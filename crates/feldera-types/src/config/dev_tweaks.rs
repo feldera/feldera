@@ -10,7 +10,7 @@ use utoipa::ToSchema;
 /// threshold never merges.  With threshold `n`, `14 + 7 * (n - 1)` batches
 /// can wait with no merge due, which reaches 128 at `n = 18`.  15 is a
 /// conservative choice; `merge_threshold_test` pins it.
-pub const MAX_MIN_MERGE_BATCHES: u16 = 15;
+pub const MAX_MERGE_THRESHOLD_BATCHES: u16 = 15;
 
 /// Optional settings for tweaking Feldera internals.
 ///
@@ -206,19 +206,21 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_level0_batch_size_records: Option<u16>,
 
-    /// Minimum number of batches an accumulator's spine merges at once,
-    /// at every level above level 1.
+    /// Merge threshold of an accumulator's spine: how many batches each
+    /// level above level 1 waits for before it merges them.
     ///
-    /// Zero restores the built-in minimum.
+    /// Zero restores the built-in minimum.  A spine that garbage-collects old
+    /// records always uses the built-in minimum.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_accumulator_merge_batches: Option<u16>,
+    pub accumulator_merge_threshold_batches: Option<u16>,
 
-    /// Minimum number of batches an integral's spine merges at once, at
-    /// every level above level 1.
+    /// Merge threshold of an integral's spine: how many batches each level
+    /// above level 1 waits for before it merges them.
     ///
-    /// Unset or zero keeps the built-in minimum.
+    /// The default is ten.  Zero restores the built-in minimum.  A spine
+    /// that garbage-collects old records always uses the built-in minimum.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_integral_merge_batches: Option<u16>,
+    pub integral_merge_threshold_batches: Option<u16>,
 
     /// The number of merger threads.
     ///
@@ -235,6 +237,19 @@ pub struct DevTweaks {
     /// any additional bias.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub negative_weight_multiplier: Option<u16>,
+
+    /// The share of the records at a spine's highest level with negative
+    /// weights above which the level merges its batches.
+    ///
+    /// A spine keeps most of its records at its highest level.  When many of
+    /// them are retractions, merging the level's batches cancels them against
+    /// the records they retract, which shrinks the spine's storage.
+    ///
+    /// A fraction from 0 through 1; the default is 0.2.  At 1 the level never
+    /// merges for this reason.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "crate::serde_via_value::deserialize")]
+    pub top_level_negative_weight_fraction: Option<f64>,
 
     /// Don't automatically start a transaction for every step.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -364,40 +379,54 @@ impl DevTweaks {
     pub fn validate(&self) -> Result<(), String> {
         for (name, value) in [
             (
-                "min_accumulator_merge_batches",
-                self.min_accumulator_merge_batches,
+                "accumulator_merge_threshold_batches",
+                self.accumulator_merge_threshold_batches,
             ),
             (
-                "min_integral_merge_batches",
-                self.min_integral_merge_batches,
+                "integral_merge_threshold_batches",
+                self.integral_merge_threshold_batches,
             ),
         ] {
             if let Some(value) = value
-                && value > MAX_MIN_MERGE_BATCHES
+                && value > MAX_MERGE_THRESHOLD_BATCHES
             {
                 return Err(format!(
                     "dev_tweaks.{name} is {value}, but the valid range is 0 through \
-                     {MAX_MIN_MERGE_BATCHES}; 0 keeps the built-in minimum"
+                     {MAX_MERGE_THRESHOLD_BATCHES}; 0 keeps the built-in minimum"
                 ));
             }
+        }
+        if let Some(fraction) = self.top_level_negative_weight_fraction
+            && !(0.0..=1.0).contains(&fraction)
+        {
+            return Err(format!(
+                "dev_tweaks.top_level_negative_weight_fraction is {fraction}, but the valid \
+                 range is 0 through 1"
+            ));
         }
         Ok(())
     }
 
     /// Batches an accumulator's spine waits for above level 1; zero means the
     /// built-in minimum.
-    pub fn min_accumulator_merge_batches(&self) -> u16 {
-        self.min_accumulator_merge_batches.unwrap_or(10)
+    pub fn accumulator_merge_threshold_batches(&self) -> u16 {
+        self.accumulator_merge_threshold_batches.unwrap_or(10)
     }
 
     /// Batches an integral's spine waits for above level 1; zero means the
     /// built-in minimum.
-    pub fn min_integral_merge_batches(&self) -> u16 {
-        self.min_integral_merge_batches.unwrap_or(0)
+    pub fn integral_merge_threshold_batches(&self) -> u16 {
+        self.integral_merge_threshold_batches.unwrap_or(10)
     }
 
     pub fn negative_weight_multiplier(&self) -> u16 {
         self.negative_weight_multiplier.unwrap_or(0)
+    }
+
+    /// The share of the records at a spine's highest level with negative
+    /// weights above which the level merges its batches.
+    pub fn top_level_negative_weight_fraction(&self) -> f64 {
+        self.top_level_negative_weight_fraction.unwrap_or(0.2)
     }
 
     pub fn disable_auto_transaction(&self) -> bool {
@@ -481,30 +510,58 @@ mod tests {
     fn merge_thresholds_are_bounded() {
         assert_eq!(DevTweaks::default().validate(), Ok(()));
         for field in [
-            "min_accumulator_merge_batches",
-            "min_integral_merge_batches",
+            "accumulator_merge_threshold_batches",
+            "integral_merge_threshold_batches",
         ] {
             let with = |value: u16| {
                 let mut tweaks = DevTweaks::default();
-                if field == "min_accumulator_merge_batches" {
-                    tweaks.min_accumulator_merge_batches = Some(value);
+                if field == "accumulator_merge_threshold_batches" {
+                    tweaks.accumulator_merge_threshold_batches = Some(value);
                 } else {
-                    tweaks.min_integral_merge_batches = Some(value);
+                    tweaks.integral_merge_threshold_batches = Some(value);
                 }
                 tweaks
             };
             assert_eq!(with(0).validate(), Ok(()), "{field} = 0");
             assert_eq!(
-                with(MAX_MIN_MERGE_BATCHES).validate(),
+                with(MAX_MERGE_THRESHOLD_BATCHES).validate(),
                 Ok(()),
                 "{field} at the bound"
             );
-            let error = with(MAX_MIN_MERGE_BATCHES + 1)
+            let error = with(MAX_MERGE_THRESHOLD_BATCHES + 1)
                 .validate()
                 .expect_err("a value past the bound must be rejected");
             assert!(error.contains(field), "{error}");
             assert!(error.contains("16"), "{error}");
             assert!(error.contains("0 through 15"), "{error}");
+        }
+    }
+
+    /// The share of negative weights that merges a spine's highest level
+    /// defaults to a fifth, and is accepted from 0 through 1 and rejected
+    /// outside that range or when it is not a number at all.
+    #[test]
+    fn top_level_negative_weight_fraction_is_a_share() {
+        assert_eq!(
+            DevTweaks::default().top_level_negative_weight_fraction(),
+            0.2
+        );
+        let with = |fraction| DevTweaks {
+            top_level_negative_weight_fraction: Some(fraction),
+            ..DevTweaks::default()
+        };
+        for fraction in [0.0, 0.2, 1.0] {
+            assert_eq!(with(fraction).validate(), Ok(()), "{fraction}");
+        }
+        for fraction in [-0.1, 1.5, f64::INFINITY, f64::NAN] {
+            let error = with(fraction)
+                .validate()
+                .expect_err("a share outside 0 through 1 must be rejected");
+            assert!(
+                error.contains("top_level_negative_weight_fraction"),
+                "{error}"
+            );
+            assert!(error.contains("0 through 1"), "{error}");
         }
     }
 
@@ -523,6 +580,7 @@ mod tests {
                 balancer_balance_tax: Some(1.1),
                 balancer_min_relative_improvement_threshold: Some(1.2),
                 balancer_key_distribution_refresh_threshold: Some(0.1),
+                top_level_negative_weight_fraction: Some(0.25),
                 ..Default::default()
             },
             ..Default::default()
@@ -556,6 +614,10 @@ mod tests {
                 .dev_tweaks
                 .balancer_key_distribution_refresh_threshold,
             Some(0.1)
+        );
+        assert_eq!(
+            pc2.global.dev_tweaks.top_level_negative_weight_fraction,
+            Some(0.25)
         );
 
         // serde_json::Value round-trip (the path the pipeline manager takes).

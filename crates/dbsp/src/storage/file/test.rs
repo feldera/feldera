@@ -18,10 +18,13 @@ use crate::{
             TouchedWindowCount,
             format::{
                 BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, Compression, FileTrailer,
-                INCOMPATIBLE_FEATURE_MODULAR_FILTERS, MODULAR_BLOOM_FILTER_BLOCK_MAGIC,
-                ROARING_BITMAP_FILTER_BLOCK_MAGIC,
+                INCOMPATIBLE_FEATURE_MODULAR_FILTERS, INCOMPATIBLE_FEATURE_ROARING_FILTERS,
+                MODULAR_BLOOM_FILTER_BLOCK_MAGIC, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
             },
-            reader::{BulkRows, FilteredKeys, Reader},
+            reader::{
+                BulkRows, CorruptionError, Error as ReaderError, FilteredKeys, Reader,
+                read_metadata,
+            },
         },
     },
     trace::{
@@ -33,18 +36,20 @@ use crate::{
 };
 
 use super::{
-    Factories, FilterPlan,
+    BatchKeyFilter, Factories, FilterPlan,
     reader::{ColumnSpec, RowGroup},
     writer::{Parameters, Writer1, Writer2},
 };
 
 use crate::storage::file::FilterKind;
+use crate::storage::file::format::{INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN, ValueStampFlag};
 use crate::storage::{backend::StorageError, buffer_cache::FBuf};
 use crate::{
     DBData,
     dynamic::{DynData, Erase},
 };
-use binrw::BinRead;
+use binrw::{BinRead, BinWrite};
+use crc32c::crc32c;
 use feldera_storage::file::FileId;
 use feldera_storage::{FileCommitter, FileReader, FileRw, StoragePath};
 use feldera_types::config::{StorageConfig, StorageOptions};
@@ -1753,6 +1758,150 @@ fn roaring_u64_filter_roundtrip_uses_batch_min_offset() {
     });
 }
 
+/// A roaring filter planned around a key smaller than the file's first key
+/// answers the same straight from the writer and after the file is reopened.
+///
+/// A merge plans its filter around the smallest key of its inputs, and that
+/// key can cancel out of the merged file. The keys here sit at odd offsets from
+/// the planned minimum, so a reader that took the first key for the filter's
+/// base would probe only clear bits.
+#[test]
+fn roaring_filter_planned_below_the_first_key_survives_reopen() {
+    init_test_logger();
+
+    with_roaring_enabled(|| {
+        for reopen in [false, true] {
+            let factories = Factories::<DynData, DynData>::new::<i64, ()>();
+            let tempdir = tempdir().unwrap();
+            let storage_backend = <dyn StorageBackend>::new(
+                &StorageConfig {
+                    path: tempdir.path().to_string_lossy().to_string(),
+                    cache: Default::default(),
+                },
+                &StorageOptions::default(),
+            )
+            .unwrap();
+
+            let planned_min = -1_000i64;
+            let keys: Vec<i64> = (0..64).map(|i| planned_min + 1 + 2 * i).collect();
+            let filter_plan =
+                FilterPlan::from_bounds((&planned_min) as &DynData, keys.last().unwrap());
+            let mut writer = Writer1::new(
+                &factories,
+                test_buffer_cache,
+                &*storage_backend,
+                Parameters::default(),
+                FilterPlan::decide_filter(Some(&filter_plan), keys.len()),
+            )
+            .unwrap();
+            for key in &keys {
+                writer.write0((key, &())).unwrap();
+            }
+
+            let (reader, filters) = if reopen {
+                let path = writer.path().clone();
+                let (_file_handle, _key_filter, _key_bounds) =
+                    writer.close(BatchMetadata::default()).unwrap();
+                let (reader, membership_filter) = Reader::open_with_filter(
+                    &[&factories.any_factories()],
+                    test_buffer_cache,
+                    &*storage_backend,
+                    &path,
+                )
+                .unwrap();
+                let key_range = reader.key_range().unwrap().map(Into::into);
+                let filters = BatchFilters::from_file(key_range, membership_filter);
+                (reader, filters)
+            } else {
+                writer.into_reader(BatchMetadata::default()).unwrap()
+            };
+
+            for key in &keys {
+                assert!(
+                    filters.maybe_contains_key(key as &DynData, None),
+                    "reopen={reopen}: key {key} not found"
+                );
+            }
+            for key in keys.iter().map(|key| key + 1).take(keys.len() - 1) {
+                assert!(
+                    !filters.maybe_contains_key((&key) as &DynData, None),
+                    "reopen={reopen}: absent key {key} found"
+                );
+            }
+            assert_eq!(
+                filter_block_magic(&reader),
+                Some(ROARING_BITMAP_FILTER_BLOCK_MAGIC)
+            );
+        }
+    });
+}
+
+/// A writer that receives no rows writes no filter, whichever filter it was
+/// created with.
+///
+/// A merge picks its output's filter before it knows whether any key survives,
+/// so a writer can hold a filter and receive no rows. The finished file must
+/// then be byte for byte the file that a writer without a filter produces,
+/// which every binary that reads this format version can read. Both the
+/// writer's own reader and a reader that reopens the file must report no
+/// filter.
+#[test]
+fn empty_file_gets_no_filter() {
+    init_test_logger();
+
+    let tempdir = tempdir().unwrap();
+    let storage_backend = backend_at(&tempdir.path().to_string_lossy());
+    let factories = Factories::<DynData, DynData>::new::<u32, ()>();
+    let write_empty_file = |key_filter| {
+        let writer = Writer1::new(
+            &factories,
+            test_buffer_cache,
+            &*storage_backend,
+            Parameters::default(),
+            key_filter,
+        )
+        .unwrap();
+        let path = writer.path().clone();
+        let (reader, filters) = writer.into_reader(BatchMetadata::default()).unwrap();
+        let contents = storage_backend.read(&path).unwrap().as_slice().to_vec();
+        (reader, filters, contents)
+    };
+
+    let (_, _, unfiltered_contents) = write_empty_file(None);
+    for (label, key_filter) in [
+        ("Bloom", BatchKeyFilter::new_bloom(100, 1e-4)),
+        (
+            "roaring",
+            Some(BatchKeyFilter::new_roaring_u32((&0u32) as &DynData)),
+        ),
+    ] {
+        assert!(key_filter.is_some(), "{label}: the writer needs a filter");
+        let (reader, filters, contents) = write_empty_file(key_filter);
+        assert_eq!(
+            filters.membership_filter_kind(),
+            FilterKind::None,
+            "{label}: the writer kept its filter"
+        );
+        assert!(
+            contents == unfiltered_contents,
+            "{label}: the file differs from one written without a filter"
+        );
+
+        let (_reopened, membership_filter): (Reader<(&'static DynData, &'static DynData, ())>, _) =
+            Reader::open_with_filter(
+                &[&factories.any_factories()],
+                test_buffer_cache,
+                &*storage_backend,
+                reader.path(),
+            )
+            .unwrap();
+        assert!(
+            membership_filter.is_none(),
+            "{label}: the reopened file has a filter"
+        );
+    }
+}
+
 #[test]
 fn i64_keys_fallback_to_bloom_when_span_exceeds_u32() {
     init_test_logger();
@@ -2359,4 +2508,157 @@ fn a_legacy_filter_has_no_ladder_to_descend() {
             assert!(filters.maybe_contains_key(key as &DynData, None));
         }
     });
+}
+
+/// A stamped value column survives a write/reopen cycle.
+///
+/// A successful reopen also proves the writer set
+/// [`INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN`]: the reader rejects a trailer
+/// whose feature bit and stamp disagree, so a stamped file that opens at all
+/// must carry the bit.
+#[test]
+fn value_stamp_roundtrip() {
+    init_test_logger();
+
+    for stamp in [ValueStampFlag::NO_STAMP, ValueStampFlag::UPSERT_INDEX] {
+        let factories = Factories::<DynData, DynData>::new::<i64, ()>();
+        let tempdir = tempdir().unwrap();
+        let storage_backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+
+        let mut writer = Writer1::new(
+            &factories,
+            test_buffer_cache,
+            &*storage_backend,
+            Parameters::default(),
+            FilterPlan::<DynData>::decide_filter(None, 3),
+        )
+        .unwrap();
+        for key in [1i64, 3, 7] {
+            writer.write0((&key, &())).unwrap();
+        }
+
+        let path = writer.path().clone();
+        // Hold the handle: the file is removed when the last one drops.
+        let (_file_handle, _key_filter, _key_bounds) = writer
+            .close(BatchMetadata {
+                value_stamp: stamp,
+                ..BatchMetadata::default()
+            })
+            .unwrap();
+
+        let (reader, _membership_filter) =
+            Reader::<(&'static DynData, &'static DynData, ())>::open_with_filter(
+                &[&factories.any_factories()],
+                test_buffer_cache,
+                &*storage_backend,
+                &path,
+            )
+            .unwrap();
+        assert_eq!(reader.metadata().value_stamp, stamp);
+        assert_eq!(
+            reader.metadata().value_stamp.is_stamped(),
+            stamp != ValueStampFlag::NO_STAMP
+        );
+    }
+}
+
+/// Negative control for the downgrade guarantee.
+///
+/// A binary that predates the stamp must REFUSE a stamped file rather than read
+/// `Tup2<V, u32>` bytes as `V`.  It refuses because the stamp is advertised in
+/// the incompatible bitmap and its bit is absent from that binary's known set,
+/// which this reproduces.  Once every reader in the tree knows the bit, this
+/// test is the only thing left holding the guarantee: moving the stamp to the
+/// compatible bitmap, or folding it into the older mask, breaks it here.
+#[test]
+fn old_reader_refuses_stamped_file() {
+    const KNOWN_BEFORE_STAMP: u64 =
+        INCOMPATIBLE_FEATURE_ROARING_FILTERS | INCOMPATIBLE_FEATURE_MODULAR_FILTERS;
+
+    assert_ne!(
+        INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN & !KNOWN_BEFORE_STAMP,
+        0,
+        "a reader predating the stamp must see the bit as unknown and refuse the file"
+    );
+}
+
+/// Copies a layer file, changing its trailer on the way.
+///
+/// # Arguments
+///
+/// * `storage_backend` - where both files live.
+/// * `path` - the file to copy.
+/// * `copy` - where to write the copy.
+/// * `patch` - the change to make to the copy's trailer.
+fn copy_with_patched_trailer(
+    storage_backend: &dyn StorageBackend,
+    path: &StoragePath,
+    copy: &StoragePath,
+    patch: impl FnOnce(&mut FileTrailer),
+) {
+    let mut content = (*storage_backend.read(path).unwrap()).clone();
+    let trailer_offset = content.len() - 512;
+    let mut trailer = FileTrailer::read_le(&mut Cursor::new(&content[trailer_offset..])).unwrap();
+    patch(&mut trailer);
+    trailer
+        .write_le(&mut Cursor::new(&mut content[trailer_offset..]))
+        .unwrap();
+    let checksum = crc32c(&content[trailer_offset + 4..]).to_le_bytes();
+    content[trailer_offset..trailer_offset + 4].copy_from_slice(&checksum);
+    storage_backend.write(copy, content).unwrap();
+}
+
+/// A trailer whose hidden-value-column feature bit and value stamp disagree is
+/// corrupted, and reading it fails whichever way they disagree.
+#[test]
+fn inconsistent_value_stamp_is_corruption() {
+    init_test_logger();
+
+    let tempdir = tempdir().unwrap();
+    let dir = tempdir.path().to_string_lossy().to_string();
+    let path = write_u32_batch(&dir, &[1, 3, 7]);
+    let storage_backend = backend_at(&dir);
+
+    for (n, (bit, stamp)) in [
+        (true, ValueStampFlag::UPSERT_INDEX),
+        (true, ValueStampFlag::NO_STAMP),
+        (false, ValueStampFlag::UPSERT_INDEX),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let copy = StoragePath::from(format!("patched{n}.feldera"));
+        copy_with_patched_trailer(&*storage_backend, &path, &copy, |trailer| {
+            if bit {
+                trailer.incompatible_features |= INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN;
+            } else {
+                trailer.incompatible_features &= !INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN;
+            }
+            trailer.metadata.value_stamp = stamp;
+        });
+
+        let result = read_metadata(test_buffer_cache, &*storage_backend, &copy);
+        if bit == stamp.is_stamped() {
+            // A consistent trailer, rewritten the same way, still reads.
+            assert_eq!(result.unwrap().value_stamp, stamp);
+        } else {
+            assert!(
+                matches!(
+                    result,
+                    Err(ReaderError::Corruption(CorruptionError::InconsistentValueStamp {
+                        bit: found_bit,
+                        stamp: found_stamp,
+                    })) if found_bit == bit && found_stamp == stamp.is_stamped()
+                ),
+                "bit {bit}, stamp {stamp:?}: expected an inconsistent stamp, got {result:?}"
+            );
+        }
+    }
 }

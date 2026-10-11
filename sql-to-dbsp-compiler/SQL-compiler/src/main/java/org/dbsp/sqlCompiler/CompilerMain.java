@@ -42,6 +42,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitorProfiles;
 import org.dbsp.util.Logger;
 import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
@@ -50,6 +51,7 @@ import javax.annotation.Nullable;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.file.Files;
@@ -156,7 +158,10 @@ public class CompilerMain {
 
     /** Run compiler, return exit code. */
     CompilerMessages run() {
-        DBSPCompiler compiler = new DBSPCompiler(this.options);
+        long jvmStart = ManagementFactory.getRuntimeMXBean().getStartTime();
+        DBSPCompiler.phases.clear();
+        DBSPCompiler.phases.add("JVM startup", System.currentTimeMillis() - jvmStart);
+        DBSPCompiler compiler = DBSPCompiler.timed("Compiler setup", () -> new DBSPCompiler(this.options));
         this.options.validate(compiler);
         try {
             InputStream input = this.getInputFile(this.options.ioOptions.inputFile);
@@ -257,6 +262,7 @@ public class CompilerMain {
             return compiler.messages;
         }
         MultiCratesWriter multiWriter = null;
+        DBSPCompiler.phases.start("Rust");
         try {
             if (!compiler.options.ioOptions.multiCrates()) {
                 PrintStream stream = this.getOutputStream();
@@ -279,6 +285,8 @@ public class CompilerMain {
             compiler.reportError(SourcePositionRange.INVALID,
                     "Error writing to output file", e.getMessage());
             return compiler.messages;
+        } finally {
+            DBSPCompiler.phases.stop("Rust");
         }
 
         // Generate stubs.rs file
@@ -302,6 +310,9 @@ public class CompilerMain {
             writer.write(compiler);
         }
 
+        Logger.INSTANCE.belowLevel(VisitorProfiles.class, 1)
+                .appendSupplier(() -> DBSPCompiler.phases.toString("Phases", 0))
+                .newline();
         return compiler.messages;
     }
 

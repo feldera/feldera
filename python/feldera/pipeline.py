@@ -159,7 +159,13 @@ class Pipeline:
 
         return self.client.resume_pipeline_logs(self.name, cursor)
 
-    def input_pandas(self, table_name: str, df: pandas.DataFrame, force: bool = False):
+    def input_pandas(
+        self,
+        table_name: str,
+        df: pandas.DataFrame,
+        force: bool = False,
+        connector_metadata: Optional[Mapping[str, Any]] = None,
+    ) -> Optional[str]:
         """
         Push all rows in a pandas DataFrame to the pipeline.
 
@@ -171,6 +177,12 @@ class Pipeline:
         :param table_name: The name of the table to insert data into.
         :param df: The pandas DataFrame to be pushed to the pipeline.
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
+        :param connector_metadata: Connector metadata for every row of the DataFrame,
+            as a dict of attribute names to values. ``CONNECTOR_METADATA()`` returns it
+            for the rows. None by default.
+
+        :returns: The completion token of the last chunk pushed, which also covers
+            the earlier chunks, or None if the DataFrame is empty and nothing was pushed.
 
         :raises ValueError: If the table does not exist in the pipeline.
         :raises RuntimeError: If the pipeline is not in a valid state to push data.
@@ -201,8 +213,9 @@ class Pipeline:
             )
         else:
             # consider validating the schema here
+            token = None
             for datum in chunk_dataframe(df):
-                self.client.push_to_pipeline(
+                token = self.client.push_to_pipeline(
                     self.name,
                     table_name,
                     "json",
@@ -211,8 +224,9 @@ class Pipeline:
                     array=True,
                     serialize=False,
                     force=force,
+                    connector_metadata=connector_metadata,
                 )
-            return
+            return token
 
     def input_json(
         self,
@@ -221,6 +235,7 @@ class Pipeline:
         update_format: str = "raw",
         force: bool = False,
         wait: bool = True,
+        connector_metadata: Optional[Mapping[str, Any]] = None,
         **kwargs,
     ) -> str:
         """
@@ -236,6 +251,11 @@ class Pipeline:
             "raw", "insert_delete". https://docs.feldera.com/formats/json#the-insertdelete-format
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
         :param wait: If True, blocks until this input has been processed by the pipeline
+        :param connector_metadata: Connector metadata for every record of this request,
+            as a dict of attribute names to values. ``CONNECTOR_METADATA()`` returns it
+            for the records, so a column declared with
+            ``DEFAULT CAST(CONNECTOR_METADATA()['name'] AS type)`` takes its value from
+            the ``name`` attribute. None by default.
         :param kwargs: Additional key word arguments forwarded to the Client push_to_pipeline method
 
         :returns: The completion token to this input.
@@ -262,6 +282,7 @@ class Pipeline:
             array=array,
             force=force,
             wait=wait,
+            connector_metadata=connector_metadata,
             **kwargs,
         )
 
@@ -1547,8 +1568,9 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         an exception will be raised.
 
         Important:
-            If you try to ``INSERT`` or ``DELETE`` data from a table while the
-            pipeline is paused, it will block until the pipeline is resumed.
+            If you try to ``INSERT`` data into a table while the pipeline is
+            paused, it will block until the pipeline is resumed.  Ad-hoc
+            queries cannot delete data.
 
         :param query: The SQL query to be executed.
         :param wait: When ``True``, block until the query's writes have been

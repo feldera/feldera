@@ -23,7 +23,7 @@ impl NatsTestRecord {
 
 deserialize_without_context!(NatsTestRecord);
 
-mod util {
+pub(crate) mod util {
     use anyhow::{Result as AnyResult, anyhow};
     use async_nats::{self, Client, jetstream};
     use serde::{Deserialize, Serialize};

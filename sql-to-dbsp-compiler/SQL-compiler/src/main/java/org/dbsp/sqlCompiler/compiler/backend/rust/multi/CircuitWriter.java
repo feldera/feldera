@@ -109,7 +109,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
             name = input.getName(false);
             this.builder().append("&")
                     .append(name)
-                    .append(".clone(), ");
+                    .append(", ");
         }
         if (node.is(DBSPControlledKeyFilterOperator.class)) {
             DBSPControlledKeyFilterOperator filter = node.to(DBSPControlledKeyFilterOperator.class);

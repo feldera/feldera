@@ -323,6 +323,14 @@ public class FloatingPointEqualityTests extends BaseSQLTests {
                         CREATE VIEW V AS SELECT eq(x, y) FROM T;"""));
     }
 
+    /** A column default value is compiled inside a generated program; the warning
+     * must point at the default value in the user's program */
+    @Test
+    public void defaultValue() {
+        this.assertWarnings("CREATE TABLE D(b BOOLEAN DEFAULT CAST(1 AS DOUBLE) = 2e0);",
+                "3:34: warning: Floating point equality: '=' " + DOUBLE);
+    }
+
     @Test
     public void silenced() {
         this.assertNoWarnings("""

@@ -308,6 +308,7 @@ struct RuntimeConfigPropVal {
     val21: Option<u64>,
     val22: Option<u64>,
     val23: bool,
+    val24: Option<String>,
 }
 type ProgramConfigPropVal = (u8, bool, bool, bool, u8);
 type ProgramInfoPropVal = (u8, u8, u8);
@@ -454,6 +455,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
                     }),
                 }),
                 storage_class: val.val12,
+                volume_attributes_class: val.val24,
                 service_account_name: val.val13,
                 namespace: val.val14,
             },
@@ -666,10 +668,12 @@ fn limited_sql_compilation_info() -> impl Strategy<Value = SqlCompilationInfo> {
 
 /// Generates different Rust compilation information.
 fn limited_rust_compilation_info() -> impl Strategy<Value = RustCompilationInfo> {
-    any::<(u8, u8, u8)>().prop_map(|v| RustCompilationInfo {
-        exit_code: (v.0 % 4) as i32,
-        stdout: format!("stdout-{}", v.1),
-        stderr: format!("stderr-{}", v.1),
+    any::<(u8, u8, u8)>().prop_map(|v| {
+        RustCompilationInfo::from_process_output_streams(
+            (v.0 % 4) as i32,
+            format!("stdout-{}", v.1),
+            format!("stderr-{}", v.1),
+        )
     })
 }
 
@@ -2483,6 +2487,7 @@ async fn pipeline_versioning() {
             storage_mb_max: None,
             autoscaling: None,
             storage_class: None,
+            volume_attributes_class: None,
             service_account_name: None,
             namespace: None,
         },
@@ -2597,11 +2602,7 @@ async fn storage_mb_min_edit_restricted_to_cleared_storage() {
             tenant_id,
             pipeline.id,
             Version(1),
-            &RustCompilationInfo {
-                exit_code: 0,
-                stdout: "".to_string(),
-                stderr: "".to_string(),
-            },
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -2908,11 +2909,7 @@ async fn pipeline_program_compilation() {
             tenant_id,
             pipeline1.id,
             Version(1),
-            &RustCompilationInfo {
-                exit_code: 0,
-                stdout: "".to_string(),
-                stderr: "".to_string(),
-            },
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "abc",
             "123",
             "456",
@@ -3010,11 +3007,8 @@ async fn count_pipelines_needing_compilation() {
             exit_code: 0,
             messages: vec![],
         };
-        let rust_compilation = RustCompilationInfo {
-            exit_code: 0,
-            stdout: "".to_string(),
-            stderr: "".to_string(),
-        };
+        let rust_compilation =
+            RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string());
         for status in statuses {
             match status {
                 ProgramStatus::Pending => db
@@ -3321,11 +3315,7 @@ async fn pipeline_transition_after_quick_stop() {
             tenant_id,
             pipeline1.id,
             Version(1),
-            &RustCompilationInfo {
-                exit_code: 0,
-                stdout: "".to_string(),
-                stderr: "".to_string(),
-            },
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -3544,11 +3534,7 @@ async fn pipeline_deployment() {
             tenant_id,
             pipeline1.id,
             Version(1),
-            &RustCompilationInfo {
-                exit_code: 0,
-                stdout: "".to_string(),
-                stderr: "".to_string(),
-            },
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -3766,11 +3752,24 @@ async fn pipeline_deployment() {
             .refresh_version,
         Version(10)
     );
+    let before_stop = handle
+        .db
+        .get_pipeline_by_id(tenant_id, pipeline1.id)
+        .await
+        .unwrap();
+    assert!(before_stop.deployment_config.is_some());
     handle
         .db
         .transit_deployment_resources_status_to_stopped(tenant_id, pipeline1.id, Version(1))
         .await
         .unwrap();
+    let stopped = handle
+        .db
+        .get_pipeline_by_id(tenant_id, pipeline1.id)
+        .await
+        .unwrap();
+    assert_eq!(stopped.deployment_config, before_stop.deployment_config);
+    assert_eq!(stopped.deployment_location, None);
     handle
         .db
         .set_deployment_resources_desired_status_provisioned(
@@ -3911,6 +3910,15 @@ async fn pipeline_deployment() {
         .transit_storage_status_to_cleared(tenant_id, pipeline1.id)
         .await
         .unwrap();
+    assert!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .deployment_config
+            .is_some()
+    );
     handle
         .db
         .set_deployment_resources_desired_status_provisioned(
@@ -4379,11 +4387,8 @@ async fn runner_descriptor_uses_runtime_compatibility_not_string_equality() {
         exit_code: 0,
         messages: vec![],
     };
-    let rust_info = RustCompilationInfo {
-        exit_code: 0,
-        stdout: "".to_string(),
-        stderr: "".to_string(),
-    };
+    let rust_info =
+        RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string());
 
     // Compile the pipeline to Success on platform version "v0", on both sides.
     for db in [&model as &dyn Storage, &handle.db as &dyn Storage] {
@@ -4520,11 +4525,7 @@ async fn pipeline_provision_version_guard() {
             tenant_id,
             pipeline.id,
             Version(1),
-            &RustCompilationInfo {
-                exit_code: 0,
-                stdout: "".to_string(),
-                stderr: "".to_string(),
-            },
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -4776,11 +4777,7 @@ async fn pipeline_client_metadata_update_while_running() {
             tenant_id,
             pipeline.id,
             Version(1),
-            &RustCompilationInfo {
-                exit_code: 0,
-                stdout: "".to_string(),
-                stderr: "".to_string(),
-            },
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -7002,6 +6999,7 @@ fn convert_descriptor_to_monitoring(
         program_status: pipeline.program_status,
         program_status_since: pipeline.program_status_since,
         deployment_error: pipeline.deployment_error.clone(),
+        deployment_config: pipeline.deployment_config.clone(),
         deployment_location: pipeline.deployment_location.clone(),
         refresh_version: pipeline.refresh_version,
         storage_status: pipeline.storage_status,
@@ -8782,7 +8780,7 @@ impl Storage for Mutex<DbModel> {
         // and clears it at Stopped.
         pipeline.deployment_initial = None;
         pipeline.bootstrap_policy = None;
-        pipeline.deployment_config = None;
+        // Retain: pipeline.deployment_config
         pipeline.deployment_location = None;
         pipeline.deployment_error = deployment_error;
         pipeline.deployment_resources_status = new_resources_status;
@@ -8837,7 +8835,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_id = None;
         pipeline.deployment_initial = None;
         pipeline.bootstrap_policy = None;
-        pipeline.deployment_config = None;
+        // Retain: pipeline.deployment_config
         pipeline.deployment_location = None;
         pipeline.deployment_error = Some(deployment_error);
         pipeline.deployment_resources_status = new_resources_status;
@@ -8906,7 +8904,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_id = None;
         pipeline.deployment_initial = None;
         pipeline.bootstrap_policy = None;
-        pipeline.deployment_config = None;
+        // Retain: pipeline.deployment_config
         pipeline.deployment_location = None;
         // Retain: pipeline.deployment_error
         pipeline.deployment_resources_status = new_resources_status;

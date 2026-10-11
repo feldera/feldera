@@ -5,7 +5,7 @@
 
   const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
 
-  const chipClass = $derived(pipelineStatusColor(status).deploymentChip)
+  const chipClass = $derived(pipelineStatusColor(status).chip)
 </script>
 
 <div class={'pointer-events-none chip text-[0.66rem] uppercase ' + chipClass + ' ' + _class}>

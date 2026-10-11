@@ -733,9 +733,17 @@ impl IntegratedInputEndpoint for DeltaTableInputEndpoint {
     }
 }
 
-struct DeltaTableInputReader {
+pub(super) struct DeltaTableInputReader {
     sender: Sender<PipelineState>,
     inner: Arc<DeltaTableInputEndpointInner>,
+}
+
+#[cfg(test)]
+impl DeltaTableInputReader {
+    /// The state last sent to the connector's worker.
+    pub(super) fn state(&self) -> PipelineState {
+        *self.sender.borrow()
+    }
 }
 
 /// Whether the table records a change feed after `actions`, or `None` if the
@@ -2411,6 +2419,10 @@ impl DeltaTableInputEndpointInner {
                                             Ok(target) => target,
                                             Err(_) => break,
                                         };
+                                    // A pause during the listing makes `target` stale: commits written while paused belong in this window too.
+                                    if *receiver.borrow() != PipelineState::Running {
+                                        continue;
+                                    }
                                     debug!(
                                         "delta_table {}: starting catchup transaction (current version: {version}, target version: {target})",
                                         &self.endpoint_name,

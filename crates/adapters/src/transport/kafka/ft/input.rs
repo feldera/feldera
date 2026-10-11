@@ -1,9 +1,10 @@
 use crate::transport::InputCommandReceiver;
-use crate::transport::kafka::MemoryUseReporter;
+use crate::transport::kafka::buffered_bytes;
 use crate::transport::kafka::ft::count_partitions_in_topic;
 use crate::transport::kafka::{
     OauthbearerAuth, generate_oauthbearer_token, resolve_oauthbearer_auth,
 };
+use crate::util::MemoryUseReporter;
 use crate::{InputBuffer, Parser};
 use crate::{
     InputConsumer, TransportInputEndpoint,
@@ -87,6 +88,33 @@ impl KafkaFtInputEndpoint {
     }
 }
 
+/// Returns a copy of `config` whose `partitions` list, if any, is in ascending
+/// order, with any offsets in `start_from` reordered to match.
+///
+/// The reader keeps its partitions in ascending order, and so do the offsets in
+/// its resume metadata.  Code that pairs the reader's partitions with the
+/// configuration's partitions by position is only correct if both are in the
+/// same order.
+pub(super) fn sort_partitions(config: &KafkaInputConfig) -> KafkaInputConfig {
+    let mut config = config.clone();
+    if let Some(partitions) = &mut config.partitions {
+        match &mut config.start_from {
+            KafkaStartFromConfig::Offsets(offsets) => {
+                // If the lengths differ, keep the order so that the reader
+                // reports the mismatch with the offsets that the user wrote.
+                if offsets.len() == partitions.len() {
+                    let mut pairs = iter::zip(partitions.iter().copied(), offsets.iter().copied())
+                        .collect::<Vec<_>>();
+                    pairs.sort_by_key(|(partition, _offset)| *partition);
+                    (*partitions, *offsets) = pairs.into_iter().unzip();
+                }
+            }
+            _ => partitions.sort(),
+        }
+    }
+    config
+}
+
 struct KafkaFtInputReader {
     inner: Arc<KafkaFtInputReaderInner>,
     command_sender: UnboundedSender<InputReaderCommand>,
@@ -120,7 +148,7 @@ impl KafkaFtInputContext {
             deferred_logging: DeferredLogging::new(),
             oauthbearer_config,
             topic: kafka_config.topic.clone(),
-            memory_use_reporter: Mutex::new(MemoryUseReporter::new()),
+            memory_use_reporter: Mutex::new(MemoryUseReporter::new("buffers", 1024 * 1024)),
         })
     }
 }
@@ -145,7 +173,10 @@ impl ClientContext for KafkaFtInputContext {
 
     fn stats(&self, statistics: rdkafka::Statistics) {
         let _guard = span(&self.topic);
-        self.memory_use_reporter.lock().unwrap().update(&statistics);
+        self.memory_use_reporter
+            .lock()
+            .unwrap()
+            .update(buffered_bytes(&statistics));
     }
 }
 
@@ -891,6 +922,7 @@ impl KafkaFtInputReader {
         // is set.
         kafka_consumer.poll(std::time::Duration::from_nanos(0));
         let partition_count = count_partitions_in_topic(&kafka_consumer, &config.topic)?;
+        let config = &Arc::new(sort_partitions(config));
 
         let inner = Arc::new(KafkaFtInputReaderInner {
             kafka_consumer: Arc::new(kafka_consumer),

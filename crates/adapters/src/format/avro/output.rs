@@ -4,7 +4,6 @@ use crate::format::avro::schema::{AvroSchemaBuilder, schema_json};
 use crate::format::avro::schema_registry_settings;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 use crate::{ControllerError, Encoder, OutputConsumer, OutputFormat, RecordFormat, SerCursor};
-use actix_web::HttpRequest;
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use apache_avro::Schema;
 use apache_avro::schema::RecordField;
@@ -54,17 +53,15 @@ impl OutputFormat for AvroOutputFormat {
         Cow::Borrowed("avro")
     }
 
-    fn config_from_http_request(
+    fn config_from_http_query(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        query: &str,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         let config = AvroEncoderConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
-            request.query_string().as_bytes(),
+            query.as_bytes(),
         )))
-        .map_err(|e| {
-            ControllerError::encoder_config_parse_error(endpoint_name, &e, request.query_string())
-        })?;
+        .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, query))?;
 
         Ok(Box::new(config))
     }

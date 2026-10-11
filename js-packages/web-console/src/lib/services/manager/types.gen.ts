@@ -1705,6 +1705,14 @@ export type Demo = {
  */
 export type DevTweaks = {
   /**
+   * Merge threshold of an accumulator's spine: how many batches each
+   * level above level 1 waits for before it merges them.
+   *
+   * Zero restores the built-in minimum.  A spine that garbage-collects old
+   * records always uses the built-in minimum.
+   */
+  accumulator_merge_threshold_batches?: number | null
+  /**
    * Enable adaptive joins.
    *
    * Adaptive joins dynamically change their partitioning policy to avoid skew.
@@ -1860,6 +1868,14 @@ export type DevTweaks = {
    */
   fetch_join?: boolean | null
   /**
+   * Merge threshold of an integral's spine: how many batches each level
+   * above level 1 waits for before it merges them.
+   *
+   * The default is ten.  Zero restores the built-in minimum.  A spine
+   * that garbage-collects old records always uses the built-in minimum.
+   */
+  integral_merge_threshold_batches?: number | null
+  /**
    * Maximum batch size in records for level 0 merges.
    */
   max_level0_batch_size_records?: number | null
@@ -1870,20 +1886,6 @@ export type DevTweaks = {
    * The default value is equal to the number of worker threads.
    */
   merger_threads?: number | null
-  /**
-   * Minimum number of batches an accumulator's spine merges at once,
-   * at every level above level 1.
-   *
-   * Zero restores the built-in minimum.
-   */
-  min_accumulator_merge_batches?: number | null
-  /**
-   * Minimum number of batches an integral's spine merges at once, at
-   * every level above level 1.
-   *
-   * Unset or zero keeps the built-in minimum.
-   */
-  min_integral_merge_batches?: number | null
   /**
    * Additional bias the merger assigns to records with negative weights
    * (retractions) to promote them to higher levels of the LSM tree sooner.
@@ -1958,6 +1960,18 @@ export type DevTweaks = {
    * Enable streaming exchange.
    */
   streaming_exchange?: boolean | null
+  /**
+   * The share of the records at a spine's highest level with negative
+   * weights above which the level merges its batches.
+   *
+   * A spine keeps most of its records at its highest level.  When many of
+   * them are retractions, merging the level's batches cancels them against
+   * the records they retract, which shrinks the spine's storage.
+   *
+   * A fraction from 0 through 1; the default is 0.2.  At 1 the level never
+   * merges for this reason.
+   */
+  top_level_negative_weight_fraction?: number | null
   [key: string]: unknown
 }
 
@@ -3523,6 +3537,14 @@ export type MultihostConfig = {
   hosts: number
 }
 
+/**
+ * A header attached to every message published by `nats_output`.
+ */
+export type NatsHeader = {
+  key: string
+  value: string
+}
+
 export type NatsInputConfig = {
   connection_config: ConnectOptions
   consumer_config: ConsumerConfig
@@ -3537,6 +3559,51 @@ export type NatsInputConfig = {
    */
   retry_interval_secs?: number
   stream_name: string
+}
+
+/**
+ * How `nats_output` chooses the `Nats-Msg-Id` header of each message.
+ */
+export type NatsMessageId = 'content_hash' | 'none'
+
+/**
+ * Configuration for writing data to a NATS subject with `nats_output`.
+ *
+ * The connector publishes to JetStream: each message is published with an
+ * acknowledgment request and the publish is retried until the server
+ * acknowledges it or the pipeline shuts down, so data is not lost to a
+ * server that is momentarily unavailable. The subject must be bound to a
+ * JetStream stream; publishing to a subject with no stream raises
+ * "no responders" and the publish fails.
+ */
+export type NatsOutputConfig = {
+  connection_config: ConnectOptions
+  /**
+   * Headers to add to every message published by this connector, as
+   * key/value pairs. Values are UTF-8 strings.
+   */
+  headers?: Array<NatsHeader>
+  /**
+   * Override for the maximum message size in bytes the connector offers to
+   * the encoder. When unset, the connector discovers the limit at connect
+   * time: the bound stream's `max_message_size` when the stream sets one,
+   * else the server's max payload. The encoder splits output records across
+   * messages by this limit; a record larger than the limit fails the
+   * pipeline with an error naming the record rather than reaching the
+   * server.
+   */
+  max_message_size?: number | null
+  message_id?: NatsMessageId
+  /**
+   * How long to wait for the server's publish acknowledgment before
+   * retrying the publish. Must be at least 1.
+   */
+  publish_timeout_secs?: number
+  /**
+   * NATS subject to publish to (e.g., "orders.created"). The subject
+   * must be bound to a JetStream stream on the target server.
+   */
+  subject: string
 }
 
 /**
@@ -4457,6 +4524,69 @@ export type PostStopPipelineParameters = {
 }
 
 /**
+ * Batch processing configuration for the Postgres CDC connector.
+ *
+ * Controls how replication events are buffered into a batch before being
+ * flushed to Feldera. Mirrors the batch configuration of the underlying
+ * `etl` replication library; fields omitted from the configuration fall
+ * back to `etl`'s own defaults.
+ */
+export type PostgresCdcBatchConfig = {
+  /**
+   * Maximum preferred byte size for one batch per active stream. This is
+   * a ceiling, not a target: the runtime still chooses the smaller value
+   * between this limit and the memory-ratio budget computed from
+   * `memory_budget_ratio`.
+   *
+   * Default: 33554432 (32 MiB), the same as etl.
+   */
+  max_bytes?: number
+  /**
+   * Maximum time, in milliseconds, to wait before flushing a partially
+   * filled batch. This is the latency bound for batching: once the first
+   * event enters a batch, the batch is flushed when this timer elapses,
+   * even if `max_bytes` was not reached.
+   *
+   * Default: 10000 (10 seconds).
+   */
+  max_fill_ms?: number
+  /**
+   * Ratio of process memory reserved for incoming replication batch
+   * bytes, in the `(0.0, 1.0]` interval. The configured memory is divided
+   * by the number of active streams at runtime, so each stream gets only
+   * a per-stream share of the global memory budget.
+   *
+   * Default: 0.2.
+   */
+  memory_budget_ratio?: number
+}
+
+/**
+ * Memory-based backpressure configuration for the Postgres CDC connector.
+ *
+ * When the connector's memory usage rises above `activate_threshold`, it
+ * pauses reading further replication events until usage drops back below
+ * `resume_threshold`. Mirrors the memory backpressure configuration of the
+ * underlying `etl` replication library.
+ */
+export type PostgresCdcMemoryBackpressureConfig = {
+  /**
+   * Memory usage ratio above which backpressure is activated, in the
+   * `(0.0, 1.0]` interval.
+   *
+   * Default: 0.85.
+   */
+  activate_threshold?: number
+  /**
+   * Memory usage ratio below which backpressure is released, in the
+   * `[0.0, 1.0)` interval. Must be lower than `activate_threshold`.
+   *
+   * Default: 0.75.
+   */
+  resume_threshold?: number
+}
+
+/**
  * Postgres CDC input connector configuration.
  *
  * Uses logical replication to capture ongoing changes from a Postgres database.
@@ -4508,6 +4638,8 @@ export type PostgresCdcReaderConfig = {
    */
   verify_hostname?: boolean | null
 } & {
+  batch?: PostgresCdcBatchConfig
+  memory_backpressure?: PostgresCdcMemoryBackpressureConfig
   /**
    * Name of the pre-created Postgres publication to replicate from.
    */
@@ -5203,6 +5335,14 @@ export type ResourceConfig = {
    * autoscaling.
    */
   storage_mb_min?: number | null
+  /**
+   * Kubernetes volume attributes class to use for the storage of an
+   * instance of this pipeline. The class sets mutable storage parameters
+   * such as IOPS and throughput. Requires Kubernetes 1.34 or later (or
+   * the `VolumeAttributesClass` feature gate) and CSI driver support.
+   * A change takes effect on the next start, also for existing storage.
+   */
+  volume_attributes_class?: string | null
 }
 
 export type ResourcesDesiredStatus = 'Stopped' | 'Provisioned'
@@ -5658,6 +5798,10 @@ export type RustCompilationInfo = {
    */
   exit_code: number
   /**
+   * Parsed rustc diagnostics. Older stored JSON omits this field.
+   */
+  messages?: Array<RustCompilerMessage>
+  /**
    * Output printed to stderr by the `cargo` compilation command.
    */
   stderr: string
@@ -5665,6 +5809,21 @@ export type RustCompilationInfo = {
    * Output printed to stdout by the `cargo` compilation command.
    */
   stdout: string
+}
+
+/**
+ * One rustc diagnostic (error or warning).
+ */
+export type RustCompilerMessage = {
+  end_column: number
+  end_line_number: number
+  error_type: string
+  file?: string | null
+  message: string
+  rendered?: string | null
+  start_column: number
+  start_line_number: number
+  warning: boolean
 }
 
 /**
@@ -6564,6 +6723,10 @@ export type TransportConfig =
   | {
       config: NatsInputConfig
       name: 'nats_input'
+    }
+  | {
+      config: NatsOutputConfig
+      name: 'nats_output'
     }
   | {
       config: KafkaInputConfig
@@ -8250,7 +8413,7 @@ export type HttpInputData = {
      */
     force: boolean
     /**
-     * Input data format, either `csv' or 'json'.
+     * Input data format: `csv`, `json`, `parquet`, `avro`, or `raw`. The default is `csv`.
      */
     format: string
     /**
@@ -8261,6 +8424,10 @@ export type HttpInputData = {
      * JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'.
      */
     update_format?: JsonUpdateFormat | null
+    /**
+     * Connector metadata for every record of this request, as a JSON object.  `CONNECTOR_METADATA()` returns the object for the records, so a column declared with `DEFAULT CAST(CONNECTOR_METADATA()['name'] AS type)` takes its value from the object's `name` attribute.  Works with every input format.
+     */
+    connector_metadata?: string | null
   }
   url: '/v0/pipelines/{pipeline_name}/ingress/{table_name}'
 }

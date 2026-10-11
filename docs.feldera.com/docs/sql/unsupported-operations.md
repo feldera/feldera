@@ -13,6 +13,11 @@ The following aggregate functions are not supported:
 `REGR_SLOPE`, `REGR_INTERCEPT`, `REGR_R2`, `JSON_AGG`,
 `JSON_OBJECT_AGG`, `LISTAGG`.
 
+### `WITHIN DISTINCT` not supported
+
+The `WITHIN DISTINCT` clause of aggregate functions, as in `SUM(x)
+WITHIN DISTINCT (k)`, is not supported.
+
 ## Window functions (`OVER` clause)
 
 ### Statistics window functions

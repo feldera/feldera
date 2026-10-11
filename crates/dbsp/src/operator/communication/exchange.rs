@@ -2311,7 +2311,7 @@ fn ping_interval() -> Duration {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use feldera_storage::tokio::TOKIO;
     use feldera_types::config::DevTweaks;
     use itertools::Itertools;
@@ -2371,7 +2371,23 @@ mod tests {
         });
     }
 
-    fn test_circuit(
+    /// Runs `circuit` on every worker of a runtime and waits for all of them to
+    /// finish.
+    ///
+    /// With more than one host, this starts one runtime per host in this
+    /// process, connected over localhost TCP, the way a multihost pipeline's
+    /// hosts are.
+    ///
+    /// # Arguments
+    ///
+    /// * `workers` - total number of workers, across all hosts.
+    /// * `hosts` - number of hosts to spread the workers across.
+    /// * `circuit` - function that each worker runs.
+    ///
+    /// # Returns
+    ///
+    /// Nothing.  Panics if a worker panics.
+    pub(crate) fn test_circuit(
         workers: usize,
         hosts: usize,
         circuit: impl FnOnce() + Copy + Clone + Send + Sync + 'static,

@@ -6,7 +6,6 @@ use crate::{
         avro::schema::{schema_json, validate_struct_schema},
     },
 };
-use actix_web::HttpRequest;
 use apache_avro::{
     Schema as AvroSchema, from_avro_datum,
     schema::{Name as AvroName, ResolvedSchema},
@@ -87,22 +86,16 @@ impl InputFormat for AvroInputFormat {
         Ok(Box::new(parser) as Box<dyn Parser>)
     }
 
-    fn config_from_http_request(
+    fn config_from_http_query(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        query: &str,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         Ok(Box::new(
             AvroParserConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
-                request.query_string().as_bytes(),
+                query.as_bytes(),
             )))
-            .map_err(|e| {
-                ControllerError::parser_config_parse_error(
-                    endpoint_name,
-                    &e,
-                    request.query_string(),
-                )
-            })?,
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, query))?,
         ))
     }
 }
@@ -399,6 +392,17 @@ impl AvroParser {
         let avro_value = from_avro_datum(schema, &mut record, None).map_err(|e| {
             ParseError::bin_envelope_error(format!("error parsing avro record: {e}"), record, None)
         })?;
+        // `from_avro_datum` leaves the bytes after the datum in `record`.
+        if !record.is_empty() {
+            return Err(ParseError::bin_envelope_error(
+                format!(
+                    "{} trailing bytes after the Avro datum; a message holds exactly one datum",
+                    record.len()
+                ),
+                data,
+                None,
+            ));
+        }
 
         match self.config.update_format {
             AvroUpdateFormat::Raw => self

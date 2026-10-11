@@ -10,7 +10,41 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- New connector (`nats_output`): write view output to a NATS subject. The
+  connector publishes to JetStream: each message is acknowledged by the
+  server before the pipeline moves on, every message carries a `Nats-Msg-Id`
+  derived from its content so that output replayed after a restart is
+  deduplicated by the server within the stream's duplicate window, and
+  static headers can be attached to every message. The message size limit is
+  discovered from the bound stream at connect time (the stream's
+  `max_message_size`, else the server's max payload) and can be overridden;
+  a record over the limit fails the pipeline with an error naming the record
+  and the limit, instead of reaching the server. See
+  [NATS output connector](/connectors/sinks/nats).
+
 - DBSP startup storage accounting now includes checkpoint files in nested directories and continues past unreadable child directories.
+
+## v0.362.0
+
+- Incompatible change (SQL): the `emit_final` property of a view must
+  specify a column name.  The documentation also allowed a column number,
+  such as `'emit_final' = '0'`, but the compiler ignored numeric values:
+  the view emitted every change, as if it had no `emit_final` property.  A column
+  number is now a compilation error.  See
+  [`emit_final`](/tutorials/time-series#emitting-final-values-of-a-view-with-emit_final).
+
+- Incompatible change (SQL): a view with an `emit_final` property can no
+  longer be used in the definition of another view.  The other view read
+  the rows before `emit_final` held them back, not the final rows.  Define
+  a separate view without `emit_final` and use that view instead.  See
+  [`emit_final`](/tutorials/time-series#emitting-final-values-of-a-view-with-emit_final).
+
+- Bug fix (SQL): casting a `DATE`, `TIMESTAMP`, or `TIMESTAMP WITH TIME
+  ZONE` to a string now pads the year to four digits:
+  `CAST(DATE '0001-01-01' AS VARCHAR)` is `'0001-01-01'`.  For years
+  before 1000 the result used to omit the leading zeros (`'1-01-01'`).
+
+## v0.360.0
 
 - Storage now uses LZ4 compression by default, instead of Snappy.  LZ4
   compresses better in about the same amount of time and decompresses

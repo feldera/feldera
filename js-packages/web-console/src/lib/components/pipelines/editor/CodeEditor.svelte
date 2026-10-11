@@ -340,7 +340,7 @@
 {@render codeEditor(textEditor, statusBar, isReadOnly)}
 {#snippet textEditor()}
   <div class="flex h-full flex-col">
-    <div class="flex flex-row-reverse flex-wrap items-end">
+    <div class="flex flex-row-reverse flex-wrap items-center border-b border-surface-200-800">
       {@render toolBarEnd?.({ saveFile: _saveFile })}
       <div class="mr-auto flex flex-nowrap items-center justify-end">
         {#each files as file}

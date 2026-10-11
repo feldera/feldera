@@ -203,6 +203,7 @@ mod test {
             program_status: ProgramStatus::Pending,
             program_status_since: Default::default(),
             deployment_error: None,
+            deployment_config: None,
             deployment_location: None,
             refresh_version: Version(1),
             storage_status: StorageStatus::Cleared,

@@ -20,7 +20,7 @@
 <label class="flex items-center gap-2 text-sm {className}">
   <span class="text-surface-600-400">Snapshot:</span>
   <Select
-    class="w-36"
+    class="select-sm w-36 bg-transparent! preset-outlined-surface-200-800"
     value={selectedTimestamp?.getTime()}
     onchange={(e) => {
       onSelectTimestamp(new Date(parseInt(e.currentTarget.value)))

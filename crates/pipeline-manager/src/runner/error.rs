@@ -322,12 +322,12 @@ impl Display for RunnerError {
                 current_status,
                 desired_status,
             } => {
-                write! {
+                write!(
                     f,
                     "
                     Current deployment status {current_status} cannot reach desired status {desired_status}
                     "
-                }
+                )
             }
             Self::AutomatonGen2MultihostUnsupported { hosts } => {
                 write!(

@@ -1073,11 +1073,7 @@ impl PipelineExecutor for LocalRunner {
 
     /// The local runner should always be able to manage local processes and the pipeline working
     /// directory irrespective of configuration, hence no checks are performed here.
-    async fn can_provision(
-        &self,
-        _deployment_config: &PipelineConfig,
-        _runtime_config: &serde_json::Value,
-    ) -> Result<(), ManagerError> {
+    async fn can_provision(&self, _deployment_config: &PipelineConfig) -> Result<(), ManagerError> {
         Ok(())
     }
 
@@ -1098,7 +1094,6 @@ impl PipelineExecutor for LocalRunner {
         program_binary_url: &str,
         program_info_url: &str,
         program_version: Version,
-        _runtime_config: &serde_json::Value,
         is_gen2: bool,
     ) -> Result<(), ManagerError> {
         if let Err(e) = validate_pipeline_env(&deployment_config.global.env) {
@@ -1347,7 +1342,7 @@ impl PipelineExecutor for LocalRunner {
     /// Process deployment provisioning is completed when the port file is found and read.
     async fn is_provisioned(
         &mut self,
-        _runtime_config: &serde_json::Value,
+        _deployment_config: &serde_json::Value,
     ) -> Result<ProvisionStatus, ManagerError> {
         // Multihost: provisioning is complete once the coordinator's HTTP
         // endpoint accepts connections; the deployment location is the
@@ -1409,7 +1404,7 @@ impl PipelineExecutor for LocalRunner {
     /// - Process status must be checkable and not be exited
     async fn check(
         &mut self,
-        _runtime_config: &serde_json::Value,
+        _deployment_config: &serde_json::Value,
     ) -> Result<serde_json::Value, ManagerError> {
         // Multihost: healthy as long as no member process has fatally exited.
         // (Coordinated restarts, exit code 55, are handled transparently by the
@@ -1445,7 +1440,7 @@ impl PipelineExecutor for LocalRunner {
     }
 
     /// Kills the pipeline process and terminates the thread which follows its stdout and stderr.
-    async fn stop(&mut self, _runtime_config: &serde_json::Value) -> Result<(), ManagerError> {
+    async fn stop(&mut self, _deployment_config: &serde_json::Value) -> Result<(), ManagerError> {
         // Multihost: signal every member supervisor to kill its process and
         // wait for them to finish, so this blocks until all processes are gone.
         if let Some(multihost) = self.multihost.take() {
@@ -1474,7 +1469,7 @@ impl PipelineExecutor for LocalRunner {
     }
 
     /// Removes the pipeline working directory.
-    async fn clear(&mut self, _runtime_config: &serde_json::Value) -> Result<(), ManagerError> {
+    async fn clear(&mut self, _deployment_config: &serde_json::Value) -> Result<(), ManagerError> {
         if self.config.pipeline_dir(self.pipeline_id).exists() {
             match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
                 Ok(_) => (),

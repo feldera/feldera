@@ -4,32 +4,19 @@ from decimal import Decimal
 import random
 from pyiceberg.catalog.sql import SqlCatalog
 from pyiceberg.schema import Schema
-from pyiceberg.types import (
-    BooleanType,
-    DateType,
-    LongType,
-    MapType,
-    StringType,
-    StructType,
-    NestedField,
-    TimeType,
-    TimestampType,
-    TimestamptzType,
-    IntegerType,
-    FloatType,
-    DoubleType,
-    DecimalType,
-    BinaryType,
-    FixedType,
-    UUIDType,
+from pyiceberg.types import NestedField, StringType, UUIDType
+
+from test_table_schema import (
+    ARROW_FIELDS,
+    SCHEMA_FIELDS,
+    ndjson_to_pandas,
+    test_struct,
 )
 from pyiceberg.partitioning import PartitionSpec, PartitionField
 from pyiceberg.transforms import DayTransform
 from datetime import time, timedelta
 
 import datetime
-import os
-import sys
 import uuid
 import pyarrow as pa
 import pandas as pd
@@ -52,6 +39,13 @@ parser.add_argument(
     help="Location to create the warehouse; only used in conjunction with '--catalog=sql' in (default: /tmp/warehouse)",
 )
 parser.add_argument(
+    "--append",
+    action="store_true",
+    help="Append to the existing table, making a second snapshot, "
+    "instead of recreating it",
+)
+
+parser.add_argument(
     "--rows",
     type=int,
     default=1000000,
@@ -72,36 +66,21 @@ args = parser.parse_args()
 if args.catalog == "glue":
     from pyiceberg.catalog.glue import GlueCatalog
 
-    aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
-    aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
-
-    if not aws_access_key_id:
-        print("Error: AWS_ACCESS_KEY_ID is not set")
-        sys.exit(1)
-
-    if not aws_secret_access_key:
-        print("Error: AWS_SECRET_ACCESS_KEY is not set")
-        sys.exit(1)
-
     print("Connecting to Glue catalog")
     catalog = GlueCatalog(
         "glue",
         **{
-            "glue.access-key-id": aws_access_key_id,
-            "glue.secret-access-key": aws_secret_access_key,
-            "glue.region": "us-east-1",
-            "s3.access-key-id": aws_access_key_id,
-            "s3.secret-access-key": aws_secret_access_key,
-            "s3.region": "us-east-1",
+            "glue.region": "us-west-1",
+            "s3.region": "us-west-1",
         },
     )
-    location = "s3://feldera-iceberg-test/test_table_v2"
+    location = "s3://feldera-ci-iceberg/test_table_v3"
 elif args.catalog == "rest":
     print("REST catalog not yet supported")
     exit(1)
 else:
     warehouse_path = args.warehouse_path
-    location = f"{warehouse_path}/test_table_v2"
+    location = f"{warehouse_path}/test_table_v3"
 
     print(f"Creating SQL catalog at {warehouse_path}")
 
@@ -118,47 +97,16 @@ else:
     except:
         pass
 
-# Iceberg schema (matches `IcebergTestStruct`)
-schema_fields = [
-    NestedField(1, "b", BooleanType(), required=True),
-    NestedField(2, "i", IntegerType(), required=True),
-    NestedField(3, "l", LongType(), required=True),
-    NestedField(4, "r", FloatType(), required=True),
-    NestedField(5, "d", DoubleType(), required=True),
-    NestedField(6, "dec", DecimalType(10, 3), required=True),
-    NestedField(7, "dt", DateType(), required=True),
-    NestedField(8, "tm", TimeType(), required=True),
-    NestedField(9, "ts", TimestampType(), required=True),
-    NestedField(10, "s", StringType(), required=True),
-    NestedField(11, "fixed", FixedType(5), required=True),
-    NestedField(12, "varbin", BinaryType(), required=True),
-    NestedField(13, "tstz", TimestamptzType(), required=True),
-]
 
-# Equivalent arrow schema
-arrow_fields = [
-    pa.field("b", pa.bool_(), nullable=False),
-    pa.field("i", pa.int32(), nullable=False),
-    pa.field("l", pa.int64(), nullable=False),
-    pa.field("r", pa.float32(), nullable=False),
-    pa.field("d", pa.float64(), nullable=False),
-    pa.field("dec", pa.decimal128(10, 3), nullable=False),
-    pa.field("dt", pa.date32(), nullable=False),
-    pa.field("tm", pa.time64("us"), nullable=False),
-    pa.field("ts", pa.timestamp("us"), nullable=False),
-    pa.field("s", pa.string(), nullable=False),
-    pa.field("fixed", pa.binary(5), nullable=False),
-    pa.field("varbin", pa.binary(), nullable=False),
-    pa.field("tstz", pa.timestamp("us", tz="UTC"), nullable=False),
-]
-
+schema_fields = list(SCHEMA_FIELDS)
+arrow_fields = list(ARROW_FIELDS)
 
 # Columns that the Feldera SQL test schemas do not declare; the connector
 # must never select them. `uuid` exercises an extension-typed column.
 if args.extra_columns:
     schema_fields += [
-        NestedField(14, "uuid", UUIDType(), required=False),
-        NestedField(15, "extra_s", StringType(), required=False),
+        NestedField(19, "uuid", UUIDType(), required=False),
+        NestedField(20, "extra_s", StringType(), required=False),
     ]
     arrow_fields += [
         pa.field("uuid", pa.uuid(), nullable=True),
@@ -172,20 +120,23 @@ partition_spec = PartitionSpec(
     PartitionField(source_id=9, field_id=1000, transform=DayTransform(), name="date")
 )
 
-try:
-    print("Deleting existing table, if any")
-    catalog.drop_table("iceberg_test.test_table_v2")
-except:
-    pass
+if args.append:
+    table = catalog.load_table("iceberg_test.test_table_v3")
+else:
+    try:
+        print("Deleting existing table, if any")
+        catalog.drop_table("iceberg_test.test_table_v3")
+    except:
+        pass
 
-print("Creating Iceberg table")
+    print("Creating Iceberg table")
 
-table = catalog.create_table(
-    "iceberg_test.test_table_v2",
-    schema,
-    location=location,
-    partition_spec=partition_spec,
-)
+    table = catalog.create_table(
+        "iceberg_test.test_table_v3",
+        schema,
+        location=location,
+        partition_spec=partition_spec,
+    )
 
 # Number of records
 num_records = args.rows
@@ -200,15 +151,7 @@ if args.json_file:
             if i == 4:
                 break
 
-    pandas_df = pd.read_json(args.json_file, lines=True)
-    pandas_df["tm"] = pd.to_datetime(pandas_df["tm"]).dt.time
-    pandas_df["ts"] = pd.to_datetime(pandas_df["ts"])
-    pandas_df["tstz"] = pd.to_datetime(pandas_df["tstz"], utc=True)
-    pandas_df["dt"] = pd.to_datetime(pandas_df["dt"]).dt.date
-    pandas_df["dec"] = pandas_df["dec"].apply(lambda x: Decimal(f"{x:.3f}"))
-    # pandas_df['uuid'] = pandas_df['uuid'].apply(lambda x: bytes(x))
-    pandas_df["fixed"] = pandas_df["fixed"].apply(lambda x: bytes(x))
-    pandas_df["varbin"] = pandas_df["varbin"].apply(lambda x: bytes(x))
+    pandas_df = ndjson_to_pandas(args.json_file)
 
 else:
     # Generate a range of dates between 2024-01-01 and 2024-12-31
@@ -259,6 +202,11 @@ else:
         "varbin": [
             np.random.bytes(np.random.randint(1, 20)) for _ in range(num_records)
         ],  # variable-length binary
+        "string_array": [[f"a{i}", f"b{i}"] for i in range(num_records)],
+        "struct1": [test_struct(i) for i in range(num_records)],
+        "struct_array": [[test_struct(i)] for i in range(num_records)],
+        "string_string_map": [[(f"k{i}", f"v{i}")] for i in range(num_records)],
+        "string_struct_map": [[(f"k{i}", test_struct(i))] for i in range(num_records)],
     }
 
     # Create the DataFrame

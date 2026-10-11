@@ -1091,7 +1091,7 @@ where
 
         // Choose capacity heuristically.
         let mut batch = self.output_factories.weighted_items_factory().default_box();
-        batch.reserve(min(i1.len(), i2.len()));
+        batch.reserve(min(i1.len_upper_bound(), i2.len_upper_bound()));
 
         while cursor1.key_valid() && cursor2.key_valid() {
             match cursor1.key().cmp(cursor2.key()) {
@@ -1197,8 +1197,8 @@ where
         // Choose capacity heuristically.
         let mut builder = Z::Builder::with_capacity(
             &self.output_factories,
-            min(i1.key_count(), i2.key_count()),
-            min(i1.len(), i2.len()),
+            min(i1.key_count_upper_bound(), i2.key_count_upper_bound()),
+            min(i1.len_upper_bound(), i2.len_upper_bound()),
         );
 
         let mut output = output_key_factory.default_box();
@@ -1262,7 +1262,7 @@ impl JoinStats {
     }
 
     pub fn add_output_batch<Z: ZBatch>(&mut self, batch: &Z) {
-        self.output_batch_stats.add_batch(batch.len())
+        self.output_batch_stats.add_batch(batch.len_upper_bound())
     }
 }
 
@@ -1496,7 +1496,7 @@ where
 
 /// Estimates the key counts used to choose which side the joint cursor drives.
 ///
-/// [`BatchReader::key_count`] reports the sum of key counts across all batches,
+/// [`BatchReader::key_count_upper_bound`] reports the sum of key counts across all batches,
 /// which overstates what a cursor yields in two ways: a key held by several
 /// batches is counted once per batch, and keys whose weights add up to zero are
 /// counted even though the cursor skips them.
@@ -1510,13 +1510,22 @@ where
 ///
 /// Sampling is skipped when the smaller input is below [`MIN_KEYS_TO_SAMPLE`]:
 /// at that size neither side is expensive to drive.
+///
+/// # Arguments
+///
+/// * `delta` - this step's delta, the smaller input in the usual case.
+/// * `trace` - the trace to join it against.
+///
+/// # Returns
+///
+/// An upper bound on the keys each cursor will yield, `delta` first.
 fn estimate_input_key_counts<D, T>(delta: &D, trace: &T) -> (usize, usize)
 where
     D: BatchReader,
     T: BatchReader,
 {
-    let delta_key_count = delta.key_count();
-    let trace_key_count = trace.key_count();
+    let delta_key_count = delta.key_count_upper_bound();
+    let trace_key_count = trace.key_count_upper_bound();
 
     if min(delta_key_count, trace_key_count) < MIN_KEYS_TO_SAMPLE {
         return (delta_key_count, trace_key_count);
@@ -1655,8 +1664,8 @@ where
 
             self.empty_input.set(delta.is_empty());
             self.empty_output.set(true);
-            self.stats.borrow_mut().lhs_tuples += delta.len();
-            self.stats.borrow_mut().rhs_tuples = trace.len();
+            self.stats.borrow_mut().lhs_tuples += delta.len_upper_bound();
+            self.stats.borrow_mut().rhs_tuples = trace.len_upper_bound();
 
             let fetched = if Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.fetch_join == Some(true)) {
                 trace.fetch(&delta).await
@@ -1943,7 +1952,7 @@ mod key_count_estimate_test {
         let delta = snapshot(vec![rows(0..N, -1), rows(0..N, 1)]);
         let trace = snapshot(vec![rows(0..N, 1)]);
 
-        assert_eq!(delta.key_count(), 2 * N as usize);
+        assert_eq!(delta.key_count_upper_bound(), 2 * N as usize);
 
         let (delta_keys, _) = estimate_input_key_counts(&delta, &trace);
         assert_eq!(delta_keys, 0);
@@ -1964,7 +1973,7 @@ mod key_count_estimate_test {
         let trace = snapshot(vec![rows(0..N, 1)]);
 
         // Two thirds of the stored key slots belong to keys that cancel.
-        assert_eq!(delta.key_count(), (N + N / 2) as usize);
+        assert_eq!(delta.key_count_upper_bound(), (N + N / 2) as usize);
 
         const DRAWS: usize = 50;
         let mean = (0..DRAWS)
@@ -1992,7 +2001,7 @@ mod key_count_estimate_test {
                     .collect(),
             );
 
-            assert_eq!(delta.key_count(), N as usize);
+            assert_eq!(delta.key_count_upper_bound(), N as usize);
 
             let (delta_keys, _) = estimate_input_key_counts(&delta, &trace);
             assert_eq!(delta_keys, N as usize, "batch_count={batch_count}");
@@ -2014,7 +2023,7 @@ mod key_count_estimate_test {
             // Every batch holds the same live keys, so the cursor yields N / 2.
             let delta = snapshot(vec![rows(0..N / 2, 1); batch_count]);
 
-            let key_count = delta.key_count();
+            let key_count = delta.key_count_upper_bound();
             assert_eq!(key_count, batch_count * (N / 2) as usize);
 
             let (delta_keys, _) = estimate_input_key_counts(&delta, &trace);

@@ -2,8 +2,8 @@
 //
 // Slot 0, resting on the top edge from outside, marks operators that have SQL source attached; slot 1,
 // just inside the top edge, carries a network icon and the number of primitive operators inside a
-// composite. Both are buttons - `chipButtons.ts` owns their hit boxes, their actions, and the window
-// control that replaces the count while a composite is hovered.
+// circuit region. Both are buttons - `chipButtons.ts` owns their hit boxes, their actions, and the
+// window control that replaces the count while a circuit region is hovered.
 //
 // Every chip is an SVG document built by this module and handed to cytoscape as a
 // `data:image/svg+xml` URI: a background image of the node, not a DOM overlay and not an extra graph
@@ -69,7 +69,7 @@ const badgeWidth = (glyphs: number): number =>
 /** The counter canvas is sized for the widest label `formatLeafCount` can produce, and its pill drawn
  *  right-aligned inside it, so a wider count grows leftward from a fixed corner anchor. The rest of the
  *  canvas is transparent. */
-export const BADGE_CANVAS_WIDTH = badgeWidth('1000M'.length);
+export const BADGE_CANVAS_WIDTH = badgeWidth('9.9K'.length);
 
 /** Width of the pill drawn in the counter slot, as opposed to its canvas: what is seen, and what
  *  `chipButtons.ts` treats as the button. */
@@ -171,7 +171,7 @@ const CONTROL_GLYPH = 7;
 const CONTROL_STROKE = 1.5;
 
 /** A window control, centered on a box `width` wide starting at `left`: a square for expanding a
- *  composite, a dash for collapsing it. */
+ *  circuit region, a dash for collapsing it. */
 const controlGlyph = (
     control: Exclude<CounterGlyph, 'count'>,
     left: number,
@@ -189,29 +189,33 @@ const controlGlyph = (
 
 /** Scale prefixes for a count, one per power of a thousand. The last one covers
  *  `Number.MAX_SAFE_INTEGER`, which is what holds every label to the width the canvas is sized for. */
-const COUNT_PREFIXES = ['', 'K', 'M', 'B', 'T'];
+const COUNT_PREFIXES = ['', 'K', 'M', 'B', 'T', 'Q'];
 
-/** Compact label for a leaf count, so the counter stays inside `BADGE_CANVAS_WIDTH`. */
+/** Compact label for a leaf count, so the counter stays inside `BADGE_CANVAS_WIDTH`: the count rounded
+ *  half up to two significant digits, then scaled to its prefix. A count whose leading group of three
+ *  digits is full keeps all three, since they fit without a decimal point: `1.5K` and `12K`, but `123K`. */
 export function formatLeafCount(count: number): string {
-    let scaled = count;
+    const digits = String(count).length;
+    const significant = digits % 3 === 0 ? 3 : 2;
+    // Rounded in whole numbers before it is scaled, so a carry moves to the next prefix: 999_999 reads
+    // `1M`, not `1000K`.
+    const step = 10 ** Math.max(digits - significant, 0);
+    const rest = count % step;
+    const rounded = count - rest + (rest >= step / 2 ? step : 0);
     let prefix = 0;
-    while (scaled >= 1000 && prefix < COUNT_PREFIXES.length - 1) {
-        scaled /= 1000;
+    while (rounded >= 1000 ** (prefix + 1) && prefix < COUNT_PREFIXES.length - 1) {
         prefix++;
     }
-    // One decimal below ten of a scaled unit, none above it: `1.5K` reads at a glance, `12.3K` does
-    // not fit the pill.
-    const decimals = prefix > 0 && scaled < 10 ? 1 : 0;
-    return `${round(scaled, decimals)}${COUNT_PREFIXES[prefix]}`;
+    return `${rounded / 1000 ** prefix}${COUNT_PREFIXES[prefix]}`;
 }
 
-/** What the counter slot shows: how many primitive operators a composite holds, or - while that
- *  composite is hovered - the control that expands or collapses it. */
+/** What the counter slot shows: how many primitive operators a circuit region holds, or - while that
+ *  circuit region is hovered - the control that expands or collapses it. */
 export type CounterGlyph = 'count' | 'expand' | 'collapse';
 
-/** The counter chip: the icon and `label`, or the control that stands in for both while the composite
- *  is hovered. `label` sets the width either way, so the button does not resize under the pointer that
- *  is already on it. */
+/** The counter chip: the icon and `label`, or the control that stands in for both while the circuit
+ *  region is hovered. `label` sets the width either way, so the button does not resize under the
+ *  pointer that is already on it. */
 function counterChip(label: string, glyph: CounterGlyph, theme: DiagramTheme): string {
     const boxWidth = badgePillWidth(label);
     return chipSvg(BADGE_CANVAS_WIDTH, boxWidth, BADGE_HEIGHT, BADGE_HEIGHT / 2, theme, (boxLeft) => {

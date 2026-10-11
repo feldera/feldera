@@ -541,6 +541,22 @@ public class ToRustVisitor extends CircuitVisitor {
         return json;
     }
 
+    /** Remove the source positions of the properties from a json tree. */
+    JsonNode stripPositions(JsonNode json) {
+        if (!json.isObject())
+            return json;
+        ObjectNode j = (ObjectNode) json;
+        ObjectNode props = (ObjectNode) j.get("properties");
+        if (props == null)
+            return json;
+        for (JsonNode property: props) {
+            ObjectNode value = (ObjectNode) property;
+            value.remove("key_position");
+            value.remove("value_position");
+        }
+        return json;
+    }
+
     public static class FindNestedStructs extends InnerVisitor {
         final List<DBSPStructItem> structs;
         final Set<String> found = new HashSet<>();
@@ -692,6 +708,7 @@ public class ToRustVisitor extends CircuitVisitor {
         IHasSchema tableDescription = this.metadata.getTableDescription(operator.tableName);
         JsonNode j = tableDescription.asJson(true);
         j = this.stripConnectors(j);
+        j = this.stripPositions(j);
         DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
         operator.originalRowType.accept(this.innerVisitor);
         this.builder.append(">(").increase()
@@ -887,6 +904,7 @@ public class ToRustVisitor extends CircuitVisitor {
             IHasSchema tableDescription = this.metadata.getTableDescription(operator.getTableName());
             JsonNode j = tableDescription.asJson(true);
             j = this.stripConnectors(j);
+            j = this.stripPositions(j);
             DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
 
             // Check if any of the primary keys columns has a LATENESS annotation
@@ -1242,6 +1260,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     IHasSchema description = this.metadata.getViewDescription(indexes.getView().viewName);
                     JsonNode j = description.asJson(true);
                     j = this.stripConnectors(j);
+                    j = this.stripPositions(j);
                     DBSPStrLiteral schemaJson = new DBSPStrLiteral(j.toString(), true);
                     schemaJson.accept(this.innerVisitor);
                     this.builder.append(",").newline();
@@ -1266,6 +1285,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     IHasSchema description = this.metadata.getViewDescription(operator.viewName);
                     JsonNode j = description.asJson(true);
                     j = this.stripConnectors(j);
+                    j = this.stripPositions(j);
                     DBSPStrLiteral schemaJson = new DBSPStrLiteral(j.toString(), true);
 
                     String registerFunction = switch (operator.metadata.viewKind) {

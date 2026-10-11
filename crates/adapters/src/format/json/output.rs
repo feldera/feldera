@@ -6,7 +6,6 @@ use crate::{
     catalog::{CursorWithPolarity, RecordFormat, SerCursor},
     util::truncate_ellipse,
 };
-use actix_web::HttpRequest;
 use anyhow::{Result as AnyResult, bail};
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::catalog::SerCursorFlattened;
@@ -29,17 +28,15 @@ impl OutputFormat for JsonOutputFormat {
         Cow::Borrowed("json")
     }
 
-    fn config_from_http_request(
+    fn config_from_http_query(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        query: &str,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         let mut config = JsonEncoderConfig::deserialize(UrlDeserializer::new(
-            form_urlencoded::parse(request.query_string().as_bytes()),
+            form_urlencoded::parse(query.as_bytes()),
         ))
-        .map_err(|e| {
-            ControllerError::encoder_config_parse_error(endpoint_name, &e, request.query_string())
-        })?;
+        .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, query))?;
 
         // We currently always break output into chunks, which requires encoding
         // JSON data as a valid JSON document (can't use ND-JSON), so we set `array`

@@ -1,3 +1,4 @@
+use super::rustc_diagnostics::parse_cargo_json_messages;
 use crate::compiler::util::{
     CleanupDecision, DirectoryContent, DiskSpace, ProcessGroupTerminator, UtilError,
     checksum_buffer, checksum_file, cleanup_specific_directories, cleanup_specific_files,
@@ -1724,6 +1725,8 @@ async fn call_compiler(
         .arg("--workspace")
         .arg("--profile")
         .arg(profile.to_string())
+        // rustc diagnostics as JSON on stdout; `human` cannot be combined with `json`.
+        .arg("--message-format=json")
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_file.into_std().await))
         .stderr(Stdio::from(stderr_file.into_std().await))
@@ -1799,13 +1802,14 @@ async fn call_compiler(
         return Err(RustCompilationError::TerminatedBySignal);
     };
 
-    // Read stdout and stderr
-    let stdout = read_file_content(&stdout_file_path).await?;
+    // Parse JSON stdout into `messages`; leave `stdout` empty so FDA/Python do not print NDJSON.
+    let stdout_json = read_file_content(&stdout_file_path).await?;
     let stderr = read_file_content(&stderr_file_path).await?;
     let compilation_info = RustCompilationInfo {
         exit_code,
-        stdout,
+        stdout: String::new(),
         stderr,
+        messages: parse_cargo_json_messages(&stdout_json),
     };
 
     // Compilation is successful if the return exit code is present and zero
@@ -2554,10 +2558,10 @@ mod test {
     fn extract_sccache_message() {
         // Captured from `cargo build` with RUSTC_WRAPPER=sccache and a config sccache
         // rejects. Cargo echoes the failing subprocess stderr below `--- stderr`.
-        let bad_config = RustCompilationInfo {
-            exit_code: 101,
-            stdout: "".to_string(),
-            stderr: indoc::indoc! {r#"
+        let bad_config = RustCompilationInfo::from_process_output_streams(
+            101,
+            "".to_string(),
+            indoc::indoc! {r#"
                 error: process didn't exit successfully: `sccache /rustc -vV` (exit status: 2)
                 --- stderr
                 sccache: error: Failed to load config file
@@ -2568,7 +2572,7 @@ mod test {
                 unknown field `server_side_encryption_bogus`
             "#}
             .to_string(),
-        };
+        );
         assert_eq!(
             sccache_message(&bad_config).as_deref(),
             Some(indoc::indoc! {r#"
@@ -2582,10 +2586,10 @@ mod test {
 
         // Same, with an unreachable S3 endpoint: sccache checks the bucket at startup, so
         // its message continues past a blank line into a context block.
-        let unreachable_bucket = RustCompilationInfo {
-            exit_code: 101,
-            stdout: "".to_string(),
-            stderr: indoc::indoc! {r#"
+        let unreachable_bucket = RustCompilationInfo::from_process_output_streams(
+            101,
+            "".to_string(),
+            indoc::indoc! {r#"
                 error: process didn't exit successfully: `sccache /rustc -vV` (exit status: 2)
                 --- stderr
                 sccache: error: Server startup failed: cache storage failed to read
@@ -2595,7 +2599,7 @@ mod test {
                    service: s3
             "#}
             .to_string(),
-        };
+        );
         assert_eq!(
             sccache_message(&unreachable_bucket).as_deref(),
             Some(indoc::indoc! {r#"
@@ -2608,10 +2612,10 @@ mod test {
 
         // The user's program must stay out of the compiler server log: cargo diagnostics
         // quote its source, and they start where sccache's message ends.
-        let sccache_and_user_error = RustCompilationInfo {
-            exit_code: 101,
-            stdout: "".to_string(),
-            stderr: indoc::indoc! {r#"
+        let sccache_and_user_error = RustCompilationInfo::from_process_output_streams(
+            101,
+            "".to_string(),
+            indoc::indoc! {r#"
                 sccache: warning: failed to read from cache
                 error[E0433]: failed to resolve: use of undeclared crate or module `chrnoo`
                  --> src/udf.rs:3:5
@@ -2619,7 +2623,7 @@ mod test {
                 3 |     chrnoo::Utc::now();
             "#}
             .to_string(),
-        };
+        );
         assert_eq!(
             sccache_message(&sccache_and_user_error).as_deref(),
             Some("sccache: warning: failed to read from cache")
@@ -2627,10 +2631,10 @@ mod test {
 
         // Under IRSA, sccache reports the STS request it could not sign, and the query string
         // of that request holds the web identity token.
-        let irsa_failure = RustCompilationInfo {
-            exit_code: 101,
-            stdout: "".to_string(),
-            stderr: indoc::indoc! {"
+        let irsa_failure = RustCompilationInfo::from_process_output_streams(
+            101,
+            "".to_string(),
+            indoc::indoc! {"
                 error: process didn't exit successfully: `sccache /rustc -vV` (exit status: 2)
                 --- stderr
                 sccache: error: Server startup failed: cache storage failed to read: \
@@ -2651,7 +2655,7 @@ mod test {
                    ): client error (Connect)
             "}
             .to_string(),
-        };
+        );
         let message = sccache_message(&irsa_failure).expect("sccache message");
         assert!(!message.contains("TOKENLEAKCANARY123456"), "{message}");
         // The cause an operator needs survives the redaction.
@@ -2661,15 +2665,15 @@ mod test {
              loading credential to sign http request"
         ));
 
-        let user_error = RustCompilationInfo {
-            exit_code: 101,
-            stdout: "".to_string(),
-            stderr: indoc::indoc! {r#"
+        let user_error = RustCompilationInfo::from_process_output_streams(
+            101,
+            "".to_string(),
+            indoc::indoc! {r#"
                 error[E0433]: failed to resolve: use of undeclared crate or module `chrnoo`
                  --> src/udf.rs:3:5
             "#}
             .to_string(),
-        };
+        );
         assert_eq!(sccache_message(&user_error), None);
     }
 

@@ -1,6 +1,6 @@
 [workspace.package]
 authors = ["Feldera Team <dev@feldera.com>"]
-version = "0.360.0"
+version = "0.365.0"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/feldera/feldera"
 repository = "https://github.com/feldera/feldera"
@@ -130,7 +130,7 @@ csv-core = "0.1.10"
 data-encoding = "2.9.0"
 dashmap = "6.1.0"
 datafusion = "53.1"
-dbsp = { path = "crates/dbsp", version = "0.360.0" }
+dbsp = { path = "crates/dbsp", version = "0.365.0" }
 # JSON functions applied to strings.
 datafusion-functions-json = "0.53.1"
 dbsp_nexmark = { path = "crates/nexmark" }
@@ -138,8 +138,10 @@ deadpool-postgres = "0.14.1"
 # Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 7 patches, on branch
 # `field-id-nested-containers-0.32.3`. When bumping the pinned revision, preserve
 # these patches:
-#   - 7f8bb445 "Disable unsupported feature check." — relax the writer-side
-#     protocol-feature gate so we can write tables produced by newer clients.
+#   - 7f8bb445 "Disable unsupported feature check." — downgrade the reader-side
+#     check in `can_read_from_protocol` to a warning, so a table declaring a
+#     feature delta-rs does not list still reads. Guarded by
+#     `delta_table_snapshot_unlisted_reader_feature_test`.
 #   - 297f2dd1 "delta-rs: resolve column-mapped Uniform/Iceberg columns by
 #     Parquet field id." — fixes `col-<id> is missing from the physical schema`
 #     when reading UC-Uniform-over-Iceberg tables (columnMapping.mode=id). #6557.
@@ -152,6 +154,7 @@ deadpool-postgres = "0.14.1"
 #     so a table with enough vectors deadlocked Tokio's pool for good. Reported
 #     upstream with a standalone reproduction:
 #     https://github.com/ryzhyk/delta-rs-dv-deadlock
+#     Guarded by `delta_table_deletion_vector_scan_without_blocking_pool_test`.
 #   - 78a5d066 "delta-rs: regression test for the deletion-vector blocking-pool
 #     deadlock": eight vectors against four blocking threads, which wedges
 #     without the patch above.
@@ -188,21 +191,21 @@ erased-serde = "0.3.31"
 fake = "2.10"
 fastbloom = "0.14.0"
 fdlimit = "0.3.0"
-feldera-buffer-cache = { version = "0.360.0", path = "crates/buffer-cache" }
+feldera-buffer-cache = { version = "0.365.0", path = "crates/buffer-cache" }
 feldera-cloud1-client = "0.3.0"
 feldera-datagen = { path = "crates/datagen" }
-feldera-fxp = { version = "0.360.0", path = "crates/fxp", features = ["dbsp"] }
+feldera-fxp = { version = "0.365.0", path = "crates/fxp", features = ["dbsp"] }
 feldera-iceberg = { path = "crates/iceberg" }
-feldera-observability = { version = "0.360.0", path = "crates/feldera-observability" }
-feldera-macros = { version = "0.360.0", path = "crates/feldera-macros" }
-feldera-modular-bloom = { version = "0.360.0", path = "crates/modular-bloom" }
-feldera-sqllib = { version = "0.360.0", path = "crates/sqllib" }
-feldera-storage = { version = "0.360.0", path = "crates/storage" }
-feldera-types = { version = "0.360.0", path = "crates/feldera-types" }
-feldera-rest-api = { version = "0.360.0", path = "crates/rest-api" }
-feldera-ir = { version = "0.360.0", path = "crates/ir" }
-feldera-adapterlib = { version = "0.360.0", path = "crates/adapterlib" }
-feldera-samply = { version = "0.360.0", path = "crates/samply" }
+feldera-observability = { version = "0.365.0", path = "crates/feldera-observability" }
+feldera-macros = { version = "0.365.0", path = "crates/feldera-macros" }
+feldera-modular-bloom = { version = "0.365.0", path = "crates/modular-bloom" }
+feldera-sqllib = { version = "0.365.0", path = "crates/sqllib" }
+feldera-storage = { version = "0.365.0", path = "crates/storage" }
+feldera-types = { version = "0.365.0", path = "crates/feldera-types" }
+feldera-rest-api = { version = "0.365.0", path = "crates/rest-api" }
+feldera-ir = { version = "0.365.0", path = "crates/ir" }
+feldera-adapterlib = { version = "0.365.0", path = "crates/adapterlib" }
+feldera-samply = { version = "0.365.0", path = "crates/samply" }
 flate2 = "1.1.0"
 form_urlencoded = "1.2.0"
 fs_extra = "1.3.0"
@@ -389,7 +392,7 @@ uuid = { version = "1.17.0", features = ["serde"] }
 vergen-gitcl = "1.0.0"
 wiremock = "0.6"
 xxhash-rust = "0.8.6"
-zip = "6.0.0"
+zip = "9.0.1"
 zstd = "0.12.0"
 backtrace = "0.3.75"
 parking_lot = "0.12.4"

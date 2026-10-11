@@ -243,6 +243,27 @@ CREATE TABLE my_table(
     }]');
 ```
 
+### Ingesting Avro data via HTTP
+
+You can also push Avro data to a pipeline via [HTTP](/connectors/sources/http).
+The query parameters of the request configure the parser the way the
+`config` object of a connector does: `format=avro`, the `schema` as a
+URL-encoded JSON string, and `skip_schema_id=true`, because the request body
+holds a bare Avro datum without the schema id header.  Each request body
+holds exactly one datum.  A body with bytes after the datum is rejected.
+
+The following request inserts the datum stored in the file `datum.avro`
+into the table `my_table` of the first example above, using the schema of
+that example.  Any Avro library can write such a file, for example
+`fastavro.schemaless_writer` in Python.
+
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8080/v0/pipelines/my_pipeline/ingress/my_table?format=avro&update_format=raw&skip_schema_id=true&schema=%7B%22type%22%3A%22record%22%2C%22name%22%3A%22ExampleSchema%22%2C%22fields%22%3A%5B%7B%22name%22%3A%22id%22%2C%22type%22%3A%22int%22%7D%2C%7B%22name%22%3A%22ts%22%2C%22type%22%3A%5B%22null%22%2C%7B%22type%22%3A%22long%22%2C%22logicalType%22%3A%22timestamp-micros%22%7D%5D%7D%5D%7D' \
+  -H 'Content-Type: application/octet-stream' \
+  --data-binary @datum.avro
+```
+
 ## Avro output
 
 ### Schema management

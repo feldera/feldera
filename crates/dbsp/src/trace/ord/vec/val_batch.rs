@@ -352,6 +352,12 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
+    fn is_empty(&self) -> bool {
+        // `len_upper_bound` counts a (key, value) pair once per time for this batch
+        // type, so it can exceed the pair count, but it is zero exactly when the
+        // batch is empty.
+        self.len_upper_bound() == 0
+    }
     type Key = K;
     type Val = V;
     type Time = T;
@@ -379,11 +385,11 @@ where
         todo!()
     }*/
 
-    fn key_count(&self) -> usize {
+    fn key_count_upper_bound(&self) -> usize {
         <VecValBatchLayer<K, V, T, R, O> as Trie>::keys(&self.layer)
     }
 
-    fn len(&self) -> usize {
+    fn len_upper_bound(&self) -> usize {
         <VecValBatchLayer<K, V, T, R, O> as Trie>::tuples(&self.layer)
     }
 

@@ -319,8 +319,9 @@ describe('Table — header alignment', () => {
     mountTable()
     await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
 
-    expect(justifyOf('Status')).toBe('center')
-    expect(justifyOf('Errors Runtime errors')).toBe('flex-end')
+    // Status and Runtime errors are left-aligned so their values line up with the labels above them.
+    expect(justifyOf('Status')).toBe('normal')
+    expect(justifyOf('Errors Runtime errors')).toBe('normal')
     expect(justifyOf('Pipeline name')).toBe('normal')
   })
 })

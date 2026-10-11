@@ -129,8 +129,8 @@ where
         // Choose capacity heuristically.
         let mut builder = Out::Builder::with_capacity(
             &self.output_factories,
-            min(pairs.key_count(), keys.key_count()),
-            min(pairs.len(), keys.len()),
+            min(pairs.key_count_upper_bound(), keys.key_count_upper_bound()),
+            min(pairs.len_upper_bound(), keys.len_upper_bound()),
         );
 
         // While both keys are valid

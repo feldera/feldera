@@ -146,6 +146,7 @@ const guides = {
             ]
         },
         'tutorials/time-series',
+        'tutorials/testing',
         {
             type: 'category',
             label: 'Fine-Grained Authorization',
@@ -385,6 +386,11 @@ const connectors = {
                 },
                 {
                     type: 'doc',
+                    id: 'connectors/sinks/nats',
+                    label: 'NATS'
+                },
+                {
+                    type: 'doc',
                     id: 'connectors/sinks/postgresql',
                     label: 'PostgreSQL'
                 },
@@ -515,7 +521,8 @@ const operations = {
         'operations/json-logging',
         'operations/visualizing-profiles',
         'operations/required-domains',
-        'operations/best_practices/best_practices'
+        'operations/best_practices/best_practices',
+        'operations/telemetry'
     ]
 };
 

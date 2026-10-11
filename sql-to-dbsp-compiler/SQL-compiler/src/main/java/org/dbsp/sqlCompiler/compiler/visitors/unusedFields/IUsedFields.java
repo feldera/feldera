@@ -22,5 +22,12 @@ public abstract class IUsedFields implements ICastable, IHasId {
     /** Convert the used fields into a {@link ParameterFieldUse} representation.
      * The current representation is a set of fields, whereas the result
      * is more like a bitmap for each parameter. */
-    public abstract ParameterFieldUse getParameterUse();
+    public ParameterFieldUse getParameterUse() {
+        ParameterFieldUse result = new ParameterFieldUse();
+        this.markParameterUse(result);
+        return result;
+    }
+
+    /** Mark as used in 'use' the parameter fields that this value uses */
+    abstract void markParameterUse(ParameterFieldUse use);
 }

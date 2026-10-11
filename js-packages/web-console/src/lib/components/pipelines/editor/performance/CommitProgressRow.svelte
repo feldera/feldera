@@ -5,6 +5,7 @@
   import { slide } from 'svelte/transition'
   import { useIsScreenSm } from '$lib/compositions/layout/useIsMobile.svelte'
   import { formatQty } from '$lib/functions/format'
+  import { statusChipClass, statusToneColors } from '$lib/functions/pipelineStatusColor'
   import type { CommitProgressSummary } from '$lib/services/manager'
 
   let {
@@ -99,8 +100,8 @@
       <div class="flex flex-nowrap items-center justify-center">
         <div></div>
         <div
-          class="pointer-events-none chip tracking-wider uppercase {status?.class ??
-            'bg-surface-100-900 text-surface-600-400'}"
+          class="pointer-events-none {statusChipClass} {status?.class ??
+            statusToneColors.neutral.chip}"
         >
           {status?.label ?? 'None'}
         </div>

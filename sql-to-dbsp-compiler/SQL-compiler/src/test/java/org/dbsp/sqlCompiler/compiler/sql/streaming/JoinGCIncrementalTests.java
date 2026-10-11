@@ -1,22 +1,14 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CountGCOperators;
 import org.dbsp.sqlCompiler.compiler.sql.tools.DifferentialTester;
 import org.dbsp.sqlCompiler.compiler.sql.tools.TablePair;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.junit.Assert;
 import org.junit.Test;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
@@ -57,8 +49,8 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
             new JoinShape("left_kt", "LEFT JOIN R r ON l.k = r.k AND l.t = r.t", true),
             new JoinShape("left_k", "LEFT JOIN R r ON l.k = r.k", true),
             new JoinShape("left_filter_anti", "LEFT JOIN R r ON l.k = r.k AND l.t >= r.t", true),
-            new JoinShape("right_t_anti", "RIGHT JOIN R r ON l.t = r.t", true),
-            new JoinShape("right_k_anti", "RIGHT JOIN R r ON l.k = r.k", true),
+            new JoinShape("right_t", "RIGHT JOIN R r ON l.t = r.t", true),
+            new JoinShape("right_k", "RIGHT JOIN R r ON l.k = r.k", true),
             new JoinShape("full_t_anti", "FULL JOIN R r ON l.t = r.t", true),
             new JoinShape("full_k_anti", "FULL JOIN R r ON l.k = r.k", true),
             new JoinShape("asof", "LEFT ASOF JOIN R r MATCH_CONDITION (l.t >= r.t) ON l.k = r.k", true),
@@ -114,7 +106,10 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
         LR(LATENESS, LATENESS),
         /** Both inputs, with a larger LATENESS on the right, so that the right input accepts
          * older rows than the left. */
-        LR_LARGE(LATENESS, 6 * LATENESS);
+        LR_LARGE(LATENESS, 6 * LATENESS),
+        /** Both inputs, with a larger LATENESS on the left, so that the left input accepts rows
+         * older than the bound that the right waterline gives its trace. */
+        LARGE_LR(6 * LATENESS, LATENESS);
 
         /** The LATENESS of t in the left input; 0 for none. */
         final int left;
@@ -197,6 +192,9 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
         tester.insert(Set.of("RIGHT_L"), new Right(0, 100, 24));
         // The mirror case: a left row far below the right waterline
         tester.insert(Set.of("LEFT_R"), new Left(1, 99, 25));
+        // Delete a left row below the right waterline, which only the right input has: the ASOF
+        // join no longer keeps the row, and computes the retraction from the right trace
+        tester.delete(Set.of("LEFT_R"), new Left(0, 100, 1));
         // A right row that gives an unmatched left row of the outer joins its first match
         tester.insert(Set.of("RIGHT_L"), new Right(4, 105, 26));
         // Rows with a NULL t, which are never late, and the delete of an old one
@@ -392,113 +390,61 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
              not_exists_t     | 0    |NULL  | 6    |NULL  |NULL  |NULL
              not_exists_t     | 1    | 103  | 4    |NULL  |NULL  |NULL
              not_exists_t     | 2    | 105  | 5    |NULL  |NULL  |NULL
-             right_k_anti     | 0    | 100  | 1    | 0    | 100  | 10
-             right_k_anti     | 0    | 100  | 1    | 0    | 102  | 14
-             right_k_anti     | 0    | 100  | 1    | 0    | 111  | 17
-             right_k_anti     | 0    | 101  | 2    | 0    | 100  | 10
-             right_k_anti     | 0    | 101  | 2    | 0    | 102  | 14
-             right_k_anti     | 0    | 101  | 2    | 0    | 111  | 17
-             right_k_anti     | 0    | 110  | 7    | 0    | 100  | 10
-             right_k_anti     | 0    | 110  | 7    | 0    | 102  | 14
-             right_k_anti     | 0    | 110  | 7    | 0    | 111  | 17
-             right_k_anti     | 0    |NULL  | 6    | 0    | 100  | 10
-             right_k_anti     | 0    |NULL  | 6    | 0    | 102  | 14
-             right_k_anti     | 0    |NULL  | 6    | 0    | 111  | 17
-             right_k_anti     | 1    | 100  | 3    | 1    | 100  | 11
-             right_k_anti     | 1    | 100  | 3    | 1    | 104  | 13
-             right_k_anti     | 1    | 100  | 3    | 1    | 99   | 12
-             right_k_anti     | 1    | 103  | 4    | 1    | 100  | 11
-             right_k_anti     | 1    | 103  | 4    | 1    | 104  | 13
-             right_k_anti     | 1    | 103  | 4    | 1    | 99   | 12
-             right_k_anti     | 2    | 105  | 5    | 2    |NULL  | 15
-             right_k_anti     |NULL  |NULL  |NULL  | 3    | 106  | 16
-             right_t_anti     | 0    | 100  | 1    | 0    | 100  | 10
-             right_t_anti     | 0    | 100  | 1    | 1    | 100  | 11
-             right_t_anti     | 1    | 100  | 3    | 0    | 100  | 10
-             right_t_anti     | 1    | 100  | 3    | 1    | 100  | 11
-             right_t_anti     |NULL  |NULL  |NULL  | 0    | 102  | 14
-             right_t_anti     |NULL  |NULL  |NULL  | 0    | 111  | 17
-             right_t_anti     |NULL  |NULL  |NULL  | 1    | 104  | 13
-             right_t_anti     |NULL  |NULL  |NULL  | 1    | 99   | 12
-             right_t_anti     |NULL  |NULL  |NULL  | 2    |NULL  | 15
-             right_t_anti     |NULL  |NULL  |NULL  | 3    | 106  | 16""");
+             right_k          | 0    | 100  | 1    | 0    | 100  | 10
+             right_k          | 0    | 100  | 1    | 0    | 102  | 14
+             right_k          | 0    | 100  | 1    | 0    | 111  | 17
+             right_k          | 0    | 101  | 2    | 0    | 100  | 10
+             right_k          | 0    | 101  | 2    | 0    | 102  | 14
+             right_k          | 0    | 101  | 2    | 0    | 111  | 17
+             right_k          | 0    | 110  | 7    | 0    | 100  | 10
+             right_k          | 0    | 110  | 7    | 0    | 102  | 14
+             right_k          | 0    | 110  | 7    | 0    | 111  | 17
+             right_k          | 0    |NULL  | 6    | 0    | 100  | 10
+             right_k          | 0    |NULL  | 6    | 0    | 102  | 14
+             right_k          | 0    |NULL  | 6    | 0    | 111  | 17
+             right_k          | 1    | 100  | 3    | 1    | 100  | 11
+             right_k          | 1    | 100  | 3    | 1    | 104  | 13
+             right_k          | 1    | 100  | 3    | 1    | 99   | 12
+             right_k          | 1    | 103  | 4    | 1    | 100  | 11
+             right_k          | 1    | 103  | 4    | 1    | 104  | 13
+             right_k          | 1    | 103  | 4    | 1    | 99   | 12
+             right_k          | 2    | 105  | 5    | 2    |NULL  | 15
+             right_k          |NULL  |NULL  |NULL  | 3    | 106  | 16
+             right_t          | 0    | 100  | 1    | 0    | 100  | 10
+             right_t          | 0    | 100  | 1    | 1    | 100  | 11
+             right_t          | 1    | 100  | 3    | 0    | 100  | 10
+             right_t          | 1    | 100  | 3    | 1    | 100  | 11
+             right_t          |NULL  |NULL  |NULL  | 0    | 102  | 14
+             right_t          |NULL  |NULL  |NULL  | 0    | 111  | 17
+             right_t          |NULL  |NULL  |NULL  | 1    | 104  | 13
+             right_t          |NULL  |NULL  |NULL  | 1    | 99   | 12
+             right_t          |NULL  |NULL  |NULL  | 2    |NULL  | 15
+             right_t          |NULL  |NULL  |NULL  | 3    | 106  | 16""");
     }
-
-    /** Records the GC operators of a circuit, and its star joins. */
-    static final class GcOperators extends CircuitVisitor {
-        /** One letter per GC operator: K for RetainKeys, V for RetainValues, N for RetainNValues. */
-        final List<String> kinds = new ArrayList<>();
-        /** The kinds of star join operators, in circuit order. */
-        final List<String> starJoins = new ArrayList<>();
-
-        GcOperators(DBSPCompiler compiler) {
-            super(compiler);
-        }
-
-        @Override
-        public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
-            this.kinds.add("K");
-        }
-
-        @Override
-        public void postorder(DBSPIntegrateTraceRetainValuesOperator operator) {
-            this.kinds.add("V");
-        }
-
-        @Override
-        public void postorder(DBSPIntegrateTraceRetainNValuesOperator operator) {
-            this.kinds.add("N");
-        }
-
-        @Override
-        public void postorder(DBSPStarJoinOperator operator) {
-            this.starJoins.add("StarJoin");
-        }
-
-        @Override
-        public void postorder(DBSPStarJoinIndexOperator operator) {
-            this.starJoins.add("StarJoinIndex");
-        }
-
-        @Override
-        public void postorder(DBSPStarJoinFilterMapOperator operator) {
-            this.starJoins.add("StarJoinFilterMap");
-        }
-
-        /** The letters of the GC operators, sorted; "-" for none. */
-        String kinds() {
-            if (this.kinds.isEmpty())
-                return "-";
-            List<String> sorted = new ArrayList<>(this.kinds);
-            Collections.sort(sorted);
-            return String.join("", sorted);
-        }
-    }
-
 
     /** The GC operators of each join shape, for each choice of the inputs with LATENESS: K is a
      * RetainKeys operator, V a RetainValues operator, and N a RetainNValues operator. */
     static final String EXPECTED_GC = """
-            shape            | L        | R        | LR       | LR_LARGE
-            inner_t          | K        | K        | KK       | KK
-            inner_kt         | K        | K        | KK       | KK
-            inner_expr       | K        | K        | KK       | KK
-            inner_k          | -        | -        | -        | -
-            inner_filter     | -        | V        | V        | V
-            left_t           | -        | K        | KK       | KK
-            left_kt          | -        | K        | KK       | KK
-            left_k           | -        | -        | -        | -
-            left_filter_anti | -        | V        | V        | V
-            right_t_anti     | K        | K        | KK       | KK
-            right_k_anti     | -        | -        | -        | -
-            full_t_anti      | K        | K        | KK       | KK
-            full_k_anti      | -        | -        | -        | -
-            asof             | -        | -        | NV       | NV
-            not_exists_t     | -        | KKN      | KKN      | KKN
-            not_exists_k     | -        | N        | N        | N
-            exists_t         | K        | KK       | KKK      | KKK
-            exists_k         | -        | -        | -        | -
-            not_in_t         | -        | KKN      | KKN      | KKN
+            shape            | L        | R        | LR       | LR_LARGE | LARGE_LR
+            inner_t          | K        | K        | KK       | KK       | KK
+            inner_kt         | K        | K        | KK       | KK       | KK
+            inner_expr       | K        | K        | KK       | KK       | KK
+            inner_k          | -        | -        | -        | -        | -
+            inner_filter     | -        | V        | V        | V        | V
+            left_t           | -        | K        | KK       | KK       | KK
+            left_kt          | -        | K        | KK       | KK       | KK
+            left_k           | -        | -        | -        | -        | -
+            left_filter_anti | -        | V        | V        | V        | V
+            right_t          | K        | -        | KK       | KK       | KK
+            right_k          | -        | -        | -        | -        | -
+            full_t_anti      | K        | K        | KK       | KK       | KK
+            full_k_anti      | -        | -        | -        | -        | -
+            asof             | -        | V        | NV       | NV       | NV
+            not_exists_t     | -        | KKN      | KKN      | KKN      | KKN
+            not_exists_k     | -        | N        | N        | N        | N
+            exists_t         | K        | KK       | KKK      | KKK      | KKK
+            exists_k         | -        | -        | -        | -        | -
+            not_in_t         | -        | KKN      | KKN      | KKN      | KKN
             """;
 
     /** The declaration of an input of a join, with LATENESS on t unless {@code lateness} is 0. */
@@ -520,7 +466,7 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
                 String sql = createInput("L", lateInputs.left) + createInput("R", lateInputs.right) +
                         "CREATE VIEW V AS SELECT * " + shape.from("L", "R") + ";";
                 var cc = this.getCC(sql);
-                GcOperators operators = new GcOperators(cc.compiler);
+                CountGCOperators operators = new CountGCOperators(cc.compiler);
                 cc.visit(operators);
                 line.append(String.format(" | %-8s", operators.kinds()));
             }
@@ -611,7 +557,7 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
         StringBuilder actual = new StringBuilder();
         for (StarView view : STAR_VIEWS) {
             var cc = this.getCC(createInput("S", LATENESS) + "CREATE VIEW V AS " + view.over("S") + ";");
-            GcOperators operators = new GcOperators(cc.compiler);
+            CountGCOperators operators = new CountGCOperators(cc.compiler);
             cc.visit(operators);
             String line = String.format("%-13s | %-13s | %s", view.name,
                     String.join(" ", operators.starJoins), operators.kinds());

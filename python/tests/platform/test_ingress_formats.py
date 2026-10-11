@@ -1,9 +1,12 @@
 # TODO: these tests should be part of runtime tests
 
+import io
 import json
 import time
 from http import HTTPStatus
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
+
+import fastavro
 
 from .helper import (
     http_request,
@@ -849,4 +852,128 @@ def test_upsert(pipeline_name):
                 "int2": None,
             }
         },
+    ]
+
+
+@gen_pipeline_name
+def test_avro_ingress(pipeline_name):
+    """
+    Avro over `/ingress`: the schema travels in the query string, and each
+    request body is one bare Avro datum (issue 7397).
+    """
+    sql = (
+        "CREATE TABLE t1(c1 integer, c2 bool, c3 varchar) "
+        "WITH ('materialized' = 'true');"
+    )
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    schema = {
+        "type": "record",
+        "name": "t1",
+        "fields": [
+            {"name": "c1", "type": ["null", "int"]},
+            {"name": "c2", "type": ["null", "boolean"]},
+            {"name": "c3", "type": ["null", "string"]},
+        ],
+    }
+    query = urlencode(
+        {
+            "format": "avro",
+            "update_format": "raw",
+            "skip_schema_id": "true",
+            "schema": json.dumps(schema),
+        }
+    )
+    path = api_url(f"/pipelines/{pipeline_name}/ingress/t1?{query}")
+    records = [
+        {"c1": 10, "c2": True, "c3": "foo"},
+        {"c1": 20, "c2": None, "c3": None},
+    ]
+    for record in records:
+        buffer = io.BytesIO()
+        fastavro.schemaless_writer(buffer, schema, record)
+        r = http_request(
+            "POST",
+            path,
+            data=buffer.getvalue(),
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        assert r.status_code == HTTPStatus.OK, r.text
+        _wait_token(pipeline_name, r.json()["token"])
+
+    got = adhoc_query_json(pipeline_name, "select * from t1 order by c1")
+    assert got == records
+
+
+@gen_pipeline_name
+def test_connector_metadata_ingress(pipeline_name):
+    """
+    The `connector_metadata` query parameter of `/ingress` reaches every
+    record of the request through `CONNECTOR_METADATA()`.
+    """
+    sql = (
+        "CREATE TABLE t1("
+        "  c1 integer,"
+        "  kafka_topic varchar DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR),"
+        "  kafka_offset bigint DEFAULT CAST(CONNECTOR_METADATA()['kafka_offset'] AS BIGINT)"
+        ") WITH ('materialized' = 'true');"
+    )
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    def ingress(connector_metadata: dict | None, body: str):
+        params = {"format": "json", "update_format": "raw"}
+        if connector_metadata is not None:
+            params["connector_metadata"] = json.dumps(connector_metadata)
+        path = api_url(f"/pipelines/{pipeline_name}/ingress/t1?{urlencode(params)}")
+        return http_request(
+            "POST",
+            path,
+            data=body.encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+
+    # Every record of a request takes the metadata of that request.
+    r = ingress({"kafka_topic": "events", "kafka_offset": 42}, '{"c1": 1}\n{"c1": 2}')
+    assert r.status_code == HTTPStatus.OK, r.text
+    _wait_token(pipeline_name, r.json()["token"])
+    r = ingress({"kafka_topic": "audit", "kafka_offset": 7}, '{"c1": 3}')
+    assert r.status_code == HTTPStatus.OK, r.text
+    _wait_token(pipeline_name, r.json()["token"])
+
+    # Without the parameter the metadata columns take their NULL default.
+    r = ingress(None, '{"c1": 4}')
+    assert r.status_code == HTTPStatus.OK, r.text
+    _wait_token(pipeline_name, r.json()["token"])
+
+    # A value that is not a JSON object is rejected before any record is ingested.
+    for invalid in ("[1, 2]", "not json"):
+        path = api_url(
+            f"/pipelines/{pipeline_name}/ingress/t1?"
+            + urlencode(
+                {
+                    "format": "json",
+                    "update_format": "raw",
+                    "connector_metadata": invalid,
+                }
+            )
+        )
+        r = http_request(
+            "POST",
+            path,
+            data=b'{"c1": 5}',
+            headers={"Content-Type": "application/json"},
+        )
+        assert r.status_code == HTTPStatus.BAD_REQUEST, r.text
+        assert "connector_metadata" in r.text
+
+    got = adhoc_query_json(pipeline_name, "select * from t1 order by c1")
+    assert got == [
+        {"c1": 1, "kafka_topic": "events", "kafka_offset": 42},
+        {"c1": 2, "kafka_topic": "events", "kafka_offset": 42},
+        {"c1": 3, "kafka_topic": "audit", "kafka_offset": 7},
+        {"c1": 4, "kafka_topic": None, "kafka_offset": None},
     ]

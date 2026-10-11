@@ -2003,6 +2003,31 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void testConstantRegexUsesRustSemantics() {
+        // Java and Rust regular expressions give different results for these patterns
+        this.qst("""
+                SELECT '٣' RLIKE '^\\d$';
+                 rlike
+                -------
+                 true
+                (1 row)
+
+                SELECT '٣' NOT RLIKE '^\\d$';
+                 rlike
+                -------
+                 false
+                (1 row)
+
+                SELECT REGEXP_REPLACE('ab', '(a)', '$1x');
+                 regexp_replace
+                ----------------
+                 b
+                (1 row)
+                """
+        );
+    }
+
+    @Test
     public void testSequence() {
         this.qst("""
                 SELECT SEQUENCE(1, 10);

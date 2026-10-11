@@ -23,6 +23,7 @@ use crate::{
     samply::{SamplyProfile, SamplyState, SamplyStatus},
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
+        RequestMetadata,
     },
 };
 use actix_web::HttpResponseBuilder;
@@ -2734,6 +2735,94 @@ struct IngressArgs {
     /// Push data to the pipeline even if the pipeline is in a paused state.
     #[serde(default)]
     force: bool,
+    /// Connector metadata for every record of this request: a JSON object
+    /// that `CONNECTOR_METADATA()` returns for the records.
+    connector_metadata: Option<String>,
+}
+
+impl IngressArgs {
+    /// Names of the query parameters that the `/ingress` handler consumes.
+    fn names() -> &'static [&'static str] {
+        field_names::<Self>()
+    }
+}
+
+/// The query string of `request` without the parameters named in
+/// `handler_args`.  The remaining parameters configure the data format.
+fn format_query(request: &HttpRequest, handler_args: &[&str]) -> String {
+    let mut format_args = form_urlencoded::Serializer::new(String::new());
+    for (name, value) in form_urlencoded::parse(request.query_string().as_bytes()) {
+        if !handler_args.contains(&name.as_ref()) {
+            format_args.append_pair(&name, &value);
+        }
+    }
+    format_args.finish()
+}
+
+/// The field names that the `Deserialize` implementation of the struct `T`
+/// accepts, which are the query parameters that a handler taking
+/// `web::Query<T>` consumes.
+///
+/// `#[derive(Deserialize)]` writes the field names into the generated
+/// implementation as the `fields` argument of `Deserializer::deserialize_struct`.
+/// For example, for `IngressArgs` the derive generates
+///
+/// ```ignore
+/// const FIELDS: &'static [&'static str] = &["format", "force"];
+/// _serde::Deserializer::deserialize_struct(deserializer, "IngressArgs", FIELDS, visitor)
+/// ```
+fn field_names<T: for<'de> Deserialize<'de>>() -> &'static [&'static str] {
+    use serde::de::{Error, Visitor};
+    use std::fmt::{Display, Formatter};
+
+    /// A deserializer that fails as soon as it learns the field names of the
+    /// struct it is asked for, and reports them as its error.
+    struct FieldNamesDeserializer;
+
+    #[derive(Debug)]
+    struct Fields(&'static [&'static str]);
+
+    impl Display for Fields {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:?}", self.0)
+        }
+    }
+
+    impl std::error::Error for Fields {}
+
+    impl Error for Fields {
+        fn custom<M: Display>(_: M) -> Self {
+            Fields(&[])
+        }
+    }
+
+    impl<'de> serde::Deserializer<'de> for FieldNamesDeserializer {
+        type Error = Fields;
+
+        fn deserialize_struct<V: Visitor<'de>>(
+            self,
+            _name: &'static str,
+            fields: &'static [&'static str],
+            _visitor: V,
+        ) -> Result<V::Value, Fields> {
+            Err(Fields(fields))
+        }
+
+        fn deserialize_any<V: Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Fields> {
+            Err(Fields(&[]))
+        }
+
+        serde::forward_to_deserialize_any! {
+            bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+            bytes byte_buf option unit unit_struct newtype_struct seq tuple
+            tuple_struct map enum identifier ignored_any
+        }
+    }
+
+    match T::deserialize(FieldNamesDeserializer) {
+        Err(Fields(fields)) => fields,
+        Ok(_) => unreachable!("a struct does not deserialize from the field-name deserializer"),
+    }
 }
 
 /// Lookup or create an HTTP input endpoint.
@@ -2799,6 +2888,13 @@ async fn input_endpoint(
 
     let table_name = path.into_inner();
 
+    let connector_metadata = args
+        .connector_metadata
+        .as_deref()
+        .map(RequestMetadata::parse)
+        .transpose()
+        .map_err(|error| PipelineError::InvalidParam { error })?;
+
     // Generate deterministic endpoint name per (table_name, FormatConfig).
     let parser_endpoint_name = format!("{table_name}.api-ingress-{}", args.format);
     let format = parser_config_from_http_request(&parser_endpoint_name, &args.format, &req)?;
@@ -2830,7 +2926,7 @@ async fn input_endpoint(
 
     // Call endpoint to complete request.
     endpoint
-        .complete_request(payload, args.force)
+        .complete_request(payload, args.force, connector_metadata)
         .instrument(info_span!("http_input"))
         .await?;
 
@@ -2851,7 +2947,8 @@ pub fn parser_config_from_http_request(
     let format = get_input_format(format_name)
         .ok_or_else(|| ControllerError::unknown_input_format(endpoint_name, format_name))?;
 
-    let config = format.config_from_http_request(endpoint_name, request)?;
+    let config = format
+        .config_from_http_query(endpoint_name, &format_query(request, IngressArgs::names()))?;
 
     // Convert config to YAML format.
     // FIXME: this is hacky. Perhaps we can parameterize `FormatConfig` with the
@@ -2865,7 +2962,7 @@ pub fn parser_config_from_http_request(
 }
 
 /// Create an instance of `FormatConfig` from format name and
-/// HTTP request using the `InputFormat::config_from_http_request` method.
+/// HTTP request using the `OutputFormat::config_from_http_query` method.
 pub fn encoder_config_from_http_request(
     endpoint_name: &str,
     format: HttpOutputFormat,
@@ -2878,7 +2975,8 @@ pub fn encoder_config_from_http_request(
         HttpOutputFormat::Json => Box::new(JsonOutputFormat),
     };
 
-    let config = format.config_from_http_request(endpoint_name, request)?;
+    let config = format
+        .config_from_http_query(endpoint_name, &format_query(request, EgressArgs::names()))?;
 
     Ok(FormatConfig {
         name: format.name(),
@@ -2909,6 +3007,13 @@ struct EgressArgs {
     /// streaming incremental updates. The view must be materialized.
     #[serde(default)]
     send_snapshot: bool,
+}
+
+impl EgressArgs {
+    /// Names of the query parameters that the `/egress` handler consumes.
+    fn names() -> &'static [&'static str] {
+        field_names::<Self>()
+    }
 }
 
 #[post("/egress/{table_name}")]
@@ -3718,10 +3823,16 @@ mod test_http_helpers {
         web::{self, Data as WebData},
     };
     use csv::ReaderBuilder as CsvReaderBuilder;
+    use dbsp::DBData;
     use dbsp::storage::dirlock::LockedDirectory;
+    use feldera_sqllib::Variant;
     use feldera_types::adapter_stats::{ExternalControllerStatus, ExternalOutputEndpointMetrics};
+    use feldera_types::program_schema::Field;
     use feldera_types::runtime_status::{
         BootstrapConfig, ExtendedRuntimeStatus, RuntimeDesiredStatus,
+    };
+    use feldera_types::serde_with_context::{
+        DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
     };
     use feldera_types::{
         completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
@@ -4199,6 +4310,33 @@ outputs:
         persistent_output_ids: &'static [Option<&'static str>],
         program_ir: Option<ProgramIr>,
     ) -> (TestServer, WebData<ServerState>) {
+        start_test_server_for::<TestStruct>(
+            config_str,
+            deployment_id,
+            bootstrap_config,
+            persistent_output_ids,
+            program_ir,
+            TestStruct::schema(),
+        )
+        .await
+    }
+
+    /// Like [`start_test_server_with_state`], but the tables and views of the
+    /// circuit hold records of type `T`, described by `schema`.
+    pub(super) async fn start_test_server_for<T>(
+        config_str: &str,
+        deployment_id: Uuid,
+        bootstrap_config: BootstrapConfig,
+        persistent_output_ids: &'static [Option<&'static str>],
+        program_ir: Option<ProgramIr>,
+        schema: Vec<Field>,
+    ) -> (TestServer, WebData<ServerState>)
+    where
+        T: DBData
+            + SerializeWithContext<SqlSerdeConfig>
+            + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+            + Sync,
+    {
         let mut config_file = NamedTempFile::new().unwrap();
         config_file.write_all(config_str.as_bytes()).unwrap();
 
@@ -4242,12 +4380,8 @@ outputs:
         thread::spawn(move || {
             bootstrap(
                 builder,
-                Box::new(|workers| {
-                    Ok(test_circuit::<TestStruct>(
-                        workers,
-                        &TestStruct::schema(),
-                        persistent_output_ids,
-                    ))
+                Box::new(move |workers| {
+                    Ok(test_circuit::<T>(workers, &schema, persistent_output_ids))
                 }),
                 state_clone,
             )
@@ -4623,6 +4757,27 @@ outputs:
             .unwrap_or(0)
     }
 
+    /// The rows of an ad-hoc query, as the `/query` endpoint returns them in
+    /// its JSON format: one JSON object per line.
+    pub(super) async fn adhoc_query_rows(server: &TestServer, sql: &str) -> Vec<serde_json::Value> {
+        let qs = form_urlencoded::Serializer::new(String::new())
+            .append_pair("sql", sql)
+            .append_pair("format", "json")
+            .finish();
+        let mut resp = server.get(format!("/query?{qs}")).send().await.unwrap();
+        assert!(
+            resp.status().is_success(),
+            "ad-hoc query failed: {}",
+            resp.status()
+        );
+        let body = resp.body().await.unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+        text.lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
     fn output_metrics(stats: &ExternalControllerStatus) -> &ExternalOutputEndpointMetrics {
         stats
             .outputs
@@ -4693,17 +4848,20 @@ mod test_http {
     use crate::{
         ensure_default_crypto_provider,
         server::test_http_helpers::{
-            adhoc_query_count, assert_no_file_output, batch_num_records, commit_transaction,
-            crash_pipeline, output_progress, pause_pipeline, send_input, send_input_no_wait,
-            start_pipeline, start_test_server_with_options, start_test_server_with_state,
-            start_transaction, suspend_pipeline, test_batches, test_program_ir,
-            wait_for_file_output,
+            adhoc_query_count, adhoc_query_rows, assert_no_file_output, batch_num_records,
+            commit_transaction, crash_pipeline, output_progress, pause_pipeline, send_input,
+            send_input_no_wait, start_pipeline, start_test_server_for,
+            start_test_server_with_options, start_test_server_with_state, start_transaction,
+            suspend_pipeline, test_batches, test_program_ir, wait_for_file_output,
         },
         test::{
-            TestStruct, async_wait, generate_test_batches,
+            TestStruct, async_wait,
+            data::TestStructMetadata,
+            generate_test_batches,
             http::{TestHttpReceiver, TestHttpSender},
         },
     };
+    use actix_test::TestServer;
     use actix_web::http::StatusCode;
     use feldera_types::{
         adapter_stats::TransactionStatus,
@@ -4722,6 +4880,365 @@ mod test_http {
     use tempfile::TempDir;
     use tokio::time::timeout;
     use uuid::Uuid;
+
+    /// The `/ingress` handler must not pass its own query parameters to the
+    /// format.
+    #[cfg(feature = "with-avro")]
+    #[test]
+    fn test_ingress_query_excludes_handler_args() {
+        use super::{IngressArgs, format_query, parser_config_from_http_request};
+        use actix_web::test::TestRequest;
+
+        let request = TestRequest::with_uri(
+            "/ingress/t?format=avro&force=true&update_format=raw&skip_schema_id=true",
+        )
+        .to_http_request();
+        assert_eq!(
+            format_query(&request, IngressArgs::names()),
+            "update_format=raw&skip_schema_id=true"
+        );
+        parser_config_from_http_request("t", "avro", &request).unwrap();
+
+        let request =
+            TestRequest::with_uri("/ingress/t?format=avro&update_formt=raw").to_http_request();
+        let error = parser_config_from_http_request("t", "avro", &request).unwrap_err();
+        assert!(error.to_string().contains("update_formt"), "{error}");
+
+        // Percent-encoded values and repeated parameters reach the format
+        // unchanged.
+        let request =
+            TestRequest::with_uri("/ingress/t?schema=%7B%22a%22%3A1%7D&force=true&x=1&x=2")
+                .to_http_request();
+        let pairs: Vec<(String, String)> =
+            form_urlencoded::parse(format_query(&request, IngressArgs::names()).as_bytes())
+                .into_owned()
+                .collect();
+        assert_eq!(
+            pairs,
+            [("schema", "{\"a\":1}"), ("x", "1"), ("x", "2")]
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+        );
+    }
+
+    /// The handler parameter names come from the `IngressArgs` and
+    /// `EgressArgs` structs themselves.
+    #[test]
+    fn test_handler_arg_names() {
+        use super::{EgressArgs, IngressArgs};
+
+        assert_eq!(
+            IngressArgs::names(),
+            ["format", "force", "connector_metadata"]
+        );
+        assert_eq!(
+            EgressArgs::names(),
+            ["backpressure", "format", "send_snapshot"]
+        );
+    }
+
+    /// Connector metadata that the `connector_metadata` tests attach to a
+    /// request, with one attribute for each metadata column of
+    /// `TestStructMetadata`.
+    const CONNECTOR_METADATA: &str = r#"{"kafka_headers":{"h":"v"},"kafka_topic":"events","kafka_timestamp":"2025-01-01 10:00:00","kafka_partition":3,"kafka_offset":42}"#;
+
+    /// Posts `body` to `/ingress/test_input1` as raw JSON with the given
+    /// `connector_metadata`; returns the response status and body.
+    async fn post_with_connector_metadata(
+        server: &TestServer,
+        connector_metadata: &str,
+        body: &'static str,
+    ) -> (StatusCode, String) {
+        let query = form_urlencoded::Serializer::new(String::new())
+            .append_pair("format", "json")
+            .append_pair("update_format", "raw")
+            .append_pair("connector_metadata", connector_metadata)
+            .finish();
+        let mut response = server
+            .post(format!("/ingress/test_input1?{query}"))
+            .send_body(body)
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = response.body().await.unwrap();
+        (status, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    /// Checks that `test_output1` holds exactly the records with the given
+    /// `ids`, each with the metadata columns from `CONNECTOR_METADATA`.
+    async fn assert_records_carry_connector_metadata(server: &TestServer, ids: &[i64]) {
+        let rows = adhoc_query_rows(
+            server,
+            "SELECT i, kafka_topic, kafka_partition, kafka_offset, kafka_timestamp, kafka_headers \
+             FROM test_output1 ORDER BY i",
+        )
+        .await;
+        assert_eq!(rows.len(), ids.len(), "{rows:?}");
+        for (row, id) in rows.iter().zip(ids) {
+            assert_eq!(row["i"], serde_json::json!(id), "{row}");
+            assert_eq!(row["kafka_topic"], serde_json::json!("events"), "{row}");
+            assert_eq!(row["kafka_partition"], serde_json::json!(3), "{row}");
+            assert_eq!(row["kafka_offset"], serde_json::json!(42), "{row}");
+            let timestamp = row["kafka_timestamp"].as_str().expect("timestamp string");
+            assert!(
+                timestamp.starts_with("2025-01-01") && timestamp.contains("10:00:00"),
+                "{row}"
+            );
+            // The query engine returns a VARIANT either as a JSON value or as
+            // its JSON text.
+            let headers = &row["kafka_headers"];
+            let headers = headers
+                .as_str()
+                .map(|text| serde_json::from_str::<serde_json::Value>(text).unwrap())
+                .unwrap_or_else(|| headers.clone());
+            assert_eq!(headers, serde_json::json!({"h": "v"}), "{row}");
+        }
+    }
+
+    /// The `connector_metadata` query parameter of `/ingress` reaches every
+    /// record of the request through `CONNECTOR_METADATA()`, and an invalid
+    /// parameter is rejected before any record is ingested.
+    #[actix_web::test]
+    async fn test_ingress_connector_metadata() {
+        ensure_default_crypto_provider();
+
+        let (server, _state) = start_test_server_for::<TestStructMetadata>(
+            "name: test\ninputs:\noutputs:\n",
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[None],
+            None,
+            TestStructMetadata::schema(),
+        )
+        .await;
+        start_pipeline(&server).await;
+
+        let (status, body) =
+            post_with_connector_metadata(&server, CONNECTOR_METADATA, "{\"i\": 1}\n{\"i\": 2}")
+                .await;
+        assert!(status.is_success(), "{body}");
+        let CompletionTokenResponse { token } = serde_json::from_str(&body).unwrap();
+        wait_for_completion(&server, &token).await;
+        assert_records_carry_connector_metadata(&server, &[1, 2]).await;
+
+        for invalid in ["not json", "[1, 2]", "\"text\""] {
+            let (status, body) = post_with_connector_metadata(&server, invalid, "{\"i\": 3}").await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid}: {body}");
+            assert!(body.contains("connector_metadata"), "{body}");
+        }
+        assert_eq!(
+            adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await,
+            2
+        );
+    }
+
+    /// A client that hangs up in the middle of an `/ingress` upload fails
+    /// only its own request. The table's ingress endpoint is shared by every
+    /// later request, so it keeps accepting data and `/stats` must not report
+    /// it as failed.
+    #[actix_web::test]
+    async fn test_ingress_aborted_upload_is_not_fatal() {
+        use tokio::io::AsyncWriteExt;
+
+        ensure_default_crypto_provider();
+
+        let server = start_test_server("name: test\ninputs:\noutputs:\n", Uuid::new_v4()).await;
+        start_pipeline(&server).await;
+
+        // Announce a larger body than is sent, then close the connection.
+        let row = r#"{"id": 1, "b": true, "i": null, "s": "a"}"#;
+        let request = format!(
+            "POST /ingress/test_input1?format=json&update_format=raw HTTP/1.1\r\n\
+             Host: localhost\r\nContent-Type: application/json\r\n\
+             Content-Length: 1000000\r\n\r\n{row}\n"
+        );
+        let mut connection = tokio::net::TcpStream::connect(server.addr()).await.unwrap();
+        connection.write_all(request.as_bytes()).await.unwrap();
+        drop(connection);
+
+        // Wait until the server has read the broken body.
+        let errors_seen = async_wait(
+            || async {
+                get_stats(&server)
+                    .await
+                    .inputs
+                    .iter()
+                    .any(|input| input.metrics.num_transport_errors > 0)
+            },
+            20_000,
+        )
+        .await;
+        assert!(errors_seen.is_ok(), "the aborted upload was never noticed");
+
+        let mut response = server
+            .post("/ingress/test_input1?format=json&update_format=raw")
+            .send_body(r#"{"id": 2, "b": false, "i": 2, "s": "b"}"#)
+            .await
+            .unwrap();
+        assert!(
+            response.status().is_success(),
+            "{:?}",
+            response.body().await
+        );
+
+        for input in get_stats(&server).await.inputs {
+            assert_eq!(
+                input.fatal_error, None,
+                "input endpoint '{}' is reported as failed",
+                input.endpoint_name
+            );
+        }
+    }
+
+    /// A fault-tolerant replay parses the journaled chunks with the
+    /// `connector_metadata` of their requests, so the replayed records carry
+    /// the same metadata columns as the original ones.
+    #[actix_web::test]
+    async fn test_ft_replay_connector_metadata() {
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        std::fs::create_dir(&storage_dir).unwrap();
+        let config_str = format!(
+            r#"
+name: test
+workers: 1
+storage_config:
+    path: "{}"
+storage: true
+fault_tolerance: latest_checkpoint
+clock_resolution_usecs:
+inputs:
+outputs:
+"#,
+            storage_dir.display()
+        );
+
+        let (server, state) = start_test_server_for::<TestStructMetadata>(
+            &config_str,
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[Some("v0")],
+            Some(test_program_ir("v0")),
+            TestStructMetadata::schema(),
+        )
+        .await;
+        start_pipeline(&server).await;
+        let (status, body) =
+            post_with_connector_metadata(&server, CONNECTOR_METADATA, "{\"i\": 1}").await;
+        assert!(status.is_success(), "{body}");
+        let CompletionTokenResponse { token } = serde_json::from_str(&body).unwrap();
+        wait_for_completion(&server, &token).await;
+        assert_records_carry_connector_metadata(&server, &[1]).await;
+
+        // Crash without a checkpoint, so that the restart replays the journal.
+        crash_pipeline(&state, &storage_dir).await;
+        drop(server);
+
+        let (server, _state) = start_test_server_for::<TestStructMetadata>(
+            &config_str,
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[Some("v0")],
+            Some(test_program_ir("v0")),
+            TestStructMetadata::schema(),
+        )
+        .await;
+        start_pipeline(&server).await;
+        assert_records_carry_connector_metadata(&server, &[1]).await;
+
+        suspend_pipeline(&server, Some(&storage_dir)).await;
+    }
+
+    /// Avro over `/ingress`: the schema travels in the query string, and each
+    /// request body is one datum (issue 7397).
+    #[cfg(feature = "with-avro")]
+    #[actix_web::test]
+    async fn test_http_ingress_avro() {
+        use apache_avro::{Schema as AvroSchema, to_avro_datum, types::Value as AvroValue};
+
+        ensure_default_crypto_provider();
+
+        let data = vec![vec![TestStruct::for_id(1), TestStruct::for_id(2)]];
+        let schema = AvroSchema::parse_str(TestStruct::avro_schema()).unwrap();
+        let query = form_urlencoded::Serializer::new(String::new())
+            .append_pair("format", "avro")
+            .append_pair("update_format", "raw")
+            .append_pair("skip_schema_id", "true")
+            .append_pair("schema", TestStruct::avro_schema())
+            .finish();
+
+        let server = start_test_server(
+            r#"
+name: test
+inputs:
+outputs:
+"#,
+            Uuid::new_v4(),
+        )
+        .await;
+        start_pipeline(&server).await;
+
+        let datums: Vec<Vec<u8>> = data
+            .iter()
+            .flatten()
+            .map(|record| {
+                let value = AvroValue::Record(vec![
+                    ("id".to_string(), AvroValue::Long(record.id as i64)),
+                    ("b".to_string(), AvroValue::Boolean(record.b)),
+                    (
+                        "i".to_string(),
+                        match record.i {
+                            None => AvroValue::Union(0, Box::new(AvroValue::Null)),
+                            Some(i) => AvroValue::Union(1, Box::new(AvroValue::Long(i))),
+                        },
+                    ),
+                    ("s".to_string(), AvroValue::String(record.s.clone())),
+                ]);
+                to_avro_datum(&schema, value).unwrap()
+            })
+            .collect();
+        for datum in &datums {
+            let mut response = server
+                .post(format!("/ingress/test_input1?{query}"))
+                .send_body(datum.clone())
+                .await
+                .unwrap();
+            let status = response.status();
+            let body = response.body().await.unwrap();
+            assert!(status.is_success(), "{}", String::from_utf8_lossy(&body));
+            let CompletionTokenResponse { token } = serde_json::from_slice(&body).unwrap();
+            wait_for_completion(&server, &token).await;
+        }
+
+        // A body that holds two datums is rejected instead of silently
+        // dropping the second datum.
+        let two_datums = [datums[0].as_slice(), datums[1].as_slice()].concat();
+        let mut response = server
+            .post(format!("/ingress/test_input1?{query}"))
+            .send_body(two_datums)
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = String::from_utf8_lossy(&response.body().await.unwrap()).into_owned();
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(body.contains("trailing bytes"), "{body}");
+
+        let mut response = server
+            .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+        let (_chunks, mut records) = timeout(
+            Duration::from_secs(10),
+            collect_output_chunks(&mut response, 2),
+        )
+        .await
+        .unwrap();
+        records.sort();
+        assert_eq!(records, flatten_and_sort_batches(&data));
+    }
 
     /// Verifies the `send_snapshot` HTTP egress mode:
     /// 1. Pushes initial data, connects with `send_snapshot=true`, and

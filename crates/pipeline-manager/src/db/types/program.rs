@@ -261,8 +261,35 @@ impl SqlCompilationInfo {
     }
 }
 
-/// Rust compilation information.
+/// One rustc diagnostic (error or warning).
 #[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
+pub struct RustCompilerMessage {
+    pub(crate) file: Option<String>,
+    pub(crate) start_line_number: usize,
+    pub(crate) start_column: usize,
+    pub(crate) end_line_number: usize,
+    pub(crate) end_column: usize,
+    pub(crate) warning: bool,
+    pub(crate) error_type: String,
+    pub(crate) message: String,
+    pub(crate) rendered: Option<String>,
+}
+
+impl Display for RustCompilerMessage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{error_type}: {message} (line {start_line_number}, column {start_column})",
+            error_type = self.error_type,
+            message = self.message,
+            start_line_number = self.start_line_number,
+            start_column = self.start_column
+        )
+    }
+}
+
+/// Rust compilation information.
+#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone, Default)]
 pub struct RustCompilationInfo {
     /// Exit code of the `cargo` compilation command.
     pub exit_code: i32,
@@ -270,15 +297,23 @@ pub struct RustCompilationInfo {
     pub stdout: String,
     /// Output printed to stderr by the `cargo` compilation command.
     pub stderr: String,
+    /// Parsed rustc diagnostics. Older stored JSON omits this field.
+    #[serde(default)]
+    pub messages: Vec<RustCompilerMessage>,
 }
 
 impl RustCompilationInfo {
     #[cfg(test)]
-    pub(crate) fn success() -> Self {
+    pub(crate) fn from_process_output_streams(
+        exit_code: i32,
+        stdout: String,
+        stderr: String,
+    ) -> Self {
         Self {
-            exit_code: 0,
-            stdout: "".to_string(),
-            stderr: "".to_string(),
+            exit_code,
+            stdout,
+            stderr,
+            ..Self::default()
         }
     }
 }
@@ -876,6 +911,7 @@ pub fn generate_program_info(
                 | TransportConfig::KafkaOutput(_)
                 | TransportConfig::DeltaTableOutput(_)
                 | TransportConfig::DynamoDBOutput(_)
+                | TransportConfig::NatsOutput(_)
                 | TransportConfig::RedisOutput(_)
                 | TransportConfig::S2Output(_)
                 | TransportConfig::NullOutput => {}

@@ -15,8 +15,8 @@ use crate::storage::{
     buffer_cache::{BufferCache, FBuf},
     file::format::{
         BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, DataBlockHeader, FileTrailerColumn,
-        IndexBlockHeader, MIN_SUPPORTED_VERSION, NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
-        Varint,
+        INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN, IndexBlockHeader, MIN_SUPPORTED_VERSION,
+        NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC, Varint,
     },
     file::item::ArchivedItem,
 };
@@ -132,6 +132,31 @@ pub enum CorruptionError {
         /// Unsupported incompatible features
         u64,
     ),
+
+    /// A layer file's value layout does not match the factories opening it.
+    #[error(
+        "File value column is {} but the factories opening it expect {}",
+        if *found { "stamped" } else { "plain" },
+        if *expected { "stamped" } else { "plain" }
+    )]
+    ValueStampMismatch {
+        /// Whether the factories describe a stamped value column.
+        expected: bool,
+        /// Whether the file's value column is stamped.
+        found: bool,
+    },
+
+    /// The file is corrupted: the hidden-value-column feature bit and the
+    /// metadata flag disagree.
+    #[error(
+        "File is corrupted: the hidden-value-column feature bit is {bit} but the value stamp is {stamp}"
+    )]
+    InconsistentValueStamp {
+        /// Whether [`INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN`] is set.
+        bit: bool,
+        /// Whether the metadata records a stamped value column.
+        stamp: bool,
+    },
 
     /// [`mod@binrw`] reported a format violation.
     #[error("Binary read/write error reading {block_type} block ({location}): {inner}")]
@@ -1682,7 +1707,7 @@ fn whole_block(
 fn read_filter_block(
     file_handle: &dyn FileReader,
     location: BlockLocation,
-    roaring_min: Option<&DynData>,
+    first_key: Option<&DynData>,
 ) -> Result<Option<BatchKeyFilter>, Error> {
     // Reading the header before the modules only pays off when the configured
     // rate can drop some of them. When it cannot, that first read would be
@@ -1782,14 +1807,14 @@ fn read_filter_block(
             let block = whole_block(file_handle, location, &head)?;
             let block: RoaringBitmapFilterBlock =
                 parse_filter_block(&block, location, "roaring bitmap filter")?;
-            let roaring_min = roaring_min.ok_or_else(|| {
+            let first_key = first_key.ok_or_else(|| {
                 Error::Corruption(CorruptionError::InvalidFilterEncoding {
                     location,
                     kind: "roaring bitmap",
-                    inner: "roaring bitmap filter requires the batch minimum".to_string(),
+                    inner: "roaring bitmap filter requires the batch's first key".to_string(),
                 })
             })?;
-            BatchKeyFilter::deserialize_roaring_u32(&block.data, roaring_min)
+            BatchKeyFilter::deserialize_roaring_u32(&block.data, first_key)
                 .map(Some)
                 .map_err(|e| {
                     Error::Corruption(CorruptionError::InvalidFilterEncoding {
@@ -1870,6 +1895,91 @@ where
     }
 }
 
+/// Reads and validates a layer file's trailer.
+///
+/// Reading the trailer does not require any factories, so a caller can learn a
+/// file's layout from [`read_metadata`] before it picks the factories that
+/// decode the file.
+///
+/// # Arguments
+///
+/// * `cache` - the buffer cache to use.
+/// * `file` - the open file, read from its end.
+/// * `stats` - counts the cache accesses this read makes.
+///
+/// # Returns
+///
+/// The trailer, or an error if the file is too short, was written by a later version,
+/// needs a feature this reader lacks, or records a layout inconsistently.
+fn read_trailer(
+    cache: fn() -> Option<Arc<BufferCache>>,
+    file: &dyn FileReader,
+    stats: &AtomicCacheStats,
+) -> Result<Arc<FileTrailer>, Error> {
+    let file_size = file.get_size()?;
+    if file_size < 512 || (file_size % 512) != 0 {
+        return Err(CorruptionError::InvalidFileSize(file_size).into());
+    }
+
+    let file_trailer = FileTrailer::new(
+        cache,
+        file,
+        BlockLocation::new(file_size - 512, 512).unwrap(),
+        stats,
+    )?;
+
+    if file_trailer.version < MIN_SUPPORTED_VERSION {
+        return Err(CorruptionError::InvalidVersion {
+            version: file_trailer.version,
+            min_supported_version: MIN_SUPPORTED_VERSION,
+        }
+        .into());
+    }
+
+    if let Some(features) = file_trailer.unsupported_compatible_features() {
+        info!(
+            "{}: storage file uses unsupported compatible features {features:#x}",
+            file.path(),
+        );
+    }
+
+    if let Some(features) = file_trailer.unknown_incompatible_features() {
+        return Err(CorruptionError::UnsupportedIncompatibleFeatures(features).into());
+    }
+
+    // The bit and the flag are written together, so if they disagree, the file
+    // is corrupted.  In particular, we want to avoid treating a stamped value
+    // column as a plain one when the bit is set but the flag is clear.
+    let stamp = file_trailer.metadata.value_stamp.is_stamped();
+    let bit = file_trailer.has_incompatible_feature(INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN);
+    if stamp != bit {
+        return Err(CorruptionError::InconsistentValueStamp { bit, stamp }.into());
+    }
+
+    Ok(file_trailer)
+}
+
+/// Reads only a layer file's metadata.
+///
+/// # Arguments
+///
+/// * `cache` - the buffer cache to use.
+/// * `storage_backend` - where the file lives.
+/// * `path` - the file to read.
+///
+/// # Returns
+///
+/// The file's metadata, or an error if its trailer cannot be read.
+pub fn read_metadata(
+    cache: fn() -> Option<Arc<BufferCache>>,
+    storage_backend: &dyn StorageBackend,
+    path: &StoragePath,
+) -> Result<BatchMetadata, Error> {
+    let file = storage_backend.open(path)?;
+    let stats = AtomicCacheStats::default();
+    Ok(read_trailer(cache, &*file, &stats)?.metadata.clone())
+}
+
 impl<T> Reader<T>
 where
     T: ColumnSpec,
@@ -1890,37 +2000,8 @@ where
         file: Arc<dyn FileReader>,
         membership_filter: Option<BatchKeyFilter>,
     ) -> Result<(Self, Option<BatchKeyFilter>), Error> {
-        let file_size = file.get_size()?;
-        if file_size < 512 || (file_size % 512) != 0 {
-            return Err(CorruptionError::InvalidFileSize(file_size).into());
-        }
-
         let stats = AtomicCacheStats::default();
-        let file_trailer = FileTrailer::new(
-            cache,
-            &*file,
-            BlockLocation::new(file_size - 512, 512).unwrap(),
-            &stats,
-        )?;
-
-        if file_trailer.version < MIN_SUPPORTED_VERSION {
-            return Err(CorruptionError::InvalidVersion {
-                version: file_trailer.version,
-                min_supported_version: MIN_SUPPORTED_VERSION,
-            }
-            .into());
-        }
-
-        if let Some(features) = file_trailer.unsupported_compatible_features() {
-            info!(
-                "{}: storage file uses unsupported compatible features {features:#x}",
-                file.path(),
-            );
-        }
-
-        if let Some(features) = file_trailer.unknown_incompatible_features() {
-            return Err(CorruptionError::UnsupportedIncompatibleFeatures(features).into());
-        }
+        let file_trailer = read_trailer(cache, &*file, &stats)?;
 
         assert_eq!(factories.len(), file_trailer.columns.len());
 
@@ -2066,13 +2147,13 @@ where
 {
     /// Reads and deserializes the per-batch membership filter, if present.
     ///
-    /// For roaring filters this also threads the batch minimum into the
-    /// min-offset decoder, so the returned filter can be queried directly.
+    /// A roaring filter also needs the batch's first key to locate the base
+    /// of its offsets, so the returned filter can be queried directly.
     pub fn membership_filter(&self) -> Result<Option<BatchKeyFilter>, Error> {
         let key_range = self.key_range()?;
-        let roaring_min = key_range.as_ref().map(|(min, _)| min.as_ref().as_data());
+        let first_key = key_range.as_ref().map(|(min, _)| min.as_ref().as_data());
         self.membership_filter_location
-            .map(|location| read_filter_block(&*self.file.file_handle, location, roaring_min))
+            .map(|location| read_filter_block(&*self.file.file_handle, location, first_key))
             .transpose()
             .map(Option::flatten)
     }

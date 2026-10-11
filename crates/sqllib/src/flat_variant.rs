@@ -2752,7 +2752,7 @@ mod tests {
                 (
                     Variant::String(SqlString::from_ref("arr")),
                     Variant::Array(
-                        vec![Variant::SqlDecimal((5, 1)), Variant::Real(1.5.into())].into(),
+                        vec![Variant::SqlDecimal((5, 1)), Variant::Real(1.5_f32.into())].into(),
                     ),
                 ),
             ]

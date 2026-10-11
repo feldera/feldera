@@ -1612,7 +1612,7 @@ mod test {
                 id: 1,
                 s: "foo".to_string(),
                 b: true,
-                o: Some(F32::from(0.1)),
+                o: Some(F32::from(0.1_f32)),
             },
             TestStruct {
                 id: 2,
@@ -1832,7 +1832,7 @@ mod test {
                 id: 1,
                 s: "foo".to_string(),
                 b: true,
-                o: Some(F32::from(0.1)),
+                o: Some(F32::from(0.1_f32)),
             },
             TestStruct {
                 id: 2,

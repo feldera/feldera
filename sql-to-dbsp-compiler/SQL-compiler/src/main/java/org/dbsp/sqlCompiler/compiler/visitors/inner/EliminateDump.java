@@ -27,6 +27,11 @@ public class EliminateDump extends InnerRewriteVisitor {
     }
 
     @Override
+    protected boolean rewritesTypes() {
+        return false;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPApplyExpression expression) {
         this.push(expression);
         DBSPExpression[] arguments = this.transform(expression.arguments);

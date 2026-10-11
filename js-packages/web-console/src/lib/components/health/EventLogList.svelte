@@ -170,7 +170,7 @@
     class="flex flex-nowrap items-center gap-1 outline-none"
     onclick={() => onEventSelected?.(event)}
   >
-    <span class="text-[24px] {getIconClass(event.type)} {iconClass}"></span>
+    <span class="text-[16px] {getIconClass(event.type)} {iconClass}"></span>
     <span class="line-clamp-1">{event.description}</span>
   </button>
 {/snippet}

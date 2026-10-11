@@ -53,6 +53,7 @@ impl ExtendedPipelineDescrRunner {
                 program_status: pipeline.program_status,
                 program_status_since: pipeline.program_status_since,
                 deployment_error: pipeline.deployment_error.clone(),
+                deployment_config: pipeline.deployment_config.clone(),
                 deployment_location: pipeline.deployment_location.clone(),
                 refresh_version: pipeline.refresh_version,
                 storage_status: pipeline.storage_status,

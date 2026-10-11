@@ -77,6 +77,11 @@ export class Size {
 export class Rectangle {
     constructor(readonly origin: Point, readonly size: Size) { }
 
+    /** The rectangle of `size` with its center at `center`. */
+    static centered(center: Point, size: Size): Rectangle {
+        return new Rectangle(new Point(center.x - size.w / 2, center.y - size.h / 2), size);
+    }
+
     bottomRight(): Point {
         return new Point(
             this.origin.x + this.size.w,

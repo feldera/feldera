@@ -46,7 +46,7 @@ state is tracked by the storage status.
 
 **Relevant API fields:**
 - `deployment_id` (set becoming `Provisioning`, unset becoming `Stopping`)
-- `deployment_config` (set becoming `Provisioning`, unset becoming `Stopping`)
+- `deployment_config` (set becoming `Provisioning`, kept afterwards as the configuration of the most recent deployment)
 - `deployment_error` (set becoming `Stopping` or `Stopped` (if error), must be unset to have desired status
    become `Provisioned` (either via `/start?dismiss_error=true` (default) or `/dismiss_error`))
 - `deployment_initial` (set when desired status becomes `Provisioned`, unset becoming `Stopping`

@@ -1038,6 +1038,9 @@ fn patch_runtime_config(
         RuntimeConfigKey::StorageClass => {
             rc.resources.storage_class = Some(value.parse().map_err(|_| ())?);
         }
+        RuntimeConfigKey::VolumeAttributesClass => {
+            rc.resources.volume_attributes_class = Some(value.parse().map_err(|_| ())?);
+        }
         RuntimeConfigKey::MinStorageBytes => {
             if let Some(storage) = rc.storage.as_mut() {
                 storage.min_storage_bytes = Some(value.parse().map_err(|_| ())?);
@@ -4246,6 +4249,7 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
             sql_compilation: None,
             rust_compilation: Some(RustCompilationInfo {
                 exit_code: 101,
+                messages: Vec::new(),
                 stdout: "checking pipeline\n".to_string(),
                 stderr: "error: failed to compile".to_string(),
             }),

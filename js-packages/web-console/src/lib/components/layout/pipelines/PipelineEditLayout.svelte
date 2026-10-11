@@ -218,7 +218,7 @@
       >
         {#snippet titleEnd()}
           <button
-            class="fd fd-x btn-icon btn text-[24px]"
+            class="fd fd-x btn-icon btn text-[20px]"
             aria-label="Close"
             onclick={() => (contextDrawer.content = null)}
           ></button>
@@ -231,10 +231,11 @@
 <div class="flex h-full w-full flex-col">
   <AppHeader>
     {#snippet afterStart()}
-      <div class="flex min-w-0 flex-1 flex-col gap-x-4 gap-y-1 sm:flex-row sm:items-center">
+      <!-- One row that wraps: the status chip drops under the name only when they don't fit. -->
+      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
         <PipelineBreadcrumbs
-          class="-ml-3 pb-1 pl-3"
-          textClass="text-base"
+          class="-ml-3 items-center py-1 pl-3"
+          textClass="text-base font-semibold"
           breadcrumbs={[
             ...(isTablet.current
               ? []
@@ -260,10 +261,10 @@
               }}
               disabled={editNameDisabled}
               editLabel="Edit pipeline name"
-              class="inline overflow-hidden overflow-ellipsis"
-              inputClass="input flex -ml-1 mr-2 py-0 pl-1 text-base mt-1"
+              class="flex min-w-0 items-center gap-1"
+              inputClass="input flex -ml-1 mr-2 py-0 pl-1 text-base"
             >
-              <span class="text-base">
+              <span class="truncate text-base font-semibold">
                 {pipelineName}
               </span>
             </DoubleClickInput>
@@ -283,7 +284,7 @@
         {#if pipelineThumb}
           <PipelineStatus
             data-testid="box-pipeline-status"
-            class="h-6"
+            class="shrink-0"
             status={pipelineThumb.status}
             {deleted}
           ></PipelineStatus>
@@ -302,7 +303,7 @@
       {#if drawer.isMobileDrawer}
         <button
           onclick={() => (drawer.value = !drawer.value)}
-          class="fd fd-book-open btn-icon flex preset-tonal-surface text-[20px]"
+          class="fd fd-book-open btn-icon flex preset-tonal-surface text-[16px]"
           aria-label="Open the right navigation drawer"
         >
         </button>
@@ -428,7 +429,7 @@
         </Pane>
 
         {#if showMonitoringPanel.value}
-          <PaneResizer class="pane-divider-horizontal my-2" />
+          <PaneResizer class="pane-divider-horizontal my-1" />
           <Pane minSize={15} class="flex flex-col !overflow-visible">
             {#if pipeline.current && metrics.current}
               <MonitoringPanel
@@ -468,13 +469,13 @@
     {#each layoutControls as { icon, text, value, show }}
       {#if show !== false}
         <button
-          class="btn gap-2 p-2 text-surface-700-300 !brightness-100 hover:preset-tonal-surface"
+          class="btn btn-sm text-surface-700-300 !brightness-100 hover:preset-tonal-surface"
           onclick={() => (value.value = !value.value)}
         >
           <span class="hidden sm:inline">
             {text}
           </span>
-          <div class="{icon} text-[20px] {value.value ? 'text-primary-500' : ''}"></div>
+          <div class="{icon} {value.value ? 'text-primary-500' : ''}"></div>
         </button>
         <div class="pointer-events-none w-0 -translate-x-0.5">|</div>
       {/if}

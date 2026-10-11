@@ -15,10 +15,10 @@ use crate::storage::{
             BatchMetadata, BlockHeader, BloomFilterBlockRef, COMPATIBLE_FEATURE_FILTER64,
             COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT, DATA_BLOCK_MAGIC, DataBlockHeader,
             FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FixedLen,
-            INCOMPATIBLE_FEATURE_MODULAR_FILTERS, INCOMPATIBLE_FEATURE_ROARING_FILTERS,
-            INDEX_BLOCK_MAGIC, IndexBlockHeader, MODULAR_BLOOM_FILTER_BLOCK_MAGIC,
-            ModularBloomFilterBlockRef, NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
-            RoaringBitmapFilterBlockRef, VERSION_NUMBER, Varint,
+            INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN, INCOMPATIBLE_FEATURE_MODULAR_FILTERS,
+            INCOMPATIBLE_FEATURE_ROARING_FILTERS, INDEX_BLOCK_MAGIC, IndexBlockHeader,
+            MODULAR_BLOOM_FILTER_BLOCK_MAGIC, ModularBloomFilterBlockRef, NodeType,
+            ROARING_BITMAP_FILTER_BLOCK_MAGIC, RoaringBitmapFilterBlockRef, VERSION_NUMBER, Varint,
         },
         reader::TreeNode,
     },
@@ -1280,6 +1280,13 @@ impl Writer {
     ) -> Result<(Arc<dyn FileReader>, Option<BatchKeyFilter>), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
+        // A file with no rows gets no filter. Every lookup misses such a file
+        // anyway, and its filter block would start at offset 0, which the
+        // trailer uses to mean that there is no filter block.
+        if self.n_rows() == 0 {
+            self.key_filter = None;
+        }
+
         if let Some(key_filter) = &mut self.key_filter {
             key_filter.finalize();
         }
@@ -1350,6 +1357,12 @@ impl Writer {
             BlockLocation { offset: 0, size: 0 }
         };
 
+        // A stamped value column is unreadable to a binary that does not know to
+        // hide the trailing column, so advertise it as incompatible.
+        if metadata.value_stamp.is_stamped() {
+            incompatible_features |= INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN;
+        }
+
         // Write the file trailer block.
 
         let mut file_trailer = FileTrailer {
@@ -1366,6 +1379,7 @@ impl Writer {
             metadata,
         };
         if filter_location.size > 0 {
+            debug_assert_ne!(filter_location.offset, 0, "offset 0 means no filter block");
             if let Ok(size) = u32::try_from(filter_location.size)
                 && size < i32::MAX as u32
             {
@@ -1501,7 +1515,10 @@ where
     }
 
     /// Finishes writing the layer file and returns the file handle, optional
-    /// bloom filter, and column-0 key bounds.
+    /// membership filter, and column-0 key bounds.
+    ///
+    /// The filter is `None` for a file with no rows, even if the writer was
+    /// created with one.
     ///
     /// # Arguments
     ///
@@ -1704,7 +1721,10 @@ where
     }
 
     /// Finishes writing the layer file and returns the file handle, optional
-    /// bloom filter, and column-0 key bounds.
+    /// membership filter, and column-0 key bounds.
+    ///
+    /// The filter is `None` for a file with no rows, even if the writer was
+    /// created with one.
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).

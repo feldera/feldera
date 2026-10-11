@@ -33,6 +33,8 @@ Use transport name `postgres_cdc_input`.
 | `run_source_migrations` | boolean | `true` | Whether the connector runs etl's source migrations on startup. The migrations install helper functions and a `ddl_command_end` event trigger; creating the trigger requires a superuser. Set to `false` after an administrator has installed the source objects out-of-band (see [Running as a non-superuser](#running-as-a-non-superuser)). This does not skip the state-store migrations, which run on every start. |
 | `ssl_ca_pem`      | string |         | CA certificates in PEM format. Setting this enables TLS and takes precedence over `ssl_ca_location`.                                                                                            |
 | `ssl_ca_location` | string |         | Path to a PEM file containing CA certificates. Used when `ssl_ca_pem` is not set.                                                                                                               |
+| `batch`               | object |         | Batch processing configuration. See [Batch configuration](#batch-configuration) below. When omitted, uses the defaults listed below, which match the `etl` library's defaults.                                              |
+| `memory_backpressure` | object |         | Memory-based backpressure configuration. See [Memory backpressure configuration](#memory-backpressure-configuration) below. When omitted, uses the defaults listed below, which match the `etl` library's defaults.         |
 
 [*]: Required fields
 
@@ -43,6 +45,27 @@ rejects `verify_hostname: false`: hostname verification is always on, unlike
 the [PostgreSQL source](/connectors/sources/postgresql) and
 [sink](/connectors/sinks/postgresql), where it can be disabled. A pipeline that
 sets any of these fails to start.
+
+### Batch configuration
+
+Controls how replication events are buffered into a batch before being
+flushed to Feldera.
+
+| Property              | Type    | Default | Description                                                                                                                                            |
+|-----------------------|---------|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `max_fill_ms`         | integer | 10000   | Maximum time, in milliseconds, to wait before flushing a partially filled batch.                                                                       |
+| `memory_budget_ratio` | float   | 0.2     | Ratio, in `(0.0, 1.0]`, of process memory reserved for incoming replication batch bytes, divided across active streams.                                |
+| `max_bytes`           | integer | 33554432 | Maximum preferred byte size for one batch per active stream (32 MiB). A ceiling, not a target: the smaller of this and the memory-ratio budget applies. |
+
+### Memory backpressure configuration
+
+Controls when the connector pauses reading further replication events to
+avoid exceeding available memory.
+
+| Property             | Type  | Default | Description                                                                                                         |
+|----------------------|-------|---------|---------------------------------------------------------------------------------------------------------------------|
+| `activate_threshold` | float | 0.85    | Memory usage ratio, in `(0.0, 1.0]`, above which backpressure is activated.                                         |
+| `resume_threshold`   | float | 0.75    | Memory usage ratio, in `[0.0, 1.0)`, below which backpressure is released. Must be lower than `activate_threshold`. |
 
 ## PostgreSQL setup
 
@@ -328,6 +351,42 @@ CREATE TABLE orders (
                 "publication": "feldera_orders",
                 "source_table": "public.orders",
                 "ssl_ca_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+            }
+        }
+    }]'
+);
+```
+
+## Memory vs. throughput tuning example
+
+For a high-throughput table, you may want larger batches (fewer, bigger
+flushes) and a memory backpressure window tuned for the worker's available
+memory:
+
+```sql
+CREATE TABLE orders (
+    id BIGINT NOT NULL,
+    customer TEXT NOT NULL,
+    amount DECIMAL(10, 2),
+    status TEXT NOT NULL
+) WITH (
+    'materialized' = 'true',
+    'connectors' = '[{
+        "transport": {
+            "name": "postgres_cdc_input",
+            "config": {
+                "uri": "postgres://feldera:password@localhost:5432/postgres",
+                "publication": "feldera_orders",
+                "source_table": "public.orders",
+                "batch": {
+                    "max_fill_ms": 2000,
+                    "memory_budget_ratio": 0.3,
+                    "max_bytes": 16777216
+                },
+                "memory_backpressure": {
+                    "activate_threshold": 0.9,
+                    "resume_threshold": 0.7
+                }
             }
         }
     }]'

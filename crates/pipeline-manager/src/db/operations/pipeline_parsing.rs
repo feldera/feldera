@@ -43,7 +43,7 @@ pub const PIPELINE_COLUMNS_ALL: &str =
 pub const PIPELINE_COLUMNS_MONITORING: &str =
     "p.id, p.name, p.client_metadata, p.created_at, p.version, p.platform_version, p.runtime_config,
      p.program_config, p.program_version, p.program_status, p.program_status_since,
-     p.deployment_error, p.deployment_location, p.refresh_version,
+     p.deployment_error, p.deployment_config, p.deployment_location, p.refresh_version,
      p.storage_status, p.storage_status_details, p.deployment_id, p.deployment_initial,
      p.deployment_resources_status, p.deployment_resources_status_since,
      p.deployment_resources_desired_status, p.deployment_resources_desired_status_since,
@@ -134,6 +134,7 @@ pub fn parse_pipeline_row_monitoring(row: &Row) -> Result<ExtendedPipelineDescrM
         program_status: parse_from_row_program_status(row)?,
         program_status_since: parse_from_row_program_status_since(row),
         deployment_error: parse_from_row_deployment_error(row)?,
+        deployment_config: parse_from_row_deployment_config(row)?,
         deployment_location: parse_from_row_deployment_location(row),
         refresh_version: parse_from_row_refresh_version(row),
         storage_status: parse_from_row_storage_status(row)?,
@@ -680,6 +681,7 @@ mod tests {
             program_status: ProgramStatus::Pending,
             program_status_since: Default::default(),
             deployment_error: None,
+            deployment_config: None,
             deployment_location: None,
             refresh_version: Version(3),
             storage_status: StorageStatus::Cleared,
@@ -916,11 +918,11 @@ mod tests {
                     },
                 )],
             }),
-            rust_compilation: Some(RustCompilationInfo {
-                exit_code: 89,
-                stdout: "stdout-example".to_string(),
-                stderr: "stderr-example".to_string(),
-            }),
+            rust_compilation: Some(RustCompilationInfo::from_process_output_streams(
+                89,
+                "stdout-example".to_string(),
+                "stderr-example".to_string(),
+            )),
             system_error: Some("system-error-example".to_string()),
         };
         let data = serialize_program_error(&program_error).unwrap();
@@ -963,6 +965,7 @@ mod tests {
                 system_error: None,
             }
         );
+        // Older rust_compilation JSON omitted `messages`.
         assert_eq!(
             deserialize_program_error(
                 "{ \"sql_compilation\": { \"exit_code\": 0, \"messages\": [] }, \"rust_compilation\": { \"exit_code\": 0, \"stdout\": \"\", \"stderr\": \"\" } }"
@@ -973,11 +976,11 @@ mod tests {
                     exit_code: 0,
                     messages: vec![],
                 }),
-                rust_compilation: Some(RustCompilationInfo {
-                    exit_code: 0,
-                    stdout: "".to_string(),
-                    stderr: "".to_string(),
-                }),
+                rust_compilation: Some(RustCompilationInfo::from_process_output_streams(
+                    0,
+                    "".to_string(),
+                    "".to_string(),
+                )),
                 system_error: None,
             }
         );
@@ -991,11 +994,11 @@ mod tests {
                     exit_code: 2,
                     messages: vec![],
                 }),
-                rust_compilation: Some(RustCompilationInfo {
-                    exit_code: 3,
-                    stdout: "a".to_string(),
-                    stderr: "b".to_string(),
-                }),
+                rust_compilation: Some(RustCompilationInfo::from_process_output_streams(
+                    3,
+                    "a".to_string(),
+                    "b".to_string(),
+                )),
                 system_error: None,
             }
         );

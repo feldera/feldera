@@ -242,10 +242,9 @@ public class KeyAnalysis extends CircuitVisitor {
         return result;
     }
 
-    /** Whether two expressions compute the same value.  Both are toplevel field
-     * accesses of the body of {@code closure}, so they are evaluated in the same contex. */
-    private static boolean sameValue(
-            DBSPClosureExpression closure, DBSPExpression left, DBSPExpression right) {
+    /** A context that compares expressions from the body of {@code closure}, where each
+     * parameter stands for itself. */
+    private static EquivalenceContext customContext(DBSPClosureExpression closure) {
         EquivalenceContext context = new EquivalenceContext();
         context.leftDeclaration.newContext();
         context.rightDeclaration.newContext();
@@ -254,7 +253,7 @@ public class KeyAnalysis extends CircuitVisitor {
             context.rightDeclaration.substitute(parameter.getName(), parameter);
             context.leftToRight.substitute(parameter, parameter);
         }
-        return context.equivalent(left, right);
+        return context;
     }
 
     /** Output columns that hold the same value: those computed by equal expressions.
@@ -262,6 +261,7 @@ public class KeyAnalysis extends CircuitVisitor {
     private static ColumnEquivalence outputEquivalence(
             CollectionShape shape, DBSPClosureExpression closure, Provenance provenance) {
         List<DBSPExpression> expressions = outputExpressions(shape, closure);
+        EquivalenceContext context = customContext(closure);
         List<DBSPExpression> computations = new ArrayList<>();
         List<List<Column>> groups = new ArrayList<>();
         for (int i = 0; i < expressions.size(); i++) {
@@ -270,7 +270,7 @@ public class KeyAnalysis extends CircuitVisitor {
                 continue;
             int group = -1;
             for (int j = 0; j < computations.size(); j++) {
-                if (sameValue(closure, computations.get(j), expression)) {
+                if (context.equivalent(computations.get(j), expression)) {
                     group = j;
                     break;
                 }

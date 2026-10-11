@@ -194,7 +194,7 @@
     <Control>
       {#snippet children(attrs)}
         <Label>Role</Label>
-        <Select class="h-9 text-base!" {...attrs} bind:value={$formData.role}>
+        <Select {...attrs} bind:value={$formData.role}>
           <option value="read">read</option>
           <option value="write">write</option>
           <option value="admin">admin</option>

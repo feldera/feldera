@@ -1,7 +1,7 @@
 import pandas as pd
 
 from typing import Optional
-from threading import Event
+from threading import Event, Lock
 
 from feldera import FelderaClient
 from feldera._callback_runner import CallbackRunner
@@ -23,13 +23,16 @@ class OutputHandler:
         self.pipeline_name: str = pipeline_name
         self.view_name: str = view_name
         self.buffer: list[pd.DataFrame] = []
+        # Guards `buffer`: the callback thread appends while `to_pandas` reads and clears.
+        self.buffer_lock = Lock()
         self.exception: Optional[BaseException] = None
         self.event = Event()
 
         # the callback that is passed to the `CallbackRunner`
         def callback(df: pd.DataFrame, _: int):
             if not df.empty:
-                self.buffer.append(df)
+                with self.buffer_lock:
+                    self.buffer.append(df)
 
         def exception_callback(exception: BaseException):
             self.exception = exception
@@ -61,11 +64,12 @@ class OutputHandler:
 
         if self.exception is not None:
             raise self.exception
-        if len(self.buffer) == 0:
-            return pd.DataFrame()
-        res = pd.concat(self.buffer, ignore_index=True)
-        if clear_buffer:
-            self.buffer.clear()
+        with self.buffer_lock:
+            if len(self.buffer) == 0:
+                return pd.DataFrame()
+            res = pd.concat(self.buffer, ignore_index=True)
+            if clear_buffer:
+                self.buffer.clear()
 
         return res
 

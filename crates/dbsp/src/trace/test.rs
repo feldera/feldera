@@ -11,6 +11,7 @@ use std::{
 };
 
 use feldera_storage::tokio::TOKIO;
+use feldera_types::config::dev_tweaks::DevTweaks;
 use feldera_types::memory_pressure::MemoryPressure;
 use proptest::{collection::vec, prelude::*, strategy::BoxedStrategy};
 use size_of::SizeOf;
@@ -24,12 +25,17 @@ use crate::{
     },
     circuit::{CircuitConfig, mkconfig},
     dynamic::{DowncastTrait, DynData, DynUnit, DynWeightedPairs, Erase, LeanVec, pair::DynPair},
-    storage::{buffer_cache::CacheStats, file::FilterKind},
+    storage::{
+        buffer_cache::CacheStats,
+        file::FilterKind,
+        file::reader::{CorruptionError, Error as ReaderError},
+    },
     trace::{
-        Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, FileIndexedWSetFactories,
-        FileWSetFactories, GroupFilter, ListMerger, Spine, Trace, TraceRole, VecIndexedWSet,
-        VecIndexedWSetFactories, VecKeyBatch, VecKeyBatchFactories, VecValBatch,
-        VecValBatchFactories, VecWSet, VecWSetFactories,
+        Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, FallbackIndexedWSet,
+        FallbackIndexedWSetFactories, FileIndexedWSetFactories, FileWSetFactories, GroupFilter,
+        ListMerger, Spine, Trace, TraceRole, VecIndexedWSet, VecIndexedWSetFactories, VecKeyBatch,
+        VecKeyBatchFactories, VecValBatch, VecValBatchFactories, VecWSet, VecWSetFactories,
+        WithSnapshot,
         cursor::{Cursor, CursorPair},
         ord::{
             FileIndexedWSet, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
@@ -38,7 +44,8 @@ use crate::{
         },
         test::test_batch::{
             TestBatch, TestBatchFactories, assert_batch_cursors_eq, assert_batch_eq,
-            assert_trace_eq, test_batch_sampling, test_trace_sampling,
+            assert_bounds_match_cursor, assert_negative_weights_counted, assert_trace_eq,
+            test_batch_sampling, test_trace_sampling,
         },
     },
     utils::{Tup1, Tup2, Tup3, Tup4},
@@ -220,6 +227,8 @@ fn test_zset_spine<B: ZSet<Key = DynI32>>(
             TestBatch::dyn_from_tuples(&TestBatchFactories::new(), (), &mut erased_tuples);
 
         test_batch_sampling(&batch);
+        assert_negative_weights_counted(&batch);
+        assert_negative_weights_counted(&batch.neg_by_ref());
 
         assert_batch_eq(&batch, &ref_batch);
 
@@ -234,6 +243,9 @@ fn test_zset_spine<B: ZSet<Key = DynI32>>(
         test_trace_sampling(&trace);
 
         assert_trace_eq(&trace, &ref_trace);
+        for batch in trace.get_batches() {
+            assert_negative_weights_counted(&*batch);
+        }
 
         kbound = max(kbound, bound);
         trace.retain_keys(Filter::new(Box::new(move |key| {
@@ -276,6 +288,8 @@ fn test_indexed_zset_spine<B: IndexedZSet<Key = DynI32, Val = DynI32>>(
             TestBatch::dyn_from_tuples(&TestBatchFactories::new(), (), &mut erased_tuples);
 
         test_batch_sampling(&batch);
+        assert_negative_weights_counted(&batch);
+        assert_negative_weights_counted(&batch.neg_by_ref());
 
         assert_batch_eq(&batch, &ref_batch);
 
@@ -293,6 +307,9 @@ fn test_indexed_zset_spine<B: IndexedZSet<Key = DynI32, Val = DynI32>>(
 
         assert_trace_eq(&trace, &ref_trace);
         assert_batch_cursors_eq(trace.cursor(), &ref_trace, seed);
+        for batch in trace.get_batches() {
+            assert_negative_weights_counted(&*batch);
+        }
 
         kbound = max(kbound, key_bound);
         trace.retain_keys(Filter::new(Box::new(move |key| {
@@ -627,6 +644,574 @@ fn test_file_wset_neg_by_ref_preserves_key_bounds() {
         assert_batch_eq(&negated, &expected);
         assert_out_of_range_seek_uses_range_filter(&negated, -20, 40);
     });
+}
+
+/// A layer file records whether its value column carries a hidden trailing
+/// column, and opening one through factories that disagree is a loud error
+/// rather than a misdecode.
+///
+/// This is the guard that keeps a projected batch from being read as though its
+/// values were plain, which would deserialize `Tup2<V, u32>` bytes as `V`
+/// through unchecked rkyv.
+#[test]
+fn test_file_indexed_wset_value_stamp_guards_from_path() {
+    run_in_circuit_with_storage(|| {
+        let stamped =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::stamped::<i32, i32, ZWeight>();
+        let plain =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+
+        let mut tuples = indexed_zset_tuples(vec![Tup2(Tup2(1, 10), 1), Tup2(Tup2(2, 20), 1)]);
+        let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &stamped,
+            (),
+            &mut tuples,
+        );
+
+        let path = batch.file_reader().unwrap().path().to_string().into();
+
+        // Same factories: reopens, and the contents survive. This also proves
+        // the builder wrote the stamp, since the guard compares the two.
+        let reopened = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::from_path(&stamped, &path)
+            .expect("a stamped file reopens through stamped factories");
+        assert_eq!(reopened.len_upper_bound(), batch.len_upper_bound());
+
+        // Plain factories: refused, not misdecoded.
+        let err = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::from_path(&plain, &path)
+            .expect_err("plain factories must refuse a stamped file");
+        assert!(
+            format!("{err}").contains("stamped"),
+            "expected a value-stamp mismatch, got: {err}"
+        );
+    });
+}
+
+/// `(key, value, hidden stamp, weight)` for a projected batch.
+type ProjectedRow = (i32, i32, u32, ZWeight);
+
+type ProjectedPair = DynPair<DynData, DynData>;
+type Projectable = FallbackIndexedWSet<DynData, DynData, DynZWeight>;
+
+/// The inner batch a projected variant wraps: values are `(value, stamp)`
+/// pairs, and the batch consolidates rows agreeing on all three of key, value
+/// and stamp.
+///
+/// # Arguments
+///
+/// * `rows` - the rows to hold.
+///
+/// # Returns
+///
+/// The inner batch, held in memory.
+fn projected_inner(rows: &[ProjectedRow]) -> VecIndexedWSet<DynData, ProjectedPair, DynZWeight> {
+    let factories = <VecIndexedWSetFactories<DynData, ProjectedPair, DynZWeight>>::new::<
+        i32,
+        Tup2<i32, u32>,
+        ZWeight,
+    >();
+    let tuples: Vec<Tup2<Tup2<i32, Tup2<i32, u32>>, ZWeight>> = rows
+        .iter()
+        .map(|&(key, value, stamp, weight)| Tup2(Tup2(key, Tup2(value, stamp)), weight))
+        .collect();
+    let mut tuples = Box::new(LeanVec::from(tuples)).erase_box();
+    VecIndexedWSet::dyn_from_tuples(&factories, (), &mut tuples)
+}
+
+/// [`projected_inner`] on storage, written through the stamped factories so the
+/// file records that its values carry a trailing column.
+///
+/// # Arguments
+///
+/// * `factories` - factories describing both value types.
+/// * `rows` - the rows to hold.
+///
+/// # Returns
+///
+/// The inner batch, on storage.
+fn projected_inner_file(
+    factories: &FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>,
+    rows: &[ProjectedRow],
+) -> FileIndexedWSet<DynData, ProjectedPair, DynZWeight> {
+    let tuples: Vec<Tup2<Tup2<i32, Tup2<i32, u32>>, ZWeight>> = rows
+        .iter()
+        .map(|&(key, value, stamp, weight)| Tup2(Tup2(key, Tup2(value, stamp)), weight))
+        .collect();
+    let mut tuples = Box::new(LeanVec::from(tuples)).erase_box();
+    FileIndexedWSet::dyn_from_tuples(factories.projected(), (), &mut tuples)
+}
+
+/// Every `(key, value, weight)` a batch's cursor exposes.
+///
+/// # Arguments
+///
+/// * `batch` - the batch to walk.
+///
+/// # Returns
+///
+/// Its records, in key and value order.
+fn projected_contents<B>(batch: &B) -> Vec<(i32, i32, ZWeight)>
+where
+    B: BatchReader<Key = DynData, Val = DynData, Time = (), R = DynZWeight>,
+{
+    cursor_contents(&mut batch.cursor())
+}
+
+/// Every `(key, value, weight)` that `cursor` exposes from where it stands.
+///
+/// # Arguments
+///
+/// * `cursor` - the cursor to walk.
+///
+/// # Returns
+///
+/// Its records, in key and value order.
+fn cursor_contents(
+    cursor: &mut dyn Cursor<DynData, DynData, (), DynZWeight>,
+) -> Vec<(i32, i32, ZWeight)> {
+    let mut contents = Vec::new();
+    while cursor.key_valid() {
+        while cursor.val_valid() {
+            contents.push((
+                *unsafe { cursor.key().downcast::<i32>() },
+                *unsafe { cursor.val().downcast::<i32>() },
+                **cursor.weight(),
+            ));
+            cursor.step_val();
+        }
+        cursor.step_key();
+    }
+    contents
+}
+
+/// A batch over values that carry a trailing column reads back as a batch over
+/// the leading column alone: values differing only in the stamp become one
+/// value carrying their summed weight.
+#[test]
+fn test_fallback_indexed_wset_projects_hidden_column() {
+    let factories = <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+        i32,
+        i32,
+        ZWeight,
+    >();
+    // Key 1 holds value 10 at two stamps and value 20 at one; key 2 holds a
+    // value whose two stamps cancel, so it disappears along with its key.
+    let rows: &[ProjectedRow] = &[
+        (1, 10, 0, 1),
+        (1, 10, 5, 2),
+        (1, 20, 1, 1),
+        (2, 30, 0, 1),
+        (2, 30, 7, -1),
+    ];
+
+    let batch = Projectable::from_projected_vec(&factories, projected_inner(rows));
+    assert_eq!(
+        projected_contents(&batch),
+        vec![(1, 10, 3), (1, 20, 1)],
+        "the stamps must be invisible and their runs consolidated"
+    );
+
+    // The count is over the inner batch, so it counts the stamps rather than
+    // the values they project to; `len_upper_bound` promises only an upper bound.
+    assert!(
+        batch.len_upper_bound() >= 2,
+        "len_upper_bound is an upper bound on the projected length"
+    );
+}
+
+/// A projected batch keeps the answer its first `is_empty` call finds, and the
+/// answer holds on later calls, on a clone and on the negated batch.
+#[test]
+fn test_fallback_indexed_wset_keeps_projected_emptiness() {
+    let factories = <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+        i32,
+        i32,
+        ZWeight,
+    >();
+    // Keys 1 and 2 cancel across their stamps; key 3 does not.
+    let cancelling: &[ProjectedRow] =
+        &[(1, 10, 0, 1), (1, 10, 5, -1), (2, 20, 0, 2), (2, 20, 1, -2)];
+    let mut surviving = cancelling.to_vec();
+    surviving.push((3, 30, 0, 1));
+
+    for (rows, empty) in [(cancelling, true), (surviving.as_slice(), false)] {
+        let batch = Projectable::from_projected_vec(&factories, projected_inner(rows));
+        assert_eq!(batch.is_empty(), empty, "first call on {rows:?}");
+        assert_eq!(batch.is_empty(), empty, "kept answer on {rows:?}");
+        assert_eq!(batch.clone().is_empty(), empty, "clone of {rows:?}");
+        assert_eq!(batch.neg_by_ref().is_empty(), empty, "negation of {rows:?}");
+    }
+}
+
+/// Spilling a projected batch to storage drops the trailing column: the file
+/// holds the values a reader of the batch sees, so it is an ordinary batch that
+/// reopens without one.
+#[test]
+fn test_fallback_indexed_wset_persisting_drops_the_hidden_column() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        // Value 10 is held at two stamps, so the inner batch has one more record
+        // than the projection exposes.
+        let rows: &[ProjectedRow] = &[(1, 10, 0, 1), (1, 10, 5, 2), (1, 20, 1, 1)];
+        let expected = vec![(1, 10, 3), (1, 20, 1)];
+
+        let batch = Projectable::from_projected_vec(&factories, projected_inner(rows));
+        assert_eq!(
+            batch.len_upper_bound(),
+            3,
+            "the inner batch still counts stamps"
+        );
+
+        let persisted = batch
+            .persisted()
+            .expect("an in-memory batch persists to storage");
+        assert_eq!(persisted.location(), BatchLocation::Storage);
+        assert_eq!(
+            projected_contents(&persisted),
+            expected,
+            "spilling must not disturb the projection"
+        );
+        assert_eq!(
+            persisted.len_upper_bound(),
+            expected.len(),
+            "the spilled batch counts values, so the column is gone rather than hidden"
+        );
+
+        let path: StoragePath = persisted.file_reader().unwrap().path().to_string().into();
+        let reopened = Projectable::from_path(&factories, &path)
+            .expect("a batch spilled from a projected one reopens as an ordinary batch");
+        assert_eq!(projected_contents(&reopened), expected);
+        assert_eq!(reopened.len_upper_bound(), expected.len());
+    });
+}
+
+/// A file whose values do carry the trailing column reopens as a projected
+/// batch, on the stamp the file records.
+#[test]
+fn test_fallback_indexed_wset_reopens_a_stamped_file_as_projected() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        let rows: &[ProjectedRow] = &[(1, 10, 0, 1), (1, 10, 5, 2), (1, 20, 1, 1)];
+        let expected = vec![(1, 10, 3), (1, 20, 1)];
+
+        let batch =
+            Projectable::from_projected_file(&factories, projected_inner_file(&factories, rows));
+        assert_eq!(projected_contents(&batch), expected);
+
+        let path: StoragePath = batch.file_reader().unwrap().path().to_string().into();
+        let reopened = Projectable::from_path(&factories, &path).expect("a stamped file reopens");
+        assert_eq!(
+            projected_contents(&reopened),
+            expected,
+            "the stamp must route the file back to the projected variant"
+        );
+        assert_eq!(
+            reopened.len_upper_bound(),
+            3,
+            "reopened as projected, so the count is still over the stamped records"
+        );
+    });
+}
+
+/// A stamped file opened through factories that describe no projection is
+/// refused.
+///
+/// The plain factories cannot read the file: its values carry a column they know
+/// nothing about, and decoding one as the other would hand rkyv a record of the
+/// wrong type.  The stamp the file records is what makes the refusal possible.
+#[test]
+fn test_fallback_indexed_wset_refuses_a_stamped_file_without_projection() {
+    run_in_circuit_with_storage(|| {
+        let projecting =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        let batch = Projectable::from_projected_file(
+            &projecting,
+            projected_inner_file(&projecting, &[(1, 10, 0, 1)]),
+        );
+        let path: StoragePath = batch.file_reader().unwrap().path().to_string().into();
+
+        let plain =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::new::<i32, i32, ZWeight>(
+            );
+        assert!(
+            matches!(
+                Projectable::from_path(&plain, &path),
+                Err(ReaderError::Corruption(
+                    CorruptionError::ValueStampMismatch {
+                        expected: false,
+                        found: true,
+                    }
+                ))
+            ),
+            "a stamped file must be refused, not read as an unstamped one"
+        );
+    });
+}
+
+/// Fetching keys from a projected batch on storage returns their records with
+/// the trailing value hidden, as the batch's own cursor does, so a spine can read
+/// such a batch with one parallel fetch instead of a lookup per key.
+#[test]
+fn test_fallback_indexed_wset_fetches_projected_keys() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        // Key 1 keeps both of its values, the only value of key 2 cancels, and
+        // key 3 is not asked for.
+        let rows: &[ProjectedRow] = &[
+            (1, 10, 0, 1),
+            (1, 10, 1, 2),
+            (1, 20, 0, 1),
+            (2, 20, 0, 5),
+            (2, 20, 1, -5),
+            (3, 30, 0, 4),
+        ];
+        let batch =
+            Projectable::from_projected_file(&factories, projected_inner_file(&factories, rows));
+
+        // Only the keys of `wanted` matter: 1, 2, and 4, which the batch lacks.
+        let wanted = projected_inner(&[(1, 0, 0, 1), (2, 0, 0, 1), (4, 0, 0, 1)]);
+        let fetched = TOKIO
+            .block_on(batch.fetch(&wanted))
+            .expect("a projected batch on storage fetches the keys it is asked for");
+        assert_eq!(
+            cursor_contents(&mut *fetched.get_cursor()),
+            vec![(1, 10, 3), (1, 20, 1)],
+            "the fetched records must hide the trailing value"
+        );
+    });
+}
+
+/// Factories that describe no projection cannot hold a projected batch, and say
+/// so rather than reading its values as though they had no trailing column.
+#[test]
+#[should_panic(expected = "with_projection")]
+fn test_fallback_indexed_wset_projection_requires_its_factories() {
+    let plain =
+        <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::new::<i32, i32, ZWeight>();
+    let _ = Projectable::from_projected_vec(&plain, projected_inner(&[(1, 10, 0, 1)]));
+}
+
+/// Rows for a projected batch.  A row may be mirrored by one that carries the
+/// negated weight under another stamp, which cancels the row in the projection
+/// but not in the inner batch, so values, keys, and whole batches can cancel.
+///
+/// # Returns
+///
+/// A strategy for the rows.
+fn projected_rows() -> impl Strategy<Value = Vec<ProjectedRow>> + Clone {
+    vec(
+        (
+            0..8i32,
+            0..4i32,
+            0..4u32,
+            prop_oneof![-2i64..=-1, 1i64..=2],
+            any::<bool>(),
+        ),
+        0..30,
+    )
+    .prop_map(|rows| {
+        let mut projected = Vec::with_capacity(rows.len() * 2);
+        for (key, value, stamp, weight, mirror) in rows {
+            projected.push((key, value, stamp, weight));
+            if mirror {
+                projected.push((key, value, stamp + 4, -weight));
+            }
+        }
+        projected
+    })
+}
+
+/// The batch that a projected batch over `rows` must read as: the rows without
+/// their stamps, consolidated.
+///
+/// # Arguments
+///
+/// * `rows` - the projected batch's rows.
+///
+/// # Returns
+///
+/// A reference batch holding the projection.
+fn projected_reference(rows: &[ProjectedRow]) -> TestBatch<DynData, DynData, (), DynZWeight> {
+    let tuples = rows
+        .iter()
+        .map(|&(key, value, _stamp, weight)| Tup2(Tup2(key, value), weight))
+        .collect();
+    TestBatch::dyn_from_tuples(
+        &TestBatchFactories::new(),
+        (),
+        &mut indexed_zset_tuples(tuples),
+    )
+}
+
+/// `rows` with every weight negated.
+///
+/// # Arguments
+///
+/// * `rows` - the rows to negate.
+///
+/// # Returns
+///
+/// The negated rows, which a negated projected batch must read as.
+fn negated(rows: &[ProjectedRow]) -> Vec<ProjectedRow> {
+    rows.iter()
+        .map(|&(key, value, stamp, weight)| (key, value, stamp, -weight))
+        .collect()
+}
+
+/// A retention filter that keeps the keys from `bound` up.
+///
+/// # Arguments
+///
+/// * `bound` - the least key to keep.
+///
+/// # Returns
+///
+/// The filter.
+fn keys_from(bound: i32) -> Filter<DynData> {
+    Filter::new(Box::new(move |key: &DynData| {
+        *key.downcast_checked::<i32>() >= bound
+    }))
+}
+
+/// A retention filter that keeps the values from `bound` up.
+///
+/// # Arguments
+///
+/// * `bound` - the least value to keep.
+///
+/// # Returns
+///
+/// The filter.
+fn values_from(bound: i32) -> GroupFilter<DynData> {
+    GroupFilter::Simple(Filter::new(Box::new(move |value: &DynData| {
+        *value.downcast_checked::<i32>() >= bound
+    })))
+}
+
+proptest! {
+    /// A projected batch, in memory or on storage, and its negation read as their
+    /// projections, and their size bounds, `is_empty`, negative weight counts, and
+    /// key samples agree with their cursors however much of them cancels.
+    #[test]
+    fn projected_batch_reads_as_its_projection(rows in projected_rows(), seed in 0..u64::MAX) {
+        let factories =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        let reference = projected_reference(&rows);
+        let batch = Projectable::from_projected_vec(&factories, projected_inner(&rows));
+        assert_batch_eq(&batch, &reference);
+        assert_batch_cursors_eq(batch.cursor(), &reference, seed);
+        test_batch_sampling(&batch);
+        assert_negative_weights_counted(&batch);
+        let negation = batch.neg_by_ref();
+        assert_batch_eq(&negation, &projected_reference(&negated(&rows)));
+        assert_negative_weights_counted(&negation);
+
+        run_in_circuit_with_storage(move || {
+            let factories =
+                <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+                    i32,
+                    i32,
+                    ZWeight,
+                >();
+            let reference = projected_reference(&rows);
+            let batch =
+                Projectable::from_projected_file(&factories, projected_inner_file(&factories, &rows));
+            assert_batch_eq(&batch, &reference);
+            assert_batch_cursors_eq(batch.cursor(), &reference, seed);
+            test_batch_sampling(&batch);
+            assert_negative_weights_counted(&batch);
+            let negation = batch.neg_by_ref();
+            assert_batch_eq(&negation, &projected_reference(&negated(&rows)));
+            assert_negative_weights_counted(&negation);
+        });
+    }
+
+    /// A spine of projected batches, in memory or on storage, reads as a spine
+    /// of their projections while it merges them and drops the records its
+    /// retention filters reject, its size bounds and `is_empty` agree with its
+    /// cursor, and each batch it holds counts its negative weights.
+    #[test]
+    fn projected_batches_merge_into_a_spine(
+        batches in vec(
+            (projected_rows(), any::<bool>(), any::<bool>(), 0..4i32, 0..3i32),
+            0..12,
+        ),
+        seed in 0..u64::MAX,
+    ) {
+        run_in_circuit_with_storage(move || {
+            let factories =
+                <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+                    i32,
+                    i32,
+                    ZWeight,
+                >();
+            let mut spine: Spine<Projectable> =
+                Spine::new(&factories, Arc::new(String::from("Test")), TraceRole::Integral);
+            let mut reference: TestBatch<DynData, DynData, (), DynZWeight> = TestBatch::new(
+                &TestBatchFactories::new(),
+                Arc::new(String::from("Test")),
+                TraceRole::Integral,
+            );
+            let mut least_key = 0;
+            let mut least_value = 0;
+            for (rows, on_storage, merge, key_bound, value_bound) in batches {
+                let batch = if on_storage {
+                    Projectable::from_projected_file(
+                        &factories,
+                        projected_inner_file(&factories, &rows),
+                    )
+                } else {
+                    Projectable::from_projected_vec(&factories, projected_inner(&rows))
+                };
+                TOKIO.block_on(spine.insert(batch));
+                TOKIO.block_on(reference.insert(projected_reference(&rows)));
+
+                // The spine can still hold records that a higher bound rejected,
+                // so the bounds never fall.
+                least_key = max(least_key, key_bound);
+                least_value = max(least_value, value_bound);
+                spine.retain_keys(keys_from(least_key));
+                reference.retain_keys(keys_from(least_key));
+                spine.retain_values(values_from(least_value));
+                reference.retain_values(values_from(least_value));
+
+                // The merger in the background may or may not get to the
+                // batches before the checks; merging here makes sure that some
+                // merges read projected batches.
+                if merge {
+                    spine.complete_merges();
+                }
+                assert_trace_eq(&spine, &reference);
+                assert_batch_cursors_eq(spine.cursor(), &reference, seed);
+                test_trace_sampling(&spine);
+                for batch in spine.get_batches() {
+                    assert_negative_weights_counted(&*batch);
+                }
+            }
+        });
+    }
 }
 
 #[test]
@@ -1235,6 +1820,49 @@ fn test_fork_spine_metadata() {
     .unwrap();
 }
 
+/// A spine whose separate batches cancel each other yields nothing through its
+/// cursor, so it and its snapshot are empty although every batch holds updates.
+///
+/// The topmost level of a spine merges early once enough of its records have
+/// negative weights.  That merge runs in the background and may cancel the
+/// batches before the test looks at them, so the test turns it off.
+#[test]
+fn spine_is_empty_when_its_batches_cancel() {
+    let config = CircuitConfig::with_workers(1).with_dev_tweaks(DevTweaks {
+        top_level_negative_weight_fraction: Some(1.0),
+        ..DevTweaks::default()
+    });
+    Runtime::run(config, move |_parker| {
+        let factories = <OrdZSetFactories<DynI32>>::new::<i32, (), ZWeight>();
+        let batch = |tuples: Vec<Tup2<i32, ZWeight>>| {
+            OrdZSet::<DynI32>::dyn_from_tuples(&factories, (), &mut zset_tuples(tuples))
+        };
+        let mut spine: Spine<OrdZSet<DynI32>> = Spine::new(
+            &factories,
+            Arc::new(String::from("Test")),
+            TraceRole::Integral,
+        );
+        assert!(spine.is_empty());
+
+        TOKIO.block_on(spine.insert(batch(vec![Tup2(1, 1), Tup2(2, 1)])));
+        assert!(!spine.is_empty());
+        TOKIO.block_on(spine.insert(batch(vec![Tup2(1, -1)])));
+        assert!(!spine.is_empty());
+        assert!(!spine.ro_snapshot().is_empty());
+        TOKIO.block_on(spine.insert(batch(vec![Tup2(2, -1)])));
+
+        // The batches have not been merged, so their counts still add up.
+        assert_eq!(spine.len_upper_bound(), 4);
+        assert!(spine.is_empty());
+        assert!(spine.ro_snapshot().is_empty());
+        assert_bounds_match_cursor(&spine);
+        assert_bounds_match_cursor(&spine.ro_snapshot());
+    })
+    .unwrap()
+    .join()
+    .unwrap();
+}
+
 /// Executes `f`, once, inside a circuit initialized so that it has access to
 /// storage.
 ///
@@ -1412,6 +2040,232 @@ fn test_fallback_wset_roaring_filter_rebuilt_after_storage_merge() {
         assert!(!cursor.seek_key_exact(missing.erase(), None));
         assert_eq!(total_cache_accesses(merged.cache_stats()), before);
     });
+}
+
+/// Lists the keys that `seek_key_exact` does not find in a batch.
+///
+/// # Arguments
+///
+/// * `batch` - A batch keyed by `Tup1<i64>`.
+/// * `keys` - The keys to look up, each with a fresh cursor.
+///
+/// # Returns
+///
+/// The keys that were not found, in the order of `keys`.
+fn keys_not_found<B>(batch: &B, keys: &[i64]) -> Vec<i64>
+where
+    B: BatchReader<Key = DynData>,
+{
+    keys.iter()
+        .copied()
+        .filter(|key| !batch.cursor().seek_key_exact(Tup1(*key).erase(), None))
+        .collect()
+}
+
+/// Checks that a merged batch's roaring filter still finds every key after
+/// the batch is reloaded from storage, when the merge drops the smallest key
+/// of its inputs.
+///
+/// A merge plans its roaring filter around the smallest key of its input
+/// batches. Here that key has weight 1 in one input and -1 in the other, so
+/// the merged batch starts at a larger key. The surviving keys sit at odd
+/// offsets from the dropped one, so a filter decoded relative to the merged
+/// batch's first key, instead of the base it was built from, probes only clear
+/// bits. The reload happens in a fresh circuit, as a restore does.
+///
+/// Each of the four file batch types reaches the filter through its own
+/// `from_path`, so all of them run through this check.
+///
+/// # Arguments
+///
+/// * `label` - Names the batch type in failure messages.
+/// * `factories` - Returns the factories of the batch type, keyed by
+///   `Tup1<i64>`.
+/// * `build` - Builds a batch from `(key, weight)` pairs in ascending key
+///   order.
+fn assert_roaring_filter_survives_reload<B>(
+    label: &str,
+    factories: fn() -> B::Factories,
+    build: fn(&B::Factories, &[(i64, ZWeight)]) -> B,
+) where
+    B: Batch<Key = DynData> + Send + 'static,
+    B::Factories: Send + 'static,
+{
+    const MINIMUM: i64 = 8_000_000;
+    const NAME: &str = "merged-batch.feldera";
+    let label = label.to_string();
+    let keys: Vec<i64> = (0..1_000).map(|i| MINIMUM + 1 + 2 * i).collect();
+
+    // A circuit deletes its storage directory when it shuts down, so the
+    // merged batch file is stashed outside it and copied into the next one.
+    let temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let stash = temp_dir.path().join("stashed-batch.feldera");
+    let write_dir = temp_dir.path().join("write");
+    let read_dir = temp_dir.path().join("read");
+    std::fs::create_dir_all(&write_dir).unwrap();
+    std::fs::create_dir_all(&read_dir).unwrap();
+
+    let mut config = mkconfig(&write_dir);
+    config.dev_tweaks.enable_roaring = Some(true);
+    {
+        let (label, keys, stash, write_dir) = (
+            label.clone(),
+            keys.clone(),
+            stash.clone(),
+            write_dir.clone(),
+        );
+        run_in_circuit_with_storage_config(config, move || {
+            let factories = factories();
+            let input: Vec<(i64, ZWeight)> = std::iter::once(MINIMUM)
+                .chain(keys.iter().copied())
+                .map(|key| (key, 1))
+                .collect();
+            let with_minimum = build(&factories, &input);
+            let cancels_minimum = build(&factories, &[(MINIMUM, -1)]);
+            let merged: B = ListMerger::merge(
+                &factories,
+                B::Builder::for_merge(
+                    &factories,
+                    [&with_minimum, &cancels_minimum],
+                    Some(BatchLocation::Storage),
+                ),
+                vec![
+                    with_minimum.merge_cursor(None, None),
+                    cancels_minimum.merge_cursor(None, None),
+                ],
+            );
+
+            assert_eq!(
+                merged.membership_filter_kind(),
+                FilterKind::Roaring,
+                "{label}"
+            );
+            let (first, _) = merged.key_bounds().expect("merged batch is empty");
+            assert_eq!(
+                *first.downcast_checked::<Tup1<i64>>(),
+                Tup1(MINIMUM + 1),
+                "{label}"
+            );
+            assert_eq!(
+                keys_not_found(&merged, &keys),
+                Vec::<i64>::new(),
+                "{label}: keys not found before reload"
+            );
+
+            let file = merged
+                .file_reader()
+                .expect("merged batch must be file backed");
+            let source = file.path().to_string();
+            std::fs::copy(write_dir.join(source.trim_start_matches('/')), &stash).unwrap();
+        });
+    }
+
+    std::fs::copy(&stash, read_dir.join(NAME)).unwrap();
+    let mut config = mkconfig(&read_dir);
+    config.dev_tweaks.enable_roaring = Some(true);
+    run_in_circuit_with_storage_config(config, move || {
+        let reloaded = B::from_path(&factories(), &StoragePath::from(NAME))
+            .unwrap_or_else(|e| panic!("{label}: reloading the merged batch: {e}"));
+
+        assert_eq!(
+            reloaded.membership_filter_kind(),
+            FilterKind::Roaring,
+            "{label}"
+        );
+        let missing = keys_not_found(&reloaded, &keys);
+        assert!(
+            missing.is_empty(),
+            "{label}: {} of {} keys not found after reload, starting with {:?}",
+            missing.len(),
+            keys.len(),
+            &missing[..missing.len().min(5)]
+        );
+    });
+}
+
+#[test]
+fn file_wset_roaring_filter_survives_reload_after_the_minimum_cancels() {
+    assert_roaring_filter_survives_reload::<FileWSet<DynData, DynZWeight>>(
+        "FileWSet",
+        <FileWSetFactories<DynData, DynZWeight>>::new::<Tup1<i64>, (), ZWeight>,
+        |factories, tuples| {
+            let mut builder = <FileWSet<DynData, DynZWeight> as Batch>::Builder::with_capacity(
+                factories,
+                tuples.len(),
+                0,
+            );
+            for (key, weight) in tuples {
+                builder.push_time_diff(&(), weight.erase());
+                builder.push_key(Tup1(*key).erase());
+            }
+            builder.done()
+        },
+    );
+}
+
+#[test]
+fn file_indexed_wset_roaring_filter_survives_reload_after_the_minimum_cancels() {
+    assert_roaring_filter_survives_reload::<FileIndexedWSet<DynData, DynData, DynZWeight>>(
+        "FileIndexedWSet",
+        <FileIndexedWSetFactories<DynData, DynData, DynZWeight>>::new::<Tup1<i64>, i64, ZWeight>,
+        |factories, tuples| {
+            let mut builder =
+                <FileIndexedWSet<DynData, DynData, DynZWeight> as Batch>::Builder::with_capacity(
+                    factories,
+                    tuples.len(),
+                    tuples.len(),
+                );
+            for (key, weight) in tuples {
+                builder.push_val_diff(0i64.erase(), weight.erase());
+                builder.push_key(Tup1(*key).erase());
+            }
+            builder.done()
+        },
+    );
+}
+
+#[test]
+fn file_key_batch_roaring_filter_survives_reload_after_the_minimum_cancels() {
+    assert_roaring_filter_survives_reload::<FileKeyBatch<DynData, u32, DynZWeight>>(
+        "FileKeyBatch",
+        <FileKeyBatchFactories<DynData, u32, DynZWeight>>::new::<Tup1<i64>, (), ZWeight>,
+        |factories, tuples| {
+            let mut builder =
+                <FileKeyBatch<DynData, u32, DynZWeight> as Batch>::Builder::with_capacity(
+                    factories,
+                    tuples.len(),
+                    tuples.len(),
+                );
+            for (key, weight) in tuples {
+                builder.push_time_diff(&0u32, weight.erase());
+                builder.push_val(().erase());
+                builder.push_key(Tup1(*key).erase());
+            }
+            builder.done()
+        },
+    );
+}
+
+#[test]
+fn file_val_batch_roaring_filter_survives_reload_after_the_minimum_cancels() {
+    assert_roaring_filter_survives_reload::<FileValBatch<DynData, DynData, u32, DynZWeight>>(
+        "FileValBatch",
+        <FileValBatchFactories<DynData, DynData, u32, DynZWeight>>::new::<Tup1<i64>, i64, ZWeight>,
+        |factories, tuples| {
+            let mut builder =
+                <FileValBatch<DynData, DynData, u32, DynZWeight> as Batch>::Builder::with_capacity(
+                    factories,
+                    tuples.len(),
+                    tuples.len(),
+                );
+            for (key, weight) in tuples {
+                builder.push_time_diff(&0u32, weight.erase());
+                builder.push_val(0i64.erase());
+                builder.push_key(Tup1(*key).erase());
+            }
+            builder.done()
+        },
+    );
 }
 
 /// Builds a `FallbackIndexedWSet` over `(key, value, weight)` triples.
@@ -2046,10 +2900,30 @@ fn assert_seek_key_exact_matches<B>(
     }
 }
 
+/// Reopens a file-backed batch from its file, as a restore does.
+///
+/// # Arguments
+///
+/// * `batch` - A batch that resides in storage.
+/// * `factories` - The factories of the batch's type.
+///
+/// # Returns
+///
+/// A second batch that reads the same file.
+fn reopen<B>(batch: &B, factories: &B::Factories) -> B
+where
+    B: Batch,
+{
+    let file = batch.file_reader().expect("batch must be file backed");
+    B::from_path(factories, file.path())
+        .unwrap_or_else(|e| panic!("reopening {}: {e}", file.path()))
+}
+
 /// Shared body for `indexed_wset_storage_merges_*` proptests. Generates
 /// inputs as a vec/file mix, runs `ListMerger::merge` to file storage, and
-/// validates the merged batch against a `TestBatch` reference. The input
-/// batches are reduced by an optional key filter `retain_above`.
+/// validates the merged batch against a `TestBatch` reference, both as the
+/// merge wrote it and reopened from its file. The input batches are reduced by
+/// an optional key filter `retain_above`.
 fn run_indexed_wset_storage_merges(
     batches: MergeInputBatches,
     retain_above: Option<i32>,
@@ -2079,7 +2953,7 @@ fn run_indexed_wset_storage_merges(
 
         // Sanity check that each input batch resides where we requested it to be.
         for (input, (_tuples, requested_loc)) in inputs.iter().zip(batches.iter()) {
-            if input.key_count() > 0 {
+            if input.key_count_upper_bound() > 0 {
                 assert_eq!(input.location(), *requested_loc);
             }
         }
@@ -2126,17 +3000,34 @@ fn run_indexed_wset_storage_merges(
             fc.allowed_filter_kinds().contains(&kind),
             "filter kind {kind:?} is not allowed under {fc:?}",
         );
+        if merged.is_empty() {
+            assert_eq!(
+                kind,
+                FilterKind::None,
+                "the empty merged batch has a filter"
+            );
+        }
         assert_batch_eq(&merged, &expected);
 
         // Check some absent probes across the input range.
         let absent_probes = (-150_000i32..=150_000).step_by(7_500);
-        assert_seek_key_exact_matches(&merged, &expected, absent_probes, 42);
+        assert_seek_key_exact_matches(&merged, &expected, absent_probes.clone(), 42);
+
+        // A restore reopens every batch from its file, and the filter it loads
+        // must answer like the one the merge built. The merge drops keys that
+        // cancel or fall below `retain_above`, so the file can start above the
+        // smallest input key.
+        let reopened = reopen(&merged, &factories);
+        assert_eq!(reopened.membership_filter_kind(), kind);
+        assert_batch_eq(&reopened, &expected);
+        assert_seek_key_exact_matches(&reopened, &expected, absent_probes, 42);
     });
 }
 
 /// Dense-key sibling of `run_indexed_wset_storage_merges`. Same merge plumbing
 /// but with the `0..200` key domain so we probe every possible key in
-/// `seek_key_exact` and so per-batch overlap is high.
+/// `seek_key_exact` and so per-batch overlap is high. It also validates the
+/// merged batch reopened from its file.
 fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterConfig) {
     let _temp_dir = tempdir().expect("Can't create temp dir for storage");
     let mut config = mkconfig(_temp_dir.path());
@@ -2157,7 +3048,7 @@ fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterC
             .collect();
 
         for (input, (_tuples, requested_loc)) in inputs.iter().zip(batches.iter()) {
-            if input.key_count() > 0 {
+            if input.key_count_upper_bound() > 0 {
                 assert_eq!(input.location(), *requested_loc);
             }
         }
@@ -2191,12 +3082,27 @@ fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterC
             fc.allowed_filter_kinds().contains(&kind),
             "filter kind {kind:?} is not allowed under {fc:?}",
         );
+        if merged.is_empty() {
+            assert_eq!(
+                kind,
+                FilterKind::None,
+                "the empty merged batch has a filter"
+            );
+        }
 
         assert_batch_eq(&merged, &expected);
 
         // Key domain is `0..200`; probe every value to cover present and
         // absent paths exhaustively.
         assert_seek_key_exact_matches(&merged, &expected, 0..200i32, 42);
+
+        // A restore reopens every batch from its file, and the filter it loads
+        // must answer like the one the merge built, even when the smallest
+        // input key cancelled out of the merged batch.
+        let reopened = reopen(&merged, &factories);
+        assert_eq!(reopened.membership_filter_kind(), kind);
+        assert_batch_eq(&reopened, &expected);
+        assert_seek_key_exact_matches(&reopened, &expected, 0..200i32, 42);
     });
 }
 
@@ -2285,6 +3191,39 @@ proptest! {
         ),
     ) {
         run_indexed_wset_storage_merges_dense(batches, FilterConfig::Neither);
+    }
+}
+
+/// Merges an empty input, inputs whose weights cancel, and an input whose keys
+/// a key filter drops, under every filter configuration.
+///
+/// Each merge picks its output's filter before it learns that no key survives.
+/// The runners check that the empty output has no filter, both as the merge
+/// built it and as reopened from its file.
+#[test]
+fn indexed_wset_storage_merges_to_empty_batch() {
+    for fc in [
+        FilterConfig::BloomOnly,
+        FilterConfig::RoaringOnly,
+        FilterConfig::Both,
+        FilterConfig::Neither,
+    ] {
+        run_indexed_wset_storage_merges_dense(vec![(Vec::new(), BatchLocation::Storage)], fc);
+        run_indexed_wset_storage_merges_dense(
+            vec![
+                (vec![Tup2(Tup2(5, 1), 2)], BatchLocation::Storage),
+                (vec![Tup2(Tup2(5, 1), -2)], BatchLocation::Memory),
+            ],
+            fc,
+        );
+        run_indexed_wset_storage_merges(
+            vec![(
+                vec![Tup2(Tup2(-5, 1), 1), Tup2(Tup2(7, 0), -1)],
+                BatchLocation::Storage,
+            )],
+            Some(7),
+            fc,
+        );
     }
 }
 

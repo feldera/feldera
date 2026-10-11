@@ -36,7 +36,9 @@ use crate::server::{InitializationState, ServerState};
 use crate::transport::Step;
 use crate::transport::clock::now_endpoint_config;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
-use crate::util::{LongOperationWarning, missing_pipeline_identity_message, run_on_thread_pool};
+use crate::util::{
+    LongOperationWarning, MemoryUseReporter, missing_pipeline_identity_message, run_on_thread_pool,
+};
 use crate::{
     CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
     PipelineError, PipelineState, TransportInputEndpoint,
@@ -6383,6 +6385,7 @@ impl StatisticsThread {
     ) {
         let mut last = Instant::now();
         let mut storage_byte_msecs = 0;
+        let mut memory_use_reporter = MemoryUseReporter::new("RSS", 512 * 1024 * 1024);
         while !exit.load(Ordering::Acquire) {
             let storage_bytes = if let Some(storage_backend) = &storage_backend {
                 // Measure.
@@ -6409,13 +6412,14 @@ impl StatisticsThread {
                 0
             };
 
-            // Update time series..
+            // Update time series.
+            let memory_bytes = process_rss_bytes().unwrap_or_default();
             let sample = SampleStatistics {
                 time: Utc::now(),
                 total_processed_records: controller_status
                     .global_metrics
                     .num_total_processed_records(),
-                memory_bytes: process_rss_bytes().unwrap_or_default(),
+                memory_bytes,
                 storage_bytes,
             };
             let mut time_series = controller_status.time_series.lock().unwrap();
@@ -6424,6 +6428,9 @@ impl StatisticsThread {
             }
             time_series.push_back(sample);
             drop(time_series);
+
+            // Log RSS growth.
+            memory_use_reporter.update(memory_bytes);
 
             // Notify subscribers about the new time series data
             let _ = controller_status.time_series_notifier.send(sample);
@@ -6488,6 +6495,12 @@ struct OutputEndpointDescr {
 
     /// Transaction number when the endpoint was created.
     /// 0 - the endpoint was created before the first transaction performed by the controller.
+    ///
+    /// The endpoint skips this transaction's output.  Each worker samples its
+    /// stream's enable count once per transaction, so this transaction
+    /// might have missed the enable that created the endpoint, and its output
+    /// could lack some workers' rows.  [OutputEndpoints::insert] reads it
+    /// after that enable, so that every later transaction sees the enable.
     created_during_transaction_number: u64,
 
     /// FIFO queue of batches read from the stream.
@@ -6514,7 +6527,6 @@ impl OutputEndpointDescr {
         stream_name: &str,
         send_snapshot: bool,
         snapshot_already_sent: bool,
-        created_during_transaction_number: u64,
         command_handler: Option<Arc<dyn CommandHandler>>,
         unparker: Unparker,
     ) -> Self {
@@ -6528,7 +6540,9 @@ impl OutputEndpointDescr {
                 snapshot_already_sent,
             )),
             disconnect_flag: Arc::new(AtomicBool::new(false)),
-            created_during_transaction_number,
+            // A placeholder: [OutputEndpoints::insert] sets the real value before it
+            // publishes the endpoint, so `push_output` never sees this one.
+            created_during_transaction_number: 0,
             unparker,
         }
     }
@@ -6608,6 +6622,12 @@ impl OutputEndpoints {
     ///
     /// * `endpoint_id` - Id of the endpoint.
     /// * `endpoint_descr` - The endpoint.  Its `stream_name` names the group.
+    /// * `transaction_number` - Reads the current transaction number, which
+    ///   becomes the endpoint's
+    ///   [OutputEndpointDescr::created_during_transaction_number].  This is
+    ///   called after the endpoint enables its handles, and it must read the
+    ///   number in a way that is ordered after that enable; see
+    ///   [ControllerInner::transaction_number_after_enable].
     ///
     /// # Returns
     ///
@@ -6617,7 +6637,8 @@ impl OutputEndpoints {
     fn insert(
         &mut self,
         endpoint_id: EndpointId,
-        endpoint_descr: OutputEndpointDescr,
+        mut endpoint_descr: OutputEndpointDescr,
+        transaction_number: impl FnOnce() -> u64,
     ) -> Result<(), ControllerError> {
         let Some((handles, endpoints)) = self.by_stream.get_mut(&endpoint_descr.stream_name) else {
             return Err(ControllerError::unknown_output_stream(
@@ -6626,6 +6647,7 @@ impl OutputEndpoints {
             ));
         };
         handles.enable_count.enable();
+        endpoint_descr.created_during_transaction_number = transaction_number();
         endpoints.insert(endpoint_id);
         self.by_id.insert(endpoint_id, endpoint_descr);
         Ok(())
@@ -7549,12 +7571,28 @@ impl ControllerInner {
         self.last_checkpoint_sync.lock().unwrap().clone()
     }
 
+    // Both use `SeqCst` to pair with `EnableCount` (see [OutputEndpoints::insert]).
     fn get_transaction_number(&self) -> u64 {
-        self.transaction_number.load(Ordering::Acquire)
+        self.transaction_number.load(Ordering::SeqCst)
+    }
+
+    /// Returns the current transaction number, ordered after the caller's
+    /// earlier write to an accumulator's enable count.
+    ///
+    /// The caller enables an accumulator and then reads the transaction
+    /// number, while the circuit thread increments the transaction number
+    /// and then its workers read the enable count.  With plain loads, both
+    /// reads could see the old values, so that the next transaction misses
+    /// the enable although this read claims it sees it.  A read-modify-write
+    /// takes a place in the transaction number's modification order: if it
+    /// reads the old number, then the circuit thread's increment reads from
+    /// it and so happens after the enable.
+    fn transaction_number_after_enable(&self) -> u64 {
+        self.transaction_number.fetch_add(0, Ordering::AcqRel)
     }
 
     fn increment_transaction_number(&self) {
-        self.transaction_number.fetch_add(1, Ordering::AcqRel);
+        self.transaction_number.fetch_add(1, Ordering::SeqCst);
     }
 
     /// Sets the journaled transaction id of the replay step the circuit thread
@@ -7937,7 +7975,7 @@ impl ControllerInner {
 
         match self
             .num_api_connections
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, update)
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, update)
         {
             Ok(_) => Ok(ApiConnectionGuard(self)),
             Err(_) => Err(PipelineError::ApiConnectionLimit),
@@ -8283,7 +8321,6 @@ impl ControllerInner {
             &stream_name,
             endpoint_config.connector_config.send_snapshot,
             snapshot_already_sent,
-            self.get_transaction_number(),
             command_handler,
             parker.unparker().clone(),
         );
@@ -8295,7 +8332,9 @@ impl ControllerInner {
         if outputs.lookup_by_name(endpoint_name).is_some() {
             Err(ControllerError::duplicate_output_endpoint(endpoint_name))?;
         }
-        outputs.insert(endpoint_id, endpoint_descr)?;
+        outputs.insert(endpoint_id, endpoint_descr, || {
+            self.transaction_number_after_enable()
+        })?;
         drop(outputs);
 
         // We succeeded, cancel removal of the endpoint.
@@ -10181,7 +10220,7 @@ mod controller_init_tests {
         let config = pipeline_config(RuntimeConfig {
             workers: 1,
             dev_tweaks: DevTweaks {
-                min_accumulator_merge_batches: Some(16),
+                accumulator_merge_threshold_batches: Some(16),
                 ..Default::default()
             },
             ..Default::default()
@@ -10193,7 +10232,10 @@ mod controller_init_tests {
         match err {
             ControllerError::Config { config_error } => match *config_error {
                 ConfigError::InvalidDevTweaks { error } => {
-                    assert!(error.contains("min_accumulator_merge_batches"), "{error}");
+                    assert!(
+                        error.contains("accumulator_merge_threshold_batches"),
+                        "{error}"
+                    );
                 }
                 other => panic!("expected InvalidDevTweaks, got {other:?}"),
             },

@@ -5,6 +5,9 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.RecordComponent;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -15,6 +18,7 @@ import java.util.Set;
 public final class TablePair<R extends Record> {
     /** The prefixes of the names of the two tables. */
     public static final String[] PREFIXES = { "LATE_", "PLAIN_" };
+    static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /** A column of the tables, read from the record component {@code component}. */
     record Column(RecordComponent component, String sqlType) {
@@ -30,11 +34,7 @@ public final class TablePair<R extends Record> {
         /** The value of the column in {@code row}; null for NULL. */
         @Nullable
         Object read(Record row) {
-            try {
-                return this.component.getAccessor().invoke(row);
-            } catch (IllegalAccessException | InvocationTargetException ex) {
-                throw new RuntimeException(ex);
-            }
+            return TablePair.read(this.component, row);
         }
     }
 
@@ -50,26 +50,66 @@ public final class TablePair<R extends Record> {
     /** @param name         Suffix of the table names: the tables are LATE_name and PLAIN_name.
      *  @param nullable     True if the boxed columns of the tables accept NULL.
      *  @param rowClass     The record whose components are the columns of the tables.
-     *  @param lateColumns  Names of the columns with LATENESS in the LATE_ table; each is an INT column.
-     *  @param lateness     The LATENESS of these columns. */
-    public TablePair(String name, boolean nullable, Class<R> rowClass, Set<String> lateColumns, int lateness) {
+     *  @param lateColumns  The columns with LATENESS in the LATE_ table; each is a component of the record. */
+    public TablePair(String name, boolean nullable, Class<R> rowClass, List<ColumnWithLateness<R, ?>> lateColumns) {
         this.name = name;
         this.rowClass = rowClass;
         this.nullable = nullable;
         for (RecordComponent component : rowClass.getRecordComponents()) {
             // The row records are nested in the test classes, which are in another package
             component.getAccessor().setAccessible(true);
-            Column column = new Column(component, sqlType(component.getType()));
-            this.columns.add(column);
-            if (lateColumns.contains(column.name())) {
-                // Currently only INT columns can have lateness
-                Utilities.enforce(column.sqlType.equals("INT"),
-                        () -> "Column " + column.name() + " with LATENESS is not an INT");
-                this.schema.addColumn(new IntegerColumn<R>(column.name(), row -> (Integer) column.read(row), lateness));
-            }
+            this.columns.add(new Column(component, sqlType(component.getType())));
         }
-        for (String late : lateColumns)
-            Utilities.enforce(this.schema.hasLateness(late), () -> "No column " + late + " in " + rowClass);
+        for (ColumnWithLateness<R, ?> late : lateColumns) {
+            Column column = this.column(late.name);
+            Utilities.enforce(column != null, () -> "No column " + late + " in " + rowClass);
+            Utilities.enforce(column.sqlType.equals(late.sqlType()),
+                    () -> "Column " + late + " with LATENESS is not a " + late.sqlType());
+            this.schema.addColumn(late);
+        }
+    }
+
+    /** The column named {@code name}, or null if there is none. */
+    @Nullable
+    Column column(String name) {
+        for (Column column : this.columns)
+            if (column.name().equals(name))
+                return column;
+        return null;
+    }
+
+    /** @param name         Suffix of the table names: the tables are LATE_name and PLAIN_name.
+     *  @param nullable     True if the boxed columns of the tables accept NULL.
+     *  @param rowClass     The record whose components are the columns of the tables.
+     *  @param lateColumns  Names of the columns with LATENESS in the LATE_ table; each is an INT column.
+     *  @param lateness     The LATENESS of these columns. */
+    public TablePair(String name, boolean nullable, Class<R> rowClass, Set<String> lateColumns, int lateness) {
+        this(name, nullable, rowClass, integerColumns(rowClass, lateColumns, lateness));
+    }
+
+    /** An INT column with LATENESS {@code lateness} for each component of {@code rowClass} named in
+     * {@code names}. */
+    static <R extends Record> List<ColumnWithLateness<R, ?>> integerColumns(
+            Class<R> rowClass, Set<String> names, int lateness) {
+        List<ColumnWithLateness<R, ?>> result = new ArrayList<>();
+        for (RecordComponent component : rowClass.getRecordComponents()) {
+            if (!names.contains(component.getName()))
+                continue;
+            component.getAccessor().setAccessible(true);
+            result.add(new IntegerColumn<R>(component.getName(), row -> (Integer) read(component, row), lateness));
+        }
+        Utilities.enforce(result.size() == names.size(), () -> "Not all of " + names + " are columns of " + rowClass);
+        return result;
+    }
+
+    /** The value of {@code component} in {@code row}; null for NULL. */
+    @Nullable
+    static Object read(RecordComponent component, Record row) {
+        try {
+            return component.getAccessor().invoke(row);
+        } catch (IllegalAccessException | InvocationTargetException ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     /** The SQL type of a column for a record component of type {@code type}. */
@@ -78,6 +118,10 @@ public final class TablePair<R extends Record> {
             return "INT";
         if (type == long.class || type == Long.class)
             return "BIGINT";
+        if (type == LocalDateTime.class)
+            return "TIMESTAMP";
+        if (type == LocalDate.class)
+            return "DATE";
         throw new UnsupportedOperationException("No SQL type for " + type);
     }
 
@@ -109,8 +153,17 @@ public final class TablePair<R extends Record> {
     String values(R row) {
         List<String> values = new ArrayList<>();
         for (Column column : this.columns)
-            values.add(String.valueOf(column.read(row)));
+            values.add(literal(column.read(row)));
         return "(" + String.join(", ", values) + ")";
+    }
+
+    /** The SQL literal of a column value; NULL for null. */
+    static String literal(@Nullable Object value) {
+        if (value instanceof LocalDateTime timestamp)
+            return "TIMESTAMP '" + timestamp.format(TIMESTAMP_FORMAT) + "'";
+        if (value instanceof LocalDate date)
+            return "DATE '" + date + "'";
+        return String.valueOf(value);
     }
 
     /** The statement {@code command} applied to {@code row}, once for each table. */

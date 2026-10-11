@@ -1,4 +1,4 @@
-use crate::storage::file::format::BatchMetadata;
+use crate::storage::file::format::{BatchMetadata, ValueStampFlag};
 use crate::storage::file::{
     FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter, collect_roaring_metadata,
 };
@@ -13,7 +13,9 @@ use crate::{
         buffer_cache::CacheStats,
         file::{
             Factories as FileFactories, FilterPlan,
-            reader::{BulkRows, Cursor as FileCursor, Error as ReaderError, Reader},
+            reader::{
+                BulkRows, CorruptionError, Cursor as FileCursor, Error as ReaderError, Reader,
+            },
             writer::Writer2,
         },
     },
@@ -48,6 +50,13 @@ where
     factories1: FileFactories<V, R>,
     opt_key_factory: &'static dyn Factory<DynOpt<K>>,
     pub vec_indexed_wset_factory: VecIndexedWSetFactories<K, V, R>,
+
+    /// [`ValueStampFlag::UPSERT_INDEX`] if `V` carries a trailing column that is
+    /// not exposed by the readers, and [`ValueStampFlag::NO_STAMP`] otherwise.
+    ///
+    /// Files written with these factories record this flag, and files opened
+    /// with them must record the same one.
+    value_stamp: ValueStampFlag,
 }
 
 impl<K, V, R> Clone for FileIndexedWSetFactories<K, V, R>
@@ -62,7 +71,41 @@ where
             factories1: self.factories1.clone(),
             opt_key_factory: self.opt_key_factory,
             vec_indexed_wset_factory: self.vec_indexed_wset_factory.clone(),
+            value_stamp: self.value_stamp,
         }
+    }
+}
+
+impl<K, V, R> FileIndexedWSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    /// Like [`BatchReaderFactories::new`], but for a `VType` that carries a
+    /// trailing column that is not exposed by the readers.
+    ///
+    /// Files written through these factories record the stamp.
+    pub fn stamped<KType, VType, RType>() -> Self
+    where
+        KType: DBData + Erase<K>,
+        VType: DBData + Erase<V>,
+        RType: DBWeight + Erase<R>,
+    {
+        Self {
+            value_stamp: ValueStampFlag::UPSERT_INDEX,
+            ..Self::new::<KType, VType, RType>()
+        }
+    }
+
+    /// Returns the value stamp of the value type these factories describe.
+    ///
+    /// # Returns
+    ///
+    /// [`ValueStampFlag::UPSERT_INDEX`] for factories built by [`Self::stamped`], and
+    /// [`ValueStampFlag::NO_STAMP`] otherwise.
+    pub fn value_stamp(&self) -> ValueStampFlag {
+        self.value_stamp
     }
 }
 
@@ -83,6 +126,7 @@ where
             factories1: FileFactories::new::<VType, RType>(),
             opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
             vec_indexed_wset_factory: VecIndexedWSetFactories::new::<KType, VType, RType>(),
+            value_stamp: ValueStampFlag::NO_STAMP,
         }
     }
 
@@ -287,7 +331,7 @@ where
             Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap_storage(),
             Runtime::file_writer_parameters(),
-            FilterPlan::<K>::decide_filter(None, self.key_count()),
+            FilterPlan::<K>::decide_filter(None, self.key_count_upper_bound()),
         )
         .unwrap_storage();
 
@@ -303,9 +347,10 @@ where
             cursor.step_key();
         }
         let stats = BatchMetadata {
-            negative_weight_count: (self.len() as u64)
+            negative_weight_count: (self.len_upper_bound() as u64)
                 .saturating_sub(self.metadata().negative_weight_count),
             touched_window_count: self.metadata().touched_window_count,
+            value_stamp: self.metadata().value_stamp,
         };
         let (file, filters) = writer.into_reader(stats).unwrap_storage();
         Self::from_parts(self.factories.clone(), Arc::new(file), filters)
@@ -359,6 +404,11 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    fn is_empty(&self) -> bool {
+        // `len_upper_bound` is exact for this batch type: the file holds only the
+        // (key, value) pairs that its cursor yields.
+        self.len_upper_bound() == 0
+    }
     type Factories = FileIndexedWSetFactories<K, V, R>;
     type Key = K;
     type Val = V;
@@ -385,12 +435,12 @@ where
     }
 
     #[inline]
-    fn key_count(&self) -> usize {
+    fn key_count_upper_bound(&self) -> usize {
         self.file.n_rows(0) as usize
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    fn len_upper_bound(&self) -> usize {
         self.file.n_rows(1) as usize
     }
 
@@ -423,7 +473,7 @@ where
     where
         RG: Rng,
     {
-        let size = self.key_count();
+        let size = self.key_count_upper_bound();
         let mut cursor = self.cursor();
         if sample_size >= size {
             output.reserve(size);
@@ -456,7 +506,7 @@ where
             keys
         } else {
             keys_vec = self.factories.factories0.keys_factory.default_box();
-            keys_vec.reserve(keys.len());
+            keys_vec.reserve(keys.len_upper_bound());
             let mut cursor = keys.cursor();
             while cursor.key_valid() {
                 keys_vec.push_ref(cursor.key());
@@ -502,6 +552,17 @@ where
             &*Runtime::storage_backend().unwrap_storage(),
             path,
         )?;
+
+        // The file's layout must match what these factories expect.
+        let found = file.metadata().value_stamp;
+        if found != factories.value_stamp {
+            return Err(CorruptionError::ValueStampMismatch {
+                expected: factories.value_stamp.is_stamped(),
+                found: found.is_stamped(),
+            }
+            .into());
+        }
+
         let file = Arc::new(file);
         let key_range = file.key_range()?.map(Into::into);
         let filters = BatchFilters::from_file(key_range, membership_filter);
@@ -937,7 +998,10 @@ where
             .unwrap_storage(),
             weight: factories.weight_factory().default_box(),
             num_tuples: 0,
-            stats: BatchMetadata::default(),
+            stats: BatchMetadata {
+                value_stamp: factories.value_stamp,
+                ..BatchMetadata::default()
+            },
             touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
         }
     }
@@ -951,7 +1015,11 @@ where
         B: Batch<Key = K, Val = V, Time = (), R = R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
+        let key_capacity = batches
+            .clone()
+            .into_iter()
+            .map(|b| b.key_count_upper_bound())
+            .sum();
         let key_filter = if collect_roaring_metadata() {
             let filter_plan = FilterPlan::from_batches(batches.clone());
             filter_plan.map_or_else(
@@ -974,7 +1042,10 @@ where
             .unwrap_storage(),
             weight: factories.weight_factory().default_box(),
             num_tuples: 0,
-            stats: BatchMetadata::default(),
+            stats: BatchMetadata {
+                value_stamp: factories.value_stamp,
+                ..BatchMetadata::default()
+            },
             touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
         }
     }

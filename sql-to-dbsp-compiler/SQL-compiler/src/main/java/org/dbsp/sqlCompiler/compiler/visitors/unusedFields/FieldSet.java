@@ -45,20 +45,9 @@ public final class FieldSet extends IUsedFields {
     }
 
     @Override
-    public ParameterFieldUse getParameterUse() {
-        if (this.isEmpty())
-            return new ParameterFieldUse();
-        ParameterFieldUse result = null;
-        for (var u : this.used) {
-            ParameterFieldUse next = u.getParameterUse();
-            if (result == null)
-                result = next;
-            else
-                result.union(next);
-        }
-        if (result == null)
-            return new ParameterFieldUse();
-        return result;
+    void markParameterUse(ParameterFieldUse use) {
+        for (var u : this.used)
+            u.markParameterUse(use);
     }
 
     public Set<IUsedFields> used() {

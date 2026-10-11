@@ -346,7 +346,7 @@ fn main() -> Result<()> {
 
         let row = vec![
             result.name.clone(),
-            format!("{}", result.num_events.to_formatted_string(&Locale::en)),
+            result.num_events.to_formatted_string(&Locale::en),
             format!("{cpu_cores}"),
             format!("{:#.3?}", result.elapsed),
             format!("{:#.3?}", result.elapsed * cpu_cores as u32),

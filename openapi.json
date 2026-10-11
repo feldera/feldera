@@ -10,7 +10,7 @@
     "license": {
       "name": "MIT OR Apache-2.0"
     },
-    "version": "0.360.0"
+    "version": "0.365.0"
   },
   "paths": {
     "/config/authentication": {
@@ -4605,7 +4605,7 @@
           {
             "name": "format",
             "in": "query",
-            "description": "Input data format, either `csv' or 'json'.",
+            "description": "Input data format: `csv`, `json`, `parquet`, `avro`, or `raw`. The default is `csv`.",
             "required": true,
             "schema": {
               "type": "string"
@@ -4632,6 +4632,16 @@
                   "$ref": "#/components/schemas/JsonUpdateFormat"
                 }
               ],
+              "nullable": true
+            }
+          },
+          {
+            "name": "connector_metadata",
+            "in": "query",
+            "description": "Connector metadata for every record of this request, as a JSON object.  `CONNECTOR_METADATA()` returns the object for the records, so a column declared with `DEFAULT CAST(CONNECTOR_METADATA()['name'] AS type)` takes its value from the object's `name` attribute.  Works with every input format.",
+            "required": false,
+            "schema": {
+              "type": "string",
               "nullable": true
             }
           }
@@ -10394,6 +10404,14 @@
         "type": "object",
         "description": "Optional settings for tweaking Feldera internals.\n\nThese settings reflect experiments that may come and go and change from\nversion to version.  Users should not consider them to be stable.",
         "properties": {
+          "accumulator_merge_threshold_batches": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Merge threshold of an accumulator's spine: how many batches each\nlevel above level 1 waits for before it merges them.\n\nZero restores the built-in minimum.  A spine that garbage-collects old\nrecords always uses the built-in minimum.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
           "adaptive_joins": {
             "type": "boolean",
             "description": "Enable adaptive joins.\n\nAdaptive joins dynamically change their partitioning policy to avoid skew.\n\nAdaptive joins are disabled by default.",
@@ -10505,6 +10523,14 @@
             "default": null,
             "nullable": true
           },
+          "integral_merge_threshold_batches": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Merge threshold of an integral's spine: how many batches each level\nabove level 1 waits for before it merges them.\n\nThe default is ten.  Zero restores the built-in minimum.  A spine\nthat garbage-collects old records always uses the built-in minimum.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
           "max_level0_batch_size_records": {
             "type": "integer",
             "format": "int32",
@@ -10526,22 +10552,6 @@
             "type": "integer",
             "format": "int32",
             "description": "The number of merger threads.\n\nThe default value is equal to the number of worker threads.",
-            "default": null,
-            "nullable": true,
-            "minimum": 0
-          },
-          "min_accumulator_merge_batches": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Minimum number of batches an accumulator's spine merges at once,\nat every level above level 1.\n\nZero restores the built-in minimum.",
-            "default": null,
-            "nullable": true,
-            "minimum": 0
-          },
-          "min_integral_merge_batches": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Minimum number of batches an integral's spine merges at once, at\nevery level above level 1.\n\nUnset or zero keeps the built-in minimum.",
             "default": null,
             "nullable": true,
             "minimum": 0
@@ -10598,6 +10608,13 @@
           "streaming_exchange": {
             "type": "boolean",
             "description": "Enable streaming exchange.",
+            "default": null,
+            "nullable": true
+          },
+          "top_level_negative_weight_fraction": {
+            "type": "number",
+            "format": "double",
+            "description": "The share of the records at a spine's highest level with negative\nweights above which the level merges its batches.\n\nA spine keeps most of its records at its highest level.  When many of\nthem are retractions, merging the level's batches cancels them against\nthe records they retract, which shrinks the spine's storage.\n\nA fraction from 0 through 1; the default is 0.2.  At 1 the level never\nmerges for this reason.",
             "default": null,
             "nullable": true
           }
@@ -12310,6 +12327,22 @@
           }
         }
       },
+      "NatsHeader": {
+        "type": "object",
+        "description": "A header attached to every message published by `nats_output`.",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
       "NatsInputConfig": {
         "type": "object",
         "required": [
@@ -12338,6 +12371,53 @@
           },
           "stream_name": {
             "type": "string"
+          }
+        }
+      },
+      "NatsMessageId": {
+        "type": "string",
+        "description": "How `nats_output` chooses the `Nats-Msg-Id` header of each message.",
+        "enum": [
+          "content_hash",
+          "none"
+        ]
+      },
+      "NatsOutputConfig": {
+        "type": "object",
+        "description": "Configuration for writing data to a NATS subject with `nats_output`.\n\nThe connector publishes to JetStream: each message is published with an\nacknowledgment request and the publish is retried until the server\nacknowledges it or the pipeline shuts down, so data is not lost to a\nserver that is momentarily unavailable. The subject must be bound to a\nJetStream stream; publishing to a subject with no stream raises\n\"no responders\" and the publish fails.",
+        "required": [
+          "connection_config",
+          "subject"
+        ],
+        "properties": {
+          "connection_config": {
+            "$ref": "#/components/schemas/ConnectOptions"
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NatsHeader"
+            },
+            "description": "Headers to add to every message published by this connector, as\nkey/value pairs. Values are UTF-8 strings."
+          },
+          "max_message_size": {
+            "type": "integer",
+            "description": "Override for the maximum message size in bytes the connector offers to\nthe encoder. When unset, the connector discovers the limit at connect\ntime: the bound stream's `max_message_size` when the stream sets one,\nelse the server's max payload. The encoder splits output records across\nmessages by this limit; a record larger than the limit fails the\npipeline with an error naming the record rather than reaching the\nserver.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "message_id": {
+            "$ref": "#/components/schemas/NatsMessageId"
+          },
+          "publish_timeout_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How long to wait for the server's publish acknowledgment before\nretrying the publish. Must be at least 1.",
+            "minimum": 0
+          },
+          "subject": {
+            "type": "string",
+            "description": "NATS subject to publish to (e.g., \"orders.created\"). The subject\nmust be bound to a JetStream stream on the target server."
           }
         }
       },
@@ -13857,6 +13937,49 @@
           }
         }
       },
+      "PostgresCdcBatchConfig": {
+        "type": "object",
+        "description": "Batch processing configuration for the Postgres CDC connector.\n\nControls how replication events are buffered into a batch before being\nflushed to Feldera. Mirrors the batch configuration of the underlying\n`etl` replication library; fields omitted from the configuration fall\nback to `etl`'s own defaults.",
+        "properties": {
+          "max_bytes": {
+            "type": "integer",
+            "description": "Maximum preferred byte size for one batch per active stream. This is\na ceiling, not a target: the runtime still chooses the smaller value\nbetween this limit and the memory-ratio budget computed from\n`memory_budget_ratio`.\n\nDefault: 33554432 (32 MiB), the same as etl.",
+            "default": 33554432,
+            "minimum": 0
+          },
+          "max_fill_ms": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maximum time, in milliseconds, to wait before flushing a partially\nfilled batch. This is the latency bound for batching: once the first\nevent enters a batch, the batch is flushed when this timer elapses,\neven if `max_bytes` was not reached.\n\nDefault: 10000 (10 seconds).",
+            "default": 10000,
+            "minimum": 0
+          },
+          "memory_budget_ratio": {
+            "type": "number",
+            "format": "float",
+            "description": "Ratio of process memory reserved for incoming replication batch\nbytes, in the `(0.0, 1.0]` interval. The configured memory is divided\nby the number of active streams at runtime, so each stream gets only\na per-stream share of the global memory budget.\n\nDefault: 0.2.",
+            "default": 0.2
+          }
+        }
+      },
+      "PostgresCdcMemoryBackpressureConfig": {
+        "type": "object",
+        "description": "Memory-based backpressure configuration for the Postgres CDC connector.\n\nWhen the connector's memory usage rises above `activate_threshold`, it\npauses reading further replication events until usage drops back below\n`resume_threshold`. Mirrors the memory backpressure configuration of the\nunderlying `etl` replication library.",
+        "properties": {
+          "activate_threshold": {
+            "type": "number",
+            "format": "float",
+            "description": "Memory usage ratio above which backpressure is activated, in the\n`(0.0, 1.0]` interval.\n\nDefault: 0.85.",
+            "default": 0.85
+          },
+          "resume_threshold": {
+            "type": "number",
+            "format": "float",
+            "description": "Memory usage ratio below which backpressure is released, in the\n`[0.0, 1.0)` interval. Must be lower than `activate_threshold`.\n\nDefault: 0.75.",
+            "default": 0.75
+          }
+        }
+      },
       "PostgresCdcReaderConfig": {
         "allOf": [
           {
@@ -13913,6 +14036,12 @@
               "source_table"
             ],
             "properties": {
+              "batch": {
+                "$ref": "#/components/schemas/PostgresCdcBatchConfig"
+              },
+              "memory_backpressure": {
+                "$ref": "#/components/schemas/PostgresCdcMemoryBackpressureConfig"
+              },
               "publication": {
                 "type": "string",
                 "description": "Name of the pre-created Postgres publication to replicate from."
@@ -14809,6 +14938,12 @@
             "default": null,
             "nullable": true,
             "minimum": 0
+          },
+          "volume_attributes_class": {
+            "type": "string",
+            "description": "Kubernetes volume attributes class to use for the storage of an\ninstance of this pipeline. The class sets mutable storage parameters\nsuch as IOPS and throughput. Requires Kubernetes 1.34 or later (or\nthe `VolumeAttributesClass` feature gate) and CSI driver support.\nA change takes effect on the next start, also for existing storage.",
+            "default": null,
+            "nullable": true
           }
         }
       },
@@ -15253,6 +15388,13 @@
             "format": "int32",
             "description": "Exit code of the `cargo` compilation command."
           },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RustCompilerMessage"
+            },
+            "description": "Parsed rustc diagnostics. Older stored JSON omits this field."
+          },
           "stderr": {
             "type": "string",
             "description": "Output printed to stderr by the `cargo` compilation command."
@@ -15260,6 +15402,54 @@
           "stdout": {
             "type": "string",
             "description": "Output printed to stdout by the `cargo` compilation command."
+          }
+        }
+      },
+      "RustCompilerMessage": {
+        "type": "object",
+        "description": "One rustc diagnostic (error or warning).",
+        "required": [
+          "start_line_number",
+          "start_column",
+          "end_line_number",
+          "end_column",
+          "warning",
+          "error_type",
+          "message"
+        ],
+        "properties": {
+          "end_column": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end_line_number": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "error_type": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string",
+            "nullable": true
+          },
+          "message": {
+            "type": "string"
+          },
+          "rendered": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_column": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "start_line_number": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "warning": {
+            "type": "boolean"
           }
         }
       },
@@ -16434,6 +16624,24 @@
                 "type": "string",
                 "enum": [
                   "nats_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/NatsOutputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "nats_output"
                 ]
               }
             }

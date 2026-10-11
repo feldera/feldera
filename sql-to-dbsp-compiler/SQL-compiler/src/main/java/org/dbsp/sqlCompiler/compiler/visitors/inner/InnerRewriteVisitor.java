@@ -187,7 +187,14 @@ public abstract class InnerRewriteVisitor
         return this.getResult().to(DBSPStatement.class);
     }
 
+    /** True if this visitor may change types.  A visitor that returns false skips all types. */
+    protected boolean rewritesTypes() {
+        return true;
+    }
+
     protected DBSPType transform(DBSPType type) {
+        if (!this.rewritesTypes())
+            return type;
         type.accept(this);
         return this.getResultType();
     }
@@ -869,7 +876,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression function = this.transform(expression.function);
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
-        DBSPExpression result = new DBSPApplyExpression(function, type, arguments);
+        DBSPExpression result = new DBSPApplyExpression(expression.getNode(), function, type, arguments);
         this.map(expression, result);
         return VisitDecision.STOP;
     }
@@ -882,7 +889,7 @@ public abstract class InnerRewriteVisitor
         DBSPExpression self = this.transform(expression.self);
         DBSPType type = this.transform(expression.getType());
         this.pop(expression);
-        DBSPExpression result = new DBSPApplyMethodExpression(function, type, self, arguments);
+        DBSPExpression result = new DBSPApplyMethodExpression(expression.getNode(), function, type, self, arguments);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

@@ -16,8 +16,8 @@
   <PipelineNameInput inputClass="input h-9 {inputClass}" {onSuccess}>
     {#snippet createButton(onclick)}
       <div class="flex justify-center">
-        <button class="btn h-9 {btnClass}" {onclick}>
-          <span class="fd fd fd-plus text-2xl"></span>
+        <button class="btn {btnClass}" {onclick}>
+          <span class="fd fd-plus"></span>
           New Pipeline
         </button>
       </div>

@@ -1,17 +1,20 @@
 # Visualizing Pipeline Profiles
 
+{/* The icons are imported, not referenced as images: an imported SVG is drawn inline, so it takes the color of the text. */}
+import OpenSupportBundleIcon from '../../../js-packages/web-console/src/assets/icons/feldera-material-icons/stethoscope.svg';
+import SearchIcon from '../../../js-packages/common-ui/src/lib/icons/search.svg';
+
 ## Preliminaries
 
-The Feldera SQL compiler transforms a query into a dataflow graph.  A
-dataflow graph is a representation of a program composed of two kinds
-of objects: nodes and edges.  Nodes (also called operators) represent
-computations, and edges show how data flows between nodes.  Dataflow
-graphs can be represented visually as networks of boxes and arrows:
-the boxes are the computations, while the arrows show how data
-produced by a node is consumed by other nodes.  For SQL programs you
-can think of the nodes as roughly representing the SQL primitive
-operations, while each edge represents a collection: the result
-produced by the node when it receives inputs.
+The Feldera SQL compiler transforms a program into a *dataflow graph*. The
+profile viewer draws the dataflow graph. A dataflow graph has these kinds of
+objects:
+
+| Object | What it is |
+|---|---|
+| Node (operator) | A computation. A SQL operation, for example a join or an aggregate, usually compiles into many nodes. |
+| Edge | A directed flow of data between two nodes. It carries the changes that a node produces when it receives inputs. |
+| Region | A node that contains another dataflow graph. See [Regions](#regions). |
 
 Feldera queries run continuously, each receiving many input changes
 and producing many output changes.  So multiple Feldera views are
@@ -23,258 +26,301 @@ in programming is the technique of measuring and understanding the
 behavior of computer programs.
 
 The Feldera engine contains lots of *instrumentation* code which
-collects measurements about the behavior of each operator.  These
+collects measurements about the behavior of each node.  These
 measurements are aggregated into *measurement statistics*.  For
-example, the code may measure how much time an operator spends to
-process each change.  During the lifetime of a pipeline each operator
+example, the code may measure how much time a node spends to
+process each change.  During the lifetime of a pipeline each node
 may be invoked millions of times, so the information is summarized,
-for example as the "total time" spent executing this operator.
+for example as the "total time" spent executing this node.
 
 There are many interesting measurements that may be collected; other
-examples are: how much data is received by the operator, how much data
-is produced by the operator (note that an operator like `WHERE`
+examples are: how much data is received by the node, how much data
+is produced by the node (note that a node for `WHERE`
 produces less data than it receives), how much data was written to
-disk, how much memory was allocated by an operator, when searching for
+disk, how much memory was allocated by a node, when searching for
 a value what is the success rate (for `JOIN` operations), etc.
 
 Feldera pipelines are designed to take advantage of multiple CPU cores
 (and will soon use multiple computers as well, each with multiple
-cores).  When you start a pipeline you specify a number of cores, and
-each operator of the dataflow graph is instantiated once for every
-core.  The profiling code collects information for each core.
+cores).  When you start a pipeline you specify a number of *workers*.
+Each node of the dataflow graph runs on all the worker threads of each
+host of the pipeline.  The profiling code collects measurements for each
+worker.
 
-## Visualizing profile information
+## Opening the profile viewer
 
-The profile visualization tool lets you display the dataflow graph of
-the program.  There are two ways to use the tool:
+The profile viewer is part of the [Web Console](https://docs.feldera.com/interface/web-console),
+the browser-based dashboard of the Feldera instance. It shows the
+dataflow graph of a pipeline, with the measurements of each node.
 
-- the tool is integrated with the Feldera [WEB-based
-  user-interface](https://docs.feldera.com/interface/web-console)
+The viewer reads the profiles from a [support bundle](https://docs.feldera.com/operations/guide/#diagnosing-performance-issues).
+A support bundle may contain profiles at multiple points in time. The
+viewer shows the measurements as they were when the profile was
+collected. It does not update them live.
 
-- the tool can be used by developers for offline analysis of [support
-  bundles](https://docs.feldera.com/operations/guide/#diagnosing-performance-issues)
-  which contain profiling information.
+You can open a profile in the viewer in three ways:
 
-## Starting the profile visualization from the web UI
+| To | Home page | Pipeline page | Profile viewer |
+|---|---|---|---|
+| Download a profile from a pipeline | Not available | Click **View profile**.<br/>![The View profile button](open-live-pipeline.png) | Click **Load profile**, then **Download profile**.<br/>![Download profile in the Load profile menu](open-live-viewer.png) |
+| Open a bundle that you opened before | Click <OpenSupportBundleIcon className="inline-icon" title="Open support bundle" />, then click the bundle.<br/>![A bundle in the list of recent support bundles](open-history-home.png) | Not available | Not available |
+| Upload a bundle zip file | Click <OpenSupportBundleIcon className="inline-icon" title="Open support bundle" />, then **Upload support bundle**.<br/>![Upload support bundle in the Open support bundle dialog](open-upload-home.png) | Click the arrow next to **View profile**, then **Open support bundle**.<br/>![Open support bundle in the View profile menu](open-upload-pipeline.png) | Click **Load profile**, then **Open support bundle**.<br/>![Open support bundle in the Load profile menu](open-upload-viewer.png) |
 
-The web app monitoring panel has a "profiler" tab which enables the
-collection of visualization of profile data:
+After you select a zip file, click **View profile** to open it in a new tab.
 
-![profiler tab](profiler-tab.png)
+| Support bundle | Profiles in it |
+|---|---|
+| Downloaded from a pipeline | The profiles that the pipeline collected at earlier points in time. If the pipeline is running and **Collect new data** is checked in the menu, the pipeline also collects a new profile now. |
+| Uploaded | The profiles in the zip file, for example a bundle from the [diagnostics guide](/operations/guide#diagnosing-performance-issues). The Web Console adds the file to the list of bundles that you opened before. |
 
-The UI allows collecting a new bundle or uploading a bundle received
-as a zip file from a third party.
+## The parts of the viewer
 
-## Profiler visualization UI
+![The parts of the profile viewer](ui-structure.png)
 
-The profiler visualization interface is shown in the following
-image:
+| Part | What it shows |
+|---|---|
+| Toolbar | **Load profile** gets a new bundle. **Snapshot** selects one of the profiles in the bundle. **Search node** finds a node. |
+| Minimap | A map that shows which part of the dataflow graph is in the window |
+| Dataflow graph | The nodes and edges of the pipeline |
+| SQL | The SQL program of the pipeline. A click on a node selects its SQL here, if the node has a SQL source position. |
+| Analysis panel | The tabs **Metrics**, **Logs**, **Config** and **Issues & Suggestions** |
 
-![Profiler UI structure](ui-structure.png)
+The analysis panel has these tabs:
 
-### Navigation the dataflow graph
+| Tab | Content |
+|---|---|
+| Metrics | The measurements of the pipeline, of the current node, or of the top nodes. See [Displaying measurements](#displaying-measurements). |
+| Logs | The pipeline log from the bundle |
+| Config | The pipeline configuration from the bundle |
+| Issues & Suggestions | Problems that triage rules found in the bundle. See [Issues & Suggestions](#issues-and-suggestions). |
 
-The visualization is designed for navigating very large dataflow
-graphs, possibly much larger that can fit comfortably on the screen.
-The navigation aid on the top-left displays two rectangles:
+The button in the top right corner of the SQL panel stretches it to the full
+height of the window.
 
-- the light grey rectangle is the bounding box of the dataflow graph
+## Moving around the dataflow graph
 
-- the dark grey rectangle represents the browser window
+The dataflow graph can be much larger than the window.
 
-Double-clicking on this navigation aid will recenter the dataflow
-graph, fitting it on the screen.
+| To | Do this |
+|---|---|
+| Zoom | Turn the mouse wheel |
+| Pan | Click and drag the background of the dataflow graph |
+| Go to another part of the dataflow graph | Click or drag on the minimap |
+| See the full dataflow graph | Double-click the minimap |
+| Find a node | Type a node ID, a table or view name, or a persistent ID in **Search node**, then press Enter. See [Searching for a node](#searching-for-a-node). |
 
-The mouse wheel can be used to zoom-in and zoom-out the dataflow
-graph.
+## The current node
 
-The mouse gestures of grabbing and dragging can be used to pan
-horizontally and vertically.
+Click a node to make it the *current node*. The other parts of the
+viewer show information about the current node:
 
-Nodes can be moved as well using the mouse, i.e., to declutter edges,
-but information about moved nodes is lost when nodes are expanded or
-contracted, as described below.
+| Action | Result |
+|---|---|
+| Move the pointer over a node | The node glows. The other parts of the viewer do not change. |
+| Click a node | The node becomes the current node and glows. The **Node** view of the **Metrics** tab shows its measurements, the SQL panel selects the SQL of the node, if the node has a SQL source position, and the edges show its [reachability](#reachability). |
+| Press Escape | There is no current node. |
 
-### Hierarchical dataflow graphs
+### Nodes and SQL
 
-Some nodes in a dataflow graph are in turn composed of other nodes and
-edges.  Such nodes are shown with rounded corners.  Double-clicking on
-such a node will expand it into the component nodes.  Double-clicking
-on an expanded node will contract it.  Clicking on an expanded node,
-away from the nodes inside it, displays the measurements of the
-composite node itself.
+A node with a Code chip has an associated SQL source position:
 
-![expanding composite nodes](expanding.png)
+![Nodes with a SQL source position](source-chip.png)
 
-Unfortunately, expanding a node that has many components may change
-the layout of the overall layout of the graph on the screen
-significantly.
+When you click such a node, the SQL panel selects the SQL statements of
+the node and scrolls to them:
 
-The metrics displayed for a composite node are derived from the values
-of the metrics of the component nodes.  Some metrics are the sum of
-the metrics for the component nodes (e.g., time, storage), while other
-metrics are the *maximum* value across all components (e.g.,
-"average", "percentage", "min", or "max" values).
+![The SQL of the current node](sources.png)
 
-### Displaying node metrics
+A click on a region selects the SQL of all the nodes in it. The relation
+between nodes and SQL statements is many-to-many. One statement can
+compile into many nodes, and one node can do the work of many statements.
+Some nodes have no SQL source position.
 
-The user can mouse-over a node to display various measurements
-collected for the node.  The measurements are displayed in a table.
+### Reachability
 
-Clicking on a node will make the table of measurements "sticky": the
-table will remain visible until either the user presses the ESCAPE
-key, or the user clicks on another node.  Clicking also selects the SQL
-the node was compiled from in the program shown beside the graph, and
-scrolls it into view.  A node that groups other nodes stands for all the
-SQL inside it, so clicking one selects every statement it covers.
+The edges show the paths through the current node:
 
-### Understanding graph reachability
+![The paths through the current node](reachability.png)
 
-Mousing over a node, or clicking on a node will also compute all nodes
-upstream and downstream of the selected node.  The downstream edges
-are displayed in red, and the upstream edges are displayed in blue.
-Note that graphs may contain "back" edges; the reachability
-information displayed currently stops at back-edges.
+| Edge color | Meaning |
+|---|---|
+| Magenta | An edge out of the current node |
+| Light blue | An edge into the current node |
+| Red | An edge further downstream, on a path that starts at the current node |
+| Blue | An edge further upstream, on a path that ends at the current node |
+| Gray | An edge that is not on a path through the current node |
 
-![Node reachability information](reachability.png)
+Most dataflow graphs have back edges: each integrator has one. The paths
+stop at a back edge.
 
-### The table displaying node metrics
+## Regions
 
-The metrics collected for a node are displayed as a table:
+Some nodes contain another dataflow graph. These nodes are *regions*. You
+can expand a region to see the nodes in it. An expanded region has a dashed
+border, and its nodes are inside it:
 
-![Table with node measurements](table.png)
+![An expanded region](region-expanded.png)
 
-The table has one row for each measurement type.  Related measurements
-are grouped together in *sections* which can be collapsed by clicking
-on the section header.  The previous figure highlights the "State"
-section, containing metrics related to the internal state storage.
+A collapsed region is shown as a node:
 
-Some metrics are considered "advanced", and are only displayed when
-the "advanced metrics" checkbox is selected.
+![A collapsed region](region-collapsed.png)
 
-By default the table has one column for each worker thread that
-executes the operator (this can be controlled as described below).
-Differences between workers indicate data skew.  The last two columns
-display the maximum and minimum values of the measurements across all
-workers for a node.  A big difference between these two columns is
-also indicative of skew.
+| Decoration | Meaning |
+|---|---|
+| Name | The node ID of the region, and the names of the tables and views in it |
+| Child count chip | The number of nodes in the region. The nodes in nested regions count, and the nested regions do not. |
+| Code chip | The region has a SQL source position. See [Nodes and SQL](#nodes-and-sql). |
 
-The table also displays general node information, such as the node
-operation type and node name, which can aid in navigation and
-debugging.
+When you move the pointer over a top-level region, the region glows, and
+the child count chip changes to a square (expand) or a dash (collapse):
 
-The table cells are colored according to the *magnitude* of the
-measurements.  A deep red measurement has a high magnitude, while a
-white measurement has a low magnitude.  What is "high" or "low" is
-determined by comparing the measurements across all operators and
-workers in the entire dataflow graph.  For example, if the node taking
-most of the time in the graph requires 10% of the computation time,
-then a deep red value means "10%" (and not 100%).
+![A collapsed region, with the pointer on it](region-collapsed-hover.png)
 
-The table display is essentially a heatmap of the resource
-consumption.
+| To | Do this |
+|---|---|
+| Collapse or expand a region | Double-click it, or click its child count chip |
+| Make a region the current node | Click it |
 
-The units of the measurement used in the table are the "natural" ones:
-bytes for memory, seconds for time, values between 0 and 100 for
-percentages.
+A small pipeline opens with all its regions expanded.
 
-Note that the set of metrics displayed varies between different kinds
-of nodes.  For example, a node which does not store data on disk will
-not have storage-related metrics.
+## Displaying measurements
 
-The measurements for a composite node (that expands into multiple
-sub-nodes) are the sum of the measurements for all the individual
-component nodes.
+The measurements are values that the running pipeline collects for each
+node. You can display them, and use them to troubleshoot performance
+problems.
 
-### Global metrics
+Each measurement is a value of a *metric*, for example **Runtime percent**.
+There are many metrics, and one of them is always the *current metric*.
+See [The current metric](#the-current-metric).
 
-The toplevel menu contains a button labeled "Overall metrics".
-Clicking on this button will display aggregate metrics collected for
-the entire pipeline.  The information is shown using the same tabular
-display as used for individual nodes.  Note that this information is
-not simply the "sum" of the information for all operators; this
-information is especially attributed to the entire pipeline by the
-profile collection code.
+The **Metrics** tab has three views:
 
-![Displaying global metrics](overall.png)
+| View | Content |
+|---|---|
+| Overview |  The global statistics of the pipeline, and the aggregated measurements of all nodes |
+| Node | The measurements of the current node |
+| Top nodes | The top nodes according to the current metric |
 
-### Selecting the node highlight metric
+### Per-pipeline measurements
 
-The "metric" drop-down box allows selecting a metric that the user
-wants to focus on.  All graph nodes are colored according to their
-maximum value (across all workers) for this metric.  A red node has a
-high value, while a white node has a low value.
+The **Overview** view shows the global statistics of the pipeline, for
+example the number of records that the pipeline received and processed,
+and its CPU time. Then it shows the measurements for the full dataflow graph.
 
-![Selecting the current metric](metric-selection.png)
+![The Overview view](overall.png)
 
-#### Finding nodes with high value of a metric
+### Per-node measurements
 
-Clicking on the button labeled "top 20 nodes" will display a table with
-nodes that have a high value with respect to this metric:
+The **Node** view shows the measurements of the current node, in tables
+that group related measurements. The measurements of a region are
+aggregated measurements of the nodes in it.
 
-![Finding nodes with high values for a metric](important-nodes.png)
+Each node runs on multiple *worker* threads on each host of the pipeline.
+The profile has a value of each measurement for each worker. The Node view
+shows these values, and how much they differ between the workers.
 
-The rows in this table can be clicked; clicking on a node will center
-the display around that node.
+![The measurements of a node](node-metrics.png)
 
-### Worker information selection
+| Part | What it shows |
+|---|---|
+| Title | The node ID and the name of its operator. Click it to center the dataflow graph on this node. |
+| consumers | The number of nodes that read the output of this node |
+| persistent ID | Two nodes with the same persistent ID compute the same result from the same table inputs. So the two nodes, and all the nodes before them, are semantically equivalent. |
+| Section | A table of related measurements, for example **Time** or **State**. Click the title of a section to collapse or expand it. |
+| Avg, Min, Max, Total | The average, minimum, maximum and sum of the measurement across the workers |
+| Histogram | One bar for each worker. Move the pointer over a bar to see its value. |
+| Skew | A measure of the resource imbalance between the workers. Higher skew is generally bad. Click it to make the histogram taller. |
 
-The toplevel menu contains a row of checkboxes: one for each worker.
-By deselecting some checkboxes the user can choose which workers to
-focus on.  The "toggle all" button will complement the current
-selection.
+The section that holds the current metric is shown first, and it does not
+collapse. In it, the current metric is the first row.
 
-![Choosing the workers to display](workers.png)
+Some measurements have a red background. The intensity of the red shows how
+important the measurement is, relative to the highest values of that
+measurement in the whole dataflow graph.
+
+Each node has only some of the measurements. For example, a node that
+keeps no state has no **State** section. Turn on **Show advanced** to show
+more measurements.
+
+### The current metric
+
+To change the current metric, use the **Select metric** box at the top
+right of the **Metrics** tab:
+
+![Selecting the metric](metric-selection.png)
+
+The current metric colors each node of the dataflow graph. The color
+shows how important the node is for this metric, when compared with the
+other nodes.
+
+### Top nodes
+
+**Top nodes** lists the nodes that have a value for the current metric.
+The node most worthy of attention is first. Click a node ID to center the
+dataflow graph on that node.
+
+![The top nodes for the current metric](important-nodes.png)
+
+## Issues & Suggestions {#issues-and-suggestions}
+
+The **Issues & Suggestions** tab shows the results of triage rules that
+the viewer runs on the bundle. The number on the tab is the number of
+results. Each result has:
+
+| Part | What it shows |
+|---|---|
+| Severity | **Critical**, **Medium** or **Low** |
+| Category | The area of the problem, for example **Storage** or **Connector** |
+| Rule and message | The rule that found the problem, and what it found |
+| Show details | The data that the rule found |
+
+Use **Filter by severity** and **Filter by category** to show only some of
+the results. If the Feldera instance has no triage rules, the tab shows
+"No issues found".
+
+## Searching
 
 ### Searching for a node
 
-The search box finds a node by its ID, by the name of an input table
-or an output view (an exact name match wins over a substring match),
-or by a substring of its persistent ID.  The
-display is centered around the node found; if the node is hidden
-inside collapsed regions, these regions are expanded first.  (In the
-future we may allow searching by attributes as well.)
+**Search node** allows you to search for a node by one of these, in this
+order:
 
-![Searching for nodes](search.png)
+1. The node ID, for example `nn21`.
+2. The name of a table or a view. An exact match is prioritized over a part
+   of a name.
+3. A part of the persistent ID of the node.
 
-Pressing `Ctrl-F` (`Cmd-F` on macOS) after clicking anywhere in the
-dataflow graph moves the keyboard focus to this search box.
+When you press Enter, the viewer expands the regions that hold the node,
+centers the node in the window, and makes it glow. The node does not
+become the current node. Click it to make it the current node.
 
-### Searching through metrics, issues and logs
+![Searching for a node](search.png)
 
-The bottom right has a search button (a magnifying glass) at
-its right end.  It searches the tab that is currently shown:
+### Searching in a tab
 
-| Tab     | What the search matches                                                                                             |
-|---------|---------------------------------------------------------------------------------------------------------------------|
-| Metrics | The title of a metrics block or a "top nodes" row, a metric label or identifier               |
-| Logs    | Any log line containing the text                                                                                     |
-| Issues  | Any issue row containing the text                       |
+The <SearchIcon className="inline-icon" title="Search" /> button at the top right of the analysis
+panel searches the open tab below it:
 
-Pressing `Ctrl-F` (`Cmd-F` on macOS) anywhere outside the graph opens
-this search box and selects its contents, so a second `Ctrl-F` starts a
-new query without deleting the old one.
+![Searching in the Metrics tab](search-tab.png)
 
-### Cross-referencing with SQL
+| Tab | What the search finds |
+|---|---|
+| Metrics | The title of a section, the name or ID of a metric, or a row of **Top nodes** |
+| Logs | A log line that contains the text |
+| Issues & Suggestions | A result that contains the text |
 
-Some, but not all, nodes of the dataflow graph can be directly linked
-with source SQL expressions.  A node that has source position
-information is displayed using a little diamond sign:
+Press Enter for the next match, and Shift+Enter for the previous match.
 
-![Nodes with source position](diamond.png)
+### Keyboard search
 
-The source position information for these nodes is shown in the table
-of metrics, in a row labeled "sources":
+| Keys | Where you clicked last | Result |
+|---|---|---|
+| `Ctrl-F` (`Cmd-F` on macOS) | In the dataflow graph | Moves the focus to **Search node** |
+| `Ctrl-F` (`Cmd-F` on macOS) | Anywhere else | Opens the search of the open tab. It selects the old text, so you can type a new search immediately. |
+| Escape | | Removes the current node, or closes the search |
 
-![Source position information](sources.png)
-
-The source code includes line numbers.
-
-Note that there is generally a many-to-many relationship between nodes
-and source statements: multiple source statements may be assigned to a
-dataflow graph node, or multiple dataflow graph nodes may be used to
-implement a single source SQL statement.  Some dataflow graphs do not
-directly correspond to any SQL statement.
+The **Config** tab does not have its own search. On this tab, `Ctrl-F`
+opens the search of the browser.
 
 ## Profiling pipelines using samply
 

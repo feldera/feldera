@@ -10,7 +10,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Utilities;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
@@ -105,8 +104,8 @@ public class CanonicalForm extends InnerRewriteVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPType type) {
-        return VisitDecision.STOP;
+    protected boolean rewritesTypes() {
+        return false;
     }
 
     @Override
@@ -130,7 +129,10 @@ public class CanonicalForm extends InnerRewriteVisitor {
         this.rowVar = list.rowVar.variable;
         this.canonicalRowVar = canonical;
         this.push(list);
-        List<IAggregate> aggregates = Linq.map(list.aggregates, a -> this.transform(a).to(IAggregate.class));
+        // The entries share variable nodes (every step uses the compiler's one weight variable),
+        // and the resolver maps each node to one declaration; a deep copy gives every entry its own.
+        List<IAggregate> aggregates = Linq.map(
+                list.aggregates, a -> this.transform(a.deepCopy()).to(IAggregate.class));
         this.pop(list);
         this.rowVar = null;
         this.canonicalRowVar = null;

@@ -8,7 +8,6 @@ use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     format::{InputFormat, ParseError, Parser},
 };
-use actix_web::HttpRequest;
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::ConnectorMetadata;
@@ -218,22 +217,16 @@ impl InputFormat for JsonInputFormat {
         Ok(Box::new(JsonParser::new(input_stream, config)) as Box<dyn Parser>)
     }
 
-    fn config_from_http_request(
+    fn config_from_http_query(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        query: &str,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         Ok(Box::new(
             JsonParserConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
-                request.query_string().as_bytes(),
+                query.as_bytes(),
             )))
-            .map_err(|e| {
-                ControllerError::parser_config_parse_error(
-                    endpoint_name,
-                    &e,
-                    request.query_string(),
-                )
-            })?,
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, query))?,
         ))
     }
 }

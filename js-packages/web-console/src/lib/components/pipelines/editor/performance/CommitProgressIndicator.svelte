@@ -2,6 +2,7 @@
   import { slide } from 'svelte/transition'
   import { match } from 'ts-pattern'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
+  import { statusToneColors } from '$lib/functions/pipelineStatusColor'
   import CommitProgressRow from './CommitProgressRow.svelte'
 
   let { metrics, class: _class = '' }: { metrics: { current: PipelineMetrics }; class?: string } =
@@ -13,22 +14,28 @@
 
   const transactionStatus = $derived(
     match(global.transaction_status)
-      .with('TransactionInProgress', () => ({ label: 'Started', class: 'bg-tertiary-50-950' }))
-      .with('CommitInProgress', () => ({ label: 'Committing', class: 'bg-warning-200-800' }))
+      .with('TransactionInProgress', () => ({
+        label: 'Started',
+        class: statusToneColors.blue.chip
+      }))
+      .with('CommitInProgress', () => ({
+        label: 'Committing',
+        class: statusToneColors.warning.chip
+      }))
       // A pipeline that has not reported metrics yet has no status at all.
       .otherwise(() => null)
   )
 
   const bootstrapStatus = $derived(
     match(bootstrapPhase)
+      // Both phases match the colour of the pipeline status chip.
       .with('ConcurrentBootstrapping', () => ({
         label: 'Backfilling',
-        class: 'bg-blue-200 dark:bg-blue-800'
+        class: statusToneColors.blue.chip
       }))
-      // Warning coloring flags the cutover pause, matching the pipeline status chip.
       .with('Synchronizing', () => ({
         label: 'Synchronizing',
-        class: 'preset-filled-warning-200-800'
+        class: statusToneColors.blue.chip
       }))
       .otherwise(() => null)
   )

@@ -100,8 +100,8 @@ public class RewriteNow extends CircuitCloneVisitor {
         }
 
         @Override
-        public VisitDecision preorder(DBSPType type) {
-            return VisitDecision.STOP;
+        protected boolean rewritesTypes() {
+            return false;
         }
 
         @Override
@@ -175,8 +175,8 @@ public class RewriteNow extends CircuitCloneVisitor {
         }
 
         @Override
-        public VisitDecision preorder(DBSPType type) {
-            return VisitDecision.STOP;
+        protected boolean rewritesTypes() {
+            return false;
         }
     }
 

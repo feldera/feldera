@@ -1046,6 +1046,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Try a view if no table with this name exists.
             DBSPViewOperator sourceView = this.getCircuit().getView(tableName);
             if (sourceView != null) {
+                if (sourceView.metadata.emitFinalColumn >= 0)
+                    throw new UnsupportedException("View " + tableName.singleQuote() +
+                            " has an 'emit_final' property, so it cannot be used as a source for a query. " +
+                            "Define an additional view without 'emit_final' instead.",
+                            node.getPositionRange());
                 Utilities.putNew(this.nodeOperator, scan, sourceView);
             } else {
                 if (!create)

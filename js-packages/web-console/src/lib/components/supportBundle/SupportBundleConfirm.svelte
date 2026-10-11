@@ -33,7 +33,7 @@
   <div class="flex flex-col items-center gap-3" data-testid="box-support-bundle-confirm">
     <span class="max-w-full truncate font-semibold" title={name}>{name}</span>
     <button class="btn preset-filled-primary-500" onclick={onConfirm} data-testid={testid}>
-      <span class="fd fd-file-search text-[18px]"></span>
+      <span class="fd fd-file-search"></span>
       <span>{confirmLabel}</span>
     </button>
   </div>
@@ -53,12 +53,8 @@
       <span class="min-w-0 flex-1 truncate text-sm" title={name}>{name}</span>
     </div>
     <div class="px-2 pb-2">
-      <button
-        class="btn h-8! w-full preset-filled-primary-500"
-        onclick={onConfirm}
-        data-testid={testid}
-      >
-        <span class="fd fd-file-search text-[18px]"></span>
+      <button class="btn w-full preset-filled-primary-500" onclick={onConfirm} data-testid={testid}>
+        <span class="fd fd-file-search"></span>
         <span>{confirmLabel}</span>
       </button>
     </div>

@@ -102,7 +102,7 @@
           {/if}
         </span>
         <button
-          class="fd fd-x ml-auto btn-icon text-[24px]"
+          class="fd fd-x ml-auto btn-icon text-[20px]"
           onclick={() => {
             lastGenerated = []
           }}

@@ -103,6 +103,38 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void negativeFloatingPointLateness() {
+        String sql = """
+                CREATE TABLE T(d DOUBLE NOT NULL LATENESS 10, r REAL NOT NULL LATENESS 10);
+                CREATE VIEW V AS SELECT CAST(d AS INT) AS d, CAST(r AS INT) AS r FROM T;""";
+        var ccs = this.getCCS(sql);
+        ccs.stepWeightOne("INSERT INTO T VALUES(-5, -6);",
+                """
+                         d  | r
+                        ---------
+                         -5 | -6""");
+    }
+
+    @Test
+    public void floatingPointTemporalFilter() {
+        // The window has no upper bound; the largest value, NaN, is its upper end
+        String sql = """
+                CREATE TABLE T(d DOUBLE NOT NULL);
+                CREATE VIEW V AS SELECT CAST(d AS VARCHAR) AS d FROM T
+                WHERE d >= CAST(EXTRACT(EPOCH FROM NOW()) AS DOUBLE);""";
+        var ccs = this.getCCS(sql);
+        ccs.stepWeightOne("""
+                INSERT INTO T VALUES (-1), (5), (CAST('Infinity' AS DOUBLE)), (CAST('NaN' AS DOUBLE));
+                INSERT INTO now VALUES ('1970-01-01 00:00:00');""",
+                """
+                 d
+                -----
+                 5.0
+                 inf
+                 NaN""");
+    }
+
+    @Test
     public void issue3465() {
         String sql = """
                 CREATE TABLE T(TS INT LATENESS 100, X INT) WITH ('append_only' = 'true');
@@ -1917,10 +1949,10 @@ public class StreamingTests extends StreamingTestBase {
         this.statementsFailingInCompilation("""
                 create table t (ts int not null LATENESS 2);
                 CREATE VIEW v WITH
-                ('emit_final' = '2') AS
+                ('emit_final' = '0') AS
                 SELECT ts, COUNT(*)
                 FROM t
-                GROUP BY ts;""", "View 'v' does not have a column with number 2");
+                GROUP BY ts;""", "Column '0' not found in 'v'");
         this.statementsFailingInCompilation("""
                 create table t (ts int);
                 CREATE VIEW v WITH
@@ -3966,6 +3998,49 @@ public class StreamingTests extends StreamingTestBase {
                 --------------------------------
                  a | 1    | 1 | 1     | -1
                  a |NULL  | 0 | 1     | 1""");
+    }
+
+    @Test
+    public void nowFilterNextToArrayAgg() {
+        // AggregateCaseToFilterRule leaves the ARRAY_AGG call alone, but still
+        // rewrites the SUM, so AggregateNowFilterRule creates a window.
+        String sql = """
+                CREATE TABLE T(k VARCHAR, tt TIMESTAMP, v INT);
+                CREATE VIEW V AS
+                SELECT k,
+                       ARRAY_AGG(CASE WHEN v > 1 THEN v END ORDER BY v) AS a,
+                       SUM(CASE WHEN tt >= NOW() - INTERVAL 1 DAY THEN v END) AS s
+                FROM T GROUP BY k;""";
+        var ccs = this.getCCS(sql).withStringTrim();
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            int window = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.window);
+            }
+        };
+        ccs.visit(visitor);
+        ccs.step("""
+                INSERT INTO NOW VALUES('2020-01-01 00:00:00');
+                INSERT INTO T VALUES('a', '2020-01-01 00:00:00', 1);
+                INSERT INTO T VALUES('a', '2019-12-30 00:00:00', 2);
+                INSERT INTO T VALUES('b', '2019-12-30 00:00:00', 3);""", """
+                 k | a           | s    | weight
+                ----------------------------------
+                 a | { NULL, 2 } | 1    | 1
+                 b | { 3 }       |NULL  | 1""");
+        // Two days later the row with v = 1 leaves the window
+        ccs.step("INSERT INTO NOW VALUES('2020-01-03 00:00:00')", """
+                 k | a           | s    | weight
+                ----------------------------------
+                 a | { NULL, 2 } | 1    | -1
+                 a | { NULL, 2 } |NULL  | 1""");
     }
 
     @Test

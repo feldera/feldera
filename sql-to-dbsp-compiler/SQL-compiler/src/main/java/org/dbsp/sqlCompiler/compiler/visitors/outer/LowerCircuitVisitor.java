@@ -57,8 +57,12 @@ import java.util.List;
 /** Lowers a circuit's representation; most changes are about
  * generating compilable Rust for operator functions. */
 public class LowerCircuitVisitor extends CircuitCloneVisitor {
+    /** True if the aggregate operators keep their aggregate lists instead of a single {@link DBSPFold}. */
+    final boolean keepAggregateLists;
+
     public LowerCircuitVisitor(DBSPCompiler compiler) {
         super(compiler, false);
+        this.keepAggregateLists = compiler.options.ioOptions.gen2;
     }
 
     /** Rewrite a flatmap operation into a Rust method call.
@@ -301,8 +305,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPStreamAggregateOperator node) {
-        if (node.function != null) {
-            // OrderBy implemented as an aggregate
+        if (node.function != null || this.keepAggregateLists) {
+            // OrderBy implemented as an aggregate, or a Gen-2 circuit
             super.postorder(node);
             return;
         }
@@ -316,8 +320,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPAggregateOperator node) {
-        if (node.function != null) {
-            // OrderBy implemented as an aggregate
+        if (node.function != null || this.keepAggregateLists) {
+            // OrderBy implemented as an aggregate, or a Gen-2 circuit
             super.postorder(node);
             return;
         }
@@ -438,7 +442,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPPartitionedRollingAggregateOperator node) {
-        if (node.aggregateList == null) {
+        if (node.aggregateList == null || this.keepAggregateLists) {
             super.postorder(node);
             return;
         }
@@ -451,7 +455,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator node) {
-        if (node.aggregateList == null) {
+        if (node.aggregateList == null || this.keepAggregateLists) {
             super.postorder(node);
             return;
         }

@@ -662,38 +662,6 @@ pub fn array_aggN<T>(
 }
 
 #[doc(hidden)]
-pub fn array_agg_opt<T>(
-    accumulator: &mut Vec<Option<T>>,
-    value: Option<T>,
-    weight: Weight,
-    distinct: bool,
-    keep: bool,
-    ignore_nulls: bool,
-) where
-    T: Clone,
-{
-    if !ignore_nulls || value.is_some() {
-        array_agg(accumulator, value, weight, distinct, keep);
-    }
-}
-
-#[doc(hidden)]
-pub fn array_agg_optN<T>(
-    accumulator: &mut Option<Vec<Option<T>>>,
-    value: Option<T>,
-    weight: Weight,
-    distinct: bool,
-    keep: bool,
-    ignore_nulls: bool,
-) where
-    T: Clone,
-{
-    if let Some(accumulator) = accumulator.as_mut() {
-        array_agg_opt(accumulator, value, weight, distinct, keep, ignore_nulls);
-    }
-}
-
-#[doc(hidden)]
 pub fn array_concat__<T>(left: Array<T>, right: Array<T>) -> Array<T>
 where
     T: Clone,

@@ -56,7 +56,13 @@ public final class DBSPApplyMethodExpression extends DBSPApplyBaseExpression {
     public DBSPApplyMethodExpression(
             DBSPExpression function, DBSPType returnType,
             DBSPExpression self, DBSPExpression... arguments) {
-        super(CalciteObject.EMPTY, function, returnType, arguments);
+        this(CalciteObject.EMPTY, function, returnType, self, arguments);
+    }
+
+    public DBSPApplyMethodExpression(
+            CalciteObject node, DBSPExpression function, DBSPType returnType,
+            DBSPExpression self, DBSPExpression... arguments) {
+        super(node, function, returnType, arguments);
         this.self = self;
         this.checkArgs(true);
     }

@@ -28,6 +28,10 @@
   --anchor-text-decoration-focus: none;
   --spacing: 4px;
   --radius-base: 6px;
+  /* Corner radii of the 24px, 32px and 40px controls: buttons, selects and inputs. */
+  --radius-control-sm: 3px;
+  --radius-control: 4px;
+  --radius-control-lg: 6px;
   --radius-container: 12px;
   --default-border-width: 2px;
   --default-divide-width: 1px;
@@ -221,6 +225,109 @@
   background-color: #ffffff;
 }
 
+/* ── Status tones ────────────────────────────────────────────────────────────
+   Colours for status chips, dots and counters in web-console and profiler-app
+   (Figma: Feldera-UI, node 3554:18690). Tailwind turns them into utilities
+   such as `bg-status-blue-subtle` and `text-status-blue`.                    */
+
+@theme {
+  /* Each tone has a strong colour for text and dots and a subtle colour for the
+     chip background. The light values are Radix alpha steps 11 and 3; the dark
+     overrides follow. A `-dot` colour replaces the strong colour for dots where
+     the strong colour reads too dark. */
+  --color-status-neutral: #0007149f;
+  --color-status-neutral-subtle: #0000330f;
+  --color-status-neutral-dot: #8b8d98;
+  --color-status-blue: #006dcbf2;
+  --color-status-blue-subtle: #008ff519;
+  --color-status-blue-dot: #0090ff;
+  --color-status-jade: #007152df;
+  --color-status-jade-subtle: #00a83829;
+  --color-status-jade-dot: #29a383;
+  --color-status-warning: #ab6400;
+  --color-status-warning-subtle: #ffde003d;
+  --color-status-warning-dot: #ffc53d;
+  --color-status-error: #c40006d3;
+  --color-status-error-subtle: #f3000d14;
+}
+
+/* Dark counterparts of the status tones (Radix dark steps 11 and 3). */
+.dark {
+  --color-status-neutral: #f1f7feb5;
+  --color-status-neutral-subtle: #d3edf81d;
+  --color-status-neutral-dot: #696e77;
+  --color-status-blue: #70b8ff;
+  --color-status-blue-subtle: #0077ff3a;
+  --color-status-blue-dot: #70b8ff;
+  --color-status-jade: #1fd8a4;
+  --color-status-jade-subtle: #00f9a51c;
+  --color-status-jade-dot: #1fd8a4;
+  --color-status-warning: #ffca16;
+  --color-status-warning-subtle: #fa820022;
+  --color-status-warning-dot: #ffca16;
+  --color-status-error: #ff9592;
+  --color-status-error-subtle: #f4121227;
+}
+
+/* ── Tabs ────────────────────────────────────────────────────────────────────
+   A 24px tab with 12px above and below, so a row of tabs is 48px tall and its
+   bottom edge is the header's line. The selected tab draws a 2px bar on that
+   line, so the bar stays with its tab when the row wraps. Zag tab triggers are
+   marked selected with `data-selected`; plain buttons use `.tab-active`.
+   Used by TabsPanel and the pipeline editor's file tabs.                     */
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 24px;
+  margin-block: 12px;
+  padding-inline: 12px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms;
+}
+
+/* Zag tab triggers also carry Skeleton's own tab styles, whose hover tints the tab
+   with the primary colour and brightens it. A tab keeps its text colour instead, and
+   only an unselected tab takes the grey hover fill. */
+.tab:hover {
+  color: inherit;
+  filter: none;
+  background-color: transparent;
+}
+
+.tab:not([data-selected], .tab-active, [data-disabled]):hover {
+  background-color: color-mix(
+    in oklab,
+    light-dark(var(--color-surface-100), var(--color-surface-900)) 50%,
+    transparent
+  );
+}
+
+.tab:is([data-selected], .tab-active)::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -12px;
+  height: 2px;
+  background-color: light-dark(
+    var(--color-surface-950),
+    var(--color-surface-50)
+  );
+}
+
+.tab[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
 /* ── Resizable pane divider handles ──────────────────────────────────────────
    Used by paneforge PaneResizer elements in both web-console and profiler-app.
    Apply in addition to margin utilities (my-2 / mx-1.5) for spacing.         */
@@ -234,7 +341,7 @@
 }
 
 .pane-divider-horizontal::before {
-  content: '';
+  content: "";
   display: flex;
   margin-top: -3px; /* -0.75 * 4 px */
   height: 8px; /* 2 * 4 px */
@@ -255,7 +362,7 @@
 }
 
 .pane-divider-vertical::before {
-  content: '';
+  content: "";
   display: flex;
   margin-left: -3px;
   height: 100%;

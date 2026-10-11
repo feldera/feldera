@@ -34,6 +34,8 @@
     class?: string
     /** Extra classes for the input (width, ...). */
     inputClass?: string
+    /** Extra classes for the search toggle button (size, style preset, ...). */
+    buttonClass?: string
     /** Advance to the next match — Enter or the down button. */
     onnext: () => void
     /** Step back to the previous match — Shift-Enter or the up button. */
@@ -52,6 +54,7 @@
     open = $bindable(false),
     class: className = '',
     inputClass = '',
+    buttonClass = '',
     onnext,
     onprevious,
     onclear
@@ -144,7 +147,7 @@
 <div class="relative flex items-center {className}">
   <button
     type="button"
-    class="btn-icon p-0.5 text-[16px] hover:preset-tonal-surface"
+    class="btn-icon p-0.5 text-[16px] hover:preset-tonal-surface {buttonClass}"
     class:preset-tonal-surface={open}
     onclick={toggle}
     onmousedown={(e) => e.preventDefault()}

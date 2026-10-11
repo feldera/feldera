@@ -586,6 +586,7 @@ pub enum RuntimeConfigKey {
     MemoryMbMax,
     StorageMbMax,
     StorageClass,
+    VolumeAttributesClass,
     MinStorageBytes,
     ClockResolutionUsecs,
     Logging,

@@ -7,7 +7,15 @@ import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlTimeLiteral;
+import org.apache.calcite.sql.SqlTimestampLiteral;
+import org.apache.calcite.sql.parser.SqlParserPos;
+import org.apache.calcite.sql.parser.SqlParserUtil;
 import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.type.SqlTypeUtil;
+import org.apache.calcite.util.NlsString;
+import org.apache.calcite.util.TimeString;
+import org.apache.calcite.util.TimestampString;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -39,7 +47,49 @@ public class RexOptimize extends RexShuttle {
     RexNode optimize(RexCall call) {
         if (SqlTypeName.INTERVAL_TYPES.contains(call.getType().getSqlTypeName()))
             return this.optimizeInterval(call);
+        if (call.getKind() == SqlKind.CAST || call.getKind() == SqlKind.SAFE_CAST)
+            return this.optimizeCast(call);
         return call;
+    }
+
+    /** Constant fold a cast of a string literal to TIME or TIMESTAMP.  Calcite folds only
+     * strings with fractional seconds (CALCITE-7529).  The string must be in the canonical
+     * form, which the runtime parses the same way, with no more fractional digits than the
+     * precision of the result, so that no rounding is needed.  Any other string is left to
+     * the runtime. */
+    RexNode optimizeCast(RexCall call) {
+        if (!(call.getOperands().get(0) instanceof RexLiteral literal)
+                || !SqlTypeUtil.isCharacter(literal.getType()))
+            return call;
+        NlsString string = literal.getValueAs(NlsString.class);
+        if (string == null)
+            return call;
+        String value = string.getValue();
+        RelDataType type = call.getType();
+        try {
+            switch (type.getSqlTypeName()) {
+                case TIME: {
+                    SqlTimeLiteral time = SqlParserUtil.parseTimeLiteral(value, SqlParserPos.ZERO);
+                    if (!time.toFormattedString().equals(value) || time.getPrec() > type.getPrecision())
+                        return call;
+                    return this.builder.makeLiteral(time.getValueAs(TimeString.class), type, true);
+                }
+                case TIMESTAMP: {
+                    SqlTimestampLiteral timestamp = SqlParserUtil.parseTimestampLiteral(value, SqlParserPos.ZERO);
+                    if (!timestamp.toFormattedString().equals(value)
+                            || timestamp.getPrec() > type.getPrecision()
+                            // The canonical form starts with the four digits of the year
+                            || Integer.parseInt(value.substring(0, 4)) < 1)
+                        return call;
+                    return this.builder.makeLiteral(timestamp.getValueAs(TimestampString.class), type, true);
+                }
+                default:
+                    return call;
+            }
+        } catch (RuntimeException e) {
+            // Not a literal of this type; the runtime reports the error
+            return call;
+        }
     }
 
     /** Constant fold interval computations */

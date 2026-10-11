@@ -29,9 +29,9 @@
 //!
 //! See `config_utils::translate_connect_options` for implementation details.
 
-mod config_utils;
+pub(crate) mod config_utils;
 #[cfg(test)]
-mod test;
+pub(crate) mod test;
 
 use crate::{
     InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint,

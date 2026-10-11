@@ -112,7 +112,7 @@ fn main() {
 
             paths.gather(0).inspect(|zs: &OrdZSet<_>| {
                 if Runtime::worker_index() == 0 {
-                    println!("paths: {}", zs.len())
+                    println!("paths: {}", zs.len_upper_bound())
                 }
             });
             Ok(())
