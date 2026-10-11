@@ -188,46 +188,92 @@ where
         Accumulation<Stream<C, Option<Spine<B>>>>,
         Arc<ShardedAccumulator<B>>,
     ) {
+        let (receiver, exchange) = self.add_sharded_accumulator_receiver(
+            runtime,
+            factories,
+            workers.clone(),
+            batch_layout,
+            remote_waiter_node_id,
+            location,
+        );
+        let sender = self.circuit().add_sink(
+            ShardedAccumulatorSender::new(
+                Some(location),
+                exchange.clone(),
+                // Only the root circuit exchanges metadata.
+                (self.circuit().root_scope() == 0)
+                    .then(|| self.circuit().metadata_exchange().clone()),
+            ),
+            self,
+        );
+        self.circuit()
+            .add_dependency(sender.local_node_id().unwrap(), receiver.local_node_id());
+        let accumulation = Accumulation {
+            stream: receiver.mark_sharded_workers(workers),
+            enable_count: exchange.enable_count.clone(),
+        };
+        (accumulation, exchange)
+    }
+
+    /// Adds a new [ShardedAccumulator], with its receiver and the receiver's
+    /// waiters, but no sender.
+    ///
+    /// Constructs the receiving half of a sharded accumulator circuit, leaving
+    /// the following to the caller:
+    /// - Create a sender - an operator that reads `self` and sends to
+    ///   the accumulator
+    /// - Add a dependency from the sender to the receiver.
+    /// - Mark the receiver's output as sharded, if the sender produces sharded
+    ///   output.
+    ///
+    /// # Arguments
+    ///
+    /// * `runtime` - the runtime to exchange data in.
+    /// * `factories` - factories for the accumulated batches.
+    /// * `workers` - the workers that receive data.
+    /// * `batch_layout` - how the receiving spines lay out the batches that
+    ///   they write.
+    /// * `remote_waiter_node_id` - the circuit's
+    ///   [ShardedAccumulatorRemoteWaiter], on a multihost runtime.
+    /// * `location` - the source location to report for the operators.
+    ///
+    /// # Returns
+    ///
+    /// The receiver's output stream and the [ShardedAccumulator].
+    fn add_sharded_accumulator_receiver(
+        &self,
+        runtime: &Runtime,
+        factories: &B::Factories,
+        workers: Range<usize>,
+        batch_layout: BatchLayout,
+        remote_waiter_node_id: Option<NodeId>,
+        location: &'static Location<'static>,
+    ) -> (Stream<C, Option<Spine<B>>>, Arc<ShardedAccumulator<B>>) {
         let exchange_id: ExchangeId = runtime.sequence_next().try_into().unwrap();
         let exchange = ShardedAccumulator::<B>::with_runtime(
             runtime,
-            workers.clone(),
+            workers,
             exchange_id,
             factories,
             batch_layout,
         );
-        let enable_count = exchange.enable_count.clone();
         let local_waiter = self
             .circuit()
             .add_source(ShardedAccumulatorLocalWaiter::new(
                 Some(location),
                 exchange.clone(),
             ));
-        let receiver = self
-            .circuit()
-            .add_exchange(
-                ShardedAccumulatorSender::new(
-                    Some(location),
-                    exchange.clone(),
-                    // Only the root circuit exchanges metadata.
-                    (self.circuit().root_scope() == 0)
-                        .then(|| self.circuit().metadata_exchange().clone()),
-                ),
-                ShardedAccumulatorReceiver::new(Some(location), exchange.clone()),
-                self,
-            )
-            .mark_sharded_workers(workers);
+        let receiver = self.circuit().add_source(ShardedAccumulatorReceiver::new(
+            Some(location),
+            exchange.clone(),
+        ));
         self.circuit()
             .add_dependency(receiver.local_node_id(), local_waiter.local_node_id());
         if let Some(remote_waiter_node_id) = remote_waiter_node_id {
             self.circuit()
                 .add_dependency(receiver.local_node_id(), remote_waiter_node_id);
         }
-        let accumulation = Accumulation {
-            stream: receiver,
-            enable_count,
-        };
-        (accumulation, exchange)
+        (receiver, exchange)
     }
 }
 
