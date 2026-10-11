@@ -5,8 +5,16 @@
   const {
     inputClass,
     btnClass,
-    onSuccess
-  }: { class?: string; inputClass?: string; btnClass?: string; onSuccess?: () => void } = $props()
+    onSuccess,
+    shortLabelOnMobile = false
+  }: {
+    class?: string
+    inputClass?: string
+    btnClass?: string
+    onSuccess?: () => void
+    /** Shorten the label to "New" below the `md` breakpoint, where space is tight. */
+    shortLabelOnMobile?: boolean
+  } = $props()
 </script>
 
 <!-- Creating a pipeline is the only thing this control does, so gate the whole
@@ -18,7 +26,12 @@
       <div class="flex justify-center">
         <button class="btn {btnClass}" {onclick}>
           <span class="fd fd-plus"></span>
-          New Pipeline
+          {#if shortLabelOnMobile}
+            <span class="md:hidden">New</span>
+            <span class="hidden md:inline">New Pipeline</span>
+          {:else}
+            New Pipeline
+          {/if}
         </button>
       </div>
     {/snippet}

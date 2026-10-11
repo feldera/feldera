@@ -107,8 +107,9 @@
    This shows only when the button is wider than its content. The auto margins of the
    icon and of a zero-width ::after share the spare width. The ::after's negative end
    margin cancels the flex gap before it, so a button that fits its content keeps its
-   size. */
-.btn:has(> .fd:first-child) {
+   size. A button that is also `.btn-icon` (a labelled button shrunk to its icon on small
+   screens) keeps the icon centred instead. */
+.btn:not(.btn-icon):has(> .fd:first-child) {
   & > .fd:first-child {
     margin-inline-end: auto;
   }
@@ -204,8 +205,10 @@
   color: var(--color-surface-950-50);
 }
 
+/* Selects share the buttons' hover, so a select next to a button reacts the same way. */
 .btn,
-.btn-icon {
+.btn-icon,
+.select {
   &:not(:disabled, .disabled) {
     &:hover {
       filter: brightness(93%);
@@ -238,7 +241,6 @@
   --tw-brightness: brightness(1.3);
 } */
 
-.checkbox,
 .radio {
   @apply border-none bg-white dark:bg-dark;
 }
@@ -302,9 +304,92 @@ input:focus {
   background-position: right calc(var(--spacing) * 2) /* 8px */ center;
 }
 
+/* Checkboxes follow the Figma "Checkbox" component at its 16px size: an outlined box when
+   unchecked, and the primary fill with a white check mark when checked. */
 .checkbox {
+  @apply border border-surface-950-50/20 bg-white dark:bg-dark;
+  appearance: none;
+  flex-shrink: 0;
   width: 16px;
   height: 16px;
+  border-radius: var(--radius-control-sm) /* 3px */;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 16px 16px;
+  print-color-adjust: exact;
+
+  &:checked {
+    border-color: transparent;
+    background-color: var(--color-primary-500);
+    background-image: url("../assets/icons/generic/checkbox-check.svg");
+  }
+}
+
+/* The home page's welcome banner: one continuous background instead of two gradient
+   halves, which met in a visible seam. A soft primary glow fans out from the top-left
+   corner and a faint warm yellow glow rises from the bottom, over a smooth base. */
+.welcome-banner-bg {
+  background:
+    radial-gradient(
+      55% 140% at 0% 0%,
+      color-mix(in oklab, var(--color-primary-300) 60%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(45% 120% at 55% 130%, oklch(92.4% 0.12 95.75 / 0.6), transparent 70%),
+    linear-gradient(100deg, oklch(98.7% 0.022 95.28), oklch(98% 0.016 73.68));
+
+  &:where(.dark, .dark *) {
+    background:
+      radial-gradient(
+        55% 140% at 0% 0%,
+        color-mix(in oklab, var(--color-primary-500) 50%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(45% 120% at 55% 130%, oklch(82.8% 0.189 84.43 / 0.22), transparent 70%),
+      linear-gradient(100deg, oklch(24% 0.02 70), oklch(22% 0.01 80) 60%, oklch(21% 0.005 90));
+  }
+}
+
+/* The small Skeleton `Switch`, after the smallest Figma "Switch" (28 × 16px with a 14px
+   thumb) for use beside 16px checkboxes and small controls. Put `switch-sm` on the
+   `<Switch>` root; the colours stay Skeleton's (Feldera primary when on). The thumb fills
+   the control's height, so only the control is sized. */
+.switch-sm [data-part="control"] {
+  width: 28px;
+  height: 16px;
+  padding: 1px;
+}
+
+.switch-sm [data-part="thumb"] {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+
+/* Skeleton slides the checked thumb a fixed 16px, sized for its default track. On the
+   28px track it travels 28 - 2 × 1px padding - 14px thumb = 12px, or it overhangs the
+   right edge. */
+.switch-sm [data-part="thumb"][data-state="checked"] {
+  transform: translateX(12px);
+}
+
+[dir="rtl"] .switch-sm [data-part="thumb"][data-state="checked"] {
+  transform: translateX(-12px);
+}
+
+/* The medium Skeleton `Switch`, between `switch-sm` and Skeleton's 40 × 24px default:
+   34 × 20px with a 16px thumb, for settings lists. Put `switch-md` on the `<Switch>` root.
+   The checked thumb travels 34 - 2 × 2px padding - 16px thumb = 14px. */
+.switch-md [data-part="control"] {
+  width: 34px;
+  height: 20px;
+  padding: 2px;
+}
+
+.switch-md [data-part="thumb"][data-state="checked"] {
+  transform: translateX(14px);
+}
+
+[dir="rtl"] .switch-md [data-part="thumb"][data-state="checked"] {
+  transform: translateX(-14px);
 }
 
 /* The end of Skeleton UI overrides */

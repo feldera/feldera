@@ -229,7 +229,8 @@
 {/snippet}
 
 <div class="flex h-full w-full flex-col">
-  <AppHeader>
+  <!-- 20px side gutters on this page, for the header and the panels below it alike. -->
+  <AppHeader paddingX="px-2 md:px-5">
     {#snippet afterStart()}
       <!-- One row that wraps: the status chip drops under the name only when they don't fit. -->
       <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
@@ -319,7 +320,8 @@
       {/if}
     {/snippet}
   </AppHeader>
-  <PaneGroup direction="horizontal" class="!overflow-visible px-2 pb-4 md:pr-8 md:pl-8 xl:pl-4">
+  <!-- From xl the pipelines list pane's resizer adds 16px on the left, hence the 4px. -->
+  <PaneGroup direction="horizontal" class="!overflow-visible px-2 pb-2 md:pr-5 md:pl-5 xl:pl-1">
     <Pane
       defaultSize={15}
       minSize={10}
@@ -386,9 +388,7 @@
                   {statusBarEnd}
                 ></PipelineCodePanel>
               {:else}
-                <div
-                  class="flex h-full flex-col justify-end rounded-container bg-surface-50-950 px-4 py-2"
-                >
+                <div class="panel flex h-full flex-col justify-end px-2 pt-2 pb-0">
                   <div class="-mx-8 -mt-2 flex flex-1 flex-col items-center gap-4">
                     <Progress class="h-1 w-full px-4" value={null} max={100}>
                       <Progress.Track>
@@ -398,9 +398,9 @@
                     <p class="text-surface-600-400">Loading pipeline...</p>
                   </div>
                   <div
-                    class="bg-white-dark mb-2 flex flex-wrap items-center gap-x-8 rounded-b border-t border-surface-50-950 p-2 pl-4"
+                    class="flex flex-wrap items-center gap-x-8 border-t border-surface-200-800 px-2 py-2 pl-4"
                   >
-                    <div class="flex h-9 flex-nowrap gap-3">
+                    <div class="flex h-6 flex-nowrap gap-3">
                       {@render statusBarCenter()}
                     </div>
                     <div class="ml-auto flex flex-nowrap gap-x-2">
@@ -421,7 +421,7 @@
                     bind:currentTab={currentInteractionTab}
                   ></InteractionPanel>
                 {:else}
-                  <div class="flex flex-1 rounded-container bg-surface-50-950 p-4 pt-3"></div>
+                  <div class="panel flex flex-1 px-2 pt-3 pb-2"></div>
                 {/if}
               </Pane>
             {/if}
@@ -429,7 +429,7 @@
         </Pane>
 
         {#if showMonitoringPanel.value}
-          <PaneResizer class="pane-divider-horizontal my-1" />
+          <PaneResizer class="pane-divider-horizontal my-[5px]" />
           <Pane minSize={15} class="flex flex-col !overflow-visible">
             {#if pipeline.current && metrics.current}
               <MonitoringPanel
@@ -440,7 +440,7 @@
                 bind:currentTab={currentMonitoringTab}
               ></MonitoringPanel>
             {:else}
-              <div class="flex flex-1 rounded-container bg-surface-50-950 p-4 pt-3"></div>
+              <div class="panel flex flex-1 px-2 pt-3 pb-2"></div>
             {/if}
           </Pane>
         {/if}
@@ -469,7 +469,7 @@
     {#each layoutControls as { icon, text, value, show }}
       {#if show !== false}
         <button
-          class="btn btn-sm text-surface-700-300 !brightness-100 hover:preset-tonal-surface"
+          class="btn btn-sm text-surface-700-300 hover:bg-surface-50-950 hover:text-surface-950-50"
           onclick={() => (value.value = !value.value)}
         >
           <span class="hidden sm:inline">

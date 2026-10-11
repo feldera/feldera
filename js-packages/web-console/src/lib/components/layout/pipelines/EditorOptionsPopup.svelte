@@ -11,7 +11,7 @@
 <Popup wrapperClass="flex">
   {#snippet trigger(toggle)}
     <button
-      class="fd fd-more_horiz btn-icon btn-icon-sm text-[16px] !brightness-100 hover:preset-tonal-surface"
+      class="fd fd-more_horiz btn-icon btn-icon-sm text-[16px] hover:bg-surface-50-950 hover:text-surface-950-50"
       onclick={toggle}
       aria-label="Editor settings"
     ></button>
@@ -25,6 +25,7 @@
         <label class="flex cursor-pointer justify-between rounded p-2 hover:preset-tonal-surface">
           Autosave
           <Switch
+            class="switch-md"
             name="autoSave"
             checked={autoSaveFiles.value}
             onCheckedChange={(e) => (autoSaveFiles.value = e.checked)}
@@ -39,6 +40,7 @@
         <label class="flex cursor-pointer justify-between rounded p-2 hover:preset-tonal-surface">
           Show minimap
           <Switch
+            class="switch-md"
             name="showMinimap"
             checked={showMinimap.value}
             onCheckedChange={(e) => (showMinimap.value = e.checked)}
@@ -53,6 +55,7 @@
         <label class="flex cursor-pointer justify-between rounded p-2 hover:preset-tonal-surface">
           Show sticky scroll
           <Switch
+            class="switch-md"
             name="showStickyScroll"
             checked={showStickyScroll.value}
             onCheckedChange={(e) => (showStickyScroll.value = e.checked)}

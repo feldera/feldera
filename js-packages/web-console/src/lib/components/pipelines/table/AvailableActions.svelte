@@ -215,7 +215,7 @@
 {/snippet}
 
 {#if actions.length}
-  <div class="flex h-9 flex-wrap gap-2">
+  <div class="flex h-8 flex-wrap gap-2">
     {#each actions as action}
       {@render action()}
     {/each}

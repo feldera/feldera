@@ -225,6 +225,19 @@
   background-color: #ffffff;
 }
 
+/* ── Panels ──────────────────────────────────────────────────────────────────
+   The grey content panels, such as the pipeline editor and its tabbed panels. In dark
+   mode they sit close to the near-black page (#2a2a2a is the Radix dark grey step 4,
+   the scale of the status tones) rather than at surface-950, which light mode uses for
+   text. Their corners are a little tighter than `rounded-container`. */
+.panel {
+  border-radius: 8px;
+  background-color: var(--color-surface-50);
+}
+.panel:where(.dark, .dark *) {
+  background-color: #2a2a2a;
+}
+
 /* ── Status tones ────────────────────────────────────────────────────────────
    Colours for status chips, dots and counters in web-console and profiler-app
    (Figma: Feldera-UI, node 3554:18690). Tailwind turns them into utilities
