@@ -20,7 +20,7 @@ use tokio::sync::Notify;
 use crate::{
     Circuit, NumEntries, Runtime, Scope, Stream,
     circuit::{
-        GlobalNodeId, NodeId, OwnershipPreference, StepSize, WorkerLocation, WorkerLocations,
+        GlobalNodeId, NodeId, OwnershipPreference, WorkerLocation, WorkerLocations,
         circuit_builder::{MetadataExchange, StreamId},
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT,
@@ -124,10 +124,9 @@ where
         B: Batch<Time = ()>,
     {
         if !self.has_workers_sharded_version(workers.clone())
-            && Runtime::with_dev_tweaks(|d| d.streaming_exchange())
             && let Some(runtime) = Runtime::runtime()
+            && runtime.streaming_exchange()
             && runtime.layout().n_workers() > 1
-            && runtime.step_size() == StepSize::Microsteps
         {
             let remote_waiter_node_id = self.sharded_accumulator_remote_waiter(&runtime);
             self.circuit()

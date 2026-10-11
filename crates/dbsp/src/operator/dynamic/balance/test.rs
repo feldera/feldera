@@ -5,10 +5,10 @@ use std::{hash::Hasher, path::Path};
 use tempfile::tempdir;
 
 use crate::{
-    Circuit, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Runtime,
-    ZWeight,
+    Circuit, Error as DbspError, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle,
+    RootCircuit, Runtime, RuntimeError, ZWeight,
     algebra::F64,
-    circuit::{CircuitConfig, CircuitStorageConfig, Mode},
+    circuit::{CircuitConfig, CircuitStorageConfig, Mode, StepSize},
     default_hasher,
     dynamic::{Data, DowncastTrait as _},
     operator::{
@@ -1309,6 +1309,76 @@ fn test_reject_broadcast_hint_on_left_join_outer_input() {
     left_input_handle.push(1, (1, 1));
     right_input_handle.push(1, (1, 1));
     circuit.transaction().unwrap();
+}
+
+/// Adaptive joins exchange data through the streaming exchange, so they also
+/// need it.  Without it, `join_balanced` builds an ordinary join, which does
+/// not register with the balancer.
+#[test]
+fn test_adaptive_joins_need_streaming_exchange() {
+    init_test_logger();
+
+    for (streaming_exchange, adaptive) in [(true, true), (false, false)] {
+        let mut config = CircuitConfig::with_workers(4).with_streaming_exchange(streaming_exchange);
+        config.dev_tweaks.adaptive_joins = Some(true);
+        let (mut circuit, (left_input_handle, right_input_handle, output_handle)) =
+            Runtime::init_circuit(config, |circuit| {
+                let (left_input, left_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
+                let (right_input, right_input_handle) =
+                    circuit.add_input_indexed_zset::<u64, u64>();
+                let output_handle = left_input
+                    .join_balanced(&right_input, |key, v1, v2| Tup3(*key, *v1, Some(*v2)))
+                    .accumulate_output();
+                Ok((left_input_handle, right_input_handle, output_handle))
+            })
+            .unwrap();
+        assert_eq!(
+            circuit.adaptive_joins_enabled(),
+            adaptive,
+            "streaming_exchange={streaming_exchange}"
+        );
+
+        left_input_handle.push(1, (1, 1));
+        right_input_handle.push(1, (2, 1));
+        circuit.transaction().unwrap();
+        assert_eq!(
+            SpineSnapshot::<OrdZSet<Tup3<u64, u64, Option<u64>>>>::concat(
+                &output_handle.take_from_all()
+            )
+            .iter()
+            .collect::<Vec<_>>(),
+            vec![(Tup3(1, 1, Some(2)), (), 1)],
+            "streaming_exchange={streaming_exchange}"
+        );
+        assert_eq!(
+            !circuit.get_current_balancer_policies().unwrap().is_empty(),
+            adaptive,
+            "streaming_exchange={streaming_exchange}"
+        );
+        circuit.kill().unwrap();
+    }
+}
+
+/// Adaptive joins do not support full steps, so the runtime refuses to start a
+/// circuit that runs in full steps with adaptive joins enabled, and starts one
+/// without them.
+#[test]
+fn test_adaptive_joins_reject_full_steps() {
+    init_test_logger();
+
+    for adaptive_joins in [false, true] {
+        let mut config = CircuitConfig::with_workers(4).with_step_size(StepSize::FullSteps);
+        config.dev_tweaks.adaptive_joins = Some(adaptive_joins);
+        let result = Runtime::init_circuit(config, |_circuit| Ok(()));
+        if adaptive_joins {
+            assert!(matches!(
+                result,
+                Err(DbspError::Runtime(RuntimeError::AdaptiveJoinsInFullSteps))
+            ));
+        } else {
+            result.unwrap().0.kill().unwrap();
+        }
+    }
 }
 
 /// Join a large left collection with a small right collection. Both are skewed.

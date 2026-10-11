@@ -178,7 +178,7 @@ where
             .typed()
     }
 
-    /// Behaves as `join_balanced_inner` when adaptive joins are enabled in dev tweaks and as `join` otherwise.
+    /// Behaves as `join_balanced_inner` when [`adaptive_joins_enabled`] returns true and as `join` otherwise.
     #[track_caller]
     pub fn join_balanced<F, V2, OV>(
         &self,
@@ -255,7 +255,7 @@ where
             .typed()
     }
 
-    /// Behaves as `left_join_balanced_inner` when adaptive joins are enabled in dev tweaks and as `left_join` otherwise.
+    /// Behaves as `left_join_balanced_inner` when [`adaptive_joins_enabled`] returns true and as `left_join` otherwise.
     #[track_caller]
     pub fn left_join_balanced<F, V2, OV>(
         &self,
@@ -329,7 +329,7 @@ where
             .typed()
     }
 
-    /// Behaves as `join_flatmap_balanced_inner` when adaptive joins are enabled in dev tweaks and as `join_flatmap` otherwise.
+    /// Behaves as `join_flatmap_balanced_inner` when [`adaptive_joins_enabled`] returns true and as `join_flatmap` otherwise.
     #[track_caller]
     pub fn join_flatmap_balanced<F, V2, OV, It>(
         &self,
@@ -405,7 +405,7 @@ where
             .typed()
     }
 
-    /// Behaves as `left_join_flatmap_balanced_inner` when adaptive joins are enabled in dev tweaks and as `left_join_flatmap` otherwise.
+    /// Behaves as `left_join_flatmap_balanced_inner` when [`adaptive_joins_enabled`] returns true and as `left_join_flatmap` otherwise.
     #[track_caller]
     pub fn left_join_flatmap_balanced<F, V2, OV, It>(
         &self,
@@ -482,7 +482,7 @@ where
             .typed()
     }
 
-    /// Behaves as `join_index_balanced_inner` when adaptive joins are enabled in dev tweaks and as `join_index` otherwise.
+    /// Behaves as `join_index_balanced_inner` when [`adaptive_joins_enabled`] returns true and as `join_index` otherwise.
     #[track_caller]
     pub fn join_index_balanced<F, V2, OK, OV, It>(
         &self,
@@ -561,7 +561,7 @@ where
             .typed()
     }
 
-    /// Behaves as `left_join_index_balanced_inner` when adaptive joins are enabled in dev tweaks and as `left_join_index` otherwise.
+    /// Behaves as `left_join_index_balanced_inner` when [`adaptive_joins_enabled`] returns true and as `left_join_index` otherwise.
     #[track_caller]
     pub fn left_join_index_balanced<F, V2, OK, OV, It>(
         &self,

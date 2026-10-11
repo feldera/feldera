@@ -98,6 +98,10 @@ pub enum Error {
     /// stepping a bootstrap circuit that does not exist or creating one
     /// while another exists.
     BootstrapCircuit(String),
+    /// The configuration enables adaptive joins (`dev_tweaks.adaptive_joins`)
+    /// in a circuit that runs in full steps (see [`StepSize::FullSteps`]),
+    /// which adaptive joins do not support.
+    AdaptiveJoinsInFullSteps,
     Terminated,
 }
 
@@ -113,6 +117,7 @@ impl DetailedError for Error {
             Self::IncompatibleStorage => Cow::from("IncompatibleStorage"),
             Self::CheckpointParseError(_) => Cow::from("CheckpointParseError"),
             Self::BootstrapCircuit(_) => Cow::from("BootstrapCircuit"),
+            Self::AdaptiveJoinsInFullSteps => Cow::from("AdaptiveJoinsInFullSteps"),
         }
     }
 }
@@ -162,6 +167,9 @@ impl Display for Error {
             Self::BootstrapCircuit(error) => {
                 write!(f, "Bootstrap circuit error: {error}")
             }
+            Self::AdaptiveJoinsInFullSteps => f.write_str(
+                "Adaptive joins (dev_tweaks.adaptive_joins) do not support full steps, which nonincremental circuits use",
+            ),
         }
     }
 }
@@ -894,6 +902,10 @@ impl Runtime {
     {
         let mut config: CircuitConfig = config.into();
         if config.step_size == StepSize::FullSteps {
+            // Adaptive joins can spread a commit over several steps.
+            if config.dev_tweaks.adaptive_joins() {
+                return Err(DbspError::Runtime(Error::AdaptiveJoinsInFullSteps));
+            }
             config.dev_tweaks.splitter_chunk_size_records = Some(u64::MAX);
         }
 
@@ -1335,12 +1347,28 @@ impl Runtime {
         self.inner().allow_input_during_commit
     }
 
-    /// Whether adaptive (dynamically balanced) joins are enabled, per
-    /// `dev_tweaks.adaptive_joins`. Unlike [`Self::with_dev_tweaks`], this reads the
-    /// runtime's configured tweaks, so it is valid off the worker threads (e.g. on
-    /// the thread that owns the `DBSPHandle`).
+    /// Whether this runtime exchanges data through streaming exchange
+    /// operators.
+    ///
+    /// `dev_tweaks.streaming_exchange` enables the streaming exchange, which
+    /// also needs microsteps.  Nonincremental circuits, which run in full
+    /// steps, use the synchronous exchange.
+    pub fn streaming_exchange(&self) -> bool {
+        self.inner().dev_tweaks.streaming_exchange()
+            && self.inner().step_size == StepSize::Microsteps
+    }
+
+    /// Whether adaptive (dynamically balanced) joins are enabled and can run.
+    ///
+    /// `dev_tweaks.adaptive_joins` enables them.  They exchange data through
+    /// the streaming exchange, so without it (see [`Self::streaming_exchange`])
+    /// circuits use ordinary joins instead.  [`Self::run`] refuses to start a
+    /// circuit that runs in full steps with them enabled.  Unlike
+    /// [`Self::with_dev_tweaks`], this reads the runtime's configured tweaks,
+    /// so it is valid off the worker threads (e.g. on the thread that owns the
+    /// `DBSPHandle`).
     pub fn adaptive_joins(&self) -> bool {
-        self.inner().dev_tweaks.adaptive_joins()
+        self.inner().dev_tweaks.adaptive_joins() && self.streaming_exchange()
     }
 
     /// Returns the worker index as a string.
