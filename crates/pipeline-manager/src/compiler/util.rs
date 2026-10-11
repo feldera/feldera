@@ -249,6 +249,20 @@ pub async fn copy_file_if_checksum_differs(
     }
 }
 
+/// Writes `content` to the file unless it already holds exactly that, so that an unchanged
+/// file keeps its modification time and cargo does not rebuild what depends on it.
+pub async fn write_file_if_content_differs(
+    target_file_path: &Path,
+    content: &str,
+) -> Result<(), UtilError> {
+    if target_file_path.is_file()
+        && read_file_content_bytes(target_file_path).await? == content.as_bytes()
+    {
+        return Ok(());
+    }
+    write_file(content.as_bytes(), target_file_path).await
+}
+
 /// Removes the directory recursively if it already exists, and then creates the directory anew empty.
 pub async fn recreate_dir(dir_path: &Path) -> Result<(), UtilError> {
     if dir_path.exists() {
@@ -641,6 +655,11 @@ pub fn crate_name_pipeline_globals(pipeline_id: PipelineId) -> String {
         "feldera_pipe_{}_globals",
         crate_name_pipeline_base(pipeline_id)
     )
+}
+
+/// Name of the crate in which the Rust UDFs of a Gen-2 pipeline are compiled.
+pub fn crate_name_pipeline_udf(pipeline_id: PipelineId) -> String {
+    format!("feldera_pipe_{}_udf", crate_name_pipeline_base(pipeline_id))
 }
 
 /// Generate filename for pipeline binary based on pipeline ID, version, and checksums.

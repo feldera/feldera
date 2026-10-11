@@ -14388,6 +14388,11 @@
           },
           "program_schema": {
             "description": "Program schema."
+          },
+          "udf_wasm": {
+            "type": "string",
+            "description": "The program's Rust UDFs compiled to a WebAssembly module, base64-encoded, which\nthe Gen-2 engine loads to run them. `None` when the program has no Rust UDFs, and\nfor Rust-compiled pipelines, which link their UDFs into the binary.",
+            "nullable": true
           }
         }
       },

@@ -1506,6 +1506,16 @@ pub struct CompilerConfig {
     #[arg(long, default_value_t = 1000)]
     pub binary_upload_retry_delay_ms: u64,
 
+    /// Directory of the `feldera-udf` crate, the SDK that the Rust UDFs of Gen-2
+    /// programs are written against.
+    ///
+    /// The compiler builds such UDFs into a WebAssembly module whose crate depends
+    /// on this directory by path. When unset, a Gen-2 program with Rust UDFs is
+    /// refused. Building the module requires the `wasm32-wasip1` Rust target.
+    #[serde(default)]
+    #[arg(long, env = "GEN2_UDF_SDK_PATH")]
+    pub gen2_udf_sdk_path: Option<String>,
+
     /// Precompile Rust dependencies in the working directory.
     ///
     /// Instructs the manager to download and compile all crates needed by
@@ -1524,7 +1534,8 @@ impl CompilerConfig {
         Path::new(&self.compiler_working_directory).to_path_buf()
     }
 
-    /// Convert all directory paths in the `self` to absolute paths.
+    /// Convert all directory paths in the `self` to absolute paths, and check that the
+    /// Gen-2 UDF SDK location, if set, is a crate.
     pub fn canonicalize(mut self) -> AnyResult<Self> {
         help_create_dir(&self.compiler_working_directory)?;
         self.compiler_working_directory = help_canonicalize_path(&self.compiler_working_directory)?;
@@ -1532,6 +1543,20 @@ impl CompilerConfig {
         self.compilation_cargo_lock_path =
             help_canonicalize_path(&self.compilation_cargo_lock_path)?;
         self.dbsp_override_path = help_canonicalize_path(&self.dbsp_override_path)?;
+        // Generated UDF crates depend on the SDK by path, which must not be relative to them.
+        self.gen2_udf_sdk_path = self
+            .gen2_udf_sdk_path
+            .as_deref()
+            .map(help_canonicalize_path)
+            .transpose()?;
+        if let Some(sdk_path) = &self.gen2_udf_sdk_path
+            && !Path::new(sdk_path).join("Cargo.toml").is_file()
+        {
+            return Err(AnyError::msg(format!(
+                "the Gen-2 UDF SDK location '{sdk_path}' holds no Cargo.toml: \
+                 '--gen2-udf-sdk-path' must name the directory of the 'feldera-udf' crate"
+            )));
+        }
         Ok(self)
     }
 }
@@ -1787,6 +1812,43 @@ mod tests {
             ..CommonConfig::test_config()
         };
         assert!(std::panic::catch_unwind(|| config.https_config()).is_err());
+    }
+
+    /// The Gen-2 UDF SDK location is made absolute, and one that is not a crate stops startup.
+    #[test]
+    fn gen2_udf_sdk_path_must_name_a_crate() {
+        let working_dir = tempfile::tempdir().unwrap();
+        let sdk_dir = tempfile::tempdir().unwrap();
+        let existing_path = working_dir.path().to_string_lossy().to_string();
+        let config = |gen2_udf_sdk_path: Option<String>| CompilerConfig {
+            compiler_working_directory: existing_path.clone(),
+            compilation_profile: CompilationProfile::Optimized,
+            sql_compiler_path: existing_path.clone(),
+            sql_compiler_cache_url: String::new(),
+            compilation_cargo_lock_path: existing_path.clone(),
+            dbsp_override_path: existing_path.clone(),
+            binary_upload_endpoint: None,
+            binary_upload_timeout_secs: 600,
+            binary_upload_max_retries: 3,
+            binary_upload_retry_delay_ms: 1000,
+            gen2_udf_sdk_path,
+            precompile: false,
+        };
+        let sdk_path = format!("{}/.", sdk_dir.path().display());
+
+        assert_eq!(config(None).canonicalize().unwrap().gen2_udf_sdk_path, None);
+        let error = config(Some(sdk_path.clone())).canonicalize().unwrap_err();
+        assert!(error.to_string().contains("--gen2-udf-sdk-path"), "{error}");
+
+        std::fs::write(sdk_dir.path().join("Cargo.toml"), "").unwrap();
+        let canonical_sdk_path = std::fs::canonicalize(sdk_dir.path()).unwrap();
+        assert_eq!(
+            config(Some(sdk_path))
+                .canonicalize()
+                .unwrap()
+                .gen2_udf_sdk_path,
+            Some(canonical_sdk_path.to_string_lossy().to_string())
+        );
     }
 
     /// Provisioning off without a configured owner is a bricked installation,

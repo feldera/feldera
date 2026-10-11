@@ -1,3 +1,6 @@
+use crate::compiler::gen2_udf_compiler::{
+    cleanup_gen2_udf_compilation, perform_gen2_udf_compilation,
+};
 use crate::compiler::util::{
     CleanupDecision, DirectoryContent, DiskSpace, ProcessGroupTerminator, UtilError,
     checksum_buffer, checksum_file, cleanup_specific_directories, cleanup_specific_files,
@@ -190,7 +193,7 @@ pub async fn rust_compiler_task(
 /// 2. Queries the database for a pipeline which has `program_status` of `SqlCompiled` the longest
 /// 3. Updates pipeline database `program_status` to `CompilingRust`
 /// 4. Performs Rust compilation on `program_info.main`, `udf_rust` and `udf_toml`, configured
-///    with `program_config`
+///    with `program_config`; a Gen-2 program compiles only `udf_rust` and `udf_toml`
 /// 5. Upon completion, the compilation status is set to `Success`
 ///
 /// Note that this function assumes it runs in isolation, and as such at the beginning resets
@@ -205,7 +208,7 @@ pub async fn rust_compiler_task(
 /// - The pipeline no longer exists
 /// - The pipeline program is detected to be updated (it became outdated)
 /// - The database cannot be reached
-async fn attempt_end_to_end_rust_compilation(
+pub(crate) async fn attempt_end_to_end_rust_compilation(
     worker_id: usize,
     total_workers: usize,
     common_config: &CommonConfig,
@@ -450,9 +453,8 @@ fn calculate_source_checksum(
     udf_rust: &str,
     udf_toml: &str,
 ) -> String {
-    let mut hasher = digest::Context::new(&digest::SHA256);
     let profile = profile.to_string();
-    let to_hash = vec![
+    checksum_fields(&[
         ("platform_version", platform_version.as_bytes()),
         ("runtime_version", runtime_version.as_bytes()),
         ("profile", profile.as_bytes()),
@@ -460,9 +462,15 @@ fn calculate_source_checksum(
         ("program_info.udf_stubs", udf_stubs.as_bytes()),
         ("udf_rust", udf_rust.as_bytes()),
         ("udf_toml", udf_toml.as_bytes()),
-    ];
+    ])
+}
 
-    for (name, data) in to_hash {
+/// Hex-encoded `H(H(field1) || H(field2) || ...)` over the named fields in the given order,
+/// with `H` sha256. Hashing each field first keeps two field lists from colliding by
+/// shifting bytes from one field into its neighbor.
+pub(super) fn checksum_fields(fields: &[(&str, &[u8])]) -> String {
+    let mut hasher = digest::Context::new(&digest::SHA256);
+    for (name, data) in fields {
         let checksum = sha256(data);
         hasher.update(&checksum);
         trace!(
@@ -1003,7 +1011,8 @@ pub(super) struct RustCompilationResult {
 /// Performs the Rust compilation.
 ///
 /// Returns the program binary URL, source checksum, integrity checksum,
-/// duration, and compilation information.
+/// duration, and compilation information. The binary of a Gen-2 program is its
+/// UDF module, which is delivered inside its program info.
 #[allow(clippy::too_many_arguments)]
 pub async fn perform_rust_compilation(
     common_config: &CommonConfig,
@@ -1044,15 +1053,6 @@ pub async fn perform_rust_compilation(
     })?;
     let runtime_selector = program_config.runtime_version();
     assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
-    // The Gen-2 engine needs no Rust compilation: the SQL compiler completes it, so it never
-    // enters the Rust compilation queue. Reaching here means the claim predicate is
-    // wrong; fail loudly rather than build a binary the Gen-2 engine does not use.
-    if runtime_selector.is_gen2() {
-        return Err(RustCompilationError::SystemError(
-            "Gen-2 programs are completed by the SQL compiler and must not reach Rust compilation"
-                .to_string(),
-        ));
-    }
     let pipeline_name_for_log = pipeline_name.clone().unwrap_or_else(|| "N/A".to_string());
     info!(
         pipeline_id = %pipeline_id,
@@ -1086,6 +1086,24 @@ pub async fn perform_rust_compilation(
                 Recompile the pipeline to resolve this.
             "})
     })?;
+
+    // The Gen-2 engine runs the circuit from its IR, so only the program's Rust UDFs are
+    // compiled, into a WebAssembly module rather than a pipeline binary.
+    if runtime_selector.is_gen2() {
+        return perform_gen2_udf_compilation(
+            common_config,
+            config,
+            db,
+            tenant_id,
+            pipeline_id,
+            &pipeline_name_for_log,
+            program_version,
+            &program_info,
+            udf_rust,
+            udf_toml,
+        )
+        .await;
+    }
     let main_rust = program_info.main_rust.clone();
     let udf_stubs = program_info.udf_stubs.clone();
 
@@ -1347,7 +1365,7 @@ pub async fn resolve_runtime_sha(
         RuntimeSelector::Sha(sha) => Ok(sha.clone()),
         RuntimeSelector::Platform(platform_sha) => Ok(platform_sha.clone()),
         RuntimeSelector::Gen2 => unreachable!(
-            "the Gen-2 engine compiles against the platform sources; no runtime SHA is resolved"
+            "a Gen-2 program builds its UDF module against the UDF SDK; no runtime SHA is resolved"
         ),
         RuntimeSelector::Version(version) => {
             let repo_location = runtime_version.runtime_sources(config);
@@ -1640,42 +1658,8 @@ async fn call_compiler(
 
     let pipeline_name_for_log = pipeline_name.unwrap_or_else(|| "N/A".to_string());
 
-    // Create file where stdout will be written to
-    let stdout_file_path = pipeline_main_crate_dir.join("stdout.log");
-    let stdout_file = create_new_file(&stdout_file_path).await?;
-
-    // Create file where stderr will be written to
-    let stderr_file_path = pipeline_main_crate_dir.join("stderr.log");
-    let stderr_file = create_new_file(&stderr_file_path).await?;
-
-    // By default, the command inherits all environment variables
-    // from the originating process. This is fine when the compiler
-    // server is run directly using its executable, but in the case
-    // of being run from source using `cargo run`, this will result
-    // in all kinds of cargo-related environment variables being set
-    // such as `CARGO_PKG_VERSION`. This can cause unnecessary
-    // recompilation for some dependency crates if they use
-    // for example `cargo::rerun-if-env-changed=CARGO_PKG_VERSION`
-    // in their build.rs, even if the actual `CARGO_PKG_VERSION`
-    // they read does not change (as it is overwritten by cargo).
-    //
-    // Only a select number of environment variables are inherited
-    // explicitly. All other inherited environment variables are cleared.
-    let env_path = std::env::var_os("PATH").ok_or(RustCompilationError::SystemError(
-        "The PATH environment variable is not set, which is needed to locate `cargo`".to_string(),
-    ))?;
-    let optional_env_rustflags = std::env::var_os("RUSTFLAGS");
-
     // Formulate command
-    let mut command = Command::new("cargo");
-
-    // get env vars that start with SCCACHE
-    let preserved_env_vars: Vec<(String, String)> = std::env::vars()
-        .filter(|(key, _)| key.starts_with("SCCACHE"))
-        .collect();
-
-    command.env_clear();
-    command.env("PATH", env_path);
+    let mut command = cargo_command_with_minimal_env()?;
     command.env("FELDERA_PLATFORM_VERSION", &common_config.platform_version);
     // The platform's own runtime has the platform version; an override is a tag or SHA
     let runtime_version = if runtime_selector.is_platform() {
@@ -1690,9 +1674,125 @@ async fn call_compiler(
             resolve_runtime_sha(runtime_selector, config).await?,
         );
     }
-    if let Some(env_rustflags) = optional_env_rustflags {
+    if let Some(env_rustflags) = std::env::var_os("RUSTFLAGS") {
         command.env("RUSTFLAGS", env_rustflags);
     }
+    command
+        .current_dir(&workspace_dir)
+        .arg("build")
+        .arg("--workspace")
+        .arg("--profile")
+        .arg(profile.to_string());
+
+    let compilation_info = run_cargo_build(
+        command,
+        &pipeline_main_crate_dir.join("stdout.log"),
+        &pipeline_main_crate_dir.join("stderr.log"),
+        db,
+        tenant_id,
+        pipeline_id,
+        &pipeline_name_for_log,
+        program_version,
+    )
+    .await?;
+
+    // Source file
+    let source_file_path = workspace_dir
+        .join("target")
+        .join(profile.to_target_folder())
+        .join(crate_name_pipeline_main(pipeline_id));
+    if !source_file_path.is_file() {
+        return Err(RustCompilationError::SystemError(format!(
+            "Rust compilation was successful but no binary was generated at '{}'",
+            source_file_path.display()
+        )));
+    }
+
+    // Integrity checksum of the source file
+    let (file_size, binary_integrity_checksum) = checksum_file(&source_file_path).await?;
+
+    // Create binary metadata
+    let binary_metadata = FileUploadMetadata {
+        pipeline_id,
+        program_version,
+        source_checksum: source_checksum.to_string(),
+        integrity_checksum: binary_integrity_checksum.clone(),
+    };
+
+    // Determine binary delivery mode from configuration
+    let delivery_mode = FileDeliveryMode::from_config(config);
+
+    // Deliver binary according to the configured mode
+    let _binary_location = deliver_binary(
+        common_config,
+        &delivery_mode,
+        &source_file_path,
+        &binary_metadata,
+        &pipeline_binaries_dir,
+    )
+    .await?;
+
+    let program_info_str = serde_json::to_string(&program_info).map_err(|e| {
+        RustCompilationError::SystemError(format!("failed to serialize program info: {e}"))
+    })?;
+    // Integrity checksum of the source file
+    let program_info_integrity_checksum = checksum_buffer(program_info_str.as_bytes()).await?;
+
+    // Create binary metadata
+    let program_info_metadata = FileUploadMetadata {
+        pipeline_id,
+        program_version,
+        source_checksum: source_checksum.to_string(),
+        integrity_checksum: program_info_integrity_checksum.clone(),
+    };
+
+    deliver_program_info(
+        common_config,
+        &delivery_mode,
+        &program_info_str,
+        &program_info_metadata,
+        &pipeline_binaries_dir,
+    )
+    .await?;
+
+    // Success
+    Ok((
+        compilation_info,
+        binary_integrity_checksum,
+        file_size,
+        program_info_integrity_checksum,
+    ))
+}
+
+/// A `cargo` command whose environment holds only what a build needs.
+///
+/// By default, the command inherits all environment variables
+/// from the originating process. This is fine when the compiler
+/// server is run directly using its executable, but in the case
+/// of being run from source using `cargo run`, this will result
+/// in all kinds of cargo-related environment variables being set
+/// such as `CARGO_PKG_VERSION`. This can cause unnecessary
+/// recompilation for some dependency crates if they use
+/// for example `cargo::rerun-if-env-changed=CARGO_PKG_VERSION`
+/// in their build.rs, even if the actual `CARGO_PKG_VERSION`
+/// they read does not change (as it is overwritten by cargo).
+///
+/// Only a select number of environment variables are inherited
+/// explicitly. All other inherited environment variables are cleared.
+pub(super) fn cargo_command_with_minimal_env() -> Result<Command, RustCompilationError> {
+    let env_path = std::env::var_os("PATH").ok_or(RustCompilationError::SystemError(
+        "The PATH environment variable is not set, which is needed to locate `cargo`".to_string(),
+    ))?;
+
+    let mut command = Command::new("cargo");
+
+    // get env vars that start with SCCACHE
+    let preserved_env_vars: Vec<(String, String)> = std::env::vars()
+        .filter(|(key, _)| key.starts_with("SCCACHE"))
+        .collect();
+
+    command.env_clear();
+    command.env("PATH", env_path);
 
     if let Some(rustc_wrapper) = std::env::var_os("RUSTC_WRAPPER") {
         command.env("RUSTC_WRAPPER", rustc_wrapper);
@@ -1715,15 +1815,32 @@ async fn call_compiler(
         command.env(key, value);
     }
 
+    // Set compiler stack size to 20MB (10x the default) to prevent
+    // SIGSEGV when the compiler runs out of stack on large programs.
+    command.env("RUST_MIN_STACK", "20971520");
+    Ok(command)
+}
+
+/// Runs `command`, a `cargo build`, to completion with its stdout and stderr captured in
+/// `stdout_file_path` and `stderr_file_path`, which must not exist yet. While it runs, the
+/// pipeline is checked regularly, so that the build is canceled once the pipeline no longer
+/// exists or its program is updated.
+///
+/// Returns the captured output when cargo succeeds, and a `RustError` carrying it when not.
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn run_cargo_build(
+    mut command: Command,
+    stdout_file_path: &Path,
+    stderr_file_path: &Path,
+    db: Option<Arc<Mutex<StoragePostgres>>>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    pipeline_name_for_log: &str,
+    program_version: Version,
+) -> Result<RustCompilationInfo, RustCompilationError> {
+    let stdout_file = create_new_file(stdout_file_path).await?;
+    let stderr_file = create_new_file(stderr_file_path).await?;
     command
-        // Set compiler stack size to 20MB (10x the default) to prevent
-        // SIGSEGV when the compiler runs out of stack on large programs.
-        .env("RUST_MIN_STACK", "20971520")
-        .current_dir(&workspace_dir)
-        .arg("build")
-        .arg("--workspace")
-        .arg("--profile")
-        .arg(profile.to_string())
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_file.into_std().await))
         .stderr(Stdio::from(stderr_file.into_std().await))
@@ -1771,7 +1888,7 @@ async fn call_compiler(
                             Err(e) => {
                                 error!(
                                     pipeline_id = %pipeline_id,
-                                    pipeline = pipeline_name_for_log.as_str(),
+                                    pipeline = pipeline_name_for_log,
                                     "Rust compilation outdated check failed due to database error: {e}"
                                 )
                                 // As preemption check failing is not fatal, compilation will continue
@@ -1800,8 +1917,8 @@ async fn call_compiler(
     };
 
     // Read stdout and stderr
-    let stdout = read_file_content(&stdout_file_path).await?;
-    let stderr = read_file_content(&stderr_file_path).await?;
+    let stdout = read_file_content(stdout_file_path).await?;
+    let stderr = read_file_content(stderr_file_path).await?;
     let compilation_info = RustCompilationInfo {
         exit_code,
         stdout,
@@ -1810,77 +1927,11 @@ async fn call_compiler(
 
     // Compilation is successful if the return exit code is present and zero
     if exit_status.success() {
-        // Source file
-        let source_file_path = workspace_dir
-            .join("target")
-            .join(profile.to_target_folder())
-            .join(crate_name_pipeline_main(pipeline_id));
-        if !source_file_path.is_file() {
-            return Err(RustCompilationError::SystemError(format!(
-                "Rust compilation was successful but no binary was generated at '{}'",
-                source_file_path.display()
-            )));
-        }
-
-        // Integrity checksum of the source file
-        let (file_size, binary_integrity_checksum) = checksum_file(&source_file_path).await?;
-
-        // Create binary metadata
-        let binary_metadata = FileUploadMetadata {
-            pipeline_id,
-            program_version,
-            source_checksum: source_checksum.to_string(),
-            integrity_checksum: binary_integrity_checksum.clone(),
-        };
-
-        // Determine binary delivery mode from configuration
-        let delivery_mode = FileDeliveryMode::from_config(config);
-
-        // Deliver binary according to the configured mode
-        let _binary_location = deliver_binary(
-            common_config,
-            &delivery_mode,
-            &source_file_path,
-            &binary_metadata,
-            &pipeline_binaries_dir,
-        )
-        .await?;
-
-        let program_info_str = serde_json::to_string(&program_info).map_err(|e| {
-            RustCompilationError::SystemError(format!("failed to serialize program info: {e}"))
-        })?;
-        // Integrity checksum of the source file
-        let program_info_integrity_checksum = checksum_buffer(program_info_str.as_bytes()).await?;
-
-        // Create binary metadata
-        let program_info_metadata = FileUploadMetadata {
-            pipeline_id,
-            program_version,
-            source_checksum: source_checksum.to_string(),
-            integrity_checksum: program_info_integrity_checksum.clone(),
-        };
-
-        deliver_program_info(
-            common_config,
-            &delivery_mode,
-            &program_info_str,
-            &program_info_metadata,
-            &pipeline_binaries_dir,
-        )
-        .await?;
-
-        // Success
-        Ok((
-            compilation_info,
-            binary_integrity_checksum,
-            file_size,
-            program_info_integrity_checksum,
-        ))
+        Ok(compilation_info)
     } else {
         Err(RustCompilationError::RustError(compilation_info))
     }
 }
-
 /// Rust compilation cleanup possible error outcomes.
 pub(crate) enum RustCompilationCleanupError {
     /// Database error occurred (e.g., lost connectivity).
@@ -2006,10 +2057,11 @@ fn valid_program_info_filenames(programs: &[PipelineProgramArtifacts]) -> Vec<St
                 &program.program_binary_source_checksum,
                 &program.program_info_integrity_checksum,
             ) {
-                // A Gen-2 program builds no binary, so it has no binary source checksum;
-                // its artifact is named by the program-info checksum on both halves (see
-                // `deliver_gen2_program_info`). Naming it exactly is what keeps a running
-                // Gen-2 pipeline's only artifact off the checksum-less fallback below.
+                // A Gen-2 program delivers only program info, which carries its UDF module
+                // when it has one; the artifact is named by the program-info checksum on both
+                // halves (see `deliver_gen2_program_info`), whatever the binary checksums
+                // record. Naming it exactly is what keeps a running Gen-2 pipeline's only
+                // artifact off the checksum-less fallback below.
                 (ProgramStatus::Success, true, _, Some(program_info_integrity_checksum)) => {
                     program_info_filename(
                         pipeline_id,
@@ -2145,6 +2197,10 @@ async fn cleanup_rust_compilation(
     db: Arc<Mutex<StoragePostgres>>,
 ) -> Result<(), RustCompilationCleanupError> {
     trace!("Performing Rust cleanup...");
+
+    // The Gen-2 UDF workspace lies outside the Rust compilation directory, which may not
+    // exist yet when it does.
+    cleanup_gen2_udf_compilation(config, db.clone()).await?;
 
     // Rust compilation directory
     let rust_compilation_dir = config.working_dir().join("rust-compilation");
@@ -2851,6 +2907,7 @@ mod test {
             binary_upload_timeout_secs: 300,
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
+            gen2_udf_sdk_path: None,
             precompile: false,
         };
 
@@ -2993,6 +3050,33 @@ mod test {
         assert_eq!(
             valid_program_info_filenames(std::slice::from_ref(&compiling)),
             vec![format!("program_info_{pipeline_id}_v3_")]
+        );
+    }
+
+    /// A Gen-2 program that built a UDF module records the module in its binary checksums,
+    /// yet its program info is retained by the name the runner rebuilds: the program-info
+    /// checksum on both halves.
+    #[test]
+    fn gen2_program_info_with_a_udf_module_is_retained_by_its_exact_name() {
+        let pipeline_id = PipelineId(uuid::Uuid::nil());
+        let checksum = "c0ffee";
+        let delivered = program_info_filename(&pipeline_id, Version(3), checksum, checksum);
+        let with_module = PipelineProgramArtifacts {
+            pipeline_id,
+            program_version: Version(3),
+            program_status: ProgramStatus::Success,
+            program_binary_source_checksum: Some("50a1ce".to_string()),
+            program_binary_integrity_checksum: Some("ab0d1e".to_string()),
+            program_info_integrity_checksum: Some(checksum.to_string()),
+            is_gen2: true,
+        };
+        let valid = valid_program_info_filenames(std::slice::from_ref(&with_module));
+        assert_eq!(valid, vec![delivered.clone()]);
+        assert_eq!(
+            decide_pipeline_binary_cleanup(&delivered, None, &[], &valid),
+            CleanupDecision::Keep {
+                motivation: delivered.clone()
+            }
         );
     }
 

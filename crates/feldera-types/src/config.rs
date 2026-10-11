@@ -70,6 +70,11 @@ pub struct ProgramIr {
     /// Rust-compiled pipelines, whose circuit is statically linked into the binary.
     #[serde(default)]
     pub circuit_ir: Option<serde_json::Value>,
+    /// The program's Rust UDFs compiled to a WebAssembly module, base64-encoded, which
+    /// the Gen-2 engine loads to run them. `None` when the program has no Rust UDFs, and
+    /// for Rust-compiled pipelines, which link their UDFs into the binary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub udf_wasm: Option<String>,
 }
 
 /// Identity of a pipeline, used to record and check ownership of an S3

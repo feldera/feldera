@@ -1,3 +1,4 @@
+use crate::compiler::rust_compiler::attempt_end_to_end_rust_compilation;
 use crate::compiler::sql_compiler::{attempt_end_to_end_sql_compilation, cleanup_sql_compilation};
 use crate::compiler::util::{DirectoryContent, encode_dir_as_string, read_file_content};
 use crate::config::{CommonConfig, CompilerConfig};
@@ -66,6 +67,7 @@ impl CompilerTest {
             binary_upload_timeout_secs: 600,
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
+            gen2_udf_sdk_path: None,
         };
 
         // Test in-memory database
@@ -123,6 +125,31 @@ impl CompilerTest {
         udf_rust: &str,
         udf_toml: &str,
     ) -> PipelineId {
+        self.create_pipeline_with_program_config(
+            tenant_id,
+            name,
+            platform_version,
+            program_code,
+            udf_rust,
+            udf_toml,
+            json!({}),
+        )
+        .await
+    }
+
+    /// Creates a pipeline in the database under the provided name with UDF and program
+    /// configuration specified.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn create_pipeline_with_program_config(
+        &self,
+        tenant_id: TenantId,
+        name: &str,
+        platform_version: &str,
+        program_code: &str,
+        udf_rust: &str,
+        udf_toml: &str,
+        program_config: serde_json::Value,
+    ) -> PipelineId {
         let pipeline_id = PipelineId(Uuid::now_v7());
         self.db
             .lock()
@@ -139,7 +166,7 @@ impl CompilerTest {
                     program_code: program_code.to_string(),
                     udf_rust: udf_rust.to_string(),
                     udf_toml: udf_toml.to_string(),
-                    program_config: json!({}),
+                    program_config,
                 },
             )
             .await
@@ -187,6 +214,20 @@ impl CompilerTest {
             .await
             .unwrap();
         attempt_end_to_end_sql_compilation(
+            0, // Use worker 0 for tests
+            1,
+            &self.common_config,
+            &self.compiler_config,
+            self.db.clone(),
+        )
+        .await
+        .unwrap();
+    }
+
+    /// Performs a tick as-if it was the Rust compiler task, without its cleanup and
+    /// without the perpetual loop with interval waiting.
+    pub(crate) async fn rust_compiler_tick(&self) {
+        attempt_end_to_end_rust_compilation(
             0, // Use worker 0 for tests
             1,
             &self.common_config,
@@ -272,7 +313,7 @@ impl CompilerTest {
         );
         assert_eq!(content_program_sql, program_code);
         assert_ne!(content_schema_json, "");
-        if (!warnings) {
+        if !warnings {
             assert_eq!(content_stderr_log, "");
         }
         assert_eq!(content_stdout_log, "");

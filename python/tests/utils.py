@@ -74,6 +74,12 @@ def runs_in_ci() -> bool:
     return env_truthy("CI")
 
 
+def runs_on_gen2() -> bool:
+    """Return True when ``FELDERA_RUNTIME_VERSION`` pins the test pipelines to the
+    Gen-2 engine, which runs Rust UDFs written against the ``feldera-udf`` SDK."""
+    return os.environ.get("FELDERA_RUNTIME_VERSION") == "gen2"
+
+
 @dataclass(frozen=True)
 class ObjectStore:
     """Object store the tests keep Delta and Iceberg tables in, and how the

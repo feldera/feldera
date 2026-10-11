@@ -363,9 +363,11 @@ pub struct PipelineProgramArtifacts {
     /// artifact yet, or to a previous version, so cleanup must not name a file from them.
     pub program_status: ProgramStatus,
     /// Checksum of the sources the binary was built from. `None` while `CompilingRust`, and
-    /// for a Gen-2 program, which builds no binary.
+    /// for a Gen-2 program without Rust UDFs, which builds nothing. For a Gen-2 program with
+    /// Rust UDFs, the binary is the UDF module, which travels inside the program info.
     pub program_binary_source_checksum: Option<String>,
-    /// Checksum of the binary itself. `None` while `CompilingRust`, and for a Gen-2 program.
+    /// Checksum of the binary itself. `None` while `CompilingRust`, and for a Gen-2 program
+    /// without Rust UDFs.
     pub program_binary_integrity_checksum: Option<String>,
     /// Checksum of the delivered program info.
     pub program_info_integrity_checksum: Option<String>,
@@ -392,8 +394,8 @@ pub enum RuntimeSelector {
     /// The string corresponds to the git SHA of feldera/feldera at the time of the build.
     Platform(String),
     /// The Gen-2 engine runs the pipeline. The SQL compiler captures the JIT
-    /// circuit IR into the program info; the Rust half compiles against the
-    /// platform sources, so no runtime commit is selected.
+    /// circuit IR into the program info, and the Rust half compiles only the
+    /// Rust UDFs, into a WebAssembly module, so no runtime commit is selected.
     Gen2,
 }
 
@@ -781,6 +783,7 @@ impl ProgramInfo {
                     .unwrap_or_default(),
                 program_schema: self.schema.clone(),
                 circuit_ir: self.circuit_ir.clone(),
+                udf_wasm: None,
             });
 
         PipelineConfigProgramInfo {
@@ -994,8 +997,8 @@ mod tests {
     #[test]
     fn gen2_sql_stage_reaches_success_directly() {
         use super::{ProgramStatus, validate_program_status_transition};
-        // The Gen-2 engine skips Rust compilation: the SQL compiler moves the program from
-        // CompilingSql straight to Success.
+        // A Gen-2 program without Rust UDFs skips Rust compilation: the SQL compiler moves
+        // the program from CompilingSql straight to Success.
         assert!(
             validate_program_status_transition(ProgramStatus::CompilingSql, ProgramStatus::Success)
                 .is_ok()

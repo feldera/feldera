@@ -16,6 +16,7 @@ from tests.utils import (
     env_truthy,
     required_env,
     runs_in_ci,
+    runs_on_gen2,
 )
 
 LOGLEVEL = os.environ.get("LOGLEVEL", "INFO").upper()
@@ -34,4 +35,5 @@ __all__ = [
     "env_truthy",
     "required_env",
     "runs_in_ci",
+    "runs_on_gen2",
 ]
