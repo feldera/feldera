@@ -637,6 +637,26 @@ where
         }
     }
 
+    /// Takes the batches that this worker has received in the current
+    /// transaction, leaving its receive queue empty, so that the caller can
+    /// redistribute them.
+    ///
+    /// Call this after [Self::wait_for_arrival], in a step in which no sender
+    /// has flushed the transaction.  The result then holds every batch that
+    /// any worker sent to this worker in the transaction before its call to
+    /// `wait_for_arrival`.  It can also hold batches that workers sent after
+    /// their calls in the same step, but none from later steps, because no
+    /// sender starts the next step before every worker finishes this one.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a sender has already flushed the current transaction.
+    #[cfg_attr(not(test), expect(dead_code, reason = "awaiting first caller"))]
+    fn take_received(&self) -> Vec<Arc<B>> {
+        let receiver = Runtime::worker_index();
+        self.rxq(receiver).take(&self.factories).get_batches()
+    }
+
     fn set_name(&self, global_id: &GlobalNodeId) {
         self.name.init(global_id);
         for rxq in &self.rxq {
@@ -885,6 +905,33 @@ where
                 self.n_received += 1;
                 entry.spine
             })
+    }
+
+    /// Takes the spine of the current transaction and leaves an empty one in
+    /// its place (see [ShardedAccumulator::take_received]).
+    ///
+    /// # Panics
+    ///
+    /// Panics if a sender has already flushed the current transaction: its
+    /// later batches belong to the next transaction.
+    fn take(&mut self, factories: &B::Factories) -> Spine<B> {
+        let entry = self
+            .spines
+            .front_mut()
+            .expect("the receive queue always has a spine under construction");
+        assert_eq!(
+            entry.n_unflushed, self.npeers,
+            "cannot take received batches after a sender flushed the transaction"
+        );
+        let empty = RxqEntry::new(
+            self.npeers,
+            &self.runtime,
+            self.worker_index,
+            factories,
+            self.name.clone(),
+            self.batch_layout,
+        );
+        std::mem::replace(entry, empty).spine
     }
 
     fn set_name(&mut self, name: Arc<String>) {
@@ -1250,10 +1297,10 @@ mod tests {
     use crossbeam::thread;
     use itertools::Itertools;
 
-    use super::ShardedAccumulator;
+    use super::{Rxq, ShardedAccumulator};
     use crate::{
         Circuit, DBSPHandle, OrdZSet, OutputHandle, RootCircuit, Stream, ZSetHandle, ZWeight,
-        algebra::OrdZSet as DynOrdZSet,
+        algebra::{OrdZSet as DynOrdZSet, OrdZSetFactories},
         circuit::{
             CircuitConfig, Layout, Runtime,
             circuit_builder::CircuitBase,
@@ -1827,7 +1874,30 @@ mod tests {
         /// The worker that receives every record.
         destination: usize,
 
+        /// If set, every worker takes its received batches once per
+        /// transaction.
+        take: Option<Take>,
+
+        /// The number of steps so far in the current transaction.
+        steps_in_transaction: usize,
+
         flushed: bool,
+    }
+
+    /// When [PartitionedSender] takes its worker's received batches.
+    #[derive(Clone)]
+    struct Take {
+        /// The step in each transaction, counting from 1, after which every
+        /// worker takes its received batches.
+        step: usize,
+
+        /// A worker that sleeps before it sends in `step`, so that the other
+        /// workers would take before its batches arrive if they did not wait
+        /// for them.
+        slow_worker: usize,
+
+        /// Numbers of records taken, indexed by worker.
+        taken: Arc<Vec<AtomicUsize>>,
     }
 
     impl<B> Operator for PartitionedSender<B>
@@ -1842,6 +1912,10 @@ mod tests {
             true
         }
 
+        fn start_transaction(&mut self) {
+            self.steps_in_transaction = 0;
+        }
+
         fn flush(&mut self) {
             self.flushed = true;
         }
@@ -1852,17 +1926,36 @@ mod tests {
         B: Batch<Time = ()>,
     {
         async fn eval(&mut self, batch: &B) {
+            self.steps_in_transaction += 1;
+            let take = self
+                .take
+                .as_ref()
+                .filter(|take| take.step == self.steps_in_transaction);
+            if let Some(take) = take
+                && take.slow_worker == Runtime::worker_index()
+            {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+
             let mut batches = (0..Runtime::num_workers())
                 .map(|_| B::dyn_empty(&self.exchange.factories))
                 .collect_vec();
             batches[self.destination] = batch.clone();
+            let name = Arc::new("PartitionedSender".to_string());
             self.exchange
-                .send_partitioned(
-                    Arc::new("PartitionedSender".to_string()),
-                    batches,
-                    self.flushed,
-                )
+                .send_partitioned(name.clone(), batches, self.flushed)
                 .await;
+
+            if let Some(take) = take {
+                self.exchange.wait_for_arrival(name).await;
+                let n_taken = self
+                    .exchange
+                    .take_received()
+                    .iter()
+                    .map(|batch| batch.len_upper_bound())
+                    .sum();
+                take.taken[Runtime::worker_index()].fetch_add(n_taken, Ordering::AcqRel);
+            }
             self.flushed = false;
         }
     }
@@ -1897,11 +1990,13 @@ mod tests {
     }
 
     /// Builds a circuit in which every worker sends its input to
-    /// `destination` through a sharded accumulator, and the receivers count
-    /// the records they output in `counts`.
+    /// `destination` through a sharded accumulator, taking its received
+    /// batches as `take` says, and the receivers count the records they
+    /// output in `counts`.
     fn partitioned_circuit(
         circuit: &mut RootCircuit,
         destination: usize,
+        take: Option<Take>,
         counts: Arc<Vec<AtomicUsize>>,
     ) -> anyhow::Result<ZSetHandle<usize>> {
         let (input, input_handle) = circuit.add_input_zset::<usize>();
@@ -1920,6 +2015,8 @@ mod tests {
             PartitionedSender {
                 exchange,
                 destination,
+                take,
+                steps_in_transaction: 0,
                 flushed: false,
             },
             &input,
@@ -1940,7 +2037,7 @@ mod tests {
         let (mut dbsp_handles, input_handles) =
             start_runtimes(workers, hosts, Gather::ALL_WORKERS, {
                 let counts = counts.clone();
-                move |circuit| partitioned_circuit(circuit, destination, counts)
+                move |circuit| partitioned_circuit(circuit, destination, None, counts)
             });
 
         let mut next_key = 0;
@@ -1980,6 +2077,106 @@ mod tests {
                 test_partitioned_send(workers, hosts, destination);
             }
         }
+    }
+
+    /// Checks that `take_received`, after `wait_for_arrival`, takes exactly
+    /// the records sent so far in the transaction, even from a slow sender,
+    /// and that the receiver outputs only the records sent afterward.
+    fn test_take_received(workers: usize, hosts: usize, destination: usize) {
+        const TRANSACTIONS: usize = 3;
+        const STEPS: usize = 4;
+        const TAKE_STEP: usize = 3;
+
+        let taken = Arc::new((0..workers).map(|_| AtomicUsize::new(0)).collect_vec());
+        let received = Arc::new((0..workers).map(|_| AtomicUsize::new(0)).collect_vec());
+        let take = Take {
+            step: TAKE_STEP,
+            slow_worker: (destination + 1) % workers,
+            taken: taken.clone(),
+        };
+        let (mut dbsp_handles, input_handles) =
+            start_runtimes(workers, hosts, Gather::ALL_WORKERS, {
+                let received = received.clone();
+                move |circuit| partitioned_circuit(circuit, destination, Some(take), received)
+            });
+
+        let mut next_key = 0;
+        for transaction in 0..TRANSACTIONS {
+            for_each_host(&mut dbsp_handles, |h| h.start_transaction().unwrap());
+            let mut n_before = 0;
+            let mut n_after = 0;
+            for step in 1..=STEPS {
+                for _ in 0..step {
+                    input_handles[step % hosts].push(next_key, 1);
+                    next_key += 1;
+                    if step <= TAKE_STEP {
+                        n_before += 1;
+                    } else {
+                        n_after += 1;
+                    }
+                }
+                for_each_host(&mut dbsp_handles, |h| {
+                    h.step().unwrap();
+                });
+            }
+            for_each_host(&mut dbsp_handles, |h| h.commit_transaction().unwrap());
+
+            let only_destination = |n| {
+                (0..workers)
+                    .map(|worker| if worker == destination { n } else { 0 })
+                    .collect_vec()
+            };
+            let take_counts = |counts: &Arc<Vec<AtomicUsize>>| {
+                counts
+                    .iter()
+                    .map(|count| count.swap(0, Ordering::AcqRel))
+                    .collect_vec()
+            };
+            assert_eq!(
+                take_counts(&taken),
+                only_destination(n_before),
+                "taken: workers={workers} hosts={hosts} destination={destination} transaction={transaction}"
+            );
+            assert_eq!(
+                take_counts(&received),
+                only_destination(n_after),
+                "received: workers={workers} hosts={hosts} destination={destination}"
+            );
+        }
+    }
+
+    #[test]
+    fn take_received() {
+        for (workers, hosts) in [(4, 1), (4, 2), (3, 3)] {
+            for destination in [0, workers - 1] {
+                test_take_received(workers, hosts, destination);
+            }
+        }
+    }
+
+    /// Checks that the spine that `take` leaves in a receive queue has the
+    /// queue's batch layout.
+    #[test]
+    fn take_keeps_batch_layout() {
+        Runtime::run(CircuitConfig::with_workers(1), |_parker| {
+            let layout = BatchLayout {
+                key_block_bytes: Some(65536),
+            };
+            let factories = <OrdZSetFactories<DynData>>::new::<usize, (), ZWeight>();
+            let mut rxq = Rxq::<DynOrdZSet<DynData>>::new(
+                &Runtime::runtime().unwrap(),
+                0,
+                &factories,
+                1,
+                Arc::new("Rxq".to_string()),
+                layout,
+            );
+            rxq.take(&factories);
+            assert_eq!(rxq.spines[0].spine.layout(), layout);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
     }
 
     /// Builds a circuit that feeds its input into an enabled sharded
