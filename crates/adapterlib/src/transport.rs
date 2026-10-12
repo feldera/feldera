@@ -303,8 +303,9 @@ pub struct InputQueueEntry<A, B> {
     /// unless a transaction is already in progress.
     start_transaction: Option<Option<String>>,
 
-    /// Whether every host of a distributed connector requests the transaction
-    /// in `start_transaction` (see [InputConsumer::start_transaction_on_all_hosts]).
+    /// Whether the transaction in `start_transaction` must contain the input of
+    /// every host of a distributed connector (see
+    /// [InputConsumer::start_transaction_on_all_hosts]).
     on_all_hosts: bool,
 
     /// Commit the transaction after pushing the buffer to the circuit if there is a transaction in progress.
@@ -342,8 +343,8 @@ impl<A, B> InputQueueEntry<A, B> {
         }
     }
 
-    /// Like [Self::with_start_transaction], for a transaction that every host
-    /// of a distributed connector requests (see
+    /// Like [Self::with_start_transaction], for a transaction that must contain
+    /// the input of every host of a distributed connector (see
     /// [InputConsumer::start_transaction_on_all_hosts]).
     pub fn with_start_transaction_on_all_hosts(self, label: Option<String>) -> Self {
         Self {
@@ -1014,8 +1015,9 @@ pub trait InputConsumer: Send + Sync + DynClone {
     fn start_transaction(&self, label: Option<&str>);
 
     /// Like [`start_transaction`](Self::start_transaction), for a transaction
-    /// that every host of a distributed connector requests, so that the
-    /// pipeline keeps it open until all of the hosts have committed.
+    /// that must contain the input of every host of a distributed connector.
+    /// Every host calls this, and the pipeline keeps the transaction open
+    /// until all of the hosts have committed it.
     ///
     /// The default implementation calls `start_transaction`, which is right
     /// for a single-host pipeline.

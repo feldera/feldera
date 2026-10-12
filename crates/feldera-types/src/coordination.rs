@@ -531,23 +531,29 @@ pub struct TransactionCoordination {
     /// Endpoints that want to join a transaction, with their optional labels.
     pub requests: HashMap<String, Option<String>>,
 
-    /// The endpoints in `requests` whose request every host makes, as the
-    /// hosts of a distributed input connector do for a transaction that
-    /// covers all of their input.
+    /// The endpoints in `requests` whose transaction must contain the input
+    /// of every host.
+    ///
+    /// Each host of a distributed input connector reads its own share of the
+    /// input, and requests a transaction for it.  Some connectors need all of
+    /// the shares in one transaction, for example to read a snapshot.  The
+    /// hosts start and finish at different times, so a host can finish and
+    /// withdraw its request before another host makes its request.  Without
+    /// this field, the coordinator could then commit the transaction with
+    /// only the first host's share.
     ///
     /// A pipeline that predates this field reports none.
     #[serde(default, skip_serializing_if = "HashSet::is_empty")]
     pub all_hosts: HashSet<String>,
 
-    /// Endpoints that made a request that every host makes, and have
-    /// withdrawn it, in the current transaction.  The pipeline reports these
-    /// until the transaction commits.
+    /// The endpoints from `all_hosts` that this host has finished in the
+    /// current transaction: it made its request and then withdrew it.  The
+    /// host reports an endpoint here until the transaction commits.
     ///
-    /// The coordinator keeps the transaction open until every host reports
-    /// such an endpoint here, so that a host that finishes early does not
-    /// commit the transaction before another host joins it.  Unlike a request,
-    /// which appears and disappears, this stays until the commit, so the
-    /// coordinator cannot miss it even if it does not see every update.
+    /// The coordinator keeps such an endpoint in the transaction until every
+    /// host reports it here.  An endpoint stays here until the commit, so the
+    /// coordinator sees it even if it misses some updates.  A request can
+    /// appear and disappear between two updates.
     #[serde(default, skip_serializing_if = "HashSet::is_empty")]
     pub all_hosts_done: HashSet<String>,
 }
