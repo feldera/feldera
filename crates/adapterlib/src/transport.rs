@@ -454,13 +454,14 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
     ///   multihost host reports its connectors' requests to the coordinator.
     ///
     /// - The coordinator opens a transaction whenever a host reports a request,
-    ///   adds the connector to an open transaction when it sees the request,
-    ///   and commits the transaction once no host reports a request for it,
-    ///   between steps and also while the pipeline is paused.  After a request,
-    ///   the connector waits until it is in the open transaction (see
-    ///   [InputConsumer::joined_transaction]), not just until a transaction is
-    ///   open: the coordinator may already have decided to commit that one
-    ///   without the connector.
+    ///   and adds the connector to an open transaction when it sees the
+    ///   request.  It commits the transaction when no host reports a request
+    ///   for it any more.
+    ///
+    /// - After a request, the connector waits until it is in the open
+    ///   transaction (see [InputConsumer::joined_transaction]), not only until
+    ///   a transaction is open.  The coordinator may already have decided to
+    ///   commit that transaction without the connector.
     ///
     /// - The records that wait still count as buffered, so the host requests
     ///   another step, which flushes them once the boundary is reached.
