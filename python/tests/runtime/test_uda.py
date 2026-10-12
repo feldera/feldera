@@ -2,9 +2,68 @@ import unittest
 
 from feldera import PipelineBuilder
 from tests.platform.helper import gen_pipeline_name
-from tests import TEST_CLIENT
+from tests import TEST_CLIENT, runs_on_gen2
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
+
+
+# The Gen-2 form of the UDFs: the accumulator travels as its 32 big-endian bytes.
+GEN2_TOML = """
+i256 = "0.2.2"
+"""
+
+GEN2_UDFS = """
+use feldera_udf::Accumulator;
+use feldera_udf::prelude::*;
+use i256::I256;
+
+pub struct I128Sum;
+
+fn i256_of(bytes: &[u8]) -> Result<I256, UdfError> {
+    let bytes: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| UdfError::new(format!("an accumulator of {} bytes", bytes.len())))?;
+    Ok(I256::from_be_bytes(bytes))
+}
+
+#[feldera_udf(accumulator = "i128_sum_accumulator_type")]
+impl Accumulator for I128Sum {
+    fn zero() -> Vec<u8> {
+        vec![0; 32]
+    }
+
+    fn add(a: &[u8], b: &[u8]) -> Result<Vec<u8>, UdfError> {
+        let sum = i256_of(a)?
+            .checked_add(i256_of(b)?)
+            .ok_or_else(|| UdfError::new("256-bit overflow"))?;
+        Ok(sum.to_be_bytes().to_vec())
+    }
+
+    fn mul_weight(a: &[u8], weight: i64) -> Result<Vec<u8>, UdfError> {
+        let scaled = i256_of(a)?
+            .checked_mul_i64(weight)
+            .ok_or_else(|| UdfError::new("256-bit overflow"))?;
+        Ok(scaled.to_be_bytes().to_vec())
+    }
+}
+
+#[feldera_udf]
+pub fn i128_sum_map(value: &[u8]) -> Result<Vec<u8>, UdfError> {
+    let value: [u8; 16] = value
+        .try_into()
+        .map_err(|_| UdfError::new(format!("I128_SUM takes BINARY(16), got {} bytes", value.len())))?;
+    Ok(I256::from(i128::from_be_bytes(value)).to_be_bytes().to_vec())
+}
+
+#[feldera_udf]
+pub fn i128_sum_post(accumulator: &[u8]) -> Result<Vec<u8>, UdfError> {
+    let sum = i256_of(accumulator)?;
+    if sum < I256::from(i128::MIN) || sum > I256::from(i128::MAX) {
+        return Err(UdfError::new(format!("Result of aggregation {sum} does not fit in 128 bits")));
+    }
+    Ok(sum.to_be_bytes()[16..].to_vec())
+}
+"""
 
 
 @gen_pipeline_name
@@ -146,6 +205,9 @@ if val.data < I256::from(i128::MIN) || val.data > I256::from(i128::MAX) {
 ByteArray::new(&val.data.to_be_bytes()[16..])
 }
     """
+
+    if runs_on_gen2():
+        udfs, toml = GEN2_UDFS, GEN2_TOML
 
     pipeline = PipelineBuilder(
         TEST_CLIENT,

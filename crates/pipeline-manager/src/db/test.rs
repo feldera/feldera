@@ -706,6 +706,7 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
                         .unwrap_or_default(),
                     program_schema: program_info.schema.clone(),
                     circuit_ir: None,
+                    udf_library: None,
                 }),
             })
             .unwrap()
@@ -8260,8 +8261,9 @@ impl Storage for Mutex<DbModel> {
             error: e,
         })?;
 
-        // The Gen-2 engine completes at the SQL stage: it carries its SQL log and program info
-        // (CompilingSql stored neither), delivers no binary, and stores no Rust log.
+        // A Gen-2 program without Rust UDFs completes at the SQL stage: it carries its SQL log
+        // and program info (CompilingSql stored neither), delivers no binary, and stores no
+        // Rust log.
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
         pipeline.program_error = ProgramError {

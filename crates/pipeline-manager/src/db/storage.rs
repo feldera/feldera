@@ -491,9 +491,10 @@ pub(crate) trait Storage {
     ) -> Result<(), DBError>;
 
     /// Transitions program status from `CompilingSql` to `Success` for a Gen-2
-    /// program, which the SQL compiler completes without Rust compilation. It carries
-    /// the SQL log and program info (neither is stored yet at `CompilingSql`), delivers
-    /// no pipeline binary (both binary checksums stay cleared), and stores no Rust log.
+    /// program without Rust UDFs, which the SQL compiler completes without Rust
+    /// compilation. It carries the SQL log and program info (neither is stored yet at
+    /// `CompilingSql`), delivers no pipeline binary (both binary checksums stay
+    /// cleared), and stores no Rust log.
     async fn transit_program_status_to_success_no_binary(
         &self,
         tenant_id: TenantId,

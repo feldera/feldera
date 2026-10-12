@@ -70,7 +70,9 @@ pub trait PipelineExecutor: Sync + Send {
     ///
     /// When `is_gen2` is true the pipeline is configured with the Gen-2
     /// engine, so no pipeline binary was compiled: the executor launches the
-    /// Gen-2 engine and ignores `program_binary_url`.
+    /// Gen-2 engine and ignores `program_binary_url`. A Gen-2 program with Rust
+    /// UDFs references its UDF library in the program info; the executor fetches
+    /// it from the compiler server and passes it to the engine (`--udf-library`).
     #[allow(clippy::too_many_arguments)]
     async fn provision(
         &mut self,

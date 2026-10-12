@@ -111,6 +111,31 @@ fn program_config_is_gen2(program_config: &serde_json::Value) -> bool {
         .unwrap_or(false)
 }
 
+/// URL at which the compiler server serves the pipeline binary or UDF library with these
+/// checksums.
+pub(crate) fn compiler_binary_url(
+    common_config: &CommonConfig,
+    pipeline_id: PipelineId,
+    program_version: crate::db::types::version::Version,
+    source_checksum: &str,
+    integrity_checksum: &str,
+) -> String {
+    format!(
+        "{}://{}:{}/binary/{}/{}/{}/{}",
+        if common_config.enable_https {
+            "https"
+        } else {
+            "http"
+        },
+        common_config.compiler_host,
+        common_config.compiler_port,
+        pipeline_id,
+        program_version,
+        source_checksum,
+        integrity_checksum,
+    )
+}
+
 /// Pipeline automaton monitors the runtime state of a single pipeline and continually reconciles
 /// actual with desired state. The automaton runs as a separate tokio task.
 pub struct PipelineAutomaton<T>
@@ -1342,16 +1367,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     storage_status_details: None,
                 };
             };
-            // URL where the program binary can be downloaded from
-            let program_binary_url = format!(
-                "{}://{}:{}/binary/{}/{}/{}/{}",
-                if self.common_config.enable_https {
-                    "https"
-                } else {
-                    "http"
-                },
-                self.common_config.compiler_host,
-                self.common_config.compiler_port,
+            let program_binary_url = compiler_binary_url(
+                &self.common_config,
                 self.pipeline_id,
                 pipeline.program_version,
                 source_checksum,

@@ -14388,6 +14388,14 @@
           },
           "program_schema": {
             "description": "Program schema."
+          },
+          "udf_library": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UdfLibrary"
+              }
+            ],
+            "nullable": true
           }
         }
       },
@@ -16848,6 +16856,24 @@
         "description": "Transport-specific endpoint configuration passed to\n`crate::OutputTransport::new_endpoint`\nand `crate::InputTransport::new_endpoint`.",
         "discriminator": {
           "propertyName": "name"
+        }
+      },
+      "UdfLibrary": {
+        "type": "object",
+        "description": "A program's UDF library, named by the same checksums as a pipeline binary.",
+        "required": [
+          "source_checksum",
+          "integrity_checksum"
+        ],
+        "properties": {
+          "integrity_checksum": {
+            "type": "string",
+            "description": "sha256 checksum of the library file."
+          },
+          "source_checksum": {
+            "type": "string",
+            "description": "Checksum of the sources the library was built from."
+          }
         }
       },
       "UpdateInformation": {

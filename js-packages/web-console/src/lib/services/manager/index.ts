@@ -689,6 +689,7 @@ export type {
   TransactionPhase,
   TransactionStatus,
   TransportConfig,
+  UdfLibrary,
   UpdateInformation,
   UrlInputConfig,
   UserAndPassword,
