@@ -38,6 +38,18 @@ impl<T: Trace> ReplayState<T> {
         !self.borrow_cursor().key_valid()
     }
 
+    /// Ends the replay and gives back the trace that it played back.
+    ///
+    /// The replay only reads the trace, so the trace comes back whole, without
+    /// a copy, however much of it has been replayed.
+    ///
+    /// # Returns
+    ///
+    /// The trace passed to [`Self::create`].
+    pub(crate) fn into_trace(self) -> T {
+        self.into_heads().trace
+    }
+
     /// Builds the next replay chunk: a batch with at most `chunk_size`
     /// values, where each value's weights are consolidated across timestamps.
     /// Values whose weights sum to zero are skipped and do not count toward
