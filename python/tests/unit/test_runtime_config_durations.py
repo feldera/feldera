@@ -100,8 +100,9 @@ def test_deprecated_integer_warns_and_names_its_replacement(
 def test_duration_argument_wins_over_the_deprecated_one_and_says_so(
     old_name, new_name, unit, value
 ):
-    """Giving both spellings keeps the current one and drops the integer.
-    The caller is told, because the dropped argument otherwise looks applied."""
+    """When both spellings are given, the current one is kept and the
+    deprecated integer is dropped. A warning says so, because an argument
+    that is dropped silently looks as if it was applied."""
     with pytest.warns(DeprecationWarning) as caught:
         config = _build(**{new_name: "42ms", old_name: value})
     assert _setting(config, new_name) == "42ms"
@@ -131,7 +132,7 @@ def test_unset_durations_stay_out_of_the_dictionary():
 
 def test_checkpoint_interval_needs_a_fault_tolerance_model():
     """Without a model there is no `fault_tolerance` object to hold the
-    interval, so both spellings are dropped."""
+    interval, so neither spelling is written."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
         config = RuntimeConfig(
@@ -143,7 +144,7 @@ def test_checkpoint_interval_needs_a_fault_tolerance_model():
 
 def test_a_model_without_an_interval_sends_an_explicit_null():
     """A null interval disables periodic checkpoints, which differs from
-    leaving the key out, so `to_dict` must keep it."""
+    leaving the setting out, so `to_dict` must keep it."""
     config = RuntimeConfig(
         fault_tolerance_model=FaultToleranceModel.AtLeastOnce
     ).to_dict()
@@ -188,7 +189,7 @@ def test_storage_rejects_a_value_that_is_neither_flag_nor_storage():
 def test_helper_names_the_replacement_in_the_unit_it_is_given(unit, value, expected):
     """The helper serves fields in every unit the configuration uses, so cover
     the units no RuntimeConfig field happens to take yet. The unit only shows
-    in the advice: the value itself goes out under the older key."""
+    in the advice: the value itself is written under the older name."""
     with pytest.warns(DeprecationWarning, match=f"new='{expected}'"):
         assert _duration_setting("new", None, "old", value, unit) == ("old", value)
 
@@ -281,8 +282,9 @@ def test_from_dict_reads_an_older_key_under_both_names():
     assert config.to_dict() == {"clock_resolution_usecs": 250}
 
 
-# A runtime configuration as a release before the rename stored it: every
-# duration spelled out under its older key, including the explicit nulls.
+# A runtime configuration as a Feldera release before the duration settings
+# were renamed stored it: every duration spelled out under its older name,
+# including the explicit nulls.
 PRE_RENAME_STORED = {
     "workers": 4,
     "max_buffering_delay_usecs": 0,

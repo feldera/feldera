@@ -450,7 +450,8 @@ def build_pipeline(
     with warnings.catch_warnings():
         # The older spelling of the timeout, so that a deployment from before
         # the current names reads it too; it warns, and the warning is noise
-        # here.
+        # here. TODO: write `provisioning_timeout="5m"` once no such
+        # deployment is tested against any more.
         warnings.simplefilter("ignore", DeprecationWarning)
         runtime_config = RuntimeConfig(
             # Covers node auto-provisioning: a pipeline that needs a fresh

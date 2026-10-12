@@ -1027,15 +1027,16 @@ fn patch_runtime_config(
             }
         }
         RuntimeConfigKey::CheckpointInterval => {
-            // One key serves both spellings, because a command line carries
-            // everything as text anyway. `none` sends the explicit null that
-            // turns periodic checkpointing off, which the bare number
-            // expressed by accepting 0.
+            // The value of `--key checkpoint_interval` is text, so one key
+            // takes both a duration such as `5m` and the bare number of
+            // seconds the setting took before. `none` sends the explicit
+            // null that turns periodic checkpointing off.
             rc.fault_tolerance.checkpoint_interval = Some(match value {
                 "none" | "null" => None,
                 _ => match value.parse::<u64>() {
                     // A bare 0 disabled periodic checkpoints; `0s` would mean
-                    // the shortest interval instead, so point at `none`.
+                    // the shortest interval instead, so tell the user to
+                    // write `none`.
                     Ok(0) => {
                         eprintln!(
                             "a bare 0 is deprecated; write `none` to disable periodic checkpoints"

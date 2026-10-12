@@ -290,7 +290,8 @@ class RuntimeConfig:
         old_value: Optional[int],
         unit: str,
     ) -> None:
-        """Stores a duration setting under the spelling it was given in."""
+        """Stores a duration setting in this object's attributes, under
+        `new_name` or `old_name`, whichever the caller gave a value for."""
         key, value = _duration_setting(new_name, new_value, old_name, old_value, unit)
         self.__dict__[key] = value
 
