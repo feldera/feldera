@@ -758,6 +758,25 @@ fn default_optimize_download_resources() -> bool {
 }
 
 impl SyncConfig {
+    /// The interval between standby pulls, as a [`Duration`].
+    ///
+    /// The enterprise crates read the sync durations through these accessors
+    /// rather than the fields, so that one version of them compiles against
+    /// every `feldera-types` a pinned runtime may bring.
+    pub fn standby_pull_interval(&self) -> Duration {
+        Duration::from_secs(self.pull_interval)
+    }
+
+    /// The interval between checkpoint pushes, or `None` for no periodic push.
+    pub fn checkpoint_push_interval(&self) -> Option<Duration> {
+        self.push_interval.map(Duration::from_secs)
+    }
+
+    /// The minimum age a checkpoint reaches before it may be deleted.
+    pub fn min_retention(&self) -> Duration {
+        Duration::from_secs(u64::from(self.retention_min_age) * 24 * 60 * 60)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         #[allow(deprecated)]
         if self.standby {
@@ -1404,6 +1423,40 @@ impl Default for FtConfig {
 
 #[cfg(test)]
 mod test {
+
+    /// The sync duration accessors read the fields in the units their names
+    /// carry, and apply the defaults the fields apply.
+    #[test]
+    fn sync_config_duration_accessors() {
+        let config: super::SyncConfig = serde_json::from_value(serde_json::json!({
+            "bucket": "b", "pull_interval": 3, "push_interval": 120, "retention_min_age": 2,
+        }))
+        .unwrap();
+        assert_eq!(
+            config.standby_pull_interval(),
+            std::time::Duration::from_secs(3)
+        );
+        assert_eq!(
+            config.checkpoint_push_interval(),
+            Some(std::time::Duration::from_secs(120))
+        );
+        assert_eq!(
+            config.min_retention(),
+            std::time::Duration::from_secs(2 * 24 * 60 * 60)
+        );
+
+        let defaults: super::SyncConfig =
+            serde_json::from_value(serde_json::json!({"bucket": "b"})).unwrap();
+        assert_eq!(
+            defaults.standby_pull_interval(),
+            std::time::Duration::from_secs(10)
+        );
+        assert_eq!(defaults.checkpoint_push_interval(), None);
+        assert_eq!(
+            defaults.min_retention(),
+            std::time::Duration::from_secs(30 * 24 * 60 * 60)
+        );
+    }
     use super::deserialize_fault_tolerance;
     use crate::config::{
         ConnectorConfig, DEFAULT_DATAFUSION_MEMORY_MB_CEILING, FtConfig, FtModel, PipelineConfig,
