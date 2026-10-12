@@ -1583,9 +1583,26 @@ impl Edge {
 
 circuit_cache_key!(ExportId<C, D>(StreamId => Stream<C, D>));
 
-// `stream` => `replay_stream` mapping designates `replay_stream`
+/// How a stream is registered for replay.
+///
+/// A replay source can play back several streams.  It records the changes
+/// that it plays back on one of them, its recorded stream, which carries a
+/// [`Recorder`].
+#[derive(Clone)]
+pub struct ReplayRegistration {
+    /// The stream that the replay source writes during a replay.  It aliases
+    /// the registered stream.
+    pub(crate) replay_stream: Box<dyn StreamMetadata>,
+
+    /// The stream on which the replay source records the changes that it
+    /// plays back in the synchronization transaction of a concurrent
+    /// bootstrap.
+    pub(crate) recorded_stream: StreamId,
+}
+
+// `stream` => `registration` mapping designates `registration.replay_stream`
 // as a replay source for `stream`.
-circuit_cache_key!(ReplaySource(StreamId => Box<dyn StreamMetadata>));
+circuit_cache_key!(ReplaySource(StreamId => ReplayRegistration));
 
 /// Register `replay_stream` as a replay source for `stream`.
 ///
@@ -1681,7 +1698,10 @@ fn register_replay_source<C, D, B>(
         if !circuit.cache_contains(&ReplaySource::new(stream.stream_id())) {
             circuit.cache_insert(
                 ReplaySource::new(stream.stream_id()),
-                Box::new(replay_stream.clone()),
+                ReplayRegistration {
+                    replay_stream: Box::new(replay_stream.clone()),
+                    recorded_stream: stream.stream_id(),
+                },
             );
 
             let recorder = Recorder::<B>::new(factories, Location::caller());
@@ -2170,9 +2190,8 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         K: TypedMapKey<CircuitStoreMarker> + 'static,
         K::Value: Clone;
 
-    /// Check if a stream can be replayed, if so, return the replay stream that can be used to
-    /// replay the contents of `stream_id`.
-    fn get_replay_source(&self, stream_id: StreamId) -> Option<Box<dyn StreamMetadata>> {
+    /// Check if a stream can be replayed, if so, return its registration.
+    fn get_replay_source(&self, stream_id: StreamId) -> Option<ReplayRegistration> {
         self.cache_get(&ReplaySource::new(stream_id))
     }
 
@@ -3354,7 +3373,7 @@ impl RootCircuit {
                 tokio_runtime,
                 runtime_idle,
                 replay_info: None,
-                boundary_streams: None,
+                recorded_streams: None,
                 concurrent_bootstrap_info: None,
             },
             res,
@@ -7634,17 +7653,17 @@ pub struct CircuitHandle {
     runtime_idle: RuntimeIdle,
     replay_info: Option<BootstrapInfo>,
 
-    /// The boundary streams of the replay prepared by
-    /// [`CircuitHandle::restore`], mapped to their replay-source nodes.
+    /// The replay sources of the replay prepared by
+    /// [`CircuitHandle::restore`], mapped to their recorded streams.
     /// During a concurrent bootstrap, the synchronization transaction uses
-    /// this map to feed each boundary stream's recorded changes to the
-    /// replay source that plays them back.
-    boundary_streams: Option<BTreeMap<StreamId, NodeId>>,
+    /// this map to feed each replay source the changes recorded on its
+    /// recorded stream.
+    recorded_streams: Option<BTreeMap<NodeId, StreamId>>,
 
     /// Set while this circuit is the live half of a concurrent bootstrap
     /// (see [`CircuitHandle::restore_concurrent`]): the replay runs in a
     /// separate circuit copy while this circuit serves pre-existing views
-    /// with recorders armed on the boundary streams.
+    /// with recorders armed on the recorded streams.
     ///
     /// Kept separate from `replay_info`, which makes `is_replay_complete`
     /// and `complete_replay` operate on a replay running in *this* circuit.
@@ -7674,8 +7693,9 @@ impl Drop for CircuitHandle {
 /// Operators involved in the replay phase of a circuit.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BootstrapInfo {
-    /// Operators that will replay their contents during the replay phase.
-    pub replay_sources: BTreeMap<NodeId, StreamId>,
+    /// Operators that will replay their contents during the replay phase,
+    /// and the replay streams that each of them writes.
+    pub replay_sources: BTreeMap<NodeId, BTreeSet<StreamId>>,
 
     /// Operators that require backfill from upstream nodes, including their persistent IDs.
     #[allow(dead_code)]
@@ -7689,17 +7709,63 @@ pub struct BootstrapInfo {
 /// missing state) and [`CircuitHandle::restore_concurrent`] (which keeps the
 /// pre-existing parts of the circuit running while a second circuit copy
 /// replays the missing state).
+///
+/// # Example
+///
+/// Consider the following circuit where the `integral` node feeds two replay
+/// streams: the accumulator stream `acc`, used to construct the integral itself,
+/// and the `delta` stream:
+///
+/// ```text
+///          ┌────────────────────┐
+///          │                    │      delta
+///          │      circuit       ├────────────────────┐
+///          │                    │                    │
+///          └─────────┬──────────┘                    │
+///                    │                               │
+///    ┌────────┐      │                               │
+///    │Recorder│◄.....│                               │
+///    └────────┘      │acc                            │
+///                    │                               │
+///        ...........►│                               │
+///        .           ▼                               │
+///    acc'.       ┌────────┐        delta'            │
+///        ........│integral│.........................►│
+///                └────────┘                          │
+///                                                    ▼
+/// ```
+///
+/// This circuit topology is useful when `delta` is a stream whose contents are
+/// identical to the contents of the integral, but `delta` does not feed the
+/// integral: replaying `delta` alone does not reconstruct the integral.
+/// Currently the only instance of this is the lazy input upsert operator.
+///
+/// Both streams must carry the same contents, represented as either a stream
+/// of batches, one per step, or as a single accumulated output produced once
+/// per transaction.
+///
+/// Exactly one of the replayed streams must have a recorder attached to it, used
+/// to bring the integral in the bootstrap circuit up to speed during concurrent
+/// bootstrapping.
+///
+/// In this example:
+/// - `replay_sources: {integral -> {acc', delta'}}`
+/// - `boundary_streams: {acc -> integral, delta -> integral}`
+/// - `recorded_streams: {integral -> acc}`
 struct CheckpointAnalysis {
     /// Nodes that will act as replay sources during the replay phase, and
     /// their replay streams.
-    replay_sources: BTreeMap<NodeId, StreamId>,
+    replay_sources: BTreeMap<NodeId, BTreeSet<StreamId>>,
 
     /// The streams whose contents the replay sources play back, mapped to
     /// the replay source's node: the boundary between the circuit's
-    /// pre-existing region and its bootstrapped region.  Changes to these
-    /// streams during concurrent bootstrapping must be recorded for the
-    /// synchronization transaction.
+    /// pre-existing region and its bootstrapped region.  The replay connects
+    /// each of them to its replay stream.
     boundary_streams: BTreeMap<StreamId, NodeId>,
+
+    /// The replay sources mapped to their recorded streams.  A replay source
+    /// that plays back several boundary streams records their changes on one stream.
+    recorded_streams: BTreeMap<NodeId, StreamId>,
 
     /// New or invalidated nodes: nodes absent from the checkpoint, plus
     /// nodes whose checkpointed state the balancer invalidated.
@@ -7739,12 +7805,13 @@ struct ConcurrentBootstrapInfo {
     /// bootstrap circuit when bootstrapping completes.
     need_backfill: BTreeSet<NodeId>,
 
-    /// Streams with recorders armed, mapped to the replay-source node that
-    /// plays each stream's recorded contents back in the bootstrap circuit.
-    /// The recorders are drained — and thereby disarmed — by the
-    /// synchronization transaction, or disarmed with their contents
-    /// discarded by [`CircuitHandle::abort_concurrent_bootstrap`].
-    boundary_streams: BTreeMap<StreamId, NodeId>,
+    /// The replay sources mapped to their recorded streams, whose recorders
+    /// are armed.  Each replay source plays the contents of its stream's
+    /// recorder back in the bootstrap circuit.  The synchronization
+    /// transaction drains the recorders, which disarms them.
+    /// [`CircuitHandle::abort_concurrent_bootstrap`] disarms them and
+    /// discards their contents.
+    recorded_streams: BTreeMap<NodeId, StreamId>,
 }
 
 impl CircuitHandle {
@@ -7888,10 +7955,13 @@ impl CircuitHandle {
         splice_replay_edges: bool,
     ) -> Result<CheckpointAnalysis, DbspError> {
         // Nodes that will act as replay sources during the replay phase of the circuit.
-        let mut replay_sources: BTreeMap<NodeId, StreamId> = BTreeMap::new();
+        let mut replay_sources: BTreeMap<NodeId, BTreeSet<StreamId>> = BTreeMap::new();
 
         // The streams whose contents the replay sources play back.
         let mut boundary_streams: BTreeMap<StreamId, NodeId> = BTreeMap::new();
+
+        // The streams on which the replay sources record their changes.
+        let mut recorded_streams: BTreeMap<NodeId, StreamId> = BTreeMap::new();
 
         // Nodes that require backfill from upstream nodes.
         let mut need_backfill: BTreeSet<GlobalNodeId> = BTreeSet::new();
@@ -7968,6 +8038,7 @@ impl CircuitHandle {
             participate_in_backfill_new = self.compute_replay_nodes_step(
                 &mut replay_sources,
                 &mut boundary_streams,
+                &mut recorded_streams,
                 splice_replay_edges,
                 &need_backfill,
                 participate_in_backfill_new,
@@ -8011,6 +8082,7 @@ impl CircuitHandle {
         Ok(CheckpointAnalysis {
             replay_sources,
             boundary_streams,
+            recorded_streams,
             need_backfill,
             participate_in_backfill,
         })
@@ -8062,7 +8134,7 @@ impl CircuitHandle {
     ) -> Result<Option<BootstrapInfo>, DbspError> {
         let CheckpointAnalysis {
             replay_sources,
-            boundary_streams,
+            recorded_streams,
             need_backfill,
             participate_in_backfill,
             ..
@@ -8175,7 +8247,7 @@ impl CircuitHandle {
             };
 
             self.replay_info = Some(replay_info.clone());
-            self.boundary_streams = Some(boundary_streams);
+            self.recorded_streams = Some(recorded_streams);
 
             Ok(Some(replay_info))
         } else {
@@ -8196,11 +8268,11 @@ impl CircuitHandle {
     ///   node that restored successfully.  Forward propagation of
     ///   `need_backfill` guarantees that no such node is downstream of a
     ///   backfilled node.
-    /// * A recorder starts recording on every boundary stream.  The
-    ///   bootstrap circuit replays these streams' integrals as of the
-    ///   checkpoint, so the deltas this circuit applies to them afterward
-    ///   must be captured for the synchronization transaction that brings
-    ///   the bootstrap circuit up to date.
+    /// * A recorder starts recording on the recorded stream of every replay
+    ///   source.  The bootstrap circuit replays the sources' integrals as of
+    ///   the checkpoint, so the deltas this circuit applies to them
+    ///   afterward must be captured for the synchronization transaction
+    ///   that brings the bootstrap circuit up to date.
     ///
     /// Returns `None`, leaving the circuit fully active with no recorders
     /// armed, if the checkpoint matches the circuit (nothing to bootstrap).
@@ -8235,12 +8307,12 @@ impl CircuitHandle {
             // splice the replay edges that `analyze_checkpoint` skipped,
             // then run [`Self::restore`]'s epilogue.
             for original_stream in analysis.boundary_streams.keys() {
-                let replay_source = self
+                let registration = self
                     .circuit
                     .get_replay_source(*original_stream)
                     .expect("boundary streams have replay sources by construction");
                 self.circuit
-                    .add_replay_edges(*original_stream, replay_source.as_ref());
+                    .add_replay_edges(*original_stream, registration.replay_stream.as_ref());
             }
             // The replay runs in this circuit, not a separate copy, so the
             // backfilled views' output must reach their mailboxes normally.
@@ -8248,15 +8320,15 @@ impl CircuitHandle {
             return Ok(ConcurrentRestoreOutcome::FellBack { reason, info });
         }
 
-        for stream_id in analysis.boundary_streams.keys() {
-            // Every stream with a registered replay source gets a recorder
-            // at construction time (see `register_replay_stream`), and
-            // boundary streams are found through replay-source lookups, so
-            // the recorder must exist.
+        for stream_id in analysis.recorded_streams.values() {
+            // A replay source's recorded stream gets a recorder at
+            // construction time (see `register_replay_stream`), and recorded
+            // streams are found through replay-source lookups, so the
+            // recorder must exist.
             let control = self
                 .circuit
                 .cache_get(&RecorderControlId::new(*stream_id))
-                .unwrap_or_else(|| panic!("boundary stream {stream_id} has no recorder attached"));
+                .unwrap_or_else(|| panic!("recorded stream {stream_id} has no recorder attached"));
             control.start_recording();
         }
 
@@ -8329,7 +8401,7 @@ impl CircuitHandle {
 
         self.concurrent_bootstrap_info = Some(ConcurrentBootstrapInfo {
             need_backfill: excluded,
-            boundary_streams: analysis.boundary_streams,
+            recorded_streams: analysis.recorded_streams,
         });
 
         Ok(ConcurrentRestoreOutcome::Concurrent(info))
@@ -8369,7 +8441,7 @@ impl CircuitHandle {
     }
 
     /// Stops the recorders armed by [`Self::restore_concurrent`] and returns
-    /// their recorded contents, keyed by boundary stream.
+    /// their recorded contents, keyed by recorded stream.
     ///
     /// The synchronization transaction of a concurrent bootstrap feeds the
     /// result to the bootstrap circuit's [`Self::start_sync_replay`].
@@ -8381,13 +8453,13 @@ impl CircuitHandle {
         };
 
         let mut recorded = BTreeMap::new();
-        for stream_id in info.boundary_streams.keys() {
+        for stream_id in info.recorded_streams.values() {
             let control = self
                 .circuit
                 .cache_get(&RecorderControlId::new(*stream_id))
-                .unwrap_or_else(|| panic!("boundary stream {stream_id} has no recorder attached"));
+                .unwrap_or_else(|| panic!("recorded stream {stream_id} has no recorder attached"));
             let contents = control.stop_recording_any().unwrap_or_else(|| {
-                panic!("the recorder on boundary stream {stream_id} was not recording")
+                panic!("the recorder on recorded stream {stream_id} was not recording")
             });
             recorded.insert(*stream_id, contents);
         }
@@ -8396,9 +8468,9 @@ impl CircuitHandle {
     }
 
     /// Starts the synchronization replay on a circuit prepared by
-    /// [`Self::restore`]: each boundary stream's replay source replays the
-    /// changes that the live circuit recorded on that stream (the boxes hold
-    /// the recorders' spines; see [`Self::drain_recorders`]).
+    /// [`Self::restore`]: each replay source replays the changes that the
+    /// live circuit recorded on its recorded stream (the boxes hold the
+    /// recorders' spines; see [`Self::drain_recorders`]).
     ///
     /// The caller must run a transaction afterwards; the replay drains
     /// chunk-by-chunk during the transaction's commit, exactly like the
@@ -8407,16 +8479,16 @@ impl CircuitHandle {
         &mut self,
         mut recorded: BTreeMap<StreamId, Box<dyn Any>>,
     ) -> Result<(), DbspError> {
-        let Some(boundary_streams) = self.boundary_streams.as_ref() else {
+        let Some(recorded_streams) = self.recorded_streams.as_ref() else {
             return Err(DbspError::Runtime(RuntimeError::BootstrapCircuit(
                 "the circuit has no replay prepared".to_string(),
             )));
         };
 
-        for (stream_id, node_id) in boundary_streams.iter() {
+        for (node_id, stream_id) in recorded_streams.iter() {
             let contents = recorded
                 .remove(stream_id)
-                .unwrap_or_else(|| panic!("no recorded contents for boundary stream {stream_id}"));
+                .unwrap_or_else(|| panic!("no recorded contents for recorded stream {stream_id}"));
             // `map_local_node_mut` takes an `FnMut` closure, which cannot
             // consume `contents` directly; it invokes the closure exactly
             // once, so route the move through an `Option`.
@@ -8480,7 +8552,7 @@ impl CircuitHandle {
             return;
         };
 
-        for stream_id in info.boundary_streams.keys() {
+        for stream_id in info.recorded_streams.values() {
             if let Some(control) = self.circuit.cache_get(&RecorderControlId::new(*stream_id)) {
                 let _ = control.stop_recording_any();
             }
@@ -8610,13 +8682,16 @@ impl CircuitHandle {
     /// * For streams that can be replayed from a replay source:
     ///  - add the replay source to `replay_sources` and `participate_in_backfill`.
     ///  - create replay streams from the replay source to each consumer of the original stream.
+    ///  - record the replay source's recorded stream in `recorded_streams`.
     /// * For other streams, add their origin nodes to `participate_in_backfill`.
     ///
     /// Return the set of nodes newly added to `participate_in_backfill`.
+    #[allow(clippy::too_many_arguments)]
     fn compute_replay_nodes_step(
         &self,
-        replay_sources: &mut BTreeMap<NodeId, StreamId>,
+        replay_sources: &mut BTreeMap<NodeId, BTreeSet<StreamId>>,
         boundary_streams: &mut BTreeMap<StreamId, NodeId>,
+        recorded_streams: &mut BTreeMap<NodeId, StreamId>,
         splice_replay_edges: bool,
         need_backfill: &BTreeSet<NodeId>,
         participate_in_backfill_new: BTreeSet<NodeId>,
@@ -8674,20 +8749,22 @@ impl CircuitHandle {
             // Add all ancestors of `participate_in_backfill_new` to the `participate_in_backfill` set, except streams
             // that can be replayed from a different node.
             if let Some(stream_id) = stream_id
-                && let Some(replay_source) = self.circuit.get_replay_source(stream_id)
+                && let Some(registration) = self.circuit.get_replay_source(stream_id)
             {
+                let replay_source = registration.replay_stream.local_node_id();
+
                 // If the replay source is itself in the need_backfill set (i.e., it's an integral without
                 // a checkpoint), it cannot be used for replay.
-                if !need_backfill.contains(&replay_source.local_node_id()) {
-                    replay_streams.insert(stream_id, replay_source.clone());
+                if !need_backfill.contains(&replay_source) {
+                    replay_streams.insert(stream_id, registration);
                     // trace!(
                     //     "worker {}: Replacing node_id {node_id} with replay source {}",
                     //     Runtime::worker_index(),
-                    //     replay_source.origin_node_id()
+                    //     replay_source
                     // );
 
                     // Replace the node_id with the replay source.
-                    node_id = replay_source.local_node_id();
+                    node_id = replay_source;
                 }
             }
 
@@ -8699,19 +8776,37 @@ impl CircuitHandle {
         }
 
         // Record the boundary streams and, when preparing this circuit for
-        // replay (rather than only analyzing it), connect `replay_streams`
-        // to all operators that consume the original stream.
-        for (original_stream, replay_stream) in replay_streams.into_iter() {
-            boundary_streams.insert(original_stream, replay_stream.local_node_id());
-            replay_sources
-                .entry(replay_stream.local_node_id())
-                .or_insert_with(|| {
-                    if splice_replay_edges {
-                        self.circuit
-                            .add_replay_edges(original_stream, replay_stream.as_ref());
-                    }
-                    replay_stream.stream_id()
-                });
+        // replay (rather than only analyzing it), connect each replay stream
+        // to all operators that consume its original stream.  A replay
+        // source can play back several boundary streams, so this happens
+        // once per replay stream rather than once per source.
+        for (original_stream, registration) in replay_streams.into_iter() {
+            let ReplayRegistration {
+                replay_stream,
+                recorded_stream,
+            } = registration;
+            let replay_source = replay_stream.local_node_id();
+
+            boundary_streams.insert(original_stream, replay_source);
+            let new_replay_stream = replay_sources
+                .entry(replay_source)
+                .or_default()
+                .insert(replay_stream.stream_id());
+            if new_replay_stream && splice_replay_edges {
+                self.circuit
+                    .add_replay_edges(original_stream, replay_stream.as_ref());
+            }
+
+            // The synchronization transaction of a concurrent bootstrap
+            // replays each source's recording once, so all replay streams of
+            // a source must name the same recorded stream.
+            let source_recorded_stream = *recorded_streams
+                .entry(replay_source)
+                .or_insert(recorded_stream);
+            assert_eq!(
+                source_recorded_stream, recorded_stream,
+                "replay source {replay_source} records its changes on two streams"
+            );
         }
 
         Ok(participate_in_backfill_new)
@@ -8747,10 +8842,12 @@ impl CircuitHandle {
         };
 
         // End replay mode.
-        for (node_id, stream_id) in replay_info.replay_sources.iter() {
+        for (node_id, stream_ids) in replay_info.replay_sources.iter() {
             self.circuit
                 .map_local_node_mut(*node_id, &mut |node| node.end_replay())?;
-            self.circuit.edges_mut().delete_stream(*stream_id);
+            for stream_id in stream_ids {
+                self.circuit.edges_mut().delete_stream(*stream_id);
+            }
         }
 
         // Prepare the scheduler to run the full circuit.
