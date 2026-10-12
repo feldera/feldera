@@ -340,6 +340,7 @@ It contains the following fields:
         feldera_ir::Op,
         feldera_ir::Condition,
         feldera_types::config::ProgramIr,
+        feldera_types::config::UdfLibrary,
 
         // Storage
         crate::db::types::storage::StorageStatus,

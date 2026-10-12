@@ -952,11 +952,12 @@ pub(crate) async fn set_program_status(
             )
         }
         ProgramStatus::Success => {
-            // Two shapes reach Success. A Rust pipeline arrives from CompilingRust,
-            // where its program info and SQL log are already stored, and delivers a
-            // binary plus a Rust log. A Gen-2 pipeline arrives straight from
-            // CompilingSql, so it carries its program info and SQL log here and
-            // delivers no binary and no Rust log. The Rust log is therefore present
+            // Two shapes reach Success. A pipeline arrives from CompilingRust, where its
+            // program info and SQL log are already stored, and delivers a binary plus a
+            // Rust log; for a Gen-2 pipeline with Rust UDFs, the binary checksums describe
+            // its UDF library. A Gen-2 pipeline without Rust UDFs arrives
+            // straight from CompilingSql, so it carries its program info and SQL log here
+            // and delivers no binary and no Rust log. The Rust log is therefore present
             // exactly when a binary was built, and a half-delivered binary is a bug.
             assert!(
                 new_program_error_system_error.is_none()
@@ -2141,9 +2142,10 @@ pub(crate) async fn count_pipelines_needing_compilation(
 ///
 /// Both compiling statuses are included because each one covers a window in which an
 /// artifact is already on disk while the checksum naming it is not yet in the row.
-/// `CompilingRust` covers the binary and program info a legacy program delivers;
-/// `CompilingSql` covers the program info a Gen-2 program delivers, which is its only
-/// artifact and is written before the row moves to `Success`.
+/// `CompilingRust` covers the binary and program info a legacy program delivers, and the
+/// UDF library and program info a Gen-2 program with Rust UDFs delivers; `CompilingSql`
+/// covers the program info a Gen-2 program without them delivers. Either is written before
+/// the row moves to `Success`.
 pub(crate) async fn list_pipeline_programs_across_all_tenants(
     txn: &Transaction<'_>,
 ) -> Result<Vec<PipelineProgramArtifacts>, DBError> {
