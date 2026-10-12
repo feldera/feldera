@@ -51,7 +51,7 @@
     tooltipData: TooltipData | null
     /** The loaded profile's toplevel node id, used to recognise overview data. */
     rootNodeId: string | undefined
-    /** Cumulative pipeline-wide metrics from `stats.json`; shown as a tile atop the overview. */
+    /** Pipeline-wide metrics from `stats.json`. The overview shows them in a tile at the top. */
     globalMetrics?: GlobalMetrics
     /** When true, metrics flagged `advanced` in the profile metadata are included. */
     showAdvanced: boolean
@@ -73,8 +73,8 @@
     onSearchNode
   }: Props = $props()
 
-  // Pipeline-wide totals for the overview's "Global stats" tile. Empty (so the tile is hidden) on
-  // any non-overview view or when the bundle carried no stats.
+  // Rows of the "Global stats" tile in the overview. The list is empty in the other views and when
+  // the bundle has no stats, which hides the tile.
   const globalMetricEntries = $derived(
     mode === 'overview' ? buildGlobalMetrics(globalMetrics) : []
   )
@@ -210,9 +210,8 @@
          otherwise one column. CSS multi-column flow auto-distributes blocks; the column
          count is driven by the ResizeObserver on the scroll container. -->
     <div class="gap-2" style="column-count: {useTwoColumns ? 2 : 1};">
-      <!-- Overview-only cumulative pipeline metrics from `stats.json`, tiled alongside the node
-           blocks. Driven by the bundle's global metrics, not the selected node, so it shows in the
-           overview even when the root node carries no attributes and no node tooltip is produced. -->
+      <!-- The tile shows the bundle's global metrics, not metrics of the selected node. The overview
+           shows the tile even when the root node has no attributes and there is no node tooltip. -->
       {#if globalMetricEntries.length > 0}
         <div class="mb-2 break-inside-avoid">
           <KeyValueBlock id="global-metrics" title="Global stats" entries={globalMetricEntries} />
