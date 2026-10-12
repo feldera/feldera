@@ -9026,7 +9026,8 @@
         "properties": {
           "clock_resolution": {
             "type": "string",
-            "description": "How often the clock ticks, for example `1s`.",
+            "description": "How often the clock ticks, for example `1s`. Unset selects the\ndefault, `DEFAULT_CLOCK_RESOLUTION`.",
+            "default": "1s",
             "nullable": true
           },
           "http_driven": {
@@ -9545,12 +9546,14 @@
           },
           "connection_timeout": {
             "type": "string",
-            "description": "Connection timeout, for example `10s`.\n\nHow long to wait when establishing the initial connection to the\nNATS server. Defaults to 10 seconds.",
+            "description": "Connection timeout, for example `10s`.\n\nHow long to wait when establishing the initial connection to the\nNATS server. Unset selects the default, `DEFAULT_CONNECTION_TIMEOUT`.",
+            "default": "10s",
             "nullable": true
           },
           "request_timeout": {
             "type": "string",
-            "description": "Request timeout, for example `10s`.\n\nHow long to wait for responses to requests. Defaults to 10 seconds.",
+            "description": "Request timeout, for example `10s`.\n\nHow long to wait for responses to requests. Unset selects\nthe default, `DEFAULT_REQUEST_TIMEOUT`.",
+            "default": "10s",
             "nullable": true
           },
           "server_url": {
@@ -10938,7 +10941,8 @@
         "properties": {
           "checkpoint_interval": {
             "type": "string",
-            "description": "Interval between automatic checkpoints, for example `60s`.\n\nThe default is 60 seconds; `null` disables periodic checkpointing.\nValues less than 1 second or greater than 1 hour will be forced into\nthat range.",
+            "description": "Interval between automatic checkpoints, for example `60s`.\n\nUnset selects the default, `DEFAULT_CHECKPOINT_INTERVAL`; `null` disables periodic\ncheckpointing.\nValues less than 1 second or greater than 1 hour will be forced into\nthat range.",
+            "default": "1m",
             "nullable": true
           },
           "model": {
@@ -11808,7 +11812,8 @@
         "properties": {
           "group_join_timeout": {
             "type": "string",
-            "description": "Maximum time to wait for the endpoint to join the Kafka consumer group\nduring initialization, for example `10s`. Defaults to 10 seconds.",
+            "description": "Maximum time to wait for the endpoint to join the Kafka consumer group\nduring initialization, for example `10s`. Unset selects\nthe default, `DEFAULT_GROUP_JOIN_TIMEOUT`.",
+            "default": "10s",
             "nullable": true
           },
           "header_filter": {
@@ -11947,7 +11952,8 @@
           },
           "initialization_timeout": {
             "type": "string",
-            "description": "Maximum time to wait for the endpoint to connect to a Kafka broker, for\nexample `60s`. Defaults to 60 seconds.",
+            "description": "Maximum time to wait for the endpoint to connect to a Kafka broker, for\nexample `60s`. Unset selects the default, `DEFAULT_INITIALIZATION_TIMEOUT`.",
+            "default": "1m",
             "nullable": true
           },
           "kafka_service": {
@@ -12319,12 +12325,14 @@
           },
           "inactivity_timeout": {
             "type": "string",
-            "description": "Maximum time to wait for the next message before running a\nstream/server health check, for example `60s`. Must be at least one\nsecond. Defaults to 60 seconds.",
+            "description": "Maximum time to wait for the next message before running a\nstream/server health check, for example `60s`. Must be at least one\nsecond. Unset selects the default, `DEFAULT_INACTIVITY_TIMEOUT`.",
+            "default": "1m",
             "nullable": true
           },
           "retry_interval": {
             "type": "string",
-            "description": "Delay between automatic reconnect attempts while in retry mode, for\nexample `5s`. Must be at least one second. Defaults to 5 seconds.",
+            "description": "Delay between automatic reconnect attempts while in retry mode, for\nexample `5s`. Must be at least one second. Unset selects\nthe default, `DEFAULT_RETRY_INTERVAL`.",
+            "default": "5s",
             "nullable": true
           },
           "stream_name": {
@@ -12980,8 +12988,8 @@
               },
               "clock_resolution": {
                 "type": "string",
-                "description": "Real-time clock resolution, for example `1s`.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most once per `clock_resolution`.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nIt is set to 1 second by default, and `null` selects that default.",
-                "default": null,
+                "description": "Real-time clock resolution, for example `1s`.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most once per `clock_resolution`.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nUnset or `null` selects the default, `DEFAULT_CLOCK_RESOLUTION`.",
+                "default": "1s",
                 "nullable": true
               },
               "clock_timezone_offset": {
@@ -15075,8 +15083,8 @@
           },
           "clock_resolution": {
             "type": "string",
-            "description": "Real-time clock resolution, for example `1s`.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most once per `clock_resolution`.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nIt is set to 1 second by default, and `null` selects that default.",
-            "default": null,
+            "description": "Real-time clock resolution, for example `1s`.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most once per `clock_resolution`.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nUnset or `null` selects the default, `DEFAULT_CLOCK_RESOLUTION`.",
+            "default": "1s",
             "nullable": true
           },
           "clock_timezone_offset": {
@@ -16224,7 +16232,8 @@
           },
           "min_retention": {
             "type": "string",
-            "description": "The minimum age a checkpoint must reach before it becomes eligible for\ndeletion, for example `30d`. All younger checkpoints will be preserved.\n\nDefault: 30 days",
+            "description": "The minimum age a checkpoint must reach before it becomes eligible for\ndeletion, for example `30d`. All younger checkpoints will be preserved.\nUnset selects the default, `DEFAULT_RETENTION_MIN_AGE`.",
+            "default": "30d",
             "nullable": true
           },
           "multi_thread_cutoff": {
@@ -16279,7 +16288,8 @@
           },
           "standby_pull_interval": {
             "type": "string",
-            "description": "The interval between each attempt to fetch the latest checkpoint from\nobject store while in standby mode, for example `10s`.\n\nApplies only when `start_from_checkpoint` is set to `latest`.\n\nDefault: 10 seconds",
+            "description": "The interval between each attempt to fetch the latest checkpoint from\nobject store while in standby mode, for example `10s`.\n\nApplies only when `start_from_checkpoint` is set to `latest`. Unset\nselects the default, `DEFAULT_PULL_INTERVAL`.",
+            "default": "10s",
             "nullable": true
           },
           "start_from_checkpoint": {
@@ -17033,7 +17043,8 @@
           },
           "pause_linger": {
             "type": "string",
-            "description": "Timeout before disconnection when paused, for example `60s`.\n\nIf the pipeline is paused, or if the input adapter reads data faster\nthan the pipeline can process it, then the controller will pause the\ninput adapter. If the input adapter stays paused longer than this\ntimeout, it will drop the network connection to the server. It will\nautomatically reconnect when the input adapter starts running again.\n\nThe default is 60 seconds.",
+            "description": "Timeout before disconnection when paused, for example `60s`.\n\nIf the pipeline is paused, or if the input adapter reads data faster\nthan the pipeline can process it, then the controller will pause the\ninput adapter. If the input adapter stays paused longer than this\ntimeout, it will drop the network connection to the server. It will\nautomatically reconnect when the input adapter starts running again.\n\nUnset selects the default, `DEFAULT_PAUSE_TIMEOUT`.",
+            "default": "1m",
             "nullable": true
           }
         }
