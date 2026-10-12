@@ -9,6 +9,11 @@ use crate::{
 /// Default timeout before a paused input adapter drops its connection.
 pub const DEFAULT_PAUSE_TIMEOUT: ConfigDuration = ConfigDuration::from_secs(60);
 
+/// The default as the OpenAPI schema shows it.
+fn default_pause_linger() -> String {
+    DEFAULT_PAUSE_TIMEOUT.to_string()
+}
+
 duration_setting!(duration_pause_linger, "pause_linger", LegacyUnit::Secs);
 
 /// Configuration for reading data from an HTTP or HTTPS URL with
@@ -26,14 +31,14 @@ pub struct UrlInputConfig {
     /// timeout, it will drop the network connection to the server. It will
     /// automatically reconnect when the input adapter starts running again.
     ///
-    /// The default is 60 seconds.
+    /// Unset selects the default, `DEFAULT_PAUSE_TIMEOUT`.
     #[serde(
         default,
         alias = "pause_timeout",
         deserialize_with = "duration_pause_linger",
         skip_serializing_if = "Option::is_none"
     )]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, default = default_pause_linger)]
     pub pause_linger: Option<ConfigDuration>,
 }
 
