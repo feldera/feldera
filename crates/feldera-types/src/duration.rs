@@ -8,7 +8,7 @@
 //! tools accept and users already know. Feldera extends it with a `d` (day)
 //! unit, because configuration values such as checkpoint retention are
 //! naturally expressed in days, and narrows it by rejecting a negative
-//! duration, which no configuration setting means.
+//! duration, which no configuration setting accepts.
 //!
 //! [`time.ParseDuration`]: https://pkg.go.dev/time#ParseDuration
 
@@ -25,7 +25,58 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub struct ConfigDuration(Duration);
 
-const EXPECTED_UNITS: &str = "expected one of 'ns', 'us', '\u{00b5}s', 'ms', 's', 'm', 'h', or 'd'";
+/// The unit list quoted in error messages, built from [`UNITS`] at compile
+/// time so that the two cannot drift apart. The Greek mu spelling is left out:
+/// it is accepted, but the micro sign already stands for it.
+const EXPECTED_UNITS: &str = match str::from_utf8(&EXPECTED_UNITS_BYTES) {
+    Ok(text) => text,
+    Err(_) => panic!("unit names are UTF-8"),
+};
+
+const EXPECTED_UNITS_BYTES: [u8; EXPECTED_UNITS_LEN] = {
+    let mut buf = [0u8; EXPECTED_UNITS_LEN];
+    render_expected_units(&mut buf);
+    buf
+};
+
+const EXPECTED_UNITS_LEN: usize = render_expected_units(&mut []);
+
+/// Writes the unit list into `buf`, or only measures it when `buf` is empty,
+/// and returns its length in bytes.
+const fn render_expected_units(buf: &mut [u8]) -> usize {
+    let mut i = 0;
+    while i < UNITS.len() {
+        i += 1;
+    }
+
+    let mut at = put(buf, 0, "expected one of ");
+    let mut i = 0;
+    while i < UNITS.len() {
+        let (name, _) = UNITS[i];
+        i += 1;
+        if i > 1 {
+            at = put(buf, at, ", ");
+        }
+        at = put(buf, at, "'");
+        at = put(buf, at, name);
+        at = put(buf, at, "'");
+    }
+    at
+}
+
+/// Appends `text` to `buf` at `at`, or only measures it when `buf` is empty,
+/// and returns the position after it.
+const fn put(buf: &mut [u8], at: usize, text: &str) -> usize {
+    let bytes = text.as_bytes();
+    if !buf.is_empty() {
+        let mut i = 0;
+        while i < bytes.len() {
+            buf[at + i] = bytes[i];
+            i += 1;
+        }
+    }
+    at + bytes.len()
+}
 
 /// Errors returned when parsing a [`ConfigDuration`] from a string.
 ///
@@ -56,16 +107,11 @@ pub enum ParseError {
     Negative { input: String },
 
     /// The value does not fit in a [`Duration`].
-    #[error("duration `{input}` is too large")]
+    #[error("duration `{input}` is too large: at most {} days", u64::MAX / (24 * 60 * 60))]
     Overflow { input: String },
 }
 
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
-
-const SECOND: Duration = Duration::from_secs(1);
-const MINUTE: Duration = Duration::from_secs(60);
-const HOUR: Duration = Duration::from_secs(60 * 60);
-const DAY: Duration = Duration::from_secs(24 * 60 * 60);
 
 impl ConfigDuration {
     pub const ZERO: ConfigDuration = ConfigDuration(Duration::ZERO);
@@ -317,16 +363,9 @@ impl fmt::Display for ConfigDuration {
             return f.write_str("0s");
         }
 
-        for (unit, base) in [
-            ("d", DAY),
-            ("h", HOUR),
-            ("m", MINUTE),
-            ("s", SECOND),
-            ("ms", Duration::from_millis(1)),
-            ("us", Duration::from_micros(1)),
-            ("ns", Duration::from_nanos(1)),
-        ] {
-            let base = base.as_nanos();
+        // Largest unit first. The ASCII names are the ones written out; the
+        // micro sign and the Greek mu are read but never written.
+        for &(unit, base) in UNITS.iter().rev().filter(|(name, _)| name.is_ascii()) {
             let unit_mult = remain / base;
             if unit_mult != 0 {
                 remain %= base;
@@ -375,7 +414,7 @@ impl<'de> Deserialize<'de> for ConfigDuration {
 // this type would make every such field a reference to one shared schema, and
 // `utoipa` drops a field's description once it becomes a reference. Each field's
 // doc comment carries an example, and the accepted format is documented once
-// under `docs/pipelines/configuration.mdx`.
+// in the user documentation.
 
 /// The unit in which a setting's superseded numeric spelling was written.
 ///
@@ -441,11 +480,11 @@ pub fn duration_from_legacy_number<E: de::Error>(
     // `u64::MAX` is the "no limit" an older release wrote out on its own, as
     // `max_output_buffer_time_millis` in every output connector's stored and
     // checkpointed configuration. Warning about it would tell the reader to
-    // write a duration they never chose.
+    // write a duration they never wrote.
     if value != u64::MAX && !warned.swap(true, std::sync::atomic::Ordering::Relaxed) {
         log::warn!(
             "configuration field `{field}` was given the bare number {value}, which is \
-             deprecated and will be removed at the 1.0 release; write \
+             deprecated and is removed no earlier than release 0.368.0; write \
              `\"{duration}\"` instead"
         );
     }
@@ -646,7 +685,7 @@ where
             if !self.warned.swap(true, std::sync::atomic::Ordering::Relaxed) {
                 log::warn!(
                     "configuration field `{}` was given a `{{secs, nanos}}` object, which is \
-                     deprecated and will be removed at the 1.0 release; write \
+                     deprecated and is removed no earlier than release 0.368.0; write \
                      `\"{duration}\"` instead",
                     self.field
                 );
@@ -736,6 +775,11 @@ macro_rules! nullable_duration_setting {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const SECOND: Duration = Duration::from_secs(1);
+    const MINUTE: Duration = Duration::from_secs(60);
+    const HOUR: Duration = Duration::from_secs(60 * 60);
+    const DAY: Duration = Duration::from_secs(24 * 60 * 60);
 
     #[test]
     fn parses_the_same_as_go() {
