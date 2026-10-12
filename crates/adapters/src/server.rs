@@ -4401,6 +4401,7 @@ mod test_http_helpers {
             .unwrap(),
             program_schema: serde_json::json!({ "inputs": [], "outputs": [] }),
             circuit_ir: None,
+            udf_library: None,
         }
     }
 

@@ -5228,6 +5228,7 @@ export type ProgramIr = {
    * Program schema.
    */
   program_schema: unknown
+  udf_library?: UdfLibrary | null
 }
 
 /**
@@ -7006,6 +7007,20 @@ export type TransportConfig =
   | {
       name: 'empty_input'
     }
+
+/**
+ * A program's UDF library, named by the same checksums as a pipeline binary.
+ */
+export type UdfLibrary = {
+  /**
+   * sha256 checksum of the library file.
+   */
+  integrity_checksum: string
+  /**
+   * Checksum of the sources the library was built from.
+   */
+  source_checksum: string
+}
 
 export type UpdateInformation = {
   /**

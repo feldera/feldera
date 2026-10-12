@@ -163,6 +163,20 @@ pub struct ProgramIr {
     /// Rust-compiled pipelines, whose circuit is statically linked into the binary.
     #[serde(default)]
     pub circuit_ir: Option<serde_json::Value>,
+    /// The program's Rust UDFs compiled to a native shared library (a Linux `cdylib`), which
+    /// the Gen-2 engine loads into its process. `None` when the program has no Rust UDFs, and
+    /// for Rust-compiled pipelines, which link their UDFs into the binary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub udf_library: Option<UdfLibrary>,
+}
+
+/// A program's UDF library, named by the same checksums as a pipeline binary.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+pub struct UdfLibrary {
+    /// Checksum of the sources the library was built from.
+    pub source_checksum: String,
+    /// sha256 checksum of the library file.
+    pub integrity_checksum: String,
 }
 
 /// Identity of a pipeline, used to record and check ownership of an S3

@@ -10,13 +10,15 @@ use crate::db::types::version::Version;
 use crate::error::{ManagerError, source_error};
 use crate::pipeline_env::validate_pipeline_env;
 use crate::runner::error::RunnerError;
+use crate::runner::pipeline_automata::compiler_binary_url;
 use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use async_trait::async_trait;
 use feldera_observability::system::total_memory_megabyte;
 use feldera_types::config::LegacySpelling;
 use feldera_types::config::{
-    PipelineConfig, PipelineConfigProgramInfo, RuntimeConfig, StorageCacheConfig, StorageConfig,
+    PipelineConfig, PipelineConfigProgramInfo, ProgramIr, RuntimeConfig, StorageCacheConfig,
+    StorageConfig,
 };
 use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus};
 use feldera_types::size::ConfigSize;
@@ -517,6 +519,37 @@ impl LocalRunner {
         (terminate_sender, join_handle)
     }
 
+    /// Fetches the UDF library that `program_ir` references, if any, into the pipeline
+    /// working directory, and returns where it is.
+    async fn retrieve_udf_library(
+        &self,
+        program_ir: Option<&ProgramIr>,
+        program_version: Version,
+    ) -> Result<Option<PathBuf>, ManagerError> {
+        let Some(udf_library) = program_ir.and_then(|program_ir| program_ir.udf_library.as_ref())
+        else {
+            return Ok(None);
+        };
+        let udf_library_url = compiler_binary_url(
+            &self.common_config,
+            self.pipeline_id,
+            program_version,
+            &udf_library.source_checksum,
+            &udf_library.integrity_checksum,
+        );
+        let udf_library_file_path = self
+            .config
+            .udf_library_file_path(self.pipeline_id, program_version);
+        self.retrieve_pipeline_file(
+            &udf_library_url,
+            "UDF library",
+            &udf_library_file_path,
+            0o660, // User: rw, Group: rw, Others: /
+        )
+        .await?;
+        Ok(Some(udf_library_file_path))
+    }
+
     /// Retrieves the binary executable or program info file of the pipeline from the compiler
     /// server and stores it in the local runner working directory for that pipeline
     /// located at `target_file_path`.
@@ -862,6 +895,9 @@ impl LocalRunner {
                 })
             })?;
 
+        let udf_library_file_path = self
+            .retrieve_udf_library(program_info.program_ir.as_ref(), program_version)
+            .await?;
         let mut base_config = deployment_config.clone();
         base_config.inputs = program_info.inputs;
         base_config.outputs = program_info.outputs;
@@ -941,6 +977,10 @@ impl LocalRunner {
                 if bootstrap_config.silent_bootstrap {
                     args.push("--silent-bootstrap".into());
                 }
+            }
+            if let Some(udf_library_file_path) = &udf_library_file_path {
+                args.push("--udf-library".into());
+                args.push(udf_library_file_path.clone().into_os_string());
             }
 
             let mut envs = pipeline_env.clone();
@@ -1217,6 +1257,10 @@ impl PipelineExecutor for LocalRunner {
                 })
             })?;
 
+        let udf_library_file_path = self
+            .retrieve_udf_library(program_info.program_ir.as_ref(), program_version)
+            .await?;
+
         // Merge program info into deployment_config
         deployment_config.inputs = program_info.inputs;
         deployment_config.outputs = program_info.outputs;
@@ -1323,6 +1367,9 @@ impl PipelineExecutor for LocalRunner {
                     .arg(https_tls_cert_path)
                     .arg("--https-tls-key-path")
                     .arg(https_tls_key_path);
+            }
+            if let Some(udf_library_file_path) = &udf_library_file_path {
+                command.arg("--udf-library").arg(udf_library_file_path);
             }
             match command.spawn() {
                 Ok(process) => break process,
