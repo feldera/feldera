@@ -6,7 +6,7 @@ use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineId,
     runtime_desired_status_to_string, runtime_status_to_string,
 };
-use crate::db::types::program::{ProgramStatus, generate_pipeline_config};
+use crate::db::types::program::{ProgramStatus, RuntimeSelector, generate_pipeline_config};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
@@ -111,14 +111,14 @@ fn program_config_is_gen2(program_config: &serde_json::Value) -> bool {
         .unwrap_or(false)
 }
 
-/// Whether more than `timeout` has passed between `since` and `now`. A timeout
-/// longer than `i64::MAX` milliseconds never passes; cast to `i64` it would go
-/// negative and time out at once.
-fn provisioning_timed_out(since: DateTime<Utc>, now: DateTime<Utc>, timeout: Duration) -> bool {
+/// Whether more than `duration` has passed between `since` and `now`. A
+/// duration longer than `i64::MAX` milliseconds never passes; cast to `i64` it
+/// would go negative and pass at once.
+fn elapsed_exceeds(since: DateTime<Utc>, now: DateTime<Utc>, duration: Duration) -> bool {
     let elapsed = now
         .timestamp_millis()
         .saturating_sub(since.timestamp_millis());
-    i64::try_from(timeout.as_millis()).is_ok_and(|timeout| elapsed > timeout)
+    i64::try_from(duration.as_millis()).is_ok_and(|duration| elapsed > duration)
 }
 
 /// The release that renamed the duration settings. A binary compiled by an
@@ -129,22 +129,27 @@ const DURATION_RENAME_VERSION: Version = Version::new(0, 366, 0);
 /// rename, in which case the executor hands it its duration settings in the
 /// older spelling. A pipeline keeps the binary it was compiled with until its
 /// runtime is updated, so after an upgrade it may still run an older one.
-/// A version that does not parse is taken to predate the rename: every runtime
-/// up to 1.0 reads the older spelling, so writing it is safe either way.
+/// A version that does not parse is taken to predate the rename: every Feldera
+/// release so far reads the older spelling, so writing it is safe either way.
 fn platform_version_predates_duration_rename(platform_version: &str) -> bool {
     !Version::parse(platform_version).is_ok_and(|version| version >= DURATION_RENAME_VERSION)
 }
 
-/// Whether the program configuration pins a runtime other than the platform's
-/// (Gen-2 runs on the platform's engine). Such a runtime may predate the
-/// duration rename, so the executor hands it its duration settings in the older
-/// spelling, which every runtime up to 1.0 accepts. A configuration that fails
-/// to parse is treated as not pinning.
-fn program_config_pins_runtime(program_config: &serde_json::Value) -> bool {
+/// Whether the program configuration pins, with `runtime_version`, a runtime
+/// that may predate the duration rename. The executor hands such a runtime its
+/// duration settings in the older spelling, which every Feldera release so far
+/// accepts. A tagged version is compared with the release that renamed the
+/// settings; a commit hash tells nothing about its age, so it gets the older
+/// spelling. The platform's own runtime and the Gen-2 engine read the current
+/// spelling. A configuration that fails to parse is treated as not pinning.
+fn pinned_runtime_predates_duration_rename(program_config: &serde_json::Value) -> bool {
     validate_program_config(program_config, false)
-        .map(|config| {
-            let runtime = config.runtime_version();
-            !runtime.is_platform() && !runtime.is_gen2()
+        .map(|config| match config.runtime_version() {
+            RuntimeSelector::Platform(_) | RuntimeSelector::Gen2 => false,
+            RuntimeSelector::Version(tag) => {
+                platform_version_predates_duration_rename(tag.trim_start_matches('v'))
+            }
+            RuntimeSelector::Sha(_) => true,
         })
         .unwrap_or(false)
 }
@@ -1429,8 +1434,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
         // A runtime from before the duration rename, whether pinned or the one
         // this pipeline was compiled with, reads only the older spelling.
-        let legacy_duration_spelling = program_config_pins_runtime(&pipeline.program_config)
-            || platform_version_predates_duration_rename(&pipeline.platform_version);
+        let legacy_duration_spelling =
+            pinned_runtime_predates_duration_rename(&pipeline.program_config)
+                || platform_version_predates_duration_rename(&pipeline.platform_version);
 
         match self
             .pipeline_handle
@@ -1543,7 +1549,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 );
 
                 // Provisioning can time out if it takes too long
-                if provisioning_timed_out(
+                if elapsed_exceeds(
                     pipeline.deployment_resources_status_since,
                     Utc::now(),
                     provisioning_timeout,
@@ -2022,53 +2028,46 @@ mod test {
         assert!(predates(""));
     }
 
-    /// Only a pinned runtime other than the platform's is handed the older
-    /// duration spelling: the platform's own runtime and the Gen-2 engine read
-    /// the current one.
+    /// One case per kind of runtime selector. The platform's own runtime and
+    /// the Gen-2 engine read the current spelling; a tag is compared with the
+    /// rename, whose boundary the test above covers; a commit hash tells
+    /// nothing about its age, so it gets the older spelling.
     #[test]
-    fn only_a_pinned_runtime_gets_the_older_duration_spelling() {
+    fn only_a_pinned_older_runtime_gets_the_older_duration_spelling() {
         crate::enable_test_unstable_features();
-        use super::program_config_pins_runtime;
-        assert!(!program_config_pins_runtime(&serde_json::json!({})));
-        assert!(!program_config_pins_runtime(
-            &serde_json::json!({"runtime_version": null})
-        ));
-        assert!(!program_config_pins_runtime(
-            &serde_json::json!({"runtime_version": "gen2"})
-        ));
-        assert!(program_config_pins_runtime(
+        use super::pinned_runtime_predates_duration_rename as predates;
+        assert!(!predates(&serde_json::json!({})));
+        assert!(!predates(&serde_json::json!({"runtime_version": "gen2"})));
+        assert!(predates(
             &serde_json::json!({"runtime_version": "v0.357.0"})
         ));
-        assert!(program_config_pins_runtime(
+        assert!(!predates(
+            &serde_json::json!({"runtime_version": "v0.366.0"})
+        ));
+        assert!(predates(
             &serde_json::json!({"runtime_version": "d0b45d8f87056c9d2c89c6f63b2531b0c5905f9b"})
         ));
         // A configuration that does not parse pins nothing.
-        assert!(!program_config_pins_runtime(
-            &serde_json::json!({"runtime_version": 7})
-        ));
+        assert!(!predates(&serde_json::json!({"runtime_version": 7})));
     }
 
     /// A provisioning timeout longer than `i64::MAX` milliseconds, which a
     /// duration setting can now say, never passes rather than passing at once.
     #[test]
     fn a_huge_provisioning_timeout_never_passes() {
-        use super::provisioning_timed_out;
+        use super::elapsed_exceeds;
         use chrono::{TimeDelta, Utc};
         use std::time::Duration;
         let since = Utc::now();
         let later = since + TimeDelta::seconds(2);
-        assert!(provisioning_timed_out(since, later, Duration::from_secs(1)));
-        assert!(!provisioning_timed_out(
-            since,
-            later,
-            Duration::from_secs(3)
-        ));
-        assert!(!provisioning_timed_out(
+        assert!(elapsed_exceeds(since, later, Duration::from_secs(1)));
+        assert!(!elapsed_exceeds(since, later, Duration::from_secs(3)));
+        assert!(!elapsed_exceeds(
             since,
             later,
             Duration::from_secs(u64::MAX)
         ));
-        assert!(!provisioning_timed_out(since, later, Duration::MAX));
+        assert!(!elapsed_exceeds(since, later, Duration::MAX));
     }
 
     struct MockRunner {
