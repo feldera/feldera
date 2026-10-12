@@ -1769,6 +1769,188 @@ fn regression1() {
     assert_eq!(actual_output, &indexed_zset!(0 => {0 => 1}));
 }
 
+// `regression1` over a lazy input map: the new aggregate bootstraps from the
+// map's integral rather than from the input.  The aggregate reads the map's
+// accumulated output and integral, not its deltas, so the integral replays
+// into the accumulator only.
+#[test]
+fn regression1_lazy_input_map() {
+    init_test_logger();
+
+    let path = tempfile::tempdir().unwrap().keep();
+
+    let (mut circuit1, input_handle1) =
+        Runtime::init_circuit(circuit_config(&path), move |circuit| {
+            let (input_stream, input_handle) =
+                circuit.add_lazy_input_map_persistent::<u64, u64>(Some("input_map"));
+            input_stream.set_persistent_id(Some("input_map"));
+            Ok(input_handle)
+        })
+        .unwrap();
+
+    input_handle1.push(0, Some(0));
+
+    circuit1.transaction().unwrap();
+
+    // Checkpoint.
+    let checkpoint = circuit1.checkpoint().run().unwrap();
+    circuit1.kill().unwrap();
+
+    // Restart the second circuit from the checkpoint.
+    let mut circuit_config = circuit_config(&path);
+    circuit_config.storage.as_mut().unwrap().init_checkpoint = Some(checkpoint.uuid);
+
+    let (mut circuit2, (_input_handle2, output_handle2)) =
+        Runtime::init_circuit(circuit_config, move |circuit| {
+            let (input_stream, input_handle) =
+                circuit.add_lazy_input_map_persistent::<u64, u64>(Some("input_map"));
+            input_stream.set_persistent_id(Some("input_map"));
+
+            let aggregate = input_stream
+                .aggregate_persistent(Some("aggregate1"), Max)
+                .set_persistent_id(Some("aggregate1"));
+
+            let output_handle = aggregate
+                .accumulate_trace()
+                .apply(|trace| trace.ro_snapshot().consolidate())
+                .output_persistent(Some("output"));
+            Ok((input_handle, output_handle))
+        })
+        .unwrap();
+
+    // One replay source, the map's integral, plays back one stream: the
+    // accumulator, which every replay of the integral needs, since it gives
+    // the integral its contents back.  The node that carries the table's
+    // persistent id stays out of the replay: a controller rejects a bootstrap
+    // that would have to refill a table.
+    let info = circuit2
+        .bootstrap_info()
+        .clone()
+        .expect("the restart bootstraps the aggregate");
+    assert_eq!(
+        info.replay_sources
+            .values()
+            .map(|streams| streams.len())
+            .collect::<Vec<_>>(),
+        vec![1]
+    );
+    assert!(
+        !info
+            .need_backfill
+            .values()
+            .flatten()
+            .any(|pid| pid == "input_map"),
+        "the table's node needs backfill: {:?}",
+        info.need_backfill
+    );
+
+    while circuit2.bootstrap_in_progress() {
+        circuit2.transaction().unwrap();
+    }
+
+    let actual_output = &output_handle2.concat().consolidate();
+    assert_eq!(actual_output, &indexed_zset!(0 => {0 => 1}));
+}
+
+// A new view that reads only a lazy input map's deltas, and shares neither
+// the map's integral nor its accumulated output: a linear operator gives the
+// view a stream of its own.  The map's integral replays into the deltas, in
+// chunks, and into the accumulator, which gives the integral its contents
+// back.  An overwrite and a delete after the bootstrap retract the records
+// that the restored integral holds.
+#[test]
+fn lazy_input_map_bootstraps_a_view_of_its_deltas() {
+    init_test_logger();
+
+    let path = tempfile::tempdir().unwrap().keep();
+
+    let (mut circuit1, input_handle1) =
+        Runtime::init_circuit(circuit_config(&path), move |circuit| {
+            let (input_stream, input_handle) =
+                circuit.add_lazy_input_map_persistent::<u64, u64>(Some("input_map"));
+            input_stream.set_persistent_id(Some("input_map"));
+            Ok(input_handle)
+        })
+        .unwrap();
+
+    // Enough records for each worker to replay them in several chunks.
+    for key in 0..20 {
+        input_handle1.push(key, Some(key % 5));
+    }
+    circuit1.transaction().unwrap();
+
+    let checkpoint = circuit1.checkpoint().run().unwrap();
+    circuit1.kill().unwrap();
+
+    let mut circuit_config = circuit_config(&path);
+    circuit_config.storage.as_mut().unwrap().init_checkpoint = Some(checkpoint.uuid);
+
+    let (mut circuit2, (input_handle2, output_handle2)) =
+        Runtime::init_circuit(circuit_config, move |circuit| {
+            let (input_stream, input_handle) =
+                circuit.add_lazy_input_map_persistent::<u64, u64>(Some("input_map"));
+            input_stream.set_persistent_id(Some("input_map"));
+
+            // The largest key that holds each value.
+            let keys_by_value = input_stream.map_index(|(key, value)| (*value, *key));
+            keys_by_value.set_persistent_id(Some("keys_by_value"));
+            let aggregate = keys_by_value
+                .aggregate_persistent(Some("aggregate1"), Max)
+                .set_persistent_id(Some("aggregate1"));
+
+            let output_handle = aggregate
+                .accumulate_trace()
+                .apply(|trace| trace.ro_snapshot().consolidate())
+                .output_persistent(Some("output"));
+            Ok((input_handle, output_handle))
+        })
+        .unwrap();
+
+    // One replay source, the map's integral, plays back both streams, and the
+    // node that carries the table's persistent id stays out of the replay.
+    let info = circuit2
+        .bootstrap_info()
+        .clone()
+        .expect("the restart bootstraps the view");
+    assert_eq!(
+        info.replay_sources
+            .values()
+            .map(|streams| streams.len())
+            .collect::<Vec<_>>(),
+        vec![2]
+    );
+    assert!(
+        !info
+            .need_backfill
+            .values()
+            .flatten()
+            .any(|pid| pid == "input_map"),
+        "the table's node needs backfill: {:?}",
+        info.need_backfill
+    );
+
+    while circuit2.bootstrap_in_progress() {
+        circuit2.transaction().unwrap();
+    }
+    assert_eq!(
+        &output_handle2.concat().consolidate(),
+        &indexed_zset!(0 => {15 => 1}, 1 => {16 => 1}, 2 => {17 => 1}, 3 => {18 => 1}, 4 => {19 => 1})
+    );
+
+    // Key 19 moves from value 4 to value 0, and key 18 goes.  Without the
+    // restored integral, the map would not retract their old records, and
+    // values 3 and 4 would keep their old largest keys.
+    input_handle2.push(19, Some(0));
+    input_handle2.push(18, None);
+    circuit2.transaction().unwrap();
+    assert_eq!(
+        &output_handle2.concat().consolidate(),
+        &indexed_zset!(0 => {19 => 1}, 1 => {16 => 1}, 2 => {17 => 1}, 3 => {13 => 1}, 4 => {14 => 1})
+    );
+
+    circuit2.kill().unwrap();
+}
+
 /// Unit test for the replay behavior of Z1Trace and AccumulateZ1Trace operators.
 /// Operators must correctly replay their contents during bootstrap as one atomic transaction.
 
@@ -3549,6 +3731,132 @@ fn test_concurrent_bootstrap_map_input() {
     circuit.transaction().unwrap();
     assert_eq!(read(&out_new), zset! {});
     input.push(11, Update::Delete); // value 25, the last residue-4 contributor
+    circuit.transaction().unwrap();
+    assert_eq!(read(&out_new), zset! { 4 => -1 });
+
+    circuit.kill().unwrap();
+}
+
+/// `test_concurrent_bootstrap_map_input` over a lazy input map.  A lazy map is
+/// always materialized, and its integral replays into the map's deltas and its
+/// accumulator, so the new view bootstraps concurrently while the old view
+/// stays live, and the map's own nodes stay out of the replay.
+#[test]
+fn test_concurrent_bootstrap_lazy_map_input() {
+    init_test_logger();
+    let path = tempfile::tempdir().unwrap().keep();
+
+    fn read(handle: &OutputHandle<SpineSnapshot<OrdZSet<u64>>>) -> OrdZSet<u64> {
+        SpineSnapshot::<OrdZSet<u64>>::concat(&handle.take_from_all()).consolidate()
+    }
+
+    let old_constructor = |circuit: &mut RootCircuit| {
+        let (input, ih) = circuit.add_lazy_input_map_persistent::<u64, u64>(Some("t1"));
+        input.set_persistent_id(Some("t1"));
+        let out_old = input
+            .map(|(_k, v)| *v + 5)
+            .accumulate_output_persistent(Some("out_old"));
+        Ok((ih, out_old))
+    };
+    let new_constructor = |circuit: &mut RootCircuit| {
+        let (input, ih) = circuit.add_lazy_input_map_persistent::<u64, u64>(Some("t1"));
+        input.set_persistent_id(Some("t1"));
+        let out_old = input
+            .map(|(_k, v)| *v + 5)
+            .accumulate_output_persistent(Some("out_old"));
+        let d_in = input.map(|(_k, v)| *v % 7);
+        d_in.set_persistent_id(Some("d_in"));
+        let d = d_in.distinct();
+        d.set_persistent_id(Some("d_new"));
+        let out_new = d.accumulate_output_persistent(Some("out_new"));
+        Ok((ih, out_old, out_new))
+    };
+
+    let checkpoint = {
+        let (mut circuit, (input, out_old)) =
+            Runtime::init_circuit(circuit_config(&path), old_constructor).unwrap();
+        for x in 0..12u64 {
+            input.push(x, Some(x));
+            circuit.transaction().unwrap();
+            assert_eq!(read(&out_old), zset! { x + 5 => 1 });
+        }
+        let checkpoint = circuit.checkpoint().run().unwrap();
+        circuit.kill().unwrap();
+        checkpoint
+    };
+
+    let (mut circuit, (input, out_old, out_new)) =
+        Runtime::init_circuit(circuit_config(&path), new_constructor).unwrap();
+    let outcome = circuit
+        .start_concurrent_bootstrap(checkpoint.uuid.to_string().into())
+        .unwrap();
+    let crate::circuit::ConcurrentRestoreOutcome::Concurrent(info) = outcome else {
+        panic!("expected concurrent bootstrap, got {outcome:?}");
+    };
+    assert_eq!(
+        info.replay_sources
+            .values()
+            .map(|streams| streams.len())
+            .collect::<Vec<_>>(),
+        vec![2]
+    );
+    assert!(
+        !info.need_backfill.values().flatten().any(|pid| pid == "t1"),
+        "the table's node needs backfill: {:?}",
+        info.need_backfill
+    );
+
+    // The old view stays live during the backfill; the map's changes,
+    // including a deletion, are recorded for the synchronization transaction.
+    let mut done = false;
+    for x in 12..18u64 {
+        input.push(x, Some(x));
+        circuit.transaction().unwrap();
+        assert_eq!(read(&out_old), zset! { x + 5 => 1 });
+        assert_eq!(read(&out_new), zset! {});
+        if !done {
+            done = circuit.step_bootstrap_circuit().unwrap();
+        }
+    }
+    input.push(13, None); // delete key 13 (value 13)
+    circuit.transaction().unwrap();
+    assert_eq!(read(&out_old), zset! { 18 => -1 });
+    while !done {
+        done = circuit.step_bootstrap_circuit().unwrap();
+    }
+
+    circuit.sync_concurrent_bootstrap().unwrap();
+    while !circuit.step_bootstrap_circuit().unwrap() {}
+    circuit.complete_concurrent_bootstrap().unwrap();
+
+    // The first transaction after the cutover delivers the new view's whole
+    // contents: values 0..=17 without 13 cover every residue mod 7.
+    // Inserting key 18 (residue 4) adds nothing to it.
+    input.push(18, Some(18));
+    circuit.transaction().unwrap();
+    assert_eq!(read(&out_old), zset! { 23 => 1 });
+    assert_eq!(
+        read(&out_new),
+        zset! { 0 => 1, 1 => 1, 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1 }
+    );
+
+    // Overwriting key 11 (11 -> 25) changes the old view only: residue 4
+    // stays.
+    input.push(11, Some(25));
+    circuit.transaction().unwrap();
+    assert_eq!(read(&out_old), zset! { 16 => -1, 30 => 1 });
+    assert_eq!(read(&out_new), zset! {});
+
+    // Deleting the residue-4 values one per transaction retracts the residue
+    // exactly when the last one goes: a value lost by the checkpoint, the
+    // replay or the synchronization shifts which deletion retracts it.
+    input.push(4, None);
+    circuit.transaction().unwrap();
+    assert_eq!(read(&out_new), zset! {});
+    input.push(18, None);
+    circuit.transaction().unwrap();
+    assert_eq!(read(&out_new), zset! {});
+    input.push(11, None); // value 25, the last residue-4 value
     circuit.transaction().unwrap();
     assert_eq!(read(&out_new), zset! { 4 => -1 });
 

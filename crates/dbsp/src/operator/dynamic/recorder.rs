@@ -14,7 +14,10 @@
 //! source (see `register_replay_stream` and
 //! `register_accumulated_replay_stream` in `circuit_builder`), because any
 //! of them can turn out to be a boundary stream when a checkpoint is
-//! restored into a modified circuit.  The recorded stream carries either
+//! restored into a modified circuit.  A replay source that also plays back a
+//! second stream (see `register_secondary_replay_stream`) records the
+//! changes on its first stream only, so the second stream gets no recorder.
+//! The recorded stream carries either
 //! batches or, for an integral fed by an accumulator, the accumulator's
 //! output: one spine per transaction.  Either way the recorder accumulates
 //! the stream's contents into a single spine.  Building recorders unconditionally
