@@ -2497,7 +2497,7 @@ pub(crate) mod tests {
         utils::test::init_test_logger,
     };
     use std::{
-        iter::{repeat, zip},
+        iter::zip,
         net::TcpListener,
         sync::{Arc, atomic::Ordering},
     };
@@ -2519,17 +2519,23 @@ pub(crate) mod tests {
             let n_workers = Runtime::num_workers();
             let global_node_id = Arc::new(String::from("test_global_node_id"));
             for round in 0..ROUNDS {
+                // Each value names its receiver too, so that a value delivered to
+                // the wrong worker is caught.
                 exchange
-                    .send_all_with_serializer(&global_node_id, repeat((sender, round)), |data| {
-                        to_bytes(&data).unwrap()
-                    })
+                    .send_all_with_serializer(
+                        &global_node_id,
+                        (0..n_workers).map(|receiver| (sender, receiver, round)),
+                        |data| to_bytes(&data).unwrap(),
+                    )
                     .await;
 
                 let (received, _) = exchange
                     .receive_all(|data| aligned_deserialize(&data[..]), None)
                     .await;
 
-                let expected = (0..n_workers).map(|worker| (worker, round)).collect_vec();
+                let expected = (0..n_workers)
+                    .map(|worker| (worker, sender, round))
+                    .collect_vec();
                 assert_eq!(received, expected);
             }
         });
@@ -2677,7 +2683,8 @@ pub(crate) mod tests {
                     exchange
                         .send_all_with_serializer(
                             &global_node_id,
-                            repeat((sender, round, padding)),
+                            (0..n_workers)
+                                .map(|receiver| (sender, receiver, round, padding.clone())),
                             |data| to_bytes(&data).unwrap(),
                         )
                         .await;
@@ -2688,10 +2695,19 @@ pub(crate) mod tests {
                         .await;
                     let received = received
                         .into_iter()
-                        .map(|(sender, round, _padding): (usize, usize, Vec<u8>)| (sender, round))
+                        .map(
+                            |(sender, receiver, round, _padding): (
+                                usize,
+                                usize,
+                                usize,
+                                Vec<u8>,
+                            )| { (sender, receiver, round) },
+                        )
                         .collect_vec();
 
-                    let expected = (0..n_workers).map(|worker| (worker, round)).collect_vec();
+                    let expected = (0..n_workers)
+                        .map(|worker| (worker, sender, round))
+                        .collect_vec();
                     assert_eq!(received, expected, "seed {seed}");
                 }
             }
@@ -2802,18 +2818,20 @@ pub(crate) mod tests {
             let (sender, receiver) = new_exchange_operators(
                 None,
                 Vec::new,
+                // Each value names its receiver too, so that a value delivered to
+                // the wrong worker is caught.
                 move |n, vals| {
-                    for location in WorkerLocations::new() {
+                    for (receiver, location) in WorkerLocations::new().enumerate() {
                         match location {
-                            WorkerLocation::Local => vals.push(Mailbox::Plain(n)),
+                            WorkerLocation::Local => vals.push(Mailbox::Plain((n, receiver))),
                             WorkerLocation::Remote => {
-                                vals.push(Mailbox::Tx(to_bytes_dyn(&n).unwrap()))
+                                vals.push(Mailbox::Tx(to_bytes_dyn(&(n, receiver)).unwrap()))
                             }
                         }
                     }
                 },
                 |data| aligned_deserialize(&data[..]),
-                |v: &mut Vec<usize>, n| v.push(n),
+                |v: &mut Vec<(usize, usize)>, x| v.push(x),
                 ExchangeActivity::AllSteps,
             )
             .unwrap();
@@ -2822,7 +2840,10 @@ pub(crate) mod tests {
             circuit
                 .add_exchange(sender, receiver, &source)
                 .inspect(move |v| {
-                    assert_eq!(&vec![round; Runtime::num_workers()], v);
+                    assert_eq!(
+                        &vec![(round, Runtime::worker_index()); Runtime::num_workers()],
+                        v
+                    );
                     round += 1;
                 });
             Ok(())
