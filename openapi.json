@@ -10941,7 +10941,7 @@
         "properties": {
           "checkpoint_interval": {
             "type": "string",
-            "description": "Interval between automatic checkpoints, for example `60s`.\n\nUnset selects the default, `DEFAULT_CHECKPOINT_INTERVAL`; `null` disables periodic\ncheckpointing.\nValues less than 1 second or greater than 1 hour will be forced into\nthat range.",
+            "description": "Interval between automatic checkpoints, for example `60s`.\n\nUnset selects the default, `DEFAULT_CHECKPOINT_INTERVAL`; `null`\ndisables periodic checkpointing.\nValues less than 1 second or greater than 1 hour will be forced into\nthat range.",
             "default": "1m",
             "nullable": true
           },
@@ -12375,11 +12375,11 @@
           "message_id": {
             "$ref": "#/components/schemas/NatsMessageId"
           },
-          "publish_timeout_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "How long to wait for the server's publish acknowledgment before\nretrying the publish. Must be at least 1.",
-            "minimum": 0
+          "publish_timeout": {
+            "type": "string",
+            "description": "How long to wait for the server's publish acknowledgment before\nretrying the publish, for example `5s`. Must be at least one second.\nUnset selects the default, `DEFAULT_PUBLISH_TIMEOUT`.",
+            "default": "5s",
+            "nullable": true
           },
           "subject": {
             "type": "string",

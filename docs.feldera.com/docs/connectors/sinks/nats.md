@@ -25,7 +25,7 @@ for how you can tell the server to drop these duplicates within a window.
 | `subject`              | string | Yes      | NATS subject to publish to (e.g., `orders.created`). The subject must be bound to a JetStream stream |
 | `headers`              | list   | No       | Headers attached to every message, as `key`/`value` string pairs. Default: none |
 | `message_id`           | string | No       | How the `Nats-Msg-Id` header is chosen: `content_hash` or `none` (see [Idempotence](#idempotence)). Default: `content_hash` |
-| `publish_timeout_secs` | integer | No      | How long to wait for the server's publish acknowledgment before retrying. Must be at least 1. Default: 5 |
+| `publish_timeout`      | string | No       | How long to wait for the server's publish acknowledgment before retrying, for example `5s`. Must be at least one second. Default: `5s` |
 | `max_message_size`     | integer | No      | Override for the maximum message size in bytes. When unset, the connector discovers the limit at connect time: the bound stream's `max_message_size` when the stream sets one, else the server's max payload. Default: discovered |
 
 ### Connection options
@@ -68,7 +68,7 @@ published as two messages:
 
 ## Delivery
 
-A publish the server does not acknowledge within `publish_timeout_secs`, or
+A publish the server does not acknowledge within `publish_timeout`, or
 that fails with a transient error (a lost connection, a server-side timeout),
 is retried with exponential backoff until it is acknowledged or the pipeline
 stops. The retry is safe because of the message id described below: a copy
