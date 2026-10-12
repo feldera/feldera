@@ -75,46 +75,22 @@ Source edition can be found on github.
   returned by an ad-hoc query.  This fails with `cannot serialize null into
   non-nullable array`.  Parquet does not allow NULL map keys.
 
-## v0.365.0
-
-- New connector (`nats_output`): write view output to a NATS subject. The
-  connector publishes to JetStream: each message is acknowledged by the
-  server before the pipeline moves on, every message carries a `Nats-Msg-Id`
-  derived from its content so that output replayed after a restart is
-  deduplicated by the server within the stream's duplicate window, and
-  static headers can be attached to every message. The message size limit is
-  discovered from the bound stream at connect time (the stream's
-  `max_message_size`, else the server's max payload) and can be overridden;
-  a record over the limit fails the pipeline with an error naming the record
-  and the limit, instead of reaching the server. See
-  [NATS output connector](/connectors/sinks/nats).
-
 - Deprecation (pipeline and connector configuration): every duration setting
   now takes a string with a unit, such as `"500ms"`, `"30s"`, `"1h30m"` or
   `"30d"`. Accepted units are `ns`, `us` (or `µs`), `ms`, `s`, `m`, `h`, and
-  `d`, and several terms in a row are summed; a bare `0` is also accepted.
-  Most settings keep their name with the unit dropped, so
-  `clock_resolution_usecs` becomes `clock_resolution`; the six whose old name
-  carried no unit take a new name instead. The old key remains an alias of the
-  new one, so an existing configuration keeps working, and a bare number is
-  still read in the unit it always meant. The pipeline logs a warning naming
-  the equivalent duration to write instead. The 1.0 release stops accepting
-  the old keys and the bare numbers. Because both keys reach one setting,
-  writing both is an error rather than a contest one of them wins.
-
-  The old keys could not say everything the new ones can. Each held a whole
-  number of one unit, so a retention age measured in days could not be twelve
-  hours, and a checkpoint interval measured in seconds could not be half a
-  second; `"12h"` and `"500ms"` now work everywhere. And a large value such as
-  the output buffer's default of 2^64 - 1 milliseconds is not a number a
-  JavaScript client can hold exactly, where the string
-  `"213503982334d14h25m51s615ms"` is.
+  `d`, and several terms in a row are summed. Most settings keep their name
+  with the unit dropped, so `clock_resolution_usecs` becomes
+  `clock_resolution`; the others take a new name, as the table below shows.
+  The old name remains a deprecated alias of the new one, so an existing
+  configuration keeps working, and the pipeline logs a warning that names the
+  setting and the value to write instead. Writing both names of one setting
+  is an error. The old names are removed no earlier than release 0.368.0.
 
   The Delta connector's `log_retention_duration` is not part of this scheme:
   it passes a `"interval 30 days"` string through to Delta Lake and keeps its
   own syntax.
 
-  | Old field (unit)                        | New field                            |
+  | Old name (unit)                        | New name                            |
   |-----------------------------------------|--------------------------------------|
   | `max_buffering_delay_usecs` (µs)        | `max_buffering_delay`       |
   | `clock_resolution_usecs` (µs)           | `clock_resolution`          |
@@ -133,61 +109,63 @@ Source edition can be found on github.
   | Pub/Sub `timeout_seconds`, `connect_timeout_seconds` (s) | `timeout`, `connect_timeout` |
   | Avro `registry_timeout_secs` (s)        | `registry_timeout`          |
 
-  Three things change for anyone reading the configuration back rather than
-  only writing it. A configuration is stored under the current names the next
-  time it is saved, and from then on the API returns it under those names
-  only: a client that reads `clock_resolution_usecs` from a response must read
-  `clock_resolution` instead. A pipeline stored before this release and not
-  saved since still comes back under the older names, so a client must accept
-  either; adding a current key beside an older one already there is a
-  duplicate. The OpenAPI schema lists only the current names, so a validator
-  built from it rejects the older ones that the pipeline still accepts. And
-  the Python SDK's `RuntimeConfig` reads `.clock_resolution` as a duration
-  such as `"1ms"` rather than a number, whichever spelling the configuration
-  holds; the old attributes such as `.clock_resolution_usecs` remain as
-  deprecated properties that read back a whole number of the old unit and
-  warn. The SDK sends each setting in the spelling it was given, so code
-  written against the old arguments keeps working against an older server.
-  One cosmetic effect: an output connector compiled by an older release shows
-  its buffer time as `"213503982334d14h25m51s615ms"`, which is the old
-  default of 2^64 - 1 milliseconds spelled as a duration, means the same, and
-  can be left alone.
+  For a client that reads the configuration back:
 
-  Upgrade `fda` together with the server. An `fda` older than this release
-  reads a configuration stored under the current names as defaults, and
-  `fda set-config` then writes those defaults back over every duration
+  - A configuration is stored under the new names the next time it is saved,
+    and the API then returns it under those names. A pipeline stored before
+    this change and not saved since comes back under the old names, so a
+    client must accept either.
+  - The OpenAPI schema lists only the new names.
+  - The Python SDK's `RuntimeConfig` reads `.clock_resolution` and the other
+    duration attributes as strings such as `"1ms"`, whichever name the
+    configuration holds. The old attributes such as `.clock_resolution_usecs`
+    remain as deprecated properties that return a whole number of the old
+    unit and warn. The SDK writes each setting to the server under the name
+    it was given, so code that uses the old arguments keeps working against
+    an older server.
+  - An output connector stored by an earlier release shows its buffer time as
+    `"213503982334d14h25m51s615ms"`. This is the old default of 2^64 - 1
+    milliseconds, means the same, and can be left alone.
+
+  Upgrade `fda` together with the server. An `fda` older than this change
+  reads a configuration stored under the new names as if those settings were
+  unset, and `fda set-config` then writes defaults over every duration
   setting it did not change.
 
-  The current names also matter for a downgrade, in three places. A runtime
-  configuration saved by this release reaches an older release under names it
-  does not know, so it silently runs every duration setting on its default;
-  rewrite the configuration under the old keys first. A checkpoint this
-  release writes carries each connector under the current names, for the
-  settings that connector set: an older release's Kafka input rejects such a
-  name and the pipeline fails to start with `Invalid Kafka input connector
-  configuration key`, its Kafka output hands the name to librdkafka, which
-  rejects it as an unknown property, and its other connectors silently use
-  their defaults. Clear the pipeline's storage to start it from scratch
-  instead. The same happens during a rolling upgrade to a standby still on an
-  older release once it pulls a checkpoint written by an upgraded leader, so
-  upgrade the standby before the leader. And an older release's SQL compiler
-  rejects the current names in a program's connector configuration, as does
-  its Avro format, so a program written with them fails to compile there.
+  When the pipeline manager starts a pipeline pinned to an older runtime with
+  `runtime_version`, or one compiled by an earlier release and not yet
+  updated, it writes the pipeline's configuration under the old names, in the
+  runtime configuration and in every connector. A value that is not a whole
+  number of the old unit rounds up, so a short timeout never becomes `0`. The
+  configuration stored by the API is not changed. In the Enterprise edition,
+  pinning a runtime older than this change does not compile, because the
+  platform's enterprise crates, which such a pipeline builds against, use the
+  new settings. Also in the Enterprise edition, checkpoint garbage collection
+  now keeps a checkpoint for the full `min_retention`: it no longer subtracts
+  a one-hour allowance for clock skew, so a checkpoint may be kept up to an
+  hour longer than before.
 
-  A pipeline pinned to another runtime with `runtime_version`, or compiled by
-  an earlier release and not yet updated to this one, is handed its duration
-  settings under the old keys, in the runtime configuration and in every
-  connector, which every runtime up to 1.0 reads. A value that is not a whole
-  number of the old unit rounds up, so a short timeout never becomes `0`.
-  Pinning a runtime older than this release in the Enterprise edition does not
-  compile, because the platform's enterprise crates, which such a pipeline
-  builds against, use the new settings.
+  In a rolling upgrade of a pipeline with a standby, upgrade the standby
+  before the leader: a standby on an earlier release cannot read a checkpoint
+  the upgraded leader writes.
 
   `fda set-config` takes `max_buffering_delay` and `clock_resolution` as
-  durations, and its `checkpoint_interval` key now accepts a duration such as
-  `5m` alongside the bare number of seconds it took before. The Python SDK's
-  `RuntimeConfig` gains the matching duration arguments and warns when the old
-  ones are used.
+  durations, and its `checkpoint_interval` key accepts a duration such as
+  `5m` as well as the bare number of seconds it took before.
+
+## v0.365.0
+
+- New connector (`nats_output`): write view output to a NATS subject. The
+  connector publishes to JetStream: each message is acknowledged by the
+  server before the pipeline moves on, every message carries a `Nats-Msg-Id`
+  derived from its content so that output replayed after a restart is
+  deduplicated by the server within the stream's duplicate window, and
+  static headers can be attached to every message. The message size limit is
+  discovered from the bound stream at connect time (the stream's
+  `max_message_size`, else the server's max payload) and can be overridden;
+  a record over the limit fails the pipeline with an error naming the record
+  and the limit, instead of reaching the server. See
+  [NATS output connector](/connectors/sinks/nats).
 
 ## v0.362.0
 
