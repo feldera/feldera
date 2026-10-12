@@ -15,7 +15,10 @@ use crate::{
     algebra::{IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
         OwnershipPreference, Scope,
-        circuit_builder::{CircuitBase, RefStreamValue},
+        circuit_builder::{
+            CircuitBase, RefStreamValue, register_accumulated_replay_stream,
+            register_secondary_replay_stream,
+        },
         lazy_input_map_key_block_bytes, lazy_input_map_keys_per_step,
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, CONFLICTING_UPDATES_COUNT, INPUT_BATCHES_STATS,
@@ -891,6 +894,8 @@ impl RootCircuit {
     /// commands, but the integral is read once per transaction in key order
     /// rather than once per key per step at random.
     ///
+    /// # Circuit
+    ///
     /// ```text
     ///                                                  ┌──────────── integral ─────────┐
     ///                                                  ▼                               │
@@ -906,6 +911,38 @@ impl RootCircuit {
     /// integral in one scan and emits both the accumulator that feeds the
     /// integral and the adjustments that, with the projected updates, make the
     /// delta.
+    ///
+    /// # Bootstrapping
+    ///
+    /// The lazy upsert operator requires two separate replay streams for bootstrapping.
+    /// The `delta'` stream bootstraps any downstream circuits that consume the raw change
+    /// stream. Since this stream doesn't feed the integral or its accumulator, as with most
+    /// other operators that support replay, we need another replay stream for this: the
+    /// `accumulator'` stream bootstraps any downstream circuits that consume accumulated
+    /// inputs.
+    ///
+    /// The `register_XXX_replay_stream` API requires that exactly one replay stream produced
+    /// by an operator has a recorder attached to it. We therefore only attach recorder to the
+    /// `accumulator` stream.
+    ///
+    /// ```text
+    ///                                                  ┌───────────────────────────── integral ─────────┐
+    ///                                                  │                                                │
+    ///                                                  │                           accumulator'         │
+    ///                                                  │                          ...............       │
+    ///                                                  ▼                          ▼             .       │
+    ///  updates ──► Stamp ──┬──► shard_accumulate ──► LazyUpsert────────────────────────────► integrate ─┘
+    ///                      │                            │             .      accumulator        .
+    ///                      │                 adjustments│             ▼                         .
+    ///                      │                            │         ┌────────┐                    .
+    ///                      │                            │         │Recorder│    .................
+    ///                      │                            │         └────────┘    .delta'
+    ///                      │                            ▼                       ▼
+    ///                      └────────► project ──────► concat ───────────────────────────────────►
+    ///                                                                      delta
+    /// ```
+    ///
+    /// `Stamp`, the accumulator and `LazyUpsert` take no part in the replay.
     ///
     /// # Arguments
     ///
@@ -1017,8 +1054,6 @@ impl RootCircuit {
                 (&accumulator, OwnershipPreference::PREFER_OWNED),
             );
             integral.mark_sharded();
-            z1feedback
-                .connect_with_preference(&integral, OwnershipPreference::STRONGLY_PREFER_OWNED);
 
             let adjustments =
                 Stream::with_value(self.clone(), accumulator.local_node_id(), adjustments_value);
@@ -1043,6 +1078,26 @@ impl RootCircuit {
                     )
                 }
             });
+
+            // A bootstrap replays the integral into both of the map's outputs:
+            // in chunks into the delta, for the operators that read it, and
+            // whole into the accumulator, which gives the integral its contents
+            // back.  The accumulator's recorder records the changes for a
+            // concurrent bootstrap.  Connecting the feedback gives the operator
+            // up, so it comes last.
+            let (delta_replay, accumulator_replay) = z1feedback
+                .operator_mut()
+                .prepare_both_replay_streams(&delta, &accumulator);
+            register_accumulated_replay_stream(
+                self,
+                &accumulator,
+                &accumulator_replay,
+                &factories.batch_factories,
+            );
+            register_secondary_replay_stream(self, &delta, &delta_replay, &accumulator);
+            z1feedback
+                .connect_with_preference(&integral, OwnershipPreference::STRONGLY_PREFER_OWNED);
+
             let enable_count = EnableCount::new();
             enable_count.enable();
 

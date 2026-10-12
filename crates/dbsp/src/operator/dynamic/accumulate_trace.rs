@@ -1342,7 +1342,6 @@ where
     /// # Panics
     ///
     /// Panics if the integral already replays into a stream.
-    #[allow(dead_code)]
     pub fn prepare_both_replay_streams(
         &mut self,
         stream: &Stream<C, B>,

@@ -1614,7 +1614,8 @@ circuit_cache_key!(ReplaySource(StreamId => ReplayRegistration));
 /// synchronization transaction.  The recorder is disabled (empty, no-op)
 /// until bootstrap orchestration enables it through the
 /// [`RecorderId`] cache
-/// entry.
+/// entry.  A second stream that the same replay source plays back shares
+/// this recorder (see [`register_secondary_replay_stream`]).
 #[track_caller]
 pub(crate) fn register_replay_stream<C, B>(
     circuit: &C,
@@ -1625,7 +1626,9 @@ pub(crate) fn register_replay_stream<C, B>(
     C: Circuit,
     B: Batch<Time = ()>,
 {
-    register_replay_source::<C, B, B>(circuit, stream, replay_stream, factories);
+    if register_replay_source(circuit, stream, replay_stream, stream.stream_id()) {
+        register_recorder::<C, B, B>(circuit, stream, factories);
+    }
 }
 
 /// Register `replay_stream` as a replay source for `accumulated`, the output
@@ -1654,73 +1657,136 @@ pub(crate) fn register_accumulated_replay_stream<C, B>(
     C: Circuit,
     B: Batch<Time = ()>,
 {
-    register_replay_source::<C, Option<Spine<B>>, B>(
-        circuit,
-        accumulated,
-        replay_stream,
-        factories,
-    );
+    if register_replay_source(circuit, accumulated, replay_stream, accumulated.stream_id()) {
+        register_recorder::<C, Option<Spine<B>>, B>(circuit, accumulated, factories);
+    }
 }
 
-/// Registers `replay_stream` as a replay source for `stream`, which carries
-/// values of type `D` built from batches of type `B`, and attaches a disabled
-/// [`Recorder`] to `stream`.  See [`register_replay_stream`].
+/// Registers `replay_stream` as a replay source for `stream`, a second stream
+/// that the replay source of `primary` plays back.
+///
+/// Unlike [`register_replay_stream`], attaches no [`Recorder`] to `stream`.  A
+/// replay source records the changes that it plays back on one stream, and
+/// the synchronization transaction of a concurrent bootstrap replays that one
+/// recording into all of the source's replay streams.  `primary` is that
+/// stream: a [`register_replay_stream`] or [`register_accumulated_replay_stream`]
+/// call must register it first.
 ///
 /// # Arguments
 ///
 /// * `circuit` - The circuit that contains `stream`.
 /// * `stream` - The stream to replay.
 /// * `replay_stream` - The replay stream, which aliases `stream`.
-/// * `factories` - Factories for the batches that `stream` carries.
-#[track_caller]
-fn register_replay_source<C, D, B>(
+/// * `primary` - The stream whose recorder records the changes to `stream`.
+///
+/// # Panics
+///
+/// Panics if `primary` has no recorder.
+pub(crate) fn register_secondary_replay_stream<C, D, P>(
     circuit: &C,
     stream: &Stream<C, D>,
     replay_stream: &Stream<C, D>,
-    factories: &B::Factories,
+    primary: &Stream<C, P>,
 ) where
+    C: Circuit,
+    D: Data,
+{
+    if register_replay_source(circuit, stream, replay_stream, primary.stream_id()) {
+        assert!(
+            circuit.cache_contains(&RecorderControlId::new(primary.stream_id())),
+            "the primary replay stream {} of stream {} has no recorder",
+            primary.stream_id(),
+            stream.stream_id(),
+        );
+    }
+}
+
+/// Registers `replay_stream` as a replay source for `stream`.
+///
+/// Only operators in the top-level circuit can be replay sources.  This
+/// function can be called multiple times for the same `stream`; only the first
+/// call registers a replay source for it.
+///
+/// # Arguments
+///
+/// * `circuit` - The circuit that contains `stream`.
+/// * `stream` - The stream to replay.
+/// * `replay_stream` - The replay stream, which aliases `stream`.
+/// * `recorded_stream` - The stream on which the replay source records the
+///   changes that it plays back.
+///
+/// # Returns
+///
+/// `true` if this call registered the replay source.
+fn register_replay_source<C, D>(
+    circuit: &C,
+    stream: &Stream<C, D>,
+    replay_stream: &Stream<C, D>,
+    recorded_stream: StreamId,
+) -> bool
+where
+    C: Circuit,
+    D: Data,
+{
+    // We currently only support using operators in the top-level circuit
+    // as replay sources.
+    if TypeId::of::<()>() != TypeId::of::<C::Time>() {
+        return false;
+    }
+
+    // If a replay source already exists, don't overwrite it. This normally shouldn't
+    // happen as we should not have more than one integral for each stream. One situation
+    // where this does happen today is for input streams that have an integral without
+    // an accumulator as part of input_upsert, and another integral with an accumulator
+    // created by a downstream join or aggregate. In this case, we want to use the former
+    // for replay, as the latter may have been added in the modified version of the program
+    // and may be empty, while the former can have state (conversely, if the input integral
+    // is empty, the downstream integral is guaranteed to be empty too).
+    if circuit.cache_contains(&ReplaySource::new(stream.stream_id())) {
+        return false;
+    }
+
+    circuit.cache_insert(
+        ReplaySource::new(stream.stream_id()),
+        ReplayRegistration {
+            replay_stream: Box::new(replay_stream.clone()),
+            recorded_stream,
+        },
+    );
+    true
+}
+
+/// Attaches a disabled [`Recorder`] to `stream`, which carries values of type
+/// `D` built from batches of type `B`.
+///
+/// Bootstrap orchestration starts and drains the recorder through its
+/// `RecorderControlId` cache entry; its [`RecorderId`] entry gives typed
+/// access to it.
+///
+/// # Arguments
+///
+/// * `circuit` - The circuit that contains `stream`.
+/// * `stream` - The stream to record.
+/// * `factories` - Factories for the batches that `stream` carries.
+#[track_caller]
+fn register_recorder<C, D, B>(circuit: &C, stream: &Stream<C, D>, factories: &B::Factories)
+where
     C: Circuit,
     D: Data,
     B: Batch<Time = ()>,
     Recorder<B>: SinkOperator<D>,
 {
-    // We currently only support using operators in the top-level circuit
-    // as replay sources.
-    if TypeId::of::<()>() == TypeId::of::<C::Time>() {
-        // If a replay source already exists, don't overwrite it. This normally shouldn't
-        // happen as we should not have more than one integral for each stream. One situation
-        // where this does happen today is for input streams that have an integral without
-        // an accumulator as part of input_upsert, and another integral with an accumulator
-        // created by a downstream join or aggregate. In this case, we want to use the former
-        // for replay, as the latter may have been added in the new version of the program
-        // and may be empty, while the former can have state (conversely, if the input integral
-        // is empty, the downstream integral is guaranteed to be empty too).
-        if !circuit.cache_contains(&ReplaySource::new(stream.stream_id())) {
-            circuit.cache_insert(
-                ReplaySource::new(stream.stream_id()),
-                ReplayRegistration {
-                    replay_stream: Box::new(replay_stream.clone()),
-                    recorded_stream: stream.stream_id(),
-                },
-            );
-
-            let recorder = Recorder::<B>::new(factories, Location::caller());
-            let handle = recorder.handle();
-            // `YIELD_OWNERSHIP` schedules the recorder before the stream's
-            // owned-input consumers (the integral's appender), so that it
-            // does not intercept the owned-value delivery they rely on.
-            circuit.add_sink_with_preference(
-                recorder,
-                stream,
-                OwnershipPreference::YIELD_OWNERSHIP,
-            );
-            circuit.cache_insert(
-                RecorderControlId::new(stream.stream_id()),
-                Rc::new(handle.clone()) as Rc<dyn RecorderControl>,
-            );
-            circuit.cache_insert(RecorderId::new(stream.stream_id()), handle);
-        }
-    }
+    let recorder = Recorder::<B>::new(factories, Location::caller());
+    let handle = recorder.handle();
+    // `YIELD_OWNERSHIP` schedules the recorder before the stream's
+    // owned-input consumers (the integral's appender), so that it
+    // does not intercept the owned-value delivery they rely on.
+    circuit.add_sink_with_preference(recorder, stream, OwnershipPreference::YIELD_OWNERSHIP);
+    circuit.cache_insert(
+        RecorderControlId::new(stream.stream_id()),
+        Rc::new(handle.clone()) as Rc<dyn RecorderControl>,
+    );
+    circuit.cache_insert(RecorderId::new(stream.stream_id()), handle);
 }
 
 /// Trait for an object that has a clock associated with it.
