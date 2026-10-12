@@ -97,3 +97,70 @@ describe('MetricsView search', () => {
       .toBeLessThan(4)
   })
 })
+
+describe('MetricsView global stats', () => {
+  const globalMetrics = {
+    state: 'Running',
+    rss_bytes: 2048,
+    transaction_msecs: null,
+    transaction_initiators: { initiated_by_connectors: { kafka_input: { phase: 'Started' } } },
+    future_metric: true
+  }
+
+  const rows = (container: HTMLElement) => {
+    const tile = container.querySelector<HTMLElement>('[data-block-id="global-metrics"]')
+    return Array.from(tile?.querySelectorAll('dt') ?? []).map((dt) => [
+      dt.textContent?.trim(),
+      dt.nextElementSibling?.textContent?.trim()
+    ])
+  }
+
+  it('shows text, nested and unknown fields in the overview tile', async () => {
+    const { container } = render(MetricsView, {
+      props: {
+        mode: 'overview',
+        tooltipData: null,
+        rootNodeId: 'root',
+        globalMetrics,
+        showAdvanced: false
+      }
+    })
+    await tick()
+    expect(rows(container)).toEqual([
+      ['State', 'Running'],
+      ['Memory (RSS)', '2KiB'],
+      ['Transaction initiators', 'kafka_input (Started)'],
+      ['future_metric', 'true']
+    ])
+  })
+
+  it('finds a non-numeric field by its label', async () => {
+    const lookup = createLookupCoordinator()
+    render(MetricsView, {
+      props: {
+        mode: 'overview',
+        tooltipData: null,
+        rootNodeId: 'root',
+        globalMetrics,
+        showAdvanced: false,
+        lookup
+      }
+    })
+    await tick()
+    expect(lookup.execute('Metrics', 'Transaction initiators').total).toBe(1)
+  })
+
+  it('hides the tile outside the overview', async () => {
+    const { container } = render(MetricsView, {
+      props: {
+        mode: 'node',
+        tooltipData: { nodeAttributes },
+        rootNodeId: 'root',
+        globalMetrics,
+        showAdvanced: false
+      }
+    })
+    await tick()
+    expect(rows(container)).toEqual([])
+  })
+})
