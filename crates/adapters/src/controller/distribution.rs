@@ -26,17 +26,21 @@ pub struct ActivationInput {
     pub choice: Option<JsonValue>,
 }
 
-/// Returns the distribution to use when this host resumes from a checkpoint
-/// whose distribution was `checkpointed`, given the coordinator's current
-/// distribution `current`.
+/// Returns the distribution of each distributed connector when this host
+/// resumes from a checkpoint.  `current` is the distribution that the
+/// coordinator computed now, and `checkpointed` is the one in the checkpoint.
 ///
-/// A connector that both distribute keeps its checkpointed home host, because
-/// each host's resume state covers only the part of the input that the old
-/// home host gave it, and the coordinator may now compute a different home (for
-/// example, because input connectors were added or removed).  Every host
-/// resumes from the same checkpoint step, so every host makes the same choice.
-/// A connector that the checkpoint did not distribute uses the coordinator's
-/// home host.
+/// The home host sets which part of the input each host reads (see
+/// [InputDistribution::home]), and each host's checkpoint has its position
+/// only in its own part.  The coordinator can now compute a different home
+/// host than when the hosts wrote the checkpoint, for example because input
+/// connectors were added or removed.  A new home host would give each host a
+/// different part, and its checkpoint has no position for that part.
+///
+/// Thus, a connector that both distribute keeps the home host from the
+/// checkpoint.  A connector that only `current` distributes uses the
+/// coordinator's home host.  Every host resumes from the same checkpoint
+/// step, so all of the hosts make the same choice.
 pub fn resume_distribution(
     current: BTreeMap<String, InputDistribution>,
     checkpointed: &BTreeMap<String, InputDistribution>,
