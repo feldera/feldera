@@ -68,16 +68,22 @@ fn is_zero(value: &i64) -> bool {
     *value == 0
 }
 
+/// The default as the OpenAPI schema shows it.
+fn default_clock_resolution() -> String {
+    crate::config::DEFAULT_CLOCK_RESOLUTION.to_string()
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
 pub struct ClockConfig {
-    /// How often the clock ticks, for example `1s`.
+    /// How often the clock ticks, for example `1s`. Unset selects the
+    /// default, `DEFAULT_CLOCK_RESOLUTION`.
     #[serde(
         default,
         alias = "clock_resolution_usecs",
         deserialize_with = "duration_clock_resolution",
         skip_serializing_if = "Option::is_none"
     )]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, default = default_clock_resolution)]
     pub clock_resolution: Option<ConfigDuration>,
 
     /// Constant offset added to every emitted `NOW()` value, in milliseconds
@@ -106,8 +112,9 @@ pub struct ClockConfig {
 }
 
 impl ClockConfig {
-    /// The resolution in effect: `clock_resolution`, falling back to
-    /// the deprecated `clock_resolution_usecs` and then to one second.
+    /// The resolution in effect: `clock_resolution`, or
+    /// [`DEFAULT_CLOCK_RESOLUTION`](crate::config::DEFAULT_CLOCK_RESOLUTION)
+    /// when unset.
     pub fn clock_resolution(&self) -> ConfigDuration {
         self.clock_resolution
             .unwrap_or(crate::config::DEFAULT_CLOCK_RESOLUTION)

@@ -101,6 +101,21 @@ pub const DEFAULT_INACTIVITY_TIMEOUT: ConfigDuration = ConfigDuration::from_secs
 /// Default delay between automatic reconnect attempts.
 pub const DEFAULT_RETRY_INTERVAL: ConfigDuration = ConfigDuration::from_secs(5);
 
+// The defaults as the OpenAPI schema shows them, one function per
+// `#[schema(default = ...)]`.
+fn default_connection_timeout() -> String {
+    DEFAULT_CONNECTION_TIMEOUT.to_string()
+}
+fn default_request_timeout() -> String {
+    DEFAULT_REQUEST_TIMEOUT.to_string()
+}
+fn default_inactivity_timeout() -> String {
+    DEFAULT_INACTIVITY_TIMEOUT.to_string()
+}
+fn default_retry_interval() -> String {
+    DEFAULT_RETRY_INTERVAL.to_string()
+}
+
 /// Options for connecting to a NATS server.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct ConnectOptions {
@@ -118,26 +133,27 @@ pub struct ConnectOptions {
     /// Connection timeout, for example `10s`.
     ///
     /// How long to wait when establishing the initial connection to the
-    /// NATS server. Defaults to 10 seconds.
+    /// NATS server. Unset selects the default, `DEFAULT_CONNECTION_TIMEOUT`.
     #[serde(
         default,
         alias = "connection_timeout_secs",
         deserialize_with = "duration_connection_timeout",
         skip_serializing_if = "Option::is_none"
     )]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, default = default_connection_timeout)]
     pub connection_timeout: Option<ConfigDuration>,
 
     /// Request timeout, for example `10s`.
     ///
-    /// How long to wait for responses to requests. Defaults to 10 seconds.
+    /// How long to wait for responses to requests. Unset selects
+    /// the default, `DEFAULT_REQUEST_TIMEOUT`.
     #[serde(
         default,
         alias = "request_timeout_secs",
         deserialize_with = "duration_request_timeout",
         skip_serializing_if = "Option::is_none"
     )]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, default = default_request_timeout)]
     pub request_timeout: Option<ConfigDuration>,
 }
 
@@ -218,25 +234,26 @@ pub struct NatsInputConfig {
     pub stream_name: String,
     /// Maximum time to wait for the next message before running a
     /// stream/server health check, for example `60s`. Must be at least one
-    /// second. Defaults to 60 seconds.
+    /// second. Unset selects the default, `DEFAULT_INACTIVITY_TIMEOUT`.
     #[serde(
         default,
         alias = "inactivity_timeout_secs",
         deserialize_with = "duration_inactivity_timeout",
         skip_serializing_if = "Option::is_none"
     )]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, default = default_inactivity_timeout)]
     pub inactivity_timeout: Option<ConfigDuration>,
 
     /// Delay between automatic reconnect attempts while in retry mode, for
-    /// example `5s`. Must be at least one second. Defaults to 5 seconds.
+    /// example `5s`. Must be at least one second. Unset selects
+    /// the default, `DEFAULT_RETRY_INTERVAL`.
     #[serde(
         default,
         alias = "retry_interval_secs",
         deserialize_with = "duration_retry_interval",
         skip_serializing_if = "Option::is_none"
     )]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, default = default_retry_interval)]
     pub retry_interval: Option<ConfigDuration>,
 
     pub consumer_config: ConsumerConfig,

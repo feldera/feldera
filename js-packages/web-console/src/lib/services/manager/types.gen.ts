@@ -440,7 +440,8 @@ export type ClockAdvanceResponse = {
 
 export type ClockConfig = {
   /**
-   * How often the clock ticks, for example `1s`.
+   * How often the clock ticks, for example `1s`. Unset selects the
+   * default, `DEFAULT_CLOCK_RESOLUTION`.
    */
   clock_resolution?: string | null
   /**
@@ -805,13 +806,14 @@ export type ConnectOptions = {
    * Connection timeout, for example `10s`.
    *
    * How long to wait when establishing the initial connection to the
-   * NATS server. Defaults to 10 seconds.
+   * NATS server. Unset selects the default, `DEFAULT_CONNECTION_TIMEOUT`.
    */
   connection_timeout?: string | null
   /**
    * Request timeout, for example `10s`.
    *
-   * How long to wait for responses to requests. Defaults to 10 seconds.
+   * How long to wait for responses to requests. Unset selects
+   * the default, `DEFAULT_REQUEST_TIMEOUT`.
    */
   request_timeout?: string | null
   /**
@@ -2293,7 +2295,8 @@ export type FtConfig = {
   /**
    * Interval between automatic checkpoints, for example `60s`.
    *
-   * The default is 60 seconds; `null` disables periodic checkpointing.
+   * Unset selects the default, `DEFAULT_CHECKPOINT_INTERVAL`; `null`
+   * disables periodic checkpointing.
    * Values less than 1 second or greater than 1 hour will be forced into
    * that range.
    */
@@ -3146,7 +3149,8 @@ export type KafkaHeaderValue = Blob | File
 export type KafkaInputConfig = {
   /**
    * Maximum time to wait for the endpoint to join the Kafka consumer group
-   * during initialization, for example `10s`. Defaults to 10 seconds.
+   * during initialization, for example `10s`. Unset selects
+   * the default, `DEFAULT_GROUP_JOIN_TIMEOUT`.
    */
   group_join_timeout?: string | null
   header_filter?: HeaderFilter | null
@@ -3340,7 +3344,7 @@ export type KafkaOutputConfig = {
   headers?: Array<KafkaHeader>
   /**
    * Maximum time to wait for the endpoint to connect to a Kafka broker, for
-   * example `60s`. Defaults to 60 seconds.
+   * example `60s`. Unset selects the default, `DEFAULT_INITIALIZATION_TIMEOUT`.
    */
   initialization_timeout?: string | null
   /**
@@ -3572,12 +3576,13 @@ export type NatsInputConfig = {
   /**
    * Maximum time to wait for the next message before running a
    * stream/server health check, for example `60s`. Must be at least one
-   * second. Defaults to 60 seconds.
+   * second. Unset selects the default, `DEFAULT_INACTIVITY_TIMEOUT`.
    */
   inactivity_timeout?: string | null
   /**
    * Delay between automatic reconnect attempts while in retry mode, for
-   * example `5s`. Must be at least one second. Defaults to 5 seconds.
+   * example `5s`. Must be at least one second. Unset selects
+   * the default, `DEFAULT_RETRY_INTERVAL`.
    */
   retry_interval?: string | null
   stream_name: string
@@ -4087,7 +4092,7 @@ export type PipelineConfig = {
    * recomputation at most once per `clock_resolution`.  If the query does not use
    * `NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.
    *
-   * It is set to 1 second by default, and `null` selects that default.
+   * Unset or `null` selects the default, `DEFAULT_CLOCK_RESOLUTION`.
    */
   clock_resolution?: string | null
   /**
@@ -5565,7 +5570,7 @@ export type RuntimeConfig = {
    * recomputation at most once per `clock_resolution`.  If the query does not use
    * `NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.
    *
-   * It is set to 1 second by default, and `null` selects that default.
+   * Unset or `null` selects the default, `DEFAULT_CLOCK_RESOLUTION`.
    */
   clock_resolution?: string | null
   /**
@@ -6477,8 +6482,7 @@ export type SyncConfig = {
   /**
    * The minimum age a checkpoint must reach before it becomes eligible for
    * deletion, for example `30d`. All younger checkpoints will be preserved.
-   *
-   * Default: 30 days
+   * Unset selects the default, `DEFAULT_RETENTION_MIN_AGE`.
    */
   min_retention?: string | null
   /**
@@ -6561,9 +6565,8 @@ export type SyncConfig = {
    * The interval between each attempt to fetch the latest checkpoint from
    * object store while in standby mode, for example `10s`.
    *
-   * Applies only when `start_from_checkpoint` is set to `latest`.
-   *
-   * Default: 10 seconds
+   * Applies only when `start_from_checkpoint` is set to `latest`. Unset
+   * selects the default, `DEFAULT_PULL_INTERVAL`.
    */
   standby_pull_interval?: string | null
   start_from_checkpoint?: StartFromCheckpoint | null
@@ -6876,7 +6879,7 @@ export type UrlInputConfig = {
    * timeout, it will drop the network connection to the server. It will
    * automatically reconnect when the input adapter starts running again.
    *
-   * The default is 60 seconds.
+   * Unset selects the default, `DEFAULT_PAUSE_TIMEOUT`.
    */
   pause_linger?: string | null
 }

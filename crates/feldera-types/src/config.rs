@@ -70,6 +70,21 @@ pub const DEFAULT_PULL_INTERVAL: ConfigDuration = ConfigDuration::from_secs(10);
 /// Default minimum age a checkpoint reaches before it may be deleted.
 pub const DEFAULT_RETENTION_MIN_AGE: ConfigDuration = ConfigDuration::from_days(30);
 
+// The defaults as the OpenAPI schema shows them, one function per
+// `#[schema(default = ...)]`.
+fn default_clock_resolution() -> String {
+    DEFAULT_CLOCK_RESOLUTION.to_string()
+}
+fn default_checkpoint_interval() -> String {
+    DEFAULT_CHECKPOINT_INTERVAL.to_string()
+}
+fn default_pull_interval() -> String {
+    DEFAULT_PULL_INTERVAL.to_string()
+}
+fn default_retention_min_age() -> String {
+    DEFAULT_RETENTION_MIN_AGE.to_string()
+}
+
 duration_setting!(
     duration_standby_pull_interval,
     "standby_pull_interval",
@@ -707,16 +722,15 @@ pub struct SyncConfig {
     /// The interval between each attempt to fetch the latest checkpoint from
     /// object store while in standby mode, for example `10s`.
     ///
-    /// Applies only when `start_from_checkpoint` is set to `latest`.
-    ///
-    /// Default: 10 seconds
+    /// Applies only when `start_from_checkpoint` is set to `latest`. Unset
+    /// selects the default, `DEFAULT_PULL_INTERVAL`.
     #[serde(
         default,
         alias = "pull_interval",
         deserialize_with = "duration_standby_pull_interval",
         skip_serializing_if = "Option::is_none"
     )]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, default = default_pull_interval)]
     pub standby_pull_interval: Option<ConfigDuration>,
 
     /// The interval between each push of checkpoints to object store, for
@@ -753,15 +767,14 @@ pub struct SyncConfig {
 
     /// The minimum age a checkpoint must reach before it becomes eligible for
     /// deletion, for example `30d`. All younger checkpoints will be preserved.
-    ///
-    /// Default: 30 days
+    /// Unset selects the default, `DEFAULT_RETENTION_MIN_AGE`.
     #[serde(
         default,
         alias = "retention_min_age",
         deserialize_with = "duration_min_retention",
         skip_serializing_if = "Option::is_none"
     )]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, default = default_retention_min_age)]
     pub min_retention: Option<ConfigDuration>,
 
     /// A read-only bucket used as a fallback checkpoint source.
@@ -1177,14 +1190,14 @@ pub struct RuntimeConfig {
     /// recomputation at most once per `clock_resolution`.  If the query does not use
     /// `NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.
     ///
-    /// It is set to 1 second by default, and `null` selects that default.
+    /// Unset or `null` selects the default, `DEFAULT_CLOCK_RESOLUTION`.
     #[serde(
         default,
         alias = "clock_resolution_usecs",
         deserialize_with = "duration_clock_resolution",
         skip_serializing_if = "Option::is_none"
     )]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, default = default_clock_resolution)]
     pub clock_resolution: Option<ConfigDuration>,
 
     /// Fixed timezone offset for the SQL `NOW()` clock.
@@ -1498,7 +1511,8 @@ pub struct FtConfig {
 
     /// Interval between automatic checkpoints, for example `60s`.
     ///
-    /// The default is 60 seconds; `null` disables periodic checkpointing.
+    /// Unset selects the default, `DEFAULT_CHECKPOINT_INTERVAL`; `null`
+    /// disables periodic checkpointing.
     /// Values less than 1 second or greater than 1 hour will be forced into
     /// that range.
     #[serde(
@@ -1507,7 +1521,7 @@ pub struct FtConfig {
         deserialize_with = "duration_checkpoint_interval",
         skip_serializing_if = "Option::is_none"
     )]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, default = default_checkpoint_interval)]
     pub checkpoint_interval: Option<Option<ConfigDuration>>,
 }
 
@@ -1548,8 +1562,8 @@ pub fn json_to_yaml_value(value: &serde_json::Value) -> serde_yaml::Value {
 }
 
 /// Rewrites the duration settings of a serialized pipeline configuration in the
-/// spelling that releases before the duration rename read: under the older key,
-/// as a whole number of the unit that key named.
+/// spelling that Feldera releases before the duration rename read: under the
+/// older key, as a whole number of the unit that key named.
 ///
 /// `config` is a serialized [`RuntimeConfig`], or a serialized
 /// [`PipelineConfig`], which flattens one and carries the connectors in
@@ -1558,7 +1572,7 @@ pub fn json_to_yaml_value(value: &serde_json::Value) -> serde_yaml::Value {
 /// runtime version, or compiled by a platform before the rename and not yet
 /// updated: such a runtime may predate the rename, and a runtime that does
 /// ignores the current names and silently runs on its defaults, or, for a
-/// Kafka connector, rejects them. Every release up to 1.0 still accepts the
+/// Kafka connector, rejects them. Every Feldera release so far accepts the
 /// older spelling, so writing it is safe whichever runtime runs.
 ///
 /// A duration that is not a whole number of the older unit rounds up to the

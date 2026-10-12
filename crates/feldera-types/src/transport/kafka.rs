@@ -54,14 +54,15 @@ pub struct KafkaInputConfig {
     pub log_level: Option<KafkaLogLevel>,
 
     /// Maximum time to wait for the endpoint to join the Kafka consumer group
-    /// during initialization, for example `10s`. Defaults to 10 seconds.
+    /// during initialization, for example `10s`. Unset selects
+    /// the default, `DEFAULT_GROUP_JOIN_TIMEOUT`.
     #[serde(
         default,
         alias = "group_join_timeout_secs",
         deserialize_with = "duration_group_join_timeout",
         skip_serializing_if = "Option::is_none"
     )]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, default = default_group_join_timeout)]
     pub group_join_timeout: Option<ConfigDuration>,
 
     /// Set to 1 or more to fix the number of threads used to poll
@@ -494,6 +495,15 @@ pub const DEFAULT_GROUP_JOIN_TIMEOUT: ConfigDuration = ConfigDuration::from_secs
 /// Default time to wait for the endpoint to connect to a Kafka broker.
 pub const DEFAULT_INITIALIZATION_TIMEOUT: ConfigDuration = ConfigDuration::from_secs(60);
 
+// The defaults as the OpenAPI schema shows them, one function per
+// `#[schema(default = ...)]`.
+fn default_group_join_timeout() -> String {
+    DEFAULT_GROUP_JOIN_TIMEOUT.to_string()
+}
+fn default_initialization_timeout() -> String {
+    DEFAULT_INITIALIZATION_TIMEOUT.to_string()
+}
+
 impl KafkaInputConfig {
     /// The consumer-group join timeout in effect, or
     /// [`DEFAULT_GROUP_JOIN_TIMEOUT`].
@@ -702,14 +712,14 @@ pub struct KafkaOutputConfig {
     pub log_level: Option<KafkaLogLevel>,
 
     /// Maximum time to wait for the endpoint to connect to a Kafka broker, for
-    /// example `60s`. Defaults to 60 seconds.
+    /// example `60s`. Unset selects the default, `DEFAULT_INITIALIZATION_TIMEOUT`.
     #[serde(
         default,
         alias = "initialization_timeout_secs",
         deserialize_with = "duration_initialization_timeout",
         skip_serializing_if = "Option::is_none"
     )]
-    #[schema(value_type = Option<String>)]
+    #[schema(value_type = Option<String>, default = default_initialization_timeout)]
     pub initialization_timeout: Option<ConfigDuration>,
 
     /// Optional configuration for fault tolerance.
