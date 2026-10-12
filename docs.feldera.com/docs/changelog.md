@@ -104,7 +104,7 @@ Source edition can be found on github.
   | URL input `pause_timeout` (s)           | `pause_linger`             |
   | Kafka input `group_join_timeout_secs` (s) | `group_join_timeout`      |
   | Kafka output `initialization_timeout_secs` (s) | `initialization_timeout` |
-  | NATS `connection_timeout_secs`, `request_timeout_secs`, `inactivity_timeout_secs`, `retry_interval_secs` (s) | the same names without `_secs` |
+  | NATS `connection_timeout_secs`, `request_timeout_secs`, `inactivity_timeout_secs`, `retry_interval_secs`, `publish_timeout_secs` (s) | the same names without `_secs` |
   | NATS consumer `max_expires` (`{secs, nanos}` object) | `max_expiry`  |
   | Pub/Sub `timeout_seconds`, `connect_timeout_seconds` (s) | `timeout`, `connect_timeout` |
   | Avro `registry_timeout_secs` (s)        | `registry_timeout`          |
