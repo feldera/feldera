@@ -3623,9 +3623,10 @@ export type NatsOutputConfig = {
   message_id?: NatsMessageId
   /**
    * How long to wait for the server's publish acknowledgment before
-   * retrying the publish. Must be at least 1.
+   * retrying the publish, for example `5s`. Must be at least one second.
+   * Unset selects the default, `DEFAULT_PUBLISH_TIMEOUT`.
    */
-  publish_timeout_secs?: number
+  publish_timeout?: string | null
   /**
    * NATS subject to publish to (e.g., "orders.created"). The subject
    * must be bound to a JetStream stream on the target server.

@@ -1661,6 +1661,24 @@ pub fn to_legacy_duration_spelling(config: &mut serde_json::Value) {
             serde_json::json!({"secs": duration.as_secs(), "nanos": duration.subsec_nanos()}),
         );
     }
+    /// The connection options both NATS transports share.
+    fn nats_connection(transport: &mut Map<String, Value>) {
+        if let Some(connection) = child(transport, "connection_config") {
+            apply(
+                connection,
+                &[
+                    rule(
+                        "connection_timeout",
+                        "connection_timeout_secs",
+                        Secs,
+                        U64,
+                        false,
+                    ),
+                    rule("request_timeout", "request_timeout_secs", Secs, U64, false),
+                ],
+            );
+        }
+    }
     /// One connector of `inputs` or `outputs`.
     fn connector(endpoint: &mut Map<String, Value>) {
         apply(
@@ -1741,24 +1759,23 @@ pub fn to_legacy_duration_spelling(config: &mut serde_json::Value) {
                             rule("retry_interval", "retry_interval_secs", Secs, U64, false),
                         ],
                     );
-                    if let Some(connection) = child(transport, "connection_config") {
-                        apply(
-                            connection,
-                            &[
-                                rule(
-                                    "connection_timeout",
-                                    "connection_timeout_secs",
-                                    Secs,
-                                    U64,
-                                    false,
-                                ),
-                                rule("request_timeout", "request_timeout_secs", Secs, U64, false),
-                            ],
-                        );
-                    }
+                    nats_connection(transport);
                     if let Some(consumer) = child(transport, "consumer_config") {
                         max_expiry(consumer);
                     }
+                }
+                Some("nats_output") => {
+                    apply(
+                        transport,
+                        &[rule(
+                            "publish_timeout",
+                            "publish_timeout_secs",
+                            Secs,
+                            U64,
+                            false,
+                        )],
+                    );
+                    nats_connection(transport);
                 }
                 _ => {}
             }
@@ -2149,6 +2166,10 @@ mod test {
                         "registry_timeout": "8s"}},
                     "enable_output_buffer": true,
                     "max_output_buffer_time": "500ms"},
+                "v.nats": {"stream": "v", "transport": {"name": "nats_output", "config": {
+                    "connection_config": {"server_url": "nats://x",
+                        "connection_timeout": "5s", "request_timeout": "6s"},
+                    "subject": "s", "publish_timeout": "9s"}}},
             },
         })
     }
@@ -2185,6 +2206,10 @@ mod test {
         );
         assert_eq!(out["format"]["config"]["registry_timeout_secs"], 8);
         assert_eq!(out["max_output_buffer_time_millis"], 500);
+        let nats = &config["outputs"]["v.nats"]["transport"]["config"];
+        assert_eq!(nats["connection_config"]["connection_timeout_secs"], 5);
+        assert_eq!(nats["connection_config"]["request_timeout_secs"], 6);
+        assert_eq!(nats["publish_timeout_secs"], 9);
 
         // No current name survives anywhere in the file.
         let text = config.to_string();
@@ -2201,6 +2226,7 @@ mod test {
             "\"initialization_timeout\"",
             "\"registry_timeout\"",
             "\"max_output_buffer_time\"",
+            "\"publish_timeout\"",
             "\"clock_resolution\"",
         ] {
             assert!(!text.contains(new), "{new} survived in {text}");
@@ -3380,6 +3406,13 @@ impl TransportConfig {
                     Some(config.connection_config.request_timeout());
                 config.inactivity_timeout = Some(config.inactivity_timeout());
                 config.retry_interval = Some(config.retry_interval());
+            }
+            TransportConfig::NatsOutput(config) => {
+                config.connection_config.connection_timeout =
+                    Some(config.connection_config.connection_timeout());
+                config.connection_config.request_timeout =
+                    Some(config.connection_config.request_timeout());
+                config.publish_timeout = Some(config.publish_timeout());
             }
             _ => {}
         }

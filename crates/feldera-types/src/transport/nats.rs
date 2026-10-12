@@ -26,6 +26,11 @@ duration_setting!(
     LegacyUnit::Secs
 );
 duration_setting!(duration_retry_interval, "retry_interval", LegacyUnit::Secs);
+duration_setting!(
+    duration_publish_timeout,
+    "publish_timeout",
+    LegacyUnit::Secs
+);
 duration_struct_setting!(duration_max_expiry, "max_expiry");
 
 fn is_default<T: Default + Eq>(t: &T) -> bool {
@@ -259,8 +264,12 @@ pub struct NatsInputConfig {
     pub consumer_config: ConsumerConfig,
 }
 
-pub const fn default_publish_timeout_secs() -> u64 {
-    5
+/// Default time to wait for the server's publish acknowledgment.
+pub const DEFAULT_PUBLISH_TIMEOUT: ConfigDuration = ConfigDuration::from_secs(5);
+
+/// The default as the OpenAPI schema shows it.
+fn default_publish_timeout() -> String {
+    DEFAULT_PUBLISH_TIMEOUT.to_string()
 }
 
 /// Default max message payload when the bound stream's `max_message_size` is
@@ -298,9 +307,16 @@ pub struct NatsOutputConfig {
     pub message_id: NatsMessageId,
 
     /// How long to wait for the server's publish acknowledgment before
-    /// retrying the publish. Must be at least 1.
-    #[serde(default = "default_publish_timeout_secs")]
-    pub publish_timeout_secs: u64,
+    /// retrying the publish, for example `5s`. Must be at least one second.
+    /// Unset selects the default, `DEFAULT_PUBLISH_TIMEOUT`.
+    #[serde(
+        default,
+        alias = "publish_timeout_secs",
+        deserialize_with = "duration_publish_timeout",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>, default = default_publish_timeout)]
+    pub publish_timeout: Option<ConfigDuration>,
 
     /// Override for the maximum message size in bytes the connector offers to
     /// the encoder. When unset, the connector discovers the limit at connect
@@ -311,6 +327,13 @@ pub struct NatsOutputConfig {
     /// server.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_message_size: Option<usize>,
+}
+
+impl NatsOutputConfig {
+    /// The publish timeout in effect, or [`DEFAULT_PUBLISH_TIMEOUT`].
+    pub fn publish_timeout(&self) -> ConfigDuration {
+        self.publish_timeout.unwrap_or(DEFAULT_PUBLISH_TIMEOUT)
+    }
 }
 
 /// A header attached to every message published by `nats_output`.
@@ -507,6 +530,26 @@ mod tests {
             let json = input_config_json(fields);
             let config: NatsInputConfig = serde_json::from_str(&json).unwrap();
             assert_eq!(config.retry_interval(), expected, "parsing {json}");
+        }
+    }
+
+    /// The publish timeout reads back from both spellings.
+    #[test]
+    fn publish_timeout_accepts_both_spellings() {
+        for (fields, expected) in [
+            ("", DEFAULT_PUBLISH_TIMEOUT),
+            (r#""publish_timeout": "2s""#, ConfigDuration::from_secs(2)),
+            (
+                r#""publish_timeout_secs": 30"#,
+                ConfigDuration::from_secs(30),
+            ),
+        ] {
+            let separator = if fields.is_empty() { "" } else { ", " };
+            let json = format!(
+                r#"{{"connection_config": {{"server_url": "nats://localhost:4222"}}, "subject": "s"{separator}{fields}}}"#
+            );
+            let config: NatsOutputConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(config.publish_timeout(), expected, "parsing {json}");
         }
     }
 }

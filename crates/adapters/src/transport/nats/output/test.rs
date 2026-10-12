@@ -30,12 +30,12 @@ fn rejects_zero_publish_timeout() {
             "server_url": "nats://localhost:4222",
         },
         "subject": "sub",
-        "publish_timeout_secs": 0,
+        "publish_timeout": "500ms",
     }));
     let error = NatsOutputEndpoint::new(config, CancellationToken::new()).unwrap_err();
     let text = format!("{error:#}");
     assert!(
-        text.contains("publish_timeout_secs"),
+        text.contains("publish_timeout"),
         "error should name the invalid field, got: {text}"
     );
 }
