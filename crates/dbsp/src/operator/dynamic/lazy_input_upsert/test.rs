@@ -30,6 +30,11 @@
 //! sees more than one input vector, so it is the only one where the merge in
 //! `Stamp` decides anything.
 //!
+//! [`check_bootstrap`] restarts a program from a checkpoint at each of its
+//! transaction boundaries, with a view that the checkpoint does not hold, and
+//! checks that a bootstrap, stop-the-world or concurrent, fills the view from
+//! the map's integral.
+//!
 //! # Validation
 //!
 //! Each defect below was injected into the operator, one at a time, and the
@@ -58,14 +63,17 @@
 //! * A step reports completion before the operator has finished.
 
 use super::*;
-use crate::circuit::{CircuitConfig, CircuitStorageConfig, Layout, mkconfig};
+use crate::circuit::{
+    CircuitConfig, CircuitStorageConfig, ConcurrentRestoreOutcome, Layout, Mode,
+    circuit_builder::BootstrapInfo, mkconfig,
+};
 use crate::operator::dynamic::input_upsert::Update;
 use crate::operator::input::{LazyMapHandle, MapHandle, StagedBuffers};
 use crate::trace::Cursor;
 use crate::typed_batch::{
-    BatchReader as _, OrdIndexedZSet as TypedIndexedZSet, Spine as TypedSpine,
+    BatchReader as _, OrdIndexedZSet as TypedIndexedZSet, Spine as TypedSpine, SpineSnapshot,
 };
-use crate::{DBSPHandle, Runtime, Stream};
+use crate::{DBSPHandle, OutputHandle, Runtime, Stream};
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use proptest::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -265,6 +273,33 @@ fn push(handle: &mut impl Push, commands: &[Command], staged: bool) {
     }
 }
 
+/// Reads a batch or a trace of the map's records.
+///
+/// # Arguments
+///
+/// * `batch` - the batch or trace to read.
+///
+/// # Returns
+///
+/// Each record with its weight, in cursor order.
+fn records<R>(batch: &R) -> Batch
+where
+    R: BatchReader<Key = DynData, Val = DynData, Time = (), R = crate::DynZWeight>,
+{
+    let mut records = Vec::new();
+    let mut cursor = batch.cursor();
+    while cursor.key_valid() {
+        while cursor.val_valid() {
+            let key = *cursor.key().downcast_checked::<i32>();
+            let value = *cursor.val().downcast_checked::<i32>();
+            records.push(((key, value), **cursor.weight()));
+            cursor.step_val();
+        }
+        cursor.step_key();
+    }
+    records
+}
+
 /// Collects every batch a stream emits.  With several workers a step emits one
 /// batch per worker, and each lands here on its own.
 ///
@@ -273,20 +308,7 @@ fn push(handle: &mut impl Push, commands: &[Command], staged: bool) {
 /// * `stream` - the stream to watch.
 /// * `into` - collects the batches, one per worker per step.
 fn record(stream: &Stream<RootCircuit, Map>, into: Arc<Mutex<Vec<Batch>>>) {
-    stream.inspect(move |batch| {
-        let mut records = Vec::new();
-        let mut cursor = batch.inner().cursor();
-        while cursor.key_valid() {
-            while cursor.val_valid() {
-                let key = *unsafe { cursor.key().downcast::<i32>() };
-                let value = *unsafe { cursor.val().downcast::<i32>() };
-                records.push(((key, value), **cursor.weight()));
-                cursor.step_val();
-            }
-            cursor.step_key();
-        }
-        into.lock().unwrap().push(records);
-    });
+    stream.inspect(move |batch| into.lock().unwrap().push(records(batch.inner())));
 }
 
 /// Collects the integral of a stream, which is what an operator downstream of
@@ -320,23 +342,12 @@ fn record_trace(trace: &Stream<RootCircuit, TypedSpine<Map>>, into: Arc<Mutex<Ve
         // `apply` rather than `inspect`: a `Spine` cannot be cloned, and
         // `inspect` clones what it passes through.
         .apply(move |spine| {
-            let mut records = Vec::new();
-            let mut cursor = spine.inner().cursor();
-            while cursor.key_valid() {
-                while cursor.val_valid() {
-                    let key = *unsafe { cursor.key().downcast::<i32>() };
-                    let value = *unsafe { cursor.val().downcast::<i32>() };
-                    records.push(((key, value), **cursor.weight()));
-                    cursor.step_val();
-                }
-                cursor.step_key();
-            }
             let mut shards = into.lock().unwrap();
             let worker = Runtime::worker_index();
             if shards.len() <= worker {
                 shards.resize(worker + 1, Vec::new());
             }
-            shards[worker] = records;
+            shards[worker] = records(spine.inner());
         });
 }
 
@@ -801,6 +812,367 @@ fn a_checkpoint_restores_the_map_and_a_spine_of_its_deltas() {
     assert_eq!(collection(&integral.lock().unwrap()), map);
     assert_eq!(collection(&downstream.lock().unwrap()), map);
     dbsp.kill().unwrap();
+}
+
+/// How a restarted circuit fills a view that its checkpoint does not hold.
+#[derive(Clone, Copy, Debug)]
+enum Bootstrap {
+    /// The circuit replays the map's integral before it takes input again.
+    StopTheWorld,
+
+    /// The circuit takes input while a second copy of it replays the integral,
+    /// then brings that copy up to date with the input that arrived meanwhile.
+    Concurrent,
+}
+
+/// What a view added after the checkpoint reads from the map.  With a view of
+/// the deltas, the integral replays into the deltas and into the accumulator;
+/// without one, into the accumulator only.
+#[derive(Clone, Copy, Debug)]
+enum NewView {
+    /// The deltas, through a linear operator into an integral of its own, as a
+    /// SQL view reads a table.
+    Deltas,
+
+    /// The map's accumulated output, through an output of its own, as a
+    /// table's output reads it.
+    Accumulator,
+}
+
+/// Reads a view that a bootstrap fills.
+enum ViewReader {
+    /// The latest contents of the view's integral, one batch per worker.
+    Integral(Recorded),
+
+    /// The view's output, and the batches it has output so far.
+    Output(OutputHandle<SpineSnapshot<Map>>, Vec<Batch>),
+}
+
+impl ViewReader {
+    /// Collects what the view output in the transaction that just committed.
+    /// It must run after every transaction, since each one replaces the last
+    /// one's output.
+    fn collect(&mut self) {
+        if let Self::Output(handle, outputs) = self {
+            let output = SpineSnapshot::<Map>::concat(&handle.take_from_all()).consolidate();
+            outputs.push(records(output.inner()));
+        }
+    }
+
+    /// Returns the collection the view holds.
+    ///
+    /// # Returns
+    ///
+    /// The view's integral, or the sum of everything it has output.
+    fn contents(&self) -> BTreeMap<(i32, i32), ZWeight> {
+        match self {
+            Self::Integral(integral) => collection(&integral.lock().unwrap()),
+            Self::Output(_, outputs) => collection(outputs),
+        }
+    }
+}
+
+/// Returns the configuration of a circuit that a bootstrap test checkpoints
+/// and restarts: `config`'s, in persistent mode and on storage, even where
+/// `config` keeps everything in memory.
+///
+/// # Arguments
+///
+/// * `config` - the workers and dev tweaks to run under.
+/// * `storage_dir` - the directory for storage and checkpoints.
+///
+/// # Returns
+///
+/// The circuit's configuration.
+fn persistent_config(config: Config, storage_dir: &Path) -> CircuitConfig {
+    let circuit_config = config
+        .circuit_config(storage_dir)
+        .with_mode(Mode::Persistent);
+    if config.storage {
+        return circuit_config;
+    }
+    circuit_config.with_storage(Some(
+        CircuitStorageConfig::for_config(
+            StorageConfig {
+                path: storage_dir.to_string_lossy().into_owned(),
+                cache: StorageCacheConfig::default(),
+            },
+            StorageOptions::default(),
+        )
+        .unwrap(),
+    ))
+}
+
+/// Builds the circuit of a bootstrap test: a map whose state is named for a
+/// restart, a record of its deltas, and the views that a restart adds.
+///
+/// # Arguments
+///
+/// * `circuit_config` - the circuit's configuration, which may name a
+///   checkpoint to restore.
+/// * `new_views` - the views to add, at most one of each kind.
+///
+/// # Returns
+///
+/// The circuit, the map's handle, the map's recorded deltas, and a reader for
+/// each new view.
+fn bootstrap_circuit(
+    circuit_config: CircuitConfig,
+    new_views: &[NewView],
+) -> (
+    DBSPHandle,
+    LazyMapHandle<i32, i32>,
+    Recorded,
+    Vec<ViewReader>,
+) {
+    let [deltas, integral]: [Recorded; 2] = Default::default();
+    let (deltas_out, integral_out) = (deltas.clone(), integral.clone());
+    let views = new_views.to_vec();
+    let (dbsp, (handle, outputs)) = Runtime::init_circuit(circuit_config, move |circuit| {
+        let (map, handle) = circuit.add_lazy_input_map_persistent::<i32, i32>(Some("map"));
+        record(&map, deltas_out.clone());
+        let mut outputs = Vec::new();
+        for view in views {
+            match view {
+                NewView::Deltas => {
+                    let view = map.map_index(|(key, value)| (*key, *value));
+                    view.set_persistent_id(Some("view"));
+                    record_trace(&view.accumulate_integrate_trace(), integral_out.clone());
+                }
+                NewView::Accumulator => {
+                    outputs.push(map.accumulate_output_persistent(Some("output")));
+                }
+            }
+        }
+        Ok((handle, outputs))
+    })
+    .unwrap();
+    let mut outputs = outputs.into_iter();
+    let readers = new_views
+        .iter()
+        .map(|new_view| match new_view {
+            NewView::Deltas => ViewReader::Integral(integral.clone()),
+            NewView::Accumulator => ViewReader::Output(outputs.next().unwrap(), Vec::new()),
+        })
+        .collect();
+    (dbsp, handle, deltas, readers)
+}
+
+/// Runs one transaction of a program.
+///
+/// # Arguments
+///
+/// * `dbsp` - the circuit.
+/// * `handle` - the map's handle.
+/// * `transaction` - the transaction's steps.
+/// * `staged` - whether a step's commands arrive as several staged appends.
+fn run_transaction(
+    dbsp: &mut DBSPHandle,
+    handle: &mut LazyMapHandle<i32, i32>,
+    transaction: &[Vec<Command>],
+    staged: bool,
+) {
+    dbsp.start_transaction().unwrap();
+    for step in transaction {
+        push(handle, step, staged);
+        dbsp.step().unwrap();
+    }
+    dbsp.commit_transaction().unwrap();
+}
+
+/// Runs the first `split` transactions of `program`, checkpoints, restarts with
+/// views that the checkpoint does not hold, and runs the rest.
+///
+/// The bootstrap must fill every view: after every transaction that runs the
+/// whole circuit, each view holds the map the model computes.  The map's own
+/// deltas since the restart must sum to what changed since the checkpoint,
+/// whichever way the bootstrap runs.
+///
+/// # Arguments
+///
+/// * `program` - the commands to run and where their boundaries fall.
+/// * `split` - how many transactions run before the checkpoint.
+/// * `config` - the workers and dev tweaks to run under.
+/// * `bootstrap` - how the restarted circuit fills the views.
+/// * `new_views` - what each view reads from the map, at most one of each.
+/// * `explain` - names a key's program, for a failure message.
+fn check_bootstrap(
+    program: &Program,
+    split: usize,
+    config: Config,
+    bootstrap: Bootstrap,
+    new_views: &[NewView],
+    explain: Explain,
+) {
+    let storage_dir = TempDir::new().expect("cannot create a directory for storage");
+    let mut model = Model::default();
+
+    let (mut dbsp, mut handle, _, _) =
+        bootstrap_circuit(persistent_config(config, storage_dir.path()), &[]);
+    for transaction in &program[..split] {
+        run_transaction(&mut dbsp, &mut handle, transaction, config.staged);
+        model.apply(&transaction.concat());
+    }
+    let checkpoint = dbsp.checkpoint().run().expect("the checkpoint is written");
+    dbsp.kill().unwrap();
+    let checkpointed = model.clone();
+
+    let mut circuit_config = persistent_config(config, storage_dir.path());
+    if let Bootstrap::StopTheWorld = bootstrap {
+        circuit_config.storage.as_mut().unwrap().init_checkpoint = Some(checkpoint.uuid);
+    }
+    let (mut dbsp, mut handle, deltas, mut views) = bootstrap_circuit(circuit_config, new_views);
+    let what = format!(
+        "a {bootstrap:?} bootstrap of {new_views:?} from a checkpoint after {split} transactions"
+    );
+
+    // The map's integral is the one replay source.  It replays into the
+    // deltas and the accumulator when a view reads the deltas, and into the
+    // accumulator alone otherwise.
+    let replay_streams = if new_views.iter().any(|view| matches!(view, NewView::Deltas)) {
+        2
+    } else {
+        1
+    };
+    let check_replay_streams = |info: &BootstrapInfo| {
+        let streams: Vec<usize> = info.replay_sources.values().map(BTreeSet::len).collect();
+        assert_eq!(
+            streams,
+            [replay_streams],
+            "the streams each replay source plays back in {what}"
+        );
+    };
+    let mut rest = program[split..].iter();
+    match bootstrap {
+        Bootstrap::StopTheWorld => {
+            check_replay_streams(
+                dbsp.bootstrap_info()
+                    .as_ref()
+                    .expect("the restart bootstraps"),
+            );
+            while dbsp.bootstrap_in_progress() {
+                dbsp.transaction().unwrap();
+                views.iter_mut().for_each(ViewReader::collect);
+            }
+        }
+        Bootstrap::Concurrent => {
+            let outcome = dbsp
+                .start_concurrent_bootstrap(checkpoint.uuid.to_string().into())
+                .unwrap();
+            let ConcurrentRestoreOutcome::Concurrent(info) = outcome else {
+                panic!("{what} fell back to a stop-the-world bootstrap: {outcome:?}");
+            };
+            check_replay_streams(&info);
+
+            // A transaction runs while the copy replays, so that the
+            // synchronization has changes to replay.
+            let mut replayed = false;
+            if let Some(transaction) = rest.next() {
+                run_transaction(&mut dbsp, &mut handle, transaction, config.staged);
+                model.apply(&transaction.concat());
+                views.iter_mut().for_each(ViewReader::collect);
+                replayed = dbsp.step_bootstrap_circuit().unwrap();
+            }
+            while !replayed {
+                replayed = dbsp.step_bootstrap_circuit().unwrap();
+            }
+            dbsp.sync_concurrent_bootstrap().unwrap();
+            while !dbsp.step_bootstrap_circuit().unwrap() {}
+            dbsp.complete_concurrent_bootstrap().unwrap();
+        }
+    }
+
+    // Only a transaction that runs the whole circuit reads the views, so one
+    // more runs after the program's last.
+    let last = vec![Vec::new()];
+    for transaction in rest.chain([&last]) {
+        run_transaction(&mut dbsp, &mut handle, transaction, config.staged);
+        model.apply(&transaction.concat());
+        for (new_view, view) in zip(new_views, &mut views) {
+            view.collect();
+            check_collection(
+                &format!("the view that reads the {new_view:?}, after {what},"),
+                &view.contents(),
+                &model.zset(),
+                explain,
+            );
+        }
+    }
+
+    let mut changed = model.zset();
+    for (record, weight) in checkpointed.zset() {
+        *changed.entry(record).or_default() -= weight;
+    }
+    changed.retain(|_, weight| *weight != 0);
+    check_collection(
+        "the map's deltas since the restart",
+        &collection(&deltas.lock().unwrap()),
+        &changed,
+        explain,
+    );
+    dbsp.kill().unwrap();
+}
+
+/// Checks every way to restart every short program from a checkpoint, with
+/// either bootstrap and a view of the deltas, of the accumulator, or both,
+/// under `config`.
+///
+/// # Arguments
+///
+/// * `config` - the workers and dev tweaks to run under.
+fn check_every_bootstrap(config: Config) {
+    for length in 1..=4 {
+        let program = every_program(length);
+        let explain = |key| program_of(key, length);
+        for split in 0..=program.len() {
+            for bootstrap in [Bootstrap::StopTheWorld, Bootstrap::Concurrent] {
+                for new_views in [
+                    &[NewView::Deltas][..],
+                    &[NewView::Accumulator],
+                    &[NewView::Deltas, NewView::Accumulator],
+                ] {
+                    check_bootstrap(&program, split, config, bootstrap, new_views, &explain);
+                }
+            }
+        }
+    }
+}
+
+/// A view added after a checkpoint gets the map's contents from the map's
+/// integral, wherever the checkpoint falls in every short program.
+#[test]
+fn every_short_program_bootstraps_a_new_view() {
+    check_every_bootstrap(Config::default());
+}
+
+/// The same across four workers, each of which replays its own share of the
+/// integral.
+#[test]
+fn every_short_program_bootstraps_a_new_view_across_four_workers() {
+    check_every_bootstrap(Config {
+        workers: 4,
+        ..Config::default()
+    });
+}
+
+/// The same with the integral replayed one record per chunk, so that the
+/// replay of the deltas spans many steps of the bootstrap's commit.
+#[test]
+fn every_short_program_bootstraps_a_new_view_chunked_at_every_record() {
+    check_every_bootstrap(Config {
+        chunk_size: Some(1),
+        ..Config::default()
+    });
+}
+
+/// The same with every batch on storage, so the replay reads file-backed
+/// batches.
+#[test]
+fn every_short_program_bootstraps_a_new_view_on_storage() {
+    check_every_bootstrap(Config {
+        storage: true,
+        ..Config::default()
+    });
 }
 
 /// Starts one circuit per host, each running a lazy map with one worker, and
