@@ -36,6 +36,11 @@ adds librdkafka settings for those two clients:
 fault tolerance model does. Omitting `fault_tolerance` leaves the consumer and
 producer with the connector's other Kafka options and the librdkafka defaults.
 
+The connector leaves producer batching (`batch.size`, `batch.num.messages` and
+`linger.ms`) at the librdkafka defaults, and you can tune it in
+`producer_options`. It sets `acks`, `enable.idempotence`, `retries` and
+`socket.nagle.disable` itself, and rejects other values for them.
+
 ```json
 "fault_tolerance": {
   "consumer_options": {"fetch.max.bytes": "10485760"},
