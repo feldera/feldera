@@ -416,7 +416,7 @@ mod tests {
         let mut archive = read_zip(&bundle.buffer);
 
         let names: Vec<String> = (0..archive.len())
-            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .map(|i| archive.by_index(i).unwrap().name().unwrap().to_string())
             .collect();
 
         // `metadata.txt` and `metadata.json` sit at the root.
@@ -492,7 +492,7 @@ mod tests {
             .unwrap();
         let mut archive = read_zip(&bundle.buffer);
         let names: Vec<String> = (0..archive.len())
-            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .map(|i| archive.by_index(i).unwrap().name().unwrap().to_string())
             .collect();
         assert_eq!(names.iter().filter(|n| n.contains('/')).count(), 0);
         assert!(names.iter().any(|n| n == "metadata.txt"));
@@ -514,7 +514,7 @@ mod tests {
             .unwrap();
         let mut archive = read_zip(&bundle.buffer);
         let names: Vec<String> = (0..archive.len())
-            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .map(|i| archive.by_index(i).unwrap().name().unwrap().to_string())
             .collect();
         let dirs: BTreeSet<&str> = names
             .iter()

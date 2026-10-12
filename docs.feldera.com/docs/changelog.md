@@ -10,6 +10,18 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- New connector (`nats_output`): write view output to a NATS subject. The
+  connector publishes to JetStream: each message is acknowledged by the
+  server before the pipeline moves on, every message carries a `Nats-Msg-Id`
+  derived from its content so that output replayed after a restart is
+  deduplicated by the server within the stream's duplicate window, and
+  static headers can be attached to every message. The message size limit is
+  discovered from the bound stream at connect time (the stream's
+  `max_message_size`, else the server's max payload) and can be overridden;
+  a record over the limit fails the pipeline with an error naming the record
+  and the limit, instead of reaching the server. See
+  [NATS output connector](/connectors/sinks/nats).
+
 - The Kafka output connector with exactly-once fault tolerance no longer
   forces `batch.size`, `batch.num.messages` and `linger.ms` to their
   minimums, which sent every message in its own request and limited
@@ -33,6 +45,11 @@ Source edition can be found on github.
   the rows before `emit_final` held them back, not the final rows.  Define
   a separate view without `emit_final` and use that view instead.  See
   [`emit_final`](/tutorials/time-series#emitting-final-values-of-a-view-with-emit_final).
+
+- Bug fix (SQL): casting a `DATE`, `TIMESTAMP`, or `TIMESTAMP WITH TIME
+  ZONE` to a string now pads the year to four digits:
+  `CAST(DATE '0001-01-01' AS VARCHAR)` is `'0001-01-01'`.  For years
+  before 1000 the result used to omit the leading zeros (`'1-01-01'`).
 
 ## v0.360.0
 

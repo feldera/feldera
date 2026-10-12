@@ -766,6 +766,26 @@ def helper_test_restricted_runtime_config_edit(
 
 
 @gen_pipeline_name
+def test_volume_attributes_class_edit_with_storage(pipeline_name):
+    """`resources.volume_attributes_class` can change without clearing storage."""
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+    pipeline.start()
+    pipeline.stop(force=True)
+
+    runtime_config: dict = TEST_CLIENT.http.get(
+        f"/pipelines/{pipeline_name}?selector=all"
+    )["runtime_config"]
+    runtime_config["resources"]["volume_attributes_class"] = "example"
+    TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
+    assert (
+        TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=all")[
+            "runtime_config"
+        ]["resources"]["volume_attributes_class"]
+        == "example"
+    )
+
+
+@gen_pipeline_name
 def test_runtime_config_edit_restricted(pipeline_name):
     pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
 

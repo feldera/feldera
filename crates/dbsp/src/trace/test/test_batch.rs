@@ -7,14 +7,14 @@ use crate::circuit::operator_traits::OperatorCheckpoint;
 use crate::storage::file::FilterStats;
 use crate::trace::BatchLocation;
 use crate::{
-    DBData, DBWeight, NumEntries, Timestamp,
+    DBData, DBWeight, DynZWeight, NumEntries, Timestamp,
     dynamic::{
         DataTrait, DowncastTrait, DynDataTyped, DynVec, DynWeightedPairs, Erase, Factory, Vector,
         WeightTrait, pair::DynPair,
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, Filter,
-        GroupFilter, Trace, TraceRole, cursor::Position,
+        GroupFilter, Trace, TraceRole, WithSnapshot, cursor::Position,
     },
 };
 use dyn_clone::clone_box;
@@ -429,7 +429,86 @@ where
         .collect::<Vec<_>>()
 }
 
-/// Panic if `batch1` and `batch2` contain different tuples.
+/// Panic unless the size bounds and emptiness of `batch` agree with its cursor.
+///
+/// [`BatchReader::key_count_upper_bound`] and [`BatchReader::len_upper_bound`]
+/// may exceed the keys and the (key, value) pairs that a cursor over `batch`
+/// yields, but never fall short of them, and [`BatchReader::is_empty`] is true
+/// exactly when the cursor yields nothing.
+///
+/// # Arguments
+///
+/// * `batch` - the batch or trace to check.
+pub fn assert_bounds_match_cursor<B>(batch: &B)
+where
+    B: BatchReader,
+{
+    let mut cursor = batch.cursor();
+    let mut keys = 0;
+    let mut pairs = 0;
+    while cursor.key_valid() {
+        keys += 1;
+        while cursor.val_valid() {
+            pairs += 1;
+            cursor.step_val();
+        }
+        cursor.step_key();
+    }
+    assert!(
+        batch.key_count_upper_bound() >= keys,
+        "key_count_upper_bound() is {}, but the cursor yields {keys} keys",
+        batch.key_count_upper_bound()
+    );
+    assert!(
+        batch.len_upper_bound() >= pairs,
+        "len_upper_bound() is {}, but the cursor yields {pairs} (key, value) pairs",
+        batch.len_upper_bound()
+    );
+    assert_eq!(
+        batch.is_empty(),
+        keys == 0,
+        "is_empty() disagrees with the cursor, which yields {keys} keys"
+    );
+}
+
+/// Panic if `batch` reports fewer negative weights than its cursor yields.
+///
+/// [`Batch::negative_weight_count`] may exceed the negative weights that a
+/// cursor over `batch` yields, but never fall short of them: a caller that sees
+/// `Some(0)` may conclude that the batch holds no negative weight at all.  A
+/// batch that reports `None` does not count them, and passes.
+///
+/// # Arguments
+///
+/// * `batch` - the batch to check.
+pub fn assert_negative_weights_counted<B>(batch: &B)
+where
+    B: Batch<R = DynZWeight>,
+{
+    let Some(count) = batch.negative_weight_count() else {
+        return;
+    };
+    let mut negative = 0u64;
+    let mut cursor = batch.cursor();
+    while cursor.key_valid() {
+        while cursor.val_valid() {
+            cursor.map_times(&mut |_time, weight| {
+                if **weight < 0 {
+                    negative += 1;
+                }
+            });
+            cursor.step_val();
+        }
+        cursor.step_key();
+    }
+    assert!(
+        count >= negative,
+        "negative_weight_count() is {count}, but the cursor yields {negative} negative weights"
+    );
+}
+
+/// Panic if `batch1` and `batch2` contain different tuples, or if either one's
+/// size bounds or emptiness disagree with its cursor.
 pub fn assert_batch_eq<B1, B2>(batch1: &B1, batch2: &B2)
 where
     B1: BatchReader,
@@ -444,6 +523,9 @@ where
     assert_eq!(tuples2, batch_to_tuples_reverse_vals(batch2));
 
     assert_eq!(tuples1, tuples2);
+
+    assert_bounds_match_cursor(batch1);
+    assert_bounds_match_cursor(batch2);
 }
 
 /// Panic if `batch1` and `batch2` contain different tuples.
@@ -463,7 +545,7 @@ where
 
 pub fn assert_trace_eq<T1, T2>(trace1: &T1, trace2: &T2)
 where
-    T1: Trace,
+    T1: Trace + WithSnapshot,
     T2: Trace<Key = T1::Key, Val = T1::Val, Time = T1::Time, R = T1::R>,
 {
     let tuples1 = filter(
@@ -510,6 +592,11 @@ where
         )
     );
     assert_eq!(tuples1, tuples2);
+
+    // A spine merges in the background, which can change its batches between
+    // reading its bounds and walking its cursor; a snapshot's batches stay put.
+    assert_bounds_match_cursor(&trace1.ro_snapshot());
+    assert_bounds_match_cursor(trace2);
 }
 
 pub fn assert_batch_cursors_eq<C, B>(mut cursor: C, ref_batch: &B, seed: u64)
@@ -925,7 +1012,7 @@ where
     }
 
     fn tuples(&self) -> usize {
-        self.result.len()
+        self.result.len_upper_bound()
     }
 
     fn seal(mut self) -> TestBatch<K, V, T, R> {
@@ -1313,6 +1400,12 @@ where
     R: WeightTrait + ?Sized,
     T: Timestamp,
 {
+    fn is_empty(&self) -> bool {
+        // `len_upper_bound` counts a (key, value) pair once per time for this batch
+        // type, but it is zero exactly when the batch is empty: the batch stores no
+        // zero weights.
+        self.len_upper_bound() == 0
+    }
     type Key = K;
     type Val = V;
     type Time = T;
@@ -1337,7 +1430,7 @@ where
         todo!()
     }*/
 
-    fn key_count(&self) -> usize {
+    fn key_count_upper_bound(&self) -> usize {
         self.data
             .keys()
             .map(|(k, _, _)| clone_box(k.as_ref()))
@@ -1345,7 +1438,7 @@ where
             .len()
     }
 
-    fn len(&self) -> usize {
+    fn len_upper_bound(&self) -> usize {
         self.data.len()
     }
 
@@ -1531,21 +1624,35 @@ where
     assert!(sample.is_empty());
     sample.clear();
 
-    // Sample size == batch size - must return all keys in the batch.
-    batch.sample_keys(&mut thread_rng(), batch.key_count(), sample.as_mut());
+    // Sample size == key count bound - must return all keys in the batch.
+    batch.sample_keys(
+        &mut thread_rng(),
+        batch.key_count_upper_bound(),
+        sample.as_mut(),
+    );
     assert_eq!(&sample, &all_keys);
     sample.clear();
 
-    // Sample size > batch size - must return all keys in the batch.
-    batch.sample_keys(&mut thread_rng(), batch.key_count() << 1, sample.as_mut());
+    // Sample size > key count bound - must return all keys in the batch.
+    batch.sample_keys(
+        &mut thread_rng(),
+        batch.key_count_upper_bound() << 1,
+        sample.as_mut(),
+    );
     assert_eq!(&sample, &all_keys);
     sample.clear();
 
     // Sample size < batch size - return the exact number of keys requested,
     // no duplicates, all returned keys must belong to the batch.
-    let sample_size = batch.key_count() >> 1;
+    let sample_size = batch.key_count_upper_bound() >> 1;
     batch.sample_keys(&mut thread_rng(), sample_size, sample.as_mut());
-    assert_eq!(sample.len(), sample_size);
+    if batch.key_count_upper_bound() == all_keys.len() {
+        assert_eq!(sample.len(), sample_size);
+    } else {
+        // A batch that counts keys it does not hold can draw them and then
+        // drop them, which leaves its sample short.
+        assert!(sample.len() <= sample_size);
+    }
     assert!(sample.is_sorted_by(&|k1, k2| k1.cmp(k2)));
     let sample_set = sample.dyn_iter().map(clone_box).collect::<BTreeSet<_>>();
     assert_eq!(sample_set.len(), sample.len());
@@ -1596,18 +1703,26 @@ pub fn test_trace_sampling<T: Trace<Time = ()>>(trace: &T) {
     assert!(sample.is_empty());
     sample.clear();
 
-    // Sample size == size - must return all keys in the batch.
+    // Sample size == key count bound - must return all keys in the trace.
     let (all_keys, sample) = retry_until_stable(trace, || {
         let mut sample = trace.factories().keys_factory().default_box();
-        trace.sample_keys(&mut thread_rng(), trace.key_count(), sample.as_mut());
+        trace.sample_keys(
+            &mut thread_rng(),
+            trace.key_count_upper_bound(),
+            sample.as_mut(),
+        );
         sample
     });
     assert_eq!(&sample, &all_keys);
 
-    // Sample size > trace size - must return all keys in the trace.
+    // Sample size > key count bound - must return all keys in the trace.
     let (all_keys, sample) = retry_until_stable(trace, || {
         let mut sample = trace.factories().keys_factory().default_box();
-        trace.sample_keys(&mut thread_rng(), trace.key_count() << 1, sample.as_mut());
+        trace.sample_keys(
+            &mut thread_rng(),
+            trace.key_count_upper_bound() << 1,
+            sample.as_mut(),
+        );
         sample
     });
     assert_eq!(&sample, &all_keys);
@@ -1615,7 +1730,7 @@ pub fn test_trace_sampling<T: Trace<Time = ()>>(trace: &T) {
     // Sample size < trace size - return at most the number of keys requested,
     // no duplicates, all returned keys must belong to the trace.
     let (all_keys, sample) = retry_until_stable(trace, || {
-        let sample_size = trace.key_count() >> 1;
+        let sample_size = trace.key_count_upper_bound() >> 1;
         let mut sample = trace.factories().keys_factory().default_box();
         trace.sample_keys(&mut thread_rng(), sample_size, sample.as_mut());
         assert!(sample.len() <= sample_size);

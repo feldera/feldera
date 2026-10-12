@@ -692,7 +692,7 @@ where
         // receive any non-empty batches from the previous transaction at that
         // point (in the top-level circuit).  This may not be the first batch in
         // the transaction, but it's ok to admit some empty batches.
-        let len = batch.len();
+        let len = batch.len_upper_bound();
         if (len > 0 || self.flushed) && self.enabled_during_current_transaction.is_none() {
             self.enabled_during_current_transaction = Some(match &self.metadata_exchange {
                 Some(metadata_exchange) => metadata_exchange
@@ -928,7 +928,7 @@ where
     async fn eval(&mut self) -> Option<Spine<B>> {
         let output = self.exchange.receive();
         if let Some(spine) = &output {
-            self.output_batch_stats.add_batch(spine.len());
+            self.output_batch_stats.add_batch(spine.len_upper_bound());
             spine.backpressure_wait().await;
             self.flushed = true;
         }

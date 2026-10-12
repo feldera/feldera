@@ -52,7 +52,7 @@ use crate::{
     operator::require_persistent_id,
     storage::file::to_bytes,
     time::{Timestamp, UnitTimestamp},
-    trace::{Batch, unaligned_deserialize},
+    trace::{Batch, Spine, unaligned_deserialize},
 };
 #[cfg(doc)]
 use crate::{
@@ -1608,6 +1608,65 @@ pub(crate) fn register_replay_stream<C, B>(
     C: Circuit,
     B: Batch<Time = ()>,
 {
+    register_replay_source::<C, B, B>(circuit, stream, replay_stream, factories);
+}
+
+/// Register `replay_stream` as a replay source for `accumulated`, the output
+/// of an accumulator, which carries one spine per transaction.
+///
+/// This is the counterpart of [`register_replay_stream`] for an integral fed
+/// by an accumulator (see `AccumulateZ1Trace::prepare_accumulated_replay_stream`):
+/// the replay plays the integral back into the accumulator's output, so the
+/// accumulator and the operators that feed it do not participate in the
+/// replay.  The [`Recorder`] attached to `accumulated` records whole
+/// transactions' spines.
+///
+/// # Arguments
+///
+/// * `circuit` - The circuit that contains `accumulated`.
+/// * `accumulated` - The accumulator's output stream.
+/// * `replay_stream` - The replay stream, which aliases `accumulated`.
+/// * `factories` - Factories for the accumulated batches.
+#[track_caller]
+pub(crate) fn register_accumulated_replay_stream<C, B>(
+    circuit: &C,
+    accumulated: &Stream<C, Option<Spine<B>>>,
+    replay_stream: &Stream<C, Option<Spine<B>>>,
+    factories: &B::Factories,
+) where
+    C: Circuit,
+    B: Batch<Time = ()>,
+{
+    register_replay_source::<C, Option<Spine<B>>, B>(
+        circuit,
+        accumulated,
+        replay_stream,
+        factories,
+    );
+}
+
+/// Registers `replay_stream` as a replay source for `stream`, which carries
+/// values of type `D` built from batches of type `B`, and attaches a disabled
+/// [`Recorder`] to `stream`.  See [`register_replay_stream`].
+///
+/// # Arguments
+///
+/// * `circuit` - The circuit that contains `stream`.
+/// * `stream` - The stream to replay.
+/// * `replay_stream` - The replay stream, which aliases `stream`.
+/// * `factories` - Factories for the batches that `stream` carries.
+#[track_caller]
+fn register_replay_source<C, D, B>(
+    circuit: &C,
+    stream: &Stream<C, D>,
+    replay_stream: &Stream<C, D>,
+    factories: &B::Factories,
+) where
+    C: Circuit,
+    D: Data,
+    B: Batch<Time = ()>,
+    Recorder<B>: SinkOperator<D>,
+{
     // We currently only support using operators in the top-level circuit
     // as replay sources.
     if TypeId::of::<()>() == TypeId::of::<C::Time>() {
@@ -1625,7 +1684,7 @@ pub(crate) fn register_replay_stream<C, B>(
                 Box::new(replay_stream.clone()),
             );
 
-            let recorder = Recorder::new(factories, Location::caller());
+            let recorder = Recorder::<B>::new(factories, Location::caller());
             let handle = recorder.handle();
             // `YIELD_OWNERSHIP` schedules the recorder before the stream's
             // owned-input consumers (the integral's appender), so that it

@@ -167,11 +167,11 @@ where
                 SqlSerdeConfig::from(flavor),
             ))),
             RecordFormat::Parquet(_) => {
-                todo!()
+                unreachable!("Parquet input goes through configure_arrow_deserializer")
             }
             #[cfg(feature = "with-avro")]
             RecordFormat::Avro => {
-                todo!()
+                unreachable!("Avro input goes through configure_avro_deserializer")
             }
             RecordFormat::Raw(column_name) => Ok(Box::new(MockDeZSetStream::<
                 RawDeserializerFromBytes,

@@ -1876,6 +1876,17 @@ export type DevTweaks = {
    */
   integral_merge_threshold_batches?: number | null
   /**
+   * How many keys a lazy input map resolves against its integral in one step.
+   *
+   * The lazy upsert operator may scan a large number of keys without
+   * producing any output. Therefore bounding its step by the number of
+   * outputs is not sufficient. This setting additionally bounds it by its
+   * input.
+   *
+   * The default is 100,000.
+   */
+  lazy_input_map_keys_per_step?: number | null
+  /**
    * Maximum batch size in records for level 0 merges.
    */
   max_level0_batch_size_records?: number | null
@@ -3537,6 +3548,14 @@ export type MultihostConfig = {
   hosts: number
 }
 
+/**
+ * A header attached to every message published by `nats_output`.
+ */
+export type NatsHeader = {
+  key: string
+  value: string
+}
+
 export type NatsInputConfig = {
   connection_config: ConnectOptions
   consumer_config: ConsumerConfig
@@ -3551,6 +3570,51 @@ export type NatsInputConfig = {
    */
   retry_interval_secs?: number
   stream_name: string
+}
+
+/**
+ * How `nats_output` chooses the `Nats-Msg-Id` header of each message.
+ */
+export type NatsMessageId = 'content_hash' | 'none'
+
+/**
+ * Configuration for writing data to a NATS subject with `nats_output`.
+ *
+ * The connector publishes to JetStream: each message is published with an
+ * acknowledgment request and the publish is retried until the server
+ * acknowledges it or the pipeline shuts down, so data is not lost to a
+ * server that is momentarily unavailable. The subject must be bound to a
+ * JetStream stream; publishing to a subject with no stream raises
+ * "no responders" and the publish fails.
+ */
+export type NatsOutputConfig = {
+  connection_config: ConnectOptions
+  /**
+   * Headers to add to every message published by this connector, as
+   * key/value pairs. Values are UTF-8 strings.
+   */
+  headers?: Array<NatsHeader>
+  /**
+   * Override for the maximum message size in bytes the connector offers to
+   * the encoder. When unset, the connector discovers the limit at connect
+   * time: the bound stream's `max_message_size` when the stream sets one,
+   * else the server's max payload. The encoder splits output records across
+   * messages by this limit; a record larger than the limit fails the
+   * pipeline with an error naming the record rather than reaching the
+   * server.
+   */
+  max_message_size?: number | null
+  message_id?: NatsMessageId
+  /**
+   * How long to wait for the server's publish acknowledgment before
+   * retrying the publish. Must be at least 1.
+   */
+  publish_timeout_secs?: number
+  /**
+   * NATS subject to publish to (e.g., "orders.created"). The subject
+   * must be bound to a JetStream stream on the target server.
+   */
+  subject: string
 }
 
 /**
@@ -5282,6 +5346,14 @@ export type ResourceConfig = {
    * autoscaling.
    */
   storage_mb_min?: number | null
+  /**
+   * Kubernetes volume attributes class to use for the storage of an
+   * instance of this pipeline. The class sets mutable storage parameters
+   * such as IOPS and throughput. Requires Kubernetes 1.34 or later (or
+   * the `VolumeAttributesClass` feature gate) and CSI driver support.
+   * A change takes effect on the next start, also for existing storage.
+   */
+  volume_attributes_class?: string | null
 }
 
 export type ResourcesDesiredStatus = 'Stopped' | 'Provisioned'
@@ -6662,6 +6734,10 @@ export type TransportConfig =
   | {
       config: NatsInputConfig
       name: 'nats_input'
+    }
+  | {
+      config: NatsOutputConfig
+      name: 'nats_output'
     }
   | {
       config: KafkaInputConfig

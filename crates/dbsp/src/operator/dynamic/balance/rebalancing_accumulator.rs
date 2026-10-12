@@ -149,11 +149,12 @@ where
     }
 
     fn clock_start(&mut self, _scope: Scope) {
-        debug_assert!(self.0.borrow().state.is_empty());
+        // The state holds no batches at all, not merely batches that cancel.
+        debug_assert!(self.0.borrow().state.len_upper_bound() == 0);
     }
 
     fn clock_end(&mut self, _scope: Scope) {
-        debug_assert!(self.0.borrow().state.is_empty());
+        debug_assert!(self.0.borrow().state.len_upper_bound() == 0);
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -174,8 +175,8 @@ where
         // of every transaction (see `eval`), so it is empty between
         // transactions.  Cutover happens between transactions, so there is
         // nothing to move -- the integral node carries the transferred state.
-        debug_assert!(self.0.borrow().state.is_empty());
-        debug_assert!(other.0.borrow().state.is_empty());
+        debug_assert!(self.0.borrow().state.len_upper_bound() == 0);
+        debug_assert!(other.0.borrow().state.len_upper_bound() == 0);
         Ok(())
     }
 
@@ -198,7 +199,7 @@ where
     async fn eval(&mut self, batch: &B) -> Option<Spine<B>> {
         let mut inner = self.0.borrow_mut();
 
-        let len = batch.len();
+        let len = batch.len_upper_bound();
 
         if len > 0 {
             inner.input_batch_stats.add_batch(len);
@@ -212,7 +213,7 @@ where
                 Spine::<B>::new(&inner.factories, inner.name.get(), TraceRole::Accumulator);
             std::mem::swap(&mut inner.state, &mut spine);
 
-            inner.output_batch_stats.add_batch(spine.len());
+            inner.output_batch_stats.add_batch(spine.len_upper_bound());
             Some(spine)
         } else {
             None
@@ -233,7 +234,7 @@ where
     async fn eval_owned(&mut self, batch: B) -> Option<Spine<B>> {
         let mut inner = self.0.borrow_mut();
 
-        let len = batch.len();
+        let len = batch.len_upper_bound();
 
         if len > 0 {
             inner.input_batch_stats.add_batch(len);
@@ -247,7 +248,7 @@ where
                 Spine::<B>::new(&inner.factories, inner.name.get(), TraceRole::Accumulator);
             std::mem::swap(&mut inner.state, &mut spine);
 
-            inner.output_batch_stats.add_batch(spine.len());
+            inner.output_batch_stats.add_batch(spine.len_upper_bound());
             Some(spine)
         } else {
             None

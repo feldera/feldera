@@ -14,6 +14,8 @@ class Resources:
     :param memory_mb_min: The minimum memory in Megabytes to reserve for an instance of the pipeline.
     :param storage_class: The storage class to use for the pipeline. The class determines storage performance such
         as IOPS and throughput.
+    :param volume_attributes_class: The Kubernetes volume attributes class to use for the pipeline storage. The class
+        sets mutable storage parameters such as IOPS and throughput.
     :param storage_mb_max: The  storage in Megabytes to reserve for an instance of the pipeline.
     """
 
@@ -25,6 +27,7 @@ class Resources:
         memory_mb_max: Optional[int] = None,
         memory_mb_min: Optional[int] = None,
         storage_class: Optional[str] = None,
+        volume_attributes_class: Optional[str] = None,
         storage_mb_max: Optional[int] = None,
     ):
         config = config or {}
@@ -34,6 +37,7 @@ class Resources:
         self.memory_mb_max = memory_mb_max
         self.memory_mb_min = memory_mb_min
         self.storage_class = storage_class
+        self.volume_attributes_class = volume_attributes_class
         self.storage_mb_max = storage_mb_max
 
         self.__dict__.update(config)

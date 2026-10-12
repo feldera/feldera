@@ -67,6 +67,18 @@ and some programs need less than 2x while others need more than 4x.
 storage, so size it generously up front. [Storage can be expanded out of band](/operations/guide/#expand-existing-pipeline-storage) but will result in a mismatch between the volume size and the reported `storage_mb_max`. `storage_class` determines IOPS and throughput; backfill is
 frequently storage-bound. Use a volume with [fast IO and throughput](/get-started/enterprise/helm-guide/#persistent-volume-sizing) when performing a large backfill.
 
+`volume_attributes_class` names a Kubernetes
+[VolumeAttributesClass](https://kubernetes.io/docs/concepts/storage/volume-attributes-classes/)
+that sets IOPS and throughput for the volume. It requires Kubernetes 1.34 or
+later (or the `VolumeAttributesClass` feature gate) and a CSI driver that
+supports it, such as AWS EBS. The class must exist before the pipeline starts,
+otherwise its storage stays pending. Unlike `storage_class`, it can be edited
+while a stopped pipeline holds storage: the next start applies the new class to
+the existing volume. Kubernetes cannot remove a class from a volume, so removing
+the setting keeps the current class. Some CSI drivers limit how often a volume
+can change; on AWS EBS, a class change and a storage expansion share a limit of
+one change every 6 hours.
+
 ## Declare intermediate views `LOCAL`
 
 Declare every view `LOCAL` unless it is an output of the pipeline:

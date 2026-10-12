@@ -98,6 +98,7 @@ playwright/.cache/
 
 # Claude Code
 /.claude/settings.local.json
+/.claude/skills/
 CLAUDE.md
 
 # Devcontainers - the lock file should be committed when more people use them

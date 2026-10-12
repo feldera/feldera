@@ -89,6 +89,16 @@ These values set cluster-wide bounds for pipeline resource requests. See [pipeli
 | `kubernetesRunner.enableStorageClassNamesSupported` | `false` | When `true`, only storage classes listed in `storageClassNamesSupported` can be used. |
 | `kubernetesRunner.storageClassNamesSupported` | `[]` | Allowlist of permitted storage class names. Only effective when `enableStorageClassNamesSupported` is `true`. |
 
+### Pipeline Volume Attributes Class
+
+Requires Kubernetes 1.34 or later and a CSI driver that supports [volume attributes classes](https://kubernetes.io/docs/concepts/storage/volume-attributes-classes/).
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `kubernetesRunner.volumeAttributesClassName` | `null` | Volume attributes class for pipeline persistent volumes that do not set `resources.volume_attributes_class`. `null` sets none. |
+| `kubernetesRunner.enableVolumeAttributesClassNamesSupported` | `false` | When `true`, only volume attributes classes listed in `volumeAttributesClassNamesSupported` can be used. |
+| `kubernetesRunner.volumeAttributesClassNamesSupported` | `[]` | Allowlist of permitted volume attributes class names. Only effective when `enableVolumeAttributesClassNamesSupported` is `true`. |
+
 ### Connector Kubernetes Secrets
 
 Controls which Kubernetes secrets can be mounted in connectors via [secret references](/connectors/secret-references).

@@ -199,6 +199,10 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    fn is_empty(&self) -> bool {
+        // `len_upper_bound` is exact for both representations of this batch type.
+        self.len_upper_bound() == 0
+    }
     type Factories = FallbackWSetFactories<K, R>;
     type Key = K;
     type Val = DynUnit;
@@ -250,15 +254,15 @@ where
     }
 
     #[inline]
-    fn key_count(&self) -> usize {
+    fn key_count_upper_bound(&self) -> usize {
         match &self.inner {
-            Inner::File(file) => file.key_count(),
-            Inner::Vec(vec) => vec.key_count(),
+            Inner::File(file) => file.key_count_upper_bound(),
+            Inner::Vec(vec) => vec.key_count_upper_bound(),
         }
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    fn len_upper_bound(&self) -> usize {
         match &self.inner {
             Inner::File(file) => file.len(),
             Inner::Vec(vec) => vec.len(),
@@ -353,8 +357,11 @@ where
     fn persisted(&self) -> Option<Self> {
         match &self.inner {
             Inner::Vec(vec) => {
-                let mut file =
-                    FileWSetBuilder::with_capacity(&self.factories, self.key_count(), self.len());
+                let mut file = FileWSetBuilder::with_capacity(
+                    &self.factories,
+                    self.key_count_upper_bound(),
+                    self.len_upper_bound(),
+                );
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
                     inner: Inner::File(file.done()),
@@ -520,7 +527,11 @@ where
         B: Batch<Key = K, Val = DynUnit, Time = (), R = R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
+        let key_capacity = batches
+            .clone()
+            .into_iter()
+            .map(|b| b.key_count_upper_bound())
+            .sum();
         Self {
             factories: factories.clone(),
             inner: match pick_merge_destination(batches.clone(), location) {

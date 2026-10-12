@@ -1114,7 +1114,8 @@ where
 {
     let factories = OrdZSetFactories::new::<D, (), ZWeight>();
 
-    let mut builder = OrdWSetBuilder::with_capacity(&factories, data.len(), data.len());
+    let mut builder =
+        OrdWSetBuilder::with_capacity(&factories, data.len_upper_bound(), data.len_upper_bound());
 
     let mut cursor = data.cursor();
     while cursor.key_valid() {
@@ -1144,8 +1145,11 @@ where
     F: Fn((&K, &D), &T) -> bool,
 {
     let factories = OrdIndexedZSetFactories::new::<K, D, ZWeight>();
-    let mut builder =
-        OrdIndexedWSetBuilder::with_capacity(&factories, data.key_count(), data.len());
+    let mut builder = OrdIndexedWSetBuilder::with_capacity(
+        &factories,
+        data.key_count_upper_bound(),
+        data.len_upper_bound(),
+    );
 
     let mut cursor = data.cursor();
     while cursor.key_valid() {
