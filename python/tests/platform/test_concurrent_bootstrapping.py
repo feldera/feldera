@@ -145,6 +145,90 @@ def test_concurrent_bootstrap_new_view(pipeline_name):
     pipeline.stop(force=True)
 
 
+# With `FELDERA_LAZY_UPSERT` on, a table with a primary key and no `LATENESS`
+# column resolves its upserts when a transaction commits.  Its integral is the
+# only copy of its contents, so a bootstrap replays the integral: into the
+# table's changes, for the new view, and back into the integral itself.
+LAZY_BASE_SQL = """SET FELDERA_LAZY_UPSERT = ON;
+CREATE TABLE t1(id int not null primary key, x int);
+CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
+"""
+LAZY_ADD_VIEW_SQL = (
+    LAZY_BASE_SQL + "CREATE MATERIALIZED VIEW v2 AS SELECT SUM(x) AS s FROM t1;\n"
+)
+
+
+def _insert_rows(pipeline, table: str, rows) -> None:
+    """Insert `rows`, tuples of column values, into `table` and wait for them to land."""
+    values = ",".join(f"({', '.join(str(v) for v in row)})" for row in rows)
+    pipeline.execute(f"INSERT INTO {table} VALUES {values};")
+    pipeline.wait_for_idle()
+
+
+def _check_lazy_table_new_view(pipeline_name: str, concurrent: bool) -> None:
+    """
+    Add a view over a lazy table and bootstrap it, concurrently or not.  The new
+    view must reflect the rows that existed before the bootstrap.  The bootstrap
+    must also restore the table: an overwrite and a delete afterwards retract
+    rows that the table held before it.
+    """
+    pipeline = _create(pipeline_name, LAZY_BASE_SQL)
+    pipeline.start()
+    _insert_rows(pipeline, "t1", ((id, id) for id in range(1, PRELOAD_ROWS + 1)))
+    assert _scalar(pipeline, "SELECT c FROM v1;", "c") == PRELOAD_ROWS
+    pipeline.checkpoint(wait=True)
+    pipeline.stop(force=True)
+    pipeline.wait_for_status(PipelineStatus.STOPPED, timeout=120)
+
+    pipeline.modify(sql=LAZY_ADD_VIEW_SQL)
+    pipeline.start(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        concurrent_bootstrap=concurrent,
+        timeout_s=600,
+    )
+    pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=600)
+
+    # New view backfilled over the pre-existing rows; old view intact.
+    assert _scalar(pipeline, "SELECT s FROM v2;", "s") == _sum_to(PRELOAD_ROWS)
+    assert _scalar(pipeline, "SELECT c FROM v1;", "c") == PRELOAD_ROWS
+
+    # Overwrite x with 0 in the first POSTLOAD_ROWS rows and delete the last
+    # row.  A table whose contents the bootstrap lost would not retract the old
+    # rows: the count would grow and the sum would keep their old values.
+    _insert_rows(pipeline, "t1", ((id, 0) for id in range(1, POSTLOAD_ROWS + 1)))
+    pipeline.input_json(
+        "t1",
+        [{"delete": {"id": PRELOAD_ROWS, "x": PRELOAD_ROWS}}],
+        update_format="insert_delete",
+    )
+    pipeline.wait_for_idle()
+    assert _scalar(pipeline, "SELECT c FROM v1;", "c") == PRELOAD_ROWS - 1
+    assert _scalar(pipeline, "SELECT s FROM v2;", "s") == _sum_to(
+        PRELOAD_ROWS - 1
+    ) - _sum_to(POSTLOAD_ROWS)
+
+    pipeline.stop(force=True)
+
+
+@enterprise_only
+@gen_pipeline_name
+def test_concurrent_bootstrap_lazy_table_new_view(pipeline_name):
+    """
+    Add a new view over a lazy table and bootstrap it concurrently.
+    """
+    _check_lazy_table_new_view(pipeline_name, concurrent=True)
+
+
+@enterprise_only
+@gen_pipeline_name
+def test_bootstrap_lazy_table_new_view(pipeline_name):
+    """
+    Add a new view over a lazy table and bootstrap it with the pipeline stopped,
+    which a lazy table allows because it is always materialized.
+    """
+    _check_lazy_table_new_view(pipeline_name, concurrent=False)
+
+
 # Modifies the existing view's definition (and schema), so it must be recomputed
 # over the pre-existing rows during the bootstrap.
 MODIFY_VIEW_SQL = """CREATE TABLE t1(x int) WITH ('materialized' = 'true');
