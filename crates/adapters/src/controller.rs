@@ -7054,8 +7054,8 @@ struct ConnectorTransactionPhase {
     phase: TransactionPhase,
     label: Option<String>,
 
-    /// True if every host of a distributed connector requests this
-    /// transaction (see [TransactionCoordination::all_hosts]).
+    /// True if the transaction must contain the input of every host of this
+    /// distributed connector (see [TransactionCoordination::all_hosts]).
     all_hosts: bool,
 }
 
@@ -7198,9 +7198,9 @@ pub struct TransactionInfo {
     /// This field is modified by each transaction initiator: the REST API and connectors.
     initiators: TransactionInitiators,
 
-    /// In a multihost pipeline, the connectors that made a request that every
-    /// host makes, and withdrew it, in the current transaction (see
-    /// [TransactionCoordination::all_hosts_done]).
+    /// In a multihost pipeline, the connectors that need every host in the
+    /// transaction, and that this host has finished in the current transaction
+    /// (see [TransactionCoordination::all_hosts_done]).
     all_hosts_done: HashSet<String>,
 
     /// Actual pipeline state, set by the circuit thread.
@@ -9360,8 +9360,8 @@ impl ControllerInner {
     }
 
     /// Starts a transaction, or joins the one that is open, for connector
-    /// `endpoint_name`.  `all_hosts` is true if every host of a distributed
-    /// connector requests the transaction (see
+    /// `endpoint_name`.  `all_hosts` is true if the transaction must contain
+    /// the input of every host of this distributed connector (see
     /// [TransactionCoordination::all_hosts]).
     pub fn start_transaction_from_connector(
         &self,
