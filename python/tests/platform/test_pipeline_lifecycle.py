@@ -867,7 +867,8 @@ def test_runtime_config_edit_restricted_enterprise(pipeline_name):
             }
         },
         lambda r: r["fault_tolerance"],
-        {"model": "exactly_once", "checkpoint_interval": "60s"},
+        # The API returns durations in normalized form.
+        {"model": "exactly_once", "checkpoint_interval": "1m"},
     )
 
 
