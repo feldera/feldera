@@ -1950,7 +1950,10 @@ impl DeltaTableInputEndpointInner {
     }
 
     /// For a distributed connector that reads its snapshot in a transaction,
-    /// requests the transaction during initialization, before any host reads.
+    /// waits until the connector runs, through `receiver`, and then requests
+    /// the transaction, before this host reads.  A paused connector does not
+    /// request it, because the transaction would stay open, holding back
+    /// output and checkpoints, until the connector reads its part.
     ///
     /// For testing only, setting [PER_HOST_SNAPSHOT_TRANSACTIONS_ENV] in the
     /// environment skips this, so that each host requests an ordinary
@@ -1963,7 +1966,7 @@ impl DeltaTableInputEndpointInner {
     /// committed its part of the snapshot.  The snapshot query reuses the label (see
     /// [`Self::snapshot_transaction_label`]), and the snapshot's final queue
     /// entry commits the transaction as usual.
-    fn start_distributed_snapshot_transaction(&self) {
+    async fn start_distributed_snapshot_transaction(&self, receiver: &mut Receiver<PipelineState>) {
         if self.distributed.is_none()
             || std::env::var_os(PER_HOST_SNAPSHOT_TRANSACTIONS_ENV).is_some()
             || !self.config.snapshot()
@@ -1971,6 +1974,7 @@ impl DeltaTableInputEndpointInner {
         {
             return;
         }
+        wait_running(receiver).await;
         let Some(label) = self.allocate_snapshot_transaction_label() else {
             return;
         };
@@ -2561,12 +2565,13 @@ impl DeltaTableInputEndpointInner {
             return;
         }
 
-        self.start_distributed_snapshot_transaction();
-
         // Code before this point is part of endpoint initialization.
         // After this point, the thread should continue running until it receives a
         // shutdown command from the controller.
         let _ = init_status_sender.send(Ok(())).await;
+
+        self.start_distributed_snapshot_transaction(&mut receiver)
+            .await;
 
         // Wait for the pipeline to start before reading.
         wait_running(&mut receiver).await;
@@ -6885,6 +6890,7 @@ mod distributed_snapshot_tests {
     use std::sync::Arc;
 
     use super::{DeltaResumeInfo, DeltaTableInputEndpointInner, validate_distributed};
+    use crate::PipelineState;
     use crate::integrated::DistributedInput;
     use crate::test::MockInputConsumer;
     use arrow::array::{Array, Int64Array, RecordBatch, StringArray};
@@ -6898,6 +6904,9 @@ mod distributed_snapshot_tests {
     use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
     use feldera_types::transport::delta_table::DeltaTableReaderConfig;
     use serde_json::json;
+    use std::time::Duration;
+    use tokio::sync::watch::channel;
+    use tokio::time::timeout;
 
     /// Writes a table partitioned by `part`, whose rows have IDs `0..n_rows`
     /// and `part` equal to `p{id % 3}`, in `n_writes` appends, so that the
@@ -7021,10 +7030,11 @@ mod distributed_snapshot_tests {
     }
 
     /// A distributed connector that reads its snapshot in a transaction
-    /// requests the transaction at initialization, and the snapshot query
-    /// reuses its label.  Other connectors request it only when they read.
-    #[test]
-    fn distributed_snapshot_transaction_starts_early() {
+    /// requests the transaction once it runs, before it reads, and the
+    /// snapshot query reuses its label.  Other connectors request it only when
+    /// they read.
+    #[tokio::test]
+    async fn distributed_snapshot_transaction_starts_early() {
         let endpoint = |transaction_mode, shard| {
             endpoint_with_config(
                 json!({"uri": "/tmp/t", "mode": "snapshot", "transaction_mode": transaction_mode}),
@@ -7040,7 +7050,21 @@ mod distributed_snapshot_tests {
             None,
             consumer.clone(),
         );
-        distributed.start_distributed_snapshot_transaction();
+
+        // A paused connector does not request the transaction.
+        let (sender, mut receiver) = channel(PipelineState::Paused);
+        let request = distributed.start_distributed_snapshot_transaction(&mut receiver);
+        let mut request = std::pin::pin!(request);
+        assert!(
+            timeout(Duration::from_millis(100), request.as_mut())
+                .await
+                .is_err()
+        );
+        assert_eq!(distributed.queue.len(), 0);
+
+        // Once it runs, it does.
+        sender.send_replace(PipelineState::Running);
+        request.await;
         assert_eq!(distributed.queue.len(), 1);
         // The request is one that every host makes.
         distributed.queue.flush_with_aux();
@@ -7055,7 +7079,10 @@ mod distributed_snapshot_tests {
 
         for (transaction_mode, shard) in [("none", Some(shard(2))), ("snapshot", None)] {
             let endpoint = endpoint(transaction_mode, shard);
-            endpoint.start_distributed_snapshot_transaction();
+            let (_sender, mut receiver) = channel(PipelineState::Running);
+            endpoint
+                .start_distributed_snapshot_transaction(&mut receiver)
+                .await;
             assert_eq!(endpoint.queue.len(), 0, "{transaction_mode} {shard:?}");
         }
     }
