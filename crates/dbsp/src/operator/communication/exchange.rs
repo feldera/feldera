@@ -2478,6 +2478,7 @@ fn ping_interval() -> Duration {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use crossbeam::channel::{Select, unbounded};
     use feldera_storage::tokio::TOKIO;
     use feldera_types::config::DevTweaks;
     use itertools::Itertools;
@@ -2486,7 +2487,7 @@ pub(crate) mod tests {
     use crate::{
         Circuit, RootCircuit,
         circuit::{
-            CircuitConfig, Layout, Runtime,
+            CircuitConfig, Layout, Runtime, RuntimeHandle,
             runtime::{WorkerLocation, WorkerLocations},
             schedule::{DynamicScheduler, Scheduler},
         },
@@ -2570,7 +2571,7 @@ pub(crate) mod tests {
                 let hruntime = Runtime::run(workers, move |_parker| circuit())
                     .expect("failed to start runtime");
 
-                hruntime.join().unwrap();
+                join_runtimes(vec![hruntime]);
             }
             _ => {
                 assert!(workers >= hosts);
@@ -2614,12 +2615,67 @@ pub(crate) mod tests {
                     );
                 }
 
-                // Wait for the runtimes to finish.
-                for runtime in runtimes {
-                    runtime.join().unwrap();
-                }
+                join_runtimes(runtimes);
             }
         }
+    }
+
+    /// Waits for all of `runtimes` to finish.
+    ///
+    /// Panics as soon as any worker panics.  Waiting for the other workers
+    /// first could hang the test, because they can wait forever for data
+    /// from the worker that panicked.  Those workers are left behind.
+    fn join_runtimes(runtimes: Vec<RuntimeHandle>) {
+        let panics = runtimes
+            .iter()
+            .map(|runtime| runtime.panic_receiver())
+            .collect_vec();
+
+        // Dropping a runtime also disconnects its panic receiver, so keep the
+        // runtimes alive until we are done.
+        let _keep_alive = runtimes
+            .iter()
+            .map(|runtime| runtime.runtime().clone())
+            .collect_vec();
+
+        let (done_sender, done_receiver) = unbounded();
+        for runtime in runtimes {
+            let done_sender = done_sender.clone();
+            std::thread::spawn(move || {
+                let _ = done_sender.send(runtime.join().is_ok());
+            });
+        }
+
+        let mut select = Select::new();
+        for panic in &panics {
+            select.recv(panic);
+        }
+        let done_index = select.recv(&done_receiver);
+        for _ in 0..panics.len() {
+            let operation = select.select();
+            let index = operation.index();
+            if index == done_index {
+                assert!(operation.recv(&done_receiver).unwrap(), "worker panicked");
+            } else {
+                let _ = operation.recv(&panics[index]);
+                panic!("worker on host {index} panicked");
+            }
+        }
+    }
+
+    // A worker panic fails the test, even though the other workers wait
+    // forever for data from the worker that panicked.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    #[should_panic(expected = "panicked")]
+    fn test_circuit_fails_on_worker_panic() {
+        init_test_logger();
+        test_circuit(4, 2, || {
+            if Runtime::worker_index() == 0 {
+                panic!("worker 0 fails before its first exchange");
+            }
+            circuit();
+        });
     }
 
     // Test an exchange object with multiple concurrent senders/receivers on a single host.
