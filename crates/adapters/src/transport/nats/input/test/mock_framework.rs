@@ -135,6 +135,14 @@ pub(super) enum NatsMockAction {
     /// connector cannot have deleted more consumers than it created, and
     /// `created - deleted` equals the consumers left on the stream.
     AssertConsumerCountersMatchServer,
+    /// Assert that the server has exactly `n` consumers on the stream now,
+    /// without waiting.
+    AssertServerConsumerCount(usize),
+    /// Make the proxy drop the replies to the next `n` stream info
+    /// requests, so they time out.
+    DropStreamInfoReplies(usize),
+    /// Assert that the endpoint has not reported a fatal error.
+    AssertNoFatalError,
 }
 
 /// Internal state held by the test runner.
@@ -798,13 +806,42 @@ impl NatsMockRunner {
             }
 
             NatsMockAction::DisconnectWithin(duration) => {
-                let start = Instant::now();
-                self.endpoint().disconnect();
-                self.wait_for_disconnect()?;
-                let elapsed = start.elapsed();
+                let endpoint = self.endpoint();
+                endpoint.disconnect();
                 assert!(
-                    elapsed <= *duration,
-                    "disconnect took {elapsed:?}, more than {duration:?}"
+                    wait(|| endpoint.is_closed(), duration.as_millis()).is_ok(),
+                    "disconnect took more than {duration:?}"
+                );
+            }
+
+            NatsMockAction::AssertServerConsumerCount(n) => {
+                let nats_url = self.nats_url().to_string();
+                let consumers = self
+                    .rt
+                    .block_on(util::list_consumers(&nats_url, STREAM_NAME))?;
+                assert_eq!(
+                    consumers.len(),
+                    *n,
+                    "expected {n} consumers on stream '{STREAM_NAME}', found {:?}",
+                    consumers
+                        .iter()
+                        .map(|info| info.name.as_str())
+                        .collect::<Vec<_>>()
+                );
+            }
+
+            NatsMockAction::DropStreamInfoReplies(n) => {
+                self.proxy
+                    .as_ref()
+                    .expect("StartProxy must be called before this action")
+                    .drop_stream_info_replies(*n);
+            }
+
+            NatsMockAction::AssertNoFatalError => {
+                assert!(
+                    !self.got_fatal.load(Ordering::Acquire),
+                    "unexpected fatal endpoint error: {:?}",
+                    self.mock_input_consumer().state().endpoint_error
                 );
             }
 

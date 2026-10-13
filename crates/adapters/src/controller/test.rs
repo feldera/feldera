@@ -11,7 +11,7 @@ use crate::{
     },
     transport::{
         InputQueue, InputQueueEntry, InputReader, InputReaderCommand,
-        input_transport_config_to_endpoint, set_barrier,
+        input_transport_config_to_endpoint, set_barrier, set_failure,
     },
 };
 use anyhow::anyhow;
@@ -4438,6 +4438,16 @@ fn input_batch_wakes_the_circuit_thread() {
 }
 
 fn start_controller(storage_dir: &Path, barriers: &[usize]) -> Controller {
+    start_controller_with_error_cb(storage_dir, barriers, Box::new(|e, _| panic!("error: {e}")))
+}
+
+/// Like [`start_controller`], with `error_cb` as the controller's error
+/// callback.
+fn start_controller_with_error_cb(
+    storage_dir: &Path,
+    barriers: &[usize],
+    error_cb: Box<dyn Fn(Arc<crate::controller::ControllerError>, Option<String>) + Send + Sync>,
+) -> Controller {
     let n = barriers.len();
     for (i, barrier) in barriers.iter().copied().enumerate() {
         set_barrier(input_path(storage_dir, i).to_str().unwrap(), barrier);
@@ -4509,12 +4519,127 @@ fn start_controller(storage_dir: &Path, barriers: &[usize]) -> Controller {
             ))
         },
         &config,
-        Box::new(|e, _| panic!("error: {e}")),
+        error_cb,
     )
     .unwrap();
 
     controller.start();
     controller
+}
+
+/// An input endpoint that fails while it holds a barrier must not block
+/// suspend forever.
+///
+/// The controller keeps a failed endpoint in the pipeline status. Its barrier
+/// flag is set by the last step it reported, and a failed endpoint never
+/// reports a step again, so the flag never clears and every suspend or
+/// checkpoint waits for it.
+#[test]
+fn failed_input_at_barrier_does_not_block_suspend() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input = input_path(&storage_dir, 0);
+    let input_file = File::create(&input).unwrap();
+    let mut writer = CsvWriterBuilder::new()
+        .has_headers(false)
+        .from_writer(&input_file);
+    for id in 0..1000 {
+        writer.serialize(TestStruct::for_id(id)).unwrap();
+    }
+    writer.flush().unwrap();
+
+    // The barrier lies past the end of the file, so the endpoint holds it.
+    let controller = start_controller_with_error_cb(
+        &storage_dir,
+        &[2000],
+        Box::new(|e, _| tprintln!("controller error: {e}")),
+    );
+    wait_for_records(&controller, &[1000]);
+    assert!(
+        controller
+            .status()
+            .input_status()
+            .get(&0)
+            .unwrap()
+            .is_barrier()
+    );
+
+    set_failure(input.to_str().unwrap());
+    wait(
+        || {
+            controller
+                .status()
+                .input_status()
+                .get(&0)
+                .is_none_or(|status| status.fatal_error.lock().unwrap().is_some())
+        },
+        DEFAULT_TIMEOUT_MS,
+    )
+    .expect("the input endpoint did not fail");
+
+    // The controller sees that the endpoint stopped during a step. This
+    // pipeline has no clock and no new input, so request steps.
+    for _ in 0..10 {
+        controller.request_step();
+        sleep(Duration::from_millis(200));
+    }
+
+    let (sender, receiver) = mpsc::channel();
+    controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
+    let result = receiver.recv_timeout(Duration::from_secs(30));
+    assert!(
+        result.is_ok(),
+        "suspend did not complete within 30s of the input endpoint failing at a barrier"
+    );
+
+    controller.stop().unwrap();
+}
+
+/// A checkpoint taken after an input endpoint was removed while it held a
+/// barrier must not crash the pipeline.
+///
+/// After each step the controller now starts from the previous step's resume
+/// entries, so a removed endpoint keeps its last entry. A barrier entry has no
+/// seek position, and writing the next checkpoint panics on it.
+#[test]
+fn checkpoint_after_removing_input_at_barrier() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_file = File::create(input_path(&storage_dir, 0)).unwrap();
+    let mut writer = CsvWriterBuilder::new()
+        .has_headers(false)
+        .from_writer(&input_file);
+    for id in 0..1000 {
+        writer.serialize(TestStruct::for_id(id)).unwrap();
+    }
+    writer.flush().unwrap();
+
+    // The barrier lies past the end of the file, so the endpoint holds it.
+    let controller = start_controller(&storage_dir, &[2000]);
+    wait_for_records(&controller, &[1000]);
+    assert!(
+        controller
+            .status()
+            .input_status()
+            .get(&0)
+            .unwrap()
+            .is_barrier()
+    );
+
+    controller.disconnect_input(&0);
+    for _ in 0..10 {
+        controller.request_step();
+        sleep(Duration::from_millis(200));
+    }
+
+    controller
+        .checkpoint()
+        .expect("checkpoint after removing the input endpoint failed");
+    controller.stop().unwrap();
 }
 
 /// Test suspend when barriers are involved, with one input
