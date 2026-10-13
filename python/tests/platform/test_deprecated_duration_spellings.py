@@ -73,7 +73,7 @@ class TestDeprecatedDurationSpellings(PipelineTestCase):
         assert pipeline.status() == PipelineStatus.RUNNING
         _now_from(pipeline)
 
-        deployed = pipeline.deployment_config()
+        deployed = pipeline.runtime_config().to_dict()
         for name, expected in EQUIVALENT_CURRENT_CONFIG.items():
             assert deployed.get(name) == expected, (
                 f"the pipeline was deployed with `{name}` = {deployed.get(name)!r}, "
