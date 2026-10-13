@@ -7658,8 +7658,10 @@ impl Drop for CircuitHandle {
 
         // Prevent nested panic when `drop` is invoked while panicking
         // and `clock_end` triggers another panic due to violated invariants
-        // since the original panic interrupted normal execution.
-        if !panicking() {
+        // since the original panic interrupted normal execution.  A circuit
+        // dropped in the middle of a transaction violates them too: for
+        // example, a streaming operator can be in the middle of an evaluation.
+        if !panicking() && self.executor.is_commit_complete() {
             self.circuit.clock_end(0)
         }
 

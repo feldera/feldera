@@ -1070,4 +1070,38 @@ mod tests {
             assert_eq!(wrapper.eval_ref_and_owned(&1, 2).await, (false, true));
         });
     }
+
+    /// A circuit dropped while a streaming operator is in the middle of an
+    /// evaluation must shut down cleanly.  The evaluation's stream holds a
+    /// reference to the operator, which `clock_end` must not trip over.
+    #[test]
+    fn kill_during_streaming_commit() {
+        use crate::{Runtime, ZWeight, circuit::CircuitConfig, utils::Tup2};
+
+        let (mut dbsp, input) = Runtime::init_circuit(
+            CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+            |circuit| {
+                let (stream, handle) = circuit.add_input_zset::<u64>();
+                circuit
+                    .accumulate_concat_zsets(&[(stream.clone(), true), (stream, true)])
+                    .accumulate_output();
+                Ok(handle)
+            },
+        )
+        .unwrap();
+
+        dbsp.start_transaction().unwrap();
+        let mut records = (0..100u64)
+            .map(|k| Tup2(k, 1 as ZWeight))
+            .collect::<Vec<_>>();
+        input.append(&mut records);
+        dbsp.step().unwrap();
+        dbsp.start_commit_transaction().unwrap();
+        assert!(
+            !dbsp.step().unwrap(),
+            "the commit finished in one step, so the test proved nothing"
+        );
+
+        dbsp.kill().expect("a worker panicked while shutting down");
+    }
 }
