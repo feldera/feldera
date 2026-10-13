@@ -143,6 +143,45 @@ fn test_nats_fatal_connector_keeps_cursor_across_restart() -> AnyResult<()> {
     )
 }
 
+/// Separate outages on a stream with no new messages must not add up to
+/// `retry_max_attempts`.
+///
+/// The failure count resets only when a step delivers records. On a quiet
+/// stream, each outage that the connector recovers from adds to the count,
+/// so the connector gives up after `retry_max_attempts` outages spread over
+/// any length of time, while NATS is healthy.
+#[test]
+fn test_nats_retry_max_attempts_counts_one_outage_at_a_time() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |nats_url| fast_retry_config(nats_url, json!({"retry_max_attempts": 1})),
+        &[
+            StartNats,
+            CreateStream,
+            Publish(1),
+            StartProxy(ProxyFaults::default()),
+            CreatePipeline,
+            Extend,
+            WaitForRecords(1),
+            // One failed inactivity health check: the probe and its fallback.
+            DropStreamInfoReplies(2),
+            WaitForErrorCountAtLeast {
+                count: 1,
+                timeout: Duration::from_secs(20),
+            },
+            // Recover, then stay healthy for several retry intervals.
+            Sleep(Duration::from_secs(5)),
+            DropStreamInfoReplies(2),
+            WaitForErrorCountAtLeast {
+                count: 2,
+                timeout: Duration::from_secs(20),
+            },
+            AssertNoFatalError,
+            DisconnectAllowNonFatal,
+        ],
+    )
+}
+
 /// A controller runner whose connector gives up after one failed retry.
 fn fatal_runner() -> AnyResult<NatsControllerRunner> {
     Ok(NatsControllerRunner::new()?
@@ -205,6 +244,56 @@ fn test_nats_disconnect_interrupts_replay_retry_wait() -> AnyResult<()> {
     )
 }
 
+/// A disconnect must interrupt the wait between replay retries, also when
+/// other commands arrived before it.
+///
+/// The wait buffers the first command it receives and then stops reading
+/// commands. After the wait, that command is put back and read first by the
+/// next wait, so a disconnect that arrives behind it is never read while the
+/// replay keeps failing. The controller sends a command on every step, so
+/// this is the usual order.
+#[test]
+fn test_nats_disconnect_behind_queue_interrupts_replay_retry_wait() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |nats_url| {
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": nats_url,
+                            "request_timeout_secs": 1,
+                        },
+                        "stream_name": "missing_stream",
+                        "retry_interval": "30s",
+                        "retry_max_interval": "30s",
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                            "filter_subjects": [SUBJECT_NAME],
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
+        },
+        &[
+            StartNats,
+            CreatePipeline,
+            Replay { start: 1, end: 2 },
+            Sleep(Duration::from_secs(2)),
+            QueueFor(Duration::from_millis(200)),
+            DisconnectWithin(Duration::from_secs(5)),
+        ],
+    )
+}
+
 /// Pausing a connector must not delay its next step while the server is
 /// slow to answer the consumer delete.
 ///
@@ -228,6 +317,36 @@ fn test_nats_pause_does_not_stall_next_step() -> AnyResult<()> {
             QueueCompletesWithin(Duration::from_secs(1)),
             ThawServer,
             Disconnect,
+        ],
+    )
+}
+
+/// When the connector stops, its consumer must be deleted before the
+/// connector's worker exits.
+///
+/// The delete now runs in a background task. When a pipeline stops, its
+/// process can exit as soon as the connectors have stopped, before that task
+/// runs, which leaves the consumer on the server until `inactive_threshold`
+/// removes it. The proxy makes the delete slow, so the task is still running
+/// when the worker exits.
+#[test]
+fn test_nats_disconnect_deletes_consumer_before_exit() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        basic_nats_config,
+        &[
+            StartNats,
+            CreateStream,
+            Publish(2),
+            StartProxy(ProxyFaults {
+                delay_deletes: Some(Duration::from_secs(1)),
+                ..Default::default()
+            }),
+            CreatePipeline,
+            Extend,
+            WaitForRecords(2),
+            Disconnect,
+            AssertServerConsumerCount(0),
         ],
     )
 }
