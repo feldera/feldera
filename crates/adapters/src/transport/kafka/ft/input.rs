@@ -780,6 +780,7 @@ impl KafkaFtInputReaderInner {
         // A distributed connector names its partitions in its metadata, so
         // that the coordinator can join the hosts' offsets.
         let shard_partitions = shard.map(|_| receivers.keys().copied().collect::<Vec<_>>());
+        let mut eoi = false;
 
         loop {
             let was_running = running;
@@ -809,7 +810,10 @@ impl KafkaFtInputReaderInner {
                 }
             }
 
-            if !running {
+            // After the end of input, the reader reads nothing more, even if
+            // more messages arrive, but it keeps acting on commands (see
+            // `InputReader::is_closed`).
+            if !running || eoi {
                 if !kafka_paused {
                     self.pause_partitions()
                         .map_err(|error| self.refine_error(error).1)?;
@@ -835,7 +839,7 @@ impl KafkaFtInputReaderInner {
             }
 
             let mut n_read = 0;
-            if running {
+            if running && !eoi {
                 if config.synchronize_partitions {
                     /// Returns the index(es) of the partition(s) in `receivers`
                     /// with the earliest timestamp(s), or `None` if any of the
@@ -918,10 +922,14 @@ impl KafkaFtInputReaderInner {
             }
             // A host with no partitions ends its input once it runs, so
             // that it does not hold back the connector's merged frontier.
-            if receivers.values().all(|r| r.eof()) && (running || !receivers.is_empty()) {
+            //
+            // The reader keeps running after it ends its input, because the
+            // controller removes an endpoint whose reader exits, and a
+            // distributed connector must stay on every host.
+            if !eoi && receivers.values().all(|r| r.eof()) && (running || !receivers.is_empty()) {
                 tracing::info!("reached end of all partitions (`enable.partition.eof` configured)");
                 consumer.eoi();
-                return Ok(());
+                eoi = true;
             }
 
             if n_read == 0 {

@@ -3438,7 +3438,8 @@ mod distributed {
 
     /// A host that owns no partitions reads nothing, and ends its input once
     /// it runs, so that it does not hold back the connector's merged
-    /// frontier.  This holds for every way to choose where to start reading.
+    /// frontier.  Its reader keeps running, so that the controller keeps the
+    /// endpoint.  This holds for every way to choose where to start reading.
     #[test]
     fn host_without_partitions_ends_input() {
         init_test_logger();
@@ -3467,7 +3468,98 @@ mod distributed {
             reader.extend();
             receiver.expect(vec![ConsumerCall::Eoi]);
             assert_eq!(take_flushed(&receiver), Vec::<String>::new());
+
+            // The reader neither exits nor ends its input again.
+            sleep(Duration::from_secs(2));
+            assert!(!reader.is_closed());
+            assert_eq!(*receiver.inner.calls.lock().unwrap(), vec![]);
         }
+    }
+}
+
+/// Tests for the end of input, with `enable.partition.eof`.
+mod end_of_input {
+    use super::*;
+    use rdkafka::producer::Producer;
+
+    fn produce(producer: &TestProducer, topic: &str, ids: Range<u32>) {
+        for id in ids {
+            let mut writer = CsvWriterBuilder::new()
+                .has_headers(false)
+                .from_writer(Vec::new());
+            writer.serialize(TestStruct::for_id(id)).unwrap();
+            let bytes = writer.into_inner().unwrap();
+            let record = <BaseRecord<(), [u8], ()>>::to(topic)
+                .payload(&bytes)
+                .partition(0);
+            producer.producer.send(record).unwrap();
+        }
+        producer.producer.flush(Duration::from_secs(10)).unwrap();
+    }
+
+    /// Once the reader reaches the end of every partition, it ends its input
+    /// and reads nothing more, even if more records arrive, but it keeps
+    /// running, so that the controller keeps the endpoint.
+    #[test]
+    fn reads_nothing_after_end_of_input() {
+        init_test_logger();
+        const TOPIC: &str = "end_of_input";
+        let _kafka_resources = KafkaResources::create_topics(&[(TOPIC, 1)]);
+        let producer = TestProducer::new();
+        produce(&producer, TOPIC, 0..3);
+
+        let config = serde_json::from_value(json!({
+          "name": "kafka_input",
+          "config": {
+              "topic": TOPIC,
+              "log_level": "debug",
+              "start_from": "earliest",
+              "enable.partition.eof": "true",
+          },
+        }))
+        .unwrap();
+        let endpoint =
+            input_transport_config_to_endpoint(&config, "", default_secrets_directory(), None)
+                .unwrap()
+                .unwrap();
+        let receiver = DummyInputReceiver::new();
+        let reader = endpoint
+            .open(
+                receiver.consumer(),
+                Box::new(DummyParser::new(&receiver)),
+                Relation::empty(),
+                None,
+            )
+            .unwrap();
+        reader.extend();
+        let ended = || {
+            receiver
+                .inner
+                .calls
+                .lock()
+                .unwrap()
+                .contains(&ConsumerCall::Eoi)
+        };
+        let buffered = || {
+            receiver
+                .inner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|call| match call {
+                    ConsumerCall::Buffered(amt) => amt.records,
+                    _ => 0,
+                })
+                .sum::<usize>()
+        };
+        wait(ended, 60_000).expect("timed out reaching the end of input");
+        assert_eq!(buffered(), 3);
+
+        produce(&producer, TOPIC, 3..6);
+        sleep(Duration::from_secs(3));
+        assert_eq!(buffered(), 3);
+        assert!(!reader.is_closed());
     }
 }
 
