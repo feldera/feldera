@@ -39,6 +39,12 @@ pub struct MockInputConsumerState {
     /// True if the transaction in progress is one that every host requests
     /// (see `InputConsumer::start_transaction_on_all_hosts`).
     pub transaction_on_all_hosts: bool,
+
+    /// What `InputConsumer::open_transaction` reports.  `None`, the default,
+    /// acts like a single-host pipeline.  `Some(None)` acts like a multihost
+    /// pipeline with no transaction open, so that a connector that requests
+    /// a transaction waits for it.
+    pub open_transaction: Option<Option<i64>>,
 }
 
 impl MockInputConsumerState {
@@ -51,6 +57,7 @@ impl MockInputConsumerState {
             error_cb: None,
             transaction_in_progress: false,
             transaction_on_all_hosts: false,
+            open_transaction: None,
         }
     }
 
@@ -160,6 +167,10 @@ impl InputConsumer for MockInputConsumer {
     }
 
     fn update_connector_health(&self, _health: ConnectorHealth) {}
+
+    fn open_transaction(&self) -> Option<Option<i64>> {
+        self.state().open_transaction
+    }
 
     fn completion_watcher(
         &self,
