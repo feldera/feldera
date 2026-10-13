@@ -24,6 +24,7 @@ pub(super) enum RetryState {
 pub(super) struct NatsInputMetrics {
     consumers_created: AtomicU64,
     consumers_deleted: AtomicU64,
+    consumer_delete_failures: AtomicU64,
     retries: AtomicU64,
     consecutive_failures: AtomicU64,
     retry_state: AtomicU64,
@@ -36,6 +37,14 @@ impl NatsInputMetrics {
 
     pub(super) fn consumer_deleted(&self) {
         self.consumers_deleted.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// A delete request errored or timed out. The consumer is left to expire
+    /// on its own; this only tracks how often that happens so it is
+    /// alertable instead of requiring a log search during an incident.
+    pub(super) fn consumer_delete_failed(&self) {
+        self.consumer_delete_failures
+            .fetch_add(1, Ordering::Relaxed);
     }
 
     /// Records one retry attempt and the number of consecutive failures so far.
@@ -57,6 +66,7 @@ impl NatsInputMetrics {
         NatsInputMetricsSnapshot {
             consumers_created: self.consumers_created.load(Ordering::Relaxed),
             consumers_deleted: self.consumers_deleted.load(Ordering::Relaxed),
+            consumer_delete_failures: self.consumer_delete_failures.load(Ordering::Relaxed),
             retries: self.retries.load(Ordering::Relaxed),
             consecutive_failures: self.consecutive_failures.load(Ordering::Relaxed),
             retry_state: self.retry_state.load(Ordering::Relaxed),
@@ -69,6 +79,7 @@ impl NatsInputMetrics {
 pub(super) struct NatsInputMetricsSnapshot {
     pub consumers_created: u64,
     pub consumers_deleted: u64,
+    pub consumer_delete_failures: u64,
     pub retries: u64,
     pub consecutive_failures: u64,
     pub retry_state: u64,
@@ -88,6 +99,12 @@ impl ConnectorMetrics for NatsInputMetrics {
                 "Number of JetStream consumers this connector has explicitly deleted on pause, stop, error, or replay completion.",
                 ValueType::Counter,
                 self.consumers_deleted.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "input_connector_nats_consumer_delete_failures_total",
+                "Number of consumer delete requests that errored or timed out. The consumer is left to expire on its own via inactive_threshold.",
+                ValueType::Counter,
+                self.consumer_delete_failures.load(Ordering::Relaxed) as f64,
             ),
             (
                 "input_connector_nats_retries_total",
@@ -122,12 +139,14 @@ mod tests {
         metrics.consumer_created();
         metrics.consumer_created();
         metrics.consumer_deleted();
+        metrics.consumer_delete_failed();
         metrics.set_retry_state(RetryState::Retrying);
         metrics.retry_attempt(3);
 
         let snapshot = metrics.snapshot();
         assert_eq!(snapshot.consumers_created, 2);
         assert_eq!(snapshot.consumers_deleted, 1);
+        assert_eq!(snapshot.consumer_delete_failures, 1);
         assert_eq!(snapshot.retries, 1);
         assert_eq!(snapshot.consecutive_failures, 3);
         assert_eq!(snapshot.retry_state, RetryState::Retrying as u64);
@@ -142,7 +161,7 @@ mod tests {
     fn exported_metric_names_are_prometheus_safe() {
         let metrics = NatsInputMetrics::default();
         let exported = metrics.metrics();
-        assert_eq!(exported.len(), 5);
+        assert_eq!(exported.len(), 6);
         for (name, help, value_type, _) in exported {
             assert!(
                 name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'),

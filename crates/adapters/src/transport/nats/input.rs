@@ -72,7 +72,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, debug, info, info_span, trace};
+use tracing::{Instrument, debug, info, info_span, trace, warn};
 use xxhash_rust::xxh3::Xxh3Default;
 
 type NatsConsumerConfig = nats_consumer::pull::OrderedConfig;
@@ -943,8 +943,11 @@ fn create_may_have_succeeded(kind: &ConsumerCreateStrictErrorKind) -> bool {
 /// made it abandon the consumer in the first place. Deleting explicitly keeps
 /// the server-side consumer count equal to the number of live readers.
 ///
-/// Failure is logged, not propagated: the caller is already tearing down or
-/// retrying, and the consumer will still expire eventually.
+/// Failure is logged at `warn!` and counted in
+/// `input_connector_nats_consumer_delete_failures_total`, not propagated: the
+/// caller is already tearing down or retrying, and the consumer will still
+/// expire eventually. The metric exists so a cluster that is failing deletes
+/// under load is visible without a log search.
 async fn delete_nats_consumer(
     jetstream: &jetstream::Context,
     stream_ctx: &StreamContext,
@@ -962,12 +965,14 @@ async fn delete_nats_consumer(
             debug!("Deleted consumer '{consumer_name}' on stream '{stream_name}'");
         }
         Ok(Err(error)) => {
-            debug!(
+            stream_ctx.metrics.consumer_delete_failed();
+            warn!(
                 "Failed to delete consumer '{consumer_name}' on stream '{stream_name}', it will expire on its own: {error}"
             );
         }
         Err(_) => {
-            debug!(
+            stream_ctx.metrics.consumer_delete_failed();
+            warn!(
                 "Timed out after {CONSUMER_DELETE_TIMEOUT:?} deleting consumer '{consumer_name}' on stream '{stream_name}', it will expire on its own"
             );
         }

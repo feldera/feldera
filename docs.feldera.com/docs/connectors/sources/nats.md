@@ -167,6 +167,7 @@ endpoint, in addition to the standard input connector metrics:
 |--------|------|-------------|
 | `input_connector_nats_consumers_created_total` | counter | JetStream consumers created (start, resume, replay, and every retry) |
 | `input_connector_nats_consumers_deleted_total` | counter | JetStream consumers explicitly deleted |
+| `input_connector_nats_consumer_delete_failures_total` | counter | Delete requests that errored or timed out; the consumer is left to expire on its own |
 | `input_connector_nats_retries_total` | counter | Reconnect attempts made in retry mode |
 | `input_connector_nats_consecutive_failures` | gauge | Consecutive failed attempts in the current retry episode; 0 when healthy |
 | `input_connector_nats_retry_state` | gauge | `0` healthy or paused, `1` retrying, `2` stopped after a fatal error |
