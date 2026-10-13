@@ -1,12 +1,13 @@
 <script lang="ts" module>
   import type { ConnectorMetrics } from 'common-ui/connectorMetrics'
+  import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import type { TriageResults } from 'triage-types'
   import type { GlobalMetrics } from '../../functions/globalMetrics'
   import type { LookupCoordinator } from '../../functions/lookup'
   import type { MetricsMode } from '../MetricsView.svelte'
   import type { TooltipData } from '../ProfilerTooltip.svelte'
 
-  /** Props of every analysis-panel tab (Metrics / Connectors / Logs / Config / Issues). Each tab
+  /** Props of every analysis-panel tab (Metrics / Connectors / Health / Logs / Config / Issues). Each tab
    *  uses a subset. All tabs share this type so that `TabsPanel<T>` type-checks with a single T. */
   export type AnalysisTabProps = {
     metricsMode: MetricsMode
@@ -23,6 +24,12 @@
     /** Pipeline runtime configuration shown in the Config tab. `undefined` when the bundle carried
      *  no `pipeline_config.json` */
     runtimeConfig: unknown
+    /** Pipeline monitor events from `pipeline_events.json`, shown in the Health tab. `undefined`
+     *  when the bundle has no events. */
+    pipelineEvents: PipelineMonitorEvent[] | undefined
+    /** The time when the support bundle collected the selected profile. The Health tab uses it
+     *  as the end of the observed period. */
+    collectedAt: Date | null
     /** When true, metrics flagged `advanced` in the profile metadata are shown too. */
     showAdvancedMetrics: boolean
     lookup: LookupCoordinator
