@@ -853,9 +853,18 @@ pub trait InputReader: Send + Sync {
     fn request(&self, command: InputReaderCommand);
 
     /// Returns true if the endpoint is closed, meaning that it has already
-    /// acted on all of the commands that it ever will. A closed endpoint can be
-    /// one that came to the end of its input (and is not waiting for more to
-    /// arrive) or one that encountered a fatal error and cannot continue.
+    /// acted on all of the commands that it ever will.  An endpoint closes
+    /// after [InputReaderCommand::Disconnect] or after a fatal error.
+    ///
+    /// An endpoint should not close just because it came to the end of its
+    /// input.  An endpoint that calls [InputConsumer::eoi] must keep acting on
+    /// commands until it is told to [InputReaderCommand::Disconnect].
+    /// (Otherwise, the controller removes the endpoint, so it no longer
+    /// appears in statistics, cannot be paused or started or issue completion
+    /// tokens, and is left out of checkpoints.  When the pipeline resumes from
+    /// such a checkpoint, the endpoint appears to be new, so the pipeline
+    /// waits for approval and the endpoint starts reading again from the
+    /// beginning.)
     ///
     /// An endpoint is often implemented in terms of a channel to a thread. In
     /// such a case, this can be implemented in terms of `is_closed` on the
@@ -993,6 +1002,10 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// the controller will request them in future [InputReaderCommand::Queue]
     /// messages. The endpoint must not make further calls to
     /// [InputConsumer::buffered] or [InputConsumer::parse_errors].
+    ///
+    /// The endpoint must keep acting on commands after this call, until
+    /// [InputReaderCommand::Disconnect], because the controller removes an
+    /// endpoint that closes (see [InputReader::is_closed]).
     fn eoi(&self);
 
     /// Request the controller to schedule a step even if the connector hasn't queued
