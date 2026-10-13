@@ -891,10 +891,13 @@ impl ExchangeServer {
     /// This is pure network I/O: it doesn't touch the sequence number or
     /// deliver anything, so unlike the rest of message processing, it's safe
     /// to abandon at any point (see `serve`'s use of `cancel`).
-    async fn read_message(
-        stream: &mut TcpStream,
+    async fn read_message<S>(
+        stream: &mut S,
         n: usize,
-    ) -> std::io::Result<Option<(ExchangeHeader, Vec<AlignedVec>, usize)>> {
+    ) -> std::io::Result<Option<(ExchangeHeader, Vec<AlignedVec>, usize)>>
+    where
+        S: AsyncRead + Unpin,
+    {
         let Some(header) = ExchangeHeader::read(n, stream).await? else {
             return Ok(None);
         };
@@ -927,7 +930,10 @@ impl ExchangeServer {
             let pointer = payload.as_mut_ptr() as *mut MaybeUninit<u8>;
             let mut slice = unsafe { std::slice::from_raw_parts_mut(pointer, len) };
             while !slice.is_empty() {
-                stream.read_buf(&mut slice).await?;
+                // At EOF, `read_buf` returns 0 forever.
+                if stream.read_buf(&mut slice).await? == 0 {
+                    return Err(std::io::ErrorKind::UnexpectedEof.into());
+                }
             }
             unsafe { payload.set_len(len) };
             data.push(payload);
@@ -3142,6 +3148,46 @@ pub(crate) mod tests {
             timeout(Duration::from_secs(5), waiter)
                 .await
                 .expect("a waiter handed out before the drain should still wake");
+        });
+    }
+
+    // A connection that closes in the middle of a payload is an error, not a
+    // spin that waits forever for the rest of the payload.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn read_message_fails_on_eof_in_payload() {
+        use super::{ExchangeHeader, ExchangeServer, MessageType};
+        use std::time::Duration;
+        use tokio::{io::AsyncWriteExt, time::timeout};
+
+        let _guard = FaultInjectionDisabled::new();
+        let header = ExchangeHeader {
+            exchange_id: 0,
+            sequence: 0,
+            round: 0,
+            message_type: MessageType::Streaming,
+            sender: 0,
+            payload_lens: vec![10],
+        };
+        let mut bytes = header.to_bytes();
+        bytes.extend_from_slice(&[1, 2, 3]);
+
+        TOKIO.block_on(async {
+            // Unlike a byte slice, a pipe yields to the runtime at EOF, the
+            // way a socket does, so `timeout` can catch a spin.
+            let (mut writer, mut stream) = tokio::io::duplex(bytes.len());
+            writer.write_all(&bytes).await.unwrap();
+            drop(writer);
+            let result = timeout(
+                Duration::from_secs(5),
+                ExchangeServer::read_message(&mut stream, 1),
+            )
+            .await
+            .expect("EOF in a payload should not hang");
+            assert_eq!(
+                result.err().map(|error| error.kind()),
+                Some(std::io::ErrorKind::UnexpectedEof)
+            );
         });
     }
 
