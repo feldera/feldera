@@ -1,6 +1,7 @@
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
 use crate::db::types::api_key::ApiKeyDescr;
+use crate::db::types::deployment::PipelineDeploymentConfig;
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
     ExtendedPipelineMonitorEvent, NewClusterMonitorEvent, PipelineMonitorEvent,
@@ -412,13 +413,13 @@ pub(crate) trait Storage {
         platform_version: &str,
     ) -> Result<(), DBError>;
 
-    /// Applies `patch`, a partial runtime configuration, to the deployment config of a running
-    /// pipeline, and returns the updated pipeline.
+    /// Applies `patch` to the deployment config of a running pipeline, and returns the updated
+    /// pipeline.
     async fn patch_pipeline_deployment(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-        patch: &serde_json::Value,
+        patch: &PipelineDeploymentConfig,
     ) -> Result<ExtendedPipelineDescr, DBError>;
 
     /// Updates an existing pipeline.

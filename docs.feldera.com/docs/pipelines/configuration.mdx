@@ -104,9 +104,10 @@ curl -X PATCH "http://localhost:8080/v0/pipelines/example" \
 
 - `deployment_config` cannot be combined with other fields in the same `PATCH`. `PUT` accepts it
   only unchanged, so a pipeline read with `GET` can be written back.
-
-- Only `cpu_cores_min`, `cpu_cores_max`, `memory_mb_min` and `memory_mb_max` can be changed, and only if they are set.
-- Each request must stay equal to, or different from, its limit, so the pod keeps its Kubernetes QoS class.
+- Only `cpu_cores_min`, `cpu_cores_max`, `memory_mb_min` and `memory_mb_max` can be changed.
+- Kubernetes cannot change the QoS class of a running pod. A change that it cannot apply while the
+  pipeline runs, such as making a request equal to its limit, is written to the pipeline log, and
+  the next start uses it.
 - Only single-host pipelines can be resized.
 - The runtime configuration does not change. The resize lasts across restarts until storage is
   cleared or CPU or memory is changed in the runtime configuration.

@@ -10417,7 +10417,7 @@
       },
       "DeploymentResources": {
         "type": "object",
-        "description": "The CPU and memory of a pipeline deployment.",
+        "description": "CPU and memory, the only fields that can change while the pipeline runs.",
         "properties": {
           "cpu_cores_max": {
             "type": "number",
@@ -13347,7 +13347,7 @@
       },
       "PipelineDeploymentConfig": {
         "type": "object",
-        "description": "The `deployment_config` field of a pipeline in the API: the runtime modifiable fields of the\nstored deployment config. `PATCH` changes them while the pipeline runs.",
+        "description": "The part of a deployment config that can change while the pipeline runs.",
         "properties": {
           "resources": {
             "$ref": "#/components/schemas/DeploymentResources"
