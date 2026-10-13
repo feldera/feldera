@@ -3,6 +3,7 @@
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { enclosure, nonNull } from 'common-lib/function'
   import type { ConnectorMetrics } from 'common-ui/connectorMetrics'
+  import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import {
     createLoadGuard,
     type GlobalMetrics,
@@ -65,6 +66,7 @@
         globalMetrics: GlobalMetrics | undefined
         connectorMetrics: ConnectorMetrics | undefined
         runtimeConfig: unknown
+        pipelineEvents: PipelineMonitorEvent[] | undefined
       })
     | null = $state(null)
   let triageResults: TriageResults = $state(new TriageResults())
@@ -125,7 +127,8 @@
       logText: processed.logText,
       globalMetrics: processed.globalMetrics,
       connectorMetrics: processed.connectorMetrics,
-      runtimeConfig: processed.runtimeConfig
+      runtimeConfig: processed.runtimeConfig,
+      pipelineEvents: processed.pipelineEvents
     })
   }
 
@@ -408,7 +411,8 @@
       logText,
       globalMetrics,
       connectorMetrics,
-      runtimeConfig
+      runtimeConfig,
+      pipelineEvents
     } = getProfileData()}
     <div class="min-h-0 flex-1 px-4 pb-4">
       <SupportBundleViewerLayout
@@ -419,6 +423,7 @@
         {globalMetrics}
         {connectorMetrics}
         {runtimeConfig}
+        {pipelineEvents}
         {triageResults}
         theme={darkMode.current}
         profileFiles={getProfileFiles()}

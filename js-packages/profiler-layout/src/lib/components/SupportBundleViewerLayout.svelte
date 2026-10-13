@@ -1,7 +1,6 @@
 <script lang="ts">
   import { Switch } from '@skeletonlabs/skeleton-svelte'
   import type { ZipItem } from 'but-unzip'
-  import type { ConnectorMetrics } from 'common-ui/connectorMetrics'
   import {
     isFindShortcut,
     PersistentContent,
@@ -14,8 +13,9 @@
     usePersistentRect,
     useShortcut
   } from 'common-ui'
+  import type { ConnectorMetrics } from 'common-ui/connectorMetrics'
+  import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
-  import { measurementLabel } from 'profiler-lib'
   import type {
     Dataflow,
     DiagramTheme,
@@ -26,25 +26,27 @@
     SourcePositionRange,
     WorkerOption
   } from 'profiler-lib'
+  import { measurementLabel } from 'profiler-lib'
   import { type Snippet, untrack } from 'svelte'
   import type { TriageResults } from 'triage-types'
   import type { GlobalMetrics } from '../functions/globalMetrics'
   import { createLookupCoordinator, type SearchProgress } from '../functions/lookup'
   import { type AnalysisView, isNodeView, metricsModeOf } from '../functions/metricsMode'
   import { severityLabel, uniqueCategories, uniqueSeverities } from '../functions/triage'
+  import MetricSelect from './MetricSelect.svelte'
   import type { MetricsMode } from './MetricsView.svelte'
   import ProfilerDiagram from './ProfilerDiagram.svelte'
   import type { TooltipData } from './ProfilerTooltip.svelte'
-  import MetricSelect from './MetricSelect.svelte'
   import ProfileTimestampSelector from './ProfileTimestampSelector.svelte'
   import ConfigTab from './tabs/ConfigTab.svelte'
   import ConnectorsTab from './tabs/ConnectorsTab.svelte'
+  import HealthTab from './tabs/HealthTab.svelte'
   import IssuesTab from './tabs/IssuesTab.svelte'
   import LogsTab from './tabs/LogsTab.svelte'
   import MetricsTab, { type AnalysisTabProps } from './tabs/MetricsTab.svelte'
   import SqlTab, { type SqlTabProps } from './tabs/SqlTab.svelte'
 
-  const TABS = ['Metrics', 'Connectors', 'Logs', 'Config', 'Issues'] as const
+  const TABS = ['Metrics', 'Connectors', 'Health', 'Logs', 'Config', 'Issues'] as const
   type AnalysisTab = (typeof TABS)[number]
 
   interface Props {
@@ -61,6 +63,9 @@
     /** Pipeline runtime configuration from the bundle's `pipeline_config.json`; shown in the Config
      *  tab. Absent when the bundle carried no config. */
     runtimeConfig?: unknown
+    /** Pipeline monitor events from the bundle's `pipeline_events.json`, shown in the Health tab.
+     *  Absent when the bundle has no events. */
+    pipelineEvents?: PipelineMonitorEvent[]
     triageResults: TriageResults
     /** Palette the circuit diagram is drawn with; follows the application theme */
     theme?: DiagramTheme
@@ -88,6 +93,7 @@
     globalMetrics,
     connectorMetrics,
     runtimeConfig,
+    pipelineEvents,
     triageResults,
     theme = 'light',
     profileFiles,
@@ -139,8 +145,8 @@
   let nodeSearchInput: HTMLInputElement | undefined = $state()
 
   // Ctrl/Cmd-F targets the "Search node" input while focused on the circuit diagram, otherwise the
-  // active tab's search. Inactive on Connectors and Config (no in-tab search), so the browser's
-  // native find popup appears there.
+  // active tab's search. Inactive on Connectors, Health and Config (no in-tab search), so the
+  // browser's native find popup appears there.
   useShortcut(
     isFindShortcut,
     () => {
@@ -151,7 +157,7 @@
         searchBar?.activate()
       }
     },
-    () => currentTab !== 'Connectors' && currentTab !== 'Config'
+    () => currentTab !== 'Connectors' && currentTab !== 'Health' && currentTab !== 'Config'
   )
   let highlightRanges: SourcePositionRange[] = $state([])
 
@@ -309,7 +315,7 @@
     { id: 'SQL', label: sqlLabel, panel: SqlTab, keepAlive: false, tabBarEnd: sqlTabBarEnd }
   ])
 
-  // Analysis panel (Metrics / Connectors / Logs / Config / Issues) tab spec.
+  // Analysis panel (Metrics / Connectors / Health / Logs / Config / Issues) tab spec.
   const analysisTabProps = $derived<AnalysisTabProps>({
     metricsMode,
     tooltipData,
@@ -317,6 +323,8 @@
     globalMetrics,
     connectorMetrics,
     runtimeConfig,
+    pipelineEvents,
+    collectedAt: selectedTimestamp,
     showAdvancedMetrics,
     lookup,
     logText,
@@ -340,6 +348,13 @@
       keepAlive: true,
       // The tab stays visible, but is disabled when the bundle has no connector statistics.
       disabled: connectorMetrics === undefined
+    },
+    {
+      id: 'Health',
+      label: healthLabel,
+      panel: HealthTab,
+      keepAlive: true,
+      disabled: pipelineEvents === undefined
     },
     {
       id: 'Logs',
@@ -447,6 +462,7 @@
 <!-- ── Analysis panel labels and tab-bar-end snippets ────────────────────────── -->
 {#snippet metricsLabel()}Metrics{/snippet}
 {#snippet connectorsLabel()}Connectors{/snippet}
+{#snippet healthLabel()}Health{/snippet}
 {#snippet logsLabel()}Logs{/snippet}
 {#snippet configLabel()}Config{/snippet}
 {#snippet issuesLabel()}
