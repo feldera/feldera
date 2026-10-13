@@ -1461,6 +1461,99 @@ fn step_does_not_wait_for_endpoint_without_reader() {
     );
 }
 
+/// A commit that takes several steps must finish even if a client starts a
+/// new API transaction while it runs.
+///
+/// The API accepts `start_transaction` during a commit.  The commit only
+/// advances when the circuit thread steps, and nothing else asks it to step
+/// while no input is buffered, so the commit must keep asking for steps of
+/// its own whether or not a new transaction is open.
+#[test]
+fn api_transaction_started_during_commit_does_not_stall_it() {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "min_batch_size_records": 0,
+        "max_buffering_delay_usecs": 0,
+        "clock_resolution_usecs": null,
+        // A commit processes one chunk of this many records per step.
+        "dev_tweaks": { "splitter_chunk_size_records": 1 },
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| Ok(test_circuit_with_aggregate(circuit_config, 16)),
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    let feeder = TransactionalInputEndpoint::new();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+    controller
+        .add_input_endpoint("feeder", endpoint_config, Box::new(feeder.clone()), None)
+        .unwrap();
+
+    // Each wait below is for a few steps of a small circuit.
+    const TIMEOUT_MS: u128 = 20_000;
+
+    // Transaction X ingests more records than fit in one chunk, so its commit
+    // takes more than one step.
+    const RECORDS: usize = 100;
+    controller.start_transaction().unwrap();
+    feeder.push(
+        &(0..RECORDS)
+            .map(|id| format!("{id},true,{id},record-{id}\n"))
+            .collect::<String>(),
+    );
+    wait(
+        || controller.status().num_total_circuit_input_records() >= RECORDS as u64,
+        TIMEOUT_MS,
+    )
+    .expect("transaction X never ingested its records");
+
+    // Client Y starts transaction Y right after the first step of X's commit.
+    let (sender, receiver) = std::sync::mpsc::channel();
+    *controller.inner.commit_step_hook.lock().unwrap() = Some(Box::new(move |inner| {
+        sender
+            .send(
+                inner
+                    .start_transaction_from_api()
+                    .map_err(|e| e.to_string()),
+            )
+            .unwrap();
+    }));
+    controller.start_commit_transaction().unwrap();
+    receiver
+        .recv_timeout(Duration::from_millis(TIMEOUT_MS as u64))
+        .expect("X's commit finished in one step, so the test cannot start Y during it")
+        .expect("the API refused to start Y during X's commit");
+
+    // Y sends no input, so only X's commit can make the circuit thread step.
+    let x_committed = wait(
+        || !controller.inner.get_transaction_state().is_committing(),
+        TIMEOUT_MS,
+    );
+
+    // Commit Y, so that the pipeline stops cleanly whatever happened to X.
+    controller.start_commit_transaction().unwrap();
+    wait(
+        || controller.inner.get_transaction_state() == TransactionState::None,
+        TIMEOUT_MS,
+    )
+    .expect("transaction Y never committed");
+    controller.stop().unwrap();
+
+    x_committed.expect("X's commit stalled after Y started");
+}
+
 /// An input endpoint that opens and commits Feldera transactions, the way a
 /// connector configured with a `transaction_mode` does.
 ///
