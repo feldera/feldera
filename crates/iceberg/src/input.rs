@@ -466,7 +466,8 @@ enum QueueEntry {
     /// Pushed after a failed read, before retrying or declaring a fatal error,
     /// so the connector stays checkpointable between retries. Any in-progress
     /// transaction is committed (not rolled back), so a retry may re-emit rows
-    /// (at-least-once).
+    /// (at-least-once).  A distributed snapshot's transaction stays open
+    /// instead.
     Rollback,
 }
 
@@ -2632,9 +2633,16 @@ impl IcebergInputEndpointInner {
                     // checkpointable boundary between retries. The partial data
                     // already queued is not rolled back, so a retry re-reads the
                     // whole dataframe and may re-emit those rows (at-least-once).
+                    //
+                    // A distributed snapshot's transaction must contain every
+                    // host's whole part of the snapshot, so that the home
+                    // host's changes to the table cannot reach the circuit
+                    // before rows that this host reads again.  So it stays
+                    // open, and the retry reads into it again.
+                    let commit = self.distributed.is_none() || transaction.is_none();
                     self.queue.push_entry(
                         InputQueueEntry::new_with_aux(Utc::now(), QueueEntry::Rollback)
-                            .with_commit_transaction(true),
+                            .with_commit_transaction(commit),
                         Vec::new(),
                     );
 
@@ -3215,12 +3223,22 @@ mod variant_tests {
 
 #[cfg(test)]
 mod distributed_tests {
-    use super::{validate_distributed, IcebergInputEndpointInner};
-    use anyhow::Error as AnyError;
+    use super::{validate_distributed, IcebergInputEndpointInner, QueueEntry};
+    use anyhow::{Error as AnyError, Result as AnyResult};
+    use chrono::Utc;
+    use datafusion::arrow::array::{Int64Array, RecordBatch};
+    use datafusion::arrow::datatypes::{DataType, Field, Schema};
+    use datafusion::datasource::MemTable;
     use datafusion::execution::runtime_env::RuntimeEnv;
+    use datafusion::prelude::SessionContext;
+    use dbsp::operator::input::StagedBuffers;
+    use feldera_adapterlib::catalog::ArrowStream;
+    use feldera_adapterlib::format::InputBuffer;
     use feldera_adapterlib::format::{BufferSize, ParseError};
+    use feldera_adapterlib::transport::InputQueueEntry;
     use feldera_adapterlib::transport::{DistributedInput, InputConsumer, Resume, Watermark};
     use feldera_adapterlib::PipelineState;
+    use feldera_sqllib::Variant;
     use feldera_types::adapter_stats::ConnectorHealth;
     use feldera_types::config::{FtModel, PipelineConfig};
     use feldera_types::coordination::{Completion, InputDistribution, InputShard};
@@ -3229,11 +3247,14 @@ mod distributed_tests {
     use std::time::Duration;
     use tokio::sync::watch::channel;
 
-    /// Records the transactions that a connector starts.
+    /// Records the transactions that a connector starts and commits.
     #[derive(Clone, Default)]
     struct Consumer {
         /// For each transaction started, whether every host starts it.
         started: Arc<Mutex<Vec<bool>>>,
+
+        /// The number of transactions committed.
+        committed: Arc<Mutex<usize>>,
     }
 
     impl InputConsumer for Consumer {
@@ -3256,7 +3277,9 @@ mod distributed_tests {
         fn start_transaction_on_all_hosts(&self, _label: Option<&str>) {
             self.started.lock().unwrap().push(true);
         }
-        fn commit_transaction(&self) {}
+        fn commit_transaction(&self) {
+            *self.committed.lock().unwrap() += 1;
+        }
         fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<Completion>> {
             None
         }
@@ -3437,6 +3460,99 @@ mod distributed_tests {
             let (_sender, mut receiver) = channel(PipelineState::Running);
             block_on(endpoint.start_distributed_snapshot_transaction(fresh, &mut receiver));
             assert_eq!(endpoint.queue.len(), 0, "{config} {shard:?} {fresh}");
+        }
+    }
+
+    /// An [ArrowStream] for a read that fails before it yields any records.
+    struct NoRecords;
+
+    impl InputBuffer for NoRecords {
+        fn flush(&mut self) {}
+        fn len(&self) -> BufferSize {
+            BufferSize::empty()
+        }
+        fn hash(&self, _hasher: &mut dyn std::hash::Hasher) {}
+        fn take_some(&mut self, _n: usize) -> Option<Box<dyn InputBuffer>> {
+            None
+        }
+    }
+
+    impl ArrowStream for NoRecords {
+        fn insert(&mut self, _data: &RecordBatch, _metadata: &Option<Variant>) -> AnyResult<()> {
+            unreachable!()
+        }
+        fn delete(&mut self, _data: &RecordBatch, _metadata: &Option<Variant>) -> AnyResult<()> {
+            unreachable!()
+        }
+        fn insert_with_polarities(
+            &mut self,
+            _data: &RecordBatch,
+            _polarities: &[bool],
+            _metadata: &Option<Variant>,
+        ) -> AnyResult<()> {
+            unreachable!()
+        }
+        fn fork(&self) -> Box<dyn ArrowStream> {
+            Box::new(NoRecords)
+        }
+        fn stage(&self, _buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+            unreachable!()
+        }
+    }
+
+    /// A read error in a distributed snapshot keeps the snapshot's
+    /// transaction open, so that the retry reads into the same transaction.
+    /// Without distribution, the error commits the transaction.
+    #[test]
+    fn distributed_snapshot_error_keeps_transaction_open() {
+        for (shard, commits) in [(Some(shard(2)), 0), (None, 1)] {
+            let consumer = Consumer::default();
+            let endpoint = endpoint(
+                json!({"mode": "snapshot", "transaction_mode": "snapshot", "max_retries": 0}),
+                shard,
+                Some(json!(7)),
+                consumer.clone(),
+            );
+
+            // The snapshot's first records start its transaction.
+            let transaction = Some(Some("snapshot-0".to_string()));
+            endpoint.queue.push_entry(
+                InputQueueEntry::new_with_aux(Utc::now(), QueueEntry::ResumeInfo(None))
+                    .with_start_transaction(transaction.clone()),
+                Vec::new(),
+            );
+            endpoint.queue.flush_with_aux();
+            assert_eq!(consumer.started.lock().unwrap().len(), 1);
+
+            block_on(async {
+                // Dividing by zero fails while the query runs, after planning.
+                let ctx = SessionContext::new();
+                let zero = RecordBatch::try_new(
+                    Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, false)])),
+                    vec![Arc::new(Int64Array::from(vec![0]))],
+                )
+                .unwrap();
+                ctx.register_table(
+                    "zero",
+                    Arc::new(MemTable::try_new(zero.schema(), vec![vec![zero]]).unwrap()),
+                )
+                .unwrap();
+                let dataframe = ctx.sql("select 10 / id as id from zero").await.unwrap();
+                let (_sender, mut receiver) = channel(PipelineState::Running);
+                assert!(endpoint
+                    .execute_df(
+                        dataframe,
+                        true,
+                        "snapshot",
+                        transaction,
+                        &mut NoRecords,
+                        &mut receiver,
+                    )
+                    .await
+                    .is_err());
+            });
+            endpoint.queue.flush_with_aux();
+            assert_eq!(*consumer.committed.lock().unwrap(), commits, "{shard:?}");
         }
     }
 }
