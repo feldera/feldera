@@ -1689,7 +1689,8 @@ enum QueueEntry {
     /// between retries.
     ///
     /// Note: this is not the actual transaction rollback: the current transaction,
-    /// if any, will be committed.
+    /// if any, will be committed, except for a distributed snapshot's
+    /// transaction, which stays open.
     Rollback,
 }
 
@@ -2205,9 +2206,9 @@ impl DeltaTableInputEndpointInner {
     /// Load the entire table snapshot as a single "select * where <filter>" query.
     /// Returns the total number of records processed.
     ///
-    /// Fails with an error if the function fails to read the snapshot.  This function
-    /// doesn't retry (the idea being that the snapshot can be large, and it's better to
-    /// fail fast and give the user a chance to restart the pipeline).
+    /// Fails with an error if the function fails to read the snapshot after
+    /// [`DeltaTableReaderConfig::max_retries`] retries.  Each retry reads the
+    /// whole snapshot again.
     async fn read_unordered_snapshot(
         &self,
         table: &DeltaTable,
@@ -3525,6 +3526,14 @@ impl DeltaTableInputEndpointInner {
         wait_running(receiver).await;
         let transaction = self.follow_start_transaction(transaction);
 
+        // A distributed snapshot's transaction must contain every host's whole
+        // part of the snapshot, so that the home host's changes to the table
+        // cannot reach the circuit before rows that this host reads again
+        // after an error.  So an error keeps the transaction open, and the
+        // retry reads into it again.
+        let commit_on_error =
+            !(self.distributed.is_some() && Self::is_snapshot_transaction_label(&transaction));
+
         // Limit the number of connectors simultaneously reading from Delta Lake.
         let _token = DELTA_READER_SEMAPHORE.acquire().await.unwrap();
 
@@ -3619,7 +3628,7 @@ impl DeltaTableInputEndpointInner {
                     self.queue.push_entry(
                         InputQueueEntry::new_with_aux(timestamp, QueueEntry::Rollback)
                             // If we started a transaction while processing the log entry, commit it now.
-                            .with_commit_transaction(true),
+                            .with_commit_transaction(commit_on_error),
                         Vec::new(),
                     );
 
@@ -6889,19 +6898,25 @@ mod distributed_snapshot_tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
 
-    use super::{DeltaResumeInfo, DeltaTableInputEndpointInner, validate_distributed};
-    use crate::PipelineState;
+    use super::{
+        DeltaResumeInfo, DeltaTableInputEndpointInner, Polarity, QueueEntry, validate_distributed,
+    };
     use crate::integrated::DistributedInput;
-    use crate::test::MockInputConsumer;
+    use crate::test::{MockDeZSet, MockInputConsumer, TestStruct};
+    use crate::{DeCollectionHandle, PipelineState};
     use arrow::array::{Array, Int64Array, RecordBatch, StringArray};
     use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
+    use chrono::Utc;
+    use datafusion::datasource::MemTable;
     use deltalake::DeltaTable;
     use deltalake::datafusion::prelude::SessionContext;
     use deltalake::kernel::{DataType, PrimitiveType, StructField};
     use deltalake::operations::create::CreateBuilder;
     use deltalake::protocol::SaveMode;
+    use feldera_adapterlib::transport::InputQueueEntry;
     use feldera_types::coordination::{InputDistribution, InputShard};
     use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
+    use feldera_types::serde_with_context::SqlSerdeConfig;
     use feldera_types::transport::delta_table::DeltaTableReaderConfig;
     use serde_json::json;
     use std::time::Duration;
@@ -7084,6 +7099,79 @@ mod distributed_snapshot_tests {
                 .start_distributed_snapshot_transaction(&mut receiver)
                 .await;
             assert_eq!(endpoint.queue.len(), 0, "{transaction_mode} {shard:?}");
+        }
+    }
+
+    /// A read error in a distributed snapshot keeps the snapshot's
+    /// transaction open, so that the retry reads into the same transaction.
+    /// Without distribution, the error commits the transaction.
+    #[tokio::test]
+    async fn distributed_snapshot_error_keeps_transaction_open() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let (table, uri) = write_table(dir.path(), 3, 1).await;
+        let table = Arc::new(table);
+
+        // Dividing by zero fails while the query runs, after planning.
+        let ctx = SessionContext::new();
+        let zero = RecordBatch::try_new(
+            Arc::new(ArrowSchema::new(vec![ArrowField::new(
+                "id",
+                ArrowDataType::Int64,
+                false,
+            )])),
+            vec![Arc::new(Int64Array::from(vec![0]))],
+        )
+        .unwrap();
+        ctx.register_table(
+            "zero",
+            Arc::new(MemTable::try_new(zero.schema(), vec![vec![zero]]).unwrap()),
+        )
+        .unwrap();
+
+        for (shard, stays_open) in [(Some(shard(2)), true), (None, false)] {
+            let consumer = MockInputConsumer::new();
+            let endpoint = endpoint_with_consumer(
+                json!({"uri": uri, "mode": "snapshot", "transaction_mode": "snapshot"}),
+                shard,
+                None,
+                consumer.clone(),
+            );
+            *endpoint.schema_table.lock().unwrap() = Some(table.clone());
+
+            // The snapshot's first records start its transaction.
+            let transaction = Some(Some("snapshot-0".to_string()));
+            endpoint.queue.push_entry(
+                InputQueueEntry::new_with_aux(Utc::now(), QueueEntry::ResumeInfo(None))
+                    .with_start_transaction(transaction.clone()),
+                Vec::new(),
+            );
+            endpoint.queue.flush_with_aux();
+            assert!(consumer.state().transaction_in_progress);
+
+            let dataframe = ctx.sql("select 10 / id as id from zero").await.unwrap();
+            let mut input_stream = MockDeZSet::<TestStruct, TestStruct>::new()
+                .configure_arrow_deserializer(SqlSerdeConfig::default())
+                .unwrap();
+            let (_sender, mut receiver) = channel(PipelineState::Running);
+            assert!(
+                endpoint
+                    .execute_df_inner(
+                        dataframe,
+                        Polarity::Fixed(true),
+                        input_stream.as_mut(),
+                        &mut receiver,
+                        &transaction,
+                        None,
+                    )
+                    .await
+                    .is_err()
+            );
+            endpoint.queue.flush_with_aux();
+            assert_eq!(
+                consumer.state().transaction_in_progress,
+                stays_open,
+                "{shard:?}"
+            );
         }
     }
 
