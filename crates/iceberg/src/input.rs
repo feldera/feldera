@@ -1024,7 +1024,10 @@ impl IcebergInputEndpointInner {
     }
 
     /// For a distributed connector that reads its snapshot in a transaction,
-    /// requests the transaction during initialization, before any host reads.
+    /// waits until the connector runs, through `receiver`, and then requests
+    /// the transaction, before this host reads.  A paused connector does not
+    /// request it, because the transaction would stay open, holding back
+    /// output and checkpoints, until the connector reads its part.
     ///
     /// Otherwise, a host requests the transaction only when it reads its first
     /// records, and a host whose part of the snapshot has no files never
@@ -1037,10 +1040,15 @@ impl IcebergInputEndpointInner {
     /// `fresh` must be true only if the connector starts without a pinned
     /// snapshot from a checkpoint.  A connector that resumes might be the only
     /// host that reads the snapshot again, so it uses an ordinary transaction.
-    fn start_distributed_snapshot_transaction(&self, fresh: bool) {
+    async fn start_distributed_snapshot_transaction(
+        &self,
+        fresh: bool,
+        receiver: &mut Receiver<PipelineState>,
+    ) {
         if self.distributed.is_none() || !self.config.snapshot() || !fresh {
             return;
         }
+        wait_running(receiver).await;
         let Some(label) = self.allocate_snapshot_transaction() else {
             return;
         };
@@ -1899,12 +1907,13 @@ impl IcebergInputEndpointInner {
             Ok(used_columns) => used_columns,
         };
 
-        self.start_distributed_snapshot_transaction(fresh);
-
         // Code before this point is part of endpoint initialization.
         // After this point, the thread should continue running until it receives a
         // shutdown command from the controller.
         let _ = init_status_sender.send(Ok(())).await;
+
+        self.start_distributed_snapshot_transaction(fresh, &mut receiver)
+            .await;
 
         if self.config.snapshot() && self.config.timestamp_column.is_none() {
             // Unordered read: the whole snapshot is one query with no seekable
@@ -3211,11 +3220,14 @@ mod distributed_tests {
     use datafusion::execution::runtime_env::RuntimeEnv;
     use feldera_adapterlib::format::{BufferSize, ParseError};
     use feldera_adapterlib::transport::{DistributedInput, InputConsumer, Resume, Watermark};
+    use feldera_adapterlib::PipelineState;
     use feldera_types::adapter_stats::ConnectorHealth;
     use feldera_types::config::{FtModel, PipelineConfig};
     use feldera_types::coordination::{Completion, InputDistribution, InputShard};
     use serde_json::{json, Value as JsonValue};
     use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+    use tokio::sync::watch::channel;
 
     /// Records the transactions that a connector starts.
     #[derive(Clone, Default)]
@@ -3349,9 +3361,18 @@ mod distributed_tests {
         assert!(chosen(Some(shard(2)), Some(json!("seven"))).is_err());
     }
 
+    /// Runs `future` to completion.
+    fn block_on<F: std::future::Future>(future: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap()
+            .block_on(future)
+    }
+
     /// A distributed connector that starts fresh and reads its snapshot in a
-    /// transaction requests the transaction at initialization, as one that
-    /// every host requests, and the snapshot query reuses its label.
+    /// transaction requests the transaction once it runs, before it reads, as
+    /// one that every host requests, and the snapshot query reuses its label.
     #[test]
     fn distributed_snapshot_transaction_starts_early() {
         let consumer = Consumer::default();
@@ -3361,7 +3382,22 @@ mod distributed_tests {
             Some(json!(7)),
             consumer.clone(),
         );
-        distributed.start_distributed_snapshot_transaction(true);
+
+        // A paused connector does not request the transaction.  Once it runs,
+        // it does.
+        let (sender, mut receiver) = channel(PipelineState::Paused);
+        block_on(async {
+            let request = distributed.start_distributed_snapshot_transaction(true, &mut receiver);
+            let mut request = std::pin::pin!(request);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), request.as_mut())
+                    .await
+                    .is_err()
+            );
+            assert_eq!(distributed.queue.len(), 0);
+            sender.send_replace(PipelineState::Running);
+            request.await;
+        });
         assert_eq!(distributed.queue.len(), 1);
         distributed.queue.flush_with_aux();
         assert_eq!(*consumer.started.lock().unwrap(), [true]);
@@ -3398,7 +3434,8 @@ mod distributed_tests {
             ),
         ] {
             let endpoint = endpoint(config.clone(), shard, Some(json!(7)), Consumer::default());
-            endpoint.start_distributed_snapshot_transaction(fresh);
+            let (_sender, mut receiver) = channel(PipelineState::Running);
+            block_on(endpoint.start_distributed_snapshot_transaction(fresh, &mut receiver));
             assert_eq!(endpoint.queue.len(), 0, "{config} {shard:?} {fresh}");
         }
     }
