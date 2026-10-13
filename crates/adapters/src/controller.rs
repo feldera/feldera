@@ -55,6 +55,7 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
+use dbsp::circuit::checkpointer::Checkpointer;
 use dbsp::circuit::circuit_builder::{BootstrapInfo, ConcurrentRestoreOutcome};
 use dbsp::circuit::metrics::{
     COMPACTION_STALL_TIME_NANOSECONDS, DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS, DBSP_STEP,
@@ -190,7 +191,7 @@ use feldera_types::config::{
     DEFAULT_MAX_WORKER_BATCH_SIZE, DevTweaks, FileBackendConfig, FtConfig, FtModel,
     OutputBufferConfig, PipelineIdentity, StorageBackendConfig, SyncConfig,
 };
-use feldera_types::constants::{STATE_FILE, STEPS_FILE};
+use feldera_types::constants::{CHECKPOINT_FILE_NAME, STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 pub use feldera_types::pipeline_diff::compute_pipeline_diff;
 use feldera_types::program_schema::{SqlIdentifier, canonical_identifier};
@@ -5840,15 +5841,58 @@ impl ControllerInit {
             return Self::without_checkpoint(layout, config, None);
         };
 
-        // Try to read a checkpoint.
-        let checkpoint = match Checkpoint::read(&*storage.backend, &StoragePath::from(STATE_FILE)) {
-            Err(error) if error.kind() == ErrorKind::NotFound => {
+        match Self::read_latest_checkpoint(&*storage.backend)? {
+            Some(checkpoint) => Self::with_checkpoint_inner(layout, config, storage, checkpoint),
+            None => {
                 info!("starting fresh pipeline without resuming from checkpoint");
-                return Self::without_checkpoint(layout, config, Some(storage));
+                Self::without_checkpoint(layout, config, Some(storage))
             }
-            other => other?,
+        }
+    }
+
+    /// Reads the state of the newest checkpoint in the checkpoint catalog.
+    ///
+    /// The root `state.json` can name an older checkpoint: a checkpoint is
+    /// published to the catalog before the root file is rewritten, so a crash
+    /// in between leaves the root one checkpoint behind, and resuming from it
+    /// would fork the checkpoint history.  The root file still decides when the
+    /// catalog is empty, because a fault-tolerant pipeline that has not
+    /// checkpointed yet records its starting point there.
+    fn read_latest_checkpoint(
+        backend: &dyn StorageBackend,
+    ) -> Result<Option<Checkpoint>, ControllerError> {
+        let root = match Checkpoint::read(backend, &StoragePath::from(STATE_FILE)) {
+            Err(error) if error.kind() == ErrorKind::NotFound => None,
+            other => Some(other?),
         };
-        Self::with_checkpoint_inner(layout, config, storage, checkpoint)
+        let catalog =
+            Checkpointer::read_checkpoints(backend).map_err(ControllerError::dbsp_error)?;
+        let Some(newest) = catalog.back() else {
+            return Ok(root);
+        };
+        let root_uuid = root
+            .as_ref()
+            .and_then(|root| root.circuit.as_ref())
+            .map(|circuit| circuit.uuid);
+        if root_uuid == Some(newest.uuid) {
+            return Ok(root);
+        }
+
+        let newest_path = StoragePath::from(newest.uuid.to_string()).join(STATE_FILE);
+        let checkpoint = match Checkpoint::read(backend, &newest_path) {
+            Ok(checkpoint) => checkpoint,
+            // Checkpoints written before July 2025 have no state file of their own.
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(root),
+            Err(error) => return Err(error),
+        };
+        warn!(
+            "{STATE_FILE} names checkpoint {} but the newest checkpoint in {CHECKPOINT_FILE_NAME} is {}; resuming from {} and updating {STATE_FILE}",
+            root_uuid.map_or_else(|| String::from("none"), |uuid| uuid.to_string()),
+            newest.uuid,
+            newest.uuid,
+        );
+        checkpoint.write(backend, &StoragePath::from(STATE_FILE))?;
+        Ok(Some(checkpoint))
     }
 
     fn with_checkpoint_inner(

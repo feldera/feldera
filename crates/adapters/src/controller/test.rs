@@ -3149,6 +3149,104 @@ fn checkpoint_state_file_names_its_own_circuit() {
     controller.stop().unwrap();
 }
 
+/// A restart resumes from the newest published checkpoint, even when the root
+/// `state.json` still names the one before it, as a crash between publishing a
+/// checkpoint and rewriting the root file leaves it.
+#[test]
+fn restart_resumes_from_newest_published_checkpoint() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let tempdir_path = tempdir.path();
+    let storage_dir = tempdir_path.join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_path = tempdir_path.join("input.csv");
+    File::create_new(&input_path).unwrap();
+
+    const RECORDS: usize = 100;
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_path.display().to_string(), "follow": true },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+        "outputs": {},
+    }))
+    .unwrap();
+    let start_controller = || {
+        Controller::with_test_config(
+            |circuit_config| {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &[],
+                    &[Some("output")],
+                ))
+            },
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap()
+    };
+    let processed_records = |controller: &Controller| {
+        controller
+            .status()
+            .global_metrics
+            .num_total_processed_records()
+    };
+    let checkpoint_after = |controller: &Controller, records: usize| {
+        wait(
+            || processed_records(controller) >= records as u64,
+            DEFAULT_TIMEOUT_MS,
+        )
+        .unwrap();
+        controller.checkpoint().unwrap()
+    };
+
+    let controller = start_controller();
+    controller.start();
+    append_input(&input_path, 0..RECORDS);
+    let older = checkpoint_after(&controller, RECORDS);
+    append_input(&input_path, RECORDS..2 * RECORDS);
+    let newest = checkpoint_after(&controller, 2 * RECORDS);
+    controller.stop().unwrap();
+
+    let older_uuid = older.circuit.unwrap().uuid;
+    std::fs::copy(
+        storage_dir.join(older_uuid.to_string()).join(STATE_FILE),
+        storage_dir.join(STATE_FILE),
+    )
+    .unwrap();
+
+    let controller = start_controller();
+    assert_eq!(
+        processed_records(&controller),
+        newest.processed_records,
+        "the restart resumed from checkpoint {older_uuid}, which the root state.json names"
+    );
+
+    // Later checkpoints, and the cleanup after each, leave a checkpoint that
+    // the next restart can open.
+    controller.start();
+    for round in 2..4 {
+        append_input(&input_path, round * RECORDS..(round + 1) * RECORDS);
+        checkpoint_after(&controller, (round + 1) * RECORDS);
+    }
+    controller.stop().unwrap();
+    let controller = start_controller();
+    assert_eq!(processed_records(&controller), 4 * RECORDS as u64);
+    controller.stop().unwrap();
+}
+
 /// A connector that starts paused with `send_snapshot` keeps owing its
 /// snapshot rather than dropping it, and receives it when it is started --
 /// reflecting the state of the view at that moment, not at startup.
