@@ -1365,6 +1365,107 @@ fn api_transaction_started_during_commit_does_not_stall_it() {
     x_committed.expect("X's commit stalled after Y started");
 }
 
+/// An ad hoc INSERT in progress at a checkpoint must not hold the pipeline
+/// open after a restart from that checkpoint.
+///
+/// A checkpoint records the configuration of every input endpoint, and a
+/// restart with the same program reconnects them all.  An ad hoc INSERT's
+/// endpoint belongs to one request, so after the restart nothing sends it
+/// data or removes it.
+#[test]
+fn restored_adhoc_insert_does_not_hold_pipeline_open() {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let mut config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+
+    // The same program information in both runs tells the restart that the
+    // program is unchanged, which is the case that restores the checkpoint's
+    // input endpoints.
+    config.program_ir = Some(feldera_types::config::ProgramIr {
+        mir: serde_json::from_value(json!({
+            "0": { "operation": "source", "table": "test_input1", "persistent_id": "test_input1" },
+            "1": { "operation": "sink", "view": "test_output1", "persistent_id": "output" },
+        }))
+        .unwrap(),
+        program_schema: json!({ "inputs": [], "outputs": [] }),
+        circuit_ir: None,
+    });
+    let circuit = |circuit_config| {
+        Ok(test_circuit::<TestStruct>(
+            circuit_config,
+            &TestStruct::schema(),
+            &[Some("output")],
+        ))
+    };
+    let adhoc_endpoints = |controller: &Controller| {
+        controller
+            .status()
+            .input_status()
+            .values()
+            .map(|status| status.endpoint_name.clone())
+            .filter(|name| name.starts_with("adhoc-ingress-"))
+            .collect::<Vec<_>>()
+    };
+
+    let controller =
+        Controller::with_test_config(circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+            .unwrap();
+    controller.start();
+    wait(|| controller.pipeline_complete(), 10_000).expect("the new pipeline never completed");
+
+    // While the pipeline is paused, an INSERT adds its endpoint and then
+    // waits for the pipeline to run.  Take a checkpoint in that window.
+    controller.pause();
+    let insert = std::thread::spawn({
+        let controller = controller.clone();
+        move || {
+            TOKIO.block_on(async {
+                let df = crate::adhoc::execute_sql(
+                    &controller,
+                    "INSERT INTO test_input1 VALUES (1, true, 1, 'one')",
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                df.collect().await.map(|_| ()).map_err(|e| e.to_string())
+            })
+        }
+    });
+    wait(|| !adhoc_endpoints(&controller).is_empty(), 10_000)
+        .expect("the INSERT never added its endpoint");
+    controller.checkpoint().unwrap();
+    controller.stop().unwrap();
+    let _ = insert.join().unwrap();
+
+    // Restart from the checkpoint.
+    let controller =
+        Controller::with_test_config(circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+            .unwrap();
+    controller.start();
+    let complete = wait(|| controller.pipeline_complete(), 10_000);
+    let restored = adhoc_endpoints(&controller);
+    controller.stop().unwrap();
+
+    // Without this, the test would pass without reaching the case it is for.
+    assert!(
+        !restored.is_empty(),
+        "the restart did not restore the INSERT's endpoint"
+    );
+
+    complete.unwrap_or_else(|_| {
+        panic!("the pipeline never completed after the restart; ad hoc endpoints: {restored:?}")
+    });
+}
+
 /// An input endpoint that opens and commits Feldera transactions, the way a
 /// connector configured with a `transaction_mode` does.
 ///

@@ -1517,10 +1517,14 @@ impl ControllerStatus {
 
             // We don't require HTTP ingress connectors to be at end of input,
             // because the user is in charge of whether more data comes in.
+            // The same goes for ad hoc INSERT connectors, which a restart can
+            // also bring back from a checkpoint with no request to finish
+            // them.
             //
             // We also don't require the clock connector to be at end of input
             // if it's configured to advance only when the user sends a request.
             let ignore = name.contains(".api-ingress-")
+                || name.starts_with("adhoc-ingress-")
                 || (name == "now" && self.pipeline_config.global.dev_tweaks.now_http_driven());
 
             if !ignore {
