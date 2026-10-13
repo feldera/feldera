@@ -3933,6 +3933,11 @@ impl CircuitThread {
                     .num_total_processed_records()
                     - processed_records;
                 if !committed {
+                    #[cfg(test)]
+                    if let Some(hook) = self.controller.commit_step_hook.lock().unwrap().take() {
+                        hook(&self.controller);
+                    }
+
                     let commit_updates = self.commit_updates.get_or_insert_default();
                     if commit_updates.should_update_status() {
                         match self.circuit.commit_progress() {
@@ -7372,7 +7377,14 @@ pub struct ControllerInner {
     /// out caught up with the pipeline's output, which seeds its
     /// `total_processed_input_records` counter.
     bootstrapped_output_endpoints: HashSet<String>,
+
+    /// Runs on the circuit thread after a step that left a commit unfinished.
+    #[cfg(test)]
+    commit_step_hook: Mutex<Option<CommitStepHook>>,
 }
+
+#[cfg(test)]
+type CommitStepHook = Box<dyn FnOnce(&ControllerInner) + Send>;
 
 impl Drop for ControllerInner {
     fn drop(&mut self) {
@@ -7454,6 +7466,8 @@ impl ControllerInner {
                 coordination_prepare_checkpoint: AtomicBool::new(false),
                 input_completion_notify: Arc::new(Notify::new()),
                 checkpoint_activity: Mutex::new(CheckpointActivity::Idle),
+                #[cfg(test)]
+                commit_step_hook: Mutex::new(None),
                 modified_output_endpoints,
                 bootstrapped_output_endpoints,
             }
@@ -9137,8 +9151,8 @@ impl ControllerInner {
         self.transaction_info.lock().unwrap().transaction_state
     }
 
-    /// Returns true if there is a transaction in progress (transaction_state != None)
-    /// and the client requested to commit the transaction (transaction_requested = None).
+    /// Returns true if a transaction is committing, or if a transaction is
+    /// running and its initiators have asked to commit it.
     ///
     /// Used to decide whether the circuit needs to perform a step in order to advance
     /// commit processing.
@@ -9150,8 +9164,14 @@ impl ControllerInner {
             ..
         } = &*self.transaction_info.lock().unwrap();
 
-        *transaction_state != TransactionState::None
-            && !transaction_requested.is_ongoing(*is_multihost)
+        match transaction_state {
+            TransactionState::None => false,
+            TransactionState::Started { .. } => !transaction_requested.is_ongoing(*is_multihost),
+            // The API can start the next transaction during a commit, which
+            // makes the initiators ongoing again, but the commit still
+            // advances only when the circuit steps.
+            TransactionState::Committing { .. } => true,
+        }
     }
 
     /// Returns true if (transaction_state == Committing).
@@ -9303,9 +9323,13 @@ impl ControllerInner {
                     // Nothing to do.
                     //
                     // We know that there must not be any active initiators
-                    // because we cleared them when we started committing the transaction
-                    // (the previous case) and we reject requests to initiate a
-                    // transaction while a transaction is committing.
+                    // because we cleared them when we started committing the
+                    // transaction (the previous case).  Since then, connectors
+                    // can't initiate a transaction, and the API can, but an
+                    // ongoing initiator takes the branch above and one that
+                    // has already asked to commit was cleared by
+                    // `start_commit_transaction_from_api`, because its
+                    // transaction never started.
                     assert!(!transaction_info.initiators.is_active(is_multihost));
                     None
                 }
