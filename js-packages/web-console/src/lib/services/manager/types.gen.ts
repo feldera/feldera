@@ -1709,7 +1709,7 @@ export type Demo = {
 }
 
 /**
- * The CPU and memory of a pipeline deployment.
+ * CPU and memory, the only fields that can change while the pipeline runs.
  */
 export type DeploymentResources = {
   cpu_cores_max?: number | null
@@ -4363,8 +4363,7 @@ export type PipelineConfig = {
 }
 
 /**
- * The `deployment_config` field of a pipeline in the API: the runtime modifiable fields of the
- * stored deployment config. `PATCH` changes them while the pipeline runs.
+ * The part of a deployment config that can change while the pipeline runs.
  */
 export type PipelineDeploymentConfig = {
   resources?: DeploymentResources

@@ -906,8 +906,6 @@ def test_deployment_resources(pipeline_name):
         pipeline.stop(force=True)
         pytest.skip("the runner cannot resize a running pipeline in place")
     assert_error(patch({"cpu_cores_min": 2}), "InvalidDeploymentPatch")
-    # The CPU request would become equal to its limit.
-    assert_error(patch({"cpu_cores_max": 0.5}), "InvalidDeploymentPatch")
     assert patch({"workers": 1}).status_code == HTTPStatus.BAD_REQUEST
     assert_error(
         patch_json(

@@ -9,7 +9,8 @@ use crate::db::transaction;
 use crate::db::transaction::LOCK_TIMEOUT;
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId};
 use crate::db::types::deployment::{
-    merge_deployment_config_on_edit, patch_deployment_config, running_deployment_config,
+    DeploymentResources, PipelineDeploymentConfig, merge_deployment_config_on_edit,
+    parse_deployment_config_patch, patch_deployment_config, running_deployment_config,
 };
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
@@ -663,19 +664,17 @@ fn limited_option_program_config() -> impl Strategy<Value = Option<serde_json::V
 }
 
 /// Generates different deployment patches, valid and invalid.
-fn limited_patch_pipeline_deployment() -> impl Strategy<Value = serde_json::Value> {
+fn limited_patch_pipeline_deployment() -> impl Strategy<Value = PipelineDeploymentConfig> {
     let cpu = proptest::option::of(prop_oneof![Just(-1.0), Just(0.5), Just(1.0), Just(2.0)]);
     let memory = proptest::option::of(prop_oneof![Just(0u64), Just(1000), Just(2000)]);
-    (cpu.clone(), cpu, memory.clone(), memory, any::<bool>()).prop_map(
-        |(cpu_cores_min, cpu_cores_max, memory_mb_min, memory_mb_max, workers)| {
-            let mut patch = json!({"resources": {
-                "cpu_cores_min": cpu_cores_min, "cpu_cores_max": cpu_cores_max,
-                "memory_mb_min": memory_mb_min, "memory_mb_max": memory_mb_max,
-            }});
-            if workers {
-                patch["workers"] = json!(2);
-            }
-            patch
+    (cpu.clone(), cpu, memory.clone(), memory).prop_map(
+        |(cpu_cores_min, cpu_cores_max, memory_mb_min, memory_mb_max)| PipelineDeploymentConfig {
+            resources: DeploymentResources {
+                cpu_cores_min,
+                cpu_cores_max,
+                memory_mb_min,
+                memory_mb_max,
+            },
         },
     )
 }
@@ -3608,8 +3607,10 @@ async fn pipeline_deployment_patch() {
         )
         .await
         .unwrap();
-    let patch =
-        json!({"resources": {"cpu_cores_min": 1.0, "memory_mb_min": 3000, "memory_mb_max": 3000}});
+    let patch = parse_deployment_config_patch(
+        &json!({"resources": {"cpu_cores_min": 1.0, "memory_mb_min": 3000, "memory_mb_max": 3000}}),
+    )
+    .unwrap();
 
     // Stopped
     assert!(matches!(
@@ -3752,7 +3753,8 @@ async fn pipeline_deployment_patch() {
     assert_eq!(after.refresh_version, Version(before.refresh_version.0 + 1));
 
     // Running: an invalid patch changes nothing
-    let invalid = json!({"resources": {"cpu_cores_min": 9.0}});
+    let invalid =
+        parse_deployment_config_patch(&json!({"resources": {"cpu_cores_min": 9.0}})).unwrap();
     assert!(matches!(
         handle
             .db
@@ -6000,7 +6002,7 @@ enum StorageAction {
     PatchPipelineDeployment(
         TenantId,
         #[proptest(strategy = "limited_pipeline_name()")] String,
-        #[proptest(strategy = "limited_patch_pipeline_deployment()")] serde_json::Value,
+        #[proptest(strategy = "limited_patch_pipeline_deployment()")] PipelineDeploymentConfig,
     ),
     TransitDeploymentResourcesStatusToProvisioned(
         TenantId,
@@ -8502,7 +8504,7 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-        patch: &serde_json::Value,
+        patch: &PipelineDeploymentConfig,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
         let patched = patch_deployment_config(running_deployment_config(&pipeline)?, patch)?;
