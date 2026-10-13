@@ -19,15 +19,17 @@ use datafusion::catalog::TableProvider;
 use datafusion::common::arrow::array::RecordBatch;
 use datafusion::common::tree_node::{TransformedResult, TreeNode};
 use datafusion::common::{DFSchema, DataFusionError, ScalarValue};
+use datafusion::config::ConfigNonZeroUsize;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
 use datafusion::execution::memory_pool::MemoryLimit;
+use datafusion::logical_expr::physical_planning_context::PhysicalPlanningContext;
 use datafusion::optimizer::analyzer::type_coercion::TypeCoercionRewriter;
 use datafusion::physical_plan::{
-    ExecutionPlan, ExecutionPlanProperties, PhysicalExpr, SendableRecordBatchStream, displayable,
-    execute_stream,
+    ExecutionPlan, ExecutionPlanProperties, PhysicalExpr, SendableRecordBatchStream,
+    StatisticsArgs, StatisticsContext, displayable, execute_stream,
 };
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 use dbsp::circuit::tokio::TOKIO;
@@ -36,7 +38,7 @@ use delta_kernel::table_features::ColumnMappingMode;
 use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
 use deltalake::datafusion::logical_expr::{ExprSchemable, SortExpr};
-use deltalake::datafusion::prelude::{Expr, SessionContext, ident, lit};
+use deltalake::datafusion::prelude::{Expr, SessionConfig, SessionContext, ident, lit};
 use deltalake::datafusion::sql::sqlparser::dialect::GenericDialect;
 use deltalake::datafusion::sql::sqlparser::parser::Parser;
 use deltalake::datafusion::sql::sqlparser::tokenizer::Token;
@@ -270,10 +272,12 @@ fn scan_partitions(plan: &Arc<dyn ExecutionPlan>) -> usize {
 ///
 /// The Delta snapshot's table provider states the log's own totals here, so a
 /// snapshot read is sized without the connector passing anything. The listing
-/// tables the connector builds for follow and CDC reads collect no statistics,
-/// so their callers supply a [`ReadSize`] instead.
+/// tables the connector builds for follow and CDC reads are planned with
+/// `collect_statistics` off, so their callers supply a [`ReadSize`] instead.
 fn plan_read_size(plan: &dyn ExecutionPlan) -> Option<ReadSize> {
-    let statistics = plan.partition_statistics(None).ok()?;
+    let statistics = StatisticsContext::new()
+        .compute(plan, &StatisticsArgs::new())
+        .ok()?;
     Some(ReadSize {
         bytes: *statistics.total_byte_size.get_value()? as u64,
         records: *statistics.num_rows.get_value()? as u64,
@@ -310,6 +314,55 @@ fn describe_paths<'a>(paths: impl IntoIterator<Item = &'a str>) -> String {
 
 /// How many file paths a read description names before summarizing the rest.
 const DESCRIBED_PATHS: usize = 3;
+
+/// A listing table must be planned without statistics. DataFusion matches them to fields by
+/// position against the table schema, which under `mode = 'id'` holds physical `col-<id>` names
+/// no file need use, then folds a column it reads as constant into a literal before
+/// `PhysicalExprAdapter` runs, and the read returns NULL; a NaN, which parquet-rs leaves out of
+/// min/max, folds to another value the same way. Reading every footer to plan costs a round trip
+/// per file as well. Only a listing table consults this; the Delta table provider states the
+/// log's own statistics either way, so batch sizing keeps them.
+fn plan_listing_without_statistics(cfg: SessionConfig) -> SessionConfig {
+    cfg.set_bool("datafusion.execution.collect_statistics", false)
+}
+
+/// Refuse a table that may shred VARIANT values: delta-rs reads only the unshredded part and drops
+/// the shredded fields without an error.
+fn check_no_variant_shredding(
+    endpoint_name: &str,
+    table: &DeltaTable,
+) -> Result<(), ControllerError> {
+    let snapshot = table.snapshot().map_err(|e| {
+        ControllerError::invalid_transport_configuration(
+            endpoint_name,
+            &format!("error reading the Delta table protocol: {e}"),
+        )
+    })?;
+    refuse_variant_shredding(endpoint_name, snapshot.protocol())
+}
+
+/// [`check_no_variant_shredding`] for one protocol, also checked on each followed commit.
+fn refuse_variant_shredding(
+    endpoint_name: &str,
+    protocol: &deltalake::kernel::Protocol,
+) -> Result<(), ControllerError> {
+    let shredding = [protocol.reader_features(), protocol.writer_features()]
+        .into_iter()
+        .flatten()
+        .flatten()
+        .find(|f| matches!(f.as_ref(), "variantShredding" | "variantShredding-preview"));
+    match shredding {
+        Some(feature) => Err(ControllerError::invalid_transport_configuration(
+            endpoint_name,
+            &format!(
+                "the Delta table enables '{}', which this connector cannot read: shredded \
+                 VARIANT fields would be lost. Read a table without VARIANT shredding.",
+                feature.as_ref()
+            ),
+        )),
+        None => Ok(()),
+    }
+}
 
 /// Whether a `table_builder.load()` failure is transient and worth retrying.
 ///
@@ -569,14 +622,8 @@ pub(super) fn apply_filter(
 /// would point at the wrong relation after `except`. (`cdc_adds` and
 /// `cdc_removes` are labels for the two sides, not registered tables.)
 ///
-/// Caveat: `EXCEPT ALL` relies on `arrow_row::RowConverter`, which in
-/// the currently pinned `arrow-row` does not support `Map` columns.
-/// Pure-append transactions on tables with `Map` columns are
-/// unaffected (the `EXCEPT ALL` branch isn't taken when `removes_df`
-/// is `None`); transactions that do produce Removes fail here with
-/// `NotImplemented`. See issue:
-///   - https://github.com/apache/datafusion/issues/15428
-///   - https://github.com/apache/arrow-rs/issues/7879
+/// `EXCEPT ALL` plans as an anti join on every column;
+/// `except_all_cancels_a_rewrite_across_all_types` checks it over every Delta type.
 ///
 /// Free function (not a method on the connector) so a unit test can
 /// inspect the resulting logical plan without standing up the full
@@ -595,7 +642,7 @@ pub(super) fn build_cdc_dataframe(
         Some(removes_df) => {
             let removes_df = apply_filter(removes_df, filter, description, Some("cdc_removes"))?;
             adds_df.except(removes_df).map_err(|e| {
-                anyhow!("failed to build the CDC set difference for {description}: {e}. This typically means the Delta table contains a `Map` column, which the CDC deduplication step (`EXCEPT ALL`) does not yet support.")
+                anyhow!("failed to build the CDC set difference for {description}: {e}. This can happen if the table uses a column type the CDC deduplication step (`EXCEPT ALL`) cannot compare.")
             })?
         }
     };
@@ -699,7 +746,7 @@ impl DeltaTableInputEndpoint {
             if let Some(n) = batch_size {
                 cfg = cfg.set_usize("datafusion.execution.batch_size", n);
             }
-            cfg
+            plan_listing_without_statistics(cfg)
         });
 
         Self {
@@ -2650,6 +2697,8 @@ impl DeltaTableInputEndpointInner {
             )
         })? as i64;
 
+        check_no_variant_shredding(&self.endpoint_name, &delta_table)?;
+
         // If we are about to follow the table, set resume state to the current table version, otherwise
         // the connector will remain in the barrier state until at least one transaction is added to the log.
         if !self.config.snapshot() {
@@ -2662,11 +2711,11 @@ impl DeltaTableInputEndpointInner {
         // Our snapshot scans and CDC listing tables both address files by the
         // table's `root_url()`, so register that store with datafusion.
         // Without it, `select ... from snapshot` fails with "No suitable object
-        // store found for <root>". (delta-rs 0.32.x no longer uses the old
+        // store found for <root>". (delta-rs no longer uses the old
         // synthetic `delta-rs://` URL, so we don't register it anymore.)
         let log_store = delta_table.log_store();
         let runtime_env = self.datafusion.runtime_env();
-        runtime_env.register_object_store(log_store.root_url(), log_store.root_object_store(None));
+        runtime_env.register_object_store(log_store.root_url(), log_store.root_object_store());
 
         // if let Some(schema) = delta_table.schema() {
         //     info!("Delta table schema: {schema:?}");
@@ -2797,7 +2846,12 @@ impl DeltaTableInputEndpointInner {
             })?;
 
         let physical_expr = DefaultPhysicalPlanner::default()
-            .create_physical_expr(&filter_expr, schema, &self.datafusion.state())
+            .create_physical_expr(
+                &filter_expr,
+                schema,
+                &self.datafusion.state(),
+                &PhysicalPlanningContext::default(),
+            )
             .map_err(|e| {
                 anyhow!("cannot compile 'cdc_delete_filter' expression '{delete_filter}': {e}")
             })?;
@@ -3097,26 +3151,29 @@ impl DeltaTableInputEndpointInner {
         read_size: Option<ReadSize>,
     ) -> Result<SendableRecordBatchStream, DataFusionError> {
         let (mut state, logical) = dataframe.into_parts();
-        let plan = state.create_physical_plan(&logical).await?;
 
+        let plan = state.create_physical_plan(&logical).await?;
         let partitions = scan_partitions(&plan);
         let default_rows = state.config().batch_size();
-        let plan = match read_size
+        let rows = read_size
             .or_else(|| plan_read_size(plan.as_ref()))
             .and_then(|size| size.batch_rows(partitions, default_rows))
-            .filter(|rows| *rows < default_rows)
-        {
-            Some(rows) => {
-                debug!(
-                    "delta_table {}: reading {rows} rows per batch instead of {default_rows}, to \
-                     keep {partitions} concurrent readers within {} MB of decoded data",
-                    &self.endpoint_name,
-                    DECODE_BUDGET_BYTES / 1024 / 1024,
-                );
-                state.config_mut().options_mut().execution.batch_size = rows;
-                state.create_physical_plan(&logical).await?
-            }
-            None => plan,
+            .filter(|rows| *rows < default_rows);
+
+        if let Some(rows) = rows {
+            debug!(
+                "delta_table {}: reading {rows} rows per batch instead of {default_rows}, to \
+                 keep {partitions} concurrent readers within {} MB of decoded data",
+                &self.endpoint_name,
+                DECODE_BUDGET_BYTES / 1024 / 1024,
+            );
+            state.config_mut().options_mut().execution.batch_size =
+                ConfigNonZeroUsize::try_new(rows)?;
+        }
+        let plan = if rows.is_some() {
+            state.create_physical_plan(&logical).await?
+        } else {
+            plan
         };
 
         execute_stream(plan, state.task_ctx())
@@ -3356,6 +3413,13 @@ impl DeltaTableInputEndpointInner {
                     "".to_string()
                 }
             );
+        }
+
+        // A commit can turn VARIANT shredding on while we follow the table.
+        for action in actions {
+            if let Action::Protocol(protocol) = action {
+                refuse_variant_shredding(&self.endpoint_name, protocol)?;
+            }
         }
 
         // Adopt a schema change carried by this commit before reading its data,
@@ -3669,8 +3733,9 @@ impl DeltaTableInputEndpointInner {
                 self.config.max_retries(),
                 Some(new_version),
                 // A `cdc` action carries the file's size but no row count, so
-                // there is no ratio to size the batch from; the plan's own
-                // statistics decide, and the configured size if it has none.
+                // there is no ratio to size the batch from, and the table it is
+                // read through has no statistics. The read keeps the configured
+                // batch size.
                 None,
             )
             .await?;
@@ -4300,7 +4365,7 @@ impl DeltaTableInputEndpointInner {
             .collect::<AnyResult<Vec<_>>>()?;
 
         filtered_parquet_table(
-            table.log_store().object_store(None),
+            table.log_store().object_store(),
             files,
             read_schema,
             mode,
@@ -5838,7 +5903,8 @@ mod read_schema_tests {
 
         let (mut state, logical) = df.into_parts();
         let plan = state.create_physical_plan(&logical).await.unwrap();
-        state.config_mut().options_mut().execution.batch_size = AFTER;
+        state.config_mut().options_mut().execution.batch_size =
+            ConfigNonZeroUsize::try_new(AFTER).unwrap();
 
         let mut largest = 0;
         let mut stream = execute_stream(plan, state.task_ctx()).unwrap();
@@ -5921,6 +5987,59 @@ mod read_schema_tests {
         }
     }
 
+    /// A NaN survives a listing-table read planned with the connector's session settings.
+    ///
+    /// parquet-rs leaves NaN out of min/max, so with statistics on DataFusion
+    /// reads `[1.5, NaN]` as the constant 1.5.
+    #[tokio::test]
+    async fn a_nan_survives_a_listing_table_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("part-00000.parquet");
+        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
+            "f",
+            ArrowDataType::Float64,
+            false,
+        )]));
+        let mut writer =
+            ArrowWriter::try_new(File::create(&path).unwrap(), schema.clone(), None).unwrap();
+        let column: ArrayRef = Arc::new(datafusion::arrow::array::Float64Array::from(vec![
+            1.5,
+            f64::NAN,
+        ]));
+        writer
+            .write(&RecordBatch::try_new(schema.clone(), vec![column]).unwrap())
+            .unwrap();
+        writer.close().unwrap();
+
+        let config = super::plan_listing_without_statistics(SessionConfig::new());
+        let ctx = SessionContext::new_with_config(config);
+        let url = ListingTableUrl::parse(format!("file://{}", path.display())).unwrap();
+        let listing_options = ListingOptions::new(Arc::new(ParquetFormat::default()))
+            .with_file_extension_opt(Some(".parquet"));
+        let table = ListingTable::try_new(
+            ListingTableConfig::new_with_multi_paths(vec![url])
+                .with_listing_options(listing_options)
+                .with_schema(schema.clone()),
+        )
+        .unwrap();
+
+        let (state, plan) = ctx.read_table(Arc::new(table)).unwrap().into_parts();
+        let plan = state.create_physical_plan(&plan).await.unwrap();
+        let mut stream = execute_stream(plan, state.task_ctx()).unwrap();
+        let batch = stream.next().await.expect("the file holds rows").unwrap();
+        let column = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<datafusion::arrow::array::Float64Array>()
+            .unwrap();
+        assert_eq!(column.value(0), 1.5);
+        assert!(
+            column.value(1).is_nan(),
+            "the NaN read back as {}",
+            column.value(1)
+        );
+    }
+
     /// The batch size a file scan uses comes from the task context at execution
     /// time, not from the session the plan was built with. `execute_stream`
     /// relies on that: it plans once, sizes the batch from the read, and then
@@ -5951,7 +6070,8 @@ mod read_schema_tests {
 
         let (mut state, plan) = ctx.read_table(Arc::new(table)).unwrap().into_parts();
         let plan = state.create_physical_plan(&plan).await.unwrap();
-        state.config_mut().options_mut().execution.batch_size = 100;
+        state.config_mut().options_mut().execution.batch_size =
+            ConfigNonZeroUsize::try_new(100).unwrap();
 
         let mut stream = execute_stream(plan, state.task_ctx()).unwrap();
         let batch = stream.next().await.expect("the file holds rows").unwrap();

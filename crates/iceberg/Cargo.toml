@@ -21,7 +21,7 @@ tokio = { workspace = true, features = ["sync", "rt", "time"] }
 datafusion = { workspace = true }
 log = { workspace = true }
 iceberg = { workspace = true }
-iceberg-datafusion = { workspace = true }
+datafusion-iceberg = { workspace = true }
 iceberg-catalog-glue = { workspace = true }
 iceberg-catalog-rest = { workspace = true }
 iceberg-catalog-s3tables = { workspace = true }

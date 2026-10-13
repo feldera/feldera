@@ -10,6 +10,71 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (ad-hoc queries): the `hash` result format and
+  `Pipeline.query_hash()` in the Python SDK return a different hash for the
+  same rows than earlier releases.  Compare only hashes taken from the same
+  release.
+
+- Incompatible change (ad-hoc queries and connector filters): ad-hoc queries,
+  and the `filter` and `snapshot_filter` properties of the Delta Lake and
+  Iceberg connectors, now evaluate some SQL differently.  Filters that compare
+  a timestamp or date with a string, such as `ts > '2024-01-01'`, are not
+  affected.
+  - A number compared with a string is compared as a number, not as text.
+    For example, `bigint_col BETWEEN '10' AND '20'` now selects the values
+    from 10 to 20.  A string that is not a number makes the query fail,
+    instead of matching nothing.
+  - `sqrt` of a negative number and `power(0, -1)` fail, instead of returning
+    NaN and infinity.
+  - A scalar subquery that returns more than one row fails.
+  - `median` of an integer column returns a floating-point value.
+  - `-0.0` and `0.0` are equal and group together.
+  - `EXTRACT(ISODOW FROM ...)` returns 1 (Monday) to 7 (Sunday), instead of
+    0 to 6.
+  - `CAST(json_get(...) AS VARCHAR)` returns the JSON text of a number,
+    boolean, object or array, instead of NULL.
+  - `values` is no longer accepted as a column alias without `AS`: write
+    `SELECT x AS values`, not `SELECT x values`.
+
+- Incompatible change (Delta Lake connectors): DynamoDB commit locking on S3
+  is no longer supported.  If the
+  [storage parameters](/connectors/sinks/delta#storage-parameters) set
+  `AWS_S3_LOCKING_PROVIDER = 'dynamodb'`, the connector logs an error and
+  ignores it.  Commits use conditional writes, which stop two writers from
+  overwriting each other's commit on a store that supports them, such as
+  Amazon S3.
+
+- Incompatible change (Delta Lake connectors): the connector properties
+  `aws_profile`, `aws_role_arn`, `aws_web_identity_token_file` and
+  `aws_role_session_name` no longer have an effect.  Set the matching
+  environment variables (`AWS_PROFILE`, `AWS_ROLE_ARN`,
+  `AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_ROLE_SESSION_NAME`) in the pipeline's
+  environment instead, as IRSA on Amazon EKS does.  `aws_region` still selects
+  the S3 region, but to assume an IAM role, also set `AWS_REGION` in the
+  environment.  Other properties, such as `aws_access_key_id` and
+  `aws_secret_access_key`, work as before.
+
+- Delta Lake input connector: in `snapshot` mode, an empty string in a string
+  partition column now reads as `''` instead of NULL, the same as in `follow`
+  mode.  A `filter` or `snapshot_filter` that compares a string partition
+  column with a number, such as `part = 2024`, now reads all files instead of
+  only the matching partition, and fails if a partition value is not a number.
+  Write `part = '2024'` instead.
+
+- Iceberg input connector:
+  - When the connector reads a snapshot, it matches the columns of a data file
+    without field ids by the table's `schema.name-mapping.default` property,
+    instead of by column position.
+  - The `gcs.service.path` property is renamed to `gcs.service.host`.  The old
+    name still works.
+  - Each read call has a time limit, set by `opendal.io-timeout-ms`.  The
+    default is 60 seconds.
+
+- Incompatible change (Parquet and Delta Lake output, ad-hoc queries): a `MAP`
+  value with a NULL key can no longer be written to Parquet or Delta Lake, or
+  returned by an ad-hoc query.  This fails with `cannot serialize null into
+  non-nullable array`.  Parquet does not allow NULL map keys.
+
 ## v0.365.0
 
 - New connector (`nats_output`): write view output to a NATS subject. The
