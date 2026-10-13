@@ -1243,9 +1243,6 @@ struct ReceiverState {
     /// messages before reading all of them from mailboxes in one pass.
     full_mailboxes: AtomicUsize,
 
-    /// Invoked when all `npeers` messages are ready.
-    callback: Callback,
-
     /// Notified when all `npeers` messages are ready.
     notify: Notify,
 }
@@ -1637,7 +1634,6 @@ where
         let receiver_state = &self.receivers[receiver];
         let old_counter = receiver_state.full_mailboxes.fetch_add(1, Ordering::AcqRel);
         if old_counter >= self.npeers - 1 {
-            receiver_state.callback.call();
             receiver_state.notify.notify_waiters();
         }
     }
