@@ -4591,7 +4591,20 @@ impl CircuitThread {
                         } else {
                             warn!("Input endpoint {} failed", status.endpoint_name);
                         }
-                        failed.push(endpoint_id);
+                        // A fatal error (e.g. a circuit breaker giving up)
+                        // closes the reader deliberately, but the endpoint
+                        // must stay visible in pipeline status with that
+                        // error attached, so an operator can find it and
+                        // decide when to resume, and so checkpointing keeps
+                        // tracking its last position instead of dropping it
+                        // (which would otherwise make a restart re-ingest
+                        // the connector's input from the start). Only a
+                        // close with no fatal error -- a deliberate
+                        // disconnect, or a clean end of input -- actually
+                        // removes the endpoint here.
+                        if status.fatal_error.lock().unwrap().is_none() {
+                            failed.push(endpoint_id);
+                        }
                         return false;
                     } else {
                         return true;
@@ -4632,9 +4645,17 @@ impl CircuitThread {
         // Save metadata for checkpointing this step.
         self.input_metadata = match self.ft.as_ref().and_then(|ft| ft.replay_step.as_ref()) {
             None => {
-                // Common case: We just completed a normal step.  Collect its
-                // metadata.
-                let mut input_metadata = HashMap::new();
+                // Common case: We just completed a normal step. Update each
+                // endpoint's recorded resume position as it reports in, but
+                // keep the existing entries for endpoints that are not
+                // reporting this particular step (e.g. one currently
+                // retrying or that has given up with a fatal error):
+                // starting from a fresh map here would otherwise drop a
+                // connector's last known checkpoint position the moment it
+                // stops reporting progress on some step, discarding it from
+                // every checkpoint from then on, and making a restart
+                // re-ingest it from the beginning.
+                let mut input_metadata = std::mem::take(&mut self.input_metadata);
 
                 let statuses = self.controller.status.input_status();
                 for (&endpoint_id, (_name, results)) in step_metadata.iter() {
