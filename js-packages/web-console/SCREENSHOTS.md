@@ -13,12 +13,12 @@ silently until a reader notices.
 
 Goals:
 
-| Goal | Meaning |
-| --- | --- |
-| Reproducible | Two runs on the same commit produce byte-identical PNGs |
-| Automatic | One command regenerates every screenshot |
-| Local | A developer runs the script and commits the images that they accept |
-| Reviewable | Image diffs appear in the PR that caused them |
+| Goal         | Meaning                                                             |
+| ------------ | ------------------------------------------------------------------- |
+| Reproducible | Two runs on the same commit produce byte-identical PNGs             |
+| Automatic    | One command regenerates every screenshot                            |
+| Local        | A developer runs the script and commits the images that they accept |
+| Reviewable   | Image diffs appear in the PR that caused them                       |
 
 ## How vitest browser mode works here
 
@@ -47,12 +47,12 @@ the frame.
 
 Consequences that matter:
 
-| Property | Consequence |
-| --- | --- |
-| Real Chromium, real CSS engine | Screenshots are production-faithful |
-| `page` is a facade, not a Playwright `Page` | Locators become selectors, re-resolved node-side |
-| Component harness, not the SvelteKit runtime | No router, no layouts, no load functions |
-| Content lives in an iframe | `fullPage` is unavailable, and the iframe can be scaled |
+| Property                                     | Consequence                                             |
+| -------------------------------------------- | ------------------------------------------------------- |
+| Real Chromium, real CSS engine               | Screenshots are production-faithful                     |
+| `page` is a facade, not a Playwright `Page`  | Locators become selectors, re-resolved node-side        |
+| Component harness, not the SvelteKit runtime | No router, no layouts, no load functions                |
+| Content lives in an iframe                   | `fullPage` is unavailable, and the iframe can be scaled |
 
 Determinism is the reason to prefer this path. Component state comes from props and mocks, so there
 is no server clock, no build version, and no instance state to normalise. The nondeterminism that
@@ -63,17 +63,17 @@ would otherwise have to be engineered away simply does not exist.
 Both modes default to output unfit for docs, for different reasons. Neither default is usable
 as-is, so both need explicit configuration.
 
-| | vitest browser | Playwright e2e |
-| --- | --- | --- |
-| Content renders in | iframe inside an orchestrator page | the top-level page |
-| Logical size knob | `instances[].viewport` | `use.viewport` |
-| Real window size knob | `contextOptions.viewport` | same as `use.viewport` |
-| Retina knob | `contextOptions.deviceScaleFactor` | `use.deviceScaleFactor` |
-| Default when unset | 414x896, then downscaled | 1280x720 at dsf 1 |
-| Downscaling trap | yes, see below | none |
-| `fullPage` | unavailable | works |
-| Element clip | `screenshot({ element })` | `locator.screenshot()` |
-| Output path base | the test file's directory | the process working directory |
+|                       | vitest browser                     | Playwright e2e                |
+| --------------------- | ---------------------------------- | ----------------------------- |
+| Content renders in    | iframe inside an orchestrator page | the top-level page            |
+| Logical size knob     | `instances[].viewport`             | `use.viewport`                |
+| Real window size knob | `contextOptions.viewport`          | same as `use.viewport`        |
+| Retina knob           | `contextOptions.deviceScaleFactor` | `use.deviceScaleFactor`       |
+| Default when unset    | 414x896, then downscaled           | 1280x720 at dsf 1             |
+| Downscaling trap      | yes, see below                     | none                          |
+| `fullPage`            | unavailable                        | works                         |
+| Element clip          | `screenshot({ element })`          | `locator.screenshot()`        |
+| Output path base      | the test file's directory          | the process working directory |
 
 ### vitest: `page.screenshot()` is a body locator screenshot
 
@@ -88,11 +88,11 @@ and applies `transform: scale(...)` on `#tester-ui` to fit. Playwright captures 
 the output is `viewport * scale`. Enlarging the viewport makes the image smaller, because a larger
 iframe is scaled down harder. Measured on a 414x896 tester viewport:
 
-| Configuration | Window | Scale | Capture |
-| --- | --- | --- | --- |
-| Repository default | 800x600 | 0.379 | 158x340 |
-| `--window-size=1920,1200` | 1920x1200 | 0.977 | 405x876 |
-| plus `browser.ui: false` | 1280x720 | 0.900 | 1152x720 |
+| Configuration                                           | Window    | Scale | Capture   |
+| ------------------------------------------------------- | --------- | ----- | --------- |
+| Repository default                                      | 800x600   | 0.379 | 158x340   |
+| `--window-size=1920,1200`                               | 1920x1200 | 0.977 | 405x876   |
+| plus `browser.ui: false`                                | 1280x720  | 0.900 | 1152x720  |
 | plus context viewport 1600x1000, `deviceScaleFactor: 2` | 1600x1000 | 1.000 | 2560x1600 |
 
 The rule is `scale = min(1, windowW / viewportW, windowH / viewportH)`. The context viewport must be
@@ -110,10 +110,10 @@ viewport was honoured in every configuration tried.
 `deviceScaleFactor` 1, so a docs capture would land at 1280x720 non-retina, no better than the
 hand-made 1245x813 images it is meant to replace. Measured:
 
-| Context options | Viewport | Viewport capture | `fullPage` capture |
-| --- | --- | --- | --- |
-| none (Playwright defaults) | 1280x720 at dpr 1 | 1280x720 | 1280x2029, 12KB |
-| `1440x900`, `deviceScaleFactor: 2` | 1440x900 at dpr 2 | 2880x1800 | 2880x4058, 44KB |
+| Context options                    | Viewport          | Viewport capture | `fullPage` capture |
+| ---------------------------------- | ----------------- | ---------------- | ------------------ |
+| none (Playwright defaults)         | 1280x720 at dpr 1 | 1280x720         | 1280x2029, 12KB    |
+| `1440x900`, `deviceScaleFactor: 2` | 1440x900 at dpr 2 | 2880x1800        | 2880x4058, 44KB    |
 
 Docs shots therefore need their own Playwright project rather than the inherited `use` block:
 
@@ -175,10 +175,10 @@ largest fidelity gap and is now fixed.
 
 Two attributes carry the entire design system, and both are set outside every component:
 
-| Attribute | Set by | Drives |
-| --- | --- | --- |
-| `data-theme="feldera-modern-theme"` | `src/app.html:2` | Every feldera-theme custom property |
-| `light` / `dark` class | `src/routes/+layout.svelte:52` via `HtmlAttr` | The `dark` custom variant in `src/routes/layout.css:20` |
+| Attribute                           | Set by                                        | Drives                                                  |
+| ----------------------------------- | --------------------------------------------- | ------------------------------------------------------- |
+| `data-theme="feldera-modern-theme"` | `src/app.html:2`                              | Every feldera-theme custom property                     |
+| `light` / `dark` class              | `src/routes/+layout.svelte:52` via `HtmlAttr` | The `dark` custom variant in `src/routes/layout.css:20` |
 
 `src/routes/layout.css` is already imported by the setup file, so Tailwind, Skeleton, the
 feldera-theme sheet, DM Sans, DM Mono, Font Awesome brands, and the `fd`/`gc` icon webfonts are all
@@ -192,13 +192,13 @@ back to Tailwind's preflight.
 
 Measured on the same component, before and after:
 
-| Property | Without the root attributes | With them |
-| --- | --- | --- |
-| `body` font-family | `ui-sans-serif, system-ui, ...` | `"DM Sans Variable"` |
-| `--base-font-family` | unset | `DM Sans Variable` |
-| `body` color | `rgb(0, 0, 0)` | `oklch(0.3677 0 none)` |
-| `body` background | `oklch(0.985 0 0)` | `rgb(255, 255, 255)` |
-| `document.fonts.check('16px "DM Sans Variable"')` | `false` | `true` |
+| Property                                          | Without the root attributes     | With them              |
+| ------------------------------------------------- | ------------------------------- | ---------------------- |
+| `body` font-family                                | `ui-sans-serif, system-ui, ...` | `"DM Sans Variable"`   |
+| `--base-font-family`                              | unset                           | `DM Sans Variable`     |
+| `body` color                                      | `rgb(0, 0, 0)`                  | `oklch(0.3677 0 none)` |
+| `body` background                                 | `oklch(0.985 0 0)`              | `rgb(255, 255, 255)`   |
+| `document.fonts.check('16px "DM Sans Variable"')` | `false`                         | `true`                 |
 
 Visually, a danger dialog rendered with grey buttons and system text before, and with the correct
 red preset and DM Sans after.
@@ -280,11 +280,11 @@ problem described below.
 Note that `workers: 1` in the existing config is deliberate, because compilation is a shared global
 resource. Docs shots inherit that serialization, which is another reason to keep this path small.
 
-| Shot kind | Path | Determinism source |
-| --- | --- | --- |
-| Component, dialog, detail | vitest browser | props and mocks |
-| Composed view | vitest browser with mocked `$app/*` | props and mocks |
-| Whole page, navigation, routing | Playwright e2e | seeded instance state |
+| Shot kind                       | Path                                | Determinism source    |
+| ------------------------------- | ----------------------------------- | --------------------- |
+| Component, dialog, detail       | vitest browser                      | props and mocks       |
+| Composed view                   | vitest browser with mocked `$app/*` | props and mocks       |
+| Whole page, navigation, routing | Playwright e2e                      | seeded instance state |
 
 ### Determinism for the e2e path
 
@@ -337,10 +337,10 @@ place keeps those working and puts image review beside prose review.
 
 ## Commands
 
-| Script | Behaviour |
-| --- | --- |
-| `screenshots:update` | Capture and write into `docs.feldera.com` |
-| `screenshots:update -- <id>` | Regenerate one shot |
+| Script                       | Behaviour                                 |
+| ---------------------------- | ----------------------------------------- |
+| `screenshots:update`         | Capture and write into `docs.feldera.com` |
+| `screenshots:update -- <id>` | Regenerate one shot                       |
 
 `screenshots:update` uses the pixel-ratio tolerance already configured for e2e in
 `playwright.config.ts` (`maxDiffPixelRatio: 0.01`), which absorbs font-hinting noise without hiding
@@ -354,11 +354,11 @@ This keeps write tokens and image churn out of the CI, and a pixel change never 
 
 ## Rollout
 
-| Phase | Work | Result |
-| --- | --- | --- |
-| 1 | `screenshots` vitest project, one component shot | Byte-identical output across two local runs |
-| 2 | Migrate the detail shots under `docs/pipelines/` to component captures | Hand-cropping retired |
-| 3 | e2e path plus fixtures for the `docs/tour/` whole-page shots | The staleest set is generated |
+| Phase | Work                                                                   | Result                                      |
+| ----- | ---------------------------------------------------------------------- | ------------------------------------------- |
+| 1     | `screenshots` vitest project, one component shot                       | Byte-identical output across two local runs |
+| 2     | Migrate the detail shots under `docs/pipelines/` to component captures | Hand-cropping retired                       |
+| 3     | e2e path plus fixtures for the `docs/tour/` whole-page shots           | The staleest set is generated               |
 
 Phase 1 carries the real risk. Run `screenshots:update` twice on an unchanged tree and confirm
 `git diff` is empty before the set grows. Phase 3 is last because it is the only phase needing

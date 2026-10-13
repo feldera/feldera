@@ -21,25 +21,24 @@ export const formatDuration = (deltaMs: number, precision: 'dhms' | 'dhm' = 'dhm
   )
 }
 
+/**
+ * How long ago a view last refreshed, e.g. "updated 1h 30m ago". The age rounds down to a whole
+ * `stepMs`, so that the label does not change every second.
+ */
+export const formatAge = (elapsedMs: number, stepMs = 10_000): string => {
+  // A timestamp ahead of the clock reports "just now", not a negative age.
+  const elapsed = Math.max(elapsedMs, 0)
+  const ago = formatDuration(Math.floor(elapsed / stepMs) * stepMs).trim()
+  return ago ? `updated ${ago} ago` : 'updated just now'
+}
+
 export const useElapsedTime = () => {
   // Every timestamp measured here comes from the server, so ageing it against a skewed
   // browser clock would report drift as elapsed time.
   const now = useInterval(() => new ServerDate(), 1000, 1000 - (Date.now() % 1000))
   const formatElapsedTime = (timestamp: Date, precision: 'dhms' | 'dhm' = 'dhms') =>
     formatDuration(now.current.valueOf() - timestamp.valueOf(), precision)
-  /**
-   * How long ago a view last refreshed, quantized to `stepMs` so that the label does not
-   * tick every second. A cluster monitor event is up to ten minutes old, and older still
-   * once the monitor dies, so the age rolls over into minutes and hours.
-   */
-  const formatUpdatedAgo = (timestamp: Date | null | undefined, stepMs = 10_000): string | null => {
-    if (!timestamp) {
-      return null
-    }
-    // A timestamp ahead of the clock ages to nothing rather than to a negative duration.
-    const elapsed = Math.max(now.current.valueOf() - timestamp.valueOf(), 0)
-    const ago = formatDuration(Math.floor(elapsed / stepMs) * stepMs).trim()
-    return ago ? `updated ${ago} ago` : 'updated just now'
-  }
+  const formatUpdatedAgo = (timestamp: Date | null | undefined, stepMs?: number): string | null =>
+    timestamp ? formatAge(now.current.valueOf() - timestamp.valueOf(), stepMs) : null
   return { formatElapsedTime, formatUpdatedAgo }
 }

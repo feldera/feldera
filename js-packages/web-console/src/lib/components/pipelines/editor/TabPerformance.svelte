@@ -5,17 +5,16 @@
 </script>
 
 <script lang="ts">
-  import type { ConnectorErrorFilter } from 'common-lib/connectorMetrics'
+  import type { ConnectorErrorFilter } from 'common-ui/connectorMetrics'
   import { formatDateTime, formatQty } from 'common-lib/format'
   import { sleep } from 'common-lib/promise'
-  import { ConnectorMetricsTables, SegmentedControl } from 'common-ui'
+  import { ConnectorMetricsTables, Drawer, SegmentedControl, useIsScreenXl } from 'common-ui'
   import Dayjs from 'dayjs'
   import PipelineMemoryGraph from '$lib/components/layout/pipelines/PipelineMemoryGraph.svelte'
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
   import PipelineThroughputGraph from '$lib/components/layout/pipelines/PipelineThroughputGraph.svelte'
   import ConnectorErrors from '$lib/components/pipelines/editor/performance/ConnectorErrors.svelte'
   import CheckpointsStatus from '$lib/components/pipelines/editor/performance/CheckpointsStatus.svelte'
-  import { useIsScreenXl } from '$lib/compositions/layout/useIsMobile.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { staleSampleCount, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
@@ -27,7 +26,6 @@
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
   import CheckpointsIndicator from './performance/CheckpointsIndicator.svelte'
   import CommitProgressIndicator from './performance/CommitProgressIndicator.svelte'
-  import Drawer from '$lib/components/layout/Drawer.svelte'
   import WarningBanner from './WarningBanner.svelte'
 
   const RECONNECT_BACKOFF_MS = 1000

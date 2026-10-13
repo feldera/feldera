@@ -1,10 +1,9 @@
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { formatQty } from 'common-lib/format'
-  import { Tooltip } from 'common-ui'
+  import { Tooltip, useIsScreenSm } from 'common-ui'
   import { type Snippet, untrack } from 'svelte'
   import { slide } from 'svelte/transition'
-  import { useIsScreenSm } from '$lib/compositions/layout/useIsMobile.svelte'
   import { statusChipClass, statusToneColors } from '$lib/functions/pipelineStatusColor'
   import type { CommitProgressSummary } from '$lib/services/manager'
 

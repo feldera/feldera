@@ -67,4 +67,18 @@ describe('statusToneColors', () => {
     expect(colors.chip).toBe(`bg-status-${tone}-subtle text-status-${tone}`)
     expect(colors.dot).toMatch(new RegExp(`^bg-status-${tone}(-dot)?$`))
   })
+
+  it.each([
+    'chip',
+    'dot',
+    'healthIcon',
+    'healthDot',
+    'healthText',
+    'healthBar',
+    'healthBarHighlight',
+    'healthIndicator'
+  ] as const)('gives each tone a different %s color', (purpose) => {
+    const classes = Object.values(statusToneColors).map((colors) => colors[purpose])
+    expect(new Set(classes).size).toBe(classes.length)
+  })
 })

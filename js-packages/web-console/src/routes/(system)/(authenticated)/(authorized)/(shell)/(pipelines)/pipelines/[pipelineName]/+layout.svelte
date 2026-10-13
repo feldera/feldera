@@ -1,8 +1,7 @@
 <script lang="ts">
+  import { OverlayDrawer, useIsTablet } from 'common-ui'
   import type { Snippet } from 'svelte'
-  import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
   import PipelineList from '$lib/components/pipelines/List.svelte'
-  import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import type { LayoutData, LayoutProps } from './$types'

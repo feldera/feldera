@@ -1,11 +1,13 @@
 <script lang="ts" module>
-  export interface TimelineEvent<S extends string = string> {
+  import type { HealthStatus } from './healthEvents'
+
+  export interface TimelineEvent<S extends HealthStatus = HealthStatus> {
     timestamp: Date
     type: S
     description: string
   }
 
-  export interface TimelineGroup<S extends string = string> {
+  export interface TimelineGroup<S extends HealthStatus = HealthStatus> {
     startTime: number
     endTime: number
     status: S
@@ -13,9 +15,10 @@
   }
 </script>
 
-<script lang="ts" generics="S extends string">
+<script lang="ts" generics="S extends HealthStatus">
+  import { healthSeverity } from './healthEvents'
   import { formatDateTime, formatDateTimeRange } from 'common-lib/format'
-  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
+  import { healthStatusColors, healthStatusLabel } from './healthStatus'
 
   interface Props {
     /** The text label for the timeline */
@@ -36,20 +39,14 @@
     legend: S[]
     /** Selected bar timestamp range */
     selectedBars?: { from: Date; to: Date } | null
-    /** When the timeline data was last refreshed, used to show "updated X ago" */
-    updatedAt?: Date | null
+    /** Text after the status in the header, e.g. "updated 5m ago". */
+    updatedText?: string | null
     /**
      * Whether the newest event no longer describes the present, so the header reports no
      * data instead of repeating that event's status. What makes data stale is the caller's
      * to decide: an event's own age says so only for a source that writes on a heartbeat.
      */
     stale?: boolean
-    /** Maps a status to its sort priority; higher wins when a bucket has mixed statuses */
-    getSeverity: (status: S) => number
-    /** Returns the SVG fill class for a bar given its status and highlight state */
-    getBarColor: (status: S, isHighlighted: boolean) => string
-    /** Returns bg/text/label style tokens for the legend and status header */
-    getStatusStyle: (status: S) => { bg: string; text: string; label: string }
   }
 
   let {
@@ -62,16 +59,9 @@
     onBarClick,
     legend,
     selectedBars = null,
-    updatedAt = null,
-    stale = false,
-    getSeverity,
-    getBarColor,
-    getStatusStyle
+    updatedText = null,
+    stale = false
   }: Props = $props()
-
-  const UPDATED_AGO_STEP_MS = 10_000
-  const { formatUpdatedAgo } = useElapsedTime()
-  const updatedAgoText = $derived(formatUpdatedAgo(updatedAt, UPDATED_AGO_STEP_MS))
 
   // Timeline display configuration
   const TIMELINE_HEIGHT = 24
@@ -129,18 +119,20 @@
   const gapWidth = $derived(barWidth / BAR_TO_GAP_RATIO)
 
   function pickWorseStatus(a: S, b: S): S {
-    return getSeverity(b) > getSeverity(a) ? b : a
+    return healthSeverity[b] > healthSeverity[a] ? b : a
   }
 
-  const noDataStyle = { bg: 'bg-surface-300-700', text: 'text-surface-300-700', label: 'No data' }
-  const resolveStyle = (status: S | 'no_data') =>
-    status === 'no_data' ? noDataStyle : getStatusStyle(status)
+  // The colors of a bar with no events. The bar color is too faint for text, so the "No data"
+  // label in the header uses `text-surface-600-300`.
+  const noDataLabel = 'No data'
+  const noDataSwatch = 'bg-surface-300-700'
+  const noDataBar = 'fill-surface-300-700'
 
   const latestStatus = $derived(events.at(0)?.type)
   const healthStatus = $derived(stale ? undefined : latestStatus)
   // "No data" must not hide a recorded problem, so the header keeps naming it.
   const staleIssue = $derived(
-    stale && latestStatus !== undefined && getSeverity(latestStatus) > 0 ? latestStatus : undefined
+    stale && latestStatus !== undefined && healthSeverity[latestStatus] > 0 ? latestStatus : undefined
   )
 
   function getBarX(index: number): number {
@@ -332,23 +324,31 @@
   </g>
 {/snippet}
 
+{#snippet legendItem(swatchClass: string, label: string)}
+  <div class="flex items-center gap-1.5">
+    <div class="h-3 w-3 rounded-md {swatchClass}"></div>
+    <span class="text-surface-600-400">{label}</span>
+  </div>
+{/snippet}
+
 <div class="flex flex-col">
   <div class="">
     {label}
     {#if healthStatus}
-      {@const style = getStatusStyle(healthStatus)} — <span class={style.text}>{style.label}</span>
+      — <span class={healthStatusColors(healthStatus).healthText}
+        >{healthStatusLabel(healthStatus)}</span
+      >
     {:else if stale}
-      <!-- The bar fill colour of `noDataStyle` is too faint to read as text; the legend
-           renders its label in this colour instead. -->
-      — <span class="text-surface-600-300">{noDataStyle.label}</span>
+      — <span class="text-surface-600-400">{noDataLabel}</span>
       {#if staleIssue}
-        {@const style = getStatusStyle(staleIssue)}
         <span class="text-surface-600-400">(last recorded:</span>
-        <span class={style.text}>{style.label}</span><span class="text-surface-600-400">)</span>
+        <span class={healthStatusColors(staleIssue).healthText}
+          >{healthStatusLabel(staleIssue)}</span
+        ><span class="text-surface-600-400">)</span>
       {/if}
     {/if}
-    {#if updatedAgoText !== null}
-      <span class="text-surface-600-400"> — {updatedAgoText}</span>
+    {#if updatedText}
+      <span class="text-surface-600-400"> — {updatedText}</span>
     {/if}
   </div>
   <div class="relative {className}">
@@ -361,17 +361,16 @@
     >
       {#each groups as group, index}
         {#if group !== null}
+          {@const colors = healthStatusColors(group.status)}
+          {@const isHighlighted = hoveredBarIndex === index || selectedBarIndices.includes(index)}
           {@render timelineBar(
             index,
-            getBarColor(
-              group.status,
-              hoveredBarIndex === index || selectedBarIndices.includes(index)
-            ),
+            isHighlighted ? colors.healthBarHighlight : colors.healthBar,
             true,
             group
           )}
         {:else}
-          {@render timelineBar(index, 'fill-surface-300-700', false, null)}
+          {@render timelineBar(index, noDataBar, false, null)}
         {/if}
       {/each}
     </svg>
@@ -391,12 +390,9 @@
       </div>
       {#if legend.length}
         <div class="hidden items-center gap-4 text-xs lg:flex">
-          {#each ['no_data' as const, ...legend] as status}
-            {@const style = resolveStyle(status)}
-            <div class="flex items-center gap-1.5">
-              <div class="h-3 w-3 rounded-md {style.bg}"></div>
-              <span class="text-surface-600-300">{style.label}</span>
-            </div>
+          {@render legendItem(noDataSwatch, noDataLabel)}
+          {#each legend as status}
+            {@render legendItem(healthStatusColors(status).healthDot, healthStatusLabel(status))}
           {/each}
         </div>
       {/if}

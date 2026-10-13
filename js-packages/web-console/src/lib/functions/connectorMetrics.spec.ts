@@ -4,8 +4,8 @@ import {
   type ConnectorStatus,
   type InputEndpointStatus,
   type OutputEndpointStatus
-} from './connectorMetrics.ts'
-import { microseconds } from './duration.ts'
+} from 'common-ui/connectorMetrics'
+import { microseconds } from 'common-lib/duration'
 
 const input = (
   name: string,

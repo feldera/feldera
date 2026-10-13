@@ -18,12 +18,27 @@ import { SegmentedControl, TabsPanel, PersistentContent, MonacoEditor } from 'co
 |---|---|
 | Controls | `SegmentedControl`, `Select`, `TabsPanel`, `Popover`, `Tooltip` |
 | Editor | `MonacoEditorRunes` and `monaco.ts`, a runes-based Monaco wrapper |
+| Layout | `Drawer` shows a resizable side panel on wide screens (`InlineDrawer`) and an overlay on tablets and phones (`OverlayDrawer`). `InlineDropdown` toggles content under a header. `useIsMobile.svelte` has the screen-size media queries. |
 | Layout helpers | `PersistentContent` and `persistentRect.svelte` for content that must survive conditional re-renders (see those files for details). `ANSIDecoratedText` renders ANSI-colored log output. |
 | Buttons | `ClipboardCopyButton`. `ClickFeedback` shows a short confirmation state after a click. |
-| Pipeline views | `ConnectorMetricsTables` shows the connector statistics of each table and view. Use `aggregateConnectorMetrics` from `common-lib/connectorMetrics` to make its input from a `/stats` response. |
+| Pipeline views | `ConnectorMetricsTables` shows the connector statistics of each table and view. Use `aggregateConnectorMetrics` from `common-ui/connectorMetrics` to make its input from a `/stats` response. |
+| Health views | `StatusTimeline`, `EventLogList` and `HealthEventList` show a status history, its incidents and the events of one incident. `PipelineEventHistory` combines them for the monitor events of a pipeline, from the API or from a support bundle. |
 
-Code that does not need Svelte (formatting, collections, domain types) lives in
-[`common-lib`](../common-lib/README.md) instead.
+Plain TypeScript modules that only the web console and the profiler use also
+live here. Import them by their path, e.g. `common-ui/pipelineHealth`:
+
+| Module | Contents |
+|---|---|
+| `statusTone` | The colors of each status tone |
+| `healthStatus` | The tone, label and icon of each health status |
+| `healthEvents` | The health statuses, their severity order and the incident bucket type |
+| `pipelineHealth` | Pipeline monitor event types, classified and grouped into incidents |
+| `felderaRelation` | SQL relation name normalization |
+| `latencyColor` | Color scale for connector latencies |
+| `connectorMetrics` | Connector statistics types, grouped by relation |
+
+Code that is useful outside the web console and the profiler (formatting,
+collections) lives in [`common-lib`](../common-lib/README.md) instead.
 
 `src/lib` is the published surface (re-exported from `src/lib/index.ts`);
 `src/routes` is only a local preview/showcase app and is not published.

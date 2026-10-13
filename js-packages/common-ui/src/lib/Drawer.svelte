@@ -1,10 +1,9 @@
 <script lang="ts">
   import type { Percent } from 'common-lib/percent'
-  import InlineDrawer from '$lib/components/layout/InlineDrawer.svelte'
-
-  import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
-  import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
-  import type { Snippet } from '$lib/types/svelte'
+  import type { Snippet } from 'svelte'
+  import InlineDrawer from './InlineDrawer.svelte'
+  import OverlayDrawer from './OverlayDrawer.svelte'
+  import { useIsTablet } from './useIsMobile.svelte'
 
   const isTablet = useIsTablet()
 

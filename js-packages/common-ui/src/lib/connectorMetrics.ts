@@ -2,11 +2,11 @@
 // are structural subsets of the pipeline-manager API types, so both a live `/stats` response and
 // the `stats.json` of a support bundle match them.
 
-import { groupBy } from './array.ts'
-import { type Microseconds, microseconds } from './duration.ts'
-import { normalizeCaseIndependentName } from './felderaRelation.ts'
-import { nonNull } from './function.ts'
-import { tuple } from './tuple.ts'
+import { groupBy } from 'common-lib/array'
+import { type Microseconds, microseconds } from 'common-lib/duration'
+import { nonNull } from 'common-lib/function'
+import { tuple } from 'common-lib/tuple'
+import { normalizeCaseIndependentName } from './felderaRelation'
 
 export type ConnectorHealth = {
   status: 'Healthy' | 'Unhealthy'

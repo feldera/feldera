@@ -1,11 +1,12 @@
 <script lang="ts">
+  import { statusToneColors } from 'common-ui'
   import { slide } from 'svelte/transition'
   import type { Snippet } from '$lib/types/svelte'
 
   const styles = {
     warning: {
       iconClass: 'fd fd-triangle-alert',
-      colorClass: 'bg-status-warning-subtle text-status-warning'
+      colorClass: statusToneColors.warning.chip
     },
     info: {
       iconClass: 'fd fd-info',

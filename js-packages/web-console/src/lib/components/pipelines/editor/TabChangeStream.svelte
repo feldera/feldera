@@ -284,7 +284,7 @@
 
 <script lang="ts">
   import { count, groupBy } from 'common-lib/array'
-  import { getCaseIndependentName, normalizeCaseIndependentName } from 'common-lib/felderaRelation'
+  import { getCaseIndependentName, normalizeCaseIndependentName } from 'common-ui/felderaRelation'
   import { tuple } from 'common-lib/tuple'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
 
@@ -300,13 +300,12 @@
   } from '$lib/functions/pipelines/changeStream'
   import JSONbig from 'true-json-bigint'
   import { untrack } from 'svelte'
-  import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
+  import { SegmentedControl, Tooltip, useIsMobile } from 'common-ui'
   import {
     usePipelineManager,
     type PipelineManagerApi
   } from '$lib/compositions/usePipelineManager.svelte'
   import { useProtocol } from '$lib/compositions/useProtocol'
-  import { SegmentedControl, Tooltip } from 'common-ui'
   import { getSelectedTenant } from '$lib/services/auth'
   import { isPipelineInteractive } from '$lib/functions/pipelines/status'
   import { Ref } from '$lib/compositions/ref.svelte'
