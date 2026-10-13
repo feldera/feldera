@@ -528,22 +528,34 @@ impl NatsReader {
                             ),
                             Some("nats-input"),
                         );
-                        if let Some(command) = command_receiver.try_recv()? {
-                            match command {
-                                InputReaderCommand::Disconnect => return Ok(()),
-                                other => {
-                                    // Buffer the command (Replay or control) and
-                                    // keep retrying the current replay range. An
-                                    // acknowledged replay step must run to
-                                    // completion — honoring a control command here
-                                    // would abandon the step before `replayed()`,
-                                    // leaving replay/checkpoint state divergent.
-                                    command_receiver.put_back(other);
+                        // Wait out the backoff, but notice a Disconnect
+                        // during it instead of only checking once up front:
+                        // the wait can now reach retry_max_interval_secs
+                        // (300s by default), long enough that waiting it out
+                        // unconditionally would make the connector
+                        // unresponsive to a stop request for most of that
+                        // time. Any other command is buffered and still
+                        // waits out the full delay: an acknowledged replay
+                        // step must run to completion, and honoring a
+                        // control command here would abandon the step before
+                        // `replayed()`, leaving replay/checkpoint state
+                        // divergent.
+                        let deadline = tokio::time::Instant::now() + retry_delay;
+                        let mut pending_command = None;
+                        loop {
+                            select! {
+                                _ = tokio::time::sleep_until(deadline) => break,
+                                result = command_receiver.recv(), if pending_command.is_none() => {
+                                    match result? {
+                                        InputReaderCommand::Disconnect => return Ok(()),
+                                        other => pending_command = Some(other),
+                                    }
                                 }
                             }
                         }
-
-                        tokio::time::sleep(retry_delay).await;
+                        if let Some(command) = pending_command {
+                            command_receiver.put_back(command);
+                        }
                     }
                     Err(ConnectorError::Fatal(error)) => {
                         metrics.set_retry_state(RetryState::Stopped);
@@ -569,12 +581,30 @@ impl NatsReader {
                                     while reader_error_receiver.try_recv().is_ok() {}
                                     match error.with_context("NATS reader task failed") {
                                         ConnectorError::Retryable(error) => {
-                                            state = ReaderLifecycleState::ErrorRetrying;
-                                            retry_count = 1;
-                                            let retry_delay = retry_policy.delay(retry_count);
-                                            next_retry_at = Some(tokio::time::Instant::now() + retry_delay);
-                                            metrics.set_retry_state(RetryState::Retrying);
-                                            consumer.error(false, anyhow!("NATS input entered ERROR state, will retry in {retry_delay:?}: {error:#}"), Some("nats-input"));
+                                            // A reader that started (its consumer
+                                            // create succeeded) and then failed
+                                            // right away is still a failure to
+                                            // deliver, not a recovery: keep
+                                            // counting consecutive failures across
+                                            // these cycles rather than resetting to
+                                            // 1, and check retry_max_attempts here
+                                            // too, or a cluster that always accepts
+                                            // the create but never lets a reader
+                                            // succeed can retry forever regardless
+                                            // of the configured limit.
+                                            retry_count += 1;
+                                            if retry_policy.exhausted(retry_count) {
+                                                state = ReaderLifecycleState::Stopped;
+                                                next_retry_at = None;
+                                                metrics.set_retry_state(RetryState::Stopped);
+                                                consumer.error(true, retry_exhausted_error(&retry_policy, retry_count, "input", error), Some("nats-input"));
+                                            } else {
+                                                state = ReaderLifecycleState::ErrorRetrying;
+                                                let retry_delay = retry_policy.delay(retry_count);
+                                                next_retry_at = Some(tokio::time::Instant::now() + retry_delay);
+                                                metrics.set_retry_state(RetryState::Retrying);
+                                                consumer.error(false, anyhow!("NATS input entered ERROR state, will retry in {retry_delay:?}: {error:#}"), Some("nats-input"));
+                                            }
                                         }
                                         ConnectorError::Fatal(error) => {
                                             state = ReaderLifecycleState::Stopped;
@@ -591,12 +621,19 @@ impl NatsReader {
                                     if let Some(canceller) = canceller.take() {
                                         canceller.cancel_and_join().await;
                                     }
-                                    state = ReaderLifecycleState::ErrorRetrying;
-                                    retry_count = 1;
-                                    let retry_delay = retry_policy.delay(retry_count);
-                                    next_retry_at = Some(tokio::time::Instant::now() + retry_delay);
-                                    metrics.set_retry_state(RetryState::Retrying);
-                                    consumer.error(false, anyhow!("NATS reader task exited unexpectedly without reporting an error, will retry in {retry_delay:?}"), Some("nats-input"));
+                                    retry_count += 1;
+                                    if retry_policy.exhausted(retry_count) {
+                                        state = ReaderLifecycleState::Stopped;
+                                        next_retry_at = None;
+                                        metrics.set_retry_state(RetryState::Stopped);
+                                        consumer.error(true, retry_exhausted_error(&retry_policy, retry_count, "input", anyhow!("NATS reader task exited unexpectedly without reporting an error")), Some("nats-input"));
+                                    } else {
+                                        state = ReaderLifecycleState::ErrorRetrying;
+                                        let retry_delay = retry_policy.delay(retry_count);
+                                        next_retry_at = Some(tokio::time::Instant::now() + retry_delay);
+                                        metrics.set_retry_state(RetryState::Retrying);
+                                        consumer.error(false, anyhow!("NATS reader task exited unexpectedly without reporting an error, will retry in {retry_delay:?}"), Some("nats-input"));
+                                    }
                                 }
                             }
                             continue;
@@ -651,7 +688,12 @@ impl NatsReader {
                                     while reader_error_receiver.try_recv().is_ok() {}
                                     canceller = Some(new_canceller);
                                     state = ReaderLifecycleState::Running;
-                                    retry_count = 0;
+                                    // retry_count is deliberately not reset here: a
+                                    // successful create is not yet a recovery if
+                                    // the new reader immediately fails again (see
+                                    // the Running-state error handling above).
+                                    // Real forward progress (a non-empty Queue
+                                    // flush) resets it instead.
                                     next_retry_at = None;
                                     metrics.set_retry_state(RetryState::Healthy);
                                 }
@@ -716,6 +758,12 @@ impl NatsReader {
                             "Queued {:?} records ({sequence_number_range:?})",
                             buffer_size
                         );
+                        // Real forward progress: messages actually reached
+                        // the circuit, so whatever got the connector here
+                        // worked. This is what clears the breaker's memory
+                        // of consecutive failures, not merely creating a
+                        // consumer (see the Running-state error handling).
+                        retry_count = 0;
                     } else {
                         trace!("Queued 0 records ({sequence_number_range:?})");
                     }
@@ -770,18 +818,37 @@ impl NatsReader {
                     {
                         Ok(new_canceller) => {
                             state = ReaderLifecycleState::Running;
-                            retry_count = 0;
+                            // Not reset here, for the same reason as the
+                            // ErrorRetrying case above: a create succeeding is
+                            // not yet a recovery. Pause and real forward
+                            // progress are what clear the breaker's memory.
                             canceller = Some(new_canceller);
                             next_retry_at = None;
                             metrics.set_retry_state(RetryState::Healthy);
                         }
                         Err(ConnectorError::Retryable(error)) => {
-                            state = ReaderLifecycleState::ErrorRetrying;
-                            retry_count = 1;
-                            let retry_delay = retry_policy.delay(retry_count);
-                            next_retry_at = Some(tokio::time::Instant::now() + retry_delay);
-                            metrics.set_retry_state(RetryState::Retrying);
-                            consumer.error(false, anyhow!("NATS input entered ERROR state, will retry in {retry_delay:?}: {error:#}"), Some("nats-input"));
+                            retry_count += 1;
+                            if retry_policy.exhausted(retry_count) {
+                                state = ReaderLifecycleState::Stopped;
+                                next_retry_at = None;
+                                metrics.set_retry_state(RetryState::Stopped);
+                                consumer.error(
+                                    true,
+                                    retry_exhausted_error(
+                                        &retry_policy,
+                                        retry_count,
+                                        "input",
+                                        error,
+                                    ),
+                                    Some("nats-input"),
+                                );
+                            } else {
+                                state = ReaderLifecycleState::ErrorRetrying;
+                                let retry_delay = retry_policy.delay(retry_count);
+                                next_retry_at = Some(tokio::time::Instant::now() + retry_delay);
+                                metrics.set_retry_state(RetryState::Retrying);
+                                consumer.error(false, anyhow!("NATS input entered ERROR state, will retry in {retry_delay:?}: {error:#}"), Some("nats-input"));
+                            }
                         }
                         Err(ConnectorError::Fatal(error)) => {
                             metrics.set_retry_state(RetryState::Stopped);
@@ -902,9 +969,12 @@ async fn create_nats_consumer(
         // On an overloaded cluster, consumer creation can take minutes and
         // still succeed long after the client gave up, leaving a consumer
         // that nobody reads but that scans the stream to compute its pending
-        // count. The delete is queued behind the create, so it removes that
-        // consumer if it appears.
+        // count. The server may have created it, so count it as created
+        // before cleaning it up, or consumers_deleted_total runs permanently
+        // ahead of consumers_created_total.
+        stream_ctx.metrics.consumer_created();
         delete_nats_consumer(jetstream, stream_ctx, &consumer_name).await;
+        clean_up_delayed_create(jetstream, stream_ctx, &consumer_name);
     }
     let consumer = create_result.with_context(|| {
         format!(
@@ -977,6 +1047,45 @@ async fn delete_nats_consumer(
             );
         }
     }
+}
+
+/// Grace period before re-checking whether a consumer we just deleted has
+/// reappeared.
+const DELAYED_CREATE_RECHECK_DELAY: Duration = Duration::from_secs(2);
+
+/// Catches a create that a JetStream meta-leader change applies after a
+/// delete meant to clean it up, undoing that delete.
+///
+/// Deleting after a create assumes the two requests land on the server in
+/// that order. They usually do, but a meta-leader change between them can
+/// apply the create after the delete, leaving an orphan that nobody will
+/// ever read and that scans the stream on the server's behalf. A delete
+/// sent immediately after would race the same reordering, so this instead
+/// waits out a grace period, then deletes the consumer again if it exists.
+///
+/// Spawned rather than awaited: the caller (a create path, or a pause
+/// tearing down a reader) should not block on this best-effort cleanup.
+fn clean_up_delayed_create(
+    jetstream: &jetstream::Context,
+    stream_ctx: &StreamContext,
+    consumer_name: &str,
+) {
+    let jetstream = jetstream.clone();
+    let stream_ctx = stream_ctx.clone();
+    let consumer_name = consumer_name.to_string();
+    tokio::spawn(async move {
+        tokio::time::sleep(DELAYED_CREATE_RECHECK_DELAY).await;
+        let reappeared = jetstream
+            .get_consumer_from_stream::<nats_consumer::Config, _, _>(
+                &consumer_name,
+                &stream_ctx.stream_name,
+            )
+            .await
+            .is_ok();
+        if reappeared {
+            delete_nats_consumer(&jetstream, &stream_ctx, &consumer_name).await;
+        }
+    });
 }
 
 /// Runs a health check after an inactivity timeout fires.
@@ -1158,6 +1267,21 @@ async fn spawn_nats_reader(
                                         continue;
                                     }
                                 };
+                                // The ordered consumer can recreate itself
+                                // with DeliverPolicy::All on a detected gap
+                                // or lost heartbeat if it has not yet
+                                // delivered a message (e.g. its consumer was
+                                // deleted externally before anything arrived
+                                // at a checkpointed, already-positioned
+                                // start). That rescans the whole stream from
+                                // the beginning, redelivering messages we
+                                // have already processed. Skip anything at or
+                                // behind our own tracked position instead of
+                                // re-ingesting it.
+                                if info.stream_sequence < state.next_sequence.load(Ordering::Acquire) {
+                                    trace!("Skipping already-processed message #{} (redelivered)", info.stream_sequence);
+                                    continue;
+                                }
                                 trace!("Got message #{}", info.stream_sequence);
                                 // Store the checkpoint position (the next sequence).
                                 state.next_sequence.store(info.stream_sequence + 1, Ordering::Release);
@@ -1327,12 +1451,28 @@ struct Canceller {
 }
 
 impl Canceller {
+    /// Cancels the reader task and waits for it to stop. Bounded by actual
+    /// task shutdown, not by anything server-side: the consumer delete runs
+    /// in the background (see below) so a slow server cannot stall whoever
+    /// is awaiting this, such as the worker's command loop after a `Pause`.
     async fn cancel_and_join(self) {
         self.cancel_token.cancel();
         let _ = self.join_handle.await;
-        // The reader task (and with it the ordered consumer's subscription)
-        // is gone, so nothing can race the delete by recreating the consumer.
-        delete_nats_consumer(&self.jetstream, &self.stream_ctx, &self.consumer_name).await;
+        // The reader task is gone, but the client library may have already
+        // sent its own recreate of this consumer (on a detected gap or lost
+        // heartbeat) before cancellation reached it. That recreate can still
+        // land after our delete below, the same reordering
+        // `clean_up_delayed_create` exists for, so check for it too.
+        let Canceller {
+            jetstream,
+            stream_ctx,
+            consumer_name,
+            ..
+        } = self;
+        tokio::spawn(async move {
+            delete_nats_consumer(&jetstream, &stream_ctx, &consumer_name).await;
+            clean_up_delayed_create(&jetstream, &stream_ctx, &consumer_name);
+        });
     }
 }
 
