@@ -14,13 +14,14 @@ use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as
 use chrono::Utc;
 use dbsp::circuit::tokio::TOKIO;
 use delta_kernel::engine::arrow_conversion::TryFromArrow;
+use delta_kernel::table_features::ColumnMappingMode;
 use delta_kernel::table_properties::DataSkippingNumIndexedCols;
 use deltalake::DeltaTable;
 use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, TableReference};
 use deltalake::kernel::{Action, Add, ArrayType, DataType, MapType, StructField, StructType};
 use deltalake::logstore::ObjectStoreRef;
 use deltalake::operations::create::CreateBuilder;
-use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
+use deltalake::operations::write::writer::{ArrowWriterOptions, DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use feldera_adapterlib::catalog::SerCursorFlattened;
 use feldera_adapterlib::transport::OutputBatchType;
@@ -178,6 +179,20 @@ pub(crate) fn check_variant_encoding(
         ));
     }
     Ok(())
+}
+
+/// Refuse a column-mapped table: we write logical names, so readers would see NULL.
+fn check_column_mapping(table: &DeltaTable) -> AnyResult<()> {
+    let snapshot = table.snapshot()?;
+    match snapshot.snapshot().table_properties().column_mapping_mode {
+        None | Some(ColumnMappingMode::None) => Ok(()),
+        Some(mode) => Err(anyhow!(
+            "the existing Delta table sets 'delta.columnMapping.mode' to '{}', which this \
+             connector cannot write: the rows would be stored under column names no reader \
+             resolves, and would read back as NULL. Write to a table without column mapping.",
+            format!("{mode:?}").to_lowercase()
+        )),
+    }
 }
 
 struct DeltaTableWriterInner {
@@ -467,15 +482,7 @@ impl WriterTask {
         inner: Arc<DeltaTableWriterInner>,
         continue_previous_state: bool,
     ) -> AnyResult<Self> {
-        let mut storage_options = inner.config.object_store_config.clone();
-
-        // FIXME: S3 does not support the atomic rename operation required by delta. This is not a problem
-        // with a single writer, but multiple writers require an external coordinator service.
-        // `delta-rs` users tend to rely on the DynamoDB lock client for this
-        // (see `object_store::aws::DynamoCommit`), but that only helps if all writers use the
-        // same lock service.  For now we simply tell the object store client to use unsafe renames
-        // and hope for the best.  Without this config option, writes to S3-based delta tables will fail.
-        storage_options.insert("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string());
+        let storage_options = inner.config.object_store_config.clone();
 
         // On restart (resuming from a checkpoint), open the existing table
         // without truncating or error-checking.  This prevents data loss when
@@ -604,6 +611,7 @@ impl WriterTask {
             &inner.struct_fields,
             inner.config.variant_encoding,
         )?;
+        check_column_mapping(&delta_table)?;
 
         info!(
             "delta_table {}: opened delta table '{}' (current table version {})",
@@ -940,12 +948,18 @@ async fn stream_encode_and_write(
         .set_compression(Compression::SNAPPY)
         .set_max_row_group_bytes(Some(MAX_ROW_GROUP_BYTES))
         .build();
+    // Serial encoding: delta-rs's parallel default ignores `max_row_group_bytes`
+    // and buffers the whole file, which removes backpressure from a slow store.
+    let arrow_options = ArrowWriterOptions::new().with_enable_parallel_encoding(false);
+    // delta-rs checks the file size once per slice; 8192-row slices overshoot by tens of MiB.
+    const WRITE_BATCH_ROWS: usize = 1024;
     let writer_config = WriterConfig::new(
         inner.arrow_schema.clone(),
         vec![],
         Some(writer_properties),
+        Some(arrow_options),
         Some(TARGET_FILE_SIZE),
-        None,
+        Some(WRITE_BATCH_ROWS),
         DataSkippingNumIndexedCols::NumColumns(num_indexed_cols),
         None,
     );
@@ -1500,6 +1514,25 @@ mod parallel {
         continue_previous_state: bool,
         max_retries: Option<u32>,
     ) -> DeltaTableWriter {
+        try_make_endpoint(
+            threads,
+            table_uri,
+            indexed,
+            mode,
+            continue_previous_state,
+            max_retries,
+        )
+        .expect("failed to create endpoint")
+    }
+
+    fn try_make_endpoint(
+        threads: usize,
+        table_uri: &str,
+        indexed: bool,
+        mode: DeltaTableWriteMode,
+        continue_previous_state: bool,
+        max_retries: Option<u32>,
+    ) -> Result<DeltaTableWriter, crate::ControllerError> {
         let key_schema = if indexed { Some(key_relation()) } else { None };
         DeltaTableWriter::new(
             EndpointId::default(),
@@ -1522,7 +1555,6 @@ mod parallel {
             continue_previous_state,
             indexed,
         )
-        .expect("failed to create endpoint")
     }
 
     fn build_insert_batch(records: &[DeltaTestStruct]) -> Arc<dyn SerBatch> {
@@ -1905,10 +1937,111 @@ mod parallel {
         insert_test(4);
     }
 
+    /// Give `field` and every field nested inside it a physical name, the way
+    /// a writer that turns column mapping on rewrites the schema.
+    fn annotate_column_mapping(field: &mut serde_json::Value, next_id: &mut i64) {
+        *next_id += 1;
+        field["metadata"]["delta.columnMapping.id"] = serde_json::json!(*next_id);
+        field["metadata"]["delta.columnMapping.physicalName"] =
+            serde_json::json!(format!("col-{next_id}"));
+        annotate_nested(&mut field["type"], next_id);
+    }
+
+    /// Walk a Delta type, annotating the fields of every struct under it.
+    fn annotate_nested(data_type: &mut serde_json::Value, next_id: &mut i64) {
+        let Some(kind) = data_type.get("type").and_then(|t| t.as_str()) else {
+            return;
+        };
+        match kind {
+            "struct" => {
+                for field in data_type["fields"].as_array_mut().unwrap() {
+                    annotate_column_mapping(field, next_id);
+                }
+            }
+            "array" => annotate_nested(&mut data_type["elementType"], next_id),
+            "map" => {
+                annotate_nested(&mut data_type["keyType"], next_id);
+                annotate_nested(&mut data_type["valueType"], next_id);
+            }
+            _ => {}
+        }
+    }
+
+    /// Rewrite version 0 of `table_uri` so the table declares
+    /// `delta.columnMapping.mode = 'name'`, giving every column, nested ones
+    /// included, a physical name of its own, the way a table written with
+    /// column mapping on looks.
+    fn enable_column_mapping(table_uri: &str) {
+        let log = Path::new(table_uri)
+            .join("_delta_log")
+            .join("00000000000000000000.json");
+        let mut out = Vec::new();
+        for line in std::fs::read_to_string(&log).unwrap().lines() {
+            let mut action: serde_json::Value = serde_json::from_str(line).unwrap();
+            if let Some(protocol) = action.get_mut("protocol") {
+                // The connector creates a table-features protocol (3/7), so
+                // column mapping is declared as a feature rather than by
+                // raising the version.
+                for features in ["readerFeatures", "writerFeatures"] {
+                    let list = protocol[features]
+                        .as_array_mut()
+                        .expect("the created table declares feature lists");
+                    list.push(serde_json::json!("columnMapping"));
+                }
+            }
+            if let Some(metadata) = action.get_mut("metaData") {
+                metadata["configuration"]["delta.columnMapping.mode"] = serde_json::json!("name");
+                let mut schema: serde_json::Value =
+                    serde_json::from_str(metadata["schemaString"].as_str().unwrap()).unwrap();
+                let mut next_id = 0i64;
+                for field in schema["fields"].as_array_mut().unwrap() {
+                    annotate_column_mapping(field, &mut next_id);
+                }
+                metadata["configuration"]["delta.columnMapping.maxColumnId"] =
+                    serde_json::json!(next_id);
+                metadata["schemaString"] = serde_json::json!(schema.to_string());
+            }
+            out.push(serde_json::to_string(&action).unwrap());
+        }
+        std::fs::write(&log, out.join("\n") + "\n").unwrap();
+    }
+
+    /// Appending to a column-mapped table must fail, not write rows that read back as NULL.
+    /// delta-rs refused the table before 2.0; `check_column_mapping` does now.
+    #[test]
+    fn appending_to_a_column_mapped_table_is_refused() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        // Let the connector create the table, then turn column mapping on.
+        drop(make_endpoint(1, &table_uri, true));
+        enable_column_mapping(&table_uri);
+
+        let error = try_make_endpoint(
+            1,
+            &table_uri,
+            true,
+            DeltaTableWriteMode::Append,
+            false,
+            Some(0),
+        )
+        .err()
+        .expect("appending to a column-mapped table must fail");
+        let error = error.to_string();
+        assert!(
+            error.contains("columnMapping"),
+            "the error must name column mapping, got: {error}"
+        );
+    }
+
     /// A batch bigger than `TARGET_FILE_SIZE` must land in more than one Parquet
     /// file. delta-rs rolls over only when the writer config carries a target
     /// size; without one it writes a single object per key range, which an object
     /// store rejects once the multipart upload passes 10000 parts.
+    ///
+    /// It pins `WRITE_BATCH_ROWS` too: at delta-rs's 8192-row default these
+    /// 16000 rows are two slices, and the size first passes the target after
+    /// the last one, so they still land in one file.
     #[test]
     fn test_batch_larger_than_target_file_size_rolls_over() {
         const PAYLOAD_LEN: usize = 8 * 1024;

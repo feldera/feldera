@@ -129,10 +129,13 @@ S3 and GCP FileIO implementations require additional configuration options docum
 | Property                    | Type   | Description   |
 |-----------------------------|--------|---------------|
 | `gcs.project-id`            | string | Google Cloud Project ID.|
-| `gcs.service.path`          | string | Google Cloud Storage endpoint.|
+| `gcs.service.host`          | string | Google Cloud Storage endpoint. The old name `gcs.service.path` is still accepted.|
 | `gcs.no-auth`               | string | Set to `"true"` to allow unauthenticated requests.|
 | `gcs.credentials-json`      | string | Google Cloud Storage credentials JSON string, base64 encoded.|
 | `gcs.oauth2.token`          | string | String representation of the access token used for temporary access.|
+
+The S3 and GCS FileIO also accept `opendal.io-timeout-ms`: the time limit, in milliseconds, for one read
+call before it is retried. The connector sets it to `60000` (60 s) unless you set it.
 
 ## Data type mapping
 
@@ -159,8 +162,9 @@ The following table lists supported Iceberg data types and corresponding Feldera
 | `struct`                    | `ROW(...)`       | Read as a whole column; nested fields map by name.|
 | `list`                      | `<element> ARRAY`| |
 | `map`                       | `MAP<<key>, <value>>` | |
+| `variant`                   |                  | Not supported: a table with a `variant` column opens, but reading that column fails. |
 
-All Iceberg data types are supported, including the nested types (`struct`, `list`,
+All other Iceberg data types are supported, including the nested types (`struct`, `list`,
 and `map`), which the connector reads as whole columns.
 
 ## Column selection

@@ -44,14 +44,6 @@ exactly once fault tolerance.
 
 [*]: Required fields
 
-:::caution
-In `cdc` mode, transactions that need to reconcile Add and Remove actions
-(such as `MERGE` or `UPDATE`) are not currently supported on Delta tables
-whose schema contains a `Map` column. Ingest of such transactions fails
-with an error. Pure-append transactions on the same tables continue to
-work.
-:::
-
 ### Storage parameters
 
 Along with the parameters listed above, there are additional configuration options for
@@ -210,7 +202,7 @@ The following table lists supported Delta Lake data types and corresponding Feld
 | `MAP<K,V>`                  | `MAP<K,V>`       |               |
 | `ARRAY<T>`                  | `T ARRAY`        |               |
 | `STRUCT`                    | `ROW` or [user-defined type](/sql/types#user-defined-types)| structs can be encoded as either anonymous `ROW` types or as named user-defined structs |
-| `VARIANT`                   | `VARIANT`        | Read from the Parquet variant binary encoding, keeping the types the writer encoded (dates, decimals, timestamps and binary stay typed inside the `VARIANT`). Shredded variants (the `variantShredding-preview` table feature) are not supported. Timestamps with nanosecond precision are truncated to microseconds. A `VARIANT` column stored as a JSON string is also accepted. |
+| `VARIANT`                   | `VARIANT`        | Read from the Parquet variant binary encoding, keeping the types the writer encoded (dates, decimals, timestamps and binary stay typed inside the `VARIANT`). A table that enables variant shredding (the `variantShredding` or `variantShredding-preview` table feature) is refused. Timestamps with nanosecond precision are truncated to microseconds. A `VARIANT` column stored as a JSON string is also accepted. |
 
 
 ## Reading the Change Data Feed
