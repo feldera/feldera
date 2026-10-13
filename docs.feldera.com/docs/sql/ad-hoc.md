@@ -132,6 +132,43 @@ state of all tables and materialized views as of the start of that
 transaction, even when earlier statements in the same request inserted
 into source tables.
 
+### Read-after-write across ad-hoc requests
+
+An ad-hoc `INSERT` returns when the pipeline has accepted its rows as
+input. This can occur before the pipeline completes the step that
+processes the rows. Thus, an ad-hoc query that you send immediately
+after the `INSERT` returns can show the state from before the `INSERT`.
+
+To see the rows of an `INSERT` in a later query, use one of these
+methods:
+
+- **Python SDK:** call
+  [`execute`](pathname:///python/feldera.html#feldera.pipeline.Pipeline.execute)
+  with `wait=True`. The call returns when later ad-hoc queries can see
+  the rows.
+
+  ```py
+  pipeline.execute("INSERT INTO tbl VALUES(1, 2, 3);", wait=True)
+  ```
+
+- **REST API:** when the `INSERT` returns, read
+  the `global_metrics` of [`/stats`](/api/get-pipeline-stats) and calculate
+  `total_input_records - buffered_input_records`. Then read `/stats`
+  again until `total_completed_records` is equal to or more than this
+  value. This is what the Python SDK does. The value includes the rows
+  of all clients, thus the wait can be longer when other clients send
+  much data.
+
+- **Ingress endpoint:** if you can send the rows in a data format
+  instead of SQL, write them with the
+  [ingress endpoint](/api/insert-data) and wait until its
+  [completion token](/connectors/completion-tokens) is complete. The
+  token includes only the rows of that endpoint. An ad-hoc `INSERT`
+  does not supply a completion token.
+
+While an API transaction is open, all three methods wait until the
+transaction commits.
+
 ## Examples
 
 ### Inserting Complex Data Types
