@@ -6,11 +6,11 @@
  * `InlineDrawer` is the wide-screen variant selected by `Drawer`.
  */
 
+import { InlineDrawer } from 'common-ui'
 import { createRawSnippet } from 'svelte'
 import { describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import InlineDrawer from './InlineDrawer.svelte'
 
 const textSnippet = (text: string) =>
   createRawSnippet(() => ({ render: () => `<div>${text}</div>` }))

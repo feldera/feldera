@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { healthStatusColors } from 'common-ui'
   import { fade } from 'svelte/transition'
   import { page } from '$app/state'
   import CurrentTenant from '$lib/components/auth/CurrentTenant.svelte'
@@ -90,11 +91,8 @@
           <div
             class="h-2.5 w-2.5 rounded-full {combinedStatus === undefined
               ? 'border-2 border-surface-400'
-              : combinedStatus === 'healthy'
-                ? 'bg-success-500'
-                : combinedStatus === 'unhealthy' || combinedStatus === 'stale'
-                  ? 'bg-warning-500'
-                  : 'bg-error-500'}"
+              : healthStatusColors(combinedStatus === 'stale' ? 'unhealthy' : combinedStatus)
+                  .healthIndicator}"
           ></div>
         {/snippet}
 

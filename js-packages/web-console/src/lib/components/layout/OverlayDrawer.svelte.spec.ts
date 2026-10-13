@@ -5,10 +5,10 @@
  * browser's default narrow viewport, where the nominal width exceeds the screen.
  */
 
+import { OverlayDrawer } from 'common-ui'
 import { createRawSnippet } from 'svelte'
 import { describe, expect, it } from 'vitest'
 import { render } from 'vitest-browser-svelte'
-import OverlayDrawer from './OverlayDrawer.svelte'
 
 const textSnippet = (text: string) =>
   createRawSnippet(() => ({ render: () => `<div>${text}</div>` }))

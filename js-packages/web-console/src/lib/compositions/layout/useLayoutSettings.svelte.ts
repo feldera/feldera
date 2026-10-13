@@ -1,4 +1,4 @@
-import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
+import { useIsTablet } from 'common-ui'
 import { useLocalStorage } from '$lib/compositions/localStore.svelte'
 
 export const useLayoutSettings = () => {

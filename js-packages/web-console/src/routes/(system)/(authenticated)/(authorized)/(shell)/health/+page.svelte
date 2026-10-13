@@ -2,17 +2,21 @@
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { partition } from 'common-lib/array'
   import { ceilToHour, dateMax } from 'common-lib/date'
+  import {
+    Drawer,
+    EventLogList,
+    HealthEventList,
+    StatusTimeline,
+    type TimelineGroup
+  } from 'common-ui'
   import { match } from 'ts-pattern'
-  import EventLogList from '$lib/components/health/EventLogList.svelte'
-  import HealthEventList from '$lib/components/health/HealthEventList.svelte'
-  import StatusTimeline, { type TimelineGroup } from '$lib/components/health/StatusTimeline.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
-  import Drawer from '$lib/components/layout/Drawer.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
+  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { useClusterHealth } from '$lib/compositions/health/useClusterHealth.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import { ServerDate } from '$lib/compositions/serverTime'
@@ -66,6 +70,7 @@
     clusterHealth.current?.stale ? clusterHealth.current.recordedAt : null
   )
   const isEnterprise = useIsEnterprise()
+  const { formatUpdatedAgo } = useElapsedTime()
 
   const healthWindowHours = 72
 
@@ -87,31 +92,6 @@
     const [unresolved, previous] = partition(groupedClusterEvents, (es) => es.active)
     return { unresolved, previous }
   })
-
-  const clusterStatus = (type: ClusterEventType) =>
-    match(type)
-      .with('major_issue', () => ({
-        iconClass: 'fd fd-circle-x text-error-500',
-        statusColor: 'bg-red-500',
-        severity: 3,
-        barColor: (h: boolean) => (h ? 'fill-red-600' : 'fill-red-500'),
-        statusStyle: { bg: 'bg-red-500', text: 'text-red-500', label: 'Major Issue' }
-      }))
-      .with('unhealthy', () => ({
-        iconClass: 'fd fd-triangle-alert text-warning-500',
-        statusColor: 'bg-yellow-500',
-        severity: 2,
-        barColor: (h: boolean) => (h ? 'fill-yellow-600' : 'fill-yellow-500'),
-        statusStyle: { bg: 'bg-yellow-500', text: 'text-yellow-500', label: 'Service degradation' }
-      }))
-      .with('healthy', () => ({
-        iconClass: 'fd fd-circle-check-big text-success-500',
-        statusColor: 'bg-green-500',
-        severity: 0,
-        barColor: (h: boolean) => (h ? 'fill-green-600' : 'fill-green-500'),
-        statusStyle: { bg: 'bg-green-500', text: 'text-green-500', label: 'Operational' }
-      }))
-      .exhaustive()
 
   $effect(() => {
     refreshEvents()
@@ -299,7 +279,7 @@
               endAt={lastTimestamp(events)}
               unitDurationMs={60 * 60 * 1000}
               stale={!!staleSince}
-              updatedAt={clusterHealth.current?.recordedAt}
+              updatedText={formatUpdatedAgo(clusterHealth.current?.recordedAt)}
               class="flex flex-col gap-2"
               onBarClick={(group) => handleBarClick(tag as EventTag, group)}
               legend={i === 2
@@ -308,9 +288,6 @@
               selectedBars={selectedEventTimestamp?.tag === tag
                 ? { from: selectedEventTimestamp.from, to: selectedEventTimestamp.to }
                 : null}
-              getSeverity={(type) => clusterStatus(type).severity}
-              getBarColor={(type, h) => clusterStatus(type).barColor(h)}
-              getStatusStyle={(type) => clusterStatus(type).statusStyle}
             ></StatusTimeline>
           {/each}
         </div>
@@ -327,7 +304,6 @@
           unresolvedEvents={splitClusterEvents.unresolved}
           onEventSelected={handleEventSelected}
           selectedEvents={selectedEventTimestamp}
-          getIconClass={(type) => clusterStatus(type).iconClass}
         >
           {#snippet noIssues()}
             {#if events}
@@ -344,7 +320,6 @@
         onClose={onCloseDrawer}
         onNavigatePrevious={canNavigatePrevious ? navigatePrevious : undefined}
         onNavigateNext={canNavigateNext ? navigateNext : undefined}
-        getStatusColor={(type) => clusterStatus(type).statusColor}
       ></HealthEventList>
     {/if}
   </Drawer>

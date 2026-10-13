@@ -1,33 +1,27 @@
 /**
  * Unit tests for the pipeline health classifier and incident grouper that
  * back the Health tab. These are pure functions over
- * `PipelineMonitorEventSelectedInfo`, so the tests construct minimal events
+ * `PipelineMonitorEvent`, so the tests construct minimal events
  * inline rather than mocking the API.
  */
-import { partition } from 'common-lib/array'
 import { describe, expect, it } from 'vitest'
-import type {
-  PipelineMonitorEventSelectedInfo,
-  ProgramStatus,
-  ResourcesStatus
-} from '$lib/services/manager'
+import { partition } from 'common-lib/array'
 import {
   type CategorizedPipelineEvent,
   categorizePipelineEvent,
   categorizePipelineEvents,
   formatPipelineEventDescription,
   groupPipelineEvents,
-  type IncidentKey
-} from './pipelineHealth'
+  type IncidentKey,
+  type PipelineMonitorEvent
+} from 'common-ui/pipelineHealth'
 
 // --- Factories ---
 
 let nextId = 1
 const freshId = () => `e${nextId++}`
 
-function makeEvent(
-  overrides: Partial<PipelineMonitorEventSelectedInfo> = {}
-): PipelineMonitorEventSelectedInfo {
+function makeEvent(overrides: Partial<PipelineMonitorEvent> = {}): PipelineMonitorEvent {
   // Spread overrides last so explicit `null`/`false` overrides are honored.
   return {
     event_id: freshId(),
@@ -71,29 +65,28 @@ describe('categorizePipelineEvent', () => {
       })
     })
 
-    it.each<ProgramStatus>([
-      'SystemError',
-      'SqlError',
-      'RustError'
-    ])('returns major_issue for program_status=%s when no deployment error', (status) => {
-      const r = categorizePipelineEvent(makeEvent({ program_status: status }))
-      expect(r.type).toBe('major_issue')
-      expect(r.incident.programError).toBe(true)
-    })
+    it.each<string>(['SystemError', 'SqlError', 'RustError'])(
+      'returns major_issue for program_status=%s when no deployment error',
+      (status) => {
+        const r = categorizePipelineEvent(makeEvent({ program_status: status }))
+        expect(r.type).toBe('major_issue')
+        expect(r.incident.programError).toBe(true)
+      }
+    )
 
-    it.each<ResourcesStatus>([
-      'Provisioning',
-      'Stopping'
-    ])('returns transitioning for resources_status=%s (overrides runtime status)', (status) => {
-      // Resource transition wins over Unavailable runtime: blue, not yellow
-      const r = categorizePipelineEvent(
-        makeEvent({
-          deployment_resources_status: status,
-          deployment_runtime_status: 'Unavailable'
-        })
-      )
-      expect(r.type).toBe('transitioning')
-    })
+    it.each<string>(['Provisioning', 'Stopping'])(
+      'returns transitioning for resources_status=%s (overrides runtime status)',
+      (status) => {
+        // Resource transition wins over Unavailable runtime: blue, not yellow
+        const r = categorizePipelineEvent(
+          makeEvent({
+            deployment_resources_status: status,
+            deployment_runtime_status: 'Unavailable'
+          })
+        )
+        expect(r.type).toBe('transitioning')
+      }
+    )
 
     it('returns unhealthy when runtime is Unavailable and resources are not transitioning', () => {
       const r = categorizePipelineEvent(
@@ -421,7 +414,7 @@ describe('formatPipelineEventDescription', () => {
 
 describe('TabHealth split: same-timestamp events fold into one active incident', () => {
   // Paste the output of pipeline/events?selector=status here.
-  const rawEvents: PipelineMonitorEventSelectedInfo[] = [
+  const rawEvents: PipelineMonitorEvent[] = [
     {
       event_id: '019df87b-e784-7af0-865e-fd7918e895e3',
       recorded_at: '2026-05-05T14:12:43.009099Z',

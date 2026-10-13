@@ -3,7 +3,7 @@ import {
   aggregateConnectorMetrics,
   type ConnectorMetrics,
   type ConnectorStatus
-} from 'common-lib/connectorMetrics'
+} from 'common-ui/connectorMetrics'
 import type { Dataflow, JsonProfiles } from 'profiler-lib'
 import sortOn from 'sort-on'
 import { groupBy } from './array'

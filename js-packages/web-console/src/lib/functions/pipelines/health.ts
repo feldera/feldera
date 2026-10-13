@@ -1,4 +1,5 @@
 import { pushSortedOn } from 'common-lib/array'
+import type { HealthEventBucket, HealthStatus } from 'common-ui/healthEvents'
 import { match } from 'ts-pattern'
 import type { ClusterMonitorEventSelectedInfo, MonitorStatus } from '$lib/services/manager'
 
@@ -16,28 +17,6 @@ export type RawHealthEvent<S extends string, T extends string> = {
   description: string
   tag: T
   id: string
-}
-
-/**
- * A time-bounded group of consecutive events sharing the same status and tag,
- * rendered as one entry in the incident list.
- * `active` is true when the incident is still ongoing (not yet resolved).
- * @template S status union — e.g. `ClusterEventType` | `PipelineHealthStatus`
- * @template T tag union — discriminates which sub-service the bucket belongs to
- */
-export type HealthEventBucket<S extends string, T extends string> = {
-  timestampFrom: Date
-  timestampTo: Date
-  type: S
-  description: string
-  tag: T
-  active: boolean
-  title: string
-  events: {
-    id: string
-    timestamp: Date
-    status: S
-  }[]
 }
 
 /**
@@ -98,7 +77,7 @@ export const worstClusterStatus = (statuses: ClusterEventType[]): ClusterEventTy
       : 'healthy'
 
 /** Health status reported by the cluster monitor for a single service component. */
-export type ClusterEventType = 'healthy' | 'unhealthy' | 'major_issue'
+export type ClusterEventType = Extract<HealthStatus, 'healthy' | 'unhealthy' | 'major_issue'>
 
 export const toEventType = (status: MonitorStatus) =>
   match(status)
