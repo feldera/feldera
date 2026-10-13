@@ -177,10 +177,10 @@ Concurrent bootstrapping proceeds in two phases:
 
 * **Synchronization**. The pipeline pauses input ingestion just long enough to bring
   the new views up to date with the most recent changes, switches them in, emits the
-  full contents of new and modified views to input connectors, and returns to the
+  full contents of new and modified views to output connectors, and returns to the
   `Running` state. During this phase the pipeline reports `Synchronizing` runtime status.
 
-Concurrent bootstrapping is *mutually exclusive with `silent_bootstrap`**. Starting a
+Concurrent bootstrapping is mutually exclusive with `silent_bootstrap`. Starting a
 pipeline with both `concurrent_bootstrap=true` and `silent_bootstrap=true` is rejected.
 
 Both phases report progress: the `concurrent_bootstrap_phase` and
