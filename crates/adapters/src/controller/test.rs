@@ -1,4 +1,4 @@
-use super::{OutputEndpointControl, OutputEndpointDescr};
+use super::{OutputEndpointControl, OutputEndpointDescr, stats::CompletionToken};
 use crate::{
     Controller, InputConsumer, InputEndpoint, OutputEndpoint, PipelineConfig,
     TransportInputEndpoint,
@@ -11,6 +11,7 @@ use crate::{
     },
     transport::{
         InputQueue, InputQueueEntry, InputReader, InputReaderCommand,
+        http::{HttpInputEndpoint, REPLAY_GATES},
         input_transport_config_to_endpoint, set_barrier,
     },
 };
@@ -27,6 +28,7 @@ use feldera_types::{
     constants::{CHECKPOINT_FILE_NAME, STATE_FILE},
     memory_pressure::MemoryPressure,
     program_schema::Relation,
+    transport::http::HttpInputConfig,
 };
 use serde_json::json;
 use std::{
@@ -1468,6 +1470,161 @@ fn adhoc_insert_removed_before_journaling_replays() {
     // the endpoint its input.
     assert_eq!(adhoc_input_endpoints(&controller), Vec::<String>::new());
     assert_eq!(count_rows(&controller, "test_input1"), 1);
+    controller.stop().unwrap();
+}
+
+/// Makes one `/ingress` request for rows with `ids` to `test_input1` through a
+/// new HTTP input endpoint named `name`, the way the server does.  Returns the
+/// request's completion token.
+fn ingress_rows(controller: &Controller, name: &str, ids: Range<u32>) -> CompletionToken {
+    let endpoint = HttpInputEndpoint::new(HttpInputConfig { name: name.into() });
+    controller
+        .add_input_endpoint(
+            name,
+            http_input_config(name),
+            Box::new(endpoint.clone()),
+            None,
+        )
+        .unwrap();
+    TOKIO.block_on(async {
+        let (request, mut payload) = actix_web::test::TestRequest::default()
+            .set_payload(
+                ids.map(|id| format!(r#"{{"id": {id}, "b": true, "i": {id}, "s": "row-{id}"}}"#))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .to_http_parts();
+        let payload = <actix_web::web::Payload as actix_web::FromRequest>::from_request(
+            &request,
+            &mut payload,
+        )
+        .await
+        .unwrap();
+        endpoint
+            .complete_request(payload, false, None)
+            .await
+            .unwrap();
+    });
+    controller.completion_token(name).unwrap()
+}
+
+/// The configuration of an `/ingress` endpoint named `name` for `test_input1`.
+fn http_input_config(name: &str) -> InputEndpointConfig {
+    serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "http_input", "config": { "name": name } },
+        "format": { "name": "json", "config": { "update_format": "raw" } },
+    }))
+    .unwrap()
+}
+
+/// Waits until the input that `token` identifies completes.
+fn wait_for_completion(controller: &Controller, token: &CompletionToken) {
+    wait(
+        || matches!(controller.completion_status(token), Ok(Some(_))),
+        DEFAULT_TIMEOUT_MS,
+    )
+    .expect("the /ingress input never completed");
+}
+
+/// Replay must not feed a journaled step's input to the circuit while it
+/// commits the previous replayed transaction.
+///
+/// The HTTP endpoint parses and flushes replayed input from its own task.  If
+/// replay hands a step's input to the endpoint before the controller has
+/// committed the previous replayed transaction, the input can reach the
+/// circuit during that commit, and a worker panics with "cannot process input
+/// received during commit".
+///
+/// The journal holds an empty step, an API transaction with 100 records from
+/// one request, and one more request in its own transaction.  Both requests
+/// are at a transaction boundary.  With one record per commit chunk, a commit
+/// takes many steps.  The second endpoint's replay waits a while for a commit
+/// to be in progress, so that a replay that hands it the input too early
+/// flushes during the commit.
+#[test]
+fn replay_does_not_feed_http_input_during_commit() {
+    init_test_logger();
+    const FIRST: &str = "test_input1.api-ingress-first";
+    const SECOND: &str = "test_input1.api-ingress-second";
+
+    const RECORDS: u32 = 100;
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+        // A commit processes one chunk of this many records per step.
+        "dev_tweaks": { "splitter_chunk_size_records": 1 },
+    }))
+    .unwrap();
+    let circuit = |circuit_config| Ok(test_circuit_with_aggregate(circuit_config, 16));
+
+    let controller =
+        Controller::with_test_config(circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+            .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+    controller.start_transaction().unwrap();
+    let token = ingress_rows(&controller, FIRST, 0..RECORDS);
+    controller.start_commit_transaction().unwrap();
+    wait_for_completion(&controller, &token);
+    let token = ingress_rows(&controller, SECOND, RECORDS..RECORDS + 1);
+    wait_for_completion(&controller, &token);
+    controller.stop().unwrap();
+
+    // Hold the second endpoint's replay until a commit is in progress, or for
+    // a while if none starts, and note whether one was in progress.
+    let restarted = Arc::new(std::sync::OnceLock::<Controller>::new());
+    let flushed_in_commit = Arc::new(AtomicBool::new(false));
+    REPLAY_GATES.lock().unwrap().insert(
+        SECOND.into(),
+        Box::new({
+            let restarted = restarted.clone();
+            let flushed_in_commit = flushed_in_commit.clone();
+            move || {
+                let committing = || {
+                    restarted
+                        .get()
+                        .is_some_and(|c| c.inner.transaction_commit_in_progress())
+                };
+                let _ = wait(committing, 2_000);
+                flushed_in_commit.store(committing(), Ordering::Release);
+            }
+        }),
+    );
+
+    // Restart from the journal.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = Controller::with_test_config(
+        circuit,
+        &config,
+        Box::new({
+            let errors = errors.clone();
+            move |e, _| errors.lock().unwrap().push(e.to_string())
+        }),
+    )
+    .unwrap_or_else(|e| panic!("replay failed: {e}"));
+    let _ = restarted.set(controller.clone());
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        DEFAULT_TIMEOUT_MS,
+    );
+    let errors = errors.lock().unwrap().clone();
+    assert!(errors.is_empty(), "replay failed: {errors:?}");
+    replayed.expect("replay never finished");
+    assert!(
+        !flushed_in_commit.load(Ordering::Acquire),
+        "replay handed the second request's input to its endpoint during a commit"
+    );
+    assert_eq!(count_rows(&controller, "test_input1"), RECORDS as i64 + 1);
     controller.stop().unwrap();
 }
 

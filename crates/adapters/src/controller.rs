@@ -4441,6 +4441,9 @@ impl CircuitThread {
         {
             return Ok(Some(BufferSize::empty()));
         }
+        if let Some(ft) = self.ft.as_mut() {
+            ft.feed_replay_step()?;
+        }
         let mut step_metadata = HashMap::new();
         if let Some(replay_step) = self.ft.as_ref().and_then(|ft| ft.replay_step.as_ref()) {
             // Reuse input logs from the original step.  Usually, these logs are
@@ -4530,39 +4533,41 @@ impl CircuitThread {
                         ),
                     );
                 }
-            } else {
-                if !self.replaying() {
-                    // Don't request a checkpoint if we're processing a
-                    // transaction. The `checkpoint_requested` flag requires the
-                    // connector to get to a checkpointable state as fast as
-                    // possible, which may cause connector's performance to
-                    // drop, e.g., some connectors may return 1 record per step.
-                    if let Some(reader) = status.reader.as_ref() {
-                        reader.queue(
-                            self.checkpoint_requested()
-                                && self.controller.get_transaction_state()
-                                    == TransactionState::None,
+            } else if !self.replaying() {
+                // Don't request a checkpoint if we're processing a
+                // transaction. The `checkpoint_requested` flag requires the
+                // connector to get to a checkpointable state as fast as
+                // possible, which may cause connector's performance to
+                // drop, e.g., some connectors may return 1 record per step.
+                if let Some(reader) = status.reader.as_ref() {
+                    reader.queue(
+                        self.checkpoint_requested()
+                            && self.controller.get_transaction_state() == TransactionState::None,
+                    );
+                    if self
+                        .ft
+                        .as_ref()
+                        .is_some_and(|ft| ft.is_new_input(endpoint_id))
+                    {
+                        self.pending_new_inputs.insert(
+                            endpoint_id,
+                            (
+                                status.endpoint_name.clone(),
+                                status.config.clone(),
+                                status.is_paused_by_user(),
+                            ),
                         );
-                        if self
-                            .ft
-                            .as_ref()
-                            .is_some_and(|ft| ft.is_new_input(endpoint_id))
-                        {
-                            self.pending_new_inputs.insert(
-                                endpoint_id,
-                                (
-                                    status.endpoint_name.clone(),
-                                    status.config.clone(),
-                                    status.is_paused_by_user(),
-                                ),
-                            );
-                        }
                     }
-                } else {
-                    // We already started the input adapters replaying. The set of
-                    // input adapters can't change during replay (because we disable
-                    // the APIs that could do that during replay).
                 }
+                waiting.insert(endpoint_id, status.endpoint_name.clone());
+            } else if let Some(ft) = &self.ft
+                && let Some(record) = &ft.replay_step
+                && record.input_logs.contains_key(&status.endpoint_name)
+            {
+                // `feed_replay_step` handed this endpoint its logged input.
+                // An endpoint without input in the record, such as one that a
+                // checkpoint restored but that did not exist yet at the
+                // recorded step, gets nothing to replay and never answers.
                 waiting.insert(endpoint_id, status.endpoint_name.clone());
             }
         }
@@ -5063,6 +5068,12 @@ struct FtState {
     /// we're replaying.
     replay_step: Option<StepMetadata>,
 
+    /// Whether `replay_step`'s endpoint changes and input have been handed to
+    /// the endpoints.  `input_step` does that only when the step will consume
+    /// the input, so no input reaches the circuit while it commits the
+    /// previous replayed transaction.
+    replay_fed: bool,
+
     /// Journaled step numbers to replay, in recorded order. Replay iterates
     /// these (decoupled from the physical step counter, which can diverge when
     /// a transaction's commit takes a different number of steps on replay).
@@ -5096,14 +5107,7 @@ impl FtState {
         let journal = Journal::open(backend, &StoragePath::from(STEPS_FILE));
         let replay_steps = journal.list_steps(step)?;
         let replay_step = match replay_steps.first() {
-            Some(&first) => {
-                let record = journal.read(first)?;
-                if let Some(record) = &record {
-                    // Start replaying the first step.
-                    Self::replay_step(first, record, &controller)?;
-                }
-                record
-            }
+            Some(&first) => journal.read(first)?,
             None => None,
         };
         controller.set_replay_transaction_id(replay_step.as_ref().map(|r| r.transaction_id));
@@ -5113,6 +5117,7 @@ impl FtState {
             output_endpoints: Self::initial_output_endpoints(&controller),
             controller,
             replay_step,
+            replay_fed: false,
             replay_steps,
             replay_cursor: 0,
             replay_check: None,
@@ -5135,6 +5140,7 @@ impl FtState {
             output_endpoints: Self::initial_output_endpoints(&controller),
             controller,
             replay_step: None,
+            replay_fed: false,
             replay_steps: Vec::new(),
             replay_cursor: 0,
             replay_check: None,
@@ -5179,6 +5185,7 @@ impl FtState {
             output_endpoints: Self::initial_output_endpoints(&controller),
             controller,
             replay_step: None,
+            replay_fed: false,
             replay_steps: Vec::new(),
             replay_cursor: 0,
             replay_check: None,
@@ -5304,6 +5311,22 @@ impl FtState {
             {
                 reader.replay(log.metadata.clone(), log.data.clone())
             }
+        }
+        Ok(())
+    }
+
+    /// Hands the current replay step's endpoint changes and input to the
+    /// endpoints, if that has not happened yet.
+    fn feed_replay_step(&mut self) -> Result<(), ControllerError> {
+        if let Some(record) = &self.replay_step
+            && !self.replay_fed
+        {
+            Self::replay_step(
+                self.replay_steps[self.replay_cursor],
+                record,
+                &self.controller,
+            )?;
+            self.replay_fed = true;
         }
         Ok(())
     }
@@ -5565,11 +5588,8 @@ impl FtState {
             // arm can take `&mut self` to verify the final transaction.
             match self.replay_steps.get(self.replay_cursor).copied() {
                 Some(step) => {
-                    let record = self.journal.read(step)?;
-                    if let Some(record) = &record {
-                        Self::replay_step(step, record, &self.controller)?;
-                    }
-                    self.replay_step = record;
+                    self.replay_step = self.journal.read(step)?;
+                    self.replay_fed = false;
                 }
                 None => {
                     // No more steps to replay. The boundary check in

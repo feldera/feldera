@@ -101,6 +101,17 @@ struct HttpInputEndpointDetails {
     queue: InputQueue<JournaledChunk>,
 }
 
+/// Test hooks that hold the replay of the HTTP input endpoint with a given
+/// name. The endpoint's background task calls the hook before it parses and
+/// flushes the replayed input.
+#[cfg(test)]
+pub(crate) static REPLAY_GATES: std::sync::LazyLock<
+    Mutex<std::collections::HashMap<String, ReplayGate>>,
+> = std::sync::LazyLock::new(Default::default);
+
+#[cfg(test)]
+pub(crate) type ReplayGate = Box<dyn FnOnce() + Send>;
+
 struct HttpInputEndpointInner {
     name: String,
     state: Atomic<PipelineState>,
@@ -130,6 +141,10 @@ impl HttpInputEndpointInner {
         while let Some(message) = receiver.recv().await {
             input_span.in_scope(|| match message {
                 InputReaderCommand::Replay { data, .. } => {
+                    #[cfg(test)]
+                    if let Some(gate) = REPLAY_GATES.lock().unwrap().remove(&self.name) {
+                        gate();
+                    }
                     let Data {
                         chunks,
                         connector_metadata,
