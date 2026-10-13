@@ -13,7 +13,7 @@ use actix_web::{HttpResponse, HttpResponseBuilder, ResponseError};
 use anyhow::Error as AnyError;
 use dbsp::{
     Error as DbspError,
-    circuit::{LayoutError, circuit_builder::BootstrapInfo},
+    circuit::{LayoutError, bootstrap::BootstrapInfo},
     storage::backend::StorageError,
 };
 use feldera_types::{

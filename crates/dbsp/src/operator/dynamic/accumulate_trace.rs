@@ -1,6 +1,9 @@
-use crate::circuit::circuit_builder::{StreamId, StreamMetadata, register_replay_stream};
 use crate::circuit::metadata::{INPUT_RECORDS_COUNT, MEMORY_ALLOCATIONS_COUNT, RETAINMENT_BOUNDS};
 use crate::circuit::{NodeId, splitter_output_chunk_size};
+use crate::circuit::{
+    bootstrap::register_replay_stream,
+    circuit_builder::{StreamId, StreamMetadata},
+};
 use crate::dynamic::Factory;
 use crate::operator::dynamic::replay::ReplayState;
 use crate::operator::dynamic::trace::{DelayedTraceId, TraceBounds};

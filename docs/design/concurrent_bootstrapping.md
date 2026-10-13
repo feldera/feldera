@@ -2,7 +2,8 @@
 
 ## Background: how bootstrapping works today
 
-Bootstrapping (`CircuitHandle::restore`, `circuit_builder.rs`) proceeds as follows:
+Bootstrapping (`CircuitHandle::restore` in `circuit_builder.rs`, and the
+replay code in `bootstrap.rs`) proceeds as follows:
 
 1. Determine the operators that require backfill: every node whose `restore()`
    fails with `NotFound` (its persistent-id state file is missing from the
