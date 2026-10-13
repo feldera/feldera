@@ -44,6 +44,8 @@ pub struct Checkpointer {
     checkpoint_list: VecDeque<CheckpointMetadata>,
 }
 
+const MAX_STORAGE_RECURSION_DEPTH: usize = 64;
+
 impl Checkpointer {
     /// We keep at least this many checkpoints around.
     pub(super) const MIN_CHECKPOINT_THRESHOLD: usize = 2;
@@ -92,15 +94,58 @@ impl Checkpointer {
     }
 
     pub(super) fn measure_checkpoint_storage_use(&self, uuid: uuid::Uuid) -> Result<u64, Error> {
-        let mut usage = 0;
-        StorageError::ignore_notfound(self.backend.list(
+        let mut n_errors = 0;
+        let usage = match Self::measure_storage_path_use(
+            &*self.backend,
             &Self::checkpoint_dir(uuid),
-            &mut |entry| {
-                if let Ok(StorageFileType::File { size }) = entry.file_type {
-                    usage += size;
+            &mut n_errors,
+            0,
+        ) {
+            Ok(usage) => usage,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(0),
+            Err(error) => return Err(error.into()),
+        };
+        if n_errors > 0 {
+            let error_label = if n_errors == 1 { "error" } else { "errors" };
+            warn!(
+                "Encountered {n_errors} {error_label} while measuring checkpoint {uuid}; storage usage may be underestimated"
+            );
+        }
+        Ok(usage)
+    }
+
+    fn measure_storage_path_use(
+        backend: &dyn StorageBackend,
+        path: &StoragePath,
+        n_errors: &mut usize,
+        recursion_depth: usize,
+    ) -> Result<u64, StorageError> {
+        if recursion_depth >= MAX_STORAGE_RECURSION_DEPTH {
+            *n_errors += 1;
+            warn!(
+                "Maximum storage directory recursion depth ({MAX_STORAGE_RECURSION_DEPTH}) reached; storage usage may be underestimated"
+            );
+            return Ok(0);
+        }
+
+        let mut usage = 0;
+        let mut directories = Vec::new();
+        backend.list(path, &mut |entry| match entry.file_type {
+            Ok(StorageFileType::File { size }) => usage += size,
+            Ok(StorageFileType::Directory) => directories.push(entry.name),
+            Ok(StorageFileType::Other) => (),
+            Err(_) => *n_errors += 1,
+        })?;
+        for directory in directories {
+            match Self::measure_storage_path_use(backend, &directory, n_errors, recursion_depth + 1)
+            {
+                Ok(size) => usage += size,
+                Err(error) => {
+                    *n_errors += 1;
+                    warn!("Failed to read storage directory {directory}: {error}");
                 }
-            },
-        ))?;
+            }
+        }
         Ok(usage)
     }
 
@@ -231,8 +276,18 @@ impl Checkpointer {
                         }
                     }
                 }
-                if let StorageFileType::File { size } = file_type {
-                    usage += size;
+                match file_type {
+                    StorageFileType::File { size } => usage += size,
+                    StorageFileType::Directory => {
+                        match Self::measure_storage_path_use(&*self.backend, &name, &mut n_errors, 0) {
+                            Ok(size) => usage += size,
+                            Err(error) => {
+                                n_errors += 1;
+                                warn!("Failed to read storage directory {name}: {error}");
+                            }
+                        }
+                    }
+                    _ => (),
                 }
             })?;
         info!(
@@ -786,6 +841,7 @@ mod test {
     use feldera_types::constants::CHECKPOINT_FILE_NAME;
     use itertools::Itertools;
     use std::collections::HashSet;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use uuid::uuid;
 
     use crate::storage::backend::posixio_impl::PosixBackend;
@@ -829,6 +885,61 @@ mod test {
             parent: &StoragePath,
             cb: &mut dyn FnMut(DirEntry),
         ) -> Result<(), feldera_storage::error::StorageError> {
+            self.inner.list(parent, cb)
+        }
+
+        fn delete(&self, name: &StoragePath) -> Result<(), feldera_storage::error::StorageError> {
+            self.inner.delete(name)
+        }
+
+        fn delete_recursive(
+            &self,
+            name: &StoragePath,
+        ) -> Result<(), feldera_storage::error::StorageError> {
+            self.inner.delete_recursive(name)
+        }
+
+        fn usage(&self) -> Arc<std::sync::atomic::AtomicI64> {
+            self.inner.usage()
+        }
+    }
+
+    struct ListFailingBackend {
+        inner: Arc<dyn StorageBackend>,
+        fail_on: StoragePath,
+        was_listed: Arc<AtomicBool>,
+    }
+
+    impl feldera_storage::StorageBackend for ListFailingBackend {
+        fn create_named(
+            &self,
+            name: &StoragePath,
+        ) -> Result<Box<dyn feldera_storage::FileWriter>, feldera_storage::error::StorageError>
+        {
+            self.inner.create_named(name)
+        }
+
+        fn open(
+            &self,
+            name: &StoragePath,
+        ) -> Result<Arc<dyn feldera_storage::FileReader>, feldera_storage::error::StorageError>
+        {
+            self.inner.open(name)
+        }
+
+        fn list(
+            &self,
+            parent: &StoragePath,
+            cb: &mut dyn FnMut(DirEntry),
+        ) -> Result<(), feldera_storage::error::StorageError> {
+            if parent == &self.fail_on {
+                self.was_listed.store(true, Ordering::Relaxed);
+                return Err(feldera_storage::error::StorageError::StdIo {
+                    kind: std::io::ErrorKind::PermissionDenied,
+                    operation: "injected directory read failure",
+                    path: None,
+                });
+            }
             self.inner.list(parent, cb)
         }
 
@@ -922,6 +1033,164 @@ mod test {
             format!("{err}").contains("pspine-trace.dat"),
             "error should mention the missing file, got: {err}",
         );
+    }
+
+    #[test]
+    fn startup_usage_includes_checkpoint_subdirectory_files() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let make_backend = || -> Arc<dyn StorageBackend> {
+            Arc::new(PosixBackend::new(
+                tempdir.path(),
+                StorageCacheConfig::default(),
+                &FileBackendConfig::default(),
+            ))
+        };
+
+        let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
+        let uuid = uuid::Uuid::now_v7();
+        checkpointer
+            .commit_and_publish(uuid, 0, None, Some(0), Some(0))
+            .unwrap();
+        drop(checkpointer);
+
+        let nested_payload = vec![1; 1024 * 1024];
+        std::fs::write(
+            tempdir
+                .path()
+                .join(uuid.to_string())
+                .join("subdirectory-payload.dat"),
+            &nested_payload,
+        )
+        .unwrap();
+
+        let backend = make_backend();
+        let _restarted = Checkpointer::new(backend.clone()).unwrap();
+        let usage = backend.usage().load(std::sync::atomic::Ordering::Relaxed);
+        println!(
+            "startup usage: {usage} bytes; nested checkpoint file: {} bytes",
+            nested_payload.len()
+        );
+        assert!(
+            usage >= nested_payload.len() as i64,
+            "startup usage {usage} does not include {} bytes in checkpoint directory {uuid}",
+            nested_payload.len(),
+        );
+    }
+
+    #[test]
+    fn startup_usage_ignores_subdirectory_read_errors() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let make_backend = || -> Arc<dyn StorageBackend> {
+            Arc::new(PosixBackend::new(
+                tempdir.path(),
+                StorageCacheConfig::default(),
+                &FileBackendConfig::default(),
+            ))
+        };
+
+        let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
+        let uuid = uuid::Uuid::now_v7();
+        checkpointer
+            .commit_and_publish(uuid, 0, None, Some(0), Some(0))
+            .unwrap();
+        drop(checkpointer);
+
+        let checkpoint_dir = tempdir.path().join(uuid.to_string());
+        let visible_payload = vec![1; 4096];
+        std::fs::write(checkpoint_dir.join("visible.dat"), &visible_payload).unwrap();
+        let unreadable_dir = checkpoint_dir.join("unreadable");
+        std::fs::create_dir(&unreadable_dir).unwrap();
+        std::fs::write(unreadable_dir.join("hidden.dat"), vec![1; 1024]).unwrap();
+
+        let inner = make_backend();
+        let was_listed = Arc::new(AtomicBool::new(false));
+        let failing_backend: Arc<dyn StorageBackend> = Arc::new(ListFailingBackend {
+            inner: inner.clone(),
+            fail_on: format!("{uuid}/unreadable").into(),
+            was_listed: was_listed.clone(),
+        });
+        let (result, log) =
+            crate::utils::LogCapture::new(|| Checkpointer::new(failing_backend.clone()))
+                .into_parts();
+
+        let restarted = result.expect("an unreadable nested directory should not block startup");
+        assert!(was_listed.load(Ordering::Relaxed));
+        assert!(
+            inner.usage().load(Ordering::Relaxed) >= visible_payload.len() as i64,
+            "startup usage should include readable files"
+        );
+        assert!(
+            log.contains("1 error(s) reading directory entries"),
+            "startup log should report the skipped directory: {log}"
+        );
+        println!(
+            "startup usage after skipping unreadable subtree: {} bytes",
+            inner.usage().load(Ordering::Relaxed)
+        );
+        println!("{log}");
+        let (usage, measurement_log) =
+            crate::utils::LogCapture::new(|| restarted.measure_checkpoint_storage_use(uuid))
+                .into_parts();
+        let usage =
+            usage.expect("a nested read error should not block checkpoint size measurement");
+        assert!(
+            usage >= visible_payload.len() as u64,
+            "checkpoint usage should include readable files"
+        );
+        assert!(
+            measurement_log.contains("Encountered 1 error while measuring checkpoint"),
+            "checkpoint size measurement should report the skipped directory: {measurement_log}"
+        );
+        println!("checkpoint size after skipping unreadable subtree: {usage} bytes");
+        println!("{measurement_log}");
+    }
+
+    #[test]
+    fn startup_usage_limits_directory_recursion() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let make_backend = || -> Arc<dyn StorageBackend> {
+            Arc::new(PosixBackend::new(
+                tempdir.path(),
+                StorageCacheConfig::default(),
+                &FileBackendConfig::default(),
+            ))
+        };
+
+        let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
+        let uuid = uuid::Uuid::now_v7();
+        checkpointer
+            .commit_and_publish(uuid, 0, None, Some(0), Some(0))
+            .unwrap();
+        drop(checkpointer);
+
+        let mut deep_fs_path = tempdir.path().join(uuid.to_string());
+        let mut fail_on: StoragePath = uuid.to_string().into();
+        for index in 0..super::MAX_STORAGE_RECURSION_DEPTH {
+            let component = format!("nested-{index}");
+            deep_fs_path.push(&component);
+            std::fs::create_dir(&deep_fs_path).unwrap();
+            fail_on = fail_on.join(component.as_str());
+        }
+        std::fs::write(deep_fs_path.join("payload.dat"), b"deep payload").unwrap();
+
+        let inner = make_backend();
+        let was_listed = Arc::new(AtomicBool::new(false));
+        let failing_backend: Arc<dyn StorageBackend> = Arc::new(ListFailingBackend {
+            inner: inner.clone(),
+            fail_on,
+            was_listed: was_listed.clone(),
+        });
+        let (result, log) =
+            crate::utils::LogCapture::new(|| Checkpointer::new(failing_backend)).into_parts();
+
+        let _restarted = result.expect("deep storage paths should not block startup");
+        assert!(!was_listed.load(Ordering::Relaxed));
+        assert!(
+            log.contains("1 error(s) reading directory entries"),
+            "startup log should report the recursion limit: {log}"
+        );
+        println!("startup completed with maximum scan depth 64");
+        println!("{log}");
     }
 
     /// Verifies that GC uses `dependencies.json` as the authoritative list

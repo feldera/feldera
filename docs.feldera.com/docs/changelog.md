@@ -89,6 +89,8 @@ Source edition can be found on github.
   and the limit, instead of reaching the server. See
   [NATS output connector](/connectors/sinks/nats).
 
+- DBSP startup storage accounting now includes checkpoint files in nested directories and continues past unreadable child directories.
+
 ## v0.362.0
 
 - Incompatible change (SQL): the `emit_final` property of a view must
