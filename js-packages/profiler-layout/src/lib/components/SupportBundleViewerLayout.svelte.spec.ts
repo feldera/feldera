@@ -22,9 +22,11 @@
  * vertical panes in SupportBundleViewerLayout.svelte.
  */
 
+import { formatDateTime } from 'common-lib/format'
 import type { SourcePositionRange } from 'profiler-lib'
 import { TriageResults } from 'triage-types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 
 // vi.mock is hoisted above module-scope bindings, so each factory imports the stub inline
@@ -60,7 +62,7 @@ const baseProps = () => ({
   triageResults: new TriageResults(),
   profileFiles: [],
   selectedTimestamp: null,
-  onSelectTimestamp: () => { },
+  onSelectTimestamp: () => {},
   sqlPanelFullHeight: false
 })
 
@@ -215,5 +217,45 @@ describe('SupportBundleViewerLayout Connectors tab', () => {
       connectorMetrics: { tables: new Map(), views: new Map() }
     })
     expect(connectorsTab(container).disabled).toBe(false)
+  })
+})
+
+describe('SupportBundleViewerLayout Health tab', () => {
+  const healthTab = () => page.getByRole('radio', { name: 'Health' })
+
+  it('is disabled when the bundle has no pipeline events', async () => {
+    render(SupportBundleViewerLayout, baseProps())
+    await expect.element(healthTab()).toBeDisabled()
+  })
+
+  it('shows the pipeline events of the bundle up to the time it was collected', async () => {
+    const collectedAt = new Date('2026-05-01T12:30:00Z')
+    render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      selectedTimestamp: collectedAt,
+      pipelineEvents: [
+        {
+          event_id: 'e1',
+          recorded_at: '2026-05-01T12:00:00Z',
+          program_status: 'Success',
+          storage_status: 'InUse',
+          deployment_has_error: true,
+          deployment_resources_status: 'Provisioned',
+          deployment_resources_desired_status: 'Provisioned',
+          deployment_runtime_status: 'Running'
+        }
+      ]
+    })
+    await expect.element(healthTab()).toBeEnabled()
+    // Playwright never finds the segment label visible and stable here, so the test clicks it
+    // through the DOM.
+    ;(page.getByText('Health', { exact: true }).element() as HTMLElement).click()
+    await expect.element(page.getByText('1 ongoing incident')).toBeInTheDocument()
+    // The timeline ends at the hour after the bundle was collected, not after the current time.
+    const endAt = new Date('2026-05-01T13:00:00Z')
+    const startAt = new Date(endAt.getTime() - 72 * 60 * 60 * 1000)
+    await expect
+      .element(page.getByText(`${formatDateTime(startAt)} - ${formatDateTime(endAt)}`))
+      .toBeInTheDocument()
   })
 })

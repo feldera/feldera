@@ -116,3 +116,75 @@ describe('processProfileFiles runtimeConfig', () => {
     expect(result.runtimeConfig).toBeUndefined()
   })
 })
+
+/** A pipeline monitor event with the fields that the bundle has, recorded at `recordedAt`. */
+function monitorEvent(eventId: string, recordedAt = '2026-05-25T12:30:00Z') {
+  return {
+    event_id: eventId,
+    recorded_at: recordedAt,
+    program_status: 'Success',
+    storage_status: 'InUse',
+    deployment_has_error: false,
+    deployment_resources_status: 'Provisioned',
+    deployment_resources_desired_status: 'Provisioned',
+    deployment_runtime_status: 'Running'
+  }
+}
+
+function pipelineEvents(text: string, dir = TIMESTAMP): ZipItem {
+  return file(`${dir}/pipeline_events.json`, text)
+}
+
+describe('processProfileFiles pipelineEvents', () => {
+  it('extracts the events from pipeline_events.json in their order', async () => {
+    const events = [
+      monitorEvent('e2', '2026-05-25T12:30:00Z'),
+      monitorEvent('e1', '2026-05-25T12:00:00Z')
+    ]
+    const result = await processProfileFiles([pipelineEvents(JSON.stringify(events))])
+    expect(result.pipelineEvents).toEqual(events)
+  })
+
+  it('extracts an empty event list', async () => {
+    const result = await processProfileFiles([pipelineEvents('[]')])
+    expect(result.pipelineEvents).toEqual([])
+  })
+
+  it('leaves pipelineEvents undefined when the bundle has no pipeline_events.json', async () => {
+    const result = await processProfileFiles([circuitProfile()])
+    expect(result.pipelineEvents).toBeUndefined()
+  })
+
+  it.each([
+    ['is not valid JSON', '[{'],
+    ['is an object', '{"events": []}'],
+    ['is null', 'null']
+  ])('leaves pipelineEvents undefined and loads the rest when the file %s', async (_, text) => {
+    const result = await processProfileFiles([logs(), pipelineEvents(text)])
+    expect(result.pipelineEvents).toBeUndefined()
+    expect(result.logText).toBe('starting up\n')
+  })
+
+  it('skips the entries that have no event ID or recording time', async () => {
+    const valid = monitorEvent('e1')
+    const entries = [
+      null,
+      7,
+      'e0',
+      { ...valid, event_id: 5 },
+      { ...valid, recorded_at: null },
+      { event_id: 'e9' },
+      valid
+    ]
+    const result = await processProfileFiles([pipelineEvents(JSON.stringify(entries))])
+    expect(result.pipelineEvents).toEqual([valid])
+  })
+})
+
+describe('selectProfiles with pipeline events', () => {
+  it('keeps a collection that has only pipeline_events.json', () => {
+    const profiles = selectProfiles([pipelineEvents('[]')])
+    expect(profiles).toHaveLength(1)
+    expect(profiles[0][1].map((f) => f.filename)).toEqual([`${TIMESTAMP}/pipeline_events.json`])
+  })
+})
