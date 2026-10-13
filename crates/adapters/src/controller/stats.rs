@@ -747,7 +747,15 @@ impl ControllerStatus {
     /// Invoked when one of the input endpoints has finished processing
     /// to check if any paused endpoints have all their 'start_after'
     /// dependencies satisfied and can be started.
+    ///
+    /// In a multihost pipeline, this does nothing, because the labels must be
+    /// complete on every host, not only on this one.  The coordinator starts
+    /// the endpoints instead.
     pub fn start_dependencies(&self, backpressure_thread_unparker: &Unparker) {
+        if self.pipeline_config.multihost.is_some() {
+            return;
+        }
+
         let mut endpoints_to_start: Vec<EndpointId> = Vec::new();
 
         let inputs = self.input_status();
@@ -3276,13 +3284,16 @@ impl OutputEndpointStatus {
 #[cfg(test)]
 mod test {
     use super::{
-        ConnectorError, ConnectorErrorList, GlobalControllerMetrics, InputEndpointMetrics,
-        InputEndpointStatus, MAX_CONNECTOR_ERROR_LEN, StepResults, bound_error_message,
+        ConnectorError, ConnectorErrorList, ControllerStatus, GlobalControllerMetrics,
+        InputEndpointMetrics, InputEndpointStatus, MAX_CONNECTOR_ERROR_LEN, StepResults,
+        bound_error_message,
     };
     use crate::format::BufferSize;
     use anyhow::anyhow;
     use chrono::Utc;
+    use crossbeam::sync::Parker;
     use feldera_types::config::InputEndpointConfig;
+    use feldera_types::config::PipelineConfig;
     use serde_json::json;
     use std::sync::{Arc, atomic::Ordering};
     use uuid::Uuid;
@@ -3327,6 +3338,48 @@ mod test {
         // The records are in step 5, so the token completes only once
         // `total_completed_steps` reaches 6.
         assert_eq!(endpoint.completion_status(token), Some(6));
+    }
+
+    /// Returns true if endpoint `waits`, which starts after label `backfill`,
+    /// starts when endpoint `labeled`, the only one with that label, reaches the
+    /// end of its input on this host.
+    fn starts_after_local_eoi(pipeline_config: serde_json::Value) -> bool {
+        let status = ControllerStatus::new(
+            serde_json::from_value::<PipelineConfig>(pipeline_config).unwrap(),
+            0,
+            None,
+            Uuid::nil(),
+        );
+        for (id, name, endpoint) in [
+            (0, "labeled", json!({"labels": ["backfill"]})),
+            (1, "waits", json!({"start_after": "backfill"})),
+        ] {
+            let mut config = json!({"stream": "t", "transport": {"name": "datagen", "config": {}}});
+            config
+                .as_object_mut()
+                .unwrap()
+                .extend(endpoint.as_object().unwrap().clone());
+            let config = serde_json::from_value(config).unwrap();
+            status
+                .inputs
+                .write()
+                .insert(id, InputEndpointStatus::new(name, config, None, None));
+        }
+        let parker = Parker::new();
+        status.eoi(0, parker.unparker(), parker.unparker());
+        !status.input_status()[&1].is_paused_by_user()
+    }
+
+    /// In a multihost pipeline, a host does not start an endpoint when its own
+    /// part of a label completes, because other hosts may still be reading
+    /// theirs.  The coordinator starts it once the label completes on every
+    /// host.
+    #[test]
+    fn multihost_start_after_waits_for_coordinator() {
+        assert!(starts_after_local_eoi(json!({"name": "test"})));
+        assert!(!starts_after_local_eoi(
+            json!({"name": "test", "multihost": {"hosts": 2}})
+        ));
     }
 
     #[test]

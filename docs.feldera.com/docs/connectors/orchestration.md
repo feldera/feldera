@@ -166,6 +166,7 @@ or
 
 Such a connector is created in the Paused state and is automatically activated once
 all connectors tagged with at least one of the specified labels have reached the end of input.
+In a multihost pipeline, those connectors must reach the end of input on every host.
 
 ### Example
 
