@@ -8693,3 +8693,98 @@ fn a_reader_is_told_the_step_being_fed_not_the_one_the_outputs_finished() {
 
     controller.stop().unwrap();
 }
+
+/// Returns a controller for `config` and a probe for input connector
+/// `test_input` with endpoint id 0, which has a status entry but no reader.
+fn controller_with_probe(config: serde_json::Value) -> (Controller, super::InputProbe) {
+    init_test_logger();
+    let controller = Controller::with_test_config(
+        |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], &[None])),
+        &serde_json::from_value(config).unwrap(),
+        Box::new(|_e, _| ()),
+    )
+    .unwrap();
+    let input_config = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": {"name": "datagen", "config": {}},
+    }))
+    .unwrap();
+    controller.inner.status.inputs.write().insert(
+        0,
+        super::stats::InputEndpointStatus::new("test_input", input_config, None, None),
+    );
+    let probe = super::InputProbe {
+        endpoint_id: 0,
+        endpoint_name: "test_input".to_string(),
+        controller: controller.inner.clone(),
+        max_batch_size: 1024,
+        transaction_in_progress: AtomicBool::new(false),
+    };
+    (controller, probe)
+}
+
+/// True if `controller`'s open transaction waits for a connector to commit.
+fn waits_for_connector(controller: &Controller) -> bool {
+    let transaction_info = controller.inner.transaction_info.lock().unwrap();
+    transaction_info
+        .initiators
+        .is_ongoing(transaction_info.is_multihost)
+}
+
+/// A connector that fails, or is disconnected, in the middle of a
+/// transaction can never commit it, so its part ends.  Otherwise the
+/// transaction would stay open forever.  A connector that recovers from an
+/// error keeps its part.
+#[test]
+fn stopped_connector_ends_its_transaction() {
+    let config = json!({"name": "test", "workers": 1, "inputs": {}, "outputs": {}});
+    for stop in ["nonfatal", "fatal", "disconnect"] {
+        let (controller, probe) = controller_with_probe(config.clone());
+        probe.start_transaction(Some("t"));
+        assert!(waits_for_connector(&controller));
+        match stop {
+            "nonfatal" => probe.error(false, anyhow!("retrying"), None),
+            "fatal" => probe.error(true, anyhow!("failed"), None),
+            _ => controller.disconnect_input(&0),
+        }
+        assert_eq!(
+            waits_for_connector(&controller),
+            stop == "nonfatal",
+            "{stop}"
+        );
+        controller.stop().unwrap();
+    }
+}
+
+/// In a multihost pipeline, a host whose part of a transaction that needs
+/// every host fails reports the connector as done, so that the coordinator
+/// does not wait for it forever.
+#[test]
+fn stopped_connector_finishes_all_hosts_transaction() {
+    let (controller, probe) = controller_with_probe(json!({
+        "name": "test",
+        "workers": 1,
+        "inputs": {},
+        "outputs": {},
+        "multihost": {"hosts": 1},
+    }));
+    probe.start_transaction_on_all_hosts(Some("snapshot-0"));
+    let all_hosts_done = || {
+        controller
+            .inner
+            .transaction_info
+            .lock()
+            .unwrap()
+            .sender
+            .borrow()
+            .all_hosts_done
+            .clone()
+    };
+    assert!(all_hosts_done().is_empty());
+    probe.error(true, anyhow!("failed"), None);
+    assert_eq!(
+        all_hosts_done(),
+        std::collections::HashSet::from(["test_input".to_string()])
+    );
+    controller.stop().unwrap();
+}

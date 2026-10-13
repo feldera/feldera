@@ -7915,6 +7915,7 @@ impl ControllerInner {
             if let Some(reader) = ep.reader.as_ref() {
                 reader.disconnect()
             }
+            self.end_transaction_for_stopped_connector(&ep.endpoint_name, "was disconnected");
             self.unpark_circuit();
             self.unpark_backpressure();
         }
@@ -9395,6 +9396,26 @@ impl ControllerInner {
         Ok(())
     }
 
+    /// Ends connector `endpoint_name`'s part of the open transaction, if it has
+    /// one, because the connector stopped (`why`) and so can never commit it.
+    /// Otherwise, the transaction would stay open forever: in a single-host
+    /// pipeline, because it commits only after every connector in it commits,
+    /// and in a multihost pipeline, because the coordinator waits for every
+    /// host to finish a connector that needs every host.
+    ///
+    /// This commits the connector's part, so the transaction contains whatever
+    /// input the connector sent before it stopped.
+    fn end_transaction_for_stopped_connector(&self, endpoint_name: &str, why: &str) {
+        if self
+            .commit_transaction_from_connector(endpoint_name)
+            .is_ok()
+        {
+            warn!(
+                "Input endpoint {endpoint_name} {why} during a transaction, so its part of the transaction is committed with the input that it sent before"
+            );
+        }
+    }
+
     /// Read the current value of transaction_info.transaction_state.
     pub fn get_transaction_state(&self) -> TransactionState {
         self.transaction_info.lock().unwrap().transaction_state
@@ -9842,6 +9863,10 @@ impl InputConsumer for InputProbe {
             error,
             tag,
         );
+        if fatal {
+            self.controller
+                .end_transaction_for_stopped_connector(&self.endpoint_name, "failed");
+        }
     }
 
     fn set_custom_metrics(&self, metrics: Arc<dyn ConnectorMetrics>) {
