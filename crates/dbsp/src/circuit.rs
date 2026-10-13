@@ -20,6 +20,7 @@ pub(crate) mod runtime;
 
 #[macro_use]
 pub mod metadata;
+pub mod bootstrap;
 pub mod cache;
 pub mod checkpointer;
 pub mod circuit_builder;
@@ -33,10 +34,11 @@ pub mod trace;
 #[cfg(test)]
 mod replay_tests;
 
+pub use bootstrap::ConcurrentRestoreOutcome;
 pub use circuit_builder::{
-    ChildCircuit, Circuit, CircuitBase, CircuitHandle, ConcurrentRestoreOutcome, ElapsedTime,
-    ExportId, ExportStream, FeedbackConnector, GlobalNodeId, NestedCircuit, NodeId,
-    OwnershipPreference, RegionName, RootCircuit, Scope, Stream, ThreadCpuTime, WithClock,
+    ChildCircuit, Circuit, CircuitBase, CircuitHandle, ElapsedTime, ExportId, ExportStream,
+    FeedbackConnector, GlobalNodeId, NestedCircuit, NodeId, OwnershipPreference, RegionName,
+    RootCircuit, Scope, Stream, ThreadCpuTime, WithClock,
 };
 pub use dbsp_handle::{
     CheckpointCommitter, CheckpointPublisher, CircuitConfig, CircuitStorageConfig, DBSPHandle,

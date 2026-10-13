@@ -1,7 +1,7 @@
-use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
 use crate::circuit::metadata::{INPUT_RECORDS_COUNT, MEMORY_ALLOCATIONS_COUNT, RETAINMENT_BOUNDS};
 use crate::circuit::operator_traits::{OperatorCheckpoint, OperatorName};
 use crate::circuit::{NodeId, splitter_output_chunk_size};
+use crate::circuit::{bootstrap::register_replay_stream, circuit_builder::StreamId};
 use crate::dynamic::Factory;
 use crate::operator::dynamic::replay::ReplayState;
 use crate::operator::require_persistent_id;

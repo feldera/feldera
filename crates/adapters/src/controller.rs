@@ -55,7 +55,7 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
-use dbsp::circuit::circuit_builder::{BootstrapInfo, ConcurrentRestoreOutcome};
+use dbsp::circuit::bootstrap::{BootstrapInfo, ConcurrentRestoreOutcome};
 use dbsp::circuit::metrics::{
     COMPACTION_STALL_TIME_NANOSECONDS, DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS, DBSP_STEP,
     DBSP_STEP_LATENCY_MICROSECONDS, DUPLICATE_EXCHANGE_MESSAGES_RECEIVED,

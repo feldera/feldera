@@ -15,10 +15,8 @@ use crate::{
     algebra::{IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
         OwnershipPreference, Scope,
-        circuit_builder::{
-            CircuitBase, RefStreamValue, register_accumulated_replay_stream,
-            register_secondary_replay_stream,
-        },
+        bootstrap::{register_accumulated_replay_stream, register_secondary_replay_stream},
+        circuit_builder::{CircuitBase, RefStreamValue},
         lazy_input_map_key_block_bytes, lazy_input_map_keys_per_step,
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, CONFLICTING_UPDATES_COUNT, INPUT_BATCHES_STATS,

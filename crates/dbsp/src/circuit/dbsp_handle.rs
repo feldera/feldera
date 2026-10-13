@@ -1,9 +1,9 @@
 use crate::circuit::GlobalNodeId;
 use crate::circuit::checkpointer::Checkpointer;
-use crate::circuit::circuit_builder::{CircuitHandle, ConcurrentRestoreOutcome};
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::operator_traits::OperatorCheckpoint;
 use crate::circuit::schedule::CommitProgress;
+use crate::circuit::{bootstrap::ConcurrentRestoreOutcome, circuit_builder::CircuitHandle};
 use crate::monitor::visual_graph::Graph;
 use crate::operator::dynamic::balance::{BalancerHint, PartitioningPolicy};
 use crate::storage::backend::StorageError;
@@ -50,7 +50,7 @@ use crate::circuit::circuit_builder::Stream;
 use crate::profile::{DbspProfile, GraphProfile, WorkerProfile};
 
 use super::SchedulerError;
-use super::circuit_builder::BootstrapInfo;
+use super::bootstrap::BootstrapInfo;
 use super::runtime::WorkerPanicInfo;
 
 /// Default ratio of merger threads to worker threads.
