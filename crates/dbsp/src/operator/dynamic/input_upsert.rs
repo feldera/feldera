@@ -3,8 +3,9 @@ use crate::{
     algebra::{HasOne, HasZero, IndexedZSet, OrdZSet, ZTrace},
     circuit::{
         OwnershipPreference, Scope,
+        bootstrap::register_replay_stream,
         checkpointer::Checkpoint,
-        circuit_builder::{CircuitBase, RefStreamValue, register_replay_stream},
+        circuit_builder::{CircuitBase, RefStreamValue},
         metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::{BinaryOperator, Operator, TernaryOperator},
     },

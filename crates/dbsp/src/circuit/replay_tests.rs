@@ -2416,7 +2416,7 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
     // Invoked with the bootstrap info in the `Concurrent` case; lets tests
     // assert WHERE the replay boundary landed (e.g., at an operator's own
     // output integral vs at the integrals upstream of it).
-    info_check: fn(&crate::circuit::circuit_builder::BootstrapInfo),
+    info_check: fn(&crate::circuit::bootstrap::BootstrapInfo),
 ) where
     I: TestDataType,
     OO: TestDataType,
@@ -4678,10 +4678,7 @@ fn test_concurrent_left_join() {
 // ============================================================================
 
 /// True if any persistent id in `info.need_backfill` contains `fragment`.
-fn backfill_pids_contain(
-    info: &crate::circuit::circuit_builder::BootstrapInfo,
-    fragment: &str,
-) -> bool {
+fn backfill_pids_contain(info: &crate::circuit::bootstrap::BootstrapInfo, fragment: &str) -> bool {
     info.need_backfill
         .values()
         .flatten()

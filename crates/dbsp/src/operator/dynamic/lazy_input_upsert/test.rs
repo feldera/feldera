@@ -65,7 +65,7 @@
 use super::*;
 use crate::circuit::{
     CircuitConfig, CircuitStorageConfig, ConcurrentRestoreOutcome, Layout, Mode,
-    circuit_builder::BootstrapInfo, mkconfig,
+    bootstrap::BootstrapInfo, mkconfig,
 };
 use crate::operator::dynamic::input_upsert::Update;
 use crate::operator::input::{LazyMapHandle, MapHandle, StagedBuffers};
