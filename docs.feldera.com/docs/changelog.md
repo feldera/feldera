@@ -408,8 +408,10 @@ Source edition can be found on github.
   still create it after the client has given up.
 
 - NATS input connector: new metrics `input_connector_nats_consumers_created_total`,
-  `input_connector_nats_consumers_deleted_total`, `input_connector_nats_retries_total`,
-  `input_connector_nats_consecutive_failures`, and `input_connector_nats_retry_state`.
+  `input_connector_nats_consumers_deleted_total`,
+  `input_connector_nats_consumer_delete_failures_total`,
+  `input_connector_nats_retries_total`, `input_connector_nats_consecutive_failures`,
+  and `input_connector_nats_retry_state`.
 
 - NATS input connector: the pipeline name is now injected into the JetStream
   consumer's metadata under the `pipeline` key, so consumer metrics can be
