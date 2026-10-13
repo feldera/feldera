@@ -3,7 +3,8 @@
 Framework-independent TypeScript utilities shared by Feldera's frontends (the
 web console, the profiler app and their libraries). Nothing here depends on
 Svelte or on a specific app, so any package can use it, including plain
-TypeScript libraries and Node scripts. Svelte components belong in
+TypeScript libraries and Node scripts. Svelte components, and code that only
+the web console and the profiler use, belong in
 [`common-ui`](../common-ui/README.md).
 
 ## Usage
@@ -31,9 +32,6 @@ import type { SameNullability } from 'common-lib/types/nullable'
 | `bigNumber` | `BigNumber` helpers | `bignumber.js` |
 | `valibot` | `BigNumber` schemas for Valibot | `bignumber.js`, `valibot` |
 | `d3-random-bignumber` | Random `BigNumber` generators | `bignumber.js` |
-| `felderaRelation` | SQL relation name normalization | |
-| `latencyColor` | Color scale for connector latencies | `tiny-invariant` |
-| `connectorMetrics` | Connector statistics types, grouped by relation | |
 
 The libraries in the "Needs" column are optional peer dependencies. A package
 that imports a module must also depend on the libraries that the module needs.

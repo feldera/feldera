@@ -1,7 +1,7 @@
 <script lang="ts">
   import { type Percent, percentValue } from 'common-lib/percent'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
-  import type { Snippet } from '$lib/types/svelte'
+  import type { Snippet } from 'svelte'
 
   const {
     side,

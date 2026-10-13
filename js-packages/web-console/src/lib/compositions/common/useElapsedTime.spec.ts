@@ -6,7 +6,7 @@
 import Dayjs from 'dayjs'
 import duration from 'dayjs/plugin/duration'
 import { describe, expect, it } from 'vitest'
-import { formatDuration } from './useElapsedTime'
+import { formatAge, formatDuration } from './useElapsedTime'
 
 // The app extends Dayjs once at startup; a unit test loads the plugin itself.
 Dayjs.extend(duration)
@@ -49,5 +49,27 @@ describe('formatDuration', () => {
     it('reports one minute exactly as a minute', () => {
       expect(formatDuration(minutes(1), 'dhm')).toBe(' 1m')
     })
+  })
+})
+
+describe('formatAge', () => {
+  // The cluster monitor writes an event every ten minutes, so a typical age is minutes or hours.
+  it('ages an event in minutes and hours', () => {
+    expect(formatAge(minutes(10))).toBe('updated 10m ago')
+    expect(formatAge(minutes(90))).toBe('updated 1h 30m ago')
+  })
+
+  it('rounds the age down to a whole step', () => {
+    expect(formatAge(seconds(29))).toBe('updated 20s ago')
+    expect(formatAge(minutes(10) + seconds(5), minutes(1))).toBe('updated 10m ago')
+  })
+
+  it('reports an age shorter than one step as just now', () => {
+    expect(formatAge(0)).toBe('updated just now')
+    expect(formatAge(seconds(9))).toBe('updated just now')
+  })
+
+  it('reports a timestamp ahead of the clock as just now', () => {
+    expect(formatAge(-minutes(5))).toBe('updated just now')
   })
 })

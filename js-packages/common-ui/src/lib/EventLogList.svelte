@@ -1,9 +1,10 @@
-<script lang="ts" generics="S extends string, T extends string">
+<script lang="ts" generics="S extends HealthStatus, T extends string">
   import { formatDateTimeRange } from 'common-lib/format'
+  import type { HealthEventBucket, HealthStatus } from './healthEvents'
+  import type { Snippet } from 'svelte'
   import { slide } from 'svelte/transition'
-  import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
-  import type { HealthEventBucket } from '$lib/functions/pipelines/health'
-  import type { Snippet } from '$lib/types/svelte'
+  import { healthStatusColors, healthStatusIcon } from './healthStatus'
+  import InlineDropdown from './InlineDropdown.svelte'
 
   type Bucket = HealthEventBucket<S, T>
 
@@ -12,15 +13,13 @@
     unresolvedEvents,
     noIssues,
     onEventSelected,
-    selectedEvents = null,
-    getIconClass
+    selectedEvents = null
   }: {
     previousEvents: Bucket[]
     unresolvedEvents: Bucket[]
     noIssues: Snippet
     onEventSelected?: (eventParts: Bucket) => void
     selectedEvents?: { tag: T; from: Date; to: Date } | null
-    getIconClass: (type: S) => string
   } = $props()
 
   let showUnresolved = $state(true)
@@ -165,12 +164,13 @@
 </script>
 
 {#snippet eventItem(event: Bucket, iconClass: string = '')}
+  {@const iconColor = healthStatusColors(event.type).healthIcon}
   <button
     id={getEventId(event)}
     class="flex flex-nowrap items-center gap-1 outline-none"
     onclick={() => onEventSelected?.(event)}
   >
-    <span class="text-[16px] {getIconClass(event.type)} {iconClass}"></span>
+    <span class="text-[16px] {healthStatusIcon(event.type)} {iconColor} {iconClass}"></span>
     <span class="line-clamp-1">{event.description}</span>
   </button>
 {/snippet}
