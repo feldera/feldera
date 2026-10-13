@@ -1113,56 +1113,7 @@ impl InputReader for DeltaTableInputReader {
             InputReaderCommand::Queue {
                 checkpoint_requested,
             } => {
-                // When initiating a checkpoint, try to stop at a delta table transaction boundary.
-                let stop_at: &dyn Fn(&QueueEntry) -> bool = if checkpoint_requested {
-                    &|entry: &QueueEntry| {
-                        matches!(
-                            entry,
-                            QueueEntry::ResumeInfo(Some(_)) | QueueEntry::Rollback
-                        )
-                    }
-                } else {
-                    &|_: &QueueEntry| false
-                };
-
-                let (total, _, resume_info) = self.inner.queue.flush_with_aux_until(stop_at);
-                let resume_status = match resume_info.last() {
-                    None => self.inner.last_resume_status.lock().unwrap().clone(),
-                    Some((_ts, QueueEntry::ResumeInfo(resume_info))) => resume_info.clone(),
-                    Some((_ts, QueueEntry::Rollback)) => Some(
-                        self.inner
-                            .last_checkpointable_status
-                            .lock()
-                            .unwrap()
-                            .clone(),
-                    ),
-                };
-
-                *self.inner.last_resume_status.lock().unwrap() = resume_status.clone();
-                if let Some(resume_status) = &resume_status {
-                    *self.inner.last_checkpointable_status.lock().unwrap() = resume_status.clone();
-                }
-
-                let resume = match resume_status {
-                    None => Resume::Barrier,
-                    Some(delta_resume_info) => delta_resume_info.to_resume(),
-                };
-
-                // We use the same format (DeltaResumeInfo) for resume info and watermark metadata.
-                self.inner.consumer.extended(
-                    total,
-                    Some(resume),
-                    resume_info
-                        .into_iter()
-                        .filter_map(|(timestamp, metadata)| match metadata {
-                            QueueEntry::ResumeInfo(resume_info) => Some(Watermark::new(
-                                timestamp,
-                                resume_info.map(|m| serde_json::to_value(m).unwrap()),
-                            )),
-                            QueueEntry::Rollback => None,
-                        })
-                        .collect(),
-                );
+                self.inner.queue(checkpoint_requested);
             }
             InputReaderCommand::Disconnect => {
                 let _ = self.sender.send_replace(PipelineState::Terminated);
@@ -1226,6 +1177,19 @@ struct DeltaResumeInfo {
     /// the same version even if they stopped at different points.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     snapshot_pending: bool,
+
+    /// True if a distributed connector with `snapshot_pending` had already
+    /// requested the transaction for its share of the snapshot, which every
+    /// host joins (see
+    /// [`DeltaTableInputEndpointInner::start_distributed_snapshot_transaction`]).
+    ///
+    /// A host saves this state only if that transaction committed without its
+    /// share, for example because the host failed or the pipeline suspended.
+    /// The other hosts may then have finished their shares, and they will not
+    /// join a new such transaction, so on resume this host reads its share in
+    /// a transaction of its own.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    snapshot_started: bool,
 }
 
 impl DeltaResumeInfo {
@@ -1236,6 +1200,7 @@ impl DeltaResumeInfo {
             snapshot_timestamp: None,
             eoi: false,
             snapshot_pending: false,
+            snapshot_started: false,
         }
     }
 
@@ -1246,6 +1211,7 @@ impl DeltaResumeInfo {
             snapshot_timestamp: None,
             eoi: true,
             snapshot_pending: false,
+            snapshot_started: false,
         }
     }
 
@@ -1262,6 +1228,7 @@ impl DeltaResumeInfo {
             snapshot_timestamp: None,
             eoi,
             snapshot_pending: false,
+            snapshot_started: false,
         }
     }
 
@@ -1275,6 +1242,7 @@ impl DeltaResumeInfo {
             snapshot_timestamp: Some(timestamp.to_string()),
             eoi: false,
             snapshot_pending: false,
+            snapshot_started: false,
         }
     }
 
@@ -1286,6 +1254,7 @@ impl DeltaResumeInfo {
             snapshot_timestamp: None,
             eoi: false,
             snapshot_pending: true,
+            snapshot_started: false,
         }
     }
 
@@ -1736,6 +1705,56 @@ impl DeltaTableInputEndpointInner {
         }
     }
 
+    /// Flushes queued input to the circuit, for [InputReaderCommand::Queue].
+    fn queue(&self, checkpoint_requested: bool) {
+        // When initiating a checkpoint, try to stop at a delta table transaction boundary.
+        let stop_at: &dyn Fn(&QueueEntry) -> bool = if checkpoint_requested {
+            &|entry: &QueueEntry| {
+                matches!(
+                    entry,
+                    QueueEntry::ResumeInfo(Some(_)) | QueueEntry::Rollback
+                )
+            }
+        } else {
+            &|_: &QueueEntry| false
+        };
+
+        let (total, _, resume_info) = self.queue.flush_with_aux_until(stop_at);
+        let resume_status = match resume_info.last() {
+            None => self.last_resume_status.lock().unwrap().clone(),
+            Some((_ts, QueueEntry::ResumeInfo(resume_info))) => resume_info.clone(),
+            Some((_ts, QueueEntry::Rollback)) => {
+                Some(self.last_checkpointable_status.lock().unwrap().clone())
+            }
+        };
+
+        *self.last_resume_status.lock().unwrap() = resume_status.clone();
+        if let Some(resume_status) = &resume_status {
+            *self.last_checkpointable_status.lock().unwrap() = resume_status.clone();
+        }
+
+        let resume = match resume_status {
+            None => Resume::Barrier,
+            Some(delta_resume_info) => delta_resume_info.to_resume(),
+        };
+
+        // We use the same format (DeltaResumeInfo) for resume info and watermark metadata.
+        self.consumer.extended(
+            total,
+            Some(resume),
+            resume_info
+                .into_iter()
+                .filter_map(|(timestamp, metadata)| match metadata {
+                    QueueEntry::ResumeInfo(resume_info) => Some(Watermark::new(
+                        timestamp,
+                        resume_info.map(|m| serde_json::to_value(m).unwrap()),
+                    )),
+                    QueueEntry::Rollback => None,
+                })
+                .collect(),
+        );
+    }
+
     /// Returns true if this host follows the table's log after the snapshot.
     ///
     /// The log is a single sequence of commits, so only one host of a
@@ -1972,6 +1991,12 @@ impl DeltaTableInputEndpointInner {
             || std::env::var_os(PER_HOST_SNAPSHOT_TRANSACTIONS_ENV).is_some()
             || !self.config.snapshot()
             || !Self::snapshot_incomplete(&self.last_resume_status.lock().unwrap())
+            || self
+                .last_resume_status
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|status| status.snapshot_started)
         {
             return;
         }
@@ -1979,6 +2004,20 @@ impl DeltaTableInputEndpointInner {
         let Some(label) = self.allocate_snapshot_transaction_label() else {
             return;
         };
+        // A checkpoint taken after the transaction commits without this
+        // host's share records that this host started it.  Both copies of the
+        // status get the flag: a flush that consumes nothing, because the
+        // queue holds this request until the host joins the transaction,
+        // copies the last status over the checkpointable one.
+        let mark_started = |status: &mut DeltaResumeInfo| {
+            if status.snapshot_pending {
+                status.snapshot_started = true;
+            }
+        };
+        mark_started(&mut self.last_checkpointable_status.lock().unwrap());
+        if let Some(status) = self.last_resume_status.lock().unwrap().as_mut() {
+            mark_started(status);
+        }
         // Every host makes this request, so the coordinator keeps the
         // transaction open until every host has committed its part.  During a
         // snapshot, every queue entry's resume info is `None`.
@@ -7099,6 +7138,48 @@ mod distributed_snapshot_tests {
                 .start_distributed_snapshot_transaction(&mut receiver)
                 .await;
             assert_eq!(endpoint.queue.len(), 0, "{transaction_mode} {shard:?}");
+        }
+    }
+
+    /// A host that resumes before it started its share of the snapshot reads
+    /// it in the transaction that every host joins, and records that it
+    /// started it, also across a flush that the transaction holds back.  A
+    /// host that resumes after it started its share reads it in a transaction
+    /// of its own, because the other hosts may have finished theirs and will
+    /// not join.
+    #[tokio::test]
+    async fn resumed_share_joins_all_hosts_transaction_only_if_not_started() {
+        let config = json!({"uri": "/tmp/t", "mode": "snapshot", "transaction_mode": "snapshot"});
+        for started in [false, true] {
+            let resume_info = DeltaResumeInfo {
+                snapshot_started: started,
+                ..DeltaResumeInfo::snapshot_pending(7)
+            };
+            let consumer = MockInputConsumer::new();
+            // A multihost pipeline without an open transaction holds the
+            // request back.
+            consumer.state().open_transaction = Some(None);
+            let endpoint = resumed_endpoint(
+                config.clone(),
+                Some(shard(2)),
+                None,
+                consumer.clone(),
+                Some(resume_info),
+            );
+            let (_sender, mut receiver) = channel(PipelineState::Running);
+            endpoint
+                .start_distributed_snapshot_transaction(&mut receiver)
+                .await;
+            assert_eq!(endpoint.queue.len(), usize::from(!started), "{started}");
+            endpoint.queue(false);
+            assert_eq!(endpoint.queue.len(), usize::from(!started), "{started}");
+            assert!(
+                endpoint
+                    .last_checkpointable_status
+                    .lock()
+                    .unwrap()
+                    .snapshot_started
+            );
         }
     }
 
