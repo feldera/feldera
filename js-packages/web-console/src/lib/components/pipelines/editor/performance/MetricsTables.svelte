@@ -6,11 +6,6 @@
   import { humanSize } from '$lib/functions/common/string'
   import { formatDuration, formatQty } from '$lib/functions/format'
   import {
-    statusChipClass,
-    statusCounterClass,
-    statusToneColors
-  } from '$lib/functions/pipelineStatusColor'
-  import {
     defaultLatencyColorSpread,
     latencyColor,
     latencyColorScale
@@ -21,6 +16,11 @@
     AggregatedOutputEndpointMetrics,
     PipelineMetrics
   } from '$lib/functions/pipelineMetrics'
+  import {
+    statusChipClass,
+    statusCounterClass,
+    statusToneColors
+  } from '$lib/functions/pipelineStatusColor'
   import type { InputEndpointMetrics, OutputEndpointMetrics } from '$lib/services/manager'
   import type { Snippet } from '$lib/types/svelte'
   import type { ConnectorErrorFilter } from './ConnectorErrors.svelte'
