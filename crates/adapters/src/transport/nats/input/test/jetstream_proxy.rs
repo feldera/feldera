@@ -13,6 +13,7 @@ use anyhow::{Result as AnyResult, anyhow};
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
@@ -35,6 +36,8 @@ pub(super) struct ProxyFaults {
     /// Holds the nth consumer create until a delete of the same consumer has
     /// reached the server, then forwards the create.
     pub hold_create_until_delete: Option<usize>,
+    /// Holds every consumer delete for this long before forwarding it.
+    pub delay_deletes: Option<Duration>,
 }
 
 /// State shared by all connections of one proxy.
@@ -47,10 +50,14 @@ struct ProxyState {
     dropped_replies: HashSet<String>,
     /// The held create: consumer name and raw frame.
     held_create: Option<(String, Vec<u8>)>,
+    /// Number of stream info replies still to drop. Set at run time with
+    /// [`JetStreamProxy::drop_stream_info_replies`].
+    stream_info_replies_to_drop: usize,
 }
 
 pub(super) struct JetStreamProxy {
     url: String,
+    state: Arc<Mutex<ProxyState>>,
     accept_task: JoinHandle<()>,
 }
 
@@ -67,7 +74,9 @@ impl JetStreamProxy {
             faults,
             ..Default::default()
         }));
+        let accept_state = state.clone();
         let accept_task = rt.spawn(async move {
+            let state = accept_state;
             while let Ok((client, _)) = listener.accept().await {
                 let upstream = upstream.clone();
                 let state = state.clone();
@@ -78,11 +87,21 @@ impl JetStreamProxy {
                 });
             }
         });
-        Ok(Self { url, accept_task })
+        Ok(Self {
+            url,
+            state,
+            accept_task,
+        })
     }
 
     pub(super) fn url(&self) -> &str {
         &self.url
+    }
+
+    /// Drops the server's replies to the next `n` stream info requests, so
+    /// those requests time out. The server still answers them.
+    pub(super) fn drop_stream_info_replies(&self, n: usize) {
+        self.state.lock().unwrap().stream_info_replies_to_drop = n;
     }
 }
 
@@ -217,6 +236,7 @@ async fn proxy_connection(
             let reply = has_reply.then(|| args[2]);
             let mut to_server = Vec::new();
             let mut to_client = Vec::new();
+            let mut delay = None;
             {
                 let mut state = state.lock().unwrap();
                 if consumer_name(subject, "MSG.NEXT").is_some() {
@@ -248,6 +268,7 @@ async fn proxy_connection(
                         to_server.push(frame.bytes());
                     }
                 } else if let Some(name) = consumer_name(subject, "DELETE") {
+                    delay = state.faults.delay_deletes;
                     to_server.push(frame.bytes());
                     if state
                         .held_create
@@ -258,8 +279,18 @@ async fn proxy_connection(
                         to_server.push(create);
                     }
                 } else {
+                    if subject.starts_with("$JS.API.STREAM.INFO.")
+                        && state.stream_info_replies_to_drop > 0
+                        && let Some(reply) = reply
+                    {
+                        state.stream_info_replies_to_drop -= 1;
+                        state.dropped_replies.insert(reply.to_string());
+                    }
                     to_server.push(frame.bytes());
                 }
+            }
+            if let Some(delay) = delay {
+                tokio::time::sleep(delay).await;
             }
             for bytes in to_server {
                 server_write.write_all(&bytes).await?;

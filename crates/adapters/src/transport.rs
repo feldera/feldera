@@ -67,9 +67,9 @@ use feldera_types::coordination::InputShard;
 use redis::output::RedisOutputEndpoint;
 
 use crate::transport::empty::EmptyInputEndpoint;
-#[cfg(test)]
-pub use crate::transport::file::set_barrier;
 use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};
+#[cfg(test)]
+pub use crate::transport::file::{set_barrier, set_failure};
 #[cfg(feature = "with-kafka")]
 use crate::transport::kafka::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint, KafkaOutputEndpoint};
 use crate::transport::null::NullOutputEndpoint;
