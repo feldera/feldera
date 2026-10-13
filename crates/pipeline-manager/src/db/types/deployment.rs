@@ -3,22 +3,11 @@ use crate::db::types::pipeline::ExtendedPipelineDescr;
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::utils::ValidationError;
 use feldera_types::config::{PipelineConfig, ResourceConfig, RuntimeConfig};
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use utoipa::ToSchema;
 
-/// Fields that can change while the pipeline runs. `merge_deployment_config` and
-/// `merge_deployment_config_on_edit` must cover the same ones.
-const RUNTIME_MODIFIABLE_FIELDS: [&str; 4] = [
-    "resources.cpu_cores_min",
-    "resources.cpu_cores_max",
-    "resources.memory_mb_min",
-    "resources.memory_mb_max",
-];
-
-/// The `deployment_config` field of a pipeline in the API: the runtime modifiable fields of the
-/// stored deployment config. `PATCH` changes them while the pipeline runs.
+/// The part of a deployment config that can change while the pipeline runs.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PipelineDeploymentConfig {
@@ -26,7 +15,8 @@ pub struct PipelineDeploymentConfig {
     pub resources: DeploymentResources,
 }
 
-/// The CPU and memory of a pipeline deployment.
+// `merge_deployment_config` and `merge_deployment_config_on_edit` must cover the same fields.
+/// CPU and memory, the only fields that can change while the pipeline runs.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DeploymentResources {
@@ -36,8 +26,7 @@ pub struct DeploymentResources {
     pub memory_mb_max: Option<u64>,
 }
 
-/// The `deployment_config` field returned by the API for a stored deployment config. Reads the
-/// JSON directly, so a config this version cannot parse still shows.
+/// The API view of a stored deployment config.
 pub fn deployment_config_view(deployment_config: &Value) -> Value {
     let resources = deployment_config.get("resources");
     let field = |name: &str| {
@@ -54,8 +43,7 @@ pub fn deployment_config_view(deployment_config: &Value) -> Value {
     }})
 }
 
-/// Checks the `deployment_config` of a `PUT` or `POST`, which cannot change it: each value given
-/// must equal the stored one, so a pipeline read with `GET` can be written back unchanged.
+/// Checks that a `PUT` or `POST` does not change the deployment config.
 pub fn check_unchanged_deployment_config(
     stored: Option<&Value>,
     given: &Value,
@@ -85,7 +73,7 @@ pub fn check_unchanged_deployment_config(
     Ok(())
 }
 
-/// The deployment config of a running pipeline.
+/// The deployment config, if the pipeline is running.
 pub fn running_deployment_config(pipeline: &ExtendedPipelineDescr) -> Result<&Value, DBError> {
     match (
         pipeline.deployment_resources_status,
@@ -101,9 +89,18 @@ pub fn running_deployment_config(pipeline: &ExtendedPipelineDescr) -> Result<&Va
     }
 }
 
-/// Applies `patch`, a partial runtime configuration, to a deployment configuration and returns
-/// the new one. Only the CPU and memory in `resources` can change.
-pub fn patch_deployment_config(deployment_config: &Value, patch: &Value) -> Result<Value, DBError> {
+/// Parses the `deployment_config` of a `PATCH`.
+pub fn parse_deployment_config_patch(patch: &Value) -> Result<PipelineDeploymentConfig, DBError> {
+    serde_json::from_value(patch.clone()).map_err(|e| DBError::InvalidDeploymentPatch {
+        reason: e.to_string(),
+    })
+}
+
+/// Applies `patch` to a stored deployment config.
+pub fn patch_deployment_config(
+    deployment_config: &Value,
+    patch: &PipelineDeploymentConfig,
+) -> Result<Value, DBError> {
     let invalid = |error: String| DBError::InvalidDeploymentConfig {
         value: deployment_config.clone(),
         error: ValidationError::DeserializationFailed(error),
@@ -111,7 +108,7 @@ pub fn patch_deployment_config(deployment_config: &Value, patch: &Value) -> Resu
     let current = resources_of(deployment_config).map_err(invalid)?;
     let mut stored: PipelineConfig =
         serde_json::from_value(deployment_config.clone()).map_err(|e| invalid(e.to_string()))?;
-    let resources = apply_patch(stored.global.hosts, current, patch)
+    let resources = apply_patch(stored.global.hosts, current, &patch.resources)
         .map_err(|reason| DBError::InvalidDeploymentPatch { reason })?;
     let mut patched = stored.global.clone();
     patched.resources = resources;
@@ -119,50 +116,13 @@ pub fn patch_deployment_config(deployment_config: &Value, patch: &Value) -> Resu
     serde_json::to_value(stored).map_err(|e| invalid(e.to_string()))
 }
 
-/// The resources after `patch`, checked against what Kubernetes can change while the pod runs.
+/// The resources after `patch`. The runner checks what Kubernetes allows.
 fn apply_patch(
     hosts: usize,
     current: ResourceConfig,
-    patch: &Value,
+    resize: &DeploymentResources,
 ) -> Result<ResourceConfig, String> {
-    let known = known_fields::<RuntimeConfig>(patch)?;
-    for (field, value) in patch.as_object().into_iter().flatten() {
-        if value.is_null() || field == "resources" {
-            continue;
-        }
-        if !known.contains_key(field) {
-            return Err(format!("unknown field `{field}`"));
-        }
-        return Err(format!(
-            "`{field}` cannot be changed while the pipeline is running"
-        ));
-    }
-    let resources_patch = patch
-        .get("resources")
-        .filter(|v| !v.is_null())
-        .cloned()
-        .unwrap_or_else(|| json!({}));
-    let known = known_fields::<ResourceConfig>(&resources_patch)?;
-    for (field, value) in resources_patch.as_object().into_iter().flatten() {
-        if value.is_null()
-            || RUNTIME_MODIFIABLE_FIELDS.contains(&format!("resources.{field}").as_str())
-        {
-            continue;
-        }
-        if !known.contains_key(field) {
-            return Err(format!("unknown field `resources.{field}`"));
-        }
-        return Err(format!(
-            "`resources.{field}` cannot be changed while the pipeline is running"
-        ));
-    }
-    let resize: ResourceConfig = serde_json::from_value(resources_patch)
-        .map_err(|e| format!("unable to parse resources: {e}"))?;
-    if resize.cpu_cores_min.is_none()
-        && resize.cpu_cores_max.is_none()
-        && resize.memory_mb_min.is_none()
-        && resize.memory_mb_max.is_none()
-    {
+    if resize == &DeploymentResources::default() {
         return Err(
             "specify at least one of resources.cpu_cores_min, resources.cpu_cores_max, \
              resources.memory_mb_min, resources.memory_mb_max"
@@ -170,13 +130,17 @@ fn apply_patch(
         );
     }
     if hosts > 1 {
-        return Err(format!("a pipeline with {hosts} hosts cannot be resized"));
+        return Err("only single-host pipelines can be resized".to_string());
     }
+    check_cpu("cpu_cores_min", resize.cpu_cores_min)?;
+    check_cpu("cpu_cores_max", resize.cpu_cores_max)?;
+    check_memory("memory_mb_min", resize.memory_mb_min)?;
+    check_memory("memory_mb_max", resize.memory_mb_max)?;
     let mut new = current.clone();
-    new.cpu_cores_min = check_cpu("cpu_cores_min", current.cpu_cores_min, resize.cpu_cores_min)?;
-    new.cpu_cores_max = check_cpu("cpu_cores_max", current.cpu_cores_max, resize.cpu_cores_max)?;
-    new.memory_mb_min = check_memory("memory_mb_min", current.memory_mb_min, resize.memory_mb_min)?;
-    new.memory_mb_max = check_memory("memory_mb_max", current.memory_mb_max, resize.memory_mb_max)?;
+    new.cpu_cores_min = resize.cpu_cores_min.or(current.cpu_cores_min);
+    new.cpu_cores_max = resize.cpu_cores_max.or(current.cpu_cores_max);
+    new.memory_mb_min = resize.memory_mb_min.or(current.memory_mb_min);
+    new.memory_mb_max = resize.memory_mb_max.or(current.memory_mb_max);
     if let (Some(min), Some(max)) = (new.cpu_cores_min, new.cpu_cores_max)
         && min > max
     {
@@ -191,19 +155,11 @@ fn apply_patch(
             "memory_mb_min ({min}) exceeds memory_mb_max ({max})"
         ));
     }
-    if !is_same_qos_class(&current, &new) {
-        return Err(
-            "each request must stay equal to, or different from, its limit, so the pod keeps \
-             its Kubernetes QoS class"
-                .to_string(),
-        );
-    }
 
     Ok(new)
 }
 
-/// Copies the runtime modifiable fields of `from` into a deployment config, leaving every other
-/// setting.
+/// Copies CPU and memory from `from` into `into`.
 pub fn merge_deployment_config(into: &mut PipelineConfig, from: &RuntimeConfig) {
     into.global.resources.cpu_cores_min = from.resources.cpu_cores_min;
     into.global.resources.cpu_cores_max = from.resources.cpu_cores_max;
@@ -211,8 +167,8 @@ pub fn merge_deployment_config(into: &mut PipelineConfig, from: &RuntimeConfig) 
     into.global.resources.memory_mb_max = from.resources.memory_mb_max;
 }
 
-/// The stored deployment config with the runtime modifiable fields of the edited runtime config,
-/// or `None` when the edit leaves them unchanged.
+/// The stored deployment config with CPU and memory from an edited runtime config, or `None` if
+/// they did not change.
 pub fn merge_deployment_config_on_edit(
     deployment_config: &Value,
     old_runtime_config: &Value,
@@ -237,20 +193,7 @@ pub fn merge_deployment_config_on_edit(
     serde_json::to_value(stored).ok()
 }
 
-/// The fields of `value` that `T` keeps after a round trip, which drops unknown fields.
-fn known_fields<T: DeserializeOwned + Serialize>(
-    value: &Value,
-) -> Result<Map<String, Value>, String> {
-    if !value.is_object() {
-        return Err(format!("expected a JSON object, found {value}"));
-    }
-    let parsed: T = serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
-    match serde_json::to_value(parsed) {
-        Ok(Value::Object(fields)) => Ok(fields),
-        _ => Err("unable to serialize the configuration".to_string()),
-    }
-}
-
+/// Parses the `resources` of a deployment config.
 fn resources_of(config: &Value) -> Result<ResourceConfig, String> {
     let resources = config
         .get("resources")
@@ -258,37 +201,20 @@ fn resources_of(config: &Value) -> Result<ResourceConfig, String> {
     ResourceConfig::deserialize(resources).map_err(|e| format!("unable to parse resources: {e}"))
 }
 
-/// Kubernetes cannot change a running pod's QoS class. Keeping each request equal to, or
-/// different from, its limit keeps the class without knowing how unset values are filled in.
-fn is_same_qos_class(current: &ResourceConfig, new: &ResourceConfig) -> bool {
-    let cpu = |r: &ResourceConfig| r.cpu_cores_min == r.cpu_cores_max;
-    let memory = |r: &ResourceConfig| r.memory_mb_min == r.memory_mb_max;
-    cpu(current) == cpu(new) && memory(current) == memory(new)
-}
-
-fn check_cpu(name: &str, current: Option<f64>, new: Option<f64>) -> Result<Option<f64>, String> {
-    let Some(new) = new else {
-        return Ok(current);
-    };
-    if !new.is_finite() || new <= 0.0 {
-        return Err(format!("{name} must be greater than 0"));
-    }
-    match current {
-        None => Err(format!("{name} is not set, so it cannot be resized")),
-        Some(_) => Ok(Some(new)),
+/// Checks a CPU value from a patch.
+fn check_cpu(name: &str, value: Option<f64>) -> Result<(), String> {
+    match value {
+        Some(value) if !value.is_finite() => Err(format!("{name} must be a finite number")),
+        Some(value) if value <= 0.0 => Err(format!("{name} must be greater than 0")),
+        _ => Ok(()),
     }
 }
 
-fn check_memory(name: &str, current: Option<u64>, new: Option<u64>) -> Result<Option<u64>, String> {
-    let Some(new) = new else {
-        return Ok(current);
-    };
-    if new == 0 {
-        return Err(format!("{name} must be greater than 0"));
-    }
-    match current {
-        None => Err(format!("{name} is not set, so it cannot be resized")),
-        Some(_) => Ok(Some(new)),
+/// Checks a memory value from a patch.
+fn check_memory(name: &str, value: Option<u64>) -> Result<(), String> {
+    match value {
+        Some(0) => Err(format!("{name} must be greater than 0")),
+        _ => Ok(()),
     }
 }
 
@@ -320,10 +246,12 @@ mod test {
 
     /// The patched config, or why the patch was refused.
     fn try_patch(config: &Value, patch: &Value) -> Result<Value, String> {
-        patch_deployment_config(config, patch).map_err(|e| match e {
-            DBError::InvalidDeploymentPatch { reason } => reason,
-            e => panic!("unexpected error: {e:?}"),
-        })
+        parse_deployment_config_patch(patch)
+            .and_then(|patch| patch_deployment_config(config, &patch))
+            .map_err(|e| match e {
+                DBError::InvalidDeploymentPatch { reason } => reason,
+                e => panic!("unexpected error: {e:?}"),
+            })
     }
 
     #[test]
@@ -365,99 +293,71 @@ mod test {
         assert_refused(json!({"memory_mb_max": 0}), "greater than 0");
         assert_refused(json!({"memory_mb_min": 17000}), "exceeds");
         assert_refused(json!({"cpu_cores_min": 9.0}), "exceeds");
-        // Every request equal to its limit would make the pod Guaranteed.
-        assert_refused(json!({"cpu_cores_max": 4.0}), "QoS");
         let mut multihost = deployment();
         multihost["hosts"] = json!(2);
         let error = try_patch(&multihost, &resize(json!({"cpu_cores_min": 1.0}))).unwrap_err();
-        assert!(error.contains("2 hosts"), "{error}");
+        assert!(error.contains("single-host"), "{error}");
         for (patch, expected) in [
-            (json!({"workers": 2}), "`workers` cannot be changed"),
+            (
+                json!({"workers": 2}),
+                "unknown field `workers`, expected `resources`",
+            ),
             (json!({"no_such_field": 2}), "unknown field `no_such_field`"),
             (
                 json!({"resources": {"workers": 2}}),
-                "unknown field `resources.workers`",
+                "unknown field `workers`, expected one of `cpu_cores_min`",
             ),
             // Refused even when it repeats the current value.
             (
                 json!({"resources": {"storage_mb_max": 1000}}),
-                "`resources.storage_mb_max` cannot be changed",
-            ),
-            (
-                json!({"resources": {"storage_mb_max": 5}}),
-                "`resources.storage_mb_max` cannot be changed",
+                "unknown field `storage_mb_max`",
             ),
             (
                 json!({"resources": {"cpu_cores_min": "two"}}),
                 "invalid type",
             ),
-            (json!(["resources"]), "expected a JSON object"),
+            (json!(["resources"]), "invalid type"),
         ] {
             let error = try_patch(&deployment(), &patch).unwrap_err();
             assert!(error.contains(expected), "{patch}: {error}");
         }
     }
 
+    /// The runner, not the API, refuses what Kubernetes cannot change while the pod runs.
     #[test]
-    fn unset_field_cannot_be_resized() {
-        let mut config = deployment();
-        config["resources"]["cpu_cores_min"] = json!(null);
-        let error = try_patch(&config, &resize(json!({"cpu_cores_min": 1.0}))).unwrap_err();
-        assert!(error.contains("not set"), "{error}");
-    }
-
-    #[test]
-    fn request_keeps_its_relation_to_the_limit() {
-        let mut config = deployment();
-        config["resources"]["cpu_cores_max"] = json!(4.0);
-        // Memory request and limit are equal, so they must stay equal.
-        let error = try_patch(&config, &resize(json!({"memory_mb_min": 8000}))).unwrap_err();
-        assert!(error.contains("QoS"), "{error}");
-        assert!(
-            try_patch(
-                &config,
-                &resize(json!({"memory_mb_min": 8000, "memory_mb_max": 8000}))
-            )
-            .is_ok()
-        );
-    }
-
-    #[test]
-    fn unset_memory_limit_cannot_be_resized() {
-        let mut config = deployment();
-        config["resources"]["memory_mb_max"] = json!(null);
-        let error = try_patch(&config, &resize(json!({"memory_mb_max": 8000}))).unwrap_err();
-        assert!(error.contains("not set"), "{error}");
-    }
-
-    #[test]
-    fn unset_cpu_request_stays_unset() {
+    fn kubernetes_rules_are_left_to_the_runner() {
+        // CPU request equal to its limit: a QoS class change.
+        let new = try_patch(&deployment(), &resize(json!({"cpu_cores_max": 4.0}))).unwrap();
+        assert_eq!(new["resources"]["cpu_cores_max"], json!(4.0));
+        // An unset value can be set, and an unset value that is not given stays unset.
         let mut config = deployment();
         config["resources"]["cpu_cores_min"] = json!(null);
         let new = try_patch(&config, &resize(json!({"cpu_cores_max": 2.0}))).unwrap();
-        assert_eq!(new["resources"]["cpu_cores_max"], json!(2.0));
         assert_eq!(new["resources"]["cpu_cores_min"], json!(null));
-        let error = try_patch(&config, &resize(json!({"memory_mb_min": 8000}))).unwrap_err();
-        assert!(error.contains("QoS"), "{error}");
+        let new = try_patch(&config, &resize(json!({"cpu_cores_min": 1.0}))).unwrap();
+        assert_eq!(new["resources"]["cpu_cores_min"], json!(1.0));
     }
 
     #[test]
-    fn same_qos_class_is_checked_per_resource() {
-        // CPU 2/4 and memory 3000/4000: making only CPU equal keeps the pod Burstable in
-        // Kubernetes, but each resource must keep its own relation.
+    fn non_finite_cpu_is_refused() {
+        for value in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            let error = check_cpu("cpu_cores_max", Some(value)).unwrap_err();
+            assert_eq!(error, "cpu_cores_max must be a finite number", "{value}");
+        }
+    }
+
+    #[test]
+    fn multihost_pipeline_cannot_be_resized() {
         let mut config = deployment();
-        config["resources"] = json!({"cpu_cores_min": 2.0, "cpu_cores_max": 4.0, "memory_mb_min": 3000, "memory_mb_max": 4000});
-        let error = try_patch(&config, &resize(json!({"cpu_cores_min": 4.0}))).unwrap_err();
-        assert!(error.contains("QoS class"), "{error}");
+        config["hosts"] = json!(2);
+        let error = try_patch(&config, &resize(json!({"cpu_cores_min": 1.0}))).unwrap_err();
+        assert_eq!(error, "only single-host pipelines can be resized");
     }
 
     #[test]
     fn broken_stored_resources_are_a_server_error() {
-        let error = patch_deployment_config(
-            &json!({"workers": 4}),
-            &resize(json!({"cpu_cores_min": 1.0})),
-        )
-        .unwrap_err();
+        let patch = parse_deployment_config_patch(&resize(json!({"cpu_cores_min": 1.0}))).unwrap();
+        let error = patch_deployment_config(&json!({"workers": 4}), &patch).unwrap_err();
         assert!(
             matches!(error, DBError::InvalidDeploymentConfig { .. }),
             "{error:?}"
@@ -561,8 +461,10 @@ mod test {
     #[test]
     fn every_live_setting_is_merged_and_detected() {
         let base = deployment();
-        for path in RUNTIME_MODIFIABLE_FIELDS {
-            let pointer = format!("/{}", path.replace('.', "/"));
+        let fields = serde_json::to_value(DeploymentResources::default()).unwrap();
+        for field in fields.as_object().unwrap().keys() {
+            let path = format!("resources.{field}");
+            let pointer = format!("/resources/{field}");
             let mut changed = base.clone();
             *changed.pointer_mut(&pointer).unwrap() = json!(12345);
             assert!(

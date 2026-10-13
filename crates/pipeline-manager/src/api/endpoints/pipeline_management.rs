@@ -10,6 +10,7 @@ use crate::db::storage::Storage;
 use crate::db::types::combined_status::{CombinedDesiredStatus, CombinedStatus, combine_since};
 use crate::db::types::deployment::{
     PipelineDeploymentConfig, check_unchanged_deployment_config, deployment_config_view,
+    parse_deployment_config_patch,
 };
 use crate::db::types::pipeline::{
     ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata,
@@ -1353,11 +1354,12 @@ async fn patch_deployment_config(
             reason: "`deployment_config` cannot be combined with other fields".to_string(),
         })?;
     }
+    let patch = parse_deployment_config_patch(deployment_config)?;
     let pipeline = state
         .db
         .lock()
         .await
-        .patch_pipeline_deployment(tenant_id, pipeline_name, deployment_config)
+        .patch_pipeline_deployment(tenant_id, pipeline_name, &patch)
         .await?;
     info!(
         pipeline = %pipeline.name,
