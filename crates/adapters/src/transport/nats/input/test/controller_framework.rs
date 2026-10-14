@@ -6,7 +6,7 @@ use crate::{Controller, PipelineConfig};
 use anyhow::Result as AnyResult;
 use csv::ReaderBuilder as CsvReaderBuilder;
 use feldera_types::memory_pressure::MemoryPressure;
-use serde_json;
+use serde_json::json;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{fs::create_dir, thread::sleep, time::Duration};
@@ -124,57 +124,63 @@ impl NatsControllerRunner {
             let storage_dir = &self.storage_dir;
             let output_path = &self.output_path;
 
-            let consumer_name_line = self
-                .consumer_name
-                .as_deref()
-                .map(|n| format!("name: {n}"))
-                .unwrap_or_default();
+            let mut config = json!({
+                "name": "test",
+                "workers": 4,
+                "storage_config": {
+                    "path": storage_dir,
+                },
+                "storage": true,
+                "fault_tolerance": {},
+                "clock_resolution_usecs": null,
+                "inputs": {
+                    "test_input1": {
+                        "stream": "test_input1",
+                        "transport": {
+                            "name": "nats_input",
+                            "config": {
+                                "connection_config": {
+                                    "server_url": nats_url,
+                                },
+                                "stream_name": STREAM_NAME,
+                                "consumer_config": {
+                                    "deliver_policy": "All",
+                                    "filter_subjects": [SUBJECT_NAME],
+                                },
+                            },
+                        },
+                        "format": {
+                            "name": "json",
+                            "config": {
+                                "update_format": "raw",
+                            },
+                        },
+                    },
+                },
+                "outputs": {
+                    "test_output1": {
+                        "stream": "test_output1",
+                        "transport": {
+                            "name": "file_output",
+                            "config": {
+                                "path": output_path,
+                            },
+                        },
+                        "format": {
+                            "name": "csv",
+                        },
+                    },
+                },
+            });
+            let transport_config = &mut config["inputs"]["test_input1"]["transport"]["config"];
+            if let Some(secs) = self.inactivity_timeout_secs {
+                transport_config["inactivity_timeout_secs"] = json!(secs);
+            }
+            if let Some(name) = &self.consumer_name {
+                transport_config["consumer_config"]["name"] = json!(name);
+            }
 
-            let inactivity_timeout_line = self
-                .inactivity_timeout_secs
-                .map(|s| format!("inactivity_timeout_secs: {s}"))
-                .unwrap_or_default();
-
-            let config_str = format!(
-                r#"
-name: test
-workers: 4
-storage_config:
-    path: {storage_dir:?}
-storage: true
-fault_tolerance: {{}}
-clock_resolution_usecs: null
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: nats_input
-            config:
-                connection_config:
-                    server_url: {nats_url}
-                stream_name: {STREAM_NAME}
-                {inactivity_timeout_line}
-                consumer_config:
-                    {consumer_name_line}
-                    deliver_policy: All
-                    filter_subjects: [{SUBJECT_NAME}]
-        format:
-            name: json
-            config:
-                update_format: raw
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: {output_path:?}
-        format:
-            name: csv
-"#
-            );
-
-            self.pipeline_config = Some(serde_yaml::from_str(&config_str).unwrap());
+            self.pipeline_config = Some(serde_json::from_value(config).unwrap());
         }
         self.pipeline_config.as_ref().unwrap()
     }

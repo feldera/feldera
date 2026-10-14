@@ -261,7 +261,6 @@ signal-hook = { workspace = true }
 vergen-gitcl = { workspace = true }
 
 [dev-dependencies]
-serde_yaml = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 # Test key generation only; runtime signing goes through aws-lc-rs.
 nkeys = { workspace = true }
