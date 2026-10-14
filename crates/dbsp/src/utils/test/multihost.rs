@@ -9,17 +9,22 @@
 use std::{
     iter::zip,
     net::TcpListener,
+    ops::Range,
     panic::resume_unwind,
+    path::Path,
+    sync::Arc,
     thread,
     time::{Duration, Instant},
 };
 
 use anyhow::Result as AnyResult;
 use crossbeam::channel::{Select, unbounded};
+use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
+use uuid::Uuid;
 
 use crate::{
     DBSPHandle, RootCircuit, Runtime,
-    circuit::{CircuitConfig, Layout, RuntimeHandle},
+    circuit::{CircuitConfig, CircuitStorageConfig, Layout, RuntimeHandle},
 };
 
 /// Returns a configuration for each of `hosts` hosts that run `workers`
@@ -136,6 +141,42 @@ fn join_runtimes(runtimes: Vec<RuntimeHandle>) {
     }
 }
 
+/// Returns `config` with storage for `host` in a directory of its own under
+/// `path`, which this creates.
+///
+/// Each host needs storage of its own to checkpoint and to start again from a
+/// checkpoint (see [TestHosts::restart]).
+///
+/// # Arguments
+///
+/// * `config` - the configuration of the host.
+/// * `path` - the directory that holds the storage of all of the hosts.
+/// * `host` - the index of the host.
+///
+/// # Returns
+///
+/// The configuration, with storage.
+pub(crate) fn with_host_storage(config: CircuitConfig, path: &Path, host: usize) -> CircuitConfig {
+    let path = path.join(format!("host{host}"));
+    std::fs::create_dir_all(&path).unwrap();
+    config.with_storage(Some(
+        CircuitStorageConfig::for_config(
+            StorageConfig {
+                path: path.to_string_lossy().into_owned(),
+                cache: StorageCacheConfig::default(),
+            },
+            StorageOptions::default(),
+        )
+        .unwrap(),
+    ))
+}
+
+/// Changes the configuration of a host, given the index of the host.
+type Configure = dyn Fn(usize, CircuitConfig) -> CircuitConfig + Send + Sync;
+
+/// Builds the circuit on a host.
+type Constructor<T> = dyn Fn(&mut RootCircuit) -> AnyResult<T> + Send + Sync;
+
 /// A circuit that runs on one or more hosts in this process.
 ///
 /// The handle of a host and the value that the circuit's constructor returned
@@ -146,6 +187,14 @@ pub(crate) struct TestHosts<T> {
 
     /// The value that the circuit's constructor returned on each host.
     results: Vec<T>,
+
+    /// The number of workers on all of the hosts together.
+    workers: usize,
+
+    /// What the hosts started with, to start them again (see
+    /// [TestHosts::restart]).
+    configure: Arc<Configure>,
+    constructor: Arc<Constructor<T>>,
 }
 
 impl<T> TestHosts<T>
@@ -166,7 +215,7 @@ where
     /// The hosts, which run.
     pub(crate) fn start<F>(workers: usize, hosts: usize, constructor: F) -> Self
     where
-        F: FnOnce(&mut RootCircuit) -> AnyResult<T> + Clone + Send + 'static,
+        F: FnOnce(&mut RootCircuit) -> AnyResult<T> + Clone + Send + Sync + 'static,
     {
         Self::start_with(workers, hosts, |_host, config| config, constructor)
     }
@@ -193,23 +242,74 @@ where
         constructor: F,
     ) -> Self
     where
-        C: Fn(usize, CircuitConfig) -> CircuitConfig,
-        F: FnOnce(&mut RootCircuit) -> AnyResult<T> + Clone + Send + 'static,
+        C: Fn(usize, CircuitConfig) -> CircuitConfig + Send + Sync + 'static,
+        F: FnOnce(&mut RootCircuit) -> AnyResult<T> + Clone + Send + Sync + 'static,
     {
+        Self::start_from(
+            workers,
+            hosts,
+            Arc::new(configure),
+            Arc::new(move |circuit: &mut RootCircuit| constructor.clone()(circuit)),
+            None,
+        )
+    }
+
+    /// Starts the hosts, each from its checkpoint in `checkpoints` if there
+    /// is one.
+    ///
+    /// # Arguments
+    ///
+    /// * `workers` - the number of workers on all of the hosts together.
+    /// * `hosts` - the number of hosts.
+    /// * `configure` - see [TestHosts::start_with].
+    /// * `constructor` - builds the circuit on each host.
+    /// * `checkpoints` - the checkpoint of each host, in order of host index,
+    ///   or `None` to start without checkpoints.
+    ///
+    /// # Returns
+    ///
+    /// The hosts, which run.
+    fn start_from(
+        workers: usize,
+        hosts: usize,
+        configure: Arc<Configure>,
+        constructor: Arc<Constructor<T>>,
+        checkpoints: Option<&[Uuid]>,
+    ) -> Self {
         let (handles, results) = host_configs(workers, hosts)
             .into_iter()
             .enumerate()
             .map(|(host, config)| {
-                Runtime::init_circuit(configure(host, config), constructor.clone())
+                let mut config = configure(host, config);
+                if let Some(checkpoints) = checkpoints {
+                    config
+                        .storage
+                        .as_mut()
+                        .expect("a host must have storage to start from a checkpoint")
+                        .init_checkpoint = Some(checkpoints[host]);
+                }
+                let constructor = constructor.clone();
+                Runtime::init_circuit(config, move |circuit| constructor(circuit))
                     .expect("cannot start a host")
             })
             .unzip();
-        Self { handles, results }
+        Self {
+            handles,
+            results,
+            workers,
+            configure,
+            constructor,
+        }
     }
 
     /// Returns the number of hosts.
     pub(crate) fn n_hosts(&self) -> usize {
         self.handles.len()
+    }
+
+    /// Returns the workers that `host` runs.
+    pub(crate) fn workers(&self, host: usize) -> Range<usize> {
+        self.handles[host].runtime().layout().local_workers()
     }
 
     /// Returns the value that the circuit's constructor returned on `host`.
@@ -225,6 +325,26 @@ where
     /// Like [TestHosts::results], for a caller that changes the values.
     pub(crate) fn results_mut(&mut self) -> &mut [T] {
         &mut self.results
+    }
+
+    /// Calls `f` for each worker, in order of worker index.
+    ///
+    /// # Arguments
+    ///
+    /// * `f` - receives the value that the circuit's constructor returned on
+    ///   the host of a worker, and the index of the worker.
+    ///
+    /// # Returns
+    ///
+    /// The value that `f` returned for each worker.
+    pub(crate) fn map_workers<R>(&self, mut f: impl FnMut(&T, usize) -> R) -> Vec<R> {
+        let mut values = Vec::new();
+        for (host, result) in self.results.iter().enumerate() {
+            for worker in self.workers(host) {
+                values.push(f(result, worker));
+            }
+        }
+        values
     }
 
     /// Calls `f` on the handle of each host, each in a thread of its own, and
@@ -297,6 +417,37 @@ where
         self.for_each(|handle| handle.transaction().unwrap());
     }
 
+    /// Checkpoints every host.
+    ///
+    /// # Returns
+    ///
+    /// The checkpoint of each host, in order of host index.
+    pub(crate) fn checkpoint(&mut self) -> Vec<Uuid> {
+        self.map(|handle| handle.checkpoint().run().unwrap().uuid)
+    }
+
+    /// Kills every host and starts it again from its checkpoint in
+    /// `checkpoints`, with the configuration and the circuit that it started
+    /// with.
+    ///
+    /// Each host must have storage (see [with_host_storage]).
+    ///
+    /// # Arguments
+    ///
+    /// * `checkpoints` - the checkpoint of each host, in order of host index,
+    ///   from [TestHosts::checkpoint].
+    ///
+    /// # Returns
+    ///
+    /// The hosts, which run.
+    pub(crate) fn restart(self, checkpoints: &[Uuid]) -> Self {
+        assert_eq!(checkpoints.len(), self.n_hosts());
+        let (workers, hosts) = (self.workers, self.n_hosts());
+        let (configure, constructor) = (self.configure.clone(), self.constructor.clone());
+        self.kill();
+        Self::start_from(workers, hosts, configure, constructor, Some(checkpoints))
+    }
+
     /// Kills every host, each in a thread of its own, and waits until all of
     /// them stop.
     ///
@@ -309,7 +460,9 @@ where
     ///
     /// If the runtime of a host remains for longer than 10 seconds.
     pub(crate) fn kill(self) {
-        let Self { handles, results } = self;
+        let Self {
+            handles, results, ..
+        } = self;
         let runtimes: Vec<_> = handles
             .iter()
             .map(|handle| handle.runtime().downgrade())
@@ -334,5 +487,78 @@ where
                 thread::sleep(Duration::from_millis(1));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::{TestHosts, with_host_storage};
+    use crate::{OrdZSet, OutputHandle, ZSetHandle, typed_batch::IndexedZSetReader, utils::Tup2};
+
+    /// The handles of the circuit in [restart_keeps_the_state_of_every_host].
+    type Handles = (ZSetHandle<u64>, OutputHandle<OrdZSet<u64>>);
+
+    /// Returns the integral that the circuit in
+    /// [restart_keeps_the_state_of_every_host] outputs, over all workers.
+    ///
+    /// The input shards the records over the workers of both hosts, so each
+    /// host holds a part of the integral.
+    fn integral(hosts: &TestHosts<Handles>) -> OrdZSet<u64> {
+        let tuples = hosts.map_workers(|(_, output), worker| {
+            output
+                .take_from_worker(worker)
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>()
+        });
+        OrdZSet::from_keys(
+            (),
+            tuples
+                .into_iter()
+                .flatten()
+                .map(|(key, (), weight)| Tup2(key, weight))
+                .collect(),
+        )
+    }
+
+    /// A circuit that two hosts start again from their checkpoints keeps the
+    /// state of both of them.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn restart_keeps_the_state_of_every_host() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().to_path_buf();
+        let mut hosts = TestHosts::start_with(
+            4,
+            2,
+            move |host, config| with_host_storage(config, &path, host),
+            |circuit| {
+                let (input, input_handle) = circuit.add_input_zset::<u64>();
+                Ok((input_handle, input.integrate().output()))
+            },
+        );
+
+        for key in 0..16 {
+            hosts.result(0).0.push(key, 1);
+        }
+        hosts.transaction();
+        assert_eq!(
+            integral(&hosts),
+            OrdZSet::from_keys((), (0..16).map(|key| Tup2(key, 1)).collect())
+        );
+
+        let checkpoints = hosts.checkpoint();
+        assert_ne!(checkpoints[0], checkpoints[1]);
+        let mut hosts = hosts.restart(&checkpoints);
+        for key in 16..32 {
+            hosts.result(1).0.push(key, 1);
+        }
+        hosts.transaction();
+        assert_eq!(
+            integral(&hosts),
+            OrdZSet::from_keys((), (0..32).map(|key| Tup2(key, 1)).collect())
+        );
     }
 }
