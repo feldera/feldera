@@ -46,7 +46,7 @@ fn writer(
         update_mode: update,
         lookup_chunk_bytes: 1 << 20,
         max_concurrent_probes: 4,
-        optimize_interval_secs: None,
+        optimize_interval: None,
     };
     let key_schema = Some(BenchKeyStruct::relation_schema());
     let mut value_schema = BenchTestStruct::relation_schema();

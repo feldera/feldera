@@ -242,7 +242,7 @@ pub struct DeltaTableWriter {
     /// writing files there and committing in `batch_end`.
     merge: Option<Arc<MergeWriter>>,
     merge_metrics: Option<Arc<MergeMetrics>>,
-    /// Present when `optimize_interval_secs` asks the connector to compact the table itself.
+    /// Present when `optimize_interval` asks the connector to compact the table itself.
     compactor: Option<Compactor>,
     /// Uniqueness violations handed to the controller, for the test that pins how often a
     /// retried batch reports them. Tests build the endpoint with no controller to report to.
@@ -1858,7 +1858,7 @@ mod parallel {
                 mode,
                 max_retries,
                 threads: Some(threads),
-                optimize_interval_secs: None,
+                optimize_interval: None,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -1901,7 +1901,7 @@ mod parallel {
                 update_mode: DeltaTableUpdateMode::Merge,
                 max_retries: Some(max_retries),
                 threads: Some(1),
-                optimize_interval_secs: None,
+                optimize_interval: None,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -3865,7 +3865,7 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(0),
                 threads: Some(4),
-                optimize_interval_secs: None,
+                optimize_interval: None,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -4015,7 +4015,7 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(1),
                 threads: Some(1),
-                optimize_interval_secs: None,
+                optimize_interval: None,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -4086,7 +4086,7 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(0),
                 threads: Some(1),
-                optimize_interval_secs: None,
+                optimize_interval: None,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -4130,7 +4130,7 @@ mod parallel {
             mode: DeltaTableWriteMode::Truncate,
             max_retries: Some(0),
             threads: Some(0),
-            optimize_interval_secs: None,
+            optimize_interval: None,
 
             object_store_config: Default::default(),
             checkpoint_interval: None,
@@ -4328,7 +4328,7 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(1),
                 threads: Some(1),
-                optimize_interval_secs: None,
+                optimize_interval: None,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,

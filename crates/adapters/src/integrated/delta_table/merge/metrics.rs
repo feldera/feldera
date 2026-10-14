@@ -171,7 +171,7 @@ impl MergeMetrics {
         warn!(
             "delta_table {endpoint}: {:.0}% of the rows in '{uri}' are superseded versions \
              ({superseded} superseded, {live} live), and reads still scan them. Set the \
-             connector's 'optimize_interval_secs' to reclaim them automatically, or compact \
+             connector's 'optimize_interval' to reclaim them automatically, or compact \
              the table yourself. See 'Compaction is required' in the Delta output connector \
              documentation.",
             ratio * 100.0
@@ -320,7 +320,7 @@ impl ConnectorMetrics for MergeMetrics {
             (
                 "output_connector_delta_merge_compactions_total",
                 "Maintenance runs the connector completed, when \
-                 'optimize_interval_secs' asks it to maintain the table.",
+                 'optimize_interval' asks it to maintain the table.",
                 ValueType::Counter,
                 get(&self.compactions),
             ),

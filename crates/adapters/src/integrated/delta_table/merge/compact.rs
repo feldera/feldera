@@ -1,7 +1,7 @@
 //! Compaction driven by the connector, for tables nothing else maintains.
 //!
 //! Superseded rows stay in the table until something rewrites their file. Compacting is
-//! normally the table administrator's job, so `optimize_interval_secs` is off by default; it
+//! normally the table administrator's job, so `optimize_interval` is off by default; it
 //! is there for tables where Feldera is the only writer.
 //!
 //! It runs in the background because its cost follows the size of the table, not the size of
@@ -60,7 +60,7 @@ impl Compactor {
         metrics: Arc<MergeMetrics>,
         now: Instant,
     ) -> Option<Self> {
-        let interval = Duration::from_secs(config.optimize_interval_secs?);
+        let interval = Duration::from(config.optimize_interval?);
         Some(Self {
             uri: config.uri.clone(),
             endpoint_name: endpoint_name.to_string(),
@@ -146,9 +146,8 @@ impl Compactor {
                     warn!(
                         "delta_table {endpoint_name}: unable to compact '{uri}': {e}. Whatever \
                          the run had already compacted is committed and the table is intact; \
-                         the connector retries in {}s. Compact the table yourself if this \
-                         persists.",
-                        interval.as_secs(),
+                         the connector retries in {interval:?}. Compact the table yourself \
+                         if this persists."
                     )
                 }
             }
@@ -224,6 +223,7 @@ pub(super) async fn compact(
 
 #[cfg(test)]
 mod test {
+    use feldera_types::duration::ConfigDuration;
     use feldera_types::transport::delta_table::{
         DeltaTableUpdateMode, DeltaTableWriteMode, DeltaTableWriterConfig, DeltaVariantEncoding,
     };
@@ -244,7 +244,7 @@ mod test {
             enable_expired_log_cleanup: None,
             max_retries: Some(0),
             threads: Some(1),
-            optimize_interval_secs: interval,
+            optimize_interval: interval.map(ConfigDuration::from_secs),
             object_store_config: Default::default(),
         }
     }
@@ -324,7 +324,7 @@ mod test {
     /// A compaction that panics must still give the slot back.
     ///
     /// delta-rs and DataFusion are not panic-free, and a slot never released would leave
-    /// `optimize_interval_secs` silently ignored for the life of the process.
+    /// `optimize_interval` silently ignored for the life of the process.
     #[test]
     fn a_panicking_compaction_releases_the_slot() {
         let compactor = Compactor::new(
