@@ -183,10 +183,34 @@ where
         + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
+    iceberg_input_pipeline_with_storage::<T>(
+        schema,
+        table_properties,
+        config,
+        output_file_path,
+        None,
+    )
+}
+
+/// Like [`iceberg_input_pipeline`], with storage in `storage_dir`, if any, so
+/// that the pipeline can checkpoint and resume.
+fn iceberg_input_pipeline_with_storage<T>(
+    schema: &[Field],
+    table_properties: &[(&str, &str)],
+    config: serde_json::Value,
+    output_file_path: &str,
+    storage_dir: Option<&std::path::Path>,
+) -> (Controller, Receiver<String>)
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
     init_logging();
 
     // Create controller.
-    let config = serde_json::from_value(json!({
+    let mut config = json!({
       "name": "test",
       "workers": 4,
       "outputs": {
@@ -215,8 +239,11 @@ where
           }
         }
       }
-    }))
-    .unwrap();
+    });
+    if let Some(storage_dir) = storage_dir {
+        config["storage_config"] = json!({"path": storage_dir});
+    }
+    let config = serde_json::from_value(config).unwrap();
 
     let schema = schema.to_vec();
     let table_properties: Vec<(String, String)> = table_properties
@@ -226,6 +253,8 @@ where
 
     let (err_sender, err_receiver) = crossbeam::channel::unbounded();
 
+    // A checkpoint needs a persistent id for the output.
+    let persistent_output_id = storage_dir.map(|_| "output");
     let controller = Controller::with_test_config(
         move |workers| {
             let table_properties: Vec<(&str, &str)> = table_properties
@@ -236,7 +265,7 @@ where
                 workers,
                 &schema,
                 &table_properties,
-                &[None],
+                &[persistent_output_id],
             ))
         },
         &config,
@@ -983,6 +1012,59 @@ fn iceberg_rest_follow_snapshot_and_follow() {
         assert_eq!(zset.len_upper_bound(), 10);
         assert_eq!(zset, expected_zset(&all));
     });
+}
+
+/// `snapshot_and_follow`: a connector that resumes from a checkpoint taken
+/// while it followed the table continues to follow it, without reading the
+/// snapshot again.
+#[test]
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_rest_follow_resume_does_not_reread_snapshot() {
+    use dbsp::trace::BatchReader;
+
+    let all = data(10);
+    let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let table = &format!("{ns}.resume_follow");
+    let storage_dir = tempfile::TempDir::new().unwrap();
+    let run = |out: &NamedTempFile| {
+        iceberg_input_pipeline_with_storage::<IcebergTestStruct>(
+            &IcebergTestStruct::schema_with_lateness(),
+            &[],
+            rest_follow_config(table, "snapshot_and_follow"),
+            &out.path().display().to_string(),
+            Some(storage_dir.path()),
+        )
+    };
+
+    // Read the snapshot, then suspend while following.
+    follow_table_op("create", table, &all[..5]);
+    let first_out = NamedTempFile::new().unwrap();
+    let (pipeline, _errors) = run(&first_out);
+    pipeline.start();
+    wait(|| output_record_count(first_out.path()) >= 5, 120_000)
+        .expect("timed out reading the snapshot");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    pipeline.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(100))
+        .expect("timed out suspending")
+        .expect("suspend failed");
+    pipeline.stop().unwrap();
+
+    // Resume after another snapshot.  Only its rows are new.
+    follow_table_op("append", table, &all[5..]);
+    let second_out = NamedTempFile::new().unwrap();
+    let (pipeline, _errors) = run(&second_out);
+    pipeline.start();
+    wait(|| output_record_count(second_out.path()) >= 5, 120_000)
+        .expect("timed out following the table");
+    // Give a read of the snapshot time to show up.
+    std::thread::sleep(std::time::Duration::from_secs(5));
+    pipeline.stop().unwrap();
+
+    let zset = output_zset(second_out.path());
+    assert_eq!(zset.len_upper_bound(), 5, "the snapshot was read again");
+    assert_eq!(zset, expected_zset(&all[5..]));
 }
 
 /// `follow`: no initial snapshot; a snapshot committed after startup is tailed.
