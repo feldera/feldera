@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 
 import java.io.File;
@@ -25,6 +26,12 @@ import java.sql.SQLException;
 import java.util.Arrays;
 
 public class MultiCrateTests extends BaseSQLTests {
+    @Before
+    public void skipUnderGen2() {
+        // Each test here duplicates another test; this class only tests the multi-crate Rust backend.
+        BaseSQLTests.assumeRustBackend();
+    }
+
     public static void setupCargoLock() throws IOException {
         Files.copy(Path.of(BaseSQLTests.PROJECT_DIRECTORY, "..", BaseSQLTests.CARGO_LOCK),
                 Path.of(BaseSQLTests.RUST_MULTI_DIRECTORY, BaseSQLTests.CARGO_LOCK),
