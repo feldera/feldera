@@ -8788,3 +8788,34 @@ fn stopped_connector_finishes_all_hosts_transaction() {
     );
     controller.stop().unwrap();
 }
+
+/// The controller reports a paused input connector that the open transaction
+/// waits for, because the transaction cannot commit until it is started.
+#[test]
+fn paused_connector_holds_transaction() {
+    let (controller, probe) = controller_with_probe(json!({
+        "name": "test",
+        "workers": 1,
+        "inputs": {},
+        "outputs": {},
+    }));
+    let paused = || controller.inner.paused_transaction_connectors();
+    let test_input = std::collections::BTreeSet::from(["test_input".to_string()]);
+
+    // A paused connector outside a transaction holds nothing.
+    controller.inner.status.pause_input_endpoint(&0);
+    assert!(paused().is_empty());
+
+    // A connector in the transaction holds it only while it is paused.
+    probe.start_transaction(Some("t"));
+    assert_eq!(paused(), test_input);
+    controller.inner.status.start_input_endpoint(&0);
+    assert!(paused().is_empty());
+    controller.inner.status.pause_input_endpoint(&0);
+    assert_eq!(paused(), test_input);
+
+    // Once it commits its part, it holds the transaction no longer.
+    probe.commit_transaction();
+    assert!(paused().is_empty());
+    controller.stop().unwrap();
+}
