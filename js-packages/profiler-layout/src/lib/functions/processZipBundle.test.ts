@@ -58,7 +58,9 @@ describe('processProfileFiles without a circuit profile', () => {
   it('leaves profile undefined while still extracting config and logs', async () => {
     const result = await processProfileFiles([pipelineConfig({}), logs()])
     expect(result.profile).toBeUndefined()
-    expect(result.sources).toEqual(['SELECT 1;'])
+    expect(result.sourceFiles).toEqual([
+      { name: 'program.sql', language: 'sql', code: 'SELECT 1;' }
+    ])
     expect(result.pipelineName).toBe('p')
     expect(result.logText).toBe('starting up\n')
   })
@@ -73,6 +75,68 @@ async function gzip(text: string): Promise<Uint8Array> {
   const compressed = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))
   return new Uint8Array(await new Response(compressed).arrayBuffer())
 }
+
+describe('processProfileFiles sourceFiles', () => {
+  it('extracts the SQL program and the UDF files in the editor order, without the UDF stubs', async () => {
+    const result = await processProfileFiles([
+      pipelineConfig({
+        udf_rust: 'pub fn f() {}',
+        udf_toml: 'chrono = "0.4"',
+        program_info: { udf_stubs: '// stubs' }
+      })
+    ])
+    expect(result.sourceFiles).toEqual([
+      { name: 'program.sql', language: 'sql', code: 'SELECT 1;' },
+      { name: 'udf.rs', language: 'rust', code: 'pub fn f() {}' },
+      { name: 'udf.toml', language: 'graphql', code: 'chrono = "0.4"' }
+    ])
+  })
+
+  it('keeps only the SQL program when the pipeline has no UDF files', async () => {
+    const result = await processProfileFiles([pipelineConfig({})])
+    expect(result.sourceFiles?.map((f) => f.name)).toEqual(['program.sql'])
+  })
+
+  it('keeps an empty SQL program', async () => {
+    const result = await processProfileFiles([pipelineConfig({ program_code: '' })])
+    expect(result.sourceFiles).toEqual([{ name: 'program.sql', language: 'sql', code: '' }])
+  })
+
+  it('leaves out UDF fields that are not strings', async () => {
+    const result = await processProfileFiles([pipelineConfig({ udf_rust: 42, udf_toml: null })])
+    expect(result.sourceFiles?.map((f) => f.name)).toEqual(['program.sql'])
+  })
+
+  it('leaves out empty UDF files', async () => {
+    const result = await processProfileFiles([
+      pipelineConfig({ udf_rust: 'pub fn f() {}', udf_toml: '' })
+    ])
+    expect(result.sourceFiles?.map((f) => f.name)).toEqual(['program.sql', 'udf.rs'])
+  })
+
+  it('leaves out the SQL program when pipeline_config.json has no program_code', async () => {
+    const result = await processProfileFiles([
+      pipelineConfig({ program_code: undefined, udf_rust: 'pub fn f() {}' })
+    ])
+    expect(result.sourceFiles?.map((f) => f.name)).toEqual(['udf.rs'])
+  })
+
+  it('leaves out a program_code that is not a string', async () => {
+    const result = await processProfileFiles([pipelineConfig({ program_code: 42 })])
+    expect(result.sourceFiles).toEqual([])
+  })
+
+  it('loads the rest of the profile when pipeline_config.json has no program_code', async () => {
+    const result = await processProfileFiles([pipelineConfig({ program_code: undefined }), logs()])
+    expect(result.pipelineName).toBe('p')
+    expect(result.logText).toBe('starting up\n')
+  })
+
+  it('leaves sourceFiles undefined when the bundle has no pipeline_config.json', async () => {
+    const result = await processProfileFiles([logs()])
+    expect(result.sourceFiles).toBeUndefined()
+  })
+})
 
 describe('processProfileFiles with a gzip-compressed circuit profile', () => {
   const profile = { metrics: [], worker_profiles: [], graph: { nodes: [], edges: [] } }
