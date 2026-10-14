@@ -64,6 +64,13 @@ fn validate_key_column(path: &str, columntype: &ColumnType) -> Result<(), String
             "column '{path}' has type ARRAY, which merge mode does not yet support as part of a \
              unique key. Project a scalar surrogate into the view and index on that instead."
         )),
+        SqlType::UTinyInt | SqlType::USmallInt | SqlType::UInt | SqlType::UBigInt => Err(format!(
+            "column '{path}' has type {:?}, which merge mode cannot use as part of a unique key. \
+             Delta has no unsigned types, so the table stores the column as a signed integer \
+             and the key would not compare equal after the round trip. Cast the column to a \
+             signed type in the view, wide enough for its values, and index on that.",
+            columntype.typ
+        )),
         SqlType::Null | SqlType::Interval(_) => Err(format!(
             "column '{path}' has type {:?}, which merge mode cannot use as part of a unique key.",
             columntype.typ
@@ -285,12 +292,13 @@ pub(super) fn normalize_floats(column: &ArrayRef) -> ArrayRef {
 
 /// Whether casting `from` to `to` leaves every value unchanged.
 ///
-/// Only LargeBinary to Binary qualifies. The bytes are the same and only the offset width
-/// shrinks, and a value too large for a 32-bit offset fails the cast instead of being
-/// truncated.
+/// Only the large and view forms of a string or binary type qualify: the bytes are the same,
+/// and a value too large for a 32-bit offset fails the cast instead of being truncated.
+/// Other writers embed these forms in the files they write.
 fn cast_preserves_values(from: &ArrowDataType, to: &ArrowDataType) -> bool {
     match (from, to) {
-        (ArrowDataType::LargeBinary, ArrowDataType::Binary) => true,
+        (ArrowDataType::LargeBinary | ArrowDataType::BinaryView, ArrowDataType::Binary) => true,
+        (ArrowDataType::LargeUtf8 | ArrowDataType::Utf8View, ArrowDataType::Utf8) => true,
         // A ROW key is a composite key, so check its leaves the same way.
         (ArrowDataType::Struct(from), ArrowDataType::Struct(to)) => {
             from.len() == to.len()
@@ -440,6 +448,19 @@ mod test {
     }
 
     #[test]
+    fn rejects_unsigned_integers() {
+        for typ in [
+            SqlType::UTinyInt,
+            SqlType::USmallInt,
+            SqlType::UInt,
+            SqlType::UBigInt,
+        ] {
+            let rel = relation(vec![scalar("k", typ)]);
+            assert!(validate_key_types(&rel).unwrap_err().contains("unsigned"));
+        }
+    }
+
+    #[test]
     fn rejects_array() {
         let rel = relation(vec![scalar("k", SqlType::Array)]);
         assert!(validate_key_types(&rel).unwrap_err().contains("ARRAY"));
@@ -530,6 +551,41 @@ mod test {
         assert_eq!(a.row(0), b.row(0), "the same value must encode identically");
         assert_eq!(a.row(1), b.row(1));
         assert_ne!(a.row(0), b.row(1), "different values must not collide");
+    }
+
+    /// Other writers embed large and view string types in their files. They hold the same
+    /// values, so they must encode as the declared type does, not fail the lookup.
+    #[test]
+    fn large_and_view_strings_encode_the_same_as_the_declared_one() {
+        use arrow::array::{BinaryViewArray, LargeStringArray, StringArray, StringViewArray};
+
+        let rel = relation(vec![scalar("s", SqlType::Varchar)]);
+        let schema = ArrowSchema::new(vec![ArrowField::new("s", DataType::Utf8, false)]);
+        let encoder = KeyEncoder::new(&rel, &schema).unwrap();
+        let values = vec!["one", "two"];
+        let declared = encoder
+            .encode_columns(&[Arc::new(StringArray::from(values.clone()))])
+            .unwrap();
+        for other in [
+            Arc::new(LargeStringArray::from(values.clone())) as ArrayRef,
+            Arc::new(StringViewArray::from(values.clone())) as ArrayRef,
+        ] {
+            let encoded = encoder.encode_columns(&[other]).unwrap();
+            assert_eq!(declared.row(0), encoded.row(0));
+            assert_eq!(declared.row(1), encoded.row(1));
+        }
+
+        let rel = relation(vec![scalar("b", SqlType::Varbinary)]);
+        let schema = ArrowSchema::new(vec![ArrowField::new("b", DataType::Binary, false)]);
+        let encoder = KeyEncoder::new(&rel, &schema).unwrap();
+        let bytes: Vec<&[u8]> = vec![b"one", b"two"];
+        let declared = encoder
+            .encode_columns(&[Arc::new(arrow::array::BinaryArray::from(bytes.clone()))])
+            .unwrap();
+        let view = encoder
+            .encode_columns(&[Arc::new(BinaryViewArray::from(bytes))])
+            .unwrap();
+        assert_eq!(declared.row(1), view.row(1));
     }
 
     /// The same, one level down, since a ROW key can hold a BINARY leaf.

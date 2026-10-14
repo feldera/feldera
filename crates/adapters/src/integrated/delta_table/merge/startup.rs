@@ -19,7 +19,7 @@ use deltalake::DeltaTable;
 use deltalake::kernel::transaction::PROTOCOL;
 use deltalake::kernel::{DataType, StructField, StructType};
 use deltalake::operations::get_num_idx_cols_and_stats_columns;
-use feldera_types::program_schema::Relation;
+use feldera_types::program_schema::{Relation, SqlType};
 use tracing::{info, warn};
 
 use super::key::{KeyEncoder, key_leaf_paths, validate_key_types};
@@ -349,6 +349,20 @@ fn partition_key_columns(
             overlap.join(", ")
         );
     }
+    // delta-rs writes a binary partition value as escaped text, and the log parses it back as
+    // that text, so the key would never match its own row.
+    if let Some(field) = key_schema.fields.iter().find(|f| {
+        overlap.contains(&f.name.name())
+            && matches!(f.columntype.typ, SqlType::Binary | SqlType::Varbinary)
+    }) {
+        bail!(
+            "'update_mode: merge' cannot use key column '{}' because it is a BINARY partition \
+             column of the target table: delta-rs stores its partition values as escaped text, \
+             so the connector could not find the row to supersede. Partition the table on \
+             another column, or leave this column out of the key.",
+            field.name.name()
+        );
+    }
     Ok(overlap)
 }
 
@@ -429,6 +443,23 @@ mod test {
         assert_eq!(setup.partition_columns, ["payload"]);
         assert_eq!(setup.partition_key_columns, ["payload"]);
         assert!(setup.prune_on_stats);
+    }
+
+    /// delta-rs writes a binary partition value as escaped text, so such a key never matches.
+    #[test]
+    fn rejects_a_binary_partition_key_column() {
+        use feldera_types::program_schema::{ColumnType, Field};
+
+        let mut relation = key_relation();
+        relation
+            .fields
+            .push(Field::new("b".into(), ColumnType::varbinary(false)));
+        let err = partition_key_columns(&relation, &["b".to_string()]).unwrap_err();
+        assert!(err.to_string().contains("BINARY partition"), "{err}");
+        assert_eq!(
+            partition_key_columns(&relation, &[]).unwrap(),
+            Vec::<String>::new()
+        );
     }
 
     /// A key made entirely of partition columns leaves nothing in the data file to read the
