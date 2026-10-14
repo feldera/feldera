@@ -168,6 +168,17 @@ pub struct AvroParserConfig {
     #[serde(default)]
     pub skip_schema_id: bool,
 
+    /// Optional name of the field that holds the operation of each record.
+    ///
+    /// The field must be a `string` or `enum` with one of these values:
+    /// - `"I"`: insert
+    /// - `"U"`: upsert
+    /// - `"D"`: delete
+    ///
+    /// If not set, every record is an insert.
+    /// Only works with the `raw` update format.
+    pub cdc_field: Option<String>,
+
     /// Schema registry configuration.
     #[serde(flatten)]
     pub registry_config: AvroSchemaRegistryConfig,
