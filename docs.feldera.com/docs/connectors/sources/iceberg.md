@@ -250,7 +250,8 @@ bounded-re-read checkpointing on large tables. Once the snapshot has been fully 
 restart resumes directly into the completed state and reads nothing further, regardless of
 `timestamp_column`.  In `snapshot_and_follow` mode, such a restart continues to follow the
 table after the last snapshot that the connector ingested, without reading the initial
-snapshot again.
+snapshot again.  If the table had no snapshot when the connector started, a restart follows
+the table from its first snapshot.
 
 ## Distributed connectors
 
