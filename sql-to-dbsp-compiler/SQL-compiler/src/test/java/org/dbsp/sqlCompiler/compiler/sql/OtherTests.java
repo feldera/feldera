@@ -824,6 +824,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     @Test
     public void rustFmt() throws IOException, InterruptedException {
+        BaseSQLTests.assumeRustBackend();
         // Don't run this in CI
         if (Utilities.inCI())
             return;
