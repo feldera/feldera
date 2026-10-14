@@ -616,6 +616,14 @@ filter at all.
 table, is rebuilt on every restart, and covers a file the connector did not write only once
 it has probed it.
 
+**A footer cache.** Measured and rejected. A cached footer is 3.7 KiB per file at 4 columns
+and one row group, but 905 KiB at 32 columns and 64 row groups: 8 MiB to 1.9 GiB for the same
+2,167 files. A flush walks the whole candidate set, so a cache smaller than the table has a hit
+rate near zero; it either holds every file or buys nothing. Keeping only the per-file facts the
+probe needs still grows with the table, and saves only the footer request. The key column read
+stays, and that is the cost. The footer size hint already cut a probe from three requests to
+two, with no memory.
+
 **A key location cache is unsound and must not be built.** A cache hit short-circuits the
 lookup, so a second copy of the key in another file is never tombstoned -- and a second copy
 is exactly what a replayed batch creates. It would turn "converges with one extra tombstone"

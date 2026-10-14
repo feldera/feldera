@@ -147,7 +147,7 @@ pub struct DeltaTableWriterConfig {
     /// Determines how the connector applies updates to the target table.
     ///
     /// See [`DeltaTableUpdateMode`]. When omitted, defaults to
-    /// [`DeltaTableUpdateMode::Cdc`], the historical behavior.
+    /// [`DeltaTableUpdateMode::Cdc`], the historical behavior. `merge` is experimental.
     // Defaults stay out of the serialized form: a runtime pinned to an older release reads
     // unknown keys into its string-valued `object_store_config`, where an integer fails.
     #[serde(default, skip_serializing_if = "is_default")]
@@ -258,15 +258,14 @@ pub struct DeltaTableWriterConfig {
     /// scheduled `OPTIMIZE` leaves behind.
     ///
     /// Maintenance is normally the table administrator's job, which is why this is off by
-    /// default. Set it for tables where Feldera is the only writer. Hourly (`1h`) or daily
-    /// (`1d`) is typical. A short interval is safe: a run costs what needs doing, not the
-    /// size of the table, and two runs cannot overlap. A large backlog is cleared over
-    /// several runs.
+    /// default. Set it for tables where Feldera is the only writer, and nothing else
+    /// compacts the table. Hourly (`1h`) or daily (`1d`) is typical. Two runs cannot overlap,
+    /// and a large backlog is cleared over several runs.
     ///
-    /// A run starts after a flush and works in the background, so it never holds up a flush.
-    /// If it commits while a flush is in progress, the connector redoes that flush against
-    /// the new files. A run replaces files rather than deleting them, so `VACUUM` is still
-    /// what reclaims the space.
+    /// A run starts after a flush and works in the background. If it commits while a flush
+    /// is in progress, the connector redoes that flush against the new files, so on a busy
+    /// table a run can slow the flushes down. A run replaces files rather than deleting
+    /// them, so `VACUUM` is still what reclaims the space.
     ///
     /// Default: none, meaning the connector never compacts.
     #[serde(default, skip_serializing_if = "Option::is_none")]

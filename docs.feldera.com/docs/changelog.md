@@ -133,8 +133,8 @@ Source edition can be found on github.
   affected. In the Enterprise edition, the pipeline `ConfigMap` carries only
   `config.json`.
 
-- The Delta Lake output connector can keep a table equal to its view
-  instead of appending a change log. Set `update_mode` to `merge`: the
+- Experimental: the Delta Lake output connector can keep a table equal to
+  its view instead of appending a change log. Set `update_mode` to `merge`: the
   connector appends each new row version and marks the old one deleted
   in a deletion vector, so a reader sees one live row per key and a
   flush never rewrites a data file. An existing target table must have

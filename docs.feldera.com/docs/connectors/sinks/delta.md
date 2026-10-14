@@ -18,7 +18,7 @@ The connector has two ways of applying a view's changes to a Delta table, chosen
 | Mode | What the table holds | Who folds the changes in |
 |------|----------------------|--------------------------|
 | `cdc` (default) | A change log: every insert and delete, tagged with `__feldera_op` and `__feldera_ts` | You, with a periodic Spark `MERGE INTO` job |
-| `merge` | Exactly the view's rows, one per key, no extra columns | The connector |
+| `merge` (experimental) | Exactly the view's rows, one per key, no extra columns | The connector |
 
 `cdc` is described in the next section, `merge` in [Merge mode](#merge-mode) below.
 
@@ -96,7 +96,7 @@ MERGE INTO {target_table} AS target
 | `max_retries`|<p>Maximum number of retries for failed Delta Lake operations like writing Parquet files and committing transactions.</p><p>The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits, and overall operation retries. This setting controls the overall operation retries. When a write to the table fails, because of an S3 timeout or any other reason that was not resolved by lower-level retries, the connector will retry the entire operation.</p><p>When not specified, the connector performs infinite retries. When set to 0, the connector doesn't retry failed operations.</p>|
 | `threads` | <p>Number of parallel threads used by the connector. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.</p><p>Values above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly. Define the key with `CREATE INDEX` and set the connector's `index` property to that index; see [views with unique keys](#views-with-unique-keys) and [writing in parallel](#writing-in-parallel).</p><p>In `merge` mode the connector splits a batch only when each thread would get a substantial share of it, so a small change stays one file rather than becoming one small file per thread.</p><p>Default: `1`.</p>|
 | `variant_encoding` | <p>Encoding of `VARIANT` columns. Options:</p><p>- `variant`: the Delta `variant` type, holding the Parquet variant binary encoding.</p><p>- `json_string`: JSON text in a `string` column.</p><p>See [VARIANT](#variant).</p><p>Default: `variant`.</p>|
-| `update_mode` | <p>How the connector applies the view's changes to the table. Orthogonal to `mode`, which governs what happens to an existing table when the pipeline starts.</p><p>- `cdc`: append a change log with `__feldera_op` and `__feldera_ts` metadata columns, which a job of yours folds into a state table.</p><p>- `merge`: keep the table in sync with the view. See [Merge mode](#merge-mode).</p><p>Default: `cdc`.</p>|
+| `update_mode` | <p>How the connector applies the view's changes to the table. Orthogonal to `mode`, which governs what happens to an existing table when the pipeline starts.</p><p>- `cdc`: append a change log with `__feldera_op` and `__feldera_ts` metadata columns, which a job of yours folds into a state table.</p><p>- `merge` (experimental): keep the table in sync with the view. See [Merge mode](#merge-mode).</p><p>Default: `cdc`.</p>|
 | `lookup_chunk_bytes` | <p>Ceiling, in bytes, on the encoded keys the connector holds while locating rows to supersede. `merge` mode only.</p><p>A flush whose key set exceeds this budget is split into successive lookup passes, which bounds memory at the cost of re-scanning candidate files. Like `max_concurrent_probes`, it is a budget for a flush rather than for a thread: the threads of one flush divide it between them, so raising `threads` does not raise what the lookup holds.</p><p>Default: `268435456` (256 MiB). Maximum: `2147483647` (2 GiB).</p>|
 | `max_concurrent_probes` | <p>Number of data files read concurrently while locating rows to supersede. `merge` mode only.</p><p>The lookup reads each file in its own task, so this sets how much of the decoding runs in parallel as well as how many requests are in flight. Each concurrent read holds one file's projected key column, so it bounds memory too. Like `lookup_chunk_bytes` it is a budget for a flush rather than for a thread. Default: `16`.</p>|
 | `optimize_interval` | <p>Compact the target table from the connector, at most once per this interval, for example `1h`. `merge` mode only.</p><p>Merge mode marks an old row version deleted but leaves it in place. Without compaction the table keeps growing and reads keep slowing down, however few live rows it holds. See [Compaction is required](#compaction-is-required).</p><p>Off by default, because maintenance is normally the table administrator's job. Set it for tables where Feldera is the only writer and nothing else will maintain them. Hourly (`1h`) or daily (`1d`) is typical. It runs in the background and does not hold up a flush.</p>|
@@ -136,6 +136,11 @@ To enable this optimization:
 For more information, see the [documentation on views with unique keys](/connectors/unique_keys#views-with-unique-keys).
 
 ## Merge mode
+
+:::caution Experimental feature
+Merge mode is an experimental feature of Feldera. Read [Limits](#limits) and [Flush
+cost](#flush-cost-and-how-to-size-it) before you use it on a production table.
+:::
 
 With `"update_mode": "merge"` the connector keeps the target table equal to the current
 contents of the view: one row per key, no metadata columns, no change history. There is no
