@@ -2412,14 +2412,9 @@ impl Controller {
         self.inner.input_choices()
     }
 
+    /// See [ControllerStatus::incomplete_labels].
     pub fn incomplete_labels(&self) -> HashSet<String> {
-        let mut incomplete_labels = HashSet::new();
-        for status in self.inner.status.inputs.read().values() {
-            if !status.metrics.end_of_input.load(Ordering::Relaxed) {
-                incomplete_labels.extend(status.config.connector_config.labels.iter().cloned());
-            }
-        }
-        incomplete_labels
+        self.inner.status.incomplete_labels()
     }
 
     pub fn input_completion_notify(&self) -> Arc<Notify> {
@@ -7692,6 +7687,7 @@ impl ControllerInner {
         let circuit_thread_parker = Parker::new();
         let backpressure_thread_parker = Parker::new();
         let is_multihost = config.multihost.is_some();
+        let input_completion_notify = status.input_completion_notify.clone();
         let (command_sender, command_receiver) = channel();
         let (transaction_sender, transaction_receiver) =
             tokio::sync::watch::channel(TransactionCoordination::default());
@@ -7736,7 +7732,7 @@ impl ControllerInner {
                 transaction_receiver,
                 coordination_request: Mutex::new(is_multihost.then_some(StepRequest::new_idle(0))),
                 coordination_prepare_checkpoint: AtomicBool::new(false),
-                input_completion_notify: Arc::new(Notify::new()),
+                input_completion_notify,
                 checkpoint_activity: Mutex::new(CheckpointActivity::Idle),
                 modified_output_endpoints,
                 bootstrapped_output_endpoints,
