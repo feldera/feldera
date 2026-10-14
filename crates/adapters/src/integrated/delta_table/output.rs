@@ -248,6 +248,9 @@ pub struct DeltaTableWriter {
     /// retried batch reports them. Tests build the endpoint with no controller to report to.
     #[cfg(test)]
     merge_violations: u64,
+    /// A merge batch failed for good. Its commit may still have landed, so the next flush
+    /// must read the table again before it looks anything up.
+    merge_reload: bool,
 }
 
 /// Limit on the number of records buffered in memory in the encoder.
@@ -467,6 +470,7 @@ impl DeltaTableWriter {
             compactor,
             #[cfg(test)]
             merge_violations: 0,
+            merge_reload: false,
         })
     }
 }
@@ -1303,6 +1307,13 @@ impl<'a> Meta<'a> {
     }
 }
 
+/// Stop `merge` skipping the lookup for inserts, logging why the first time.
+fn forfeit_ownership(merge: &MergeWriter, endpoint_name: &str, reason: &str) {
+    if merge.forfeit_ownership() {
+        warn!("delta_table {endpoint_name}: {reason}; from now on every insert is looked up");
+    }
+}
+
 impl DeltaTableWriter {
     /// Apply and commit one batch in merge mode, retrying transient failures.
     ///
@@ -1310,6 +1321,21 @@ impl DeltaTableWriter {
     /// because a retry re-runs the row lookup and that needs the batch, which lives only for
     /// the duration of this call.
     fn encode_merge(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
+        let result = self.merge_with_retries(batch);
+        if result.is_err() {
+            // The controller drops a failed batch, so its changes never reach the table.
+            self.merge_reload = true;
+            let merge = self.merge.as_ref().expect("caller checked for merge mode");
+            forfeit_ownership(
+                merge,
+                &self.inner.endpoint_name,
+                "a batch could not be applied",
+            );
+        }
+        result
+    }
+
+    fn merge_with_retries(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
         // Destructured so the merge writer and the table can be borrowed at once.
         let Self {
             inner,
@@ -1321,6 +1347,7 @@ impl DeltaTableWriter {
             threads,
             #[cfg(test)]
             merge_violations,
+            merge_reload,
             ..
         } = self;
         let merge = merge.as_ref().expect("caller checked for merge mode");
@@ -1345,6 +1372,9 @@ impl DeltaTableWriter {
             // A retry rewrites the same rows, so its progress restarts rather than adds.
             inner.records_written.store(0, Ordering::Relaxed);
             let mut report_violation = |e: anyhow::Error| {
+                // The key is skipped, so the table keeps its old row: a later insert of that
+                // key must find it.
+                forfeit_ownership(merge, &inner.endpoint_name, "a key was skipped");
                 // First attempt only: a retry walks the same batch and would report the
                 // same keys again, once per attempt, for as long as the commit fails.
                 if retrying {
@@ -1372,7 +1402,7 @@ impl DeltaTableWriter {
                 async {
                     // A failed attempt may have committed anyway: a lookup in the old snapshot
                     // misses its rows and appends them twice, so a failed reload fails the retry.
-                    if retrying {
+                    if retrying || *merge_reload {
                         task.delta_table
                             .update_incremental(None)
                             .await
@@ -1398,6 +1428,7 @@ impl DeltaTableWriter {
 
             match result {
                 Ok(metrics) => {
+                    *merge_reload = false;
                     metrics_sink.record(&metrics);
                     metrics_sink.record_tombstone_ratio(
                         metrics.table_live_rows,
@@ -2432,8 +2463,6 @@ mod parallel {
     /// committed rows and append every one of them again.
     #[test]
     fn a_retry_after_a_commit_that_landed_does_not_duplicate() {
-        use dbsp::circuit::tokio::TOKIO;
-
         let dir = TempDir::new().unwrap();
         let uri = dir.path().to_str().unwrap();
         let mut endpoint = make_merge_endpoint_ex(
@@ -2452,15 +2481,7 @@ mod parallel {
             failures_left: AtomicUsize::new(0),
             injected: AtomicUsize::new(0),
         });
-        let url = deltalake::table::builder::ensure_table_uri(uri).unwrap();
-        endpoint.task.delta_table = TOKIO.block_on(async {
-            deltalake::DeltaTableBuilder::from_url(url.clone())
-                .unwrap()
-                .with_storage_backend(store.clone(), url)
-                .load()
-                .await
-                .unwrap()
-        });
+        reopen_over(&mut endpoint, uri, store.clone());
 
         encode_batch(&mut endpoint, &build_insert_batch(&records[4..8]));
         assert!(
@@ -2470,6 +2491,159 @@ mod parallel {
         let model: BTreeMap<i64, DeltaTestStruct> =
             records.iter().map(|r| (r.bigint, r.clone())).collect();
         assert_matches_model(uri, &model, "a retry after a commit that landed");
+    }
+
+    /// Endpoint whose table reads and writes its log through `store`.
+    fn reopen_over(endpoint: &mut DeltaTableWriter, uri: &str, store: Arc<LogOutageStore>) {
+        use dbsp::circuit::tokio::TOKIO;
+        let url = deltalake::table::builder::ensure_table_uri(uri).unwrap();
+        endpoint.task.delta_table = TOKIO.block_on(async {
+            deltalake::DeltaTableBuilder::from_url(url.clone())
+                .unwrap()
+                .with_storage_backend(store, url)
+                .load()
+                .await
+                .unwrap()
+        });
+    }
+
+    /// Hand `batch` to the endpoint, expecting the encoder to fail it.
+    fn encode_failing_batch(endpoint: &mut DeltaTableWriter, batch: &Arc<dyn SerBatch>) {
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
+        assert!(
+            endpoint
+                .encode(batch.clone().arc_as_batch_reader())
+                .is_err(),
+            "the fixture did not fail the batch"
+        );
+        endpoint.consumer().batch_end();
+    }
+
+    /// The batch after a failed one must see what the failed one committed.
+    ///
+    /// The failed batch's commit landed, but reading the log afterwards failed and no retry
+    /// was allowed. An update of a key it inserted must find that row, not add a second one.
+    #[test]
+    fn a_batch_after_a_failed_batch_whose_commit_landed_does_not_duplicate() {
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint =
+            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 0, key_relation());
+        let records = make_records(8);
+        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
+
+        let store = Arc::new(LogOutageStore {
+            inner: Arc::new(deltalake::logstore::object_store::local::LocalFileSystem::new()),
+            armed: AtomicUsize::new(1),
+            failures_left: AtomicUsize::new(0),
+            injected: AtomicUsize::new(0),
+        });
+        reopen_over(&mut endpoint, uri, store.clone());
+        encode_failing_batch(&mut endpoint, &build_insert_batch(&records[4..8]));
+        store.failures_left.store(0, Ordering::Relaxed);
+
+        let mut new = make_record(500);
+        new.bigint = records[5].bigint;
+        encode_batch(
+            &mut endpoint,
+            &build_upsert_batch(&[(records[5].clone(), new.clone())]),
+        );
+
+        let mut model: BTreeMap<i64, DeltaTestStruct> =
+            records.iter().map(|r| (r.bigint, r.clone())).collect();
+        model.insert(new.bigint, new);
+        assert_matches_model(uri, &model, "an update after a failed batch that committed");
+    }
+
+    /// A dropped delete leaves its row live, so a later insert of that key must find it.
+    ///
+    /// The table started empty, so inserts skip the lookup. The delete conflicts with a
+    /// compaction and no retry is allowed, which drops the batch.
+    #[test]
+    fn the_insert_shortcut_does_not_survive_a_dropped_batch() {
+        use dbsp::circuit::tokio::TOKIO;
+        use deltalake::open_table;
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint =
+            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 0, key_relation());
+        let records = make_records(8);
+        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
+        encode_batch(&mut endpoint, &build_insert_batch(&records[4..8]));
+
+        let url = url::Url::from_file_path(uri).unwrap();
+        TOKIO.block_on(async move {
+            open_table(url)
+                .await
+                .unwrap()
+                .optimize()
+                .with_target_size(std::num::NonZeroU64::new(64 << 20).unwrap())
+                .await
+                .unwrap();
+        });
+        encode_failing_batch(&mut endpoint, &build_delete_batch(&records[0..1]));
+
+        let mut new = make_record(500);
+        new.bigint = records[0].bigint;
+        encode_batch(
+            &mut endpoint,
+            &build_insert_batch(std::slice::from_ref(&new)),
+        );
+
+        let rows = read_merge_output(uri);
+        assert_eq!(
+            rows.iter().filter(|r| r.bigint == new.bigint).count(),
+            1,
+            "the key has two live rows: {rows:?}"
+        );
+    }
+
+    /// A key skipped for a uniqueness violation keeps its old row, so a later insert of that
+    /// key must find it.
+    #[test]
+    fn the_insert_shortcut_does_not_survive_a_skipped_key() {
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint =
+            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 0, key_relation());
+        let old = make_record(0);
+        encode_batch(
+            &mut endpoint,
+            &build_insert_batch(std::slice::from_ref(&old)),
+        );
+
+        let with_key = |i: usize| {
+            let mut record = make_record(i);
+            record.bigint = old.bigint;
+            record
+        };
+        let batch = |tuples: Vec<(DeltaTestStruct, i64)>| -> Arc<dyn SerBatch> {
+            let tuples = tuples
+                .into_iter()
+                .map(|(r, w)| Tup2(Tup2(DeltaTestKey { bigint: r.bigint }, r), w))
+                .collect();
+            Arc::new(SerBatchImpl::<_, DeltaTestKey, DeltaTestStruct>::new(
+                OrdIndexedZSet::from_tuples((), tuples),
+            ))
+        };
+        // Two new values for one key, then both gone: each step is a violation the connector
+        // skips, so the table keeps `old`.
+        encode_batch(
+            &mut endpoint,
+            &batch(vec![(old.clone(), -1), (with_key(1), 1), (with_key(2), 1)]),
+        );
+        encode_batch(
+            &mut endpoint,
+            &batch(vec![(with_key(1), -1), (with_key(2), -1)]),
+        );
+        assert_eq!(endpoint.merge_violations, 2);
+
+        let new = with_key(3);
+        encode_batch(&mut endpoint, &batch(vec![(new.clone(), 1)]));
+
+        let rows = read_merge_output(uri);
+        assert_eq!(rows, vec![new], "the skipped key's old row is still live");
     }
 
     /// Log reads the store fails after the armed commit: the read that follows the commit,

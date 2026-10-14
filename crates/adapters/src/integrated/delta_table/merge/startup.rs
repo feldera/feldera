@@ -40,13 +40,6 @@ pub enum Regime {
     Default,
 }
 
-impl Regime {
-    /// Whether an insert -- a key the view did not hold before this step -- needs a lookup.
-    pub fn insert_needs_lookup(&self) -> bool {
-        *self == Regime::Default
-    }
-}
-
 /// Everything merge mode needs from the target table, resolved once at startup.
 #[derive(Debug)]
 pub struct MergeSetup {
@@ -387,7 +380,6 @@ mod test {
         let setup = prepare(&table, &Some(key_relation()), &fixture_columns()).unwrap();
 
         assert_eq!(setup.regime, Regime::Default);
-        assert!(setup.regime.insert_needs_lookup());
     }
 
     /// Without deletion vectors there is no way to supersede a row, so the error must name
