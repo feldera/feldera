@@ -64,8 +64,8 @@
 
 use super::*;
 use crate::circuit::{
-    CircuitConfig, CircuitStorageConfig, ConcurrentRestoreOutcome, Layout, Mode,
-    bootstrap::BootstrapInfo, mkconfig,
+    CircuitConfig, CircuitStorageConfig, ConcurrentRestoreOutcome, Mode, bootstrap::BootstrapInfo,
+    mkconfig,
 };
 use crate::operator::dynamic::input_upsert::Update;
 use crate::operator::input::{LazyMapHandle, MapHandle, StagedBuffers};
@@ -73,12 +73,12 @@ use crate::trace::Cursor;
 use crate::typed_batch::{
     BatchReader as _, OrdIndexedZSet as TypedIndexedZSet, Spine as TypedSpine, SpineSnapshot,
 };
+use crate::utils::test::multihost::TestHosts;
 use crate::{DBSPHandle, OutputHandle, Runtime, Stream};
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use proptest::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::iter::zip;
-use std::net::TcpListener;
 use std::path::Path;
 use std::sync::Mutex;
 use tempfile::TempDir;
@@ -1184,52 +1184,20 @@ fn every_short_program_bootstraps_a_new_view_on_storage() {
 ///
 /// # Returns
 ///
-/// Each host's circuit and map handle, and the integral's latest contents, one
-/// batch per worker across all hosts.
-fn map_on_hosts(hosts: usize) -> (Vec<DBSPHandle>, Vec<LazyMapHandle<i32, i32>>, Recorded) {
-    // Every listener is bound before any runtime starts, so a host that
-    // connects to another before it listens waits in the accept queue.
-    let listeners: Vec<TcpListener> = (0..hosts)
-        .map(|_| TcpListener::bind("127.0.0.1:0").expect("cannot bind a port on localhost"))
-        .collect();
-    let params: Vec<_> = listeners
-        .iter()
-        .map(|listener| (listener.local_addr().unwrap(), 1))
-        .collect();
-
+/// The hosts, with each host's map handle, and the integral's latest contents,
+/// one batch per worker across all hosts.
+fn map_on_hosts(hosts: usize) -> (TestHosts<LazyMapHandle<i32, i32>>, Recorded) {
     let integral = Recorded::default();
-    let mut circuits = Vec::with_capacity(hosts);
-    let mut handles = Vec::with_capacity(hosts);
-    for (listener, &(address, _)) in zip(listeners, &params) {
-        let config = CircuitConfig::from(Layout::new_multihost(&params, address).unwrap())
-            .with_exchange_listener(listener);
+    let test_hosts = TestHosts::start(hosts, hosts, {
         let integral = integral.clone();
-        let (circuit, handle) = Runtime::init_circuit(config, move |circuit| {
+        move |circuit| {
             let (map, handle) = circuit.add_lazy_input_map::<i32, i32>();
             // On several hosts the map caches its integral as the sharded one.
             record_trace(&map.shard_accumulate_integrate_trace(), integral.clone());
             Ok(handle)
-        })
-        .unwrap();
-        circuits.push(circuit);
-        handles.push(handle);
-    }
-    (circuits, handles, integral)
-}
-
-/// Runs `f` on every host at once, as hosts that step together must.
-///
-/// # Arguments
-///
-/// * `circuits` - one circuit per host.
-/// * `f` - what to run on each host's circuit.
-fn on_every_host(circuits: &mut [DBSPHandle], f: impl Fn(&mut DBSPHandle) + Sync) {
-    let f = &f;
-    std::thread::scope(|scope| {
-        for circuit in circuits.iter_mut() {
-            scope.spawn(move || f(circuit));
         }
     });
+    (test_hosts, integral)
 }
 
 /// Two hosts that write one key at the same step leave it at one value, with
@@ -1251,20 +1219,14 @@ fn hosts_that_write_a_key_at_the_same_step_leave_one_value() {
         (None, Some(0), Some(0)),
     ];
     for (host0, host1, expected) in cases {
-        let (mut circuits, mut handles, integral) = map_on_hosts(2);
+        let (mut test_hosts, integral) = map_on_hosts(2);
         let mut transaction = |commands: [&[Command]; 2]| {
-            on_every_host(&mut circuits, |circuit| {
-                circuit.start_transaction().unwrap()
-            });
-            for (handle, commands) in zip(&mut handles, commands) {
+            test_hosts.start_transaction();
+            for (handle, commands) in zip(test_hosts.results_mut(), commands) {
                 handle.append_commands(commands);
             }
-            on_every_host(&mut circuits, |circuit| {
-                circuit.step().unwrap();
-            });
-            on_every_host(&mut circuits, |circuit| {
-                circuit.commit_transaction().unwrap()
-            });
+            test_hosts.step();
+            test_hosts.commit_transaction();
             collection(&integral.lock().unwrap())
         };
 
