@@ -1,7 +1,7 @@
-use super::{OutputEndpointControl, OutputEndpointDescr};
+use super::{FtState, OutputEndpointControl, OutputEndpointDescr, journal::StepMetadata};
 use crate::{
-    Controller, InputConsumer, InputEndpoint, OutputEndpoint, PipelineConfig,
-    TransportInputEndpoint,
+    ConfigError, Controller, ControllerError, InputConsumer, InputEndpoint, OutputEndpoint,
+    PipelineConfig, TransportInputEndpoint,
     controller::{ControllerStatusContext, TransactionInfo, TransactionState},
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
     test::{
@@ -10,7 +10,7 @@ use crate::{
         test_circuit_with_aliased_index, test_circuit_without_persistent_ids, wait,
     },
     transport::{
-        InputQueue, InputQueueEntry, InputReader, InputReaderCommand,
+        InputQueue, InputQueueEntry, InputReader, InputReaderCommand, http::HttpInputEndpoint,
         input_transport_config_to_endpoint, set_barrier, set_failure,
     },
 };
@@ -23,16 +23,17 @@ use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::{
     adapter_stats::ExternalOutputEndpointMetrics,
     checkpoint::CheckpointMetadata,
-    config::{FtModel, InputEndpointConfig, OutputEndpointConfig},
+    config::{FormatConfig, FtModel, InputEndpointConfig, OutputEndpointConfig},
     constants::{CHECKPOINT_FILE_NAME, STATE_FILE},
     memory_pressure::MemoryPressure,
     program_schema::Relation,
+    transport::http::HttpInputConfig,
 };
 use serde_json::json;
 use std::{
     borrow::Cow,
     cmp::min,
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     fs::{File, create_dir, remove_file},
     io::{ErrorKind, Write},
     iter::repeat_n,
@@ -1554,6 +1555,112 @@ fn api_transaction_started_during_commit_does_not_stall_it() {
     x_committed.expect("X's commit stalled after Y started");
 }
 
+/// A step must replay even if an ad hoc INSERT whose input it consumed removed
+/// its endpoint before the step was journaled.
+///
+/// The journal records, for each step, the input endpoints added and removed
+/// since the previous step and the input each endpoint supplied.  Replay adds
+/// and removes endpoints first, then feeds each endpoint its input, so a
+/// record that removes an endpoint, or never adds it, cannot also feed it.
+#[test]
+fn adhoc_insert_removed_before_journaling_replays() {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let circuit = |circuit_config| {
+        Ok(test_circuit::<TestStruct>(
+            circuit_config,
+            &TestStruct::schema(),
+            &[None],
+        ))
+    };
+    let is_adhoc = |name: &str| name.starts_with("adhoc-ingress-");
+
+    let controller =
+        Controller::with_test_config(circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+            .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), 10_000).unwrap();
+
+    // Hold the journal write of the step that consumes the INSERT until the
+    // INSERT has removed its endpoint.
+    let held = Arc::new(AtomicBool::new(false));
+    *controller.inner.journal_step_hook.lock().unwrap() = Some(Box::new({
+        let held = held.clone();
+        move |inner, names| {
+            if !names.iter().any(|name| is_adhoc(name)) {
+                return false;
+            }
+            let removed = wait(
+                || {
+                    !inner
+                        .status
+                        .input_status()
+                        .values()
+                        .any(|status| is_adhoc(&status.endpoint_name))
+                },
+                10_000,
+            );
+            held.store(removed.is_ok(), Ordering::Release);
+            true
+        }
+    }));
+    TOKIO.block_on(async {
+        crate::adhoc::execute_sql(
+            &controller,
+            "INSERT INTO test_input1 VALUES (1, true, 1, 'one')",
+        )
+        .await
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    });
+    // The INSERT returns once its step has taken its input, which is before
+    // the step is journaled.
+    wait(|| held.load(Ordering::Acquire), 10_000)
+        .expect("the INSERT did not remove its endpoint before its step was journaled");
+    controller.stop().unwrap();
+
+    // Restart from the journal.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = Controller::with_test_config(
+        circuit,
+        &config,
+        Box::new({
+            let errors = errors.clone();
+            move |e, _| errors.lock().unwrap().push(e.to_string())
+        }),
+    )
+    .unwrap_or_else(|e| panic!("replay failed: {e}"));
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        10_000,
+    );
+    let errors = errors.lock().unwrap().clone();
+    replayed.expect("replay never finished");
+    assert!(errors.is_empty(), "replay failed: {errors:?}");
+
+    // No step ran after the INSERT's step, so the journal never recorded
+    // removing its endpoint.  Replay must remove it anyway, once it has fed
+    // the endpoint its input.
+    assert_eq!(adhoc_input_endpoints(&controller), Vec::<String>::new());
+    assert_eq!(count_rows(&controller, "test_input1"), 1);
+    controller.stop().unwrap();
+}
+
 /// Returns the names of the ad hoc INSERT input endpoints of `controller`.
 fn adhoc_input_endpoints(controller: &Controller) -> Vec<String> {
     controller
@@ -1728,6 +1835,89 @@ fn restored_adhoc_insert_without_fault_tolerance() {
 #[test]
 fn restored_adhoc_insert_with_nothing_to_replay() {
     restored_adhoc_insert(true, false);
+}
+
+#[test]
+fn restored_adhoc_insert_after_replay() {
+    restored_adhoc_insert(true, true);
+}
+
+/// The configuration of an `/ingress` endpoint named `name` for `test_input1`.
+fn http_input_config(name: &str) -> InputEndpointConfig {
+    serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "http_input", "config": { "name": name } },
+        "format": { "name": "json", "config": { "update_format": "raw" } },
+    }))
+    .unwrap()
+}
+
+/// Replay of a journal entry that adds an input endpoint must skip an endpoint
+/// that a checkpoint already restored with the same configuration, but must
+/// still reject a different endpoint with the same name.
+#[test]
+fn replay_add_input_that_already_exists() {
+    init_test_logger();
+    const NAME: &str = "test_input1.api-ingress-existing";
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    let endpoint = HttpInputEndpoint::new(HttpInputConfig { name: NAME.into() });
+    let endpoint_id = controller
+        .add_input_endpoint(NAME, http_input_config(NAME), Box::new(endpoint), None)
+        .unwrap();
+
+    let step = |config: InputEndpointConfig| StepMetadata {
+        step: 0,
+        transaction_id: 0,
+        remove_inputs: HashSet::new(),
+        add_inputs: HashMap::from([(NAME.to_string(), config)]),
+        changed_inputs: HashMap::new(),
+        input_logs: HashMap::new(),
+        changed_outputs: HashMap::new(),
+    };
+
+    // The same configuration is the endpoint that the checkpoint restored.
+    FtState::replay_step(0, &step(http_input_config(NAME)), &controller.inner)
+        .expect("replay did not accept the restored endpoint");
+    assert_eq!(
+        controller.inner.input_endpoint_id_by_name(NAME).unwrap(),
+        endpoint_id
+    );
+
+    // A different configuration is a different endpoint.
+    let mut other = http_input_config(NAME);
+    other.connector_config.format = Some(FormatConfig {
+        name: "csv".into(),
+        config: json!({}),
+    });
+    let error = FtState::replay_step(0, &step(other), &controller.inner)
+        .expect_err("replay replaced an endpoint with a different one of the same name");
+    assert!(
+        matches!(
+            &error,
+            ControllerError::Config { config_error }
+                if matches!(**config_error, ConfigError::DuplicateInputEndpoint { .. })
+        ),
+        "unexpected error: {error}"
+    );
+    controller.stop().unwrap();
 }
 
 /// An input endpoint that opens and commits Feldera transactions, the way a
