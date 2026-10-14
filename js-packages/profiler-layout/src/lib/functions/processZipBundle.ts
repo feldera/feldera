@@ -81,6 +81,8 @@ export interface ProcessedProfile {
   /** Input and output connector statistics from `stats.json`, grouped by table and view, when the
    *  bundle includes them. */
   connectorMetrics?: ConnectorMetrics
+  /** The `connectorMetrics` source, with the error lists of the connectors. */
+  connectorStatus?: ConnectorStatus
   /** Pipeline runtime configuration (`runtime_config` from `pipeline_config.json`), when the
    *  bundle includes it. */
   runtimeConfig?: unknown
@@ -207,6 +209,7 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
   const statsFile = files.find((file) => statsRegex.test(file.filename))
   let globalMetrics: GlobalMetrics | undefined
   let connectorMetrics: ConnectorMetrics | undefined
+  let connectorStatus: ConnectorStatus | undefined
   if (statsFile) {
     let stats: (Partial<ConnectorStatus> & { global_metrics?: GlobalMetrics }) | undefined
     try {
@@ -215,7 +218,8 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
       stats = undefined
     }
     globalMetrics = stats?.global_metrics
-    connectorMetrics = aggregateBundleConnectorMetrics(stats)
+    connectorStatus = parseConnectorStatus(stats)
+    connectorMetrics = connectorStatus && aggregateBundleConnectorMetrics(connectorStatus)
   }
 
   // A malformed file leaves the events undefined and does not fail the load.
@@ -237,6 +241,7 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
     pipelineName,
     globalMetrics,
     connectorMetrics,
+    connectorStatus,
     runtimeConfig,
     pipelineEvents,
     sourceFiles
@@ -271,19 +276,12 @@ export function parseConnectorStatus(
 }
 
 /**
- * Groups the connector statistics of a parsed `stats.json` by table and view. Returns `undefined`
- * when it lists no connectors.
+ * Groups the connector statistics of a `stats.json` by table and view.
  *
  * @throws Error if a connector entry cannot be aggregated, for example one without
  *         `config.stream`
  */
-function aggregateBundleConnectorMetrics(
-  stats: Partial<ConnectorStatus> | null | undefined
-): ConnectorMetrics | undefined {
-  const connectorStatus = parseConnectorStatus(stats)
-  if (!connectorStatus) {
-    return undefined
-  }
+function aggregateBundleConnectorMetrics(connectorStatus: ConnectorStatus): ConnectorMetrics {
   // A bundle holds one `/stats` sample, so `io_active` is false for all connectors.
   try {
     return aggregateConnectorMetrics(connectorStatus)

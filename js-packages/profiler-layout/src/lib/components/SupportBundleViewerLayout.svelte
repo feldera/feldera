@@ -8,12 +8,18 @@
     type SearchDirection,
     SegmentedControl,
     Select,
+    statusCounterClass,
+    statusToneColors,
     type TabSpec,
     TabsPanel,
     usePersistentRect,
     useShortcut
   } from 'common-ui'
-  import type { ConnectorMetrics } from 'common-ui/connectorMetrics'
+  import {
+    countConnectorErrors,
+    type ConnectorMetrics,
+    type ConnectorStatus
+  } from 'common-ui/connectorMetrics'
   import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type {
@@ -60,6 +66,9 @@
     /** Input and output connector statistics from the bundle's `stats.json`, grouped by table and
      *  view, shown in the Connectors tab. Absent when the bundle has no connector statistics. */
     connectorMetrics?: ConnectorMetrics
+    /** The `connectorMetrics` source. The Connectors tab reads the error lists of the connectors
+     *  from it. */
+    connectorStatus?: ConnectorStatus
     /** Pipeline runtime configuration from the bundle's `pipeline_config.json`; shown in the Config
      *  tab. Absent when the bundle carried no config. */
     runtimeConfig?: unknown
@@ -92,6 +101,7 @@
     logText,
     globalMetrics,
     connectorMetrics,
+    connectorStatus,
     runtimeConfig,
     pipelineEvents,
     sourceFiles = [],
@@ -107,6 +117,9 @@
   }: Props = $props()
 
   const hasProfile = $derived(profileData !== undefined)
+  const connectorErrorCount = $derived(
+    connectorMetrics ? countConnectorErrors(connectorMetrics) : 0
+  )
 
   const graphPaneDefaultSize = 55
   const graphPaneMinSize = 20
@@ -349,6 +362,7 @@
     rootNodeId: diagramRootNodeId,
     globalMetrics,
     connectorMetrics,
+    connectorStatus,
     runtimeConfig,
     pipelineEvents,
     collectedAt: selectedTimestamp,
@@ -485,7 +499,14 @@
 
 <!-- ── Analysis panel labels and tab-bar-end snippets ────────────────────────── -->
 {#snippet metricsLabel()}Metrics{/snippet}
-{#snippet connectorsLabel()}Connectors{/snippet}
+{#snippet connectorsLabel()}
+  Connectors
+  {#if connectorErrorCount > 0}
+    <span class="ml-1 {statusCounterClass} {statusToneColors.error.chip}">
+      {connectorErrorCount}
+    </span>
+  {/if}
+{/snippet}
 {#snippet healthLabel()}Health{/snippet}
 {#snippet logsLabel()}Logs{/snippet}
 {#snippet configLabel()}Config{/snippet}
