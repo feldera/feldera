@@ -2,7 +2,7 @@
   import triagePlugins, { createBundle, TriageResults } from 'virtual:feldera-triage-plugins'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { enclosure, nonNull } from 'common-lib/function'
-  import type { ConnectorMetrics } from 'common-ui/connectorMetrics'
+  import type { ConnectorMetrics, ConnectorStatus } from 'common-ui/connectorMetrics'
   import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import {
     createLoadGuard,
@@ -65,6 +65,7 @@
         logText: string | undefined
         globalMetrics: GlobalMetrics | undefined
         connectorMetrics: ConnectorMetrics | undefined
+        connectorStatus: ConnectorStatus | undefined
         runtimeConfig: unknown
         pipelineEvents: PipelineMonitorEvent[] | undefined
         sourceFiles: SourceFile[] | undefined
@@ -127,6 +128,7 @@
       logText: processed.logText,
       globalMetrics: processed.globalMetrics,
       connectorMetrics: processed.connectorMetrics,
+      connectorStatus: processed.connectorStatus,
       runtimeConfig: processed.runtimeConfig,
       pipelineEvents: processed.pipelineEvents,
       sourceFiles: processed.sourceFiles
@@ -411,6 +413,7 @@
       logText,
       globalMetrics,
       connectorMetrics,
+      connectorStatus,
       runtimeConfig,
       pipelineEvents,
       sourceFiles
@@ -422,6 +425,7 @@
         {logText}
         {globalMetrics}
         {connectorMetrics}
+        {connectorStatus}
         {runtimeConfig}
         {pipelineEvents}
         {sourceFiles}

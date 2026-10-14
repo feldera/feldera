@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ConnectorMetrics } from 'common-ui/connectorMetrics'
+  import type { ConnectorMetrics, ConnectorStatus } from 'common-ui/connectorMetrics'
   import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import {
     createLoadGuard,
@@ -28,6 +28,7 @@
     logText: string | undefined
     globalMetrics: GlobalMetrics | undefined
     connectorMetrics: ConnectorMetrics | undefined
+    connectorStatus: ConnectorStatus | undefined
     runtimeConfig: unknown
     pipelineEvents: PipelineMonitorEvent[] | undefined
     sourceFiles: SourceFile[] | undefined
@@ -54,6 +55,7 @@
       logText: data.logText,
       globalMetrics: data.globalMetrics,
       connectorMetrics: data.connectorMetrics,
+      connectorStatus: data.connectorStatus,
       runtimeConfig: data.runtimeConfig,
       pipelineEvents: data.pipelineEvents,
       sourceFiles: data.sourceFiles
@@ -124,6 +126,7 @@
       logText={profileData.logText}
       globalMetrics={profileData.globalMetrics}
       connectorMetrics={profileData.connectorMetrics}
+      connectorStatus={profileData.connectorStatus}
       runtimeConfig={profileData.runtimeConfig}
       pipelineEvents={profileData.pipelineEvents}
       sourceFiles={profileData.sourceFiles}

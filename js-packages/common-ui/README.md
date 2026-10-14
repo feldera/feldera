@@ -21,7 +21,7 @@ import { SegmentedControl, TabsPanel, PersistentContent, MonacoEditor } from 'co
 | Layout | `Drawer` shows a resizable side panel on wide screens (`InlineDrawer`) and an overlay on tablets and phones (`OverlayDrawer`). `InlineDropdown` toggles content under a header. `useIsMobile.svelte` has the screen-size media queries. |
 | Layout helpers | `PersistentContent` and `persistentRect.svelte` for content that must survive conditional re-renders (see those files for details). `ANSIDecoratedText` renders ANSI-colored log output. |
 | Buttons | `ClipboardCopyButton`. `ClickFeedback` shows a short confirmation state after a click. |
-| Pipeline views | `ConnectorMetricsTables` shows the connector statistics of each table and view. Use `aggregateConnectorMetrics` from `common-ui/connectorMetrics` to make its input from a `/stats` response. |
+| Pipeline views | `ConnectorMetricsTables` shows the connector statistics of each table and view. Use `aggregateConnectorMetrics` from `common-ui/connectorMetrics` to make its input from a `/stats` response. `ConnectorErrors` shows the error lists of one connector. The caller passes the connector status, from the API or from a support bundle. |
 | Health views | `StatusTimeline`, `EventLogList` and `HealthEventList` show a status history, its incidents and the events of one incident. `PipelineEventHistory` combines them for the monitor events of a pipeline, from the API or from a support bundle. |
 
 Plain TypeScript modules that only the web console and the profiler use also
