@@ -6,7 +6,13 @@
 //! hosts at the same time, with one thread for each host.  [TestHosts] does
 //! this for the operations that tests use frequently.
 
-use std::{iter::zip, net::TcpListener, panic::resume_unwind, thread};
+use std::{
+    iter::zip,
+    net::TcpListener,
+    panic::resume_unwind,
+    thread,
+    time::{Duration, Instant},
+};
 
 use anyhow::Result as AnyResult;
 use crossbeam::channel::{Select, unbounded};
@@ -284,5 +290,49 @@ where
     /// Commits the current transaction on every host.
     pub(crate) fn commit_transaction(&mut self) {
         self.for_each(|handle| handle.commit_transaction().unwrap());
+    }
+
+    /// Runs a transaction of one step on every host.
+    pub(crate) fn transaction(&mut self) {
+        self.for_each(|handle| handle.transaction().unwrap());
+    }
+
+    /// Kills every host, each in a thread of its own, and waits until all of
+    /// them stop.
+    ///
+    /// Then waits until the runtime of every host is gone, so that the hosts
+    /// release their storage and can start again from it.  A runtime can
+    /// remain for a short time after the kill, while one of its network tasks
+    /// finishes a delivery.
+    ///
+    /// # Panics
+    ///
+    /// If the runtime of a host remains for longer than 10 seconds.
+    pub(crate) fn kill(self) {
+        let Self { handles, results } = self;
+        let runtimes: Vec<_> = handles
+            .iter()
+            .map(|handle| handle.runtime().downgrade())
+            .collect();
+        thread::scope(|scope| {
+            for handle in handles {
+                scope.spawn(move || handle.kill().unwrap());
+            }
+        });
+
+        // The constructor's results, such as input handles, can hold the
+        // runtime too.
+        drop(results);
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        for (host, runtime) in runtimes.iter().enumerate() {
+            while runtime.upgrade().is_some() {
+                assert!(
+                    Instant::now() < deadline,
+                    "host {host} keeps its runtime after the kill"
+                );
+                thread::sleep(Duration::from_millis(1));
+            }
+        }
     }
 }

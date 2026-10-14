@@ -35,7 +35,7 @@ use std::{
     borrow::Cow,
     collections::{HashMap, VecDeque},
     fmt::{Debug, Display},
-    future::Future,
+    future::{Future, ready},
     io::{Cursor, IoSlice},
     iter::zip,
     marker::PhantomData,
@@ -44,7 +44,7 @@ use std::{
     ops::Range,
     pin::{Pin, pin},
     sync::{
-        Arc, Mutex, MutexGuard, RwLock,
+        Arc, Mutex, MutexGuard, RwLock, Weak,
         atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant, SystemTime},
@@ -799,17 +799,67 @@ impl ExchangeDirectory {
             .clone()
     }
 
-    pub fn get(
+    pub fn insert(&self, exchange_id: ExchangeId, delivery: Arc<dyn ExchangeDelivery>) {
+        self.entries
+            .write()
+            .unwrap()
+            .entry(exchange_id)
+            .and_modify(|_| panic!())
+            .or_insert_with(|| ExchangeDirectoryEntry::new(delivery));
+    }
+
+    /// Returns this directory for the network tasks of the runtime (see
+    /// [WeakExchangeDirectory]).
+    fn downgrade(&self) -> WeakExchangeDirectory {
+        WeakExchangeDirectory {
+            next_sequence: self.next_sequence.clone(),
+            entries: Arc::downgrade(&self.entries),
+            connections: self.connections.clone(),
+        }
+    }
+}
+
+/// An [ExchangeDirectory] for the network tasks of a runtime, which refers to
+/// the exchanges weakly.
+///
+/// The exchanges hold the runtime, and the network tasks continue to run
+/// after the runtime stops.  With strong references, the tasks would keep the
+/// runtime, and the lock on its storage, for as long as they run.
+#[derive(Clone)]
+struct WeakExchangeDirectory {
+    /// See [ExchangeDirectory].
+    next_sequence: Arc<Vec<EnumMap<MessageType, AtomicU64>>>,
+
+    /// See [ExchangeDirectory].  The upgrade fails after the runtime stops.
+    entries: Weak<RwLock<HashMap<ExchangeId, ExchangeDirectoryEntry>>>,
+
+    /// See [ExchangeDirectory].
+    connections: ConnectionRegistry,
+}
+
+impl WeakExchangeDirectory {
+    /// Finds where to deliver message `sequence` of `message_type` from
+    /// `sending_host_idx` to exchange `exchange_id`.
+    ///
+    /// After the runtime stops, there is no exchange, so a message in
+    /// sequence goes to [Discard].
+    fn get(
         &self,
         exchange_id: ExchangeId,
         sending_host_idx: usize,
         message_type: MessageType,
         sequence: u64,
     ) -> Result<ExchangeGet, ExchangeGetError> {
-        let map = self.entries.read().unwrap();
-        let entry = map
-            .get(&exchange_id)
-            .ok_or(ExchangeGetError::UnknownExchange(exchange_id))?;
+        let delivery: Arc<dyn ExchangeDelivery> = match self.entries.upgrade() {
+            Some(entries) => entries
+                .read()
+                .unwrap()
+                .get(&exchange_id)
+                .ok_or(ExchangeGetError::UnknownExchange(exchange_id))?
+                .delivery
+                .clone(),
+            None => Arc::new(Discard),
+        };
         match self.next_sequence[sending_host_idx][message_type].compare_exchange(
             sequence,
             sequence + 1,
@@ -819,7 +869,7 @@ impl ExchangeDirectory {
             Ok(_) => {
                 // Correct sequence number.
                 Ok(ExchangeGet {
-                    delivery: Some(entry.delivery.clone()),
+                    delivery: Some(delivery),
                     next_sequence: sequence + 1,
                 })
             }
@@ -841,15 +891,6 @@ impl ExchangeDirectory {
         }
     }
 
-    pub fn insert(&self, exchange_id: ExchangeId, delivery: Arc<dyn ExchangeDelivery>) {
-        self.entries
-            .write()
-            .unwrap()
-            .entry(exchange_id)
-            .and_modify(|_| panic!())
-            .or_insert_with(|| ExchangeDirectoryEntry::new(delivery));
-    }
-
     /// Registers `cancel`/`handle` as the connection serving
     /// `sending_host_idx` and `message_type`, cancelling any previous
     /// connection serving the same pair and waiting for it to fully exit
@@ -867,9 +908,30 @@ impl ExchangeDirectory {
     }
 }
 
+/// Drops the messages that arrive after the runtime stops.
+///
+/// The server still acknowledges these messages, so that a sender does not
+/// wait for them.
+struct Discard;
+
+impl ExchangeDelivery for Discard {
+    fn name(&self) -> Arc<String> {
+        Arc::new(String::from("Discard"))
+    }
+
+    fn received(
+        self: Arc<Self>,
+        _sender: usize,
+        _round: u64,
+        _data: Vec<AlignedVec>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        Box::pin(ready(()))
+    }
+}
+
 struct ExchangeServer {
     layout: Layout,
-    directory: ExchangeDirectory,
+    directory: WeakExchangeDirectory,
     stream: TcpStream,
 
     /// Cancelled by a subsequent connection that takes over this connection's
@@ -1114,7 +1176,7 @@ impl ExchangeClients {
                     Some(ExchangeListener::new(
                         local_address,
                         runtime.take_exchange_listener(),
-                        directory,
+                        directory.downgrade(),
                         self.layout.clone(),
                     ))
                 } else {
@@ -1381,7 +1443,7 @@ impl ExchangeListener {
     fn new(
         local_address: SocketAddr,
         exchange_listener: Option<std::net::TcpListener>,
-        directory: ExchangeDirectory,
+        directory: WeakExchangeDirectory,
         layout: Layout,
     ) -> Self {
         let token = CancellationToken::new();
@@ -2496,7 +2558,10 @@ mod tests {
         },
         storage::file::{to_bytes, to_bytes_dyn},
         trace::aligned_deserialize,
-        utils::test::{init_test_logger, multihost::run_on_hosts},
+        utils::test::{
+            init_test_logger,
+            multihost::{TestHosts, run_on_hosts},
+        },
     };
     use std::sync::{Arc, atomic::Ordering};
 
@@ -2826,6 +2891,34 @@ mod tests {
     fn operators_multihost_dynamic() {
         init_test_logger();
         test_operators_multihost(operator_circuit::<DynamicScheduler>);
+    }
+
+    /// Killed hosts drop their runtimes.  The network tasks of a host continue
+    /// to run after a kill, and they find the sharded accumulators of the host
+    /// in its exchange directory.  The accumulators hold the runtime, so if
+    /// the tasks held the directory strongly, a killed host would keep its
+    /// runtime, and the lock on its storage, and could not start again from
+    /// that storage.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn killed_hosts_drop_their_runtimes() {
+        init_test_logger();
+        let mut hosts = TestHosts::start(4, 2, |circuit| {
+            let (input, input_handle) = circuit.add_input_zset::<u64>();
+            // An input stream is already sharded, so `shard_accumulate` on it
+            // would not use a sharded accumulator.  The stream from `map` is
+            // not sharded.
+            let (accumulated, enable_count) = input.map(|x| *x).shard_accumulate().into_parts();
+            enable_count.enable();
+            Ok((input_handle, accumulated.latest_output(), enable_count))
+        });
+        for key in 0..16 {
+            hosts.result(0).0.push(key, 1);
+        }
+        hosts.transaction();
+
+        // Fails unless every host drops its runtime.
+        hosts.kill();
     }
 
     /// Disables the random `inject_fault` failures used by the round-based
