@@ -335,14 +335,14 @@ def test_merge_requires_a_unique_key(pipeline_name):
 
 @enterprise_only
 def test_merge_compacts_when_asked_to(pipeline_name):
-    """`optimize_interval_secs` makes the connector compact its own table.
+    """`optimize_interval` makes the connector compact its own table.
 
     Merge mode never rewrites a data file, so a table nothing else maintains
     grows one file per flush. The option hands that job to the connector.
     """
     loc = DeltaTestLocation.create(pipeline_name, mode="append")
     try:
-        sql = _sql(loc, {"optimize_interval_secs": 1})
+        sql = _sql(loc, {"optimize_interval": "1s"})
         pipeline = _build_pipeline(pipeline_name, sql)
         pipeline.start()
 

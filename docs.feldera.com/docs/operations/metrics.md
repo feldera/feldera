@@ -219,7 +219,7 @@ These metrics accumulate across checkpoint and resume.
 | <a name='output_connector_delta_merge_bytes_written_total'>`output_connector_delta_merge_bytes_written_total`</a> |counter | Bytes written to object storage: new data files plus deletion vectors. |
 | <a name='output_connector_delta_merge_commit_microseconds_total'>`output_connector_delta_merge_commit_microseconds_total`</a> |counter | Time spent writing the commit to the Delta log. |
 | <a name='output_connector_delta_merge_compaction_failures_total'>`output_connector_delta_merge_compaction_failures_total`</a> |counter | Maintenance runs that failed. The table is left intact and the next run retries, but nothing was reclaimed by this one. |
-| <a name='output_connector_delta_merge_compactions_total'>`output_connector_delta_merge_compactions_total`</a> |counter | Maintenance runs the connector completed, when 'optimize_interval_secs' asks it to maintain the table. |
+| <a name='output_connector_delta_merge_compactions_total'>`output_connector_delta_merge_compactions_total`</a> |counter | Maintenance runs the connector completed, when 'optimize_interval' asks it to maintain the table. |
 | <a name='output_connector_delta_merge_deletion_vector_microseconds_total'>`output_connector_delta_merge_deletion_vector_microseconds_total`</a> |counter | Time spent reading, merging and writing deletion vectors. |
 | <a name='output_connector_delta_merge_files_appended_total'>`output_connector_delta_merge_files_appended_total`</a> |counter | Data files added to the target table. |
 | <a name='output_connector_delta_merge_files_dropped_total'>`output_connector_delta_merge_files_dropped_total`</a> |counter | Data files removed outright because every row in them was superseded. |

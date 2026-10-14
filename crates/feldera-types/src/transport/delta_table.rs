@@ -1,3 +1,4 @@
+use crate::duration::ConfigDuration;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
@@ -248,7 +249,8 @@ pub struct DeltaTableWriterConfig {
     #[schema(minimum = 1)]
     pub threads: Option<usize>,
 
-    /// Compact the target table from the connector, at most once every this many seconds.
+    /// Compact the target table from the connector, at most once per this interval, for
+    /// example `1h`.
     ///
     /// Only used when `update_mode` is `merge`. Merge mode marks an old row version deleted
     /// but leaves it in place. Without compaction the table keeps growing and reads keep
@@ -256,8 +258,8 @@ pub struct DeltaTableWriterConfig {
     /// scheduled `OPTIMIZE` leaves behind.
     ///
     /// Maintenance is normally the table administrator's job, which is why this is off by
-    /// default. Set it for tables where Feldera is the only writer. Hourly (`3600`) or daily
-    /// (`86400`) is typical. A short interval is safe: a run costs what needs doing, not the
+    /// default. Set it for tables where Feldera is the only writer. Hourly (`1h`) or daily
+    /// (`1d`) is typical. A short interval is safe: a run costs what needs doing, not the
     /// size of the table, and two runs cannot overlap. A large backlog is cleared over
     /// several runs.
     ///
@@ -268,8 +270,8 @@ pub struct DeltaTableWriterConfig {
     ///
     /// Default: none, meaning the connector never compacts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(minimum = 1)]
-    pub optimize_interval_secs: Option<u64>,
+    #[schema(value_type = Option<String>)]
+    pub optimize_interval: Option<ConfigDuration>,
 
     /// Storage options for configuring backend object store.
     ///
@@ -296,17 +298,16 @@ impl DeltaTableWriterConfig {
         if self.lookup_chunk_bytes == 0 {
             return Err("lookup_chunk_bytes must be greater than 0".to_string());
         }
-        if self.optimize_interval_secs.is_some_and(|s| s == 0) {
+        if self.optimize_interval.is_some_and(|d| d.is_zero()) {
             return Err(
-                "optimize_interval_secs must be greater than 0; omit it to leave \
+                "optimize_interval must be greater than 0; omit it to leave \
                  compaction to the table's administrator"
                     .to_string(),
             );
         }
-        if self.optimize_interval_secs.is_some() && self.update_mode != DeltaTableUpdateMode::Merge
-        {
+        if self.optimize_interval.is_some() && self.update_mode != DeltaTableUpdateMode::Merge {
             return Err(
-                "optimize_interval_secs only applies to 'update_mode: merge', which \
+                "optimize_interval only applies to 'update_mode: merge', which \
                  is the only mode that supersedes rows and therefore the only one that \
                  needs compacting"
                     .to_string(),
@@ -1037,7 +1038,7 @@ mod log_retention_tests {
             enable_expired_log_cleanup: None,
             max_retries: None,
             threads: None,
-            optimize_interval_secs: None,
+            optimize_interval: None,
             object_store_config: HashMap::new(),
         }
     }
@@ -1154,19 +1155,19 @@ mod log_retention_tests {
     fn validate_constrains_the_optimize_interval() {
         let mut cfg = make_config(None);
         cfg.update_mode = DeltaTableUpdateMode::Merge;
-        cfg.optimize_interval_secs = Some(3600);
+        cfg.optimize_interval = Some(ConfigDuration::from_secs(3600));
         assert!(cfg.validate().is_ok());
 
-        cfg.optimize_interval_secs = Some(0);
+        cfg.optimize_interval = Some(ConfigDuration::from_secs(0));
         assert!(
             cfg.validate()
                 .unwrap_err()
-                .contains("optimize_interval_secs must be greater than 0"),
+                .contains("optimize_interval must be greater than 0"),
             "zero must be rejected rather than treated as a cadence"
         );
 
         cfg.update_mode = DeltaTableUpdateMode::Cdc;
-        cfg.optimize_interval_secs = Some(3600);
+        cfg.optimize_interval = Some(ConfigDuration::from_secs(3600));
         assert!(
             cfg.validate()
                 .unwrap_err()
@@ -1174,8 +1175,23 @@ mod log_retention_tests {
         );
 
         // Omitted is the default, and valid in either mode.
-        cfg.optimize_interval_secs = None;
+        cfg.optimize_interval = None;
         assert!(cfg.validate().is_ok());
+    }
+
+    /// The interval is a duration string, as every duration setting is.
+    #[test]
+    fn optimize_interval_is_a_duration() {
+        let parse = |interval: &str| {
+            serde_json::from_str::<DeltaTableWriterConfig>(&format!(
+                r#"{{"uri":"memory://","update_mode":"merge","optimize_interval":{interval}}}"#
+            ))
+        };
+        assert_eq!(
+            parse(r#""1h30m""#).unwrap().optimize_interval,
+            Some(ConfigDuration::from_secs(5400))
+        );
+        assert!(parse("3600").is_err(), "a bare number has no unit");
     }
 
     /// Merge mode accepts threads: a flush walks its key ranges separately but joins their

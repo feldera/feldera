@@ -99,7 +99,7 @@ MERGE INTO {target_table} AS target
 | `update_mode` | <p>How the connector applies the view's changes to the table. Orthogonal to `mode`, which governs what happens to an existing table when the pipeline starts.</p><p>- `cdc`: append a change log with `__feldera_op` and `__feldera_ts` metadata columns, which a job of yours folds into a state table.</p><p>- `merge`: keep the table in sync with the view. See [Merge mode](#merge-mode).</p><p>Default: `cdc`.</p>|
 | `lookup_chunk_bytes` | <p>Ceiling, in bytes, on the encoded keys the connector holds while locating rows to supersede. `merge` mode only.</p><p>A flush whose key set exceeds this budget is split into successive lookup passes, which bounds memory at the cost of re-scanning candidate files. Like `max_concurrent_probes`, it is a budget for a flush rather than for a thread: the threads of one flush divide it between them, so raising `threads` does not raise what the lookup holds.</p><p>Default: `268435456` (256 MiB). Maximum: `2147483647` (2 GiB).</p>|
 | `max_concurrent_probes` | <p>Number of data files read concurrently while locating rows to supersede. `merge` mode only.</p><p>The lookup reads each file in its own task, so this sets how much of the decoding runs in parallel as well as how many requests are in flight. Each concurrent read holds one file's projected key column, so it bounds memory too. Like `lookup_chunk_bytes` it is a budget for a flush rather than for a thread. Default: `16`.</p>|
-| `optimize_interval_secs` | <p>Compact the target table from the connector, at most once every this many seconds. `merge` mode only.</p><p>Merge mode marks an old row version deleted but leaves it in place. Without compaction the table keeps growing and reads keep slowing down, however few live rows it holds. See [Compaction is required](#compaction-is-required).</p><p>Off by default, because maintenance is normally the table administrator's job. Set it for tables where Feldera is the only writer and nothing else will maintain them. Hourly (`3600`) or daily (`86400`) is typical. It runs in the background and does not hold up a flush.</p>|
+| `optimize_interval` | <p>Compact the target table from the connector, at most once per this interval, for example `1h`. `merge` mode only.</p><p>Merge mode marks an old row version deleted but leaves it in place. Without compaction the table keeps growing and reads keep slowing down, however few live rows it holds. See [Compaction is required](#compaction-is-required).</p><p>Off by default, because maintenance is normally the table administrator's job. Set it for tables where Feldera is the only writer and nothing else will maintain them. Hourly (`1h`) or daily (`1d`) is typical. It runs in the background and does not hold up a flush.</p>|
 
 [*]: Required fields
 
@@ -235,7 +235,7 @@ The connector exports these alongside the standard connector metrics.
 | `output_connector_delta_merge_bytes_written_total` | Bytes written: new data files plus deletion vectors |
 | `output_connector_delta_merge_ranges_walked_total` | Key ranges walked, summed over flushes. Above the flush count when `threads` split a batch into ranges written in parallel. |
 | `output_connector_delta_merge_probe_key_bytes_read_total` | Key-column bytes the lookup read. Against `bytes_written_total`, the flush's read amplification |
-| `output_connector_delta_merge_compactions_total`, `output_connector_delta_merge_compaction_failures_total` | Maintenance runs, and how many failed. Only when `optimize_interval_secs` is set |
+| `output_connector_delta_merge_compactions_total`, `output_connector_delta_merge_compaction_failures_total` | Maintenance runs, and how many failed. Only when `optimize_interval` is set |
 | `output_connector_delta_merge_flush_latency_microseconds` | Histogram of whole flushes. Where object-store latency shows up; no combination of the counters above reveals it |
 | `output_connector_delta_merge_probe_microseconds_total`, `..._append_...`, `..._deletion_vector_...`, `..._commit_...`, `..._log_scan_...`, `..._batch_walk_...` | Where flush time goes. Only successful flushes report them. At `threads` 1 they partition a flush and sum to what the latency histogram records for it; above 1 the phases a key range performs -- `batch_walk`, `probe` and `append` -- are summed across ranges that ran at once, so they measure work rather than elapsed time and can exceed the flush's latency |
 | `output_connector_delta_merge_reclaimed_rows_total` | Superseded rows that maintenance removed from storage |
@@ -250,7 +250,7 @@ The connector warns, at most once an hour, when more than 20% of the table's row
 superseded versions.
 
 If Feldera is the table's only writer and nothing else will compact it, set
-`optimize_interval_secs`. The connector then compacts the table itself, in the background, no
+`optimize_interval`. The connector then compacts the table itself, in the background, no
 more often than that interval. How it is scheduled:
 
 - The first run comes one interval after the connector starts, not at startup, so adopting a

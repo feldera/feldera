@@ -587,7 +587,7 @@ pruned none, at every size up to 2,000 files, so cost per flush is linear in the
 16 ms at 250 files, 134 ms at 1,000, 289 ms at 2,000.
 
 So the file count, not the change rate, sets the cost of this workload, and keeping it down
-is what `optimize_interval_secs` and an administrator's `OPTIMIZE` schedule are for. Pruning
+is what `optimize_interval` and an administrator's `OPTIMIZE` schedule are for. Pruning
 pays where the key range of a file is meaningful: a partitioned table, a key-clustered table,
 and a flush whose keys are local.
 
@@ -625,7 +625,7 @@ into two live rows for one key, permanently.
 What a flush never does: rewrite a data file, change the schema, change the partitioning,
 alter table properties, or upgrade the protocol. The background pass described below does
 rewrite files, but only ones it has already read, and only when asked for by
-`optimize_interval_secs`.
+`optimize_interval`.
 
 Concurrency does not rest on delta-rs's conflict checker. Since delta-rs#4568 that checker
 ignores a concurrent remove with `data_change: false`, so a flush that tombstones a file
@@ -657,7 +657,7 @@ adds a row and tombstones one. Without compaction the table grows without bound 
 cost grows with the number of updates rather than the number of live rows.
 
 By default the table's administrator maintains it, which is why the connector's own
-compaction is off unless `optimize_interval_secs` asks for it.
+compaction is off unless `optimize_interval` asks for it.
 
 An OPTIMIZE schedule is not enough on its own, though. OPTIMIZE plans on file size: it
 bin-packs files below the target and drops a bin holding a single file, so a file that has
@@ -690,7 +690,7 @@ template change, as the Delta input connector's `input_connector_delta_*` alread
 
 The connector warns at most once per hour when `tombstone_ratio_permille` exceeds 200, and
 names the remedy. The warning is suppressed while the connector performs that remedy itself
-and it is working: setting `optimize_interval_secs` suppresses it, and a maintenance run that
+and it is working: setting `optimize_interval` suppresses it, and a maintenance run that
 fails brings it back, since a remedy that is not running is one the operator has to know
 about.
 
@@ -698,7 +698,7 @@ about.
 
 `rewrite.rs` rewrites the files OPTIMIZE leaves behind: read the live rows, write them as a
 new file, commit the swap. It runs after the bin-packing, in the same background task, and
-only when `optimize_interval_secs` is set.
+only when `optimize_interval` is set.
 
 | Decision | Why |
 |----------|-----|
@@ -725,7 +725,7 @@ Declared in `crates/feldera-types/src/transport/delta_table.rs`.
 | `lookup_chunk_bytes` | `usize` | 256 MiB | Ceiling on encoded removal keys held at once. Capped at 2 GiB: the chunk addresses its buffer with 32-bit offsets |
 | `threads` | `Option<usize>` | none | Key ranges a flush may walk at once. A flush splits only when the batch is worth three target-sized files per range, so a small batch stays whole rather than fragmenting the table. The first flush has no write rate to size that against and falls back to a row count, so a backfill splits as far as `threads` allows and pays a partial file per range |
 | `max_concurrent_probes` | `usize` | 16 | Caps the probe working set and its request concurrency |
-| `optimize_interval_secs` | `Option<u64>` | none | Connector-driven maintenance: OPTIMIZE, then the reclamation pass. Off by default, because the table administrator normally maintains the table; set it where Feldera is the only writer. Runs in the background after a flush, one at a time, first run one interval after startup |
+| `optimize_interval` | duration, e.g. `1h` | none | Connector-driven maintenance: OPTIMIZE, then the reclamation pass. Off by default, because the table administrator normally maintains the table; set it where Feldera is the only writer. Runs in the background after a flush, one at a time, first run one interval after startup |
 
 `threads` divides the per-flush budgets rather than multiplying them: the ranges share
 `max_concurrent_probes`, `lookup_chunk_bytes` and the append chunk between them, so raising
@@ -754,7 +754,7 @@ Merge mode lives under `crates/adapters/src/integrated/delta_table/merge/`.
 | `rewrite.rs` | Rewriting a file whose rows are mostly superseded, which is what reclaims their storage |
 | `startup.rs` | What the target table must satisfy before the first row moves |
 | `flush.rs` | The cursor walk that drives all of the above, and the commit |
-| `compact.rs` | The opt-in background maintenance behind `optimize_interval_secs`: `OPTIMIZE`, then `rewrite.rs` |
+| `compact.rs` | The opt-in background maintenance behind `optimize_interval`: `OPTIMIZE`, then `rewrite.rs` |
 | `metrics.rs` | The exported counters, and the compaction warning |
 | `model.rs` | Model-based tests: random operation sequences through the real writer, compared against an in-memory oracle after every flush |
 | `test.rs` | Shared test fixtures, and the protocol-level checks the design rests on |
