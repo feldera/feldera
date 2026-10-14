@@ -248,7 +248,9 @@ An unordered read has no seekable interior boundary, so a checkpoint taken while
 progress resumes by re-reading the whole snapshot. Set `timestamp_column` to get incremental,
 bounded-re-read checkpointing on large tables. Once the snapshot has been fully ingested, a
 restart resumes directly into the completed state and reads nothing further, regardless of
-`timestamp_column`.
+`timestamp_column`.  In `snapshot_and_follow` mode, such a restart continues to follow the
+table after the last snapshot that the connector ingested, without reading the initial
+snapshot again.
 
 ## Distributed connectors
 
