@@ -1027,8 +1027,7 @@ async fn wait_replay_backoff(
     // Check for control commands *before* sleeping. Disconnect stops replay
     // immediately; any other command is buffered back for the worker to handle
     // once this backoff elapses (it cannot be serviced mid-replay). We take at
-    // most one command per call — `put_back` is single-slot, so taking a second
-    // before draining the first would assert-fail. The sleep then always elapses,
+    // most one command per call. The sleep then always elapses,
     // so a buffered command cannot busy-loop `read_session` against S2.
     if let Some(command) = command_receiver.try_recv()? {
         match command {

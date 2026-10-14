@@ -4527,15 +4527,14 @@ fn start_controller_with_error_cb(
     controller
 }
 
-/// An input endpoint that fails while it holds a barrier must not block
-/// suspend forever.
+/// Suspend fails with an actionable error, instead of waiting forever, when an
+/// input endpoint failed while it held a barrier.
 ///
 /// The controller keeps a failed endpoint in the pipeline status. Its barrier
 /// flag is set by the last step it reported, and a failed endpoint never
-/// reports a step again, so the flag never clears and every suspend or
-/// checkpoint waits for it.
+/// reports a step again, so the flag never clears.
 #[test]
-fn failed_input_at_barrier_does_not_block_suspend() {
+fn failed_input_at_barrier_fails_suspend() {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
     let storage_dir = tempdir.path().join("storage");
@@ -4588,10 +4587,24 @@ fn failed_input_at_barrier_does_not_block_suspend() {
 
     let (sender, receiver) = mpsc::channel();
     controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
-    let result = receiver.recv_timeout(Duration::from_secs(30));
+    let result = receiver
+        .recv_timeout(Duration::from_secs(30))
+        .expect("suspend did not complete within 30s of the input endpoint failing at a barrier");
+    let error = result
+        .expect_err("suspend succeeded although the failed input endpoint holds a barrier")
+        .to_string();
     assert!(
-        result.is_ok(),
-        "suspend did not complete within 30s of the input endpoint failing at a barrier"
+        error.contains("failed with a fatal error at a position that cannot be checkpointed"),
+        "unexpected suspend error: {error}"
+    );
+    let endpoint_name = controller.status().input_status()[&0].endpoint_name.clone();
+    assert_eq!(
+        controller.permanent_checkpoint_errors(),
+        Some(vec![
+            feldera_types::suspend::PermanentSuspendError::FailedInputEndpointBarrier(
+                endpoint_name
+            )
+        ])
     );
 
     controller.stop().unwrap();
