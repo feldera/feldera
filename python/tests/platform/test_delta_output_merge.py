@@ -276,21 +276,22 @@ def test_merge_into_a_partitioned_table(pipeline_name):
         pipeline = _build_pipeline(pipeline_name, sql)
         pipeline.start()
 
-        # The same id in two partitions: superseding one must leave the other alone.
+        # The same id in three partitions: superseding one must leave the others alone.
+        # The log stores an empty partition value as "", which it parses back as null.
         pipeline.input_json(
             "t",
-            [{"id": i, "tag": tag} for tag in ("a", "b") for i in range(5)],
+            [{"id": i, "tag": tag} for tag in ("a", "b", "") for i in range(5)],
             wait=True,
         )
-        assert loc.live_row_count() == 10
+        assert loc.live_row_count() == 15
 
         pipeline.input_json(
             "t",
-            [{"delete": {"id": 3, "tag": "b"}}],
+            [{"delete": {"id": 3, "tag": "b"}}, {"delete": {"id": 2, "tag": ""}}],
             update_format="insert_delete",
             wait=True,
         )
-        assert loc.live_row_count() == 9
+        assert loc.live_row_count() == 13
 
         adds = _active_adds(loc)
         tombstoned = sum(
@@ -298,9 +299,9 @@ def test_merge_into_a_partitioned_table(pipeline_name):
             for add in adds.values()
             if add.get("deletionVector")
         )
-        assert tombstoned == 1, (
-            f"expected exactly one superseded row, found {tombstoned}: deleting (3, 'b') "
-            "must not touch (3, 'a')"
+        assert tombstoned == 2, (
+            f"expected exactly two superseded rows, found {tombstoned}: deleting (3, 'b') "
+            "and (2, '') must touch no other partition"
         )
 
         pipeline.stop(force=True)
