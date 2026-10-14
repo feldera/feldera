@@ -2906,6 +2906,12 @@ struct CircuitThread {
     /// a transaction).
     pending_step_metadata: Option<HashMap<EndpointId, (String, StepResults)>>,
 
+    /// The name, configuration, and paused state of each input endpoint that
+    /// `input_step` polled and that the journal has not recorded yet, so that
+    /// the step's journal entry can add it even if it is removed in the
+    /// meantime.
+    pending_new_inputs: HashMap<EndpointId, (String, InputEndpointConfig, bool)>,
+
     /// Whether [Self::input_step] fed a replay step to the circuit this step.
     /// Used by [FtState::next_step] to decide whether to advance the replay
     /// cursor (it must not advance on steps that only commit the open replay
@@ -3413,6 +3419,7 @@ impl CircuitThread {
             concurrent_bootstrap_updates: None,
             bootstrapping,
             pending_step_metadata: None,
+            pending_new_inputs: HashMap::new(),
             replay_consumed: false,
             concurrent_phase,
             replay_finalize: false,
@@ -3846,9 +3853,31 @@ impl CircuitThread {
         // transaction id it belonged to.  Needs to be done after
         // `step_circuit`, because the transaction id is only assigned there.
         if let Some(step_metadata) = self.pending_step_metadata.take() {
+            #[cfg(test)]
+            {
+                let names = step_metadata
+                    .values()
+                    .map(|(name, _)| name.as_str())
+                    .collect::<Vec<_>>();
+                let mut hook = self.controller.journal_step_hook.lock().unwrap();
+                if hook
+                    .as_mut()
+                    .is_some_and(|hook| hook(&self.controller, &names))
+                {
+                    *hook = None;
+                }
+            }
+
             let transaction_id = self.controller.get_transaction_number() as TransactionId;
+            let new_inputs = mem::take(&mut self.pending_new_inputs);
             if let Some(ft) = self.ft.as_mut() {
-                ft.write_step(step_metadata, journal_step, transaction_id, &paused_outputs)?;
+                ft.write_step(
+                    step_metadata,
+                    new_inputs,
+                    journal_step,
+                    transaction_id,
+                    &paused_outputs,
+                )?;
             }
         }
 
@@ -4461,6 +4490,7 @@ impl CircuitThread {
         // below leave them as is, so those steps neither journal nor
         // advance the replay cursor.
         self.pending_step_metadata = None;
+        self.pending_new_inputs.clear();
         self.replay_consumed = false;
         // No ingestion during bootstrap, while committing a transaction, or at a
         // replay transaction boundary.
@@ -4577,7 +4607,21 @@ impl CircuitThread {
                     reader.queue(
                         self.checkpoint_requested()
                             && self.controller.get_transaction_state() == TransactionState::None,
-                    )
+                    );
+                    if self
+                        .ft
+                        .as_ref()
+                        .is_some_and(|ft| ft.is_new_input(endpoint_id))
+                    {
+                        self.pending_new_inputs.insert(
+                            endpoint_id,
+                            (
+                                status.endpoint_name.clone(),
+                                status.config.clone(),
+                                status.is_paused_by_user(),
+                            ),
+                        );
+                    }
                 } else {
                     // We already started the input adapters replaying. The set of
                     // input adapters can't change during replay (because we disable
@@ -5254,6 +5298,12 @@ impl FtState {
         self.enabled = false;
     }
 
+    /// Returns true if journaling this step must record `endpoint_id` as a new
+    /// input endpoint.
+    fn is_new_input(&self, endpoint_id: EndpointId) -> bool {
+        self.enabled && !self.is_replaying() && !self.input_endpoints.contains_key(&endpoint_id)
+    }
+
     /// Disconnects the ad hoc INSERT endpoints that a restart restored (see
     /// [ControllerInner::disconnect_adhoc_inputs]), once replay no longer needs
     /// them, and forgets them so that the journal does not record removing
@@ -5316,6 +5366,14 @@ impl FtState {
             controller.disconnect_input(&endpoint_id);
         }
         for (endpoint_name, config) in &metadata.add_inputs {
+            // The checkpoint that replay starts from also records the input
+            // endpoints that existed when it was taken.  An endpoint added
+            // after the last journal entry before the checkpoint is in both.
+            if let Ok(endpoint_id) = controller.input_endpoint_id_by_name(endpoint_name)
+                && controller.status.input_status()[&endpoint_id].config == *config
+            {
+                continue;
+            }
             controller.connect_input(endpoint_name, config, None, None)?;
         }
         for (endpoint_name, pause) in &metadata.changed_inputs {
@@ -5362,6 +5420,7 @@ impl FtState {
     fn write_step(
         &mut self,
         step_metadata: HashMap<u64, (String, StepResults)>,
+        new_inputs: HashMap<EndpointId, (String, InputEndpointConfig, bool)>,
         step: Step,
         transaction_id: TransactionId,
         paused_outputs: &HashSet<EndpointId>,
@@ -5375,6 +5434,12 @@ impl FtState {
                 let mut add_inputs = HashMap::new();
                 let mut changed_inputs = HashMap::new();
                 let inputs = self.controller.status.input_status();
+
+                // Replay feeds each endpoint its logged input after it applies
+                // the entry's endpoint additions and removals, so every
+                // endpoint whose input this entry logs must exist then, even
+                // one removed after this step took its input.
+                let logged = step_metadata.keys().copied().collect::<HashSet<_>>();
 
                 // Compute the endpoint lifecycle diff (added/removed/paused since
                 // the previous step) that this step's journal entry records, but
@@ -5395,6 +5460,10 @@ impl FtState {
                                     *paused = now_paused;
                                 }
                                 true
+                            } else if logged.contains(endpoint_id) {
+                                // Removed after this step took its input.  The
+                                // next entry records the removal.
+                                true
                             } else {
                                 remove_inputs.insert(endpoint_name.clone());
                                 false
@@ -5408,6 +5477,17 @@ impl FtState {
                     }
                 }
                 drop(inputs);
+
+                // An endpoint added and removed within this step, or added
+                // while stopping, is not in the diff above.
+                for (endpoint_id, (endpoint_name, config, paused)) in new_inputs {
+                    if logged.contains(&endpoint_id) {
+                        self.input_endpoints.entry(endpoint_id).or_insert_with(|| {
+                            add_inputs.insert(endpoint_name.clone(), config);
+                            (endpoint_name, paused)
+                        });
+                    }
+                }
 
                 let changed_outputs = self.changed_outputs(paused_outputs);
 
@@ -7754,6 +7834,12 @@ pub struct ControllerInner {
     /// Runs on the circuit thread after a step that left a commit unfinished.
     #[cfg(test)]
     commit_step_hook: Mutex<Option<CommitStepHook>>,
+
+    /// Runs on the circuit thread just before a step is journaled, with the
+    /// names of the input endpoints whose input the step consumed.  Removed
+    /// once it returns true.
+    #[cfg(test)]
+    journal_step_hook: Mutex<Option<JournalStepHook>>,
 }
 
 #[cfg(test)]
@@ -7761,6 +7847,9 @@ type InputStepHook = Box<dyn FnOnce(&mut HashMap<String, Option<Resume>>) + Send
 
 #[cfg(test)]
 type CommitStepHook = Box<dyn FnOnce(&ControllerInner) + Send>;
+
+#[cfg(test)]
+type JournalStepHook = Box<dyn FnMut(&ControllerInner, &[&str]) -> bool + Send>;
 
 impl Drop for ControllerInner {
     fn drop(&mut self) {
@@ -7848,6 +7937,8 @@ impl ControllerInner {
                 checkpoint_activity: Mutex::new(CheckpointActivity::Idle),
                 #[cfg(test)]
                 commit_step_hook: Mutex::new(None),
+                #[cfg(test)]
+                journal_step_hook: Mutex::new(None),
                 modified_output_endpoints,
                 bootstrapped_output_endpoints,
                 input_completions: Mutex::new(Vec::new()),
