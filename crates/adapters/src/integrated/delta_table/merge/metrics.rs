@@ -218,9 +218,9 @@ impl ConnectorMetrics for MergeMetrics {
             ),
             (
                 "output_connector_delta_merge_keys_not_found_total",
-                "Keys the lookup did not find in the target table. A delete of an absent row \
-                 is a no-op, so this is not an error, but a sustained rate means the table \
-                 has diverged from the view.",
+                "Changed keys the lookup did not find in the target table. This includes \
+                 inserts of new keys, which the connector looks up whenever the table held \
+                 data when it started, so a nonzero rate is normal.",
                 ValueType::Counter,
                 get(&self.keys_not_found),
             ),
@@ -359,7 +359,7 @@ impl ConnectorMetrics for MergeMetrics {
             name: "output_connector_delta_merge_flush_latency_microseconds",
             help: "Wall time of one merge-mode flush: the row lookup, the writes and the \
                    commit. The lookup dominates it, so this is where object-store latency \
-                   shows up -- the scanned and pruned counters cannot.",
+                   shows up; the scanned and pruned counters cannot.",
             snapshot: self.flush_latency.snapshot(),
         }]
     }

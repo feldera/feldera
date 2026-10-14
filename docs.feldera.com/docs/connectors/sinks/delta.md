@@ -108,17 +108,45 @@ The connector cannot write to a Delta table that sets `delta.columnMapping.mode`
 The pipeline fails to start with an error that names the table property.
 :::
 
+### Storage parameters
+
+Additional configuration options are defined for specific storage backends.  Refer to
+backend-specific documentation for details:
+
+* [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)
+* [Azure Blob Storage options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)
+* [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
+
+On S3 the connector commits with a conditional put, so one writer cannot
+overwrite another writer's commit. The S3-compatible store must support
+conditional put. Amazon S3 does; on a store that does not, two writers can
+overwrite each other's commit. DynamoDB-based locking
+(`AWS_S3_LOCKING_PROVIDER = 'dynamodb'`) is no longer supported; the connector
+logs an error and commits without it.
+
+### Views with unique keys
+
+If the SQL view contains a **unique key**—a set of columns that uniquely identify each record—the Delta Lake connector can optimize updates by combining a delete and insert with the same key into a single **atomic update**. In such cases, the connector emits a record with the `__feldera_op` field set to `'u'` (for **update**).
+
+To enable this optimization:
+
+* Use the `CREATE INDEX` statement to define the unique key on the view.
+* Set the connector's `index` property to reference this index.
+
+For more information, see the [documentation on views with unique keys](/connectors/unique_keys#views-with-unique-keys).
+
 ## Merge mode
 
 With `"update_mode": "merge"` the connector keeps the target table equal to the current
 contents of the view: one row per key, no metadata columns, no change history. There is no
 Spark merge job to run.
 
-It works by never rewriting a data file. A change to a row appends the new version and marks
+A flush never rewrites a data file. A change to a row appends the new version and marks
 the old one deleted in a [deletion
 vector](https://docs.delta.io/latest/delta-deletion-vectors.html) attached to the file that
-holds it, so the cost of a flush is proportional to the change, not to the size of the files
-being changed. One flush produces one commit, so a reader never sees half of one.
+holds it. To find the old row, the flush reads the key columns of the table; see [Flush
+cost](#flush-cost-and-how-to-size-it). One flush produces one commit, so a reader never sees
+half of one.
 
 ### Requirements
 
@@ -134,12 +162,15 @@ before any data moves.
 | At least one key column is stored in the data files | A key made entirely of partition columns leaves nothing in the file to read the key from, and would mean one partition directory per row |
 | `delta.enableChangeDataFeed` is off | A change data feed needs `_change_data` files that this connector does not write |
 | `delta.appendOnly` is off | Superseding a row means removing the old one |
+| The table uses only table features that delta-rs can write | Tables with row tracking, liquid clustering, UniForm (`icebergCompat*`), identity columns, type widening, in-commit timestamps or column mapping are refused. Databricks turns some of these on by default. Create the table without them, or remove them with `ALTER TABLE ... DROP FEATURE` |
+| A key column that is a partition column is not `BINARY` | delta-rs stores binary partition values as escaped text, so the key would not match |
 
 Merge mode also assumes the pipeline is the only process writing rows to the table.
-Maintenance is fine -- `OPTIMIZE` and `VACUUM` conflict with a flush and the connector
-retries -- but a second writer inserting rows is not: the connector locates the row to
-supersede in the snapshot it read, and an insert of the same key committed in between would
-leave two live rows for one key.
+Maintenance is fine: when an `OPTIMIZE` or `VACUUM` conflicts with a flush, the connector
+redoes the flush. Each redo uses one of the `max_retries` attempts, so leave `max_retries`
+unset in merge mode. A second writer that inserts rows is not fine. The connector finds the
+row to supersede in the snapshot it read, so an insert of the same key committed in between
+leaves two live rows for one key.
 
 On a table the connector creates, it enables deletion vectors itself. On a table that
 already exists it does not, and reports the statement to run:
@@ -162,6 +193,7 @@ row to supersede.
 |------|-----------------|
 | Scalars, except `INTERVAL` | Yes |
 | `ROW` of scalars | Yes |
+| `TINYINT UNSIGNED` to `BIGINT UNSIGNED` | No: Delta has no unsigned types. Cast to a signed type that holds the values |
 | `ARRAY` | No |
 | `MAP`, `VARIANT` | No: two values Feldera considers equal can be stored differently, so the connector could fail to find the row |
 
@@ -182,10 +214,10 @@ certain:
 A few things make the read wider than it needs to be, all worth knowing when a flush costs
 more than expected:
 
-- **A key that is not part of the table's clustering.** If changed keys are spread across the
+- A key that is not part of the table's clustering. If changed keys are spread across the
   whole table, every file's range contains some of them and nothing is skipped. Partitioning
   or `ZORDER`ing the table on the key is what makes pruning effective.
-- **The files the connector itself appends.** A flush writes a file holding the new versions
+- The files the connector itself appends. A flush writes a file holding the new versions
   of whatever keys changed, so if those keys are spread across the key space, that one file's
   key range spans the key space too, and no later flush can prune it. Clustering the table
   therefore only helps for as long as it lasts: every file appended since the last `OPTIMIZE`
@@ -193,11 +225,11 @@ more than expected:
   updates, pruning skipped no files at all and each flush read every file in the table. How
   often `OPTIMIZE` runs is what bounds that, which is a second reason to run it on a
   schedule.
-- **A `FLOAT` or `DOUBLE` key column.** Parquet and Delta leave `NaN` out of min/max
+- A `FLOAT` or `DOUBLE` key column. Parquet and Delta leave `NaN` out of min/max
   statistics, so a range test could skip a file that holds the key. Range pruning is
   therefore switched off for the whole key, and every file is read. Floating point makes a
   poor key in any case; use an exact type.
-- **A null key value.** Nulls are left out of min/max statistics too, so a null key sits below
+- A null key value. Nulls are left out of min/max statistics too, so a null key sits below
   the recorded range of every file. Range pruning is therefore switched off for any flush that
   changes a null-keyed row, and every file is read. Only that flush is affected; a nullable key
   column that holds no nulls costs nothing.
@@ -227,7 +259,7 @@ The connector exports these alongside the standard connector metrics.
 | `output_connector_delta_merge_tombstone_ratio_permille` | Superseded rows per thousand rows in the table. The signal for when to compact |
 | `output_connector_delta_merge_rows_appended_total`, `output_connector_delta_merge_rows_superseded_total` | Change volume, split by side |
 | `output_connector_delta_merge_keys_probed_total` | Changed keys whose row had to be located. Below the changed-key count by whatever the insert shortcut saved |
-| `output_connector_delta_merge_keys_not_found_total` | Keys the lookup did not find. Not an error, but a sustained rate means the table has diverged from the view |
+| `output_connector_delta_merge_keys_not_found_total` | Changed keys the lookup did not find. This includes inserts of new keys, which the connector looks up whenever the table held data when it started, so a nonzero rate is normal |
 | `output_connector_delta_merge_probe_files_scanned_total`, `output_connector_delta_merge_probe_files_pruned_total` | Whether file pruning is doing anything |
 | `output_connector_delta_merge_probe_row_groups_scanned_total`, `output_connector_delta_merge_probe_row_groups_pruned_total` | The same, within the files that are opened |
 | `output_connector_delta_merge_files_appended_total`, `output_connector_delta_merge_files_dropped_total` | Small-file growth, and the files reclaimed because every row in them was superseded |
@@ -237,9 +269,11 @@ The connector exports these alongside the standard connector metrics.
 | `output_connector_delta_merge_probe_key_bytes_read_total` | Key-column bytes the lookup read. Against `bytes_written_total`, the flush's read amplification |
 | `output_connector_delta_merge_compactions_total`, `output_connector_delta_merge_compaction_failures_total` | Maintenance runs, and how many failed. Only when `optimize_interval` is set |
 | `output_connector_delta_merge_flush_latency_microseconds` | Histogram of whole flushes. Where object-store latency shows up; no combination of the counters above reveals it |
-| `output_connector_delta_merge_probe_microseconds_total`, `..._append_...`, `..._deletion_vector_...`, `..._commit_...`, `..._log_scan_...`, `..._batch_walk_...` | Where flush time goes. Only successful flushes report them. At `threads` 1 they partition a flush and sum to what the latency histogram records for it; above 1 the phases a key range performs -- `batch_walk`, `probe` and `append` -- are summed across ranges that ran at once, so they measure work rather than elapsed time and can exceed the flush's latency |
+| `output_connector_delta_merge_probe_microseconds_total`, `..._append_...`, `..._deletion_vector_...`, `..._commit_...`, `..._log_scan_...`, `..._batch_walk_...` | Where flush time goes. Only successful flushes report them. At `threads` 1 they partition a flush and sum to what the latency histogram records for it; above 1 the phases a key range performs (`batch_walk`, `probe` and `append`) are summed across ranges that ran at once, so they measure work rather than elapsed time and can exceed the flush's latency |
 | `output_connector_delta_merge_reclaimed_rows_total` | Superseded rows that maintenance removed from storage |
 | `output_connector_delta_merge_reclaim_incomplete` | `1` while the last run ran out of time with files still mostly superseded. Sustained, reclamation is falling behind the writes |
+
+These counters start from zero each time the pipeline starts.
 
 ### Compaction is required
 
@@ -263,6 +297,12 @@ more often than that interval. How it is scheduled:
 - Runs start after a flush, so a pipeline that stops writing stops compacting.
 - A run replaces files rather than deleting them, so `VACUUM` still reclaims the space, as
   described below.
+- Each file a run rewrites is its own commit. A flush that changes the same file at the
+  same time is redone, so on a busy table a run can slow the flushes down.
+
+Do not set `optimize_interval` when anything else compacts the table, for example
+Databricks auto compaction or predictive optimization. delta-rs does not detect two
+compactions of the same file, and the rows of that file then appear twice.
 
 Otherwise, maintain the table yourself. `OPTIMIZE` alone is not enough: it plans on file
 size, bin-packing files below the target size, so a file that has reached that size is never
@@ -289,13 +329,18 @@ marked deleted. Never pass `full=True` to it.
 
 ### Flush cost, and how to size it
 
-A flush costs one pass over the table's file list, plus one row-group read for every distinct
-file its keys land in. Two things follow, and both matter more than the pipeline's row rate:
+A flush reads the table's file list. Then, for every file whose key range can hold a changed
+key, it reads the file's footer and the key column of the row groups that can hold one. When
+the changed keys are spread over the whole key range, every file can hold one, so a flush of
+ten keys costs about as much as a flush of ten thousand: about two object-store requests per
+data file. `threads` above 1 splits the lookup into key ranges, and each range checks every
+file, so on such a table it multiplies those requests. Two things keep the cost down, and
+both matter more than the pipeline's row rate:
 
 | Lever | Why it moves the cost |
 |-------|-----------------------|
 | Output buffering | Merge mode writes at least one data file per flush, and the pass over the file list is linear in the file count. Buffering cuts the number of flushes, which cuts both terms at once |
-| `OPTIMIZE` | Fewer, larger files. The lookup reads one row group of one column, so a file 100x larger costs about 3x more to search -- far less than searching 100 files |
+| `OPTIMIZE` | Fewer, larger files. The lookup reads one row group of one column, so a file 100x larger costs about 3x more to search, far less than searching 100 files |
 
 Output buffering is a requirement of merge mode rather than a tuning knob. Measured on a local
 table, an unbuffered flush of 16 keys cost 4.5 ms per record where a buffered flush of 1000
@@ -314,34 +359,23 @@ Merge mode is not exactly-once, and the connector is still not fault tolerant. A
 restart the connector replays whatever the pipeline replays, and because a Feldera change
 states the final value or a deletion per key, re-applying one converges: it marks the row it
 previously wrote as deleted and appends an identical one. The cost is one extra superseded
-row per replayed row, which the next compaction reclaims.
+row per replayed row, which the next compaction reclaims. While the replay runs, readers can
+see older values.
 
-### Storage parameters
+The table stops matching the view in these cases:
 
-Additional configuration options are defined for specific storage backends.  Refer to
-backend-specific documentation for details:
+| Case | What happens | What to do |
+|------|--------------|------------|
+| A batch still fails after `max_retries` | The batch is dropped and the connector reports an error | Leave `max_retries` unset, or rebuild the table (see below) |
+| The connector is paused | The changes made while it is paused are dropped | Rebuild the table after you resume it |
+| The `index` columns are not unique | A key with more than one value in a step is skipped and reported as a `delta_uniqueness_violation` error. The table keeps that key's previous row | Index on a key that is unique |
+| You change the view's query | The pipeline sends the view's new contents but no deletes for rows that left it, so those rows stay | Rebuild the table |
 
-* [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)
-* [Azure Blob Storage options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)
-* [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
-
-On S3 the connector commits with a conditional put, so one writer cannot
-overwrite another writer's commit. The S3-compatible store must support
-conditional put. Amazon S3 does; on a store that does not, two writers can
-overwrite each other's commit. DynamoDB-based locking
-(`AWS_S3_LOCKING_PROVIDER = 'dynamodb'`) is no longer supported; the connector
-logs an error and commits without it.
-
-### Views with unique keys
-
-If the SQL view contains a **unique key**—a set of columns that uniquely identify each record—the Delta Lake connector can optimize updates by combining a delete and insert with the same key into a single **atomic update**. In such cases, the connector emits a record with the `__feldera_op` field set to `'u'` (for **update**).
-
-To enable this optimization:
-
-* Use the `CREATE INDEX` statement to define the unique key on the view.
-* Set the connector's `index` property to reference this index.
-
-For more information, see the [documentation on views with unique keys](/connectors/unique_keys#views-with-unique-keys).
+To rebuild the table, start the connector with `mode: truncate` and `send_snapshot: true`.
+With `mode: truncate`, every start that is not a resume of the same configuration re-creates
+the table. That includes a resume after you change any of this connector's settings. Re-creating
+the table resets its partitioning and properties and turns on deletion vectors, and without
+`send_snapshot: true` the table then holds only the keys that change after the start.
 
 ## Data type mapping
 
@@ -468,9 +502,9 @@ Define the key with `CREATE INDEX` and set the connector's `index` property to t
 Each thread writes its own files, so both the memory a write needs and the uploads it has in flight scale with
 `threads`: a thread holds the Parquet file it is building, and the buffers that feed it, until the file is
 uploaded. On a twenty-million-row backfill of fifty columns, `threads` 8 peaked between 2.5 GB and 3.8 GB above
-`threads` 1 across runs -- the spread is wide because peak memory also depends on what the pipeline itself is
+`threads` 1 across runs. The spread is wide because peak memory also depends on what the pipeline itself is
 holding, so treat this as a few hundred megabytes per added thread and measure your own workload rather than
-taking the figure. **Raise the pipeline's memory limit along with `threads`**, or a thread count that writes faster
+taking the figure. Raise the pipeline's memory limit along with `threads`, or a thread count that writes faster
 will run out of memory instead.
 
 On a constrained network path a high thread count can saturate the link before it saturates the writers, which
@@ -479,13 +513,13 @@ shows up as a slower write rather than a faster one.
 Threads speed a backfill up sublinearly, because a thread spends most of its time serializing rows and the
 threads compete for the same cores. On a twelve-core machine, a ten-million-row backfill of fifty columns flushed
 in 65.4 s at `threads` 1, 24.2 s at 4 (2.7x) and 18.1 s at 8 (3.6x), each the mean of three runs. The CPU the
-flush spends rises with it -- 15% above `threads` 1 at 4, and 52% at 8 -- so the gain costs cores and memory that
+flush spends rises with it (15% above `threads` 1 at 4, and 52% at 8), so the gain costs cores and memory that
 the rest of the pipeline could use. Raise `threads` a step at a time and keep the setting that stops improving
 throughput; the point where it stops depends on how many cores the pipeline itself needs.
 
 In `merge` mode a thread also needs enough rows to be worth a file of its own, so the connector splits a batch only
 when each thread would get a substantial share of it. A steady stream of small transactions therefore keeps writing
-one file per flush whatever `threads` says, and only a large change -- a backfill, typically -- is split.
+one file per flush whatever `threads` says, and only a large change, typically a backfill, is split.
 
 A backfill is the one flush the connector cannot size that way, because no flush has yet measured what a row costs,
 so it splits into as many ranges as `threads` allows. Each range ends on a partially filled file, so a high setting

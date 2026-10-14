@@ -560,9 +560,10 @@ bytes = key_column_bytes(candidate row groups)   # lookup
 
 No term is proportional to the size of the data files being modified.
 
-Two things drive cost, and neither is the shape of the data files. Key column width sets
-the lookup, and tombstone accumulation sets both the vector rewrite cost and the compaction
-cadence. File size, partition granularity, and file count do not move the numbers.
+Key column width sets the bytes the lookup reads, and tombstone accumulation sets both the
+vector rewrite cost and the compaction cadence. File size does not move the numbers. File
+count does: every candidate file costs a footer read, and with scattered keys every file is a
+candidate (see below).
 
 Batch size matters only indirectly: the output buffer consolidates repeated updates to the
 same key before the connector sees them, so a
