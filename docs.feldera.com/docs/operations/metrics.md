@@ -98,7 +98,7 @@ which Feldera is built.
 | <a name='dbsp_runtime_elapsed_seconds_total'>`dbsp_runtime_elapsed_seconds_total`</a> |counter | Time elapsed while the pipeline is executing a step, multiplied by the number of foreground and background threads, in seconds. |
 | <a name='dbsp_step_latency_seconds'>`dbsp_step_latency_seconds`</a> |histogram | Latency of DBSP steps over the last 60 seconds or 1000 steps, whichever is less, in seconds |
 | <a name='dbsp_steps_total'>`dbsp_steps_total`</a> |counter | Total number of DBSP steps executed. |
-| <a name='max_rss_bytes'>`max_rss_bytes`</a> |gauge | Configured maximum process RSS in bytes. A value of 0 means no limit is configured. |
+| <a name='max_rss_bytes'>`max_rss_bytes`</a> |gauge | Memory limit in bytes: the configured limit or the memory available to the process, whichever is smaller, minus memory reserved for other components. A value of 0 means there is no limit. |
 | <a name='memory_pressure'>`memory_pressure`</a> |gauge | Current memory pressure level in [0..3]: low=0, moderate=1, high=2, critical=3. |
 | <a name='memory_pressure_epoch'>`memory_pressure_epoch`</a> |gauge | Monotonic counter incremented whenever memory pressure transitions to high/critical. |
 | <a name='output_stall_seconds'>`output_stall_seconds`</a> |gauge | If the pipeline is currently stalled because one or more output connectors' output buffers were full, this is the time in seconds for which it has been stalled.<br/><br/>If the pipeline is not currently stalled, this is zero.<br/><br/>If this is nonzero, then the output connectors causing the stall can be identified by observing which values of `output_connector_queued_records` are greater than or equal to the configured maximum (which defaults to 1,000,000). |

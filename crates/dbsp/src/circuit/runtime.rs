@@ -12,7 +12,7 @@ use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
 use crate::trace::BatchLayout;
-use crate::utils::process_rss_bytes;
+use crate::utils::{available_memory_bytes, process_rss_bytes};
 use crate::{
     DetailedError,
     storage::{
@@ -284,6 +284,20 @@ struct RuntimeStorage {
     locked_directory: LockedDirectory,
 }
 
+/// Stored in `RuntimeInner::max_rss` to mean "no memory limit".
+const UNLIMITED_RSS: u64 = u64::MAX;
+
+/// Returns the circuit's memory limit: the smaller of the `configured` budget
+/// and the `available` memory, minus the memory `reserved` outside the circuit.
+///
+/// The reservation never takes more than half of the available memory, so a
+/// container smaller than the reservation still leaves the circuit a limit.
+fn circuit_max_rss(configured: Option<u64>, available: Option<u64>, reserved: u64) -> Option<u64> {
+    let from_configured = configured.map(|bytes| bytes.saturating_sub(reserved));
+    let from_available = available.map(|bytes| bytes - reserved.min(bytes / 2));
+    from_configured.into_iter().chain(from_available).min()
+}
+
 struct RuntimeInner {
     layout: Layout,
     mode: Mode,
@@ -291,8 +305,16 @@ struct RuntimeInner {
     allow_input_during_commit: bool,
     dev_tweaks: DevTweaks,
 
-    /// User-configured process memory limit.
-    max_rss: Option<u64>,
+    /// Process memory budget from the circuit config.
+    configured_max_rss: Option<u64>,
+
+    /// Part of the budget used outside the circuit.
+    reserved_memory: u64,
+
+    /// The circuit's memory limit in bytes, or [`UNLIMITED_RSS`] if there is
+    /// none. See [`circuit_max_rss`]. The RSS monitor refreshes it every
+    /// second, so it picks up changes to the container's memory limit.
+    max_rss: AtomicU64,
 
     /// Current process RSS.
     process_rss: AtomicU64,
@@ -624,7 +646,12 @@ impl RuntimeInner {
             step_size: config.step_size,
             allow_input_during_commit: config.allow_input_during_commit,
             dev_tweaks: config.dev_tweaks,
-            max_rss: config.max_rss_bytes,
+            configured_max_rss: config.max_rss_bytes,
+            reserved_memory: config.reserved_memory_bytes,
+            max_rss: AtomicU64::new(
+                circuit_max_rss(config.max_rss_bytes, None, config.reserved_memory_bytes)
+                    .unwrap_or(UNLIMITED_RSS),
+            ),
             process_rss: AtomicU64::new(process_rss_bytes().unwrap_or_default()),
             memory_pressure: AtomicU8::new(MemoryPressure::Low as u8),
             memory_pressure_epoch: AtomicU64::new(0),
@@ -681,13 +708,48 @@ impl RuntimeInner {
         MemoryPressure::try_from(self.memory_pressure.load(Ordering::Relaxed)).unwrap()
     }
 
+    fn max_rss(&self) -> Option<u64> {
+        Some(self.max_rss.load(Ordering::Relaxed)).filter(|&bytes| bytes != UNLIMITED_RSS)
+    }
+
+    /// Recomputes the circuit's memory limit from the `available` memory, and
+    /// logs the new limit if it changed.
+    fn update_max_rss(&self, available: Option<u64>) {
+        let max_rss = circuit_max_rss(self.configured_max_rss, available, self.reserved_memory);
+        let previous = self
+            .max_rss
+            .swap(max_rss.unwrap_or(UNLIMITED_RSS), Ordering::Relaxed);
+        if previous != max_rss.unwrap_or(UNLIMITED_RSS) {
+            let mb = |bytes: Option<u64>| {
+                bytes.map_or("none".to_string(), |bytes| {
+                    format!("{} MB", bytes / 1_000_000)
+                })
+            };
+            info!(
+                "process memory limit set to {} (configured: {}, available: {}, reserved: {})",
+                mb(max_rss),
+                mb(self.configured_max_rss),
+                mb(available),
+                mb(Some(self.reserved_memory))
+            );
+            if available.is_some_and(|available| self.reserved_memory > available / 2) {
+                warn!(
+                    "reserved memory ({}) exceeds half of the available memory ({}); \
+reserving only half",
+                    mb(Some(self.reserved_memory)),
+                    mb(available)
+                );
+            }
+        }
+    }
+
     /// Compute memory pressure based on the current process RSS.
     ///
     /// Final memory pressure is computed taking into account the previous memory pressure level as well.
     fn raw_memory_pressure(&self, process_rss: u64) -> MemoryPressure {
         let process_rss = process_rss as f64;
 
-        let Some(max_rss) = self.max_rss else {
+        let Some(max_rss) = self.max_rss() else {
             return MemoryPressure::Low;
         };
 
@@ -857,6 +919,7 @@ impl Runtime {
 
             let mut pressure_span = None;
             while !Runtime::kill_in_progress() {
+                runtime.inner().update_max_rss(available_memory_bytes());
                 let process_rss = process_rss_bytes().unwrap_or_default();
                 runtime
                     .inner()
@@ -1283,8 +1346,11 @@ impl Runtime {
         self.inner().memory_pressure()
     }
 
+    /// Returns the circuit's memory limit, which is the smaller of the
+    /// configured budget and the memory available to the process, minus the
+    /// memory reserved outside the circuit.
     pub fn max_rss_bytes(&self) -> Option<u64> {
-        self.inner().max_rss
+        self.inner().max_rss()
     }
 
     pub fn memory_pressure_epoch(&self) -> u64 {
@@ -2044,6 +2110,16 @@ pub(crate) mod tests {
         }
     }
 
+    fn set_mock_available_memory_bytes(bytes: Option<u64>) {
+        // Safety: We assume that only DBSP code accesses the environment variables.
+        unsafe {
+            match bytes {
+                Some(bytes) => std::env::set_var("MOCK_AVAILABLE_MEMORY_BYTES", bytes.to_string()),
+                None => std::env::remove_var("MOCK_AVAILABLE_MEMORY_BYTES"),
+            }
+        }
+    }
+
     struct MockRssVarGuard;
 
     impl Drop for MockRssVarGuard {
@@ -2051,6 +2127,7 @@ pub(crate) mod tests {
             // Safety: We assume that only DBSP code accesses the environment variables.
             unsafe {
                 std::env::remove_var("MOCK_PROCESS_RSS_BYTES");
+                std::env::remove_var("MOCK_AVAILABLE_MEMORY_BYTES");
             }
         }
     }
@@ -2563,6 +2640,98 @@ pub(crate) mod tests {
 
         sleep(Duration::from_millis(100));
         hruntime.kill().unwrap();
+    }
+
+    /// Waits for the runtime's memory limit and memory pressure to reach the
+    /// expected values.
+    fn wait_for_max_rss(runtime: &Runtime, max_rss: Option<u64>, pressure: MemoryPressure) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while runtime.max_rss_bytes() != max_rss || runtime.current_memory_pressure() != pressure {
+            assert!(
+                Instant::now() < deadline,
+                "expected memory limit {max_rss:?} and pressure {pressure:?}, got {:?} and {:?}",
+                runtime.max_rss_bytes(),
+                runtime.current_memory_pressure()
+            );
+            sleep(Duration::from_millis(100));
+        }
+    }
+
+    /// The memory limit tracks the memory available to the process, for
+    /// example when the container's memory limit changes at runtime.
+    #[test]
+    fn max_rss_follows_available_memory() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        let _clear_mock_rss = MockRssVarGuard;
+        set_mock_process_rss_bytes(4 * GIB);
+
+        let config = CircuitConfig::with_workers(1).with_max_rss_bytes(Some(10 * GIB));
+        let (circuit, _input_handle) =
+            Runtime::init_circuit(config, |circuit| Ok(circuit.add_input_zset::<u64>().1)).unwrap();
+        let runtime = circuit.runtime();
+        wait_for_max_rss(runtime, Some(10 * GIB), MemoryPressure::Low);
+
+        // Available memory drops below the configured limit and becomes the
+        // new limit. Using 4 GiB out of 4.3 GiB is high pressure.
+        set_mock_available_memory_bytes(Some(43 * GIB / 10));
+        wait_for_max_rss(runtime, Some(43 * GIB / 10), MemoryPressure::High);
+
+        // Available memory rises above the configured limit, so the
+        // configured limit applies again.
+        set_mock_available_memory_bytes(Some(20 * GIB));
+        wait_for_max_rss(runtime, Some(10 * GIB), MemoryPressure::Low);
+    }
+
+    /// With no configured limit, the memory available to the process becomes
+    /// the limit.
+    #[test]
+    fn max_rss_defaults_to_available_memory() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        let _clear_mock_rss = MockRssVarGuard;
+        set_mock_process_rss_bytes(4 * GIB);
+
+        let config = CircuitConfig::with_workers(1);
+        let (circuit, _input_handle) =
+            Runtime::init_circuit(config, |circuit| Ok(circuit.add_input_zset::<u64>().1)).unwrap();
+        let runtime = circuit.runtime();
+        wait_for_max_rss(runtime, None, MemoryPressure::Low);
+
+        set_mock_available_memory_bytes(Some(43 * GIB / 10));
+        wait_for_max_rss(runtime, Some(43 * GIB / 10), MemoryPressure::High);
+    }
+
+    /// Memory reserved outside the circuit comes out of the budget, whether the
+    /// budget is the configured limit or the available memory.
+    #[test]
+    fn max_rss_excludes_reserved_memory() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        let _clear_mock_rss = MockRssVarGuard;
+        set_mock_process_rss_bytes(GIB / 10);
+        set_mock_available_memory_bytes(Some(20 * GIB));
+
+        // A 10 GiB budget with 2 GiB reserved leaves 8 GiB for the circuit.
+        let config = CircuitConfig::with_workers(1)
+            .with_max_rss_bytes(Some(10 * GIB))
+            .with_reserved_memory_bytes(2 * GIB);
+        let (circuit, _input_handle) =
+            Runtime::init_circuit(config, |circuit| Ok(circuit.add_input_zset::<u64>().1)).unwrap();
+        let runtime = circuit.runtime();
+        wait_for_max_rss(runtime, Some(8 * GIB), MemoryPressure::Low);
+
+        // The container shrinks to 6 GiB, and the 2 GiB stay reserved.
+        set_mock_available_memory_bytes(Some(6 * GIB));
+        wait_for_max_rss(runtime, Some(4 * GIB), MemoryPressure::Low);
+
+        // The container shrinks below the reservation. The reservation takes
+        // at most half, so the circuit keeps a limit and pressure stays low.
+        set_mock_available_memory_bytes(Some(GIB));
+        wait_for_max_rss(runtime, Some(GIB / 2), MemoryPressure::Low);
     }
 
     /// Test the memory pressure thresholds and how merger threads behave

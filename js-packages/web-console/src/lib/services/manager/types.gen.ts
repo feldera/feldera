@@ -4259,6 +4259,10 @@ export type PipelineConfig = {
    * When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
    * latter is used as the effective memory cap for the pipeline.
    *
+   * The pipeline caps this limit at the memory available to it, which is the
+   * host's memory or the container's memory limit, whichever is smaller. It
+   * rechecks the available memory every second.
+   *
    * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
    * for more details.
    */
@@ -5736,6 +5740,10 @@ export type RuntimeConfig = {
    *
    * When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
    * latter is used as the effective memory cap for the pipeline.
+   *
+   * The pipeline caps this limit at the memory available to it, which is the
+   * host's memory or the container's memory limit, whichever is smaller. It
+   * rechecks the available memory every second.
    *
    * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
    * for more details.

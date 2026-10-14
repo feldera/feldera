@@ -346,6 +346,12 @@ pub struct CircuitConfig {
     /// Used to calculate the memory pressure level.
     pub max_rss_bytes: Option<u64>,
 
+    /// Part of the process memory, in bytes, that other parts of the process
+    /// (such as DataFusion) use outside the circuit. The circuit's memory
+    /// limit is `max_rss_bytes`, or the memory available to the process if
+    /// lower, minus this amount.
+    pub reserved_memory_bytes: u64,
+
     /// Optionally, CPU numbers for pinning the worker threads.
     pub pin_cpus: Vec<usize>,
 
@@ -613,6 +619,7 @@ impl CircuitConfig {
         Self {
             layout: Layout::new_solo(n),
             max_rss_bytes: None,
+            reserved_memory_bytes: 0,
             pin_cpus: Vec::new(),
             mode: Mode::Ephemeral,
             step_size: StepSize::default(),
@@ -625,6 +632,11 @@ impl CircuitConfig {
 
     pub fn with_max_rss_bytes(mut self, max_rss: Option<u64>) -> Self {
         self.max_rss_bytes = max_rss;
+        self
+    }
+
+    pub fn with_reserved_memory_bytes(mut self, reserved: u64) -> Self {
+        self.reserved_memory_bytes = reserved;
         self
     }
 

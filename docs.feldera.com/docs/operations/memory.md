@@ -20,10 +20,18 @@ multi-host deployment each pipeline process that finds neither
 parameter set derives `max_rss_mb` from its own host's available
 memory at startup.
 
-When either `max_rss_mb` or `resources.memory_mb_max` is configured, the pipeline reports its current
-memory pressure level (`low`, `moderate`, `high`, or `critical`) via the
-[`memory_pressure` metric](/operations/metrics). High or critical pressure indicates that memory usage
-is nearing the configured limit and may result in significant performance degradation. In such cases,
+In every case, the pipeline caps its memory limit at the memory
+available to it, which is the host's memory or the container's memory
+limit, whichever is smaller.  The pipeline rechecks this every second,
+so if the container's memory limit changes while the pipeline runs,
+the pipeline adjusts its limit to match.
+
+The pipeline reports its current memory pressure level (`low`,
+`moderate`, `high`, or `critical`) via the
+[`memory_pressure` metric](/operations/metrics), and its memory limit
+via the [`max_rss_bytes` metric](/operations/metrics). High or critical
+pressure indicates that memory usage is nearing the limit and may
+result in significant performance degradation. In such cases,
 increasing available memory is recommended.
 
 ## Pipeline memory breakdown

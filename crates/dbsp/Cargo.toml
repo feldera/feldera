@@ -76,6 +76,7 @@ serde_json = { workspace = true }
 ptr_meta = { workspace = true }
 feldera-samply = { workspace = true }
 feldera-types = { workspace = true }
+feldera-observability = { workspace = true }
 feldera-macros = { workspace = true }
 libc = { workspace = true }
 zip = { workspace = true }
