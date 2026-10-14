@@ -530,7 +530,7 @@ impl NatsReader {
                         );
                         // Wait out the backoff, but notice a Disconnect
                         // during it instead of only checking once up front:
-                        // the wait can now reach retry_max_interval_secs
+                        // the wait can now reach retry_max_interval
                         // (300s by default), long enough that waiting it out
                         // unconditionally would make the connector
                         // unresponsive to a stop request for most of that
