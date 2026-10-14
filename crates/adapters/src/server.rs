@@ -105,7 +105,6 @@ use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
-use std::ffi::OsStr;
 use std::hash::{BuildHasherDefault, DefaultHasher, Hash, Hasher};
 use std::io::ErrorKind;
 use std::mem::take;
@@ -586,11 +585,7 @@ impl ServerState {
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct ServerArgs {
-    /// Pipeline configuration YAML or JSON file.
-    ///
-    /// We are transitioning from YAML to JSON for configuration.  If
-    /// `config_file` ends in `.yaml` then the server will first try to read the
-    /// same file with a `.json` extension.
+    /// Pipeline configuration JSON file.
     #[arg(short, long)]
     config_file: String,
 
@@ -1173,27 +1168,14 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
         Ok(string)
     }
 
-    fn parse_yaml_config(config_file: &Path) -> Result<PipelineConfig, ControllerError> {
-        serde_yaml::from_str(&read_config_file_as_string(config_file)?)
-            .map_err(|e| ControllerError::pipeline_config_parse_error(&e))
-    }
-
-    fn parse_json_config(config_file: &Path) -> Result<PipelineConfig, ControllerError> {
-        serde_json::from_str(&read_config_file_as_string(config_file)?)
-            .map_err(|e| ControllerError::pipeline_config_parse_error(&e))
-    }
-
     let path = config_file.as_ref();
-    let mut config = if path.extension() == Some(OsStr::new("json")) {
-        parse_json_config(path)
-    } else {
-        let json_path = path.with_extension("json");
-        if json_path.exists() {
-            parse_json_config(&json_path)
-        } else {
-            parse_yaml_config(path)
-        }
-    }?;
+    let mut config: PipelineConfig = serde_json::from_str(&read_config_file_as_string(path)?)
+        .map_err(|e| {
+            ControllerError::pipeline_config_parse_error(&format!(
+                "configuration file '{}' must be JSON (YAML is no longer read): {e}",
+                path.display()
+            ))
+        })?;
 
     // This is run in the pipeline process itself, so on a multihost deployment every
     // host derives the limit from its own machine.
@@ -3895,7 +3877,7 @@ mod test_http_helpers {
     };
     use feldera_types::{
         completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
-        config::ProgramIr,
+        config::{PipelineConfig, ProgramIr},
         runtime_status::{BootstrapPolicy, RuntimeStatus},
         transaction::ConcurrentBootstrapPhase,
     };
@@ -3911,6 +3893,37 @@ mod test_http_helpers {
     };
     use tempfile::{NamedTempFile, TempDir};
     use uuid::Uuid;
+
+    /// Writes a test configuration, given in YAML for readability, as the
+    /// JSON file the pipeline reads. The YAML goes through `PipelineConfig`,
+    /// which reads an empty `inputs:` as an empty map where JSON would not.
+    fn json_config_file(config_str: &str) -> NamedTempFile {
+        let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
+        let mut config_file = NamedTempFile::new().unwrap();
+        config_file
+            .write_all(&serde_json::to_vec(&config).unwrap())
+            .unwrap();
+        config_file
+    }
+
+    /// The configuration file is read as JSON whatever its name: the YAML
+    /// fallback for older launchers is gone, and the error says so and
+    /// names the file.
+    #[test]
+    fn parse_config_reads_json_only() {
+        let config_str = "name: test\ninputs:\noutputs:\n";
+        let mut yaml_file = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
+        yaml_file.write_all(config_str.as_bytes()).unwrap();
+        let error = parse_config(yaml_file.path()).unwrap_err().to_string();
+        assert!(
+            error.contains(&yaml_file.path().display().to_string()),
+            "{error}"
+        );
+        assert!(error.contains("must be JSON"), "{error}");
+        let json_file = json_config_file(config_str);
+        let config = parse_config(json_file.path()).unwrap();
+        assert_eq!(config.name.as_deref(), Some("test"));
+    }
 
     /// A successful suspend terminates the circuit before the server reports
     /// `PipelinePhase::Suspended`, so `terminated_status` must report a clean
@@ -4038,8 +4051,7 @@ outputs:
 "#,
             storage_dir.display()
         );
-        let mut config_file = NamedTempFile::new().unwrap();
-        config_file.write_all(config_str.as_bytes()).unwrap();
+        let config_file = json_config_file(&config_str);
         let config = parse_config(config_file.path().display().to_string()).unwrap();
         let builder = ControllerBuilder::new(&config).unwrap();
 
@@ -4129,8 +4141,7 @@ outputs:
 "#,
             storage_dir.display()
         );
-        let mut config_file = NamedTempFile::new().unwrap();
-        config_file.write_all(config_str.as_bytes()).unwrap();
+        let config_file = json_config_file(&config_str);
         let config = parse_config(config_file.path().display().to_string()).unwrap();
         let builder = ControllerBuilder::new(&config).unwrap();
 
@@ -4396,8 +4407,7 @@ outputs:
             + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + Sync,
     {
-        let mut config_file = NamedTempFile::new().unwrap();
-        config_file.write_all(config_str.as_bytes()).unwrap();
+        let config_file = json_config_file(config_str);
 
         println!("Creating HTTP server");
 

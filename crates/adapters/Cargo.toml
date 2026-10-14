@@ -108,7 +108,6 @@ semver = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_dynamo = { workspace = true, optional = true }
 erased-serde = { workspace = true }
-serde_yaml = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
 serde_urlencoded = { workspace = true }
 form_urlencoded = { workspace = true }
@@ -262,6 +261,7 @@ signal-hook = { workspace = true }
 vergen-gitcl = { workspace = true }
 
 [dev-dependencies]
+serde_yaml = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 # Test key generation only; runtime signing goes through aws-lc-rs.
 nkeys = { workspace = true }
