@@ -4,36 +4,41 @@ use super::util;
 use crate::test::mock_input_pipeline;
 use async_nats::jetstream;
 use feldera_types::program_schema::Relation;
+use serde_json::json;
 use std::time::Duration;
 
 // ---------------------------------------------------------------------------
 // Configuration Validation
 // ---------------------------------------------------------------------------
 
-/// Builds a NATS input config with `field_line` inserted at the transport
+/// Builds a NATS input config with `key: value` inserted at the transport
 /// config level, and runs it through configuration validation.
-fn validate_config_with(field_line: &str) -> Result<(), String> {
-    let config_str = format!(
-        r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: nats://127.0.0.1:4222
-        stream_name: some_stream
-        {field_line}
-        consumer_config:
-            deliver_policy: All
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-    );
+fn validate_config_with(key: &str, value: serde_json::Value) -> Result<(), String> {
+    let mut config = json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "nats_input",
+            "config": {
+                "connection_config": {
+                    "server_url": "nats://127.0.0.1:4222",
+                },
+                "stream_name": "some_stream",
+                "consumer_config": {
+                    "deliver_policy": "All",
+                },
+            },
+        },
+        "format": {
+            "name": "json",
+            "config": {
+                "update_format": "raw",
+            },
+        },
+    });
+    config["transport"]["config"][key] = value;
 
     mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
-        serde_yaml::from_str(&config_str).unwrap(),
+        serde_json::from_value(config).unwrap(),
         Relation::empty(),
     )
     .map(|_| ())
@@ -47,13 +52,13 @@ format:
 fn test_nats_inactivity_timeout_below_one_second_rejected() {
     // `500ms` is the case a zero check would miss: the setting now holds a
     // `Duration`, so "below one second" is a wider set than "zero".
-    for field_line in [
-        "inactivity_timeout: 0s",
-        "inactivity_timeout: 500ms",
-        "inactivity_timeout_secs: 0",
+    for (key, value) in [
+        ("inactivity_timeout", json!("0s")),
+        ("inactivity_timeout", json!("500ms")),
+        ("inactivity_timeout_secs", json!(0)),
     ] {
-        let err_msg = validate_config_with(field_line)
-            .expect_err(&format!("Expected `{field_line}` to be rejected"));
+        let err_msg = validate_config_with(key, value.clone())
+            .expect_err(&format!("Expected `{key}: {value}` to be rejected"));
         // Both spellings reach one setting, so the error names that setting
         // rather than the key the user happened to type.
         assert!(
@@ -70,13 +75,13 @@ fn test_nats_inactivity_timeout_below_one_second_rejected() {
 fn test_nats_retry_interval_below_one_second_rejected() {
     // `500ms` is the case a zero check would miss: the setting now holds a
     // `Duration`, so "below one second" is a wider set than "zero".
-    for field_line in [
-        "retry_interval: 0s",
-        "retry_interval: 500ms",
-        "retry_interval_secs: 0",
+    for (key, value) in [
+        ("retry_interval", json!("0s")),
+        ("retry_interval", json!("500ms")),
+        ("retry_interval_secs", json!(0)),
     ] {
-        let err_msg = validate_config_with(field_line)
-            .expect_err(&format!("Expected `{field_line}` to be rejected"));
+        let err_msg = validate_config_with(key, value.clone())
+            .expect_err(&format!("Expected `{key}: {value}` to be rejected"));
         // Both spellings reach one setting, so the error names that setting
         // rather than the key the user happened to type.
         assert!(
