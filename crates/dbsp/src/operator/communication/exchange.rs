@@ -2477,8 +2477,7 @@ fn ping_interval() -> Duration {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
-    use crossbeam::channel::{Select, unbounded};
+mod tests {
     use feldera_storage::tokio::TOKIO;
     use feldera_types::config::DevTweaks;
     use itertools::Itertools;
@@ -2487,7 +2486,7 @@ pub(crate) mod tests {
     use crate::{
         Circuit, RootCircuit,
         circuit::{
-            CircuitConfig, Layout, Runtime, RuntimeHandle,
+            Runtime,
             runtime::{WorkerLocation, WorkerLocations},
             schedule::{DynamicScheduler, Scheduler},
         },
@@ -2497,13 +2496,9 @@ pub(crate) mod tests {
         },
         storage::file::{to_bytes, to_bytes_dyn},
         trace::aligned_deserialize,
-        utils::test::init_test_logger,
+        utils::test::{init_test_logger, multihost::run_on_hosts},
     };
-    use std::{
-        iter::zip,
-        net::TcpListener,
-        sync::{Arc, atomic::Ordering},
-    };
+    use std::sync::{Arc, atomic::Ordering};
 
     /// Number of rounds for exchange.
     ///
@@ -2544,133 +2539,14 @@ pub(crate) mod tests {
         });
     }
 
-    /// Runs `circuit` on every worker of a runtime and waits for all of them to
-    /// finish.
-    ///
-    /// With more than one host, this starts one runtime per host in this
-    /// process, connected over localhost TCP, the way a multihost pipeline's
-    /// hosts are.
-    ///
-    /// # Arguments
-    ///
-    /// * `workers` - total number of workers, across all hosts.
-    /// * `hosts` - number of hosts to spread the workers across.
-    /// * `circuit` - function that each worker runs.
-    ///
-    /// # Returns
-    ///
-    /// Nothing.  Panics if a worker panics.
-    pub(crate) fn test_circuit(
-        workers: usize,
-        hosts: usize,
-        circuit: impl FnOnce() + Copy + Clone + Send + Sync + 'static,
-    ) {
-        match hosts {
-            0 => unreachable!(),
-            1 => {
-                let hruntime = Runtime::run(workers, move |_parker| circuit())
-                    .expect("failed to start runtime");
-
-                join_runtimes(vec![hruntime]);
-            }
-            _ => {
-                assert!(workers >= hosts);
-
-                // Bind some listening sockets.
-                let exchange_listeners = (0..hosts)
-                    .map(|_| {
-                        TcpListener::bind("127.0.0.1:0")
-                            .expect("should be able to bind a port on localhost")
-                    })
-                    .collect_vec();
-
-                // Assemble the listening sockets' addresses into something we can pass
-                // to `Layout::new_multihost`.
-                let params = exchange_listeners
-                    .iter()
-                    .enumerate()
-                    .map(|(index, listener)| {
-                        (
-                            listener
-                                .local_addr()
-                                .expect("should be able to get local address"),
-                            workers / hosts + (index < workers % hosts) as usize,
-                        )
-                    })
-                    .collect_vec();
-
-                // Create the runtimes.
-                let mut runtimes = Vec::with_capacity(hosts);
-                for ((local_address, _), exchange_listener) in
-                    zip(params.iter(), exchange_listeners)
-                {
-                    let cconf = CircuitConfig::from(
-                        Layout::new_multihost(&params, *local_address).unwrap(),
-                    )
-                    .with_exchange_listener(exchange_listener);
-
-                    runtimes.push(
-                        Runtime::run(cconf, move |_parker| circuit())
-                            .expect("failed to start runtime"),
-                    );
-                }
-
-                join_runtimes(runtimes);
-            }
-        }
-    }
-
-    /// Waits for all of `runtimes` to finish.
-    ///
-    /// Panics as soon as any worker panics.  Waiting for the other workers
-    /// first could hang the test, because they can wait forever for data
-    /// from the worker that panicked.  Those workers are left behind.
-    fn join_runtimes(runtimes: Vec<RuntimeHandle>) {
-        let panics = runtimes
-            .iter()
-            .map(|runtime| runtime.panic_receiver())
-            .collect_vec();
-
-        // Dropping a runtime also disconnects its panic receiver, so keep the
-        // runtimes alive until we are done.
-        let _keep_alive = runtimes
-            .iter()
-            .map(|runtime| runtime.runtime().clone())
-            .collect_vec();
-
-        let (done_sender, done_receiver) = unbounded();
-        for runtime in runtimes {
-            let done_sender = done_sender.clone();
-            std::thread::spawn(move || {
-                let _ = done_sender.send(runtime.join().is_ok());
-            });
-        }
-
-        let mut select = Select::new();
-        for panic in &panics {
-            select.recv(panic);
-        }
-        let done_index = select.recv(&done_receiver);
-        for _ in 0..panics.len() {
-            let operation = select.select();
-            let index = operation.index();
-            if index == done_index {
-                assert!(operation.recv(&done_receiver).unwrap(), "worker panicked");
-            } else {
-                let _ = operation.recv(&panics[index]);
-                panic!("worker on host {index} panicked");
-            }
-        }
-    }
-
     // A worker panic fails the test, even though the other workers wait
     // forever for data from the worker that panicked.
     #[test]
     #[cfg_attr(miri, ignore)]
     #[should_panic(expected = "panicked")]
-    fn test_circuit_fails_on_worker_panic() {
+    fn run_on_hosts_fails_on_worker_panic() {
         init_test_logger();
-        test_circuit(4, 2, || {
+        run_on_hosts(4, 2, || {
             if Runtime::worker_index() == 0 {
                 panic!("worker 0 fails before its first exchange");
             }
@@ -2684,7 +2560,7 @@ pub(crate) mod tests {
     fn single_host() {
         init_test_logger();
         for workers in [2, 4, 8] {
-            test_circuit(workers, 1, circuit);
+            run_on_hosts(workers, 1, circuit);
         }
     }
 
@@ -2694,7 +2570,7 @@ pub(crate) mod tests {
     fn multihost() {
         init_test_logger();
         for (workers, hosts) in [(2, 2), (4, 2), (8, 2), (3, 3), (4, 4), (16, 4)] {
-            test_circuit(workers, hosts, circuit);
+            run_on_hosts(workers, hosts, circuit);
         }
     }
 
@@ -2780,7 +2656,7 @@ pub(crate) mod tests {
         init_test_logger();
         let seed = mixed_size_seed();
         for (workers, hosts) in [(2, 2), (4, 2), (3, 3), (4, 4)] {
-            test_circuit(workers, hosts, move || mixed_size_circuit(seed, 1));
+            run_on_hosts(workers, hosts, move || mixed_size_circuit(seed, 1));
         }
     }
 
@@ -2793,7 +2669,7 @@ pub(crate) mod tests {
         init_test_logger();
         let seed = mixed_size_seed();
         for (workers, hosts) in [(2, 2), (4, 2), (3, 3), (4, 4)] {
-            test_circuit(workers, hosts, move || mixed_size_circuit(seed, 2));
+            run_on_hosts(workers, hosts, move || mixed_size_circuit(seed, 2));
         }
     }
 
@@ -2922,7 +2798,7 @@ pub(crate) mod tests {
     // `Inspect` - validates the output of the receiver.
     fn test_operators_single_host(circuit: impl FnOnce() + Copy + Clone + Send + Sync + 'static) {
         for workers in [2, 16, 32] {
-            test_circuit(workers, 1, circuit);
+            run_on_hosts(workers, 1, circuit);
         }
     }
 
@@ -2934,7 +2810,7 @@ pub(crate) mod tests {
     // `Inspect` - validates the output of the receiver.
     fn test_operators_multihost(circuit: impl FnOnce() + Copy + Clone + Send + Sync + 'static) {
         for (workers, hosts) in [(2, 2), (4, 2), (8, 2), (3, 3), (4, 4), (16, 4)] {
-            test_circuit(workers, hosts, circuit);
+            run_on_hosts(workers, hosts, circuit);
         }
     }
 
