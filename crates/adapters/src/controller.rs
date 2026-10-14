@@ -5367,13 +5367,18 @@ impl FtState {
         }
         info!("replaying input step {}", step);
         for endpoint_name in &metadata.remove_inputs {
-            let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
-            controller.disconnect_input(&endpoint_id);
+            // An endpoint removed just before a checkpoint is not in the
+            // checkpoint, but the journal records its removal in the next
+            // step, which is the first step that replay runs.  Ignore it.
+            if let Ok(endpoint_id) = controller.input_endpoint_id_by_name(endpoint_name) {
+                controller.disconnect_input(&endpoint_id);
+            }
         }
         for (endpoint_name, config) in &metadata.add_inputs {
-            // The checkpoint that replay starts from also records the input
-            // endpoints that existed when it was taken.  An endpoint added
-            // after the last journal entry before the checkpoint is in both.
+            // An endpoint added just before a checkpoint is already in the
+            // checkpoint, but the journal records its addition in the next
+            // step, which is the first step that replay runs.  Skip it if the
+            // checkpoint restored it with the same config.
             if let Ok(endpoint_id) = controller.input_endpoint_id_by_name(endpoint_name)
                 && controller.status.input_status()[&endpoint_id].config == *config
             {

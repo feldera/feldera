@@ -2078,6 +2078,88 @@ fn replay_add_input_that_already_exists() {
     controller.stop().unwrap();
 }
 
+/// Replay must not fail on removing an endpoint that the checkpoint it starts
+/// from no longer has.
+///
+/// An ad hoc INSERT removes its endpoint once its step has taken its input,
+/// and the journal records the removal only in the next entry.  A checkpoint
+/// taken in between does not include the endpoint, but the next entry, which
+/// replay of that checkpoint starts with, removes it.
+#[test]
+fn replay_removes_endpoint_missing_from_checkpoint() {
+    init_test_logger();
+    const HTTP: &str = "test_input1.api-ingress-after-checkpoint";
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let circuit = |circuit_config| {
+        Ok(test_circuit::<TestStruct>(
+            circuit_config,
+            &TestStruct::schema(),
+            &[Some("output")],
+        ))
+    };
+
+    let controller =
+        Controller::with_test_config(circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+            .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    // Insert a row and wait for the INSERT's endpoint to go away.
+    insert_row(&controller, 1).unwrap();
+    wait(
+        || adhoc_input_endpoints(&controller).is_empty(),
+        DEFAULT_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    // No step has journaled the removal yet, so the checkpoint omits the
+    // endpoint and the next step removes it.
+    controller.checkpoint().unwrap();
+
+    // The next step journals the removal.
+    let token = ingress_rows(&controller, HTTP, 2..3);
+    wait_for_completion(&controller, &token);
+    controller.stop().unwrap();
+
+    // Restart from the checkpoint and the journal.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = Controller::with_test_config(
+        circuit,
+        &config,
+        Box::new({
+            let errors = errors.clone();
+            move |e, _| errors.lock().unwrap().push(e.to_string())
+        }),
+    )
+    .unwrap_or_else(|e| panic!("restart failed: {e}"));
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        DEFAULT_TIMEOUT_MS,
+    );
+    let errors = errors.lock().unwrap().clone();
+    assert!(errors.is_empty(), "replay failed: {errors:?}");
+    replayed.expect("replay never finished");
+    let _ = wait(
+        || count_rows(&controller, "test_input1") >= 2,
+        DEFAULT_TIMEOUT_MS,
+    );
+    assert_eq!(count_rows(&controller, "test_input1"), 2);
+    controller.stop().unwrap();
+}
+
 /// An input endpoint that opens and commits Feldera transactions, the way a
 /// connector configured with a `transaction_mode` does.
 ///
