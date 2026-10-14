@@ -13030,6 +13030,18 @@
                 "type": "string"
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "FailedInputEndpointBarrier"
+            ],
+            "properties": {
+              "FailedInputEndpointBarrier": {
+                "type": "string",
+                "description": "The input endpoint failed with a fatal error while it held a barrier.\nIt never reports another step, so the barrier never clears."
+              }
+            }
           }
         ],
         "description": "Reasons why a pipeline does not support suspend and resume operations."

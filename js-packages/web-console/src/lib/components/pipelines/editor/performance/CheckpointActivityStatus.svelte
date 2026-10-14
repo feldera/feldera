@@ -39,6 +39,9 @@
     if ('UnsupportedInputEndpoint' in e) {
       return `Input "${e.UnsupportedInputEndpoint}" does not support checkpointing`
     }
+    if ('FailedInputEndpointBarrier' in e) {
+      return `Input "${e.FailedInputEndpointBarrier}" failed at a position that cannot be checkpointed; restart the pipeline`
+    }
     return String(e)
   }
 

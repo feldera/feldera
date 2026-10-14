@@ -4658,6 +4658,13 @@ impl CircuitThread {
                 let mut input_metadata = std::mem::take(&mut self.input_metadata);
 
                 let statuses = self.controller.status.input_status();
+                // Drop the entries of removed endpoints: a checkpoint cannot
+                // seek a barrier entry.
+                input_metadata.retain(|name, _| {
+                    statuses
+                        .values()
+                        .any(|status| status.endpoint_name == *name)
+                });
                 for (&endpoint_id, (_name, results)) in step_metadata.iter() {
                     let Some(endpoint) = statuses.get(&endpoint_id) else {
                         // The endpoint has been removed, so there's nothing to record
@@ -9398,6 +9405,13 @@ impl ControllerInner {
         for endpoint_stats in self.status.input_status().values() {
             if endpoint_stats.fault_tolerance.is_none() {
                 permanent.push(PermanentSuspendError::UnsupportedInputEndpoint(
+                    endpoint_stats.endpoint_name.clone(),
+                ));
+            }
+            // A failed endpoint stays in the status but never steps again, so
+            // its barrier never clears.
+            if endpoint_stats.is_barrier() && endpoint_stats.fatal_error.lock().unwrap().is_some() {
+                permanent.push(PermanentSuspendError::FailedInputEndpointBarrier(
                     endpoint_stats.endpoint_name.clone(),
                 ));
             }
