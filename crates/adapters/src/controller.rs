@@ -3372,7 +3372,7 @@ impl CircuitThread {
         };
 
         Ok(Self {
-            _statistics_thread: StatisticsThread::new(controller.status.clone(), storage.clone()),
+            _statistics_thread: StatisticsThread::new(&controller, storage.clone()),
             controller,
             ft,
             circuit,
@@ -6485,15 +6485,19 @@ struct StatisticsThread {
 impl StatisticsThread {
     /// Starts a statistics thread.
     fn new(
-        controller_status: Arc<ControllerStatus>,
+        controller: &Arc<ControllerInner>,
         storage_backend: Option<Arc<dyn StorageBackend>>,
     ) -> Self {
         let exit = Arc::new(AtomicBool::new(false));
+        let controller_status = controller.status.clone();
+        let controller = Arc::downgrade(controller);
         let join_handle = thread::Builder::new()
             .name("dbsp-storage".into())
             .spawn({
                 let exit = exit.clone();
-                move || Self::statistics_thread(controller_status, storage_backend, exit)
+                move || {
+                    Self::statistics_thread(controller, controller_status, storage_backend, exit)
+                }
             })
             .unwrap();
         Self {
@@ -6504,6 +6508,7 @@ impl StatisticsThread {
 
     /// Thread function.
     fn statistics_thread(
+        controller: Weak<ControllerInner>,
         controller_status: Arc<ControllerStatus>,
         storage_backend: Option<Arc<dyn StorageBackend>>,
         exit: Arc<AtomicBool>,
@@ -6511,7 +6516,12 @@ impl StatisticsThread {
         let mut last = Instant::now();
         let mut storage_byte_msecs = 0;
         let mut memory_use_reporter = MemoryUseReporter::new("RSS", 512 * 1024 * 1024);
+        let mut paused_transaction_warning = None;
         while !exit.load(Ordering::Acquire) {
+            if let Some(controller) = controller.upgrade() {
+                Self::warn_about_paused_transaction(&controller, &mut paused_transaction_warning);
+            }
+
             let storage_bytes = if let Some(storage_backend) = &storage_backend {
                 // Measure.
                 let elapsed_msecs = last.elapsed().as_millis();
@@ -6562,6 +6572,40 @@ impl StatisticsThread {
 
             std::thread::park_timeout(Duration::from_secs(1));
         }
+    }
+}
+
+impl StatisticsThread {
+    /// Warns, at growing intervals, while the open transaction waits for input
+    /// connectors that are paused (see
+    /// [ControllerInner::paused_transaction_connectors]).  `warning` tracks
+    /// the connectors and how long the transaction has waited for them.
+    fn warn_about_paused_transaction(
+        controller: &ControllerInner,
+        warning: &mut Option<(BTreeSet<String>, LongOperationWarning)>,
+    ) {
+        let connectors = controller.paused_transaction_connectors();
+        if connectors.is_empty() {
+            *warning = None;
+            return;
+        }
+        if warning
+            .as_ref()
+            .is_none_or(|(previous, _long_wait)| *previous != connectors)
+        {
+            *warning = Some((
+                connectors,
+                LongOperationWarning::new(Duration::from_secs(60)),
+            ));
+        }
+        let (connectors, long_wait) = warning.as_mut().unwrap();
+        long_wait.check(|elapsed| {
+            warn!(
+                "The open transaction has waited {} seconds for input connectors that are paused, and it cannot commit until they are started: {}",
+                elapsed.as_secs(),
+                connectors.iter().join(", ")
+            );
+        });
     }
 }
 
@@ -9394,6 +9438,31 @@ impl ControllerInner {
 
         self.unpark_circuit();
         Ok(())
+    }
+
+    /// Returns the input connectors that are paused and that the open
+    /// transaction waits for, because they have not committed their parts of
+    /// it.  The transaction cannot commit until they are started.
+    fn paused_transaction_connectors(&self) -> BTreeSet<String> {
+        let started = self
+            .transaction_info
+            .lock()
+            .unwrap()
+            .initiators
+            .initiated_by_connectors
+            .iter()
+            .filter(|(_name, phase)| phase.phase == TransactionPhase::Started)
+            .map(|(name, _phase)| name.clone())
+            .collect::<BTreeSet<_>>();
+        if started.is_empty() {
+            return started;
+        }
+        self.status
+            .input_status()
+            .values()
+            .filter(|status| status.is_paused_by_user() && started.contains(&status.endpoint_name))
+            .map(|status| status.endpoint_name.clone())
+            .collect()
     }
 
     /// Ends connector `endpoint_name`'s part of the open transaction, if it has
