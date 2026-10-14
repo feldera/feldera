@@ -33,32 +33,31 @@ import { render } from 'vitest-browser-svelte'
 // (no top-level references allowed). Stubbing ProfilerDiagram and the tab panels keeps the
 // test on the pane layout, off cytoscape and Monaco.
 vi.mock('./ProfilerDiagram.svelte', async () => ({
-  default: (await import('../test-support/ComponentStub.svelte')).default
+  default: (await import('../test-support/LayoutPanelStub.svelte')).default
 }))
 vi.mock('./tabs/MetricsTab.svelte', async () => ({
-  default: (await import('../test-support/ComponentStub.svelte')).default
+  default: (await import('../test-support/LayoutPanelStub.svelte')).default
 }))
 vi.mock('./tabs/LogsTab.svelte', async () => ({
-  default: (await import('../test-support/ComponentStub.svelte')).default
+  default: (await import('../test-support/LayoutPanelStub.svelte')).default
 }))
 vi.mock('./tabs/ConfigTab.svelte', async () => ({
-  default: (await import('../test-support/ComponentStub.svelte')).default
+  default: (await import('../test-support/LayoutPanelStub.svelte')).default
 }))
 vi.mock('./tabs/IssuesTab.svelte', async () => ({
-  default: (await import('../test-support/ComponentStub.svelte')).default
+  default: (await import('../test-support/LayoutPanelStub.svelte')).default
 }))
-vi.mock('./tabs/SqlTab.svelte', async () => ({
-  default: (await import('../test-support/ComponentStub.svelte')).default
+vi.mock('./tabs/SourceTab.svelte', async () => ({
+  default: (await import('../test-support/LayoutPanelStub.svelte')).default
 }))
 
 // Imported after vi.mock so the stubs take effect.
-import { capture } from '../test-support/ComponentStub.svelte'
+import { capture } from '../test-support/LayoutPanelStub.svelte'
 import SupportBundleViewerLayout from './SupportBundleViewerLayout.svelte'
 
 const baseProps = () => ({
   profileData: undefined,
   dataflowData: undefined,
-  programCode: undefined,
   triageResults: new TriageResults(),
   profileFiles: [],
   selectedTimestamp: null,
@@ -158,7 +157,7 @@ describe('SupportBundleViewerLayout source navigation', () => {
       props: {
         ...baseProps(),
         profileData: someProfile,
-        programCode: ['a', 'b', 'c'],
+        sourceFiles: [{ name: 'program.sql', language: 'sql', code: 'a\nb\nc' }],
         onHighlightSourceRanges: (r: SourcePositionRange[]) => highlighted.push(r)
       }
     })
@@ -289,5 +288,149 @@ describe('SupportBundleViewerLayout Health tab', () => {
     })
     await expect.element(timelineRange('2026-05-02T09:00:00Z')).toBeInTheDocument()
     await expect.element(timelineRange('2026-05-01T13:00:00Z')).not.toBeInTheDocument()
+  })
+})
+
+describe('SupportBundleViewerLayout code panel', () => {
+  const program = { name: 'program.sql', language: 'sql', code: 'a\nb\nc' } as const
+  const udf = { name: 'udf.rs', language: 'rust', code: 'pub fn f() {}' } as const
+  const operatorRanges = [
+    { start: { line: 2, column: 1 }, end: { line: 2, column: 1 } }
+  ] as SourcePositionRange[]
+  // The code panel overlay has no size here, so it is hidden and `getByRole` cannot find its
+  // tabs. The test finds them through the DOM.
+  const fileTab = (name: string) =>
+    [...document.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+      (tab) => tab.textContent?.trim() === name
+    )
+  const openTab = (name: string) => fileTab(name)?.click()
+  const selectedTab = () =>
+    document.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim()
+
+  beforeEach(() => {
+    capture.callbacks = undefined
+    capture.profile = { getSourceRanges: () => operatorRanges } as never
+    capture.sourceTab = undefined
+    capture.programCode = undefined
+  })
+
+  it('has a tab for each source file and opens the SQL program', async () => {
+    render(SupportBundleViewerLayout, { ...baseProps(), sourceFiles: [program, udf] })
+    await expect
+      .poll(() => [...document.querySelectorAll('[role="tab"]')].map((t) => t.textContent?.trim()))
+      .toEqual(['program.sql', 'udf.rs'])
+    await expect.poll(() => capture.sourceTab?.file).toEqual(program)
+  })
+
+  it('has a single tab when the pipeline has no UDF files', async () => {
+    render(SupportBundleViewerLayout, { ...baseProps(), sourceFiles: [program] })
+    await expect
+      .poll(() => [...document.querySelectorAll('[role="tab"]')].map((t) => t.textContent?.trim()))
+      .toEqual(['program.sql'])
+  })
+
+  it('hands the diagram the lines of the SQL program', async () => {
+    render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      profileData: someProfile,
+      sourceFiles: [udf, program]
+    })
+    await expect.poll(() => capture.programCode).toEqual(['a', 'b', 'c'])
+  })
+
+  it('hands the diagram no lines when the bundle has no source files', async () => {
+    render(SupportBundleViewerLayout, { ...baseProps(), profileData: someProfile })
+    await expect.poll(() => capture.callbacks).toBeDefined()
+    expect(capture.programCode).toBeUndefined()
+  })
+
+  it('says that the source code is not in the bundle when it has no source files', async () => {
+    render(SupportBundleViewerLayout, baseProps())
+    await expect.poll(() => document.body.textContent).toContain('Profile does not contain the source code')
+    expect(document.querySelector('[role="tab"]')).toBeNull()
+  })
+
+  it('opens the first file when the bundle has no SQL program', async () => {
+    render(SupportBundleViewerLayout, { ...baseProps(), sourceFiles: [udf] })
+    await expect.poll(() => capture.sourceTab?.file).toEqual(udf)
+    await expect.poll(selectedTab).toBe('udf.rs')
+    expect(document.body.textContent).not.toContain('Profile does not contain the source code')
+  })
+
+  it('shows the files when a bundle with source files follows one without', async () => {
+    const { rerender } = render(SupportBundleViewerLayout, baseProps())
+    await rerender({ sourceFiles: [program, udf] })
+    await expect.poll(() => capture.sourceTab?.file).toEqual(program)
+    expect(document.body.textContent).not.toContain('Profile does not contain the source code')
+  })
+
+  it('selects node ranges only in the SQL program', async () => {
+    render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      profileData: someProfile,
+      sourceFiles: [program, udf]
+    })
+    capture.callbacks?.onNodeClick?.('operator')
+    await expect.poll(() => capture.sourceTab?.highlightRanges).toEqual(operatorRanges)
+    await expect.poll(() => fileTab('udf.rs')).toBeDefined()
+    openTab('udf.rs')
+    await expect.poll(() => capture.sourceTab?.file).toEqual(udf)
+    expect(capture.sourceTab?.highlightRanges).toEqual([])
+  })
+
+  it('goes back to the SQL program when a node with SQL is clicked', async () => {
+    render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      profileData: someProfile,
+      sourceFiles: [program, udf]
+    })
+    await expect.poll(() => fileTab('udf.rs')).toBeDefined()
+    openTab('udf.rs')
+    await expect.poll(() => capture.sourceTab?.file).toEqual(udf)
+    capture.callbacks?.onNodeClick?.('operator')
+    await expect.poll(() => capture.sourceTab?.file).toEqual(program)
+    await expect.poll(selectedTab).toBe('program.sql')
+  })
+
+  it('stays on the open file when a node without SQL is clicked', async () => {
+    capture.profile = { getSourceRanges: () => [] } as never
+    render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      profileData: someProfile,
+      sourceFiles: [program, udf]
+    })
+    await expect.poll(() => fileTab('udf.rs')).toBeDefined()
+    openTab('udf.rs')
+    await expect.poll(() => capture.sourceTab?.file).toEqual(udf)
+    capture.callbacks?.onNodeClick?.('internal')
+    await expect.poll(selectedTab).toBe('udf.rs')
+    expect(capture.sourceTab?.file).toEqual(udf)
+  })
+
+  it('stays on the open file when the next bundle has it, and shows its new code', async () => {
+    const { rerender } = render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      sourceFiles: [program, udf]
+    })
+    await expect.poll(() => fileTab('udf.rs')).toBeDefined()
+    openTab('udf.rs')
+    await expect.poll(() => capture.sourceTab?.file).toEqual(udf)
+    const nextUdf = { ...udf, code: 'pub fn g() {}' }
+    await rerender({ sourceFiles: [program, nextUdf] })
+    await expect.poll(() => capture.sourceTab?.file).toEqual(nextUdf)
+    expect(selectedTab()).toBe('udf.rs')
+  })
+
+  it('goes back to the SQL program when the next bundle does not have the open file', async () => {
+    const { rerender } = render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      sourceFiles: [program, udf]
+    })
+    await expect.poll(() => fileTab('udf.rs')).toBeDefined()
+    openTab('udf.rs')
+    await expect.poll(() => capture.sourceTab?.file).toEqual(udf)
+    await rerender({ sourceFiles: [program] })
+    await expect.poll(() => capture.sourceTab?.file).toEqual(program)
+    await expect.poll(selectedTab).toBe('program.sql')
   })
 })

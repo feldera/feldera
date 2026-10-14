@@ -172,7 +172,7 @@ describe('profile viewer — uploaded bundles', () => {
     processProfileFiles.mockResolvedValue({
       profile: {},
       dataflow: {},
-      sources: [],
+      sourceFiles: [],
       logText: '',
       globalMetrics: {},
       runtimeConfig: {},

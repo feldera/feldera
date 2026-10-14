@@ -9,6 +9,7 @@
     type GlobalMetrics,
     getSuitableProfiles,
     processProfileFiles,
+    type SourceFile,
     SupportBundleViewerLayout,
     type ZipItem
   } from 'profiler-layout'
@@ -61,12 +62,12 @@
     | (() => {
         profile: JsonProfiles | undefined
         dataflow: Dataflow | undefined
-        sources: string[] | undefined
         logText: string | undefined
         globalMetrics: GlobalMetrics | undefined
         connectorMetrics: ConnectorMetrics | undefined
         runtimeConfig: unknown
         pipelineEvents: PipelineMonitorEvent[] | undefined
+        sourceFiles: SourceFile[] | undefined
       })
     | null = $state(null)
   let triageResults: TriageResults = $state(new TriageResults())
@@ -123,12 +124,12 @@
     getProfileData = enclosure({
       profile: processed.profile,
       dataflow: processed.dataflow,
-      sources: processed.sources,
       logText: processed.logText,
       globalMetrics: processed.globalMetrics,
       connectorMetrics: processed.connectorMetrics,
       runtimeConfig: processed.runtimeConfig,
-      pipelineEvents: processed.pipelineEvents
+      pipelineEvents: processed.pipelineEvents,
+      sourceFiles: processed.sourceFiles
     })
   }
 
@@ -407,23 +408,23 @@
     {@const {
       profile,
       dataflow,
-      sources,
       logText,
       globalMetrics,
       connectorMetrics,
       runtimeConfig,
-      pipelineEvents
+      pipelineEvents,
+      sourceFiles
     } = getProfileData()}
     <div class="min-h-0 flex-1 px-4 pb-4">
       <SupportBundleViewerLayout
         profileData={profile}
         dataflowData={dataflow}
-        programCode={sources}
         {logText}
         {globalMetrics}
         {connectorMetrics}
         {runtimeConfig}
         {pipelineEvents}
+        {sourceFiles}
         {triageResults}
         theme={darkMode.current}
         profileFiles={getProfileFiles()}
