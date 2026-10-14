@@ -9,7 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 
 /** Expansion of a {@link org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator}, a
  * left join fused with the filter σ that follows it:
- * σ(ΔL ⋈ z⁻¹I(R)) + σ(z⁻¹I(L) ⋈ ΔR) + σ(ΔL ⋈ ΔR) + σ(pad(Δ(L ▷ R))). */
+ * σ(ΔL ⋈ z⁻¹R) + σ(z⁻¹L ⋈ ΔR) + σ(ΔL ⋈ ΔR) + σ(pad(Δ(L ▷ R))). */
 public final class LeftJoinFilterMapExpansion extends LeftJoinDeltaExpansion {
     /** Filter of {@code leftDelta} */
     public final DBSPFilterOperator leftFilter;
