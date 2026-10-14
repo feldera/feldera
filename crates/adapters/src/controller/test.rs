@@ -8784,7 +8784,7 @@ fn stopped_connector_finishes_all_hosts_transaction() {
     probe.error(true, anyhow!("failed"), None);
     assert_eq!(
         all_hosts_done(),
-        std::collections::HashSet::from(["test_input".to_string()])
+        std::collections::HashMap::from([("test_input".to_string(), None)])
     );
     controller.stop().unwrap();
 }

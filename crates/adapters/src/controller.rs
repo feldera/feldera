@@ -2376,7 +2376,7 @@ impl Controller {
             .transaction_info
             .lock()
             .unwrap()
-            .coordinator_members = coordination_request.transaction_members.clone();
+            .set_coordinator_transaction(&coordination_request);
         *self.inner.coordination_request.lock().unwrap() = Some(coordination_request);
         self.inner.unpark_circuit();
     }
@@ -7245,7 +7245,7 @@ pub struct TransactionInfo {
     /// In a multihost pipeline, the connectors that need every host in the
     /// transaction, and that this host has finished in the current transaction
     /// (see [TransactionCoordination::all_hosts_done]).
-    all_hosts_done: HashSet<String>,
+    all_hosts_done: HashMap<String, Option<TransactionId>>,
 
     /// Actual pipeline state, set by the circuit thread.
     transaction_state: TransactionState,
@@ -7269,6 +7269,10 @@ pub struct TransactionInfo {
     /// not say, because it predates this.
     coordinator_members: Option<BTreeSet<String>>,
 
+    /// In a multihost pipeline, the coordinator's id for the open transaction,
+    /// from its latest step request (see [StepRequest::transaction_id]).
+    coordinator_transaction_id: Option<TransactionId>,
+
     /// For sending updates to the coordination status to the coordinator.
     sender: tokio::sync::watch::Sender<TransactionCoordination>,
 }
@@ -7282,12 +7286,61 @@ impl TransactionInfo {
             is_multihost,
             last_transaction_id: 0,
             initiators: TransactionInitiators::default(),
-            all_hosts_done: HashSet::new(),
+            all_hosts_done: HashMap::new(),
             transaction_state: TransactionState::None,
             replay_transaction_id: None,
             replay_open_transaction_id: None,
             coordinator_members: None,
+            coordinator_transaction_id: None,
             sender,
+        }
+    }
+
+    /// Records what the coordinator's step request says about the open
+    /// transaction.
+    ///
+    /// A connector in `all_hosts_done` without a transaction id finished
+    /// outside any transaction that the coordinator counted it in, for
+    /// example because it failed before it joined one (see
+    /// [Self::finished_in]).  The coordinator counts such a report in any
+    /// transaction.  Once the coordinator lists the connector as a member of
+    /// the open transaction, it counts this host's report in that one, so
+    /// this fills in that transaction's id.
+    fn set_coordinator_transaction(&mut self, request: &StepRequest) {
+        self.coordinator_members = request.transaction_members.clone();
+        self.coordinator_transaction_id = request.transaction_id;
+        if let (Some(id), Some(members)) = (request.transaction_id, &request.transaction_members) {
+            let mut changed = false;
+            for (connector, done_in) in &mut self.all_hosts_done {
+                if done_in.is_none() && members.contains(connector) {
+                    *done_in = Some(id);
+                    changed = true;
+                }
+            }
+            if changed {
+                self.update_transaction_status();
+            }
+        }
+    }
+
+    /// Returns the coordinator's id for the transaction that connector
+    /// `endpoint_name` finishes its part of now, for
+    /// [TransactionCoordination::all_hosts_done]: the open transaction, if
+    /// the coordinator counts the connector in it, and otherwise `None`.
+    ///
+    /// A connector that stops, because it failed or was disconnected, can
+    /// finish without joining a transaction.  It gets no id then, because the
+    /// coordinator may commit the open transaction without it.
+    fn finished_in(&self, endpoint_name: &str) -> Option<TransactionId> {
+        let member = self
+            .coordinator_members
+            .as_ref()
+            .is_some_and(|members| members.contains(endpoint_name));
+        let open = self.initiators.initiated_by_api == Some(TransactionPhase::Started);
+        if member && open {
+            self.coordinator_transaction_id
+        } else {
+            None
         }
     }
 
@@ -7424,7 +7477,9 @@ impl TransactionInfo {
             {
                 Some(phase) => {
                     if phase.all_hosts {
-                        self.all_hosts_done.insert(endpoint_name.to_string());
+                        let done_in = self.finished_in(endpoint_name);
+                        self.all_hosts_done
+                            .insert(endpoint_name.to_string(), done_in);
                     }
                     Ok(())
                 }
@@ -7481,8 +7536,13 @@ impl TransactionInfo {
 
     fn clear_initiators(&mut self) {
         self.initiators.clear(self.is_multihost);
-        if !self.all_hosts_done.is_empty() {
-            self.all_hosts_done.clear();
+        // A report without an id was not counted in the transaction that is
+        // committing (see [Self::set_coordinator_transaction]), so it stays
+        // for a later transaction.
+        let before = self.all_hosts_done.len();
+        self.all_hosts_done
+            .retain(|_connector, done_in| done_in.is_none());
+        if self.all_hosts_done.len() != before {
             self.update_transaction_status();
         }
     }
@@ -10668,9 +10728,11 @@ mod controller_init_tests {
 
 #[cfg(test)]
 mod all_hosts_transaction_tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
-    use feldera_types::coordination::TransactionCoordination;
+    use feldera_types::coordination::{
+        StepAction, StepInputs, StepRequest, TransactionCoordination,
+    };
 
     use super::TransactionInfo;
 
@@ -10696,15 +10758,73 @@ mod all_hosts_transaction_tests {
         assert_eq!(status.all_hosts, names(&["d"]));
         assert!(status.all_hosts_done.is_empty());
 
+        // The host reports the coordinator's id for the transaction in which
+        // it finished `d`, which counts `d` in.
+        info.start_transaction_from_api().unwrap();
+        info.set_coordinator_transaction(
+            &StepRequest::new(0, StepAction::Idle, StepInputs::All)
+                .with_transaction_members(names(&["d", "x"]).into_iter().collect())
+                .with_transaction_id(Some(7)),
+        );
         info.commit_transaction_from_connector("d").unwrap();
         info.commit_transaction_from_connector("x").unwrap();
         info.update_transaction_status();
         let status = receiver.borrow().clone();
         assert!(status.requests.is_empty());
         assert!(status.all_hosts.is_empty());
-        assert_eq!(status.all_hosts_done, names(&["d"]));
+        assert_eq!(
+            status.all_hosts_done,
+            HashMap::from([("d".to_string(), Some(7))])
+        );
 
         // The transaction starts committing.
+        info.clear_initiators();
+        assert!(receiver.borrow().all_hosts_done.is_empty());
+    }
+
+    /// A connector that stops before the coordinator counts it in a
+    /// transaction is reported without an id, which keeps counting until the
+    /// coordinator counts the connector in a transaction: across commits of
+    /// transactions without it, and in particular across the commit of the
+    /// transaction that was open when it stopped.  Then the report gets that
+    /// transaction's id, and that transaction's commit clears it.
+    #[test]
+    fn stopped_connector_report_waits_to_be_counted() {
+        let (sender, receiver) = tokio::sync::watch::channel(TransactionCoordination::default());
+        let mut info = TransactionInfo::new(true, sender);
+        let request = |members: &[&str], id| {
+            StepRequest::new(0, StepAction::Idle, StepInputs::All)
+                .with_transaction_members(names(members).into_iter().collect())
+                .with_transaction_id(id)
+        };
+        let done = |id| HashMap::from([("d".to_string(), id)]);
+
+        // Transaction 5 is open without `d` when `d` makes its request, and
+        // `d` stops before the coordinator counts it in.
+        info.start_transaction_from_api().unwrap();
+        info.set_coordinator_transaction(&request(&["x"], Some(5)));
+        info.start_transaction_from_connector("d", Some("snapshot-0"), true)
+            .unwrap();
+        info.commit_transaction_from_connector("d").unwrap();
+        info.update_transaction_status();
+        assert_eq!(receiver.borrow().all_hosts_done, done(None));
+
+        // Transaction 5 commits without `d`.  The report stays.
+        info.set_coordinator_transaction(&request(&[], None));
+        info.clear_initiators();
+        assert_eq!(receiver.borrow().all_hosts_done, done(None));
+
+        // A transaction that does not count `d` in leaves the report alone.
+        info.start_transaction_from_api().unwrap();
+        info.set_coordinator_transaction(&request(&["x"], Some(6)));
+        assert_eq!(receiver.borrow().all_hosts_done, done(None));
+
+        // Once the coordinator counts `d` in, the report has that
+        // transaction's id, and its commit clears the report.
+        info.set_coordinator_transaction(&request(&["d"], Some(6)));
+        assert_eq!(receiver.borrow().all_hosts_done, done(Some(6)));
+        info.set_coordinator_transaction(&request(&["d"], Some(7)));
+        assert_eq!(receiver.borrow().all_hosts_done, done(Some(6)));
         info.clear_initiators();
         assert!(receiver.borrow().all_hosts_done.is_empty());
     }

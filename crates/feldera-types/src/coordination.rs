@@ -162,6 +162,7 @@ use crate::{
     program_schema::SqlIdentifier,
     runtime_status::{ExtendedRuntimeStatus, ExtendedRuntimeStatusError, RuntimeDesiredStatus},
     suspend::TemporarySuspendError,
+    transaction::TransactionId,
 };
 
 /// `/coordination/status` update, streamed by pipeline to coordinator.
@@ -454,6 +455,14 @@ pub struct StepRequest {
     /// transaction is open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transaction_members: Option<BTreeSet<String>>,
+
+    /// The coordinator's id for the open transaction, if one is open.  A
+    /// pipeline reports it with each connector that it finishes in
+    /// [TransactionCoordination::all_hosts_done], so that the coordinator can
+    /// tell a report for the open transaction from one left over from an
+    /// earlier transaction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transaction_id: Option<TransactionId>,
 }
 
 impl StepRequest {
@@ -463,6 +472,7 @@ impl StepRequest {
             action,
             inputs,
             transaction_members: None,
+            transaction_id: None,
         }
     }
 
@@ -470,6 +480,14 @@ impl StepRequest {
     pub fn with_transaction_members(self, members: BTreeSet<String>) -> Self {
         Self {
             transaction_members: Some(members),
+            ..self
+        }
+    }
+
+    /// Returns this request with `transaction_id` set to `id`.
+    pub fn with_transaction_id(self, id: Option<TransactionId>) -> Self {
+        Self {
+            transaction_id: id,
             ..self
         }
     }
@@ -548,14 +566,25 @@ pub struct TransactionCoordination {
 
     /// The endpoints from `all_hosts` that this host has finished in the
     /// current transaction: it made its request and then withdrew it.  The
-    /// host reports an endpoint here until the transaction commits.
+    /// host reports an endpoint here until the transaction commits.  Each
+    /// endpoint maps to the coordinator's id for the transaction in which the
+    /// host finished it (see [StepRequest::transaction_id]), or to `None` if
+    /// the host finished it outside a transaction that counted it, for
+    /// example because it failed before it joined one.  An endpoint without
+    /// an id stays here across commits, until a step request lists it as a
+    /// member of the open transaction.  Then the host fills in that
+    /// transaction's id.
     ///
     /// The coordinator keeps such an endpoint in the transaction until every
     /// host reports it here.  An endpoint stays here until the commit, so the
     /// coordinator sees it even if it misses some updates.  A request can
-    /// appear and disappear between two updates.
-    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
-    pub all_hosts_done: HashSet<String>,
+    /// appear and disappear between two updates.  The transaction id lets the
+    /// coordinator ignore a report from an earlier transaction, which it can
+    /// still see right after a commit, because each host's updates arrive
+    /// separately.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    #[schema(value_type = Object)]
+    pub all_hosts_done: HashMap<String, Option<TransactionId>>,
 }
 
 /// `/coordination/adhoc/catalog` reply.
