@@ -45,7 +45,7 @@ public class CompilerCircuitStream extends CompilerCircuit {
     public CompilerCircuitStream(DBSPCompiler compiler, InputOutputChangeStream streams, BaseSQLTests test) {
         super(compiler);
         this.stream = streams;
-        test.addRustTestCase(this);
+        test.runOneTestCase(this);
         this.compactAfterEachStep = false;
     }
 
