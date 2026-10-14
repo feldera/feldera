@@ -1778,7 +1778,7 @@ impl Controller {
 
             metrics.gauge(
                 "max_rss_bytes",
-                "Configured maximum process RSS in bytes. A value of 0 means no limit is configured.",
+                "Memory limit in bytes: the configured limit or the memory available to the process, whichever is smaller, minus memory reserved for other components. A value of 0 means there is no limit.",
                 labels,
                 runtime.max_rss_bytes().unwrap_or(0),
             );
@@ -6211,36 +6211,31 @@ Using the pod limit as the RSS memory limit."
         }
 
         // Carve out a slice of the pipeline's memory budget for DataFusion's
-        // memory pool (see `RuntimeConfig::datafusion_memory_mb`) and pass
-        // only the remainder to the DBSP circuit. Without this, the circuit
-        // and DataFusion would each independently grow to the full budget,
-        // which would double-book RAM.
+        // memory pool (see `RuntimeConfig::datafusion_memory_mb`) and have the
+        // DBSP circuit reserve it, so the circuit only uses the remainder.
+        // Without this, the circuit and DataFusion would each independently
+        // grow to the full budget, which would double-book RAM.
         let datafusion_memory_mb = pipeline_config.global.resolved_datafusion_memory_mb();
-        let circuit_max_rss_mb = match (max_rss_mb, datafusion_memory_mb) {
-            (Some(rss), Some(df)) => {
-                if df >= rss {
-                    return Err(ControllerError::Config {
-                        config_error: Box::new(ConfigError::DatafusionMemoryExceedsBudget {
-                            datafusion_memory_mb: df,
-                            max_rss_mb: rss,
-                        }),
-                    });
-                }
-                let remainder = rss - df;
-                info!(
-                    "memory budget split: circuit RSS {remainder} MB, datafusion {df} MB \
-(total {rss} MB)"
-                );
-                Some(remainder)
+        if let (Some(rss), Some(df)) = (max_rss_mb, datafusion_memory_mb) {
+            if df >= rss {
+                return Err(ControllerError::Config {
+                    config_error: Box::new(ConfigError::DatafusionMemoryExceedsBudget {
+                        datafusion_memory_mb: df,
+                        max_rss_mb: rss,
+                    }),
+                });
             }
-            (Some(rss), None) => Some(rss),
-            (None, _) => None,
-        };
+            info!(
+                "memory budget split: circuit RSS {} MB, datafusion {df} MB (total {rss} MB)",
+                rss - df
+            );
+        }
 
         let layout =
             layout.unwrap_or_else(|| Layout::new_solo(pipeline_config.global.workers as usize));
         Ok(CircuitConfig::from(layout)
-            .with_max_rss_bytes(circuit_max_rss_mb.map(|mb| mb * 1_000_000))
+            .with_max_rss_bytes(max_rss_mb.map(|mb| mb * 1_000_000))
+            .with_reserved_memory_bytes(datafusion_memory_mb.unwrap_or(0) * 1_000_000)
             .with_pin_cpus(pipeline_config.global.pin_cpus.clone())
             .with_storage(storage)
             .with_mode(Mode::Persistent)
@@ -10221,6 +10216,34 @@ mod controller_init_tests {
                 other => panic!("expected InvalidDevTweaks, got {other:?}"),
             },
             other => panic!("expected ControllerError::Config, got {other:?}"),
+        }
+    }
+
+    /// The circuit gets the full budget and reserves DataFusion's share, even
+    /// when only `datafusion_memory_mb` is set.
+    #[test]
+    fn circuit_config_reserves_datafusion_memory() {
+        let cases = [
+            (
+                Some(10_000),
+                Some(2_000),
+                Some(10_000_000_000),
+                2_000_000_000,
+            ),
+            (None, Some(2_000), None, 2_000_000_000),
+            (Some(10_000), None, Some(10_000_000_000), 500_000_000),
+            (None, None, None, 0),
+        ];
+        for (max_rss_mb, datafusion_memory_mb, max_rss_bytes, reserved_memory_bytes) in cases {
+            let config = pipeline_config(RuntimeConfig {
+                workers: 1,
+                max_rss_mb,
+                datafusion_memory_mb,
+                ..Default::default()
+            });
+            let circuit_config = ControllerInit::circuit_config(None, &config, None).unwrap();
+            assert_eq!(circuit_config.max_rss_bytes, max_rss_bytes);
+            assert_eq!(circuit_config.reserved_memory_bytes, reserved_memory_bytes);
         }
     }
 
