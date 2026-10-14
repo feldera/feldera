@@ -2,6 +2,7 @@ use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use proptest::collection::vec;
 use proptest::prelude::*;
 use std::{
+    collections::BTreeMap,
     hash::Hasher,
     path::Path,
     time::{Duration, Instant},
@@ -70,14 +71,18 @@ where
         .collect()
 }
 
-fn accumulate_trace_with_balancer_test_circuit(
-    circuit: &mut RootCircuit,
-) -> AnyResult<(
+/// The input, the persistent id of the input, the output delta and the
+/// output trace of [accumulate_trace_with_balancer_test_circuit].
+type AccumulateTraceTestCircuitResult = (
     IndexedZSetHandle<u64, u64>,
     String,
     OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, u64>>>,
     OutputHandle<OrdIndexedZSet<u64, u64>>,
-)> {
+);
+
+fn accumulate_trace_with_balancer_test_circuit(
+    circuit: &mut RootCircuit,
+) -> AnyResult<AccumulateTraceTestCircuitResult> {
     let (input, input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
     input.set_persistent_id(Some("input"));
     let input_node_id = "input".to_string();
@@ -184,6 +189,22 @@ fn left_join_with_balancer_test_circuit(
     ))
 }
 
+/// The two inputs of [circular_dependency_test_circuit], the outputs of its
+/// balanced joins `s1`, `s4`, `s7` and `s8`, and the outputs of the reference
+/// joins for the same streams.
+type CircularDependencyTestCircuitResult = (
+    IndexedZSetHandle<u64, u64>,
+    IndexedZSetHandle<u64, u64>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup2<u64, u64>>>>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup2<u64, u64>>>>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, u64>>>>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, u64>>>>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup2<u64, u64>>>>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup2<u64, u64>>>>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, u64>>>>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, u64>>>>,
+);
+
 /// A circuit with a circular dependency between join clusters.
 ///
 /// ```text
@@ -210,18 +231,7 @@ fn left_join_with_balancer_test_circuit(
 /// This circuit is used to test this behavior.
 fn circular_dependency_test_circuit(
     circuit: &mut RootCircuit,
-) -> AnyResult<(
-    IndexedZSetHandle<u64, u64>,
-    IndexedZSetHandle<u64, u64>,
-    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup2<u64, u64>>>>,
-    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup2<u64, u64>>>>,
-    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, u64>>>>,
-    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, u64>>>>,
-    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup2<u64, u64>>>>,
-    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup2<u64, u64>>>>,
-    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, u64>>>>,
-    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, u64>>>>,
-)> {
+) -> AnyResult<CircularDependencyTestCircuitResult> {
     let (left_input, left_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
     let (right_input, right_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
 
@@ -406,25 +416,86 @@ fn diluted_cluster_test_circuit(
     ))
 }
 
+/// Starts [accumulate_trace_with_balancer_test_circuit] on `hosts` hosts with
+/// `workers` workers in total, configured for the balancer to change policies
+/// freely.
+fn start_accumulate_trace_with_balancer(
+    workers: usize,
+    hosts: usize,
+) -> TestHosts<AccumulateTraceTestCircuitResult> {
+    TestHosts::start_with(
+        workers,
+        hosts,
+        |_host, config| {
+            config
+                .with_splitter_chunk_size_records(2)
+                .with_balancer_min_absolute_improvement_threshold(0)
+                .with_mode(Mode::Persistent)
+        },
+        accumulate_trace_with_balancer_test_circuit,
+    )
+}
+
+/// Takes the output delta and the output trace of
+/// [accumulate_trace_with_balancer_test_circuit] from every worker.
+///
+/// # Returns
+///
+/// The delta and the trace of each worker, in order of worker index.
+#[allow(clippy::type_complexity)]
+fn take_accumulate_trace_output(
+    hosts: &TestHosts<AccumulateTraceTestCircuitResult>,
+) -> (Vec<OrdIndexedZSet<u64, u64>>, Vec<OrdIndexedZSet<u64, u64>>) {
+    let deltas = hosts.map_workers(|(_, _, output_delta, _), worker| {
+        output_delta.take_from_worker(worker).unwrap().consolidate()
+    });
+    let traces = hosts.map_workers(|(_, _, _, output_trace), worker| {
+        output_trace.take_from_worker(worker).unwrap()
+    });
+    (deltas, traces)
+}
+
+/// Hints `policy` for `stream` on every host.
+fn set_policy<T>(hosts: &mut TestHosts<T>, stream: &str, policy: PartitioningPolicy)
+where
+    T: Send + 'static,
+{
+    let stream = stream.to_string();
+    hosts.for_each(move |handle| {
+        handle
+            .set_balancer_hint(&stream, BalancerHint::Policy(Some(policy)))
+            .unwrap()
+    });
+}
+
+/// Returns the current policy of `stream`, which all of the hosts must agree
+/// on.
+fn current_policy<T>(hosts: &mut TestHosts<T>, stream: &str) -> PartitioningPolicy
+where
+    T: Send + 'static,
+{
+    let id = stream.to_string();
+    let policies = hosts.map(move |handle| handle.get_current_balancer_policy(&id).unwrap());
+    assert!(
+        policies.iter().all(|policy| *policy == policies[0]),
+        "the hosts disagree on the policy of {stream}: {policies:?}"
+    );
+    policies[0]
+}
+
 fn test_accumulate_trace_with_balancer(
     workers: usize,
+    hosts: usize,
     transaction: bool,
     batches: Vec<(PartitioningPolicy, Vec<Tup2<u64, Tup2<u64, ZWeight>>>)>,
 ) {
-    let (mut circuit, (input_handle, input_node_id, output_delta, output_trace)) =
-        Runtime::init_circuit(
-            CircuitConfig::from(workers)
-                .with_splitter_chunk_size_records(2)
-                .with_balancer_min_absolute_improvement_threshold(0)
-                .with_mode(Mode::Persistent),
-            accumulate_trace_with_balancer_test_circuit,
-        )
-        .unwrap();
+    let mut test_hosts = start_accumulate_trace_with_balancer(workers, hosts);
+    let input_node_id = test_hosts.result(0).1.clone();
 
     let mut all_tuples: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
 
     if transaction {
-        circuit.start_transaction().unwrap();
+        test_hosts.start_transaction();
     }
 
     let mut previous_policy = PartitioningPolicy::Shard;
@@ -432,9 +503,7 @@ fn test_accumulate_trace_with_balancer(
     for (_step, (policy, batch)) in batches.iter().enumerate() {
         //println!("step: {}", step);
 
-        circuit
-            .set_balancer_hint(&input_node_id, BalancerHint::Policy(Some(*policy)))
-            .unwrap();
+        set_policy(&mut test_hosts, &input_node_id, *policy);
 
         let retractions = balance_batch(
             &OrdIndexedZSet::from_tuples(
@@ -459,6 +528,7 @@ fn test_accumulate_trace_with_balancer(
         // println!("insertions: {:?}", insertions);
 
         let mut tuples = vec![];
+        let input_handle = &test_hosts.result(0).0;
         for Tup2(key, Tup2(val, w)) in batch.iter() {
             input_handle.push(*key, (*val, *w));
             tuples.push(Tup2(Tup2(*key, *val), *w));
@@ -485,20 +555,13 @@ fn test_accumulate_trace_with_balancer(
         let expected_output_trace = balance_batch(&input_trace, *policy, workers);
 
         if transaction {
-            circuit.step().unwrap();
+            test_hosts.step();
         } else {
-            circuit.transaction().unwrap();
+            test_hosts.transaction();
         }
 
         if !transaction {
-            let output_delta: Vec<_> = (0..workers)
-                .map(|worker| output_delta.take_from_worker(worker).unwrap().consolidate())
-                .collect();
-
-            let output_trace: Vec<_> = (0..workers)
-                .map(|worker| output_trace.take_from_worker(worker).unwrap())
-                .collect();
-
+            let (output_delta, output_trace) = take_accumulate_trace_output(&test_hosts);
             assert_eq!(output_delta, expected_output_delta);
             assert_eq!(output_trace, expected_output_trace);
         }
@@ -507,14 +570,8 @@ fn test_accumulate_trace_with_balancer(
     }
 
     if transaction {
-        circuit.commit_transaction().unwrap();
-        let output_delta: Vec<_> = (0..workers)
-            .map(|worker| output_delta.take_from_worker(worker).unwrap().consolidate())
-            .collect();
-
-        let output_trace: Vec<_> = (0..workers)
-            .map(|worker| output_trace.take_from_worker(worker).unwrap())
-            .collect();
+        test_hosts.commit_transaction();
+        let (output_delta, output_trace) = take_accumulate_trace_output(&test_hosts);
 
         let input = OrdIndexedZSet::from_tuples((), all_tuples.clone().into_iter().collect());
         let expected_output = balance_batch(&input, batches.last().unwrap().0, workers);
@@ -539,11 +596,8 @@ struct JoinTestStep {
     expected_right_policy: Option<PartitioningPolicy>,
 }
 
-fn mkconfig(path: &Path, workers: usize) -> CircuitConfig {
-    configure(CircuitConfig::from(workers), path)
-}
-
-/// Applies the settings of [mkconfig] to `config`, with storage in `path`.
+/// Configures `config` for the balancer to change policies freely, with
+/// storage in `path`.
 fn configure(config: CircuitConfig, path: &Path) -> CircuitConfig {
     config
         .with_splitter_chunk_size_records(2)
@@ -563,6 +617,7 @@ fn configure(config: CircuitConfig, path: &Path) -> CircuitConfig {
 
 fn test_join_with_balancer(
     workers: usize,
+    hosts: usize,
     transaction: bool,
     checkpoints: bool,
     inputs: Vec<JoinTestStep>,
@@ -586,23 +641,18 @@ fn test_join_with_balancer(
         join_with_balancer_test_circuit
     };
 
-    let (
-        mut circuit,
-        (
-            mut left_input_handle,
-            mut right_input_handle,
-            mut left_input_node_id,
-            mut right_input_node_id,
-            mut output_integral_handle,
-        ),
-    ) = Runtime::init_circuit(mkconfig(temp.path(), workers), constructor).unwrap();
-    circuit.set_auto_rebalance(auto_rebalance).unwrap();
+    let mut test_hosts =
+        TestHosts::start_with(workers, hosts, configure_hosts(temp.path()), constructor);
+    test_hosts.for_each(move |handle| handle.set_auto_rebalance(auto_rebalance).unwrap());
+    let (_, _, left_input_node_id, right_input_node_id, _) = test_hosts.result(0);
+    let (left_input_node_id, right_input_node_id) =
+        (left_input_node_id.clone(), right_input_node_id.clone());
 
     let mut all_left_tuples: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
     let mut all_right_tuples: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
 
     if transaction {
-        circuit.start_transaction().unwrap();
+        test_hosts.start_transaction();
     }
 
     for (
@@ -623,35 +673,40 @@ fn test_join_with_balancer(
         // );
 
         if auto_rebalance {
-            circuit
-                .set_balancer_hints(vec![
-                    (left_input_node_id.clone(), BalancerHint::Policy(None)),
-                    (right_input_node_id.clone(), BalancerHint::Policy(None)),
-                ])
-                .unwrap();
+            let hints = vec![
+                (left_input_node_id.clone(), BalancerHint::Policy(None)),
+                (right_input_node_id.clone(), BalancerHint::Policy(None)),
+            ];
+            test_hosts.for_each(move |handle| {
+                handle.set_balancer_hints(hints.clone()).unwrap();
+            });
         }
 
         if let Some(left_policy_hint) = left_policy_hint
             && auto_rebalance
         {
-            circuit
-                .set_balancer_hint(&left_input_node_id, BalancerHint::Policy(*left_policy_hint))
-                .unwrap();
+            let (id, hint) = (left_input_node_id.clone(), *left_policy_hint);
+            test_hosts.for_each(move |handle| {
+                handle
+                    .set_balancer_hint(&id, BalancerHint::Policy(hint))
+                    .unwrap()
+            });
         }
 
         if let Some(right_policy_hint) = right_policy_hint
             && auto_rebalance
         {
-            circuit
-                .set_balancer_hint(
-                    &right_input_node_id,
-                    BalancerHint::Policy(*right_policy_hint),
-                )
-                .unwrap();
+            let (id, hint) = (right_input_node_id.clone(), *right_policy_hint);
+            test_hosts.for_each(move |handle| {
+                handle
+                    .set_balancer_hint(&id, BalancerHint::Policy(hint))
+                    .unwrap()
+            });
         }
 
         // println!("insertions: {:?}", insertions);
 
+        let (left_input_handle, right_input_handle, _, _, _) = test_hosts.result(0);
         let mut left_tuples = vec![];
         for Tup2(key, Tup2(val, w)) in left.iter() {
             left_input_handle.push(*key, (*val, *w));
@@ -671,9 +726,9 @@ fn test_join_with_balancer(
             OrdIndexedZSet::from_tuples((), all_right_tuples.clone().into_iter().collect());
 
         if transaction {
-            circuit.step().unwrap();
+            test_hosts.step();
         } else {
-            circuit.transaction().unwrap();
+            test_hosts.transaction();
         }
 
         if !transaction && expected_left_policy.is_some() && expected_right_policy.is_some() {
@@ -686,49 +741,27 @@ fn test_join_with_balancer(
                 left_join,
             );
 
-            let output_trace: Vec<_> = (0..workers)
-                .map(|worker| output_integral_handle.take_from_worker(worker).unwrap())
-                .collect();
+            let output_trace = collect_join_output(&test_hosts);
 
-            let current_left_policy = circuit
-                .get_current_balancer_policy(&left_input_node_id)
-                .unwrap();
-            let current_right_policy = circuit
-                .get_current_balancer_policy(&right_input_node_id)
-                .unwrap();
+            let current_left_policy = current_policy(&mut test_hosts, &left_input_node_id);
+            let current_right_policy = current_policy(&mut test_hosts, &right_input_node_id);
 
             assert_eq!(current_left_policy, expected_left_policy.unwrap());
             assert_eq!(current_right_policy, expected_right_policy.unwrap());
             assert_eq!(output_trace, expected_output);
 
             if checkpoints {
-                // checkpoint and stop the circuit.
-                let cpm = circuit.checkpoint().run().expect("commit shouldn't fail");
-                circuit.kill().unwrap();
-
-                // start from the checkpoint
-                let mut cconf = mkconfig(temp.path(), workers);
-                cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
-
-                (
-                    circuit,
-                    (
-                        left_input_handle,
-                        right_input_handle,
-                        left_input_node_id,
-                        right_input_node_id,
-                        output_integral_handle,
-                    ),
-                ) = Runtime::init_circuit(cconf, constructor).unwrap();
+                // Checkpoint the circuit, and start it again from the
+                // checkpoint.
+                let checkpoints = test_hosts.checkpoint();
+                test_hosts = test_hosts.restart(&checkpoints);
             }
         }
     }
 
     if transaction {
-        circuit.commit_transaction().unwrap();
-        let output_trace: Vec<_> = (0..workers)
-            .map(|worker| output_integral_handle.take_from_worker(worker).unwrap())
-            .collect();
+        test_hosts.commit_transaction();
+        let output_trace = collect_join_output(&test_hosts);
 
         let left_input_trace =
             OrdIndexedZSet::from_tuples((), all_left_tuples.clone().into_iter().collect());
@@ -751,8 +784,62 @@ fn test_join_with_balancer(
     }
 }
 
+/// Returns the contents of an output of a circuit over all of the workers on
+/// all of the hosts.
+///
+/// # Arguments
+///
+/// * `hosts` - the hosts of the circuit.
+/// * `output` - takes the output of one host and consolidates it, given what
+///   the circuit's constructor returned on that host.
+///
+/// # Returns
+///
+/// The weight of each record in the output.
+fn consolidate_hosts<T, B>(
+    hosts: &TestHosts<T>,
+    output: impl Fn(&T) -> B,
+) -> BTreeMap<(B::Key, B::Val), ZWeight>
+where
+    T: Send + 'static,
+    B: IndexedZSetReader,
+    B::Key: Ord,
+    B::Val: Ord,
+{
+    let mut contents = BTreeMap::new();
+    for result in hosts.results() {
+        for (key, val, weight) in output(result).iter() {
+            *contents.entry((key, val)).or_insert(0) += weight;
+        }
+    }
+    contents.retain(|_, weight| *weight != 0);
+    contents
+}
+
+/// Checks that each balanced join of [circular_dependency_test_circuit]
+/// outputs what its reference join outputs, over all of the workers.
+fn check_circular_dependency_outputs(hosts: &TestHosts<CircularDependencyTestCircuitResult>) {
+    assert_eq!(
+        consolidate_hosts(hosts, |result| result.2.concat().consolidate()),
+        consolidate_hosts(hosts, |result| result.6.concat().consolidate())
+    );
+    assert_eq!(
+        consolidate_hosts(hosts, |result| result.3.concat().consolidate()),
+        consolidate_hosts(hosts, |result| result.7.concat().consolidate())
+    );
+    assert_eq!(
+        consolidate_hosts(hosts, |result| result.4.concat().consolidate()),
+        consolidate_hosts(hosts, |result| result.8.concat().consolidate())
+    );
+    assert_eq!(
+        consolidate_hosts(hosts, |result| result.5.concat().consolidate()),
+        consolidate_hosts(hosts, |result| result.9.concat().consolidate())
+    );
+}
+
 fn test_circular_dependency(
     num_workers: usize,
+    hosts: usize,
     transaction: bool,
     checkpoints: bool,
     inputs: Vec<(TestBatch, TestBatch)>,
@@ -764,28 +851,15 @@ fn test_circular_dependency(
 
     let temp = tempdir().expect("Can't create temp dir for storage");
 
-    let (
-        mut circuit,
-        (
-            mut input_handle1,
-            mut input_handle2,
-            mut output_handle1,
-            mut output_handle4,
-            mut output_handle7,
-            mut output_handle8,
-            mut output_handle1_ref,
-            mut output_handle4_ref,
-            mut output_handle7_ref,
-            mut output_handle8_ref,
-        ),
-    ) = Runtime::init_circuit(
-        mkconfig(temp.path(), num_workers),
+    let mut test_hosts = TestHosts::start_with(
+        num_workers,
+        hosts,
+        configure_hosts(temp.path()),
         circular_dependency_test_circuit,
-    )
-    .unwrap();
+    );
 
     if transaction {
-        circuit.start_transaction().unwrap();
+        test_hosts.start_transaction();
     }
 
     for (_step, (left, right)) in inputs.iter().enumerate() {
@@ -793,6 +867,7 @@ fn test_circular_dependency(
 
         // println!("insertions: {:?}", insertions);
 
+        let (input_handle1, input_handle2, ..) = test_hosts.result(0);
         for Tup2(key, Tup2(val, w)) in left.iter() {
             input_handle1.push(*key, (*val, *w));
         }
@@ -801,76 +876,26 @@ fn test_circular_dependency(
         }
 
         if transaction {
-            circuit.step().unwrap();
+            test_hosts.step();
         } else {
-            circuit.transaction().unwrap();
+            test_hosts.transaction();
         }
 
         if !transaction {
-            assert_eq!(
-                output_handle1.concat().consolidate(),
-                output_handle1_ref.concat().consolidate()
-            );
-            assert_eq!(
-                output_handle4.concat().consolidate(),
-                output_handle4_ref.concat().consolidate()
-            );
-            assert_eq!(
-                output_handle7.concat().consolidate(),
-                output_handle7_ref.concat().consolidate()
-            );
-            assert_eq!(
-                output_handle8.concat().consolidate(),
-                output_handle8_ref.concat().consolidate()
-            );
+            check_circular_dependency_outputs(&test_hosts);
 
             if checkpoints {
-                // checkpoint and stop the circuit.
-                let cpm = circuit.checkpoint().run().expect("commit shouldn't fail");
-                circuit.kill().unwrap();
-
-                // start from the checkpoint
-                let mut cconf = mkconfig(temp.path(), num_workers);
-                cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
-
-                (
-                    circuit,
-                    (
-                        input_handle1,
-                        input_handle2,
-                        output_handle1,
-                        output_handle4,
-                        output_handle7,
-                        output_handle8,
-                        output_handle1_ref,
-                        output_handle4_ref,
-                        output_handle7_ref,
-                        output_handle8_ref,
-                    ),
-                ) = Runtime::init_circuit(cconf, circular_dependency_test_circuit).unwrap();
+                // Checkpoint the circuit, and start it again from the
+                // checkpoint.
+                let checkpoints = test_hosts.checkpoint();
+                test_hosts = test_hosts.restart(&checkpoints);
             }
         }
     }
 
     if transaction {
-        circuit.commit_transaction().unwrap();
-
-        assert_eq!(
-            output_handle1.concat().consolidate(),
-            output_handle1_ref.concat().consolidate()
-        );
-        assert_eq!(
-            output_handle4.concat().consolidate(),
-            output_handle4_ref.concat().consolidate()
-        );
-        assert_eq!(
-            output_handle7.concat().consolidate(),
-            output_handle7_ref.concat().consolidate()
-        );
-        assert_eq!(
-            output_handle8.concat().consolidate(),
-            output_handle8_ref.concat().consolidate()
-        );
+        test_hosts.commit_transaction();
+        check_circular_dependency_outputs(&test_hosts);
     }
 }
 
@@ -1138,6 +1163,7 @@ fn generate_skewed_batch(num_partitions: usize, size: usize, skew: usize) -> Tes
 fn test_accumulate_trace_with_balancer_shard_small_step() {
     test_accumulate_trace_with_balancer(
         4,
+        1,
         false,
         simple_integrate_workload(PartitioningPolicy::Shard),
     );
@@ -1147,6 +1173,7 @@ fn test_accumulate_trace_with_balancer_shard_small_step() {
 fn test_accumulate_trace_with_balancer_bcast_small_step() {
     test_accumulate_trace_with_balancer(
         4,
+        1,
         false,
         simple_integrate_workload(PartitioningPolicy::Broadcast),
     );
@@ -1156,6 +1183,7 @@ fn test_accumulate_trace_with_balancer_bcast_small_step() {
 fn test_accumulate_trace_with_balancer_balance_small_step() {
     test_accumulate_trace_with_balancer(
         4,
+        1,
         false,
         simple_integrate_workload(PartitioningPolicy::Balance),
     );
@@ -1165,6 +1193,7 @@ fn test_accumulate_trace_with_balancer_balance_small_step() {
 fn test_accumulate_trace_with_balancer_shard_big_step() {
     test_accumulate_trace_with_balancer(
         4,
+        1,
         true,
         simple_integrate_workload(PartitioningPolicy::Shard),
     );
@@ -1174,6 +1203,7 @@ fn test_accumulate_trace_with_balancer_shard_big_step() {
 fn test_accumulate_trace_with_balancer_bcast_big_step() {
     test_accumulate_trace_with_balancer(
         4,
+        1,
         true,
         simple_integrate_workload(PartitioningPolicy::Broadcast),
     );
@@ -1183,6 +1213,7 @@ fn test_accumulate_trace_with_balancer_bcast_big_step() {
 fn test_accumulate_trace_with_balancer_balance_big_step() {
     test_accumulate_trace_with_balancer(
         4,
+        1,
         true,
         simple_integrate_workload(PartitioningPolicy::Balance),
     );
@@ -1190,66 +1221,118 @@ fn test_accumulate_trace_with_balancer_balance_big_step() {
 
 #[test]
 fn test_accumulate_trace_with_balancer_round_robin_small_step() {
-    test_accumulate_trace_with_balancer(4, false, round_robin_integrate_workload());
+    test_accumulate_trace_with_balancer(4, 1, false, round_robin_integrate_workload());
 }
 
 #[test]
 fn test_accumulate_trace_with_balancer_round_robin_big_step() {
-    test_accumulate_trace_with_balancer(4, true, round_robin_integrate_workload());
+    test_accumulate_trace_with_balancer(4, 1, true, round_robin_integrate_workload());
 }
 
 #[test]
-fn test_accumulate_trace_with_balancer_policy_returns_to_trace_policy() {
-    // The integral is rebalanced at commit using the policy captured on the first
-    // policy change in the transaction. A long transaction can still see later
-    // policy changes before commit; if the policy changes Shard -> Broadcast -> Shard,
-    // the final policy matches the original trace policy. This used to panic when
-    // the sender assumed that the saved trace policy and current policy must differ.
+fn test_accumulate_trace_with_balancer_shard_small_step_multihost() {
+    test_accumulate_trace_with_balancer(
+        4,
+        2,
+        false,
+        simple_integrate_workload(PartitioningPolicy::Shard),
+    );
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_bcast_small_step_multihost() {
+    test_accumulate_trace_with_balancer(
+        4,
+        2,
+        false,
+        simple_integrate_workload(PartitioningPolicy::Broadcast),
+    );
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_balance_small_step_multihost() {
+    test_accumulate_trace_with_balancer(
+        4,
+        2,
+        false,
+        simple_integrate_workload(PartitioningPolicy::Balance),
+    );
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_shard_big_step_multihost() {
+    test_accumulate_trace_with_balancer(
+        4,
+        2,
+        true,
+        simple_integrate_workload(PartitioningPolicy::Shard),
+    );
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_bcast_big_step_multihost() {
+    test_accumulate_trace_with_balancer(
+        4,
+        2,
+        true,
+        simple_integrate_workload(PartitioningPolicy::Broadcast),
+    );
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_balance_big_step_multihost() {
+    test_accumulate_trace_with_balancer(
+        4,
+        2,
+        true,
+        simple_integrate_workload(PartitioningPolicy::Balance),
+    );
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_round_robin_small_step_multihost() {
+    test_accumulate_trace_with_balancer(4, 2, false, round_robin_integrate_workload());
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_round_robin_big_step_multihost() {
+    test_accumulate_trace_with_balancer(4, 2, true, round_robin_integrate_workload());
+}
+
+/// The integral is rebalanced at commit using the policy captured on the first
+/// policy change in the transaction. A long transaction can still see later
+/// policy changes before commit; if the policy changes Shard -> Broadcast -> Shard,
+/// the final policy matches the original trace policy. This used to panic when
+/// the sender assumed that the saved trace policy and current policy must differ.
+///
+/// # Arguments
+///
+/// * `hosts` - the number of hosts to run the circuit on.
+fn policy_returns_to_trace_policy(hosts: usize) {
     let workers = 4;
-    let (mut circuit, (input_handle, input_node_id, output_delta, output_trace)) =
-        Runtime::init_circuit(
-            CircuitConfig::from(workers)
-                .with_splitter_chunk_size_records(2)
-                .with_balancer_min_absolute_improvement_threshold(0)
-                .with_mode(Mode::Persistent),
-            accumulate_trace_with_balancer_test_circuit,
-        )
-        .unwrap();
+    let mut test_hosts = start_accumulate_trace_with_balancer(workers, hosts);
+    let input_node_id = test_hosts.result(0).1.clone();
 
-    circuit
-        .set_balancer_hint(
-            &input_node_id,
-            BalancerHint::Policy(Some(PartitioningPolicy::Shard)),
-        )
-        .unwrap();
-    input_handle.push(0, (0, 1));
-    circuit.transaction().unwrap();
-    for worker in 0..workers {
-        output_delta.take_from_worker(worker).unwrap();
-        output_trace.take_from_worker(worker).unwrap();
-    }
+    set_policy(&mut test_hosts, &input_node_id, PartitioningPolicy::Shard);
+    test_hosts.result(0).0.push(0, (0, 1));
+    test_hosts.transaction();
+    take_accumulate_trace_output(&test_hosts);
 
-    circuit.start_transaction().unwrap();
+    test_hosts.start_transaction();
 
-    circuit
-        .set_balancer_hint(
-            &input_node_id,
-            BalancerHint::Policy(Some(PartitioningPolicy::Broadcast)),
-        )
-        .unwrap();
-    input_handle.push(1, (0, 1));
-    circuit.step().unwrap();
+    set_policy(
+        &mut test_hosts,
+        &input_node_id,
+        PartitioningPolicy::Broadcast,
+    );
+    test_hosts.result(0).0.push(1, (0, 1));
+    test_hosts.step();
 
-    circuit
-        .set_balancer_hint(
-            &input_node_id,
-            BalancerHint::Policy(Some(PartitioningPolicy::Shard)),
-        )
-        .unwrap();
-    input_handle.push(2, (0, 1));
-    circuit.step().unwrap();
+    set_policy(&mut test_hosts, &input_node_id, PartitioningPolicy::Shard);
+    test_hosts.result(0).0.push(2, (0, 1));
+    test_hosts.step();
 
-    circuit.commit_transaction().unwrap();
+    test_hosts.commit_transaction();
 
     let expected_output_delta = balance_batch(
         &OrdIndexedZSet::from_tuples((), vec![Tup2(Tup2(1, 0), 1), Tup2(Tup2(2, 0), 1)]),
@@ -1268,19 +1351,24 @@ fn test_accumulate_trace_with_balancer_policy_returns_to_trace_policy() {
         PartitioningPolicy::Shard,
         workers,
     );
-    let output_delta: Vec<_> = (0..workers)
-        .map(|worker| output_delta.take_from_worker(worker).unwrap().consolidate())
-        .collect();
-    let output_trace: Vec<_> = (0..workers)
-        .map(|worker| output_trace.take_from_worker(worker).unwrap())
-        .collect();
+    let (output_delta, output_trace) = take_accumulate_trace_output(&test_hosts);
 
     assert_eq!(
-        circuit.get_current_balancer_policy(&input_node_id).unwrap(),
+        current_policy(&mut test_hosts, &input_node_id),
         PartitioningPolicy::Shard
     );
     assert_eq!(output_delta, expected_output_delta);
     assert_eq!(output_trace, expected_output_trace);
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_policy_returns_to_trace_policy() {
+    policy_returns_to_trace_policy(1);
+}
+
+#[test]
+fn test_accumulate_trace_with_balancer_policy_returns_to_trace_policy_multihost() {
+    policy_returns_to_trace_policy(2);
 }
 
 /// A `Broadcast` policy hint on the outer (left) input of a left join cannot be
@@ -1812,8 +1900,13 @@ fn workers_rebalancing(handle: &mut DBSPHandle) -> usize {
 /// commit, after some workers have finished rebalancing it and before one
 /// has.  A worker that has finished can no longer change its policy in the
 /// transaction, so the balancer must reject the hint until the next one.
-#[test]
-fn test_policy_frozen_after_flush() {
+///
+/// # Arguments
+///
+/// * `hosts` - the number of hosts to run the join on.  On more than one
+///   host, the workers that have finished can be on a host other than the
+///   one that still rebalances.
+fn policy_frozen_after_flush(hosts: usize) {
     use PartitioningPolicy::{Broadcast, Shard};
 
     init_test_logger();
@@ -1822,7 +1915,7 @@ fn test_policy_frozen_after_flush() {
     let temp = tempdir().expect("Can't create temp dir for storage");
     let mut test_hosts = TestHosts::start_with(
         workers,
-        1,
+        hosts,
         configure_hosts(temp.path()),
         join_with_balancer_test_circuit,
     );
@@ -1853,23 +1946,30 @@ fn test_policy_frozen_after_flush() {
         all_left.push(Tup2(Tup2(0, val), 1));
         test_hosts.step();
     }
-    let handle = test_hosts.handle(0);
-    handle.start_commit_transaction().unwrap();
+    test_hosts.for_each(|handle| handle.start_commit_transaction().unwrap());
     let mut hinted = false;
-    while !handle.step().unwrap() {
-        let rebalancing = workers_rebalancing(handle);
+    while !test_hosts.step() {
+        let rebalancing: usize = test_hosts
+            .handles()
+            .iter_mut()
+            .map(workers_rebalancing)
+            .sum();
         if !hinted && (1..workers).contains(&rebalancing) {
-            let result = handle.set_balancer_hint(&left_id, BalancerHint::Policy(Some(Shard)));
-            assert!(
-                matches!(
-                    result,
-                    Err(DbspError::Balancer(BalancerError::InvalidPolicyHint(
-                        Shard,
-                        _
-                    )))
-                ),
-                "a hint while {rebalancing} of {workers} workers rebalance must be rejected, got {result:?}"
-            );
+            let id = left_id.clone();
+            for result in test_hosts
+                .map(move |handle| handle.set_balancer_hint(&id, BalancerHint::Policy(Some(Shard))))
+            {
+                assert!(
+                    matches!(
+                        result,
+                        Err(DbspError::Balancer(BalancerError::InvalidPolicyHint(
+                            Shard,
+                            _
+                        )))
+                    ),
+                    "a hint while {rebalancing} of {workers} workers rebalance must be rejected, got {result:?}"
+                );
+            }
             hinted = true;
         }
     }
@@ -1877,10 +1977,7 @@ fn test_policy_frozen_after_flush() {
         hinted,
         "the commit had no step in which only some workers rebalanced"
     );
-    assert_eq!(
-        handle.get_current_balancer_policy(&left_id).unwrap(),
-        Broadcast
-    );
+    assert_eq!(current_policy(&mut test_hosts, &left_id), Broadcast);
     assert_eq!(
         collect_join_output(&test_hosts),
         reference_join(
@@ -1896,13 +1993,7 @@ fn test_policy_frozen_after_flush() {
     // The next transaction can change the policy again.
     set_join_policies(&mut test_hosts, &left_id, &right_id, (Shard, Shard));
     test_hosts.transaction();
-    assert_eq!(
-        test_hosts
-            .handle(0)
-            .get_current_balancer_policy(&left_id)
-            .unwrap(),
-        Shard
-    );
+    assert_eq!(current_policy(&mut test_hosts, &left_id), Shard);
     assert_eq!(
         collect_join_output(&test_hosts),
         reference_join(
@@ -1916,10 +2007,20 @@ fn test_policy_frozen_after_flush() {
     );
 }
 
+#[test]
+fn test_policy_frozen_after_flush() {
+    policy_frozen_after_flush(1);
+}
+
+#[test]
+fn test_policy_frozen_after_flush_multihost() {
+    policy_frozen_after_flush(2);
+}
+
 /// Join a large left collection with a small right collection. Both are skewed.
 /// The balancer should balance the left collection using Policy::Balance and the
 /// right collection using Policy::Broadcast.
-fn test_skewed_join_left(left_join: bool, auto_rebalance: bool) {
+fn test_skewed_join_left(hosts: usize, left_join: bool, auto_rebalance: bool) {
     let num_partitions = 4;
 
     let mut test_steps = vec![];
@@ -1966,6 +2067,7 @@ fn test_skewed_join_left(left_join: bool, auto_rebalance: bool) {
     }
     test_join_with_balancer(
         num_partitions,
+        hosts,
         false,
         false,
         test_steps,
@@ -1974,8 +2076,13 @@ fn test_skewed_join_left(left_join: bool, auto_rebalance: bool) {
     );
 }
 
-#[test]
-fn test_slow_skew() {
+/// Skew that grows slowly, a few records in each step, still makes the
+/// balancer change the join's policies.
+///
+/// # Arguments
+///
+/// * `hosts` - the number of hosts to run the join on.
+fn slow_skew(hosts: usize) {
     let num_partitions = 4;
 
     let mut test_steps = vec![];
@@ -2016,22 +2123,38 @@ fn test_slow_skew() {
             },
         });
     }
-    test_join_with_balancer(num_partitions, false, false, test_steps, false, true);
+    test_join_with_balancer(num_partitions, hosts, false, false, test_steps, false, true);
+}
+
+#[test]
+fn test_slow_skew() {
+    slow_skew(1);
+}
+
+#[test]
+fn test_slow_skew_multihost() {
+    slow_skew(2);
 }
 
 /// The skewed collection reaches `Balance` even though its cluster is too large
 /// for the change to look significant cluster-wide.
-#[test]
-fn test_skew_survives_a_diluting_cluster() {
+///
+/// # Arguments
+///
+/// * `hosts` - the number of hosts to run the circuit on.
+fn skew_survives_a_diluting_cluster(hosts: usize) {
     init_test_logger();
 
     let workers = 4;
     let temp = tempdir().expect("Can't create temp dir for storage");
 
-    let (mut circuit, (skewed_handle, filler_handle, balanced_outputs, reference_outputs)) =
-        Runtime::init_circuit(mkconfig(temp.path(), workers), diluted_cluster_test_circuit)
-            .unwrap();
-    circuit.set_auto_rebalance(true).unwrap();
+    let mut test_hosts = TestHosts::start_with(
+        workers,
+        hosts,
+        configure_hosts(temp.path()),
+        diluted_cluster_test_circuit,
+    );
+    test_hosts.for_each(|handle| handle.set_auto_rebalance(true).unwrap());
 
     // Size hints stand in for the filler collections, which cost too much to
     // materialize. `filler0` and `filler1` are also pinned, the other way a
@@ -2050,9 +2173,11 @@ fn test_skew_survives_a_diluting_cluster() {
         filler_stream(1),
         BalancerHint::Policy(Some(PartitioningPolicy::Shard)),
     ));
-    for result in circuit.set_balancer_hints(hints).unwrap() {
-        result.unwrap();
-    }
+    test_hosts.for_each(move |handle| {
+        for result in handle.set_balancer_hints(hints.clone()).unwrap() {
+            result.unwrap();
+        }
+    });
 
     // Five evenly distributed steps, then five skewed ones. The even phase is what
     // makes this a test of the gate: the gate is only consulted once every stream
@@ -2064,15 +2189,17 @@ fn test_skew_survives_a_diluting_cluster() {
             // materialize, so scale it with hints. Setting a hint also requests a
             // refresh, which gets the cluster re-solved at the start of the next
             // transaction, while its policies can still change.
-            circuit
-                .set_balancer_hint(SKEWED_STREAM, BalancerHint::Size(Some(SKEWED_SIZE)))
-                .unwrap();
-            circuit
-                .set_balancer_hint(
-                    SKEWED_STREAM,
-                    BalancerHint::Skew(Some(F64::new(SKEWED_SKEW))),
-                )
-                .unwrap();
+            test_hosts.for_each(|handle| {
+                handle
+                    .set_balancer_hint(SKEWED_STREAM, BalancerHint::Size(Some(SKEWED_SIZE)))
+                    .unwrap();
+                handle
+                    .set_balancer_hint(
+                        SKEWED_STREAM,
+                        BalancerHint::Skew(Some(F64::new(SKEWED_SKEW))),
+                    )
+                    .unwrap();
+            });
         }
 
         let skewed_batch = if step < 5 {
@@ -2080,6 +2207,7 @@ fn test_skew_survives_a_diluting_cluster() {
         } else {
             generate_skewed_batch(workers, 100, 5)
         };
+        let (skewed_handle, filler_handle, _, _) = test_hosts.result(0);
         for Tup2(key, Tup2(val, w)) in skewed_batch {
             skewed_handle.push(key, (val, w));
         }
@@ -2087,13 +2215,13 @@ fn test_skew_survives_a_diluting_cluster() {
             filler_handle.push(key, (val, w));
         }
 
-        circuit.transaction().unwrap();
+        test_hosts.transaction();
 
-        for (balanced, reference) in balanced_outputs.iter().zip(reference_outputs.iter()) {
+        for index in 0..test_hosts.result(0).2.len() {
             assert_eq!(
-                balanced.concat().consolidate(),
-                reference.concat().consolidate(),
-                "step {step}"
+                consolidate_hosts(&test_hosts, |result| result.2[index].concat().consolidate()),
+                consolidate_hosts(&test_hosts, |result| result.3[index].concat().consolidate()),
+                "step {step}, join {index}"
             );
         }
 
@@ -2104,12 +2232,12 @@ fn test_skew_survives_a_diluting_cluster() {
         };
 
         assert_eq!(
-            circuit.get_current_balancer_policy(SKEWED_STREAM).unwrap(),
+            current_policy(&mut test_hosts, SKEWED_STREAM),
             expected_skewed,
             "step {step}"
         );
         assert_eq!(
-            circuit.get_current_balancer_policy(BCAST_STREAM).unwrap(),
+            current_policy(&mut test_hosts, BCAST_STREAM),
             expected_bcast,
             "step {step}"
         );
@@ -2117,9 +2245,7 @@ fn test_skew_survives_a_diluting_cluster() {
         // The fillers are what dilutes the ratio, so they must stay put.
         for index in 0..NUM_FILLERS {
             assert_eq!(
-                circuit
-                    .get_current_balancer_policy(&filler_stream(index))
-                    .unwrap(),
+                current_policy(&mut test_hosts, &filler_stream(index)),
                 PartitioningPolicy::Shard,
                 "step {step}, filler {index}"
             );
@@ -2128,24 +2254,49 @@ fn test_skew_survives_a_diluting_cluster() {
 }
 
 #[test]
+fn test_skew_survives_a_diluting_cluster() {
+    skew_survives_a_diluting_cluster(1);
+}
+
+#[test]
+fn test_skew_survives_a_diluting_cluster_multihost() {
+    skew_survives_a_diluting_cluster(2);
+}
+
+#[test]
 fn test_skewed_inner_join_left() {
-    test_skewed_join_left(false, true);
+    test_skewed_join_left(1, false, true);
+}
+
+#[test]
+fn test_skewed_inner_join_left_multihost() {
+    test_skewed_join_left(2, false, true);
 }
 
 #[test]
 fn test_skewed_inner_join_left_disable_auto_rebalance() {
-    test_skewed_join_left(false, false);
+    test_skewed_join_left(1, false, false);
+}
+
+#[test]
+fn test_skewed_inner_join_left_disable_auto_rebalance_multihost() {
+    test_skewed_join_left(2, false, false);
 }
 
 #[test]
 fn test_skewed_left_join_no_checkpoints() {
-    test_skewed_join_left(true, true);
+    test_skewed_join_left(1, true, true);
+}
+
+#[test]
+fn test_skewed_left_join_no_checkpoints_multihost() {
+    test_skewed_join_left(2, true, true);
 }
 
 /// Join a small left collection with a large right collection. Both are skewed.
 /// The balancer should balance the left collection using Policy::Broadcast and the
 /// right collection using Policy::Balance.
-fn test_skewed_join_right(checkpoints: bool, left_join: bool) {
+fn test_skewed_join_right(hosts: usize, checkpoints: bool, left_join: bool) {
     let num_partitions = 4;
 
     let mut test_steps = vec![];
@@ -2197,6 +2348,7 @@ fn test_skewed_join_right(checkpoints: bool, left_join: bool) {
     }
     test_join_with_balancer(
         num_partitions,
+        hosts,
         false,
         checkpoints,
         test_steps,
@@ -2207,61 +2359,84 @@ fn test_skewed_join_right(checkpoints: bool, left_join: bool) {
 
 #[test]
 fn test_skewed_join_right_no_checkpoints() {
-    test_skewed_join_right(false, false);
+    test_skewed_join_right(1, false, false);
+}
+
+#[test]
+fn test_skewed_join_right_no_checkpoints_multihost() {
+    test_skewed_join_right(2, false, false);
 }
 
 #[test]
 fn test_skewed_join_right_checkpoints() {
-    test_skewed_join_right(true, false);
+    test_skewed_join_right(1, true, false);
+}
+
+#[test]
+fn test_skewed_join_right_checkpoints_multihost() {
+    test_skewed_join_right(2, true, false);
 }
 
 #[test]
 fn test_skewed_left_join_right_no_checkpoints() {
-    test_skewed_join_right(false, true);
+    test_skewed_join_right(1, false, true);
+}
+
+#[test]
+fn test_skewed_left_join_right_no_checkpoints_multihost() {
+    test_skewed_join_right(2, false, true);
 }
 
 #[test]
 fn test_skewed_left_join_right_checkpoints() {
-    test_skewed_join_right(true, true);
+    test_skewed_join_right(1, true, true);
+}
+
+#[test]
+fn test_skewed_left_join_right_checkpoints_multihost() {
+    test_skewed_join_right(2, true, true);
+}
+
+/// Ten skewed steps for [test_circular_dependency].
+fn circular_dependency_inputs() -> Vec<(TestBatch, TestBatch)> {
+    (0..10)
+        .map(|_| {
+            (
+                generate_skewed_batch(4, 100, 5),
+                generate_skewed_batch(4, 10, 5),
+            )
+        })
+        .collect()
 }
 
 #[test]
 fn test_circular_dependency_small_step() {
-    let mut inputs = vec![];
+    test_circular_dependency(4, 1, false, false, circular_dependency_inputs());
+}
 
-    for _ in 0..10 {
-        let left_batch = generate_skewed_batch(4, 100, 5);
-        let right_batch = generate_skewed_batch(4, 10, 5);
-        inputs.push((left_batch, right_batch));
-    }
-
-    test_circular_dependency(4, false, false, inputs);
+#[test]
+fn test_circular_dependency_small_step_multihost() {
+    test_circular_dependency(4, 2, false, false, circular_dependency_inputs());
 }
 
 #[test]
 fn test_circular_dependency_big_step() {
-    let mut inputs = vec![];
+    test_circular_dependency(4, 1, true, false, circular_dependency_inputs());
+}
 
-    for _ in 0..10 {
-        let left_batch = generate_skewed_batch(4, 100, 5);
-        let right_batch = generate_skewed_batch(4, 10, 5);
-        inputs.push((left_batch, right_batch));
-    }
-
-    test_circular_dependency(4, true, false, inputs);
+#[test]
+fn test_circular_dependency_big_step_multihost() {
+    test_circular_dependency(4, 2, true, false, circular_dependency_inputs());
 }
 
 #[test]
 fn test_circular_dependency_checkpoints() {
-    let mut inputs = vec![];
+    test_circular_dependency(4, 1, false, true, circular_dependency_inputs());
+}
 
-    for _ in 0..10 {
-        let left_batch = generate_skewed_batch(4, 100, 5);
-        let right_batch = generate_skewed_batch(4, 10, 5);
-        inputs.push((left_batch, right_batch));
-    }
-
-    test_circular_dependency(4, false, true, inputs);
+#[test]
+fn test_circular_dependency_checkpoints_multihost() {
+    test_circular_dependency(4, 2, false, true, circular_dependency_inputs());
 }
 
 proptest! {
@@ -2270,22 +2445,42 @@ proptest! {
 
     #[test]
     fn proptest_join_with_balancer_small_step(inputs in generate_join_test_data(10, 10, 10, 30)) {
-        test_join_with_balancer(4, false, false, inputs, false, true);
+        test_join_with_balancer(4, 1, false, false, inputs, false, true);
+    }
+
+    #[test]
+    fn proptest_join_with_balancer_small_step_multihost(inputs in generate_join_test_data(10, 10, 10, 30)) {
+        test_join_with_balancer(4, 2, false, false, inputs, false, true);
     }
 
     #[test]
     fn proptest_join_with_balancer_big_step(inputs in generate_join_test_data(10, 10, 10, 40)) {
-        test_join_with_balancer(4, true, false, inputs, false, true);
+        test_join_with_balancer(4, 1, true, false, inputs, false, true);
+    }
+
+    #[test]
+    fn proptest_join_with_balancer_big_step_multihost(inputs in generate_join_test_data(10, 10, 10, 40)) {
+        test_join_with_balancer(4, 2, true, false, inputs, false, true);
     }
 
     #[test]
     fn proptest_left_join_with_balancer_small_step(inputs in generate_left_join_test_data(200, 10, 10, 30)) {
-        test_join_with_balancer(4, false, false, inputs, true, true);
+        test_join_with_balancer(4, 1, false, false, inputs, true, true);
+    }
+
+    #[test]
+    fn proptest_left_join_with_balancer_small_step_multihost(inputs in generate_left_join_test_data(200, 10, 10, 30)) {
+        test_join_with_balancer(4, 2, false, false, inputs, true, true);
     }
 
     #[test]
     fn proptest_left_join_with_balancer_big_step(inputs in generate_left_join_test_data(200, 10, 10, 40)) {
-        test_join_with_balancer(4, true, false, inputs, true, true);
+        test_join_with_balancer(4, 1, true, false, inputs, true, true);
+    }
+
+    #[test]
+    fn proptest_left_join_with_balancer_big_step_multihost(inputs in generate_left_join_test_data(200, 10, 10, 40)) {
+        test_join_with_balancer(4, 2, true, false, inputs, true, true);
     }
 
 }
