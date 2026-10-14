@@ -54,6 +54,27 @@ circuit_cache_key!(ShardedAccumulatorId<C, B: Batch>((StreamId, Range<usize>) =>
 
 circuit_cache_key!(ShardedAccumulatorRemoteWaiterId(() => NodeId));
 
+#[cfg(test)]
+circuit_cache_key!(local RemoteDeliveryDelayId(() => std::time::Duration));
+
+/// Makes the sharded accumulators in `runtime` wait for `delay` before they
+/// deliver each message from a remote host, so that remote data arrives late.
+///
+/// A host delivers the messages from another host one at a time, so the
+/// delays add up: a host that receives several messages in each step falls
+/// further behind its peers with every step.
+///
+/// # Arguments
+///
+/// * `runtime` - the runtime whose accumulators wait.
+/// * `delay` - how long to wait before each delivery.
+#[cfg(test)]
+pub(crate) fn delay_remote_deliveries(runtime: &Runtime, delay: std::time::Duration) {
+    runtime
+        .local_store()
+        .insert(RemoteDeliveryDelayId::new(()), delay);
+}
+
 impl<C, B> Stream<C, B>
 where
     C: Circuit,
@@ -792,6 +813,17 @@ where
             #[cfg(test)]
             self.remote_messages
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            #[cfg(test)]
+            {
+                let delay = self
+                    .runtime
+                    .local_store()
+                    .get(&RemoteDeliveryDelayId::new(()))
+                    .map(|delay| *delay.value());
+                if let Some(delay) = delay {
+                    tokio::time::sleep(delay).await;
+                }
+            }
             for (receiver, mut data) in zip_eq(self.local_workers.clone(), data) {
                 if data.is_empty() {
                     // An arrival marker (see `wait_for_arrival`).

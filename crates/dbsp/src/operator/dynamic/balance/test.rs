@@ -1,7 +1,11 @@
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use proptest::collection::vec;
 use proptest::prelude::*;
-use std::{hash::Hasher, path::Path, time::Duration};
+use std::{
+    hash::Hasher,
+    path::Path,
+    time::{Duration, Instant},
+};
 use tempfile::tempdir;
 
 use crate::{
@@ -10,14 +14,16 @@ use crate::{
     algebra::F64,
     circuit::{
         CircuitConfig, CircuitStorageConfig, Mode, StepSize,
-        metadata::{KEY_DISTRIBUTION, MetaItem},
+        metadata::{KEY_DISTRIBUTION, MetaItem, REBALANCING_IN_PROGRESS},
+        runtime::tests::with_mock_process_rss,
     },
     default_hasher,
     dynamic::{Data, DowncastTrait as _},
     operator::{
         dynamic::{
             accumulator::EnableCount,
-            balance::{BalancerHint, PartitioningPolicy},
+            balance::{BalancerError, BalancerHint, PartitioningPolicy},
+            sharded_accumulator::delay_remote_deliveries,
         },
         output::AccumulateOutput,
     },
@@ -1441,6 +1447,21 @@ fn join_with_slow_worker_test_circuit(
     ))
 }
 
+/// How late [join_with_late_delivery_test_circuit] delivers each message
+/// from a remote host.
+const LATE_DELIVERY: Duration = Duration::from_millis(100);
+
+/// Like [join_with_balancer_test_circuit], but each host delivers every
+/// message from a remote host [LATE_DELIVERY] late (see
+/// [delay_remote_deliveries]).  A step takes less time than the deliveries
+/// of its messages, so a host falls further behind with every step.
+fn join_with_late_delivery_test_circuit(
+    circuit: &mut RootCircuit,
+) -> AnyResult<JoinTestCircuitResult> {
+    delay_remote_deliveries(&Runtime::runtime().unwrap(), LATE_DELIVERY);
+    join_with_balancer_test_circuit(circuit)
+}
+
 /// Policies for the left and right inputs of a join.
 type JoinPolicies = (PartitioningPolicy, PartitioningPolicy);
 
@@ -1499,18 +1520,42 @@ fn key_distribution_total(handles: &mut [DBSPHandle]) -> ZWeight {
     total
 }
 
+/// Takes the join's output from every worker, in order of worker index.
+///
+/// # Arguments
+///
+/// * `hosts` - the hosts of a circuit that [join_with_balancer_test_circuit]
+///   or a variant of it builds.
+///
+/// # Returns
+///
+/// The output of each worker.
+fn collect_join_output(
+    hosts: &TestHosts<JoinTestCircuitResult>,
+) -> Vec<OrdZSet<Tup3<u64, u64, Option<u64>>>> {
+    hosts.map_workers(|(_, _, _, _, output_handle), worker| {
+        output_handle.take_from_worker(worker).unwrap()
+    })
+}
+
 /// Changes a join's policies in the middle of transactions, several times in
-/// one transaction, and while a transaction commits, with [SLOW_WORKER]
-/// evaluating late, and checks the join's output on every worker and the
-/// total of the key distributions after every transaction.
+/// one transaction, and while a transaction commits, and checks the join's
+/// output on every worker and the total of the key distributions after every
+/// transaction.
 ///
 /// Every policy change exercises the take race: when the policy changes, a
 /// worker must redistribute what it has received in the transaction, but
 /// faster workers may already have sent it their part of the step.
-fn test_join_with_policy_changes(workers: usize, hosts: usize) {
+///
+/// # Arguments
+///
+/// * `test_hosts` - the hosts of a circuit that
+///   [join_with_slow_worker_test_circuit] builds.
+fn check_join_with_policy_changes(test_hosts: &mut TestHosts<JoinTestCircuitResult>) {
     use PartitioningPolicy::{Balance, Broadcast, Shard};
 
-    init_test_logger();
+    let hosts = test_hosts.n_hosts();
+    let workers: usize = (0..hosts).map(|host| test_hosts.workers(host).len()).sum();
 
     // For each transaction, the policies to hint before each step, and before
     // the commit.
@@ -1541,13 +1586,6 @@ fn test_join_with_policy_changes(workers: usize, hosts: usize) {
         (vec![None, Some((Shard, Shard)), None, None], None),
     ];
 
-    let temp = tempdir().expect("Can't create temp dir for storage");
-    let mut test_hosts = TestHosts::start_with(
-        workers,
-        hosts,
-        configure_hosts(temp.path()),
-        join_with_slow_worker_test_circuit,
-    );
     let (_, _, left_id, right_id, _) = test_hosts.result(0);
     let (left_id, right_id) = (left_id.clone(), right_id.clone());
 
@@ -1561,7 +1599,7 @@ fn test_join_with_policy_changes(workers: usize, hosts: usize) {
         test_hosts.start_transaction();
         for step_policies in steps {
             if let Some(step_policies) = step_policies {
-                set_join_policies(&mut test_hosts, &left_id, &right_id, step_policies);
+                set_join_policies(test_hosts, &left_id, &right_id, step_policies);
                 policies = step_policies;
             }
 
@@ -1585,14 +1623,12 @@ fn test_join_with_policy_changes(workers: usize, hosts: usize) {
             test_hosts.step();
         }
         if let Some(commit_policies) = commit_policies {
-            set_join_policies(&mut test_hosts, &left_id, &right_id, commit_policies);
+            set_join_policies(test_hosts, &left_id, &right_id, commit_policies);
             policies = commit_policies;
         }
         test_hosts.commit_transaction();
 
-        let output = test_hosts.map_workers(|(_, _, _, _, output_handle), worker| {
-            output_handle.take_from_worker(worker).unwrap()
-        });
+        let output = collect_join_output(test_hosts);
         let expected_output = reference_join(
             &OrdIndexedZSet::from_tuples((), all_left_tuples.clone()),
             &OrdIndexedZSet::from_tuples((), all_right_tuples.clone()),
@@ -1636,6 +1672,21 @@ fn test_join_with_policy_changes(workers: usize, hosts: usize) {
     }
 }
 
+/// Runs [check_join_with_policy_changes] on `hosts` hosts with `workers`
+/// workers in all, with [SLOW_WORKER] evaluating late.
+fn test_join_with_policy_changes(workers: usize, hosts: usize) {
+    init_test_logger();
+
+    let temp = tempdir().expect("Can't create temp dir for storage");
+    let mut test_hosts = TestHosts::start_with(
+        workers,
+        hosts,
+        configure_hosts(temp.path()),
+        join_with_slow_worker_test_circuit,
+    );
+    check_join_with_policy_changes(&mut test_hosts);
+}
+
 #[test]
 fn test_join_with_policy_changes_single_host() {
     test_join_with_policy_changes(4, 1);
@@ -1644,6 +1695,225 @@ fn test_join_with_policy_changes_single_host() {
 #[test]
 fn test_join_with_policy_changes_multihost() {
     test_join_with_policy_changes(4, 2);
+}
+
+/// Changes a join's policy on two hosts in the step after one that sent
+/// data to remote workers, while that data is still in flight.  Each worker
+/// must wait for the data before it takes what it has received (see
+/// `ShardedAccumulator::wait_for_arrival`).  Otherwise, the rebalancing
+/// misses the data, which stays where the old policy sent it.
+#[test]
+fn test_policy_change_with_late_delivery() {
+    use PartitioningPolicy::{Broadcast, Shard};
+
+    init_test_logger();
+
+    let workers = 4;
+    let temp = tempdir().expect("Can't create temp dir for storage");
+    let mut test_hosts = TestHosts::start_with(
+        workers,
+        2,
+        configure_hosts(temp.path()),
+        join_with_late_delivery_test_circuit,
+    );
+    let (_, _, left_id, right_id, _) = test_hosts.result(0);
+    let (left_id, right_id) = (left_id.clone(), right_id.clone());
+    let mut all_left: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
+    let mut all_right: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
+
+    // The first step broadcasts the left input to every worker on both
+    // hosts.  The second step changes the left policy.
+    test_hosts.start_transaction();
+    for (step, policies) in [(Broadcast, Shard), (Shard, Shard)].into_iter().enumerate() {
+        set_join_policies(&mut test_hosts, &left_id, &right_id, policies);
+        let (left_input_handle, right_input_handle, _, _, _) = test_hosts.result(0);
+        for key in 0..8 {
+            let val = step as u64 * 8 + key;
+            left_input_handle.push(key, (val, 1));
+            all_left.push(Tup2(Tup2(key, val), 1));
+            right_input_handle.push(key, (val, 1));
+            all_right.push(Tup2(Tup2(key, val), 1));
+        }
+        test_hosts.step();
+    }
+    test_hosts.commit_transaction();
+
+    assert_eq!(
+        collect_join_output(&test_hosts),
+        reference_join(
+            &OrdIndexedZSet::from_tuples((), all_left),
+            &OrdIndexedZSet::from_tuples((), all_right),
+            Shard,
+            Shard,
+            workers,
+            false,
+        )
+    );
+}
+
+/// Like [test_join_with_policy_changes_single_host], but under high memory
+/// pressure, which makes a worker move the input that it saves for the
+/// rebalancing to storage (see `RebalancingExchangeSender::defer_delta`).
+#[test]
+fn test_join_with_policy_changes_under_memory_pressure() {
+    const GIB: u64 = 1 << 30;
+
+    init_test_logger();
+
+    // 9.4 GiB of a 10 GiB limit is past the 90% where high pressure starts
+    // and short of the 95% where critical pressure starts.
+    with_mock_process_rss(94 * GIB / 10, || {
+        let temp = tempdir().expect("Can't create temp dir for storage");
+        let path = temp.path().to_path_buf();
+        let mut test_hosts = TestHosts::start_with(
+            4,
+            1,
+            move |_host, config| configure(config, &path).with_max_rss_bytes(Some(10 * GIB)),
+            join_with_slow_worker_test_circuit,
+        );
+
+        // The runtime samples the process size once a second.  Under high
+        // pressure, it moves every new batch to storage.
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while test_hosts.handle(0).runtime().min_insert_storage_bytes() != Some(0) {
+            assert!(
+                Instant::now() < deadline,
+                "memory pressure did not become high"
+            );
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        check_join_with_policy_changes(&mut test_hosts);
+    });
+}
+
+/// Returns the number of workers in which an input of a join is rebalancing
+/// at commit (see `FlushState::RebalanceInProgress`).
+///
+/// # Arguments
+///
+/// * `handle` - the handle of a circuit on a single host.
+fn workers_rebalancing(handle: &mut DBSPHandle) -> usize {
+    handle
+        .retrieve_profile()
+        .unwrap()
+        .worker_profiles
+        .iter()
+        .filter(|worker| {
+            worker
+                .attribute_profile(&REBALANCING_IN_PROGRESS)
+                .values()
+                .any(|rebalancing| matches!(rebalancing, MetaItem::Bool(true)))
+        })
+        .count()
+}
+
+/// Hints a new policy for a join's input while the input rebalances at
+/// commit, after some workers have finished rebalancing it and before one
+/// has.  A worker that has finished can no longer change its policy in the
+/// transaction, so the balancer must reject the hint until the next one.
+#[test]
+fn test_policy_frozen_after_flush() {
+    use PartitioningPolicy::{Broadcast, Shard};
+
+    init_test_logger();
+
+    let workers = 4;
+    let temp = tempdir().expect("Can't create temp dir for storage");
+    let mut test_hosts = TestHosts::start_with(
+        workers,
+        1,
+        configure_hosts(temp.path()),
+        join_with_balancer_test_circuit,
+    );
+    let (_, _, left_id, right_id, _) = test_hosts.result(0);
+    let (left_id, right_id) = (left_id.clone(), right_id.clone());
+    let mut all_left: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
+    let mut all_right: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
+
+    // Every record has the same key, so under `Shard` one worker holds the
+    // whole left integral.  Rebalancing it takes that worker many more steps
+    // than the others, which have little or nothing to send.
+    set_join_policies(&mut test_hosts, &left_id, &right_id, (Shard, Shard));
+    let (left_input_handle, right_input_handle, _, _, _) = test_hosts.result(0);
+    for val in 0..20 {
+        left_input_handle.push(0, (val, 1));
+        all_left.push(Tup2(Tup2(0, val), 1));
+    }
+    right_input_handle.push(0, (0, 1));
+    all_right.push(Tup2(Tup2(0, 0), 1));
+    test_hosts.transaction();
+
+    // Change the left policy in a transaction of more than one step, so that
+    // its commit rebalances the left integral.
+    test_hosts.start_transaction();
+    set_join_policies(&mut test_hosts, &left_id, &right_id, (Broadcast, Shard));
+    for val in 20..22 {
+        test_hosts.result(0).0.push(0, (val, 1));
+        all_left.push(Tup2(Tup2(0, val), 1));
+        test_hosts.step();
+    }
+    let handle = test_hosts.handle(0);
+    handle.start_commit_transaction().unwrap();
+    let mut hinted = false;
+    while !handle.step().unwrap() {
+        let rebalancing = workers_rebalancing(handle);
+        if !hinted && (1..workers).contains(&rebalancing) {
+            let result = handle.set_balancer_hint(&left_id, BalancerHint::Policy(Some(Shard)));
+            assert!(
+                matches!(
+                    result,
+                    Err(DbspError::Balancer(BalancerError::InvalidPolicyHint(
+                        Shard,
+                        _
+                    )))
+                ),
+                "a hint while {rebalancing} of {workers} workers rebalance must be rejected, got {result:?}"
+            );
+            hinted = true;
+        }
+    }
+    assert!(
+        hinted,
+        "the commit had no step in which only some workers rebalanced"
+    );
+    assert_eq!(
+        handle.get_current_balancer_policy(&left_id).unwrap(),
+        Broadcast
+    );
+    assert_eq!(
+        collect_join_output(&test_hosts),
+        reference_join(
+            &OrdIndexedZSet::from_tuples((), all_left.clone()),
+            &OrdIndexedZSet::from_tuples((), all_right.clone()),
+            Broadcast,
+            Shard,
+            workers,
+            false,
+        )
+    );
+
+    // The next transaction can change the policy again.
+    set_join_policies(&mut test_hosts, &left_id, &right_id, (Shard, Shard));
+    test_hosts.transaction();
+    assert_eq!(
+        test_hosts
+            .handle(0)
+            .get_current_balancer_policy(&left_id)
+            .unwrap(),
+        Shard
+    );
+    assert_eq!(
+        collect_join_output(&test_hosts),
+        reference_join(
+            &OrdIndexedZSet::from_tuples((), all_left),
+            &OrdIndexedZSet::from_tuples((), all_right),
+            Shard,
+            Shard,
+            workers,
+            false,
+        )
+    );
 }
 
 /// Join a large left collection with a small right collection. Both are skewed.
