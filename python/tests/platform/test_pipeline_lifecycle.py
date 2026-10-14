@@ -856,6 +856,8 @@ def test_runtime_config_edit_restricted_enterprise(pipeline_name):
     )
 
     # runtime_config.fault_tolerance
+    # The manager stores a duration in its reduced spelling, so "60s" reads
+    # back as "1m".
     helper_test_restricted_runtime_config_edit(
         pipeline_name,
         pipeline,
@@ -867,7 +869,7 @@ def test_runtime_config_edit_restricted_enterprise(pipeline_name):
             }
         },
         lambda r: r["fault_tolerance"],
-        {"model": "exactly_once", "checkpoint_interval": "60s"},
+        {"model": "exactly_once", "checkpoint_interval": "1m"},
     )
 
 
