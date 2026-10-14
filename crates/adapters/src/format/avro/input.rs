@@ -31,7 +31,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 // TODO: Error handling here is a bit of a mess. Schema parsing and validation happens
 // as part of message processing; however since input_XXX methods must return `ParseError`,
@@ -40,7 +40,7 @@ use tracing::{debug, info};
 // `ControllerError` type.  There are multiple concurrent refactorings of this crate
 // going on at the moment, so we'll do this later.
 
-use super::{schema::schema_unwrap_optional, schema_registry_settings};
+use super::{resolve_ref, schema::schema_unwrap_optional, schema_registry_settings};
 
 pub const fn avro_de_config() -> &'static SqlSerdeConfig {
     &SqlSerdeConfig {
@@ -167,6 +167,30 @@ impl AvroParser {
                 ));
             }
             AvroUpdateFormat::Debezium | AvroUpdateFormat::Raw => (),
+        }
+
+        if let Some(cdc_field) = &config.cdc_field {
+            if config.update_format != AvroUpdateFormat::Raw {
+                return Err(ControllerError::invalid_parser_configuration(
+                    endpoint_name,
+                    "`cdc_field` is only supported with 'raw' update format",
+                ));
+            }
+
+            if cdc_field.is_empty() {
+                return Err(ControllerError::invalid_parser_configuration(
+                    endpoint_name,
+                    "`cdc_field` must not be empty",
+                ));
+            }
+
+            // An upsert only replaces the old row if the table has a primary key.
+            if relation_schema.primary_key.is_none() {
+                warn!(
+                    "avro parser {endpoint_name}: `cdc_field` is set, but table '{}' has no primary key: a 'U' record adds a row instead of replacing the old one, and a 'D' record for a row that is not in the table produces incorrect results",
+                    relation_schema.name.name()
+                );
+            }
         }
 
         let input_stream = input_handle.configure_avro_deserializer()?;
@@ -319,6 +343,14 @@ impl AvroParser {
             },
         )?;
 
+        if let Some(cdc_field) = &self.config.cdc_field {
+            validate_cdc_field_schema(&value_schema, &refs, cdc_field).map_err(|e| {
+                ControllerError::schema_validation_error(&format!(
+                    "error validating Avro schema: {e}"
+                ))
+            })?;
+        }
+
         Ok((schema, refs, value_schema))
     }
 
@@ -405,19 +437,31 @@ impl AvroParser {
         }
 
         match self.config.update_format {
-            AvroUpdateFormat::Raw => self
-                .input_stream
-                .insert(&avro_value, schema, &self.refs, n_bytes, &metadata)
+            AvroUpdateFormat::Raw => {
+                let insert = match &self.config.cdc_field {
+                    Some(cdc_field) => cdc_field_polarity(&avro_value, cdc_field).map_err(|e| {
+                        ParseError::bin_event_error(e, self.last_event_number, data, None)
+                    })?,
+                    None => true,
+                };
+                if insert {
+                    self.input_stream
+                        .insert(&avro_value, schema, &self.refs, n_bytes, &metadata)
+                } else {
+                    self.input_stream
+                        .delete(&avro_value, schema, &self.refs, n_bytes, &metadata)
+                }
                 .map_err(|e| {
                     ParseError::bin_event_error(
                         format!(
-                        "error converting avro record to table row (record: {avro_value:?}): {e}"
-                    ),
+                            "error converting avro record to table row (record: {avro_value:?}): {e}"
+                        ),
                         self.last_event_number,
                         data,
                         None,
                     )
-                })?,
+                })?
+            }
             AvroUpdateFormat::Debezium => {
                 let (before, after) = Self::extract_debezium_values(&avro_value)?;
                 let (before_bytes, after_bytes) = match (before.is_some(), after.is_some()) {
@@ -513,6 +557,61 @@ impl AvroParser {
         }
 
         Ok((before, after))
+    }
+}
+
+/// Check that `cdc_field` is a `string` or `enum` field of the record.
+fn validate_cdc_field_schema(
+    schema: &AvroSchema,
+    refs: &AvroSchemaRefs,
+    cdc_field: &str,
+) -> Result<(), String> {
+    let AvroSchema::Record(record_schema) = schema else {
+        return Err(format!(
+            "expected schema of type 'record', but found {}",
+            schema_json(schema)
+        ));
+    };
+
+    let Some(&index) = record_schema.lookup.get(cdc_field) else {
+        return Err(format!(
+            "field '{cdc_field}', specified in the 'cdc_field' property, is missing in the Avro schema"
+        ));
+    };
+
+    let field_schema = &record_schema.fields[index].schema;
+    match resolve_ref(schema_unwrap_optional(field_schema).0, refs) {
+        Ok(AvroSchema::String | AvroSchema::Enum(_)) => Ok(()),
+        _ => Err(format!(
+            "field '{cdc_field}', specified in the 'cdc_field' property, must be of type 'string' or 'enum', but found {}",
+            schema_json(field_schema)
+        )),
+    }
+}
+
+/// Return `true` to insert the record, `false` to delete it.
+fn cdc_field_polarity(record: &AvroValue, cdc_field: &str) -> Result<bool, String> {
+    let AvroValue::Record(fields) = record else {
+        return Err(format!("expected an Avro record, but found '{record:?}'"));
+    };
+
+    let op = match fields.iter().find(|(name, _)| name == cdc_field) {
+        Some((_, AvroValue::Union(_, value))) => &**value,
+        Some((_, value)) => value,
+        None => return Err(format!("the record has no '{cdc_field}' field")),
+    };
+
+    match op {
+        AvroValue::String(op) | AvroValue::Enum(_, op) => match op.as_str() {
+            "I" | "U" => Ok(true),
+            "D" => Ok(false),
+            _ => Err(format!(
+                "invalid value '{op}' in the '{cdc_field}' field; expected 'I' (insert), 'U' (upsert), or 'D' (delete)"
+            )),
+        },
+        _ => Err(format!(
+            "invalid value '{op:?}' in the '{cdc_field}' field; expected 'I' (insert), 'U' (upsert), or 'D' (delete)"
+        )),
     }
 }
 

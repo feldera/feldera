@@ -318,13 +318,13 @@ output buffer:
 
 * `enable_output_buffer` - Enable output buffer.
 
-* `max_output_buffer_time_millis` - Maximum time in milliseconds data is kept
-   in the output buffer.
+* `max_output_buffer_time` - Maximum time data is kept in the output
+   buffer, for example `"500ms"` or `"10s"`. Replaces the deprecated
+   `max_output_buffer_time_millis` (integer milliseconds).
 
    When not specified, data is kept in the buffer indefinitely until one of
    the other trigger conditions is satisfied.  When this option is
-   set the buffer will be flushed at most every
-   `max_output_buffer_time_millis` milliseconds.
+   set the buffer will be flushed at least that often.
 
    This configuration option requires the `enable_output_buffer` flag
    to be set.

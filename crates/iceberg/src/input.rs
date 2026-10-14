@@ -7,6 +7,7 @@ use datafusion::arrow::datatypes::Schema as ArrowSchema;
 use datafusion::catalog::TableProvider;
 use datafusion::common::arrow::array::RecordBatch;
 use datafusion::prelude::{DataFrame, SQLOptions, SessionContext};
+use datafusion_iceberg::IcebergStaticTableProvider;
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
     catalog::{ArrowStream, InputCollectionHandle},
@@ -41,7 +42,7 @@ use iceberg::{
     scan::{FileScanTask, FileScanTaskStream},
     spec::{
         DataContentType, DataFile, ManifestStatus, NameMapping, Operation,
-        SchemaRef as IcebergSchemaRef, SnapshotRef, TableMetadata, DEFAULT_SCHEMA_NAME_MAPPING,
+        SchemaRef as IcebergSchemaRef, SnapshotRef, TableMetadata,
     },
     table::{StaticTable, Table as IcebergTable},
     Catalog, Runtime, TableIdent,
@@ -58,7 +59,6 @@ use iceberg_catalog_s3tables::{
     S3TablesCatalogBuilder, S3TABLES_CATALOG_PROP_ENDPOINT_URL,
     S3TABLES_CATALOG_PROP_TABLE_BUCKET_ARN,
 };
-use iceberg_datafusion::IcebergStaticTableProvider;
 use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
 use log::{debug, info, trace, warn};
 use serde::{Deserialize, Serialize};
@@ -362,6 +362,12 @@ fn is_retryable_open_error(message: &str) -> bool {
     SIGNALS.iter().any(|signal| message.contains(signal))
 }
 
+/// Whether a failed read can never succeed on a retry (e.g. a VARIANT column).
+/// iceberg-rust prints the `ErrorKind` first, so match on that text.
+fn is_permanent_read_error(message: &str) -> bool {
+    message.to_lowercase().contains("featureunsupported")
+}
+
 enum SnapshotDescr {
     /// Open the latest snapshot (default)
     Latest,
@@ -529,19 +535,30 @@ fn is_noop_operation(snapshot: &SnapshotRef) -> bool {
 fn table_name_mapping(table: &IcebergTable) -> Result<Option<Arc<NameMapping>>, AnyError> {
     table
         .metadata()
-        .properties()
-        .get(DEFAULT_SCHEMA_NAME_MAPPING)
-        .map(|json| serde_json::from_str::<NameMapping>(json))
-        .transpose()
+        .table_properties()
+        .default_name_mapping()
         .map(|mapping| mapping.map(Arc::new))
-        .map_err(|e| {
-            anyhow!("error parsing the table's '{DEFAULT_SCHEMA_NAME_MAPPING}' property: {e}")
-        })
+        .map_err(|e| anyhow!("error parsing the table's default name mapping: {e}"))
 }
 
 /// Integrated input connector that reads from an Iceberg table.
 pub struct IcebergInputEndpoint {
     inner: Arc<IcebergInputEndpointInner>,
+}
+
+/// Fills in FileIO properties the user did not set.
+fn apply_fileio_defaults(props: &mut std::collections::HashMap<String, String>) {
+    // iceberg-rust renamed `gcs.service.path` to `gcs.service.host`; keep the old key working.
+    if let Some(endpoint) = props.remove("gcs.service.path") {
+        props
+            .entry(iceberg::io::GCS_SERVICE_HOST.to_string())
+            .or_insert(endpoint);
+    }
+    // OpenDAL's 10 s per-call timeout can fire on a read the connector stopped polling under
+    // backpressure; 60 s still catches a dead connection.
+    props
+        .entry(iceberg_storage_opendal::OPENDAL_IO_TIMEOUT_MS.to_string())
+        .or_insert_with(|| "60000".to_string());
 }
 
 impl IcebergInputEndpoint {
@@ -552,10 +569,12 @@ impl IcebergInputEndpoint {
         runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
         consumer: Box<dyn InputConsumer>,
     ) -> Self {
+        let mut config = config.clone();
+        apply_fileio_defaults(&mut config.fileio_config);
         Self {
             inner: Arc::new(IcebergInputEndpointInner::new(
                 endpoint_name,
-                config.clone(),
+                config,
                 pipeline_config,
                 runtime_env,
                 consumer,
@@ -1311,12 +1330,11 @@ impl IcebergInputEndpointInner {
         table: &IcebergTable,
         snapshot: &SnapshotRef,
     ) -> Result<SnapshotDelta, AnyError> {
-        let file_io = table.file_io();
-        let metadata = table.metadata();
         let snapshot_id = snapshot.snapshot_id();
 
-        let manifest_list = snapshot
-            .load_manifest_list(file_io, metadata)
+        let manifest_list = table
+            .manifest_list_reader(snapshot)
+            .load()
             .await
             .map_err(|e| anyhow!("error reading manifest list of snapshot {snapshot_id}: {e}"))?;
 
@@ -1331,12 +1349,16 @@ impl IcebergInputEndpointInner {
                 continue;
             }
 
-            let manifest = manifest_file.load_manifest(file_io).await.map_err(|e| {
-                anyhow!(
-                    "error reading manifest '{}': {e}",
-                    manifest_file.manifest_path
-                )
-            })?;
+            let manifest = table
+                .manifest_reader()
+                .read(manifest_file)
+                .await
+                .map_err(|e| {
+                    anyhow!(
+                        "error reading manifest '{}': {e}",
+                        manifest_file.manifest_path
+                    )
+                })?;
 
             for entry in manifest.entries() {
                 // Skip entries carried into this manifest from earlier snapshots
@@ -1385,26 +1407,28 @@ impl IcebergInputEndpointInner {
             .iter()
             .map(|file| {
                 let data_file = &file.data_file;
-                Ok(FileScanTask {
-                    file_size_in_bytes: data_file.file_size_in_bytes(),
-                    start: 0,
-                    length: data_file.file_size_in_bytes(),
-                    record_count: Some(data_file.record_count()),
-                    data_file_path: data_file.file_path().to_string(),
-                    data_file_format: data_file.file_format(),
-                    schema: schema.clone(),
-                    project_field_ids: field_ids.to_vec(),
-                    predicate: None,
-                    deletes: vec![],
+                FileScanTask::builder()
+                    .with_file_size_in_bytes(data_file.file_size_in_bytes())
+                    .with_start(0)
+                    .with_length(data_file.file_size_in_bytes())
+                    .with_record_count(Some(data_file.record_count()))
+                    .with_data_file_path(data_file.file_path().to_string())
+                    .with_data_file_format(data_file.file_format())
+                    .with_schema(schema.clone())
+                    .with_project_field_ids(field_ids.to_vec())
+                    .with_predicate(None)
+                    .with_deletes(vec![])
                     // Both `partition` and `partition_spec` must be set for the
                     // reader to materialize identity-partition column constants.
-                    partition: Some(data_file.partition().clone()),
-                    partition_spec: metadata
-                        .partition_spec_by_id(file.partition_spec_id)
-                        .cloned(),
-                    name_mapping: name_mapping.clone(),
-                    case_sensitive: false,
-                })
+                    .with_partition(Some(data_file.partition().clone()))
+                    .with_partition_spec(
+                        metadata
+                            .partition_spec_by_id(file.partition_spec_id)
+                            .cloned(),
+                    )
+                    .with_name_mapping(name_mapping.clone())
+                    .with_case_sensitive(false)
+                    .build()
             })
             .collect();
 
@@ -1494,7 +1518,7 @@ impl IcebergInputEndpointInner {
                     }
 
                     retry_count += 1;
-                    if retry_count > max_retries {
+                    if retry_count > max_retries || is_permanent_read_error(&e.to_string()) {
                         let message =
                             format!("error reading {descr} after {retry_count} attempt(s): {e}");
                         self.consumer
@@ -2410,7 +2434,7 @@ impl IcebergInputEndpointInner {
                     );
 
                     retry_count += 1;
-                    if retry_count > max_retries {
+                    if retry_count > max_retries || is_permanent_read_error(&e.to_string()) {
                         let message =
                             format!("error retrieving {descr} after {retry_count} attempt(s): {e}");
                         self.consumer
@@ -2602,6 +2626,31 @@ mod tests {
     fn storage_factory_constructs() {
         // Smoke test; scheme dispatch is covered upstream in iceberg-rust.
         let _factory = storage_factory();
+    }
+
+    #[test]
+    fn legacy_gcs_endpoint_key_still_applies() {
+        let mut props = std::collections::HashMap::from([(
+            "gcs.service.path".to_string(),
+            "http://fake-gcs:4443".to_string(),
+        )]);
+        super::apply_fileio_defaults(&mut props);
+        assert_eq!(
+            props.get(iceberg::io::GCS_SERVICE_HOST).map(String::as_str),
+            Some("http://fake-gcs:4443")
+        );
+    }
+
+    #[test]
+    fn io_timeout_defaults_to_60s_unless_set() {
+        let key = iceberg_storage_opendal::OPENDAL_IO_TIMEOUT_MS;
+        let mut props = std::collections::HashMap::new();
+        super::apply_fileio_defaults(&mut props);
+        assert_eq!(props.get(key).map(String::as_str), Some("60000"));
+
+        let mut props = std::collections::HashMap::from([(key.to_string(), "5000".to_string())]);
+        super::apply_fileio_defaults(&mut props);
+        assert_eq!(props.get(key).map(String::as_str), Some("5000"));
     }
 
     #[test]
@@ -2905,26 +2954,42 @@ mod variant_tests {
         );
     }
 
-    /// `iceberg-rust` has no `variant` primitive type, so a table whose schema
-    /// declares one cannot be loaded at all, whatever the connector can decode.
-    ///
-    /// When a future `iceberg-rust` adds the type this assertion fails, which
-    /// is the signal to write the end-to-end test and update the connector
-    /// documentation.
+    /// `iceberg-rust` parses the `variant` type, so such a table loads.
+    /// Reading the column still fails with `FeatureUnsupported`.
     #[test]
-    fn iceberg_rust_still_lacks_the_variant_type() {
+    fn iceberg_rust_has_the_variant_type() {
         let variant_field = serde_json::json!({
             "id": 1,
             "name": "v",
             "required": false,
             "type": "variant",
         });
-        let error = serde_json::from_value::<iceberg::spec::NestedField>(variant_field)
-            .expect_err("iceberg-rust gained a `variant` type; see the doc comment");
-        assert!(
-            error.to_string().contains("variant"),
-            "unexpected error: {error}"
+        let field = serde_json::from_value::<iceberg::spec::NestedField>(variant_field)
+            .expect("iceberg-rust should parse the `variant` type");
+        assert_eq!(
+            field.field_type.as_ref(),
+            &iceberg::spec::Type::Variant(iceberg::spec::VariantType)
         );
+    }
+
+    /// A table with a VARIANT column opens but cannot be read, so the read must
+    /// fail instead of retrying until the pipeline is stopped. The classifier
+    /// reads the `ErrorKind` out of the message text, which this pins.
+    #[test]
+    fn a_variant_read_error_is_permanent() {
+        let unsupported = iceberg::Error::new(
+            iceberg::ErrorKind::FeatureUnsupported,
+            "Reading variant columns is not supported yet",
+        );
+        assert!(super::is_permanent_read_error(&unsupported.to_string()));
+        // The snapshot path sees it wrapped by datafusion-iceberg and formatted with `{:?}`.
+        let wrapped = format!("{:?}", datafusion_iceberg::to_datafusion_error(unsupported));
+        assert!(super::is_permanent_read_error(&wrapped), "{wrapped}");
+
+        let transient = || iceberg::Error::new(iceberg::ErrorKind::Unexpected, "connection reset");
+        assert!(!super::is_permanent_read_error(&transient().to_string()));
+        let wrapped = format!("{:?}", datafusion_iceberg::to_datafusion_error(transient()));
+        assert!(!super::is_permanent_read_error(&wrapped), "{wrapped}");
     }
 
     /// A deserializer configuration is only as good as the settings around it:

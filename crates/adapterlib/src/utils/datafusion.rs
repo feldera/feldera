@@ -710,11 +710,8 @@ mod tests {
 
         let env = create_runtime_env(&cfg).unwrap();
         // Anything other than `Finite(_)` proves no FairSpillPool was wired in.
-        match env.memory_pool.memory_limit() {
-            MemoryLimit::Finite(bytes) => {
-                panic!("expected an unbounded pool, got finite limit of {bytes} bytes");
-            }
-            _ => {}
+        if let MemoryLimit::Finite(bytes) = env.memory_pool.memory_limit() {
+            panic!("expected an unbounded pool, got finite limit of {bytes} bytes");
         }
     }
 

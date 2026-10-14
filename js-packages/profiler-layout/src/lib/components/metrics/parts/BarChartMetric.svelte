@@ -145,7 +145,7 @@
        at `--bar-low`. Past the top of that range the fill is dark enough that the text turns
        white to stay readable. -->
   <div
-    class="value-cell rounded-sm px-1 text-right text-sm tabular-nums text-surface-900-100 {showValues ? 'opacity-100' : 'opacity-0'}"
+    class="value-cell rounded-md px-1 text-right text-sm tabular-nums text-surface-900-100 {showValues ? 'opacity-100' : 'opacity-0'}"
     style:background-color={total ? heatColor(total.percentile / 100) : 'transparent'}
     style:color={total ? heatTextColor(total.percentile / 100) : undefined}
     aria-hidden={!showValues}
@@ -182,7 +182,7 @@
   {#each cells as c, i (i)}
     {@const b = bar(c.percentile)}
     <div
-      class="flex-1 rounded-sm transition-[height,background-color] duration-200 ease-in-out"
+      class="flex-1 rounded-md transition-[height,background-color] duration-200 ease-in-out"
       style:height="{b.height}px"
       style:background-color={barColor(b.t)}
     ></div>

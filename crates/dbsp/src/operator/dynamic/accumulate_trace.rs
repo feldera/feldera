@@ -1,6 +1,9 @@
-use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
 use crate::circuit::metadata::{INPUT_RECORDS_COUNT, MEMORY_ALLOCATIONS_COUNT, RETAINMENT_BOUNDS};
 use crate::circuit::{NodeId, splitter_output_chunk_size};
+use crate::circuit::{
+    bootstrap::register_replay_stream,
+    circuit_builder::{StreamId, StreamMetadata},
+};
 use crate::dynamic::Factory;
 use crate::operator::dynamic::replay::ReplayState;
 use crate::operator::dynamic::trace::{DelayedTraceId, TraceBounds};
@@ -971,7 +974,7 @@ where
     }
 }
 
-/// The stream that an [`AccumulateZ1Trace`] replays its trace into, and the
+/// The streams that an [`AccumulateZ1Trace`] replays its trace into, and the
 /// replay that it has yet to play back.
 enum Replay<C, B, T>
 where
@@ -991,6 +994,16 @@ where
         stream: Stream<C, Option<Spine<B>>>,
         pending: Option<T>,
     },
+
+    /// Replays into both streams: the chunks into `delta`, as in `Delta`, and
+    /// the whole trace into `accumulated`, as in `Accumulated`, in the step
+    /// that replays the last chunk.  If no scheduled operator reads `delta`,
+    /// the replay skips the chunks and acts as `Accumulated`.
+    DeltaAndAccumulated {
+        delta: Stream<C, B>,
+        accumulated: Stream<C, Option<Spine<B>>>,
+        pending: Option<ReplayState<T>>,
+    },
 }
 
 impl<C, B, T> Replay<C, B, T>
@@ -1001,7 +1014,9 @@ where
     /// Returns true if a replay is waiting to be played back.
     fn is_pending(&self) -> bool {
         match self {
-            Self::Delta { pending, .. } => pending.is_some(),
+            Self::Delta { pending, .. } | Self::DeltaAndAccumulated { pending, .. } => {
+                pending.is_some()
+            }
             Self::Accumulated { pending, .. } => pending.is_some(),
         }
     }
@@ -1013,7 +1028,9 @@ where
     /// * `trace` - The trace to replay.
     fn start(&mut self, trace: T) {
         match self {
-            Self::Delta { pending, .. } => *pending = Some(ReplayState::create(trace)),
+            Self::Delta { pending, .. } | Self::DeltaAndAccumulated { pending, .. } => {
+                *pending = Some(ReplayState::create(trace))
+            }
             Self::Accumulated { pending, .. } => *pending = Some(trace),
         }
     }
@@ -1021,7 +1038,9 @@ where
     /// Discards the replay that is waiting to be played back, if any.
     fn cancel(&mut self) {
         match self {
-            Self::Delta { pending, .. } => *pending = None,
+            Self::Delta { pending, .. } | Self::DeltaAndAccumulated { pending, .. } => {
+                *pending = None
+            }
             Self::Accumulated { pending, .. } => *pending = None,
         }
     }
@@ -1066,7 +1085,7 @@ pub struct AccumulateZ1Trace<C: Circuit, B: Batch, T: Trace> {
     reset_on_clock_start: bool,
     bounds: TraceBounds<T::Key, T::Val>,
     batch_factories: B::Factories,
-    // The stream that this Z1 operator replays its trace into, if it is a
+    // The streams that this Z1 operator replays its trace into, if it is a
     // replay source.
     replay: Option<Replay<C, B, T>>,
     flush_output: bool,
@@ -1121,6 +1140,23 @@ where
         }
     }
 
+    /// Sets the streams that this integral replays into.
+    ///
+    /// # Arguments
+    ///
+    /// * `replay` - The replay streams, with nothing to play back yet.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the integral already replays into a stream.
+    fn set_replay(&mut self, replay: Replay<C, B, T>) {
+        assert!(
+            self.replay.is_none(),
+            "AccumulateZ1Trace: the integral already replays into a stream"
+        );
+        self.replay = Some(replay);
+    }
+
     /// Creates a stream that will be used to replay the contents of `stream`
     /// chunk-by-chunk.
     ///
@@ -1165,13 +1201,20 @@ where
     /// During normal operation, `stream` is active and `replay_stream` is not.  During
     /// replay, `replay_stream` is active while the operator that normally write to
     /// stream is disabled.
+    ///
+    /// To replay into both `stream` and its accumulated form, use
+    /// [`Self::prepare_both_replay_streams`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the integral already replays into a stream.
     pub fn prepare_replay_stream(&mut self, stream: &Stream<C, B>) -> Stream<C, B> {
         Self::check_replay_source_types();
 
         let replay_stream =
             Stream::with_value(stream.circuit().clone(), self.local_id, stream.value());
 
-        self.replay = Some(Replay::Delta {
+        self.set_replay(Replay::Delta {
             stream: replay_stream.clone(),
             pending: None,
         });
@@ -1213,8 +1256,9 @@ where
     /// ```
     ///
     /// This replay mechanism can be used to bootstrap operators that ingest the
-    /// accumulated stream or its integral, but not the operatord that consume the
-    /// raw stream of changes `stream`.
+    /// accumulated stream or its integral, but not the operators that consume the
+    /// raw stream of changes `stream`.  To bootstrap those too, use
+    /// [`Self::prepare_both_replay_streams`].
     ///
     /// # Arguments
     ///
@@ -1224,6 +1268,10 @@ where
     /// # Returns
     ///
     /// The replay stream, which aliases `accumulated`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the integral already replays into a stream.
     pub fn prepare_accumulated_replay_stream(
         &mut self,
         accumulated: &Stream<C, Option<Spine<B>>>,
@@ -1236,11 +1284,88 @@ where
             accumulated.value(),
         );
 
-        self.replay = Some(Replay::Accumulated {
+        self.set_replay(Replay::Accumulated {
             stream: replay_stream.clone(),
             pending: None,
         });
         replay_stream
+    }
+
+    /// Creates the streams that will be used to replay the contents of
+    /// `stream` chunk-by-chunk and the contents of `accumulated` in a single
+    /// step.
+    ///
+    /// Only used when `stream` contains the same contents as the integral,
+    /// but doesn't feed the integral, so the integral cannot be rebuilt by
+    /// simply replaying into `stream`:
+    ///
+    /// ```text
+    ///                                │
+    ///                                │stream
+    ///                                │
+    ///                                │
+    ///  other consumers of stream◄────┤◄..........................
+    ///                                                           .
+    ///                                                           .
+    ///                                                           .
+    ///                          ┌───────────┐                    .
+    ///                          │Accumulator│                    .
+    ///                          └─────┬─────┘                    .
+    ///                                │                          .
+    ///                                │◄....................     .
+    ///                                │     replay_stream2 .     . replay_stream1
+    ///                                ▼                    .     .
+    ///                      ┌─────────────────────┐      ┌─────────────────┐
+    ///                      │AccumulateTraceAppend├─────►│AccumulateZ1Trace│
+    ///                      └─────────────────────┘      └─────────────────┘
+    ///                                ▲                    │
+    ///                                │                    │
+    ///                                └────────────────────┘
+    /// ```
+    ///
+    /// This combines [`Self::prepare_replay_stream`] and
+    /// [`Self::prepare_accumulated_replay_stream`] for an integral that
+    /// `accumulated` feeds while other operators consume `stream` directly.
+    /// In replay mode, Z-1 sends the integral to the first replay stream
+    /// chunk-by-chunk, one chunk per step, and the whole integral to the
+    /// second, in the step of the last chunk.  If no scheduled operator reads
+    /// `stream` during the replay, Z-1 skips the chunks and sends the whole
+    /// integral in the first step.
+    ///
+    /// # Arguments
+    ///
+    /// * `stream` - The stream of changes that this integral stores.
+    /// * `accumulated` - The stream that feeds this integral: in each
+    ///   transaction, the sum of that transaction's changes in `stream`.
+    ///
+    /// # Returns
+    ///
+    /// The two replay streams, which alias `stream` and `accumulated`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the integral already replays into a stream.
+    pub fn prepare_both_replay_streams(
+        &mut self,
+        stream: &Stream<C, B>,
+        accumulated: &Stream<C, Option<Spine<B>>>,
+    ) -> (Stream<C, B>, Stream<C, Option<Spine<B>>>) {
+        Self::check_replay_source_types();
+
+        let delta_replay_stream =
+            Stream::with_value(stream.circuit().clone(), self.local_id, stream.value());
+        let accumulated_replay_stream = Stream::with_value(
+            accumulated.circuit().clone(),
+            self.local_id,
+            accumulated.value(),
+        );
+
+        self.set_replay(Replay::DeltaAndAccumulated {
+            delta: delta_replay_stream.clone(),
+            accumulated: accumulated_replay_stream.clone(),
+            pending: None,
+        });
+        (delta_replay_stream, accumulated_replay_stream)
     }
 }
 
@@ -1497,6 +1622,46 @@ where
                     };
                     stream.value().put(output);
                 }
+                Replay::DeltaAndAccumulated {
+                    delta,
+                    accumulated,
+                    pending,
+                } => {
+                    // A flushed transaction replays one chunk per step into
+                    // `delta`, as in `Delta`, and one spine into `accumulated`,
+                    // as in `Accumulated`: the whole trace, in the step of the
+                    // last chunk.  A stream that no scheduled operator reads
+                    // drops what it gets, so without a reader of `delta` the
+                    // whole trace goes out in the first step, unchunked.
+                    if self.flush_output
+                        && let Some(replay) = pending
+                    {
+                        let chunked = delta.num_consumers() > 0;
+                        delta.value().put(if chunked {
+                            replay.next_chunk(&self.batch_factories, replay_step_size)
+                        } else {
+                            B::dyn_empty(&self.batch_factories)
+                        });
+                        let output = if !chunked || replay.is_exhausted() {
+                            self.flush_output = false;
+                            pending.take().map(|replay| into_spine(replay.into_trace()))
+                        } else {
+                            None
+                        };
+                        accumulated.value().put(output);
+                    } else {
+                        delta.value().put(B::dyn_empty(&self.batch_factories));
+                        let output = self.flush_output.then(|| {
+                            Spine::new(
+                                &self.batch_factories,
+                                self.name.get(),
+                                TraceRole::Accumulator,
+                            )
+                        });
+                        accumulated.value().put(output);
+                        self.flush_output = false;
+                    }
+                }
             }
         } else {
             self.flush_output = false;
@@ -1615,6 +1780,260 @@ where
         }
 
         self.spine.as_ref().unwrap().clone()
+    }
+}
+
+#[cfg(test)]
+mod replay_test {
+    use super::AccumulateZ1Trace;
+    use crate::{
+        DynZWeight, RootCircuit, Runtime, ZWeight,
+        algebra::{OrdZSet, OrdZSetFactories},
+        circuit::{
+            CircuitBase, CircuitConfig, CircuitHandle, NodeId, Stream,
+            circuit_builder::{RefStreamValue, StreamMetadata},
+            operator_traits::{Operator, StrictOperator},
+            splitter_output_chunk_size,
+        },
+        dynamic::{DowncastTrait, DynData, DynUnit},
+        operator::dynamic::trace::TraceBounds,
+        trace::{
+            Batch, BatchReader, BatchReaderFactories, Spine, Trace, TraceRole,
+            test::{test_batch::batch_to_tuples, zset_tuples},
+        },
+        utils::Tup2,
+    };
+    use feldera_storage::tokio::TOKIO;
+    use std::{collections::BTreeMap, ops::Range, sync::Arc};
+
+    type ZSet = OrdZSet<DynData>;
+    type Z1 = AccumulateZ1Trace<RootCircuit, ZSet, Spine<ZSet>>;
+    type DeltaStream = Stream<RootCircuit, ZSet>;
+    type AccumulatedStream = Stream<RootCircuit, Option<Spine<ZSet>>>;
+
+    /// Keys mapped to their weights.
+    type Contents = BTreeMap<i32, ZWeight>;
+
+    /// Reads the keys of a batch or a spine of `i32` keys.
+    ///
+    /// # Arguments
+    ///
+    /// * `batch` - The batch or spine to read.
+    ///
+    /// # Returns
+    ///
+    /// Each key with the sum of its weights.
+    fn contents<R>(batch: &R) -> Contents
+    where
+        R: BatchReader<Key = DynData, Val = DynUnit, Time = (), R = DynZWeight>,
+    {
+        let mut contents = Contents::new();
+        for ((key, _val, ()), weight) in batch_to_tuples(batch) {
+            *contents.entry(*key.downcast_checked::<i32>()).or_default() +=
+                *weight.downcast_checked::<ZWeight>();
+        }
+        contents
+    }
+
+    /// Builds a spine that holds each of `keys` with weight 1.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - Factories for the spine's batches.
+    /// * `keys` - The keys to insert.
+    ///
+    /// # Returns
+    ///
+    /// The spine.
+    fn spine(factories: &OrdZSetFactories<DynData>, keys: Range<i32>) -> Spine<ZSet> {
+        let mut tuples = zset_tuples(keys.map(|key| Tup2(key, 1)).collect());
+        let mut spine = Spine::new(
+            factories,
+            Arc::new(String::from("test")),
+            TraceRole::Integral,
+        );
+        TOKIO.block_on(spine.insert(ZSet::dyn_from_tuples(factories, (), &mut tuples)));
+        spine
+    }
+
+    /// Creates a Z1 that replays into a new stream and its accumulated form.
+    /// Neither stream has a consumer yet.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - Factories for the Z1's batches and trace.
+    ///
+    /// # Returns
+    ///
+    /// The circuit that owns the streams, the Z1, the stream, and its
+    /// accumulated form.
+    fn replay_source(
+        factories: &OrdZSetFactories<DynData>,
+    ) -> (CircuitHandle, Z1, DeltaStream, AccumulatedStream) {
+        let (circuit, (delta, accumulated, root_scope)) = RootCircuit::build(|circuit| {
+            Ok((
+                DeltaStream::with_value(circuit.clone(), NodeId::new(0), RefStreamValue::empty()),
+                AccumulatedStream::with_value(
+                    circuit.clone(),
+                    NodeId::new(1),
+                    RefStreamValue::empty(),
+                ),
+                circuit.root_scope(),
+            ))
+        })
+        .unwrap();
+
+        let mut z1 = Z1::new(
+            factories,
+            factories,
+            false,
+            root_scope,
+            TraceBounds::unbounded(),
+        );
+        z1.prepare_both_replay_streams(&delta, &accumulated);
+        (circuit, z1, delta, accumulated)
+    }
+
+    /// Runs the output half of `z1` for one step.
+    ///
+    /// # Arguments
+    ///
+    /// * `z1` - The operator.
+    /// * `delta` - The stream that `z1` replays chunks into.
+    /// * `accumulated` - The stream that `z1` replays its whole trace into.
+    ///
+    /// # Returns
+    ///
+    /// The chunk written to `delta`, empty if `delta` has no consumer, and the
+    /// spine written to `accumulated` if there is one.
+    fn step(
+        z1: &mut Z1,
+        delta: &DeltaStream,
+        accumulated: &AccumulatedStream,
+    ) -> (Contents, Option<Contents>) {
+        // In a circuit, the input half gives the integral back after each step.
+        let integral = z1.get_output();
+        z1.trace = Some(integral);
+
+        // A stream without consumers keeps nothing.
+        let mut chunk = Contents::new();
+        if delta.num_consumers() > 0 {
+            chunk = delta.map_value(contents);
+            delta.consume_token();
+        }
+        let spine = accumulated.map_value(|spine| spine.as_ref().map(contents));
+        accumulated.consume_token();
+        (chunk, spine)
+    }
+
+    /// Checks that a Z1 that replays into both a stream and its accumulated
+    /// form writes its trace to the first in chunks and, in the step of the
+    /// last chunk, to the second as a whole.
+    #[test]
+    fn replay_into_delta_and_accumulated() {
+        // Spines need a DBSP runtime.
+        let config = CircuitConfig::with_workers(1).with_splitter_chunk_size_records(2);
+        Runtime::run(config, |_parker| {
+            let factories = OrdZSetFactories::<DynData>::new::<i32, (), ZWeight>();
+            let chunk_size = splitter_output_chunk_size() as i32;
+            // Two full chunks and one with a single key.
+            let num_keys = 2 * chunk_size + 1;
+            let trace: Contents = (0..num_keys).map(|key| (key, 1)).collect();
+            let recording: Contents = (0..chunk_size).map(|key| (key, 1)).collect();
+
+            let (_circuit, mut z1, delta, accumulated) = replay_source(&factories);
+            delta.register_consumer();
+            accumulated.register_consumer();
+
+            // The bootstrap replay plays back the checkpointed trace.
+            z1.trace = Some(spine(&factories, 0..num_keys));
+            z1.start_replay().unwrap();
+            z1.flush();
+            let mut chunks = Contents::new();
+            for last in [false, false, true] {
+                assert!(!z1.is_flush_complete());
+                let (chunk, whole) = step(&mut z1, &delta, &accumulated);
+                assert!(!chunk.is_empty());
+                chunks.extend(chunk);
+                assert_eq!(whole, last.then(|| trace.clone()));
+            }
+            assert!(z1.is_flush_complete());
+            assert_eq!(chunks, trace);
+
+            // A step outside a commit replays nothing.
+            assert_eq!(step(&mut z1, &delta, &accumulated), (Contents::new(), None));
+
+            // The synchronization replay plays back a recording that fills
+            // one chunk, so the chunk and the whole recording share a step.
+            z1.start_sync_replay(Box::new(spine(&factories, 0..chunk_size)))
+                .unwrap();
+            z1.flush();
+            assert_eq!(
+                step(&mut z1, &delta, &accumulated),
+                (recording.clone(), Some(recording.clone()))
+            );
+            assert!(z1.is_flush_complete());
+
+            // A commit with nothing to replay still gets its one spine.
+            z1.flush();
+            assert_eq!(
+                step(&mut z1, &delta, &accumulated),
+                (Contents::new(), Some(Contents::new()))
+            );
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    }
+
+    /// Checks that a Z1 that replays into both a stream and its accumulated
+    /// form skips the chunks when no scheduled operator reads the stream, and
+    /// replays the whole trace in the first step of the commit.
+    #[test]
+    fn replay_without_a_delta_reader() {
+        // Spines need a DBSP runtime.
+        let config = CircuitConfig::with_workers(1).with_splitter_chunk_size_records(2);
+        Runtime::run(config, |_parker| {
+            let factories = OrdZSetFactories::<DynData>::new::<i32, (), ZWeight>();
+            // Enough keys for three chunks.
+            let keys = 0..2 * splitter_output_chunk_size() as i32 + 1;
+            let trace: Contents = keys.clone().map(|key| (key, 1)).collect();
+
+            let (_circuit, mut z1, delta, accumulated) = replay_source(&factories);
+            accumulated.register_consumer();
+
+            // The bootstrap replay plays back the checkpointed trace.
+            z1.trace = Some(spine(&factories, keys.clone()));
+            z1.start_replay().unwrap();
+            z1.flush();
+            assert_eq!(
+                step(&mut z1, &delta, &accumulated),
+                (Contents::new(), Some(trace.clone()))
+            );
+            assert!(z1.is_flush_complete());
+
+            // So does the synchronization replay with a recording.
+            z1.start_sync_replay(Box::new(spine(&factories, keys)))
+                .unwrap();
+            z1.flush();
+            assert_eq!(
+                step(&mut z1, &delta, &accumulated),
+                (Contents::new(), Some(trace))
+            );
+            assert!(z1.is_flush_complete());
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    }
+
+    /// Checks that an integral gets its replay streams only once.
+    #[test]
+    #[should_panic(expected = "the integral already replays into a stream")]
+    fn prepare_replay_streams_twice() {
+        let factories = OrdZSetFactories::<DynData>::new::<i32, (), ZWeight>();
+        let (_circuit, mut z1, delta, _accumulated) = replay_source(&factories);
+        z1.prepare_replay_stream(&delta);
     }
 }
 

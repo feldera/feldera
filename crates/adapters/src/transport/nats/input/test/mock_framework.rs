@@ -200,7 +200,7 @@ impl NatsMockRunner {
     fn exec(
         &mut self,
         action: &NatsMockAction,
-        pipeline_config: &dyn Fn(&str) -> String,
+        pipeline_config: &dyn Fn(&str) -> serde_json::Value,
     ) -> AnyResult<()> {
         match action {
             NatsMockAction::StartNats => {
@@ -216,11 +216,11 @@ impl NatsMockRunner {
             }
 
             NatsMockAction::CreatePipeline => {
-                let config_str = pipeline_config(self.nats_url());
-                println!("Config:\n{config_str}");
+                let config = pipeline_config(self.nats_url());
+                println!("Config:\n{config:#}");
 
                 match mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
-                    serde_yaml::from_str(&config_str).unwrap(),
+                    serde_json::from_value(config).unwrap(),
                     Relation::empty(),
                 ) {
                     Ok((endpoint, mock_input_consumer, _parser, zset)) => {
@@ -627,7 +627,7 @@ impl NatsMockRunner {
 }
 
 pub(super) fn run_nats_mock_test(
-    pipeline_config: impl Fn(&str) -> String,
+    pipeline_config: impl Fn(&str) -> serde_json::Value,
     actions: &[NatsMockAction],
 ) -> AnyResult<()> {
     init_test_logger();
@@ -640,32 +640,36 @@ pub(super) fn run_nats_mock_test(
     Ok(())
 }
 
-pub(super) fn basic_nats_config(nats_url: &str) -> String {
-    format!(
-        r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {nats_url}
-        stream_name: {STREAM_NAME}
-        consumer_config:
-            deliver_policy: All
-            filter_subjects: [{SUBJECT_NAME}]
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-    )
+pub(super) fn basic_nats_config(nats_url: &str) -> serde_json::Value {
+    json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "nats_input",
+            "config": {
+                "connection_config": {
+                    "server_url": nats_url,
+                },
+                "stream_name": STREAM_NAME,
+                "consumer_config": {
+                    "deliver_policy": "All",
+                    "filter_subjects": [SUBJECT_NAME],
+                },
+            },
+        },
+        "format": {
+            "name": "json",
+            "config": {
+                "update_format": "raw",
+            },
+        },
+    })
 }
 
 /// Inactivity timeout used by [`nats_stall_config`] (seconds).
 const STALL_INACTIVITY_TIMEOUT_SECS: u64 = 2;
 
 /// Config helper: NATS config with inactivity timeout and request_timeout_secs=2.
-pub(super) fn nats_stall_config(nats_url: &str) -> String {
+pub(super) fn nats_stall_config(nats_url: &str) -> serde_json::Value {
     nats_stall_config_with_timeout(nats_url, STALL_INACTIVITY_TIMEOUT_SECS, 2)
 }
 
@@ -673,27 +677,31 @@ pub(super) fn nats_stall_config_with_timeout(
     nats_url: &str,
     inactivity_timeout_secs: u64,
     request_timeout_secs: u64,
-) -> String {
-    format!(
-        r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {nats_url}
-            request_timeout_secs: {request_timeout_secs}
-        stream_name: {STREAM_NAME}
-        inactivity_timeout_secs: {inactivity_timeout_secs}
-        consumer_config:
-            deliver_policy: All
-            filter_subjects: [{SUBJECT_NAME}]
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-    )
+) -> serde_json::Value {
+    json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "nats_input",
+            "config": {
+                "connection_config": {
+                    "server_url": nats_url,
+                    "request_timeout_secs": request_timeout_secs,
+                },
+                "stream_name": STREAM_NAME,
+                "inactivity_timeout_secs": inactivity_timeout_secs,
+                "consumer_config": {
+                    "deliver_policy": "All",
+                    "filter_subjects": [SUBJECT_NAME],
+                },
+            },
+        },
+        "format": {
+            "name": "json",
+            "config": {
+                "update_format": "raw",
+            },
+        },
+    })
 }
 
 /// Stall detection budget: inactivity_timeout + request_timeout(2) + slack(8).

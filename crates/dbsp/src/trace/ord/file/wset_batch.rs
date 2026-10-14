@@ -2,6 +2,7 @@ use crate::storage::file::format::BatchMetadata;
 use crate::storage::file::{
     FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter, collect_roaring_metadata,
 };
+use crate::trace::AccessHint;
 use crate::{
     DBData, DBWeight, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
@@ -18,8 +19,9 @@ use crate::{
         },
     },
     trace::{
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        DbspSerializer, Deserializer, FileKeyBatch, VecWSetFactories, WeightedItem,
+        Batch, BatchFactories, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories,
+        Builder, Cursor, DbspSerializer, Deserializer, FileKeyBatch, VecWSetFactories,
+        WeightedItem,
         cursor::{CursorFactoryWrapper, Pending, Position, PushCursor},
         filter::BatchFilters,
         merge_batches_by_reference,
@@ -386,6 +388,10 @@ where
         FileWSetCursor::new(self)
     }
 
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        FileWSetCursor::with_hint(self, hint)
+    }
+
     #[inline]
     fn key_count_upper_bound(&self) -> usize {
         self.file.n_rows(0) as usize
@@ -650,7 +656,17 @@ where
     R: WeightTrait + ?Sized,
 {
     fn new(wset: &'s FileWSet<K, R>) -> Self {
-        let cursor = unsafe { wset.file.rows().first().unwrap_storage() };
+        Self::with_hint(wset, AccessHint::Unknown)
+    }
+
+    /// A cursor told how it will be moved; see [`AccessHint`].
+    ///
+    /// # Arguments
+    ///
+    /// * `wset` - the batch to walk.
+    /// * `hint` - how the cursor will be moved; see [`AccessHint`].
+    fn with_hint(wset: &'s FileWSet<K, R>, hint: AccessHint) -> Self {
+        let cursor = unsafe { wset.file.rows().with_hint(hint).first().unwrap_storage() };
         let diff = wset.factories.weight_factory().default_box();
         let valid = cursor.has_value();
 
@@ -676,6 +692,11 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // A w-set has no values of its own: a key is one tuple.
+        self.key_valid() as usize
+    }
+
     fn key(&self) -> &K {
         self.cursor.key().unwrap()
     }
@@ -872,6 +893,7 @@ where
         factories: &<FileWSet<K, R> as BatchReader>::Factories,
         batches: I,
         _location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = DynUnit, Time = (), R = R>,
@@ -897,7 +919,7 @@ where
                 &factories.file_factories,
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
-                Runtime::file_writer_parameters(),
+                Runtime::file_writer_parameters_for(layout),
                 key_filter,
             )
             .unwrap_storage(),

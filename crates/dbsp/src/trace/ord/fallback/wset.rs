@@ -1,5 +1,6 @@
 use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
+use crate::trace::AccessHint;
 use crate::{
     DBWeight, NumEntries,
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
@@ -7,8 +8,8 @@ use crate::{
     dynamic::{DataTrait, DynUnit, DynVec, Erase, WeightTrait, WeightTraitTyped},
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
-        Batch, BatchLocation, BatchReader, Builder, FallbackKeyBatch, FileWSet, FileWSetFactories,
-        Filter, GroupFilter, MergeCursor,
+        Batch, BatchLayout, BatchLocation, BatchReader, Builder, FallbackKeyBatch, FileWSet,
+        FileWSetFactories, Filter, GroupFilter, MergeCursor,
         cursor::{CursorFactory, DelegatingCursor, PushCursor},
         deserialize_wset, merge_batches_by_reference,
         ord::{
@@ -219,6 +220,13 @@ where
         DelegatingCursor(match &self.inner {
             Inner::Vec(vec) => Box::new(vec.cursor()),
             Inner::File(file) => Box::new(file.cursor()),
+        })
+    }
+
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        DelegatingCursor(match &self.inner {
+            Inner::Vec(vec) => Box::new(vec.cursor()),
+            Inner::File(file) => Box::new(file.cursor_with_hint(hint)),
         })
     }
 
@@ -522,6 +530,7 @@ where
         factories: &FallbackWSetFactories<K, R>,
         batches: I,
         location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = DynUnit, Time = (), R = R>,
@@ -540,9 +549,9 @@ where
                     key_capacity,
                     key_capacity,
                 )),
-                BatchLocation::Storage => {
-                    BuilderInner::File(FileWSetBuilder::for_merge(factories, batches, location))
-                }
+                BatchLocation::Storage => BuilderInner::File(FileWSetBuilder::for_merge(
+                    factories, batches, location, layout,
+                )),
             },
         }
     }

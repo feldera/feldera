@@ -439,7 +439,11 @@ export type ClockAdvanceResponse = {
 }
 
 export type ClockConfig = {
-  clock_resolution_usecs: number
+  /**
+   * How often the clock ticks, for example `1s`. Unset selects the
+   * default, `DEFAULT_CLOCK_RESOLUTION`.
+   */
+  clock_resolution?: string | null
   /**
    * If `true`, the clock does not advance on wall-clock cadence.
    * `NOW()` is held at its current value and only advances when an
@@ -799,18 +803,19 @@ export type ConfiguredOwners = {
 export type ConnectOptions = {
   auth?: Auth
   /**
-   * Connection timeout
+   * Connection timeout, for example `10s`.
    *
    * How long to wait when establishing the initial connection to the
-   * NATS server.
+   * NATS server. Unset selects the default, `DEFAULT_CONNECTION_TIMEOUT`.
    */
-  connection_timeout_secs?: number
+  connection_timeout?: string | null
   /**
-   * Request timeout in seconds.
+   * Request timeout, for example `10s`.
    *
-   * How long to wait for responses to requests.
+   * How long to wait for responses to requests. Unset selects
+   * the default, `DEFAULT_REQUEST_TIMEOUT`.
    */
-  request_timeout_secs?: number
+  request_timeout?: string | null
   /**
    * NATS server URL (e.g., "nats://localhost:4222").
    */
@@ -1045,7 +1050,13 @@ export type ConsumerConfig = {
   filter_subjects?: Array<string>
   max_batch?: number | null
   max_bytes?: number | null
-  max_expires?: string | null
+  /**
+   * How long a pull request may stay parked on the server before it
+   * expires, for example `30s`.
+   *
+   * Unset leaves the NATS server's own default in place.
+   */
+  max_expiry?: string | null
   max_waiting?: number
   metadata?: {
     [key: string]: string
@@ -1876,6 +1887,30 @@ export type DevTweaks = {
    */
   integral_merge_threshold_batches?: number | null
   /**
+   * How many data blocks a layer-file cursor that declared a sequential
+   * walk reads ahead of its position.
+   *
+   * Each block a cursor steps into that the buffer cache does not hold is a
+   * device round trip the worker waits out, and a key column is a strided
+   * subset of its file that the kernel's readahead never serves.  Reading
+   * ahead this many blocks keeps that many round trips in flight.  Zero
+   * disables it.  The default is 8.
+   */
+  layer_file_read_ahead_blocks?: number | null
+  /**
+   * Minimum size of the key blocks in the batches a lazy input map's
+   * accumulator writes for itself, in bytes.  A power of two, at least
+   * 4096.
+   *
+   * The map resolves a transaction by walking the accumulated updates in
+   * key order without reading values, one storage request per key block,
+   * so larger blocks mean fewer requests.  Only the accumulator's own
+   * batches (merge outputs and spills) take this size; the batches that
+   * reach the integral keep it until its merger rewrites them at the
+   * default size.  The default is 32768; 8192 is the file writer's default.
+   */
+  lazy_input_map_key_block_bytes?: number | null
+  /**
    * How many keys a lazy input map resolves against its integral in one step.
    *
    * The lazy upsert operator may scan a large number of keys without
@@ -2203,12 +2238,12 @@ export type FileBackendConfig = {
    */
   async_threads?: boolean | null
   /**
-   * Per-I/O operation sleep duration, in milliseconds.
+   * Per-I/O operation sleep duration, for example `5ms`.
    *
    * This is for simulating slow storage devices.  Do not use this in
    * production.
    */
-  ioop_delay?: number | null
+  ioop_latency?: string | null
   sync?: SyncConfig | null
   sync_mode?: StorageSyncMode | null
 }
@@ -2282,12 +2317,14 @@ export type FormatConfig = {
  */
 export type FtConfig = {
   /**
-   * Interval between automatic checkpoints, in seconds.
+   * Interval between automatic checkpoints, for example `60s`.
    *
-   * The default is 60 seconds.  Values less than 1 or greater than 3600 will
-   * be forced into that range.
+   * Unset selects the default, `DEFAULT_CHECKPOINT_INTERVAL`; `null`
+   * disables periodic checkpointing.
+   * Values less than 1 second or greater than 1 hour will be forced into
+   * that range.
    */
-  checkpoint_interval_secs?: number | null
+  checkpoint_interval?: string | null
   model?: FtModel | 'none'
 }
 
@@ -3135,10 +3172,11 @@ export type KafkaHeaderValue = Blob | File
  */
 export type KafkaInputConfig = {
   /**
-   * Maximum timeout in seconds to wait for the endpoint to join the Kafka
-   * consumer group during initialization.
+   * Maximum time to wait for the endpoint to join the Kafka consumer group
+   * during initialization, for example `10s`. Unset selects
+   * the default, `DEFAULT_GROUP_JOIN_TIMEOUT`.
    */
-  group_join_timeout_secs?: number
+  group_join_timeout?: string | null
   header_filter?: HeaderFilter | null
   /**
    * Whether to include Kafka headers in the record metadata.
@@ -3271,7 +3309,8 @@ export type KafkaInputConfig = {
   topic: string
   [key: string]:
     | string
-    | number
+    | string
+    | null
     | HeaderFilter
     | null
     | boolean
@@ -3328,12 +3367,10 @@ export type KafkaOutputConfig = {
    */
   headers?: Array<KafkaHeader>
   /**
-   * Maximum timeout in seconds to wait for the endpoint to connect to
-   * a Kafka broker.
-   *
-   * Defaults to 60.
+   * Maximum time to wait for the endpoint to connect to a Kafka broker, for
+   * example `60s`. Unset selects the default, `DEFAULT_INITIALIZATION_TIMEOUT`.
    */
-  initialization_timeout_secs?: number
+  initialization_timeout?: string | null
   /**
    * If specified, this service is used to provide defaults for the Kafka options.
    */
@@ -3353,7 +3390,8 @@ export type KafkaOutputConfig = {
     | KafkaOutputFtConfig
     | null
     | Array<KafkaHeader>
-    | number
+    | string
+    | null
     | string
     | null
     | KafkaLogLevel
@@ -3560,15 +3598,17 @@ export type NatsInputConfig = {
   connection_config: ConnectOptions
   consumer_config: ConsumerConfig
   /**
-   * Maximum time in seconds to wait for the next message before running
-   * a stream/server health check. Must be at least 1.
+   * Maximum time to wait for the next message before running a
+   * stream/server health check, for example `60s`. Must be at least one
+   * second. Unset selects the default, `DEFAULT_INACTIVITY_TIMEOUT`.
    */
-  inactivity_timeout_secs?: number
+  inactivity_timeout?: string | null
   /**
-   * Delay between automatic reconnect attempts while in retry mode.
-   * Must be at least 1.
+   * Delay between automatic reconnect attempts while in retry mode, for
+   * example `5s`. Must be at least one second. Unset selects
+   * the default, `DEFAULT_RETRY_INTERVAL`.
    */
-  retry_interval_secs?: number
+  retry_interval?: string | null
   stream_name: string
 }
 
@@ -3607,9 +3647,10 @@ export type NatsOutputConfig = {
   message_id?: NatsMessageId
   /**
    * How long to wait for the server's publish acknowledgment before
-   * retrying the publish. Must be at least 1.
+   * retrying the publish, for example `5s`. Must be at least one second.
+   * Unset selects the default, `DEFAULT_PUBLISH_TIMEOUT`.
    */
-  publish_timeout_secs?: number
+  publish_timeout?: string | null
   /**
    * NATS subject to publish to (e.g., "orders.created"). The subject
    * must be bound to a JetStream stream on the target server.
@@ -3826,8 +3867,8 @@ export type OutputBufferConfig = {
    * updates produced by the pipeline are consolidated in an internal buffer and are
    * pushed to the output transport when one of several conditions is satisfied:
    *
-   * * data has been accumulated in the buffer for more than `max_output_buffer_time_millis`
-   * milliseconds.
+   * * data has been accumulated in the buffer for longer than
+   * `max_output_buffer_time`.
    * * buffer size exceeds `max_output_buffer_size_records` records.
    *
    * This flag is `false` by default.
@@ -3848,17 +3889,16 @@ export type OutputBufferConfig = {
    */
   max_output_buffer_size_records?: number
   /**
-   * Maximum time in milliseconds data is kept in the output buffer.
+   * Maximum time data is kept in the output buffer, for example `500ms`.
    *
    * By default, data is kept in the buffer indefinitely until one of
    * the other output conditions is satisfied.  When this option is
-   * set the buffer will be flushed at most every
-   * `max_output_buffer_time_millis` milliseconds.
+   * set the buffer will be flushed at least that often.
    *
    * NOTE: this configuration option requires the `enable_output_buffer` flag
    * to be set.
    */
-  max_output_buffer_time_millis?: number
+  max_output_buffer_time?: string | null
 }
 
 /**
@@ -4069,17 +4109,17 @@ export type PipelineConfig = {
    */
   checkpoint_during_suspend?: boolean
   /**
-   * Real-time clock resolution in microseconds.
+   * Real-time clock resolution, for example `1s`.
    *
    * This parameter controls the execution of queries that use the `NOW()` function.  The output of such
    * queries depends on the real-time clock and can change over time without any external
    * inputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental
-   * recomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use
+   * recomputation at most once per `clock_resolution`.  If the query does not use
    * `NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.
    *
-   * It is set to 1 second (1,000,000 microseconds) by default.
+   * Unset or `null` selects the default, `DEFAULT_CLOCK_RESOLUTION`.
    */
-  clock_resolution_usecs?: number | null
+  clock_resolution?: string | null
   /**
    * Fixed timezone offset for the SQL `NOW()` clock.
    *
@@ -4183,10 +4223,10 @@ export type PipelineConfig = {
    */
   logging?: string | null
   /**
-   * Maximal delay in microseconds to wait for `min_batch_size_records` to
-   * get buffered by the controller, defaults to 0.
+   * Maximal delay to wait for `min_batch_size_records` to get buffered by
+   * the controller, for example `10ms`. Defaults to no delay.
    */
-  max_buffering_delay_usecs?: number
+  max_buffering_delay?: string | null
   /**
    * The maximum number of connectors initialized in parallel during pipeline
    * startup.
@@ -4228,8 +4268,8 @@ export type PipelineConfig = {
    *
    * The controller delays pushing input records to the circuit until at
    * least `min_batch_size_records` records have been received (total
-   * across all endpoints) or `max_buffering_delay_usecs` microseconds
-   * have passed since at least one input records has been buffered.
+   * across all endpoints) or `max_buffering_delay` has passed
+   * since the first input record was buffered.
    * Defaults to 0.
    */
   min_batch_size_records?: number
@@ -4246,10 +4286,10 @@ export type PipelineConfig = {
   pin_cpus?: Array<number>
   pipeline_template_configmap?: PipelineTemplateConfig | null
   /**
-   * Timeout in seconds for the `Provisioning` phase of the pipeline.
+   * Timeout for the `Provisioning` phase of the pipeline, for example `5m`.
    * Setting this value will override the default of the runner.
    */
-  provisioning_timeout_secs?: number | null
+  provisioning_timeout?: string | null
   resources?: ResourceConfig
   storage?: StorageOptions | null
   /**
@@ -5140,9 +5180,9 @@ export type ProviderGenericOidc = {
  */
 export type PubSubInputConfig = {
   /**
-   * gRPC connection timeout.
+   * gRPC connection timeout, for example `10s`.
    */
-  connect_timeout_seconds?: number | null
+  connect_timeout?: string | null
   /**
    * The content of a Google Cloud credentials JSON file.
    *
@@ -5192,9 +5232,9 @@ export type PubSubInputConfig = {
    */
   subscription: string
   /**
-   * gRPC request timeout.
+   * gRPC request timeout, for example `30s`.
    */
-  timeout_seconds?: number | null
+  timeout?: string | null
   /**
    * Reset subscription's backlog to a given timestamp on startup,
    * using the Pub/Sub `Seek` API.
@@ -5547,17 +5587,17 @@ export type RuntimeConfig = {
    */
   checkpoint_during_suspend?: boolean
   /**
-   * Real-time clock resolution in microseconds.
+   * Real-time clock resolution, for example `1s`.
    *
    * This parameter controls the execution of queries that use the `NOW()` function.  The output of such
    * queries depends on the real-time clock and can change over time without any external
    * inputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental
-   * recomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use
+   * recomputation at most once per `clock_resolution`.  If the query does not use
    * `NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.
    *
-   * It is set to 1 second (1,000,000 microseconds) by default.
+   * Unset or `null` selects the default, `DEFAULT_CLOCK_RESOLUTION`.
    */
-  clock_resolution_usecs?: number | null
+  clock_resolution?: string | null
   /**
    * Fixed timezone offset for the SQL `NOW()` clock.
    *
@@ -5661,10 +5701,10 @@ export type RuntimeConfig = {
    */
   logging?: string | null
   /**
-   * Maximal delay in microseconds to wait for `min_batch_size_records` to
-   * get buffered by the controller, defaults to 0.
+   * Maximal delay to wait for `min_batch_size_records` to get buffered by
+   * the controller, for example `10ms`. Defaults to no delay.
    */
-  max_buffering_delay_usecs?: number
+  max_buffering_delay?: string | null
   /**
    * The maximum number of connectors initialized in parallel during pipeline
    * startup.
@@ -5706,8 +5746,8 @@ export type RuntimeConfig = {
    *
    * The controller delays pushing input records to the circuit until at
    * least `min_batch_size_records` records have been received (total
-   * across all endpoints) or `max_buffering_delay_usecs` microseconds
-   * have passed since at least one input records has been buffered.
+   * across all endpoints) or `max_buffering_delay` has passed
+   * since the first input record was buffered.
    * Defaults to 0.
    */
   min_batch_size_records?: number
@@ -5724,10 +5764,10 @@ export type RuntimeConfig = {
   pin_cpus?: Array<number>
   pipeline_template_configmap?: PipelineTemplateConfig | null
   /**
-   * Timeout in seconds for the `Provisioning` phase of the pipeline.
+   * Timeout for the `Provisioning` phase of the pipeline, for example `5m`.
    * Setting this value will override the default of the runner.
    */
-  provisioning_timeout_secs?: number | null
+  provisioning_timeout?: string | null
   resources?: ResourceConfig
   storage?: StorageOptions | null
   /**
@@ -6063,6 +6103,13 @@ export type SessionInfo = {
    * Acting tenant name; `null` exactly when `tenant_id` is.
    */
   tenant_name?: string | null
+  /**
+   * When the user got the first tenant membership, usually at the first
+   * login. The web console uses it to report a signup. Is `null` for
+   * principals that are not human logins, for users without memberships, and
+   * for users with a membership from before the manager recorded this time.
+   */
+  user_created_at?: string | null
 }
 
 /**
@@ -6420,6 +6467,14 @@ export type SyncConfig = {
    */
   checkers?: number | null
   /**
+   * The interval between each push of checkpoints to object store, for
+   * example `1h`.
+   *
+   * The default is no periodic push; `null` disables periodic pushes
+   * explicitly.
+   */
+  checkpoint_push_interval?: string | null
+  /**
    * The endpoint URL for the storage service.
    *
    * This is typically required for custom or local S3-compatible storage providers like MinIO.
@@ -6457,6 +6512,12 @@ export type SyncConfig = {
    */
   ignore_checksum?: boolean | null
   /**
+   * The minimum age a checkpoint must reach before it becomes eligible for
+   * deletion, for example `30d`. All younger checkpoints will be preserved.
+   * Unset selects the default, `DEFAULT_RETENTION_MIN_AGE`.
+   */
+  min_retention?: string | null
+  /**
    * Use multi-thread download for files above this size.
    * Format: `[size][Suffix]` (Example: 1G, 500M)
    * Supported suffixes: k|M|G|T
@@ -6491,21 +6552,6 @@ export type SyncConfig = {
    */
   provider?: string | null
   /**
-   * The interval (in seconds) between each attempt to fetch the latest
-   * checkpoint from object store while in standby mode.
-   *
-   * Applies only when `start_from_checkpoint` is set to `latest`.
-   *
-   * Default: 10 seconds
-   */
-  pull_interval?: number
-  /**
-   * The interval (in seconds) between each push of checkpoints to object store.
-   *
-   * Default: disabled (no periodic push).
-   */
-  push_interval?: number | null
-  /**
    * A read-only bucket used as a fallback checkpoint source.
    *
    * When the pipeline has no local checkpoint and `bucket` contains no
@@ -6527,13 +6573,6 @@ export type SyncConfig = {
    */
   region?: string | null
   /**
-   * The minimum age (in days) a checkpoint must reach before it becomes
-   * eligible for deletion. All younger checkpoints will be preserved.
-   *
-   * Default: 30
-   */
-  retention_min_age?: number
-  /**
    * The minimum number of checkpoints to retain in object store.
    * No checkpoints will be deleted if the total count is below this threshold.
    *
@@ -6554,6 +6593,14 @@ export type SyncConfig = {
    * @deprecated
    */
   standby?: boolean
+  /**
+   * The interval between each attempt to fetch the latest checkpoint from
+   * object store while in standby mode, for example `10s`.
+   *
+   * Applies only when `start_from_checkpoint` is set to `latest`. Unset
+   * selects the default, `DEFAULT_PULL_INTERVAL`.
+   */
+  standby_pull_interval?: string | null
   start_from_checkpoint?: StartFromCheckpoint | null
   /**
    * Take ownership of `bucket` when the pipeline starts, even if another
@@ -6856,15 +6903,17 @@ export type UrlInputConfig = {
    */
   path: string
   /**
-   * Timeout before disconnection when paused, in seconds.
+   * Timeout before disconnection when paused, for example `60s`.
    *
    * If the pipeline is paused, or if the input adapter reads data faster
    * than the pipeline can process it, then the controller will pause the
    * input adapter. If the input adapter stays paused longer than this
    * timeout, it will drop the network connection to the server. It will
    * automatically reconnect when the input adapter starts running again.
+   *
+   * Unset selects the default, `DEFAULT_PAUSE_TIMEOUT`.
    */
-  pause_timeout?: number
+  pause_linger?: string | null
 }
 
 export type UserAndPassword = {

@@ -106,8 +106,8 @@ Feldera pipeline:
 
      - Change `model` to `"at_least_once"` or `"exactly_once"`.
 
-     - Optionally, change `"checkpoint_interval_secs"` to an automatic
-       checkpoint interval of your choice, in seconds. The default is 60 seconds. `null` will
+     - Optionally, change `"checkpoint_interval"` to an automatic
+       checkpoint interval of your choice, such as `"5m"`. The default is 60 seconds. `null` will
        disable automatic checkpoints.
 
      Then, click on the Apply button.  If clicking Apply does not
@@ -123,11 +123,11 @@ Feldera pipeline:
      ```
 
      Optionally, use the following command to change the automatic
-     checkpointing interval to `<seconds>` (use `0` for `<seconds>` to
-     disable automatic checkpoints):
+     checkpointing interval to `<duration>`, such as `5m` (use `null`
+     for `<duration>` to disable automatic checkpoints):
 
      ```
-     fda set-config <pipeline> checkpoint_interval <seconds>
+     fda set-config <pipeline> checkpoint_interval <duration>
      ```
 
 ## Writing checkpoints
@@ -141,6 +141,14 @@ Feldera also has an HTTP API, `/checkpoint`, that allows the user to
 request writing a checkpoint immediately.  If automatic checkpoints
 are disabled, then the user should occasionally invoke this API to
 ensure that the checkpoint feature is useful.
+
+On `SIGTERM`, for example when Kubernetes evicts its pod, a pipeline
+writes a checkpoint and then exits.  Kubernetes kills the pipeline
+`pipeline.terminationGracePeriodSeconds` (a Helm value, default 60)
+after the `SIGTERM`, so set it longer than a checkpoint takes.
+Multihost pipelines exit without a checkpoint.  On Kubernetes, Force
+Stop also sends `SIGTERM`.  If the checkpoint finishes within 2
+seconds, the pipeline keeps it.
 
 > Writing a checkpoint is ordinarily a fast operation that takes
 several seconds.  However, the [Delta Lake](../connectors/sources/delta.md)

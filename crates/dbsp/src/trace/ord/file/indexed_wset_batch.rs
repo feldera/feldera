@@ -2,6 +2,7 @@ use crate::storage::file::format::{BatchMetadata, ValueStampFlag};
 use crate::storage::file::{
     FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter, collect_roaring_metadata,
 };
+use crate::trace::AccessHint;
 use crate::{
     DBData, DBWeight, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
@@ -20,8 +21,8 @@ use crate::{
         },
     },
     trace::{
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        FileValBatch, VecIndexedWSetFactories, WeightedItem,
+        Batch, BatchFactories, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories,
+        Builder, Cursor, FileValBatch, VecIndexedWSetFactories, WeightedItem,
         cursor::{CursorFactory, CursorFactoryWrapper, Pending, Position, PushCursor},
         filter::BatchFilters,
         merge_batches_by_reference,
@@ -35,6 +36,7 @@ use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer}
 use size_of::SizeOf;
 use std::any::TypeId;
 use std::{
+    cell::OnceCell,
     fmt::{self, Debug},
     ops::{Neg, Range},
     sync::Arc,
@@ -338,8 +340,7 @@ where
         let mut cursor = self.cursor();
         while cursor.key_valid() {
             while cursor.val_valid() {
-                unsafe { cursor.val_cursor.aux(&mut cursor.diff) };
-                let diff = cursor.diff.neg_by_ref();
+                let diff = cursor.weight().neg_by_ref();
                 writer.write1((cursor.val(), diff.erase())).unwrap_storage();
                 cursor.step_val();
             }
@@ -432,6 +433,10 @@ where
     #[inline]
     fn cursor(&self) -> Self::Cursor<'_> {
         FileIndexedWSetCursor::new(self)
+    }
+
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        FileIndexedWSetCursor::with_hint(self, hint)
     }
 
     #[inline]
@@ -734,7 +739,23 @@ where
 
     key_cursor: KeyCursor<'s, K, V, R>,
 
-    val_cursor: ValCursor<'s, K, V, R>,
+    /// The value cursor for the current key, positioned only once something
+    /// asks for a value.
+    ///
+    /// Positioning it reads the block the first value row lives in, and a
+    /// sweep that never looks at a value would otherwise read the whole value
+    /// column for nothing: measured over 50,000 keys, stepping them alone cost
+    /// exactly as much as stepping them and reading every value.
+    val_cursor: OnceCell<ValCursor<'s, K, V, R>>,
+
+    /// Where the value cursor was last really positioned, if ever.
+    ///
+    /// Handed to `first_with_hint`, which returns without reading when the row
+    /// it wants is inside the block the hint already holds.  Keeping it is what
+    /// leaves a scan at one read per value block rather than one descent per
+    /// key.
+    val_hint: Option<ValCursor<'s, K, V, R>>,
+
     diff: Box<R>,
 }
 
@@ -749,6 +770,7 @@ where
             wset: self.wset,
             key_cursor: self.key_cursor.clone(),
             val_cursor: self.val_cursor.clone(),
+            val_hint: self.val_hint.clone(),
             diff: self.weight_factory().default_box(),
         }
     }
@@ -761,42 +783,85 @@ where
     R: WeightTrait + ?Sized,
 {
     pub fn new(wset: &'s FileIndexedWSet<K, V, R>) -> Self {
-        let key_cursor = unsafe { wset.file.rows().first().unwrap_storage() };
+        Self::with_hint(wset, AccessHint::Unknown)
+    }
 
-        let val_cursor = unsafe {
-            key_cursor
-                .next_column()
-                .unwrap_storage()
-                .first()
-                .unwrap_storage()
-        };
+    /// A cursor told how it will be moved; see [`AccessHint`].  The value
+    /// cursors it opens later inherit the hint.
+    ///
+    /// # Arguments
+    ///
+    /// * `wset` - the batch to walk.
+    /// * `hint` - how the cursor will be moved; see [`AccessHint`].
+    pub fn with_hint(wset: &'s FileIndexedWSet<K, V, R>, hint: AccessHint) -> Self {
         Self {
             wset,
-            key_cursor,
-            val_cursor,
+            key_cursor: unsafe { wset.file.rows().with_hint(hint).first().unwrap_storage() },
+            val_cursor: OnceCell::new(),
+            val_hint: None,
             diff: wset.factories.weight_factory().default_box(),
         }
     }
 
+    /// The value cursor for the current key, positioning it if nothing has yet.
+    ///
+    /// # Returns
+    ///
+    /// The value cursor, positioned on the current key's first value.
+    fn vals(&self) -> &ValCursor<'s, K, V, R> {
+        self.val_cursor.get_or_init(|| {
+            let vals = self.key_cursor.next_column().unwrap_storage();
+            unsafe {
+                match &self.val_hint {
+                    Some(hint) => vals.first_with_hint(hint),
+                    None => vals.first(),
+                }
+            }
+            .unwrap_storage()
+        })
+    }
+
+    /// The mutable value cursor for the current key, positioning it if nothing has yet.
+    ///
+    /// # Returns
+    ///
+    /// The value cursor, positioned on the current key's first value.
+    fn vals_mut(&mut self) -> &mut ValCursor<'s, K, V, R> {
+        self.vals();
+        self.val_cursor
+            .get_mut()
+            .expect("the value cursor was just positioned")
+    }
+
+    /// Moves the key cursor with `op`, leaving the value cursor to be opened
+    /// again for whatever key it lands on.
+    ///
+    /// The value cursor the old key had is parked as a hint, so opening the new
+    /// one starts from the block it already holds rather than descending the
+    /// column afresh.
+    ///
+    /// # Arguments
+    ///
+    /// * `op` - moves the key cursor, and may fail if it has to read a block.
     fn move_key<F>(&mut self, op: F)
     where
         F: Fn(&mut KeyCursor<'s, K, V, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.key_cursor).unwrap_storage();
-        self.val_cursor = unsafe {
-            self.key_cursor
-                .next_column()
-                .unwrap_storage()
-                .first_with_hint(&self.val_cursor)
-                .unwrap_storage()
-        };
+
+        // The new key's values are left unpositioned.  Whatever the old key
+        // reached becomes the hint, since it is the nearest position known and
+        // the next key's values usually share its block.
+        if let Some(vals) = self.val_cursor.take() {
+            self.val_hint = Some(vals);
+        }
     }
 
     fn move_val<F>(&mut self, op: F)
     where
         F: Fn(&mut ValCursor<'s, K, V, R>) -> Result<(), ReaderError>,
     {
-        op(&mut self.val_cursor).unwrap_storage();
+        op(self.vals_mut()).unwrap_storage();
     }
 }
 
@@ -806,6 +871,14 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // The row group recorded beside the key says how many value rows it
+        // owns.  It lives in the key column's own block, which the cursor has
+        // already read, so `next_column` does no I/O and the value column is
+        // not touched at all.
+        self.key_cursor.next_column().unwrap_storage().len() as usize
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.wset.factories.weight_factory()
     }
@@ -816,12 +889,14 @@ where
 
     fn val(&self) -> &V {
         debug_assert!(self.val_valid());
-        self.val_cursor.key().unwrap()
+        self.vals().key().unwrap()
     }
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&(), &R)) {
         if self.val_valid() {
-            unsafe { self.val_cursor.aux(&mut self.diff) };
+            self.vals();
+            let vals = self.val_cursor.get().unwrap();
+            unsafe { vals.aux(&mut self.diff) };
             logic(&(), self.diff.as_ref())
         }
     }
@@ -832,15 +907,19 @@ where
 
     fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R)) {
         while self.val_valid() {
-            unsafe { self.val_cursor.aux(&mut self.diff) };
-            logic(self.val(), self.diff.as_ref());
+            self.vals();
+            let vals = self.val_cursor.get().unwrap();
+            unsafe { vals.aux(&mut self.diff) };
+            logic(vals.key().unwrap(), self.diff.as_ref());
             self.step_val();
         }
     }
 
     fn weight(&mut self) -> &R {
         debug_assert!(self.val_valid());
-        unsafe { self.val_cursor.aux(&mut self.diff) };
+        self.vals();
+        let vals = self.val_cursor.get().unwrap();
+        unsafe { vals.aux(&mut self.diff) };
         self.diff.as_ref()
     }
 
@@ -853,7 +932,13 @@ where
     }
 
     fn val_valid(&self) -> bool {
-        self.val_cursor.has_value()
+        match self.val_cursor.get() {
+            Some(vals) => vals.has_value(),
+            // Nothing has positioned it, so it sits at the current key's first
+            // value.  Every key in a layer file has at least one value, so
+            // there is a value exactly when there is a key.
+            None => self.key_valid(),
+        }
     }
 
     fn step_key(&mut self) {
@@ -1010,6 +1095,7 @@ where
         factories: &FileIndexedWSetFactories<K, V, R>,
         batches: I,
         _location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = V, Time = (), R = R>,
@@ -1036,7 +1122,7 @@ where
                 &factories.factories1,
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
-                Runtime::file_writer_parameters(),
+                Runtime::file_writer_parameters_for(layout),
                 key_filter,
             )
             .unwrap_storage(),
@@ -1131,5 +1217,22 @@ where
 {
     fn deserialize(&self, _deserializer: &mut D) -> Result<FileIndexedWSet<K, V, R>, D::Error> {
         unimplemented!();
+    }
+}
+
+#[cfg(test)]
+impl<K, V, R> FileIndexedWSet<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    /// Where the file lives.
+    ///
+    /// # Returns
+    ///
+    /// The batch file's path on storage.
+    pub(crate) fn path(&self) -> &feldera_storage::StoragePath {
+        self.file.path()
     }
 }

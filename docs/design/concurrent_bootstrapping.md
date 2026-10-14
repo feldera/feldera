@@ -2,7 +2,8 @@
 
 ## Background: how bootstrapping works today
 
-Bootstrapping (`CircuitHandle::restore`, `circuit_builder.rs`) proceeds as follows:
+Bootstrapping (`CircuitHandle::restore` in `circuit_builder.rs`, and the
+replay code in `bootstrap.rs`) proceeds as follows:
 
 1. Determine the operators that require backfill: every node whose `restore()`
    fails with `NotFound` (its persistent-id state file is missing from the
@@ -12,13 +13,17 @@ Bootstrapping (`CircuitHandle::restore`, `circuit_builder.rs`) proceeds as follo
 2. Walk back from these operators (`compute_replay_nodes_step`) to compute the
    *replay nodes* used to bootstrap the new parts of the circuit and the larger
    set of operators that participate in bootstrapping. The walk stops at streams
-   that have a registered replay source (an integral's `Z1Trace`, registered at
-   construction via `register_replay_stream`).
+   that have a registered replay source: an integral's `Z1Trace` or
+   `AccumulateZ1Trace`, registered at construction via `register_replay_stream`,
+   `register_accumulated_replay_stream` or `register_secondary_replay_stream`.
+   One replay source can play back several streams.
 3. Activate only these operators (`executor.prepare(circuit,
    Some(participate_in_backfill))`), wire replay nodes to play back their contents
    (`add_replay_edges`), and run the circuit until the new parts are fully
-   bootstrapped in one large transaction (the replay source emits one chunk per
-   step, so the commit stretches across as many steps as the replay needs).
+   bootstrapped in one large transaction. A replay source plays back its trace in
+   chunks, one per step, so the commit stretches across as many steps as the
+   replay needs. An integral fed by an accumulator can also play back its whole
+   trace in one step, alone or together with the chunks.
 4. Resume normal operation (`complete_replay` re-prepares the scheduler with all
    nodes active).
 
@@ -30,9 +35,9 @@ updated. The resulting downtime may be unacceptable for some applications.
 Concurrent bootstrapping keeps old views receiving incremental updates while new
 and modified views are populated. The circuit is cloned into two copies: copy 1
 runs the old operators as usual; copy 2 bootstraps the new parts. Copy 1 also
-records changes to the *boundary streams* that cross between the copies; those
-records bring copy 2 up to date in the final stage. The operator sets activated in
-the two copies may overlap.
+records changes to the *boundary streams* that cross between the copies, one
+recording for each replay source; those records bring copy 2 up to date in the
+final stage. The operator sets activated in the two copies may overlap.
 
 The algorithm:
 
@@ -42,8 +47,10 @@ The algorithm:
 - **Step 3**: clone the circuit into copy 1 and copy 2.
   * **Copy 1** enables only the operators present in the old circuit (everything
     that does not participate in replay, plus its transitive predecessors), plus
-    *recorder* operators that accumulate changes to the boundary streams (the same
-    streams whose integrals the replay sources play back in copy 2).
+    *recorder* operators that accumulate changes to the boundary streams. Each
+    replay source that copy 2 uses records on one stream, its recorded stream,
+    and the synchronization replays that recording into all of the source's
+    replay streams.
   * **Copy 2** enables only the participating operators and wires the replay nodes
     — the exact circuit of the old step 3. Operators that do not participate are
     `clear_state()`d, and their state is not restored in the first place.
@@ -89,9 +96,11 @@ copy 1 until cutover.
    copy 1 keeps running, repeat on the smaller residue, short final pause) can be
    added later without rework.
 
-4. **Recorders: pre-built and gated.** A recorder node is constructed alongside
-   every registered replay stream at build time and enabled only on actual boundary
-   streams during bootstrap (the `enable_count` pattern used by `Accumulator`). This
+4. **Recorders: pre-built and gated.** A recorder node is constructed at build
+   time on the recorded stream of every replay source. A second stream that the
+   same source plays back (`register_secondary_replay_stream`) gets no recorder.
+   During bootstrap, `restore_concurrent` starts only the recorders of the replay
+   sources that copy 2 uses (`RecorderControl::start_recording`). This
    keeps construction — and therefore `Runtime::sequence_next()` id allocation —
    deterministic across workers. Adding nodes post-build (untested path) and
    recording inside the integral operators (high blast radius on
@@ -104,7 +113,7 @@ copy 1 until cutover.
 | Replay sets, boundary streams | `CircuitHandle::restore`, `compute_replay_nodes_step` — reused unchanged |
 | Circuit clone | Constructor closure is `FnOnce + Clone` (`Runtime::init_circuit`); retain a clone and re-run `RootCircuit::build`. NodeIds and persistent ids match across copies; StreamIds and circuit caches are per-copy |
 | Per-copy operator subsets | `executor.prepare(circuit, Some(node_set))` |
-| Copy 2's large transaction | Today's bootstrap transaction verbatim (chunked replay, `splitter_output_chunk_size` per step) |
+| Copy 2's large transaction | Today's bootstrap transaction verbatim (chunked replay, `splitter_output_chunk_size` per step, or a whole trace in one step) |
 | Sync-transaction replay | The same chunked replay protocol, fed from recorder spines |
 | Recorder core | `Accumulator` (`operator/dynamic/accumulator.rs`): accumulate batches into a `Spine`, drain by swap — generalized to a multi-transaction lifetime with an explicit drain trigger |
 | Cheap state copy / spine fork | Spine batches are immutable `Arc<B>`; fork = new spine + the Arc'd batches, no data copy (hazard: `Spine::consolidate` panics on a shared batch `Arc`, so forked spines must avoid that path) |
@@ -133,9 +142,8 @@ and at cutover the integral node transfers the spine while
 `RebalancingExchangeSender::swap_state` moves the policy with it, re-seeding the
 live balancer through the same `set_policy_for_stream` hook `restore` uses (the
 rebalancing accumulator is empty between transactions, so its `swap_state` is a
-checked no-op). With these in place both balanced operators report
-`supports_state_transfer() == true` and `concurrent_restore_refusal` no longer
-falls back.
+checked no-op). With these in place, a balanced join does not make a concurrent
+bootstrap fall back.
 
 The subtlety is a cluster that spans the boundary — a new join over kept, shared
 streams (e.g. adding `s2 ⋈ s3` when `s1 ⋈ s2` and `s3 ⋈ s4` already exist) merges
@@ -151,8 +159,12 @@ because per-stream balanced traces are cached and reused, the new join runs
 cluster is fully active in the live copy and an active-node test would miss it.
 Freezing pins kept streams to their checkpoint policy while leaving genuinely new
 streams (whose policy is `None` in the live copy) free for the bootstrap copy to
-choose. An unsatisfiable boundary-spanning cluster still falls back, as do nested
-circuits and boundary streams with no replay source.
+choose.
+
+The engine falls back only when a boundary stream has no replay source
+(`concurrent_restore_refusal`). A nested circuit in the backfill region does not
+make it fall back: copy 2 bootstraps the whole subcircuit, and cutover moves its
+state as one unit (`ChildNode::swap_state_with`).
 
 ## Controller integration
 
@@ -192,23 +204,29 @@ With the flag on, on startup from a checkpoint with a program diff the controlle
 calls `start_concurrent_bootstrap(checkpoint_base)` instead of entering
 stop-the-world, and branches:
 
-* **`UpToDate`** — run normally.
-* **`FellBack { reason, .. }`** — fatal `InitializationError(reason)`; no fallback.
-* **`Concurrent`** — drive a state machine mirroring the engine's, as a new arm in
-  the `StepTrigger`:
-  1. **Backfill** — run main transactions normally (old views stay live, inputs
+* **`UpToDate`**: run normally.
+* **`FellBack { reason, .. }`**: fatal `InitializationError(reason)`; no fallback.
+* **`Concurrent`**: drive the state machine `ConcurrentPhase`. While it is not
+  `Inactive`, the `StepTrigger` keeps stepping the circuit:
+  1. **Backfill**: run main transactions normally (old views stay live, inputs
      flow) and pump `step_bootstrap_circuit()` once after each main step.
-  2. **Synchronize** — when that returns `true`, call `sync_concurrent_bootstrap()`;
-     the engine now rejects main transactions, so pause inputs and pump to
-     completion — a brief stop-the-world bounded by the deltas recorded during
-     backfill.
-  3. **Cutover** — `complete_concurrent_bootstrap()`, resume inputs, run.
+  2. **AwaitingSync**: when that returns `true`, pause inputs and wait until the
+     main circuit has no open transaction, which `sync_concurrent_bootstrap()`
+     requires.
+  3. **Synchronize**: call `sync_concurrent_bootstrap()`. The engine now rejects
+     main transactions. Pump the bootstrap circuit until the synchronization
+     transaction commits. This is a brief stop-the-world, bounded by the deltas
+     recorded during backfill.
+  4. **Finalizing**: call `complete_concurrent_bootstrap()` (cutover). Inputs stay
+     paused until the next main transaction commits, which puts the new views
+     into the ad-hoc snapshot. Then resume inputs and run.
 
 ### Gating
 
-* **Inputs.** A `concurrent_backfill_in_progress` flag keeps pre-existing inputs
-  flowing during backfill (unlike the `bootstrap_in_progress()` pause) and pauses
-  them only during synchronize.
+* **Inputs.** Pre-existing inputs keep flowing during backfill (unlike the
+  `bootstrap_in_progress()` pause). They pause while the status reports the
+  `Synchronizing` phase (`ConcurrentBootstrapPhase`): from the end of the backfill
+  until the first main transaction after cutover commits.
 * **New-table connectors.** Out of scope in v1: a new table has no checkpoint, so
   its integral is rejected as a replay source and the backward walk reaches the raw
   input, tripping the `is_input` refusal in `concurrent_restore_refusal` →

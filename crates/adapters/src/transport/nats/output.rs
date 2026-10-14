@@ -29,6 +29,7 @@ use async_nats::jetstream::{self, message::PublishMessage};
 use async_nats::{HeaderMap, HeaderName, HeaderValue};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::transport::{OutputBatchType, Step};
+use feldera_types::duration::ConfigDuration;
 use feldera_types::transport::nats as cfg;
 use tokio_util::sync::CancellationToken;
 use tracing::span::EnteredSpan;
@@ -238,9 +239,11 @@ pub struct NatsOutputEndpoint {
 
 impl NatsOutputEndpoint {
     pub fn new(config: cfg::NatsOutputConfig, shutdown: CancellationToken) -> AnyResult<Self> {
-        if config.publish_timeout_secs == 0 {
+        if config.publish_timeout() < ConfigDuration::from_secs(1) {
             bail!(
-                "Invalid NATS output configuration: publish_timeout_secs must be at least 1 second"
+                "Invalid NATS output configuration: `publish_timeout` is {}, but it must be at \
+                 least 1 second; raise it, for example to `5s`",
+                config.publish_timeout()
             );
         }
         for header in &config.headers {
@@ -304,10 +307,8 @@ impl OutputEndpoint for NatsOutputEndpoint {
         let _guard = self.span();
         let connection_config = self.config.connection_config.clone();
         let subject = self.config.subject.clone();
-        let connect_timeout = Duration::from_secs(
-            self.config.connection_config.connection_timeout_secs
-                + self.config.connection_config.request_timeout_secs,
-        );
+        let connect_timeout = Duration::from(self.config.connection_config.connection_timeout())
+            .saturating_add(self.config.connection_config.request_timeout().into());
         let max_message_size_override = self.config.max_message_size;
         let with_message_id = self.message_ids.is_some();
 
@@ -421,7 +422,7 @@ impl OutputEndpoint for NatsOutputEndpoint {
             &self.config.subject,
             buffer,
             message_id,
-            Duration::from_secs(self.config.publish_timeout_secs),
+            self.config.publish_timeout().into(),
             &self.shutdown,
         )
     }

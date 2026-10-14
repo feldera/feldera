@@ -5,12 +5,13 @@ use super::{
 };
 use crate::{
     Encoder, FormatConfig, ParseError, SerBatch,
-    format::{InputBuffer, Parser, avro::from_avro_value},
+    catalog::InputCollectionHandle,
+    format::{InputBuffer, Parser, avro::from_avro_value, get_input_format},
     static_compile::seroutput::SerBatchImpl,
     test::{
-        KeyStruct, MockOutputConsumer, MockUpdate, TestStruct, TestStruct2, TestStructSoftDelete,
-        generate_test_batches, generate_test_batches_with_weights, mock_parser_pipeline,
-        mock_soft_delete_parser_pipeline,
+        KeyStruct, MockDeZSet, MockOutputConsumer, MockUpdate, TestStruct, TestStruct2,
+        TestStructSoftDelete, generate_test_batches, generate_test_batches_with_weights,
+        mock_parser_pipeline, mock_soft_delete_parser_pipeline,
     },
 };
 use crate::{catalog::SerBatchReader, util::run_in_posix_runtime};
@@ -18,6 +19,7 @@ use apache_avro::{
     Schema as AvroSchema, from_avro_datum, schema::ResolvedSchema, to_avro_datum, types::Value,
 };
 use chrono::{DateTime, Utc};
+use dbsp::circuit::NodeId;
 use dbsp::trace::BatchReaderFactories;
 use dbsp::typed_batch::{DynSpineSnapshot, SpineSnapshot as TypedSpineSnapshot, TypedBatch};
 use dbsp::{DBData, IndexedZSetReader, OrdIndexedZSet, OrdZSet, ZWeight, utils::Tup2};
@@ -267,6 +269,7 @@ where
         update_format: AvroUpdateFormat::Raw,
         schema: Some(avro_schema_str.to_string()),
         skip_schema_id: false,
+        cdc_field: None,
         registry_config: Default::default(),
     };
 
@@ -316,6 +319,7 @@ where
         update_format: AvroUpdateFormat::Debezium,
         schema: Some(schema_json(&debezium_schema)),
         skip_schema_id: false,
+        cdc_field: None,
         registry_config: Default::default(),
     };
 
@@ -415,6 +419,7 @@ fn test_soft_delete_debezium_avro_parser() {
         update_format: AvroUpdateFormat::Debezium,
         schema: Some(schema_json(&debezium_schema)),
         skip_schema_id: false,
+        cdc_field: None,
         registry_config: Default::default(),
     };
 
@@ -559,6 +564,7 @@ fn test_debezium_ignored_coerced_field() {
             update_format: AvroUpdateFormat::Debezium,
             schema: Some(envelope_str),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches: vec![(serialize_value(value, &envelope_schema), vec![])],
@@ -569,6 +575,226 @@ fn test_debezium_ignored_coerced_field() {
     };
 
     run_parser_test(vec![test]);
+}
+
+/// Table row for the `cdc_field` tests.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct CdcFieldRow {
+    id: i64,
+    s: String,
+}
+
+deserialize_table_record!(CdcFieldRow["CdcField", Variant, 2] {
+    (r#id, "id", false, i64, |_| None),
+    (r#s, "s", false, String, |_| None)
+});
+
+impl CdcFieldRow {
+    fn new(id: i64) -> Self {
+        Self {
+            id,
+            s: format!("s{id}"),
+        }
+    }
+
+    fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("CdcField", false),
+            fields: vec![
+                Field::new("id".into(), ColumnType::bigint(false)),
+                Field::new("s".into(), ColumnType::varchar(false)),
+            ],
+            materialized: false,
+            properties: BTreeMap::new(),
+            primary_key: Some(vec!["id".to_string()]),
+        }
+    }
+
+    /// Avro schema with an `op` field of type `op_type`.
+    fn avro_schema(op_type: &str) -> String {
+        format!(
+            r#"{{"type": "record", "name": "CdcField", "fields": [
+                {{"name": "id", "type": "long"}},
+                {{"name": "s", "type": "string"}},
+                {{"name": "op", "type": {op_type}}}
+            ]}}"#
+        )
+    }
+
+    /// Avro message for the row with operation `op`.
+    fn message(&self, op: Value, schema: &AvroSchema) -> Vec<u8> {
+        serialize_value(
+            Value::Record(vec![
+                ("id".to_string(), Value::Long(self.id)),
+                ("s".to_string(), Value::String(self.s.clone())),
+                ("op".to_string(), op),
+            ]),
+            schema,
+        )
+    }
+}
+
+fn cdc_field_parser_config(
+    update_format: AvroUpdateFormat,
+    schema: String,
+    cdc_field: &str,
+) -> AvroParserConfig {
+    AvroParserConfig {
+        update_format,
+        schema: Some(schema),
+        skip_schema_id: false,
+        cdc_field: Some(cdc_field.to_string()),
+        registry_config: Default::default(),
+    }
+}
+
+/// `cdc_field` selects insert, upsert or delete for each field type.
+#[test]
+fn test_raw_cdc_field() {
+    /// Avro type of `op`, and a function that makes an `op` value.
+    type OpType = (&'static str, fn(&str) -> Value);
+    let op_types: [OpType; 3] = [
+        (r#""string""#, |op| Value::String(op.to_string())),
+        (r#"["null", "string"]"#, |op| {
+            Value::Union(1, Box::new(Value::String(op.to_string())))
+        }),
+        (
+            r#"{"type": "enum", "name": "Op", "symbols": ["I", "U", "D"]}"#,
+            |op| {
+                let index = ["I", "U", "D"].iter().position(|s| *s == op).unwrap();
+                Value::Enum(index as u32, op.to_string())
+            },
+        ),
+    ];
+
+    let test_cases = op_types
+        .into_iter()
+        .map(|(op_type, op)| {
+            let schema_str = CdcFieldRow::avro_schema(op_type);
+            let schema = AvroSchema::parse_str(&schema_str).unwrap();
+            TestCase {
+                relation_schema: CdcFieldRow::relation_schema(),
+                config: cdc_field_parser_config(AvroUpdateFormat::Raw, schema_str, "op"),
+                input_batches: [(1, "I"), (2, "I"), (1, "U"), (2, "D")]
+                    .into_iter()
+                    .map(|(id, code)| (CdcFieldRow::new(id).message(op(code), &schema), vec![]))
+                    .collect(),
+                expected_output: vec![
+                    MockUpdate::Insert(CdcFieldRow::new(1)),
+                    MockUpdate::Insert(CdcFieldRow::new(2)),
+                    MockUpdate::Insert(CdcFieldRow::new(1)),
+                    MockUpdate::Delete(CdcFieldRow::new(2)),
+                ],
+            }
+        })
+        .collect();
+
+    run_parser_test(test_cases);
+}
+
+/// An unknown or null operation is a parse error for that record only.
+#[test]
+fn test_raw_cdc_field_invalid_op() {
+    let schema_str = CdcFieldRow::avro_schema(r#"["null", "string"]"#);
+    let schema = AvroSchema::parse_str(&schema_str).unwrap();
+    let format_config = FormatConfig {
+        name: Cow::from("avro"),
+        config: serde_json::to_value(cdc_field_parser_config(
+            AvroUpdateFormat::Raw,
+            schema_str,
+            "op",
+        ))
+        .unwrap(),
+    };
+    let (consumer, mut parser, outputs) =
+        mock_parser_pipeline::<CdcFieldRow, ()>(&CdcFieldRow::relation_schema(), &format_config)
+            .unwrap();
+    consumer.on_error(Some(Box::new(|_, _| {})));
+    parser.on_error(Some(Box::new(|_, _| {})));
+
+    let string_op = |op: &str| Value::Union(1, Box::new(Value::String(op.to_string())));
+    for (id, op, expected_error) in [
+        (
+            1,
+            string_op("X"),
+            Some("invalid value 'X' in the 'op' field"),
+        ),
+        (
+            2,
+            Value::Union(0, Box::new(Value::Null)),
+            Some("invalid value 'Null' in the 'op' field"),
+        ),
+        (3, string_op("I"), None),
+    ] {
+        let (mut buffer, errors) = parser.parse(&CdcFieldRow::new(id).message(op, &schema), None);
+        match expected_error {
+            Some(expected_error) => {
+                assert_eq!(errors.len(), 1);
+                assert!(
+                    errors[0].to_string().contains(expected_error),
+                    "expected '{expected_error}' in '{}'",
+                    errors[0]
+                );
+            }
+            None => assert_eq!(&errors, &[]),
+        }
+        buffer.flush();
+    }
+
+    assert_eq!(
+        &outputs.state().flushed,
+        &[MockUpdate::Insert(CdcFieldRow::new(3))]
+    );
+}
+
+/// Invalid `cdc_field` configurations are rejected.
+#[test]
+fn test_raw_cdc_field_config_errors() {
+    let parser_error = |config: AvroParserConfig| {
+        let input_handle = InputCollectionHandle::new(
+            CdcFieldRow::relation_schema(),
+            MockDeZSet::<CdcFieldRow, ()>::new(),
+            NodeId::new(0),
+        );
+        match get_input_format("avro").unwrap().new_parser(
+            "test_endpoint",
+            &input_handle,
+            &serde_json::to_value(config).unwrap(),
+        ) {
+            Ok(_) => panic!("expected the Avro parser configuration to be rejected"),
+            Err(e) => e.to_string(),
+        }
+    };
+
+    let string_schema = CdcFieldRow::avro_schema(r#""string""#);
+    for (config, expected_error) in [
+        (
+            cdc_field_parser_config(AvroUpdateFormat::Debezium, string_schema.clone(), "op"),
+            "`cdc_field` is only supported with 'raw' update format",
+        ),
+        (
+            cdc_field_parser_config(AvroUpdateFormat::Raw, string_schema.clone(), ""),
+            "`cdc_field` must not be empty",
+        ),
+        (
+            cdc_field_parser_config(AvroUpdateFormat::Raw, string_schema, "action"),
+            "field 'action', specified in the 'cdc_field' property, is missing in the Avro schema",
+        ),
+        (
+            cdc_field_parser_config(
+                AvroUpdateFormat::Raw,
+                CdcFieldRow::avro_schema(r#""int""#),
+                "op",
+            ),
+            "field 'op', specified in the 'cdc_field' property, must be of type 'string' or 'enum'",
+        ),
+    ] {
+        let error = parser_error(config);
+        assert!(
+            error.contains(expected_error),
+            "expected '{expected_error}' in '{error}'"
+        );
+    }
 }
 
 /// SQL table can have nullable columns that are not in the Avro schema.
@@ -636,6 +862,7 @@ fn test_extra_columns() {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(schema_str.to_string()),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches,
@@ -712,6 +939,7 @@ fn test_non_null_to_nullable() {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(schema_str.to_string()),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches,
@@ -788,6 +1016,7 @@ fn test_nullable_to_non_nullable() {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(schema_str.to_string()),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches,
@@ -881,6 +1110,7 @@ fn test_parse_binary() {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(TestBinary::avro_schema().to_string()),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches,
@@ -981,6 +1211,7 @@ fn test_issue4722_issue4837() {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(TestUuid::avro_schema().to_string()),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches,
@@ -1078,6 +1309,7 @@ fn test_parse_variant() {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(TestVariant::avro_schema().to_string()),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches,
@@ -1208,6 +1440,7 @@ fn test_enums() {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(TestEnum::avro_schema().to_string()),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches,
@@ -1303,6 +1536,7 @@ fn test_metadata() {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(TestMetadata::avro_schema().to_string()),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches,
@@ -1374,6 +1608,7 @@ fn test_ms_time() {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(schema_str.to_string()),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches,
@@ -1635,6 +1870,7 @@ fn test_debezium_temporal_types() {
             update_format: AvroUpdateFormat::Debezium,
             schema: Some(envelope_str),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches: vec![encode(&raw), encode(&raw_null)],
@@ -1791,6 +2027,7 @@ fn test_debezium_timestamp_column_targets() {
             update_format: AvroUpdateFormat::Debezium,
             schema: Some(envelope_str),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches: vec![(buffer, vec![])],
@@ -1942,6 +2179,7 @@ fn test_debezium_variable_scale_decimal() {
             update_format: AvroUpdateFormat::Debezium,
             schema: Some(envelope_str),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches: vec![encode(&row1), encode(&row2)],
@@ -2102,6 +2340,7 @@ fn test_issue4664() {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(TestIntConversionsSrc::avro_schema().to_string()),
             skip_schema_id: false,
+            cdc_field: None,
             registry_config: Default::default(),
         },
         input_batches,

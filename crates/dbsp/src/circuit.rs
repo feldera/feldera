@@ -20,6 +20,7 @@ pub(crate) mod runtime;
 
 #[macro_use]
 pub mod metadata;
+pub mod bootstrap;
 pub mod cache;
 pub mod checkpointer;
 pub mod circuit_builder;
@@ -33,10 +34,11 @@ pub mod trace;
 #[cfg(test)]
 mod replay_tests;
 
+pub use bootstrap::ConcurrentRestoreOutcome;
 pub use circuit_builder::{
-    ChildCircuit, Circuit, CircuitBase, CircuitHandle, ConcurrentRestoreOutcome, ElapsedTime,
-    ExportId, ExportStream, FeedbackConnector, GlobalNodeId, NestedCircuit, NodeId,
-    OwnershipPreference, RegionName, RootCircuit, Scope, Stream, ThreadCpuTime, WithClock,
+    ChildCircuit, Circuit, CircuitBase, CircuitHandle, ElapsedTime, ExportId, ExportStream,
+    FeedbackConnector, GlobalNodeId, NestedCircuit, NodeId, OwnershipPreference, RegionName,
+    RootCircuit, Scope, Stream, ThreadCpuTime, WithClock,
 };
 pub use dbsp_handle::{
     CheckpointCommitter, CheckpointPublisher, CircuitConfig, CircuitStorageConfig, DBSPHandle,
@@ -44,8 +46,8 @@ pub use dbsp_handle::{
     accumulator_merge_threshold_batches, adaptive_joins_enabled, balancer_balance_tax,
     balancer_key_distribution_refresh_threshold, balancer_min_absolute_improvement_threshold,
     balancer_min_relative_improvement_threshold, integral_merge_threshold_batches,
-    lazy_input_map_keys_per_step, max_level0_batch_size_records, negative_weight_multiplier,
-    splitter_output_chunk_size, splitter_output_first_chunk_size,
+    lazy_input_map_key_block_bytes, lazy_input_map_keys_per_step, max_level0_batch_size_records,
+    negative_weight_multiplier, splitter_output_chunk_size, splitter_output_first_chunk_size,
     top_level_negative_weight_fraction,
 };
 pub use runtime::{

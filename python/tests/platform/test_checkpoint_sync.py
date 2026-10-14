@@ -106,10 +106,12 @@ def storage_cfg(
         {
             "start_from_checkpoint": start_from_checkpoint,
             "fail_if_no_checkpoint": strict,
-            "pull_interval": pull_interval,
-            "push_interval": push_interval,
+            "standby_pull_interval": f"{pull_interval}s",
+            "checkpoint_push_interval": None
+            if push_interval is None
+            else f"{push_interval}s",
             "retention_min_count": retention_min_count,
-            "retention_min_age": retention_min_age,
+            "min_retention": f"{retention_min_age}d",
         }
     )
     if read_bucket is not None:
@@ -199,7 +201,7 @@ class TestCheckpointSync(SharedTestPipeline):
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
                 storage=Storage(config=storage_config),
-                checkpoint_interval_secs=ft_interval,
+                checkpoint_interval=f"{ft_interval}s",
                 h2_trace=h2_trace,
             )
         )
@@ -418,7 +420,7 @@ class TestCheckpointSync(SharedTestPipeline):
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
                 storage=Storage(config=storage_config),
-                checkpoint_interval_secs=ft_interval,
+                checkpoint_interval=f"{ft_interval}s",
             )
         )
 
@@ -923,7 +925,7 @@ class TestCheckpointSync(SharedTestPipeline):
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
                 storage=Storage(config=storage_config),
-                checkpoint_interval_secs=5,
+                checkpoint_interval="5s",
             )
         )
         self.pipeline.start()
@@ -1012,7 +1014,7 @@ class TestCheckpointSync(SharedTestPipeline):
                         self.pipeline.name, endpoint=UNREACHABLE_ENDPOINT
                     )
                 ),
-                checkpoint_interval_secs=60,
+                checkpoint_interval="60s",
             )
         )
         self.pipeline.start()
@@ -1068,7 +1070,7 @@ class TestCheckpointSync(SharedTestPipeline):
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
                 storage=Storage(config=storage_cfg(self.pipeline.name, auth_err=True)),
-                checkpoint_interval_secs=60,
+                checkpoint_interval="60s",
             )
         )
         self.pipeline.start()
@@ -1819,7 +1821,7 @@ class TestCheckpointSync(SharedTestPipeline):
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
                 storage=Storage(config=storage_config),
-                checkpoint_interval_secs=60,
+                checkpoint_interval="60s",
             )
         )
         self.pipeline.start()

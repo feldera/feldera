@@ -52,6 +52,7 @@ use feldera_types::config::{
     AutoscalingConfig, DevTweaks, FtConfig, PipelineConfig, ProgramIr, ResourceConfig,
     RuntimeConfig, StorageAutoscalingConfig,
 };
+use feldera_types::duration::ConfigDuration;
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
@@ -435,7 +436,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             hosts: val.val20,
             cpu_profiler: val.val1,
             min_batch_size_records: val.val2,
-            max_buffering_delay_usecs: val.val3,
+            max_buffering_delay: Some(ConfigDuration::from_micros(val.val3)),
             storage: val.val4.then(Default::default),
             fault_tolerance: FtConfig::default(),
             tracing: val.val5,
@@ -459,7 +460,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
                 service_account_name: val.val13,
                 namespace: val.val14,
             },
-            clock_resolution_usecs: val.val15,
+            clock_resolution: val.val15.map(ConfigDuration::from_micros),
             // Varies so the proptest exercises the "cannot edit unless
             // storage is cleared" restriction on this field.
             clock_timezone_offset: match val.val0 % 3 {
@@ -468,7 +469,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
                 _ => Some("-08:00".parse().unwrap()),
             },
             pin_cpus: Vec::new(),
-            provisioning_timeout_secs: val.val16,
+            provisioning_timeout: val.val16.map(ConfigDuration::from_secs),
             max_parallel_connector_init: None,
             init_containers: None,
             checkpoint_during_suspend: val.val17,
@@ -994,7 +995,7 @@ async fn membership_origin_is_recorded() {
     assert_eq!(bob_row.role, Role::Admin);
     assert_eq!(bob_row.origin, Some(MembershipOrigin::Api));
 
-    let memberships = handle
+    let (memberships, _) = handle
         .db
         .list_user_memberships(&provider, "alice")
         .await
@@ -1010,8 +1011,81 @@ async fn membership_origin_is_recorded() {
             .list_user_memberships(&provider, "nobody")
             .await
             .unwrap()
+            .0
             .is_empty()
     );
+}
+
+/// The creation time of a user is the time of the first tenant membership. A
+/// user without memberships, and a user with a membership from before V36
+/// (NULL), have none.
+#[tokio::test]
+async fn user_created_at_is_recorded() {
+    let handle = test_setup().await;
+    let provider = "https://idp.test";
+    let created_at = async |subject: &str| {
+        handle
+            .db
+            .list_user_memberships(provider, subject)
+            .await
+            .unwrap()
+            .1
+    };
+    let login = async |tenant: &str| {
+        handle
+            .db
+            .resolve_login(
+                Uuid::now_v7(),
+                Uuid::now_v7(),
+                tenant.to_string(),
+                provider.to_string(),
+                "alice".to_string(),
+                None,
+                Role::Read,
+                Role::Admin,
+                MembershipOrigin::Derived,
+            )
+            .await
+            .unwrap()
+    };
+    assert_eq!(created_at("alice").await, None);
+
+    // A user record without a membership has no creation time.
+    handle
+        .db
+        .get_or_create_user(Uuid::now_v7(), provider, "alice", None)
+        .await
+        .unwrap();
+    assert_eq!(created_at("alice").await, None);
+
+    let before = Utc::now();
+    login("acme").await;
+    let first = created_at("alice")
+        .await
+        .expect("the first membership records the creation time");
+    assert!(first >= before - chrono::Duration::seconds(5));
+
+    // A later login and a later membership do not move the creation time.
+    login("acme").await;
+    let (beta, alice, _) = login("beta").await;
+    assert_eq!(created_at("alice").await, Some(first));
+
+    // Make the `acme` membership older than V36. The `beta` membership has a
+    // time, but it is not the signup time.
+    handle
+        .db
+        .pool
+        .get()
+        .await
+        .unwrap()
+        .execute(
+            "UPDATE tenant_membership SET created_at = NULL \
+             WHERE user_id = $1 AND tenant_id <> $2",
+            &[&alice.0, &beta.0],
+        )
+        .await
+        .unwrap();
+    assert_eq!(created_at("alice").await, None);
 }
 
 /// Creation, deletion and validation of API keys.
@@ -2477,7 +2551,7 @@ async fn pipeline_versioning() {
         tracing: false,
         tracing_endpoint_jaeger: "".to_string(),
         min_batch_size_records: 0,
-        max_buffering_delay_usecs: 0,
+        max_buffering_delay: None,
         resources: ResourceConfig {
             cpu_cores_min: None,
             cpu_cores_max: None,
@@ -2491,10 +2565,10 @@ async fn pipeline_versioning() {
             service_account_name: None,
             namespace: None,
         },
-        clock_resolution_usecs: None,
+        clock_resolution: None,
         clock_timezone_offset: None,
         pin_cpus: Vec::new(),
-        provisioning_timeout_secs: None,
+        provisioning_timeout: None,
         max_parallel_connector_init: None,
         init_containers: None,
         checkpoint_during_suspend: true,
@@ -4563,8 +4637,8 @@ async fn pipeline_provision_version_guard() {
             &PatchClientMetadata::default(),
             "v0",
             false,
-            &Some(
-                serde_json::to_value(RuntimeConfig {
+            &Some({
+                let config = RuntimeConfig {
                     workers: 10,
                     max_rss_mb: None,
                     datafusion_memory_mb: None,
@@ -4575,12 +4649,12 @@ async fn pipeline_provision_version_guard() {
                     tracing: false,
                     tracing_endpoint_jaeger: "".to_string(),
                     min_batch_size_records: 0,
-                    max_buffering_delay_usecs: 0,
+                    max_buffering_delay: None,
                     resources: Default::default(),
-                    clock_resolution_usecs: None,
+                    clock_resolution: None,
                     clock_timezone_offset: None,
                     pin_cpus: Vec::new(),
-                    provisioning_timeout_secs: None,
+                    provisioning_timeout: None,
                     max_parallel_connector_init: None,
                     init_containers: None,
                     checkpoint_during_suspend: false,
@@ -4590,9 +4664,9 @@ async fn pipeline_provision_version_guard() {
                     env: BTreeMap::new(),
                     logging: None,
                     pipeline_template_configmap: None,
-                })
-                .unwrap(),
-            ),
+                };
+                serde_json::to_value(config).unwrap()
+            }),
             &None,
             &None,
             &None,
@@ -5312,18 +5386,21 @@ async fn check_rbac_action(
         RbacAction::ListUserMemberships((provider, subject)) => {
             // Sorted by id on both sides: Postgres collates names by locale,
             // Rust by bytes, and the order is not what this action checks.
-            let mut model_response = model
+            // The clocks differ, so only the presence of a creation time is
+            // compared.
+            let (mut model_memberships, model_created_at) = model
                 .list_user_memberships(&provider, &subject)
                 .await
                 .unwrap();
-            let mut impl_response = handle
+            let (mut impl_memberships, impl_created_at) = handle
                 .db
                 .list_user_memberships(&provider, &subject)
                 .await
                 .unwrap();
-            model_response.sort_by_key(|m| m.tenant_id);
-            impl_response.sort_by_key(|m| m.tenant_id);
-            assert_eq!(model_response, impl_response);
+            model_memberships.sort_by_key(|m| m.tenant_id);
+            impl_memberships.sort_by_key(|m| m.tenant_id);
+            assert_eq!(model_memberships, impl_memberships);
+            assert_eq!(model_created_at.is_some(), impl_created_at.is_some());
         }
         RbacAction::UpsertMemberRole(tenant_id, (provider, subject), role) => {
             let user_id = user_id_for_identity(&provider, &subject);
@@ -6629,7 +6706,8 @@ struct DbModel {
     pub oidc_trusts: BTreeMap<(TenantId, String), OidcTrustDescr>,
     /// Keyed by the `(provider, subject)` identity.
     pub users: BTreeMap<(String, String), UserRecord>,
-    pub memberships: BTreeMap<(TenantId, UserId), (Role, MembershipOrigin)>,
+    /// The role, the origin and the creation time of each membership.
+    pub memberships: BTreeMap<(TenantId, UserId), (Role, MembershipOrigin, DateTime<Utc>)>,
 }
 
 #[async_trait]
@@ -7603,7 +7681,7 @@ impl Storage for Mutex<DbModel> {
             .memberships
             .iter()
             .filter(|((t, _), _)| *t == tenant_id)
-            .filter_map(|((_, user_id), (role, origin))| {
+            .filter_map(|((_, user_id), (role, origin, _))| {
                 s.users.iter().find(|(_, user)| user.id == *user_id).map(
                     |((provider, subject), user)| TenantMember {
                         user_id: user.id,
@@ -7658,7 +7736,7 @@ impl Storage for Mutex<DbModel> {
             // Enroll only where no membership exists; never touch a role.
             s.memberships
                 .entry((tenant_id, user_id))
-                .or_insert((role, origin));
+                .or_insert((role, origin, Utc::now()));
         }
         Ok(())
     }
@@ -7667,16 +7745,24 @@ impl Storage for Mutex<DbModel> {
         &self,
         provider: &str,
         subject: &str,
-    ) -> DBResult<Vec<UserMembership>> {
+    ) -> DBResult<(Vec<UserMembership>, Option<DateTime<Utc>>)> {
         let s = self.lock().await;
         let Some(user) = s.users.get(&(provider.to_string(), subject.to_string())) else {
-            return Ok(vec![]);
+            return Ok((vec![], None));
         };
+        // The model has no memberships from before V36, so the creation time
+        // is the time of the first membership.
+        let created_at = s
+            .memberships
+            .iter()
+            .filter(|((_, u), _)| *u == user.id)
+            .map(|(_, (_, _, created_at))| *created_at)
+            .min();
         let mut memberships: Vec<UserMembership> = s
             .memberships
             .iter()
             .filter(|((_, u), _)| *u == user.id)
-            .filter_map(|((t, _), (role, _))| {
+            .filter_map(|((t, _), (role, _, _))| {
                 s.tenants.get(t).map(|rec| UserMembership {
                     tenant_id: *t,
                     name: rec.tenant.clone(),
@@ -7685,7 +7771,7 @@ impl Storage for Mutex<DbModel> {
             })
             .collect();
         memberships.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(memberships)
+        Ok((memberships, created_at))
     }
 
     async fn upsert_member_role(
@@ -7708,8 +7794,8 @@ impl Storage for Mutex<DbModel> {
         // SQL upsert does.
         s.memberships
             .entry((tenant_id, user_id))
-            .and_modify(|(r, _)| *r = role)
-            .or_insert((role, origin));
+            .and_modify(|(r, _, _)| *r = role)
+            .or_insert((role, origin, Utc::now()));
         Ok(())
     }
 

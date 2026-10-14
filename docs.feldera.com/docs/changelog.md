@@ -10,6 +10,166 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Avro input connector: the new `cdc_field` property names a field that holds
+  the operation type of each raw Avro record: `I` (insert), `U` (upsert), or
+  `D` (delete).  A Feldera Avro output connector with `cdc_field` set writes
+  these values.  See
+  [Ingesting change data capture (CDC) records](/formats/avro#ingesting-cdc-records).
+
+- Incompatible change (ad-hoc queries): the `hash` result format and
+  `Pipeline.query_hash()` in the Python SDK return a different hash for the
+  same rows than earlier releases.  Compare only hashes taken from the same
+  release.
+
+- Incompatible change (ad-hoc queries and connector filters): ad-hoc queries,
+  and the `filter` and `snapshot_filter` properties of the Delta Lake and
+  Iceberg connectors, now evaluate some SQL differently.  Filters that compare
+  a timestamp or date with a string, such as `ts > '2024-01-01'`, are not
+  affected.
+  - A number compared with a string is compared as a number, not as text.
+    For example, `bigint_col BETWEEN '10' AND '20'` now selects the values
+    from 10 to 20.  A string that is not a number makes the query fail,
+    instead of matching nothing.
+  - `sqrt` of a negative number and `power(0, -1)` fail, instead of returning
+    NaN and infinity.
+  - A scalar subquery that returns more than one row fails.
+  - `median` of an integer column returns a floating-point value.
+  - `-0.0` and `0.0` are equal and group together.
+  - `EXTRACT(ISODOW FROM ...)` returns 1 (Monday) to 7 (Sunday), instead of
+    0 to 6.
+  - `CAST(json_get(...) AS VARCHAR)` returns the JSON text of a number,
+    boolean, object or array, instead of NULL.
+  - `values` is no longer accepted as a column alias without `AS`: write
+    `SELECT x AS values`, not `SELECT x values`.
+
+- Incompatible change (Delta Lake connectors): DynamoDB commit locking on S3
+  is no longer supported.  If the
+  [storage parameters](/connectors/sinks/delta#storage-parameters) set
+  `AWS_S3_LOCKING_PROVIDER = 'dynamodb'`, the connector logs an error and
+  ignores it.  Commits use conditional writes, which stop two writers from
+  overwriting each other's commit on a store that supports them, such as
+  Amazon S3.
+
+- Incompatible change (Delta Lake connectors): the connector properties
+  `aws_profile`, `aws_role_arn`, `aws_web_identity_token_file` and
+  `aws_role_session_name` no longer have an effect.  Set the matching
+  environment variables (`AWS_PROFILE`, `AWS_ROLE_ARN`,
+  `AWS_WEB_IDENTITY_TOKEN_FILE`, `AWS_ROLE_SESSION_NAME`) in the pipeline's
+  environment instead, as IRSA on Amazon EKS does.  `aws_region` still selects
+  the S3 region, but to assume an IAM role, also set `AWS_REGION` in the
+  environment.  Other properties, such as `aws_access_key_id` and
+  `aws_secret_access_key`, work as before.
+
+- Delta Lake input connector: in `snapshot` mode, an empty string in a string
+  partition column now reads as `''` instead of NULL, the same as in `follow`
+  mode.  A `filter` or `snapshot_filter` that compares a string partition
+  column with a number, such as `part = 2024`, now reads all files instead of
+  only the matching partition, and fails if a partition value is not a number.
+  Write `part = '2024'` instead.
+
+- Iceberg input connector:
+  - When the connector reads a snapshot, it matches the columns of a data file
+    without field ids by the table's `schema.name-mapping.default` property,
+    instead of by column position.
+  - The `gcs.service.path` property is renamed to `gcs.service.host`.  The old
+    name still works.
+  - Each read call has a time limit, set by `opendal.io-timeout-ms`.  The
+    default is 60 seconds.
+
+- Incompatible change (Parquet and Delta Lake output, ad-hoc queries): a `MAP`
+  value with a NULL key can no longer be written to Parquet or Delta Lake, or
+  returned by an ad-hoc query.  This fails with `cannot serialize null into
+  non-nullable array`.  Parquet does not allow NULL map keys.
+
+- Deprecation (pipeline and connector configuration): every duration setting
+  now takes a string with a unit, such as `"500ms"`, `"30s"`, `"1h30m"` or
+  `"30d"`. Accepted units are `ns`, `us` (or `µs`), `ms`, `s`, `m`, `h`, and
+  `d`, and several terms in a row are summed. Most settings keep their name
+  with the unit dropped, so `clock_resolution_usecs` becomes
+  `clock_resolution`; the others take a new name, as the table below shows.
+  The old name remains a deprecated alias of the new one, so an existing
+  configuration keeps working, and the pipeline logs a warning that names the
+  setting and the value to write instead. Writing both names of one setting
+  is an error. The old names are removed no earlier than release 0.368.0.
+
+  The Delta connector's `log_retention_duration` is not part of this scheme:
+  it passes a `"interval 30 days"` string through to Delta Lake and keeps its
+  own syntax.
+
+  | Old name (unit)                        | New name                            |
+  |-----------------------------------------|--------------------------------------|
+  | `max_buffering_delay_usecs` (µs)        | `max_buffering_delay`       |
+  | `clock_resolution_usecs` (µs)           | `clock_resolution`          |
+  | `provisioning_timeout_secs` (s)         | `provisioning_timeout`      |
+  | `fault_tolerance.checkpoint_interval_secs` (s) | `fault_tolerance.checkpoint_interval` |
+  | `storage.backend.config.ioop_delay` (ms) | `storage.backend.config.ioop_latency` |
+  | `storage.backend.config.sync.pull_interval` (s) | `storage.backend.config.sync.standby_pull_interval` |
+  | `storage.backend.config.sync.push_interval` (s) | `storage.backend.config.sync.checkpoint_push_interval` |
+  | `storage.backend.config.sync.retention_min_age` (days) | `storage.backend.config.sync.min_retention` |
+  | `max_output_buffer_time_millis` (ms)    | `max_output_buffer_time`    |
+  | URL input `pause_timeout` (s)           | `pause_linger`             |
+  | Kafka input `group_join_timeout_secs` (s) | `group_join_timeout`      |
+  | Kafka output `initialization_timeout_secs` (s) | `initialization_timeout` |
+  | NATS `connection_timeout_secs`, `request_timeout_secs`, `inactivity_timeout_secs`, `retry_interval_secs`, `publish_timeout_secs` (s) | the same names without `_secs` |
+  | NATS consumer `max_expires` (`{secs, nanos}` object) | `max_expiry`  |
+  | Pub/Sub `timeout_seconds`, `connect_timeout_seconds` (s) | `timeout`, `connect_timeout` |
+  | Avro `registry_timeout_secs` (s)        | `registry_timeout`          |
+
+  For a client that reads the configuration back:
+
+  - A configuration is stored under the new names the next time it is saved,
+    and the API then returns it under those names. A pipeline stored before
+    this change and not saved since comes back under the old names, so a
+    client must accept either.
+  - The OpenAPI schema lists only the new names.
+  - The Python SDK's `RuntimeConfig` reads `.clock_resolution` and the other
+    duration attributes as strings such as `"1ms"`, whichever name the
+    configuration holds. The old attributes such as `.clock_resolution_usecs`
+    remain as deprecated properties that return a whole number of the old
+    unit and warn. The SDK writes each setting to the server under the name
+    it was given, so code that uses the old arguments keeps working against
+    an older server.
+  - An output connector stored by an earlier release shows its buffer time as
+    `"213503982334d14h25m51s615ms"`. This is the old default of 2^64 - 1
+    milliseconds, means the same, and can be left alone.
+
+  Upgrade `fda` together with the server. An `fda` older than this change
+  reads a configuration stored under the new names as if those settings were
+  unset, and `fda set-config` then writes defaults over every duration
+  setting it did not change.
+
+  When the pipeline manager starts a pipeline pinned to an older runtime with
+  `runtime_version`, or one compiled by an earlier release and not yet
+  updated, it writes the pipeline's configuration under the old names, in the
+  runtime configuration and in every connector. A value that is not a whole
+  number of the old unit rounds up, so a short timeout never becomes `0`. The
+  configuration stored by the API is not changed. In the Enterprise edition,
+  pinning a runtime older than this change does not compile, because the
+  platform's enterprise crates, which such a pipeline builds against, use the
+  new settings. Also in the Enterprise edition, checkpoint garbage collection
+  now keeps a checkpoint for the full `min_retention`: it no longer subtracts
+  a one-hour allowance for clock skew, so a checkpoint may be kept up to an
+  hour longer than before.
+
+  In a rolling upgrade of a pipeline with a standby, upgrade the standby
+  before the leader: a standby on an earlier release cannot read a checkpoint
+  the upgraded leader writes.
+
+  `fda set-config` takes `max_buffering_delay` and `clock_resolution` as
+  durations, and its `checkpoint_interval` key accepts a duration such as
+  `5m` as well as the bare number of seconds it took before.
+
+- Incompatible change (pipeline process): the pipeline binary reads its
+  configuration file as JSON only, so its `--config-file` argument must name
+  a JSON file. The pipeline manager writes `config.json` and no longer writes
+  `config.yaml`. A pipeline binary has preferred `config.json` since release
+  0.155.0, so a pipeline pinned to that release or a later one is not
+  affected. In the Enterprise edition, the pipeline `ConfigMap` carries only
+  `config.json`.
+
+- Pipelines write a checkpoint on `SIGTERM` before they exit.  See
+  [Writing checkpoints](/pipelines/fault-tolerance#writing-checkpoints).
+
 - The Kafka output connector now writes keyed messages with exactly-once
   fault tolerance, for example from the JSON `debezium` format or from
   `key_fields`.  These messages were previously reported as errors and not
@@ -17,6 +177,8 @@ Source edition can be found on github.
   so consumers can share a topic's partitions.  Keyless messages are written
   as before.  Tombstones are still not supported in this mode.  See
   [message keys with exactly-once fault tolerance](/connectors/sinks/kafka#message-keys-with-exactly-once-fault-tolerance).
+
+## v0.365.0
 
 - New connector (`nats_output`): write view output to a NATS subject. The
   connector publishes to JetStream: each message is acknowledged by the
@@ -29,6 +191,14 @@ Source edition can be found on github.
   a record over the limit fails the pipeline with an error naming the record
   and the limit, instead of reaching the server. See
   [NATS output connector](/connectors/sinks/nats).
+
+- New experimental option (SQL): `FELDERA_LAZY_UPSERT = ON` makes the
+  pipeline use an optimized implementation for tables with a primary
+  key.  This implementation does not support partial updates (JSON
+  `update` events).  The option is off by default.  A change of the
+  option can make the pipeline re-ingest its input data.  See
+  [`FELDERA_LAZY_UPSERT`](/sql/grammar#experimental-options) and
+  [Bootstrapping](/pipelines/modifying#bootstrapping).
 
 ## v0.362.0
 

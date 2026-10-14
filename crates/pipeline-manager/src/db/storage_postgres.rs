@@ -34,6 +34,7 @@ use crate::is_supported_runtime;
 use crate::oidc::destination::TenantIssuerPolicy;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
@@ -225,12 +226,10 @@ impl Storage for StoragePostgres {
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Vec<UserMembership>, DBError> {
-        let mut client = self.pool.get().await?;
-        let txn = transaction::begin(&mut client).await?;
-        let result = operations::user::list_user_memberships(&txn, provider, subject).await?;
-        txn.commit().await?;
-        Ok(result)
+    ) -> Result<(Vec<UserMembership>, Option<DateTime<Utc>>), DBError> {
+        // One read-only statement needs no transaction.
+        let client = self.pool.get().await?;
+        operations::user::list_user_memberships(&client, provider, subject).await
     }
 
     async fn enroll_in_existing_tenants(

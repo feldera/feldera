@@ -1118,54 +1118,21 @@ fn test_connector_init_error() {
 
 /// A connector rejected by the fault-tolerance check must leave nothing behind.
 ///
-/// `add_input_endpoint` registers and opens the endpoint before it compares the
-/// endpoint's fault tolerance with the pipeline's, so the rejection path has to
-/// undo both.  It used to return the error while leaving the endpoint in the
-/// status map, where the endpoint could never run yet still reserved its own
-/// name against a retry.
+/// `add_input_endpoint` used to return the error while leaving the endpoint in
+/// the status map, where the endpoint could never run yet still reserved its
+/// own name against a retry.
 #[test]
 fn fault_tolerance_mismatch_unregisters_the_endpoint() {
     init_test_logger();
 
     let tempdir = TempDir::new().unwrap();
-    let storage_dir = tempdir.path().join("storage");
-    create_dir(&storage_dir).unwrap();
+    let controller = start_exactly_once_controller(&tempdir);
     let input_file = tempdir.path().join("input.csv");
     File::create(&input_file).unwrap();
 
     // `file_input` reports at-least-once for a path with a barrier, weaker than
     // this pipeline's exactly-once requirement.
     set_barrier(input_file.to_str().unwrap(), 0);
-
-    let config: PipelineConfig = serde_json::from_value(json!({
-        "name": "test",
-        "workers": 4,
-        "storage_config": {
-            "path": storage_dir,
-        },
-        "storage": true,
-        "fault_tolerance": {},
-        "clock_resolution_usecs": null,
-    }))
-    .unwrap();
-
-    let controller = Controller::with_test_config(
-        |circuit_config| {
-            Ok(test_circuit::<TestStruct>(
-                circuit_config,
-                &TestStruct::schema(),
-                &[None],
-            ))
-        },
-        &config,
-        Box::new(|e, _| panic!("error: {e}")),
-    )
-    .unwrap();
-
-    // `add_input_endpoint` refuses to run while the pipeline is still restoring,
-    // which on a fault-tolerant pipeline is the state it starts in.
-    controller.start();
-    wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
 
     let connector = json!({
         "name": "file_input",
@@ -1196,6 +1163,109 @@ fn fault_tolerance_mismatch_unregisters_the_endpoint() {
     assert!(
         controller.input_endpoint_id_by_name("weak_ft").is_err(),
         "the rejected endpoint stayed registered"
+    );
+    assert!(controller.status().input_status().is_empty());
+
+    controller.stop().unwrap();
+}
+
+/// Starts an exactly-once pipeline with storage in `tempdir` and waits until it
+/// accepts new input endpoints.
+fn start_exactly_once_controller(tempdir: &TempDir) -> Controller {
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    // `add_input_endpoint` refuses to run while the pipeline is still restoring,
+    // which on a fault-tolerant pipeline is the state it starts in.
+    controller.start();
+    wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+    controller
+}
+
+/// A non-fault-tolerant input endpoint that records whether it was opened.
+struct OpenRecordingEndpoint {
+    opened: Arc<AtomicBool>,
+}
+
+impl InputEndpoint for OpenRecordingEndpoint {
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        None
+    }
+}
+
+impl TransportInputEndpoint for OpenRecordingEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        schema: Relation,
+        resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn InputReader>> {
+        self.opened.store(true, Ordering::Release);
+        TransactionalInputEndpoint::new().open(consumer, parser, schema, resume_info)
+    }
+}
+
+/// A connector rejected by the fault-tolerance check must never be opened.
+///
+/// Opening a connector can connect to external systems, start threads, and
+/// report end of input, so the check must come before `open`, not after it.
+#[test]
+fn fault_tolerance_mismatch_does_not_open_the_endpoint() {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let controller = start_exactly_once_controller(&tempdir);
+
+    let opened = Arc::new(AtomicBool::new(false));
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+
+    let error = controller
+        .add_input_endpoint(
+            "weak_ft",
+            endpoint_config,
+            Box::new(OpenRecordingEndpoint {
+                opened: opened.clone(),
+            }),
+            None,
+        )
+        .expect_err(
+            "a connector without fault tolerance must be rejected by an exactly-once pipeline",
+        );
+    assert!(error.to_string().contains("fault tolerance"), "{error}");
+    assert!(
+        !opened.load(Ordering::Acquire),
+        "the rejected endpoint was opened"
     );
     assert!(controller.status().input_status().is_empty());
 
@@ -3146,6 +3216,133 @@ fn checkpoint_state_file_names_its_own_circuit() {
         assert!(published_checkpoints(&storage_dir).contains(&uuid));
     }
 
+    controller.stop().unwrap();
+}
+
+/// A restart resumes from the newest published checkpoint, even when the root
+/// `state.json` still names the one before it, as a crash between publishing a
+/// checkpoint and rewriting the root file leaves it.
+#[test]
+fn restart_resumes_from_newest_published_checkpoint() {
+    test_restart_from_newest_published_checkpoint(false);
+}
+
+/// Exactly-once variant: journal replay starts at the newest checkpoint and
+/// counts no record twice.
+#[test]
+fn ft_restart_resumes_from_newest_published_checkpoint() {
+    test_restart_from_newest_published_checkpoint(true);
+}
+
+fn test_restart_from_newest_published_checkpoint(fault_tolerant: bool) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let tempdir_path = tempdir.path();
+    let storage_dir = tempdir_path.join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_path = tempdir_path.join("input.csv");
+    File::create_new(&input_path).unwrap();
+
+    const RECORDS: usize = 100;
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": if fault_tolerant { json!({}) } else { json!(null) },
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_path.display().to_string(), "follow": true },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+        "outputs": {},
+    }))
+    .unwrap();
+    let start_controller = || {
+        Controller::with_test_config(
+            |circuit_config| {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &[],
+                    &[Some("output")],
+                ))
+            },
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap()
+    };
+    let processed_records = |controller: &Controller| {
+        controller
+            .status()
+            .global_metrics
+            .num_total_processed_records()
+    };
+    let wait_processed = |controller: &Controller, records: usize| {
+        wait(
+            || processed_records(controller) >= records as u64,
+            DEFAULT_TIMEOUT_MS,
+        )
+        .unwrap();
+    };
+    let checkpoint_after = |controller: &Controller, records: usize| {
+        wait_processed(controller, records);
+        controller.checkpoint().unwrap()
+    };
+
+    let controller = start_controller();
+    controller.start();
+    append_input(&input_path, 0..RECORDS);
+    let older = checkpoint_after(&controller, RECORDS);
+    append_input(&input_path, RECORDS..2 * RECORDS);
+    let newest = checkpoint_after(&controller, 2 * RECORDS);
+    // Steps after the newest checkpoint, which the restart reads again from
+    // the input or replays from the journal.
+    append_input(&input_path, 2 * RECORDS..3 * RECORDS);
+    wait_processed(&controller, 3 * RECORDS);
+    controller.stop().unwrap();
+
+    let older_uuid = older.circuit.unwrap().uuid;
+    std::fs::copy(
+        storage_dir.join(older_uuid.to_string()).join(STATE_FILE),
+        storage_dir.join(STATE_FILE),
+    )
+    .unwrap();
+
+    let controller = start_controller();
+    if fault_tolerant {
+        // Replay runs before `start`, so check the count after it ends.
+        wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+        assert_eq!(
+            processed_records(&controller),
+            3 * RECORDS as u64,
+            "replay did not start at checkpoint {}",
+            newest.circuit.unwrap().uuid
+        );
+    } else {
+        assert_eq!(
+            processed_records(&controller),
+            newest.processed_records,
+            "the restart resumed from checkpoint {older_uuid}, which the root state.json names"
+        );
+    }
+
+    // Later checkpoints, and the cleanup after each, leave a checkpoint that
+    // the next restart can open.
+    controller.start();
+    checkpoint_after(&controller, 3 * RECORDS);
+    append_input(&input_path, 3 * RECORDS..4 * RECORDS);
+    checkpoint_after(&controller, 4 * RECORDS);
+    controller.stop().unwrap();
+    let controller = start_controller();
+    assert_eq!(processed_records(&controller), 4 * RECORDS as u64);
     controller.stop().unwrap();
 }
 

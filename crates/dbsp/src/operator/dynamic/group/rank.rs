@@ -3,7 +3,7 @@ use crate::{
     algebra::{OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
         OwnershipPreference,
-        circuit_builder::register_replay_stream,
+        bootstrap::register_replay_stream,
         metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::Operator,
         splitter_output_chunk_size, splitter_output_first_chunk_size,

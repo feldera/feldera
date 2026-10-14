@@ -42,7 +42,7 @@ class TestNowStream(PipelineTestCase):
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 # 10 times per second
-                clock_resolution_usecs=100000,
+                clock_resolution="100ms",
             ),
         ).create_or_replace()
 

@@ -1,9 +1,9 @@
 use crate::circuit::GlobalNodeId;
 use crate::circuit::checkpointer::Checkpointer;
-use crate::circuit::circuit_builder::{CircuitHandle, ConcurrentRestoreOutcome};
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::operator_traits::OperatorCheckpoint;
 use crate::circuit::schedule::CommitProgress;
+use crate::circuit::{bootstrap::ConcurrentRestoreOutcome, circuit_builder::CircuitHandle};
 use crate::monitor::visual_graph::Graph;
 use crate::operator::dynamic::balance::{BalancerHint, PartitioningPolicy};
 use crate::storage::backend::StorageError;
@@ -50,7 +50,7 @@ use crate::circuit::circuit_builder::Stream;
 use crate::profile::{DbspProfile, GraphProfile, WorkerProfile};
 
 use super::SchedulerError;
-use super::circuit_builder::BootstrapInfo;
+use super::bootstrap::BootstrapInfo;
 use super::runtime::WorkerPanicInfo;
 
 /// Default ratio of merger threads to worker threads.
@@ -386,13 +386,27 @@ pub fn splitter_output_chunk_size() -> usize {
     Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records() as usize)
 }
 
-/// Returns how many keys a lazy input map resolves before it yields, in keys.
+/// Returns how many keys a lazy input map resolves before it yields.
 ///
 /// The `LazyUpsert` operator yields after scanning
 /// `lazy_input_map_keys_per_step` keys, regardless of the number of output
 /// updates it has produced.
+///
+/// # Returns
+///
+/// Keys, or the default when no runtime or no tweak sets it.
 pub fn lazy_input_map_keys_per_step() -> usize {
     Runtime::with_dev_tweaks(|d| d.lazy_input_map_keys_per_step() as usize)
+}
+
+/// Returns the minimum size of the key blocks in the accumulator used by the lazy
+/// upsert operator.
+///
+/// # Returns
+///
+/// Bytes, or the default when no runtime or no tweak sets it.
+pub fn lazy_input_map_key_block_bytes() -> usize {
+    Runtime::with_dev_tweaks(|d| d.lazy_input_map_key_block_bytes() as usize)
 }
 
 /// Returns the number of records to preallocate in the first iteration of loops

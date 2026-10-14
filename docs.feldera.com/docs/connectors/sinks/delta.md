@@ -85,6 +85,11 @@ MERGE INTO {target_table} AS target
 
 [*]: Required fields
 
+:::caution
+The connector cannot write to a Delta table that sets `delta.columnMapping.mode` to `name` or `id`.
+The pipeline fails to start with an error that names the table property.
+:::
+
 ### Storage parameters
 
 Additional configuration options are defined for specific storage backends.  Refer to
@@ -93,6 +98,13 @@ backend-specific documentation for details:
 * [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)
 * [Azure Blob Storage options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)
 * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
+
+On S3 the connector commits with a conditional put, so one writer cannot
+overwrite another writer's commit. The S3-compatible store must support
+conditional put. Amazon S3 does; on a store that does not, two writers can
+overwrite each other's commit. DynamoDB-based locking
+(`AWS_S3_LOCKING_PROVIDER = 'dynamodb'`) is no longer supported; the connector
+logs an error and commits without it.
 
 ### Views with unique keys
 
@@ -179,7 +191,7 @@ WITH (
       }
     },
     "enable_output_buffer": true,
-    "max_output_buffer_time_millis": 10000
+    "max_output_buffer_time": "10s"
  }]'
 )
 AS SELECT * FROM my_table;
@@ -214,7 +226,7 @@ WITH (
       }
     },
     "enable_output_buffer": true,
-    "max_output_buffer_time_millis": 10000
+    "max_output_buffer_time": "10s"
  }]'
 )
 AS SELECT * FROM my_table;
@@ -244,7 +256,7 @@ WITH (
       }
     },
     "enable_output_buffer": true,
-    "max_output_buffer_time_millis": 10000
+    "max_output_buffer_time": "10s"
  }]'
 )
 AS SELECT * FROM my_table;

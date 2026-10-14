@@ -1,6 +1,7 @@
 use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::file::SerializerInner;
 use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
+use crate::trace::AccessHint;
 use crate::{
     DBData, DBWeight, Error, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
@@ -14,8 +15,8 @@ use crate::{
         file::reader::{Error as ReaderError, read_metadata},
     },
     trace::{
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
-        FallbackValBatch, FileIndexedWSet, FileIndexedWSetFactories, Filter, GroupFilter,
+        Batch, BatchFactories, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories,
+        Builder, FallbackValBatch, FileIndexedWSet, FileIndexedWSetFactories, Filter, GroupFilter,
         MergeCursor, WeightedItem,
         cursor::{
             Cursor, CursorFactory, DefaultPushCursor, DelegatingCursor, ProjectedCursorFactory,
@@ -567,6 +568,15 @@ where
         })
     }
 
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        DelegatingCursor(match &self.inner {
+            Inner::Vec(vec) => Box::new(vec.cursor()),
+            Inner::File(file) => Box::new(file.cursor_with_hint(hint)),
+            Inner::VecProj(vec) => Box::new(self.factories.project(vec.cursor())),
+            Inner::FileProj(file) => Box::new(self.factories.project(file.cursor_with_hint(hint))),
+        })
+    }
+
     fn push_cursor(
         &self,
     ) -> Box<dyn PushCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
@@ -1003,6 +1013,7 @@ where
         factories: &FallbackIndexedWSetFactories<K, V, R>,
         batches: I,
         location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = V, Time = (), R = R>,
@@ -1030,6 +1041,7 @@ where
                     &factories.plain,
                     batches,
                     location,
+                    layout,
                 )),
             },
         }
@@ -1264,5 +1276,26 @@ where
     fn restore(&mut self, data: &[u8]) -> Result<(), Error> {
         *self = deserialize_indexed_wset(&self.factories, data);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+impl<K, V, R> FallbackIndexedWSet<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    /// Where the batch lives on storage, if it does.
+    ///
+    /// # Returns
+    ///
+    /// Its path, or `None` from a batch held in memory.
+    pub fn file_path(&self) -> Option<&feldera_storage::StoragePath> {
+        match &self.inner {
+            Inner::File(file) => Some(file.path()),
+            Inner::FileProj(file) => Some(file.path()),
+            Inner::Vec(_) | Inner::VecProj(_) => None,
+        }
     }
 }

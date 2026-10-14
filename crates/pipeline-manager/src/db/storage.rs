@@ -22,6 +22,7 @@ use crate::db::types::user::{
 use crate::db::types::version::Version;
 use crate::oidc::destination::TenantIssuerPolicy;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus, RuntimeStatus};
 use uuid::Uuid;
@@ -164,13 +165,14 @@ pub(crate) trait Storage {
         origin: MembershipOrigin,
     ) -> Result<(TenantId, UserId, Role), DBError>;
 
-    /// Lists the tenants a user may act in, with the user's role in each.
+    /// Lists the tenants a user may act in, with the user's role in each, and
+    /// when the user got the first tenant membership.
     /// See [`crate::db::operations::user::list_user_memberships`].
     async fn list_user_memberships(
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Vec<UserMembership>, DBError>;
+    ) -> Result<(Vec<UserMembership>, Option<DateTime<Utc>>), DBError>;
 
     /// Enrolls a user into the listed tenants where the tenant exists and the
     /// user is not yet a member; never creates tenants or changes existing

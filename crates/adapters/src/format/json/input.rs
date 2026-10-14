@@ -235,17 +235,31 @@ fn validate_parser_config(
     config: &JsonParserConfig,
     endpoint_name: &str,
 ) -> Result<(), ControllerError> {
-    if config.update_format == JsonUpdateFormat::Snowflake {
-        return Err(ControllerError::input_format_not_supported(
-            endpoint_name,
-            &format!(
-                "{:?} is not supported for JSON input streams",
-                config.update_format
-            ),
-        ));
+    // No wildcard: a new update format must be classified here, because the
+    // parser panics on a format it does not support.
+    match config.update_format {
+        JsonUpdateFormat::InsertDelete
+        | JsonUpdateFormat::Weighted
+        | JsonUpdateFormat::Debezium
+        | JsonUpdateFormat::Raw => Ok(()),
+        JsonUpdateFormat::Snowflake | JsonUpdateFormat::Redis => {
+            Err(ControllerError::input_format_not_supported(
+                endpoint_name,
+                &unsupported_update_format(&config.update_format),
+            ))
+        }
     }
+}
 
-    Ok(())
+/// Error message for an update format that JSON input does not support.
+///
+/// The list of formats here must match the ones that `validate_parser_config`
+/// accepts.
+fn unsupported_update_format(update_format: &JsonUpdateFormat) -> String {
+    format!(
+        "update format '{update_format}' is output-only and not supported for JSON input \
+         streams; use one of 'insert_delete', 'weighted', 'debezium', or 'raw'"
+    )
 }
 
 fn looks_like_insert_delete_envelope_object(value: &JsonValue) -> bool {
@@ -453,7 +467,15 @@ impl Parser for JsonParser {
                     }
                 }
                 JsonUpdateFormat::Redis | JsonUpdateFormat::Snowflake => {
-                    panic!("Unexpected update format: {:?}", self.config.update_format)
+                    // `validate_parser_config` rejects these formats, so this
+                    // is unreachable.  Report an error instead of panicking:
+                    // a panic here would happen while a transport holds locks.
+                    errors.push(ParseError::text_envelope_error(
+                        unsupported_update_format(&self.config.update_format),
+                        update.get(),
+                        None,
+                    ));
+                    break;
                 }
             }
         }
@@ -1312,6 +1334,24 @@ mod test {
         ];
 
         run_test_cases(test_cases);
+    }
+
+    /// Output-only update formats must be rejected when the parser is
+    /// created.  Otherwise, the parser panics on the first record.
+    #[test]
+    fn output_only_update_formats_are_rejected() {
+        for update_format in [JsonUpdateFormat::Snowflake, JsonUpdateFormat::Redis] {
+            let config = JsonParserConfig {
+                update_format: update_format.clone(),
+                ..JsonParserConfig::default()
+            };
+            let error = super::validate_parser_config(&config, "endpoint")
+                .expect_err(&format!("{update_format:?} was accepted for input"));
+            assert!(
+                error.to_string().contains("not supported for JSON input"),
+                "{error}"
+            );
+        }
     }
 
     #[test]

@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceLazyMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -23,6 +24,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -95,7 +97,8 @@ public class ExpandIndexedInputs extends Passes {
 
     /**
      * Converts {@link DBSPSourceMultisetOperator}s that have a primary key
-     * into {@link DBSPSourceMapOperator} followed by a {@link DBSPDeindexOperator}.
+     * into {@link DBSPSourceMapOperator} or {@link DBSPSourceLazyMapOperator}
+     * followed by a {@link DBSPDeindexOperator}.
      */
     static class IndexedInputs extends CircuitCloneVisitor {
         public IndexedInputs(DBSPCompiler compiler) {
@@ -114,9 +117,16 @@ public class ExpandIndexedInputs extends Passes {
             }
 
             List<Integer> keyColumnFields = getKeyFields(node);
-            DBSPSourceMapOperator set = new DBSPSourceMapOperator(
-                    node.getRelNode(), node.sourceName, keyColumnFields,
-                    ix, node.originalRowType, node.metadata, node.tableName, node.kind, node.comment);
+            // The lazy map has no counterpart of the waterline that a LATENESS column needs
+            boolean lazy = this.compiler.metadata.lazyUpsert()
+                    && !Linq.any(node.metadata.getColumns(), column -> column.lateness != null);
+            DBSPSourceMapOperator set = lazy
+                    ? new DBSPSourceLazyMapOperator(
+                            node.getRelNode(), node.sourceName, keyColumnFields,
+                            ix, node.originalRowType, node.metadata, node.tableName, node.kind, node.comment)
+                    : new DBSPSourceMapOperator(
+                            node.getRelNode(), node.sourceName, keyColumnFields,
+                            ix, node.originalRowType, node.metadata, node.tableName, node.kind, node.comment);
             this.addOperator(set);
             if (dedupKeys) {
                 // The value no longer contains the key, so rebuild the whole row by

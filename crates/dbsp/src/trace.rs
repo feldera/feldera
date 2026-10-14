@@ -85,7 +85,7 @@ use crate::{
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
     storage::file::reader::Error as ReaderError,
 };
-pub use cursor::{Cursor, MergeCursor};
+pub use cursor::{AccessHint, Cursor, MergeCursor};
 pub use filter::{BatchFilterStats, BatchFilters, Filter, GroupFilter};
 pub use layers::Trie;
 
@@ -393,6 +393,21 @@ pub enum BatchLocation {
     Storage,
 }
 
+/// How a spine lays out the batches it writes for itself: merge outputs and
+/// eager spills.  A batch inserted into a spine keeps the layout it arrived
+/// with until a merge rewrites it.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct BatchLayout {
+    /// Minimum size of a key-column data block in a file-backed batch, in
+    /// bytes; `None` is the writer's default.  Must be a power of 2 and at
+    /// least 4096.
+    ///
+    /// A walk over keys alone reads one key block per storage request, so a
+    /// larger block means fewer requests for the same keys, at the price of
+    /// more to decompress per point lookup.
+    pub key_block_bytes: Option<usize>,
+}
+
 // impl BatchLocation {
 //     fn as_str(&self) -> &'static str {
 //         match self {
@@ -489,6 +504,24 @@ where
 
     /// Acquires a cursor to the batch's contents.
     fn cursor(&self) -> Self::Cursor<'_>;
+
+    /// Acquires a cursor to the batch's contents, with an access hint.
+    ///
+    /// A file-backed batch reads ahead for a cursor that declared a
+    /// sequential walk; a batch that doesn't support the hint ignores it.
+    /// See [`AccessHint`].
+    ///
+    /// # Arguments
+    ///
+    /// * `hint` - how the cursor will be moved; see [`AccessHint`].
+    ///
+    /// # Returns
+    ///
+    /// A cursor over the batch, which may read ahead for the walk the hint declared.
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        let _ = hint;
+        self.cursor()
+    }
 
     /// Acquires a [PushCursor] for the batch's contents.
     fn push_cursor(
@@ -782,6 +815,10 @@ where
     }
     fn cursor(&self) -> Self::Cursor<'_> {
         (**self).cursor()
+    }
+
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        (**self).cursor_with_hint(hint)
     }
     fn merge_cursor(
         &self,
@@ -1193,11 +1230,22 @@ where
 
     /// Creates an empty builder to hold the result of merging
     /// `batches`. Optionally, `location` can specify the preferred location for
-    /// the result of the merge.
+    /// the result of the merge.  `layout` says how a builder that writes a file
+    /// lays it out; a builder that builds in memory ignores it.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - factories for the batch being built.
+    /// * `batches` - the batches to be merged, read for their capacities.
+    /// * `location` - where the result should be built, or `None` to let the builder
+    ///   decide.
+    /// * `layout` - how a builder that writes a file lays it out; a builder that builds
+    ///   in memory ignores it.
     fn for_merge<'a, B, I>(
         factories: &Output::Factories,
         batches: I,
         location: Option<BatchLocation>,
+        _layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = Output::Key, Val = Output::Val, Time = Output::Time, R = Output::R>,
@@ -1438,7 +1486,12 @@ where
         let mut inputs = batches.split_off(batches.len().saturating_sub(64));
         let result: B = ListMerger::merge(
             factories,
-            B::Builder::for_merge(factories, &inputs, Some(BatchLocation::Memory)),
+            B::Builder::for_merge(
+                factories,
+                &inputs,
+                Some(BatchLocation::Memory),
+                BatchLayout::default(),
+            ),
             inputs
                 .iter_mut()
                 .map(|b| b.consuming_cursor(key_filter.clone(), value_filter.clone()))
@@ -1488,6 +1541,7 @@ where
                 factories,
                 inputs.iter().cloned(),
                 Some(BatchLocation::Memory),
+                BatchLayout::default(),
             ),
             inputs
                 .into_iter()

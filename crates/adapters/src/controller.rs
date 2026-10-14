@@ -55,7 +55,8 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
-use dbsp::circuit::circuit_builder::{BootstrapInfo, ConcurrentRestoreOutcome};
+use dbsp::circuit::bootstrap::{BootstrapInfo, ConcurrentRestoreOutcome};
+use dbsp::circuit::checkpointer::Checkpointer;
 use dbsp::circuit::metrics::{
     COMPACTION_STALL_TIME_NANOSECONDS, DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS, DBSP_STEP,
     DBSP_STEP_LATENCY_MICROSECONDS, DUPLICATE_EXCHANGE_MESSAGES_RECEIVED,
@@ -190,7 +191,7 @@ use feldera_types::config::{
     DEFAULT_MAX_WORKER_BATCH_SIZE, DevTweaks, FileBackendConfig, FtConfig, FtModel,
     OutputBufferConfig, PipelineIdentity, StorageBackendConfig, SyncConfig,
 };
-use feldera_types::constants::{STATE_FILE, STEPS_FILE};
+use feldera_types::constants::{CHECKPOINT_FILE_NAME, STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 pub use feldera_types::pipeline_diff::compute_pipeline_diff;
 use feldera_types::program_schema::{SqlIdentifier, canonical_identifier};
@@ -5585,15 +5586,15 @@ impl StepTrigger {
     /// Returns a new [StepTrigger].
     fn new(controller: Arc<ControllerInner>) -> Self {
         let config = &controller.status.pipeline_config.global;
-        let max_buffering_delay = Duration::from_micros(config.max_buffering_delay_usecs);
+        let max_buffering_delay = config.max_buffering_delay().into();
         let min_batch_size_records = config.min_batch_size_records;
         let checkpoint_interval = config.fault_tolerance.checkpoint_interval();
         let sync_interval = config.storage.as_ref().and_then(|s| match &s.backend {
             StorageBackendConfig::File(file) => file
                 .sync
                 .as_ref()
-                .and_then(|s| s.push_interval)
-                .map(Duration::from_secs),
+                .and_then(|s| s.checkpoint_push_interval)
+                .map(Into::into),
             _ => None,
         });
 
@@ -5708,7 +5709,9 @@ impl StepTrigger {
                 Action::Step
             } else {
                 if buffered_records > 0 && self.buffer_timeout.is_none() {
-                    self.buffer_timeout = Some(now + self.max_buffering_delay);
+                    // A delay too long for an `Instant` to hold never expires,
+                    // so the step waits for `min_batch_size_records`.
+                    self.buffer_timeout = now.checked_add(self.max_buffering_delay);
                 }
                 let wakeup = [self.buffer_timeout, next_checkpoint]
                     .into_iter()
@@ -5840,15 +5843,58 @@ impl ControllerInit {
             return Self::without_checkpoint(layout, config, None);
         };
 
-        // Try to read a checkpoint.
-        let checkpoint = match Checkpoint::read(&*storage.backend, &StoragePath::from(STATE_FILE)) {
-            Err(error) if error.kind() == ErrorKind::NotFound => {
+        match Self::read_latest_checkpoint(&*storage.backend)? {
+            Some(checkpoint) => Self::with_checkpoint_inner(layout, config, storage, checkpoint),
+            None => {
                 info!("starting fresh pipeline without resuming from checkpoint");
-                return Self::without_checkpoint(layout, config, Some(storage));
+                Self::without_checkpoint(layout, config, Some(storage))
             }
-            other => other?,
+        }
+    }
+
+    /// Reads the state of the newest checkpoint in the checkpoint catalog.
+    ///
+    /// The root `state.json` can name an older checkpoint: a checkpoint is
+    /// published to the catalog before the root file is rewritten, so a crash
+    /// in between leaves the root one checkpoint behind, and resuming from it
+    /// would fork the checkpoint history.  The root file still decides when the
+    /// catalog is empty, because a fault-tolerant pipeline that has not
+    /// checkpointed yet records its starting point there.
+    fn read_latest_checkpoint(
+        backend: &dyn StorageBackend,
+    ) -> Result<Option<Checkpoint>, ControllerError> {
+        let root = match Checkpoint::read(backend, &StoragePath::from(STATE_FILE)) {
+            Err(error) if error.kind() == ErrorKind::NotFound => None,
+            other => Some(other?),
         };
-        Self::with_checkpoint_inner(layout, config, storage, checkpoint)
+        let catalog =
+            Checkpointer::read_checkpoints(backend).map_err(ControllerError::dbsp_error)?;
+        let Some(newest) = catalog.back() else {
+            return Ok(root);
+        };
+        let root_uuid = root
+            .as_ref()
+            .and_then(|root| root.circuit.as_ref())
+            .map(|circuit| circuit.uuid);
+        if root_uuid == Some(newest.uuid) {
+            return Ok(root);
+        }
+
+        let newest_path = StoragePath::from(newest.uuid.to_string()).join(STATE_FILE);
+        let checkpoint = match Checkpoint::read(backend, &newest_path) {
+            Ok(checkpoint) => checkpoint,
+            // Checkpoints written before July 2025 have no state file of their own.
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(root),
+            Err(error) => return Err(error),
+        };
+        warn!(
+            "{STATE_FILE} names checkpoint {} but the newest checkpoint in {CHECKPOINT_FILE_NAME} is {}; resuming from {} and updating {STATE_FILE}",
+            root_uuid.map_or_else(|| String::from("none"), |uuid| uuid.to_string()),
+            newest.uuid,
+            newest.uuid,
+        );
+        checkpoint.write(backend, &StoragePath::from(STATE_FILE))?;
+        Ok(Some(checkpoint))
     }
 
     fn with_checkpoint_inner(
@@ -5984,10 +6030,7 @@ impl ControllerInit {
                 // configuration (so far just the checkpoint interval).
                 fault_tolerance: FtConfig {
                     model: checkpoint_config.global.fault_tolerance.model,
-                    checkpoint_interval_secs: config
-                        .global
-                        .fault_tolerance
-                        .checkpoint_interval_secs,
+                    checkpoint_interval: config.global.fault_tolerance.checkpoint_interval,
                 },
 
                 // Take all the other settings from the pipeline manager.
@@ -5996,15 +6039,15 @@ impl ControllerInit {
                 tracing: config.global.tracing,
                 tracing_endpoint_jaeger: config.global.tracing_endpoint_jaeger,
                 min_batch_size_records: config.global.min_batch_size_records,
-                max_buffering_delay_usecs: config.global.max_buffering_delay_usecs,
+                max_buffering_delay: config.global.max_buffering_delay,
                 resources: config.global.resources,
-                clock_resolution_usecs: config.global.clock_resolution_usecs,
+                clock_resolution: config.global.clock_resolution,
                 // `NOW()` values shifted by the offset are baked into
                 // journaled steps and materialized state; adopting a new
                 // offset on resume would make `NOW()` jump.
                 clock_timezone_offset: checkpoint_config.global.clock_timezone_offset,
                 pin_cpus: config.global.pin_cpus,
-                provisioning_timeout_secs: config.global.provisioning_timeout_secs,
+                provisioning_timeout: config.global.provisioning_timeout,
                 max_parallel_connector_init: config.global.max_parallel_connector_init,
                 init_containers: config.global.init_containers,
                 checkpoint_during_suspend: config.global.checkpoint_during_suspend,
@@ -6548,6 +6591,9 @@ impl OutputEndpointDescr {
     }
 }
 
+/// Deferred constructor for an input endpoint's reader.
+type OpenInputReaderFn<'a> = Box<dyn FnOnce() -> Result<Box<dyn InputReader>, AnyError> + 'a>;
+
 type StreamEndpointMap = BTreeMap<String, (OutputCollectionHandles, BTreeSet<EndpointId>)>;
 
 /// The controller's output endpoints.
@@ -6770,9 +6816,7 @@ impl OutputBuffer {
                 return true;
             }
 
-            if self.buffer_since.elapsed().as_millis()
-                > config.max_output_buffer_time_millis as u128
-            {
+            if self.buffer_since.elapsed() > Duration::from(config.max_output_buffer_time()) {
                 return true;
             }
         }
@@ -7706,23 +7750,6 @@ impl ControllerInner {
 
         debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
-        // NOTE: We release the lock after the check below and then re-acquire it in the end of the function
-        // to actually insert the new inpoint in the map. This means that this function is racey (a concurrent
-        // invocation can insert an endpoint with the same name). I think it's ok the way we use it: when
-        // initializing the pipeline, we have an endpoint map with names that are guaranteed to be unique;
-        // hence it's safe to call `add_input_endpoint` concurrently. In the future we may need to maintain
-        // a separate set of reserved connector names to avoid the race. The alternative solution that keeps
-        // the lock across the entire body of the function isn't good, because it will force serial connector
-        // initialization.
-        if self
-            .status
-            .input_status()
-            .values()
-            .any(|ep| ep.endpoint_name == endpoint_name)
-        {
-            Err(ControllerError::duplicate_input_endpoint(endpoint_name))?;
-        }
-
         let resolved_connector_config = resolve_secret_references_in_connector_config(
             &self.secrets_dir,
             &endpoint_config.connector_config,
@@ -7806,7 +7833,7 @@ impl ControllerInner {
             &endpoint_config.connector_config,
             self.clone(),
         ));
-        let fault_tolerance = match endpoint {
+        let (fault_tolerance, open): (_, OpenInputReaderFn<'_>) = match endpoint {
             Some(endpoint) => {
                 // Create parser.
                 let format_config = match (
@@ -7855,39 +7882,12 @@ impl ControllerInner {
                     }
                 }
 
-                let fault_tolerance = endpoint.fault_tolerance();
-
-                // Register the endpoint, so that if the the `open` call below signals `eoi` to the controller,
-                // the eoi status is recorded and not dropped on the floor.
-                self.status.inputs.write().insert(
-                    endpoint_id,
-                    InputEndpointStatus::new(
-                        endpoint_name,
-                        endpoint_config,
-                        fault_tolerance,
-                        initial_statistics.as_ref(),
-                    ),
-                );
-
-                match endpoint
-                    .open(probe, parser, input_handle.schema.clone(), seek)
-                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))
-                {
-                    Ok(reader) => {
-                        self.status
-                            .inputs
-                            .write()
-                            .get_mut(&endpoint_id)
-                            .unwrap()
-                            .reader = Some(Arc::from(reader));
-                    }
-                    Err(e) => {
-                        self.status.inputs.write().remove(&endpoint_id);
-                        return Err(e);
-                    }
-                }
-
-                fault_tolerance
+                (
+                    endpoint.fault_tolerance(),
+                    Box::new(move || {
+                        endpoint.open(probe, parser, input_handle.schema.clone(), seek)
+                    }),
+                )
             }
             None => {
                 if preprocessor.is_some() {
@@ -7905,45 +7905,14 @@ impl ControllerInner {
                     probe,
                 )?;
 
-                let fault_tolerance = endpoint.fault_tolerance();
-
-                self.status.inputs.write().insert(
-                    endpoint_id,
-                    InputEndpointStatus::new(
-                        endpoint_name,
-                        endpoint_config,
-                        fault_tolerance,
-                        initial_statistics.as_ref(),
-                    ),
-                );
-
-                match endpoint
-                    .open(input_handle, seek)
-                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))
-                {
-                    Ok(reader) => {
-                        self.status
-                            .inputs
-                            .write()
-                            .get_mut(&endpoint_id)
-                            .unwrap()
-                            .reader = Some(Arc::from(reader));
-                    }
-                    Err(e) => {
-                        self.status.inputs.write().remove(&endpoint_id);
-                        return Err(e);
-                    }
-                }
-                fault_tolerance
+                (
+                    endpoint.fault_tolerance(),
+                    Box::new(|| endpoint.open(input_handle, seek)),
+                )
             }
         };
 
         if fault_tolerance < self.fault_tolerance {
-            // The endpoint is registered and open by now, so undo both.  A
-            // rejected endpoint left in the map can never run, yet it counts
-            // toward the pipeline's statistics and reserves its own name
-            // against a later attempt to add the connector.
-            self.disconnect_input(&endpoint_id);
             return Err(ControllerError::input_transport_error(
                 endpoint_name,
                 true,
@@ -7954,6 +7923,17 @@ impl ControllerInner {
                 ),
             ));
         }
+
+        self.status.insert_input_endpoint(
+            endpoint_id,
+            InputEndpointStatus::new(
+                endpoint_name,
+                endpoint_config,
+                fault_tolerance,
+                initial_statistics.as_ref(),
+            ),
+            open,
+        )?;
 
         self.unpark_backpressure();
         Ok(endpoint_id)
@@ -8665,10 +8645,11 @@ impl ControllerInner {
                 );
                 if let Some(buffer_since) = output_buffer.buffer_since() {
                     // Buffering is enabled: wake us up when the buffer timeout has expired.
-                    let timeout = output_buffer_config.max_output_buffer_time_millis as i128
+                    let timeout = output_buffer_config.max_output_buffer_time().as_millis() as i128
                         - buffer_since.elapsed().as_millis() as i128;
                     if timeout > 0 {
-                        parker.park_timeout(Duration::from_millis(timeout as u64));
+                        let timeout = u64::try_from(timeout).unwrap_or(u64::MAX);
+                        parker.park_timeout(Duration::from_millis(timeout));
                     }
                 } else {
                     parker.park();

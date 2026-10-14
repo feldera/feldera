@@ -3,8 +3,9 @@ use crate::{
     algebra::{IndexedZSet, ZBatch},
     circuit::{
         GlobalNodeId, NodeId, OwnershipPreference, WithClock,
+        bootstrap::register_accumulated_replay_stream,
         checkpointer::EmptyCheckpoint,
-        circuit_builder::{MetadataExchange, StreamId, register_accumulated_replay_stream},
+        circuit_builder::{MetadataExchange, StreamId},
         metadata::{
             ACCUMULATOR_RECORDS_TO_REPARTITION_COUNT, BALANCER_POLICY, BatchSizeStats,
             INPROGRESS_REBALANCING_TIME_SECONDS, INPUT_BATCHES_STATS,
