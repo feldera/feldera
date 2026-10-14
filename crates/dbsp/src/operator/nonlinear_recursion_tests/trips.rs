@@ -32,8 +32,8 @@ use std::collections::BTreeSet;
 use proptest::prelude::*;
 
 use super::harness::{
-    Program, Transaction, ZSet, any_config, apply_proposals, check, configs, fixpoint, map_steps,
-    proposals, read_zset, set_after, set_zset, workloads,
+    Program, RecursionApi, RecursiveWith, Transaction, ZSet, any_config, apply_proposals, check,
+    configs, fixpoint, map_steps, proposals, read_zset, set_after, set_zset, workloads,
 };
 use crate::{
     NestedCircuit, OutputHandle, RootCircuit, Stream, ZSetHandle, ZWeight,
@@ -72,11 +72,12 @@ impl Program for MultimodalTrips {
     );
     type Output = ZSet<Trip>;
 
-    fn build(&self, circuit: &mut RootCircuit) -> Self::Handles {
+    fn build(&self, circuit: &mut RootCircuit, api: RecursionApi) -> Self::Handles {
         let (road, road_handle) = circuit.add_input_zset::<Leg>();
         let (rail, rail_handle) = circuit.add_input_zset::<Leg>();
         let (_, _, trips) = circuit
-            .recursive(
+            .recursive_with(
+                api,
                 |child,
                  (by_road, by_rail, trips): (
                     Stream<_, OrdZSet<Leg>>,

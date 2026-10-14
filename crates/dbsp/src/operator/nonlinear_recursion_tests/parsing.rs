@@ -28,8 +28,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use proptest::prelude::*;
 
 use super::harness::{
-    Program, Transaction, ZSet, any_config, apply_proposals, check, configs, fixpoint, map_steps,
-    proposals, read_zset, set_after, set_zset, workloads,
+    Program, RecursionApi, RecursiveWith, Transaction, ZSet, any_config, apply_proposals, check,
+    configs, fixpoint, map_steps, proposals, read_zset, set_after, set_zset, workloads,
 };
 use crate::{
     OutputHandle, RootCircuit, Stream, ZSetHandle, ZWeight,
@@ -72,12 +72,12 @@ impl Program for Cyk {
     );
     type Output = ZSet<Parse>;
 
-    fn build(&self, circuit: &mut RootCircuit) -> Self::Handles {
+    fn build(&self, circuit: &mut RootCircuit, api: RecursionApi) -> Self::Handles {
         let (tokens, tokens_handle) = circuit.add_input_zset::<Token>();
         let (unary, unary_handle) = circuit.add_input_zset::<Unary>();
         let (binary, binary_handle) = circuit.add_input_zset::<Binary>();
         let parses = circuit
-            .recursive(|child, parses: Stream<_, OrdZSet<Parse>>| {
+            .recursive_with(api, |child, parses: Stream<_, OrdZSet<Parse>>| {
                 let leaves = tokens
                     .delta0(child)
                     .map_index(|Tup3(sentence, position, token)| {

@@ -27,8 +27,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use proptest::prelude::*;
 
 use super::harness::{
-    Program, Transaction, ZSet, any_config, apply_proposals, check, configs, fixpoint, map_steps,
-    proposals, read_zset, set_after, set_zset, workloads,
+    Program, RecursionApi, RecursiveWith, Transaction, ZSet, any_config, apply_proposals, check,
+    configs, fixpoint, map_steps, proposals, read_zset, set_after, set_zset, workloads,
 };
 use crate::{
     OutputHandle, RootCircuit, Stream, ZSetHandle, ZWeight,
@@ -67,11 +67,11 @@ impl Program for BillOfMaterials {
     );
     type Output = ZSet<PartStats>;
 
-    fn build(&self, circuit: &mut RootCircuit) -> Self::Handles {
+    fn build(&self, circuit: &mut RootCircuit, api: RecursionApi) -> Self::Handles {
         let (part_of, part_of_handle) = circuit.add_input_zset::<PartOf>();
         let (leaves, leaves_handle) = circuit.add_input_zset::<Leaf>();
         let stats = circuit
-            .recursive(|child, stats: Stream<_, OrdZSet<PartStats>>| {
+            .recursive_with(api, |child, stats: Stream<_, OrdZSet<PartStats>>| {
                 let leaf_stats = leaves
                     .delta0(child)
                     .map(|Tup2(part, time)| Tup3(*part, *time, 1));

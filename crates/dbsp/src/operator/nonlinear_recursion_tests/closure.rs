@@ -11,8 +11,8 @@ use std::collections::BTreeSet;
 use proptest::prelude::*;
 
 use super::harness::{
-    Program, Transaction, ZSet, any_config, apply_proposals, check, configs, fixpoint, map_steps,
-    proposals, read_zset, set_after, set_zset, workloads,
+    Program, RecursionApi, RecursiveWith, Transaction, ZSet, any_config, apply_proposals, check,
+    configs, fixpoint, map_steps, proposals, read_zset, set_after, set_zset, workloads,
 };
 use crate::{
     OutputHandle, RootCircuit, Stream, ZSetHandle, ZWeight, define_inner_star_join,
@@ -78,10 +78,10 @@ impl Program for PathDoubling {
     type Handles = (ZSetHandle<Edge>, PathsHandle);
     type Output = ZSet<Edge>;
 
-    fn build(&self, circuit: &mut RootCircuit) -> Self::Handles {
+    fn build(&self, circuit: &mut RootCircuit, api: RecursionApi) -> Self::Handles {
         let (edges, edges_handle) = circuit.add_input_zset::<Edge>();
         let paths = circuit
-            .recursive(|child, paths: Stream<_, OrdZSet<Edge>>| {
+            .recursive_with(api, |child, paths: Stream<_, OrdZSet<Edge>>| {
                 let edges = edges.delta0(child);
                 let by_end = paths.map_index(|Tup2(from, via)| (*via, *from));
                 let by_start = paths.map_index(|Tup2(via, to)| (*via, *to));
@@ -134,11 +134,12 @@ impl Program for MutualPaths {
     type Handles = (ZSetHandle<Edge>, ZSetHandle<Edge>, PathsHandle, PathsHandle);
     type Output = (ZSet<Edge>, ZSet<Edge>);
 
-    fn build(&self, circuit: &mut RootCircuit) -> Self::Handles {
+    fn build(&self, circuit: &mut RootCircuit, api: RecursionApi) -> Self::Handles {
         let (e, e_handle) = circuit.add_input_zset::<Edge>();
         let (f, f_handle) = circuit.add_input_zset::<Edge>();
         let (r, s) = circuit
-            .recursive(
+            .recursive_with(
+                api,
                 |child, (r, s): (Stream<_, OrdZSet<Edge>>, Stream<_, OrdZSet<Edge>>)| {
                     let r_by_end = r.map_index(|Tup2(from, via)| (*via, *from));
                     let r_by_start = r.map_index(|Tup2(via, to)| (*via, *to));
@@ -221,11 +222,11 @@ impl Program for StarDoubling {
     type Handles = (ZSetHandle<Edge>, ZSetHandle<u64>, PathsHandle);
     type Output = ZSet<Edge>;
 
-    fn build(&self, circuit: &mut RootCircuit) -> Self::Handles {
+    fn build(&self, circuit: &mut RootCircuit, api: RecursionApi) -> Self::Handles {
         let (edges, edges_handle) = circuit.add_input_zset::<Edge>();
         let (joinable, joinable_handle) = circuit.add_input_zset::<u64>();
         let paths = circuit
-            .recursive(|child, paths: Stream<_, OrdZSet<Edge>>| {
+            .recursive_with(api, |child, paths: Stream<_, OrdZSet<Edge>>| {
                 let by_end = paths.map_index(|Tup2(from, via)| (*via, *from));
                 let by_start = paths.map_index(|Tup2(via, to)| (*via, *to));
                 let joinable = joinable.delta0(child).map_index(|via| (*via, ()));

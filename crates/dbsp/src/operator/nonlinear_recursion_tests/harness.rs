@@ -8,8 +8,9 @@ use std::{
 use proptest::prelude::*;
 
 use crate::{
-    DBData, OutputHandle, RootCircuit, Runtime, ZWeight,
+    DBData, NestedCircuit, OutputHandle, RootCircuit, Runtime, SchedulerError, Stream, ZWeight,
     circuit::CircuitConfig,
+    operator::{RecursionVars, RecursiveStreams, RecursiveVar},
     typed_batch::{IndexedZSetReader, OrdZSet, SpineSnapshot},
 };
 
@@ -32,6 +33,9 @@ pub(super) struct Config {
     /// Maximum number of records in a chunk of a splitter operator's output,
     /// or `None` for the default.
     pub chunk_size: Option<usize>,
+
+    /// The API that builds the recursion.
+    pub api: RecursionApi,
 }
 
 impl Config {
@@ -40,7 +44,7 @@ impl Config {
     /// # Returns
     ///
     /// A configuration with the number of workers and chunk size of `self`.
-    fn circuit_config(&self) -> CircuitConfig {
+    pub(super) fn circuit_config(&self) -> CircuitConfig {
         let config = CircuitConfig::from(self.workers);
         match self.chunk_size {
             Some(records) => config.with_splitter_chunk_size_records(records as u64),
@@ -49,24 +53,129 @@ impl Config {
     }
 }
 
-/// Every combination of 1, 2, and 3 workers with a chunk size of 1, 2, and
-/// the default.
+/// Every combination of 1, 2, and 3 workers, a chunk size of 1, 2, and the
+/// default, and both recursion APIs.
 ///
 /// # Returns
 ///
 /// The configurations, smallest first.
 pub(super) fn configs() -> Vec<Config> {
-    [1, 2, 3]
-        .into_iter()
-        .flat_map(|workers| {
-            [Some(1), Some(2), None]
-                .into_iter()
-                .map(move |chunk_size| Config {
+    let mut configs = Vec::new();
+    for workers in [1, 2, 3] {
+        for chunk_size in [Some(1), Some(2), None] {
+            for api in [RecursionApi::Recursive, RecursionApi::Builder] {
+                configs.push(Config {
                     workers,
                     chunk_size,
-                })
-        })
-        .collect()
+                    api,
+                });
+            }
+        }
+    }
+    configs
+}
+
+/// An API that builds a recursion.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum RecursionApi {
+    /// [`ChildCircuit::recursive`](crate::ChildCircuit::recursive).
+    Recursive,
+
+    /// [`ChildCircuit::recursion_builder`](crate::ChildCircuit::recursion_builder).
+    Builder,
+}
+
+/// A group of recursive streams that both recursion APIs can build: a single
+/// Z-set stream, or a tuple of two or three groups.
+pub(super) trait RecursiveGroup: RecursiveStreams<NestedCircuit> + Sized {
+    /// The recursion builder's variables for the group.
+    type Vars: RecursionVars<
+            NestedCircuit,
+            Streams = Self,
+            Output = <Self as RecursiveStreams<NestedCircuit>>::Output,
+        >;
+
+    /// Creates the recursion builder's variables for the group.
+    ///
+    /// # Arguments
+    ///
+    /// * `child` - the circuit that iterates the recursion.
+    ///
+    /// # Returns
+    ///
+    /// One variable for each stream of the group.
+    fn vars(child: &NestedCircuit) -> Self::Vars;
+}
+
+impl<T: DBData> RecursiveGroup for Stream<NestedCircuit, OrdZSet<T>> {
+    type Vars = RecursiveVar<NestedCircuit, OrdZSet<T>>;
+
+    fn vars(child: &NestedCircuit) -> Self::Vars {
+        child.recursive_var()
+    }
+}
+
+impl<A: RecursiveGroup, B: RecursiveGroup> RecursiveGroup for (A, B) {
+    type Vars = (A::Vars, B::Vars);
+
+    fn vars(child: &NestedCircuit) -> Self::Vars {
+        (A::vars(child), B::vars(child))
+    }
+}
+
+impl<A: RecursiveGroup, B: RecursiveGroup, C: RecursiveGroup> RecursiveGroup for (A, B, C) {
+    type Vars = (A::Vars, B::Vars, C::Vars);
+
+    fn vars(child: &NestedCircuit) -> Self::Vars {
+        (A::vars(child), B::vars(child), C::vars(child))
+    }
+}
+
+/// Builds recursions with either recursion API.
+pub(super) trait RecursiveWith {
+    /// Builds a recursion with `api`, from the step function that
+    /// [`recursive`](crate::ChildCircuit::recursive) takes.
+    ///
+    /// Both APIs apply `distinct` to the step's output and iterate to a fixed
+    /// point, so they compute the same output.
+    ///
+    /// # Arguments
+    ///
+    /// * `api` - the API that builds the recursion.
+    /// * `step` - computes the recursive streams' next values from their
+    ///   current ones.
+    ///
+    /// # Returns
+    ///
+    /// The recursive streams' values at the fixed point, in the parent
+    /// circuit.
+    fn recursive_with<S, F>(
+        &self,
+        api: RecursionApi,
+        step: F,
+    ) -> Result<<S as RecursiveStreams<NestedCircuit>>::Output, SchedulerError>
+    where
+        S: RecursiveGroup,
+        F: FnOnce(&NestedCircuit, S) -> Result<S, SchedulerError>;
+}
+
+impl RecursiveWith for RootCircuit {
+    fn recursive_with<S, F>(
+        &self,
+        api: RecursionApi,
+        step: F,
+    ) -> Result<<S as RecursiveStreams<NestedCircuit>>::Output, SchedulerError>
+    where
+        S: RecursiveGroup,
+        F: FnOnce(&NestedCircuit, S) -> Result<S, SchedulerError>,
+    {
+        match api {
+            RecursionApi::Recursive => self.recursive(step),
+            RecursionApi::Builder => self
+                .recursion_builder(|child| Ok(S::vars(child)), step)
+                .finish(),
+        }
+    }
 }
 
 /// A circuit under test, with a model of its output.
@@ -85,11 +194,12 @@ pub(super) trait Program: Clone + Send + 'static {
     /// # Arguments
     ///
     /// * `circuit` - the root circuit to build in.
+    /// * `api` - the API that builds the recursion.
     ///
     /// # Returns
     ///
     /// Handles for pushing inputs and reading outputs.
-    fn build(&self, circuit: &mut RootCircuit) -> Self::Handles;
+    fn build(&self, circuit: &mut RootCircuit, api: RecursionApi) -> Self::Handles;
 
     /// Pushes changes into the circuit's inputs.
     ///
@@ -141,7 +251,7 @@ pub(super) trait Program: Clone + Send + 'static {
 pub(super) fn check<P: Program>(program: &P, workload: &[Transaction<P::Input>], config: Config) {
     let builder = program.clone();
     let (mut circuit, handles) = Runtime::init_circuit(config.circuit_config(), move |circuit| {
-        Ok(builder.build(circuit))
+        Ok(builder.build(circuit, config.api))
     })
     .unwrap();
 
