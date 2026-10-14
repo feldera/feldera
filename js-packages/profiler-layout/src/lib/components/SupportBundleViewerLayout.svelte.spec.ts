@@ -23,6 +23,7 @@
  */
 
 import { formatDateTime } from 'common-lib/format'
+import type { ConnectorStatus } from 'common-ui/connectorMetrics'
 import type { SourcePositionRange } from 'profiler-lib'
 import { TriageResults } from 'triage-types'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -432,5 +433,86 @@ describe('SupportBundleViewerLayout code panel', () => {
     await rerender({ sourceFiles: [program] })
     await expect.poll(() => capture.sourceTab?.file).toEqual(program)
     await expect.poll(selectedTab).toBe('program.sql')
+  })
+})
+
+describe('SupportBundleViewerLayout Connectors tab', () => {
+  const connectorStatus = {
+    inputs: [
+      {
+        endpoint_name: 't.in1',
+        config: { stream: 't' },
+        metrics: {
+          buffered_bytes: 0,
+          buffered_records: 0,
+          end_of_input: false,
+          num_parse_errors: 2,
+          num_transport_errors: 1,
+          total_bytes: 0,
+          total_records: 0
+        },
+        paused: false,
+        barrier: false,
+        parse_errors: [
+          { index: 0, tag: 'parse', message: 'bad row one', timestamp: '2026-05-01T12:00:00Z' }
+        ]
+      }
+    ],
+    outputs: []
+  }
+
+  it('shows the error count on the tab label only when there are errors', async () => {
+    render(SupportBundleViewerLayout, { ...baseProps(), connectorStatus })
+    await expect.element(page.getByRole('radio', { name: 'Connectors 3' })).toBeInTheDocument()
+  })
+
+  it('adds the errors of inputs and outputs on the tab label', async () => {
+    const both: ConnectorStatus = structuredClone(connectorStatus)
+    both.outputs = [
+      {
+        endpoint_name: 'v.out1',
+        config: { stream: 'v' },
+        metrics: {
+          buffered_batches: 0,
+          buffered_records: 0,
+          memory: 0,
+          num_encode_errors: 4,
+          num_transport_errors: 5,
+          queued_batches: 0,
+          queued_records: 0,
+          total_processed_input_records: 0,
+          total_processed_steps: 0,
+          transmitted_bytes: 0,
+          transmitted_records: 0
+        }
+      }
+    ]
+    render(SupportBundleViewerLayout, { ...baseProps(), connectorStatus: both })
+    await expect.element(page.getByRole('radio', { name: 'Connectors 12' })).toBeInTheDocument()
+  })
+
+  it('has no error count on the tab label when the bundle has no connector statistics', async () => {
+    render(SupportBundleViewerLayout, baseProps())
+    await expect
+      .element(page.getByRole('radio', { name: 'Connectors', exact: true }))
+      .toBeInTheDocument()
+  })
+
+  it('has no error count on the tab label without errors', async () => {
+    const quiet = structuredClone(connectorStatus)
+    quiet.inputs[0].metrics.num_parse_errors = 0
+    quiet.inputs[0].metrics.num_transport_errors = 0
+    render(SupportBundleViewerLayout, { ...baseProps(), connectorStatus: quiet })
+    await expect
+      .element(page.getByRole('radio', { name: 'Connectors', exact: true }))
+      .toBeInTheDocument()
+  })
+
+  it('opens the errors of a connector from its error icon', async () => {
+    render(SupportBundleViewerLayout, { ...baseProps(), connectorStatus })
+    ;(page.getByText('Connectors', { exact: false }).first().element() as HTMLElement).click()
+    await expect.element(page.getByTestId('btn-icon-input-errors').first()).toBeInTheDocument()
+    ;(page.getByTestId('btn-icon-input-errors').first().element() as HTMLElement).click()
+    await expect.element(page.getByText('bad row one').first()).toBeInTheDocument()
   })
 })
