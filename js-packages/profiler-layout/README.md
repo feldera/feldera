@@ -28,7 +28,7 @@ Runthe build to test changes in consuming apps.
 - **`ProfilerDiagram`** - Circuit graph renderer
 - **`ProfilerTooltip`** - Node metrics details display
 - **`ProfileTimestampSelector`** - Timestamp navigation dropdown
-- **`SqlCodeView`**, **`BundleLogsView`**, **`TriageResultsView`** - The panels the layout hosts
+- **`SourceCodeView`**, **`BundleLogsView`**, **`TriageResultsView`** - The panels the layout hosts
 
 ## Exported Utilities
 

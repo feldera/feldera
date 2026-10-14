@@ -57,11 +57,19 @@ function collectionDate(key: string): Date {
   return new Date(key)
 }
 
+/** A pipeline source file, named as in the web-console editor. */
+export interface SourceFile {
+  name: 'program.sql' | 'udf.rs' | 'udf.toml'
+  /** Monaco language id. Monaco has no TOML grammar, so TOML uses `graphql`, the same as the
+   *  web-console editor. */
+  language: 'sql' | 'rust' | 'graphql'
+  code: string
+}
+
 export interface ProcessedProfile {
   /** Parsed `circuit_profile.json` */
   profile?: JsonProfiles
   dataflow?: Dataflow
-  sources?: string[]
   logText?: string
   pipelineName?: string
   /** Cumulative pipeline-wide metrics from `stats.json`, when the bundle includes them. */
@@ -74,6 +82,9 @@ export interface ProcessedProfile {
   /** Pipeline monitor events from `pipeline_events.json`, newest first, when the bundle includes
    *  them. */
   pipelineEvents?: PipelineMonitorEvent[]
+  /** The pipeline source files from `pipeline_config.json`, `program.sql` first. A missing
+   *  `program_code` and empty UDF files are left out. */
+  sourceFiles?: SourceFile[]
 }
 
 /**
@@ -153,18 +164,29 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
   }
 
   const configFile = files.find((file) => pipelineConfigRegex.test(file.filename))
-  let sources: string[] | undefined
   let pipelineName: string | undefined
   let runtimeConfig: unknown
+  let sourceFiles: SourceFile[] | undefined
   if (configFile) {
     const pipelineConfig = JSON.parse(decoder.decode(await configFile.read())) as unknown as {
-      program_code: string
+      program_code?: unknown
       name?: string
       runtime_config?: unknown
+      udf_rust?: string
+      udf_toml?: string
     }
-    sources = pipelineConfig.program_code.split('\n')
     pipelineName = pipelineConfig.name || undefined
     runtimeConfig = pipelineConfig.runtime_config ?? undefined
+    const program = pipelineConfig.program_code
+    const programFiles: SourceFile[] =
+      typeof program === 'string' ? [{ name: 'program.sql', language: 'sql', code: program }] : []
+    const udfFiles = (
+      [
+        { name: 'udf.rs', language: 'rust', code: pipelineConfig.udf_rust },
+        { name: 'udf.toml', language: 'graphql', code: pipelineConfig.udf_toml }
+      ] as const
+    ).flatMap(({ code, ...file }) => (typeof code === 'string' && code ? [{ ...file, code }] : []))
+    sourceFiles = [...programFiles, ...udfFiles]
   }
 
   const logsFile = files.find((file) => logsRegex.test(file.filename))
@@ -209,13 +231,13 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
   return {
     profile,
     dataflow,
-    sources,
     logText,
     pipelineName,
     globalMetrics,
     connectorStatus,
     runtimeConfig,
-    pipelineEvents
+    pipelineEvents,
+    sourceFiles
   }
 }
 

@@ -14,13 +14,17 @@
   import { MonacoEditor, setSelections } from 'common-ui'
   import * as monaco from 'monaco-editor'
   import type { SourcePositionRange } from 'profiler-lib'
+  import { untrack } from 'svelte'
+  import type { SourceFile } from '../functions/processZipBundle'
 
   interface Props {
-    code: string
+    /** The view reads `name` and `language` once, at mount. `name` is the URI of the Monaco
+     *  model, so two mounted views must show different files. */
+    file: SourceFile
     highlightRanges?: SourcePositionRange[]
   }
 
-  let { code, highlightRanges = [] }: Props = $props()
+  let { file, highlightRanges = [] }: Props = $props()
 
   let editor: monaco.editor.IStandaloneCodeEditor | undefined = $state()
   let isDarkMode = $state(false)
@@ -34,16 +38,15 @@
     return () => observer.disconnect()
   })
 
-  // This component is mounted once (hoisted into a <PersistentContent> overlay by
-  // SupportBundleViewerLayout), so it owns a single model on a fixed URI. The model's contents are
-  // refreshed whenever `code` changes — including when a new support bundle loads a different
-  // program — and the model is disposed when the component unmounts.
-  const modelUri = monaco.Uri.parse('inmemory://profiler/program.sql')
-  const model = monaco.editor.createModel('', 'sql', modelUri)
+  // The view updates its model when `file.code` changes, for example when a new bundle loads. It
+  // disposes the model when it unmounts.
+  const { name, language } = untrack(() => file)
+  const modelUri = monaco.Uri.parse(`inmemory://profiler/${name}`)
+  const model = monaco.editor.createModel('', language, modelUri)
 
   $effect(() => {
-    if (model.getValue() !== code) {
-      model.setValue(code)
+    if (model.getValue() !== file.code) {
+      model.setValue(file.code)
     }
   })
 
