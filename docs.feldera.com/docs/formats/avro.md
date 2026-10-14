@@ -211,11 +211,14 @@ operation type in a field, such as the output of a Feldera Avro connector with
 [`cdc_field`](#emitting-change-data-capture-cdc-metadata) set.  The field must be a
 `string` or an `enum`, optionally nullable, and must hold one of the following values:
 
-| Value | Operation  | Effect on the table                                                   |
-|-------|------------|-----------------------------------------------------------------------|
-| `I`   | Insert     | Inserts the record.                                                   |
-| `U`   | Upsert     | Inserts the record. In a table with a primary key, it replaces the row with the same key. |
-| `D`   | Delete     | Deletes the record. In a table with a primary key, it deletes the row with the same key. |
+| Value | Operation | Table with a primary key                                   | Table without a primary key                                              |
+|-------|-----------|------------------------------------------------------------|--------------------------------------------------------------------------|
+| `I`   | Insert    | Inserts the record, or replaces the row with the same key. | Adds the record as a new row.                                            |
+| `U`   | Upsert    | Same as `I`.                                               | Same as `I`: adds a new row and keeps the old one.                       |
+| `D`   | Delete    | Deletes the row with the same key, if there is one.        | Deletes one row equal to the record. The record must match the row in all columns. |
+
+`I` and `U` have the same effect.  A `U` record replaces the old row only when the table
+has a primary key, because it holds the new row, but not the old one.
 
 A record with a different value, or a null, is a parse error.  The connector checks every
 Avro schema it receives, from the `schema` property or from the schema registry: a schema
@@ -227,7 +230,7 @@ The field is also ingested as a column if the table has a column with the same n
 
 Use `cdc_field` with a table that has a [primary key](/connectors/unique_keys).  In a
 table without a primary key, a `U` record adds a row instead of replacing the old one,
-and a `D` record for a row that is not in the table produces incorrect results.  The
+and a `D` record that does not match a row in the table produces incorrect results.  The
 connector logs a warning at startup when the table has no primary key.
 
 :::
