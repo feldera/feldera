@@ -24,8 +24,8 @@ use crate::{
         GlobalNodeId, OwnershipPreference,
         metadata::{OperatorLocation, OperatorMeta},
         operator_traits::{
-            BinaryOperator, NaryOperator, Operator, OperatorCheckpoint, QuaternaryOperator,
-            TernaryOperator, TernarySinkOperator,
+            BinaryOperator, BinarySinkOperator, NaryOperator, Operator, OperatorCheckpoint,
+            QuaternaryOperator, TernaryOperator,
         },
     },
 };
@@ -829,28 +829,26 @@ where
     }
 }
 
-pub trait StreamingTernarySinkOperator<I1, I2, I3>: Operator
+pub trait StreamingBinarySinkOperator<I1, I2>: Operator
 where
     I1: Clone,
     I2: Clone,
-    I3: Clone,
 {
     fn eval(
         self: Rc<Self>,
         i1: Cow<'_, I1>,
         i2: Cow<'_, I2>,
-        i3: Cow<'_, I3>,
     ) -> impl AsyncStream<Item = (bool, Option<Position>)> + 'static;
 }
 
-pub struct StreamingTernarySinkWrapper<I1, I2, I3, Op> {
+pub struct StreamingBinarySinkWrapper<I1, I2, Op> {
     operator: Rc<Op>,
     stream: Option<Pin<Box<dyn AsyncStream<Item = (bool, Option<Position>)>>>>,
     progress: Option<Position>,
-    phantom: PhantomData<fn(&I1, &I2, &I3)>,
+    phantom: PhantomData<fn(&I1, &I2)>,
 }
 
-impl<I1, I2, I3, Op> StreamingTernarySinkWrapper<I1, I2, I3, Op> {
+impl<I1, I2, Op> StreamingBinarySinkWrapper<I1, I2, Op> {
     pub fn new(operator: Op) -> Self {
         Self {
             operator: Rc::new(operator),
@@ -861,12 +859,11 @@ impl<I1, I2, I3, Op> StreamingTernarySinkWrapper<I1, I2, I3, Op> {
     }
 }
 
-impl<I1, I2, I3, Op> Operator for StreamingTernarySinkWrapper<I1, I2, I3, Op>
+impl<I1, I2, Op> Operator for StreamingBinarySinkWrapper<I1, I2, Op>
 where
     I1: Clone + 'static,
     I2: Clone + 'static,
-    I3: Clone + 'static,
-    Op: StreamingTernarySinkOperator<I1, I2, I3> + 'static,
+    Op: StreamingBinarySinkOperator<I1, I2> + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         self.operator.name()
@@ -990,21 +987,20 @@ where
     }
 }
 
-impl<I1, I2, I3, Op> TernarySinkOperator<I1, I2, I3> for StreamingTernarySinkWrapper<I1, I2, I3, Op>
+impl<I1, I2, Op> BinarySinkOperator<I1, I2> for StreamingBinarySinkWrapper<I1, I2, Op>
 where
     I1: Clone + 'static,
     I2: Clone + 'static,
-    I3: Clone + 'static,
-    Op: StreamingTernarySinkOperator<I1, I2, I3> + 'static,
+    Op: StreamingBinarySinkOperator<I1, I2> + 'static,
 {
-    async fn eval(&mut self, i1: Cow<'_, I1>, i2: Cow<'_, I2>, i3: Cow<'_, I3>) {
+    async fn eval<'a>(&mut self, i1: Cow<'a, I1>, i2: Cow<'a, I2>) {
         let stream = self.stream.get_or_insert_with(|| {
-            Box::pin(self.operator.clone().eval(i1, i2, i3))
+            Box::pin(self.operator.clone().eval(i1, i2))
                 as Pin<Box<dyn AsyncStream<Item = (bool, Option<Position>)>>>
         });
 
         let Some((complete, progress)) = stream.next().await else {
-            panic!("StreamingTernarySinkOperator unexpectedly reached end of stream");
+            panic!("StreamingBinarySinkOperator unexpectedly reached end of stream");
         };
 
         self.progress = progress;

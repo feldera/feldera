@@ -45,7 +45,7 @@ use std::{
     pin::{Pin, pin},
     sync::{
         Arc, Mutex, MutexGuard, RwLock, Weak,
-        atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant, SystemTime},
 };
@@ -1221,56 +1221,6 @@ impl ExchangeClients {
     }
 }
 
-struct CallbackInner {
-    cb: Option<Box<dyn Fn() + Send + Sync>>,
-}
-
-impl CallbackInner {
-    fn empty() -> Self {
-        Self { cb: None }
-    }
-
-    fn new<F>(cb: F) -> Self
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        let cb = Box::new(cb) as Box<dyn Fn() + Send + Sync>;
-        Self { cb: Some(cb) }
-    }
-}
-
-struct Callback(AtomicPtr<CallbackInner>);
-
-impl Default for Callback {
-    fn default() -> Self {
-        Self::empty()
-    }
-}
-
-impl Callback {
-    fn empty() -> Self {
-        Self(AtomicPtr::new(Box::into_raw(Box::new(
-            CallbackInner::empty(),
-        ))))
-    }
-
-    fn set_callback(&self, cb: impl Fn() + Send + Sync + 'static) {
-        let old_callback = self.0.swap(
-            Box::into_raw(Box::new(CallbackInner::new(cb))),
-            Ordering::AcqRel,
-        );
-
-        let old_callback = unsafe { Box::from_raw(old_callback) };
-        drop(old_callback);
-    }
-
-    fn call(&self) {
-        if let Some(cb) = &unsafe { &*self.0.load(Ordering::Acquire) }.cb {
-            cb()
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub enum Mailbox<T> {
     Tx(FBuf),
@@ -1323,9 +1273,6 @@ struct SenderState {
     /// this is 0, then sets it to `local_workers.len()` and writes all of the
     /// mailboxes in one pass.
     full_mailboxes: AtomicUsize,
-
-    /// Invoked when `full_mailboxes` drops to 0.
-    callback: Callback,
 
     /// Notified when `full_mailboxes` drops to 0.
     notify: Notify,
@@ -1543,10 +1490,6 @@ where
         exchange
     }
 
-    pub fn exchange_id(&self) -> ExchangeId {
-        self.exchange_id
-    }
-
     /// Returns an index for the sender/receiver pair.
     fn mailbox_index(&self, sender: usize, receiver: usize) -> usize {
         debug_assert!(sender < self.npeers);
@@ -1583,29 +1526,9 @@ where
             .clone()
     }
 
-    /// Register callback to be invoked whenever the `ready_to_send` condition
-    /// becomes true.
-    ///
-    /// The callback can be setup at most once (e.g., when a scheduler attaches
-    /// to the circuit) and cannot be unregistered.  Notifications delivered
-    /// before the callback is registered are lost.  The client should call
-    /// `ready_to_send` after installing the callback to check the status.
-    ///
-    /// After the callback has been registered, notifications are delivered with
-    /// at-least-once semantics: a notification is generated whenever the
-    /// status changes from not ready to ready, but spurious notifications
-    /// can occur occasionally.  Therefore, the user must check the status
-    /// explicitly by calling `ready_to_send` or be prepared that `try_send_all`
-    /// can fail.
-    pub(crate) fn register_sender_callback<F>(&self, sender: usize, cb: F)
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        debug_assert!(sender < self.npeers);
-        self.senders[sender].callback.set_callback(cb);
-    }
-
-    pub fn ready_to_send(&self, sender: usize) -> bool {
+    /// Returns whether every mailbox that receives from `sender` is empty.
+    #[cfg(test)]
+    fn ready_to_send(&self, sender: usize) -> bool {
         self.senders[sender].full_mailboxes.load(Ordering::Acquire) == 0
     }
 
@@ -1826,7 +1749,6 @@ where
             let old_counter = sender_state.full_mailboxes.fetch_sub(1, Ordering::AcqRel);
             debug_assert!(old_counter > 0);
             if old_counter == 1 {
-                sender_state.callback.call();
                 sender_state.notify.notify_waiters();
             }
         }

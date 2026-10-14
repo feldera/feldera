@@ -159,7 +159,7 @@ where
 {
     /// Returns the node ID of the circuit's [ShardedAccumulatorRemoteWaiter],
     /// first adding it if necessary, or `None` on a single-host runtime.
-    fn sharded_accumulator_remote_waiter(&self, runtime: &Runtime) -> Option<NodeId> {
+    pub(crate) fn sharded_accumulator_remote_waiter(&self, runtime: &Runtime) -> Option<NodeId> {
         if !runtime.layout().is_multihost() {
             return None;
         }
@@ -242,7 +242,7 @@ where
     /// # Returns
     ///
     /// The receiver's output stream and the [ShardedAccumulator].
-    fn add_sharded_accumulator_receiver(
+    pub(crate) fn add_sharded_accumulator_receiver(
         &self,
         runtime: &Runtime,
         factories: &B::Factories,
@@ -279,7 +279,7 @@ where
     }
 }
 
-struct ShardedAccumulator<B>
+pub(crate) struct ShardedAccumulator<B>
 where
     B: Batch,
 {
@@ -530,8 +530,12 @@ where
     ///   this accumulator must be empty.
     /// * `flush` - whether these are the sender's last batches in the
     ///   transaction.
-    #[cfg_attr(not(test), expect(dead_code, reason = "awaiting first caller"))]
-    async fn send_partitioned(self: &Arc<Self>, name: Arc<String>, batches: Vec<B>, flush: bool) {
+    pub(crate) async fn send_partitioned(
+        self: &Arc<Self>,
+        name: Arc<String>,
+        batches: Vec<B>,
+        flush: bool,
+    ) {
         let mut serializer_inner = None;
         let mailboxes = zip_eq(batches, WorkerLocations::new())
             .enumerate()
@@ -659,8 +663,7 @@ where
     /// # Arguments
     ///
     /// * `name` - the calling operator's name, for profiles.
-    #[cfg_attr(not(test), expect(dead_code, reason = "awaiting first caller"))]
-    async fn wait_for_arrival(&self, name: Arc<String>) {
+    pub(crate) async fn wait_for_arrival(&self, name: Arc<String>) {
         let worker = Runtime::worker_index();
         let runtime = Runtime::runtime().unwrap();
         let layout = runtime.layout();
@@ -715,8 +718,7 @@ where
     /// # Panics
     ///
     /// Panics if a sender has already flushed the current transaction.
-    #[cfg_attr(not(test), expect(dead_code, reason = "awaiting first caller"))]
-    fn take_received(&self) -> Vec<Arc<B>> {
+    pub(crate) fn take_received(&self) -> Vec<Arc<B>> {
         let receiver = Runtime::worker_index();
         self.rxq(receiver).take(&self.factories).get_batches()
     }
