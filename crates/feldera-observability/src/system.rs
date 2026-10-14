@@ -18,12 +18,25 @@ pub fn total_memory_megabyte() -> Option<u64> {
     let mut system = sysinfo::System::new();
     system.refresh_memory();
     let mut available = system.total_memory();
-    if let Some(limits) = system.cgroup_limits() {
+    if let Some(limits) = own_cgroup_limits(&mut system).or_else(|| system.cgroup_limits()) {
         available = available.min(limits.total_memory);
     }
     let mb = available / 1_000_000;
     // `sysinfo` reports 0 on platforms it does not support.
     if mb > 0 { Some(mb) } else { None }
+}
+
+/// Returns the limits of this process's own cgroup, including limits set on
+/// its parent cgroups. Unlike [`sysinfo::System::cgroup_limits`], this works
+/// without a cgroup namespace, where `/sys/fs/cgroup` is the host's root.
+fn own_cgroup_limits(system: &mut sysinfo::System) -> Option<sysinfo::CGroupLimits> {
+    let pid = sysinfo::get_current_pid().ok()?;
+    system.refresh_processes_specifics(
+        sysinfo::ProcessesToUpdate::Some(&[pid]),
+        false,
+        sysinfo::ProcessRefreshKind::nothing(),
+    );
+    system.process(pid)?.cgroup_limits()
 }
 
 #[cfg(test)]

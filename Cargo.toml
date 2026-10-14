@@ -336,7 +336,7 @@ lz4_flex = { version = "0.13.1", default-features = false, features = ["std", "s
 static-files = "0.2.3"
 static_assertions = "1.1.0"
 syn = "2.0.77"
-sysinfo = "0.38.4"
+sysinfo = "0.39.6"
 tabled = "0.17"
 tar = "0.4.46"
 tarpc = "0.38.0"
