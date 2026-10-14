@@ -775,6 +775,7 @@ macro_rules! nullable_duration_setting {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::de::value::F64Deserializer;
 
     const SECOND: Duration = Duration::from_secs(1);
     const MINUTE: Duration = Duration::from_secs(60);
@@ -935,8 +936,8 @@ mod tests {
     /// This workspace enables `serde_json`'s `arbitrary_precision`, which hands
     /// a non-integer literal to `deserialize_any` as a map rather than an
     /// `f64`. Without a `visit_map` the reader is told "invalid type: map",
-    /// naming nothing they wrote, so each spelling below is pinned. YAML still
-    /// delivers a real `f64`, and is covered too.
+    /// naming nothing they wrote, so each spelling below is pinned. A format
+    /// that delivers a real `f64` is covered through `F64Deserializer`.
     #[test]
     fn a_superseded_spelling_reads_any_whole_number() {
         #[derive(Debug, serde::Deserialize)]
@@ -976,8 +977,8 @@ mod tests {
             );
         }
 
-        let yaml: Config = serde_yaml::from_str("nap_secs: 10.0").unwrap();
-        assert_eq!(yaml.nap, Some(ConfigDuration::from_secs(10)));
+        let whole = duration_nap(F64Deserializer::<de::value::Error>::new(10.0)).unwrap();
+        assert_eq!(whole, Some(ConfigDuration::from_secs(10)));
 
         for (bad, quoted) in [
             (r#"{"nap_secs": 10.5}"#, "`10.5`"),
@@ -994,7 +995,7 @@ mod tests {
                 "parsing {bad} reported {error}"
             );
         }
-        let error = serde_yaml::from_str::<Config>("nap_secs: 10.5")
+        let error = duration_nap(F64Deserializer::<de::value::Error>::new(10.5))
             .unwrap_err()
             .to_string();
         assert!(error.contains("`10.5`"), "{error}");

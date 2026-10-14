@@ -1529,38 +1529,6 @@ fn default_model() -> Option<FtModel> {
     Some(FtModel::default())
 }
 
-/// Converts a JSON value to a YAML value, for the configuration file that
-/// older pipelines read.
-///
-/// Re-parsing the JSON text as YAML is not lossless: YAML 1.1 folds a U+0085
-/// (NEL) inside a string into a line break, and libyaml refuses a key longer
-/// than 1024 bytes. Mapping the value directly keeps every string as it is.
-/// Numbers go through their native types, which sidesteps the private map
-/// that `serde_json`'s `arbitrary_precision` would otherwise serialize.
-pub fn json_to_yaml_value(value: &serde_json::Value) -> serde_yaml::Value {
-    use serde_json::Value as Json;
-    use serde_yaml::Value as Yaml;
-    match value {
-        Json::Null => Yaml::Null,
-        Json::Bool(bool) => Yaml::Bool(*bool),
-        Json::Number(number) => Yaml::Number(if let Some(unsigned) = number.as_u64() {
-            unsigned.into()
-        } else if let Some(signed) = number.as_i64() {
-            signed.into()
-        } else {
-            number.as_f64().unwrap_or(f64::NAN).into()
-        }),
-        Json::String(string) => Yaml::String(string.clone()),
-        Json::Array(items) => Yaml::Sequence(items.iter().map(json_to_yaml_value).collect()),
-        Json::Object(fields) => Yaml::Mapping(
-            fields
-                .iter()
-                .map(|(key, value)| (Yaml::String(key.clone()), json_to_yaml_value(value)))
-                .collect(),
-        ),
-    }
-}
-
 /// Rewrites the duration settings of a serialized pipeline configuration in the
 /// spelling that Feldera releases before the duration rename read: under the
 /// older key, as a whole number of the unit that key named.
@@ -2231,34 +2199,6 @@ mod test {
         ] {
             assert!(!text.contains(new), "{new} survived in {text}");
         }
-    }
-
-    /// The YAML written for an older runtime decodes to the same value as the
-    /// JSON, for the strings and keys that re-parsing the JSON text as YAML
-    /// would change or refuse: a NEL, a tab, an emoji, a key over libyaml's
-    /// 1024-byte simple-key limit, and numbers of every kind.
-    #[test]
-    fn json_to_yaml_is_lossless() {
-        let long_key = "k".repeat(1100);
-        let original = serde_json::json!({
-            "nel": "a\u{85}b",
-            "tab": "a\tb",
-            "emoji": "caf\u{e9} \u{1F680}",
-            "newline": "a\nb",
-            long_key.as_str(): 1,
-            "unsigned": u64::MAX,
-            "signed": -5,
-            "float": 2.5,
-            "null": null,
-            "bools": [true, false],
-            "nested": {"list": [{"x": 1}, "two", 3.0]},
-        });
-        // The JSON text read as YAML loses the NEL and refuses the long key.
-        assert!(serde_yaml::from_str::<serde_yaml::Value>(&original.to_string()).is_err());
-
-        let yaml = serde_yaml::to_string(&super::json_to_yaml_value(&original)).unwrap();
-        let reread: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
-        assert_eq!(serde_json::to_value(reread).unwrap(), original, "{yaml}");
     }
 
     /// The rewritten connectors mean the same to this release as the originals.

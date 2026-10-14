@@ -1244,35 +1244,6 @@ mod header_filter_tests {
         .unwrap();
         assert!(config.header_filter.is_some());
     }
-
-    #[test]
-    fn config_with_header_filter_serializes_to_yaml() {
-        // Regression: the pipeline config is serialized to YAML when a pipeline
-        // is provisioned. `HeaderFilter` is a nested enum, which `serde_yaml`
-        // cannot serialize directly; `serde_via_value` keeps this working.
-        // Without it, the pipeline runner panics and the pipeline is stuck
-        // provisioning.
-        let mut config = KafkaInputConfig::default(
-            BTreeMap::from([(
-                "bootstrap.servers".to_string(),
-                "localhost:9092".to_string(),
-            )]),
-            "topic",
-        );
-        config.header_filter = Some(
-            serde_json::from_str(
-                r#"{"and":[{"header":{"name":"a","pattern":"b"}},{"not":{"header":{"name":"c","pattern":"d"}}}]}"#,
-            )
-            .unwrap(),
-        );
-
-        // Must not error (this is what panicked in the pipeline runner).
-        let yaml = serde_yaml::to_string(&config).expect("serialize config to YAML");
-
-        // And the config round-trips back through YAML.
-        let reparsed: KafkaInputConfig = serde_yaml::from_str(&yaml).unwrap();
-        assert_eq!(reparsed.header_filter, config.header_filter);
-    }
 }
 
 #[cfg(test)]
