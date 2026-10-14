@@ -461,6 +461,17 @@ impl IcebergResumeInfo {
         }
     }
 
+    /// Resume point for a connector that follows a table that had no snapshot
+    /// when it started: resume by following the table from its first snapshot.
+    fn follow_from_start() -> Self {
+        Self {
+            snapshot_id: None,
+            snapshot_timestamp: None,
+            eoi: false,
+            following: true,
+        }
+    }
+
     fn to_resume(&self) -> Resume {
         Resume::Seek {
             seek: serde_json::to_value(self).unwrap(),
@@ -2007,6 +2018,19 @@ impl IcebergInputEndpointInner {
                 // snapshot_and_follow: pin a follow resume point at the ingested
                 // snapshot, so a restart follows from it instead of re-reading.
                 self.push_follow_boundary(snapshot_id);
+            } else {
+                // snapshot_and_follow on a table with no snapshot: commit the
+                // empty snapshot's transaction, which would otherwise stay open
+                // until the table gets its first snapshot, and record that a
+                // restart follows the table from its first snapshot.
+                self.queue.push_entry(
+                    InputQueueEntry::new_with_aux(
+                        Utc::now(),
+                        QueueEntry::ResumeInfo(Some(IcebergResumeInfo::follow_from_start())),
+                    )
+                    .with_commit_transaction(true),
+                    Vec::new(),
+                );
             }
         }
 
@@ -2505,6 +2529,12 @@ impl IcebergInputEndpointInner {
                 snapshot_id: Some(snapshot_id),
                 ..
             }) => return Ok(Some(*snapshot_id)),
+            // Follows the table from its first snapshot.
+            Some(IcebergResumeInfo {
+                snapshot_id: None,
+                following: true,
+                ..
+            }) => return Ok(None),
             _ => (),
         }
 
