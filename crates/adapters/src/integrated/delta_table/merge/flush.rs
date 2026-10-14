@@ -26,7 +26,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Result as AnyResult, anyhow};
@@ -233,7 +233,8 @@ pub struct MergeWriter {
     stats_config: StatsConfig,
     key_arrow_fields: Vec<ArrowField>,
     prune_on_stats: bool,
-    regime: Regime,
+    /// [`Regime::Owned`] until [`Self::forfeit_ownership`]: whether an insert may skip the lookup.
+    owned: AtomicBool,
     lookup_chunk_bytes: usize,
     max_concurrent_probes: usize,
     view_name: SqlIdentifier,
@@ -294,7 +295,7 @@ impl MergeWriter {
             stats_config: setup.stats_config,
             key_arrow_fields: setup.key_arrow_fields,
             prune_on_stats: setup.prune_on_stats,
-            regime: setup.regime,
+            owned: AtomicBool::new(setup.regime == Regime::Owned),
             lookup_chunk_bytes,
             max_concurrent_probes,
             view_name,
@@ -305,6 +306,13 @@ impl MergeWriter {
             bytes_per_row: AtomicU64::new(0),
             index_name: key_schema.name.clone(),
         })
+    }
+
+    /// Look up every insert from now on. Called once a change the view made was not applied
+    /// (a dropped batch, a skipped key), since the table may then hold a row for a key the view
+    /// inserts again. Returns whether the shortcut was still on.
+    pub fn forfeit_ownership(&self) -> bool {
+        self.owned.swap(false, Ordering::Relaxed)
     }
 
     /// Apply one batch to `table` and commit, refreshing the table to the new version.
@@ -676,7 +684,7 @@ impl MergeWriter {
     /// started empty.
     fn needs_lookup(&self, op: &IndexedOperationType, retrying: bool) -> bool {
         match op {
-            IndexedOperationType::Insert => retrying || self.regime.insert_needs_lookup(),
+            IndexedOperationType::Insert => retrying || !self.owned.load(Ordering::Relaxed),
             IndexedOperationType::Delete | IndexedOperationType::Upsert => true,
         }
     }
