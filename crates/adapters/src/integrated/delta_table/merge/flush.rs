@@ -33,7 +33,7 @@ use anyhow::{Result as AnyResult, anyhow};
 use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
 use delta_kernel::expressions::Scalar;
 use deltalake::DeltaTable;
-use deltalake::kernel::{Action, Add, LogicalFileView};
+use deltalake::kernel::{Action, Add, DataType as DeltaDataType, LogicalFileView};
 use deltalake::logstore::ObjectStoreRef;
 use deltalake::operations::write::writer::DeltaWriter;
 use deltalake::protocol::{DeltaOperation, SaveMode};
@@ -724,7 +724,19 @@ impl MergeWriter {
             if let Some(index) = values.fields().iter().position(|f| f.name() == name)
                 && let Some(value) = values.values().get(index)
             {
-                keys.insert(name.clone(), value.clone());
+                // The log parses an empty string as null, but readers see `''`, which is
+                // also what a view's key holds.
+                let value = match value {
+                    Scalar::Null(data_type)
+                        if *data_type == DeltaDataType::STRING
+                            && file.partition_values_map().get(name)
+                                == Some(&Some(String::new())) =>
+                    {
+                        Scalar::String(String::new())
+                    }
+                    value => value.clone(),
+                };
+                keys.insert(name.clone(), value);
             }
         }
         keys
@@ -1118,5 +1130,46 @@ mod test {
         // And a flush whose ranges only failed transiently stays retryable.
         assert!(!joined(None, transient()));
         assert!(!joined(Some(transient()), transient()));
+    }
+
+    /// An empty-string partition value must reach the lookup as `''`, as readers see it.
+    /// The log parses it as null, so the key `('', 1)` would never find its row.
+    #[tokio::test]
+    async fn an_empty_string_partition_key_is_not_null() {
+        use crate::integrated::delta_table::merge::test::{
+            partitioned_fixture_table, partitioned_key_relation,
+        };
+
+        let dir = TempDir::new().unwrap();
+        let table = partitioned_fixture_table(&dir, &[(1, ""), (2, "a")]).await;
+        let setup = prepare(
+            &table,
+            &Some(partitioned_key_relation()),
+            &fixture_columns(),
+        )
+        .unwrap();
+        let schema = Arc::new(arrow_schema());
+        let writer = MergeWriter::new(
+            setup,
+            &partitioned_key_relation(),
+            SerdeArrowSchema::try_from(schema.fields().as_ref()).unwrap(),
+            schema,
+            1 << 20,
+            1,
+            SqlIdentifier::new("v", false),
+        )
+        .unwrap();
+
+        let mut values: Vec<Scalar> = writer
+            .snapshot_files(&table)
+            .unwrap()
+            .into_iter()
+            .map(|c| c.partition_keys["payload"].clone())
+            .collect();
+        values.sort_by_key(|v| v.to_string());
+        assert_eq!(
+            values,
+            vec![Scalar::String(String::new()), Scalar::String("a".into())]
+        );
     }
 }
