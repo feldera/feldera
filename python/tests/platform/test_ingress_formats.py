@@ -1044,6 +1044,99 @@ def test_avro_ingress(pipeline_name):
 
 
 @gen_pipeline_name
+def test_avro_ingress_cdc_field(pipeline_name):
+    """
+    Raw Avro with `cdc_field`: the `op` field of each record selects insert,
+    upsert or delete.
+    """
+    sql = (
+        "CREATE TABLE t_pk(id int NOT NULL PRIMARY KEY, s varchar) "
+        "WITH ('materialized' = 'true');"
+        "CREATE TABLE t_no_pk(id int NOT NULL, s varchar) "
+        "WITH ('materialized' = 'true');"
+    )
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    schema = {
+        "type": "record",
+        "name": "row",
+        "fields": [
+            {"name": "id", "type": "int"},
+            {"name": "s", "type": ["null", "string"]},
+            {"name": "op", "type": "string"},
+        ],
+    }
+
+    def ingress(table: str, records: list[dict]):
+        query = urlencode(
+            {
+                "format": "avro",
+                "update_format": "raw",
+                "skip_schema_id": "true",
+                "schema": json.dumps(schema),
+                "cdc_field": "op",
+            }
+        )
+        responses = []
+        for record in records:
+            buffer = io.BytesIO()
+            fastavro.schemaless_writer(buffer, schema, record)
+            r = http_request(
+                "POST",
+                api_url(f"/pipelines/{pipeline_name}/ingress/{table}?{query}"),
+                data=buffer.getvalue(),
+                headers={"Content-Type": "application/octet-stream"},
+            )
+            if r.status_code == HTTPStatus.OK:
+                _wait_token(pipeline_name, r.json()["token"])
+            responses.append(r)
+        return responses
+
+    # With a primary key, U replaces the row and D deletes by key.
+    for r in ingress(
+        "t_pk",
+        [
+            {"id": 1, "s": "a", "op": "I"},
+            {"id": 2, "s": "b", "op": "I"},
+            {"id": 1, "s": "a2", "op": "U"},
+            {"id": 2, "s": "b2", "op": "D"},
+        ],
+    ):
+        assert r.status_code == HTTPStatus.OK, r.text
+    got = adhoc_query_json(pipeline_name, "select id, s from t_pk order by id")
+    assert got == [{"id": 1, "s": "a2"}]
+
+    # Without a primary key, U adds a row and D deletes the matching row.
+    for r in ingress(
+        "t_no_pk",
+        [
+            {"id": 1, "s": "a", "op": "I"},
+            {"id": 1, "s": "a2", "op": "U"},
+            {"id": 1, "s": "a", "op": "D"},
+        ],
+    ):
+        assert r.status_code == HTTPStatus.OK, r.text
+    got = adhoc_query_json(pipeline_name, "select id, s from t_no_pk order by id")
+    assert got == [{"id": 1, "s": "a2"}]
+
+    # An unknown operation is a parse error.
+    [r] = ingress("t_pk", [{"id": 3, "s": "c", "op": "X"}])
+    assert r.status_code == HTTPStatus.BAD_REQUEST, r.text
+    assert "invalid value 'X' in the 'op' field" in r.text
+
+    # The table without a primary key logs a warning.
+    deadline = time.monotonic() + 30
+    for line in TEST_CLIENT.get_pipeline_logs(pipeline_name):
+        if "table 't_no_pk' has no primary key" in line:
+            break
+        assert time.monotonic() < deadline, "no warning about 't_no_pk' in the logs"
+    else:
+        raise AssertionError("log stream ended without the 't_no_pk' warning")
+
+
+@gen_pipeline_name
 def test_connector_metadata_ingress(pipeline_name):
     """
     The `connector_metadata` query parameter of `/ingress` reaches every
