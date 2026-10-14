@@ -83,7 +83,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{Notify, broadcast, watch};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -577,6 +577,11 @@ pub struct ControllerStatus {
     /// `total_input_records`, and a client waiting for the pipeline to catch up
     /// with an ad hoc write would wait forever.
     orphaned_input: Mutex<BufferSize>,
+
+    /// Notified when an input endpoint finishes (see
+    /// [InputEndpointStatus::finished]), so that the labels that
+    /// [Self::incomplete_labels] reports may have changed.
+    pub(crate) input_completion_notify: Arc<Notify>,
 }
 
 /// Context needed by [`ControllerStatus::to_api_type`] to build the public
@@ -622,6 +627,7 @@ impl ControllerStatus {
             inputs: RwLock::new(BTreeMap::new()),
             outputs: RwLock::new(BTreeMap::new()),
             orphaned_input: Mutex::new(BufferSize::empty()),
+            input_completion_notify: Arc::new(Notify::new()),
         }
     }
 
@@ -744,14 +750,32 @@ impl ControllerStatus {
             .collect()
     }
 
+    /// Returns the labels of the input endpoints that have not finished (see
+    /// `InputEndpointStatus::finished`).  An endpoint that waits for these
+    /// labels with `start_after` may not start yet.
+    ///
+    /// An endpoint that has reached the end of its input may still have
+    /// buffered records, for example records held back until a transaction
+    /// opens, so this also waits for those to reach the circuit.
+    pub fn incomplete_labels(&self) -> HashSet<String> {
+        self.input_status()
+            .values()
+            .filter(|status| !status.finished())
+            .flat_map(|status| status.config.connector_config.labels.iter().cloned())
+            .collect()
+    }
+
     /// Invoked when one of the input endpoints has finished processing
     /// to check if any paused endpoints have all their 'start_after'
     /// dependencies satisfied and can be started.
     ///
-    /// In a multihost pipeline, this does nothing, because the labels must be
-    /// complete on every host, not only on this one.  The coordinator starts
-    /// the endpoints instead.
+    /// In a multihost pipeline, this only notifies
+    /// `input_completion_notify`, because the labels must be complete
+    /// on every host, not only on this one.  The coordinator starts the
+    /// endpoints instead, when [Self::incomplete_labels] on every host says
+    /// so.
     pub fn start_dependencies(&self, backpressure_thread_unparker: &Unparker) {
+        self.input_completion_notify.notify_waiters();
         if self.pipeline_config.multihost.is_some() {
             return;
         }
@@ -3368,6 +3392,66 @@ mod test {
         let parker = Parker::new();
         status.eoi(0, parker.unparker(), parker.unparker());
         !status.input_status()[&1].is_paused_by_user()
+    }
+
+    /// A label stays incomplete until every endpoint with it has finished: it
+    /// reached the end of its input, and its buffered records reached the
+    /// circuit.  The controller notifies when an endpoint finishes, so that a
+    /// multihost host reports its labels to the coordinator again.
+    #[test]
+    fn label_completes_when_buffered_records_reach_the_circuit() {
+        use super::StepResults;
+        use feldera_adapterlib::format::BufferSize;
+        use futures::FutureExt;
+
+        for config in [
+            json!({"name": "test"}),
+            json!({"name": "test", "multihost": {"hosts": 2}}),
+        ] {
+            let status = ControllerStatus::new(
+                serde_json::from_value::<PipelineConfig>(config).unwrap(),
+                0,
+                None,
+                Uuid::nil(),
+            );
+            let input_config = serde_json::from_value(json!({
+                "stream": "t",
+                "transport": {"name": "datagen", "config": {}},
+                "labels": ["backfill"],
+            }))
+            .unwrap();
+            status.inputs.write().insert(
+                0,
+                InputEndpointStatus::new("labeled", input_config, None, None),
+            );
+            let parker = Parker::new();
+            let unparker = parker.unparker();
+            let notify = status.input_completion_notify.clone();
+            let mut notified = std::pin::pin!(notify.notified());
+            notified.as_mut().enable();
+            let backfill = || std::collections::HashSet::from(["backfill".to_string()]);
+            let amt = BufferSize {
+                records: 3,
+                bytes: 30,
+            };
+
+            // At the end of its input, the endpoint still has buffered records.
+            status.input_batch_from_endpoint(0, amt, unparker);
+            status.eoi(0, unparker, unparker);
+            assert_eq!(status.incomplete_labels(), backfill());
+            assert!(notified.as_mut().now_or_never().is_none());
+
+            // Once they reach the circuit, the endpoint has finished.
+            status.extended(
+                0,
+                StepResults { amt, resume: None },
+                Vec::new(),
+                unparker,
+                unparker,
+            );
+            assert!(status.incomplete_labels().is_empty());
+            assert!(notified.now_or_never().is_some());
+        }
     }
 
     /// In a multihost pipeline, a host does not start an endpoint when its own
