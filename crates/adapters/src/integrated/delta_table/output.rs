@@ -431,9 +431,13 @@ impl DeltaTableWriter {
                 )
             })?;
 
-        // Every range of a flush writes through this one store, so the cap it carries bounds
-        // the whole connector rather than a single writer.
-        let object_store = bound_uploads(task.delta_table.object_store());
+        // Merge mode only: every range of a flush writes through this one store, so the cap
+        // bounds the whole connector. cdc keeps main's per-file upload concurrency.
+        let object_store = if config.is_merge() {
+            bound_uploads(task.delta_table.object_store())
+        } else {
+            task.delta_table.object_store()
+        };
 
         let merge = if config.is_merge() {
             Some(build_merge_writer(&inner, &task.delta_table).map_err(|e| {
@@ -1950,6 +1954,19 @@ mod parallel {
             true,
         )
         .expect("failed to create merge endpoint")
+    }
+
+    /// Only merge mode caps part uploads. A shared cap halved cdc throughput against a store
+    /// with 150 ms part latency, so cdc keeps main's per-file concurrency.
+    #[test]
+    fn only_merge_mode_caps_part_uploads() {
+        let dir = TempDir::new().unwrap();
+        let cdc = make_endpoint(4, dir.path().to_str().unwrap(), true);
+        assert!(!cdc.object_store.to_string().starts_with("BoundedUpload"));
+
+        let dir = TempDir::new().unwrap();
+        let merge = make_merge_endpoint(dir.path().to_str().unwrap(), DeltaTableWriteMode::Append);
+        assert!(merge.object_store.to_string().starts_with("BoundedUpload"));
     }
 
     /// Rows the table currently holds, as any reader would see them.
