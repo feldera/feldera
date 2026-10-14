@@ -3224,6 +3224,17 @@ fn checkpoint_state_file_names_its_own_circuit() {
 /// checkpoint and rewriting the root file leaves it.
 #[test]
 fn restart_resumes_from_newest_published_checkpoint() {
+    test_restart_from_newest_published_checkpoint(false);
+}
+
+/// Exactly-once variant: journal replay starts at the newest checkpoint and
+/// counts no record twice.
+#[test]
+fn ft_restart_resumes_from_newest_published_checkpoint() {
+    test_restart_from_newest_published_checkpoint(true);
+}
+
+fn test_restart_from_newest_published_checkpoint(fault_tolerant: bool) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
     let tempdir_path = tempdir.path();
@@ -3239,6 +3250,7 @@ fn restart_resumes_from_newest_published_checkpoint() {
         "workers": 4,
         "storage_config": { "path": storage_dir },
         "storage": true,
+        "fault_tolerance": if fault_tolerant { json!({}) } else { json!(null) },
         "clock_resolution_usecs": null,
         "inputs": {
             "test_input1": {
@@ -3273,12 +3285,15 @@ fn restart_resumes_from_newest_published_checkpoint() {
             .global_metrics
             .num_total_processed_records()
     };
-    let checkpoint_after = |controller: &Controller, records: usize| {
+    let wait_processed = |controller: &Controller, records: usize| {
         wait(
             || processed_records(controller) >= records as u64,
             DEFAULT_TIMEOUT_MS,
         )
         .unwrap();
+    };
+    let checkpoint_after = |controller: &Controller, records: usize| {
+        wait_processed(controller, records);
         controller.checkpoint().unwrap()
     };
 
@@ -3288,6 +3303,10 @@ fn restart_resumes_from_newest_published_checkpoint() {
     let older = checkpoint_after(&controller, RECORDS);
     append_input(&input_path, RECORDS..2 * RECORDS);
     let newest = checkpoint_after(&controller, 2 * RECORDS);
+    // Steps after the newest checkpoint, which the restart reads again from
+    // the input or replays from the journal.
+    append_input(&input_path, 2 * RECORDS..3 * RECORDS);
+    wait_processed(&controller, 3 * RECORDS);
     controller.stop().unwrap();
 
     let older_uuid = older.circuit.unwrap().uuid;
@@ -3298,19 +3317,29 @@ fn restart_resumes_from_newest_published_checkpoint() {
     .unwrap();
 
     let controller = start_controller();
-    assert_eq!(
-        processed_records(&controller),
-        newest.processed_records,
-        "the restart resumed from checkpoint {older_uuid}, which the root state.json names"
-    );
+    if fault_tolerant {
+        // Replay runs before `start`, so check the count after it ends.
+        wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+        assert_eq!(
+            processed_records(&controller),
+            3 * RECORDS as u64,
+            "replay did not start at checkpoint {}",
+            newest.circuit.unwrap().uuid
+        );
+    } else {
+        assert_eq!(
+            processed_records(&controller),
+            newest.processed_records,
+            "the restart resumed from checkpoint {older_uuid}, which the root state.json names"
+        );
+    }
 
     // Later checkpoints, and the cleanup after each, leave a checkpoint that
     // the next restart can open.
     controller.start();
-    for round in 2..4 {
-        append_input(&input_path, round * RECORDS..(round + 1) * RECORDS);
-        checkpoint_after(&controller, (round + 1) * RECORDS);
-    }
+    checkpoint_after(&controller, 3 * RECORDS);
+    append_input(&input_path, 3 * RECORDS..4 * RECORDS);
+    checkpoint_after(&controller, 4 * RECORDS);
     controller.stop().unwrap();
     let controller = start_controller();
     assert_eq!(processed_records(&controller), 4 * RECORDS as u64);
