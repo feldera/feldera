@@ -899,7 +899,7 @@ async fn bearer_auth(
             let memberships = {
                 let db = state.db.lock().await;
                 match db.list_user_memberships(&provider, &subject).await {
-                    Ok(memberships) => memberships,
+                    Ok((memberships, _)) => memberships,
                     Err(e) => {
                         return Err((crate::error::ManagerError::from(e).into(), req));
                     }

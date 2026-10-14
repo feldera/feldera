@@ -66,6 +66,8 @@ def test_03_headerless_ambiguity_and_the_session_picker(api: Api, primary_idp: I
     body = session.json()
     assert body["tenant_id"] is None
     assert {m["name"] for m in body["memberships"]} == {M_ALPHA, M_BETA}
+    # The unresolved-tenant branch still reports the signup time.
+    assert body["user_created_at"] is not None
 
 
 def test_04_removal_re_enrolls_while_the_claim_still_names(
@@ -121,6 +123,8 @@ def test_07_provisioning_off_denies_until_granted(
     assert session.status_code == 200, session.text
     assert session.json()["tenant_id"] is None
     assert session.json()["memberships"] == []
+    # A user without memberships has no signup time.
+    assert session.json()["user_created_at"] is None
 
     owner = primary_idp.token("owner", email=OWNER_EMAIL)
     assert api.status("POST", "/tenants", token=owner, body={"name": "m-delta"}) in (
@@ -140,6 +144,8 @@ def test_07_provisioning_off_denies_until_granted(
     session = api.v0("GET", "/config/session", token=frank).json()
     assert session["tenant_name"] == "m-delta"
     assert session["role"] == "write"
+    # The first membership sets the signup time.
+    assert session["user_created_at"] is not None
     assert api.status("GET", "/pipelines", token=frank) == 200
 
 

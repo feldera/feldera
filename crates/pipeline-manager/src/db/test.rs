@@ -995,7 +995,7 @@ async fn membership_origin_is_recorded() {
     assert_eq!(bob_row.role, Role::Admin);
     assert_eq!(bob_row.origin, Some(MembershipOrigin::Api));
 
-    let memberships = handle
+    let (memberships, _) = handle
         .db
         .list_user_memberships(&provider, "alice")
         .await
@@ -1011,6 +1011,7 @@ async fn membership_origin_is_recorded() {
             .list_user_memberships(&provider, "nobody")
             .await
             .unwrap()
+            .0
             .is_empty()
     );
 }
@@ -1025,9 +1026,10 @@ async fn user_created_at_is_recorded() {
     let created_at = async |subject: &str| {
         handle
             .db
-            .get_user_created_at(provider, subject)
+            .list_user_memberships(provider, subject)
             .await
             .unwrap()
+            .1
     };
     let login = async |tenant: &str| {
         handle
@@ -5384,18 +5386,21 @@ async fn check_rbac_action(
         RbacAction::ListUserMemberships((provider, subject)) => {
             // Sorted by id on both sides: Postgres collates names by locale,
             // Rust by bytes, and the order is not what this action checks.
-            let mut model_response = model
+            // The clocks differ, so only the presence of a creation time is
+            // compared.
+            let (mut model_memberships, model_created_at) = model
                 .list_user_memberships(&provider, &subject)
                 .await
                 .unwrap();
-            let mut impl_response = handle
+            let (mut impl_memberships, impl_created_at) = handle
                 .db
                 .list_user_memberships(&provider, &subject)
                 .await
                 .unwrap();
-            model_response.sort_by_key(|m| m.tenant_id);
-            impl_response.sort_by_key(|m| m.tenant_id);
-            assert_eq!(model_response, impl_response);
+            model_memberships.sort_by_key(|m| m.tenant_id);
+            impl_memberships.sort_by_key(|m| m.tenant_id);
+            assert_eq!(model_memberships, impl_memberships);
+            assert_eq!(model_created_at.is_some(), impl_created_at.is_some());
         }
         RbacAction::UpsertMemberRole(tenant_id, (provider, subject), role) => {
             let user_id = user_id_for_identity(&provider, &subject);
@@ -6687,7 +6692,6 @@ struct UserRecord {
     profile: UserProfile,
     refreshed_at: Option<DateTime<Utc>>,
     refreshed_auth_time: Option<i64>,
-    created_at: DateTime<Utc>,
 }
 
 /// Model of the database to which its operations are compared.
@@ -6702,7 +6706,8 @@ struct DbModel {
     pub oidc_trusts: BTreeMap<(TenantId, String), OidcTrustDescr>,
     /// Keyed by the `(provider, subject)` identity.
     pub users: BTreeMap<(String, String), UserRecord>,
-    pub memberships: BTreeMap<(TenantId, UserId), (Role, MembershipOrigin)>,
+    /// The role, the origin and the creation time of each membership.
+    pub memberships: BTreeMap<(TenantId, UserId), (Role, MembershipOrigin, DateTime<Utc>)>,
 }
 
 #[async_trait]
@@ -7599,7 +7604,6 @@ impl Storage for Mutex<DbModel> {
                         },
                         refreshed_at: None,
                         refreshed_auth_time: None,
-                        created_at: Utc::now(),
                     },
                 );
                 Ok(id)
@@ -7626,7 +7630,6 @@ impl Storage for Mutex<DbModel> {
                     profile: UserProfile::default(),
                     refreshed_at: Some(now),
                     refreshed_auth_time: auth_time,
-                    created_at: now,
                 },
             );
             return Ok(true);
@@ -7678,7 +7681,7 @@ impl Storage for Mutex<DbModel> {
             .memberships
             .iter()
             .filter(|((t, _), _)| *t == tenant_id)
-            .filter_map(|((_, user_id), (role, origin))| {
+            .filter_map(|((_, user_id), (role, origin, _))| {
                 s.users.iter().find(|(_, user)| user.id == *user_id).map(
                     |((provider, subject), user)| TenantMember {
                         user_id: user.id,
@@ -7733,36 +7736,33 @@ impl Storage for Mutex<DbModel> {
             // Enroll only where no membership exists; never touch a role.
             s.memberships
                 .entry((tenant_id, user_id))
-                .or_insert((role, origin));
+                .or_insert((role, origin, Utc::now()));
         }
         Ok(())
-    }
-
-    async fn get_user_created_at(
-        &self,
-        provider: &str,
-        subject: &str,
-    ) -> DBResult<Option<DateTime<Utc>>> {
-        let s = self.lock().await;
-        Ok(s.users
-            .get(&(provider.to_string(), subject.to_string()))
-            .map(|user| user.created_at))
     }
 
     async fn list_user_memberships(
         &self,
         provider: &str,
         subject: &str,
-    ) -> DBResult<Vec<UserMembership>> {
+    ) -> DBResult<(Vec<UserMembership>, Option<DateTime<Utc>>)> {
         let s = self.lock().await;
         let Some(user) = s.users.get(&(provider.to_string(), subject.to_string())) else {
-            return Ok(vec![]);
+            return Ok((vec![], None));
         };
+        // The model has no memberships from before V36, so the creation time
+        // is the time of the first membership.
+        let created_at = s
+            .memberships
+            .iter()
+            .filter(|((_, u), _)| *u == user.id)
+            .map(|(_, (_, _, created_at))| *created_at)
+            .min();
         let mut memberships: Vec<UserMembership> = s
             .memberships
             .iter()
             .filter(|((_, u), _)| *u == user.id)
-            .filter_map(|((t, _), (role, _))| {
+            .filter_map(|((t, _), (role, _, _))| {
                 s.tenants.get(t).map(|rec| UserMembership {
                     tenant_id: *t,
                     name: rec.tenant.clone(),
@@ -7771,7 +7771,7 @@ impl Storage for Mutex<DbModel> {
             })
             .collect();
         memberships.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(memberships)
+        Ok((memberships, created_at))
     }
 
     async fn upsert_member_role(
@@ -7794,8 +7794,8 @@ impl Storage for Mutex<DbModel> {
         // SQL upsert does.
         s.memberships
             .entry((tenant_id, user_id))
-            .and_modify(|(r, _)| *r = role)
-            .or_insert((role, origin));
+            .and_modify(|(r, _, _)| *r = role)
+            .or_insert((role, origin, Utc::now()));
         Ok(())
     }
 
