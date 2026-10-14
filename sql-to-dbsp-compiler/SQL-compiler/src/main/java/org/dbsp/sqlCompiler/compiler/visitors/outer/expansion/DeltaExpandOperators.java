@@ -69,11 +69,13 @@ import java.util.Map;
 
 /** Expands each operator into its incremental delta form.
  *
- * <p>The expanded graph does not satisfy the stream typing rules.  The expansion of a join is:
- * {@code I(a) ⋈ Δb + Δa ⋈ I(b) + Δa ⋈ Δb}, with the integrals as explicit
- * {@link DBSPDelayedIntegralOperator}s.  Each product multiplies a
- * collection by a delta; the join is bilinear, so the product is a delta.  No
- * join operator has this signature. */
+ * <p>Notation of the expansion formulas: L and R are the input collections of an operator, ΔL
+ * and ΔR their changes, the inputs of the operator in the circuit, and z⁻¹ the delay; z⁻¹L is a
+ * {@link DBSPDelayedIntegralOperator} applied to ΔL.
+ *
+ * <p>The expanded graph does not satisfy the stream typing rules.  The expansion of a join is
+ * ΔL ⋈ z⁻¹R + z⁻¹L ⋈ ΔR + ΔL ⋈ ΔR.  Each product multiplies a collection by a delta; the join is
+ * bilinear, so the product is a delta.  No join operator has this signature. */
 public class DeltaExpandOperators extends CircuitCloneVisitor {
     public final Map<DBSPSimpleOperator, OperatorDeltaExpansion> expansion;
 
@@ -284,7 +286,7 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
         return result;
     }
 
-    /** Expand a left join into ΔL ⋈ z⁻¹I(R) + z⁻¹I(L) ⋈ ΔR + ΔL ⋈ ΔR + pad(Δ(L ▷ R)).
+    /** Expand a left join into ΔL ⋈ z⁻¹R + z⁻¹L ⋈ ΔR + ΔL ⋈ ΔR + pad(Δ(L ▷ R)).
      * @param operator  A left join, a left join that indexes its output, or a left join fused
      *                  with the filter that follows it.
      * @param filter    The fused filter, applied to each of the four terms; null if none. */
