@@ -405,6 +405,16 @@ struct IcebergResumeInfo {
 
     /// True once the pinned snapshot has been fully read.
     eoi: bool,
+
+    /// True if the connector has read its initial snapshot, if any, and
+    /// follows the table after `snapshot_id`, or from the table's first
+    /// snapshot if `snapshot_id` is `None`.  On resume, it continues to follow
+    /// the table without reading a snapshot.
+    ///
+    /// Without this, the state after following snapshot `snapshot_id` would
+    /// look the same as a pinned snapshot that the connector has not read.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    following: bool,
 }
 
 impl IcebergResumeInfo {
@@ -414,6 +424,7 @@ impl IcebergResumeInfo {
             snapshot_id: None,
             snapshot_timestamp: None,
             eoi: false,
+            following: false,
         }
     }
 
@@ -423,6 +434,7 @@ impl IcebergResumeInfo {
             snapshot_id,
             snapshot_timestamp: None,
             eoi: true,
+            following: false,
         }
     }
 
@@ -434,6 +446,7 @@ impl IcebergResumeInfo {
             snapshot_id: Some(snapshot_id),
             snapshot_timestamp: Some(timestamp.to_string()),
             eoi: false,
+            following: false,
         }
     }
 
@@ -444,6 +457,7 @@ impl IcebergResumeInfo {
             snapshot_id: Some(snapshot_id),
             snapshot_timestamp: None,
             eoi: false,
+            following: true,
         }
     }
 
@@ -695,6 +709,20 @@ impl IcebergInputReader {
                         "iceberg {}: resuming in the end-of-input state; nothing left to read",
                         endpoint.endpoint_name
                     ),
+                    IcebergResumeInfo {
+                        following: true,
+                        snapshot_id,
+                        ..
+                    } => match snapshot_id {
+                        Some(snapshot_id) => info!(
+                            "iceberg {}: resuming by following the table after snapshot {snapshot_id}",
+                            endpoint.endpoint_name
+                        ),
+                        None => info!(
+                            "iceberg {}: resuming by following the table from its first snapshot",
+                            endpoint.endpoint_name
+                        ),
+                    },
                     IcebergResumeInfo {
                         snapshot_id: Some(snapshot_id),
                         snapshot_timestamp: Some(ts),
@@ -1853,14 +1881,22 @@ impl IcebergInputEndpointInner {
 
         let table = Arc::new(table);
 
-        // A connector that resumes has the snapshot that it read pinned.
-        let fresh = matches!(
-            &*self.last_resume_status.lock().unwrap(),
-            Some(IcebergResumeInfo {
-                snapshot_id: None,
-                ..
-            })
-        );
+        // A connector that resumes has the snapshot that it read pinned, or
+        // it follows the table.
+        let following = self
+            .last_resume_status
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|status| status.following);
+        let fresh = !following
+            && matches!(
+                &*self.last_resume_status.lock().unwrap(),
+                Some(IcebergResumeInfo {
+                    snapshot_id: None,
+                    ..
+                })
+            );
 
         // Pin the snapshot the connector reads (resolving `latest` to a concrete
         // id) and record it in the reported resume state, so every checkpoint
@@ -1881,6 +1917,7 @@ impl IcebergInputEndpointInner {
                 snapshot_id: Some(snapshot_id),
                 snapshot_timestamp,
                 eoi: false,
+                following,
             });
         }
 
@@ -1916,14 +1953,17 @@ impl IcebergInputEndpointInner {
         self.start_distributed_snapshot_transaction(fresh, &mut receiver)
             .await;
 
-        if self.config.snapshot() && self.config.timestamp_column.is_none() {
+        // A connector that resumes while it follows the table already read its
+        // snapshot.
+        let reads_snapshot = self.config.snapshot() && !following;
+        if reads_snapshot && self.config.timestamp_column.is_none() {
             // Unordered read: the whole snapshot is one query with no seekable
             // interior boundary, so a checkpoint taken mid-read resumes by
             // re-reading the whole snapshot. Set `timestamp_column` for
             // incremental, bounded-re-read checkpointing on large tables.
             self.read_unordered_snapshot(&used_columns, input_stream.as_mut(), &mut receiver)
                 .await;
-        } else if self.config.snapshot() {
+        } else if reads_snapshot {
             // Ordered read: one lateness range per Feldera transaction, each a
             // checkpointable resume point.
             self.read_ordered_snapshot(
@@ -1936,7 +1976,7 @@ impl IcebergInputEndpointInner {
             .await;
         };
 
-        if self.config.snapshot() {
+        if reads_snapshot {
             self.metrics
                 .snapshot_completed_ts
                 .store(now_unix_secs(), Ordering::Relaxed);
@@ -2460,12 +2500,12 @@ impl IcebergInputEndpointInner {
     /// snapshot id, so the choice is frozen at the first read and every later
     /// checkpoint pins it.
     fn resolved_snapshot_id(&self, table: &IcebergTable) -> Result<Option<i64>, ControllerError> {
-        if let Some(IcebergResumeInfo {
-            snapshot_id: Some(snapshot_id),
-            ..
-        }) = &*self.last_resume_status.lock().unwrap()
-        {
-            return Ok(Some(*snapshot_id));
+        match &*self.last_resume_status.lock().unwrap() {
+            Some(IcebergResumeInfo {
+                snapshot_id: Some(snapshot_id),
+                ..
+            }) => return Ok(Some(*snapshot_id)),
+            _ => (),
         }
 
         if let Some(snapshot_id) = self.chosen_snapshot_id()? {
