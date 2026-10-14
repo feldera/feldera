@@ -1483,7 +1483,8 @@ pub trait OutputEndpoint: Send {
 // This is used by Kafka and Nexmark but both of those are optional.
 pub struct InputCommandReceiver<M, D> {
     receiver: UnboundedReceiver<InputReaderCommand>,
-    buffer: Option<InputReaderCommand>,
+    /// Commands given back with [Self::put_back], read before the receiver.
+    buffer: VecDeque<InputReaderCommand>,
     _phantom: PhantomData<(M, D)>,
 }
 
@@ -1526,7 +1527,7 @@ impl<M, D> InputCommandReceiver<M, D> {
     pub fn new(receiver: UnboundedReceiver<InputReaderCommand>) -> Self {
         Self {
             receiver,
-            buffer: None,
+            buffer: VecDeque::new(),
             _phantom: PhantomData,
         }
     }
@@ -1573,7 +1574,7 @@ impl<M, D> InputCommandReceiver<M, D> {
 
     #[doc(hidden)]
     pub async fn recv(&mut self) -> Result<InputReaderCommand, InputCommandReceiverError> {
-        match self.buffer.take() {
+        match self.buffer.pop_front() {
             Some(value) => Ok(value),
             None => self
                 .receiver
@@ -1585,7 +1586,7 @@ impl<M, D> InputCommandReceiver<M, D> {
 
     #[doc(hidden)]
     pub fn blocking_recv(&mut self) -> Result<InputReaderCommand, InputCommandReceiverError> {
-        match self.buffer.take() {
+        match self.buffer.pop_front() {
             Some(value) => Ok(value),
             None => self
                 .receiver
@@ -1596,7 +1597,7 @@ impl<M, D> InputCommandReceiver<M, D> {
 
     #[doc(hidden)]
     pub fn try_recv(&mut self) -> Result<Option<InputReaderCommand>, InputCommandReceiverError> {
-        if let Some(command) = self.buffer.take() {
+        if let Some(command) = self.buffer.pop_front() {
             Ok(Some(command))
         } else {
             match self.receiver.try_recv() {
@@ -1607,10 +1608,11 @@ impl<M, D> InputCommandReceiver<M, D> {
         }
     }
 
+    /// Returns `value` to the front of the command stream. To return several
+    /// commands in their original order, put them back last one first.
     #[doc(hidden)]
     pub fn put_back(&mut self, value: InputReaderCommand) {
-        assert!(self.buffer.is_none());
-        self.buffer = Some(value);
+        self.buffer.push_front(value);
     }
 }
 

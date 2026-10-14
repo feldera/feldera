@@ -4180,6 +4180,13 @@ export type PermanentSuspendError =
   | {
       UnsupportedInputEndpoint: string
     }
+  | {
+      /**
+       * The input endpoint failed with a fatal error while it held a barrier.
+       * It never reports another step, so the barrier never clears.
+       */
+      FailedInputEndpointBarrier: string
+    }
 
 /**
  * Pipeline deployment configuration.

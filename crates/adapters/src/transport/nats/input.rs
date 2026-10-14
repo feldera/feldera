@@ -64,7 +64,7 @@ use serde_json::Value as JsonValue;
 use std::cmp;
 use std::hash::Hasher;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::{
     select,
@@ -99,6 +99,9 @@ const CONSUMER_DELETE_TIMEOUT: Duration = Duration::from_secs(5);
 struct ReaderState {
     next_sequence: Arc<AtomicU64>,
     queue: Arc<InputQueue<u64>>,
+    /// Set when a reader passes a health check, so that its later failure
+    /// counts as a new outage.
+    healthy: Arc<AtomicBool>,
 }
 
 /// Consumer and parser pair for message processing.
@@ -428,6 +431,7 @@ impl NatsReader {
         let live_state = ReaderState {
             next_sequence: next_sequence.clone(),
             queue: queue.clone(),
+            healthy: Arc::new(AtomicBool::new(false)),
         };
 
         let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
@@ -539,21 +543,22 @@ impl NatsReader {
                         // step must run to completion, and honoring a
                         // control command here would abandon the step before
                         // `replayed()`, leaving replay/checkpoint state
-                        // divergent.
+                        // divergent. Keep reading past buffered commands, so
+                        // that a Disconnect behind them is still seen.
                         let deadline = tokio::time::Instant::now() + retry_delay;
-                        let mut pending_command = None;
+                        let mut pending_commands = Vec::new();
                         loop {
                             select! {
                                 _ = tokio::time::sleep_until(deadline) => break,
-                                result = command_receiver.recv(), if pending_command.is_none() => {
+                                result = command_receiver.recv() => {
                                     match result? {
                                         InputReaderCommand::Disconnect => return Ok(()),
-                                        other => pending_command = Some(other),
+                                        other => pending_commands.push(other),
                                     }
                                 }
                             }
                         }
-                        if let Some(command) = pending_command {
+                        for command in pending_commands.into_iter().rev() {
                             command_receiver.put_back(command);
                         }
                     }
@@ -591,7 +596,13 @@ impl NatsReader {
                                             // too, or a cluster that always accepts
                                             // the create but never lets a reader
                                             // succeed can retry forever regardless
-                                            // of the configured limit.
+                                            // of the configured limit. A
+                                            // reader that passed a health check
+                                            // did recover, so its failure
+                                            // starts a new count.
+                                            if live_state.healthy.swap(false, Ordering::AcqRel) {
+                                                retry_count = 0;
+                                            }
                                             retry_count += 1;
                                             if retry_policy.exhausted(retry_count) {
                                                 state = ReaderLifecycleState::Stopped;
@@ -693,7 +704,8 @@ impl NatsReader {
                                     // the new reader immediately fails again (see
                                     // the Running-state error handling above).
                                     // Real forward progress (a non-empty Queue
-                                    // flush) resets it instead.
+                                    // flush or a passed health check) resets
+                                    // it instead.
                                     next_retry_at = None;
                                     metrics.set_retry_state(RetryState::Healthy);
                                 }
@@ -870,7 +882,7 @@ impl NatsReader {
             }
         }
         if let Some(canceller) = canceller.take() {
-            canceller.cancel_and_join().await;
+            canceller.cancel_join_and_delete().await;
         }
         Ok(())
     }
@@ -1250,6 +1262,7 @@ async fn spawn_nats_reader(
                                     let _ = reader_error_sender.send(ConnectorError::Retryable(error));
                                     return;
                                 }
+                                state.healthy.store(true, Ordering::Release);
                             }
                             Ok(None) => {
                                 let _ = reader_error_sender.send(ConnectorError::Retryable(anyhow!("Unexpected end of NATS stream")));
@@ -1456,6 +1469,19 @@ impl Canceller {
     /// in the background (see below) so a slow server cannot stall whoever
     /// is awaiting this, such as the worker's command loop after a `Pause`.
     async fn cancel_and_join(self) {
+        tokio::spawn(self.cancel_and_join_reader().await);
+    }
+
+    /// Like [Self::cancel_and_join], but also waits for the consumer delete,
+    /// which is bounded by `CONSUMER_DELETE_TIMEOUT`. Used when the worker
+    /// exits, so that no consumer stays on the server after a disconnect.
+    async fn cancel_join_and_delete(self) {
+        self.cancel_and_join_reader().await.await;
+    }
+
+    /// Cancels the reader task, waits for it to stop, and returns the cleanup
+    /// of its consumer.
+    async fn cancel_and_join_reader(self) -> impl Future<Output = ()> + Send + 'static {
         self.cancel_token.cancel();
         let _ = self.join_handle.await;
         // The reader task is gone, but the client library may have already
@@ -1469,10 +1495,10 @@ impl Canceller {
             consumer_name,
             ..
         } = self;
-        tokio::spawn(async move {
+        async move {
             delete_nats_consumer(&jetstream, &stream_ctx, &consumer_name).await;
             clean_up_delayed_create(&jetstream, &stream_ctx, &consumer_name);
-        });
+        }
     }
 }
 
