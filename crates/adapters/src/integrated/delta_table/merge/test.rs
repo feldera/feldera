@@ -1372,3 +1372,66 @@ async fn a_failed_lookup_does_not_leave_its_probes_running() {
         Arc::strong_count(&chunk) - 1
     );
 }
+
+/// A commit whose response was lost has landed. Committing its actions again must not log its
+/// adds a second time, or a streaming reader would read those rows twice.
+#[tokio::test]
+async fn a_commit_that_already_landed_is_not_repeated() {
+    let dir = TempDir::new().unwrap();
+    let table = fixture_table(&dir, &[1, 2], true).await;
+    let mut stale = table.clone();
+
+    let schema = Arc::new(arrow_schema());
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(Int64Array::from(vec![3])),
+            Arc::new(StringArray::from(vec!["v3"])),
+        ],
+    )
+    .unwrap();
+    let (num_indexed_cols, stats_columns) =
+        get_num_idx_cols_and_stats_columns(None, HashMap::new());
+    let mut writer = DeltaWriter::new(
+        table.object_store(),
+        WriterConfig::new(
+            schema,
+            vec![],
+            None,
+            None,
+            None,
+            None,
+            num_indexed_cols,
+            stats_columns,
+        ),
+    );
+    writer.write(&batch).await.unwrap();
+    let actions: Vec<Action> = writer
+        .close()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(Action::Add)
+        .collect();
+    let operation = DeltaOperation::Write {
+        mode: SaveMode::Append,
+        partition_by: None,
+        predicate: None,
+    };
+
+    let mut landed = table;
+    super::commit_actions(&mut landed, actions.clone(), operation.clone())
+        .await
+        .unwrap();
+    // The same actions again, from the snapshot the lost attempt read.
+    super::commit_actions(&mut stale, actions, operation)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        stale.version(),
+        landed.version(),
+        "the adds were logged twice"
+    );
+    assert_eq!(live_ids(&stale).await, vec![1, 2, 3]);
+}

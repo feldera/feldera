@@ -137,6 +137,12 @@ pub(crate) async fn commit_actions(
                          protocol since this commit read it"
                     ));
                 }
+                // Our own attempt may have landed with only its response lost. Its files have
+                // fresh names, so finding one live proves it, and committing again would log
+                // every add twice for a streaming reader.
+                if already_committed(table, &actions)? {
+                    return Ok(());
+                }
                 if let Some(path) = first_stale_remove(table, &actions)? {
                     return Err(anyhow!(
                         "a concurrent commit (for example OPTIMIZE) removed or rewrote '{path}', \
@@ -155,6 +161,19 @@ pub(crate) async fn commit_actions(
     Err(anyhow!(
         "the Delta table gained a newer version on each of {COMMIT_ATTEMPTS} attempts to commit"
     ))
+}
+
+/// Whether `table` already holds the first file `actions` adds, with the same deletion vector.
+fn already_committed(table: &DeltaTable, actions: &[Action]) -> AnyResult<bool> {
+    let Some(add) = actions.iter().find_map(|action| match action {
+        Action::Add(add) => Some(add),
+        _ => None,
+    }) else {
+        return Ok(false);
+    };
+    Ok(table.snapshot()?.log_data().into_iter().any(|file| {
+        file.path() == add.path.as_str() && file.deletion_vector_descriptor() == add.deletion_vector
+    }))
 }
 
 /// The first file `actions` removes that `table` no longer holds as the remove saw it: gone,
