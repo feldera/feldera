@@ -32,6 +32,8 @@ pub mod trace;
 
 #[cfg(test)]
 mod replay_tests;
+#[cfg(test)]
+mod storage_leak_repro;
 
 pub use circuit_builder::{
     ChildCircuit, Circuit, CircuitBase, CircuitHandle, ConcurrentRestoreOutcome, ElapsedTime,
