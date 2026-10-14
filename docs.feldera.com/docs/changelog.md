@@ -10,6 +10,12 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Avro input connector: the new `cdc_field` property names a field that holds
+  the operation type of each raw Avro record: `I` (insert), `U` (upsert), or
+  `D` (delete).  A Feldera Avro output connector with `cdc_field` set writes
+  these values.  See
+  [Ingesting change data capture (CDC) records](/formats/avro#ingesting-cdc-records).
+
 - Incompatible change (ad-hoc queries): the `hash` result format and
   `Pipeline.query_hash()` in the Python SDK return a different hash for the
   same rows than earlier releases.  Compare only hashes taken from the same
