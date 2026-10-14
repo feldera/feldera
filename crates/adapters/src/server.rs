@@ -5090,6 +5090,41 @@ mod test_http {
         );
     }
 
+    /// `/ingress` rejects the output-only JSON update format `redis`.  It
+    /// used to accept it and panic in the parser while holding the endpoint's
+    /// lock, after which no step could complete.
+    #[actix_web::test]
+    async fn test_ingress_rejects_redis_update_format() {
+        ensure_default_crypto_provider();
+        let server = start_test_server("name: test\ninputs:\noutputs:\n", Uuid::new_v4()).await;
+        start_pipeline(&server).await;
+
+        let mut response = timeout(
+            Duration::from_secs(20),
+            server
+                .post("/ingress/test_input1?format=json&update_format=redis")
+                .send_body("{}"),
+        )
+        .await
+        .expect("/ingress with update_format=redis did not return")
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = response.body().await.unwrap();
+        assert!(
+            String::from_utf8_lossy(&body).contains("not supported for JSON input"),
+            "{}",
+            String::from_utf8_lossy(&body)
+        );
+
+        let token = timeout(
+            Duration::from_secs(20),
+            send_input_no_wait(&server, &test_batches(0, 10)),
+        )
+        .await
+        .expect("a later /ingress did not return");
+        wait_for_completion(&server, &token).await;
+    }
+
     /// A client that hangs up in the middle of an `/ingress` upload fails
     /// only its own request. The table's ingress endpoint is shared by every
     /// later request, so it keeps accepting data and `/stats` must not report
