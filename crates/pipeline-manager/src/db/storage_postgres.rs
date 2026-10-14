@@ -226,24 +226,10 @@ impl Storage for StoragePostgres {
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Vec<UserMembership>, DBError> {
-        let mut client = self.pool.get().await?;
-        let txn = transaction::begin(&mut client).await?;
-        let result = operations::user::list_user_memberships(&txn, provider, subject).await?;
-        txn.commit().await?;
-        Ok(result)
-    }
-
-    async fn get_user_created_at(
-        &self,
-        provider: &str,
-        subject: &str,
-    ) -> Result<Option<DateTime<Utc>>, DBError> {
-        let mut client = self.pool.get().await?;
-        let txn = transaction::begin(&mut client).await?;
-        let result = operations::user::get_user_created_at(&txn, provider, subject).await?;
-        txn.commit().await?;
-        Ok(result)
+    ) -> Result<(Vec<UserMembership>, Option<DateTime<Utc>>), DBError> {
+        // One read-only statement needs no transaction.
+        let client = self.pool.get().await?;
+        operations::user::list_user_memberships(&client, provider, subject).await
     }
 
     async fn enroll_in_existing_tenants(

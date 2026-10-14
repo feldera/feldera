@@ -290,15 +290,16 @@ pub(crate) async fn get_config_session(
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let identity = req.extensions().get::<LoginIdentity>().cloned();
+    // An owner login creates no membership, so an owner has no signup time
+    // until an admin adds the owner to a tenant.
     let (memberships, user_created_at) = match &identity {
         Some(identity) => {
-            let db = state.db.lock().await;
-            (
-                db.list_user_memberships(&identity.provider, &identity.subject)
-                    .await?,
-                db.get_user_created_at(&identity.provider, &identity.subject)
-                    .await?,
-            )
+            state
+                .db
+                .lock()
+                .await
+                .list_user_memberships(&identity.provider, &identity.subject)
+                .await?
         }
         None => (vec![], None),
     };

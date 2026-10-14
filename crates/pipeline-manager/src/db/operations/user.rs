@@ -9,7 +9,7 @@ use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::user::{MembershipOrigin, TenantMember, UserId, UserMembership, UserProfile};
 use chrono::{DateTime, Utc};
-use deadpool_postgres::Transaction;
+use deadpool_postgres::{GenericClient, Transaction};
 use std::str::FromStr;
 use uuid::Uuid;
 
@@ -279,44 +279,32 @@ pub async fn enroll_in_existing_tenants(
     Ok(())
 }
 
-/// When the OIDC `(provider, subject)` got its first tenant membership, usually
-/// at the first login. `None` for a user without memberships, and for a user
-/// with a membership from before V36. The time of a later membership is not
-/// the signup time of such a user.
-pub async fn get_user_created_at(
-    txn: &Transaction<'_>,
-    provider: &str,
-    subject: &str,
-) -> Result<Option<DateTime<Utc>>, DBError> {
-    let stmt = txn
-        .prepare_cached(
-            "SELECT CASE WHEN bool_or(m.created_at IS NULL) THEN NULL ELSE min(m.created_at) END \
-             FROM tenant_membership m \
-             JOIN app_user u ON u.id = m.user_id \
-             WHERE u.provider = $1 AND u.subject = $2",
-        )
-        .await?;
-    let row = txn.query_one(&stmt, &[&provider, &subject]).await?;
-    Ok(row.get(0))
-}
-
 /// Lists the tenants a user may act in, joined with each tenant's name and
 /// the user's role there. The authorization source of truth at login.
+///
+/// Also returns when the user got the first tenant membership, usually at the
+/// first login. It is `None` for a user without memberships, and for a user
+/// with a membership from before V36: the time of a later membership is not
+/// the signup time of such a user.
 pub async fn list_user_memberships(
-    txn: &Transaction<'_>,
+    client: &impl GenericClient,
     provider: &str,
     subject: &str,
-) -> Result<Vec<UserMembership>, DBError> {
-    let stmt = txn
+) -> Result<(Vec<UserMembership>, Option<DateTime<Utc>>), DBError> {
+    let stmt = client
         .prepare_cached(
-            "SELECT m.tenant_id, t.tenant, m.role \
+            "SELECT m.tenant_id, t.tenant, m.role, \
+             CASE WHEN bool_or(m.created_at IS NULL) OVER () THEN NULL \
+             ELSE min(m.created_at) OVER () END \
              FROM tenant_membership m \
              JOIN app_user u ON u.id = m.user_id \
              JOIN tenant t ON t.id = m.tenant_id \
              WHERE u.provider = $1 AND u.subject = $2 ORDER BY t.tenant",
         )
         .await?;
-    let rows = txn.query(&stmt, &[&provider, &subject]).await?;
+    let rows = client.query(&stmt, &[&provider, &subject]).await?;
+    // Every row has the same creation time.
+    let created_at = rows.first().and_then(|row| row.get(3));
     let mut result = Vec::with_capacity(rows.len());
     for row in rows {
         result.push(UserMembership {
@@ -325,7 +313,7 @@ pub async fn list_user_memberships(
             role: Role::from_str(&row.get::<_, String>(2))?,
         });
     }
-    Ok(result)
+    Ok((result, created_at))
 }
 
 /// Atomic login resolution for a non-owner principal: resolve (or create) the
