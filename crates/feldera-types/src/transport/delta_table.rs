@@ -866,14 +866,6 @@ mod log_retention_tests {
         }
     }
 
-    /// Provisioning serializes the connector config as YAML, where a nested
-    /// enum panics. `variant_encoding` is unit-only, and this pins that.
-    #[test]
-    fn writer_config_serializes_to_yaml() {
-        let yaml = serde_yaml::to_string(&make_config(None)).unwrap();
-        assert!(yaml.contains("variant_encoding: variant"), "{yaml}");
-    }
-
     #[test]
     fn validate_delta_interval_accepts_known_units() {
         for unit in [

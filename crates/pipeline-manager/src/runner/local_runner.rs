@@ -1042,7 +1042,7 @@ impl LocalRunner {
 /// when no translation is needed.
 ///
 /// Only a translated configuration goes through `serde_json::Value`, whose maps
-/// would reorder the keys of every configuration file.
+/// would reorder the keys of the configuration file.
 fn translated_for_runtime(
     config: &PipelineConfig,
     legacy_duration_spelling: bool,
@@ -1061,19 +1061,6 @@ fn config_json(config: &PipelineConfig, legacy_duration_spelling: bool) -> Strin
         None => serde_json::to_string_pretty(config),
     }
     .expect("JSON config serialization failed")
-}
-
-/// The pipeline configuration file in YAML, which older pipelines read.
-///
-/// A translated configuration is mapped value by value (see
-/// [`feldera_types::config::json_to_yaml_value`]): re-parsing its JSON text as
-/// YAML would alter some strings and refuse long keys.
-fn config_yaml(config: &PipelineConfig, legacy_duration_spelling: bool) -> String {
-    match translated_for_runtime(config, legacy_duration_spelling) {
-        Some(value) => serde_yaml::to_string(&feldera_types::config::json_to_yaml_value(&value)),
-        None => serde_yaml::to_string(config),
-    }
-    .expect("YAML config serialization failed")
 }
 
 #[async_trait]
@@ -1122,7 +1109,7 @@ impl PipelineExecutor for LocalRunner {
     /// Provisions the process deployment.
     /// - Creates pipeline working directory
     /// - Creates pipeline storage directory
-    /// - Writes config.yaml to pipeline working directory
+    /// - Writes config.json to pipeline working directory
     /// - Retrieve and writes executable to pipeline working directory
     /// - Runs executable as process in pipeline working directory
     /// - Switches to operational logging following the stdout/stderr of the process
@@ -1237,22 +1224,19 @@ impl PipelineExecutor for LocalRunner {
         // the pipeline to fall back on, so derive one from this machine.
         apply_default_memory_limit(&mut deployment_config.global, total_memory_megabyte());
 
-        // Write config as YAML and JSON
-        //
-        // Newer pipelines will read the JSON, older ones will read the YAML.
-        let json_config = config_json(&deployment_config, legacy_duration_spelling);
-        let yaml_config = config_yaml(&deployment_config, legacy_duration_spelling);
-        for (extension, expanded_config) in [("json", json_config), ("yaml", yaml_config)] {
-            let config_file_path = self.config.config_file_path(self.pipeline_id, extension);
-            fs::write(&config_file_path, &expanded_config)
-                .await
-                .map_err(|e| {
-                    ManagerError::from(CommonError::io_error(
-                        format!("write config file '{}'", config_file_path.display()),
-                        e,
-                    ))
-                })?;
-        }
+        // Write the configuration file the pipeline process reads.
+        let config_file_path = self.config.config_file_path(self.pipeline_id, "json");
+        fs::write(
+            &config_file_path,
+            config_json(&deployment_config, legacy_duration_spelling),
+        )
+        .await
+        .map_err(|e| {
+            ManagerError::from(CommonError::io_error(
+                format!("write config file '{}'", config_file_path.display()),
+                e,
+            ))
+        })?;
 
         // Delete port file (which will only exist if we are restarting from a
         // checkpoint).
@@ -1260,7 +1244,7 @@ impl PipelineExecutor for LocalRunner {
 
         // Retrieve and store executable in pipeline working directory. A Gen-2
         // pipeline compiled no binary: launch the Gen-2 engine instead, which
-        // reads the same config.yaml (carrying the circuit IR). The launch decision
+        // reads the same config.json (carrying the circuit IR). The launch decision
         // is the explicit Gen-2 configuration, not the presence of a binary.
         let executable = if is_gen2 {
             resolve_gen2_binary()?
@@ -1282,7 +1266,7 @@ impl PipelineExecutor for LocalRunner {
         let mut process = loop {
             // Run executable:
             // - Current directory: pipeline working directory
-            // - Configuration file: path to config.yaml
+            // - Configuration file: path to config.json
             // - Stdout/stderr are piped to follow logs
             let mut command = Command::new(&executable);
             command
@@ -1303,7 +1287,7 @@ impl PipelineExecutor for LocalRunner {
                 )
                 .current_dir(&pipeline_dir)
                 .arg("--config-file")
-                .arg(self.config.config_file_path(self.pipeline_id, "yaml"))
+                .arg(&config_file_path)
                 .arg("--bind-address")
                 .arg(&self.common_config.bind_address)
                 .arg("--initial")
@@ -1730,7 +1714,7 @@ mod gen2_binary_tests {
 
 #[cfg(test)]
 mod runtime_config_tests {
-    use super::{config_json, config_yaml};
+    use super::config_json;
     use feldera_types::config::PipelineConfig;
 
     fn config() -> PipelineConfig {
@@ -1761,13 +1745,6 @@ mod runtime_config_tests {
     #[test]
     fn a_pinned_runtime_gets_the_older_spelling() {
         let value: serde_json::Value = serde_json::from_str(&config_json(&config(), true)).unwrap();
-        // The YAML carries plain numbers, readable by any YAML parser.
-        let yaml_text = config_yaml(&config(), true);
-        assert!(
-            yaml_text.contains("clock_resolution_usecs: 250000"),
-            "{yaml_text}"
-        );
-        assert!(!yaml_text.contains("serde_json"), "{yaml_text}");
         assert_eq!(value["clock_resolution_usecs"], 250_000);
         assert_eq!(value["fault_tolerance"]["checkpoint_interval_secs"], 20);
         assert!(value.get("clock_resolution").is_none());
