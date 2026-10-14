@@ -3375,9 +3375,17 @@ impl CircuitThread {
                     ft.disable();
                 }
 
+                // Replay disconnects them when it finishes.
+                if !ft.is_replaying() {
+                    ft.disconnect_adhoc_inputs();
+                }
+
                 Some(ft)
             }
-            Some(FtModel::AtLeastOnce) | None => None,
+            Some(FtModel::AtLeastOnce) | None => {
+                controller.disconnect_adhoc_inputs();
+                None
+            }
         };
 
         Ok(Self {
@@ -5246,6 +5254,15 @@ impl FtState {
         self.enabled = false;
     }
 
+    /// Disconnects the ad hoc INSERT endpoints that a restart restored (see
+    /// [ControllerInner::disconnect_adhoc_inputs]), once replay no longer needs
+    /// them, and forgets them so that the journal does not record removing
+    /// them.
+    fn disconnect_adhoc_inputs(&mut self) {
+        self.controller.disconnect_adhoc_inputs();
+        self.input_endpoints = Self::initial_input_endpoints(&self.controller);
+    }
+
     fn enable(&mut self) {
         self.enabled = true;
     }
@@ -5588,7 +5605,7 @@ impl FtState {
                     // transaction begins, so verify the last one here.
                     self.verify_replay_transaction()?;
                     info!("replay complete, starting pipeline");
-                    self.input_endpoints = Self::initial_input_endpoints(&self.controller);
+                    self.disconnect_adhoc_inputs();
                     self.replay_step = None;
                 }
             };
@@ -8113,6 +8130,31 @@ impl ControllerInner {
                 Some((endpoint.endpoint_name.clone(), choice))
             })
             .collect()
+    }
+
+    /// Disconnects every ad hoc INSERT input endpoint.
+    ///
+    /// A checkpoint records every input endpoint, and a restart restores them
+    /// all, including the endpoint of an ad hoc INSERT that was in progress.
+    /// Replay may need such an endpoint to feed it journaled input, but after
+    /// that, nothing can use it: each INSERT creates an endpoint of its own.
+    fn disconnect_adhoc_inputs(self: &Arc<Self>) {
+        let endpoints = self
+            .status
+            .input_status()
+            .iter()
+            .filter(|(_, status)| {
+                matches!(
+                    status.config.connector_config.transport,
+                    TransportConfig::AdHocInput(_)
+                )
+            })
+            .map(|(endpoint_id, status)| (*endpoint_id, status.endpoint_name.clone()))
+            .collect::<Vec<_>>();
+        for (endpoint_id, endpoint_name) in endpoints {
+            info!("disconnecting restored ad hoc input endpoint '{endpoint_name}'");
+            self.disconnect_input(&endpoint_id);
+        }
     }
 
     pub fn disconnect_input(self: &Arc<Self>, endpoint_id: &EndpointId) {

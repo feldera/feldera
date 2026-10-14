@@ -1554,6 +1554,182 @@ fn api_transaction_started_during_commit_does_not_stall_it() {
     x_committed.expect("X's commit stalled after Y started");
 }
 
+/// Returns the names of the ad hoc INSERT input endpoints of `controller`.
+fn adhoc_input_endpoints(controller: &Controller) -> Vec<String> {
+    controller
+        .status()
+        .input_status()
+        .values()
+        .map(|status| status.endpoint_name.clone())
+        .filter(|name| name.starts_with("adhoc-ingress-"))
+        .collect()
+}
+
+/// Returns the number of rows in `table`, by ad hoc query.
+fn count_rows(controller: &Controller, table: &str) -> i64 {
+    TOKIO.block_on(async {
+        let batches =
+            crate::adhoc::execute_sql(controller, &format!("SELECT COUNT(*) FROM {table}"))
+                .await
+                .unwrap()
+                .collect()
+                .await
+                .unwrap();
+        batches
+            .iter()
+            .find(|batch| batch.num_rows() > 0)
+            .unwrap()
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .value(0)
+    })
+}
+
+/// Runs an ad hoc INSERT of one row into `test_input1` with the given `id`.
+fn insert_row(controller: &Controller, id: u32) -> Result<(), String> {
+    TOKIO.block_on(async {
+        crate::adhoc::execute_sql(
+            controller,
+            &format!("INSERT INTO test_input1 VALUES ({id}, true, {id}, 'row-{id}')"),
+        )
+        .await
+        .map_err(|e| e.to_string())?
+        .collect()
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    })
+}
+
+/// An ad hoc INSERT in progress at a checkpoint must not leave its endpoint
+/// behind after a restart from that checkpoint.
+///
+/// A checkpoint records the configuration of every input endpoint, and a
+/// restart with the same program reconnects them all.  An ad hoc INSERT's
+/// endpoint belongs to one request, so after the restart, and after replay
+/// feeds it any journaled input, nothing can use it.  Left in place, it would
+/// keep the pipeline from completing.
+///
+/// With `resume`, the pipeline runs the INSERT to completion after the
+/// checkpoint, so that the journal records its input, before it stops.
+fn restored_adhoc_insert(fault_tolerance: bool, resume: bool) {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let mut config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    if fault_tolerance {
+        config.global.fault_tolerance = serde_json::from_value(json!({})).unwrap();
+    }
+
+    // The same program information in both runs tells the restart that the
+    // program is unchanged, which is the case that restores the checkpoint's
+    // input endpoints.
+    config.program_ir = Some(feldera_types::config::ProgramIr {
+        mir: serde_json::from_value(json!({
+            "0": { "operation": "source", "table": "test_input1", "persistent_id": "test_input1" },
+            "1": { "operation": "sink", "view": "test_output1", "persistent_id": "output" },
+        }))
+        .unwrap(),
+        program_schema: json!({ "inputs": [], "outputs": [] }),
+        circuit_ir: None,
+        udf_library: None,
+    });
+    let circuit = |circuit_config| {
+        Ok(test_circuit::<TestStruct>(
+            circuit_config,
+            &TestStruct::schema(),
+            &[Some("output")],
+        ))
+    };
+
+    let controller =
+        Controller::with_test_config(circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+            .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), 10_000).unwrap();
+    wait(|| controller.pipeline_complete(), 10_000).expect("the new pipeline never completed");
+
+    // While the pipeline is paused, an INSERT adds its endpoint and then
+    // waits for the pipeline to run.  Take a checkpoint in that window.
+    controller.pause();
+    let insert = std::thread::spawn({
+        let controller = controller.clone();
+        move || insert_row(&controller, 1)
+    });
+    wait(|| !adhoc_input_endpoints(&controller).is_empty(), 10_000)
+        .expect("the INSERT never added its endpoint");
+    controller.checkpoint().unwrap();
+    if resume {
+        controller.start();
+        insert.join().unwrap().expect("the INSERT failed");
+        controller.stop().unwrap();
+    } else {
+        controller.stop().unwrap();
+        let _ = insert.join().unwrap();
+    }
+
+    // Restart from the checkpoint.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = Controller::with_test_config(
+        circuit,
+        &config,
+        Box::new({
+            let errors = errors.clone();
+            move |e, _| errors.lock().unwrap().push(e.to_string())
+        }),
+    )
+    .unwrap_or_else(|e| panic!("restart failed: {e}"));
+    controller.start();
+    let started = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        10_000,
+    );
+    assert!(
+        errors.lock().unwrap().is_empty(),
+        "restart failed: {:?}",
+        errors.lock().unwrap()
+    );
+    started.expect("replay never finished");
+
+    assert_eq!(adhoc_input_endpoints(&controller), Vec::<String>::new());
+    wait(|| controller.pipeline_complete(), 10_000)
+        .expect("the pipeline never completed after the restart");
+
+    // Ad hoc INSERTs still work, and only an INSERT that completed and was
+    // journaled before the stop survives it.
+    insert_row(&controller, 2).expect("an INSERT after the restart failed");
+    let expected = if resume && fault_tolerance { 2 } else { 1 };
+    // An INSERT returns once its step has taken its input, before the ad hoc
+    // snapshot includes it.
+    let _ = wait(
+        || count_rows(&controller, "test_input1") >= expected,
+        DEFAULT_TIMEOUT_MS,
+    );
+    assert_eq!(count_rows(&controller, "test_input1"), expected);
+    controller.stop().unwrap();
+}
+
+#[test]
+fn restored_adhoc_insert_without_fault_tolerance() {
+    restored_adhoc_insert(false, false);
+}
+
+#[test]
+fn restored_adhoc_insert_with_nothing_to_replay() {
+    restored_adhoc_insert(true, false);
+}
+
 /// An input endpoint that opens and commits Feldera transactions, the way a
 /// connector configured with a `transaction_mode` does.
 ///
