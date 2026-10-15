@@ -93,6 +93,7 @@ public class Logger {
             "visitors.outer.monotonicity",
             "visitors.outer.keys",
             "visitors.outer.indexSharing",
+            "visitors.outer.merkle",
             "visitors.outer.recursive",
             "visitors.outer.temporal",
             "visitors.monotone",
