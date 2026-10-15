@@ -25,7 +25,6 @@ use chrono::Utc;
 use delta_kernel::engine::arrow_conversion::TryFromArrow;
 use delta_kernel::table_features::ColumnMappingMode;
 use delta_kernel::table_properties::DataSkippingNumIndexedCols;
-use deltalake::DeltaTable;
 use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, TableReference};
 use deltalake::kernel::{
     Action, Add, ArrayType, DataType, MapType, StructField, StructType, Transaction,
@@ -37,6 +36,7 @@ use super::bounded_upload::bound_uploads;
 use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::write::writer::{ArrowWriterOptions, DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
+use deltalake::{DeltaTable, DeltaTableError};
 use feldera_adapterlib::catalog::SerCursorFlattened;
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::program_schema::{ColumnType, SqlType};
@@ -662,26 +662,19 @@ impl WriterTask {
             &inner.config.uri,
         );
 
-        let delta_table = {
-            let mut retry_count = 0;
-            const MAX_RETRIES: u32 = 10;
-
-            // We've seen the table builder get stuck forever in S3 authentication for some configurations
-            // (see https://github.com/delta-io/delta-rs/issues/3768). So we add a timeout and retry logic
-            // in that case.
-            //
-            // In other situations, the operation fails returning a timeout error. There is no easy way to
-            // distinguish such errors from permanent failures such as incorrect credentials, we therefore
-            // resort to checking the returned error message for the word "timeout".
-            let mut operation_timeout: Duration = Duration::from_secs(60);
-
-            loop {
+        let delta_table = open_with_retry(
+            &inner.endpoint_name,
+            &inner.config.uri,
+            inner.config.max_retries,
+            &inner.shutdown,
+            |e| permanent_open_error(e, save_mode),
+            || {
                 let checkpoint_interval = match inner.config.checkpoint_interval {
                     Some(0) => None,
                     Some(interval) => Some(interval.to_string()),
                     None => Some("10".to_string()),
                 };
-                let create_future = CreateBuilder::new()
+                CreateBuilder::new()
                     .with_location(inner.config.uri.clone())
                     .with_save_mode(save_mode)
                     .with_storage_options(storage_options.clone())
@@ -708,50 +701,11 @@ impl WriterTask {
                     .with_configuration_property(
                         deltalake::TableProperty::EnableDeletionVectors,
                         inner.config.is_merge().then_some("true"),
-                    );
-
-                match tokio::time::timeout(operation_timeout, create_future).await {
-                    Ok(Ok(table)) => break table,
-                    Ok(Err(e)) => {
-                        // Debug-format `e` as the timeout error is often found toward the end of the error chain.
-                        let is_timeout = format!("{:?}", e).to_lowercase().contains("timeout");
-
-                        if is_timeout && retry_count < MAX_RETRIES {
-                            retry_count += 1;
-                            let backoff_ms = min(1000 * (1 << (retry_count - 1)), 10_000);
-                            warn!(
-                                "delta_table {}: error creating or opening delta table '{}' after {retry_count} attempts (retrying in {backoff_ms} ms): {e:?}",
-                                &inner.endpoint_name, &inner.config.uri,
-                            );
-
-                            sleep(Duration::from_millis(backoff_ms)).await;
-                        } else {
-                            return Err(anyhow!(
-                                "error creating or opening delta table '{}': {e:?}",
-                                inner.config.uri
-                            ));
-                        }
-                    }
-                    Err(_timeout) => {
-                        if retry_count >= MAX_RETRIES {
-                            return Err(anyhow!(
-                                "timeout creating or opening delta table '{}' after {retry_count} attempts",
-                                inner.config.uri,
-                            ));
-                        } else {
-                            warn!(
-                                "delta_table {}: timeout creating or opening delta table '{}' after {retry_count} attempts, retrying",
-                                &inner.endpoint_name, &inner.config.uri,
-                            );
-                            retry_count += 1;
-                            if operation_timeout < Duration::from_secs(240) {
-                                operation_timeout *= 2;
-                            }
-                        }
-                    }
-                }
-            }
-        };
+                    )
+                    .into_future()
+            },
+        )
+        .await?;
 
         // `SaveMode::Ignore` keeps an existing table's schema and throws away
         // the one computed here, and nothing downstream compares the two, so a
@@ -983,6 +937,105 @@ fn checkpoint_failure_message(version: u64, cause: &str) -> String {
          written): {cause}. The commit is in the table. Check that the connector can write to \
          the table's _delta_log directory; it tries again after each commit."
     )
+}
+
+/// How many times opening the table is retried when `max_retries` is not set.
+///
+/// Bounded, unlike the other operations: the open runs while the pipeline initializes, when
+/// connector health is not visible and nothing cancels the shutdown token yet, so only this
+/// bound ends a retry loop that cannot succeed.  The backoff below adds up to about 75 s,
+/// but each attempt can also wait for its timeout, so a store that never answers holds the
+/// open for about 40 minutes.
+const DEFAULT_OPEN_RETRIES: u32 = 10;
+
+/// The message of delta-rs's `CreateError::TableAlreadyExists`.  The type is private, so
+/// only its message identifies it;
+/// `an_existing_table_with_error_if_exists_fails_at_once` pins it.
+const TABLE_ALREADY_EXISTS: &str = "A Delta Lake table already exists at that location.";
+
+/// The error to fail the open with at once, for an error that no retry can change.
+///
+/// Only local, typed errors qualify.  An object store error is retried whatever it says,
+/// because its type is often lost and a rejected request can be temporary.
+fn permanent_open_error(e: &DeltaTableError, save_mode: SaveMode) -> Option<String> {
+    match e {
+        DeltaTableError::InvalidTableLocation(_) => {
+            Some(format!("{e}. Check the connector's `uri`."))
+        }
+        DeltaTableError::GenericError { source }
+            if save_mode == SaveMode::ErrorIfExists
+                && source.to_string() == TABLE_ALREADY_EXISTS =>
+        {
+            Some(
+                "a Delta table already exists at this location, and `mode` is \
+                 `error_if_exists`. Remove the table, choose another `uri`, or set `mode` to \
+                 `append` or `truncate`."
+                    .to_string(),
+            )
+        }
+        _ => None,
+    }
+}
+
+/// Create or open the table with `open`, retrying every error but those `permanent` names.
+///
+/// Errors are not classified by text: a timeout, a dropped connection, and a rejected
+/// request can all be temporary, and delta-rs can flatten the error chain into a string.
+/// A permanent error, such as wrong credentials, fails after the retries.
+async fn open_with_retry<T, P, F, Fut>(
+    endpoint_name: &str,
+    uri: &str,
+    max_retries: Option<u32>,
+    shutdown: &CancellationToken,
+    permanent: P,
+    mut open: F,
+) -> AnyResult<T>
+where
+    P: Fn(&DeltaTableError) -> Option<String>,
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, DeltaTableError>>,
+{
+    let max_retries = max_retries.unwrap_or(DEFAULT_OPEN_RETRIES);
+    let mut retry_count = 0;
+
+    let attempts = async {
+        // We've seen the table builder get stuck forever in S3 authentication for some
+        // configurations (see https://github.com/delta-io/delta-rs/issues/3768), so each
+        // attempt has a timeout.
+        let mut operation_timeout = Duration::from_secs(60);
+        let mut backoff = Duration::from_secs(1);
+
+        loop {
+            let error = match tokio::time::timeout(operation_timeout, open()).await {
+                Ok(Ok(table)) => return Ok(table),
+                Ok(Err(e)) => match permanent(&e) {
+                    Some(error) => return Err(anyhow!(error)),
+                    None => format!("{e:?}"),
+                },
+                Err(_timeout) => {
+                    let error = format!("timed out after {operation_timeout:?}");
+                    if operation_timeout < Duration::from_secs(240) {
+                        operation_timeout *= 2;
+                    }
+                    error
+                }
+            };
+            retry_count += 1;
+            if retry_count > max_retries {
+                return Err(anyhow!("failed after {retry_count} attempts: {error}"));
+            }
+            warn!(
+                "delta_table {endpoint_name}: error creating or opening delta table '{uri}' after {retry_count} attempts (retrying in {backoff:?}): {error}"
+            );
+            sleep(backoff).await;
+            backoff = min(backoff * 2, Duration::from_secs(10));
+        }
+    };
+
+    shutdown
+        .run_until_cancelled(attempts)
+        .await
+        .unwrap_or_else(|| Err(shutdown_aborted("opening the Delta table", retry_count)))
 }
 
 /// The error an operation reports when a shutdown cuts it short.
@@ -5481,5 +5534,208 @@ pub mod parallel {
     #[engine_test]
     pub fn merge_keyed_on_smallint(engine: &dyn ConnectorTestEngine) {
         merge_key_type_case(engine, "smallint");
+    }
+}
+
+#[cfg(test)]
+mod open_retry_tests {
+    use super::{DEFAULT_OPEN_RETRIES, open_with_retry, permanent_open_error};
+    use deltalake::DeltaTableError;
+    use deltalake::kernel::{DataType, StructField};
+    use deltalake::operations::create::CreateBuilder;
+    use deltalake::protocol::SaveMode;
+    use std::future::pending;
+    use std::time::Duration;
+    use tempfile::TempDir;
+    use tokio_util::sync::CancellationToken;
+
+    fn error(text: &str) -> DeltaTableError {
+        DeltaTableError::Generic(text.to_string())
+    }
+
+    /// Every error is retried, including ones that look permanent, such as the 403 seen in
+    /// Antithesis while a network fault cut S3 off.
+    #[tokio::test(start_paused = true)]
+    async fn every_error_is_retried() {
+        let mut errors = vec![
+            error("Server returned non-2xx status code: 403 Forbidden: InvalidAccessKeyId"),
+            error("Generic S3 error: HTTP error: request or response body error"),
+        ];
+        let mut attempts = 0;
+        let table = open_with_retry(
+            "output",
+            "s3://bucket/table",
+            None,
+            &CancellationToken::new(),
+            |_| None,
+            || {
+                attempts += 1;
+                let result = errors.pop().map_or(Ok(42), Err);
+                async move { result }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!((table, attempts), (42, 3));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_attempt_that_hangs_is_retried() {
+        let mut attempts = 0;
+        let table = open_with_retry(
+            "output",
+            "s3://bucket/table",
+            None,
+            &CancellationToken::new(),
+            |_| None,
+            || {
+                attempts += 1;
+                let hang = attempts == 1;
+                async move {
+                    if hang {
+                        pending::<()>().await;
+                    }
+                    Ok::<_, DeltaTableError>(42)
+                }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!((table, attempts), (42, 2));
+    }
+
+    /// Without `max_retries`, the open still fails eventually, so that the pipeline reports
+    /// the error instead of initializing forever.
+    #[tokio::test(start_paused = true)]
+    async fn retries_are_bounded_by_default() {
+        let mut attempts = 0;
+        let e = open_with_retry::<(), _, _, _>(
+            "output",
+            "s3://bucket/table",
+            None,
+            &CancellationToken::new(),
+            |_| None,
+            || {
+                attempts += 1;
+                async { Err(error("wrong credentials")) }
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(attempts, DEFAULT_OPEN_RETRIES + 1);
+        assert!(e.to_string().contains("wrong credentials"), "{e}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn max_retries_bounds_the_retries() {
+        let mut attempts = 0;
+        open_with_retry::<(), _, _, _>(
+            "output",
+            "s3://bucket/table",
+            Some(0),
+            &CancellationToken::new(),
+            |_| None,
+            || {
+                attempts += 1;
+                async { Err(error("wrong credentials")) }
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(attempts, 1);
+    }
+
+    /// A large `max_retries` keeps the backoff at its cap, rather than overflowing it.
+    #[tokio::test(start_paused = true)]
+    async fn many_retries_keep_the_backoff_capped() {
+        let start = tokio::time::Instant::now();
+        let mut attempts = 0;
+        open_with_retry::<(), _, _, _>(
+            "output",
+            "s3://bucket/table",
+            Some(70),
+            &CancellationToken::new(),
+            |_| None,
+            || {
+                attempts += 1;
+                async { Err(error("wrong credentials")) }
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(attempts, 71);
+        // 1 + 2 + 4 + 8 s, then 66 retries at the 10 s cap.
+        assert_eq!(start.elapsed(), Duration::from_secs(15 + 66 * 10));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_permanent_error_is_not_retried() {
+        let mut attempts = 0;
+        let e = open_with_retry::<(), _, _, _>(
+            "output",
+            "s3://bucket/table",
+            None,
+            &CancellationToken::new(),
+            |_| Some("cannot work".to_string()),
+            || {
+                attempts += 1;
+                async { Err(error("wrong configuration")) }
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(attempts, 1);
+        assert_eq!(e.to_string(), "cannot work");
+    }
+
+    /// `mode = error_if_exists` on an existing table fails at once.  This also pins the
+    /// delta-rs message that [`TABLE_ALREADY_EXISTS`] matches.  Real time: the open does
+    /// file system I/O, which paused time would race with the attempt timeout.
+    #[tokio::test]
+    async fn an_existing_table_with_error_if_exists_fails_at_once() {
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().display().to_string();
+        let create = |save_mode| {
+            CreateBuilder::new()
+                .with_location(uri.clone())
+                .with_save_mode(save_mode)
+                .with_columns(vec![StructField::new("id", DataType::LONG, true)])
+                .into_future()
+        };
+        create(SaveMode::ErrorIfExists).await.unwrap();
+
+        let mut attempts = 0;
+        let e = open_with_retry(
+            "output",
+            &uri,
+            None,
+            &CancellationToken::new(),
+            |e| permanent_open_error(e, SaveMode::ErrorIfExists),
+            || {
+                attempts += 1;
+                create(SaveMode::ErrorIfExists)
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(attempts, 1, "{e}");
+        assert!(e.to_string().contains("error_if_exists"), "{e}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_shutdown_stops_the_retries() {
+        let shutdown = CancellationToken::new();
+        shutdown.cancel();
+        let e = open_with_retry::<(), _, _, _>(
+            "output",
+            "s3://bucket/table",
+            None,
+            &shutdown,
+            |_| None,
+            || async { Err(error("wrong credentials")) },
+        )
+        .await
+        .unwrap_err();
+        assert!(e.to_string().contains("shutting down"), "{e}");
     }
 }
