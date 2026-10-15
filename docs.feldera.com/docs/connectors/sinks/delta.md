@@ -20,11 +20,9 @@ The connector has two ways of applying a view's changes to a Delta table, chosen
 | `cdc` (default) | A change log: every insert and delete, tagged with `__feldera_op` and `__feldera_ts` | You, with a periodic Spark `MERGE INTO` job |
 | `merge` (experimental) | Exactly the view's rows, one per key, no extra columns | The connector |
 
-`cdc` is described in the next section, `merge` in [Merge mode](#merge-mode) below.
+`cdc` is described in [CDC mode](#cdc-mode), `merge` in [Merge mode](#merge-mode).
 
-## Support for delete operations
-
-This section describes `cdc` mode, the default.
+## CDC mode
 
 The Delta Lake format does not support efficient real-time deletes and updates.
 To delete a record from a Delta table, one must first locate the record, which
@@ -81,6 +79,17 @@ MERGE INTO {target_table} AS target
           INSERT *
 ```
 
+### Views with unique keys
+
+If the SQL view contains a **unique key**—a set of columns that uniquely identify each record—the Delta Lake connector can optimize updates by combining a delete and insert with the same key into a single **atomic update**. In such cases, the connector emits a record with the `__feldera_op` field set to `'u'` (for **update**).
+
+To enable this optimization:
+
+* Use the `CREATE INDEX` statement to define the unique key on the view.
+* Set the connector's `index` property to reference this index.
+
+For more information, see the [documentation on views with unique keys](/connectors/unique_keys#views-with-unique-keys).
+
 ## Delta Lake output connector configuration
 
 | Parameter  | Description |
@@ -123,17 +132,6 @@ conditional put. Amazon S3 does; on a store that does not, two writers can
 overwrite each other's commit. DynamoDB-based locking
 (`AWS_S3_LOCKING_PROVIDER = 'dynamodb'`) is no longer supported; the connector
 logs an error and commits without it.
-
-### Views with unique keys
-
-If the SQL view contains a **unique key**—a set of columns that uniquely identify each record—the Delta Lake connector can optimize updates by combining a delete and insert with the same key into a single **atomic update**. In such cases, the connector emits a record with the `__feldera_op` field set to `'u'` (for **update**).
-
-To enable this optimization:
-
-* Use the `CREATE INDEX` statement to define the unique key on the view.
-* Set the connector's `index` property to reference this index.
-
-For more information, see the [documentation on views with unique keys](/connectors/unique_keys#views-with-unique-keys).
 
 ## Merge mode
 
