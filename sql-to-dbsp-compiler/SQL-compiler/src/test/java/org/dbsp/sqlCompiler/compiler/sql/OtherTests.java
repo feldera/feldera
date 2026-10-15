@@ -28,45 +28,45 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
-import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
-import org.dbsp.util.HashString;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.MerkleOuter;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.FunctionDocumentation;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.FunctionDocumentation;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.MerkleOuter;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
-import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.HashString;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
@@ -666,7 +666,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
 
     /** Persistent id of each operator of the circuit of {@code cc}, computed as if the
      * runtime stored the state of a recursive circuit in format {@code stateVersion}. */
-    static Map<Long, HashString> persistentIds(CompilerCircuit cc, String stateVersion) {
+    static Map<DBSPOperator, HashString> persistentIds(CompilerCircuit cc, String stateVersion) {
         MerkleOuter visitor = new MerkleOuter(cc.compiler, true, stateVersion);
         visitor.apply(cc.getCircuit());
         return visitor.operatorHash;
@@ -693,8 +693,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 CREATE VIEW closure_size AS SELECT COUNT(*) AS n FROM closure;
                 CREATE VIEW unrelated AS SELECT x + 1 AS y FROM T;""");
         DBSPCircuit circuit = cc.getCircuit();
-        Map<Long, HashString> before = persistentIds(cc, "state-version-0");
-        Map<Long, HashString> after = persistentIds(cc, "state-version-1");
+        Map<DBSPOperator, HashString> before = persistentIds(cc, "state-version-0");
+        Map<DBSPOperator, HashString> after = persistentIds(cc, "state-version-1");
 
         DBSPNestedOperator recursion = null;
         for (DBSPOperator operator : circuit.allOperators)
@@ -708,23 +708,23 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
             if (output == null)
                 continue;
             found = true;
-            long id = output.node().getId();
+            DBSPOperator node = output.node();
             Assert.assertNotEquals("stream leaving the recursive circuit",
-                    before.get(id), after.get(id));
+                    before.get(node), after.get(node));
         }
         Assert.assertTrue("recursive circuit with no outputs", found);
 
         // So do the views computed from these streams.
         for (String view : new String[] { "closure", "closure_size" }) {
-            long id = Objects.requireNonNull(circuit.getSink(new ProgramIdentifier(view))).getId();
-            Assert.assertNotEquals(view, before.get(id), after.get(id));
+            DBSPOperator sink = Objects.requireNonNull(circuit.getSink(new ProgramIdentifier(view)));
+            Assert.assertNotEquals(view, before.get(sink), after.get(sink));
         }
 
         // Views that do not depend on the recursion keep their ids, so a pipeline that
         // resumes from a checkpoint keeps their state.
-        long id = Objects.requireNonNull(
-                circuit.getSink(new ProgramIdentifier("unrelated"))).getId();
-        Assert.assertEquals("unrelated", before.get(id), after.get(id));
+        DBSPOperator unrelated = Objects.requireNonNull(
+                circuit.getSink(new ProgramIdentifier("unrelated")));
+        Assert.assertEquals("unrelated", before.get(unrelated), after.get(unrelated));
     }
 
     @Test

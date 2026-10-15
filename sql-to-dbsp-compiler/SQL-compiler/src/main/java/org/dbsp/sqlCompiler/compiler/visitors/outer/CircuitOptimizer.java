@@ -29,28 +29,28 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.MerkleOuter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyConditionals;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ImplementStatics;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyConditionals;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChains;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ShareWindowIntegrals;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareOutputIntegrators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.Intern;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChains;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.MerkleHashes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.RecursiveComponents;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.ValidateRecursiveOperators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ImplementNow;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ShareWindowIntegrals;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.Utilities;
 
@@ -206,8 +206,7 @@ public class CircuitOptimizer extends Passes {
         // Before the Merkle hashes, so that they hash the circuit the Gen-2 engine reads
         this.add(new Conditional(compiler, new Gen2Passes(compiler), () -> options.ioOptions.gen2));
         this.add(new CompactNames(compiler));
-        this.add(new MerkleOuter(compiler, true));
-        this.add(new MerkleOuter(compiler, false));
+        this.add(new MerkleHashes(compiler));
         this.add(new TagRegions(compiler));
         this.add(new CircuitStatistics(compiler));
     }

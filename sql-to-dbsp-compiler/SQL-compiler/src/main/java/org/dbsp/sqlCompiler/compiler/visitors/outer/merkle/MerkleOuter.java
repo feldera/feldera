@@ -32,7 +32,7 @@ import java.util.Set;
  * the code that the operator invokes (e.g., function).  For operators
  * involved in input/output, it also includes metadata (e.g., column names).
  *
- * <p>This visitor is declared read-only, but it actually modifies the annotations on operators. */
+ * <p>The result is the map {@link #operatorHash}. */
 public class MerkleOuter extends CircuitVisitor {
     /** Version of the format in which the runtime stores the state of a recursive circuit.
      *
@@ -51,22 +51,31 @@ public class MerkleOuter extends CircuitVisitor {
      * <p>Bump this string whenever the runtime changes the way it stores that state. */
     public static final String LAZY_INPUT_MAP_VERSION = "lazy-input-map-v1";
 
-    public final Map<Long, HashString> operatorHash;
+    /** Maps each operator to its hash. */
+    public final Map<DBSPOperator, HashString> operatorHash;
     public final boolean includeInputs;
     /** Value mixed into the hash of the streams that leave a recursive circuit;
      * {@link #RECURSIVE_STATE_VERSION} in production, other values in tests. */
     final String recursiveStateVersion;
     /** Ids of the operators that produce the outputs of a recursive circuit. */
     final Set<Long> recursiveOutputs;
+    /** Maps an operator to a prefix that its hash includes; most operators have none. */
+    final Map<DBSPOperator, String> prefixes;
 
     public MerkleOuter(DBSPCompiler compiler, boolean includeInputs) {
         this(compiler, includeInputs, RECURSIVE_STATE_VERSION);
     }
 
     public MerkleOuter(DBSPCompiler compiler, boolean includeInputs, String recursiveStateVersion) {
+        this(compiler, includeInputs, recursiveStateVersion, Map.of());
+    }
+
+    public MerkleOuter(DBSPCompiler compiler, boolean includeInputs, String recursiveStateVersion,
+                       Map<DBSPOperator, String> prefixes) {
         super(compiler);
         this.includeInputs = includeInputs;
         this.recursiveStateVersion = recursiveStateVersion;
+        this.prefixes = prefixes;
         this.operatorHash = new HashMap<>();
         this.recursiveOutputs = new HashSet<>();
     }
@@ -92,8 +101,7 @@ public class MerkleOuter extends CircuitVisitor {
                 .append(" is ")
                 .append(hash.toString())
                 .newline();
-        Utilities.putNew(this.operatorHash, operator.id, hash);
-        operator.annotations.add(new OperatorHash(hash, this.includeInputs));
+        Utilities.putNew(this.operatorHash, operator, hash);
     }
 
     final List<ModifiedJsonOuter> generator = new ArrayList<>();
@@ -124,37 +132,39 @@ public class MerkleOuter extends CircuitVisitor {
         for (OutputPort output : nested.internalOutputs)
             if (output != null)
                 this.recursiveOutputs.add(output.node().getId());
-        int repeats = 1 + (this.includeInputs ? 1 : 0);
-        for (int i = 0; i < repeats; i++) {
-            this.startArrayProperty("allOperators");
-            int index = 0;
-            for (DBSPOperator op : nested.getAllOperators()) {
-                this.propertyIndex(index++);
-                // Pretend we haven't done it yet
-                this.operatorHash.remove(op.id);
-                op.accept(this);
-            }
-            this.endArrayProperty("allOperators");
-        }
-
-        this.pop(nested);
+        // In the first round the back-edges have no hash yet
+        this.hashComponentOperators(nested);
+        // The hash of the circuit is obtained from the hashes of all operators inside.
         StringBuilder builder = new StringBuilder();
-        // The hash is obtained from the hash of all operators inside
         for (var operator : nested.getAllOperators()) {
-            HashString hash = Utilities.getExists(
-                    MerkleOuter.this.operatorHash, operator.getId());
-            builder.append(operator.getCompactName())
-                    .append(" = ")
-                    .append(hash)
+            HashString hash = Utilities.getExists(MerkleOuter.this.operatorHash, operator);
+            // The global hash of an operator; this pass computed it if it is the global pass
+            HashString global = this.includeInputs ? hash : OperatorHash.getHash(operator, true);
+            builder.append(hash)
                     .append("(")
-                    .append(OperatorHash.getHash(operator, true))
+                    .append(global)
                     .append(");")
                     .append("\n");
         }
-
-        String string = builder.toString();
-        MerkleOuter.this.setHashedString(nested, string);
+        MerkleOuter.this.setHashedString(nested, builder.toString());
+        if (this.includeInputs) {
+            // The second round gives the persistent ids; in this round the back-edges have hashes
+            this.hashComponentOperators(nested);
+        }
+        this.pop(nested);
         return VisitDecision.STOP;
+    }
+
+    /** Hash all operators of {@code nested}, replacing their previous hashes. */
+    void hashComponentOperators(DBSPNestedOperator nested) {
+        this.startArrayProperty("allOperators");
+        int index = 0;
+        for (DBSPOperator op : nested.getAllOperators()) {
+            this.propertyIndex(index++);
+            this.operatorHash.remove(op);
+            op.accept(this);
+        }
+        this.endArrayProperty("allOperators");
     }
 
     class ModifiedJsonOuter extends ToJsonOuterVisitor {
@@ -193,10 +203,9 @@ public class MerkleOuter extends CircuitVisitor {
         @Override
         public VisitDecision preorder(DBSPOperator operator) {
             this.stream.beginObject();
-            if (MerkleOuter.this.operatorHash.containsKey(operator.getId())) {
+            if (MerkleOuter.this.operatorHash.containsKey(operator)) {
                 this.stream.label("node");
-                HashString hash = Utilities.getExists(
-                        MerkleOuter.this.operatorHash, operator.getId());
+                HashString hash = Utilities.getExists(MerkleOuter.this.operatorHash, operator);
                 this.stream.append(hash.toString());
                 this.stream.endObject();
                 return VisitDecision.STOP;
@@ -207,6 +216,11 @@ public class MerkleOuter extends CircuitVisitor {
             // Identical operators at different depths are NOT equivalent
             this.label("depth");
             this.stream.append(this.context.size());
+            String prefix = MerkleOuter.this.prefixes.get(operator);
+            if (prefix != null) {
+                this.label("prefix");
+                this.stream.append(prefix);
+            }
             this.label("inputs");
             this.stream.beginArray();
 
@@ -224,7 +238,7 @@ public class MerkleOuter extends CircuitVisitor {
                         this.stream.beginObject()
                                 .label("outputNumber").append(port.outputNumber)
                                 .label("operator");
-                        HashString hashString = MerkleOuter.this.operatorHash.get(port.operator.id);
+                        HashString hashString = MerkleOuter.this.operatorHash.get(port.operator);
                         String str = "";
                         if (hashString != null)
                             str = hashString.toString();
