@@ -48,7 +48,6 @@ use feldera_types::program_schema::{Relation, SqlIdentifier};
 use super::super::WriteError;
 use super::super::output::{TARGET_FILE_SIZE, bounded_writer_config};
 use super::chunk::LookupChunk;
-use super::commit_actions;
 use super::key::{self, KeyEncoder};
 use super::probe::Pruning;
 use super::probe::{Candidate, ProbeMetrics, locate};
@@ -56,6 +55,7 @@ use super::prune::PartitionFilter;
 use super::startup::{self, MergeSetup, Regime, StatsConfig};
 use super::tombstone::{DvWriteMetrics, Tombstones, write_deletion_vectors};
 use super::transient;
+use super::{PostCommitHook, commit_actions};
 
 /// Rows buffered in the append writers, for the whole flush: ranges divide it, so the
 /// buffers cost the same whatever `threads` says.
@@ -149,6 +149,9 @@ pub struct FlushMetrics {
     pub table_superseded_rows: u64,
     /// Key ranges this flush walked. Above one when `threads` split the batch.
     pub ranges: usize,
+    /// Whether the delta-rs post-commit hook of this flush's commit ran, and whether it wrote
+    /// a Delta log checkpoint.
+    pub post_commit: PostCommitHook,
     pub timings: FlushTimings,
 }
 
@@ -783,7 +786,7 @@ impl MergeWriter {
         // Transient: a commit fails when it loses a conflict to concurrent maintenance, or
         // when the log write itself fails.  Both want the flush redone against the table as
         // it now stands, which is the caller's retry.
-        timed(
+        metrics.post_commit = timed(
             &mut metrics.timings.commit,
             commit_actions(
                 table,
@@ -797,7 +800,8 @@ impl MergeWriter {
         )
         .await
         // Kept whole rather than re-wrapped, so the commit's own context survives.
-        .map_err(WriteError::Transient)
+        .map_err(WriteError::Transient)?;
+        Ok(())
     }
 }
 

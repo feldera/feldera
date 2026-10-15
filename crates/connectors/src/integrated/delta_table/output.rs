@@ -7,6 +7,7 @@ use crate::integrated::delta_table::merge::flush::MergeWriter;
 use crate::integrated::delta_table::merge::metrics::MergeMetrics;
 use crate::integrated::delta_table::merge::startup;
 use crate::integrated::delta_table::merge::transient;
+use crate::integrated::delta_table::merge::{PostCommitHook, checkpoint_due};
 use crate::integrated::delta_table::{WriteError, register_storage_handlers};
 use crate::transport::Step;
 use crate::util::{IndexedOperationType, indexed_operation_type};
@@ -26,7 +27,9 @@ use delta_kernel::table_features::ColumnMappingMode;
 use delta_kernel::table_properties::DataSkippingNumIndexedCols;
 use deltalake::DeltaTable;
 use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, TableReference};
-use deltalake::kernel::{Action, Add, ArrayType, DataType, MapType, StructField, StructType};
+use deltalake::kernel::{
+    Action, Add, ArrayType, DataType, MapType, StructField, StructType, Transaction,
+};
 use deltalake::logstore::ObjectStoreRef;
 use feldera_storage::tokio::TOKIO;
 
@@ -248,8 +251,8 @@ pub struct DeltaTableWriter {
     /// retried batch reports them. Tests build the endpoint with no controller to report to.
     #[cfg(any(test, feature = "testing"))]
     merge_violations: u64,
-    /// A merge batch failed for good. Its commit may still have landed, so the next flush
-    /// must read the table again before it looks anything up.
+    /// A merge batch failed for good, or its post-commit hook failed. Its commit may still
+    /// have landed, so the next flush must read the table again before it looks anything up.
     merge_reload: bool,
 }
 
@@ -510,6 +513,20 @@ fn build_merge_writer(inner: &DeltaTableWriterInner, table: &DeltaTable) -> AnyR
 struct WriterTask {
     inner: Arc<DeltaTableWriterInner>,
     delta_table: DeltaTable,
+    /// Application id recorded in a `txn` (SetTransaction) action of every
+    /// commit this writer makes.  Unique per writer instance.
+    app_id: String,
+    /// Application transaction version of the next batch to commit.  Every
+    /// attempt of one batch carries the same version, so a retry can tell
+    /// from the table's latest snapshot that an earlier attempt landed.
+    next_txn_version: i64,
+    /// The transaction version of the last commit attempt.  Only a retry of
+    /// that version can find its batch already in the table.
+    last_attempted_txn: Option<i64>,
+    /// Set when a post-commit hook fails at a version whose checkpoint was
+    /// due, cleared when a later checkpoint is written: why the connector
+    /// reports itself unhealthy.
+    checkpoint_owed: Option<String>,
 }
 
 /// Retry the future `op` with exponential backoff of up to 10 seconds until it
@@ -766,10 +783,41 @@ impl WriterTask {
         // what actually landed in the table metadata and warn on any discrepancy.
         warn_about_table_property_discrepancies(&inner, &delta_table);
 
-        Ok(Self { inner, delta_table })
+        let app_id = format!(
+            "feldera-delta-output-{}-{}",
+            inner.endpoint_name,
+            uuid::Uuid::new_v4()
+        );
+
+        Ok(Self {
+            inner,
+            delta_table,
+            app_id,
+            next_txn_version: 0,
+            last_attempted_txn: None,
+            checkpoint_owed: None,
+        })
     }
 
-    async fn commit(&mut self, actions: &[Add]) -> AnyResult<()> {
+    /// The application transaction version this writer last committed, as
+    /// recorded in the table's current snapshot.
+    async fn committed_txn_version(&self) -> AnyResult<Option<i64>> {
+        let Some(state) = self.delta_table.state.as_ref() else {
+            return Ok(None);
+        };
+        let log_store = self.delta_table.log_store();
+        state
+            .transaction_version(log_store.as_ref(), &self.app_id)
+            .await
+            .map_err(|e| {
+                anyhow!(
+                    "reading application transaction version (current version: {}): {e:?}",
+                    self.current_version()
+                )
+            })
+    }
+
+    async fn commit(&mut self, actions: &[Add], txn_version: i64) -> AnyResult<()> {
         // The snapshot version for the next commit is computed as the current version + 1.
         // We need to update the current version manually, since it doesn't happen automatically.
         self.delta_table
@@ -782,47 +830,159 @@ impl WriterTask {
                 ))
             })?;
 
+        // An earlier attempt of this batch may have landed even though it
+        // reported an error: the log PUT succeeded and then the post-commit
+        // hook (checkpoint) failed, or the PUT's response was lost.  The
+        // batch's `txn` action tells: committing it again would add the same
+        // files twice, with `dataChange = true`.
+        //
+        // Reading the `txn` replays the log, so skip it on a first attempt,
+        // which cannot have landed yet.
+        let is_retry = self.last_attempted_txn == Some(txn_version);
+        self.last_attempted_txn = Some(txn_version);
+        if is_retry
+            && let Some(committed) = self.committed_txn_version().await?
+            && committed >= txn_version
+        {
+            info!(
+                "delta_table {}: transaction {txn_version} already committed (table version {}), not committing it again",
+                &self.inner.endpoint_name,
+                self.current_version()
+            );
+            return Ok(());
+        }
+
         // `CommitBuilder::default()` leaves `post_commit_hook` unset, so delta-rs skips the
         // post-commit hook entirely and never writes `_last_checkpoint` / `*.checkpoint.parquet`,
         // regardless of `delta.checkpointInterval`. Use default commit properties so checkpoint
         // creation runs when `(version + 1) % checkpoint_interval == 0`.
-        CommitBuilder::from(CommitProperties::default())
-            .with_actions(
-                actions
-                    .iter()
-                    .map(|add| Action::Add(add.clone()))
-                    .collect::<Vec<_>>(),
-            )
-            .build(
-                self.delta_table
-                    .state
-                    .as_ref()
-                    .map(|state| state as &dyn TableReference),
-                self.delta_table.log_store(),
-                DeltaOperation::Write {
-                    mode: SaveMode::Append,
-                    partition_by: None,
-                    predicate: None,
-                },
-            )
-            .await
-            .map_err(|e| {
-                anyhow!(format!(
-                    "error committing changes to the Delta table (current version: {}): {e:?}",
-                    self.current_version()
-                ))
-            })?;
+        let prepared = CommitBuilder::from(
+            CommitProperties::default()
+                // `lastUpdated` lets `delta.setTransactionRetentionDuration` expire
+                // the entries of old writers; without it they are kept forever.
+                .with_application_transaction(Transaction::new_with_last_update(
+                    &self.app_id,
+                    txn_version,
+                    Some(Utc::now().timestamp_millis()),
+                )),
+        )
+        .with_actions(
+            actions
+                .iter()
+                .map(|add| Action::Add(add.clone()))
+                .collect::<Vec<_>>(),
+        )
+        .build(
+            self.delta_table
+                .state
+                .as_ref()
+                .map(|state| state as &dyn TableReference),
+            self.delta_table.log_store(),
+            DeltaOperation::Write {
+                mode: SaveMode::Append,
+                partition_by: None,
+                predicate: None,
+            },
+        )
+        .into_prepared_commit_future()
+        .await
+        .map_err(|e| {
+            anyhow!(format!(
+                "error preparing Delta table commit (current version: {}): {e:?}",
+                self.current_version()
+            ))
+        })?;
+
+        let post_commit = prepared.await.map_err(|e| {
+            anyhow!(format!(
+                "error committing changes to the Delta table (current version: {}): {e:?}",
+                self.current_version()
+            ))
+        })?;
+
+        // From here on the commit is in the log.  A failure of the post-commit
+        // hook (reload, checkpoint, log cleanup) must not be reported as a
+        // failed commit, or the retry would commit the same files again.  The
+        // next commit's `update_incremental` catches up with the table.
+        let version = post_commit.version;
+        match post_commit.await {
+            Ok(finalized) => {
+                self.delta_table.state = Some(finalized.snapshot);
+                if finalized.metrics.new_checkpoint_created {
+                    self.checkpoint_owed = None;
+                } else {
+                    self.write_owed_checkpoint().await;
+                }
+            }
+            Err(e) if checkpoint_due(&self.delta_table, version) => {
+                let message = checkpoint_failure_message(version, &format!("{e:?}"));
+                warn!("delta_table {}: {message}", &self.inner.endpoint_name);
+                self.checkpoint_owed = Some(message);
+            }
+            // A short read or cleanup error: the next commit reloads the table, and
+            // the next cleanup removes what this one left.
+            Err(e) => warn!(
+                "delta_table {}: committed table version {version}, but its post-commit hook failed (no checkpoint was due: reloading or cleaning up the log failed): {e:?}",
+                &self.inner.endpoint_name
+            ),
+        }
 
         Ok(())
     }
 
+    /// Write the checkpoint that a failed post-commit hook left owed, at the
+    /// current table version.  A failure leaves it owed for the next commit.
+    async fn write_owed_checkpoint(&mut self) {
+        if self.checkpoint_owed.is_none() {
+            return;
+        }
+        match deltalake::checkpoints::create_checkpoint(&self.delta_table).await {
+            Ok(()) => {
+                info!(
+                    "delta_table {}: wrote the owed checkpoint at table version {}",
+                    &self.inner.endpoint_name,
+                    self.current_version()
+                );
+                self.checkpoint_owed = None;
+            }
+            Err(e) => warn!(
+                "delta_table {}: error writing the owed checkpoint at table version {}: {e:?}",
+                &self.inner.endpoint_name,
+                self.current_version()
+            ),
+        }
+    }
+
     async fn commit_with_retry(&mut self, actions: &[Add]) -> AnyResult<()> {
+        let txn_version = self.next_txn_version;
+        // Advance even if every attempt fails: one of them may still have
+        // landed, and the next batch must not be mistaken for this one.
+        self.next_txn_version += 1;
         retry!(
             self,
             "committing Delta table transaction",
-            self.commit(actions)
+            self.commit(actions, txn_version)
         )
     }
+
+    /// The health to report after a successful commit.  A checkpoint that
+    /// keeps failing is unhealthy: the log grows and expired entries are never
+    /// cleaned up.
+    fn health(&self) -> ConnectorHealth {
+        match &self.checkpoint_owed {
+            Some(message) => ConnectorHealth::unhealthy(message),
+            None => ConnectorHealth::healthy(),
+        }
+    }
+}
+
+/// The health message for a commit whose post-commit hook failed to write a due checkpoint.
+fn checkpoint_failure_message(version: u64, cause: &str) -> String {
+    format!(
+        "committed table version {version}, but its post-commit hook failed (checkpoint not \
+         written): {cause}. The commit is in the table. Check that the connector can write to \
+         the table's _delta_log directory; it tries again after each commit."
+    )
 }
 
 /// The error an operation reports when a shutdown cuts it short.
@@ -1313,8 +1473,7 @@ impl OutputConsumer for DeltaTableWriter {
 
         self.inner.records_written.store(0, Ordering::Relaxed);
         if let Some(controller) = self.inner.controller.upgrade() {
-            controller
-                .update_output_connector_health(self.inner.endpoint_id, ConnectorHealth::healthy());
+            controller.update_output_connector_health(self.inner.endpoint_id, self.task.health());
             controller
                 .status
                 .output_buffer(self.inner.endpoint_id, num_bytes, num_rows);
@@ -1477,6 +1636,33 @@ impl DeltaTableWriter {
             match result {
                 Ok(metrics) => {
                     *merge_reload = false;
+                    match metrics.post_commit {
+                        PostCommitHook::Ran {
+                            checkpoint_written: true,
+                        } => task.checkpoint_owed = None,
+                        PostCommitHook::Ran {
+                            checkpoint_written: false,
+                        } => {
+                            TOKIO.block_on(
+                                inner
+                                    .shutdown
+                                    .run_until_cancelled(task.write_owed_checkpoint()),
+                            );
+                        }
+                        PostCommitHook::Failed {
+                            version,
+                            checkpoint_due,
+                        } => {
+                            // The table can still hold the snapshot from before the commit.
+                            *merge_reload = true;
+                            if checkpoint_due {
+                                task.checkpoint_owed = Some(checkpoint_failure_message(
+                                    version,
+                                    "the warning logged with it has the cause",
+                                ));
+                            }
+                        }
+                    }
                     metrics_sink.record(&metrics);
                     metrics_sink.record_tombstone_ratio(
                         metrics.table_live_rows,
@@ -1485,10 +1671,7 @@ impl DeltaTableWriter {
                         &inner.config.uri,
                     );
                     if let Some(controller) = inner.controller.upgrade() {
-                        controller.update_output_connector_health(
-                            inner.endpoint_id,
-                            ConnectorHealth::healthy(),
-                        );
+                        controller.update_output_connector_health(inner.endpoint_id, task.health());
                         // Both sides, matching what cdc mode reports: it writes a row per
                         // delete, so counting only appends would make a delete-only flush
                         // look idle.
@@ -1498,8 +1681,9 @@ impl DeltaTableWriter {
                             (metrics.rows_appended + metrics.dv.rows_tombstoned) as usize,
                         );
                     }
-                    // Not waited for, so the batch is acknowledged now.
-                    if let Some(compactor) = compactor.as_mut() {
+                    // Not waited for, so the batch is acknowledged now.  Skipped while the
+                    // table may be stale: the next flush reloads it first.
+                    if !*merge_reload && let Some(compactor) = compactor.as_mut() {
                         compactor.after_commit(&task.delta_table, &inner.shutdown);
                     }
 
@@ -2420,6 +2604,62 @@ pub mod parallel {
         assert_matches_model(uri, &model, "an update after a concurrent compaction");
     }
 
+    /// A merge flush whose checkpoint fails keeps its commit, reports the connector
+    /// unhealthy, and reloads the table before the next flush.  The next flush writes the
+    /// owed checkpoint, though none is due at its version, and the connector is healthy again.
+    #[engine_test]
+    pub fn merge_checkpoint_failure_is_reported(engine: &dyn ConnectorTestEngine) {
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
+
+        // Make the next version the only one with a checkpoint due, and make it fail.
+        let url = url::Url::from_file_path(uri).unwrap();
+        let next = TOKIO.block_on(async move {
+            let table = deltalake::open_table(url).await.unwrap();
+            let next = table.version().unwrap() + 2;
+            table
+                .set_tbl_properties()
+                .with_properties(std::collections::HashMap::from([(
+                    "delta.checkpointInterval".to_string(),
+                    (next + 1).to_string(),
+                )]))
+                .await
+                .unwrap();
+            next
+        });
+        endpoint.merge_reload = true;
+        let log_dir = dir.path().join("_delta_log");
+        std::fs::create_dir_all(log_dir.join(format!("{next:020}.checkpoint.parquet"))).unwrap();
+
+        let records = make_records(20);
+        encode_batch(&mut endpoint, &build_insert_batch(engine, &records[..10]));
+        assert_eq!(endpoint.task.delta_table.version(), Some(next));
+        assert!(
+            endpoint
+                .task
+                .checkpoint_owed
+                .as_deref()
+                .is_some_and(|m| m.contains("post-commit hook failed")),
+            "{:?}",
+            endpoint.task.checkpoint_owed
+        );
+        assert!(
+            endpoint.merge_reload,
+            "the next flush must reload the table"
+        );
+
+        encode_batch(&mut endpoint, &build_insert_batch(engine, &records[10..]));
+        assert_eq!(endpoint.task.checkpoint_owed, None);
+        assert!(!endpoint.merge_reload);
+        assert!(
+            log_dir
+                .join(format!("{:020}.checkpoint.parquet", next + 1))
+                .is_file(),
+            "the owed checkpoint was not written"
+        );
+    }
+
     /// Auto compaction must never make a flush lose its batch, here with `max_retries: 0`.
     #[engine_test]
     pub fn auto_compaction_never_races_a_flush(engine: &dyn ConnectorTestEngine) {
@@ -2759,12 +2999,7 @@ pub mod parallel {
         let records = make_records(8);
         encode_batch(&mut endpoint, &build_insert_batch(engine, &records[0..4]));
 
-        let store = Arc::new(LogOutageStore {
-            inner: Arc::new(deltalake::logstore::object_store::local::LocalFileSystem::new()),
-            armed: AtomicUsize::new(1),
-            failures_left: AtomicUsize::new(0),
-            injected: AtomicUsize::new(0),
-        });
+        let store = Arc::new(LogOutageStore::new(1, None));
         reopen_over(&mut endpoint, uri, store.clone());
 
         encode_batch(&mut endpoint, &build_insert_batch(engine, &records[4..8]));
@@ -2800,12 +3035,13 @@ pub mod parallel {
         endpoint.consumer().batch_end();
     }
 
-    /// The batch after a failed one must see what the failed one committed.
+    /// The batch after a commit whose reload failed must see what that commit wrote.
     ///
-    /// The failed batch's commit landed, but reading the log afterwards failed and no retry
-    /// was allowed. An update of a key it inserted must find that row, not add a second one.
+    /// The commit landed, but reading the log afterwards failed. The batch still succeeds, as
+    /// its commit is in the table, and leaves the table to reload. An update of a key it
+    /// inserted must find that row, not add a second one.
     #[engine_test]
-    pub fn a_batch_after_a_failed_batch_whose_commit_landed_does_not_duplicate(
+    pub fn a_batch_after_a_commit_whose_reload_failed_does_not_duplicate(
         engine: &dyn ConnectorTestEngine,
     ) {
         let dir = TempDir::new().unwrap();
@@ -2815,14 +3051,17 @@ pub mod parallel {
         let records = make_records(8);
         encode_batch(&mut endpoint, &build_insert_batch(engine, &records[0..4]));
 
-        let store = Arc::new(LogOutageStore {
-            inner: Arc::new(deltalake::logstore::object_store::local::LocalFileSystem::new()),
-            armed: AtomicUsize::new(1),
-            failures_left: AtomicUsize::new(0),
-            injected: AtomicUsize::new(0),
-        });
+        let store = Arc::new(LogOutageStore::new(1, None));
         reopen_over(&mut endpoint, uri, store.clone());
-        encode_failing_batch(&mut endpoint, &build_insert_batch(engine, &records[4..8]));
+        encode_batch(&mut endpoint, &build_insert_batch(engine, &records[4..8]));
+        assert!(
+            store.injected.load(Ordering::Relaxed) > 0,
+            "the store did not fail the reads after the commit"
+        );
+        assert!(
+            endpoint.merge_reload,
+            "the next flush must reload the table"
+        );
         store.failures_left.store(0, Ordering::Relaxed);
 
         let mut new = make_record(500);
@@ -3548,6 +3787,174 @@ pub mod parallel {
         );
     }
 
+    /// A retry of a batch that already landed, as after a commit whose
+    /// response was lost, must not commit the batch again.
+    #[test]
+    fn retry_of_a_landed_commit_is_skipped() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+        let mut endpoint = make_endpoint(1, &table_uri, false);
+
+        let table_version = || {
+            feldera_storage::tokio::TOKIO.block_on(async {
+                deltalake::open_table(url::Url::from_file_path(&table_uri).unwrap())
+                    .await
+                    .unwrap()
+                    .version()
+                    .unwrap()
+            })
+        };
+        let created = table_version();
+
+        feldera_storage::tokio::TOKIO.block_on(async {
+            endpoint.task.commit(&[], 0).await.unwrap();
+            // The retry finds transaction 0 in the table and commits nothing.
+            endpoint.task.commit(&[], 0).await.unwrap();
+            endpoint.task.commit(&[], 1).await.unwrap();
+        });
+
+        assert_eq!(table_version(), created + 2, "a batch was committed twice");
+    }
+
+    /// Set `delta.checkpointInterval` so that the version after the next one is
+    /// due, and return that version.
+    #[cfg(test)]
+    fn checkpoint_due_after_next_commit(table_uri: &str) -> u64 {
+        feldera_storage::tokio::TOKIO.block_on(async {
+            let table = deltalake::open_table(url::Url::from_file_path(table_uri).unwrap())
+                .await
+                .unwrap();
+            // The property change is one version, the next commit the one after.
+            let due = table.version().unwrap() + 2;
+            table
+                .set_tbl_properties()
+                .with_properties(std::collections::HashMap::from([(
+                    "delta.checkpointInterval".to_string(),
+                    (due + 1).to_string(),
+                )]))
+                .await
+                .unwrap();
+            due
+        })
+    }
+
+    /// A due checkpoint that fails is owed: the connector is unhealthy until the
+    /// next commit writes it, though no checkpoint is due at that version.
+    #[test]
+    fn an_owed_checkpoint_is_written_by_the_next_commit() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+        let mut endpoint = make_endpoint(1, &table_uri, false);
+        let due = checkpoint_due_after_next_commit(&table_uri);
+        let log_dir = table_dir.path().join("_delta_log");
+        std::fs::create_dir_all(log_dir.join(format!("{due:020}.checkpoint.parquet"))).unwrap();
+
+        feldera_storage::tokio::TOKIO.block_on(async {
+            endpoint.task.commit(&[], 0).await.unwrap();
+            assert!(
+                matches!(
+                    endpoint.task.health().status,
+                    feldera_types::adapter_stats::ConnectorHealthStatus::Unhealthy
+                ),
+                "{:?}",
+                endpoint.task.health()
+            );
+            endpoint.task.commit(&[], 1).await.unwrap();
+        });
+        assert!(
+            log_dir
+                .join(format!("{:020}.checkpoint.parquet", due + 1))
+                .is_file(),
+            "the owed checkpoint was not written"
+        );
+        assert!(matches!(
+            endpoint.task.health().status,
+            feldera_types::adapter_stats::ConnectorHealthStatus::Healthy
+        ));
+    }
+
+    /// A post-commit hook that fails where no checkpoint is due, here on the
+    /// read of the new version, leaves the connector healthy.
+    #[test]
+    fn a_hook_failure_with_no_checkpoint_due_is_healthy() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+        let mut endpoint = make_endpoint(1, &table_uri, false);
+        let store = Arc::new(LogOutageStore::new(1, None));
+        reopen_over(&mut endpoint, &table_uri, store.clone());
+
+        let version = endpoint.task.delta_table.version().unwrap();
+        assert!(!super::checkpoint_due(
+            &endpoint.task.delta_table,
+            version + 1
+        ));
+        feldera_storage::tokio::TOKIO
+            .block_on(endpoint.task.commit(&[], 0))
+            .unwrap();
+        assert!(
+            store.injected.load(Ordering::Relaxed) > 0,
+            "the store did not fail the reads after the commit"
+        );
+        assert!(
+            matches!(
+                endpoint.task.health().status,
+                feldera_types::adapter_stats::ConnectorHealthStatus::Healthy
+            ),
+            "{:?}",
+            endpoint.task.health()
+        );
+    }
+
+    /// A commit whose log PUT landed but whose response was lost is not
+    /// committed again by `commit_with_retry`: the retry finds its `txn`.
+    #[cfg(test)]
+    fn lost_commit_response_is_not_recommitted(lost: LostResponse) {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+        let mut endpoint = make_endpoint_with_retries(
+            1,
+            &table_uri,
+            false,
+            DeltaTableWriteMode::Truncate,
+            false,
+            Some(3),
+        );
+        let store = Arc::new(LogOutageStore::new(0, Some(lost)));
+        reopen_over(&mut endpoint, &table_uri, store.clone());
+        let before = endpoint.task.delta_table.version().unwrap();
+
+        feldera_storage::tokio::TOKIO
+            .block_on(endpoint.task.commit_with_retry(&[]))
+            .unwrap();
+
+        assert!(
+            store.lose_response.lock().unwrap().is_none(),
+            "no response was lost"
+        );
+        let after = feldera_storage::tokio::TOKIO.block_on(async {
+            deltalake::open_table(url::Url::from_file_path(&table_uri).unwrap())
+                .await
+                .unwrap()
+                .version()
+                .unwrap()
+        });
+        assert_eq!(after, before + 1, "the batch was committed twice");
+    }
+
+    /// The PUT fails after it wrote the commit, and the connector retries.
+    #[test]
+    fn a_lost_commit_response_is_not_recommitted() {
+        lost_commit_response_is_not_recommitted(LostResponse::Error);
+    }
+
+    /// The PUT reports that the version exists, as when object_store retried a
+    /// PUT that had landed.  delta-rs then finds its own commit and reports a
+    /// concurrent transaction, and the connector retries.
+    #[test]
+    fn a_commit_retried_by_the_store_is_not_recommitted() {
+        lost_commit_response_is_not_recommitted(LostResponse::AlreadyExists);
+    }
+
     /// Set table properties from outside the pipeline, as an `ALTER TABLE` would.
     fn alter_table(uri: &str, property: &str, value: &str) {
         feldera_storage::tokio::TOKIO.block_on(async {
@@ -4040,16 +4447,40 @@ pub mod parallel {
     /// and the reload before the retry.
     const OUTAGE_READS: usize = 2;
 
-    /// Fails the next [`OUTAGE_READS`] log reads after one commit lands.
+    /// How the store loses the response of a commit PUT that landed.
+    // Only the unit tests construct it; the engine suites build this module without them.
+    #[cfg_attr(not(test), allow(dead_code))]
+    #[derive(Debug, Clone, Copy)]
+    enum LostResponse {
+        /// The PUT fails.
+        Error,
+        /// The PUT reports that the version exists, as a store-level retry of it would.
+        AlreadyExists,
+    }
+
+    /// Fails the next [`OUTAGE_READS`] log reads after one commit lands.  With
+    /// `lose_response`, also loses the response of the first commit PUT.
     #[derive(Debug)]
     struct LogOutageStore {
         inner: ObjectStoreRef,
         armed: AtomicUsize,
         failures_left: AtomicUsize,
         injected: AtomicUsize,
+        lose_response: std::sync::Mutex<Option<LostResponse>>,
     }
 
     impl LogOutageStore {
+        /// A store over the local file system, armed for `armed` commits.
+        fn new(armed: usize, lose_response: Option<LostResponse>) -> Self {
+            Self {
+                inner: Arc::new(deltalake::logstore::object_store::local::LocalFileSystem::new()),
+                armed: AtomicUsize::new(armed),
+                failures_left: AtomicUsize::new(0),
+                injected: AtomicUsize::new(0),
+                lose_response: std::sync::Mutex::new(lose_response),
+            }
+        }
+
         fn fail(&self, location: Option<&ObjectPath>) -> bool {
             let in_log = location.is_some_and(|l| l.as_ref().contains("_delta_log"));
             let claimed = in_log
@@ -4096,6 +4527,20 @@ pub mod parallel {
                     .is_ok()
             {
                 self.failures_left.store(OUTAGE_READS, Ordering::Relaxed);
+            }
+            if result.is_ok()
+                && is_commit
+                && let Some(lost) = self.lose_response.lock().unwrap().take()
+            {
+                return Err(match lost {
+                    LostResponse::Error => Self::outage(),
+                    LostResponse::AlreadyExists => {
+                        deltalake::logstore::object_store::Error::AlreadyExists {
+                            path: location.to_string(),
+                            source: "injected lost response".into(),
+                        }
+                    }
+                });
             }
             result
         }

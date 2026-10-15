@@ -1891,6 +1891,150 @@ pub(super) fn delta_table_output_test(
     println!("delta_table_output_test: success");
 }
 
+/// A failed post-commit hook (checkpoint) must not make the connector commit
+/// the same batch again: the log entry is already in the table.
+#[engine_test]
+pub fn delta_table_output_checkpoint_failure_no_duplicate_commit_test(
+    engine: &dyn PipelineTestEngine,
+) {
+    init_logging();
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+
+    // With `checkpoint_interval = 2`, every odd version writes a checkpoint,
+    // starting with the first data commit (version 1). A directory at every
+    // checkpoint path makes each checkpoint write fail after its commit is in
+    // the log, including the retry of an owed checkpoint at an even version.
+    let log_dir = table_dir.path().join("_delta_log");
+    let checkpoint_blocker = log_dir.join("00000000000000000001.checkpoint.parquet");
+    for version in 1..100 {
+        std::fs::create_dir_all(log_dir.join(format!("{version:020}.checkpoint.parquet"))).unwrap();
+    }
+
+    let data: Vec<Value> = (0..10).map(delta_test_record).collect();
+    let mut input_file = NamedTempFile::new().unwrap();
+    input_file
+        .write_all(render::json_lines(&relation(), updates(&relation(), &data).rows()).as_bytes())
+        .unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_file.path() },
+                },
+                "format": { "name": "json", "config": { "update_format": "raw" } }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "delta_table_output",
+                    "config": {
+                        "uri": table_uri,
+                        "mode": "truncate",
+                        "checkpoint_interval": 2,
+                    },
+                },
+                "enable_output_buffer": true,
+                "max_output_buffer_size_records": 2000,
+                "max_output_buffer_time_millis": 100
+            }
+        }
+    }))
+    .unwrap();
+
+    let controller = engine
+        .controller(
+            &keyed(None, false),
+            &config,
+            Box::new(move |e, _| panic!("checkpoint failure test: error: {e}")),
+        )
+        .unwrap();
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), 100_000).unwrap();
+
+    // The commits succeed, but checkpoints keep failing, which the connector
+    // reports.
+    let health = controller
+        .output_endpoint_status("test_output1")
+        .unwrap()
+        .health
+        .unwrap();
+    assert!(
+        matches!(
+            health.status,
+            feldera_types::adapter_stats::ConnectorHealthStatus::Unhealthy
+        ),
+        "{health:?}"
+    );
+    assert!(
+        health
+            .description
+            .as_deref()
+            .is_some_and(|d| d.contains("post-commit hook failed")),
+        "{health:?}"
+    );
+    controller.stop().unwrap();
+
+    // The fault was injected: version 1 exists and has no checkpoint.
+    assert!(log_dir.join("00000000000000000001.json").is_file());
+    assert!(checkpoint_blocker.is_dir());
+
+    // Every data file is added once over the whole log.
+    let mut commits: Vec<PathBuf> = std::fs::read_dir(&log_dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension() == Some(OsStr::new("json")))
+        .collect();
+    commits.sort();
+    let mut added = Vec::new();
+    let mut txns: Vec<(String, i64)> = Vec::new();
+    for commit in &commits {
+        for line in std::fs::read_to_string(commit).unwrap().lines() {
+            let action: Value = serde_json::from_str(line).unwrap();
+            if let Some(add) = action.get("add")
+                && add["dataChange"].as_bool().unwrap_or(true)
+            {
+                added.push(add["path"].as_str().unwrap().to_string());
+            }
+            // Without `lastUpdated`, no retention setting can expire the entry.
+            if let Some(txn) = action.get("txn") {
+                assert!(
+                    txn["lastUpdated"].is_i64(),
+                    "txn action without lastUpdated in {}: {txn}",
+                    commit.display()
+                );
+                txns.push((
+                    txn["appId"].as_str().unwrap().to_string(),
+                    txn["version"].as_i64().unwrap(),
+                ));
+            }
+        }
+    }
+    assert!(!added.is_empty());
+    let unique: HashSet<&String> = added.iter().collect();
+    assert_eq!(
+        unique.len(),
+        added.len(),
+        "a data file was committed more than once: {added:?} in {commits:?}"
+    );
+
+    // One writer, so one application id, and one transaction per batch.
+    assert!(!txns.is_empty());
+    assert!(txns.iter().all(|(app_id, _)| *app_id == txns[0].0));
+    assert!(txns[0].0.starts_with("feldera-delta-output-test_output1-"));
+    let versions: Vec<i64> = txns.iter().map(|(_, v)| *v).collect();
+    assert_eq!(versions, (0..versions.len() as i64).collect::<Vec<_>>());
+}
+
 pub fn init_logging() {
     let _ = tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().with_test_writer())
