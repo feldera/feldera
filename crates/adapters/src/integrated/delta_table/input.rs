@@ -1,5 +1,6 @@
 use crate::catalog::{ArrowStream, InputCollectionHandle};
 use crate::format::InputBuffer;
+use crate::format::parquet::INT96_TIME_UNIT_NAME;
 use crate::integrated::delta_table::deletion_vector::{
     MaskedFile, ReadMode, filtered_parquet_table, read_deletion_vector,
 };
@@ -19,7 +20,7 @@ use datafusion::catalog::TableProvider;
 use datafusion::common::arrow::array::RecordBatch;
 use datafusion::common::tree_node::{TransformedResult, TreeNode};
 use datafusion::common::{DFSchema, DataFusionError, ScalarValue};
-use datafusion::config::ConfigNonZeroUsize;
+use datafusion::config::{ConfigNonZeroUsize, TableParquetOptions};
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
@@ -729,6 +730,7 @@ impl DeltaTableInputEndpoint {
             info!("delta_table {endpoint_name}: decoding {n} rows per batch");
         }
 
+        // Configure datafusion to decode INT96 timestamps at `INT96_TIME_UNIT`.
         // The `SessionContext` shares the pipeline-wide `RuntimeEnv` so that the
         // CDC-mode ORDER BY query spills to the same bounded memory pool and
         // on-disk scratch dir as every other datafusion user in the pipeline.
@@ -739,7 +741,10 @@ impl DeltaTableInputEndpoint {
         // worker-derived default, and `batch_size` DataFusion's, unless the
         // connector configured them above.
         let datafusion = create_session_context_with(pipeline_config, runtime_env, |cfg| {
-            let mut cfg = cfg;
+            let mut cfg = cfg.set_str(
+                "datafusion.execution.parquet.coerce_int96",
+                INT96_TIME_UNIT_NAME,
+            );
             if let Some(n) = target_partitions {
                 cfg = cfg.set_usize("datafusion.execution.target_partitions", n);
             }
@@ -4312,8 +4317,23 @@ impl DeltaTableInputEndpointInner {
         schema: ReadSchema,
         description: &str,
     ) -> AnyResult<ListingTable> {
-        let listing_options = ListingOptions::new(Arc::new(ParquetFormat::default()))
-            .with_file_extension_opt(Some(".parquet"));
+        // `ParquetFormat` keeps its own copy of the Parquet settings, so hand it
+        // the session's: the snapshot scan and this read must decode a file the
+        // same way.
+        let parquet_options = TableParquetOptions {
+            global: self
+                .datafusion
+                .copied_config()
+                .options()
+                .execution
+                .parquet
+                .clone(),
+            ..Default::default()
+        };
+        let listing_options = ListingOptions::new(Arc::new(
+            ParquetFormat::default().with_options(parquet_options),
+        ))
+        .with_file_extension_opt(Some(".parquet"));
 
         let mut table_config = ListingTableConfig::new_with_multi_paths(urls)
             .with_listing_options(listing_options)

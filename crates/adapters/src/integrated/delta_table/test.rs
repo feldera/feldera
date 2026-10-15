@@ -5,9 +5,13 @@ use crate::format::parquet::{ArrowSchemaOptions, relation_to_arrow_fields};
 use crate::integrated::delta_table::delta_input_serde_config;
 use crate::integrated::delta_table::output::delta_variant_types;
 use crate::test::data::DeltaTestKey;
+use crate::test::parquet_timestamps::{
+    TimestampEncoding, append_delta_version, create_delta_table, timestamp_test_data,
+    write_timestamp_parquet,
+};
 use crate::test::{
-    DeltaTestStruct, TestStruct, file_to_zset, list_files_recursive, test_circuit,
-    test_circuit_with_index, wait,
+    DEFAULT_TIMEOUT_MS, DeltaTestStruct, TestStruct, TimestampTestStruct, file_to_zset,
+    list_files_recursive, test_circuit, test_circuit_with_index, wait,
 };
 use crate::{Catalog, CircuitCatalog, PipelineState};
 use arrow::datatypes::{DataType as ArrowDataType, FieldRef, Schema as ArrowSchema};
@@ -146,6 +150,27 @@ where
 /// would have created.
 fn delta_schema_options() -> ArrowSchemaOptions {
     ArrowSchemaOptions::new(true).with_parquet_variant(true)
+}
+
+/// Number of complete (newline-terminated) JSON records in `path`.
+///
+/// Counting only terminated lines means the count never includes a record the
+/// connector is still writing, so a caller that waits on it can then parse the
+/// whole file safely.
+fn complete_json_lines(path: &Path) -> usize {
+    std::fs::read(path)
+        .map(|bytes| bytes.iter().filter(|byte| **byte == b'\n').count())
+        .unwrap_or(0)
+}
+
+/// `data` as the Z-set the pipeline is expected to emit.
+fn timestamp_zset(data: &[TimestampTestStruct]) -> OrdZSet<TimestampTestStruct> {
+    OrdZSet::from_tuples(
+        (),
+        data.iter()
+            .map(|record| Tup2(Tup2(record.clone(), ()), 1))
+            .collect(),
+    )
 }
 
 const DELTA_TEST_INPUT_ENDPOINT: &str = "test_input1";
@@ -9663,5 +9688,162 @@ async fn delta_table_snapshot_and_follow_id_mapped_test() {
         read, expected,
         "the snapshot of version 1 and the follow of version 2 must resolve \
          the same columns"
+    );
+}
+
+/// A Delta table whose data file stores timestamps as INT96 ingests them
+/// intact, dates outside the nanosecond range included. Covers the snapshot
+/// scan; see [`crate::format::parquet::INT96_TIME_UNIT`].
+#[test]
+fn delta_table_input_int96_snapshot_test() {
+    let table_dir = TempDir::new().unwrap();
+    let data = timestamp_test_data();
+    create_delta_table(table_dir.path(), &data, TimestampEncoding::Int96);
+
+    let mut json_file = delta_table_snapshot_to_json::<TimestampTestStruct>(
+        &table_dir.path().display().to_string(),
+        &TimestampTestStruct::schema(),
+        &HashMap::new(),
+    );
+
+    assert_eq!(
+        file_to_zset::<TimestampTestStruct>(json_file.as_file_mut()),
+        timestamp_zset(&data)
+    );
+}
+
+/// Follow mode reads each new version's data files itself rather than through
+/// the snapshot scan, so it carries its own copy of the setting.
+#[test]
+fn delta_table_input_int96_follow_test() {
+    let table_dir = TempDir::new().unwrap();
+    let data = timestamp_test_data();
+    let (snapshot, appended) = data.split_at(2);
+    create_delta_table(table_dir.path(), snapshot, TimestampEncoding::Int96);
+
+    let json_file = NamedTempFile::new().unwrap();
+    let pipeline = delta_table_input_pipeline::<TimestampTestStruct>(
+        &table_dir.path().display().to_string(),
+        &TimestampTestStruct::schema(),
+        &HashMap::from([("mode".to_string(), json!("snapshot_and_follow"))]),
+        &json_file.path().display().to_string(),
+    );
+    pipeline.start();
+    wait(
+        || complete_json_lines(json_file.path()) == snapshot.len(),
+        DEFAULT_TIMEOUT_MS,
+    )
+    .expect("timeout waiting for the initial snapshot");
+
+    append_delta_version(table_dir.path(), 1, appended, TimestampEncoding::Int96);
+    wait(
+        || complete_json_lines(json_file.path()) == data.len(),
+        DEFAULT_TIMEOUT_MS,
+    )
+    .expect("timeout waiting for the appended version");
+    pipeline.stop().unwrap();
+
+    assert_eq!(
+        file_to_zset::<TimestampTestStruct>(&mut File::open(json_file.path()).unwrap()),
+        timestamp_zset(&data)
+    );
+}
+
+/// Applying a deletion vector opens the data file directly, past both the
+/// snapshot scan and the follow path, so it is a third reader to set up.
+#[tokio::test]
+async fn delta_table_input_int96_deletion_vector_test() {
+    use crate::integrated::delta_table::ReadSchema;
+    use crate::integrated::delta_table::deletion_vector::{
+        MaskedFile, ReadMode, filtered_parquet_table,
+    };
+    use arrow::datatypes::{Field as ArrowField, TimeUnit};
+    use delta_kernel::object_store::local::LocalFileSystem;
+    use deltalake::{ObjectStore, Path as ObjectStorePath};
+    use roaring::RoaringTreemap;
+
+    let table_dir = TempDir::new().unwrap();
+    let data = timestamp_test_data();
+    let file_name = "data.parquet";
+    write_timestamp_parquet(
+        &table_dir.path().join(file_name),
+        &data,
+        TimestampEncoding::Int96,
+    );
+
+    // The deletion vector marks row 0; the connector must return the rest.
+    let mut deleted = RoaringTreemap::new();
+    deleted.insert(0);
+
+    let logical_schema = ReadSchema::new(&ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new(
+            "ts",
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+            true,
+        ),
+    ]));
+    let store: Arc<dyn ObjectStore> =
+        Arc::new(LocalFileSystem::new_with_prefix(table_dir.path()).unwrap());
+    let provider = filtered_parquet_table(
+        store,
+        vec![MaskedFile {
+            path: ObjectStorePath::from(file_name),
+            bitmap: deleted,
+        }],
+        logical_schema,
+        ReadMode::NotInBitmap,
+        1,
+    )
+    .await
+    .unwrap();
+
+    let batches = SessionContext::new()
+        .read_table(provider)
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    let mut records = Vec::new();
+    for batch in &batches {
+        let deserializer = serde_arrow::Deserializer::from_record_batch(batch).unwrap();
+        records.append(
+            &mut Vec::<TimestampTestStruct>::deserialize_with_context(
+                deserializer,
+                &delta_input_serde_config(),
+            )
+            .unwrap(),
+        );
+    }
+
+    assert_eq!(records, data[1..]);
+}
+
+/// A table whose files mix the two physical encodings ingests both intact:
+/// INT96, which Spark writes by default, and INT64 microseconds, which
+/// delta-rs writes. Each file is decoded on its own schema, so the INT64 half
+/// never goes near the coercion.
+#[test]
+fn delta_table_input_mixed_timestamp_encodings_test() {
+    let table_dir = TempDir::new().unwrap();
+    let data = timestamp_test_data();
+    let (int96_rows, micros_rows) = data.split_at(2);
+    create_delta_table(table_dir.path(), int96_rows, TimestampEncoding::Int96);
+    append_delta_version(
+        table_dir.path(),
+        1,
+        micros_rows,
+        TimestampEncoding::Int64Micros,
+    );
+
+    let mut json_file = delta_table_snapshot_to_json::<TimestampTestStruct>(
+        &table_dir.path().display().to_string(),
+        &TimestampTestStruct::schema(),
+        &HashMap::new(),
+    );
+
+    assert_eq!(
+        file_to_zset::<TimestampTestStruct>(json_file.as_file_mut()),
+        timestamp_zset(&data)
     );
 }

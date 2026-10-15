@@ -43,6 +43,7 @@ mod mock_input_consumer;
 mod mock_output_consumer;
 
 mod datagen;
+pub mod parquet_timestamps;
 mod soft_delete;
 
 #[cfg(all(
@@ -63,7 +64,7 @@ use crate::transport::input_transport_config_to_endpoint;
 pub use data::{
     CountRow, DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergSubsetTestStruct,
     IcebergTestStruct, KeyStruct, S3TablesTestStruct, TestStruct, TestStruct2,
-    TestStructSoftDelete, generate_test_batch, generate_test_batches,
+    TestStructSoftDelete, TimestampTestStruct, generate_test_batch, generate_test_batches,
     generate_test_batches_with_weights,
 };
 use dbsp::circuit::{CircuitConfig, NodeId};
