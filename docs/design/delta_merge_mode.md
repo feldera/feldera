@@ -112,7 +112,7 @@ moves.
 
 Guarantees:
 
-- No data file is rewritten.
+- A flush rewrites no data file. Only the opt-in `optimize_interval` maintenance does.
 - One flush produces one commit, so a reader never sees half a flush.
 - Memory is bounded by configuration, not by table size, except for the packed deletion
   vector object, which is at most one bit per table row.
@@ -154,6 +154,11 @@ only its response was lost, so a retry of that batch may be walking keys whose r
 in the table; the retry looks inserts up regardless of regime. Without that, a lost response
 would leave two live rows for every key the attempt inserted, and nothing downstream would
 notice.
+
+For the same reason the shortcut ends for the rest of the run after a batch is dropped, or a
+key is skipped for a uniqueness violation. The table then holds rows the view no longer
+describes, so a key new to the view can already be in the table. The next flush also reloads
+the snapshot first, because the dropped batch may have committed.
 
 In the default regime every changed key enters the lookup set, inserts included, and any
 row found is tombstoned before the new version is appended. Slower, correct without
@@ -227,9 +232,9 @@ require(key_types_supported(index_key))              # scalars, or ROW of scalar
 require(key_physical_types_match(index_key, table))  # decimal scale, timestamp unit, ...
 
 regime      = OWNED if snapshot.log_data().is_empty() else DEFAULT
-prune_parts = partition_cols_subset_of(key_cols)     # then a partition is a function of the key
+prune_parts = key_cols & partition_cols             # those columns are a function of the key
 encoder     = KeyEncoder(index_key)                  # RowConverter, canonical field order
-log(regime, prune_parts)
+log(regime)
 
 
 # ---------------- one flush, one commit ----------------
@@ -265,7 +270,7 @@ def walk_range(range):                   # one range, one task
             key = encoder.encode(cursor.key())
             chunk.push(key)
             if prune_parts:
-                partitions.add(cursor.partition_values())
+                partitions.add(key_partition_values(key))  # never the old row's
             if chunk.bytes() >= budget.lookup_bytes:
                 lookup(chunk, partitions, tombstones)
                 chunk.clear(); partitions.clear()
@@ -347,6 +352,8 @@ def commit(actions):
             return
         except NewerVersion:
             snapshot = table.update()
+            if first_add_is_live(snapshot, actions):  # an earlier attempt landed
+                return
             if metadata_changed or a_removed_file_changed(snapshot, actions):
                 raise RetryFlush                     # paths moved; the lookup must re-run
     raise RetryFlush
@@ -435,13 +442,23 @@ keys over an unclustered table it prunes nothing, which statistics alone cannot 
 
 #### When partition pruning is sound
 
-| Case | Sound | Why |
-|------|-------|-----|
-| Owned regime | Yes | Every row was written by this run, and the removal side carries the old row, so its partition values say where the row is |
-| Default regime | No | A row left by an earlier run can sit in any partition. Pruning to the old row's partition can miss it, skip the tombstone, and leave a duplicate. The lookup must consider every partition |
-| Default regime, partition columns all drawn from key columns | Yes | The partition is a function of the key, so the row for a key is in one known partition no matter who wrote it |
+The filter uses only the partition columns that are also key columns, in every regime.
+Then the partition is a function of the key, so the row for a key is in one known partition
+no matter who wrote it or when.
 
-Computed once at startup as `prune_parts` and logged. Note the asymmetry with statistics
+Pruning to the partition of the old row, on a partition column outside the key, is not
+sound. The copy of a key in the table is not always the old row:
+
+| Case | Where the live copy is |
+|------|------------------------|
+| A replay, or a retry after a commit that landed | In the new row's partition, appended by the first attempt. The old row's partition holds only a tombstoned copy |
+| An insert in the default regime | Anywhere. An insert has no old row, so it has no partition values |
+| A table that does not match the view (a dropped batch, a changed query) | In whatever partition the last write used |
+
+In each case the filter would skip the file that holds the live copy, and the key would keep
+two live rows.
+
+Computed once at startup as `prune_parts`. Note the asymmetry with statistics
 pruning: a statistic that is too wide merely fails to prune, while partition pruning is
 either sound or wrong, so it is switched off wholesale rather than applied cautiously.
 
@@ -653,11 +670,14 @@ there with the deletion vector the remove names. Anything else is a conflict.
 | Schema or property change | A changed metadata or protocol is a conflict, and a changed key column then fails the key encoding rather than superseding the wrong row |
 
 A retry re-runs the lookup against the new snapshot, because file paths may have changed.
-Retries reuse the existing `retry!` macro's backoff and health reporting.
+Retries use the same backoff and health reporting as cdc mode's `retry!` macro, in
+`encode_merge`, and only for transient failures. Object-store reads and writes inside a
+flush are first retried in place (`merge::retry_io`), so one dropped request does not
+redo the lookup.
 
 Because no other party writes data, the connector does not declare a read predicate on its
 commits. `DeltaOperation::Write { predicate }` stays `None` as it is today, in
-`MergeWriter::commit` (`flush.rs:735`).
+`MergeWriter::commit` in `flush.rs`.
 
 ## Table maintenance obligations
 
