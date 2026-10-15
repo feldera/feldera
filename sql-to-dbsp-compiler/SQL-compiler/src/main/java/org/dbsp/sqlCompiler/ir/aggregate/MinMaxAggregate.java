@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -65,6 +66,15 @@ public class MinMaxAggregate extends NonLinearAggregate {
         this.comparedValue.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    @Override
+    public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
+        if (!super.equivalent(context, other))
+            return false;
+        MinMaxAggregate otherAggregate = other.to(MinMaxAggregate.class);
+        return this.operation == otherAggregate.operation &&
+                context.equivalent(this.comparedValue, otherAggregate.comparedValue);
     }
 
     @Override

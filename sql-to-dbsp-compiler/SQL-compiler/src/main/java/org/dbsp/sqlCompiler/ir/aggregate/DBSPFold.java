@@ -54,7 +54,7 @@ public class DBSPFold extends DBSPAggregator {
         return this.semigroup.sameType(o.semigroup) &&
                 context.equivalent(this.zero, o.zero) &&
                 context.equivalent(this.increment, o.increment) &&
-                context.equivalent(this.postProcess, o.increment);
+                context.equivalent(this.postProcess, o.postProcess);
     }
 
     @Override

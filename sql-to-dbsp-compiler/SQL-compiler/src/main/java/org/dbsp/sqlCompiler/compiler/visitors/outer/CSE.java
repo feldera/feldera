@@ -10,6 +10,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.util.Logger;
 import org.dbsp.util.graph.Port;
 
@@ -54,10 +56,29 @@ public class CSE extends Repeat {
             this.constants = new ArrayList<>();
         }
 
+        /** True if two constants have the same type and the same values, compared as expressions,
+         * with the same weights and in the same order. */
+        static boolean sameRows(DBSPConstantOperator left, DBSPConstantOperator right) {
+            if (left.isMultiset != right.isMultiset || !left.outputType.sameType(right.outputType))
+                return false;
+            DBSPZSetExpression leftRows = left.getFunction().as(DBSPZSetExpression.class);
+            DBSPZSetExpression rightRows = right.getFunction().as(DBSPZSetExpression.class);
+            if (leftRows == null || rightRows == null || leftRows.size() != rightRows.size())
+                return false;
+            var rightIterator = rightRows.data.entrySet().iterator();
+            for (Map.Entry<DBSPExpression, Long> leftEntry: leftRows.data.entrySet()) {
+                Map.Entry<DBSPExpression, Long> rightEntry = rightIterator.next();
+                if (!leftEntry.getValue().equals(rightEntry.getValue()) ||
+                        !leftEntry.getKey().equivalent(rightEntry.getKey()))
+                    return false;
+            }
+            return true;
+        }
+
         @Override
         public void postorder(DBSPConstantOperator operator) {
             for (DBSPConstantOperator op: this.constants) {
-                if (op.equivalent(operator)) {
+                if (op.equivalent(operator) || sameRows(op, operator)) {
                     this.setCanonical(operator, op);
                     return;
                 }
@@ -66,13 +87,44 @@ public class CSE extends Repeat {
             postorder(operator.to(DBSPOperator.class));
         }
 
-        boolean hasGcSuccessor(DBSPOperator operator) {
+        /** The GC operators that read {@code operator} on input 0; only that input affects the GC. */
+        List<DBSPOperator> gcSuccessors(DBSPOperator operator) {
+            List<DBSPOperator> result = new ArrayList<>();
             for (Port<DBSPOperator> succ: this.getGraph().getSuccessors(operator)) {
-                if (succ.node().is(IGCOperator.class))
-                    // only input 0 of these operators affects the GC
-                    return succ.port() == 0;
+                if (succ.node().is(IGCOperator.class) && succ.port() == 0)
+                    result.add(succ.node());
             }
-            return false;
+            return result;
+        }
+
+        /** True if {@code gc} would be equivalent to {@code other} if {@code other} read input 0 of {@code gc}. */
+        static boolean equivalentGc(DBSPOperator gc, DBSPOperator other) {
+            List<OutputPort> inputs = new ArrayList<>(other.inputs);
+            inputs.set(0, gc.inputs.get(0));
+            DBSPOperator moved = other.withInputs(inputs, false);
+            return gc.equivalent(moved);
+        }
+
+        /** True if each GC operator in {@code left} has an equivalent GC operator in {@code right}, and the
+         * other way around.  Two equivalent operators can share a trace only if it is garbage-collected
+         * in the same way for both. */
+        private boolean sameGc(List<DBSPOperator> left, List<DBSPOperator> right) {
+            if (left.size() != right.size())
+                return false;
+            List<DBSPOperator> unmatched = new ArrayList<>(right);
+            for (DBSPOperator gc: left) {
+                DBSPOperator match = null;
+                for (DBSPOperator candidate: unmatched) {
+                    if (equivalentGc(gc, candidate)) {
+                        match = candidate;
+                        break;
+                    }
+                }
+                if (match == null)
+                    return false;
+                unmatched.remove(match);
+            }
+            return true;
         }
 
         @Override
@@ -106,8 +158,7 @@ public class CSE extends Repeat {
             // Compare every pair of destinations
             for (int i = 0; i < destinations.size(); i++) {
                 DBSPOperator base = destinations.get(i).node();
-                if (hasGcSuccessor(base))
-                    continue;
+                List<DBSPOperator> baseGc = this.gcSuccessors(base);
                 for (int j = i + 1; j < destinations.size(); j++) {
                     DBSPOperator compare = destinations.get(j).node();
                     if (this.canonical.containsKey(compare))
@@ -116,10 +167,8 @@ public class CSE extends Repeat {
                     if (compare == base)
                         // E.g., a join where both inputs come from the same source
                         continue;
-                    if (hasGcSuccessor(compare))
-                        continue;
-                    // Do not CSE something which is followed by a GC operator
-                    if (base.equivalent(compare)) {
+                    // The next round will CSE the GC operators as well
+                    if (base.equivalent(compare) && this.sameGc(baseGc, this.gcSuccessors(compare))) {
                         this.setCanonical(compare, base);
                     }
                 }

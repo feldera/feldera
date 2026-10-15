@@ -65,7 +65,7 @@ public abstract class DBSPAggregateOperatorBase
     public boolean equivalent(DBSPOperator other) {
         if (!super.equivalent(other))
             return false;
-        DBSPPartitionedRollingAggregateOperator otherOperator = other.as(DBSPPartitionedRollingAggregateOperator.class);
+        DBSPAggregateOperatorBase otherOperator = other.as(DBSPAggregateOperatorBase.class);
         if (otherOperator == null)
             return false;
         return EquivalenceContext.equiv(this.aggregateList, otherOperator.aggregateList);
