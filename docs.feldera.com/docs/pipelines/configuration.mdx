@@ -8,7 +8,7 @@ Pipelines come with a set of configuration settings to toggle features, tune per
 
 ### Editing configuration
 .
-You can edit all pipeline settings when the pipeline is `Stopped` with storage cleared, and a limited subset when it storage is in use.
+You can edit all pipeline settings when the pipeline is `Stopped` with storage cleared, and a limited subset when its storage is in use.
 <Tabs
   defaultValue="web-console"
   values={[
@@ -76,12 +76,13 @@ syntax.
 
 The runtime configuration cannot be edited at all if the pipeline is not stopped.
 
-If the pipeline is stopped, but its storage has not been cleared, the following runtime configuration fields cannot be
-edited:
+If the pipeline is stopped, but its storage has not been cleared, the pipeline cannot be renamed, and the following
+runtime configuration fields cannot be edited:
 - `workers`
 - `hosts`
 - `fault_tolerance`
 - `resources.storage_mb_max`
+- `resources.storage_mb_min`
 - `resources.namespace`
 - `resources.storage_class`
 - `clock_timezone_offset`
