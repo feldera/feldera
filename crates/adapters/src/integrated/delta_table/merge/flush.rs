@@ -29,11 +29,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use anyhow::{Result as AnyResult, anyhow};
+use anyhow::{Result as AnyResult, anyhow, bail};
 use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
 use delta_kernel::expressions::Scalar;
 use deltalake::DeltaTable;
-use deltalake::kernel::{Action, Add, DataType as DeltaDataType, LogicalFileView};
+use deltalake::kernel::{Action, Add, DataType as DeltaDataType, LogicalFileView, StructField};
 use deltalake::logstore::ObjectStoreRef;
 use deltalake::operations::write::writer::DeltaWriter;
 use deltalake::protocol::{DeltaOperation, SaveMode};
@@ -55,7 +55,7 @@ use super::key::{self, KeyEncoder};
 use super::probe::Pruning;
 use super::probe::{Candidate, ProbeMetrics, locate};
 use super::prune::PartitionFilter;
-use super::startup::{MergeSetup, Regime, StatsConfig};
+use super::startup::{self, MergeSetup, Regime, StatsConfig};
 use super::tombstone::{DvWriteMetrics, Tombstones, write_deletion_vectors};
 use super::transient;
 
@@ -314,6 +314,20 @@ impl MergeWriter {
     /// inserts again. Returns whether the shortcut was still on.
     pub fn forfeit_ownership(&self) -> bool {
         self.owned.swap(false, Ordering::Relaxed)
+    }
+
+    /// Whether `table` still meets what this writer was set up for at startup.
+    pub fn check_table(&self, table: &DeltaTable, columns: &[StructField]) -> AnyResult<()> {
+        startup::check_table(table, columns)?;
+        let partition_columns = table.snapshot()?.metadata().partition_columns().to_vec();
+        if partition_columns != self.partition_columns {
+            bail!(
+                "the table's partition columns changed from [{}] to [{}]",
+                self.partition_columns.join(", "),
+                partition_columns.join(", ")
+            );
+        }
+        Ok(())
     }
 
     /// Apply one batch to `table` and commit, refreshing the table to the new version.

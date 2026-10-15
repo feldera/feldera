@@ -154,7 +154,9 @@ half of one.
 ### Requirements
 
 The connector checks all of these when the pipeline starts, so a misconfiguration fails
-before any data moves.
+before any data moves. It checks the table requirements again each time it reloads the
+table, so an `ALTER TABLE` that breaks one while the pipeline runs stops the connector with
+an error.
 
 | Requirement | Why |
 |-------------|-----|

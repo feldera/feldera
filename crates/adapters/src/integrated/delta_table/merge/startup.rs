@@ -90,48 +90,11 @@ pub fn prepare(
 
     validate_key_types(key_schema).map_err(|e| anyhow!("{e}"))?;
 
+    check_table(table, columns)?;
     let snapshot = table
         .snapshot()
         .map_err(|e| anyhow!("unable to read the Delta table snapshot: {e}"))?;
     let properties = snapshot.snapshot().table_properties();
-
-    if !properties.enable_deletion_vectors.unwrap_or(false) {
-        bail!(
-            "'update_mode: merge' requires the target Delta table to have deletion vectors \
-             enabled, which is how the connector supersedes a row without rewriting the file \
-             that holds it. Enable it with:\n    \
-             ALTER TABLE <table> SET TBLPROPERTIES ('delta.enableDeletionVectors' = 'true')\n\
-             The connector does not set the property itself, because doing so upgrades the \
-             table's reader protocol and any reader that cannot read deletion vectors would \
-             lose access to the table."
-        );
-    }
-
-    if properties.enable_change_data_feed.unwrap_or(false) {
-        bail!(
-            "'update_mode: merge' cannot write to a table with 'delta.enableChangeDataFeed' \
-             set, because a change data feed requires '_change_data' files describing every \
-             update and delete, which this connector does not produce."
-        );
-    }
-
-    if properties.append_only.unwrap_or(false) {
-        bail!(
-            "'update_mode: merge' cannot write to a table with 'delta.appendOnly' set: \
-             superseding a row requires removing the old one."
-        );
-    }
-
-    // Rejects writer features delta-rs cannot write, such as identity columns. Column mapping
-    // passes here, so `check_column_mapping` refuses it before merge setup runs.
-    PROTOCOL.can_write_to(snapshot).map_err(|e| {
-        anyhow!(
-            "delta-rs cannot write to the target Delta table's protocol, so merge mode \
-             cannot commit to it: {e}"
-        )
-    })?;
-
-    check_schema_matches(snapshot.schema().as_ref(), columns)?;
 
     let partition_columns = snapshot.metadata().partition_columns().to_vec();
     let partition_key_columns = partition_key_columns(key_schema, &partition_columns)?;
@@ -183,6 +146,53 @@ pub fn prepare(
         stats_config,
         prune_on_stats,
     })
+}
+
+/// The table requirements merge mode depends on for as long as it writes, not only at startup.
+pub fn check_table(table: &DeltaTable, columns: &[StructField]) -> AnyResult<()> {
+    let snapshot = table
+        .snapshot()
+        .map_err(|e| anyhow!("unable to read the Delta table snapshot: {e}"))?;
+    let properties = snapshot.snapshot().table_properties();
+
+    if !properties.enable_deletion_vectors.unwrap_or(false) {
+        bail!(
+            "'update_mode: merge' requires the target Delta table to have deletion vectors \
+             enabled, which is how the connector supersedes a row without rewriting the file \
+             that holds it. Enable it with:\n    \
+             ALTER TABLE <table> SET TBLPROPERTIES ('delta.enableDeletionVectors' = 'true')\n\
+             The connector does not set the property itself, because doing so upgrades the \
+             table's reader protocol and any reader that cannot read deletion vectors would \
+             lose access to the table."
+        );
+    }
+
+    if properties.enable_change_data_feed.unwrap_or(false) {
+        bail!(
+            "'update_mode: merge' cannot write to a table with 'delta.enableChangeDataFeed' \
+             set, because a change data feed requires '_change_data' files describing every \
+             update and delete, which this connector does not produce."
+        );
+    }
+
+    if properties.append_only.unwrap_or(false) {
+        bail!(
+            "'update_mode: merge' cannot write to a table with 'delta.appendOnly' set: \
+             superseding a row requires removing the old one."
+        );
+    }
+
+    // Rejects writer features delta-rs cannot write, such as identity columns. Column mapping
+    // passes here, so `check_column_mapping` refuses it before merge setup runs.
+    PROTOCOL.can_write_to(snapshot).map_err(|e| {
+        anyhow!(
+            "delta-rs cannot write to the target Delta table's protocol, so merge mode \
+             cannot commit to it: {e}"
+        )
+    })?;
+
+    check_schema_matches(snapshot.schema().as_ref(), columns)?;
+    Ok(())
 }
 
 /// Warn when the table collects no statistics for a key column.
