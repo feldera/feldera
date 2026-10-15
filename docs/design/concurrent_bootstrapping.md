@@ -163,8 +163,9 @@ choose.
 
 The engine falls back only when a boundary stream has no replay source
 (`concurrent_restore_refusal`). A nested circuit in the backfill region does not
-make it fall back: copy 2 bootstraps the whole subcircuit, and cutover moves its
-state as one unit (`ChildNode::swap_state_with`).
+make it fall back: copy 2 evaluates the whole subcircuit. Cutover moves the state
+of a new or changed subcircuit as one unit (`ChildNode::swap_state_with`). An old
+subcircuit keeps running in copy 1, so the old views that read it stay current.
 
 ## Controller integration
 

@@ -6315,17 +6315,18 @@ fn test_concurrent_torture_shared_cluster_skewed() {
 }
 
 // ============================================================================
-// Recursive (nested) views fall back to a non-concurrent bootstrap.
+// Recursive (nested) views.
 //
-// A new view that is a transitive closure computed in a nested recursive scope.
-// The recursive scope maintains incremental state across outer transactions
-// (the maintained relation, an `AccumulateZ1Trace` inside the nested scope),
-// and the bootstrap circuit does not reconstruct that nested state when it
-// re-runs the subcircuit over the replayed inputs -- so it cannot be transferred
-// at cutover.  `concurrent_restore_refusal` therefore refuses any backfill
-// region that includes a nested circuit, and the engine falls back to the
-// classic, stop-the-world bootstrap, which reconstructs the recursive view
-// correctly by replaying the edge integral through the recursion in place.
+// A transitive closure computed in a nested recursive scope, which keeps its
+// state across outer transactions.  The bootstrap circuit rebuilds that state
+// by replaying an integral upstream of the scope through the recursion.  The
+// state of a new scope moves to the live circuit at cutover.  An old scope
+// stays in the live circuit, which keeps updating the old views that read it.
+// Some tests chain two scopes, materialize the output of a scope, or modify a
+// scope.
+//
+// In the circuit diagrams, `closure` is a recursive scope that computes a
+// transitive closure, and the name at the end of each line is an output.
 // ============================================================================
 
 /// One transaction per edge.
@@ -6414,5 +6415,519 @@ fn test_concurrent_recursive_view() {
         Vec::new(),
         ExpectedOutcome::Concurrent,
         |_| {},
+    );
+}
+
+/// One transaction per `(from, to, weight)` edge update.
+fn edge_updates(updates: &[(u64, u64, ZWeight)]) -> Vec<Vec<Tup2<Tup2<u64, u64>, ZWeight>>> {
+    updates
+        .iter()
+        .map(|(x, y, w)| vec![Tup2(Tup2(*x, *y), *w)])
+        .collect()
+}
+
+/// The input phases of the tests below, one transaction per edge update:
+///
+/// 1. A chain of edges from node 0 to node 9.
+/// 2. Edge (4, 5) is deleted, which cuts the chain in two, and edge (9, 10)
+///    is added.
+/// 3. Edge (2, 3) is deleted, and edge (4, 5) is added again.
+/// 4. Every remaining edge is deleted.
+fn edge_phases() -> [Vec<Vec<Tup2<Tup2<u64, u64>, ZWeight>>>; 4] {
+    [
+        edge_chunks(&[
+            (0, 1),
+            (1, 2),
+            (2, 3),
+            (3, 4),
+            (4, 5),
+            (5, 6),
+            (6, 7),
+            (7, 8),
+            (8, 9),
+        ]),
+        edge_updates(&[(4, 5, -1), (9, 10, 1)]),
+        edge_updates(&[(2, 3, -1), (4, 5, 1)]),
+        edge_updates(&[
+            (0, 1, -1),
+            (1, 2, -1),
+            (3, 4, -1),
+            (4, 5, -1),
+            (5, 6, -1),
+            (6, 7, -1),
+            (7, 8, -1),
+            (8, 9, -1),
+            (9, 10, -1),
+        ]),
+    ]
+}
+
+/// Bootstraps `circuit2` concurrently from a checkpoint of `circuit1` over
+/// the input phases of `edge_phases`, once with one worker and once with
+/// `NUM_WORKERS` workers.
+///
+/// # Arguments
+///
+/// * `circuit1` - Builds the old circuit.
+/// * `circuit2` - Builds the new circuit.
+/// * `info_check` - Checks the bootstrap info of each bootstrap.
+fn run_recursive_view_test<OO, ON>(
+    circuit1: ConcCircuit1Fn<TestData1<Tup2<u64, u64>>, OO>,
+    circuit2: ConcCircuit2Fn<TestData1<Tup2<u64, u64>>, OO, ON>,
+    info_check: fn(&crate::circuit::bootstrap::BootstrapInfo),
+) where
+    OO: TestDataType,
+    ON: TestDataType,
+{
+    let [p1, p2, p3, p4] = edge_phases();
+    for workers in [1, NUM_WORKERS] {
+        run_concurrent_bootstrap_test::<TestData1<Tup2<u64, u64>>, OO, ON>(
+            workers,
+            |config| config,
+            circuit1.clone(),
+            circuit2.clone(),
+            p1.clone(),
+            p2.clone(),
+            p3.clone(),
+            p4.clone(),
+            ExpectedOutcome::Concurrent,
+            info_check,
+        );
+    }
+}
+
+/// Returns the number of recursive scopes that a bootstrap circuit
+/// evaluates.
+///
+/// # Arguments
+///
+/// * `info` - The bootstrap info of the bootstrap circuit.
+fn backfilled_scopes(info: &crate::circuit::bootstrap::BootstrapInfo) -> usize {
+    // The persistent id of a scope has this prefix; see
+    // `ChildNode::derive_persistent_id`.
+    info.need_backfill
+        .values()
+        .flatten()
+        .filter(|pid| pid.starts_with("scope-"))
+        .count()
+}
+
+/// A stream of pairs of nodes, such as edges or paths.
+type PairStream = Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>>;
+
+/// The output of a view of pairs of nodes.
+type PairOutput = OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>;
+
+/// Adds a materialized table of edges to `circuit`.
+///
+/// # Arguments
+///
+/// * `circuit` - The circuit to add the table to.
+///
+/// # Returns
+///
+/// The stream of edges and the handle that feeds it.
+fn materialized_edges(circuit: &mut RootCircuit) -> (PairStream, ZSetHandle<Tup2<u64, u64>>) {
+    let (edges, ih) = circuit.add_input_zset::<Tup2<u64, u64>>();
+    edges.set_persistent_id(Some("edges"));
+    edges.integrate_trace();
+    (edges, ih)
+}
+
+/// Computes the transitive closure (paths) of `edges` in a recursive scope.
+///
+/// # Arguments
+///
+/// * `circuit` - The circuit to add the scope to.
+/// * `edges` - The edges of the graph.
+/// * `name` - The prefix of the persistent ids of the streams in the scope.
+///   It must be unique in the circuit.
+///
+/// # Returns
+///
+/// The paths of the graph.
+fn transitive_closure(circuit: &mut RootCircuit, edges: &PairStream, name: &str) -> PairStream {
+    let pid = |suffix: &str| format!("{name}_{suffix}");
+    circuit
+        .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
+            paths.set_persistent_id(Some(pid("recursive").as_str()));
+
+            let edges = edges.delta0(child);
+            let paths_indexed = paths
+                .map_index(|&Tup2(x, y)| (y, x))
+                .set_persistent_id(Some(pid("indexed").as_str()));
+            let edges_indexed = edges
+                .map_index(|Tup2(x, y)| (*x, *y))
+                .set_persistent_id(Some(pid("edges_indexed").as_str()));
+            let step =
+                edges.plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to)));
+            step.set_persistent_id(Some(pid("step").as_str()));
+            Ok(step)
+        })
+        .unwrap()
+}
+
+// New view over an old recursive view:
+//
+// Pipeline 1:
+//
+// ---> edges (materialized) --> closure --> paths
+//
+// Pipeline 2 (adds a view over the closure):
+//
+// ---> edges (materialized) --> closure --> paths
+//                                      \--> filter --> from_zero
+
+fn recursive_view_reader_old(
+    circuit: &mut RootCircuit,
+) -> (ZSetHandle<Tup2<u64, u64>>, PairOutput) {
+    let (edges, ih) = materialized_edges(circuit);
+    let paths = transitive_closure(circuit, &edges, "paths");
+    (ih, paths.accumulate_output_persistent(Some("paths")))
+}
+
+fn recursive_view_reader_new(
+    circuit: &mut RootCircuit,
+) -> (ZSetHandle<Tup2<u64, u64>>, PairOutput, PairOutput) {
+    let (edges, ih) = materialized_edges(circuit);
+    let paths = transitive_closure(circuit, &edges, "paths");
+    let out_old = paths.accumulate_output_persistent(Some("paths"));
+
+    // New view over the old recursive view: the paths that start at node 0.
+    let out_new = paths
+        .filter(|Tup2(from, _)| *from == 0)
+        .set_persistent_id(Some("from_zero"))
+        .accumulate_output_persistent(Some("from_zero"));
+    (ih, out_old, out_new)
+}
+
+#[test]
+fn test_concurrent_new_view_over_old_recursive_view() {
+    // The recursive scope is old, but its output has no integral, so the
+    // bootstrap circuit evaluates the scope again to backfill the new view.
+    // The old view must still receive every change to the closure: deleting
+    // edge (4, 5) during the backfill retracts 25 paths.
+    run_recursive_view_test::<TestData1<Tup2<u64, u64>>, TestData1<Tup2<u64, u64>>>(
+        Arc::new(recursive_view_reader_old),
+        Arc::new(recursive_view_reader_new),
+        |info| assert_eq!(backfilled_scopes(info), 1),
+    );
+}
+
+/// Selects the pairs in `paths` whose nodes are two apart.
+///
+/// # Arguments
+///
+/// * `paths` - Pairs of connected nodes.
+///
+/// # Returns
+///
+/// The pairs `(x, x + 2)` in `paths`.
+fn two_apart(paths: &PairStream) -> PairStream {
+    paths
+        .filter(|Tup2(from, to)| *to == *from + 2)
+        .set_persistent_id(Some("two_apart"))
+}
+
+/// Adds a chain of two recursive views to `circuit`: `paths`, the transitive
+/// closure of `edges`, and `jumps`, the transitive closure of the pairs in
+/// `paths` whose nodes are two apart.
+///
+/// # Arguments
+///
+/// * `circuit` - The circuit to add the views to.
+/// * `edges` - The edges of the graph.
+///
+/// # Returns
+///
+/// The `paths` and `jumps` streams.
+fn recursive_chain(circuit: &mut RootCircuit, edges: &PairStream) -> (PairStream, PairStream) {
+    let paths = transitive_closure(circuit, edges, "paths");
+    let jumps = transitive_closure(circuit, &two_apart(&paths), "jumps");
+    (paths, jumps)
+}
+
+// New recursive view over an old recursive view:
+//
+// Pipeline 1:
+//
+// ---> edges (materialized) --> closure --> paths
+//
+// Pipeline 2 (adds a recursive view over the closure):
+//
+// ---> edges (materialized) --> closure --> paths
+//                                      \--> two_apart --> closure --> jumps
+
+fn recursive_view_over_recursive_view_new(
+    circuit: &mut RootCircuit,
+) -> (ZSetHandle<Tup2<u64, u64>>, PairOutput, PairOutput) {
+    let (edges, ih) = materialized_edges(circuit);
+    let (paths, jumps) = recursive_chain(circuit, &edges);
+    let out_old = paths.accumulate_output_persistent(Some("paths"));
+    let out_new = jumps.accumulate_output_persistent(Some("jumps"));
+    (ih, out_old, out_new)
+}
+
+#[test]
+fn test_concurrent_new_recursive_view_over_old_recursive_view() {
+    // A chain of two recursive scopes, of which the second is new.  The
+    // bootstrap circuit evaluates both scopes.  The old scope also stays in
+    // the live circuit, where it keeps updating the old view.
+    run_recursive_view_test::<TestData1<Tup2<u64, u64>>, TestData1<Tup2<u64, u64>>>(
+        Arc::new(recursive_view_reader_old),
+        Arc::new(recursive_view_over_recursive_view_new),
+        |info| assert_eq!(backfilled_scopes(info), 2),
+    );
+}
+
+// New view over a chain of two old recursive views:
+//
+// Pipeline 1:
+//
+// ---> edges (materialized) --> closure --> paths
+//                                      \--> two_apart --> closure --> jumps
+//
+// Pipeline 2 (adds a view over the second closure):
+//
+// ---> edges (materialized) --> closure --> paths
+//                                      \--> two_apart --> closure --> jumps
+//                                                                \--> filter --> jumps_from_zero
+
+fn recursive_chain_old(
+    circuit: &mut RootCircuit,
+) -> (ZSetHandle<Tup2<u64, u64>>, (PairOutput, PairOutput)) {
+    let (edges, ih) = materialized_edges(circuit);
+    let (paths, jumps) = recursive_chain(circuit, &edges);
+    let out_paths = paths.accumulate_output_persistent(Some("paths"));
+    let out_jumps = jumps.accumulate_output_persistent(Some("jumps"));
+    (ih, (out_paths, out_jumps))
+}
+
+fn recursive_chain_new(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<Tup2<u64, u64>>,
+    (PairOutput, PairOutput),
+    PairOutput,
+) {
+    let (edges, ih) = materialized_edges(circuit);
+    let (paths, jumps) = recursive_chain(circuit, &edges);
+    let out_paths = paths.accumulate_output_persistent(Some("paths"));
+    let out_jumps = jumps.accumulate_output_persistent(Some("jumps"));
+
+    // New view over the second scope: the jumps that start at node 0.
+    let out_new = jumps
+        .filter(|Tup2(from, _)| *from == 0)
+        .set_persistent_id(Some("jumps_from_zero"))
+        .accumulate_output_persistent(Some("jumps_from_zero"));
+    (ih, (out_paths, out_jumps), out_new)
+}
+
+#[test]
+fn test_concurrent_new_view_over_chain_of_old_recursive_views() {
+    // Both scopes are old, and their outputs have no integral, so the
+    // bootstrap circuit evaluates both again to backfill the new view.  Both
+    // scopes also stay in the live circuit, where they keep updating the old
+    // views.
+    run_recursive_view_test::<TestData2<Tup2<u64, u64>, Tup2<u64, u64>>, TestData1<Tup2<u64, u64>>>(
+        Arc::new(recursive_chain_old),
+        Arc::new(recursive_chain_new),
+        |info| assert_eq!(backfilled_scopes(info), 2),
+    );
+}
+
+// Chain of two new recursive views:
+//
+// Pipeline 1:
+//
+// ---> edges (materialized) --> map --> out_old
+//
+// Pipeline 2 (adds a chain of two recursive views):
+//
+// ---> edges (materialized) --> map --> out_old
+//                          \--> closure --> paths
+//                                      \--> two_apart --> closure --> jumps
+
+fn new_recursive_chain_new(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<Tup2<u64, u64>>,
+    PairOutput,
+    (PairOutput, PairOutput),
+) {
+    let (edges, ih) = materialized_edges(circuit);
+    let out_old = edges
+        .map(|Tup2(x, y)| Tup2(*x, *y))
+        .accumulate_output_persistent(Some("out_old"));
+
+    // New views: a chain of two recursive scopes.
+    let (paths, jumps) = recursive_chain(circuit, &edges);
+    let out_paths = paths.accumulate_output_persistent(Some("paths"));
+    let out_jumps = jumps.accumulate_output_persistent(Some("jumps"));
+    (ih, out_old, (out_paths, out_jumps))
+}
+
+#[test]
+fn test_concurrent_chain_of_new_recursive_views() {
+    // Both scopes are new.  The cutover moves the state of both scopes to the
+    // live circuit, where the second scope then reads the output of the
+    // first.
+    run_recursive_view_test::<TestData1<Tup2<u64, u64>>, TestData2<Tup2<u64, u64>, Tup2<u64, u64>>>(
+        Arc::new(recursive_view_old),
+        Arc::new(new_recursive_chain_new),
+        |info| assert_eq!(backfilled_scopes(info), 2),
+    );
+}
+
+/// Adds the transitive closure of `edges` to `circuit`, with an integral
+/// that replays the closure into new views.
+///
+/// # Arguments
+///
+/// * `circuit` - The circuit to add the closure to.
+/// * `edges` - The edges of the graph.
+///
+/// # Returns
+///
+/// The paths of the graph.
+fn materialized_paths(circuit: &mut RootCircuit, edges: &PairStream) -> PairStream {
+    let paths =
+        transitive_closure(circuit, edges, "paths").set_persistent_id(Some("materialized_paths"));
+    paths.integrate_trace();
+    paths
+}
+
+// New recursive view over a materialized recursive view:
+//
+// Pipeline 1:
+//
+// ---> edges (materialized) --> closure (materialized) --> paths
+//
+// Pipeline 2 (adds a recursive view over the closure):
+//
+// ---> edges (materialized) --> closure (materialized) --> paths
+//                                                     \--> two_apart --> closure --> jumps
+
+fn materialized_recursive_view_old(
+    circuit: &mut RootCircuit,
+) -> (ZSetHandle<Tup2<u64, u64>>, PairOutput) {
+    let (edges, ih) = materialized_edges(circuit);
+    let paths = materialized_paths(circuit, &edges);
+    (ih, paths.accumulate_output_persistent(Some("paths")))
+}
+
+fn materialized_recursive_view_new(
+    circuit: &mut RootCircuit,
+) -> (ZSetHandle<Tup2<u64, u64>>, PairOutput, PairOutput) {
+    let (edges, ih) = materialized_edges(circuit);
+    let paths = materialized_paths(circuit, &edges);
+    let out_old = paths.accumulate_output_persistent(Some("paths"));
+    let jumps = transitive_closure(circuit, &two_apart(&paths), "jumps");
+    let out_new = jumps.accumulate_output_persistent(Some("jumps"));
+    (ih, out_old, out_new)
+}
+
+#[test]
+fn test_concurrent_new_recursive_view_over_materialized_recursive_view() {
+    // The output of the old scope has an integral, which replays the closure
+    // into the new scope, so the bootstrap circuit evaluates only the new
+    // scope.  During the backfill, the recorder of that integral records the
+    // changes that the live circuit makes to the closure.
+    run_recursive_view_test::<TestData1<Tup2<u64, u64>>, TestData1<Tup2<u64, u64>>>(
+        Arc::new(materialized_recursive_view_old),
+        Arc::new(materialized_recursive_view_new),
+        |info| assert_eq!(backfilled_scopes(info), 1),
+    );
+}
+
+/// Computes the paths of `edges` that end at most three nodes after their
+/// start, in a recursive scope: a modified `transitive_closure`.
+///
+/// The change reaches every stream on the recursive cycle, so these streams
+/// get new persistent ids.  The scope indexes the edges as before, so the
+/// indexed edges keep their persistent id, and a checkpoint of
+/// `transitive_closure` holds the state of the join over them.
+///
+/// # Arguments
+///
+/// * `circuit` - The circuit to add the scope to.
+/// * `edges` - The edges of the graph.
+/// * `name` - The prefix of the persistent ids, as in `transitive_closure`.
+///
+/// # Returns
+///
+/// The paths `(x, y)` of the graph with `y <= x + 3`.
+fn short_paths(circuit: &mut RootCircuit, edges: &PairStream, name: &str) -> PairStream {
+    let pid = |suffix: &str| format!("{name}_{suffix}");
+    circuit
+        .recursive(|child, paths: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
+            paths.set_persistent_id(Some(pid("short_recursive").as_str()));
+
+            let edges = edges.delta0(child);
+            let paths_indexed = paths
+                .map_index(|&Tup2(x, y)| (y, x))
+                .set_persistent_id(Some(pid("short_indexed").as_str()));
+            let edges_indexed = edges
+                .map_index(|Tup2(x, y)| (*x, *y))
+                .set_persistent_id(Some(pid("edges_indexed").as_str()));
+            let longer = paths_indexed
+                .join(&edges_indexed, |_via, from, to| Tup2(*from, *to))
+                .filter(|Tup2(from, to)| *to <= *from + 3);
+            let step = edges.plus(&longer);
+            step.set_persistent_id(Some(pid("short_step").as_str()));
+            Ok(step)
+        })
+        .unwrap()
+}
+
+// Modified recursive view:
+//
+// Pipeline 1:
+//
+// ---> edges (materialized) --> map --> out_old
+//                          \--> closure --> paths
+//
+// Pipeline 2 (modifies the closure):
+//
+// ---> edges (materialized) --> map --> out_old
+//                          \--> closure (y <= x + 3) --> short_paths
+
+fn modified_recursive_view_old(
+    circuit: &mut RootCircuit,
+) -> (ZSetHandle<Tup2<u64, u64>>, PairOutput) {
+    let (edges, ih) = materialized_edges(circuit);
+    let out_old = edges
+        .map(|Tup2(x, y)| Tup2(*x, *y))
+        .accumulate_output_persistent(Some("out_old"));
+
+    // The view that the new circuit modifies.  Its output handle is
+    // discarded.
+    let _ =
+        transitive_closure(circuit, &edges, "paths").accumulate_output_persistent(Some("paths"));
+    (ih, out_old)
+}
+
+fn modified_recursive_view_new(
+    circuit: &mut RootCircuit,
+) -> (ZSetHandle<Tup2<u64, u64>>, PairOutput, PairOutput) {
+    let (edges, ih) = materialized_edges(circuit);
+    let out_old = edges
+        .map(|Tup2(x, y)| Tup2(*x, *y))
+        .accumulate_output_persistent(Some("out_old"));
+    let out_new =
+        short_paths(circuit, &edges, "paths").accumulate_output_persistent(Some("short_paths"));
+    (ih, out_old, out_new)
+}
+
+#[test]
+fn test_concurrent_modified_recursive_view() {
+    // The modified scope is new, but it indexes the edges as before, so both
+    // circuit copies restore the join's trace of the edges from the
+    // checkpoint.  The bootstrap circuit must clear that trace before the
+    // replay, and the cutover must replace it in the live circuit.
+    run_recursive_view_test::<TestData1<Tup2<u64, u64>>, TestData1<Tup2<u64, u64>>>(
+        Arc::new(modified_recursive_view_old),
+        Arc::new(modified_recursive_view_new),
+        |info| assert_eq!(backfilled_scopes(info), 1),
     );
 }

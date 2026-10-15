@@ -506,25 +506,6 @@ impl CircuitHandle {
             )?;
         }
 
-        // A nested circuit (subcircuit) on the backfill path -- e.g. a recursive
-        // view -- holds incremental cross-transaction state that the live copy
-        // cannot serve correctly (it starts from a checkpoint predating the new
-        // view and only sees post-restart input deltas).  Treat the whole
-        // subcircuit as a transfer unit: add it to `need_backfill` so it is
-        // excluded from the live copy's schedule and its state is reconstructed
-        // by the bootstrap copy and swapped in at cutover (see
-        // `ChildNode::swap_state_with`).
-        let nested_backfill: BTreeSet<NodeId> = participate_in_backfill
-            .iter()
-            .filter(|node_id| {
-                self.circuit
-                    .map_local_node_mut(**node_id, &mut |node| node.is_circuit())
-            })
-            .cloned()
-            .collect();
-        let need_backfill: BTreeSet<NodeId> =
-            need_backfill.union(&nested_backfill).cloned().collect();
-
         debug!(
             "worker {}: CircuitHandle::restore: replaying {} operators: {:?}\n  backfilling {} operators: {:?}\n  replay circuit consists of {} operators: {:?}",
             Runtime::worker_index(),
@@ -690,28 +671,35 @@ impl CircuitHandle {
     ///
     /// * No replay edges are spliced and no node enters replay mode; the
     ///   replay runs in the other circuit copy.
-    /// * The scheduler is prepared with the *pre-existing* region: every
-    ///   node that restored successfully.  Forward propagation of
-    ///   `need_backfill` guarantees that no such node is downstream of a
-    ///   backfilled node.
+    /// * The scheduler is prepared with the pre-existing region: every node
+    ///   that is not new or invalidated (`need_backfill`) and not downstream
+    ///   of such a node.  A stateless node downstream of a new operator is
+    ///   not in this region, although it has no state to restore: it cannot
+    ///   run without its producer.
     /// * A recorder starts recording on the recorded stream of every replay
     ///   source.  The bootstrap circuit replays the sources' integrals as of
     ///   the checkpoint, so the deltas this circuit applies to them
     ///   afterward must be captured for the synchronization transaction
     ///   that brings the bootstrap circuit up to date.
     ///
-    /// Returns `None`, leaving the circuit fully active with no recorders
-    /// armed, if the checkpoint matches the circuit (nothing to bootstrap).
+    /// # Arguments
     ///
-    /// When the bootstrapped region cannot be processed concurrently (it
-    /// includes a nested circuit, a stream with no replay source, or an
-    /// operator whose state cannot be transferred between circuit copies),
-    /// this method *falls back* to the non-concurrent replay — exactly as if
-    /// [`Self::restore`] had been called — and reports the fallback in the
-    /// returned outcome.  Falling back here, rather than reporting an error,
-    /// matters for two reasons: an error response from a worker kills the
-    /// whole runtime, and the analysis has already restored every operator's
-    /// state, so re-running a restore from scratch would load it twice.
+    /// * `base` - the checkpoint to restore from.
+    ///
+    /// # Returns
+    ///
+    /// * [`ConcurrentRestoreOutcome::UpToDate`] if the checkpoint matches the
+    ///   circuit.  The circuit stays fully active, and no recorder is armed.
+    /// * [`ConcurrentRestoreOutcome::Concurrent`] if this circuit serves the
+    ///   pre-existing region while the bootstrap circuit replays the rest.
+    /// * [`ConcurrentRestoreOutcome::FellBack`] if a stream that feeds the
+    ///   bootstrapped region has no replay source, for example the input of
+    ///   an unmaterialized table.  The circuit then runs the replay itself,
+    ///   as if [`Self::restore`] had been called.  It falls back instead of
+    ///   returning an error for two reasons: an error response from a worker
+    ///   kills the whole runtime, and the analysis has already restored the
+    ///   state of every operator, so a second restore would load it twice.
+    /// * An error if a bootstrap is already in progress or the restore fails.
     pub fn restore_concurrent(
         &mut self,
         base: &StoragePath,
