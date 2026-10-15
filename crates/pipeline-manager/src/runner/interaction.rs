@@ -84,32 +84,34 @@ pub(crate) struct CachedPipelineDescr {
 
 impl CachedPipelineDescr {
     const CACHE_TTL: Duration = Duration::from_secs(5);
+}
 
+impl ExtendedPipelineDescrMonitoring {
     /// Return the deployment location only if the pipeline is in the correct
     /// status to be interacted with (i.e., running or paused).
-    fn deployment_location_based_on_status(&self) -> Result<String, ManagerError> {
+    pub(crate) fn deployment_location_based_on_status(&self) -> Result<String, ManagerError> {
         // Interaction with the pipeline is only useful to be attempted if the pipeline has its
         // resources provisioned, and the latest runtime status check did not return indicate even
         // the runner can't interact with it.
-        if self.pipeline.deployment_resources_status == ResourcesStatus::Provisioned {
-            if self.pipeline.deployment_runtime_status == Some(RuntimeStatus::Unavailable) {
+        if self.deployment_resources_status == ResourcesStatus::Provisioned {
+            if self.deployment_runtime_status == Some(RuntimeStatus::Unavailable) {
                 return Err(ManagerError::from(RunnerError::PipelineUnavailable {
-                    pipeline_name: self.pipeline.name.clone(),
+                    pipeline_name: self.name.clone(),
                 }));
             }
         } else {
             return Err(ManagerError::from(
                 RunnerError::PipelineInteractionNotDeployed {
-                    pipeline_name: self.pipeline.name.clone(),
-                    status: self.pipeline.deployment_resources_status,
-                    desired_status: self.pipeline.deployment_resources_desired_status,
+                    pipeline_name: self.name.clone(),
+                    status: self.deployment_resources_status,
+                    desired_status: self.deployment_resources_desired_status,
                 },
             ));
         }
 
-        Ok(match &self.pipeline.deployment_location {
+        Ok(match &self.deployment_location {
             None => Err(RunnerError::PipelineMissingDeploymentLocation {
-                pipeline_name: self.pipeline.name.clone(),
+                pipeline_name: self.name.clone(),
             })?,
             Some(location) => location.clone(),
         })
@@ -222,7 +224,7 @@ impl RunnerInteraction {
             .filter(|entry| entry.instantiated.elapsed() <= CachedPipelineDescr::CACHE_TTL);
         match entry {
             Some(entry) => {
-                let location = entry.deployment_location_based_on_status()?;
+                let location = entry.pipeline.deployment_location_based_on_status()?;
                 Ok((location, true))
             }
             None => {
@@ -234,7 +236,9 @@ impl RunnerInteraction {
                     .get_pipeline_for_monitoring(tenant_id, pipeline_name)
                     .await?;
                 let cached_descriptor: CachedPipelineDescr = pipeline.into();
-                let deployment_location = cached_descriptor.deployment_location_based_on_status();
+                let deployment_location = cached_descriptor
+                    .pipeline
+                    .deployment_location_based_on_status();
                 let mut cache = self.endpoint_cache.write().unwrap();
                 cache.insert((tenant_id, pipeline_name.to_string()), cached_descriptor);
                 let location = deployment_location?;

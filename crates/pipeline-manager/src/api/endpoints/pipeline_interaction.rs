@@ -748,14 +748,9 @@ pub(crate) async fn get_pipeline_metrics(
         .await?;
     let pipelines = std::slice::from_ref(&pipeline);
 
-    let from_pipeline = metrics::fetch_pipeline_metrics(
-        &state,
-        client.as_ref(),
-        *tenant_id,
-        &pipeline,
-        request.query_string(),
-    )
-    .await;
+    let from_pipeline =
+        metrics::fetch_pipeline_metrics(&state, client.as_ref(), &pipeline, request.query_string())
+            .await;
 
     match query.format {
         MetricsFormat::Prometheus => {
