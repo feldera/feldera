@@ -16,6 +16,16 @@ Source edition can be found on github.
   these values.  See
   [Ingesting change data capture (CDC) records](/formats/avro#ingesting-cdc-records).
 
+- Incompatible change (pipeline process): the pipeline binary reads its
+  configuration file as JSON only, so its `--config-file` argument must name
+  a JSON file. The pipeline manager writes `config.json` and no longer writes
+  `config.yaml`. A pipeline binary has preferred `config.json` since release
+  0.155.0, so a pipeline pinned to that release or a later one is not
+  affected. In the Enterprise edition, the pipeline `ConfigMap` carries only
+  `config.json`.
+
+## v0.366.0
+
 - Incompatible change (ad-hoc queries): the `hash` result format and
   `Pipeline.query_hash()` in the Python SDK return a different hash for the
   same rows than earlier releases.  Compare only hashes taken from the same
@@ -158,14 +168,6 @@ Source edition can be found on github.
   `fda set-config` takes `max_buffering_delay` and `clock_resolution` as
   durations, and its `checkpoint_interval` key accepts a duration such as
   `5m` as well as the bare number of seconds it took before.
-
-- Incompatible change (pipeline process): the pipeline binary reads its
-  configuration file as JSON only, so its `--config-file` argument must name
-  a JSON file. The pipeline manager writes `config.json` and no longer writes
-  `config.yaml`. A pipeline binary has preferred `config.json` since release
-  0.155.0, so a pipeline pinned to that release or a later one is not
-  affected. In the Enterprise edition, the pipeline `ConfigMap` carries only
-  `config.json`.
 
 - Pipelines write a checkpoint on `SIGTERM` before they exit.  See
   [Writing checkpoints](/pipelines/fault-tolerance#writing-checkpoints).
