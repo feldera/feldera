@@ -10,6 +10,11 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Bug fix (Parquet output): a deletion in the output of a view with a Parquet
+  output connector crashed the pipeline.  The connector now reports an
+  encoder error for that batch instead; the Parquet format still cannot
+  represent deletes.
+
 ## v0.369.0
 
 - Python SDK: the new `reloadable_tables` argument of `Pipeline.start()`,

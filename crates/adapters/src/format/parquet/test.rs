@@ -138,6 +138,35 @@ fn parquet_input_snappy() {
     parquet_input_test(Compression::SNAPPY);
 }
 
+/// A deletion can't be written as Parquet; encoding one fails the batch
+/// instead of panicking the pipeline.
+#[test]
+fn parquet_output_rejects_deletes() {
+    let consumer = MockOutputConsumer::new();
+    let config = ParquetEncoderConfig {
+        buffer_size_records: usize::MAX,
+    };
+    let mut encoder = ParquetEncoder::new(
+        Box::new(consumer),
+        config,
+        Relation::new(
+            "TestStruct2".into(),
+            TestStruct2::schema(),
+            false,
+            BTreeMap::new(),
+        ),
+        false,
+    )
+    .expect("Can't create encoder");
+    let test_data = TestStruct2::data();
+    let zset = OrdZSet::from_keys((), vec![Tup2(test_data[0].clone(), -1)]);
+    let zset = Arc::new(SerBatchImpl::<_, TestStruct2, ()>::new(zset)) as Arc<dyn SerBatchReader>;
+
+    encoder.consumer().batch_start(0, OutputBatchType::Delta);
+    let error = encoder.encode(zset).unwrap_err().to_string();
+    assert!(error.contains("does not support deletes"), "{error}");
+}
+
 #[test]
 fn parquet_output() {
     let buffer = Arc::new(Mutex::new(Vec::with_capacity(4096)));
