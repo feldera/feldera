@@ -12,12 +12,24 @@ use crate::{
         time_series::{RelOffset, RelRange},
     },
     typed_batch::SpineSnapshot,
-    utils::{Tup2, Tup3, Tup4, test::init_test_logger},
+    utils::{
+        Tup2, Tup3, Tup4,
+        test::{
+            init_test_logger,
+            multihost::{TestHosts, with_host_storage},
+        },
+    },
     zset,
 };
-use std::{cmp::Ordering, fmt::Debug, marker::PhantomData, path::PathBuf, sync::Arc};
+use std::{
+    cmp::Ordering,
+    fmt::Debug,
+    marker::PhantomData,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
-use super::{CircuitConfig, dbsp_handle::Mode};
+use super::{CircuitConfig, Layout, dbsp_handle::Mode};
 
 const NUM_WORKERS: usize = 4;
 
@@ -143,6 +155,66 @@ type CircuitFn<I1, I2, O1, O2> = Arc<
         + Sync,
 >;
 
+fn circuit_config(path: &PathBuf) -> CircuitConfig {
+    CircuitConfig::with_workers(NUM_WORKERS)
+        .with_splitter_chunk_size_records(2)
+        .with_mode(Mode::Persistent)
+        .with_storage(Some(
+            CircuitStorageConfig::for_config(
+                StorageConfig {
+                    path: path.to_string_lossy().into_owned(),
+                    cache: Default::default(),
+                },
+                Default::default(),
+            )
+            .unwrap(),
+        ))
+}
+
+/// The numbers of hosts that [test_replay] and [run_concurrent_bootstrap_test]
+/// run their circuits on.
+const TEST_HOSTS: [usize; 2] = [1, 2];
+
+/// Returns `config` for `host` of a replay test, with storage of its own under
+/// `path`.
+fn host_config(config: CircuitConfig, path: &Path, host: usize) -> CircuitConfig {
+    with_host_storage(config, path, host)
+        .with_splitter_chunk_size_records(2)
+        .with_mode(Mode::Persistent)
+}
+
+/// Pushes `chunk` to the input handles that `select` picks on the host that
+/// feeds transaction number `transaction`.
+///
+/// The hosts take turns, so that on more than one host every host feeds some
+/// of the inputs.
+fn push_to_host<T, I>(
+    hosts: &TestHosts<T>,
+    transaction: usize,
+    chunk: I::Chunk,
+    select: impl Fn(&T) -> &I::InputHandles,
+) where
+    T: Send + 'static,
+    I: TestDataType,
+{
+    I::push_inputs(chunk, select(hosts.result(transaction % hosts.n_hosts())));
+}
+
+/// Reads the outputs that `select` picks on every host.
+///
+/// # Returns
+///
+/// The sum of the outputs of all of the hosts.
+fn read_from_hosts<T, O>(hosts: &TestHosts<T>, select: impl Fn(&T) -> &O::OutputHandles) -> O::ZSet
+where
+    T: Send + 'static,
+    O: TestDataType,
+{
+    hosts.results().iter().fold(O::zero(), |sum, result| {
+        O::add(&sum, &O::read_outputs(select(result)))
+    })
+}
+
 /// Main test function, instantiated for each test case below.
 ///
 /// Creates, runs, and checkpoints circuit 1:
@@ -180,23 +252,8 @@ type CircuitFn<I1, I2, O1, O2> = Arc<
 ///```
 ///
 /// The common part of the two circuits must return identical results.
-
-fn circuit_config(path: &PathBuf) -> CircuitConfig {
-    CircuitConfig::with_workers(NUM_WORKERS)
-        .with_splitter_chunk_size_records(2)
-        .with_mode(Mode::Persistent)
-        .with_storage(Some(
-            CircuitStorageConfig::for_config(
-                StorageConfig {
-                    path: path.to_string_lossy().into_owned(),
-                    cache: Default::default(),
-                },
-                Default::default(),
-            )
-            .unwrap(),
-        ))
-}
-
+///
+/// Runs the test on each number of hosts in [TEST_HOSTS].
 fn test_replay<I1, I2, I3, O1, O2, O3>(
     circuit_constructor1: CircuitFn<I1, I2, O1, O2>,
     circuit_constructor2: CircuitFn<I2, I3, O2, O3>,
@@ -217,8 +274,42 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
 
     init_test_logger();
 
+    for n_hosts in TEST_HOSTS {
+        test_replay_on_hosts::<I1, I2, I3, O1, O2, O3>(
+            n_hosts,
+            &circuit_constructor1,
+            &circuit_constructor2,
+            &inputs1,
+            &inputs2_1,
+            &inputs2_2,
+            &inputs3,
+        );
+    }
+}
+
+/// Runs [test_replay] on `n_hosts` hosts.
+fn test_replay_on_hosts<I1, I2, I3, O1, O2, O3>(
+    n_hosts: usize,
+    circuit_constructor1: &CircuitFn<I1, I2, O1, O2>,
+    circuit_constructor2: &CircuitFn<I2, I3, O2, O3>,
+    inputs1: &[I1::Chunk],
+    inputs2_1: &[I2::Chunk],
+    inputs2_2: &[I2::Chunk],
+    inputs3: &[I3::Chunk],
+) where
+    I1: TestDataType,
+    I2: TestDataType,
+    I3: TestDataType,
+    O1: TestDataType,
+    O2: TestDataType,
+    O3: TestDataType,
+{
     let path = tempfile::tempdir().unwrap().keep();
-    println!("Running replay_test in {}", path.display());
+    println!(
+        "Running replay_test on {n_hosts} host(s) in {}",
+        path.display()
+    );
+    let configure = move |host, config| host_config(config, &path, host);
 
     // Create both reference circuits, feed I1 and I2 to circuit1; feed I2 and I3 to circuit2.
     let mut reference_output1 = Vec::new();
@@ -229,59 +320,60 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
     {
         println!("Running first circuit to get reference output");
         let circuit_constructor1_clone = circuit_constructor1.clone();
-        let (mut circuit, (input_handles1, input_handles2, output_handles1, output_handles2)) =
-            Runtime::init_circuit(circuit_config(&path), move |circuit| {
+        let mut hosts =
+            TestHosts::start_with(NUM_WORKERS, n_hosts, configure.clone(), move |circuit| {
                 Ok(circuit_constructor1_clone(circuit))
-            })
-            .unwrap();
+            });
 
-        for (data1, data2) in std::iter::zip(&inputs1, &inputs2_1) {
-            I1::push_inputs(data1.clone(), &input_handles1);
-            I2::push_inputs(data2.clone(), &input_handles2);
+        for (i, (data1, data2)) in std::iter::zip(inputs1, inputs2_1).enumerate() {
+            push_to_host::<_, I1>(&hosts, i, data1.clone(), |handles| &handles.0);
+            push_to_host::<_, I2>(&hosts, i, data2.clone(), |handles| &handles.1);
 
-            circuit.transaction().unwrap();
+            hosts.transaction();
 
-            reference_output1.push(O1::read_outputs(&output_handles1));
-            reference_output2.push(O2::read_outputs(&output_handles2));
+            reference_output1.push(read_from_hosts::<_, O1>(&hosts, |handles| &handles.2));
+            reference_output2.push(read_from_hosts::<_, O2>(&hosts, |handles| &handles.3));
         }
 
-        for data2 in inputs2_2.iter() {
-            I2::push_inputs(data2.clone(), &input_handles2);
+        for (i, data2) in inputs2_2.iter().enumerate() {
+            push_to_host::<_, I2>(&hosts, inputs1.len() + i, data2.clone(), |handles| {
+                &handles.1
+            });
 
-            circuit.transaction().unwrap();
+            hosts.transaction();
 
-            reference_output2.push(O2::read_outputs(&output_handles2));
+            reference_output2.push(read_from_hosts::<_, O2>(&hosts, |handles| &handles.3));
         }
 
-        circuit.kill().unwrap();
+        hosts.kill();
 
         println!("Running second circuit to get reference output");
         let circuit_constructor2_clone = circuit_constructor2.clone();
-        let (mut circuit, (input_handles2, input_handles3, output_handles2, output_handles3)) =
-            Runtime::init_circuit(circuit_config(&path), move |circuit| {
+        let mut hosts =
+            TestHosts::start_with(NUM_WORKERS, n_hosts, configure.clone(), move |circuit| {
                 Ok(circuit_constructor2_clone(circuit))
-            })
-            .unwrap();
+            });
 
-        for data2 in inputs2_1.iter() {
-            I2::push_inputs(data2.clone(), &input_handles2);
+        for (i, data2) in inputs2_1.iter().enumerate() {
+            push_to_host::<_, I2>(&hosts, i, data2.clone(), |handles| &handles.0);
 
-            circuit.transaction().unwrap();
+            hosts.transaction();
 
-            reference_output2_2.push(O2::read_outputs(&output_handles2));
+            reference_output2_2.push(read_from_hosts::<_, O2>(&hosts, |handles| &handles.2));
         }
 
-        for (data2, data3) in std::iter::zip(&inputs2_2, &inputs3) {
-            I2::push_inputs(data2.clone(), &input_handles2);
-            I3::push_inputs(data3.clone(), &input_handles3);
+        for (i, (data2, data3)) in std::iter::zip(inputs2_2, inputs3).enumerate() {
+            let transaction = inputs2_1.len() + i;
+            push_to_host::<_, I2>(&hosts, transaction, data2.clone(), |handles| &handles.0);
+            push_to_host::<_, I3>(&hosts, transaction, data3.clone(), |handles| &handles.1);
 
-            circuit.transaction().unwrap();
+            hosts.transaction();
 
-            reference_output2_2.push(O2::read_outputs(&output_handles2));
-            reference_output3.push(O3::read_outputs(&output_handles3));
+            reference_output2_2.push(read_from_hosts::<_, O2>(&hosts, |handles| &handles.2));
+            reference_output3.push(read_from_hosts::<_, O3>(&hosts, |handles| &handles.3));
         }
 
-        circuit.kill().unwrap();
+        hosts.kill();
 
         // The common part of the two circuits must return identical results.
         assert_eq!(reference_output2, reference_output2_2);
@@ -291,73 +383,66 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
     let mut actual_output2 = Vec::new();
     let mut actual_output3 = Vec::new();
 
-    let checkpoint = {
-        println!("Running first circuit to create checkpoint");
+    println!("Running first circuit to create checkpoint");
 
-        // Create the first circuit.
-        let circuit_constructor1_clone = circuit_constructor1.clone();
+    // Create the first circuit.
+    let circuit_constructor1_clone = circuit_constructor1.clone();
+    let mut hosts = TestHosts::start_with(NUM_WORKERS, n_hosts, configure, move |circuit| {
+        Ok(circuit_constructor1_clone(circuit))
+    });
 
-        let (mut circuit, (input_handles1, input_handles2, output_handles1, output_handles2)) =
-            Runtime::init_circuit(circuit_config(&path), move |circuit| {
-                Ok(circuit_constructor1_clone(circuit))
-            })
-            .unwrap();
+    // Feed inputs1, inputs2_1.
+    for (i, (data1, data2)) in std::iter::zip(inputs1, inputs2_1).enumerate() {
+        push_to_host::<_, I1>(&hosts, i, data1.clone(), |handles| &handles.0);
+        push_to_host::<_, I2>(&hosts, i, data2.clone(), |handles| &handles.1);
 
-        // Feed inputs1, inputs2_1.
-        for (data1, data2) in std::iter::zip(inputs1, inputs2_1) {
-            I1::push_inputs(data1.clone(), &input_handles1);
-            I2::push_inputs(data2.clone(), &input_handles2);
+        hosts.transaction();
 
-            circuit.transaction().unwrap();
+        actual_output1.push(read_from_hosts::<_, O1>(&hosts, |handles| &handles.2));
+        actual_output2.push(read_from_hosts::<_, O2>(&hosts, |handles| &handles.3));
+    }
 
-            actual_output1.push(O1::read_outputs(&output_handles1));
-            actual_output2.push(O2::read_outputs(&output_handles2));
-        }
-
-        // Checkpoint.
-        let checkpoint = circuit.checkpoint().run().unwrap();
-        circuit.kill().unwrap();
-        checkpoint
-    };
+    // Checkpoint.
+    let checkpoints = hosts.checkpoint();
 
     assert_eq!(reference_output1, actual_output1);
 
     {
-        println!("Restarting circuit from checkpoint {}", checkpoint.uuid);
+        println!("Restarting circuit from checkpoints {checkpoints:?}");
 
         // Restart the second circuit from the checkpoint.
-        let mut circuit_config = circuit_config(&path);
-        circuit_config.storage.as_mut().unwrap().init_checkpoint = Some(checkpoint.uuid);
-
         let circuit_constructor2_clone = circuit_constructor2.clone();
+        let mut hosts = hosts.restart_with(&checkpoints, move |circuit| {
+            Ok(circuit_constructor2_clone(circuit))
+        });
 
-        let (mut circuit, (input_handles2, input_handles3, output_handles2, output_handles3)) =
-            Runtime::init_circuit(circuit_config, move |circuit| {
-                Ok(circuit_constructor2_clone(circuit))
-            })
-            .unwrap();
-
-        circuit.start_transaction().unwrap();
-        circuit.start_commit_transaction().unwrap();
-        while !circuit.step().unwrap() {}
-        assert!(!circuit.bootstrap_in_progress());
+        hosts.start_transaction();
+        hosts.for_each(|handle| handle.start_commit_transaction().unwrap());
+        while !hosts.step() {}
+        assert!(
+            hosts
+                .map(|handle| handle.bootstrap_in_progress())
+                .iter()
+                .all(|in_progress| !in_progress)
+        );
 
         println!("Replay finished");
 
         // Feed inputs2_2, inputs2.
-        for (data2, data3) in std::iter::zip(&inputs2_2, &inputs3) {
-            I2::push_inputs(data2.clone(), &input_handles2);
-            I3::push_inputs(data3.clone(), &input_handles3);
+        for (i, (data2, data3)) in std::iter::zip(inputs2_2, inputs3).enumerate() {
+            let transaction = inputs2_1.len() + i;
+            push_to_host::<_, I2>(&hosts, transaction, data2.clone(), |handles| &handles.0);
+            push_to_host::<_, I3>(&hosts, transaction, data3.clone(), |handles| &handles.1);
 
-            circuit.transaction().unwrap();
+            hosts.transaction();
 
-            actual_output2.push(O2::read_outputs(&output_handles2));
-            actual_output3.push(O3::read_outputs(&output_handles3));
+            actual_output2.push(read_from_hosts::<_, O2>(&hosts, |handles| &handles.2));
+            actual_output3.push(read_from_hosts::<_, O3>(&hosts, |handles| &handles.3));
         }
 
         println!("Additional transactions completed");
 
-        circuit.kill().unwrap();
+        hosts.kill();
     }
 
     // Compare the outputs.
@@ -366,8 +451,8 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
 
     println!("Actual output1: {:?}", actual_output1);
     println!("Actual output3: {:?}", actual_output3);
-    assert_eq!(reference_output2, actual_output2);
-    assert_eq!(reference_output3, actual_output3);
+    assert_eq!(reference_output2, actual_output2, "on {n_hosts} host(s)");
+    assert_eq!(reference_output3, actual_output3, "on {n_hosts} host(s)");
 }
 
 fn sequence(from: u64, to: u64) -> Vec<Vec<Tup2<u64, ZWeight>>> {
@@ -2402,6 +2487,8 @@ fn circuit_config_with_workers(path: &PathBuf, workers: usize) -> CircuitConfig 
         ))
 }
 
+/// Runs the concurrent bootstrap test that the comment above describes on each
+/// number of hosts in [TEST_HOSTS] that does not exceed `workers`.
 #[allow(clippy::too_many_arguments)]
 fn run_concurrent_bootstrap_test<I, OO, ON>(
     workers: usize,
@@ -2424,8 +2511,64 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
 {
     init_test_logger();
 
+    for n_hosts in TEST_HOSTS.into_iter().filter(|&n_hosts| n_hosts <= workers) {
+        run_concurrent_bootstrap_test_on_hosts::<I, OO, ON>(
+            n_hosts,
+            workers,
+            configure,
+            &circuit1,
+            &circuit2,
+            [&inputs1, &inputs2, &inputs3, &inputs4],
+            expected,
+            info_check,
+        );
+    }
+}
+
+/// Runs one step of the bootstrap circuit on every host.
+///
+/// # Returns
+///
+/// True if the step completed the bootstrap circuit's transaction.  All of the
+/// hosts complete it in the same step.
+fn step_bootstrap_circuits<T>(hosts: &mut TestHosts<T>) -> bool
+where
+    T: Send + 'static,
+{
+    let done = hosts.map(|handle| handle.step_bootstrap_circuit().unwrap());
+    assert!(
+        done.iter().all(|&host_done| host_done == done[0]),
+        "the hosts completed the bootstrap circuit's transaction in different steps: {done:?}"
+    );
+    done[0]
+}
+
+/// Runs [run_concurrent_bootstrap_test] on `n_hosts` hosts.
+///
+/// `phases` holds the inputs of the four phases, in order.
+#[allow(clippy::too_many_arguments)]
+fn run_concurrent_bootstrap_test_on_hosts<I, OO, ON>(
+    n_hosts: usize,
+    workers: usize,
+    configure: fn(CircuitConfig) -> CircuitConfig,
+    circuit1: &ConcCircuit1Fn<I, OO>,
+    circuit2: &ConcCircuit2Fn<I, OO, ON>,
+    phases: [&[I::Chunk]; 4],
+    expected: ExpectedOutcome,
+    info_check: fn(&crate::circuit::bootstrap::BootstrapInfo),
+) where
+    I: TestDataType,
+    OO: TestDataType,
+    ON: TestDataType,
+{
+    let [inputs1, inputs2, inputs3, inputs4] = phases;
+
     let path = tempfile::tempdir().unwrap().keep();
-    println!("Running concurrent bootstrap test in {}", path.display());
+    println!(
+        "Running concurrent bootstrap test on {n_hosts} host(s) in {}",
+        path.display()
+    );
+    let configure_host = move |host, config| configure(host_config(config, &path, host));
 
     let all_inputs: Vec<I::Chunk> = inputs1
         .iter()
@@ -2440,60 +2583,62 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
     let mut ref_new = Vec::new();
     {
         let circuit2 = circuit2.clone();
-        let (mut circuit, (inputs, old_outputs, new_outputs)) = Runtime::init_circuit(
-            configure(circuit_config_with_workers(&path, workers)),
-            move |circuit| Ok(circuit2(circuit)),
-        )
-        .unwrap();
+        let mut hosts =
+            TestHosts::start_with(workers, n_hosts, configure_host.clone(), move |circuit| {
+                Ok(circuit2(circuit))
+            });
 
-        for chunk in all_inputs.iter() {
-            I::push_inputs(chunk.clone(), &inputs);
-            circuit.transaction().unwrap();
-            ref_old.push(OO::read_outputs(&old_outputs));
-            ref_new.push(ON::read_outputs(&new_outputs));
+        for (transaction, chunk) in all_inputs.iter().enumerate() {
+            push_to_host::<_, I>(&hosts, transaction, chunk.clone(), |handles| &handles.0);
+            hosts.transaction();
+            ref_old.push(read_from_hosts::<_, OO>(&hosts, |handles| &handles.1));
+            ref_new.push(read_from_hosts::<_, ON>(&hosts, |handles| &handles.2));
         }
-        circuit.kill().unwrap();
+        hosts.kill();
     }
 
     // Phase 1: run circuit 1 and checkpoint it.  Adding views does not
     // change the old views' outputs, so the reference applies here too.
-    let checkpoint = {
-        let circuit1 = circuit1.clone();
-        let (mut circuit, (inputs, old_outputs)) = Runtime::init_circuit(
-            configure(circuit_config_with_workers(&path, workers)),
-            move |circuit| Ok(circuit1(circuit)),
-        )
-        .unwrap();
+    let circuit1 = circuit1.clone();
+    let mut hosts =
+        TestHosts::start_with(workers, n_hosts, configure_host.clone(), move |circuit| {
+            Ok(circuit1(circuit))
+        });
 
-        for (i, chunk) in inputs1.iter().enumerate() {
-            I::push_inputs(chunk.clone(), &inputs);
-            circuit.transaction().unwrap();
-            assert_eq!(
-                OO::read_outputs(&old_outputs),
-                ref_old[i],
-                "phase 1, transaction {i}"
-            );
-        }
+    for (i, chunk) in inputs1.iter().enumerate() {
+        push_to_host::<_, I>(&hosts, i, chunk.clone(), |handles| &handles.0);
+        hosts.transaction();
+        assert_eq!(
+            read_from_hosts::<_, OO>(&hosts, |handles| &handles.1),
+            ref_old[i],
+            "phase 1, transaction {i}, on {n_hosts} host(s)"
+        );
+    }
 
-        let checkpoint = circuit.checkpoint().run().unwrap();
-        circuit.kill().unwrap();
-        checkpoint
-    };
+    let checkpoints = hosts.checkpoint();
+    hosts.kill();
 
-    // Restart as circuit 2 with a concurrent bootstrap.
+    // Restart as circuit 2 with a concurrent bootstrap.  The hosts start
+    // without a checkpoint, which would start a non-concurrent bootstrap.
     let circuit2 = circuit2.clone();
-    let (mut circuit, (inputs, old_outputs, new_outputs)) = Runtime::init_circuit(
-        configure(circuit_config_with_workers(&path, workers)),
-        move |circuit| Ok(circuit2(circuit)),
-    )
-    .unwrap();
+    let mut hosts = TestHosts::start_with(workers, n_hosts, configure_host, move |circuit| {
+        Ok(circuit2(circuit))
+    });
 
     // The value of "no output": mailboxes are empty before any transaction.
-    let empty_new = ON::read_outputs(&new_outputs);
+    let empty_new = read_from_hosts::<_, ON>(&hosts, |handles| &handles.2);
 
-    let outcome = circuit
-        .start_concurrent_bootstrap(checkpoint.uuid.to_string().into())
-        .unwrap();
+    // Every host bootstraps from its own checkpoint, and all of them must
+    // reach the same outcome.
+    let mut outcomes = hosts.map_with_index(|host, handle| {
+        handle
+            .start_concurrent_bootstrap(checkpoints[host].to_string().into())
+            .unwrap()
+    });
+    for (host, outcome) in outcomes.iter().enumerate() {
+        assert_eq!(outcome, &outcomes[0], "host {host} and host 0 disagree");
+    }
+    let outcome = outcomes.swap_remove(0);
 
     let mut offset = inputs1.len();
 
@@ -2507,7 +2652,7 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
     match expected {
         ExpectedOutcome::Concurrent => {
             let crate::circuit::ConcurrentRestoreOutcome::Concurrent(info) = outcome else {
-                panic!("expected a concurrent bootstrap, got {outcome:?}");
+                panic!("expected a concurrent bootstrap on {n_hosts} host(s), got {outcome:?}");
             };
             assert!(!info.replay_sources.is_empty());
             info_check(&info);
@@ -2517,25 +2662,27 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
             let mut bootstrap_done = false;
             let mut pumps = 0;
             for (i, chunk) in inputs2.iter().enumerate() {
-                I::push_inputs(chunk.clone(), &inputs);
-                circuit.transaction().unwrap();
+                push_to_host::<_, I>(&hosts, offset + i, chunk.clone(), |handles| &handles.0);
+                hosts.transaction();
                 assert_eq!(
-                    OO::read_outputs(&old_outputs),
+                    read_from_hosts::<_, OO>(&hosts, |handles| &handles.1),
                     ref_old[offset + i],
-                    "phase 2, transaction {i}: old views diverged during the background replay"
+                    "phase 2, transaction {i}, on {n_hosts} host(s): old views diverged during \
+                     the background replay"
                 );
                 assert_eq!(
-                    ON::read_outputs(&new_outputs),
+                    read_from_hosts::<_, ON>(&hosts, |handles| &handles.2),
                     empty_new,
-                    "phase 2, transaction {i}: new views must be silent before cutover"
+                    "phase 2, transaction {i}, on {n_hosts} host(s): new views must be silent \
+                     before cutover"
                 );
                 if !bootstrap_done {
-                    bootstrap_done = circuit.step_bootstrap_circuit().unwrap();
+                    bootstrap_done = step_bootstrap_circuits(&mut hosts);
                     pumps += 1;
                 }
             }
             while !bootstrap_done {
-                bootstrap_done = circuit.step_bootstrap_circuit().unwrap();
+                bootstrap_done = step_bootstrap_circuits(&mut hosts);
                 pumps += 1;
             }
             // Most topologies replay chunk-by-chunk over several pumps (the
@@ -2544,9 +2691,9 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
             assert!(pumps >= 1, "the bootstrap circuit was never pumped");
 
             // Synchronization and cutover.
-            circuit.sync_concurrent_bootstrap().unwrap();
-            while !circuit.step_bootstrap_circuit().unwrap() {}
-            circuit.complete_concurrent_bootstrap().unwrap();
+            hosts.for_each(|handle| handle.sync_concurrent_bootstrap().unwrap());
+            while !step_bootstrap_circuits(&mut hosts) {}
+            hosts.for_each(|handle| handle.complete_concurrent_bootstrap().unwrap());
 
             offset += inputs2.len();
             cutover_happened = true;
@@ -2554,13 +2701,19 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
         ExpectedOutcome::UpToDate => {
             assert!(
                 matches!(outcome, crate::circuit::ConcurrentRestoreOutcome::UpToDate),
-                "expected UpToDate, got {outcome:?}"
+                "expected UpToDate on {n_hosts} host(s), got {outcome:?}"
             );
             for (i, chunk) in inputs2.iter().enumerate() {
-                I::push_inputs(chunk.clone(), &inputs);
-                circuit.transaction().unwrap();
-                assert_eq!(OO::read_outputs(&old_outputs), ref_old[offset + i]);
-                assert_eq!(ON::read_outputs(&new_outputs), ref_new[offset + i]);
+                push_to_host::<_, I>(&hosts, offset + i, chunk.clone(), |handles| &handles.0);
+                hosts.transaction();
+                assert_eq!(
+                    read_from_hosts::<_, OO>(&hosts, |handles| &handles.1),
+                    ref_old[offset + i]
+                );
+                assert_eq!(
+                    read_from_hosts::<_, ON>(&hosts, |handles| &handles.2),
+                    ref_new[offset + i]
+                );
             }
             offset += inputs2.len();
         }
@@ -2579,12 +2732,12 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
         cumulative_new = ON::add(&cumulative_new, &ref_new[j]);
     }
     for (i, chunk) in inputs3.iter().chain(inputs4.iter()).enumerate() {
-        I::push_inputs(chunk.clone(), &inputs);
-        circuit.transaction().unwrap();
+        push_to_host::<_, I>(&hosts, offset + i, chunk.clone(), |handles| &handles.0);
+        hosts.transaction();
         assert_eq!(
-            OO::read_outputs(&old_outputs),
+            read_from_hosts::<_, OO>(&hosts, |handles| &handles.1),
             ref_old[offset + i],
-            "post-cutover transaction {i}: old views"
+            "post-cutover transaction {i}, on {n_hosts} host(s): old views"
         );
 
         let expected_new = if cutover_happened && i == 0 {
@@ -2594,13 +2747,13 @@ fn run_concurrent_bootstrap_test<I, OO, ON>(
             ref_new[offset + i].clone()
         };
         assert_eq!(
-            ON::read_outputs(&new_outputs),
+            read_from_hosts::<_, ON>(&hosts, |handles| &handles.2),
             expected_new,
-            "post-cutover transaction {i}: new views"
+            "post-cutover transaction {i}, on {n_hosts} host(s): new views"
         );
     }
 
-    circuit.kill().unwrap();
+    hosts.kill();
 }
 
 /// One single-record transaction per value in `from..to`, weight `w`.
@@ -3297,6 +3450,105 @@ fn test_concurrent_aggregate_with_deletions() {
     );
 }
 
+// --- Topology: views gathered on the first host. ---
+//
+// On more than one host, a pipeline gathers each view's output on the workers
+// of one host through a sharded accumulator.  The new view's gather is
+// downstream of a new aggregate, so the live copy excludes it during the
+// backfill.  The old view's gather shares the circuit's remote waiter with
+// it, and the old view must stay live all the same.
+
+/// Outputs `stream` as a pipeline outputs a view: on more than one host, a
+/// sharded accumulator gathers it on the workers of the first host.
+///
+/// # Arguments
+///
+/// * `stream` - the view.
+/// * `persistent_id` - the persistent id of the output operator.
+///
+/// # Returns
+///
+/// The handle of the output.
+fn gathered_output<T>(
+    stream: &Stream<RootCircuit, OrdZSet<T>>,
+    persistent_id: &str,
+) -> OutputHandle<SpineSnapshot<OrdZSet<T>>>
+where
+    T: DBData,
+{
+    match Runtime::runtime().unwrap().layout() {
+        Layout::Multihost { hosts, .. } => {
+            let (gathered, enable_count) = stream
+                .shard_workers_accumulate(hosts[0].workers.clone())
+                .into_parts();
+            enable_count.enable();
+            stream
+                .circuit()
+                .output_accumulated_stream_persistent_with_gid::<OrdZSet<T>>(
+                    &gathered,
+                    enable_count,
+                    Some(persistent_id),
+                )
+                .0
+        }
+        Layout::Solo { .. } => stream.accumulate_output_persistent(Some(persistent_id)),
+    }
+}
+
+fn topo_gathered_old(
+    circuit: &mut RootCircuit,
+) -> (ZSetHandle<u64>, OutputHandle<SpineSnapshot<OrdZSet<u64>>>) {
+    let (input, ih) = circuit.add_input_zset::<u64>();
+    input.set_persistent_id(Some("t1"));
+    input.integrate_trace();
+    let out_old = gathered_output(&input.map(|x| x + 5), "out_old");
+    (ih, out_old)
+}
+
+#[allow(clippy::type_complexity)]
+fn topo_gathered_new(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<u64>,
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, i64>>>>,
+) {
+    let (input, ih) = circuit.add_input_zset::<u64>();
+    input.set_persistent_id(Some("t1"));
+    input.integrate_trace();
+    let out_old = gathered_output(&input.map(|x| x + 5), "out_old");
+
+    let by_key = input.map_index(|x| (x % 5, *x));
+    by_key.set_persistent_id(Some("by_key"));
+    let sums = by_key.aggregate_linear_persistent(Some("sums_agg"), |v| *v as i64);
+    sums.set_persistent_id(Some("sums"));
+    let out_new = gathered_output(&sums.map(|(k, s)| Tup2(*k, *s)), "out_new");
+    (ih, out_old, out_new)
+}
+
+#[test]
+fn test_concurrent_gathered_views() {
+    let mut p1 = weighted_sequence(0, 16, 1);
+    p1.push(vec![Tup2(3, -1), Tup2(7, -1)]);
+    let mut p2 = weighted_sequence(16, 24, 1);
+    p2.push(vec![Tup2(18, -1), Tup2(4, -1)]);
+    let mut p3 = weighted_sequence(24, 28, 1);
+    p3.push(vec![Tup2(25, -1)]);
+    let p4 = negate_chunks(&[&p1, &p2, &p3]);
+    run_concurrent_bootstrap_test::<TestData1<u64>, TestData1<u64>, TestData1<Tup2<u64, i64>>>(
+        NUM_WORKERS,
+        |config| config,
+        Arc::new(topo_gathered_old),
+        Arc::new(topo_gathered_new),
+        p1,
+        p2,
+        p3,
+        p4,
+        ExpectedOutcome::Concurrent,
+        |info| assert_eq!(info.replay_sources.len(), 1),
+    );
+}
+
 // --- Topology: TWO new views sharing a new stateful operator. ---
 //
 // Both backfill cones run through one new distinct: the cones overlap in
@@ -3462,7 +3714,15 @@ fn test_concurrent_up_to_date() {
 #[test]
 fn test_concurrent_unmaterialized_table_falls_back() {
     init_test_logger();
+    for n_hosts in TEST_HOSTS {
+        concurrent_unmaterialized_table_falls_back(n_hosts);
+    }
+}
+
+/// Runs [test_concurrent_unmaterialized_table_falls_back] on `n_hosts` hosts.
+fn concurrent_unmaterialized_table_falls_back(n_hosts: usize) {
     let path = tempfile::tempdir().unwrap().keep();
+    let configure = move |host, config| host_config(config, &path, host);
 
     let old_constructor = |circuit: &mut RootCircuit| {
         let (input, ih) = circuit.add_input_zset::<u64>();
@@ -3487,56 +3747,67 @@ fn test_concurrent_unmaterialized_table_falls_back() {
         Ok((ih, out_old, out_new))
     };
 
-    fn read(handle: &OutputHandle<SpineSnapshot<OrdZSet<u64>>>) -> OrdZSet<u64> {
-        SpineSnapshot::<OrdZSet<u64>>::concat(&handle.take_from_all()).consolidate()
+    let mut hosts = TestHosts::start_with(NUM_WORKERS, n_hosts, configure.clone(), old_constructor);
+    for x in 0..8u64 {
+        hosts.result(x as usize % n_hosts).0.push(x, 1);
+        hosts.transaction();
+        assert_eq!(
+            read_u64_from_hosts(&hosts, |handles| &handles.1),
+            zset! { x + 5 => 1 }
+        );
+    }
+    let checkpoints = hosts.checkpoint();
+    hosts.kill();
+
+    // Without a checkpoint, which would start a non-concurrent bootstrap.
+    let mut hosts = TestHosts::start_with(NUM_WORKERS, n_hosts, configure, new_constructor);
+    let outcomes = hosts.map_with_index(|host, handle| {
+        handle
+            .start_concurrent_bootstrap(checkpoints[host].to_string().into())
+            .unwrap()
+    });
+    for (host, outcome) in outcomes.iter().enumerate() {
+        let crate::circuit::ConcurrentRestoreOutcome::FellBack { reason, .. } = outcome else {
+            panic!("expected fallback on host {host} of {n_hosts}, got {outcome:?}");
+        };
+        assert!(
+            reason.contains("no replay source"),
+            "unexpected reason: {reason}"
+        );
     }
 
-    let checkpoint = {
-        let (mut circuit, (input, out_old)) =
-            Runtime::init_circuit(circuit_config(&path), old_constructor).unwrap();
-        for x in 0..8u64 {
-            input.push(x, 1);
-            circuit.transaction().unwrap();
-            assert_eq!(read(&out_old), zset! { x + 5 => 1 });
-        }
-        let checkpoint = circuit.checkpoint().run().unwrap();
-        circuit.kill().unwrap();
-        checkpoint
-    };
-
-    let (mut circuit, (input, out_old, out_new)) =
-        Runtime::init_circuit(circuit_config(&path), new_constructor).unwrap();
-    let outcome = circuit
-        .start_concurrent_bootstrap(checkpoint.uuid.to_string().into())
-        .unwrap();
-    let crate::circuit::ConcurrentRestoreOutcome::FellBack { reason, .. } = &outcome else {
-        panic!("expected fallback, got {outcome:?}");
-    };
-    assert!(
-        reason.contains("no replay source"),
-        "unexpected reason: {reason}"
-    );
-
-    while circuit.bootstrap_in_progress() {
-        circuit.transaction().unwrap();
+    while hosts.map(|handle| handle.bootstrap_in_progress())[0] {
+        hosts.transaction();
     }
-    let _ = read(&out_old);
-    let _ = read(&out_new);
+    let _ = read_u64_from_hosts(&hosts, |handles| &handles.1);
+    let _ = read_u64_from_hosts(&hosts, |handles| &handles.2);
 
     // Old view live; new view sees post-restart data only.
-    input.push(100, 1);
-    circuit.transaction().unwrap();
-    assert_eq!(read(&out_old), zset! { 105 => 1 });
-    assert_eq!(read(&out_new), zset! { 100 % 19 => 1 });
+    hosts.result(0).0.push(100, 1);
+    hosts.transaction();
+    assert_eq!(
+        read_u64_from_hosts(&hosts, |handles| &handles.1),
+        zset! { 105 => 1 }
+    );
+    assert_eq!(
+        read_u64_from_hosts(&hosts, |handles| &handles.2),
+        zset! { 100 % 19 => 1 }
+    );
 
     // A value whose residue was seen before the restart is NOT suppressed:
     // the unmaterialized history is gone.
-    input.push(3, 1);
-    circuit.transaction().unwrap();
-    assert_eq!(read(&out_old), zset! { 8 => 1 });
-    assert_eq!(read(&out_new), zset! { 3 => 1 });
+    hosts.result(n_hosts - 1).0.push(3, 1);
+    hosts.transaction();
+    assert_eq!(
+        read_u64_from_hosts(&hosts, |handles| &handles.1),
+        zset! { 8 => 1 }
+    );
+    assert_eq!(
+        read_u64_from_hosts(&hosts, |handles| &handles.2),
+        zset! { 3 => 1 }
+    );
 
-    circuit.kill().unwrap();
+    hosts.kill();
 }
 
 // --- Abort: destroy the bootstrap circuit instead of cutting over. ---
@@ -3744,11 +4015,35 @@ fn test_concurrent_bootstrap_map_input() {
 #[test]
 fn test_concurrent_bootstrap_lazy_map_input() {
     init_test_logger();
-    let path = tempfile::tempdir().unwrap().keep();
-
-    fn read(handle: &OutputHandle<SpineSnapshot<OrdZSet<u64>>>) -> OrdZSet<u64> {
-        SpineSnapshot::<OrdZSet<u64>>::concat(&handle.take_from_all()).consolidate()
+    for n_hosts in TEST_HOSTS {
+        concurrent_bootstrap_lazy_map_input(n_hosts);
     }
+}
+
+/// Reads the output that `select` picks on every host of a test.
+///
+/// # Returns
+///
+/// The sum of the outputs of all of the hosts.
+fn read_u64_from_hosts<T>(
+    hosts: &TestHosts<T>,
+    select: impl Fn(&T) -> &OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+) -> OrdZSet<u64>
+where
+    T: Send + 'static,
+{
+    read_from_hosts::<_, TestData1<u64>>(hosts, select)
+}
+
+/// Runs [test_concurrent_bootstrap_lazy_map_input] on `n_hosts` hosts.
+///
+/// On more than one host, the lazy map's input crosses a sharded accumulator
+/// before the map's integral, and the new view's `distinct` has a sharded
+/// accumulator of its own.  The bootstrap must not reach the map's input
+/// through the remote waiter that the two accumulators share.
+fn concurrent_bootstrap_lazy_map_input(n_hosts: usize) {
+    let path = tempfile::tempdir().unwrap().keep();
+    let configure = move |host, config| host_config(config, &path, host);
 
     let old_constructor = |circuit: &mut RootCircuit| {
         let (input, ih) = circuit.add_lazy_input_map_persistent::<u64, u64>(Some("t1"));
@@ -3772,95 +4067,116 @@ fn test_concurrent_bootstrap_lazy_map_input() {
         Ok((ih, out_old, out_new))
     };
 
-    let checkpoint = {
-        let (mut circuit, (input, out_old)) =
-            Runtime::init_circuit(circuit_config(&path), old_constructor).unwrap();
-        for x in 0..12u64 {
-            input.push(x, Some(x));
-            circuit.transaction().unwrap();
-            assert_eq!(read(&out_old), zset! { x + 5 => 1 });
-        }
-        let checkpoint = circuit.checkpoint().run().unwrap();
-        circuit.kill().unwrap();
-        checkpoint
-    };
+    // Each key enters the circuit on a host of its own.
+    let host_of = |key: u64| key as usize % n_hosts;
 
-    let (mut circuit, (input, out_old, out_new)) =
-        Runtime::init_circuit(circuit_config(&path), new_constructor).unwrap();
-    let outcome = circuit
-        .start_concurrent_bootstrap(checkpoint.uuid.to_string().into())
-        .unwrap();
-    let crate::circuit::ConcurrentRestoreOutcome::Concurrent(info) = outcome else {
-        panic!("expected concurrent bootstrap, got {outcome:?}");
-    };
-    assert_eq!(
-        info.replay_sources
-            .values()
-            .map(|streams| streams.len())
-            .collect::<Vec<_>>(),
-        vec![2]
-    );
-    assert!(
-        !info.need_backfill.values().flatten().any(|pid| pid == "t1"),
-        "the table's node needs backfill: {:?}",
-        info.need_backfill
-    );
+    let mut hosts = TestHosts::start_with(NUM_WORKERS, n_hosts, configure.clone(), old_constructor);
+    for x in 0..12u64 {
+        hosts.result(host_of(x)).0.push(x, Some(x));
+        hosts.transaction();
+        assert_eq!(
+            read_u64_from_hosts(&hosts, |handles| &handles.1),
+            zset! { x + 5 => 1 }
+        );
+    }
+    let checkpoints = hosts.checkpoint();
+    hosts.kill();
+
+    // Without a checkpoint, which would start a non-concurrent bootstrap.
+    let mut hosts = TestHosts::start_with(NUM_WORKERS, n_hosts, configure, new_constructor);
+    let outcomes = hosts.map_with_index(|host, handle| {
+        handle
+            .start_concurrent_bootstrap(checkpoints[host].to_string().into())
+            .unwrap()
+    });
+    for (host, outcome) in outcomes.iter().enumerate() {
+        let crate::circuit::ConcurrentRestoreOutcome::Concurrent(info) = outcome else {
+            panic!("expected concurrent bootstrap on host {host} of {n_hosts}, got {outcome:?}");
+        };
+        assert_eq!(
+            info.replay_sources
+                .values()
+                .map(|streams| streams.len())
+                .collect::<Vec<_>>(),
+            vec![2]
+        );
+        assert!(
+            !info.need_backfill.values().flatten().any(|pid| pid == "t1"),
+            "the table's node needs backfill: {:?}",
+            info.need_backfill
+        );
+    }
 
     // The old view stays live during the backfill; the map's changes,
     // including a deletion, are recorded for the synchronization transaction.
     let mut done = false;
     for x in 12..18u64 {
-        input.push(x, Some(x));
-        circuit.transaction().unwrap();
-        assert_eq!(read(&out_old), zset! { x + 5 => 1 });
-        assert_eq!(read(&out_new), zset! {});
+        hosts.result(host_of(x)).0.push(x, Some(x));
+        hosts.transaction();
+        assert_eq!(
+            read_u64_from_hosts(&hosts, |handles| &handles.1),
+            zset! { x + 5 => 1 }
+        );
+        assert_eq!(read_u64_from_hosts(&hosts, |handles| &handles.2), zset! {});
         if !done {
-            done = circuit.step_bootstrap_circuit().unwrap();
+            done = step_bootstrap_circuits(&mut hosts);
         }
     }
-    input.push(13, None); // delete key 13 (value 13)
-    circuit.transaction().unwrap();
-    assert_eq!(read(&out_old), zset! { 18 => -1 });
+    hosts.result(host_of(13)).0.push(13, None); // delete key 13 (value 13)
+    hosts.transaction();
+    assert_eq!(
+        read_u64_from_hosts(&hosts, |handles| &handles.1),
+        zset! { 18 => -1 }
+    );
     while !done {
-        done = circuit.step_bootstrap_circuit().unwrap();
+        done = step_bootstrap_circuits(&mut hosts);
     }
 
-    circuit.sync_concurrent_bootstrap().unwrap();
-    while !circuit.step_bootstrap_circuit().unwrap() {}
-    circuit.complete_concurrent_bootstrap().unwrap();
+    hosts.for_each(|handle| handle.sync_concurrent_bootstrap().unwrap());
+    while !step_bootstrap_circuits(&mut hosts) {}
+    hosts.for_each(|handle| handle.complete_concurrent_bootstrap().unwrap());
 
     // The first transaction after the cutover delivers the new view's whole
     // contents: values 0..=17 without 13 cover every residue mod 7.
     // Inserting key 18 (residue 4) adds nothing to it.
-    input.push(18, Some(18));
-    circuit.transaction().unwrap();
-    assert_eq!(read(&out_old), zset! { 23 => 1 });
+    hosts.result(host_of(18)).0.push(18, Some(18));
+    hosts.transaction();
     assert_eq!(
-        read(&out_new),
+        read_u64_from_hosts(&hosts, |handles| &handles.1),
+        zset! { 23 => 1 }
+    );
+    assert_eq!(
+        read_u64_from_hosts(&hosts, |handles| &handles.2),
         zset! { 0 => 1, 1 => 1, 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1 }
     );
 
     // Overwriting key 11 (11 -> 25) changes the old view only: residue 4
     // stays.
-    input.push(11, Some(25));
-    circuit.transaction().unwrap();
-    assert_eq!(read(&out_old), zset! { 16 => -1, 30 => 1 });
-    assert_eq!(read(&out_new), zset! {});
+    hosts.result(host_of(11)).0.push(11, Some(25));
+    hosts.transaction();
+    assert_eq!(
+        read_u64_from_hosts(&hosts, |handles| &handles.1),
+        zset! { 16 => -1, 30 => 1 }
+    );
+    assert_eq!(read_u64_from_hosts(&hosts, |handles| &handles.2), zset! {});
 
     // Deleting the residue-4 values one per transaction retracts the residue
     // exactly when the last one goes: a value lost by the checkpoint, the
     // replay or the synchronization shifts which deletion retracts it.
-    input.push(4, None);
-    circuit.transaction().unwrap();
-    assert_eq!(read(&out_new), zset! {});
-    input.push(18, None);
-    circuit.transaction().unwrap();
-    assert_eq!(read(&out_new), zset! {});
-    input.push(11, None); // value 25, the last residue-4 value
-    circuit.transaction().unwrap();
-    assert_eq!(read(&out_new), zset! { 4 => -1 });
+    hosts.result(host_of(4)).0.push(4, None);
+    hosts.transaction();
+    assert_eq!(read_u64_from_hosts(&hosts, |handles| &handles.2), zset! {});
+    hosts.result(host_of(18)).0.push(18, None);
+    hosts.transaction();
+    assert_eq!(read_u64_from_hosts(&hosts, |handles| &handles.2), zset! {});
+    hosts.result(host_of(11)).0.push(11, None); // value 25, the last residue-4 value
+    hosts.transaction();
+    assert_eq!(
+        read_u64_from_hosts(&hosts, |handles| &handles.2),
+        zset! { 4 => -1 }
+    );
 
-    circuit.kill().unwrap();
+    hosts.kill();
 }
 
 // ---------------------------------------------------------------------------
