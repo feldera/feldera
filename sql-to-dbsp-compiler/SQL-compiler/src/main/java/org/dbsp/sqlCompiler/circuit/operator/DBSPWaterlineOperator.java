@@ -76,7 +76,8 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator implements IS
         DBSPWaterlineOperator otherOperator = other.as(DBSPWaterlineOperator.class);
         if (otherOperator == null)
             return false;
-        return this.init.equivalent(otherOperator.init);
+        return this.init.equivalent(otherOperator.init) &&
+                this.extractTs.equivalent(otherOperator.extractTs);
     }
 
     @SuppressWarnings("unused")
