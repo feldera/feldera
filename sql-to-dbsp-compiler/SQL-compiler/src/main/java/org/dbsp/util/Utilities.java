@@ -644,6 +644,20 @@ public class Utilities {
         return prop;
     }
 
+    /** True if {@code node} is present and is not the JSON {@code null}. */
+    public static boolean isNotNull(@Nullable JsonNode node) {
+        return node != null && !node.isNull();
+    }
+
+    /**
+     * True if both fields appear in a parsed document, even with a JSON {@code null}
+     * value.  Jackson reads an explicit {@code null} as a {@code NullNode} and leaves an
+     * absent field {@code null}, so the two are told apart.
+     */
+    public static boolean bothNonNull(@Nullable JsonNode first, @Nullable JsonNode second) {
+        return first != null && second != null;
+    }
+
     public static boolean getBooleanProperty(JsonNode node, String property) {
         JsonNode prop = Utilities.getProperty(node, property);
         return prop.asBoolean();
