@@ -273,7 +273,7 @@ hfeature = pipeline.listen("feature")
 # Process full snapshot of the input tables and compute a dataset
 # with feature vectors for use in model training and testing.
 pipeline.start()
-pipeline.wait_for_completion(shutdown=True)
+pipeline.wait_for_completion(force_stop=True)
 
 features_pd = hfeature.to_pandas()
 print(f"Computed {len(features_pd)} feature vectors")
@@ -406,7 +406,7 @@ pipeline.start()
 time.sleep(INFERENCE_TIME_SECONDS)
 
 print(f"Shutting down the inference pipeline after {INFERENCE_TIME_SECONDS} seconds")
-pipeline.shutdown()
+pipeline.stop(force=True)
 ```
 
 Running this code produces output similar to the following:
