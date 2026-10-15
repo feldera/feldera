@@ -1027,6 +1027,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPDistinctOperator operator) {
+        this.computeHash(operator);
         DBSPType streamType = this.streamType(operator);
         this.writeComments(operator)
                 .append("let ")
@@ -1048,6 +1049,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPPositiveOperator operator) {
+        this.computeHash(operator);
         // No "persistent" version
         DBSPType streamType = this.streamType(operator);
         this.writeComments(operator)
@@ -1068,7 +1070,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPControlledKeyFilterOperator operator) {
-        // No need to use the Merkle Hash
+        this.computeHash(operator);
         this.builder.append("let (")
                 .append(operator.getOutput(0).getName(this.preferHash))
                 .append(",")
@@ -1266,6 +1268,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPSinkOperator operator) {
+        this.computeHash(operator);
         this.innerVisitor.setOperatorContext(operator);
         if (!this.useHandles) {
             /*
@@ -1479,6 +1482,7 @@ public class ToRustVisitor extends CircuitVisitor {
 
     @Override
     public VisitDecision preorder(DBSPIndexedTopKOperator operator) {
+        this.computeHash(operator);
         this.innerVisitor.setOperatorContext(operator);
         DBSPExpression comparator = operator.getFunction();
         String streamOperation = switch (operator.numbering) {
