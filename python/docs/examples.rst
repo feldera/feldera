@@ -118,10 +118,9 @@ Runtime configuration of a Pipeline
             "backend": {
                 "name": "default"
             },
-            "min_storage_bytes": None,
-            "min_step_storage_bytes": None,
+            "min_spill_size": "10Mi",
             "compression": "default",
-            "cache_mib": None
+            "cache_size": "4Gi"
         },
         "fault_tolerance": {
             "model": "at_least_once",
@@ -135,9 +134,9 @@ Runtime configuration of a Pipeline
         "resources": {
             "cpu_cores_min": None,
             "cpu_cores_max": None,
-            "memory_mb_min": None,
-            "memory_mb_max": None,
-            "storage_mb_max": None,
+            "memory_min": None,
+            "memory_max": "16Gi",
+            "storage_max": "400Gi",
             "storage_class": None
         },
         "clock_resolution": "1s",
