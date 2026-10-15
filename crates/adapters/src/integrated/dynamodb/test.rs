@@ -1,3 +1,4 @@
+use feldera_types::size::ConfigSize;
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -324,7 +325,7 @@ fn config(batch_size: usize) -> DynamoDBWriterConfig {
         aws_secret_access_key: None,
         batch_size: Some(batch_size),
         write_mode: DynamoDBWriteMode::Batch,
-        max_buffer_size_bytes: 1024 * 1024,
+        max_buffer_size: ConfigSize::from_mib(1),
         max_concurrent_requests: 16,
         threads: 1,
         max_retries: Some(10),
@@ -354,7 +355,7 @@ fn endpoint_config(
         aws_secret_access_key: use_static_dummy_credentials.then(|| "dummy".to_string()),
         batch_size: None,
         write_mode: DynamoDBWriteMode::Batch,
-        max_buffer_size_bytes: 1024 * 1024,
+        max_buffer_size: ConfigSize::from_mib(1),
         max_concurrent_requests: 16,
         threads,
         max_retries: Some(10),
@@ -386,7 +387,7 @@ fn worker(batch_size: usize) -> DynamoDBWorker {
 
 fn worker_with_max_buffer_size(batch_size: usize, max_buffer_size_bytes: usize) -> DynamoDBWorker {
     let mut config = config(batch_size);
-    config.max_buffer_size_bytes = max_buffer_size_bytes;
+    config.max_buffer_size = ConfigSize::from_bytes(max_buffer_size_bytes as u64);
     DynamoDBWorker::with_client(
         dummy_client(),
         "",
@@ -660,7 +661,7 @@ fn encoder_flushes_when_record_threshold_is_reached() {
     // threshold = batch_size(2) × max_concurrent_requests(2) = 4
     let mut config = config(2);
     config.max_concurrent_requests = 2;
-    config.max_buffer_size_bytes = usize::MAX;
+    config.max_buffer_size = ConfigSize::MAX;
     let mut worker = worker_with_config(config);
     let batch = build_batch(
         (0..4)
@@ -684,7 +685,7 @@ fn encoder_pending_never_buffers_whole_batch() {
     // Enough permits that no flush blocks, and `usize::MAX` bytes so the
     // count-based flush is exercised in isolation from the byte-based one.
     config.max_concurrent_requests = 64;
-    config.max_buffer_size_bytes = usize::MAX;
+    config.max_buffer_size = ConfigSize::MAX;
     let mut worker = worker_with_config(config);
 
     let batch = build_batch(
@@ -1877,7 +1878,7 @@ fn dynamodb_endpoint_flush_every(
     endpoint_url: Option<&str>,
 ) -> DynamoDBOutputEndpoint {
     let mut config = endpoint_config(table.to_string(), endpoint_url.map(str::to_string), threads);
-    config.max_buffer_size_bytes = max_buffer_size_bytes;
+    config.max_buffer_size = ConfigSize::from_bytes(max_buffer_size_bytes as u64);
     DynamoDBOutputEndpoint::new(
         EndpointId::default(),
         "test_endpoint",
@@ -1964,7 +1965,7 @@ fn backpressure_writes_all_records(threads: usize) {
     let _table_guard = TempDynamoTable::new(&client, &table, true);
 
     let mut config = endpoint_config(table.clone(), endpoint_url.clone(), threads);
-    config.max_buffer_size_bytes = 1; // flush after every record
+    config.max_buffer_size = ConfigSize::from_bytes(1); // flush after every record
     config.max_concurrent_requests = 1; // a single in-flight write per worker
     let mut endpoint = DynamoDBOutputEndpoint::new(
         EndpointId::default(),

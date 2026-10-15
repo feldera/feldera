@@ -1618,7 +1618,7 @@ mod remove_stamp_tests {
         let dir = tempdir().expect("temp dir");
         let mut config = mkconfig(dir.path());
         let storage = config.storage.as_mut().expect("mkconfig sets up storage");
-        storage.options.min_step_storage_bytes = None;
+        storage.options.min_step_spill_size = None;
         run_in_circuit_with_storage_config(config, f);
     }
 

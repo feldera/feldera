@@ -18,6 +18,7 @@ use feldera_types::config::{
     PipelineConfig, PipelineConfigProgramInfo, RuntimeConfig, StorageCacheConfig, StorageConfig,
 };
 use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus};
+use feldera_types::size::ConfigSize;
 use reqwest::StatusCode;
 use serde_json::json;
 use std::ffi::OsString;
@@ -1520,17 +1521,18 @@ fn per_host_share(available_mb: Option<u64>, n_hosts: usize) -> Option<u64> {
         .filter(|mb| *mb > 0)
 }
 
-/// Sets `global.resources.memory_mb_max` to `available_mb` when the pipeline
-/// has no memory budget.
+/// Sets `global.resources.memory_max` to `available_mb` megabytes when the
+/// pipeline has no memory budget.
 fn apply_default_memory_limit(global: &mut RuntimeConfig, available_mb: Option<u64>) {
-    if global.effective_memory_mb().is_none()
+    if global.effective_memory().is_none()
         && let Some(available_mb) = available_mb
     {
+        let available = ConfigSize::from_mb(available_mb);
         info!(
-            "pipeline has no memory limit ('max_rss_mb' or 'resources.memory_mb_max'): \
-defaulting 'resources.memory_mb_max' to {available_mb} MB"
+            "pipeline has no memory limit ('max_rss' or 'resources.memory_max'): \
+defaulting 'resources.memory_max' to {available}"
         );
-        global.resources.memory_mb_max = Some(available_mb);
+        global.resources.memory_max = Some(available);
     }
 }
 

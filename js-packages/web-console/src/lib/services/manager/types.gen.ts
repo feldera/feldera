@@ -879,26 +879,6 @@ export type ConnectorConfig = OutputBufferConfig & {
    */
   max_batch_size?: number | null
   /**
-   * Backpressure threshold, in bytes.
-   *
-   * Maximal number of bytes queued by the endpoint before the endpoint
-   * is paused by the backpressure mechanism.
-   *
-   * For input endpoints, this setting bounds the number of bytes that have
-   * been received from the input transport but haven't yet been consumed by
-   * the circuit since the circuit, since the circuit is still busy processing
-   * previous inputs.
-   *
-   * This setting is not yet implemented for output endpoints.
-   *
-   * Note that this is not a hard bound: there can be a small delay between
-   * the backpressure mechanism is triggered and the endpoint is paused, during
-   * which more data may be queued.
-   *
-   * When this is unspecified, it defaults to `1000 * max_queued_records`.
-   */
-  max_queued_bytes?: number | null
-  /**
    * Backpressure threshold, in records.
    *
    * Maximal number of records queued by the endpoint before the endpoint
@@ -919,6 +899,30 @@ export type ConnectorConfig = OutputBufferConfig & {
    * The default is 1 million.
    */
   max_queued_records?: number
+  /**
+   * Backpressure threshold, in bytes.
+   *
+   * Maximal number of bytes queued by the endpoint before the endpoint
+   * is paused by the backpressure mechanism.
+   *
+   * For input endpoints, this setting bounds the number of bytes that have
+   * been received from the input transport but haven't yet been consumed by
+   * the circuit since the circuit, since the circuit is still busy processing
+   * previous inputs.
+   *
+   * This setting is not yet implemented for output endpoints.
+   *
+   * Note that this is not a hard bound: there can be a small delay between
+   * the backpressure mechanism is triggered and the endpoint is paused, during
+   * which more data may be queued.
+   *
+   * When this is unspecified, it defaults to `1000 * max_queued_records`
+   * bytes.
+   *
+   * Before release 0.367.0 this setting was `max_queued_bytes`, a number
+   * of bytes. That name is deprecated but still read.
+   */
+  max_queued_size?: string | null
   /**
    * Maximum number of records processed per batch, per worker thread.
    *
@@ -1728,8 +1732,16 @@ export type Demo = {
 export type DeploymentResources = {
   cpu_cores_max?: number | null
   cpu_cores_min?: number | null
-  memory_mb_max?: number | null
-  memory_mb_min?: number | null
+  /**
+   * The maximum memory, such as `"16Gi"`. `memory_mb_max`, a number of
+   * megabytes, is a deprecated alias.
+   */
+  memory_max?: string | null
+  /**
+   * The minimum memory, such as `"4Gi"`. `memory_mb_min`, a number of
+   * megabytes, is a deprecated alias.
+   */
+  memory_min?: string | null
 }
 
 /**
@@ -1870,8 +1882,8 @@ export type DevTweaks = {
    */
   enable_roaring?: boolean | null
   /**
-   * Maximum number of bytes of queued but unacknowledged exchange messages
-   * per pair of remote host and message type.
+   * Maximum size of the queued but unacknowledged exchange messages per
+   * pair of remote host and message type.
    *
    * A sender that pushes past this budget waits for the receiver to
    * acknowledge earlier messages before it queues more.  There are three
@@ -1879,15 +1891,17 @@ export type DevTweaks = {
    * each of the other hosts, plus any single message that exceeds the
    * budget on its own.
    *
-   * The default is 10,000,000 bytes.
+   * The default is `"10M"`. Before release 0.367.0 this setting was
+   * `exchange_channel_capacity_bytes`, a number of bytes.
    */
-  exchange_channel_capacity_bytes?: number | null
+  exchange_channel_capacity?: string | null
   /**
-   * Target number of cached bytes retained in each `FBuf` slab size class.
+   * Target size of the cache retained in each `FBuf` slab size class.
    *
-   * The default is 16 MiB.
+   * The default is `"16Mi"`. Before release 0.367.0 this setting was
+   * `fbuf_slab_bytes_per_class`, a number of bytes.
    */
-  fbuf_slab_bytes_per_class?: number | null
+  fbuf_slab_size_per_class?: string | null
   /**
    * Whether to asynchronously fetch keys needed for the distinct operator
    * from storage.  Asynchronous fetching should be faster for high-latency
@@ -1923,17 +1937,18 @@ export type DevTweaks = {
   layer_file_read_ahead_blocks?: number | null
   /**
    * Minimum size of the key blocks in the batches a lazy input map's
-   * accumulator writes for itself, in bytes.  A power of two, at least
-   * 4096.
+   * accumulator writes for itself.  A power of two, at least 4096 bytes.
    *
    * The map resolves a transaction by walking the accumulated updates in
    * key order without reading values, one storage request per key block,
    * so larger blocks mean fewer requests.  Only the accumulator's own
    * batches (merge outputs and spills) take this size; the batches that
    * reach the integral keep it until its merger rewrites them at the
-   * default size.  The default is 32768; 8192 is the file writer's default.
+   * default size.  The default is `"32Ki"`; `"8Ki"` is the file writer's
+   * default. Before release 0.367.0 this setting was
+   * `lazy_input_map_key_block_bytes`, a number of bytes.
    */
-  lazy_input_map_key_block_bytes?: number | null
+  lazy_input_map_key_block_size?: string | null
   /**
    * How many keys a lazy input map resolves against its integral in one step.
    *
@@ -2020,12 +2035,15 @@ export type DevTweaks = {
    */
   stack_overflow_backtrace?: boolean | null
   /**
-   * If set, the maximum amount of storage, in MiB, for the POSIX backend to
-   * allow to be in use before failing all writes with `StorageFull`.  This
-   * is useful for testing on top of storage that does not implement its own
-   * quota mechanism.
+   * If set, the maximum amount of storage for the POSIX backend to allow to
+   * be in use before failing all writes with `StorageFull`.  This is useful
+   * for testing on top of storage that does not implement its own quota
+   * mechanism.
+   *
+   * Before release 0.367.0 this setting was `storage_mb_max`, a number of
+   * mebibytes.
    */
-  storage_mb_max?: number | null
+  storage_max?: string | null
   /**
    * Enable streaming exchange.
    */
@@ -2111,11 +2129,15 @@ export type DynamoDbWriterConfig = {
    */
   endpoint_url?: string | null
   /**
-   * Maximum number of bytes buffered by each worker before flushing writes.
+   * Maximum size of the data buffered by each worker before flushing
+   * writes, such as `"1Mi"`.
    *
    * This is an approximate size based on encoded DynamoDB attributes.
+   *
+   * Before release 0.367.0 this setting was `max_buffer_size_bytes`, a
+   * number of bytes. That name is deprecated but still read.
    */
-  max_buffer_size_bytes?: number
+  max_buffer_size?: string
   /**
    * Maximum number of DynamoDB write requests in flight per worker thread.
    *
@@ -2277,12 +2299,15 @@ export type FileBackendConfig = {
  */
 export type FileInputConfig = {
   /**
-   * Read buffer size.
+   * Read buffer size, such as `"64Ki"`.
    *
    * Default: when this parameter is not specified, a platform-specific
    * default is used.
+   *
+   * Before release 0.367.0 this setting was `buffer_size_bytes`, a number
+   * of bytes. That name is deprecated but still read.
    */
-  buffer_size_bytes?: number | null
+  buffer_size?: string | null
   /**
    * Enable file following.
    *
@@ -4132,12 +4157,11 @@ export type PipelineConfig = {
    */
   cpu_profiler?: boolean
   /**
-   * DataFusion memory pool size, in MB, shared by the ad-hoc query
-   * engine and the Delta Lake / Iceberg connectors.
+   * DataFusion memory pool size, such as `"1Gi"`, shared by the ad-hoc
+   * query engine and the Delta Lake / Iceberg connectors.
    *
-   * Carved out of `max_rss_mb` (falling back to
-   * `resources.memory_mb_max`); the remainder goes to the DBSP circuit,
-   * so the two do not double-book RAM.
+   * Carved out of `max_rss` (falling back to `resources.memory_max`); the
+   * remainder goes to the DBSP circuit, so the two do not double-book RAM.
    *
    * Unset: defaults to 5% of the effective budget, capped at 2 GB.
    * Pipelines that don't run heavy ad-hoc / Delta / Iceberg workloads
@@ -4150,10 +4174,13 @@ export type PipelineConfig = {
    *
    * No pool limit applied if no overall budget is configured.
    *
+   * Before release 0.367.0 this setting was `datafusion_memory_mb`, a
+   * number of megabytes. That name is deprecated but still read.
+   *
    * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
    * for more details.
    */
-  datafusion_memory_mb?: number | null
+  datafusion_memory?: string | null
   dev_tweaks?: DevTweaks
   /**
    * Environment variables for the pipeline process.
@@ -4233,8 +4260,8 @@ export type PipelineConfig = {
    */
   max_parallel_connector_init?: number | null
   /**
-   * The maximum amount of memory, in Megabytes, that the pipeline is allowed to use
-   * on each host.
+   * The maximum amount of memory that the pipeline is allowed to use on
+   * each host, such as `"16G"` or `"16Gi"`.
    *
    * Setting this property activates memory pressure monitoring and backpressure
    * mechanisms. The pipeline will track the amount of remaining memory and
@@ -4248,17 +4275,20 @@ export type PipelineConfig = {
    * running out of memory. The setting should not exceed the memory limit of the pipeline
    * instance.
    *
-   * When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
+   * When `max_rss` is not specified but `resources.memory_max` is set, the
    * latter is used as the effective memory cap for the pipeline.
    *
    * The pipeline caps this limit at the memory available to it, which is the
    * host's memory or the container's memory limit, whichever is smaller. It
    * rechecks the available memory every second.
    *
+   * Before release 0.367.0 this setting was `max_rss_mb`, a number of
+   * megabytes. That name is deprecated but still read.
+   *
    * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
    * for more details.
    */
-  max_rss_mb?: number | null
+  max_rss?: string | null
   /**
    * Minimal input batch size.
    *
@@ -4590,23 +4620,26 @@ export type PostStopPipelineParameters = {
  */
 export type PostgresCdcBatchConfig = {
   /**
-   * Maximum preferred byte size for one batch per active stream. This is
-   * a ceiling, not a target: the runtime still chooses the smaller value
-   * between this limit and the memory-ratio budget computed from
-   * `memory_budget_ratio`.
-   *
-   * Default: 33554432 (32 MiB), the same as etl.
-   */
-  max_bytes?: number
-  /**
    * Maximum time, in milliseconds, to wait before flushing a partially
    * filled batch. This is the latency bound for batching: once the first
    * event enters a batch, the batch is flushed when this timer elapses,
-   * even if `max_bytes` was not reached.
+   * even if `max_size` was not reached.
    *
    * Default: 10000 (10 seconds).
    */
   max_fill_ms?: number
+  /**
+   * Maximum preferred size for one batch per active stream, such as
+   * `"32Mi"`. This is a ceiling, not a target: the runtime still chooses
+   * the smaller value between this limit and the memory-ratio budget
+   * computed from `memory_budget_ratio`.
+   *
+   * Default: `"32Mi"`, the same as etl.
+   *
+   * Before release 0.367.0 this setting was `max_bytes`, a number of
+   * bytes. That name is deprecated but still read.
+   */
+  max_size?: string
   /**
    * Ratio of process memory reserved for incoming replication batch
    * bytes, in the `(0.0, 1.0]` interval. The configured memory is divided
@@ -4909,12 +4942,15 @@ export type PostgresWriterConfig = {
    */
   extra_columns?: Array<string>
   /**
-   * The maximum buffer size in for a single operation.
+   * The maximum buffer size for a single operation, such as `"1Mi"`.
    * Note that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are
    * separate.
-   * Default: 1 MiB
+   * Default: `"1Mi"`.
+   *
+   * Before release 0.367.0 this setting was `max_buffer_size_bytes`, a
+   * number of bytes. That name is deprecated but still read.
    */
-  max_buffer_size_bytes?: number
+  max_buffer_size?: string
   /**
    * The maximum number of records in a single buffer.
    */
@@ -5350,15 +5386,21 @@ export type ResourceConfig = {
    */
   cpu_cores_min?: number | null
   /**
-   * The maximum memory in Megabytes to reserve
-   * for an instance of this pipeline
+   * The maximum memory to reserve for an instance of this pipeline, such
+   * as `"16Gi"`.
+   *
+   * Before release 0.367.0 this setting was `memory_mb_max`, a number of
+   * megabytes. That name is deprecated but still read.
    */
-  memory_mb_max?: number | null
+  memory_max?: string | null
   /**
-   * The minimum memory in Megabytes to reserve
-   * for an instance of this pipeline
+   * The minimum memory to reserve for an instance of this pipeline, such
+   * as `"4Gi"`.
+   *
+   * Before release 0.367.0 this setting was `memory_mb_min`, a number of
+   * megabytes. That name is deprecated but still read.
    */
-  memory_mb_min?: number | null
+  memory_min?: string | null
   /**
    * Kubernetes namespace to use for an instance of this pipeline.
    * The namespace determines the scope of names for resources created
@@ -5378,20 +5420,27 @@ export type ResourceConfig = {
    */
   storage_class?: string | null
   /**
-   * The maximum storage in Megabytes for an instance of this pipeline.
+   * The maximum storage for an instance of this pipeline, such as
+   * `"400Gi"`.
    *
-   * Without `storage_mb_min`, this much storage is reserved up front.
+   * Without `storage_min`, this much storage is reserved up front.
    *
-   * With `storage_mb_min`, storage starts there and autoscaling expands it
-   * up to this limit.
+   * With `storage_min`, storage starts there and autoscaling expands it up
+   * to this limit.
+   *
+   * Before release 0.367.0 this setting was `storage_mb_max`, a number of
+   * megabytes. That name is deprecated but still read.
    */
-  storage_mb_max?: number | null
+  storage_max?: string | null
   /**
-   * The initial storage in Megabytes to reserve for an instance of this
-   * pipeline. Set together with `storage_mb_max` to enable storage
+   * The initial storage to reserve for an instance of this pipeline, such
+   * as `"100Gi"`. Set together with `storage_max` to enable storage
    * autoscaling.
+   *
+   * Before release 0.367.0 this setting was `storage_mb_min`, a number of
+   * megabytes. That name is deprecated but still read.
    */
-  storage_mb_min?: number | null
+  storage_min?: string | null
   /**
    * Kubernetes volume attributes class to use for the storage of an
    * instance of this pipeline. The class sets mutable storage parameters
@@ -5624,12 +5673,11 @@ export type RuntimeConfig = {
    */
   cpu_profiler?: boolean
   /**
-   * DataFusion memory pool size, in MB, shared by the ad-hoc query
-   * engine and the Delta Lake / Iceberg connectors.
+   * DataFusion memory pool size, such as `"1Gi"`, shared by the ad-hoc
+   * query engine and the Delta Lake / Iceberg connectors.
    *
-   * Carved out of `max_rss_mb` (falling back to
-   * `resources.memory_mb_max`); the remainder goes to the DBSP circuit,
-   * so the two do not double-book RAM.
+   * Carved out of `max_rss` (falling back to `resources.memory_max`); the
+   * remainder goes to the DBSP circuit, so the two do not double-book RAM.
    *
    * Unset: defaults to 5% of the effective budget, capped at 2 GB.
    * Pipelines that don't run heavy ad-hoc / Delta / Iceberg workloads
@@ -5642,10 +5690,13 @@ export type RuntimeConfig = {
    *
    * No pool limit applied if no overall budget is configured.
    *
+   * Before release 0.367.0 this setting was `datafusion_memory_mb`, a
+   * number of megabytes. That name is deprecated but still read.
+   *
    * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
    * for more details.
    */
-  datafusion_memory_mb?: number | null
+  datafusion_memory?: string | null
   dev_tweaks?: DevTweaks
   /**
    * Environment variables for the pipeline process.
@@ -5725,8 +5776,8 @@ export type RuntimeConfig = {
    */
   max_parallel_connector_init?: number | null
   /**
-   * The maximum amount of memory, in Megabytes, that the pipeline is allowed to use
-   * on each host.
+   * The maximum amount of memory that the pipeline is allowed to use on
+   * each host, such as `"16G"` or `"16Gi"`.
    *
    * Setting this property activates memory pressure monitoring and backpressure
    * mechanisms. The pipeline will track the amount of remaining memory and
@@ -5740,17 +5791,20 @@ export type RuntimeConfig = {
    * running out of memory. The setting should not exceed the memory limit of the pipeline
    * instance.
    *
-   * When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
+   * When `max_rss` is not specified but `resources.memory_max` is set, the
    * latter is used as the effective memory cap for the pipeline.
    *
    * The pipeline caps this limit at the memory available to it, which is the
    * host's memory or the container's memory limit, whichever is smaller. It
    * rechecks the available memory every second.
    *
+   * Before release 0.367.0 this setting was `max_rss_mb`, a number of
+   * megabytes. That name is deprecated but still read.
+   *
    * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
    * for more details.
    */
-  max_rss_mb?: number | null
+  max_rss?: string | null
   /**
    * Minimal input batch size.
    *
@@ -6255,8 +6309,8 @@ export type StartTransactionResponse = {
 }
 
 /**
- * Storage autoscaling policy: expand storage from `storage_mb_min` toward
- * `storage_mb_max` as it fills up.
+ * Storage autoscaling policy: expand storage from `storage_min` toward
+ * `storage_max` as it fills up.
  */
 export type StorageAutoscalingConfig = {
   /**
@@ -6268,11 +6322,14 @@ export type StorageAutoscalingConfig = {
    */
   scale_threshold?: number | null
   /**
-   * Expand storage when available space falls below this many MB, even if
-   * usage is still under `scale_threshold`. Either condition triggers
-   * expansion. Unset by default.
+   * Expand storage when available space falls below this size, such as
+   * `"10Gi"`, even if usage is still under `scale_threshold`. Either
+   * condition triggers expansion. Unset by default.
+   *
+   * Before release 0.367.0 this setting was `scale_threshold_available_mb`,
+   * a number of megabytes. That name is deprecated but still read.
    */
-  scale_threshold_available_mb?: number | null
+  scale_threshold_available?: string | null
 }
 
 /**
@@ -6342,13 +6399,16 @@ export type StorageOptions = {
    */
   bloom_false_positive_rate?: number | null
   /**
-   * The maximum size of the in-memory storage cache, in MiB.
+   * The maximum size of the in-memory storage cache, such as `"4Gi"`.
    *
    * If set, the specified cache size is spread across all the foreground and
    * background threads. If unset, each foreground or background thread cache
    * is limited to 256 MiB.
+   *
+   * Before release 0.367.0 this setting was `cache_mib`, a number of
+   * mebibytes. That name is deprecated but still read.
    */
-  cache_mib?: number | null
+  cache_size?: string | null
   compression?: StorageCompression
   /**
    * Compression level, for compression algorithms that have one.
@@ -6364,31 +6424,37 @@ export type StorageOptions = {
    */
   compression_level?: number | null
   /**
-   * For a batch of data passed through the pipeline during a single step,
-   * the minimum estimated number of bytes to write it to storage.
-   *
-   * This is provided for debugging and fine-tuning and should ordinarily be
-   * left unset.  A value of 0 writes every batch that holds anything to
-   * storage; an empty batch stays in memory, since it has nothing to spill
-   * and a layer file is not free.  Nonzero values provide a threshold.
-   * `usize::MAX`, the default, effectively disables storage for such
-   * batches.  If it is set to another value, it should ordinarily be
-   * greater than or equal to `min_storage_bytes`.
-   */
-  min_step_storage_bytes?: number | null
-  /**
    * For a batch of data maintained as part of a persistent index during a
-   * pipeline run, the minimum estimated number of bytes to write it to
-   * storage.
+   * pipeline run, the minimum estimated size to write it to storage, such
+   * as `"10Mi"`.
    *
    * This is provided for debugging and fine-tuning and should ordinarily be
    * left unset.
    *
    * A value of 0 will write even empty batches to storage, and nonzero
-   * values provide a threshold.  `usize::MAX` would effectively disable
-   * storage for such batches.  The default is 10,048,576 (10 MiB).
+   * values provide a threshold.  A very large value effectively disables
+   * storage for such batches.  The default is `"10Mi"`.
+   *
+   * Before release 0.367.0 this setting was `min_storage_bytes`, a number
+   * of bytes. That name is deprecated but still read.
    */
-  min_storage_bytes?: number | null
+  min_spill_size?: string | null
+  /**
+   * For a batch of data passed through the pipeline during a single step,
+   * the minimum estimated size to write it to storage, such as `"64Mi"`.
+   *
+   * This is provided for debugging and fine-tuning and should ordinarily be
+   * left unset.  A value of 0 writes every batch that holds anything to
+   * storage; an empty batch stays in memory, since it has nothing to spill
+   * and a layer file is not free.  Nonzero values provide a threshold.
+   * Unset, the default, effectively disables storage for such batches.
+   * If it is set, it should ordinarily be greater than or equal to
+   * `min_spill_size`.
+   *
+   * Before release 0.367.0 this setting was `min_step_storage_bytes`, a
+   * number of bytes. That name is deprecated but still read.
+   */
+  min_step_spill_size?: string | null
 }
 
 /**

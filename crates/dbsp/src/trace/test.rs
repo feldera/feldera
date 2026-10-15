@@ -1,5 +1,6 @@
 use crate::trace::StoragePath;
 use crate::utils::test::CIRCUIT_CASES;
+use feldera_types::size::ConfigSize;
 use std::{
     cmp::max,
     sync::{
@@ -2014,7 +2015,7 @@ fn test_fallback_wset_roaring_filter_rebuilt_after_storage_merge() {
     let _temp_dir = tempdir().expect("Can't create temp dir for storage");
     let mut config = mkconfig(_temp_dir.path());
     config.dev_tweaks.enable_roaring = Some(true);
-    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+    config.storage.as_mut().unwrap().options.min_spill_size = Some(ConfigSize::ZERO);
 
     run_in_circuit_with_storage_config(config, move || {
         let lhs = build_fallback_wset_i32(&[1, 5]);
@@ -2288,7 +2289,7 @@ fn build_fallback_indexed_wset_i32(
 }
 
 /// Builds a `FallbackIndexedWSet` and re-routes it to the requested storage
-/// tier, regardless of the runtime's `min_step_storage_bytes` default
+/// tier, regardless of the runtime's `min_step_spill_size` default
 /// that gives more control over batch location.
 fn build_fallback_indexed_wset_i32_at(
     tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>>,
@@ -2526,7 +2527,7 @@ fn slow_read_storage_config(
                 cache: crate::circuit::StorageCacheConfig::default(),
             },
             crate::circuit::StorageOptions {
-                min_storage_bytes: Some(0),
+                min_spill_size: Some(ConfigSize::ZERO),
                 backend: StorageBackendConfig::File(Box::new(FileBackendConfig {
                     ioop_latency: Some(read_delay.into()),
                     ..Default::default()
@@ -2651,8 +2652,8 @@ fn an_empty_builder_stays_in_memory_under_a_zero_threshold() {
                 cache: crate::circuit::StorageCacheConfig::default(),
             },
             crate::circuit::StorageOptions {
-                min_storage_bytes: Some(0),
-                min_step_storage_bytes: Some(0),
+                min_spill_size: Some(ConfigSize::ZERO),
+                min_step_spill_size: Some(ConfigSize::ZERO),
                 ..Default::default()
             },
         )
@@ -2725,8 +2726,8 @@ fn a_threshold_builder_reserves_no_more_than_the_threshold() {
                 cache: crate::circuit::StorageCacheConfig::default(),
             },
             crate::circuit::StorageOptions {
-                min_storage_bytes: Some(0),
-                min_step_storage_bytes: Some(0),
+                min_spill_size: Some(ConfigSize::ZERO),
+                min_step_spill_size: Some(ConfigSize::ZERO),
                 ..Default::default()
             },
         )
@@ -2992,9 +2993,9 @@ fn run_indexed_wset_storage_merges(
     let _temp_dir = tempdir().expect("Can't create temp dir for storage");
     let mut config = mkconfig(_temp_dir.path());
     fc.apply(&mut config);
-    // `min_storage_bytes` forces the merged batch to file; per-input tiers
+    // `min_spill_size` forces the merged batch to file; per-input tiers
     // come from `build_fallback_indexed_wset_i32_at`.
-    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+    config.storage.as_mut().unwrap().options.min_spill_size = Some(ConfigSize::ZERO);
 
     run_in_circuit_with_storage_config(config, move || {
         let factories =
@@ -3093,7 +3094,7 @@ fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterC
     let _temp_dir = tempdir().expect("Can't create temp dir for storage");
     let mut config = mkconfig(_temp_dir.path());
     fc.apply(&mut config);
-    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+    config.storage.as_mut().unwrap().options.min_spill_size = Some(ConfigSize::ZERO);
 
     run_in_circuit_with_storage_config(config, move || {
         let factories =

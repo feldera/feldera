@@ -1060,7 +1060,7 @@ mod tests {
             max_batch_size: Some(0),
             max_worker_batch_size: None,
             max_queued_records: 0,
-            max_queued_bytes: None,
+            max_queued_size: None,
             paused: false,
             labels: vec![],
             start_after: None,

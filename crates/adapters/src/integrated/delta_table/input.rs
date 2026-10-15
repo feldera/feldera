@@ -141,7 +141,7 @@ fn format_datafusion_error(
             "{base}\n\
              DataFusion memory pool is exhausted. Current datafusion memory pool limit: {current_pool_limit}. \
              The query needs more memory than the pool holds; consider setting or increasing \
-             'datafusion_memory_mb' in the pipeline runtime config. If raising the budget is not \
+             'datafusion_memory' (a size such as \"4Gi\") in the pipeline runtime config. If raising the budget is not \
              an option, reduce 'io_workers' / 'workers' or set the env var \
              'DELTA_DF_TARGET_PARTITIONS=1' to scan fewer files at a time, which lowers how much \
              of the scan is held in memory at once.\n"
@@ -174,7 +174,7 @@ fn env_override(endpoint_name: &str, name: &str) -> Option<usize> {
 /// at once.
 ///
 /// Parquet decode buffers are invisible to the DataFusion memory pool, so
-/// `datafusion_memory_mb` does not bound them. What does is the batch size,
+/// `datafusion_memory` does not bound them. What does is the batch size,
 /// which DataFusion states in *rows* (8192 by default), leaving the byte total
 /// unbounded: a wide row makes one batch arbitrarily large, and up to
 /// `target_partitions` files decode at once.
@@ -5173,7 +5173,7 @@ mod format_datafusion_error_tests {
             "missing actionable hint; got: {msg}"
         );
         assert!(
-            msg.contains("datafusion_memory_mb"),
+            msg.contains("'datafusion_memory'"),
             "missing knob name; got: {msg}"
         );
     }

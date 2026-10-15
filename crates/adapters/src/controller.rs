@@ -102,6 +102,7 @@ use feldera_types::format::json::JsonLines;
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::runtime_status::BootstrapPolicy;
 use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
+use feldera_types::size::ConfigSize;
 use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
 use feldera_types::time_series::SampleStatistics;
 use feldera_types::transaction::{
@@ -6107,8 +6108,8 @@ impl ControllerInit {
                 // Can't change number of workers or hosts yet.
                 hosts: checkpoint_config.global.hosts,
                 workers: checkpoint_config.global.workers,
-                max_rss_mb: config.global.max_rss_mb,
-                datafusion_memory_mb: checkpoint_config.global.datafusion_memory_mb,
+                max_rss: config.global.max_rss,
+                datafusion_memory: checkpoint_config.global.datafusion_memory,
 
                 // The checkpoint determines the fault tolerance model, but the
                 // pipeline manager can override the details of the
@@ -6265,65 +6266,65 @@ impl ControllerInit {
                 config_error: Box::new(ConfigError::InvalidDevTweaks { error }),
             })?;
 
-        let mut max_rss_mb = pipeline_config.global.max_rss_mb;
+        let mut max_rss = pipeline_config.global.max_rss;
 
-        if max_rss_mb.is_none()
-            && let Some(memory_mb_max) = &pipeline_config.global.resources.memory_mb_max
+        if max_rss.is_none()
+            && let Some(memory_max) = &pipeline_config.global.resources.memory_max
         {
             if feldera_observability::system::running_in_kubernetes() {
                 warn!(
-                    "RSS memory limit ('max_rss_mb') is not set, but a Kubernetes pod memory limit \
-('resources.memory_mb_max' = {memory_mb_max} MB) is configured. \
+                    "RSS memory limit ('max_rss') is not set, but a Kubernetes pod memory limit \
+('resources.memory_max' = {memory_max}) is configured. \
 Using the pod limit as the RSS memory limit."
                 );
             } else {
                 info!(
-                    "RSS memory limit ('max_rss_mb') is not set; using 'resources.memory_mb_max' \
-({memory_mb_max} MB) as the RSS memory limit."
+                    "RSS memory limit ('max_rss') is not set; using 'resources.memory_max' \
+({memory_max}) as the RSS memory limit."
                 );
             }
-            max_rss_mb = Some(*memory_mb_max);
-        } else if max_rss_mb.is_none() && pipeline_config.global.resources.memory_mb_max.is_none() {
+            max_rss = Some(*memory_max);
+        } else if max_rss.is_none() && pipeline_config.global.resources.memory_max.is_none() {
             warn!(
-                "RSS memory limit ('max_rss_mb') is not set, and no deployment memory limit \
-('resources.memory_mb_max') is configured. We recommend configuring at least one of these settings to avoid out-of-memory failures."
+                "RSS memory limit ('max_rss') is not set, and no deployment memory limit \
+('resources.memory_max') is configured. We recommend configuring at least one of these settings to avoid out-of-memory failures."
             );
-        } else if let Some(max_rss_mb) = max_rss_mb
-            && let Some(memory_mb_max) = &pipeline_config.global.resources.memory_mb_max
-            && max_rss_mb > *memory_mb_max
+        } else if let Some(max_rss) = max_rss
+            && let Some(memory_max) = &pipeline_config.global.resources.memory_max
+            && max_rss > *memory_max
         {
             warn!(
-                "RSS memory limit ('max_rss_mb' = {max_rss_mb} MB) exceeds the deployment memory limit \
-('resources.memory_mb_max' = {memory_mb_max} MB). This will likely cause out-of-memory failures."
+                "RSS memory limit ('max_rss' = {max_rss}) exceeds the deployment memory limit \
+('resources.memory_max' = {memory_max}). This will likely cause out-of-memory failures."
             );
         }
 
         // Carve out a slice of the pipeline's memory budget for DataFusion's
-        // memory pool (see `RuntimeConfig::datafusion_memory_mb`) and have the
+        // memory pool (see `RuntimeConfig::datafusion_memory`) and have the
         // DBSP circuit reserve it, so the circuit only uses the remainder.
         // Without this, the circuit and DataFusion would each independently
         // grow to the full budget, which would double-book RAM.
-        let datafusion_memory_mb = pipeline_config.global.resolved_datafusion_memory_mb();
-        if let (Some(rss), Some(df)) = (max_rss_mb, datafusion_memory_mb) {
+        let datafusion_memory = pipeline_config.global.resolved_datafusion_memory();
+        if let (Some(rss), Some(df)) = (max_rss, datafusion_memory) {
             if df >= rss {
                 return Err(ControllerError::Config {
                     config_error: Box::new(ConfigError::DatafusionMemoryExceedsBudget {
-                        datafusion_memory_mb: df,
-                        max_rss_mb: rss,
+                        datafusion_memory: df,
+                        max_rss: rss,
                     }),
                 });
             }
             info!(
-                "memory budget split: circuit RSS {} MB, datafusion {df} MB (total {rss} MB)",
-                rss - df
+                "memory budget split: circuit RSS {}, datafusion {df} (total {rss})",
+                rss.saturating_sub(df)
             );
         }
 
         let layout =
             layout.unwrap_or_else(|| Layout::new_solo(pipeline_config.global.workers as usize));
         Ok(CircuitConfig::from(layout)
-            .with_max_rss_bytes(max_rss_mb.map(|mb| mb * 1_000_000))
-            .with_reserved_memory_bytes(datafusion_memory_mb.unwrap_or(0) * 1_000_000)
+            .with_max_rss_bytes(max_rss.map(ConfigSize::as_bytes))
+            .with_reserved_memory_bytes(datafusion_memory.map_or(0, ConfigSize::as_bytes))
             .with_pin_cpus(pipeline_config.global.pin_cpus.clone())
             .with_storage(storage)
             .with_mode(Mode::Persistent)
@@ -10545,6 +10546,7 @@ mod controller_init_tests {
     use feldera_adapterlib::errors::controller::ConfigError;
     use feldera_types::config::{DevTweaks, InputEndpointConfig, PipelineConfig, RuntimeConfig};
     use feldera_types::pipeline_diff::PipelineDiff;
+    use feldera_types::size::ConfigSize;
     use serde_json::json;
     use std::{borrow::Cow, collections::BTreeMap};
 
@@ -10562,15 +10564,15 @@ mod controller_init_tests {
         }
     }
 
-    /// `circuit_config` must reject an explicit `datafusion_memory_mb`
+    /// `circuit_config` must reject an explicit `datafusion_memory`
     /// that meets or exceeds the pipeline's RSS budget — otherwise the
     /// DBSP circuit would be carved down to zero.
     #[test]
     fn circuit_config_rejects_datafusion_memory_equal_to_rss() {
         let config = pipeline_config(RuntimeConfig {
             workers: 1,
-            max_rss_mb: Some(2_000),
-            datafusion_memory_mb: Some(2_000),
+            max_rss: Some(ConfigSize::from_mb(2_000)),
+            datafusion_memory: Some(ConfigSize::from_mb(2_000)),
             ..Default::default()
         });
         let result = ControllerInit::circuit_config(None, &config, None);
@@ -10581,11 +10583,11 @@ mod controller_init_tests {
         match err {
             ControllerError::Config { config_error } => match *config_error {
                 ConfigError::DatafusionMemoryExceedsBudget {
-                    datafusion_memory_mb,
-                    max_rss_mb,
+                    datafusion_memory,
+                    max_rss,
                 } => {
-                    assert_eq!(datafusion_memory_mb, 2_000);
-                    assert_eq!(max_rss_mb, 2_000);
+                    assert_eq!(datafusion_memory, ConfigSize::from_mb(2_000));
+                    assert_eq!(max_rss, ConfigSize::from_mb(2_000));
                 }
                 other => panic!("expected DatafusionMemoryExceedsBudget, got {other:?}"),
             },
@@ -10641,8 +10643,8 @@ mod controller_init_tests {
         for (max_rss_mb, datafusion_memory_mb, max_rss_bytes, reserved_memory_bytes) in cases {
             let config = pipeline_config(RuntimeConfig {
                 workers: 1,
-                max_rss_mb,
-                datafusion_memory_mb,
+                max_rss: max_rss_mb.map(ConfigSize::from_mb),
+                datafusion_memory: datafusion_memory_mb.map(ConfigSize::from_mb),
                 ..Default::default()
             });
             let circuit_config = ControllerInit::circuit_config(None, &config, None).unwrap();
@@ -10657,8 +10659,8 @@ mod controller_init_tests {
     fn circuit_config_rejects_datafusion_memory_above_rss() {
         let config = pipeline_config(RuntimeConfig {
             workers: 1,
-            max_rss_mb: Some(1_000),
-            datafusion_memory_mb: Some(4_000),
+            max_rss: Some(ConfigSize::from_mb(1_000)),
+            datafusion_memory: Some(ConfigSize::from_mb(4_000)),
             ..Default::default()
         });
         let result = ControllerInit::circuit_config(None, &config, None);
@@ -10693,7 +10695,10 @@ mod controller_init_tests {
         let connector_config = &merged["test_input.connector"].connector_config;
 
         assert_eq!(connector_config.max_queued_records, 200);
-        assert_eq!(connector_config.max_queued_bytes, Some(400));
+        assert_eq!(
+            connector_config.max_queued_size,
+            Some(ConfigSize::from_bytes(400))
+        );
         assert_eq!(connector_config.max_batch_size, Some(201));
         assert_eq!(connector_config.max_worker_batch_size, Some(202));
     }
@@ -10733,7 +10738,10 @@ mod controller_init_tests {
 
         assert!(connector_config.transport.is_http_input());
         assert_eq!(connector_config.max_queued_records, 200);
-        assert_eq!(connector_config.max_queued_bytes, Some(400));
+        assert_eq!(
+            connector_config.max_queued_size,
+            Some(ConfigSize::from_bytes(400))
+        );
         assert_eq!(connector_config.max_batch_size, Some(201));
         assert_eq!(connector_config.max_worker_batch_size, Some(202));
     }

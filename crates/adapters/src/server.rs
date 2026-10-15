@@ -86,6 +86,7 @@ use feldera_types::runtime_status::{
     ExtendedRuntimeStatusError, RuntimeDesiredStatus, RuntimeStatus, RuntimeStatusDetails,
     StorageStatusDetails,
 };
+use feldera_types::size::ConfigSize;
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
 use feldera_types::transaction::ConcurrentBootstrapPhase;
@@ -1195,15 +1196,16 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
 
     // This is run in the pipeline process itself, so on a multihost deployment every
     // host derives the limit from its own machine.
-    if config.global.effective_memory_mb().is_none()
+    if config.global.effective_memory().is_none()
         && let Some(available_mb) = observability::system::total_memory_megabyte()
     {
+        let available = ConfigSize::from_mb(available_mb);
         // The logger is not running yet.
         eprintln!(
-            "No memory limit configured ('max_rss_mb' or 'resources.memory_mb_max'); \
-using this host's available memory: 'max_rss_mb' = {available_mb} MB."
+            "No memory limit configured ('max_rss' or 'resources.memory_max'); \
+using this host's available memory: 'max_rss' = {available}."
         );
-        config.global.max_rss_mb = Some(available_mb);
+        config.global.max_rss = Some(available);
     }
 
     eprintln!(
