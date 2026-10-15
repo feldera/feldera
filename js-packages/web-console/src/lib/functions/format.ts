@@ -10,6 +10,18 @@ export const formatDateTime = (
 }
 
 /**
+ * Format the time of day of a timestamp in the browser's time zone, followed by
+ * the zone's short name (e.g. `18:39:53 PDT`), so it's clear which zone it's in.
+ */
+export const formatServerTime = (time: Date | Dayjs.Dayjs | string) => {
+  const date = Dayjs(time).toDate()
+  const zone = new Intl.DateTimeFormat(undefined, { timeZoneName: 'short' })
+    .formatToParts(date)
+    .find((part) => part.type === 'timeZoneName')?.value
+  return [Dayjs(date).format('HH:mm:ss'), zone].filter(Boolean).join(' ')
+}
+
+/**
  * Format a `[from, to]` timestamp range, omitting redundant parts on the
  * right-hand side: when both endpoints fall on the same calendar day only the
  * time is rendered, otherwise when they share a year the year is dropped.
