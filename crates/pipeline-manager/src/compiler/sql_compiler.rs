@@ -1624,7 +1624,8 @@ mod test {
             .await;
         test.sql_compiler_tick().await;
         let pipeline_descr = test
-            .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code, false)
+            // v1 and v3 compute the same contents, so a "duplicate view" warning is expected.
+            .check_outcome_sql_compiled(tenant_id, pipeline_id, program_code, true)
             .await;
 
         // Check materialized outcome
