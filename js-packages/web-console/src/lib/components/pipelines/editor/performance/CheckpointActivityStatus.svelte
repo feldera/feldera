@@ -2,6 +2,7 @@
   import { Tooltip } from 'common-ui'
   import Dayjs from 'dayjs'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
+  import { formatServerTime } from '$lib/functions/format'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import type { CheckpointStatus } from '$lib/services/manager'
 
@@ -87,9 +88,9 @@
   <div class="flex items-center gap-3">
     <div class="pointer-events-none chip bg-warning-200-800 uppercase">Checkpoint in progress</div>
     <div class="font-dm-mono text-sm">
-      for {formatElapsedTime(new Date(activity.started_at))} since {Dayjs(
+      for {formatElapsedTime(new Date(activity.started_at))} since {formatServerTime(
         activity.started_at
-      ).format('HH:mm:ss')}
+      )}
     </div>
   </div>
 {:else if activity.status === 'delayed'}
@@ -119,7 +120,7 @@
     </Tooltip>
     <div class="text-sm">
       <span class="font-dm-mono">#{failure.sequence_number}</span>
-      at {Dayjs(failure.failed_at).format('HH:mm:ss')}
+      at {formatServerTime(failure.failed_at)}
     </div>
   </div>
 {/if}
