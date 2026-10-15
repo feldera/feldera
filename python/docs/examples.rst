@@ -386,9 +386,7 @@ This example shows creating and running a pipeline with Feldera's internal data 
     out = pipeline.listen("googl_stocks")
     pipeline.resume()
 
-    # important: `wait_for_completion` will block forever here
-    pipeline.wait_for_idle()
-    pipeline.stop(force=True)
+    pipeline.wait_for_completion(force_stop=True)
     df = out.to_pandas()
     assert df.shape[0] != 0
 

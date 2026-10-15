@@ -55,12 +55,11 @@ class TestIssue_4457(PipelineTestCase):
         pipeline.input_json(
             "test_events",
             [{"id": "a", "a": "test5", "t": "2025-03-20 21:00:17.920"}],
+            wait=True,
         )
-        # The late record is expected to be dropped, so there is no record to
-        # wait for. Idleness is the only signal that the pipeline is done with
-        # the input and nothing is going to arrive.
-        pipeline.wait_for_idle()
-
+        # The late record is dropped, so no listener row is emitted.
+        # Explicit wait=True blocks on the ingress completion token, guaranteeing
+        # the circuit has finished processing (and discarding) the input before checking.
         output = out.to_dict()
         assert output == []
 
