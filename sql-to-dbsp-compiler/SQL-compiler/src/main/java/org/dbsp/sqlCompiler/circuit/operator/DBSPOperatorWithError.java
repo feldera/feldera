@@ -43,12 +43,12 @@ public abstract class DBSPOperatorWithError
 
     @Override
     public boolean equivalent(DBSPOperator other) {
-        if (!other.is(DBSPOperatorWithError.class))
+        DBSPOperatorWithError oe = other.as(DBSPOperatorWithError.class);
+        if (oe == null || !this.operation.equals(oe.operation))
             return false;
-        DBSPOperatorWithError oe = other.to(DBSPOperatorWithError.class);
         if (!this.sameInputs(oe) ||
-            !this.outputType.sameType(oe.outputType) &&
-                    !this.errorType.sameType(oe.errorType))
+            !this.outputType.sameType(oe.outputType) ||
+            !this.errorType.sameType(oe.errorType))
             return false;
         return EquivalenceContext.equiv(this.function, oe.function) &&
                 EquivalenceContext.equiv(this.error, oe.error);

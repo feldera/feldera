@@ -694,6 +694,31 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 AS select 1 as type_path;""");
     }
 
+
+    /** Two views differ only in the strictness of a NOW() bound.  CSE must not
+     * merge their window operators. */
+    @Test
+    public void windowBoundsNotMerged() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t(ts TIMESTAMP NOT NULL, v INT);
+                CREATE VIEW ge AS SELECT v FROM t WHERE ts >= NOW() - INTERVAL 1 HOUR;
+                CREATE VIEW gt AS SELECT v FROM t WHERE ts > NOW() - INTERVAL 1 HOUR;""");
+        // The row with v = 1 is exactly on the lower bound
+        ccs.stepMultiView("""
+                INSERT INTO now VALUES('2024-01-01 12:00:00');
+                INSERT INTO t VALUES('2024-01-01 11:00:00', 1);
+                INSERT INTO t VALUES('2024-01-01 11:30:00', 2);""", Map.of(
+                "ge", """
+                 v | weight
+                ------------
+                 1 | 1
+                 2 | 1""",
+                "gt", """
+                 v | weight
+                ------------
+                 2 | 1"""));
+    }
+
     @Test
     public void cseTest() {
         var ccs = this.getCCS("""

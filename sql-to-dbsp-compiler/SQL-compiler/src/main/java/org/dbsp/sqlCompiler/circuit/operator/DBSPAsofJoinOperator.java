@@ -114,7 +114,8 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator implements 
         DBSPAsofJoinOperator otherOperator = other.as(DBSPAsofJoinOperator.class);
         if (otherOperator == null)
             return false;
-        return this.leftTimestampIndex == otherOperator.leftTimestampIndex &&
+        return this.isLeft == otherOperator.isLeft &&
+                this.leftTimestampIndex == otherOperator.leftTimestampIndex &&
                 this.rightTimestampIndex == otherOperator.rightTimestampIndex &&
                 this.comparator.equivalent(otherOperator.comparator);
     }
