@@ -49,7 +49,7 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     public final JsonStream stream;
     final int verbosity;
     final Set<Long> serialized;
-    final ToJsonInnerVisitor innerVisitor;
+    protected final ToJsonInnerVisitor innerVisitor;
 
     public ToJsonOuterVisitor(DBSPCompiler compiler, int verbosity, ToJsonInnerVisitor innerVisitor) {
         super(compiler);
@@ -203,7 +203,7 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         return VisitDecision.CONTINUE;
     }
 
-    void asJsonInner(IJson value) {
+    protected void asJsonInner(IJson value) {
         value.asJson(this.innerVisitor);
     }
 
