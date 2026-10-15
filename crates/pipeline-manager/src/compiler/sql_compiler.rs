@@ -1615,7 +1615,7 @@ mod test {
             CREATE TABLE t3 (val INT) WITH ( 'materialized' = 'false' );
             CREATE VIEW v1 AS SELECT * FROM t1;
             CREATE LOCAL VIEW v2 AS SELECT * FROM t1;
-            CREATE MATERIALIZED VIEW v3 AS SELECT * FROM t1;
+            CREATE MATERIALIZED VIEW v3 AS SELECT * FROM t3;
         "#};
 
         // Create and compile

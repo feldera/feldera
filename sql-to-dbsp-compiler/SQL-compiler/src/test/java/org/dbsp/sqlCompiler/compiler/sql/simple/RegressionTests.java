@@ -189,6 +189,19 @@ public class RegressionTests extends SqlIoTest {
                 SELECT * FROM U;""");
     }
 
+    /** Two views read a local view whose row contains a ROW value built with casts.  The
+     * compiler does not fold these casts, so CSE cannot compare the two copies of the constant,
+     * which have the same persistent id. */
+    @Test
+    public void duplicateConstants() {
+        this.getCC("""
+                CREATE LOCAL VIEW T AS SELECT CAST(ROW(1, 'string') AS ROW(lf INTEGER, rf VARCHAR)) AS r,
+                    CAST(1 AS VARIANT) AS v,
+                    CAST(UUID '123e4567-e89b-12d3-a456-426655440000' AS UUID) AS u;
+                CREATE VIEW V1 AS SELECT CAST(r AS ROW(lf INTEGER, rf VARCHAR)), CAST(u AS UUID) FROM T;
+                CREATE VIEW V2 AS SELECT CAST(CAST(u AS UUID) AS VARIANT) FROM T;""");
+    }
+
     @Test
     public void issue3256() {
         this.compileRustTestCase("""

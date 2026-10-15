@@ -10,6 +10,17 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (SQL compiler): a pipeline compiled with this release
+  cannot reuse the state that an earlier release saved for its views.  When
+  the pipeline resumes from such a checkpoint, it must bootstrap all its views
+  from its tables, which takes more time than a typical bootstrap.  Materialized tables can reuse their existing saved state.
+
+- Incompatible change (SQL compiler): a pipeline whose program uses `NOW()`
+  cannot resume from a checkpoint that an earlier release saved.
+  Bootstrapping a pipeline compiled with a previous version of the
+  compiler will be impossible. After recompilation stop the pipeline, clear its storage, and start it again.  The
+  pipeline then ingests all its input data again.
+
 - Avro input connector: the new `cdc_field` property names a field that holds
   the operation type of each raw Avro record: `I` (insert), `U` (upsert), or
   `D` (delete).  A Feldera Avro output connector with `cdc_field` set writes

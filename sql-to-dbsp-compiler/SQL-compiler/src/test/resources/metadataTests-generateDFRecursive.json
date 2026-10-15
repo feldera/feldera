@@ -343,7 +343,7 @@
         "final": 1
       },
       "positions": [],
-      "persistent_id": "62ce603a01af7e712aaebdd9b81c3691b1293c14071e805d8aabe46b3d659d74"
+      "persistent_id": "7cab2d16bbde7423e8ebb2774fa8664f15375b7293873b06abf2d5b84710daa7"
     }, "s1": {
       "operation": "nested",
       "outputs": [
@@ -363,7 +363,7 @@
             }]
         },
         "positions": [],
-        "persistent_id": "96b23987412e67e2423fa758dfbe84dba1c7e298bbda0d92275021288cf54ea1"
+        "persistent_id": "5564869c301ea44ef4cf3d0828325bebc7f9332873b8dbe9346c057106b27062"
       },
       "s3": {
         "operation": "flat_map_index",
@@ -382,7 +382,7 @@
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37}
         ],
-        "persistent_id": "6f10252532d576ceadca2cf16aceb1e43bbcbf3d244021f676d259f2ca54dc15"
+        "persistent_id": "cee6aae431f5e024433f287f74c7fff25ef040387f6dd00ab968240690f00040"
       },
       "s4": {
         "operation": "flat_map_index",
@@ -403,7 +403,7 @@
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":21}
         ],
-        "persistent_id": "c908ccc474fbe19fd11a2927f10babe1e8e0f1f1afb7109c39f82348e694738d"
+        "persistent_id": "a56024180fdc3596d5fc6bb44e628fbba484862d8781f48525af5ebb7548acae"
       },
       "s5": {
         "operation": "delta0",
@@ -414,7 +414,7 @@
           "final": 10
         },
         "positions": [],
-        "persistent_id": "e8a710ece918ffeed81ebe0672e403994c58af97057cfd851161949c9da97ca1"
+        "persistent_id": "3f16289d8df3e25e5d69076a6a3c51e09b709d6726ac1926392fd387320bde29"
       },
       "s6": {
         "operation": "join",
@@ -430,7 +430,7 @@
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
           {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26}
         ],
-        "persistent_id": "3f331d70b0ffc22ae1f001c28ae87469465e75012d4e4e1c871435e416045f7d"
+        "persistent_id": "c3f899ce2e2efe7a5ed10734f4d2a6d5bc06b037b5506857aa794c951e3b50c1"
       },
       "s7": {
         "operation": "sum",
@@ -442,7 +442,7 @@
           "final": 10
         },
         "positions": [],
-        "persistent_id": "cd0b817c80168a461125e8014eb17de30de9174f4118d9694b5d3945a95bf089"
+        "persistent_id": "9a80b174e786c5f88b7d57c8d2ea84386bc1745471e8597d878090fc2aafd7ec"
       }
     }, "s8": {
       "operation": "inspect",
@@ -456,7 +456,7 @@
       "positions": [
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
       ],
-      "persistent_id": "10d23f539a1b38ba9f7047c6d2842fa5ecfe2a4cbede948f8c8662cffad9e9a1"
+      "persistent_id": "b12f8ee79ec517b4e7ce65f6fd93d0d1c389b841172361d4f2d646dfd1eac275"
     }, "s9": {
       "operation": "constant",
       "inputs": [],
@@ -464,7 +464,7 @@
         "partial": 0
       },
       "positions": [],
-      "persistent_id": "dabdc0517fb639de8ebd480cb4350e3b2054b584a8c9c42515f268f99294f72c"
+      "persistent_id": "49e7f59afc3b81729767ec6943e8856d1bc4dfc15320c84878e2965bbed27a98"
     }, "s10": {
       "operation": "inspect",
       "inputs": [
@@ -475,7 +475,7 @@
         "final": 0
       },
       "positions": [],
-      "persistent_id": "42bb786d35654abe048f3d4cedb08308c085b652304d4902765d81d8afda529c"
+      "persistent_id": "6319dce2fa7caa4a4a37a98c2e1afecbd8fcad96599a7e15b54a0f61360b1257"
     }
   },
   "sources": [

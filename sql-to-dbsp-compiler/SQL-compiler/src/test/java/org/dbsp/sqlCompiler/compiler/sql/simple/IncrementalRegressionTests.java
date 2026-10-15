@@ -694,6 +694,25 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 AS select 1 as type_path;""");
     }
 
+    /** Two views compute the same non-linear aggregate.  CSE must merge the two
+     * aggregate operators, which otherwise have the same persistent id. */
+    @Test
+    public void duplicatePersistentIds() {
+        this.getCCS("""
+                CREATE TABLE t(r BIGINT, k BIGINT);
+                CREATE VIEW v1 AS SELECT k, MIN(r) AS a FROM t GROUP BY k;
+                CREATE VIEW v2 AS SELECT k, MIN(r) AS a FROM t GROUP BY k;""");
+    }
+
+    /** Two views compute the same fold aggregate.  CSE must merge the two
+     * aggregate operators, which otherwise have the same persistent id. */
+    @Test
+    public void duplicateFoldAggregates() {
+        this.getCCS("""
+                CREATE TABLE t(r BIGINT, k BIGINT);
+                CREATE VIEW v1 AS SELECT k, ARRAY_AGG(r) AS a FROM t GROUP BY k;
+                CREATE VIEW v2 AS SELECT k, ARRAY_AGG(r) AS a FROM t GROUP BY k;""");
+    }
 
     /** Two views differ only in the strictness of a NOW() bound.  CSE must not
      * merge their window operators. */
