@@ -92,34 +92,6 @@ pub enum JsonLines {
 /// {"insert": {"column1": "hello, world!", "column2": 100}}
 /// ```
 ///
-/// ### `Weighted`
-///
-/// Each element in the input stream consists of a record and a weight
-/// which indicates how many times the row appears.
-///
-/// ```json
-/// {"weight": 2, "data": {"column1": "hello, world!", "column2": 100}}
-/// ```
-///
-/// Note that the line above would be equivalent to the following input in the `InsertDelete` format:
-///
-/// ```json
-/// {"insert": {"column1": "hello, world!", "column2": 100}}
-/// {"insert": {"column1": "hello, world!", "column2": 100}}
-/// ```
-///
-/// Similarly, negative weights are equivalent to deletions:
-///
-/// ```json
-/// {"weight": -1, "data": {"column1": "hello, world!", "column2": 100}}
-/// ```
-///
-/// is equivalent to in the `InsertDelete` format:
-///
-/// ```json
-/// {"delete": {"column1": "hello, world!", "column2": 100}}
-/// ```
-///
 /// ### `Debezium`
 ///
 /// Debezium CDC format.  Refer to [Debezium input connector documentation](https://docs.feldera.com/connectors/sources/debezium) for details.
@@ -150,9 +122,6 @@ pub enum JsonUpdateFormat {
     #[serde(rename = "insert_delete")]
     InsertDelete,
 
-    #[serde(rename = "weighted")]
-    Weighted,
-
     #[serde(rename = "debezium")]
     Debezium,
 
@@ -170,7 +139,6 @@ impl Display for JsonUpdateFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             JsonUpdateFormat::InsertDelete => write!(f, "insert_delete"),
-            JsonUpdateFormat::Weighted => write!(f, "weighted"),
             JsonUpdateFormat::Debezium => write!(f, "debezium"),
             JsonUpdateFormat::Snowflake => write!(f, "snowflake"),
             JsonUpdateFormat::Raw => write!(f, "raw"),
@@ -228,8 +196,6 @@ pub enum JsonFlavor {
     Postgres,
 }
 
-// TODO: support multiple update formats, e.g., `WeightedUpdate`
-// supports arbitrary weights beyond `MAX_DUPLICATES`.
 #[derive(Deserialize, Serialize, ToSchema)]
 #[serde(default)]
 pub struct JsonEncoderConfig {
