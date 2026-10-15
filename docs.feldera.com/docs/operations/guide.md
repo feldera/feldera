@@ -120,7 +120,7 @@ explicitly request larger volumes for each pipeline:
 
    ```json
    "resources": {
-       "storage_mb_max": 128000
+       "storage_max": "128G"
    }
    ```
 
@@ -179,7 +179,7 @@ making them eviction candidates. To raise their priority:
    ```json
    "resources": {
        "cpu_cores_min": 16,
-       "memory_mb_min": 32000,
+       "memory_min": "32G",
    }
    ```
 
@@ -189,8 +189,8 @@ making them eviction candidates. To raise their priority:
    "resources": {
        "cpu_cores_min": 16,
        "cpu_cores_max": 16,
-       "memory_mb_min": 32000,
-       "memory_mb_max": 32000,
+       "memory_min": "32G",
+       "memory_max": "32G",
    }
    ```
 
@@ -254,14 +254,14 @@ written with only single-host pipelines in mind.
 
 Choosing a larger storage without preserving existing state can be done
 by clearing the storage, followed by increasing the runtime configuration's
-`resources.storage_mb_max`. However, this field cannot be edited with uncleared
+`resources.storage_max`. However, this field cannot be edited with uncleared
 storage (i.e., while preserving existing state). Currently, Feldera does not
 have the feature to expand existing storage. It is however possible to do it
 out-of-band by directly interacting with the underlying Kubernetes PVC.
 This is only possible if its storage class allows volume expansion.
 
 This out-of-band action will result in a discrepancy between what the runtime
-configuration `resources.storage_mb_max` states and the actual size of the
+configuration `resources.storage_max` states and the actual size of the
 storage. Be aware that clearing storage afterward will delete the PVC that
 was changed out-of-band, thereby undoing the storage expansion.
 
@@ -282,7 +282,7 @@ was changed out-of-band, thereby undoing the storage expansion.
    kubectl get pvc -n $NAMESPACE $PIPELINE_PVC
    ```
 
-   ... which for example outputs (`resources.storage_mb_max` is set to 25000 in this example):
+   ... which for example outputs (`resources.storage_max` is set to `"25G"` in this example):
    ```
    NAME            STATUS   VOLUME    CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE
    pipeline-....   Bound    pvc-...   24Gi       RWO            gp3            <unset>                 21s
