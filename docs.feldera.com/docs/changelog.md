@@ -32,6 +32,15 @@ Source edition can be found on github.
   fix still makes the connector read the snapshot again once.  See
   [Iceberg input connector](/connectors/sources/iceberg).
 
+- In a multihost pipeline, a Kafka input connector can now divide the
+  partitions of its topic among the hosts, and a Delta Lake or Iceberg input
+  connector can divide the data files of its snapshot.  Set the new connector
+  attribute [`distributed`](/connectors#distributed) to `true`.  See
+  distributed connectors for
+  [Kafka](/connectors/sources/kafka#distributed-connectors),
+  [Delta Lake](/connectors/sources/delta#distributed-connectors), and
+  [Iceberg](/connectors/sources/iceberg#distributed-connectors).
+
 ## v0.366.0
 
 - Incompatible change (ad-hoc queries): the `hash` result format and
@@ -236,15 +245,6 @@ Source edition can be found on github.
   ZONE` to a string now pads the year to four digits:
   `CAST(DATE '0001-01-01' AS VARCHAR)` is `'0001-01-01'`.  For years
   before 1000 the result used to omit the leading zeros (`'1-01-01'`).
-
-- In a multihost pipeline, a Kafka input connector can now divide the
-  partitions of its topic among the hosts, and a Delta Lake or Iceberg input
-  connector can divide the data files of its snapshot.  Set the new connector
-  attribute [`distributed`](/connectors#distributed) to `true`.  See
-  distributed connectors for
-  [Kafka](/connectors/sources/kafka#distributed-connectors),
-  [Delta Lake](/connectors/sources/delta#distributed-connectors), and
-  [Iceberg](/connectors/sources/iceberg#distributed-connectors).
 
 ## v0.360.0
 
