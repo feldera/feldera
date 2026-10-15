@@ -301,6 +301,10 @@ Source edition can be found on github.
   failed with `UnknownEndpoint` for a quoted table or view name that contains
   a character such as `#`, `?`, `%` or `/`.
 
+- The pipeline manager's `--pg-embed-port` option (environment variable
+  `FELDERA_PG_EMBED_PORT`) sets the port of the embedded Postgres instance,
+  which was fixed at 8082.  The default is still 8082.
+
 ## v0.365.0
 
 - New connector (`nats_output`): write view output to a NATS subject. The
