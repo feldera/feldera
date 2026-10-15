@@ -177,6 +177,11 @@ Source edition can be found on github.
   the pipeline reported, as `Pipeline.sync_checkpoint(wait=True)` already
   did.
 
+- Bug fix (Python SDK): the connector methods (`input_connector_stats()`,
+  `pause_input_connector()`, `generate_completion_token()` and the others)
+  failed with `UnknownEndpoint` for a quoted table or view name that contains
+  a character such as `#`, `?`, `%` or `/`.
+
 ## v0.365.0
 
 - New connector (`nats_output`): write view output to a NATS subject. The

@@ -1710,7 +1710,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         Get the status of the specified input connector.
         """
         return self.http.get(
-            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/stats"
+            path=f"/pipelines/{quote(pipeline_name, safe='')}/tables/{quote(table_name, safe='')}/connectors/{quote(connector_name, safe='')}/stats"
         )
 
     def output_connector_stats(
@@ -1720,7 +1720,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         Get the status of the specified output connector.
         """
         return self.http.get(
-            path=f"/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats"
+            path=f"/pipelines/{quote(pipeline_name, safe='')}/views/{quote(view_name, safe='')}/connectors/{quote(connector_name, safe='')}/stats"
         )
 
     def pause_input_connector(
@@ -1743,7 +1743,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         """
 
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/pause",
+            path=f"/pipelines/{quote(pipeline_name, safe='')}/tables/{quote(table_name, safe='')}/connectors/{quote(connector_name, safe='')}/pause",
             idempotent=True,
         )
 
@@ -1764,7 +1764,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         """
 
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/start",
+            path=f"/pipelines/{quote(pipeline_name, safe='')}/tables/{quote(table_name, safe='')}/connectors/{quote(connector_name, safe='')}/start",
             idempotent=True,
         )
 
@@ -1821,7 +1821,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         """
 
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/pause",
+            path=f"/pipelines/{quote(pipeline_name, safe='')}/views/{quote(view_name, safe='')}/connectors/{quote(connector_name, safe='')}/pause",
             idempotent=True,
         )
 
@@ -1845,7 +1845,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         """
 
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/start",
+            path=f"/pipelines/{quote(pipeline_name, safe='')}/views/{quote(view_name, safe='')}/connectors/{quote(connector_name, safe='')}/start",
             idempotent=True,
         )
 
@@ -2126,7 +2126,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         """
 
         resp = self.http.get(
-            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token",
+            path=f"/pipelines/{quote(pipeline_name, safe='')}/tables/{quote(table_name, safe='')}/connectors/{quote(connector_name, safe='')}/completion_token",
         )
 
         token: str | None = resp.get("token")
