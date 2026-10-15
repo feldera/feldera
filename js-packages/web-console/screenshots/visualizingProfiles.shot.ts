@@ -25,7 +25,10 @@ const expectClip = (page: Page, file: string, clip: Box) => expectDocsClip(page,
 
 const center = (box: Box) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 })
 
-/** The panes of the viewer, in the default arrangement: the diagram on top, SQL and analysis below. */
+/**
+ * The panes of the viewer, in the default arrangement: the diagram on top, and the code panel and the
+ * analysis panel below.
+ */
 const panes = (page: Page) => {
   const pane = page.locator('[data-pane]')
   return { diagram: pane.nth(0), sql: pane.nth(2), analysis: pane.nth(3) }
@@ -61,6 +64,13 @@ const toggleBars = (analysis: Locator, metric: string) =>
     .filter({ has: analysis.page().getByText(metric, { exact: true }) })
     .getByRole('button', { name: /^Skew/ })
     .click()
+
+/** Compares the analysis panel with the image `file`. */
+const expectAnalysis = async (page: Page, file: string) =>
+  expectClip(page, file, await boxOf(panes(page).analysis))
+
+const openAnalysisTab = (page: Page, name: string) =>
+  panes(page).analysis.getByRole('radiogroup').getByText(name, { exact: true }).click()
 
 const metricsView = (page: Page, view: 'Overview' | 'Node' | 'Top nodes') =>
   panes(page).analysis.getByText(view, { exact: true }).click()
@@ -114,7 +124,7 @@ test.describe('The profile viewer', () => {
         label: 'Dataflow graph',
         side: 'bottom'
       },
-      { kind: 'frame', box: grow(await boxOf(sql), -2), label: 'SQL', side: 'top' },
+      { kind: 'frame', box: grow(await boxOf(sql), -2), label: 'Code panel', side: 'top' },
       { kind: 'frame', box: grow(await boxOf(analysis), -2), label: 'Analysis panel', side: 'top' }
     ])
     await waitForSqlScrollbarsToFade(page)
@@ -204,9 +214,6 @@ test.describe('The Metrics tab', () => {
   // Taller, so that the analysis panel has room for its measurements.
   test.use({ viewport: { width: 1280, height: 1200 } })
 
-  const expectAnalysis = async (page: Page, name: string) =>
-    expectClip(page, name, await boxOf(panes(page).analysis))
-
   test('the Overview view', async ({ page }) => {
     await metricsView(page, 'Overview')
     await expectAnalysis(page, 'overall.png')
@@ -230,7 +237,7 @@ test.describe('The Metrics tab', () => {
       await parkPointer(page)
       const panel = await boxOf(analysis)
       const first = async (locator: Locator) => grow(await boxOf(locator.first()), 2)
-      // A margin left of the panel, over the edge of the SQL panel, for the labels.
+      // A margin left of the panel, over the edge of the code panel, for the labels.
       const MARGIN = 130
       const margin = { x: panel.x - MARGIN, y: panel.y, width: MARGIN, height: panel.height }
       const labelX = panel.x - 16
@@ -270,18 +277,23 @@ test.describe('The Metrics tab', () => {
     })
   })
 
-  test('selecting the metric', async ({ page }) => {
-    const input = page.getByTitle('Select metric')
-    await input.click()
-    const list = page.getByRole('listbox')
-    await expect(list).toBeVisible()
-    const panel = await boxOf(panes(page).analysis)
-    const listBox = await boxOf(list)
-    await expectClip(page, 'metric-selection.png', {
-      x: panel.x,
-      y: panel.y,
-      width: panel.width,
-      height: Math.min(listBox.y + listBox.height + 16 - panel.y, panel.height)
+  test.describe(() => {
+    // Taller, so that the list of metrics opens below the box.
+    test.use({ viewport: { width: 1280, height: 1400 } })
+
+    test('selecting the metric', async ({ page }) => {
+      const input = page.getByTitle('Select metric')
+      await input.click()
+      const list = page.getByRole('listbox')
+      await expect(list).toBeVisible()
+      const panel = await boxOf(panes(page).analysis)
+      const listBox = await boxOf(list)
+      await expectClip(page, 'metric-selection.png', {
+        x: panel.x,
+        y: panel.y,
+        width: panel.width,
+        height: Math.min(listBox.y + listBox.height + 16 - panel.y, panel.height)
+      })
     })
   })
 
@@ -303,5 +315,37 @@ test.describe('The Metrics tab', () => {
   test('the top nodes', async ({ page }) => {
     await metricsView(page, 'Top nodes')
     await expectAnalysis(page, 'important-nodes.png')
+  })
+})
+
+test.describe('The other tabs of the analysis panel', () => {
+  // Wider, so that the analysis panel shows more columns of the connector table, and the event
+  // details do not wrap after each word.
+  test.use({ viewport: { width: 1920, height: 1000 } })
+
+  test('the Connectors tab', async ({ page }) => {
+    await openAnalysisTab(page, 'Connectors')
+    const panel = await boxOf(panes(page).analysis)
+    const table = await boxOf(panes(page).analysis.locator('table').first())
+    // The clip ends 16 px below the table, because the rest of the panel is empty.
+    await expectClip(page, 'connectors-tab.png', {
+      ...panel,
+      height: table.y + table.height + 16 - panel.y
+    })
+  })
+
+  test('the Health tab', async ({ page }) => {
+    await openAnalysisTab(page, 'Health')
+    const analysis = panes(page).analysis
+    // An incident is a button with its description in `.line-clamp-1`. A click opens its details
+    // in a drawer.
+    await analysis.locator('button:has(.line-clamp-1)').first().click()
+    const close = analysis.getByRole('button', { name: 'Close event details' })
+    await expect(close).toBeVisible()
+    await waitForTransitions(analysis)
+    await parkPointer(page)
+    await expectAnalysis(page, 'health-tab.png')
+    // The next tests share the viewer, and expect the details closed.
+    await close.click()
   })
 })
