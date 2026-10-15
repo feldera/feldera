@@ -37,6 +37,8 @@ use actix_web::{
 use chrono::{DateTime, Utc};
 use feldera_types::adapter_stats::PipelineStatsErrorsResponse;
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
+#[allow(unused_imports)] // Used by the OpenAPI annotation.
+use feldera_types::deployment::PipelineDeployment;
 use feldera_types::error::ErrorResponse;
 use feldera_types::pipeline_diff::{PipelineDiff, compute_pipeline_diff};
 use feldera_types::program_schema::ProgramSchema;
@@ -2291,6 +2293,52 @@ pub(crate) async fn get_pipeline_logs(
     state
         .runner
         .http_streaming_logs_from_pipeline_by_name(&client, *tenant_id, &pipeline_name, mode)
+        .await
+}
+
+/// Get Pipeline Deployment
+///
+/// Desired versus current CPU, memory, and storage per host, and the state of each change.
+/// The pipeline's `deployment_status` is the lifecycle Feldera wants; this endpoint is what
+/// exists in the runner's platform (for example Kubernetes) now.
+///
+/// `state` values follow Kubernetes kstatus: `Current`, `InProgress`, `Failed`, `Terminating`,
+/// `NotFound` and `Unknown`. The top-level `state` summarizes the hosts. Runners that do not
+/// observe their resources return the spec only.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Pipeline deployment retrieved successfully"
+            , body = PipelineDeployment),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Runner response timeout" = (value = json!(examples::error_runner_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Metrics & Debugging"
+)]
+#[get("/pipelines/{pipeline_name}/deployment")]
+pub(crate) async fn get_pipeline_deployment(
+    client: WebData<awc::Client>,
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    state
+        .runner
+        .get_deployment_from_pipeline(&client, *tenant_id, &path.into_inner())
         .await
 }
 

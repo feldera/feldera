@@ -200,6 +200,7 @@ It contains the following fields:
         endpoints::pipeline_management::post_pipeline_dismiss_error,
         endpoints::pipeline_management::post_pipeline_clear,
         endpoints::pipeline_management::get_pipeline_logs,
+        endpoints::pipeline_management::get_pipeline_deployment,
         endpoints::pipeline_management::pipeline_events::list_pipeline_events,
         endpoints::pipeline_management::pipeline_events::get_pipeline_event,
 
@@ -307,6 +308,18 @@ It contains the following fields:
         feldera_types::pipeline_diff::ProgramDiff,
         feldera_types::pipeline_diff::PipelineDiff,
         feldera_types::runtime_status::RuntimeStatus,
+        feldera_types::deployment::PipelineDeployment,
+        feldera_types::deployment::DeploymentSpec,
+        feldera_types::deployment::DeploymentSpecResources,
+        feldera_types::deployment::DeploymentStatus,
+        feldera_types::deployment::DeploymentState,
+        feldera_types::deployment::ResourceManager,
+        feldera_types::deployment::Transition,
+        feldera_types::deployment::HostStatus,
+        feldera_types::deployment::HostCompute,
+        feldera_types::deployment::ComputeResources,
+        feldera_types::deployment::HostStorage,
+        feldera_types::deployment::StorageResources,
         feldera_types::runtime_status::RuntimeDesiredStatus,
         feldera_types::runtime_status::BootstrapPolicy,
         feldera_types::runtime_status::RuntimeStatusDetails,
@@ -953,6 +966,7 @@ fn api_scope(base_path: &str) -> Scope {
         .service(endpoints::pipeline_management::post_pipeline_dismiss_error)
         .service(endpoints::pipeline_management::post_pipeline_clear)
         .service(endpoints::pipeline_management::get_pipeline_logs)
+        .service(endpoints::pipeline_management::get_pipeline_deployment)
         .service(endpoints::pipeline_management::pipeline_events::list_pipeline_events)
         .service(endpoints::pipeline_management::pipeline_events::get_pipeline_event)
         // Pipeline interaction endpoints
