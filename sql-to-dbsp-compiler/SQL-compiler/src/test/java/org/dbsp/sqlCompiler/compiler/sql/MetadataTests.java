@@ -779,6 +779,20 @@ public class MetadataTests extends BaseSQLTests {
                 Mismatched type: (y INTEGER, x INTEGER)""");
     }
 
+    /** Two views with the same definition always have the same contents. */
+    @Test
+    public void identicalViews() {
+        DBSPCompiler compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE T(x INT, y INT);
+                CREATE VIEW V1 AS SELECT x FROM T WHERE y > 0;
+                CREATE VIEW V2 AS SELECT x FROM T WHERE y > 0;""");
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        Assert.assertNotNull(circuit);
+        TestUtil.assertMessagesContain(compiler.messages,
+                "warning: Identical views: View 'v2' always has the same contents as view 'v1'");
+    }
+
     @Test
     public void nullKey() {
         String ddl = """
