@@ -3118,34 +3118,6 @@ export type JsonLines = 'multiple' | 'single'
  * {"insert": {"column1": "hello, world!", "column2": 100}}
  * ```
  *
- * ### `Weighted`
- *
- * Each element in the input stream consists of a record and a weight
- * which indicates how many times the row appears.
- *
- * ```json
- * {"weight": 2, "data": {"column1": "hello, world!", "column2": 100}}
- * ```
- *
- * Note that the line above would be equivalent to the following input in the `InsertDelete` format:
- *
- * ```json
- * {"insert": {"column1": "hello, world!", "column2": 100}}
- * {"insert": {"column1": "hello, world!", "column2": 100}}
- * ```
- *
- * Similarly, negative weights are equivalent to deletions:
- *
- * ```json
- * {"weight": -1, "data": {"column1": "hello, world!", "column2": 100}}
- * ```
- *
- * is equivalent to in the `InsertDelete` format:
- *
- * ```json
- * {"delete": {"column1": "hello, world!", "column2": 100}}
- * ```
- *
  * ### `Debezium`
  *
  * Debezium CDC format.  Refer to [Debezium input connector documentation](https://docs.feldera.com/connectors/sources/debezium) for details.
@@ -3171,13 +3143,7 @@ export type JsonLines = 'multiple' | 'single'
  * Each element in the input stream contains a record without any
  * additional envelope that gets inserted in the input table.
  */
-export type JsonUpdateFormat =
-  | 'insert_delete'
-  | 'weighted'
-  | 'debezium'
-  | 'snowflake'
-  | 'raw'
-  | 'redis'
+export type JsonUpdateFormat = 'insert_delete' | 'debezium' | 'snowflake' | 'raw' | 'redis'
 
 /**
  * Kafka message header.

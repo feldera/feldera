@@ -67,15 +67,3 @@ pub struct InsDelUpdate<T> {
     #[serde(skip_serializing_if = "Option::is_none")]
     update: Option<T>,
 }
-
-// TODO: implement support for parsing this format.
-/// A data change event in the weighted update format.
-#[doc(hidden)]
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[allow(dead_code)]
-pub struct WeightedUpdate<T: ?Sized> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    table: Option<String>,
-    weight: i64,
-    data: T,
-}

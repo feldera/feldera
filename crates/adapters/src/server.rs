@@ -5134,11 +5134,12 @@ mod test_http {
         );
     }
 
-    /// `/ingress` rejects the output-only JSON update format `redis`.  It
-    /// used to accept it and panic in the parser while holding the endpoint's
-    /// lock, after which no step could complete.
+    /// `/ingress` rejects JSON update formats that input does not support.
+    /// It used to accept `redis` and `weighted` and panic in the parser while
+    /// holding the endpoint's lock, after which no step could complete.
+    /// `weighted` is no longer a format at all.
     #[actix_web::test]
-    async fn test_ingress_rejects_redis_update_format() {
+    async fn test_ingress_rejects_unsupported_update_formats() {
         ensure_default_crypto_provider();
         let server = start_test_server(
             &json!({"name": "test", "inputs": {}, "outputs": {}}),
@@ -5147,22 +5148,33 @@ mod test_http {
         .await;
         start_pipeline(&server).await;
 
-        let mut response = timeout(
-            Duration::from_secs(20),
-            server
-                .post("/ingress/test_input1?format=json&update_format=redis")
-                .send_body("{}"),
-        )
-        .await
-        .expect("/ingress with update_format=redis did not return")
-        .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let body = response.body().await.unwrap();
-        assert!(
-            String::from_utf8_lossy(&body).contains("not supported for JSON input"),
-            "{}",
-            String::from_utf8_lossy(&body)
-        );
+        for update_format in ["redis", "weighted"] {
+            let mut response = timeout(
+                Duration::from_secs(20),
+                server
+                    .post(format!(
+                        "/ingress/test_input1?format=json&update_format={update_format}"
+                    ))
+                    .send_body(r#"{"weight": 1, "data": {}}"#),
+            )
+            .await
+            .unwrap_or_else(|_| {
+                panic!("/ingress with update_format={update_format} did not return")
+            })
+            .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::BAD_REQUEST,
+                "{update_format}"
+            );
+            let body = response.body().await.unwrap();
+            let body = String::from_utf8_lossy(&body);
+            let expected = match update_format {
+                "redis" => "not supported for JSON input",
+                _ => "unknown variant `weighted`",
+            };
+            assert!(body.contains(expected), "{update_format}: {body}");
+        }
 
         let token = timeout(
             Duration::from_secs(20),
