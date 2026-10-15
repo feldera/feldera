@@ -1416,6 +1416,20 @@ impl DeltaTableWriter {
                                 .map_err(|e| {
                                     transient(format!("reloading the Delta table: {e}"))
                                 })?;
+                            // A reload can bring in an ALTER TABLE, but the writer's schema and key
+                            // encoder are fixed at startup, so recheck what startup required.
+                            check_column_mapping(&task.delta_table)
+                                .and_then(|()| {
+                                    merge.check_table(&task.delta_table, &inner.struct_fields)
+                                })
+                                .map_err(|e| {
+                                    WriteError::Deterministic(anyhow!(
+                                        "the Delta table changed while the pipeline was running, \
+                                     and merge mode can no longer write to it: {e:#}\n\
+                                     Undo the change, or adapt the view to it, then restart \
+                                     the pipeline."
+                                    ))
+                                })?;
                         }
                         merge
                             .flush(
@@ -3467,6 +3481,59 @@ mod parallel {
             read_output(&table_uri).is_empty(),
             "the aborted write must not have written any rows"
         );
+    }
+
+    /// Set table properties from outside the pipeline, as an `ALTER TABLE` would.
+    fn alter_table(uri: &str, property: &str, value: &str) {
+        dbsp::circuit::tokio::TOKIO.block_on(async {
+            deltalake::open_table(url::Url::from_file_path(uri).unwrap())
+                .await
+                .unwrap()
+                .set_tbl_properties()
+                .with_properties(std::collections::HashMap::from([(
+                    property.to_string(),
+                    value.to_string(),
+                )]))
+                .await
+                .unwrap();
+        });
+    }
+
+    /// An `ALTER TABLE` that breaks a startup requirement stops merge mode, rather than its
+    /// retry reloading the table and committing past the change.
+    #[test]
+    fn merge_stops_when_the_table_no_longer_fits() {
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint =
+            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 3, key_relation());
+        encode_batch(&mut endpoint, &build_insert_batch(&make_records(4)));
+
+        alter_table(uri, "delta.enableChangeDataFeed", "true");
+
+        endpoint.consumer().batch_start(1, OutputBatchType::Delta);
+        let error = endpoint
+            .encode(build_insert_batch(&[make_record(10)]).arc_as_batch_reader())
+            .expect_err("a table with a change data feed must stop merge mode");
+        assert!(
+            format!("{error:#}").contains("changed while the pipeline was running"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    /// A change merge mode does not depend on must not stop it.
+    #[test]
+    fn merge_survives_an_unrelated_table_change() {
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint =
+            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 3, key_relation());
+        encode_batch(&mut endpoint, &build_insert_batch(&make_records(4)));
+
+        alter_table(uri, "delta.logRetentionDuration", "interval 7 days");
+
+        encode_batch(&mut endpoint, &build_insert_batch(&[make_record(10)]));
+        assert_eq!(read_merge_output(uri).len(), 5);
     }
 
     /// A shutdown aborts a merge flush, as it does a cdc write, rather than letting it run on.
