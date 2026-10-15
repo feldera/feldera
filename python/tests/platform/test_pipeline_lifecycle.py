@@ -801,24 +801,24 @@ def test_runtime_config_edit_restricted(pipeline_name):
         16,
     )
 
-    # runtime_config.resources.storage_mb_max
+    # runtime_config.resources.storage_max
     helper_test_restricted_runtime_config_edit(
         pipeline_name,
         pipeline,
-        "`runtime_config.resources.storage_mb_max`",
-        {"resources": {"storage_mb_max": 10000}},
-        lambda r: r["resources"]["storage_mb_max"],
-        10000,
+        "`runtime_config.resources.storage_max`",
+        {"resources": {"storage_max": "10G"}},
+        lambda r: r["resources"]["storage_max"],
+        "10G",
     )
 
-    # runtime_config.resources.storage_mb_min
+    # runtime_config.resources.storage_min
     helper_test_restricted_runtime_config_edit(
         pipeline_name,
         pipeline,
-        "`runtime_config.resources.storage_mb_min`",
-        {"resources": {"storage_mb_min": 1000}},
-        lambda r: r["resources"].get("storage_mb_min"),
-        1000,
+        "`runtime_config.resources.storage_min`",
+        {"resources": {"storage_min": "1G"}},
+        lambda r: r["resources"].get("storage_min"),
+        "1G",
     )
 
     # runtime_config.resources.namespace
@@ -852,8 +852,8 @@ def test_deployment_resources(pipeline_name):
         {
             "cpu_cores_min": 0.5,
             "cpu_cores_max": 1,
-            "memory_mb_min": 1000,
-            "memory_mb_max": 1000,
+            "memory_min": "1G",
+            "memory_max": "1G",
         }
     )
     TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
