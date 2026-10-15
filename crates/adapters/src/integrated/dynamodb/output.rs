@@ -91,7 +91,7 @@ pub(crate) struct DynamoDBWorker {
     key_schema: Relation,
     value_schema: Relation,
     /// Write requests accumulated since the last flush. Flushed when the count
-    /// reaches `batch_size` or the byte total reaches `max_buffer_size_bytes`.
+    /// reaches `batch_size` or the byte total reaches `max_buffer_size`.
     pub(crate) pending: Vec<WriteRequest>,
     pending_bytes: usize,
     max_buffer_size_bytes: usize,
@@ -163,7 +163,7 @@ impl DynamoDBWorker {
             value_schema: value_schema.clone(),
             pending: Vec::new(),
             pending_bytes: 0,
-            max_buffer_size_bytes: config.max_buffer_size_bytes,
+            max_buffer_size_bytes: config.max_buffer_size.as_usize(),
             records_written,
             bytes_written,
             metrics,
@@ -714,7 +714,7 @@ impl DynamoDBOutputEndpoint {
 
 impl OutputConsumer for DynamoDBOutputEndpoint {
     fn max_buffer_size_bytes(&self) -> usize {
-        self.config.max_buffer_size_bytes
+        self.config.max_buffer_size.as_usize()
     }
 
     fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) {
@@ -877,7 +877,7 @@ impl OutputEndpoint for DynamoDBOutputEndpoint {
     }
 
     fn max_buffer_size_bytes(&self) -> usize {
-        self.config.max_buffer_size_bytes
+        self.config.max_buffer_size.as_usize()
     }
 
     fn push_buffer(&mut self, _buffer: &[u8]) -> AnyResult<()> {

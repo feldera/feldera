@@ -209,9 +209,9 @@ impl PostgresWorker {
             inserts: 0,
             upserts: 0,
             deletes: 0,
-            insert_buf: Vec::with_capacity(config.max_buffer_size_bytes),
-            upsert_buf: Vec::with_capacity(config.max_buffer_size_bytes),
-            delete_buf: Vec::with_capacity(config.max_buffer_size_bytes),
+            insert_buf: Vec::with_capacity(config.max_buffer_size.as_usize()),
+            upsert_buf: Vec::with_capacity(config.max_buffer_size.as_usize()),
+            delete_buf: Vec::with_capacity(config.max_buffer_size.as_usize()),
             value_schema: value_schema.to_owned(),
             records_written,
         })
@@ -296,7 +296,7 @@ impl PostgresWorker {
 
         if let Err(e) = result {
             // Report only a prefix of the payload: it holds a whole batch of
-            // records, up to `max_buffer_size_bytes`, which is far too large
+            // records, up to `max_buffer_size`, which is far too large
             // to keep in the error list served by `/stats`. The postgres error
             // below the context embeds the failing row, so a fixed prefix
             // bound can push the whole message past MAX_CONNECTOR_ERROR_LEN;
@@ -1218,7 +1218,7 @@ impl PostgresOutputEndpoint {
 
 impl OutputConsumer for PostgresOutputEndpoint {
     fn max_buffer_size_bytes(&self) -> usize {
-        self.config.max_buffer_size_bytes
+        self.config.max_buffer_size.as_usize()
     }
 
     fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) {
@@ -1410,6 +1410,7 @@ impl OutputEndpoint for PostgresOutputEndpoint {
 
 #[cfg(test)]
 mod tests {
+    use feldera_types::size::ConfigSize;
     use std::sync::Weak;
 
     use feldera_adapterlib::errors::journal::ControllerError;
@@ -1469,7 +1470,7 @@ mod tests {
             table: table.into(),
             tls: PostgresTlsConfig::default(),
             max_records_in_buffer: None,
-            max_buffer_size_bytes: usize::pow(2, 20),
+            max_buffer_size: ConfigSize::from_mib(1),
             on_conflict_do_nothing: false,
             mode: PostgresWriteMode::Materialized,
             cdc_op_column: "__feldera_op".to_owned(),
@@ -1624,6 +1625,7 @@ mod tests {
     }
 
     mod parallel {
+        use feldera_types::size::ConfigSize;
         use std::collections::BTreeMap;
         use std::sync::{Arc, Weak};
 
@@ -1823,7 +1825,7 @@ mod tests {
                 table: TEST_TABLE.to_string(),
                 tls: PostgresTlsConfig::default(),
                 max_records_in_buffer: None,
-                max_buffer_size_bytes: usize::pow(2, 20),
+                max_buffer_size: ConfigSize::from_mib(1),
                 on_conflict_do_nothing: false,
                 mode: PostgresWriteMode::Materialized,
                 cdc_op_column: "__feldera_op".to_owned(),

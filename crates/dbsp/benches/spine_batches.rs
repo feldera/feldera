@@ -95,6 +95,7 @@ use dbsp::{
     typed_batch::BatchReader as TypedBatchReader,
 };
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
+use feldera_types::size::ConfigSize;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
@@ -766,9 +767,9 @@ fn main() {
                 // Every batch on storage, which is where a spine this size
                 // keeps them, and which keeps memory pressure from starting a
                 // merge the layout did not ask for.
-                min_storage_bytes: Some(0),
-                min_step_storage_bytes: Some(0),
-                cache_mib: Some(args.cache_mib),
+                min_spill_size: Some(ConfigSize::ZERO),
+                min_step_spill_size: Some(ConfigSize::ZERO),
+                cache_size: Some(ConfigSize::from_mib(args.cache_mib as u64)),
                 ..StorageOptions::default()
             },
         )

@@ -1089,7 +1089,7 @@ fn payload_bytes_in_error(message: &str) -> Option<usize> {
 /// A statement Postgres rejects must not carry the whole batch into the error
 /// message.
 ///
-/// The payload of one statement is as large as `max_buffer_size_bytes` (1 MiB by
+/// The payload of one statement is as large as `max_buffer_size` (1 MiB by
 /// default) and an endpoint retains up to `MAX_CONNECTOR_ERRORS` messages per
 /// tag, so quoting the payload in full grew `/stats` and
 /// `/output_endpoints/{name}/stats` past the size limit the pipeline manager

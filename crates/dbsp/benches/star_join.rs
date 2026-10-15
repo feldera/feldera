@@ -15,6 +15,7 @@ use dbsp::{
     utils::{Tup2, Tup3, Tup4, Tup5},
 };
 use feldera_types::config::{FileBackendConfig, StorageBackendConfig};
+use feldera_types::size::ConfigSize;
 use rand::Rng;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -74,7 +75,7 @@ fn circuit_config_with_posix_storage(
         },
         StorageOptions {
             backend: StorageBackendConfig::File(Box::new(FileBackendConfig::default())),
-            min_storage_bytes: Some(0),
+            min_spill_size: Some(ConfigSize::ZERO),
             ..StorageOptions::default()
         },
     )

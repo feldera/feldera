@@ -1,4 +1,5 @@
 //! Example data and error types for use in OpenAPI docs.
+use feldera_types::size::ConfigSize;
 use std::collections::BTreeMap;
 
 use crate::api::endpoints::pipeline_management::{
@@ -103,8 +104,8 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         platform_version: "v0".to_string(),
         runtime_config: serde_json::to_value(RuntimeConfig {
             workers: 10,
-            max_rss_mb: None,
-            datafusion_memory_mb: None,
+            max_rss: None,
+            datafusion_memory: None,
             hosts: 1,
             storage: Some(StorageOptions::default()),
             fault_tolerance: FtConfig::default(),
@@ -116,10 +117,10 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             resources: ResourceConfig {
                 cpu_cores_min: None,
                 cpu_cores_max: None,
-                memory_mb_min: Some(1000),
-                memory_mb_max: None,
-                storage_mb_min: None,
-                storage_mb_max: Some(10000),
+                memory_min: Some(ConfigSize::from_mb(1000)),
+                memory_max: None,
+                storage_min: None,
+                storage_max: Some(ConfigSize::from_mb(10000)),
                 autoscaling: None,
                 storage_class: None,
                 volume_attributes_class: None,

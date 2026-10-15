@@ -705,7 +705,9 @@ impl CircuitConfig {
 
     #[cfg(test)]
     pub fn with_fbuf_slab_bytes_per_class(mut self, bytes_per_class: usize) -> Self {
-        self.dev_tweaks.fbuf_slab_bytes_per_class = Some(bytes_per_class);
+        self.dev_tweaks.fbuf_slab_size_per_class = Some(
+            feldera_types::size::ConfigSize::from_bytes(bytes_per_class as u64),
+        );
         self
     }
 
@@ -2966,6 +2968,7 @@ impl CheckpointPublisher {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use feldera_types::size::ConfigSize;
     use std::fs::{File, create_dir_all};
     use std::io;
     use std::path::Path;
@@ -3555,8 +3558,8 @@ pub(crate) mod tests {
     }
 
     /// Like [mkconfig], with `workers` workers, keeping batches smaller than
-    /// `min_storage_bytes` in memory.  A step's output batches stay in memory
-    /// unless `min_storage_bytes` is 0.
+    /// `min_spill_size` in memory.  A step's output batches stay in memory
+    /// unless `min_spill_size` is 0.
     fn mkconfig_with(path: &Path, workers: usize, min_storage_bytes: usize) -> CircuitConfig {
         CircuitConfig::with_workers(workers).with_storage(Some(
             CircuitStorageConfig::for_config(
@@ -3565,8 +3568,8 @@ pub(crate) mod tests {
                     cache: StorageCacheConfig::default(),
                 },
                 StorageOptions {
-                    min_storage_bytes: Some(min_storage_bytes),
-                    min_step_storage_bytes: (min_storage_bytes == 0).then_some(0),
+                    min_spill_size: Some(ConfigSize::from_bytes(min_storage_bytes as u64)),
+                    min_step_spill_size: (min_storage_bytes == 0).then_some(ConfigSize::ZERO),
                     ..StorageOptions::default()
                 },
             )

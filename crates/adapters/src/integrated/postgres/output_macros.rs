@@ -9,7 +9,7 @@ macro_rules! buffer_op {
         name = $name:literal,
         value = $value:ident
     ) => {{
-        let max_buf = $this.config.max_buffer_size_bytes;
+        let max_buf = $this.config.max_buffer_size.as_usize();
         let max_records = $this.config.max_records_in_buffer.unwrap_or(usize::MAX);
 
         if $this.$buf_field.is_empty() {

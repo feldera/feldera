@@ -641,8 +641,8 @@ impl<K: Eq + Hash> TokenBucketRateLimiter<K> {
 /// Used to test code that needs to write to storage without creating a circuit.
 #[cfg(test)]
 pub(crate) fn run_in_posix_runtime<F>(
-    min_storage_bytes: Option<usize>,
-    min_step_storage_bytes: Option<usize>,
+    min_spill_size: Option<feldera_types::size::ConfigSize>,
+    min_step_spill_size: Option<feldera_types::size::ConfigSize>,
     test_fn: F,
 ) where
     F: FnOnce() + Send + 'static,
@@ -660,8 +660,8 @@ pub(crate) fn run_in_posix_runtime<F>(
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                min_storage_bytes,
-                min_step_storage_bytes,
+                min_spill_size,
+                min_step_spill_size,
                 ..StorageOptions::default()
             },
         )

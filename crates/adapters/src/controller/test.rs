@@ -6607,14 +6607,14 @@ mod queue_limit_tests {
 
     // --- ConnectorConfig::max_queued_bytes() ---
 
-    /// When `max_queued_bytes` is unset, it defaults to `max_queued_records * 1000`.
+    /// When `max_queued_size` is unset, it defaults to `max_queued_records * 1000`.
     #[test]
     fn max_queued_bytes_defaults_to_1000x_records() {
         let endpoint = make_endpoint(100, None);
         assert_eq!(endpoint.config.connector_config.max_queued_bytes(), 100_000);
     }
 
-    /// When `max_queued_bytes` is explicitly set, that value is used directly.
+    /// When `max_queued_size` is explicitly set, that value is used directly.
     #[test]
     fn max_queued_bytes_explicit_value() {
         let endpoint = make_endpoint(100, Some(50_000));
@@ -6708,7 +6708,7 @@ mod queue_limit_tests {
         assert!(endpoint.is_full());
     }
 
-    /// With no explicit `max_queued_bytes`, the default byte threshold
+    /// With no explicit `max_queued_size`, the default byte threshold
     /// (`max_queued_records * 1000`) is used for the `is_full` check.
     #[test]
     fn is_full_uses_default_bytes_threshold() {
@@ -6766,7 +6766,7 @@ mod queue_limit_tests {
     }
 
     /// The backpressure thread is unparked when a batch causes the buffered
-    /// byte count to cross `max_queued_bytes`, even when the records count
+    /// byte count to cross `max_queued_size`, even when the records count
     /// remains well below `max_queued_records`.
     #[test]
     fn backpressure_unparked_when_bytes_threshold_crossed() {

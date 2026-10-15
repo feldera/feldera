@@ -9,6 +9,7 @@ use dbsp_adapters::Encoder;
 use dbsp_adapters::SerBatch;
 use dbsp_adapters::integrated::PostgresOutputEndpoint;
 use feldera_adapterlib::transport::OutputBatchType;
+use feldera_types::size::ConfigSize;
 use feldera_types::transport::postgres::{
     PostgresTlsConfig, PostgresWriteMode, PostgresWriterConfig,
 };
@@ -68,7 +69,7 @@ fn make_config(threads: usize) -> PostgresWriterConfig {
         extra_columns: Vec::new(),
         tls: PostgresTlsConfig::default(),
         max_records_in_buffer: None,
-        max_buffer_size_bytes: usize::pow(2, 20),
+        max_buffer_size: ConfigSize::from_mib(1),
         on_conflict_do_nothing: false,
         threads,
     }
