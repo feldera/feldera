@@ -5,6 +5,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.connectors.IValidateConfig;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import javax.annotation.Nullable;
 import java.util.List;
 
@@ -43,8 +45,15 @@ public class PostgresWriterConfig implements IValidateConfig {
     @JsonProperty("max_records_in_buffer")
     public Long maxRecordsInBuffer = null;
 
+    /** Size of the buffer of one operation, for example {@code "1Mi"}. */
+    @Nullable
+    @JsonProperty("max_buffer_size")
+    public JsonNode maxBufferSize = null;
+
+    /** Deprecated; use {@link #maxBufferSize}. */
+    @Nullable
     @JsonProperty("max_buffer_size_bytes")
-    public long maxBufferSizeBytes = 1 << 20;
+    public JsonNode maxBufferSizeBytes = null;
 
     @JsonProperty("on_conflict_do_nothing")
     public boolean onConflictDoNothing = false;
@@ -59,6 +68,12 @@ public class PostgresWriterConfig implements IValidateConfig {
     @Override
     public boolean validate(ConfigReporter reporter) {
         boolean ok = true;
+        ConfigQuantity.Setting bufferSize = ConfigSize.resolveRequired(reporter,
+                "max_buffer_size", this.maxBufferSize,
+                "max_buffer_size_bytes", this.maxBufferSizeBytes);
+        if (!ConfigQuantity.checkMinimum(reporter, bufferSize, 1,
+                "greater than 0, for example \"1Mi\""))
+            ok = false;
         switch (mode) {
             case Cdc -> {
                 if (cdcOpColumn.isBlank()) {

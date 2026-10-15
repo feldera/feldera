@@ -5,6 +5,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.connectors.IValidateConfig;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import javax.annotation.Nullable;
 
 /** Configuration for the DynamoDB output connector. */
@@ -38,8 +40,15 @@ public class DynamoDBWriterConfig implements IValidateConfig {
     @JsonProperty("write_mode")
     public DynamoDBWriteMode writeMode = DynamoDBWriteMode.Batch;
 
+    /** Size of the data each worker buffers before flushing, for example {@code "1Mi"}. */
+    @Nullable
+    @JsonProperty("max_buffer_size")
+    public JsonNode maxBufferSize = null;
+
+    /** Deprecated; use {@link #maxBufferSize}. */
+    @Nullable
     @JsonProperty("max_buffer_size_bytes")
-    public long maxBufferSizeBytes = 1024 * 1024;
+    public JsonNode maxBufferSizeBytes = null;
 
     @JsonProperty("max_concurrent_requests")
     public int maxConcurrentRequests = 64;
@@ -90,11 +99,12 @@ public class DynamoDBWriterConfig implements IValidateConfig {
                     "\"threads\" must be at least 1");
             ok = false;
         }
-        if (maxBufferSizeBytes == 0) {
-            reporter.warnPath("max_buffer_size_bytes", "Invalid configuration",
-                    "\"max_buffer_size_bytes\" must be greater than 0");
+        ConfigQuantity.Setting bufferSize = ConfigSize.resolveRequired(reporter,
+                "max_buffer_size", this.maxBufferSize,
+                "max_buffer_size_bytes", this.maxBufferSizeBytes);
+        if (!ConfigQuantity.checkMinimum(reporter, bufferSize, 1,
+                "greater than 0, for example \"1Mi\""))
             ok = false;
-        }
         if (maxConcurrentRequests == 0) {
             reporter.warnPath("max_concurrent_requests", "Invalid configuration",
                     "\"max_concurrent_requests\" must be greater than 0");
