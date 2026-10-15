@@ -1402,33 +1402,46 @@ impl DeltaTableWriter {
             // Panic safety: block_on() panics if called from a tokio async context.
             // encode() is called from the dedicated output thread (output_thread_func).
             let started = Instant::now();
+            // Cancellable as a whole, as the cdc write is: a flush over many files or a slow
+            // store would otherwise hold the teardown. A dropped flush is a crash mid-flush.
             let result = TOKIO.block_on(
-                async {
-                    // A failed attempt may have committed anyway: a lookup in the old snapshot
-                    // misses its rows and appends them twice, so a failed reload fails the retry.
-                    if retrying || *merge_reload {
-                        task.delta_table
-                            .update_incremental(None)
+                inner.shutdown.run_until_cancelled(
+                    async {
+                        // A failed attempt may have committed anyway: a lookup in the old snapshot
+                        // misses its rows and appends them twice, so a failed reload fails the retry.
+                        if retrying || *merge_reload {
+                            task.delta_table
+                                .update_incremental(None)
+                                .await
+                                .map_err(|e| {
+                                    transient(format!("reloading the Delta table: {e}"))
+                                })?;
+                        }
+                        merge
+                            .flush(
+                                &mut task.delta_table,
+                                object_store.clone(),
+                                batch.clone(),
+                                format.clone(),
+                                *threads,
+                                retrying,
+                                &mut report_violation,
+                                inner.records_written.clone(),
+                            )
                             .await
-                            .map_err(|e| transient(format!("reloading the Delta table: {e}")))?;
                     }
-                    merge
-                        .flush(
-                            &mut task.delta_table,
-                            object_store.clone(),
-                            batch.clone(),
-                            format.clone(),
-                            *threads,
-                            retrying,
-                            &mut report_violation,
-                            inner.records_written.clone(),
-                        )
-                        .await
-                }
-                .instrument(span.clone()),
+                    .instrument(span.clone()),
+                ),
             );
             // Recorded whatever the outcome: a flush that fails slowly is the interesting one.
             metrics_sink.record_flush_latency(started.elapsed());
+            let Some(result) = result else {
+                inner.records_written.store(0, Ordering::Relaxed);
+                return Err(shutdown_aborted(
+                    "merging a batch into the Delta table",
+                    retry_count,
+                ));
+            };
 
             match result {
                 Ok(metrics) => {
@@ -1457,7 +1470,7 @@ impl DeltaTableWriter {
                     // After the commit, never before: a compaction starting mid-flush would
                     // replace the files that flush is addressing, forcing a needless retry.
                     if let Some(compactor) = compactor {
-                        compactor.maybe_start();
+                        compactor.maybe_start(&inner.shutdown);
                     }
 
                     debug!(
@@ -3453,6 +3466,29 @@ mod parallel {
         assert!(
             read_output(&table_uri).is_empty(),
             "the aborted write must not have written any rows"
+        );
+    }
+
+    /// A shutdown aborts a merge flush, as it does a cdc write, rather than letting it run on.
+    #[test]
+    fn shutdown_aborts_the_merge_flush() {
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
+
+        endpoint.inner.shutdown.cancel();
+
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
+        let error = endpoint
+            .encode(build_insert_batch(&make_records(10)).arc_as_batch_reader())
+            .expect_err("a shutdown must abort the flush");
+        assert!(
+            error.to_string().contains("shutting down"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            read_merge_output(uri).is_empty(),
+            "the aborted flush must not have committed any rows"
         );
     }
 
