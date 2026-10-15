@@ -72,6 +72,16 @@ use typedmap::TypedDashMap;
 pub enum Error {
     /// Specified persistent id is not found in the circuit.
     UnknownPersistentId(String),
+    /// Two operators in the circuit have the same persistent id.
+    DuplicatePersistentId {
+        persistent_id: String,
+        first: String,
+        second: String,
+    },
+    /// An operator in the circuit has an empty persistent id.
+    EmptyPersistentId {
+        operator: String,
+    },
     /// One of the worker threads terminated unexpectedly.
     WorkerPanic {
         // Detailed panic information from all threads that
@@ -95,6 +105,8 @@ impl DetailedError for Error {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::UnknownPersistentId(_) => Cow::from("UnknownPersistentId"),
+            Self::DuplicatePersistentId { .. } => Cow::from("DuplicatePersistentId"),
+            Self::EmptyPersistentId { .. } => Cow::from("EmptyPersistentId"),
             Self::WorkerPanic { .. } => Cow::from("WorkerPanic"),
             Self::CheckpointPanic(_) => Cow::from("CheckpointPanic"),
             Self::Terminated => Cow::from("Terminated"),
@@ -110,6 +122,19 @@ impl Display for Error {
         match self {
             Self::UnknownPersistentId(persistent_id) => {
                 write!(f, "Unknown persistent node id: {persistent_id}")
+            }
+            Self::DuplicatePersistentId {
+                persistent_id,
+                first,
+                second,
+            } => {
+                write!(
+                    f,
+                    "Operators {first} and {second} have the same persistent id {persistent_id}"
+                )
+            }
+            Self::EmptyPersistentId { operator } => {
+                write!(f, "Operator {operator} has an empty persistent id")
             }
             Self::WorkerPanic { panic_info } => {
                 writeln!(f, "One or more worker threads terminated unexpectedly")?;
