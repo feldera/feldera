@@ -82,10 +82,9 @@ Feldera pipeline:
         "backend": {
           "name": "default"
         },
-        "min_storage_bytes": null,
-        "min_step_storage_bytes": null,
+        "min_spill_size": "10Mi",
         "compression": "default",
-        "cache_mib": null
+        "cache_size": "4Gi"
       }
      ```
 
