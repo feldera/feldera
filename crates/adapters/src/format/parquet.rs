@@ -487,7 +487,9 @@ impl Encoder for ParquetEncoder {
                 );
             }
             if w < 0 {
-                panic!("Deletes for the parquet format are not yet supported.");
+                bail!(
+                    "Unable to output a deleted record: the Parquet format does not support deletes."
+                );
             }
 
             while w != 0 {
