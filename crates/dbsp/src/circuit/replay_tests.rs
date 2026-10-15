@@ -2630,7 +2630,7 @@ fn run_concurrent_bootstrap_test_on_hosts<I, OO, ON>(
 
     // Every host bootstraps from its own checkpoint, and all of them must
     // reach the same outcome.
-    let mut outcomes = hosts.map_with_index(|host, handle| {
+    let mut outcomes = hosts.map_with_index(move |host, handle| {
         handle
             .start_concurrent_bootstrap(checkpoints[host].to_string().into())
             .unwrap()
@@ -3761,7 +3761,7 @@ fn concurrent_unmaterialized_table_falls_back(n_hosts: usize) {
 
     // Without a checkpoint, which would start a non-concurrent bootstrap.
     let mut hosts = TestHosts::start_with(NUM_WORKERS, n_hosts, configure, new_constructor);
-    let outcomes = hosts.map_with_index(|host, handle| {
+    let outcomes = hosts.map_with_index(move |host, handle| {
         handle
             .start_concurrent_bootstrap(checkpoints[host].to_string().into())
             .unwrap()
@@ -4084,7 +4084,7 @@ fn concurrent_bootstrap_lazy_map_input(n_hosts: usize) {
 
     // Without a checkpoint, which would start a non-concurrent bootstrap.
     let mut hosts = TestHosts::start_with(NUM_WORKERS, n_hosts, configure, new_constructor);
-    let outcomes = hosts.map_with_index(|host, handle| {
+    let outcomes = hosts.map_with_index(move |host, handle| {
         handle
             .start_concurrent_bootstrap(checkpoints[host].to_string().into())
             .unwrap()
