@@ -76,6 +76,7 @@ use crate::typed_batch::{
 use crate::utils::test::multihost::TestHosts;
 use crate::{DBSPHandle, OutputHandle, Runtime, Stream};
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
+use feldera_types::size::ConfigSize;
 use proptest::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::iter::zip;
@@ -186,7 +187,7 @@ impl Config {
                     StorageOptions {
                         // Send every batch to a file, so the projection runs
                         // over file-backed batches rather than in-memory ones.
-                        min_storage_bytes: Some(0),
+                        min_spill_size: Some(ConfigSize::ZERO),
                         ..StorageOptions::default()
                     },
                 )

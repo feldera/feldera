@@ -886,18 +886,13 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 16,
-                      "max_rss_mb": null,
-                      "datafusion_memory_mb": null,
                       "hosts": 1,
                       "storage": {
                         "backend": {
                           "name": "default"
                         },
-                        "min_storage_bytes": null,
-                        "min_step_storage_bytes": null,
                         "compression": "default",
-                        "compression_level": null,
-                        "cache_mib": null
+                        "compression_level": null
                       },
                       "fault_tolerance": {
                         "model": "none"
@@ -909,9 +904,6 @@
                       "resources": {
                         "cpu_cores_min": null,
                         "cpu_cores_max": null,
-                        "memory_mb_min": null,
-                        "memory_mb_max": null,
-                        "storage_mb_max": null,
                         "storage_class": null,
                         "service_account_name": null,
                         "namespace": null
@@ -978,18 +970,13 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 10,
-                      "max_rss_mb": null,
-                      "datafusion_memory_mb": null,
                       "hosts": 1,
                       "storage": {
                         "backend": {
                           "name": "default"
                         },
-                        "min_storage_bytes": null,
-                        "min_step_storage_bytes": null,
                         "compression": "default",
-                        "compression_level": null,
-                        "cache_mib": null
+                        "compression_level": null
                       },
                       "fault_tolerance": {
                         "model": "none"
@@ -1001,9 +988,8 @@
                       "resources": {
                         "cpu_cores_min": null,
                         "cpu_cores_max": null,
-                        "memory_mb_min": 1000,
-                        "memory_mb_max": null,
-                        "storage_mb_max": 10000,
+                        "memory_min": "1G",
+                        "storage_max": "10G",
                         "storage_class": null,
                         "service_account_name": null,
                         "namespace": null
@@ -1102,18 +1088,13 @@
                 "tags": [],
                 "runtime_config": {
                   "workers": 16,
-                  "max_rss_mb": null,
-                  "datafusion_memory_mb": null,
                   "hosts": 1,
                   "storage": {
                     "backend": {
                       "name": "default"
                     },
-                    "min_storage_bytes": null,
-                    "min_step_storage_bytes": null,
                     "compression": "default",
-                    "compression_level": null,
-                    "cache_mib": null
+                    "compression_level": null
                   },
                   "fault_tolerance": {
                     "model": "none"
@@ -1125,9 +1106,6 @@
                   "resources": {
                     "cpu_cores_min": null,
                     "cpu_cores_max": null,
-                    "memory_mb_min": null,
-                    "memory_mb_max": null,
-                    "storage_mb_max": null,
                     "storage_class": null,
                     "service_account_name": null,
                     "namespace": null
@@ -1177,18 +1155,13 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "max_rss_mb": null,
-                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
                       },
-                      "min_storage_bytes": null,
-                      "min_step_storage_bytes": null,
                       "compression": "default",
-                      "compression_level": null,
-                      "cache_mib": null
+                      "compression_level": null
                     },
                     "fault_tolerance": {
                       "model": "none"
@@ -1200,9 +1173,6 @@
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
-                      "memory_mb_min": null,
-                      "memory_mb_max": null,
-                      "storage_mb_max": null,
                       "storage_class": null,
                       "service_account_name": null,
                       "namespace": null
@@ -1364,18 +1334,13 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "max_rss_mb": null,
-                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
                       },
-                      "min_storage_bytes": null,
-                      "min_step_storage_bytes": null,
                       "compression": "default",
-                      "compression_level": null,
-                      "cache_mib": null
+                      "compression_level": null
                     },
                     "fault_tolerance": {
                       "model": "none"
@@ -1387,9 +1352,6 @@
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
-                      "memory_mb_min": null,
-                      "memory_mb_max": null,
-                      "storage_mb_max": null,
                       "storage_class": null,
                       "service_account_name": null,
                       "namespace": null
@@ -1513,18 +1475,13 @@
                 "tags": [],
                 "runtime_config": {
                   "workers": 16,
-                  "max_rss_mb": null,
-                  "datafusion_memory_mb": null,
                   "hosts": 1,
                   "storage": {
                     "backend": {
                       "name": "default"
                     },
-                    "min_storage_bytes": null,
-                    "min_step_storage_bytes": null,
                     "compression": "default",
-                    "compression_level": null,
-                    "cache_mib": null
+                    "compression_level": null
                   },
                   "fault_tolerance": {
                     "model": "none"
@@ -1536,9 +1493,6 @@
                   "resources": {
                     "cpu_cores_min": null,
                     "cpu_cores_max": null,
-                    "memory_mb_min": null,
-                    "memory_mb_max": null,
-                    "storage_mb_max": null,
                     "storage_class": null,
                     "service_account_name": null,
                     "namespace": null
@@ -1588,18 +1542,13 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "max_rss_mb": null,
-                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
                       },
-                      "min_storage_bytes": null,
-                      "min_step_storage_bytes": null,
                       "compression": "default",
-                      "compression_level": null,
-                      "cache_mib": null
+                      "compression_level": null
                     },
                     "fault_tolerance": {
                       "model": "none"
@@ -1611,9 +1560,6 @@
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
-                      "memory_mb_min": null,
-                      "memory_mb_max": null,
-                      "storage_mb_max": null,
                       "storage_class": null,
                       "service_account_name": null,
                       "namespace": null
@@ -1690,18 +1636,13 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "max_rss_mb": null,
-                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
                       },
-                      "min_storage_bytes": null,
-                      "min_step_storage_bytes": null,
                       "compression": "default",
-                      "compression_level": null,
-                      "cache_mib": null
+                      "compression_level": null
                     },
                     "fault_tolerance": {
                       "model": "none"
@@ -1713,9 +1654,6 @@
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
-                      "memory_mb_min": null,
-                      "memory_mb_max": null,
-                      "storage_mb_max": null,
                       "storage_class": null,
                       "service_account_name": null,
                       "namespace": null
@@ -1973,18 +1911,13 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "max_rss_mb": null,
-                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
                       },
-                      "min_storage_bytes": null,
-                      "min_step_storage_bytes": null,
                       "compression": "default",
-                      "compression_level": null,
-                      "cache_mib": null
+                      "compression_level": null
                     },
                     "fault_tolerance": {
                       "model": "none"
@@ -1996,9 +1929,6 @@
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
-                      "memory_mb_min": null,
-                      "memory_mb_max": null,
-                      "storage_mb_max": null,
                       "storage_class": null,
                       "service_account_name": null,
                       "namespace": null
@@ -7148,18 +7078,13 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "max_rss_mb": null,
-                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
                       },
-                      "min_storage_bytes": null,
-                      "min_step_storage_bytes": null,
                       "compression": "default",
-                      "compression_level": null,
-                      "cache_mib": null
+                      "compression_level": null
                     },
                     "fault_tolerance": {
                       "model": "none"
@@ -7171,9 +7096,6 @@
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
-                      "memory_mb_min": null,
-                      "memory_mb_max": null,
-                      "storage_mb_max": null,
                       "storage_class": null,
                       "service_account_name": null,
                       "namespace": null
@@ -9661,18 +9583,16 @@
                 "nullable": true,
                 "minimum": 0
               },
-              "max_queued_bytes": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Backpressure threshold, in bytes.\n\nMaximal number of bytes queued by the endpoint before the endpoint\nis paused by the backpressure mechanism.\n\nFor input endpoints, this setting bounds the number of bytes that have\nbeen received from the input transport but haven't yet been consumed by\nthe circuit since the circuit, since the circuit is still busy processing\nprevious inputs.\n\nThis setting is not yet implemented for output endpoints.\n\nNote that this is not a hard bound: there can be a small delay between\nthe backpressure mechanism is triggered and the endpoint is paused, during\nwhich more data may be queued.\n\nWhen this is unspecified, it defaults to `1000 * max_queued_records`.",
-                "nullable": true,
-                "minimum": 0
-              },
               "max_queued_records": {
                 "type": "integer",
                 "format": "int64",
                 "description": "Backpressure threshold, in records.\n\nMaximal number of records queued by the endpoint before the endpoint\nis paused by the backpressure mechanism.\n\nFor input endpoints, this setting bounds the number of records that have\nbeen received from the input transport but haven't yet been consumed by\nthe circuit, since the circuit is still busy processing previous inputs.\n\nFor output endpoints, this setting bounds the number of records that have\nbeen produced by the circuit but not yet sent via the output transport endpoint\nnor stored in the output buffer (see `enable_output_buffer`).\n\nNote that this is not a hard bound: there can be a small delay between\nthe backpressure mechanism is triggered and the endpoint is paused, during\nwhich more data may be queued.\n\nThe default is 1 million.",
                 "minimum": 0
+              },
+              "max_queued_size": {
+                "type": "string",
+                "description": "Backpressure threshold, in bytes.\n\nMaximal number of bytes queued by the endpoint before the endpoint\nis paused by the backpressure mechanism.\n\nFor input endpoints, this setting bounds the number of bytes that have\nbeen received from the input transport but haven't yet been consumed by\nthe circuit since the circuit, since the circuit is still busy processing\nprevious inputs.\n\nThis setting is not yet implemented for output endpoints.\n\nNote that this is not a hard bound: there can be a small delay between\nthe backpressure mechanism is triggered and the endpoint is paused, during\nwhich more data may be queued.\n\nWhen this is unspecified, it defaults to `1000 * max_queued_records`\nbytes.\n\nBefore release 0.367.0 this setting was `max_queued_bytes`, a number\nof bytes. That name is deprecated but still read.",
+                "nullable": true
               },
               "max_worker_batch_size": {
                 "type": "integer",
@@ -10433,17 +10353,15 @@
             "format": "double",
             "nullable": true
           },
-          "memory_mb_max": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
+          "memory_max": {
+            "type": "string",
+            "description": "The maximum memory, such as `\"16Gi\"`. `memory_mb_max`, a number of\nmegabytes, is a deprecated alias.",
+            "nullable": true
           },
-          "memory_mb_min": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
+          "memory_min": {
+            "type": "string",
+            "description": "The minimum memory, such as `\"4Gi\"`. `memory_mb_min`, a number of\nmegabytes, is a deprecated alias.",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -10545,19 +10463,17 @@
             "default": null,
             "nullable": true
           },
-          "exchange_channel_capacity_bytes": {
-            "type": "integer",
-            "description": "Maximum number of bytes of queued but unacknowledged exchange messages\nper pair of remote host and message type.\n\nA sender that pushes past this budget waits for the receiver to\nacknowledge earlier messages before it queues more.  There are three\nmessage types, so a host buffers up to three times this many bytes for\neach of the other hosts, plus any single message that exceeds the\nbudget on its own.\n\nThe default is 10,000,000 bytes.",
+          "exchange_channel_capacity": {
+            "type": "string",
+            "description": "Maximum size of the queued but unacknowledged exchange messages per\npair of remote host and message type.\n\nA sender that pushes past this budget waits for the receiver to\nacknowledge earlier messages before it queues more.  There are three\nmessage types, so a host buffers up to three times this many bytes for\neach of the other hosts, plus any single message that exceeds the\nbudget on its own.\n\nThe default is `\"10M\"`. Before release 0.367.0 this setting was\n`exchange_channel_capacity_bytes`, a number of bytes.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
-          "fbuf_slab_bytes_per_class": {
-            "type": "integer",
-            "description": "Target number of cached bytes retained in each `FBuf` slab size class.\n\nThe default is 16 MiB.",
+          "fbuf_slab_size_per_class": {
+            "type": "string",
+            "description": "Target size of the cache retained in each `FBuf` slab size class.\n\nThe default is `\"16Mi\"`. Before release 0.367.0 this setting was\n`fbuf_slab_bytes_per_class`, a number of bytes.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "fetch_distinct": {
             "type": "boolean",
@@ -10587,13 +10503,11 @@
             "nullable": true,
             "minimum": 0
           },
-          "lazy_input_map_key_block_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Minimum size of the key blocks in the batches a lazy input map's\naccumulator writes for itself, in bytes.  A power of two, at least\n4096.\n\nThe map resolves a transaction by walking the accumulated updates in\nkey order without reading values, one storage request per key block,\nso larger blocks mean fewer requests.  Only the accumulator's own\nbatches (merge outputs and spills) take this size; the batches that\nreach the integral keep it until its merger rewrites them at the\ndefault size.  The default is 32768; 8192 is the file writer's default.",
+          "lazy_input_map_key_block_size": {
+            "type": "string",
+            "description": "Minimum size of the key blocks in the batches a lazy input map's\naccumulator writes for itself.  A power of two, at least 4096 bytes.\n\nThe map resolves a transaction by walking the accumulated updates in\nkey order without reading values, one storage request per key block,\nso larger blocks mean fewer requests.  Only the accumulator's own\nbatches (merge outputs and spills) take this size; the batches that\nreach the integral keep it until its merger rewrites them at the\ndefault size.  The default is `\"32Ki\"`; `\"8Ki\"` is the file writer's\ndefault. Before release 0.367.0 this setting was\n`lazy_input_map_key_block_bytes`, a number of bytes.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "lazy_input_map_keys_per_step": {
             "type": "integer",
@@ -10669,13 +10583,11 @@
             "default": null,
             "nullable": true
           },
-          "storage_mb_max": {
-            "type": "integer",
-            "format": "int64",
-            "description": "If set, the maximum amount of storage, in MiB, for the POSIX backend to\nallow to be in use before failing all writes with `StorageFull`.  This\nis useful for testing on top of storage that does not implement its own\nquota mechanism.",
+          "storage_max": {
+            "type": "string",
+            "description": "If set, the maximum amount of storage for the POSIX backend to allow to\nbe in use before failing all writes with `StorageFull`.  This is useful\nfor testing on top of storage that does not implement its own quota\nmechanism.\n\nBefore release 0.367.0 this setting was `storage_mb_max`, a number of\nmebibytes.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "streaming_exchange": {
             "type": "boolean",
@@ -10785,11 +10697,10 @@
             "description": "Optional endpoint URL, for example when using a local\nDynamoDB-compatible service.",
             "nullable": true
           },
-          "max_buffer_size_bytes": {
-            "type": "integer",
-            "description": "Maximum number of bytes buffered by each worker before flushing writes.\n\nThis is an approximate size based on encoded DynamoDB attributes.",
-            "default": 1048576,
-            "minimum": 0
+          "max_buffer_size": {
+            "type": "string",
+            "description": "Maximum size of the data buffered by each worker before flushing\nwrites, such as `\"1Mi\"`.\n\nThis is an approximate size based on encoded DynamoDB attributes.\n\nBefore release 0.367.0 this setting was `max_buffer_size_bytes`, a\nnumber of bytes. That name is deprecated but still read.",
+            "default": "1Mi"
           },
           "max_concurrent_requests": {
             "type": "integer",
@@ -10992,11 +10903,10 @@
           "path"
         ],
         "properties": {
-          "buffer_size_bytes": {
-            "type": "integer",
-            "description": "Read buffer size.\n\nDefault: when this parameter is not specified, a platform-specific\ndefault is used.",
-            "nullable": true,
-            "minimum": 0
+          "buffer_size": {
+            "type": "string",
+            "description": "Read buffer size, such as `\"64Ki\"`.\n\nDefault: when this parameter is not specified, a platform-specific\ndefault is used.\n\nBefore release 0.367.0 this setting was `buffer_size_bytes`, a number\nof bytes. That name is deprecated but still read.",
+            "nullable": true
           },
           "follow": {
             "type": "boolean",
@@ -13114,13 +13024,11 @@
                 "description": "Enable CPU profiler.\n\nThe default value is `true`.",
                 "default": true
               },
-              "datafusion_memory_mb": {
-                "type": "integer",
-                "format": "int64",
-                "description": "DataFusion memory pool size, in MB, shared by the ad-hoc query\nengine and the Delta Lake / Iceberg connectors.\n\nCarved out of `max_rss_mb` (falling back to\n`resources.memory_mb_max`); the remainder goes to the DBSP circuit,\nso the two do not double-book RAM.\n\nUnset: defaults to 5% of the effective budget, capped at 2 GB.\nPipelines that don't run heavy ad-hoc / Delta / Iceberg workloads\ncan leave this unset.\n\nSet this explicitly for ad-hoc queries, or Delta / Iceberg scans,\nover data too large for the default share. A pool that cannot hold\nthe query surfaces as `ResourcesExhausted` on that query alone; the\npipeline keeps running.\n\nNo pool limit applied if no overall budget is configured.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
+              "datafusion_memory": {
+                "type": "string",
+                "description": "DataFusion memory pool size, such as `\"1Gi\"`, shared by the ad-hoc\nquery engine and the Delta Lake / Iceberg connectors.\n\nCarved out of `max_rss` (falling back to `resources.memory_max`); the\nremainder goes to the DBSP circuit, so the two do not double-book RAM.\n\nUnset: defaults to 5% of the effective budget, capped at 2 GB.\nPipelines that don't run heavy ad-hoc / Delta / Iceberg workloads\ncan leave this unset.\n\nSet this explicitly for ad-hoc queries, or Delta / Iceberg scans,\nover data too large for the default share. A pool that cannot hold\nthe query surfaces as `ResourcesExhausted` on that query alone; the\npipeline keeps running.\n\nNo pool limit applied if no overall budget is configured.\n\nBefore release 0.367.0 this setting was `datafusion_memory_mb`, a\nnumber of megabytes. That name is deprecated but still read.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
                 "default": null,
-                "nullable": true,
-                "minimum": 0
+                "nullable": true
               },
               "dev_tweaks": {
                 "allOf": [
@@ -13194,13 +13102,11 @@
                 "nullable": true,
                 "minimum": 0
               },
-              "max_rss_mb": {
-                "type": "integer",
-                "format": "int64",
-                "description": "The maximum amount of memory, in Megabytes, that the pipeline is allowed to use\non each host.\n\nSetting this property activates memory pressure monitoring and backpressure\nmechanisms. The pipeline will track the amount of remaining memory and\nreport the memory pressure level via the `memory_pressure` metric.\n\nAs the memory pressure increases, the system will apply increasing backpressure\nto push state cached in memory to storage, preventing the pipeline from running\nout of memory at the cost of some performance degradation.\n\nIt is strongly recommended to set this property to prevent the pipeline from\nrunning out of memory. The setting should not exceed the memory limit of the pipeline\ninstance.\n\nWhen `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the\nlatter is used as the effective memory cap for the pipeline.\n\nThe pipeline caps this limit at the memory available to it, which is the\nhost's memory or the container's memory limit, whichever is smaller. It\nrechecks the available memory every second.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
+              "max_rss": {
+                "type": "string",
+                "description": "The maximum amount of memory that the pipeline is allowed to use on\neach host, such as `\"16G\"` or `\"16Gi\"`.\n\nSetting this property activates memory pressure monitoring and backpressure\nmechanisms. The pipeline will track the amount of remaining memory and\nreport the memory pressure level via the `memory_pressure` metric.\n\nAs the memory pressure increases, the system will apply increasing backpressure\nto push state cached in memory to storage, preventing the pipeline from running\nout of memory at the cost of some performance degradation.\n\nIt is strongly recommended to set this property to prevent the pipeline from\nrunning out of memory. The setting should not exceed the memory limit of the pipeline\ninstance.\n\nWhen `max_rss` is not specified but `resources.memory_max` is set, the\nlatter is used as the effective memory cap for the pipeline.\n\nThe pipeline caps this limit at the memory available to it, which is the\nhost's memory or the container's memory limit, whichever is smaller. It\nrechecks the available memory every second.\n\nBefore release 0.367.0 this setting was `max_rss_mb`, a number of\nmegabytes. That name is deprecated but still read.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
                 "default": null,
-                "nullable": true,
-                "minimum": 0
+                "nullable": true
               },
               "min_batch_size_records": {
                 "type": "integer",
@@ -13242,9 +13148,6 @@
                 "default": {
                   "cpu_cores_min": null,
                   "cpu_cores_max": null,
-                  "memory_mb_min": null,
-                  "memory_mb_max": null,
-                  "storage_mb_max": null,
                   "storage_class": null,
                   "service_account_name": null,
                   "namespace": null
@@ -13260,11 +13163,8 @@
                   "backend": {
                     "name": "default"
                   },
-                  "min_storage_bytes": null,
-                  "min_step_storage_bytes": null,
                   "compression": "default",
-                  "compression_level": null,
-                  "cache_mib": null
+                  "compression_level": null
                 },
                 "nullable": true
               },
@@ -14045,18 +13945,17 @@
         "type": "object",
         "description": "Batch processing configuration for the Postgres CDC connector.\n\nControls how replication events are buffered into a batch before being\nflushed to Feldera. Mirrors the batch configuration of the underlying\n`etl` replication library; fields omitted from the configuration fall\nback to `etl`'s own defaults.",
         "properties": {
-          "max_bytes": {
-            "type": "integer",
-            "description": "Maximum preferred byte size for one batch per active stream. This is\na ceiling, not a target: the runtime still chooses the smaller value\nbetween this limit and the memory-ratio budget computed from\n`memory_budget_ratio`.\n\nDefault: 33554432 (32 MiB), the same as etl.",
-            "default": 33554432,
-            "minimum": 0
-          },
           "max_fill_ms": {
             "type": "integer",
             "format": "int64",
-            "description": "Maximum time, in milliseconds, to wait before flushing a partially\nfilled batch. This is the latency bound for batching: once the first\nevent enters a batch, the batch is flushed when this timer elapses,\neven if `max_bytes` was not reached.\n\nDefault: 10000 (10 seconds).",
+            "description": "Maximum time, in milliseconds, to wait before flushing a partially\nfilled batch. This is the latency bound for batching: once the first\nevent enters a batch, the batch is flushed when this timer elapses,\neven if `max_size` was not reached.\n\nDefault: 10000 (10 seconds).",
             "default": 10000,
             "minimum": 0
+          },
+          "max_size": {
+            "type": "string",
+            "description": "Maximum preferred size for one batch per active stream, such as\n`\"32Mi\"`. This is a ceiling, not a target: the runtime still chooses\nthe smaller value between this limit and the memory-ratio budget\ncomputed from `memory_budget_ratio`.\n\nDefault: `\"32Mi\"`, the same as etl.\n\nBefore release 0.367.0 this setting was `max_bytes`, a number of\nbytes. That name is deprecated but still read.",
+            "default": "32Mi"
           },
           "memory_budget_ratio": {
             "type": "number",
@@ -14362,11 +14261,10 @@
                 },
                 "description": "The names of the extra columns in the Postgres table that are not part of the view schema.\n\nThese connector can write user-defined values, configured using the `set_extra_columns` connector command,\nto these columns."
               },
-              "max_buffer_size_bytes": {
-                "type": "integer",
-                "description": "The maximum buffer size in for a single operation.\nNote that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are\nseparate.\nDefault: 1 MiB",
-                "default": 1048576,
-                "minimum": 0
+              "max_buffer_size": {
+                "type": "string",
+                "description": "The maximum buffer size for a single operation, such as `\"1Mi\"`.\nNote that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are\nseparate.\nDefault: `\"1Mi\"`.\n\nBefore release 0.367.0 this setting was `max_buffer_size_bytes`, a\nnumber of bytes. That name is deprecated but still read.",
+                "default": "1Mi"
               },
               "max_records_in_buffer": {
                 "type": "integer",
@@ -14989,21 +14887,17 @@
             "default": null,
             "nullable": true
           },
-          "memory_mb_max": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The maximum memory in Megabytes to reserve\nfor an instance of this pipeline",
+          "memory_max": {
+            "type": "string",
+            "description": "The maximum memory to reserve for an instance of this pipeline, such\nas `\"16Gi\"`.\n\nBefore release 0.367.0 this setting was `memory_mb_max`, a number of\nmegabytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
-          "memory_mb_min": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The minimum memory in Megabytes to reserve\nfor an instance of this pipeline",
+          "memory_min": {
+            "type": "string",
+            "description": "The minimum memory to reserve for an instance of this pipeline, such\nas `\"4Gi\"`.\n\nBefore release 0.367.0 this setting was `memory_mb_min`, a number of\nmegabytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "namespace": {
             "type": "string",
@@ -15023,21 +14917,17 @@
             "default": null,
             "nullable": true
           },
-          "storage_mb_max": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The maximum storage in Megabytes for an instance of this pipeline.\n\nWithout `storage_mb_min`, this much storage is reserved up front.\n\nWith `storage_mb_min`, storage starts there and autoscaling expands it\nup to this limit.",
+          "storage_max": {
+            "type": "string",
+            "description": "The maximum storage for an instance of this pipeline, such as\n`\"400Gi\"`.\n\nWithout `storage_min`, this much storage is reserved up front.\n\nWith `storage_min`, storage starts there and autoscaling expands it up\nto this limit.\n\nBefore release 0.367.0 this setting was `storage_mb_max`, a number of\nmegabytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
-          "storage_mb_min": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The initial storage in Megabytes to reserve for an instance of this\npipeline. Set together with `storage_mb_max` to enable storage\nautoscaling.",
+          "storage_min": {
+            "type": "string",
+            "description": "The initial storage to reserve for an instance of this pipeline, such\nas `\"100Gi\"`. Set together with `storage_max` to enable storage\nautoscaling.\n\nBefore release 0.367.0 this setting was `storage_mb_min`, a number of\nmegabytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "volume_attributes_class": {
             "type": "string",
@@ -15243,13 +15133,11 @@
             "description": "Enable CPU profiler.\n\nThe default value is `true`.",
             "default": true
           },
-          "datafusion_memory_mb": {
-            "type": "integer",
-            "format": "int64",
-            "description": "DataFusion memory pool size, in MB, shared by the ad-hoc query\nengine and the Delta Lake / Iceberg connectors.\n\nCarved out of `max_rss_mb` (falling back to\n`resources.memory_mb_max`); the remainder goes to the DBSP circuit,\nso the two do not double-book RAM.\n\nUnset: defaults to 5% of the effective budget, capped at 2 GB.\nPipelines that don't run heavy ad-hoc / Delta / Iceberg workloads\ncan leave this unset.\n\nSet this explicitly for ad-hoc queries, or Delta / Iceberg scans,\nover data too large for the default share. A pool that cannot hold\nthe query surfaces as `ResourcesExhausted` on that query alone; the\npipeline keeps running.\n\nNo pool limit applied if no overall budget is configured.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
+          "datafusion_memory": {
+            "type": "string",
+            "description": "DataFusion memory pool size, such as `\"1Gi\"`, shared by the ad-hoc\nquery engine and the Delta Lake / Iceberg connectors.\n\nCarved out of `max_rss` (falling back to `resources.memory_max`); the\nremainder goes to the DBSP circuit, so the two do not double-book RAM.\n\nUnset: defaults to 5% of the effective budget, capped at 2 GB.\nPipelines that don't run heavy ad-hoc / Delta / Iceberg workloads\ncan leave this unset.\n\nSet this explicitly for ad-hoc queries, or Delta / Iceberg scans,\nover data too large for the default share. A pool that cannot hold\nthe query surfaces as `ResourcesExhausted` on that query alone; the\npipeline keeps running.\n\nNo pool limit applied if no overall budget is configured.\n\nBefore release 0.367.0 this setting was `datafusion_memory_mb`, a\nnumber of megabytes. That name is deprecated but still read.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "dev_tweaks": {
             "allOf": [
@@ -15323,13 +15211,11 @@
             "nullable": true,
             "minimum": 0
           },
-          "max_rss_mb": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The maximum amount of memory, in Megabytes, that the pipeline is allowed to use\non each host.\n\nSetting this property activates memory pressure monitoring and backpressure\nmechanisms. The pipeline will track the amount of remaining memory and\nreport the memory pressure level via the `memory_pressure` metric.\n\nAs the memory pressure increases, the system will apply increasing backpressure\nto push state cached in memory to storage, preventing the pipeline from running\nout of memory at the cost of some performance degradation.\n\nIt is strongly recommended to set this property to prevent the pipeline from\nrunning out of memory. The setting should not exceed the memory limit of the pipeline\ninstance.\n\nWhen `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the\nlatter is used as the effective memory cap for the pipeline.\n\nThe pipeline caps this limit at the memory available to it, which is the\nhost's memory or the container's memory limit, whichever is smaller. It\nrechecks the available memory every second.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
+          "max_rss": {
+            "type": "string",
+            "description": "The maximum amount of memory that the pipeline is allowed to use on\neach host, such as `\"16G\"` or `\"16Gi\"`.\n\nSetting this property activates memory pressure monitoring and backpressure\nmechanisms. The pipeline will track the amount of remaining memory and\nreport the memory pressure level via the `memory_pressure` metric.\n\nAs the memory pressure increases, the system will apply increasing backpressure\nto push state cached in memory to storage, preventing the pipeline from running\nout of memory at the cost of some performance degradation.\n\nIt is strongly recommended to set this property to prevent the pipeline from\nrunning out of memory. The setting should not exceed the memory limit of the pipeline\ninstance.\n\nWhen `max_rss` is not specified but `resources.memory_max` is set, the\nlatter is used as the effective memory cap for the pipeline.\n\nThe pipeline caps this limit at the memory available to it, which is the\nhost's memory or the container's memory limit, whichever is smaller. It\nrechecks the available memory every second.\n\nBefore release 0.367.0 this setting was `max_rss_mb`, a number of\nmegabytes. That name is deprecated but still read.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "min_batch_size_records": {
             "type": "integer",
@@ -15371,9 +15257,6 @@
             "default": {
               "cpu_cores_min": null,
               "cpu_cores_max": null,
-              "memory_mb_min": null,
-              "memory_mb_max": null,
-              "storage_mb_max": null,
               "storage_class": null,
               "service_account_name": null,
               "namespace": null
@@ -15389,11 +15272,8 @@
               "backend": {
                 "name": "default"
               },
-              "min_storage_bytes": null,
-              "min_step_storage_bytes": null,
               "compression": "default",
-              "compression_level": null,
-              "cache_mib": null
+              "compression_level": null
             },
             "nullable": true
           },
@@ -16083,7 +15963,7 @@
       },
       "StorageAutoscalingConfig": {
         "type": "object",
-        "description": "Storage autoscaling policy: expand storage from `storage_mb_min` toward\n`storage_mb_max` as it fills up.",
+        "description": "Storage autoscaling policy: expand storage from `storage_min` toward\n`storage_max` as it fills up.",
         "properties": {
           "scale_factor": {
             "type": "number",
@@ -16099,13 +15979,11 @@
             "default": null,
             "nullable": true
           },
-          "scale_threshold_available_mb": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Expand storage when available space falls below this many MB, even if\nusage is still under `scale_threshold`. Either condition triggers\nexpansion. Unset by default.",
+          "scale_threshold_available": {
+            "type": "string",
+            "description": "Expand storage when available space falls below this size, such as\n`\"10Gi\"`, even if usage is still under `scale_threshold`. Either\ncondition triggers expansion. Unset by default.\n\nBefore release 0.367.0 this setting was `scale_threshold_available_mb`,\na number of megabytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           }
         }
       },
@@ -16223,12 +16101,11 @@
             "default": null,
             "nullable": true
           },
-          "cache_mib": {
-            "type": "integer",
-            "description": "The maximum size of the in-memory storage cache, in MiB.\n\nIf set, the specified cache size is spread across all the foreground and\nbackground threads. If unset, each foreground or background thread cache\nis limited to 256 MiB.",
+          "cache_size": {
+            "type": "string",
+            "description": "The maximum size of the in-memory storage cache, such as `\"4Gi\"`.\n\nIf set, the specified cache size is spread across all the foreground and\nbackground threads. If unset, each foreground or background thread cache\nis limited to 256 MiB.\n\nBefore release 0.367.0 this setting was `cache_mib`, a number of\nmebibytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "compression": {
             "allOf": [
@@ -16245,19 +16122,17 @@
             "default": null,
             "nullable": true
           },
-          "min_step_storage_bytes": {
-            "type": "integer",
-            "description": "For a batch of data passed through the pipeline during a single step,\nthe minimum estimated number of bytes to write it to storage.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.  A value of 0 writes every batch that holds anything to\nstorage; an empty batch stays in memory, since it has nothing to spill\nand a layer file is not free.  Nonzero values provide a threshold.\n`usize::MAX`, the default, effectively disables storage for such\nbatches.  If it is set to another value, it should ordinarily be\ngreater than or equal to `min_storage_bytes`.",
+          "min_spill_size": {
+            "type": "string",
+            "description": "For a batch of data maintained as part of a persistent index during a\npipeline run, the minimum estimated size to write it to storage, such\nas `\"10Mi\"`.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  A very large value effectively disables\nstorage for such batches.  The default is `\"10Mi\"`.\n\nBefore release 0.367.0 this setting was `min_storage_bytes`, a number\nof bytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
-          "min_storage_bytes": {
-            "type": "integer",
-            "description": "For a batch of data maintained as part of a persistent index during a\npipeline run, the minimum estimated number of bytes to write it to\nstorage.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage for such batches.  The default is 10,048,576 (10 MiB).",
+          "min_step_spill_size": {
+            "type": "string",
+            "description": "For a batch of data passed through the pipeline during a single step,\nthe minimum estimated size to write it to storage, such as `\"64Mi\"`.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.  A value of 0 writes every batch that holds anything to\nstorage; an empty batch stays in memory, since it has nothing to spill\nand a layer file is not free.  Nonzero values provide a threshold.\nUnset, the default, effectively disables storage for such batches.\nIf it is set, it should ordinarily be greater than or equal to\n`min_spill_size`.\n\nBefore release 0.367.0 this setting was `min_step_storage_bytes`, a\nnumber of bytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           }
         }
       },

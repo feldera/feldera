@@ -2699,7 +2699,7 @@ where
     }
 
     /// Returns `batch`, first pushing it to storage if it exceeds the
-    /// user-configured `min_storage_bytes` or if we're under high memory
+    /// user-configured `min_spill_size` or if we're under high memory
     /// pressure.  A batch pushed to storage is laid out as `layout` asks.
     /// The runtime of the current thread decides whether to spill.  Outside a
     /// runtime, the batch stays in memory.

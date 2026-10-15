@@ -2361,7 +2361,7 @@ mod tests {
         let resize = json!({"resources": {"cpu_cores_min": 1.0}});
         let unset = json!({"resources": {
             "cpu_cores_min": null, "cpu_cores_max": null,
-            "memory_mb_min": null, "memory_mb_max": null,
+            "memory_min": null, "memory_max": null,
         }});
         let put = |deployment_config: serde_json::Value| json!({"name": "p", "program_code": "", "deployment_config": deployment_config});
         let cases = [

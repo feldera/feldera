@@ -586,12 +586,28 @@ pub enum RuntimeConfigKey {
     MaxBufferingDelay,
     CpuCoresMin,
     CpuCoresMax,
+    /// Deprecated: use `memory_min`.
     MemoryMbMin,
+    /// Deprecated: use `memory_max`.
     MemoryMbMax,
+    /// Takes a size such as `4Gi` or `16G`.
+    MemoryMin,
+    MemoryMax,
+    /// Deprecated: use `storage_max`.
     StorageMbMax,
+    /// Takes a size such as `400Gi`.
+    StorageMin,
+    StorageMax,
+    /// Takes a size such as `16G`, the memory limit the pipeline process
+    /// applies to itself.
+    MaxRss,
+    DatafusionMemory,
     StorageClass,
     VolumeAttributesClass,
+    /// Deprecated: use `min_spill_size`.
     MinStorageBytes,
+    /// Takes a size such as `10Mi`.
+    MinSpillSize,
     /// Deprecated: use `clock_resolution`.
     ClockResolutionUsecs,
     ClockResolution,

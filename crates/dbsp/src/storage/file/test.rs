@@ -2685,6 +2685,7 @@ mod read_ahead {
     };
     use feldera_buffer_cache::ThreadType;
     use feldera_storage::{FileReader, StoragePath};
+    use feldera_types::size::ConfigSize;
     use feldera_types::{
         config::{FileBackendConfig, StorageBackendConfig},
         duration::ConfigDuration,
@@ -2707,7 +2708,7 @@ mod read_ahead {
                     cache: StorageCacheConfig::default(),
                 },
                 StorageOptions {
-                    min_storage_bytes: Some(0),
+                    min_spill_size: Some(ConfigSize::ZERO),
                     backend: StorageBackendConfig::File(Box::new(FileBackendConfig {
                         async_threads: Some(true),
                         ioop_latency: ioop_delay_ms.map(ConfigDuration::from_millis),

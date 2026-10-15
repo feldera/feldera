@@ -135,9 +135,9 @@ pub fn create_runtime_env(
     pipeline_config: &PipelineConfig,
 ) -> Result<Arc<RuntimeEnv>, ControllerError> {
     let mut builder = RuntimeEnvBuilder::new();
-    if let Some(datafusion_memory_mb) = pipeline_config.global.resolved_datafusion_memory_mb() {
-        let memory_bytes_max = datafusion_memory_mb * 1_000_000;
-        builder = builder.with_memory_pool(Arc::new(FairSpillPool::new(memory_bytes_max as usize)));
+    if let Some(datafusion_memory) = pipeline_config.global.resolved_datafusion_memory() {
+        builder =
+            builder.with_memory_pool(Arc::new(FairSpillPool::new(datafusion_memory.as_usize())));
     }
     if let Some(storage) = &pipeline_config.storage_config {
         let path = PathBuf::from(storage.path.clone()).join(DATAFUSION_TEMP_DIR);
@@ -298,7 +298,7 @@ where
         info!(
             "DataFusion memory pool is {} MB across {partitions} sort partitions, too little to \
              sort them in parallel; sorts will coalesce their input first. This is slower but \
-             lets a sort use the whole pool. Increase 'datafusion_memory_mb' or reduce 'workers' \
+             lets a sort use the whole pool. Increase 'datafusion_memory' or reduce 'workers' \
              to sort in parallel again.",
             pool_bytes.unwrap_or(0) / 1_000_000,
         );
@@ -591,6 +591,7 @@ mod tests {
     use datafusion::execution::memory_pool::MemoryLimit;
     use feldera_types::config::{PipelineConfig, ResourceConfig, RuntimeConfig, StorageConfig};
     use feldera_types::constants::DATAFUSION_TEMP_DIR;
+    use feldera_types::size::ConfigSize;
     use std::collections::BTreeSet;
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -683,7 +684,7 @@ mod tests {
         let cfg = pipeline_config(
             RuntimeConfig {
                 workers: 1,
-                max_rss_mb: Some(16_000),
+                max_rss: Some(ConfigSize::from_mb(16_000)),
                 ..Default::default()
             },
             Some(storage.path()),
@@ -721,9 +722,9 @@ mod tests {
         let cfg = pipeline_config(
             RuntimeConfig {
                 workers: 1,
-                max_rss_mb: None,
+                max_rss: None,
                 resources: ResourceConfig {
-                    memory_mb_max: Some(16_000),
+                    memory_max: Some(ConfigSize::from_mb(16_000)),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1030,8 +1031,8 @@ mod tests {
                     workers: case.workers,
                     hosts: case.hosts,
                     io_workers: case.io_workers,
-                    datafusion_memory_mb: Some(case.pool_mb),
-                    max_rss_mb: Some(64_000),
+                    datafusion_memory: Some(ConfigSize::from_mb(case.pool_mb)),
+                    max_rss: Some(ConfigSize::from_mb(64_000)),
                     ..Default::default()
                 },
                 Some(storage.path()),
@@ -1086,8 +1087,8 @@ mod tests {
                 workers: WORKERS as u16,
                 // Below one 64 MiB reservation, so the first partition used
                 // to fail before comparing a row.
-                datafusion_memory_mb: Some(12),
-                max_rss_mb: Some(16_000),
+                datafusion_memory: Some(ConfigSize::from_mb(12)),
+                max_rss: Some(ConfigSize::from_mb(16_000)),
                 ..Default::default()
             },
             Some(storage.path()),
