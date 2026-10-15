@@ -1135,6 +1135,7 @@ metrics"""
         :return: The checkpoint sequence number.
 
         :raises FelderaAPIError: If enterprise features are not enabled.
+        :raises RuntimeError: If `wait` is true and the checkpoint fails.
         """
 
         return int(
@@ -1159,6 +1160,7 @@ metrics"""
             check.
 
         :raises FelderaAPIError: If enterprise features are not enabled.
+        :raises RuntimeError: If `wait` is true and the checkpoint fails.
         """
 
         resp = self.client.checkpoint_pipeline_response(self.name)
@@ -1191,6 +1193,11 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
                     incarnation_uuid = resp.get("incarnation_uuid")
                     continue
                 raise
+            if status == CheckpointStatus.Failure:
+                raise RuntimeError(
+                    f"failed to make checkpoint '{seq}': {status.get_error()}"
+                )
+
             if status == CheckpointStatus.InProgress:
                 time.sleep(0.1)
                 continue
@@ -1303,7 +1310,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
                 raise
             if status == CheckpointStatus.Failure:
                 raise RuntimeError(
-                    f"failed to sync checkpoint '{uuid}': ", status.get_error()
+                    f"failed to sync checkpoint '{uuid}': {status.get_error()}"
                 )
 
             if status in [CheckpointStatus.InProgress, CheckpointStatus.Unknown]:

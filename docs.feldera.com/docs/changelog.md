@@ -172,6 +172,11 @@ Source edition can be found on github.
 - Pipelines write a checkpoint on `SIGTERM` before they exit.  See
   [Writing checkpoints](/pipelines/fault-tolerance#writing-checkpoints).
 
+- Bug fix (Python SDK): `Pipeline.checkpoint(wait=True)` returned normally
+  when the checkpoint failed.  It now raises `RuntimeError` with the error
+  the pipeline reported, as `Pipeline.sync_checkpoint(wait=True)` already
+  did.
+
 ## v0.365.0
 
 - New connector (`nats_output`): write view output to a NATS subject. The
