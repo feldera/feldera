@@ -31,6 +31,7 @@
 //! pending.
 
 use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig};
+use crate::adhoc::table::ADHOC_INPUT_ENDPOINT_PREFIX;
 use crate::{
     PipelineState,
     controller::{
@@ -1517,10 +1518,13 @@ impl ControllerStatus {
 
             // We don't require HTTP ingress connectors to be at end of input,
             // because the user is in charge of whether more data comes in.
+            // The same goes for ad hoc INSERT connectors.  Otherwise, each
+            // INSERT would take a complete pipeline back to incomplete.
             //
             // We also don't require the clock connector to be at end of input
             // if it's configured to advance only when the user sends a request.
             let ignore = name.contains(".api-ingress-")
+                || name.starts_with(ADHOC_INPUT_ENDPOINT_PREFIX)
                 || (name == "now" && self.pipeline_config.global.dev_tweaks.now_http_driven());
 
             if !ignore {

@@ -42,6 +42,9 @@ use tokio::sync::mpsc::Sender;
 use tracing::{Instrument, info_span};
 use uuid::Uuid;
 
+/// Prefix of the name of the input endpoint that an ad hoc INSERT creates.
+pub const ADHOC_INPUT_ENDPOINT_PREFIX: &str = "adhoc-ingress-";
+
 pub const fn input_adhoc_arrow_serde_config() -> &'static SqlSerdeConfig {
     &SqlSerdeConfig {
         timestamp_format: TimestampFormat::String("%FT%T%.f"),
@@ -274,7 +277,11 @@ impl DataSink for AdHocTableSink {
         };
 
         // Generate endpoint name.
-        let endpoint_name = format!("adhoc-ingress-{}-{}", self.name.name(), Uuid::new_v4());
+        let endpoint_name = format!(
+            "{ADHOC_INPUT_ENDPOINT_PREFIX}{}-{}",
+            self.name.name(),
+            Uuid::new_v4()
+        );
 
         // Create HTTP endpoint.
         let config = AdHocInputConfig {
