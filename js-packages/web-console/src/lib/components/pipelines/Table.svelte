@@ -78,7 +78,8 @@
     ['Paused', ['Paused']],
     ['Ready To Start', ['Stopped']],
     ['Compiling', ['Queued', 'CompilingSql', 'SqlCompiled', 'CompilingRust']],
-    ['Failed', ['SystemError', 'SqlError', 'RustError']]
+    ['Failed', ['SystemError', 'SqlError', 'RustError']],
+    ['Unavailable', ['Unavailable']]
   ]
 
   let nameSearch = $state('')
