@@ -1115,6 +1115,12 @@ impl SourceOperator<()> for ShardedAccumulatorRemoteWaiter {
     async fn eval(&mut self) {
         self.clients.wait(MessageType::Streaming).await;
     }
+
+    /// The remote waiter waits for every sharded accumulator in the circuit,
+    /// and a bootstrap of one of them must not run all of them.
+    fn is_waiter(&self) -> bool {
+        true
+    }
 }
 
 impl ShardedAccumulatorRemoteWaiter {

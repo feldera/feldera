@@ -1020,6 +1020,11 @@ pub trait Node: Any {
         false
     }
 
+    /// Is this a waiter (see [`SourceOperator::is_waiter`])?
+    fn is_waiter(&self) -> bool {
+        false
+    }
+
     /// `true` if the node encapsulates an asynchronous operator (see
     /// [`Operator::is_async()`](super::operator_traits::Operator::is_async)).
     /// `false` for synchronous operators and subcircuits.
@@ -4994,6 +4999,10 @@ where
 
     fn is_deterministic_source(&self) -> bool {
         self.operator.is_deterministic_source()
+    }
+
+    fn is_waiter(&self) -> bool {
+        self.operator.is_waiter()
     }
 
     fn ready(&self) -> bool {

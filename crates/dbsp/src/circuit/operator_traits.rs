@@ -435,6 +435,14 @@ impl Debug for FileOperatorCheckpoint {
 pub trait SourceOperator<O>: Operator {
     /// Yield the next value.
     async fn eval(&mut self) -> O;
+
+    /// Returns `true` if `self` is a waiter: an operator without state or
+    /// outputs that runs after many otherwise unrelated operators in each step,
+    /// only to perform some common finalization operation.  An example is the remote
+    /// waiter of the sharded accumulators.
+    fn is_waiter(&self) -> bool {
+        false
+    }
 }
 
 /// A sink operator consumes an input stream, but does not produce an output
