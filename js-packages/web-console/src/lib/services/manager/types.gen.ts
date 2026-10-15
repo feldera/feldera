@@ -723,6 +723,13 @@ export type CompletionTokenResponse = {
   token: string
 }
 
+export type ComputeResources = {
+  cpu_cores_max?: number | null
+  cpu_cores_min?: number | null
+  memory_mb_max?: number | null
+  memory_mb_min?: number | null
+}
+
 /**
  * Phase of a concurrent bootstrap.
  *
@@ -1790,6 +1797,47 @@ export type Demo = {
    * User defined function (UDF) TOML dependencies.
    */
   udf_toml: string
+}
+
+/**
+ * What the deployment asks for, from the pipeline's `deployment_config`.
+ */
+export type DeploymentSpec = {
+  resources: DeploymentSpecResources
+}
+
+/**
+ * Each `*_min` is a Kubernetes request and each `*_max` a limit.
+ */
+export type DeploymentSpecResources = {
+  cpu_cores_max?: number | null
+  cpu_cores_min?: number | null
+  memory_max?: string | null
+  memory_min?: string | null
+  storage_max?: string | null
+  storage_min?: string | null
+}
+
+/**
+ * kstatus status of an object or of the whole deployment.
+ * <https://github.com/kubernetes-sigs/cli-utils/blob/master/pkg/kstatus/status/status.go>
+ */
+export type DeploymentState =
+  | 'Current'
+  | 'InProgress'
+  | 'Failed'
+  | 'Terminating'
+  | 'NotFound'
+  | 'Unknown'
+
+/**
+ * Observed status of the deployment. `state`, `reason` and `message` summarize `hosts`.
+ */
+export type DeploymentStatus = {
+  hosts: Array<HostStatus>
+  message?: string | null
+  reason?: string | null
+  state: DeploymentState
 }
 
 /**
@@ -2880,6 +2928,15 @@ export type HealthStatus = {
 }
 
 /**
+ * CPU and memory of one host.
+ */
+export type HostCompute = Transition & {
+  current?: ComputeResources | null
+  desired?: ComputeResources | null
+  manager: ResourceManager
+}
+
+/**
  * Resource usage of one host in a multihost pipeline.
  */
 export type HostMetrics = {
@@ -2891,6 +2948,21 @@ export type HostMetrics = {
    * Capacity of the host's storage disk, in bytes; absent when unknown.
    */
   disk_total_bytes?: number | null
+}
+
+export type HostStatus = {
+  compute: HostCompute
+  ordinal: number
+  storage?: HostStorage | null
+}
+
+/**
+ * Storage volume of one host.
+ */
+export type HostStorage = Transition & {
+  current?: StorageResources | null
+  desired?: StorageResources | null
+  manager: ResourceManager
 }
 
 /**
@@ -4536,6 +4608,14 @@ export type PipelineConfig = {
 }
 
 /**
+ * Spec and observed status of a pipeline deployment.
+ */
+export type PipelineDeployment = {
+  spec: DeploymentSpec
+  status?: DeploymentStatus | null
+}
+
+/**
  * Summary of changes in the pipeline between checkpointed and new versions.
  */
 export type PipelineDiff = {
@@ -5621,6 +5701,11 @@ export type ResourceConfig = {
   volume_attributes_class?: string | null
 }
 
+/**
+ * Who sets the desired value.
+ */
+export type ResourceManager = 'User' | 'Autoscaler'
+
 export type ResourcesDesiredStatus = 'Stopped' | 'Provisioned'
 
 /**
@@ -6640,6 +6725,10 @@ export type StorageOptions = {
   min_step_spill_size?: string | null
 }
 
+export type StorageResources = {
+  storage_mb?: number | null
+}
+
 /**
  * Storage status.
  *
@@ -7022,6 +7111,24 @@ export type TransactionPhase = 'Started' | 'Committed'
  * Transaction status summarized as a single value.
  */
 export type TransactionStatus = 'NoTransaction' | 'TransactionInProgress' | 'CommitInProgress'
+
+/**
+ * State of one object and why it is in it.
+ */
+export type Transition = {
+  /**
+   * When the platform last changed the condition behind `state` (Kubernetes
+   * `lastTransitionTime`, or `deletionTimestamp` for `Terminating`). Not when `state` itself
+   * changed: a reason change keeps the time.
+   */
+  last_transition_time?: string | null
+  message?: string | null
+  /**
+   * Machine-readable cause, passed through from the runner's platform.
+   */
+  reason?: string | null
+  state: DeploymentState
+}
 
 /**
  * Transport-specific endpoint configuration passed to
@@ -8510,6 +8617,40 @@ export type GetPipelineDataflowGraphResponses = {
 
 export type GetPipelineDataflowGraphResponse =
   GetPipelineDataflowGraphResponses[keyof GetPipelineDataflowGraphResponses]
+
+export type GetPipelineDeploymentData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/deployment'
+}
+
+export type GetPipelineDeploymentErrors = {
+  /**
+   * Pipeline with that name does not exist
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+  503: ErrorResponse
+}
+
+export type GetPipelineDeploymentError =
+  GetPipelineDeploymentErrors[keyof GetPipelineDeploymentErrors]
+
+export type GetPipelineDeploymentResponses = {
+  /**
+   * Pipeline deployment retrieved successfully
+   */
+  200: PipelineDeployment
+}
+
+export type GetPipelineDeploymentResponse =
+  GetPipelineDeploymentResponses[keyof GetPipelineDeploymentResponses]
 
 export type PostPipelineDiffData = {
   /**

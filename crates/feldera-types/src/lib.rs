@@ -5,6 +5,7 @@ pub mod completion_token;
 pub mod config;
 pub mod constants;
 pub mod coordination;
+pub mod deployment;
 pub mod duration;
 pub mod error;
 pub mod format;
