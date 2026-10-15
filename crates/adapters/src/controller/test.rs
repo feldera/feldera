@@ -1273,6 +1273,116 @@ fn fault_tolerance_mismatch_does_not_open_the_endpoint() {
     controller.stop().unwrap();
 }
 
+/// An input endpoint whose `open()` blocks until the test releases it.
+struct GatedOpenEndpoint {
+    entered: mpsc::Sender<()>,
+    release: Mutex<mpsc::Receiver<()>>,
+    inner: TransactionalInputEndpoint,
+}
+
+impl InputEndpoint for GatedOpenEndpoint {
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        None
+    }
+}
+
+impl TransportInputEndpoint for GatedOpenEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        schema: Relation,
+        resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn InputReader>> {
+        self.entered.send(()).unwrap();
+        self.release.lock().unwrap().recv().unwrap();
+        self.inner.open(consumer, parser, schema, resume_info)
+    }
+}
+
+/// A step that starts while a new endpoint is still in `open()` must not wait
+/// for that endpoint.
+///
+/// The endpoint is visible to the circuit thread before it has a reader, and an
+/// endpoint without a reader never gets `queue()`, so it can never report
+/// progress.  Waiting for it stalls the pipeline forever.  Once `open()`
+/// returns, later steps must consume the endpoint's input.
+#[test]
+fn step_does_not_wait_for_endpoint_without_reader() {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+    let endpoint = TransactionalInputEndpoint::new();
+    let adder = {
+        let controller = controller.clone();
+        let endpoint = endpoint.clone();
+        thread::spawn(move || {
+            controller.add_input_endpoint(
+                "gated",
+                endpoint_config,
+                Box::new(GatedOpenEndpoint {
+                    entered: entered_tx,
+                    release: Mutex::new(release_rx),
+                    inner: endpoint,
+                }),
+                None,
+            )
+        })
+    };
+
+    // The endpoint is now visible, without a reader.
+    entered_rx.recv().unwrap();
+    let steps = controller.status().global_metrics.total_completed_steps();
+    controller.request_step();
+    let progressed = wait(
+        || controller.status().global_metrics.total_completed_steps() > steps,
+        10_000,
+    )
+    .is_ok();
+
+    release_tx.send(()).unwrap();
+    adder.join().unwrap().unwrap();
+    endpoint.push("1,true,,foo\n");
+    let consumed = wait(
+        || controller.status().num_total_processed_records() == 1,
+        10_000,
+    )
+    .is_ok();
+    controller.stop().unwrap();
+    assert!(progressed, "step waited for an endpoint that had no reader");
+    assert!(
+        consumed,
+        "input pushed after open() returned was never processed"
+    );
+}
+
 /// An input endpoint that opens and commits Feldera transactions, the way a
 /// connector configured with a `transaction_mode` does.
 ///

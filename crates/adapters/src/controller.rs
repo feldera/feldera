@@ -4537,18 +4537,18 @@ impl CircuitThread {
                 }
             } else {
                 if !self.replaying() {
+                    // `polls` only selects endpoints that have a reader.
+                    let reader = status.reader.as_ref().unwrap();
+
                     // Don't request a checkpoint if we're processing a
                     // transaction. The `checkpoint_requested` flag requires the
                     // connector to get to a checkpointable state as fast as
                     // possible, which may cause connector's performance to
                     // drop, e.g., some connectors may return 1 record per step.
-                    if let Some(reader) = status.reader.as_ref() {
-                        reader.queue(
-                            self.checkpoint_requested()
-                                && self.controller.get_transaction_state()
-                                    == TransactionState::None,
-                        )
-                    }
+                    reader.queue(
+                        self.checkpoint_requested()
+                            && self.controller.get_transaction_state() == TransactionState::None,
+                    )
                 } else {
                     // We already started the input adapters replaying. The set of
                     // input adapters can't change during replay (because we disable
@@ -5569,6 +5569,12 @@ struct StepSelection {
 impl StepSelection {
     /// True if the next step polls `status`.
     fn polls(&self, status: &InputEndpointStatus) -> bool {
+        // An endpoint whose `open()` has not returned yet has no reader, so it
+        // cannot be queued and would never report progress.  Nothing it
+        // buffered can be consumed yet, so leave it for a future step.
+        if status.reader.is_none() {
+            return false;
+        }
         if self.committed.contains(&status.endpoint_name) {
             return false;
         }
