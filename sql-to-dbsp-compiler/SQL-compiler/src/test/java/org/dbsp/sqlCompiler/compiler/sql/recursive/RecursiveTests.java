@@ -615,4 +615,150 @@ public class RecursiveTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT COUNT(*) OVER (ORDER BY v) v FROM W;""";
         this.statementsFailingInCompilation(sql, "Unsupported operation 'OVER' in recursive code");
     }
+
+    /** A component of {@code views} recursive views.  Each view reads the previous one and
+     * a different row of T, so the optimizer keeps all of them apart, and every view is an
+     * output of the component. */
+    static String mutuallyRecursiveViews(int views) {
+        StringBuilder sql = new StringBuilder("CREATE TABLE T(v INT);\n");
+        for (int i = 0; i < views; i++)
+            sql.append("DECLARE RECURSIVE VIEW V").append(i).append("(v INT);\n");
+        for (int i = 0; i < views; i++)
+            sql.append("CREATE LOCAL VIEW V").append(i)
+                    .append(" AS SELECT v FROM T WHERE v = ").append(i)
+                    .append(" UNION SELECT v FROM V").append((i + views - 1) % views)
+                    .append(";\n");
+        sql.append("CREATE VIEW O AS SELECT v FROM V0");
+        for (int i = 1; i < views; i++)
+            sql.append(" UNION SELECT v FROM V").append(i);
+        sql.append(";");
+        return sql.toString();
+    }
+
+    @Test
+    public void issue5193() {
+        final int views = 16;
+        var ccs = this.getCCS(mutuallyRecursiveViews(views));
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPNestedOperator operator) {
+                int outputs = 0;
+                for (int i = 0; i < operator.outputCount(); i++)
+                    if (operator.hasOutput(i))
+                        outputs++;
+                Assert.assertEquals(views, outputs);
+            }
+        };
+        ccs.visit(visitor);
+        // Each view collects the rows of T that any of the views matches
+        ccs.stepWeightOne("INSERT INTO T VALUES(1), (2)", """
+                 v
+                ---
+                 1
+                 2""");
+    }
+
+    @Test
+    public void equalRecursiveViews() {
+        // Views of a component that compute the same relation.  The optimizer proves them
+        // equal and merges them, so all the outputs of the recursive component carry
+        // the same stream.
+        final int views = 4;
+        StringBuilder sql = new StringBuilder("CREATE TABLE T(v INT);\n");
+        for (int i = 0; i < views; i++)
+            sql.append("DECLARE RECURSIVE VIEW V").append(i).append("(v INT);\n");
+        sql.append("CREATE LOCAL VIEW V0 AS SELECT v FROM T UNION SELECT v FROM V")
+                .append(views - 1)
+                .append(";\n");
+        for (int i = 1; i < views; i++)
+            sql.append("CREATE LOCAL VIEW V").append(i)
+                    .append(" AS SELECT v FROM V").append(i - 1)
+                    .append(";\n");
+        sql.append("CREATE VIEW O AS SELECT v FROM V0");
+        for (int i = 1; i < views; i++)
+            sql.append(" UNION SELECT v FROM V").append(i);
+        sql.append(";");
+
+        var ccs = this.getCCS(sql.toString());
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPNestedOperator operator) {
+                Assert.assertEquals(views, operator.outputCount());
+                Assert.assertEquals(1, operator.distinctOutputs().size());
+            }
+        };
+        ccs.visit(visitor);
+        ccs.stepWeightOne("INSERT INTO T VALUES(1), (2)", """
+                 v
+                ---
+                 1
+                 2""");
+    }
+
+    @Test
+    public void deadRecursiveComponent() {
+        // Recursive view without users
+        String sql = """
+                CREATE TABLE T(v INT);
+                DECLARE RECURSIVE VIEW V(v INT);
+                CREATE LOCAL VIEW V AS SELECT v FROM T UNION SELECT v FROM V;
+                CREATE VIEW O AS SELECT v FROM T;""";
+        var ccs = this.getCCS(sql);
+        ccs.stepWeightOne("INSERT INTO T VALUES(1), (2)", """
+                 v
+                ---
+                 1
+                 2""");
+    }
+
+    @Test
+    public void sharedDeclarations() {
+        // V0 and V1 have the same body, so the optimizer fuses them
+        String sql = """
+                CREATE TABLE T(v INT);
+                DECLARE RECURSIVE VIEW V0(v INT);
+                DECLARE RECURSIVE VIEW V1(v INT);
+                CREATE LOCAL VIEW V2 AS SELECT v FROM V0 UNION SELECT v FROM V1;
+                CREATE LOCAL VIEW V0 AS SELECT v FROM T UNION SELECT v FROM V2;
+                CREATE LOCAL VIEW V1 AS SELECT v FROM T UNION SELECT v FROM V2;
+                CREATE VIEW O AS SELECT v FROM V0 UNION SELECT v FROM V1 UNION SELECT v FROM V2;""";
+        var ccs = this.getCCS(sql);
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPNestedOperator operator) {
+                Assert.assertEquals(3, operator.outputCount());
+                Assert.assertEquals(2, operator.distinctOutputs().size());
+                // The two outputs that share a stream both have a declaration
+                Assert.assertEquals(operator.internalOutputs.get(1), operator.internalOutputs.get(2));
+                for (int i = 1; i <= 2; i++)
+                    Assert.assertNotNull(operator.declarationByName.get(operator.outputViews.get(i)));
+            }
+        };
+        ccs.visit(visitor);
+        ccs.stepWeightOne("INSERT INTO T VALUES(1), (2)", """
+                 v
+                ---
+                 1
+                 2""");
+    }
+
+    @Test
+    public void recursiveViewNotExported() {
+        // Only V2 leaves the component; V0 and V1 are read by V2 alone
+        String sql = """
+                CREATE TABLE T(v INT);
+                DECLARE RECURSIVE VIEW V0(v INT);
+                DECLARE RECURSIVE VIEW V1(v INT);
+                CREATE LOCAL VIEW V2 AS SELECT v FROM V0 UNION SELECT v FROM V1;
+                CREATE LOCAL VIEW V0 AS SELECT v FROM T UNION SELECT v FROM V2;
+                CREATE LOCAL VIEW V1 AS SELECT v FROM T UNION SELECT v FROM V2;
+                CREATE VIEW O AS SELECT v FROM V2;""";
+        var ccs = this.getCCS(sql);
+        // The fixed point of V0 = V1 = T union V2, V2 = V0 union V1 is T
+        ccs.stepWeightOne("INSERT INTO T VALUES(1), (2)", """
+                 v
+                ---
+                 1
+                 2""");
+    }
 }

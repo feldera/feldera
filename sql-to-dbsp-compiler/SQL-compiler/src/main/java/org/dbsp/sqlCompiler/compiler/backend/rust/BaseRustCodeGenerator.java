@@ -124,6 +124,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                     apply_n,
                     dynamic::aggregate::{ArgMinSome, Max, Min, MinSome1, Postprocess},
                     dynamic::balance::*,
+                    dynamic::distinct::DistinctFactories,
                     ConstantGenerator,
                     Generator,
                     Fold,

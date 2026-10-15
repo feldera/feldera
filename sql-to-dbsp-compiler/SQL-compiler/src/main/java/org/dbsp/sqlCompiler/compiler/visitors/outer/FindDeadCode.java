@@ -34,28 +34,32 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
-import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** At the end of the visit the set 'keep' contains all
  * operators that are 'used' by other operators (inputs, outputs,
  * and sources). */
-public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
+public class FindDeadCode extends CircuitVisitor {
     public final Set<DBSPOperator> reachable = new HashSet<>();
     // Includes reachable plus all inputs
     public final Set<DBSPOperator> toKeep = new HashSet<>();
     /** If true all sources are kept, even if they are dead. */
     public final boolean keepAllSources;
+    /** Maps a view declaration to the nested circuit declaring it. */
+    final Map<DBSPViewDeclarationOperator, DBSPNestedOperator> declaredIn = new HashMap<>();
 
     /**
      * Run the dead code visitor.
@@ -103,6 +107,8 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
             this.reachable.add(op.node());
             if (op.node().is(DBSPNestedOperator.class)) {
                 DBSPNestedOperator nested = op.node().to(DBSPNestedOperator.class);
+                for (DBSPViewDeclarationOperator declaration : nested.declarationByName.values())
+                    this.declaredIn.put(declaration, nested);
                 OutputPort internal = nested.internalOutputs.get(op.outputNumber);
                 this.keepInverseReachable(internal);
             }
@@ -110,6 +116,18 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
                 continue;
             this.keep(op.node());
             r.addAll(op.node().inputs);
+            DBSPViewDeclarationOperator declaration = op.node().as(DBSPViewDeclarationOperator.class);
+            if (declaration != null) {
+                DBSPNestedOperator nested = this.declaredIn.get(declaration);
+                if (nested != null) {
+                    // A declaration has no inputs; the output of the component computes
+                    // the declared view, so keep it even when nothing outside reads it
+                    int index = nested.outputViews.indexOf(declaration.originalViewName());
+                    OutputPort declared = nested.internalOutputs.get(index);
+                    if (declared != null)
+                        r.add(declared);
+                }
+            }
         }
         return VisitDecision.STOP;
     }
