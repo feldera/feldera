@@ -415,6 +415,18 @@ struct IcebergResumeInfo {
     /// look the same as a pinned snapshot that the connector has not read.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     following: bool,
+
+    /// True if a distributed connector had requested the transaction for its
+    /// share of the snapshot, which every host joins (see
+    /// [`IcebergInputEndpointInner::start_distributed_snapshot_transaction`]).
+    ///
+    /// A host saves this state only if that transaction committed without its
+    /// share, for example because the host failed.  The other hosts may then
+    /// have finished their shares, and they will not join a new such
+    /// transaction, so on resume this host reads its share in a transaction of
+    /// its own.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    snapshot_started: bool,
 }
 
 impl IcebergResumeInfo {
@@ -425,6 +437,7 @@ impl IcebergResumeInfo {
             snapshot_timestamp: None,
             eoi: false,
             following: false,
+            snapshot_started: false,
         }
     }
 
@@ -435,6 +448,7 @@ impl IcebergResumeInfo {
             snapshot_timestamp: None,
             eoi: true,
             following: false,
+            snapshot_started: false,
         }
     }
 
@@ -447,6 +461,7 @@ impl IcebergResumeInfo {
             snapshot_timestamp: Some(timestamp.to_string()),
             eoi: false,
             following: false,
+            snapshot_started: false,
         }
     }
 
@@ -458,6 +473,7 @@ impl IcebergResumeInfo {
             snapshot_timestamp: None,
             eoi: false,
             following: true,
+            snapshot_started: false,
         }
     }
 
@@ -469,6 +485,7 @@ impl IcebergResumeInfo {
             snapshot_timestamp: None,
             eoi: false,
             following: true,
+            snapshot_started: false,
         }
     }
 
@@ -865,62 +882,9 @@ impl InputReader for IcebergInputReader {
 }
 
 impl IcebergInputReader {
-    /// Flush queued records to the circuit and, when a checkpoint is requested,
-    /// stop at a snapshot read boundary so the reported resume point is
-    /// consistent with the data flushed.
+    /// See [`IcebergInputEndpointInner::queue`].
     fn queue(&self, checkpoint_requested: bool) {
-        let stop_at: &dyn Fn(&QueueEntry) -> bool = if checkpoint_requested {
-            &|entry: &QueueEntry| {
-                matches!(
-                    entry,
-                    QueueEntry::ResumeInfo(Some(_)) | QueueEntry::Rollback
-                )
-            }
-        } else {
-            &|_: &QueueEntry| false
-        };
-
-        let (total, _, consumed_aux) = self.inner.queue.flush_with_aux_until(stop_at);
-
-        // The resume point is that of the last checkpointable boundary consumed;
-        // if none was consumed, keep the previously reported status.
-        let resume_status = match consumed_aux.last() {
-            None => self.inner.last_resume_status.lock().unwrap().clone(),
-            Some((_ts, QueueEntry::ResumeInfo(resume_info))) => resume_info.clone(),
-            Some((_ts, QueueEntry::Rollback)) => Some(
-                self.inner
-                    .last_checkpointable_status
-                    .lock()
-                    .unwrap()
-                    .clone(),
-            ),
-        };
-
-        *self.inner.last_resume_status.lock().unwrap() = resume_status.clone();
-        if let Some(resume_status) = &resume_status {
-            *self.inner.last_checkpointable_status.lock().unwrap() = resume_status.clone();
-        }
-
-        let resume = match resume_status {
-            None => Resume::Barrier,
-            Some(resume_info) => resume_info.to_resume(),
-        };
-
-        // Resume info and watermark metadata share the `IcebergResumeInfo` format.
-        self.inner.consumer.extended(
-            total,
-            Some(resume),
-            consumed_aux
-                .into_iter()
-                .filter_map(|(timestamp, aux)| match aux {
-                    QueueEntry::ResumeInfo(resume_info) => Some(Watermark::new(
-                        timestamp,
-                        resume_info.map(|m| serde_json::to_value(m).unwrap()),
-                    )),
-                    QueueEntry::Rollback => None,
-                })
-                .collect(),
-        );
+        self.inner.queue(checkpoint_requested);
     }
 }
 
@@ -1063,6 +1027,79 @@ impl IcebergInputEndpointInner {
             })
     }
 
+    /// Flush queued records to the circuit and, when a checkpoint is requested,
+    /// stop at a snapshot read boundary so the reported resume point is
+    /// consistent with the data flushed.
+    fn queue(&self, checkpoint_requested: bool) {
+        let stop_at: &dyn Fn(&QueueEntry) -> bool = if checkpoint_requested {
+            &|entry: &QueueEntry| {
+                matches!(
+                    entry,
+                    QueueEntry::ResumeInfo(Some(_)) | QueueEntry::Rollback
+                )
+            }
+        } else {
+            &|_: &QueueEntry| false
+        };
+
+        let (total, _, consumed_aux) = self.queue.flush_with_aux_until(stop_at);
+
+        // The resume point is that of the last checkpointable boundary consumed;
+        // if none was consumed, keep the previously reported status.
+        let resume_status = match consumed_aux.last() {
+            None => self.last_resume_status.lock().unwrap().clone(),
+            Some((_ts, QueueEntry::ResumeInfo(resume_info))) => resume_info.clone(),
+            Some((_ts, QueueEntry::Rollback)) => {
+                Some(self.last_checkpointable_status.lock().unwrap().clone())
+            }
+        };
+
+        *self.last_resume_status.lock().unwrap() = resume_status.clone();
+        if let Some(resume_status) = &resume_status {
+            *self.last_checkpointable_status.lock().unwrap() = resume_status.clone();
+        }
+
+        let resume = match resume_status {
+            None => Resume::Barrier,
+            Some(resume_info) => resume_info.to_resume(),
+        };
+
+        // Resume info and watermark metadata share the `IcebergResumeInfo` format.
+        self.consumer.extended(
+            total,
+            Some(resume),
+            consumed_aux
+                .into_iter()
+                .filter_map(|(timestamp, aux)| match aux {
+                    QueueEntry::ResumeInfo(resume_info) => Some(Watermark::new(
+                        timestamp,
+                        resume_info.map(|m| serde_json::to_value(m).unwrap()),
+                    )),
+                    QueueEntry::Rollback => None,
+                })
+                .collect(),
+        );
+    }
+
+    /// Returns true if this host has not started its share of the snapshot, so
+    /// that it reads it in the transaction that every host joins: it does not
+    /// follow the table yet, and it has not requested that transaction (see
+    /// [`IcebergResumeInfo::snapshot_started`]).  This holds whether or not a
+    /// checkpoint pinned the snapshot, because a checkpoint can be taken while
+    /// the connector waits to run.
+    fn snapshot_unstarted(&self) -> bool {
+        self.last_resume_status
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_none_or(|status| {
+                !status.following
+                    && !status.eoi
+                    && !status.snapshot_started
+                    && status.snapshot_timestamp.is_none()
+            })
+    }
+
     /// For a distributed connector that reads its snapshot in a transaction,
     /// waits until the connector runs, through `receiver`, and then requests
     /// the transaction, before this host reads.  A paused connector does not
@@ -1077,21 +1114,36 @@ impl IcebergInputEndpointInner {
     /// label (see [`Self::snapshot_transaction_label`]), and the snapshot's
     /// final queue entry commits the transaction as usual.
     ///
-    /// `fresh` must be true only if the connector starts without a pinned
-    /// snapshot from a checkpoint.  A connector that resumes might be the only
-    /// host that reads the snapshot again, so it uses an ordinary transaction.
+    /// `unstarted` must be true only if this host has not started its share
+    /// of the snapshot (see [`Self::snapshot_unstarted`]).  A host that
+    /// resumes after it started its share might be the only host that reads
+    /// the snapshot again, so it uses an ordinary transaction.
     async fn start_distributed_snapshot_transaction(
         &self,
-        fresh: bool,
+        unstarted: bool,
         receiver: &mut Receiver<PipelineState>,
     ) {
-        if self.distributed.is_none() || !self.config.snapshot() || !fresh {
+        if self.distributed.is_none() || !self.config.snapshot() || !unstarted {
             return;
         }
         wait_running(receiver).await;
         let Some(label) = self.allocate_snapshot_transaction() else {
             return;
         };
+        // A checkpoint taken after the transaction commits without this
+        // host's share records that this host started it.  Both copies of the
+        // status get the flag: a flush that consumes nothing, because the
+        // queue holds this request until the host joins the transaction,
+        // copies the last status over the checkpointable one.
+        let mark_started = |status: &mut IcebergResumeInfo| {
+            if !status.following && !status.eoi {
+                status.snapshot_started = true;
+            }
+        };
+        mark_started(&mut self.last_checkpointable_status.lock().unwrap());
+        if let Some(status) = self.last_resume_status.lock().unwrap().as_mut() {
+            mark_started(status);
+        }
         // Every host makes this request, so the coordinator keeps the
         // transaction open until every host has committed its part.  During a
         // snapshot, every queue entry's resume info is `None`.
@@ -1892,22 +1944,14 @@ impl IcebergInputEndpointInner {
 
         let table = Arc::new(table);
 
-        // A connector that resumes has the snapshot that it read pinned, or
-        // it follows the table.
+        // A connector that resumes may follow the table.
         let following = self
             .last_resume_status
             .lock()
             .unwrap()
             .as_ref()
             .is_some_and(|status| status.following);
-        let fresh = !following
-            && matches!(
-                &*self.last_resume_status.lock().unwrap(),
-                Some(IcebergResumeInfo {
-                    snapshot_id: None,
-                    ..
-                })
-            );
+        let unstarted = self.snapshot_unstarted();
 
         // Pin the snapshot the connector reads (resolving `latest` to a concrete
         // id) and record it in the reported resume state, so every checkpoint
@@ -1924,11 +1968,15 @@ impl IcebergInputEndpointInner {
             let snapshot_timestamp = status
                 .as_ref()
                 .and_then(|status| status.snapshot_timestamp.clone());
+            let snapshot_started = status
+                .as_ref()
+                .is_some_and(|status| status.snapshot_started);
             *status = Some(IcebergResumeInfo {
                 snapshot_id: Some(snapshot_id),
                 snapshot_timestamp,
                 eoi: false,
                 following,
+                snapshot_started,
             });
         }
 
@@ -1961,7 +2009,7 @@ impl IcebergInputEndpointInner {
         // shutdown command from the controller.
         let _ = init_status_sender.send(Ok(())).await;
 
-        self.start_distributed_snapshot_transaction(fresh, &mut receiver)
+        self.start_distributed_snapshot_transaction(unstarted, &mut receiver)
             .await;
 
         // A connector that resumes while it follows the table already read its
@@ -3325,6 +3373,10 @@ mod distributed_tests {
 
         /// The number of transactions committed.
         committed: Arc<Mutex<usize>>,
+
+        /// Act like a multihost pipeline with no transaction open, so that a
+        /// connector that requests a transaction waits for it.
+        multihost: bool,
     }
 
     impl InputConsumer for Consumer {
@@ -3349,6 +3401,9 @@ mod distributed_tests {
         }
         fn commit_transaction(&self) {
             *self.committed.lock().unwrap() += 1;
+        }
+        fn open_transaction(&self) -> Option<Option<i64>> {
+            self.multihost.then_some(None)
         }
         fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<Completion>> {
             None
@@ -3530,6 +3585,63 @@ mod distributed_tests {
             let (_sender, mut receiver) = channel(PipelineState::Running);
             block_on(endpoint.start_distributed_snapshot_transaction(fresh, &mut receiver));
             assert_eq!(endpoint.queue.len(), 0, "{config} {shard:?} {fresh}");
+        }
+    }
+
+    /// A host that has not started its share of the snapshot joins the
+    /// transaction that every host joins, even if a checkpoint pinned its
+    /// snapshot while it waited to run.  It records that it started, also
+    /// across a flush that the transaction holds back.  A host that started
+    /// its share, or follows the table, does not join it.
+    #[test]
+    fn snapshot_share_joins_all_hosts_transaction_only_if_unstarted() {
+        let pinned = super::IcebergResumeInfo {
+            snapshot_id: Some(7),
+            ..super::IcebergResumeInfo::initial()
+        };
+        for (status, joins) in [
+            (super::IcebergResumeInfo::initial(), true),
+            (pinned.clone(), true),
+            (
+                super::IcebergResumeInfo {
+                    snapshot_started: true,
+                    ..pinned.clone()
+                },
+                false,
+            ),
+            (super::IcebergResumeInfo::follow(7), false),
+        ] {
+            let consumer = Consumer {
+                multihost: true,
+                ..Consumer::default()
+            };
+            let endpoint = endpoint(
+                json!({"mode": "snapshot", "transaction_mode": "snapshot"}),
+                Some(shard(2)),
+                Some(json!(7)),
+                consumer.clone(),
+            );
+            *endpoint.last_resume_status.lock().unwrap() = Some(status.clone());
+            *endpoint.last_checkpointable_status.lock().unwrap() = status.clone();
+            assert_eq!(endpoint.snapshot_unstarted(), joins, "{status:?}");
+            if !joins {
+                continue;
+            }
+
+            let (_sender, mut receiver) = channel(PipelineState::Running);
+            block_on(endpoint.start_distributed_snapshot_transaction(true, &mut receiver));
+            // The flush makes the request, but the pipeline has not counted
+            // this host in, so it holds the snapshot back.
+            endpoint.queue(false);
+            assert_eq!(consumer.started.lock().unwrap().as_slice(), [true]);
+            assert_eq!(endpoint.queue.len(), 1);
+            assert!(
+                endpoint
+                    .last_checkpointable_status
+                    .lock()
+                    .unwrap()
+                    .snapshot_started
+            );
         }
     }
 
