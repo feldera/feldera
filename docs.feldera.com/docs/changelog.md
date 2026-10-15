@@ -52,6 +52,14 @@ Source edition can be found on github.
   [Delta Lake](/connectors/sources/delta#distributed-connectors), and
   [Iceberg](/connectors/sources/iceberg#distributed-connectors).
 
+- Bug fix (SQL compiler): the NATS connectors' `connection_config` accepts the
+  `tls` section (`require_tls`, `root_certificates_file`) it declared since
+  release 0.350.0, instead of rejecting it with `unknown field "tls"`. The
+  `nats_output` connector's configuration, which the SQL compiler did not
+  validate at all, is now checked like the other connectors', so an unknown
+  option in it is reported at compile time rather than failing the pipeline at
+  startup.
+
 ## v0.366.0
 
 - Incompatible change (ad-hoc queries): the `hash` result format and

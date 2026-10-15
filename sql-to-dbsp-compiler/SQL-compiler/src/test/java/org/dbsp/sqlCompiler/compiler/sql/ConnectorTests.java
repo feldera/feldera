@@ -108,6 +108,18 @@ public class ConnectorTests extends BaseSQLTests {
                 expectedMessages);
     }
 
+    /** Like {@link #viewConnectorTest}, but asserts that the config draws no warning. */
+    private void cleanViewConnectorTest(String connectorBody) {
+        runCleanConnectorTest(
+                "CREATE TABLE T (x INT);\n" +
+                "CREATE VIEW V WITH (\n" +
+                "  'connectors' = '[{\n" +
+                "    \"name\": \"c\",\n" +
+                indent4(connectorBody) + "\n" +
+                "  }]'\n" +
+                ") AS SELECT * FROM T;");
+    }
+
     // ---- Connector structure validation ----
 
     @Test
@@ -2475,5 +2487,194 @@ public class ConnectorTests extends BaseSQLTests {
                 }""",
                 "\"inactivity_timeout_secs\" is another spelling of \"inactivity_timeout\"; "
                 + "write one of the two");
+    }
+
+    /** The TLS options are part of the connection config and must not be reported as unknown. */
+    @Test
+    public void natsInputTlsOptions() {
+        cleanTableConnectorTest("""
+                "transport": {
+                  "name": "nats_input",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "tls://localhost:4222",
+                      "tls": {
+                        "require_tls": true,
+                        "root_certificates_file": "/etc/nats/ca.crt"
+                      }
+                    },
+                    "stream_name": "my-stream",
+                    "consumer_config": {
+                      "deliver_policy": "All"
+                    }
+                  }
+                }""");
+    }
+
+    // ---- NATS output transport config ----
+
+    @Test
+    public void natsOutputValidConfig() {
+        cleanViewConnectorTest("""
+                "transport": {
+                  "name": "nats_output",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222",
+                      "tls": {"require_tls": true}
+                    },
+                    "subject": "orders.created",
+                    "headers": [{"key": "X-Source", "value": "feldera"}],
+                    "message_id": "none",
+                    "publish_timeout": "10s",
+                    "max_message_size": 65536
+                  }
+                }""");
+    }
+
+    @Test
+    public void natsOutputMissingSubject() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "nats_output",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    }
+                  }
+                }""",
+                "required field \"subject\" is missing or empty");
+    }
+
+    @Test
+    public void natsOutputMissingServerUrl() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "nats_output",
+                  "config": {
+                    "connection_config": {},
+                    "subject": "orders"
+                  }
+                }""",
+                "required field \"connection_config.server_url\" is missing or empty");
+    }
+
+    @Test
+    public void natsOutputInvalidMessageId() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "nats_output",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "subject": "orders",
+                    "message_id": "payload_hash"
+                  }
+                }""",
+                "invalid value \"payload_hash\"");
+    }
+
+    @Test
+    public void natsOutputPublishTimeoutBelowMinimum() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "nats_output",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "subject": "orders",
+                    "publish_timeout": "500ms"
+                  }
+                }""",
+                "\"publish_timeout\" is '500ms'; it must be at least 1 second");
+    }
+
+    @Test
+    public void natsOutputLegacyPublishTimeoutBelowMinimum() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "nats_output",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "subject": "orders",
+                    "publish_timeout_secs": 0
+                  }
+                }""",
+                "\"publish_timeout_secs\" is '0'; it must be at least 1 second");
+    }
+
+    @Test
+    public void natsOutputEmptyHeaderKey() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "nats_output",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "subject": "orders",
+                    "headers": [{"key": "", "value": "x"}]
+                  }
+                }""",
+                "header key must not be empty");
+    }
+
+    @Test
+    public void natsOutputUnknownField() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "nats_output",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "subject": "orders",
+                    "message_id_field": "id"
+                  }
+                }""",
+                "unknown field \"message_id_field\"");
+    }
+
+    /** The consumer's {@code filter_subjects} option must not be reported as unknown. */
+    @Test
+    public void natsInputConsumerFilterSubjects() {
+        cleanTableConnectorTest("""
+                "transport": {
+                  "name": "nats_input",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "stream_name": "my-stream",
+                    "consumer_config": {
+                      "deliver_policy": "All",
+                      "filter_subjects": ["orders.*"]
+                    }
+                  }
+                }""");
+    }
+
+    /** The consumer takes {@code filter_subjects}, not the stream property {@code subjects}. */
+    @Test
+    public void natsInputConsumerRejectsSubjectsKey() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "nats_input",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "stream_name": "my-stream",
+                    "consumer_config": {
+                      "deliver_policy": "All",
+                      "subjects": ["orders"]
+                    }
+                  }
+                }""",
+                "unknown field \"subjects\"");
     }
 }

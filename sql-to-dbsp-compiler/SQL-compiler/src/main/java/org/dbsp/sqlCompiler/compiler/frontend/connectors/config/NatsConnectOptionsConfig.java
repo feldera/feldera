@@ -15,6 +15,8 @@ public class NatsConnectOptionsConfig {
 
     @JsonProperty("auth")
     public NatsAuthConfig auth = new NatsAuthConfig();
+    @JsonProperty("tls")
+    public NatsTlsConfig tls = new NatsTlsConfig();
 
     /** Connection timeout, for example {@code "10s"}. */
     @Nullable
