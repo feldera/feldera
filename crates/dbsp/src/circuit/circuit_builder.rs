@@ -3180,6 +3180,10 @@ impl RootCircuit {
                 return Err(DbspError::Constructor(e));
             }
         };
+        if let Err(e) = circuit.check_persistent_ids() {
+            circuit.clear();
+            return Err(e);
+        }
         let mut executor = Box::new(<OnceExecutor<S>>::new()) as Box<dyn Executor<RootCircuit>>;
         if let Err(e) = executor.prepare(&circuit, None) {
             circuit.clear();
@@ -3256,6 +3260,33 @@ impl RootCircuit {
             )),
             time: Rc::new(RefCell::new(())),
         }
+    }
+
+    /// Check that the persistent ids of the operators in this circuit and in its
+    /// subcircuits are not empty and are unique.  An operator stores its state in files
+    /// named after its persistent id, so two operators with the same id write the same files.
+    fn check_persistent_ids(&self) -> Result<(), DbspError> {
+        // Maps a persistent id to the first operator that has it.
+        let mut operator_by_id: HashMap<String, String> = HashMap::new();
+        self.map_nodes_recursive(&mut |node| {
+            let Some(persistent_id) = node.get_label(LABEL_PERSISTENT_OPERATOR_ID) else {
+                return Ok(());
+            };
+            let operator = format!("{} {}", node.name(), node.global_id());
+            if persistent_id.is_empty() {
+                return Err(DbspError::Runtime(RuntimeError::EmptyPersistentId {
+                    operator,
+                }));
+            }
+            match operator_by_id.insert(persistent_id.to_string(), operator.clone()) {
+                None => Ok(()),
+                Some(first) => Err(DbspError::Runtime(RuntimeError::DuplicatePersistentId {
+                    persistent_id: persistent_id.to_string(),
+                    first,
+                    second: operator,
+                })),
+            }
+        })
     }
 }
 
@@ -7896,7 +7927,7 @@ where
 mod tests {
     use super::ElapsedTime;
     use crate::{
-        Circuit, Error as DbspError, RootCircuit,
+        Circuit, Error as DbspError, RootCircuit, RuntimeError,
         circuit::{
             NodeId,
             circuit_builder::{CircuitBase, StreamId},
@@ -8177,6 +8208,60 @@ mod tests {
         assert_eq!(monitor.count_regions_with_name(REGION), 2);
         assert_eq!(monitor.count_nodes_in_region(r1.as_ref().unwrap()), Some(1));
         assert_eq!(monitor.count_nodes_in_region(r2.as_ref().unwrap()), Some(1));
+    }
+
+    /// Two operators with the same persistent id would write the same files.
+    #[test]
+    fn duplicate_persistent_id() {
+        let result = RootCircuit::build(|circuit| {
+            let source = circuit.add_source(Generator::new(|| 1usize));
+            source.apply(|n| *n + 1).set_persistent_id(Some("same"));
+            source.apply(|n| *n + 2).set_persistent_id(Some("same"));
+            Ok(())
+        });
+        let Err(DbspError::Runtime(RuntimeError::DuplicatePersistentId { persistent_id, .. })) =
+            result
+        else {
+            panic!("expected an error for the duplicate persistent id");
+        };
+        assert_eq!(persistent_id, "same");
+    }
+
+    /// A persistent id must not be empty.
+    #[test]
+    fn empty_persistent_id() {
+        let result = RootCircuit::build(|circuit| {
+            let source = circuit.add_source(Generator::new(|| 1usize));
+            source.apply(|n| *n + 1).set_persistent_id(Some(""));
+            Ok(())
+        });
+        let Err(DbspError::Runtime(RuntimeError::EmptyPersistentId { .. })) = result else {
+            panic!("expected an error for the empty persistent id");
+        };
+    }
+
+    /// Persistent ids must be unique across nested circuits too.
+    #[test]
+    fn duplicate_persistent_id_in_nested_circuit() {
+        let result = RootCircuit::build(|circuit| {
+            let source = circuit.add_source(Generator::new(|| 1usize));
+            source.apply(|n| *n).set_persistent_id(Some("same"));
+            circuit
+                .iterate_with_condition(|child| {
+                    let (z1_output, z1_feedback) = child.add_feedback_with_export(Z1::new(0usize));
+                    let inner = source.delta0(child).set_persistent_id(Some("same"));
+                    z1_feedback.connect(&inner);
+                    Ok((inner.condition(|_| true), z1_output.export))
+                })
+                .unwrap();
+            Ok(())
+        });
+        let Err(DbspError::Runtime(RuntimeError::DuplicatePersistentId { persistent_id, .. })) =
+            result
+        else {
+            panic!("expected an error for the duplicate persistent id");
+        };
+        assert_eq!(persistent_id, "same");
     }
 
     /// Every stream in a circuit must have an id of its own, including the
