@@ -22,6 +22,7 @@ use deltalake::open_table_with_storage_options;
 use deltalake::table::builder::ensure_table_uri;
 use feldera_types::transport::delta_table::DeltaTableWriterConfig;
 use parking_lot::Mutex;
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use super::metrics::MergeMetrics;
@@ -100,7 +101,7 @@ impl Compactor {
 
     /// Start a compaction if one is due. Called after every successful flush, so the common
     /// path is one lock and one clock read; never blocks on the compaction itself.
-    pub fn maybe_start(&self) {
+    pub fn maybe_start(&self, shutdown: &CancellationToken) {
         if !self.claim(Instant::now()) {
             return;
         }
@@ -111,13 +112,23 @@ impl Compactor {
         let storage_options = self.storage_options.clone();
         let interval = self.interval;
         let metrics = self.metrics.clone();
+        let shutdown = shutdown.clone();
 
         TOKIO.spawn(async move {
             // A guard, not a call at the end: delta-rs and DataFusion can panic, and a
             // claimed slot never given back would disable compaction for the whole run.
             let _slot = Slot { schedule, interval };
             let started = Instant::now();
-            match compact(&uri, storage_options, interval).await {
+            // A shutdown stops it between commits; each commit is atomic, so the table stays
+            // intact and only the run's unreferenced files remain for `VACUUM`.
+            let Some(result) = shutdown
+                .run_until_cancelled(compact(&uri, storage_options, interval))
+                .await
+            else {
+                info!("delta_table {endpoint_name}: compaction of '{uri}' stopped by shutdown");
+                return;
+            };
+            match result {
                 Ok(outcome) => {
                     metrics.record_compaction(
                         outcome.reclaim.rows_reclaimed,
@@ -380,7 +391,7 @@ mod test {
             Instant::now() - Duration::from_secs(1),
         )
         .unwrap();
-        compactor.maybe_start();
+        compactor.maybe_start(&CancellationToken::new());
 
         // Waiting on the outcome rather than on the slot flag, which the compaction may
         // already have given back by the time the assertion reads it.
@@ -392,6 +403,37 @@ mod test {
             );
             std::thread::sleep(Duration::from_millis(20));
         }
+    }
+
+    /// A shutdown stops compaction, or it would keep committing after the endpoint is gone.
+    #[test]
+    fn a_shutdown_stops_the_compaction() {
+        use super::super::test::{append_ids, fixture_table};
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap().to_string();
+        TOKIO.block_on(async {
+            let table = fixture_table(&dir, &[1, 2, 3], true).await;
+            append_ids(table, &[4, 5, 6]).await;
+        });
+        let compactor = Compactor::starting_at(
+            &config_with(&uri, Some(1)),
+            "e",
+            MergeMetrics::new(),
+            Instant::now() - Duration::from_secs(1),
+        )
+        .unwrap();
+        let shutdown = CancellationToken::new();
+        shutdown.cancel();
+        compactor.maybe_start(&shutdown);
+
+        // The slot is given back once the task ends, whether it compacted or stopped.
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while compactor.schedule.lock().running {
+            assert!(Instant::now() < deadline, "the compaction task never ended");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(data_files(&uri), 2, "a compaction ran after the shutdown");
     }
 
     /// Data files the table's current snapshot lists.

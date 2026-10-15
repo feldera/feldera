@@ -39,6 +39,7 @@ use deltalake::operations::write::writer::DeltaWriter;
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
+use tokio_util::task::AbortOnDropHandle;
 use tracing::debug;
 
 use crate::RecordFormat;
@@ -534,11 +535,12 @@ impl MergeWriter {
             let object_store = object_store.clone();
             let candidates = candidates.clone();
             let progress = progress.clone();
-            handles.push(tokio::spawn(async move {
+            // Aborted on drop, so a cancelled flush does not leave ranges uploading.
+            handles.push(AbortOnDropHandle::new(tokio::spawn(async move {
                 writer
                     .walk_range(range, object_store, candidates, retrying, progress, budget)
                     .await
-            }));
+            })));
         }
 
         // Every handle is awaited even after one fails, so no range is left writing to the
