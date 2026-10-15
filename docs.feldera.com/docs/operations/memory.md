@@ -5,19 +5,19 @@ To achieve high performance, pipelines use available physical memory to cache re
 frequently accessed state and to accelerate index lookups.
 
 For optimal performance, the system aims to fully utilize available memory without exceeding
-it. This behavior is controlled by the `max_rss_mb` setting in the pipeline [Runtime configuration].
+it. This behavior is controlled by the `max_rss` setting in the pipeline [Runtime configuration].
 When configured, the pipeline dynamically applies *backpressure* to the storage layer, flushing
 in-memory state to disk more aggressively as memory usage approaches the limit.
 
-If `max_rss_mb` is not set but `memory_mb_max` is configured in the `resources` section of
+If `max_rss` is not set but `memory_max` is configured in the `resources` section of
 [Runtime configuration], the latter is used as the effective memory cap. We **strongly recommend**
 setting at least one of these parameters to prevent out-of-memory failures.
 
 On single-host deployments (for example, in Docker), if neither
-parameter is set, `resources.memory_mb_max` is set to the smaller
+parameter is set, `resources.memory_max` is set to the smaller
 value of host memory size, and container memory limit.  In a
 multi-host deployment each pipeline process that finds neither
-parameter set derives `max_rss_mb` from its own host's available
+parameter set derives `max_rss` from its own host's available
 memory at startup.
 
 In every case, the pipeline caps its memory limit at the memory
@@ -42,7 +42,7 @@ This section breaks down pipelines' memory usage in more detail.
   the circuit.
 
   The maximum queue length is controlled by the per-connector
-  [`max_queued_records`] and [`max_queued_bytes`] properties.  These
+  [`max_queued_records`] and [`max_queued_size`] properties.  These
   should be large enough to hide the latency of communication, but
   small enough to avoid wasting memory.  The defaults of 1,000,000
   records and 1,000,000,000 bytes limit the memory used by a connector
@@ -63,7 +63,7 @@ This section breaks down pipelines' memory usage in more detail.
   [`input_connector_extra_memory_bytes`].
 
   [`max_queued_records`]: /connectors#max_queued_records
-  [`max_queued_bytes`]: /connectors#max_queued_bytes
+  [`max_queued_size`]: /connectors#max_queued_bytes
   [Kafka input connector]: /connectors/sources/kafka.md
   [`records_input_buffered`]: metrics.md#records_input_buffered
   [`records_input_buffered_bytes`]: metrics.md#records_input_buffered_bytes
@@ -79,7 +79,7 @@ This section breaks down pipelines' memory usage in more detail.
   stalling the pipeline.  The value applies to output records whether
   in memory or on storage.  The default is 1,000,000.
 
-  [`max_queued_bytes`] is not yet implemented for output connectors.
+  [`max_queued_size`] is not yet implemented for output connectors.
 
   The number of batches of buffered output records is exposed as
   [`output_buffered_batches`], but since each batch contains a
@@ -96,7 +96,7 @@ This section breaks down pipelines' memory usage in more detail.
   state, so that a pipeline can have a 1 TB storage footprint, but
   only use a few GB or RAM.
 
-  The maximum size of the cache can be configured with `cache_mib`
+  The maximum size of the cache can be configured with `cache_size`
   under `storage` in the pipeline [Runtime configuration].  The
   default is 512 MiB per worker, or 4 GiB for the default 8-worker
   configuration.  The default is usually a good choice unless a large
@@ -157,12 +157,12 @@ This section breaks down pipelines' memory usage in more detail.
 
   When storage is enabled (the default), batches exceeding a configured size are written
   to persistent storage. The minimum batch size for spilling to disk is controlled by the
-  `min_storage_bytes` parameter under `storage` in the pipeline [Runtime configuration].
+  `min_spill_size` parameter under `storage` in the pipeline [Runtime configuration].
   The default value is 10 MiB, which is typically a good balance. Lowering this value can
   reduce memory usage, but may negatively impact performance.
 
   In addition, users can bound the pipeline’s memory usage via the
-  `max_rss_mb` option described above. As memory consumption approaches this
+  `max_rss` option described above. As memory consumption approaches this
   limit, the pipeline increasingly flushes index batches to storage to stay within the
   configured bound.
 
@@ -186,7 +186,7 @@ This section breaks down pipelines' memory usage in more detail.
   internally breaks large batches into smaller batches, they do not
   usually become a memory problem.  If they do, one may reduce
   [`max_batch_size`] for input connectors, limiting the size of input
-  batches.  Another approach is to set `min_step_storage_bytes` in
+  batches.  Another approach is to set `min_step_spill_size` in
   `storage` in the pipeline [Runtime configuration], to force
   in-flight batches to storage, although this is likely to reduce
   performance.
@@ -197,12 +197,12 @@ This section breaks down pipelines' memory usage in more detail.
 
 | Component | Description | Metrics | Control knobs |
 | --- | --- | --- | --- |
-| Input buffering | Records ingested by input connectors but not yet processed by the circuit. | [`records_input_buffered`], [`records_input_buffered_bytes`], [`input_connector_buffered_records`], [`input_connector_buffered_records_bytes`], [`input_connector_extra_memory_bytes`] | Connector [`max_queued_records`], [`max_queued_bytes`] |
+| Input buffering | Records ingested by input connectors but not yet processed by the circuit. | [`records_input_buffered`], [`records_input_buffered_bytes`], [`input_connector_buffered_records`], [`input_connector_buffered_records_bytes`], [`input_connector_extra_memory_bytes`] | Connector [`max_queued_records`], [`max_queued_size`] |
 | Output buffering | Records produced by the circuit but not yet consumed by output connectors; can be buffered in memory or storage. | [`output_buffered_batches`], [`output_connector_buffered_records`] | Connector [`max_queued_records`] |
-| Index batches in memory | Index batches kept in memory before background merges and eventual flush to storage. |  | Runtime config `storage.min_storage_bytes`, [`max_rss_mb`](#max_rss) |
-| Storage cache | In-memory cache of index batches stored on disk; decouples working memory from total state size. | [`storage_cache_usage_bytes`], [`storage_cache_usage_limit_bytes_total`] | Runtime config `storage.cache_mib` |
+| Index batches in memory | Index batches kept in memory before background merges and eventual flush to storage. |  | Runtime config `storage.min_spill_size`, [`max_rss`](#max_rss) |
+| Storage cache | In-memory cache of index batches stored on disk; decouples working memory from total state size. | [`storage_cache_usage_bytes`], [`storage_cache_usage_limit_bytes_total`] | Runtime config `storage.cache_size` |
 | Bloom filters | In-memory bloom filters for batches on storage; can become significant at large state sizes. | Visible in circuit profiles. | Runtime config `storage.bloom_false_positive_rate` |
-| In-flight batches | Transient batches moving between operators during execution; usually short-lived but workload-dependent. |  | Connector [`max_batch_size`], runtime config `storage.min_step_storage_bytes` |
+| In-flight batches | Transient batches moving between operators during execution; usually short-lived but workload-dependent. |  | Connector [`max_batch_size`], runtime config `storage.min_step_spill_size` |
 
 
 <!-- ## Configuring available memory
@@ -213,23 +213,23 @@ or via the `resources` section in the pipeline config, e.g.:
 
 ```json
 "resources": {
-    "memory_mb_min": 32000,
-    "memory_mb_max": 32000
+    "memory_min": "32G",
+    "memory_max": "32G"
 }
 ```
  -->
-<!-- ## Bounding pipeline's memory footprint `max_rss_mb`
+<!-- ## Bounding pipeline's memory footprint `max_rss`
 <a id="max_rss"></a>
 
 Memory not used for input/output buffers, Bloom filters, and caches is available for temporary storage
 of the pipeline’s state indexes and in-flight batches. For optimal performance, the system aims to utilize
 as much of this memory as possible without exceeding available capacity.
 
-This behavior is controlled via the `max_rss_mb` setting in the pipeline [Runtime configuration]. When set,
+This behavior is controlled via the `max_rss` setting in the pipeline [Runtime configuration]. When set,
 the pipeline dynamically applies *backpressure* to the storage layer, flushing in-memory batches to disk more
 aggressively as memory usage approaches the configured limit.
 
-If `max_rss_mb` is not specified but `resources.memory_mb_max`
+If `max_rss` is not specified but `resources.memory_max`
 is set, the latter is used as the effective
 memory cap for the pipeline. We **strongly recommend** configuring at least one of these settings to avoid
 out-of-memory failures.
@@ -238,7 +238,7 @@ Note that the backpressure mechanism described here only applies to memory used 
 batches. Other components—input/output buffers, Bloom filters, and caches—must be managed using the separate
 controls described above.
 
-When either `max_rss_mb` or `resources.memory_mb_max` is configured, the pipeline exposes its current memory
+When either `max_rss` or `resources.memory_max` is configured, the pipeline exposes its current memory
 pressure level (low, moderate, high, or critical) via the [`memory_pressure` metric](/operations/metrics). High
 or critical pressure indicates that memory usage is approaching the configured limit and may lead to significant
 performance degradation. In such cases, we recommend increasing the available memory. -->
