@@ -269,7 +269,7 @@ fn test_nats_connection_refused_enters_retry_loop() -> AnyResult<()> {
                         "inactivity_timeout_secs": 1,
                         "consumer_config": {
                             "deliver_policy": "All",
-                            "subjects": [SUBJECT_NAME],
+                            "filter_subjects": [SUBJECT_NAME],
                         },
                     },
                 },
@@ -317,7 +317,7 @@ fn test_nats_startup_connection_refused_retries_repeatedly() -> AnyResult<()> {
                         "retry_interval_secs": 1,
                         "consumer_config": {
                             "deliver_policy": "All",
-                            "subjects": [SUBJECT_NAME],
+                            "filter_subjects": [SUBJECT_NAME],
                         },
                     },
                 },
@@ -362,7 +362,7 @@ fn test_nats_stream_not_found_enters_retry_loop() -> AnyResult<()> {
                         "inactivity_timeout_secs": 1,
                         "consumer_config": {
                             "deliver_policy": "All",
-                            "subjects": [SUBJECT_NAME],
+                            "filter_subjects": [SUBJECT_NAME],
                         },
                     },
                 },
@@ -505,7 +505,7 @@ fn test_nats_retry_interval_config_is_honored() -> AnyResult<()> {
                         "retry_interval_secs": 1,
                         "consumer_config": {
                             "deliver_policy": "All",
-                            "subjects": [SUBJECT_NAME],
+                            "filter_subjects": [SUBJECT_NAME],
                         },
                     },
                 },
