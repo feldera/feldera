@@ -360,13 +360,26 @@ where
     where
         R: Send,
     {
+        self.map_with_index(|_host, handle| f(handle))
+    }
+
+    /// Like [TestHosts::map], but `f` also receives the index of the host,
+    /// for a call that takes a different argument on each host.
+    pub(crate) fn map_with_index<R>(
+        &mut self,
+        f: impl Fn(usize, &mut DBSPHandle) -> R + Sync,
+    ) -> Vec<R>
+    where
+        R: Send,
+    {
         thread::scope(|scope| {
             let threads: Vec<_> = self
                 .handles
                 .iter_mut()
-                .map(|handle| {
+                .enumerate()
+                .map(|(host, handle)| {
                     let f = &f;
-                    scope.spawn(move || f(handle))
+                    scope.spawn(move || f(host, handle))
                 })
                 .collect();
             threads
@@ -441,11 +454,55 @@ where
     ///
     /// The hosts, which run.
     pub(crate) fn restart(self, checkpoints: &[Uuid]) -> Self {
+        let constructor = self.constructor.clone();
+        self.restart_from(checkpoints, constructor)
+    }
+
+    /// Like [TestHosts::restart], but the hosts start again with the circuit
+    /// that `constructor` builds, for a test of a bootstrap from the
+    /// checkpoint of a different circuit.
+    ///
+    /// # Arguments
+    ///
+    /// * `checkpoints` - the checkpoint of each host, in order of host index,
+    ///   from [TestHosts::checkpoint].
+    /// * `constructor` - builds the new circuit on each host.
+    ///
+    /// # Returns
+    ///
+    /// The hosts, which run the new circuit.
+    pub(crate) fn restart_with<U, F>(self, checkpoints: &[Uuid], constructor: F) -> TestHosts<U>
+    where
+        U: Send + 'static,
+        F: FnOnce(&mut RootCircuit) -> AnyResult<U> + Clone + Send + Sync + 'static,
+    {
+        self.restart_from(
+            checkpoints,
+            Arc::new(move |circuit: &mut RootCircuit| constructor.clone()(circuit)),
+        )
+    }
+
+    /// Kills every host and starts it again from its checkpoint in
+    /// `checkpoints`, with the configuration that it started with and the
+    /// circuit that `constructor` builds.
+    ///
+    /// # Arguments
+    ///
+    /// * `checkpoints` - the checkpoint of each host, in order of host index.
+    /// * `constructor` - builds the circuit on each host.
+    ///
+    /// # Returns
+    ///
+    /// The hosts, which run.
+    fn restart_from<U>(self, checkpoints: &[Uuid], constructor: Arc<Constructor<U>>) -> TestHosts<U>
+    where
+        U: Send + 'static,
+    {
         assert_eq!(checkpoints.len(), self.n_hosts());
         let (workers, hosts) = (self.workers, self.n_hosts());
-        let (configure, constructor) = (self.configure.clone(), self.constructor.clone());
+        let configure = self.configure.clone();
         self.kill();
-        Self::start_from(workers, hosts, configure, constructor, Some(checkpoints))
+        TestHosts::start_from(workers, hosts, configure, constructor, Some(checkpoints))
     }
 
     /// Kills every host, each in a thread of its own, and waits until all of
