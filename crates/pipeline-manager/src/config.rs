@@ -78,6 +78,10 @@ fn default_pg_embed_working_directory() -> String {
         .unwrap()
 }
 
+fn default_pg_embed_port() -> u16 {
+    8082
+}
+
 /// Default compiler working directory: ~/.feldera/compiler
 fn default_compiler_working_directory() -> String {
     default_working_directory()
@@ -687,6 +691,11 @@ pub struct PgEmbedConfig {
     #[serde(default = "default_pg_embed_working_directory")]
     #[arg(long, default_value_t = default_pg_embed_working_directory())]
     pub pg_embed_working_directory: String,
+
+    /// Port the embedded Postgres instance listens on.
+    #[serde(default = "default_pg_embed_port")]
+    #[arg(long, default_value_t = default_pg_embed_port(), env = "FELDERA_PG_EMBED_PORT")]
+    pub pg_embed_port: u16,
 }
 
 impl PgEmbedConfig {
