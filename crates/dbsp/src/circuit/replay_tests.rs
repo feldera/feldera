@@ -6597,7 +6597,7 @@ fn recursive_view_reader_new(
     let out_new = paths
         .filter(|Tup2(from, _)| *from == 0)
         .set_persistent_id(Some("from_zero"))
-        .accumulate_output_persistent(Some("from_zero"));
+        .accumulate_output_persistent(Some("from_zero_output"));
     (ih, out_old, out_new)
 }
 
@@ -6719,7 +6719,7 @@ fn recursive_chain_new(
     let out_new = jumps
         .filter(|Tup2(from, _)| *from == 0)
         .set_persistent_id(Some("jumps_from_zero"))
-        .accumulate_output_persistent(Some("jumps_from_zero"));
+        .accumulate_output_persistent(Some("jumps_from_zero_output"));
     (ih, (out_paths, out_jumps), out_new)
 }
 
