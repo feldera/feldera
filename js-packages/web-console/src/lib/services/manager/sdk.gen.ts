@@ -87,6 +87,9 @@ import type {
   GetPipelineDataflowGraphData,
   GetPipelineDataflowGraphErrors,
   GetPipelineDataflowGraphResponses,
+  GetPipelineDeploymentData,
+  GetPipelineDeploymentErrors,
+  GetPipelineDeploymentResponses,
   GetPipelineErrors,
   GetPipelineEventData,
   GetPipelineEventErrors,
@@ -1164,6 +1167,39 @@ export const getPipelineDataflowGraph = <ThrowOnError extends boolean = true>(
     responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/dataflow_graph',
+    ...options
+  })
+
+/**
+ * Get Pipeline Deployment
+ *
+ * Required role: `read` or higher.
+ *
+ * Desired versus current CPU, memory, and storage per host, and the state of each change.
+ * The pipeline's `deployment_status` is the lifecycle Feldera wants; this endpoint is what
+ * exists in the runner's platform (for example Kubernetes) now.
+ *
+ * `state` values follow Kubernetes kstatus: `Current`, `InProgress`, `Failed`, `Terminating`,
+ * `NotFound` and `Unknown`. The top-level `state` summarizes the hosts. Runners that do not
+ * observe their resources return the spec only.
+ */
+export const getPipelineDeployment = <ThrowOnError extends boolean = true>(
+  options: Options<GetPipelineDeploymentData, ThrowOnError>
+): RequestResult<
+  GetPipelineDeploymentResponses,
+  GetPipelineDeploymentErrors,
+  ThrowOnError,
+  'data'
+> =>
+  (options.client ?? client).get<
+    GetPipelineDeploymentResponses,
+    GetPipelineDeploymentErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/deployment',
     ...options
   })
 

@@ -13,6 +13,7 @@ use actix_ws::{CloseCode, CloseReason};
 use awc::error::{ConnectError, SendRequestError};
 use awc::{ClientRequest, ClientResponse};
 use crossbeam::sync::ShardedLock;
+use feldera_types::error::ErrorResponse;
 use feldera_types::query::{MAX_WS_FRAME_SIZE, WS_SUBPROTOCOL};
 use std::fmt::Display;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -638,6 +639,34 @@ impl RunnerInteraction {
         Ok(builder.streaming(response))
     }
 
+    /// Retrieves through the runner what exists for the pipeline now.
+    pub(crate) async fn get_deployment_from_pipeline(
+        &self,
+        client: &awc::Client,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<HttpResponse, ManagerError> {
+        let pipeline = self
+            .db
+            .lock()
+            .await
+            .get_pipeline_for_monitoring(tenant_id, pipeline_name)
+            .await?;
+        let url = format!(
+            "{}://{}:{}/deployment/{}?tenant_id={}",
+            if self.common_config.enable_https {
+                "https"
+            } else {
+                "http"
+            },
+            self.common_config.runner_host,
+            self.common_config.runner_port,
+            pipeline.id,
+            tenant_id.0,
+        );
+        deployment_proxy(client, &url, Self::RUNNER_HTTP_REQUEST_TIMEOUT).await
+    }
+
     /// Format HTTP request for logging.
     pub(crate) fn format_request(request: &ClientRequest) -> String {
         format!(
@@ -647,6 +676,50 @@ impl RunnerInteraction {
             request.get_uri()
         )
     }
+}
+
+/// Forwards `GET /deployment` to the runner at `url` and passes its status, content type, and
+/// body through, apart from a missing route.
+async fn deployment_proxy(
+    client: &awc::Client,
+    url: &str,
+    timeout: Duration,
+) -> Result<HttpResponse, ManagerError> {
+    let unreachable = |error: String| RunnerError::RunnerInteractionUnreachable { error };
+    let mut response = client
+        .request(Method::GET, url)
+        .timeout(timeout)
+        .send()
+        .await
+        .map_err(|e| match e {
+            SendRequestError::Timeout => {
+                unreachable(format_runner_timeout_error_message(timeout, e))
+            }
+            _ => unreachable(e.to_string()),
+        })?;
+    let body = response
+        .body()
+        .await
+        .map_err(|e| unreachable(format!("unable to read the runner response: {e}")))?;
+    if is_missing_route(response.status(), &body) {
+        return Err(unreachable(
+            "the runner does not serve /deployment: upgrade it to the version of the API server"
+                .to_string(),
+        )
+        .into());
+    }
+    let mut builder = HttpResponseBuilder::new(response.status());
+    if let Some(content_type) = response.headers().get(header::CONTENT_TYPE) {
+        builder.insert_header((header::CONTENT_TYPE, content_type.clone()));
+    }
+    Ok(builder.body(body))
+}
+
+/// True for a 404 without an error body: the route does not exist, as on a runner older than the
+/// API server. A 404 for an unknown pipeline has an [`ErrorResponse`] body.
+fn is_missing_route(status: actix_web::http::StatusCode, body: &[u8]) -> bool {
+    status == actix_web::http::StatusCode::NOT_FOUND
+        && serde_json::from_slice::<ErrorResponse>(body).is_err()
 }
 
 /// Core streaming proxy: forwards `request` + `body` to `url` and streams
@@ -740,6 +813,68 @@ mod tests {
 
     fn setup() {
         crate::ensure_default_crypto_provider();
+    }
+
+    /// An old runner's bare 404 must not read as an unknown pipeline.
+    #[test]
+    fn a_404_without_an_error_body_is_a_missing_route() {
+        use actix_web::http::StatusCode;
+        assert!(is_missing_route(StatusCode::NOT_FOUND, b""));
+        assert!(is_missing_route(StatusCode::NOT_FOUND, b"<html>"));
+        let unknown_pipeline = serde_json::to_vec(&serde_json::json!({
+            "message": "Unknown pipeline id",
+            "error_code": "UnknownPipeline",
+            "details": {}
+        }))
+        .unwrap();
+        assert!(!is_missing_route(StatusCode::NOT_FOUND, &unknown_pipeline));
+        assert!(!is_missing_route(StatusCode::OK, b"{}"));
+    }
+
+    /// The runner's status, content type, and body reach the client, apart from a missing route.
+    #[actix_web::test]
+    async fn deployment_proxy_passes_the_runner_response_through() {
+        use actix_web::http::StatusCode;
+        setup();
+        let error =
+            br#"{"message":"Unknown pipeline id","error_code":"UnknownPipeline","details":{}}"#;
+        for (status, body, content_type) in [
+            (200, &br#"{"spec":{}}"#[..], "application/json"),
+            (404, &error[..], "application/json"),
+            (500, &b"oops"[..], "text/plain"),
+        ] {
+            let mock_server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/deployment/p"))
+                .respond_with(
+                    ResponseTemplate::new(status).set_body_raw(body.to_vec(), content_type),
+                )
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+            let url = format!("{}/deployment/p", mock_server.uri());
+            let resp = deployment_proxy(&awc::Client::default(), &url, Duration::from_secs(10))
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), StatusCode::from_u16(status).unwrap());
+            assert_eq!(
+                resp.headers().get(header::CONTENT_TYPE).unwrap(),
+                content_type
+            );
+            assert_eq!(read_body(resp).await, body);
+        }
+
+        // An old runner without the route.
+        let mock_server = MockServer::start().await;
+        let url = format!("{}/deployment/p", mock_server.uri());
+        let error = deployment_proxy(&awc::Client::default(), &url, Duration::from_secs(10))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            actix_web::ResponseError::status_code(&error),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert!(error.to_string().contains("upgrade"), "{error}");
     }
 
     /// Build `(HttpRequest, web::Payload)` for a GET with optional headers.

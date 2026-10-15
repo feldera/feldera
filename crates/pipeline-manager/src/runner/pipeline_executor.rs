@@ -6,8 +6,10 @@ use crate::error::ManagerError;
 use crate::runner::pipeline_logs::LogsSender;
 use async_trait::async_trait;
 use feldera_types::config::LegacySpelling;
-use feldera_types::config::{PipelineConfig, StorageConfig};
+use feldera_types::config::{PipelineConfig, ResourceConfig, StorageConfig};
+use feldera_types::deployment::{DeploymentSpec, DeploymentState, PipelineDeployment};
 use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus};
+use serde::Deserialize;
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -26,7 +28,7 @@ pub enum ProvisionStatus {
 #[async_trait]
 pub trait PipelineExecutor: Sync + Send {
     /// Configuration unique to the runner type.
-    type Config: Clone;
+    type Config: Clone + Send + Sync + 'static;
 
     /// Timeout for the `Provisioning` stage in which resources are provisioned.
     const DEFAULT_PROVISIONING_TIMEOUT: Duration;
@@ -126,6 +128,35 @@ pub trait PipelineExecutor: Sync + Send {
     ///
     /// This is called during the `Clearing` storage status.
     async fn clear(&mut self, deployment_config: &serde_json::Value) -> Result<(), ManagerError>;
+
+    /// Observes what exists for the pipeline now. Called by the runner's HTTP server, not by
+    /// the automaton, so it has no `self`. Compute is expected to reach `compute_expected` and
+    /// storage `storage_expected`. The default returns the spec only.
+    async fn observe_deployment(
+        _config: &Self::Config,
+        _pipeline_id: PipelineId,
+        deployment_config: Option<&serde_json::Value>,
+        _compute_expected: DeploymentState,
+        _storage_expected: DeploymentState,
+    ) -> Result<PipelineDeployment, ManagerError> {
+        Ok(PipelineDeployment {
+            spec: deployment_spec(deployment_config),
+            status: None,
+        })
+    }
+}
+
+/// The spec part of a deployment, from the stored `deployment_config`. `resources` that do not
+/// parse give an empty spec: the config was validated when it was stored, so this only happens
+/// after an incompatible change to `ResourceConfig`.
+pub fn deployment_spec(deployment_config: Option<&serde_json::Value>) -> DeploymentSpec {
+    let resources = deployment_config
+        .and_then(|config| config.get("resources"))
+        .and_then(|resources| ResourceConfig::deserialize(resources).ok())
+        .unwrap_or_default();
+    DeploymentSpec {
+        resources: (&resources).into(),
+    }
 }
 
 /// Discovers the namespace from a pipeline configuration JSON and returns it.
@@ -147,10 +178,11 @@ pub fn discover_namespace_from_pipeline_config_json(config: &serde_json::Value) 
 
 #[cfg(test)]
 mod test {
-    use super::discover_namespace_from_pipeline_config_json;
+    use super::{deployment_spec, discover_namespace_from_pipeline_config_json};
     use crate::db::types::pipeline::PipelineId;
     use crate::db::types::program::generate_pipeline_config;
     use crate::db::types::utils::validate_runtime_config;
+    use feldera_types::size::ConfigSize;
     use serde_json::json;
     use uuid::Uuid;
 
@@ -249,5 +281,26 @@ mod test {
             discover_namespace_from_pipeline_config_json(&value),
             Some("example".to_string())
         );
+    }
+
+    /// The spec reads the resources of the deployment config, which a resize changes.
+    #[test]
+    fn deployment_spec_reads_deployment_config_resources() {
+        // A config kept from before 0.367.0 has the megabyte spelling.
+        for resources in [
+            json!({"cpu_cores_min": 2.0, "memory_max": "8000M", "storage_min": "1G"}),
+            json!({"cpu_cores_min": 2.0, "memory_mb_max": 8000, "storage_mb_min": 1000}),
+        ] {
+            let config = json!({"workers": 4, "resources": resources});
+            let resources = deployment_spec(Some(&config)).resources;
+            assert_eq!(resources.cpu_cores_min, Some(2.0));
+            assert_eq!(resources.memory_max, Some(ConfigSize::from_mb(8000)));
+            assert_eq!(resources.storage_min, Some(ConfigSize::from_mb(1000)));
+            assert_eq!(resources.cpu_cores_max, None);
+        }
+
+        assert_eq!(deployment_spec(None), Default::default());
+        let malformed = json!({"resources": {"cpu_cores_min": "two"}});
+        assert_eq!(deployment_spec(Some(&malformed)), Default::default());
     }
 }
