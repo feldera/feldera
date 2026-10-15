@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceLazyMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -216,6 +217,16 @@ public class MerkleOuter extends CircuitVisitor {
             // Identical operators at different depths are NOT equivalent
             this.label("depth");
             this.stream.append(this.context.size());
+            if (MerkleOuter.this.includeInputs && !operator.is(IInputOperator.class)) {
+                // For non-input operators mix into the hash the output types
+                // Input operators already hash the schema
+                StringBuilder types = new StringBuilder();
+                for (int i = 0; i < operator.outputCount(); i++)
+                    if (operator.hasOutput(i))
+                        types.append(operator.outputType(i)).append(";");
+                this.label("outputTypes");
+                this.stream.append(MerkleInner.hash(types.toString()).toString());
+            }
             String prefix = MerkleOuter.this.prefixes.get(operator);
             if (prefix != null) {
                 this.label("prefix");
