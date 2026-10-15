@@ -69,8 +69,8 @@ export const test = base.extend<object, { viewer: Page }>({
 /**
  * Undoes what a test did to the viewer: removes the annotations, closes a menu or a list, unpins the
  * node information, clears the search, moves the view back to where the profile opened, scrolls the
- * panes to the top, and shows the Overview of the metrics. A test that collapses a region or expands
- * a row of bars collapses it again.
+ * panes to the top, and opens the Overview of the Metrics tab. A test that collapses a region, expands
+ * a row of bars or opens the details of an event undoes this change itself.
  */
 async function resetViewer(page: Page) {
   await clearAnnotations(page)
@@ -84,7 +84,10 @@ async function resetViewer(page: Page) {
   })
   await page.keyboard.press('Escape')
   await page.getByPlaceholder('Search node').fill('')
-  await page.locator('[data-pane]').nth(3).getByText('Overview', { exact: true }).click()
+  const analysis = page.locator('[data-pane]').nth(3)
+  // The tabs of the analysis panel are a radio group.
+  await analysis.getByRole('radiogroup').getByText('Metrics', { exact: true }).click()
+  await analysis.getByText('Overview', { exact: true }).click()
   await page.mouse.move(0, 0)
 }
 
