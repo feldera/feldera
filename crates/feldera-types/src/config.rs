@@ -1919,6 +1919,43 @@ pub fn to_legacy_duration_spelling(config: &mut serde_json::Value) {
     }
 }
 
+/// Which settings a runtime reads only in their older spelling, because it
+/// predates the release that renamed them.
+///
+/// The pipeline manager computes this for the runtime a pipeline runs, and the
+/// executors apply it to the configuration they hand the pipeline process.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LegacySpelling {
+    /// The runtime predates the duration rename (release 0.366.0).
+    pub durations: bool,
+    /// The runtime predates the size rename (release 0.367.0).
+    pub sizes: bool,
+}
+
+impl LegacySpelling {
+    /// A runtime that reads every current spelling.
+    pub const NONE: LegacySpelling = LegacySpelling {
+        durations: false,
+        sizes: false,
+    };
+
+    /// Whether any setting must be rewritten.
+    pub fn any(self) -> bool {
+        self.durations || self.sizes
+    }
+
+    /// Rewrites `config`, a serialized [`RuntimeConfig`] or
+    /// [`PipelineConfig`], in the spellings the runtime reads.
+    pub fn apply(self, config: &mut serde_json::Value) {
+        if self.durations {
+            to_legacy_duration_spelling(config);
+        }
+        if self.sizes {
+            to_legacy_size_spelling(config);
+        }
+    }
+}
+
 /// Rewrites the size settings of a serialized pipeline configuration in the
 /// spelling that Feldera releases before the size rename read: under the older
 /// key, as a whole number of the unit that key named.
@@ -2753,6 +2790,37 @@ mod test {
         );
         let reread: PipelineConfig = serde_json::from_value(value).unwrap();
         assert_eq!(reread, config);
+    }
+
+    /// The executors rewrite only what the runtime needs: a runtime from
+    /// between the two renames gets the current durations and the older sizes.
+    #[test]
+    fn legacy_spelling_applies_each_rename_separately() {
+        let current = serde_json::json!({"clock_resolution": "1s", "max_rss": "16G"});
+        let mut both = current.clone();
+        super::LegacySpelling {
+            durations: true,
+            sizes: true,
+        }
+        .apply(&mut both);
+        assert_eq!(
+            both,
+            serde_json::json!({"clock_resolution_usecs": 1_000_000, "max_rss_mb": 16_000})
+        );
+        let mut sizes_only = current.clone();
+        super::LegacySpelling {
+            durations: false,
+            sizes: true,
+        }
+        .apply(&mut sizes_only);
+        assert_eq!(
+            sizes_only,
+            serde_json::json!({"clock_resolution": "1s", "max_rss_mb": 16_000})
+        );
+        let mut none = current.clone();
+        super::LegacySpelling::NONE.apply(&mut none);
+        assert_eq!(none, current);
+        assert!(!super::LegacySpelling::NONE.any());
     }
 
     #[test]
