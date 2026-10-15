@@ -8,9 +8,10 @@
 
 use std::{
     iter::zip,
+    mem,
     net::TcpListener,
     ops::Range,
-    panic::resume_unwind,
+    panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     path::Path,
     sync::Arc,
     thread,
@@ -350,51 +351,59 @@ where
     /// Calls `f` on the handle of each host, each in a thread of its own, and
     /// waits until all of the calls return.
     ///
-    /// If a call panics, this panics with the same payload after all of the
-    /// calls end.
+    /// If a call panics, this panics with the same payload at once, without
+    /// waiting for the other calls, which can wait forever for a worker that
+    /// panicked.  Those calls and their hosts are left behind.
     ///
     /// # Returns
     ///
     /// The value that `f` returned for each host, in order of host index.
-    pub(crate) fn map<R>(&mut self, f: impl Fn(&mut DBSPHandle) -> R + Sync) -> Vec<R>
+    pub(crate) fn map<R>(
+        &mut self,
+        f: impl Fn(&mut DBSPHandle) -> R + Send + Sync + 'static,
+    ) -> Vec<R>
     where
-        R: Send,
+        R: Send + 'static,
     {
-        self.map_with_index(|_host, handle| f(handle))
+        self.map_with_index(move |_host, handle| f(handle))
     }
 
     /// Like [TestHosts::map], but `f` also receives the index of the host,
     /// for a call that takes a different argument on each host.
     pub(crate) fn map_with_index<R>(
         &mut self,
-        f: impl Fn(usize, &mut DBSPHandle) -> R + Sync,
+        f: impl Fn(usize, &mut DBSPHandle) -> R + Send + Sync + 'static,
     ) -> Vec<R>
     where
-        R: Send,
+        R: Send + 'static,
     {
-        thread::scope(|scope| {
-            let threads: Vec<_> = self
-                .handles
-                .iter_mut()
-                .enumerate()
-                .map(|(host, handle)| {
-                    let f = &f;
-                    scope.spawn(move || f(host, handle))
-                })
-                .collect();
-            threads
-                .into_iter()
-                .map(|thread| {
-                    thread
-                        .join()
-                        .unwrap_or_else(|payload| resume_unwind(payload))
-                })
-                .collect()
-        })
+        // Each thread owns the handle of its host and returns it with the
+        // value, so that this can return while another thread still waits.
+        let f = Arc::new(f);
+        let (sender, receiver) = unbounded();
+        let n_hosts = self.handles.len();
+        for (host, mut handle) in mem::take(&mut self.handles).into_iter().enumerate() {
+            let f = f.clone();
+            let sender = sender.clone();
+            thread::spawn(move || {
+                let value = catch_unwind(AssertUnwindSafe(|| f(host, &mut handle)));
+                let _ = sender.send((host, handle, value));
+            });
+        }
+
+        let mut handles: Vec<Option<DBSPHandle>> = (0..n_hosts).map(|_| None).collect();
+        let mut values: Vec<Option<R>> = (0..n_hosts).map(|_| None).collect();
+        for _ in 0..n_hosts {
+            let (host, handle, value) = receiver.recv().unwrap();
+            handles[host] = Some(handle);
+            values[host] = Some(value.unwrap_or_else(|payload| resume_unwind(payload)));
+        }
+        self.handles = handles.into_iter().map(Option::unwrap).collect();
+        values.into_iter().map(Option::unwrap).collect()
     }
 
     /// Like [TestHosts::map], for a function that returns nothing.
-    pub(crate) fn for_each(&mut self, f: impl Fn(&mut DBSPHandle) + Sync) {
+    pub(crate) fn for_each(&mut self, f: impl Fn(&mut DBSPHandle) + Send + Sync + 'static) {
         self.map(f);
     }
 
@@ -552,7 +561,9 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{TestHosts, with_host_storage};
-    use crate::{OrdZSet, OutputHandle, ZSetHandle, typed_batch::IndexedZSetReader, utils::Tup2};
+    use crate::{
+        OrdZSet, OutputHandle, Runtime, ZSetHandle, typed_batch::IndexedZSetReader, utils::Tup2,
+    };
 
     /// The handles of the circuit in [restart_keeps_the_state_of_every_host].
     type Handles = (ZSetHandle<u64>, OutputHandle<OrdZSet<u64>>);
@@ -617,5 +628,22 @@ mod tests {
             integral(&hosts),
             OrdZSet::from_keys((), (0..32).map(|key| Tup2(key, 1)).collect())
         );
+    }
+
+    /// A worker panic on one host fails the transaction at once, although the
+    /// other host waits forever for the worker that panicked.
+    #[test]
+    #[should_panic(expected = "worker 0 fails in its first step")]
+    fn step_fails_on_worker_panic() {
+        let mut hosts = TestHosts::start(4, 2, |circuit| {
+            let (input, handle) = circuit.add_input_zset::<u64>();
+            input.inspect(|_| {
+                if Runtime::worker_index() == 0 {
+                    panic!("worker 0 fails in its first step");
+                }
+            });
+            Ok(handle)
+        });
+        hosts.transaction();
     }
 }
