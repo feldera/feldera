@@ -996,6 +996,8 @@ public class ConnectorTests extends BaseSQLTests {
 
     @Test
     public void postgresCdcReaderRejectsZeroBatchMaxBytes() {
+        // The deprecated spelling, a number of bytes, is still checked, and the
+        // error names the key the user wrote.
         tableConnectorTest("""
                 "transport": {
                   "name": "postgres_cdc_input",
@@ -1008,7 +1010,117 @@ public class ConnectorTests extends BaseSQLTests {
                     }
                   }
                 }""",
-                "\"batch.max_bytes\" must be greater than 0");
+                "\"batch.max_bytes\" is '0'; it must be greater than 0");
+    }
+
+    @Test
+    public void postgresCdcReaderBatchMaxSize() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders",
+                    "batch": {
+                      "max_size": "4Mi"
+                    }
+                  }
+                }""");
+    }
+
+    @Test
+    public void postgresCdcReaderRejectsZeroBatchMaxSize() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders",
+                    "batch": {
+                      "max_size": "0"
+                    }
+                  }
+                }""",
+                "\"batch.max_size\" is '0'; it must be greater than 0, for example \"32Mi\"");
+    }
+
+    /** The runtime refuses null for a size that has a default but cannot be unset. */
+    @Test
+    public void requiredSizesRejectNull() {
+        for (String key: new String[] { "max_size", "max_bytes" })
+            tableConnectorTest("""
+                    "transport": {
+                      "name": "postgres_cdc_input",
+                      "config": {
+                        "uri": "postgres://localhost/db",
+                        "publication": "my_pub",
+                        "source_table": "public.orders",
+                        "batch": {
+                          "%s": null
+                        }
+                      }
+                    }""".formatted(key),
+                    "\"batch." + key + "\" cannot be null; remove it to use the default");
+        for (String key: new String[] { "max_buffer_size", "max_buffer_size_bytes" }) {
+            viewConnectorTest("""
+                    "transport": {
+                      "name": "postgres_output",
+                      "config": {
+                        "uri": "postgres://localhost/db",
+                        "table": "t",
+                        "%s": null
+                      }
+                    }""".formatted(key),
+                    "\"" + key + "\" cannot be null; remove it to use the default");
+            viewConnectorTest("""
+                    "transport": {
+                      "name": "dynamodb_output",
+                      "config": {
+                        "table": "my-table",
+                        "region": "us-east-1",
+                        "%s": null
+                      }
+                    }""".formatted(key),
+                    "\"" + key + "\" cannot be null; remove it to use the default");
+        }
+    }
+
+    @Test
+    public void postgresCdcReaderRejectsMalformedBatchMaxSize() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders",
+                    "batch": {
+                      "max_size": "4m"
+                    }
+                  }
+                }""",
+                "\"batch.max_size\": unknown unit 'm' in size '4m'");
+    }
+
+    /** Both spellings of the batch size reach one setting, so writing both is rejected. */
+    @Test
+    public void postgresCdcReaderRejectsBothBatchSizeSpellings() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders",
+                    "batch": {
+                      "max_size": "4Mi",
+                      "max_bytes": 4194304
+                    }
+                  }
+                }""",
+                "\"batch.max_bytes\" is another spelling of \"batch.max_size\"");
     }
 
     @Test
@@ -1076,6 +1188,29 @@ public class ConnectorTests extends BaseSQLTests {
                   }
                 }""",
                 "\"cdc_op_column\" cannot be empty in CDC mode");
+    }
+
+    @Test
+    public void postgresWriterBufferSize() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "postgres_output",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "table": "t",
+                    "max_buffer_size": "512Ki"
+                  }
+                }""");
+        viewConnectorTest("""
+                "transport": {
+                  "name": "postgres_output",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "table": "t",
+                    "max_buffer_size": "0"
+                  }
+                }""",
+                "\"max_buffer_size\" is '0'; it must be greater than 0, for example \"1Mi\"");
     }
 
     @Test
@@ -1389,6 +1524,39 @@ public class ConnectorTests extends BaseSQLTests {
     }
 
     @Test
+    public void fileInputBufferSize() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "file_input",
+                  "config": {
+                    "path": "/data/input.csv",
+                    "buffer_size": "64Ki"
+                  }
+                }""");
+        tableConnectorTest("""
+                "transport": {
+                  "name": "file_input",
+                  "config": {
+                    "path": "/data/input.csv",
+                    "buffer_size_bytes": 65536
+                  }
+                }""");
+    }
+
+    @Test
+    public void fileInputMalformedBufferSize() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "file_input",
+                  "config": {
+                    "path": "/data/input.csv",
+                    "buffer_size": "64KB "
+                  }
+                }""",
+                "\"buffer_size\": unknown unit 'KB ' in size '64KB '");
+    }
+
+    @Test
     public void fileOutputUnknownField() {
         viewConnectorTest("""
                 "transport": {
@@ -1481,6 +1649,53 @@ public class ConnectorTests extends BaseSQLTests {
                     "region": "us-east-1"
                   }
                 }""");
+    }
+
+    @Test
+    public void dynamodbOutputBufferSize() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "dynamodb_output",
+                  "config": {
+                    "table": "my-table",
+                    "region": "us-east-1",
+                    "max_buffer_size": "2Mi"
+                  }
+                }""");
+        // The deprecated spelling counts bytes.
+        viewConnectorTest("""
+                "transport": {
+                  "name": "dynamodb_output",
+                  "config": {
+                    "table": "my-table",
+                    "region": "us-east-1",
+                    "max_buffer_size_bytes": 2097152
+                  }
+                }""");
+    }
+
+    @Test
+    public void dynamodbOutputRejectsZeroBufferSize() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "dynamodb_output",
+                  "config": {
+                    "table": "my-table",
+                    "region": "us-east-1",
+                    "max_buffer_size": "0"
+                  }
+                }""",
+                "\"max_buffer_size\" is '0'; it must be greater than 0, for example \"1Mi\"");
+        viewConnectorTest("""
+                "transport": {
+                  "name": "dynamodb_output",
+                  "config": {
+                    "table": "my-table",
+                    "region": "us-east-1",
+                    "max_buffer_size_bytes": 0
+                  }
+                }""",
+                "\"max_buffer_size_bytes\" is '0'; it must be greater than 0");
     }
 
     @Test
