@@ -1437,20 +1437,16 @@ async fn a_failed_lookup_does_not_leave_its_probes_running() {
     );
 }
 
-/// A commit whose response was lost has landed. Committing its actions again must not log its
-/// adds a second time, or a streaming reader would read those rows twice.
-#[tokio::test]
-async fn a_commit_that_already_landed_is_not_repeated() {
-    let dir = TempDir::new().unwrap();
-    let table = fixture_table(&dir, &[1, 2], true).await;
-    let mut stale = table.clone();
-
+/// Writes a data file with the row `(id, "v{id}")` into `table`'s directory, and returns
+/// the actions that would commit it.
+#[cfg(test)]
+async fn write_row(table: &DeltaTable, id: i64) -> Vec<Action> {
     let schema = Arc::new(arrow_schema());
     let batch = RecordBatch::try_new(
         schema.clone(),
         vec![
-            Arc::new(Int64Array::from(vec![3])),
-            Arc::new(StringArray::from(vec!["v3"])),
+            Arc::new(Int64Array::from(vec![id])),
+            Arc::new(StringArray::from(vec![format!("v{id}")])),
         ],
     )
     .unwrap();
@@ -1470,13 +1466,78 @@ async fn a_commit_that_already_landed_is_not_repeated() {
         ),
     );
     writer.write(&batch).await.unwrap();
-    let actions: Vec<Action> = writer
+    writer
         .close()
         .await
         .unwrap()
         .into_iter()
         .map(Action::Add)
-        .collect();
+        .collect()
+}
+
+/// A post-commit hook (checkpoint) that fails after the commit is in the log must not fail
+/// the commit, or the caller would redo the flush and log its rows a second time.
+#[tokio::test]
+async fn a_failed_checkpoint_does_not_fail_the_commit() {
+    let dir = TempDir::new().unwrap();
+    let table = fixture_table(&dir, &[1, 2], true).await;
+    // Checkpoint every version, and make the checkpoint of the next one fail.
+    let mut table = table
+        .set_tbl_properties()
+        .with_properties(HashMap::from([(
+            "delta.checkpointInterval".to_string(),
+            "1".to_string(),
+        )]))
+        .await
+        .unwrap();
+    let next = table.version().unwrap() + 1;
+    let blocker = dir
+        .path()
+        .join(format!("_delta_log/{next:020}.checkpoint.parquet"));
+    std::fs::create_dir_all(&blocker).unwrap();
+
+    let actions = write_row(&table, 3).await;
+    let operation = DeltaOperation::Write {
+        mode: SaveMode::Append,
+        partition_by: None,
+        predicate: None,
+    };
+    let checkpoint = super::commit_actions(&mut table, actions, operation.clone())
+        .await
+        .expect("the commit landed, so it must not report an error");
+
+    assert_eq!(
+        checkpoint,
+        super::PostCommitHook::Failed {
+            version: next,
+            checkpoint_due: true
+        }
+    );
+    assert!(blocker.is_dir(), "the checkpoint was written after all");
+    assert_eq!(table.version(), Some(next));
+    assert_eq!(live_ids(&table).await, vec![1, 2, 3]);
+
+    // The next checkpoint is not blocked, and the caller learns that it was written.
+    let actions = write_row(&table, 4).await;
+    let checkpoint = super::commit_actions(&mut table, actions, operation)
+        .await
+        .unwrap();
+    assert_eq!(
+        checkpoint,
+        super::PostCommitHook::Ran {
+            checkpoint_written: true
+        }
+    );
+}
+
+/// A commit whose response was lost has landed. Committing its actions again must not log its
+/// adds a second time, or a streaming reader would read those rows twice.
+#[tokio::test]
+async fn a_commit_that_already_landed_is_not_repeated() {
+    let dir = TempDir::new().unwrap();
+    let table = fixture_table(&dir, &[1, 2], true).await;
+    let mut stale = table.clone();
+    let actions = write_row(&table, 3).await;
     let operation = DeltaOperation::Write {
         mode: SaveMode::Append,
         partition_by: None,

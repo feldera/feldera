@@ -26,6 +26,7 @@ use deltalake::kernel::transaction::{
 };
 use deltalake::kernel::{Action, DeletionVectorDescriptor};
 use deltalake::protocol::DeltaOperation;
+use deltalake::table::config::TablePropertiesExt;
 use deltalake::{DeltaTable, DeltaTableError};
 use feldera_adapterlib::utils::backoff::calculate_backoff_delay;
 use std::collections::HashMap;
@@ -99,6 +100,35 @@ pub(crate) mod tombstone;
 /// How often a commit moves onto a newer table version before the caller redoes its work.
 const COMMIT_ATTEMPTS: usize = 5;
 
+/// The outcome of the delta-rs post-commit hook, which runs after a commit is in the log.
+///
+/// The hook reloads the table at the new version, writes a checkpoint when one is due, and
+/// cleans up expired log files.  It can fail after the commit landed, and the commit stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostCommitHook {
+    /// The hook ran, and wrote a checkpoint or not.
+    Ran { checkpoint_written: bool },
+    /// The hook failed after the commit landed at `version`.  `table` can still hold the
+    /// snapshot from before the commit, so the caller must reload it before a lookup.  When
+    /// `checkpoint_due`, the checkpoint of `version` is missing.
+    Failed { version: u64, checkpoint_due: bool },
+}
+
+impl Default for PostCommitHook {
+    fn default() -> Self {
+        Self::Ran {
+            checkpoint_written: false,
+        }
+    }
+}
+
+/// Whether the post-commit hook writes a checkpoint at `version`, decided as delta-rs does.
+pub(crate) fn checkpoint_due(table: &DeltaTable, version: u64) -> bool {
+    table.snapshot().is_ok_and(|snapshot| {
+        (version + 1).is_multiple_of(snapshot.table_config().checkpoint_interval().get())
+    })
+}
+
 /// Commit `actions` and advance `table` to the committed version.
 ///
 /// Never trusts delta-rs's conflict checker: since delta-rs#4568 it lets a remove commit over
@@ -109,19 +139,55 @@ pub(crate) async fn commit_actions(
     table: &mut DeltaTable,
     actions: Vec<Action>,
     operation: DeltaOperation,
-) -> AnyResult<()> {
+) -> AnyResult<PostCommitHook> {
     for _ in 0..COMMIT_ATTEMPTS {
         let read_snapshot = table.state.as_ref().map(|s| s as &dyn TableReference);
-        let committed = CommitBuilder::from(CommitProperties::default().with_max_retries(0))
+        let committed = match CommitBuilder::from(CommitProperties::default().with_max_retries(0))
             .with_actions(actions.clone())
             .build(read_snapshot, table.log_store(), operation.clone())
-            .await;
+            .into_prepared_commit_future()
+            .await
+        {
+            Ok(prepared) => prepared.await,
+            Err(e) => Err(e),
+        };
         match committed {
-            Ok(finalized) => {
-                // The next flush looks up rows in this snapshot, so it must include what this
-                // commit wrote; otherwise an update to a row inserted here would duplicate it.
-                table.state = Some(finalized.snapshot);
-                return Ok(());
+            Ok(post_commit) => {
+                // The commit is in the log.  A failed post-commit hook (checkpoint) must not
+                // fail it, or the caller would redo the flush and log its rows a second time.
+                let version = post_commit.version;
+                return Ok(match post_commit.await {
+                    // The next flush looks up rows in this snapshot, so it must include what
+                    // this commit wrote; otherwise an update to a row inserted here would
+                    // duplicate it.
+                    Ok(finalized) => {
+                        table.state = Some(finalized.snapshot);
+                        PostCommitHook::Ran {
+                            checkpoint_written: finalized.metrics.new_checkpoint_created,
+                        }
+                    }
+                    Err(e) => {
+                        let checkpoint_due = checkpoint_due(table, version);
+                        warn!(
+                            "committed Delta table version {version}, but its post-commit hook \
+                             failed{}: {e:?}",
+                            if checkpoint_due {
+                                " (checkpoint not written)"
+                            } else {
+                                " (no checkpoint was due: reloading or cleaning up the log failed)"
+                            }
+                        );
+                        // Best effort.  An error here must not fail the commit either, so the
+                        // caller reloads the table before its next lookup.
+                        if let Err(e) = table.update_incremental(Some(version)).await {
+                            warn!("error reloading the Delta table at version {version}: {e:?}");
+                        }
+                        PostCommitHook::Failed {
+                            version,
+                            checkpoint_due,
+                        }
+                    }
+                });
             }
             // `max_retries(0)` reports a newer version this way.
             Err(DeltaTableError::Transaction {
@@ -141,7 +207,7 @@ pub(crate) async fn commit_actions(
                 // fresh names, so finding one live proves it, and committing again would log
                 // every add twice for a streaming reader.
                 if already_committed(table, &actions)? {
-                    return Ok(());
+                    return Ok(PostCommitHook::default());
                 }
                 if let Some(path) = first_stale_remove(table, &actions)? {
                     return Err(anyhow!(
