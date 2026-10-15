@@ -276,21 +276,98 @@ export const staleSampleCount = (
   return Math.max(stale, samples.length - maxSamples)
 }
 
+const bytesPerUnit: Record<string, number> = {
+  '': 1,
+  k: 1e3,
+  K: 1e3,
+  M: 1e6,
+  G: 1e9,
+  T: 1e12,
+  P: 1e15,
+  E: 1e18,
+  Ki: 2 ** 10,
+  Mi: 2 ** 20,
+  Gi: 2 ** 30,
+  Ti: 2 ** 40,
+  Pi: 2 ** 50,
+  Ei: 2 ** 60
+}
+
 /**
- * Memory limit on a multi-host deployment, in MB.
+ * Bytes of a configuration size such as `"16G"`, `"4Gi"` or `"4096"`.
  *
- * `memory_mb_max` is the individual host's limit, but the reported memory metric
+ * The syntax is the one the pipeline reads: a number and a decimal or binary
+ * unit, with an optional trailing `B`. A number stands for the setting's
+ * deprecated spelling, which counted `legacyUnit`s, so a stored
+ * `memory_mb_max: 16000` reads as 16 GB.
+ *
+ * @param size - The size as configured, in either spelling.
+ * @param legacyUnit - The unit a bare number counts, such as `'M'`.
+ * @returns The size in bytes, or undefined when it is unset or malformed.
+ */
+export const configSizeBytes = (
+  size: string | number | null | undefined,
+  legacyUnit: keyof typeof bytesPerUnit = ''
+): number | undefined => {
+  if (size === null || size === undefined) {
+    return undefined
+  }
+  if (typeof size === 'number') {
+    return Number.isFinite(size) && size >= 0 ? size * bytesPerUnit[legacyUnit] : undefined
+  }
+  const match = /^\+?(\d*)(?:\.(\d*))?([A-Za-z]*)$/.exec(size)
+  if (!match) {
+    return undefined
+  }
+  const [, whole, fraction, unit] = match
+  const unitName = unit.endsWith('B') ? unit.slice(0, -1) : unit
+  const unitBytes = Object.hasOwn(bytesPerUnit, unitName) ? bytesPerUnit[unitName] : undefined
+  if (unitBytes === undefined || (whole === '' && (fraction ?? '') === '')) {
+    return undefined
+  }
+  return Math.round(Number(`${whole || '0'}.${fraction || '0'}`) * unitBytes)
+}
+
+/**
+ * A size setting of `resources`, read from the current name or from the
+ * deprecated megabyte count a configuration stored before the size rename
+ * still carries.
+ *
+ * @param resources - `runtimeConfig.resources`, in whichever spelling it holds.
+ * @param name - The current name of the setting, such as `'memory_max'`.
+ * @param legacyName - The deprecated name, such as `'memory_mb_max'`.
+ * @returns The size in bytes, or undefined when it is unset or malformed.
+ */
+export const resourceSizeBytes = (
+  resources: Record<string, unknown> | null | undefined,
+  name: string,
+  legacyName: string
+): number | undefined => {
+  // A bare number under either name is read in megabytes, as the pipeline
+  // reads it.
+  const current = resources?.[name]
+  if (current !== null && current !== undefined) {
+    return configSizeBytes(current as string | number, 'M')
+  }
+  return configSizeBytes(resources?.[legacyName] as string | number | null | undefined, 'M')
+}
+
+/**
+ * Memory limit on a multi-host deployment, in bytes.
+ *
+ * `memory_max` is the individual host's limit, but the reported memory metric
  * is the sum of resident memory across all hosts in a multihost deployment.
  * To keep the limit line meaningful, multiply the per-host limit by the number of hosts.
  *
- * @param perHostMemoryMb - Per-host limit `runtimeConfig.resources.memory_mb_max`, in MB.
+ * @param perHostMemoryBytes - Per-host limit `runtimeConfig.resources.memory_max`, in bytes.
  * @param hosts - Number of hosts `runtimeConfig.hosts`; treated as at least 1.
- * @returns The aggregate limit in MB, or undefined when no limit is configured.
+ * @returns The aggregate limit in bytes, or undefined when no limit is configured.
  */
-export const multihostMemoryLimitMb = (
-  perHostMemoryMb: number | null | undefined,
+export const multihostMemoryLimitBytes = (
+  perHostMemoryBytes: number | null | undefined,
   hosts: number | null | undefined
-): number | undefined => (perHostMemoryMb ? perHostMemoryMb * Math.max(hosts ?? 1, 1) : undefined)
+): number | undefined =>
+  perHostMemoryBytes ? perHostMemoryBytes * Math.max(hosts ?? 1, 1) : undefined
 
 /**
  * Throughput time series: records added between consecutive samples, stamped
