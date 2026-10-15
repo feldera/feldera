@@ -170,6 +170,14 @@ Source edition can be found on github.
 - Pipelines write a checkpoint on `SIGTERM` before they exit.  See
   [Writing checkpoints](/pipelines/fault-tolerance#writing-checkpoints).
 
+- The Kafka output connector now writes keyed messages with exactly-once
+  fault tolerance, for example from the JSON `debezium` format or from
+  `key_fields`.  These messages were previously reported as errors and not
+  written.  Messages with the same key now go to the same partition in order,
+  so consumers can share a topic's partitions.  Keyless messages are written
+  as before.  Tombstones are still not supported in this mode.  See
+  [message keys with exactly-once fault tolerance](/connectors/sinks/kafka#message-keys-with-exactly-once-fault-tolerance).
+
 ## v0.365.0
 
 - New connector (`nats_output`): write view output to a NATS subject. The
