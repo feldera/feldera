@@ -9,7 +9,7 @@ use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::combined_status::{CombinedDesiredStatus, CombinedStatus, combine_since};
 use crate::db::types::deployment::{
-    PipelineDeploymentConfig, check_unchanged_deployment_config, deployment_config_view,
+    DynamicConfig, check_unchanged_deployment_config, deployment_config_view,
     parse_deployment_config_patch,
 };
 use crate::db::types::pipeline::{
@@ -107,7 +107,7 @@ pub struct PipelineInfo {
     pub runtime_config: RuntimeConfig,
     /// The CPU and memory of the pipeline's current or last deployment, or `null` before its
     /// first start. Can differ from `runtime_config` after a `PATCH` of `deployment_config`.
-    pub deployment_config: Option<PipelineDeploymentConfig>,
+    pub deployment_config: Option<DynamicConfig>,
     pub program_code: String,
     pub udf_rust: String,
     pub udf_toml: String,
@@ -277,7 +277,7 @@ pub struct PipelineSelectedInfo {
     /// The CPU and memory of the pipeline's current or last deployment, or `null` before its
     /// first start. Can differ from `runtime_config` after a `PATCH` of `deployment_config`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub deployment_config: Option<Option<PipelineDeploymentConfig>>,
+    pub deployment_config: Option<Option<DynamicConfig>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub program_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -649,7 +649,7 @@ pub struct PostPutPipeline {
     pub runtime_config: Option<RuntimeConfig>,
     /// Must be absent, `null`, or equal to the stored value, so a pipeline read with `GET` can be
     /// written back. Change it with `PATCH` while the pipeline is running.
-    pub deployment_config: Option<PipelineDeploymentConfig>,
+    pub deployment_config: Option<DynamicConfig>,
     pub program_code: String,
     pub udf_rust: Option<String>,
     pub udf_toml: Option<String>,
@@ -713,7 +713,7 @@ pub struct PatchPipeline {
     /// Changes the CPU and memory of a running pipeline in place (experimental). Cannot be
     /// combined with other fields. The change lasts across restarts until storage is cleared
     /// or CPU or memory is changed in `runtime_config`.
-    pub deployment_config: Option<PipelineDeploymentConfig>,
+    pub deployment_config: Option<DynamicConfig>,
     pub program_code: Option<String>,
     pub udf_rust: Option<String>,
     pub udf_toml: Option<String>,
