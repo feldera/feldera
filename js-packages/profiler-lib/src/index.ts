@@ -25,6 +25,7 @@ export {
     CountValue,
     TimeValue,
     BooleanValue,
+    StringValue,
     PercentValue,
     RatioValue,
     type JsonProfiles
