@@ -1,5 +1,10 @@
 <script lang="ts">
   import { count } from 'common-lib/array'
+  import { formatDuration, formatQty } from 'common-lib/format'
+  import { humanSize } from 'common-lib/string'
+  import type { Snippet } from 'svelte'
+  import type { HTMLAttributes } from 'svelte/elements'
+  import ClipboardCopyButton from './ClipboardCopyButton.svelte'
   import type {
     AggregatedInputEndpointMetrics,
     AggregatedMetrics,
@@ -8,13 +13,8 @@
     ConnectorMetrics,
     InputEndpointMetrics,
     OutputEndpointMetrics
-  } from 'common-lib/connectorMetrics'
-  import { formatDuration, formatQty } from 'common-lib/format'
-  import { defaultLatencyColorSpread, latencyColor, latencyColorScale } from 'common-lib/latencyColor'
-  import { humanSize } from 'common-lib/string'
-  import type { Snippet } from 'svelte'
-  import type { HTMLAttributes } from 'svelte/elements'
-  import ClipboardCopyButton from './ClipboardCopyButton.svelte'
+  } from './connectorMetrics'
+  import { defaultLatencyColorSpread, latencyColor, latencyColorScale } from './latencyColor'
   import Popover from './Popover.svelte'
   import SegmentedControl from './SegmentedControl.svelte'
   import { statusChipClass, statusCounterClass, statusToneColors } from './statusTone'

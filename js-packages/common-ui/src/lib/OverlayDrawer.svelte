@@ -1,6 +1,6 @@
 <script lang="ts">
   // https://codesandbox.io/p/sandbox/drawer-with-tailwind-css-48z1k3
-  import type { Snippet } from '$lib/types/svelte'
+  import type { Snippet } from 'svelte'
 
   const openClassNames = {
     right: 'translate-x-0',

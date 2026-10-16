@@ -9,6 +9,7 @@
  * `+layout.ts` does, so relaxing that rule fails these tests rather than silently
  * restoring a menu of dead links.
  */
+import { statusToneColors } from 'common-ui/statusTone'
 import { describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-svelte'
 import type { ClusterHealthStatus } from '$lib/compositions/health/useClusterHealth.svelte'
@@ -29,6 +30,10 @@ vi.mock('$lib/components/other/OidcTrustMenu.svelte', () => ({ default: () => {}
 
 // Imported AFTER vi.mock so the mocks take effect.
 import ProfileButton from './ProfileButton.svelte'
+
+/** Finds an element with the health indicator color of a status tone. */
+const indicatorOf = (tone: keyof typeof statusToneColors) =>
+  document.querySelector(`.${statusToneColors[tone].healthIndicator}`)
 
 const auth = {
   logout: vi.fn(),
@@ -82,7 +87,9 @@ describe('ProfileButton', () => {
     document.querySelector<HTMLButtonElement>('button:has(.fd-circle-user)')!.click()
     await expect.poll(() => document.body.textContent).toContain('Feldera Health')
     const dot = document.querySelector('.h-2\\.5.rounded-full')!
-    expect(dot.className).not.toMatch(/bg-(success|warning|error)-500/)
+    for (const colors of Object.values(statusToneColors)) {
+      expect(dot.className).not.toContain(colors.healthIndicator)
+    }
   })
 
   it('offers cluster health to the lowest role that resolves a tenant', async () => {
@@ -94,15 +101,15 @@ describe('ProfileButton', () => {
   it('marks stale monitoring data as a warning rather than as healthy', async () => {
     state.data = session('read', 't-acme')
     await openMenu({ ...healthStatus, stale: true })
-    expect(document.querySelector('.bg-success-500')).toBeNull()
-    expect(document.querySelector('.bg-warning-500')).not.toBeNull()
+    expect(indicatorOf('jade')).toBeNull()
+    expect(indicatorOf('warning')).not.toBeNull()
   })
 
   it('keeps the recorded major issue red once the data goes stale', async () => {
     state.data = session('read', 't-acme')
     await openMenu({ ...healthStatus, stale: true, runner: 'major_issue' })
-    expect(document.querySelector('.bg-error-500')).not.toBeNull()
-    expect(document.querySelector('.bg-warning-500')).toBeNull()
+    expect(indicatorOf('error')).not.toBeNull()
+    expect(indicatorOf('warning')).toBeNull()
   })
 
   it('hides cluster health when no session data resolved at all', async () => {

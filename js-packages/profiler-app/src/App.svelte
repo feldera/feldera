@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ConnectorStatus } from 'common-lib/connectorMetrics'
+  import type { ConnectorStatus } from 'common-ui/connectorMetrics'
   import {
     createLoadGuard,
     getSuitableProfiles,

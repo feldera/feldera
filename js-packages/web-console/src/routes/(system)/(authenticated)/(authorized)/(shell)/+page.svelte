@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
+  import { InlineDropdown, useIsTablet } from 'common-ui'
   import { slide } from 'svelte/transition'
   import { preloadCode } from '$app/navigation'
   import IconBookOpen from '$assets/icons/feldera-material-icons/book-open.svg?component'
@@ -8,7 +9,6 @@
   import FelderaLogomarkLight from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
   import FelderaLogomarkDark from '$assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
   import ImageBox from '$assets/images/generic/package.svg?component'
-  import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import Footer from '$lib/components/layout/Footer.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
@@ -21,7 +21,6 @@
   import OpenSupportBundleDialog from '$lib/components/supportBundle/OpenSupportBundleDialog.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'

@@ -2,7 +2,7 @@ import {
   type AggregatedInputEndpointMetrics,
   type AggregatedOutputEndpointMetrics,
   aggregateConnectorMetrics
-} from 'common-lib/connectorMetrics'
+} from 'common-ui/connectorMetrics'
 import { discreteDerivative } from 'common-lib/math'
 import { tuple } from 'common-lib/tuple'
 import { ServerDate } from '$lib/compositions/serverTime'

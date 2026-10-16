@@ -1,23 +1,31 @@
-import type {
-  PipelineMonitorEventSelectedInfo,
-  ProgramStatus,
-  ResourcesStatus
-} from '$lib/services/manager'
-import type { HealthEventBucket } from './health'
+// Classifies pipeline monitor events and groups them into incidents. The event type is a
+// structural subset of the pipeline-manager API type, so both a live `/events` response and the
+// `pipeline_events.json` of a support bundle match it.
 
-const PROGRAM_ERROR_STATUSES: ReadonlyArray<ProgramStatus> = [
-  'SystemError',
-  'SqlError',
-  'RustError'
-]
-const TRANSITIONING_RESOURCE_STATUSES: ReadonlyArray<ResourcesStatus> = ['Provisioning', 'Stopping']
+import { type HealthEventBucket, type HealthStatus, healthSeverity } from './healthEvents'
 
-export type PipelineHealthStatus =
-  | 'healthy'
-  | 'unhealthy'
-  | 'major_issue'
-  | 'transitioning'
-  | 'idle'
+/** One pipeline monitor event (`PipelineMonitorEventSelectedInfo` in the OpenAPI spec). The
+ *  `*_details` fields are present only in the extended form of the event. */
+export type PipelineMonitorEvent = {
+  event_id: string
+  recorded_at: string
+  program_status: string
+  storage_status: string
+  storage_status_details?: unknown
+  deployment_has_error: boolean
+  deployment_error?: { message?: string; error_code?: string; details?: unknown } | null
+  deployment_resources_status: string
+  deployment_resources_status_details?: unknown
+  deployment_resources_desired_status: string
+  deployment_runtime_status?: string | null
+  deployment_runtime_status_details?: unknown
+  deployment_runtime_desired_status?: string | null
+}
+
+const PROGRAM_ERROR_STATUSES: ReadonlyArray<string> = ['SystemError', 'SqlError', 'RustError']
+const TRANSITIONING_RESOURCE_STATUSES: ReadonlyArray<string> = ['Provisioning', 'Stopping']
+
+export type PipelineHealthStatus = HealthStatus
 export type PipelineEventTag = 'pipeline'
 export type PipelineHealthBucket = HealthEventBucket<PipelineHealthStatus, PipelineEventTag>
 
@@ -27,7 +35,7 @@ export type IncidentKey = {
   deploymentError: boolean
 }
 
-const isProgramError = (s: ProgramStatus) => PROGRAM_ERROR_STATUSES.includes(s)
+const isProgramError = (s: string) => PROGRAM_ERROR_STATUSES.includes(s)
 
 /**
  * Classify a pipeline monitor event into a display status and an incident
@@ -36,7 +44,7 @@ const isProgramError = (s: ProgramStatus) => PROGRAM_ERROR_STATUSES.includes(s)
  * incident list, but they still carry an incident tuple so callers can use
  * them as segment boundaries when grouping.
  */
-export function categorizePipelineEvent(e: PipelineMonitorEventSelectedInfo): {
+export function categorizePipelineEvent(e: PipelineMonitorEvent): {
   type: PipelineHealthStatus | null
   incident: IncidentKey
 } {
@@ -80,11 +88,11 @@ export type CategorizedPipelineEvent = {
   timestamp: Date
   type: PipelineHealthStatus | null
   incident: IncidentKey
-  raw: PipelineMonitorEventSelectedInfo
+  raw: PipelineMonitorEvent
 }
 
 export function categorizePipelineEvents(
-  events: ReadonlyArray<PipelineMonitorEventSelectedInfo>
+  events: ReadonlyArray<PipelineMonitorEvent>
 ): CategorizedPipelineEvent[] {
   return events.map((e) => {
     const { type, incident } = categorizePipelineEvent(e)
@@ -120,14 +128,6 @@ function describeIncident(k: IncidentKey): { description: string; title: string 
   const description = parts.length ? `Pipeline incident: ${parts.join(', ')}` : 'Pipeline incident'
   const title = parts.length ? `Pipeline ${parts.join(' + ')}` : 'Pipeline incident'
   return { description, title }
-}
-
-const SEVERITY: Record<PipelineHealthStatus, number> = {
-  idle: -1,
-  healthy: 0,
-  transitioning: 1,
-  unhealthy: 2,
-  major_issue: 3
 }
 
 /**
@@ -204,7 +204,7 @@ function foldByIncident(
     if (bucket && bucketIncident && incidentKeyEq(bucketIncident, e.incident)) {
       bucket.timestampTo = e.timestamp
       bucket.events.push({ id: e.id, timestamp: e.timestamp, status: t })
-      if (SEVERITY[t] > SEVERITY[bucket.type]) {
+      if (healthSeverity[t] > healthSeverity[bucket.type]) {
         bucket.type = t
       }
     } else {
@@ -238,7 +238,7 @@ const formatStatusWithDesired = (current: unknown, desired: unknown) => {
   return `${base}, desired is ${desired ?? `(none)`}`
 }
 
-export function formatPipelineEventDescription(e: PipelineMonitorEventSelectedInfo): string {
+export function formatPipelineEventDescription(e: PipelineMonitorEvent): string {
   return [
     `recorded_at: ${formatScalar(e.recorded_at)}`,
     `program_status: ${formatScalar(e.program_status)}`,

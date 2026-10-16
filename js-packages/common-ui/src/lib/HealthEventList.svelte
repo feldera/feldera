@@ -1,9 +1,10 @@
-<script lang="ts" generics="S extends string, T extends string">
+<script lang="ts" generics="S extends HealthStatus, T extends string">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { formatDateTime, formatDateTimeRange } from 'common-lib/format'
+  import type { HealthEventBucket, HealthStatus } from './healthEvents'
   import { slide } from 'svelte/transition'
-  import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
-  import type { HealthEventBucket } from '$lib/functions/pipelines/health'
+  import { healthStatusColors } from './healthStatus'
+  import InlineDropdown from './InlineDropdown.svelte'
 
   type Bucket = HealthEventBucket<S, T>
   type EventDetail = { timestamp: Date; description: string }
@@ -13,21 +14,22 @@
     loadEventDetail,
     onClose,
     onNavigatePrevious,
-    onNavigateNext,
-    getStatusColor
+    onNavigateNext
   }: {
     eventParts: Bucket
     loadEventDetail: (eventId: string, bucket: Bucket) => Promise<EventDetail | null>
     onClose: () => void
     onNavigatePrevious?: () => void
     onNavigateNext?: () => void
-    getStatusColor: (type: S) => string
   } = $props()
 
   // Track loaded event details and loading states
   let fullEvents: (null | EventDetail)[] = $state([])
 
   let loadingStates = $state<boolean[]>([])
+  // Events that have no details or whose details failed to load. loadEvent skips them, because
+  // the effect that loads the open events would otherwise retry them at once and without end.
+  let unavailableStates = $state<boolean[]>([])
   let openStates = $state<boolean[]>([])
 
   // Reset state when eventParts changes
@@ -35,6 +37,7 @@
     eventParts
     fullEvents = Array(eventParts.events.length).fill(null)
     loadingStates = Array(eventParts.events.length).fill(false)
+    unavailableStates = Array(eventParts.events.length).fill(false)
     openStates = Array(eventParts.events.length)
       .fill(false)
       .map((_, i) => i === 0)
@@ -42,7 +45,7 @@
 
   // Load event details on-demand when dropdown is opened
   function loadEvent(index: number) {
-    if (fullEvents[index] !== null || loadingStates[index]) {
+    if (fullEvents[index] !== null || loadingStates[index] || unavailableStates[index]) {
       return
     }
 
@@ -56,6 +59,7 @@
       (detail) => {
         if (!detail) {
           loadingStates[index] = false
+          unavailableStates[index] = true
           return
         }
         if (eventParts === null) {
@@ -67,6 +71,7 @@
       },
       () => {
         loadingStates[index] = false
+        unavailableStates[index] = true
       }
     )
   }
@@ -154,7 +159,7 @@
                 class={'fd fd-chevron-down text-[16px] transition-transform ' +
                   (open ? 'rotate-180' : '')}
               ></div>
-              <div class="h-3 w-3 rounded-full {getStatusColor(event.status)}"></div>
+              <div class="h-3 w-3 rounded-full {healthStatusColors(event.status).healthDot}"></div>
               <span class="text-sm">
                 {formatDateTime(event.timestamp, 'MMM D, YYYY h:mm:ss A')}
               </span>
@@ -166,6 +171,10 @@
                 <div class="rounded font-dm-mono whitespace-pre-wrap">
                   {fullEvents[i]?.description || ''}
                 </div>
+              </div>
+            {:else if unavailableStates[i]}
+              <div transition:slide={{ duration: 150 }} class="px-2 pb-2 text-surface-600-400">
+                The details of this event are not available.
               </div>
             {:else if loadingStates[i]}
               <Progress class="-mt-2 -mb-1 h-1" value={null}>

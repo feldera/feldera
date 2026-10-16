@@ -1,11 +1,10 @@
 <script lang="ts">
-  import type { ConnectorErrorFilter } from 'common-lib/connectorMetrics'
-  import { getCaseDependentName } from 'common-lib/felderaRelation'
+  import type { ConnectorErrorFilter } from 'common-ui/connectorMetrics'
+  import { getCaseDependentName } from 'common-ui/felderaRelation'
   import { formatDateTime } from 'common-lib/format'
-  import { SegmentedControl, Tooltip } from 'common-ui'
+  import { InlineDropdown, SegmentedControl, Tooltip } from 'common-ui'
   import Dayjs from 'dayjs'
   import { fade, slide } from 'svelte/transition'
-  import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   import {
     type ConnectorError,
     type InputEndpointStatus,

@@ -39,7 +39,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 -->
 
 <script lang="ts">
-  import { Popover, Tooltip } from 'common-ui'
+  import { Popover, Tooltip, useIsMobile } from 'common-ui'
   import { slide } from 'svelte/transition'
   import { match, P } from 'ts-pattern'
   import { goto } from '$app/navigation'
@@ -53,7 +53,6 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
   import { duplicatePipeline, duplicatePipelineTooltip } from '$lib/compositions/duplicatePipeline'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import {
     usePipelineList,

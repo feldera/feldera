@@ -1,7 +1,7 @@
 <script lang="ts">
   import triagePlugins, { createBundle, TriageResults } from 'virtual:feldera-triage-plugins'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
-  import type { ConnectorStatus } from 'common-lib/connectorMetrics'
+  import type { ConnectorStatus } from 'common-ui/connectorMetrics'
   import { enclosure, nonNull } from 'common-lib/function'
   import {
     createLoadGuard,

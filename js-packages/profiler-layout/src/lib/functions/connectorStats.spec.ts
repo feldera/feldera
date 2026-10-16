@@ -1,5 +1,5 @@
 import type { ZipItem } from 'but-unzip'
-import { aggregateConnectorMetrics } from 'common-lib/connectorMetrics'
+import { aggregateConnectorMetrics } from 'common-ui/connectorMetrics'
 import { describe, expect, it } from 'vitest'
 import { parseConnectorStatus, processProfileFiles } from './processZipBundle.js'
 

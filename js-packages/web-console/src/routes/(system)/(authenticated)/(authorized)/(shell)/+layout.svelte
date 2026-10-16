@@ -1,12 +1,12 @@
 <script lang="ts">
   import { closedIntervalAction } from 'common-lib/promise'
+  import { OverlayDrawer } from 'common-ui'
   import Dayjs from 'dayjs'
   import { invalidateAll } from '$app/navigation'
   import { page } from '$app/state'
   import SvelteKitTopLoader from '$lib/components/common/SvelteKitTopLoader.svelte'
   import LineBanner, { BannerButton } from '$lib/components/layout/LineBanner.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
-  import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
   import AuthErrorToast from '$lib/components/other/AuthErrorToast.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'

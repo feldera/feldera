@@ -1,5 +1,5 @@
 import { unzip, type ZipItem } from 'but-unzip'
-import type { ConnectorStatus } from 'common-lib/connectorMetrics'
+import type { ConnectorStatus } from 'common-ui/connectorMetrics'
 import type { Dataflow, JsonProfiles } from 'profiler-lib'
 import sortOn from 'sort-on'
 import { groupBy } from './array'

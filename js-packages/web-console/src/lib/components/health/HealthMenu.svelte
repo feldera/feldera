@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Loadable } from '@square/svelte-store'
+  import { InlineDropdown } from 'common-ui'
   import { slide } from 'svelte/transition'
-  import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   import ErrorTile from '$lib/components/health/ErrorTile.svelte'
   import type { SystemError } from '$lib/compositions/health/systemErrors'
 

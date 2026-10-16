@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import type { ConnectorMetrics } from 'common-lib/connectorMetrics'
+  import type { ConnectorMetrics } from 'common-ui/connectorMetrics'
   import type { TriageResults } from 'triage-types'
   import type { GlobalMetrics } from '../../functions/globalMetrics'
   import type { LookupCoordinator } from '../../functions/lookup'

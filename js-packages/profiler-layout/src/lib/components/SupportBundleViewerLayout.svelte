@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Switch } from '@skeletonlabs/skeleton-svelte'
   import type { ZipItem } from 'but-unzip'
-  import { aggregateConnectorMetrics, type ConnectorStatus } from 'common-lib/connectorMetrics'
+  import { aggregateConnectorMetrics, type ConnectorStatus } from 'common-ui/connectorMetrics'
   import {
     isFindShortcut,
     PersistentContent,
