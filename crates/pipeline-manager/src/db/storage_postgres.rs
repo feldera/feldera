@@ -9,7 +9,7 @@ use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::transaction;
 use crate::db::types::api_key::ApiKeyDescr;
 use crate::db::types::deployment::{
-    PipelineDeploymentConfig, patch_deployment_config, running_deployment_config,
+    DynamicConfig, patch_deployment_config, running_deployment_config,
 };
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
@@ -776,7 +776,7 @@ impl Storage for StoragePostgres {
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-        patch: &PipelineDeploymentConfig,
+        patch: &DynamicConfig,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut client = self.pool.get().await?;
         let txn = transaction::begin(&mut client).await?;

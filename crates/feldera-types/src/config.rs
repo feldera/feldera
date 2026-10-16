@@ -4071,6 +4071,32 @@ impl FormatConfig {
     }
 }
 
+/// The part of a pipeline's config that can change while the pipeline runs.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DynamicConfig {
+    #[serde(default)]
+    pub resources: DynamicResources,
+}
+
+/// CPU and memory, the only fields that can change while the pipeline runs.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DynamicResources {
+    pub cpu_cores_min: Option<f64>,
+    pub cpu_cores_max: Option<f64>,
+    /// The minimum memory, such as `"4Gi"`. `memory_mb_min`, a number of
+    /// megabytes, is a deprecated alias.
+    #[serde(default, alias = "memory_mb_min", deserialize_with = "size_memory_min")]
+    #[schema(value_type = Option<String>)]
+    pub memory_min: Option<ConfigSize>,
+    /// The maximum memory, such as `"16Gi"`. `memory_mb_max`, a number of
+    /// megabytes, is a deprecated alias.
+    #[serde(default, alias = "memory_mb_max", deserialize_with = "size_memory_max")]
+    #[schema(value_type = Option<String>)]
+    pub memory_max: Option<ConfigSize>,
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct ResourceConfig {
