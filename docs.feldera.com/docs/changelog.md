@@ -10,6 +10,10 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Pipelines without fault tolerance no longer write a checkpoint on
+  `SIGTERM`.  On Kubernetes, Force Stop also sends `SIGTERM`, so such a
+  pipeline could keep a checkpoint the user did not ask for.
+
 - Incompatible change (SQL compiler): a pipeline compiled with this release
   cannot reuse the state that an earlier release saved for its views.  When
   the pipeline resumes from such a checkpoint, it must bootstrap all its views
