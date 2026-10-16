@@ -64,7 +64,7 @@
      *  tab. Absent when the bundle carried no config. */
     runtimeConfig?: unknown
     /** Pipeline monitor events from the bundle's `pipeline_events.json`, shown in the Health tab.
-     *  Absent when the bundle has no events. */
+     *  Absent when the bundle has no events file. The tab is disabled when this is absent or empty. */
     pipelineEvents?: PipelineMonitorEvent[]
     triageResults: TriageResults
     /** Palette the circuit diagram is drawn with; follows the application theme */
@@ -354,7 +354,8 @@
       label: healthLabel,
       panel: HealthTab,
       keepAlive: true,
-      disabled: pipelineEvents === undefined
+      // A pipeline with no monitor history gives an empty list. There is nothing to show then.
+      disabled: !pipelineEvents?.length
     },
     {
       id: 'Logs',

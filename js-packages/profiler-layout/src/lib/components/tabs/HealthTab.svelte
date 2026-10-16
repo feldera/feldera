@@ -5,8 +5,9 @@
   let { pipelineEvents, collectedAt }: AnalysisTabProps = $props()
 </script>
 
-{#if pipelineEvents}
-  <!-- A new bundle or timestamp closes the details drawer of the previous events. -->
+{#if pipelineEvents?.length}
+  <!-- When user loads a different bundle or timestamp the details drawer which holds previous
+       events closes. -->
   {#key pipelineEvents}
     <div class="flex min-h-0 flex-1 flex-nowrap overflow-hidden">
       <PipelineEventHistory
