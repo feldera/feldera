@@ -386,10 +386,15 @@ where
         taken
     }
 
-    /// Returns true if the slot must relieve memory pressure, i.e., if the memory pressure level is >=high
-    /// and there's at least one in-memory batch in this slot.
+    /// Returns true if the slot must relieve memory pressure, i.e., if the memory pressure level is >=high,
+    /// the runtime has storage, and there's at least one in-memory batch in this slot.
     /// In this case, we will initiate a new merge regardless of the number of loose batches.
     fn must_relieve_memory_pressure(&self) -> bool {
+        // Without storage, the merge would leave its output in memory, and the
+        // slot would merge that output again, forever.
+        if Runtime::min_merge_storage_bytes().is_none() {
+            return false;
+        }
         if let Some(memory_pressure) = Runtime::memory_pressure() {
             memory_pressure >= MemoryPressure::High
                 && self
@@ -2858,16 +2863,21 @@ mod tests {
 #[cfg(test)]
 mod merge_rule_test {
     use super::{CompactionStatus, MERGE_COUNTS, Merge, MergerType, SharedState, Slot};
-    use crate::ZWeight;
     use crate::algebra::{OrdZSet, OrdZSetFactories};
+    use crate::circuit::{CircuitConfig, mkconfig};
     use crate::dynamic::{DynData, DynUnit};
     use crate::trace::{
         BatchLayout, BatchLocation, BatchReader, BatchReaderFactories, Builder, Filter,
-        GroupFilter, TraceRole,
+        GroupFilter, TraceRole, test::run_in_circuit_with_storage_config,
     };
     use crate::typed_batch::OrdZSet as TypedOrdZSet;
     use crate::utils::Tup2;
-    use std::sync::Arc;
+    use crate::{Runtime, ZWeight};
+    use feldera_types::memory_pressure::MemoryPressure;
+    use std::sync::{Arc, Mutex};
+    use std::thread::sleep;
+    use std::time::{Duration, Instant};
+    use tempfile::tempdir;
 
     /// A batch of `n` distinct records.
     fn batch(n: usize) -> Arc<OrdZSet<DynData>> {
@@ -2930,6 +2940,50 @@ mod merge_rule_test {
         assert_eq!(taken.len(), 3, "every in-memory batch goes");
         assert!(slot.loose_batches.is_empty());
         assert_eq!(slot.merging_batches.as_ref().map(Vec::len), Some(3));
+    }
+
+    /// Memory pressure merges a level's in-memory batches only if the runtime
+    /// has storage to move them to.
+    #[test]
+    fn memory_pressure_merges_only_with_storage() {
+        let temp_dir = tempdir().expect("Can't create temp dir for storage");
+        for (has_storage, config) in [
+            (false, CircuitConfig::with_workers(1)),
+            (true, mkconfig(temp_dir.path())),
+        ] {
+            // A one-byte budget puts the runtime under critical memory pressure.
+            let config = config.with_max_rss_bytes(Some(1));
+
+            // Under memory pressure, the runtime would write a new batch to
+            // storage, so this one is built outside it.
+            let in_memory = batch(10);
+            assert_eq!(in_memory.location(), BatchLocation::Memory);
+
+            let observed = Arc::new(Mutex::new(None));
+            let reporter = Arc::clone(&observed);
+            run_in_circuit_with_storage_config(config, move || {
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while Runtime::memory_pressure() < Some(MemoryPressure::High)
+                    && Instant::now() < deadline
+                {
+                    sleep(Duration::from_millis(10));
+                }
+
+                // One batch is short of every merge rule but memory pressure.
+                let mut slot = Slot::default();
+                slot.loose_batches.push_back(in_memory);
+                let mut state = state_with(2, slot);
+                let merged = state.try_start_merge(2).is_some();
+                *reporter.lock().unwrap() = Some((Runtime::memory_pressure(), merged));
+            });
+
+            let (pressure, merged) = observed.lock().unwrap().take().unwrap();
+            assert!(
+                pressure >= Some(MemoryPressure::High),
+                "memory pressure is {pressure:?}"
+            );
+            assert_eq!(merged, has_storage, "has_storage: {has_storage}");
+        }
     }
 
     /// Relieving memory pressure can leave one in-memory batch to merge, so a
