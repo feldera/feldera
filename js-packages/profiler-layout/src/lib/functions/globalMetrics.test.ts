@@ -172,6 +172,8 @@ describe('buildGlobalMetrics', () => {
     ['pipeline_complete', 'true'],
     ['state', 5],
     ['start_time', '2023-11-14'],
+    ['start_time', 1e20],
+    ['initial_start_time', -Number.MAX_SAFE_INTEGER],
     ['transaction_id', '7'],
     ['commit_progress', 'done'],
     ['transaction_initiators', 5],
@@ -200,7 +202,24 @@ describe('buildGlobalMetrics', () => {
   })
 
   it('does not throw for any JSON type in any field', () => {
-    const values: unknown[] = [null, 0, -1, 1.5, '', 'x', true, false, [], [1], {}, { a: null }]
+    // 1e20 and the safe integer limits are outside the `Date` range, which ends at 8.64e12 s.
+    const values: unknown[] = [
+      null,
+      0,
+      -1,
+      1.5,
+      1e20,
+      Number.MAX_SAFE_INTEGER,
+      -Number.MAX_SAFE_INTEGER,
+      '',
+      'x',
+      true,
+      false,
+      [],
+      [1],
+      {},
+      { a: null }
+    ]
     for (const key of [...Object.keys(metricsFromSpec()), 'future_metric']) {
       for (const raw of values) {
         expect(
