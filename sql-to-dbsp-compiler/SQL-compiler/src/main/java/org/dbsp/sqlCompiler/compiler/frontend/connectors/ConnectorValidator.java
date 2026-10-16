@@ -304,6 +304,10 @@ public final class ConnectorValidator {
                     validateConfig(transportConfig, outerJson, configPointer,
                             outerStart, RedisOutputConfig.class, reporter);
                     break;
+                case "nats_output":
+                    validateConfig(transportConfig, outerJson, configPointer,
+                            outerStart, NatsOutputConfig.class, reporter);
+                    break;
                 case "s2_output":
                     validateConfig(transportConfig, outerJson, configPointer,
                             outerStart, S2OutputConfig.class, reporter);
