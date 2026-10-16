@@ -37,7 +37,7 @@ use actix_web::{
     http::StatusCode,
     http::header,
     middleware::Compress,
-    post, rt,
+    patch, post, rt,
     web::{self, Data as WebData, Payload, Query},
 };
 use arrow::ipc::writer::StreamWriter;
@@ -69,7 +69,7 @@ use feldera_types::checkpoint::{
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
-use feldera_types::config::{PipelineIdentity, SyncConfig};
+use feldera_types::config::{DynamicConfig, PipelineIdentity, SyncConfig};
 use feldera_types::constants::STATUS_FILE;
 use feldera_types::coordination::{
     AdHocScan, CoordinationActivate, CoordinationCapabilities, CoordinationStatus, InputChoices,
@@ -1199,11 +1199,13 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
         && let Some(available_mb) = observability::system::total_memory_megabyte()
     {
         // The logger is not running yet.
+        // Set `memory_mb_max`, not `max_rss_mb`, so that a resize can still
+        // change the budget (see `Controller::set_memory_mb_max`).
         eprintln!(
             "No memory limit configured ('max_rss_mb' or 'resources.memory_mb_max'); \
-using this host's available memory: 'max_rss_mb' = {available_mb} MB."
+using this host's available memory: 'resources.memory_mb_max' = {available_mb} MB."
         );
-        config.global.max_rss_mb = Some(available_mb);
+        config.global.resources.memory_mb_max = Some(available_mb);
     }
 
     eprintln!(
@@ -1508,6 +1510,8 @@ where
         .service(start_output_endpoint)
         .service(rebalance)
         .service(start_compaction)
+        .service(get_runtime)
+        .service(patch_runtime)
         .service(coordination_activate_handler)
         .service(coordination_status)
         .service(coordination_step_request)
@@ -3329,6 +3333,24 @@ async fn start_compaction(state: WebData<ServerState>) -> Result<HttpResponse, P
     Ok(HttpResponse::Ok().into())
 }
 
+/// Returns the part of the dynamic config the pipeline uses, as last received.
+/// Only the pipeline manager calls this endpoint.
+#[get("/runtime")]
+async fn get_runtime(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponse::Ok().json(state.controller()?.dynamic_config()))
+}
+
+/// Applies a resize of the running pipeline. Only the pipeline manager calls
+/// this endpoint.
+#[patch("/runtime")]
+async fn patch_runtime(
+    state: WebData<ServerState>,
+    args: web::Json<DynamicConfig>,
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.apply_dynamic_config(args.into_inner());
+    Ok(HttpResponse::Ok().finish())
+}
+
 #[post("/coordination/activate")]
 async fn coordination_activate_handler(
     state: WebData<ServerState>,
@@ -3963,6 +3985,20 @@ mod test_http_helpers {
         let json_file = json_config_file(&json!({"name": "test"}));
         let config = parse_config(json_file.path()).unwrap();
         assert_eq!(config.name.as_deref(), Some("test"));
+    }
+
+    /// Without a memory limit, the pipeline sets `memory_mb_max` from the
+    /// available memory. It leaves `max_rss_mb` unset, which would ignore a
+    /// later resize (see `Controller::apply_dynamic_config`).
+    #[test]
+    fn parse_config_sets_memory_mb_max_without_a_limit() {
+        let config = parse_config(json_config_file(&json!({"name": "test"})).path()).unwrap();
+        assert_eq!(config.global.max_rss_mb, None);
+        assert_eq!(
+            config.global.resources.memory_mb_max,
+            feldera_observability::system::total_memory_megabyte()
+        );
+        assert!(config.global.resources.memory_mb_max.is_some());
     }
 
     /// A successful suspend terminates the circuit before the server reports

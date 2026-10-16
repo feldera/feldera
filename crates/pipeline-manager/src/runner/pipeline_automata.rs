@@ -24,7 +24,7 @@ use crate::runner::pipeline_logs::{
     FollowRequest, LogMessage, LogsSender, start_thread_pipeline_logs,
 };
 use chrono::{DateTime, Utc};
-use feldera_types::config::PipelineConfig;
+use feldera_types::config::{DynamicConfig, DynamicResources, PipelineConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{
     ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus, RuntimeStatusDetails,
@@ -222,6 +222,9 @@ where
 
     /// Previously observed storage status details.
     prev_storage_status_details: Option<StorageStatusDetails>,
+
+    /// Deployment whose pipeline has no `/runtime` endpoint.
+    runtime_unsupported: Option<Uuid>,
 }
 
 impl<T: PipelineExecutor> PipelineAutomaton<T> {
@@ -246,6 +249,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
     /// Timeout for an HTTP request to the pipeline `/status` endpoint.
     const PIPELINE_STATUS_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+    /// Timeout for an HTTP request to the pipeline `/runtime` endpoint. It is
+    /// short because the request runs inside the poll of the pipeline status.
+    const PIPELINE_RUNTIME_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 
     /// When the pipeline becomes `Provisioned`, it will provide the first runtime status in
     /// advance (`Initializing`). It will take some time before the pipeline HTTP server actually
@@ -309,6 +316,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             prev_resources_status_details: None,
             prev_runtime_status_details: None,
             prev_storage_status_details: None,
+            runtime_unsupported: None,
         }
     }
 
@@ -891,6 +899,105 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Err(e) => Err(InternalRequestError::InvalidResponseBody {
                 error: format!("unable to deserialize response as JSON due to: {e}"),
             }),
+        }
+    }
+
+    /// Makes the pipeline's `memory_mb_max` match the deployment config, so
+    /// that a resize also changes the pipeline's memory budget. CPU and
+    /// `memory_mb_min` need nothing from the pipeline, as the container
+    /// enforces them. It reads the value the pipeline received
+    /// (`GET /runtime`), and sends the deployment's (`PATCH /runtime`) when
+    /// they differ. That also catches a pipeline process that started again
+    /// with its old value. A failed request is tried again on the next poll. A
+    /// multihost pipeline cannot be resized, so it gets nothing.
+    async fn reconcile_dynamic_config(
+        &mut self,
+        deployment_id: Option<Uuid>,
+        deployment_config: &serde_json::Value,
+        location: &str,
+    ) {
+        if !deployment_config["multihost"].is_null()
+            || (self.runtime_unsupported.is_some() && self.runtime_unsupported == deployment_id)
+        {
+            return;
+        }
+        let desired = deployment_config["resources"]["memory_mb_max"].as_u64();
+        let url = format_pipeline_url(
+            if self.common_config.enable_https {
+                "https"
+            } else {
+                "http"
+            },
+            location,
+            "runtime",
+            "",
+        );
+        let applied = match self
+            .client
+            .get(&url)
+            .timeout(Self::PIPELINE_RUNTIME_HTTP_REQUEST_TIMEOUT)
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => response
+                .json::<DynamicConfig>()
+                .await
+                .ok()
+                .map(|config| config.resources.memory_mb_max),
+            // A pipeline built before `/runtime` existed keeps what it started with.
+            Ok(response) if response.status() == StatusCode::NOT_FOUND => {
+                info!(
+                    pipeline_id = %self.pipeline_id,
+                    pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
+                    "Pipeline does not support /runtime; a resize does not change its memory budget"
+                );
+                self.runtime_unsupported = deployment_id;
+                return;
+            }
+            // For example, the pipeline is still initializing.
+            Ok(response) => {
+                debug!(
+                    pipeline_id = %self.pipeline_id,
+                    "Pipeline GET /runtime returned {}; trying again on the next poll",
+                    response.status()
+                );
+                return;
+            }
+            Err(e) => {
+                debug!(
+                    pipeline_id = %self.pipeline_id,
+                    "Pipeline GET /runtime failed: {e}; trying again on the next poll"
+                );
+                return;
+            }
+        };
+        if applied == Some(desired) {
+            return;
+        }
+        let update = DynamicConfig {
+            resources: DynamicResources {
+                memory_mb_max: desired,
+                ..Default::default()
+            },
+        };
+        match self
+            .client
+            .patch(&url)
+            .json(&update)
+            .timeout(Self::PIPELINE_RUNTIME_HTTP_REQUEST_TIMEOUT)
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => {}
+            Ok(response) => debug!(
+                pipeline_id = %self.pipeline_id,
+                "Pipeline PATCH /runtime returned {}; trying again on the next poll",
+                response.status()
+            ),
+            Err(e) => debug!(
+                pipeline_id = %self.pipeline_id,
+                "Pipeline PATCH /runtime failed: {e}; trying again on the next poll"
+            ),
         }
     }
 
@@ -1841,6 +1948,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             };
         }
 
+        self.reconcile_dynamic_config(
+            pipeline.deployment_id,
+            deployment_config,
+            deployment_location,
+        )
+        .await;
+
         // The pipeline status needs to substantially change for it to be updated
         let resources_status_details_changed = self
             .prev_resources_status_details
@@ -2716,6 +2830,136 @@ mod test {
             test.pipeline().await.deployment_config,
             Some(deployment_config)
         );
+    }
+
+    /// Returns, for each `/runtime` request the mock pipeline received, its method and, for a
+    /// `PATCH`, the `memory_mb_max` it sent.
+    async fn runtime_requests(server: &MockServer) -> Vec<(String, Option<u64>)> {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|request| request.url.path() == "/runtime")
+            .map(|request| {
+                let memory_mb_max = (request.method == http::Method::PATCH).then(|| {
+                    request
+                        .body_json::<feldera_types::config::DynamicConfig>()
+                        .unwrap()
+                        .resources
+                        .memory_mb_max
+                });
+                (request.method.to_string(), memory_mb_max.flatten())
+            })
+            .collect()
+    }
+
+    /// The pipeline gets the deployment's `memory_mb_max` whenever the value it reports
+    /// (`GET /runtime`) differs: after a resize, and after its process starts again with its old
+    /// value, even if no poll saw it initializing. A CPU-only resize sends nothing. A failed
+    /// `PATCH` is sent again, and a pipeline without `/runtime` (HTTP 404) is not asked again.
+    #[tokio::test]
+    async fn resize_reconciles_the_pipeline_dynamic_config() {
+        let (mut server, _temp, mut test) = setup_complete().await;
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(
+            &mut server,
+            vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))],
+        )
+        .await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioned, StorageStatus::InUse)
+            .await;
+        let (db, tenant_id, pipeline_id) = (
+            test.db.clone(),
+            test.automaton.tenant_id,
+            test.automaton.pipeline_id,
+        );
+        let resize = |field: &'static str, value: serde_json::Value| {
+            let db = db.clone();
+            async move {
+                let pipeline = db
+                    .lock()
+                    .await
+                    .get_pipeline_by_id(tenant_id, pipeline_id)
+                    .await
+                    .unwrap();
+                let mut resized = pipeline.deployment_config.unwrap();
+                resized["resources"][field] = value;
+                db.lock()
+                    .await
+                    .pool
+                    .get()
+                    .await
+                    .unwrap()
+                    .execute(
+                        "UPDATE pipeline SET deployment_config = $1 WHERE id = $2",
+                        &[&resized.to_string(), &pipeline_id.0],
+                    )
+                    .await
+                    .unwrap();
+            }
+        };
+        // A pipeline that reports `memory_mb_max` and answers `PATCH /runtime` with `patch_code`.
+        let mock_pipeline = |memory_mb_max: Option<u64>, patch_code: u16| {
+            vec![
+                MockEndpoint::new("GET", "/status", 200, json!("Paused")),
+                MockEndpoint::new(
+                    "GET",
+                    "/runtime",
+                    200,
+                    json!({"resources": {"memory_mb_max": memory_mb_max}}),
+                ),
+                MockEndpoint::new("PATCH", "/runtime", patch_code, json!({})),
+            ]
+        };
+        let get = || ("GET".to_string(), None);
+        let patch = |memory_mb_max: u64| ("PATCH".to_string(), Some(memory_mb_max));
+
+        // The pipeline already has the deployment's config, so nothing is sent.
+        mock_endpoints(&mut server, mock_pipeline(None, 200)).await;
+        test.tick().await;
+        assert_eq!(runtime_requests(&server).await, vec![get()]);
+
+        // CPU means nothing to the pipeline, so a CPU-only resize sends nothing.
+        resize("cpu_cores_max", json!(16.0)).await;
+        test.tick().await;
+        assert_eq!(runtime_requests(&server).await, vec![get(), get()]);
+
+        // A resize is sent until the pipeline reports it.
+        resize("memory_mb_max", json!(4_000)).await;
+        test.tick().await;
+        assert_eq!(
+            runtime_requests(&server).await,
+            vec![get(), get(), get(), patch(4_000)]
+        );
+        mock_endpoints(&mut server, mock_pipeline(Some(4_000), 200)).await;
+        test.tick().await;
+        assert_eq!(runtime_requests(&server).await, vec![get()]);
+
+        // A process that started again reports its old config and gets the resize again.
+        mock_endpoints(&mut server, mock_pipeline(None, 200)).await;
+        test.tick().await;
+        assert_eq!(runtime_requests(&server).await, vec![get(), patch(4_000)]);
+
+        // A failed `PATCH` is sent again on the next poll.
+        mock_endpoints(&mut server, mock_pipeline(None, 503)).await;
+        test.tick().await;
+        test.tick().await;
+        assert_eq!(
+            runtime_requests(&server).await,
+            vec![get(), patch(4_000), get(), patch(4_000)]
+        );
+
+        // A pipeline without `/runtime` is asked once.
+        mock_endpoints(
+            &mut server,
+            vec![MockEndpoint::new("GET", "/status", 200, json!("Paused"))],
+        )
+        .await;
+        test.tick().await;
+        test.tick().await;
+        assert_eq!(runtime_requests(&server).await, vec![get()]);
     }
 
     /// A resize stored in the deployment config is kept by a restart and reset once storage is

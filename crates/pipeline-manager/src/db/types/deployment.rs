@@ -3,28 +3,12 @@ use crate::db::types::pipeline::ExtendedPipelineDescr;
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::utils::ValidationError;
 use feldera_types::config::{PipelineConfig, ResourceConfig, RuntimeConfig};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Value, json};
-use utoipa::ToSchema;
 
-/// The part of a deployment config that can change while the pipeline runs.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PipelineDeploymentConfig {
-    #[serde(default)]
-    pub resources: DeploymentResources,
-}
-
-// `merge_deployment_config` and `merge_deployment_config_on_edit` must cover the same fields.
-/// CPU and memory, the only fields that can change while the pipeline runs.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
-#[serde(deny_unknown_fields)]
-pub struct DeploymentResources {
-    pub cpu_cores_min: Option<f64>,
-    pub cpu_cores_max: Option<f64>,
-    pub memory_mb_min: Option<u64>,
-    pub memory_mb_max: Option<u64>,
-}
+// `merge_deployment_config` and `merge_deployment_config_on_edit` must cover the same fields as
+// `DynamicResources`.
+pub use feldera_types::config::{DynamicConfig, DynamicResources};
 
 /// The API view of a stored deployment config.
 pub fn deployment_config_view(deployment_config: &Value) -> Value {
@@ -52,12 +36,12 @@ pub fn check_unchanged_deployment_config(
         return Ok(());
     }
     let invalid = |reason: String| DBError::InvalidDeploymentPatch { reason };
-    let given: PipelineDeploymentConfig =
+    let given: DynamicConfig =
         serde_json::from_value(given.clone()).map_err(|e| invalid(e.to_string()))?;
-    let stored: PipelineDeploymentConfig = match stored {
+    let stored: DynamicConfig = match stored {
         Some(stored) => serde_json::from_value(deployment_config_view(stored))
             .map_err(|e| invalid(e.to_string()))?,
-        None => PipelineDeploymentConfig::default(),
+        None => DynamicConfig::default(),
     };
     let (given, stored) = (given.resources, stored.resources);
     let changed = (given.cpu_cores_min.is_some() && given.cpu_cores_min != stored.cpu_cores_min)
@@ -90,7 +74,7 @@ pub fn running_deployment_config(pipeline: &ExtendedPipelineDescr) -> Result<&Va
 }
 
 /// Parses the `deployment_config` of a `PATCH`.
-pub fn parse_deployment_config_patch(patch: &Value) -> Result<PipelineDeploymentConfig, DBError> {
+pub fn parse_deployment_config_patch(patch: &Value) -> Result<DynamicConfig, DBError> {
     serde_json::from_value(patch.clone()).map_err(|e| DBError::InvalidDeploymentPatch {
         reason: e.to_string(),
     })
@@ -99,7 +83,7 @@ pub fn parse_deployment_config_patch(patch: &Value) -> Result<PipelineDeployment
 /// Applies `patch` to a stored deployment config.
 pub fn patch_deployment_config(
     deployment_config: &Value,
-    patch: &PipelineDeploymentConfig,
+    patch: &DynamicConfig,
 ) -> Result<Value, DBError> {
     let invalid = |error: String| DBError::InvalidDeploymentConfig {
         value: deployment_config.clone(),
@@ -112,6 +96,19 @@ pub fn patch_deployment_config(
         .map_err(|reason| DBError::InvalidDeploymentPatch { reason })?;
     let mut patched = stored.global.clone();
     patched.resources = resources;
+    // The same check as at startup: the DataFusion memory pool must leave
+    // memory for the circuit.
+    if let (Some(budget), Some(datafusion)) = (
+        patched.effective_memory_mb(),
+        patched.resolved_datafusion_memory_mb(),
+    ) && datafusion >= budget
+    {
+        return Err(DBError::InvalidDeploymentPatch {
+            reason: format!(
+                "the memory budget ({budget} MB) must exceed datafusion_memory_mb ({datafusion} MB)"
+            ),
+        });
+    }
     merge_deployment_config(&mut stored, &patched);
     serde_json::to_value(stored).map_err(|e| invalid(e.to_string()))
 }
@@ -120,9 +117,9 @@ pub fn patch_deployment_config(
 fn apply_patch(
     hosts: usize,
     current: ResourceConfig,
-    resize: &DeploymentResources,
+    resize: &DynamicResources,
 ) -> Result<ResourceConfig, String> {
-    if resize == &DeploymentResources::default() {
+    if resize == &DynamicResources::default() {
         return Err(
             "specify at least one of resources.cpu_cores_min, resources.cpu_cores_max, \
              resources.memory_mb_min, resources.memory_mb_max"
@@ -277,6 +274,22 @@ mod test {
         .unwrap();
         assert_eq!(new["resources"]["cpu_cores_max"], json!(16.0));
         assert_eq!(new["resources"]["memory_mb_max"], json!(24000));
+    }
+
+    /// A resize that leaves no memory for the circuit is refused, as at
+    /// startup. The default DataFusion pool (5%) always fits.
+    #[test]
+    fn resize_must_leave_memory_after_datafusion() {
+        let mut config = deployment();
+        config["datafusion_memory_mb"] = json!(2_000);
+        let memory = |mb: u64| resize(json!({"memory_mb_min": mb, "memory_mb_max": mb}));
+        let error = try_patch(&config, &memory(2_000)).unwrap_err();
+        assert!(
+            error.contains("must exceed datafusion_memory_mb"),
+            "{error}"
+        );
+        try_patch(&config, &memory(2_001)).unwrap();
+        try_patch(&deployment(), &memory(1)).unwrap();
     }
 
     fn assert_refused(value: Value, expected: &str) {
@@ -461,7 +474,7 @@ mod test {
     #[test]
     fn every_live_setting_is_merged_and_detected() {
         let base = deployment();
-        let fields = serde_json::to_value(DeploymentResources::default()).unwrap();
+        let fields = serde_json::to_value(DynamicResources::default()).unwrap();
         for field in fields.as_object().unwrap().keys() {
             let path = format!("resources.{field}");
             let pointer = format!("/resources/{field}");

@@ -3516,6 +3516,27 @@ impl FormatConfig {
     }
 }
 
+// It is the `deployment_config` of the pipeline manager's
+// `PATCH /v0/pipelines/{name}`, and the body of the pipeline's own
+// `PATCH /runtime`, which the pipeline manager sends to a running pipeline.
+/// The part of a pipeline's config that can change while the pipeline runs.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DynamicConfig {
+    #[serde(default)]
+    pub resources: DynamicResources,
+}
+
+/// CPU and memory, the only fields that can change while the pipeline runs.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DynamicResources {
+    pub cpu_cores_min: Option<f64>,
+    pub cpu_cores_max: Option<f64>,
+    pub memory_mb_min: Option<u64>,
+    pub memory_mb_max: Option<u64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct ResourceConfig {

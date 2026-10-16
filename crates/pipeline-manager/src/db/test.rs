@@ -9,7 +9,7 @@ use crate::db::transaction;
 use crate::db::transaction::LOCK_TIMEOUT;
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId};
 use crate::db::types::deployment::{
-    DeploymentResources, PipelineDeploymentConfig, merge_deployment_config_on_edit,
+    DynamicConfig, DynamicResources, merge_deployment_config_on_edit,
     parse_deployment_config_patch, patch_deployment_config, running_deployment_config,
 };
 use crate::db::types::monitor::{
@@ -664,12 +664,12 @@ fn limited_option_program_config() -> impl Strategy<Value = Option<serde_json::V
 }
 
 /// Generates different deployment patches, valid and invalid.
-fn limited_patch_pipeline_deployment() -> impl Strategy<Value = PipelineDeploymentConfig> {
+fn limited_patch_pipeline_deployment() -> impl Strategy<Value = DynamicConfig> {
     let cpu = proptest::option::of(prop_oneof![Just(-1.0), Just(0.5), Just(1.0), Just(2.0)]);
     let memory = proptest::option::of(prop_oneof![Just(0u64), Just(1000), Just(2000)]);
     (cpu.clone(), cpu, memory.clone(), memory).prop_map(
-        |(cpu_cores_min, cpu_cores_max, memory_mb_min, memory_mb_max)| PipelineDeploymentConfig {
-            resources: DeploymentResources {
+        |(cpu_cores_min, cpu_cores_max, memory_mb_min, memory_mb_max)| DynamicConfig {
+            resources: DynamicResources {
                 cpu_cores_min,
                 cpu_cores_max,
                 memory_mb_min,
@@ -6002,7 +6002,7 @@ enum StorageAction {
     PatchPipelineDeployment(
         TenantId,
         #[proptest(strategy = "limited_pipeline_name()")] String,
-        #[proptest(strategy = "limited_patch_pipeline_deployment()")] PipelineDeploymentConfig,
+        #[proptest(strategy = "limited_patch_pipeline_deployment()")] DynamicConfig,
     ),
     TransitDeploymentResourcesStatusToProvisioned(
         TenantId,
@@ -8504,7 +8504,7 @@ impl Storage for Mutex<DbModel> {
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-        patch: &PipelineDeploymentConfig,
+        patch: &DynamicConfig,
     ) -> Result<ExtendedPipelineDescr, DBError> {
         let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
         let patched = patch_deployment_config(running_deployment_config(&pipeline)?, patch)?;

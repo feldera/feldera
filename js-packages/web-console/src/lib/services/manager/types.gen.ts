@@ -1723,16 +1723,6 @@ export type Demo = {
 }
 
 /**
- * CPU and memory, the only fields that can change while the pipeline runs.
- */
-export type DeploymentResources = {
-  cpu_cores_max?: number | null
-  cpu_cores_min?: number | null
-  memory_mb_max?: number | null
-  memory_mb_min?: number | null
-}
-
-/**
  * Optional settings for tweaking Feldera internals.
  *
  * These settings reflect experiments that may come and go and change from
@@ -2057,6 +2047,23 @@ export type DisplaySchedule =
       }
     }
   | 'Always'
+
+/**
+ * The part of a pipeline's config that can change while the pipeline runs.
+ */
+export type DynamicConfig = {
+  resources?: DynamicResources
+}
+
+/**
+ * CPU and memory, the only fields that can change while the pipeline runs.
+ */
+export type DynamicResources = {
+  cpu_cores_max?: number | null
+  cpu_cores_min?: number | null
+  memory_mb_max?: number | null
+  memory_mb_min?: number | null
+}
 
 /**
  * DynamoDB write API used by the output connector.
@@ -4069,7 +4076,7 @@ export type PatchClientMetadata = {
  * change.
  */
 export type PatchPipeline = PatchClientMetadata & {
-  deployment_config?: PipelineDeploymentConfig | null
+  deployment_config?: DynamicConfig | null
   name?: string | null
   program_code?: string | null
   program_config?: ProgramConfig | null
@@ -4348,13 +4355,6 @@ export type PipelineConfig = {
 }
 
 /**
- * The part of a deployment config that can change while the pipeline runs.
- */
-export type PipelineDeploymentConfig = {
-  resources?: DeploymentResources
-}
-
-/**
  * Summary of changes in the pipeline between checkpointed and new versions.
  */
 export type PipelineDiff = {
@@ -4398,7 +4398,7 @@ export type PipelineId = string
  */
 export type PipelineInfo = ClientMetadata & {
   created_at: string
-  deployment_config?: PipelineDeploymentConfig | null
+  deployment_config?: DynamicConfig | null
   deployment_desired_status: CombinedDesiredStatus
   deployment_desired_status_since: string
   deployment_error?: ErrorResponse | null
@@ -4470,7 +4470,7 @@ export type PipelineMonitorEventSelectedInfo = {
 export type PipelineSelectedInfo = ClientMetadata & {
   connectors?: ConnectorStats | null
   created_at: string
-  deployment_config?: PipelineDeploymentConfig | null
+  deployment_config?: DynamicConfig | null
   deployment_desired_status: CombinedDesiredStatus
   deployment_desired_status_since: string
   deployment_error?: ErrorResponse | null
@@ -4559,7 +4559,7 @@ export type PipelineTemplateConfig = {
  * (for strings: an empty string `""`, for objects: an empty dictionary `{}`).
  */
 export type PostPutPipeline = ClientMetadata & {
-  deployment_config?: PipelineDeploymentConfig | null
+  deployment_config?: DynamicConfig | null
   name: string
   program_code: string
   program_config?: ProgramConfig | null

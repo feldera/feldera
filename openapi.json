@@ -10419,35 +10419,6 @@
           }
         }
       },
-      "DeploymentResources": {
-        "type": "object",
-        "description": "CPU and memory, the only fields that can change while the pipeline runs.",
-        "properties": {
-          "cpu_cores_max": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "cpu_cores_min": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "memory_mb_max": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          },
-          "memory_mb_min": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true,
-            "minimum": 0
-          }
-        },
-        "additionalProperties": false
-      },
       "DevTweaks": {
         "type": "object",
         "description": "Optional settings for tweaking Feldera internals.\n\nThese settings reflect experiments that may come and go and change from\nversion to version.  Users should not consider them to be stable.",
@@ -10742,6 +10713,45 @@
             ]
           }
         ]
+      },
+      "DynamicConfig": {
+        "type": "object",
+        "description": "The part of a pipeline's config that can change while the pipeline runs.",
+        "properties": {
+          "resources": {
+            "$ref": "#/components/schemas/DynamicResources"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DynamicResources": {
+        "type": "object",
+        "description": "CPU and memory, the only fields that can change while the pipeline runs.",
+        "properties": {
+          "cpu_cores_max": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "cpu_cores_min": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "memory_mb_max": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          },
+          "memory_mb_min": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
       },
       "DynamoDBWriteMode": {
         "type": "string",
@@ -13015,7 +13025,7 @@
               "deployment_config": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/PipelineDeploymentConfig"
+                    "$ref": "#/components/schemas/DynamicConfig"
                   }
                 ],
                 "nullable": true
@@ -13348,16 +13358,6 @@
         ],
         "description": "Pipeline deployment configuration.\nIt represents configuration entries directly provided by the user\n(e.g., runtime configuration) and entries derived from the schema\nof the compiled program (e.g., connectors). Storage configuration,\nif applicable, is set by the runner."
       },
-      "PipelineDeploymentConfig": {
-        "type": "object",
-        "description": "The part of a deployment config that can change while the pipeline runs.",
-        "properties": {
-          "resources": {
-            "$ref": "#/components/schemas/DeploymentResources"
-          }
-        },
-        "additionalProperties": false
-      },
       "PipelineDiff": {
         "type": "object",
         "description": "Summary of changes in the pipeline between checkpointed and new versions.",
@@ -13490,7 +13490,7 @@
               "deployment_config": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/PipelineDeploymentConfig"
+                    "$ref": "#/components/schemas/DynamicConfig"
                   }
                 ],
                 "nullable": true
@@ -13773,7 +13773,7 @@
               "deployment_config": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/PipelineDeploymentConfig"
+                    "$ref": "#/components/schemas/DynamicConfig"
                   }
                 ],
                 "nullable": true
@@ -13991,7 +13991,7 @@
               "deployment_config": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/PipelineDeploymentConfig"
+                    "$ref": "#/components/schemas/DynamicConfig"
                   }
                 ],
                 "nullable": true
