@@ -16,13 +16,13 @@ use dbsp::circuit::tokio::TOKIO;
 use delta_kernel::engine::arrow_conversion::TryFromArrow;
 use delta_kernel::table_features::ColumnMappingMode;
 use delta_kernel::table_properties::DataSkippingNumIndexedCols;
-use deltalake::DeltaTable;
 use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, TableReference};
 use deltalake::kernel::{Action, Add, ArrayType, DataType, MapType, StructField, StructType};
 use deltalake::logstore::ObjectStoreRef;
 use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::write::writer::{ArrowWriterOptions, DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
+use deltalake::{DeltaTable, DeltaTableError};
 use feldera_adapterlib::catalog::SerCursorFlattened;
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::program_schema::{ColumnType, SqlType};
@@ -562,10 +562,7 @@ impl WriterTask {
                 match tokio::time::timeout(operation_timeout, create_future).await {
                     Ok(Ok(table)) => break table,
                     Ok(Err(e)) => {
-                        // Debug-format `e` as the timeout error is often found toward the end of the error chain.
-                        let is_timeout = format!("{:?}", e).to_lowercase().contains("timeout");
-
-                        if is_timeout && retry_count < MAX_RETRIES {
+                        if is_transient_open_error(&e) && retry_count < MAX_RETRIES {
                             retry_count += 1;
                             let backoff_ms = min(1000 * (1 << (retry_count - 1)), 10_000);
                             warn!(
@@ -702,6 +699,29 @@ enum WriteError {
     /// Transient I/O error that may resolve on retry.
     /// Examples: object store timeouts, network failures.
     Transient(anyhow::Error),
+}
+
+/// Whether a failure to create or open the table is worth retrying.
+///
+/// The error chain is matched as text, because delta-rs can flatten it into
+/// `DeltaTableError::Generic`:
+///
+/// - "timeout": the open can get stuck in S3 authentication, see
+///   <https://github.com/delta-io/delta-rs/issues/3768>.
+/// - "HTTP error" / "HttpError": an object_store transport failure, such as a
+///   response body cut short. object_store does not retry these itself, so
+///   the text has no "retry_timeout" for the check above to match.
+///
+/// A non-2xx answer, such as rejected credentials, is an object_store status
+/// error and does not match "HTTP error". But the "timeout" check also
+/// matches the `retry_timeout` field that object_store prints for most
+/// request errors, so many permanent errors are retried too.
+fn is_transient_open_error(e: &DeltaTableError) -> bool {
+    // Debug-format `e`: the cause is often at the end of the error chain.
+    let debug = format!("{e:?}");
+    debug.to_lowercase().contains("timeout")
+        || debug.contains("HTTP error")
+        || debug.contains("HttpError")
 }
 
 /// The error an operation reports when a shutdown cuts it short.
@@ -2914,5 +2934,44 @@ mod parallel {
             true,
         );
         drop(endpoint);
+    }
+}
+
+#[cfg(test)]
+mod open_error_tests {
+    use super::is_transient_open_error;
+    use deltalake::DeltaTableError;
+
+    #[test]
+    fn transport_error_flattened_by_delta_rs_is_transient() {
+        // Seen in Antithesis: S3 cut the LIST response body under a network
+        // fault, and delta-rs turned the error chain into a string.
+        let e = DeltaTableError::Generic(
+            "Error interacting with object store: Generic S3 error: Error getting list \
+             response body: HTTP error: request or response body error"
+                .to_string(),
+        );
+        assert!(is_transient_open_error(&e));
+    }
+
+    #[test]
+    fn timeout_is_transient() {
+        let e = DeltaTableError::Generic("operation timed out: Timeout".to_string());
+        assert!(is_transient_open_error(&e));
+    }
+
+    #[test]
+    fn rejected_credentials_are_not_transport_errors() {
+        // object_store's text for a 403 on the first attempt (no retries, so no
+        // `retry_timeout` field), as flattened by delta-rs.
+        let e = DeltaTableError::Generic(
+            "Error interacting with object store: Generic S3 error: Error performing list \
+             request: Error performing GET http://minio:9000/feldera?list-type=2&prefix=\
+             delta_out%2F_delta_log%2F in 12.4ms - Server returned non-2xx status code: \
+             403 Forbidden: <?xml version=\"1.0\" encoding=\"UTF-8\"?><Error><Code>\
+             InvalidAccessKeyId</Code></Error>"
+                .to_string(),
+        );
+        assert!(!is_transient_open_error(&e));
     }
 }
