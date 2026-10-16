@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import type { ConnectorMetrics } from 'common-ui/connectorMetrics'
+  import type { ConnectorMetrics, ConnectorStatus } from 'common-ui/connectorMetrics'
   import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import type { TriageResults } from 'triage-types'
   import type { GlobalMetrics } from '../../functions/globalMetrics'
@@ -21,6 +21,9 @@
     /** Input and output connector statistics from `stats.json`, grouped by table and view, shown
      *  in the Connectors tab. `undefined` when the bundle has no connector statistics. */
     connectorMetrics: ConnectorMetrics | undefined
+    /** The `connectorMetrics` source. The Connectors tab reads the error lists of the connectors
+     *  from it. */
+    connectorStatus: ConnectorStatus | undefined
     /** Pipeline runtime configuration shown in the Config tab. `undefined` when the bundle carried
      *  no `pipeline_config.json` */
     runtimeConfig: unknown

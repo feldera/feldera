@@ -8,12 +8,18 @@
     type SearchDirection,
     SegmentedControl,
     Select,
+    statusCounterClass,
+    statusToneColors,
     type TabSpec,
     TabsPanel,
     usePersistentRect,
     useShortcut
   } from 'common-ui'
-  import { aggregateConnectorMetrics, type ConnectorStatus } from 'common-ui/connectorMetrics'
+  import {
+    aggregateConnectorMetrics,
+    countConnectorErrors,
+    type ConnectorStatus
+  } from 'common-ui/connectorMetrics'
   import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type {
@@ -110,6 +116,9 @@
   // A bundle holds one `/stats` sample, so `io_active` is false for all connectors.
   const connectorMetrics = $derived(
     connectorStatus ? aggregateConnectorMetrics(connectorStatus) : undefined
+  )
+  const connectorErrorCount = $derived(
+    connectorMetrics ? countConnectorErrors(connectorMetrics) : 0
   )
 
   const graphPaneDefaultSize = 55
@@ -352,6 +361,7 @@
     rootNodeId: diagramRootNodeId,
     globalMetrics,
     connectorMetrics,
+    connectorStatus,
     runtimeConfig,
     pipelineEvents,
     collectedAt: selectedTimestamp,
@@ -488,7 +498,14 @@
 
 <!-- ── Analysis panel labels and tab-bar-end snippets ────────────────────────── -->
 {#snippet metricsLabel()}Metrics{/snippet}
-{#snippet connectorsLabel()}Connectors{/snippet}
+{#snippet connectorsLabel()}
+  Connectors
+  {#if connectorErrorCount > 0}
+    <span class="ml-1 {statusCounterClass} {statusToneColors.error.chip}">
+      {connectorErrorCount}
+    </span>
+  {/if}
+{/snippet}
 {#snippet healthLabel()}Health{/snippet}
 {#snippet logsLabel()}Logs{/snippet}
 {#snippet configLabel()}Config{/snippet}

@@ -39,6 +39,16 @@ export type OutputEndpointMetrics = {
   transmitted_records: number
 }
 
+/** An error reported by a connector. */
+export type ConnectorError = {
+  /** Sequence number of the error. A jump between two errors of a tag means skipped errors. */
+  index: number
+  message: string
+  tag?: string | null
+  /** RFC3339 timestamp */
+  timestamp: string
+}
+
 export type InputEndpointStatus = {
   endpoint_name: string
   config: { stream: string }
@@ -47,6 +57,9 @@ export type InputEndpointStatus = {
   barrier: boolean
   health?: ConnectorHealth | null
   fatal_error?: string | null
+  /** The most recent errors. Absent when the status was collected without connector errors. */
+  parse_errors?: ConnectorError[] | null
+  transport_errors?: ConnectorError[] | null
 }
 
 export type OutputEndpointStatus = {
@@ -57,6 +70,9 @@ export type OutputEndpointStatus = {
   paused?: boolean
   health?: ConnectorHealth | null
   fatal_error?: string | null
+  /** The most recent errors. Absent when the status was collected without connector errors. */
+  encode_errors?: ConnectorError[] | null
+  transport_errors?: ConnectorError[] | null
 }
 
 /** The part of a `/stats` response that `aggregateConnectorMetrics` reads. */
@@ -98,6 +114,20 @@ export type AggregatedOutputEndpointMetrics = AggregatedMetrics<
 export type ConnectorMetrics = {
   tables: Map<string, AggregatedInputEndpointMetrics>
   views: Map<string, AggregatedOutputEndpointMetrics>
+}
+
+/** Sum of the error counters that the connector tables show, over all connectors. */
+export const countConnectorErrors = ({ tables, views }: ConnectorMetrics): number => {
+  let count = 0
+  for (const { aggregate } of tables.values()) {
+    count +=
+      (aggregate.metrics.num_parse_errors ?? 0) + (aggregate.metrics.num_transport_errors ?? 0)
+  }
+  for (const { aggregate } of views.values()) {
+    count +=
+      (aggregate.metrics.num_encode_errors ?? 0) + (aggregate.metrics.num_transport_errors ?? 0)
+  }
+  return count
 }
 
 /**
