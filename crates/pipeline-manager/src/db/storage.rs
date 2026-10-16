@@ -1,7 +1,7 @@
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
 use crate::db::types::api_key::ApiKeyDescr;
-use crate::db::types::deployment::PipelineDeploymentConfig;
+use crate::db::types::deployment::DynamicConfig;
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
     ExtendedPipelineMonitorEvent, NewClusterMonitorEvent, PipelineMonitorEvent,
@@ -419,7 +419,7 @@ pub(crate) trait Storage {
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-        patch: &PipelineDeploymentConfig,
+        patch: &DynamicConfig,
     ) -> Result<ExtendedPipelineDescr, DBError>;
 
     /// Updates an existing pipeline.
