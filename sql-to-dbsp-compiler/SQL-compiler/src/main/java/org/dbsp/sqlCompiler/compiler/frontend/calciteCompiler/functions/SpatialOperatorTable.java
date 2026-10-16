@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions;
 
 import org.apache.calcite.config.CalciteConnectionConfigImpl;
 import org.apache.calcite.jdbc.CalciteSchema;

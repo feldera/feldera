@@ -64,7 +64,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CustomFunctions;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateAggregate;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;

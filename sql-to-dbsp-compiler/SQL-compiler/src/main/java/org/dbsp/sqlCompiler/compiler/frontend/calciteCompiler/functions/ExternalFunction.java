@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions;
 
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
@@ -59,7 +59,7 @@ public class ExternalFunction extends SqlFunction {
     @Nullable
     public final RexNode body;
 
-    static final String JSONSTRING_AS = "jsonstring_as_";
+    public static final String JSONSTRING_AS = "jsonstring_as_";
 
     public static SqlOperandTypeChecker createTypeChecker(String function, List<RelDataTypeField> parameters) {
         if (parameters.isEmpty())
