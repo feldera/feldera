@@ -1,14 +1,5 @@
 //! System introspection utilities.
 
-/// True when this process runs inside a Kubernetes pod.
-///
-/// Kubernetes injects `KUBERNETES_SERVICE_HOST` into every pod, and the
-/// pipeline manager rejects user-supplied `KUBERNETES_*` variables in the
-/// pipeline's `env` config.
-pub fn running_in_kubernetes() -> bool {
-    std::env::var_os("KUBERNETES_SERVICE_HOST").is_some()
-}
-
 /// Returns the memory, in megabytes (MB), of the current system, or `None`
 /// when the operating system does not report it.
 ///

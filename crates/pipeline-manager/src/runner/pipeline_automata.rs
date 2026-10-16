@@ -2,7 +2,7 @@ use crate::config::CommonConfig;
 use crate::db::error::DBError;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::StoragePostgres;
-use crate::db::types::deployment::merge_deployment_config;
+use crate::db::types::deployment::{deployment_config_view, merge_deployment_config};
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineId,
     runtime_desired_status_to_string, runtime_status_to_string,
@@ -25,7 +25,7 @@ use crate::runner::pipeline_logs::{
 };
 use chrono::{DateTime, Utc};
 use feldera_types::config::LegacySpelling;
-use feldera_types::config::PipelineConfig;
+use feldera_types::config::{DynamicConfig, DynamicResources, PipelineConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{
     ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus, RuntimeStatusDetails,
@@ -267,6 +267,9 @@ where
     /// Last time the resources/runtime details were updated.
     prev_details_update: Option<Instant>,
 
+    /// Last time a failed `PATCH /dynamic_config` was logged.
+    prev_dynamic_config_warning: Option<Instant>,
+
     /// Previously observed resources status details.
     prev_resources_status_details: Option<serde_json::Value>,
 
@@ -303,6 +306,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// Timeout for an HTTP request to the pipeline `/status` endpoint.
     const PIPELINE_STATUS_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
+    /// Timeout for an HTTP request to the pipeline `/dynamic_config` endpoint. It is
+    /// short because the request runs inside the poll of the pipeline status.
+    const PIPELINE_DYNAMIC_CONFIG_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+
     /// When the pipeline becomes `Provisioned`, it will provide the first runtime status in
     /// advance (`Initializing`). It will take some time before the pipeline HTTP server actually
     /// becomes responsive and is able to provide its own runtime status. This is the grace period
@@ -317,6 +324,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
     /// If nothing changes, this will create the same event.
     const DETAILS_UPDATE_MAX_INTERVAL: Duration = Duration::from_secs(600);
+
+    /// Minimum time between two logged failures of `PATCH /dynamic_config`, which is retried on
+    /// every poll.
+    const DYNAMIC_CONFIG_WARNING_INTERVAL: Duration = Duration::from_secs(60);
 
     /// A cycle slower than this is logged, because the automaton cannot act on
     /// a new desired status, such as a stop, until the cycle finishes. It is
@@ -368,6 +379,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             ),
             database_error_counter: 0,
             prev_details_update: None,
+            prev_dynamic_config_warning: None,
             prev_resources_status_details: None,
             prev_runtime_status_details: None,
             prev_storage_status_details: None,
@@ -991,6 +1003,80 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Err(e) => Err(InternalRequestError::InvalidResponseBody {
                 error: format!("unable to deserialize response as JSON due to: {e}"),
             }),
+        }
+    }
+
+    /// Makes the pipeline's `memory_max` match the deployment config: when the
+    /// `memory_max` in the pipeline status differs, sends the deployment's with
+    /// `PATCH /dynamic_config`. This also covers a restarted pipeline process.
+    /// A failed request is tried again on the next poll. Multihost pipelines
+    /// cannot be resized.
+    async fn reconcile_dynamic_config(
+        &mut self,
+        deployment_config: &serde_json::Value,
+        location: &str,
+        status_details: &serde_json::Value,
+    ) {
+        if !deployment_config["multihost"].is_null() {
+            return;
+        }
+        let Ok(desired) =
+            serde_json::from_value::<DynamicConfig>(deployment_config_view(deployment_config))
+        else {
+            return;
+        };
+        // Without `memory_max` there is nothing to apply. A resize always sets it.
+        let Some(desired) = desired.resources.memory_max else {
+            return;
+        };
+        // A pipeline reports `memory_max` only once it runs.
+        let Some(applied) = serde_json::from_value::<RuntimeStatusDetails>(status_details.clone())
+            .ok()
+            .and_then(|details| details.memory_max)
+        else {
+            return;
+        };
+        if applied == desired {
+            return;
+        }
+        let url = format_pipeline_url(
+            if self.common_config.enable_https {
+                "https"
+            } else {
+                "http"
+            },
+            location,
+            "dynamic_config",
+            "",
+        );
+        let update = DynamicConfig {
+            resources: DynamicResources {
+                memory_max: Some(desired),
+                ..Default::default()
+            },
+        };
+        let failure = match self
+            .client
+            .patch(&url)
+            .json(&update)
+            .timeout(Self::PIPELINE_DYNAMIC_CONFIG_HTTP_REQUEST_TIMEOUT)
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => return,
+            Ok(response) => format!("returned {}", response.status()),
+            Err(e) => format!("failed: {e}"),
+        };
+        if self
+            .prev_dynamic_config_warning
+            .is_none_or(|t| t.elapsed() >= Self::DYNAMIC_CONFIG_WARNING_INTERVAL)
+        {
+            self.prev_dynamic_config_warning = Some(Instant::now());
+            warn!(
+                pipeline_id = %self.pipeline_id,
+                pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
+                "Pipeline PATCH /dynamic_config {failure}; trying again on the next poll"
+            );
         }
     }
 
@@ -1932,6 +2018,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             };
         }
 
+        self.reconcile_dynamic_config(
+            deployment_config,
+            deployment_location,
+            &latest_runtime_extended_status.runtime_status_details,
+        )
+        .await;
+
         // The pipeline status needs to substantially change for it to be updated
         let resources_status_details_changed = self
             .prev_resources_status_details
@@ -2102,6 +2195,7 @@ mod test {
     use feldera_types::error::ErrorResponse;
     use feldera_types::program_schema::ProgramSchema;
     use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus, RuntimeStatus};
+    use feldera_types::size::ConfigSize;
     use serde_json::json;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -2902,6 +2996,133 @@ mod test {
             test.pipeline().await.deployment_config,
             Some(deployment_config)
         );
+    }
+
+    /// Returns the `memory_max` of each `PATCH /dynamic_config` the mock pipeline received.
+    async fn dynamic_config_patches(server: &MockServer) -> Vec<Option<ConfigSize>> {
+        server
+            .received_requests()
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|request| request.url.path() == "/dynamic_config")
+            .map(|request| {
+                assert_eq!(request.method, http::Method::PATCH);
+                request
+                    .body_json::<feldera_types::config::DynamicConfig>()
+                    .unwrap()
+                    .resources
+                    .memory_max
+            })
+            .collect()
+    }
+
+    /// The pipeline gets the deployment's `memory_max` whenever the value in its status differs:
+    /// after a resize, and after its process starts again with its old value, even if no poll saw
+    /// it initializing. Nothing is sent while the deployment sets no `memory_max`, for a CPU-only
+    /// resize, or while the pipeline reports no `memory_max`. A failed `PATCH` is sent again on the
+    /// next poll.
+    #[tokio::test]
+    async fn resize_reconciles_the_pipeline_dynamic_config() {
+        let (mut server, _temp, mut test) = setup_complete().await;
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(
+            &mut server,
+            vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))],
+        )
+        .await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioned, StorageStatus::InUse)
+            .await;
+        let (db, tenant_id, pipeline_id) = (
+            test.db.clone(),
+            test.automaton.tenant_id,
+            test.automaton.pipeline_id,
+        );
+        let resize = |field: &'static str, value: serde_json::Value| {
+            let db = db.clone();
+            async move {
+                let pipeline = db
+                    .lock()
+                    .await
+                    .get_pipeline_by_id(tenant_id, pipeline_id)
+                    .await
+                    .unwrap();
+                let mut resized = pipeline.deployment_config.unwrap();
+                resized["resources"][field] = value;
+                db.lock()
+                    .await
+                    .pool
+                    .get()
+                    .await
+                    .unwrap()
+                    .execute(
+                        "UPDATE pipeline SET deployment_config = $1 WHERE id = $2",
+                        &[&resized.to_string(), &pipeline_id.0],
+                    )
+                    .await
+                    .unwrap();
+            }
+        };
+        // A pipeline whose status reports `memory_max`, and that answers
+        // `PATCH /dynamic_config` with `patch_code`.
+        let mock_pipeline = |memory_max: Option<ConfigSize>, patch_code: u16| {
+            vec![
+                MockEndpoint::new(
+                    "GET",
+                    "/status",
+                    200,
+                    json!({
+                        "runtime_status": "Paused",
+                        "runtime_status_details": {"memory_max": memory_max},
+                        "runtime_desired_status": "Paused",
+                        "storage_status_details": null,
+                    }),
+                ),
+                MockEndpoint::new("PATCH", "/dynamic_config", patch_code, json!({})),
+            ]
+        };
+        let mb_4000 = ConfigSize::from_mb(4_000);
+        let mb_16000 = ConfigSize::from_mb(16_000);
+
+        // The deployment sets no `memory_max`, so nothing is sent, even though the pipeline
+        // reports the `memory_max` it derived from the available memory.
+        mock_endpoints(&mut server, mock_pipeline(Some(mb_16000), 200)).await;
+        test.tick().await;
+        assert_eq!(dynamic_config_patches(&server).await, vec![]);
+
+        // CPU means nothing to the pipeline, so a CPU-only resize sends nothing.
+        resize("cpu_cores_max", json!(16.0)).await;
+        test.tick().await;
+        assert_eq!(dynamic_config_patches(&server).await, vec![]);
+
+        // A resize is sent until the pipeline reports it.
+        resize("memory_max", json!(mb_4000)).await;
+        test.tick().await;
+        assert_eq!(dynamic_config_patches(&server).await, vec![Some(mb_4000)]);
+        mock_endpoints(&mut server, mock_pipeline(Some(mb_4000), 200)).await;
+        test.tick().await;
+        assert_eq!(dynamic_config_patches(&server).await, vec![]);
+
+        // A process that started again reports its old value and gets the resize again.
+        mock_endpoints(&mut server, mock_pipeline(Some(mb_16000), 200)).await;
+        test.tick().await;
+        assert_eq!(dynamic_config_patches(&server).await, vec![Some(mb_4000)]);
+
+        // A failed `PATCH` is sent again on the next poll.
+        mock_endpoints(&mut server, mock_pipeline(Some(mb_16000), 503)).await;
+        test.tick().await;
+        test.tick().await;
+        assert_eq!(
+            dynamic_config_patches(&server).await,
+            vec![Some(mb_4000), Some(mb_4000)]
+        );
+
+        // A pipeline that reports no `memory_max`, for example while it initializes, gets no
+        // `PATCH`.
+        mock_endpoints(&mut server, mock_pipeline(None, 200)).await;
+        test.tick().await;
+        assert_eq!(dynamic_config_patches(&server).await, vec![]);
     }
 
     /// A resize stored in the deployment config is kept by a restart and reset once storage is

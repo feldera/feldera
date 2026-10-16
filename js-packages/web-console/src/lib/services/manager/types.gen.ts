@@ -5988,6 +5988,12 @@ export type RuntimeStatusDetails = {
   approval_diff?: unknown
   connector_stats?: ConnectorStats | null
   /**
+   * The `resources.memory_max` the pipeline uses, which a resize changes.
+   *
+   * Specifically useful for: `Paused`, `Running`.
+   */
+  memory_max?: string | null
+  /**
    * Free form text giving an explanation why it is currently in this runtime status.
    *
    * Specifically useful for: `Unavailable`, `Initializing`.

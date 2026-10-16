@@ -1,5 +1,6 @@
 use crate::checkpoint::CheckpointMetadata;
 use crate::error::ErrorResponse;
+use crate::size::ConfigSize;
 use actix_web::body::BoxBody;
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder, Responder, ResponseError};
@@ -405,6 +406,13 @@ pub struct RuntimeStatusDetails {
     /// Specifically useful for: `Paused`, `Running`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub connector_stats: Option<ConnectorStats>,
+
+    /// The `resources.memory_max` the pipeline uses, which a resize changes.
+    ///
+    /// Specifically useful for: `Paused`, `Running`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>)]
+    pub memory_max: Option<ConfigSize>,
 
     /// The diff which is awaiting approval.
     ///

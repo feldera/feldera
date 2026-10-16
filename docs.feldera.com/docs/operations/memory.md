@@ -17,14 +17,18 @@ On single-host deployments (for example, in Docker), if neither
 parameter is set, `resources.memory_max` is set to the smaller
 value of host memory size, and container memory limit.  In a
 multi-host deployment each pipeline process that finds neither
-parameter set derives `max_rss` from its own host's available
-memory at startup.
+parameter set derives `resources.memory_max` from its own host's
+available memory at startup.
 
 In every case, the pipeline caps its memory limit at the memory
 available to it, which is the host's memory or the container's memory
 limit, whichever is smaller.  The pipeline rechecks this every second,
 so if the container's memory limit changes while the pipeline runs,
 the pipeline adjusts its limit to match.
+
+When [a running pipeline is resized](/pipelines/configuration#resizing-a-running-pipeline),
+the new `resources.memory_max` also becomes its memory limit,
+unless `max_rss` is set.
 
 The pipeline reports its current memory pressure level (`low`,
 `moderate`, `high`, or `critical`) via the

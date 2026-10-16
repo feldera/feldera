@@ -356,6 +356,9 @@ pub trait EngineRuntime: Send + Sync {
     /// The memory pressure level, and the number of times it reached high or critical.
     fn memory_pressure(&self) -> Option<(MemoryPressure, u64)>;
 
+    /// Changes the process memory budget, in bytes, while the circuit runs.
+    fn set_max_rss_bytes(&self, max_rss: Option<u64>);
+
     /// A snapshot of the engine's metrics.
     fn metrics(&self) -> EngineMetrics;
 

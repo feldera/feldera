@@ -2545,6 +2545,7 @@ mod tests {
                         reason: Some("abc".to_string()),
                         connector_stats: Some(ConnectorStats { num_errors: 123 }),
                         approval_diff: Some(json!({"a": "b"})),
+                        memory_max: None,
                     }
                     .serialize_guaranteed(),
                 ),

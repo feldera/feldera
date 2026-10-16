@@ -10,6 +10,13 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Experimental (Enterprise, Kubernetes): a resize of `memory_max` with
+  `PATCH /v0/pipelines/{name}` also changes the memory budget of the
+  running pipeline, unless `max_rss` is set.  A smaller budget applies at
+  once, so the pipeline moves state to storage before the pod shrinks.  A
+  larger budget applies when the pod has grown.  See
+  [Resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline).
+
 - `GET /v0/pipelines/{pipeline_name}/logs` accepts `follow=false`, which
   returns the retained logs and ends the response instead of waiting for
   new lines. Support bundles use it to collect logs.

@@ -184,7 +184,7 @@ pub use feldera_types::config::{
     RuntimeConfig, TransportConfig,
 };
 use feldera_types::config::{
-    DEFAULT_MAX_WORKER_BATCH_SIZE, DevTweaks, FileBackendConfig, FtConfig, FtModel,
+    DEFAULT_MAX_WORKER_BATCH_SIZE, DevTweaks, DynamicConfig, FileBackendConfig, FtConfig, FtModel,
     OutputBufferConfig, PipelineIdentity, StorageBackendConfig, StorageOptions, SyncConfig,
 };
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
@@ -2395,6 +2395,25 @@ impl Controller {
         reply_or_controller_exit(receiver.await)?;
         self.inner.request_step();
         Ok(())
+    }
+
+    /// Applies a resize. The new `memory_max` becomes the memory budget, unless
+    /// `max_rss` sets the budget. Without `memory_max`, nothing changes.
+    pub fn apply_dynamic_config(&self, config: DynamicConfig) {
+        let Some(memory_max) = config.resources.memory_max else {
+            return;
+        };
+        if self.inner.status.pipeline_config.global.max_rss.is_none() {
+            self.inner
+                .runtime
+                .set_max_rss_bytes(Some(memory_max.as_bytes()));
+        }
+        *self.inner.memory_max.lock().unwrap() = Some(memory_max);
+    }
+
+    /// Returns the `memory_max` the pipeline last received.
+    pub fn memory_max(&self) -> Option<ConfigSize> {
+        *self.inner.memory_max.lock().unwrap()
     }
 
     pub async fn start_compaction(&self) -> Result<(), ControllerError> {
@@ -6399,31 +6418,15 @@ impl ControllerInit {
         if max_rss.is_none()
             && let Some(memory_max) = &pipeline_config.global.resources.memory_max
         {
-            if feldera_observability::system::running_in_kubernetes() {
-                warn!(
-                    "RSS memory limit ('max_rss') is not set, but a Kubernetes pod memory limit \
-('resources.memory_max' = {memory_max}) is configured. \
-Using the pod limit as the RSS memory limit."
-                );
-            } else {
-                info!(
-                    "RSS memory limit ('max_rss') is not set; using 'resources.memory_max' \
+            info!(
+                "RSS memory limit ('max_rss') is not set; using 'resources.memory_max' \
 ({memory_max}) as the RSS memory limit."
-                );
-            }
+            );
             max_rss = Some(*memory_max);
         } else if max_rss.is_none() && pipeline_config.global.resources.memory_max.is_none() {
             warn!(
                 "RSS memory limit ('max_rss') is not set, and no deployment memory limit \
 ('resources.memory_max') is configured. We recommend configuring at least one of these settings to avoid out-of-memory failures."
-            );
-        } else if let Some(max_rss) = max_rss
-            && let Some(memory_max) = &pipeline_config.global.resources.memory_max
-            && max_rss > *memory_max
-        {
-            warn!(
-                "RSS memory limit ('max_rss' = {max_rss}) exceeds the deployment memory limit \
-('resources.memory_max' = {memory_max}). This will likely cause out-of-memory failures."
             );
         }
 
@@ -7727,6 +7730,8 @@ pub struct ControllerInner {
     /// The engine's services. They do not keep the engine alive, so that it goes away once
     /// its threads end, without waiting for the controller to be dropped.
     runtime: Arc<dyn EngineRuntime>,
+    /// The `memory_max` last received, which `/status` reports.
+    memory_max: Mutex<Option<ConfigSize>>,
     /// Canceled when the pipeline starts going down.
     ///
     /// A child of the runtime's kill token, so the runtime cancels it too.
@@ -7897,6 +7902,7 @@ impl ControllerInner {
                 input_distribution: input_distribution.clone(),
                 shutdown: runtime.shutdown_token().child_token(),
                 runtime,
+                memory_max: Mutex::new(config.global.resources.memory_max),
                 circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
                 backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
                 error_cb,
@@ -10846,7 +10852,7 @@ mod controller_init_tests {
     }
 
     /// The circuit gets the full budget and reserves DataFusion's share, even
-    /// when only `datafusion_memory_mb` is set.
+    /// when only `datafusion_memory` is set.
     #[test]
     fn circuit_config_reserves_datafusion_memory() {
         let cases = [

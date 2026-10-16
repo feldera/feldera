@@ -412,6 +412,12 @@ impl EngineRuntime for StaticRuntime {
         })
     }
 
+    fn set_max_rss_bytes(&self, max_rss: Option<u64>) {
+        if let Some(runtime) = self.runtime.upgrade() {
+            runtime.set_max_rss_bytes(max_rss);
+        }
+    }
+
     fn metrics(&self) -> EngineMetrics {
         EngineMetrics {
             late_records: TOTAL_LATE_RECORDS.load(Ordering::Relaxed),
