@@ -1,5 +1,6 @@
 import { unzip, type ZipItem } from 'but-unzip'
 import type { ConnectorStatus } from 'common-ui/connectorMetrics'
+import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
 import type { Dataflow, JsonProfiles } from 'profiler-lib'
 import sortOn from 'sort-on'
 import { groupBy } from './array'
@@ -12,15 +13,17 @@ const dataflowGraphRegex = /dataflow_graph\.json$/
 const pipelineConfigRegex = /pipeline_config\.json$/
 const logsRegex = /logs\.txt$/
 const statsRegex = /stats\.json$/
+const pipelineEventsRegex = /pipeline_events\.json$/
 
 // Any of these files makes a collection worth opening. A bundle missing the circuit profile
-// still carries program code, config, logs and stats, all of which the viewer can display.
+// still carries program code, config, logs, stats and events, all of which the viewer can display.
 const usefulFileRegexes = [
   circuitProfileRegex,
   dataflowGraphRegex,
   pipelineConfigRegex,
   logsRegex,
-  statsRegex
+  statsRegex,
+  pipelineEventsRegex
 ]
 
 // New bundle layout (since support-bundle metadata_version 1): each collection
@@ -68,6 +71,9 @@ export interface ProcessedProfile {
   /** Pipeline runtime configuration (`runtime_config` from `pipeline_config.json`), when the
    *  bundle includes it. */
   runtimeConfig?: unknown
+  /** Pipeline monitor events from `pipeline_events.json`, newest first, when the bundle includes
+   *  them. */
+  pipelineEvents?: PipelineMonitorEvent[]
 }
 
 /**
@@ -188,6 +194,18 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
     }
   }
 
+  // A malformed file leaves the events undefined and does not fail the load.
+  const pipelineEventsFile = files.find((file) => pipelineEventsRegex.test(file.filename))
+  let pipelineEvents: PipelineMonitorEvent[] | undefined
+  if (pipelineEventsFile) {
+    try {
+      const parsed: unknown = JSON.parse(decoder.decode(await pipelineEventsFile.read()))
+      pipelineEvents = Array.isArray(parsed) ? parsed.filter(isPipelineMonitorEvent) : undefined
+    } catch {
+      pipelineEvents = undefined
+    }
+  }
+
   return {
     profile,
     dataflow,
@@ -196,8 +214,21 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
     pipelineName,
     globalMetrics,
     connectorStatus,
-    runtimeConfig
+    runtimeConfig,
+    pipelineEvents
   }
+}
+
+/** Checks only the fields that identify an event and place it on the timeline. The Health tab
+ *  shows the other fields without a check. */
+function isPipelineMonitorEvent(value: unknown): value is PipelineMonitorEvent {
+  const e = value as Partial<PipelineMonitorEvent> | null
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    typeof e.event_id === 'string' &&
+    typeof e.recorded_at === 'string'
+  )
 }
 
 /**

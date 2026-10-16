@@ -1,14 +1,15 @@
 <script lang="ts">
   import type { ConnectorStatus } from 'common-ui/connectorMetrics'
+  import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import {
     createLoadGuard,
-    getSuitableProfiles,
     type GlobalMetrics,
+    getSuitableProfiles,
     processProfileFiles,
     SupportBundleViewerLayout,
     type ZipItem
   } from 'profiler-layout'
-  import type { JsonProfiles, Dataflow } from 'profiler-lib'
+  import type { Dataflow, JsonProfiles } from 'profiler-lib'
   import { TriageResults } from 'triage-types'
   import faviconDataUrl from '$assets/favicon.svg?dataurl=enc'
   import FelderaModernLogoColorDark from '$assets/images/feldera-modern/Feldera Logo Color Dark.svg?component'
@@ -28,6 +29,7 @@
     globalMetrics: GlobalMetrics | undefined
     connectorStatus: ConnectorStatus | undefined
     runtimeConfig: unknown
+    pipelineEvents: PipelineMonitorEvent[] | undefined
   } | null = $state(null)
 
   let fileInput: HTMLInputElement | null = $state(null)
@@ -52,7 +54,8 @@
       logText: data.logText,
       globalMetrics: data.globalMetrics,
       connectorStatus: data.connectorStatus,
-      runtimeConfig: data.runtimeConfig
+      runtimeConfig: data.runtimeConfig,
+      pipelineEvents: data.pipelineEvents
     }
   }
 
@@ -122,6 +125,7 @@
       globalMetrics={profileData.globalMetrics}
       connectorStatus={profileData.connectorStatus}
       runtimeConfig={profileData.runtimeConfig}
+      pipelineEvents={profileData.pipelineEvents}
       triageResults={new TriageResults()}
       {profileFiles}
       {selectedTimestamp}
