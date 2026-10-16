@@ -14,6 +14,10 @@
 //! value but not in representation, empty and nested containers, and every arm
 //! of the variant enum.  The second says the same thing over random values.
 
+// Covers the enum `Variant` alongside the other SQL types until the
+// enum is removed.
+#![allow(deprecated)]
+
 use std::collections::BTreeMap;
 use std::mem::size_of;
 
