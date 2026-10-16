@@ -138,12 +138,15 @@ def test_suspend_enterprise(pipeline_name):
       5. Start c2 -> c2 runs, triggers start_after dependency for c3 -> data from both.
       6. Suspend/resume again -> all connectors in EOI, verify no new data arrives.
     """
-    before_max_rss_mb = 64_000
-    after_max_rss_mb = 65_000
+    # The circuit's memory limit is the smaller of `max_rss_mb` and the memory
+    # available to the process, so keep `max_rss_mb` well below any realistic
+    # host or container memory limit for it to be the binding one.
+    before_max_rss_mb = 2_000
+    after_max_rss_mb = 2_100
     # The pipeline carves the DataFusion pool out of `max_rss_mb` before sizing
     # the circuit (`Controller::circuit_config` in crates/adapters); pinning the
     # pool makes the expected circuit RSS exact.
-    datafusion_memory_mb = 1_000
+    datafusion_memory_mb = 500
 
     def runtime_config(max_rss_mb: int) -> dict:
         return {
