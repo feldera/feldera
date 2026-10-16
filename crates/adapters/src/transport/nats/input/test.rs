@@ -5,6 +5,8 @@ mod auth_tests;
 mod control_tests;
 mod controller_framework;
 mod custom_tests;
+mod hardening_tests;
+mod jetstream_proxy;
 mod mock_framework;
 mod mock_tests;
 
@@ -98,6 +100,28 @@ pub(crate) mod util {
 
         fn log(&self) -> String {
             fs::read_to_string(&self.log_path).unwrap_or_else(|e| format!("<unreadable: {e}>"))
+        }
+
+        /// Suspends the server with SIGSTOP. Its sockets stay open, so
+        /// requests time out instead of failing fast, as on a stalled cluster.
+        pub fn freeze(&self) -> AnyResult<()> {
+            self.signal("STOP")
+        }
+
+        /// Resumes a server suspended by [`Self::freeze`].
+        pub fn thaw(&self) -> AnyResult<()> {
+            self.signal("CONT")
+        }
+
+        fn signal(&self, signal: &str) -> AnyResult<()> {
+            let status = Command::new("kill")
+                .arg(format!("-{signal}"))
+                .arg(self.process.id().to_string())
+                .status()?;
+            if !status.success() {
+                return Err(anyhow!("kill -{signal} failed with {status}"));
+            }
+            Ok(())
         }
     }
 
@@ -270,6 +294,33 @@ pub(crate) mod util {
         let js = jetstream::new(client);
         js.delete_stream(stream).await?;
         Ok(())
+    }
+
+    /// Lists the consumers that currently exist on `stream`, as seen by the
+    /// server.
+    pub async fn list_consumers(
+        nats_url: &str,
+        stream: &str,
+    ) -> AnyResult<Vec<jetstream::consumer::Info>> {
+        use futures::TryStreamExt;
+
+        let client = wait_for_nats_ready(nats_url, Duration::from_secs(5)).await?;
+        let js = jetstream::new(client);
+        let stream = js.get_stream(stream).await?;
+        let consumers = stream.consumers().try_collect().await?;
+        Ok(consumers)
+    }
+
+    /// Deletes every consumer on `stream`, as an operator cleaning up
+    /// consumers by name prefix would.
+    pub async fn delete_consumers(nats_url: &str, stream: &str) -> AnyResult<usize> {
+        let consumers = list_consumers(nats_url, stream).await?;
+        let client = wait_for_nats_ready(nats_url, Duration::from_secs(5)).await?;
+        let js = jetstream::new(client);
+        for info in &consumers {
+            js.delete_consumer_from_stream(&info.name, stream).await?;
+        }
+        Ok(consumers.len())
     }
 
     /// Tests for the server-spawning helpers themselves. Every NATS test depends
