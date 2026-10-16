@@ -1,6 +1,7 @@
 <script lang="ts">
   import triagePlugins, { createBundle, TriageResults } from 'virtual:feldera-triage-plugins'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
+  import type { ConnectorStatus } from 'common-lib/connectorMetrics'
   import { enclosure, nonNull } from 'common-lib/function'
   import {
     createLoadGuard,
@@ -62,6 +63,7 @@
         sources: string[] | undefined
         logText: string | undefined
         globalMetrics: GlobalMetrics | undefined
+        connectorStatus: ConnectorStatus | undefined
         runtimeConfig: unknown
       })
     | null = $state(null)
@@ -122,6 +124,7 @@
       sources: processed.sources,
       logText: processed.logText,
       globalMetrics: processed.globalMetrics,
+      connectorStatus: processed.connectorStatus,
       runtimeConfig: processed.runtimeConfig
     })
   }
@@ -398,7 +401,7 @@
       {/if}
     </div>
   {:else if getProfileData}
-    {@const { profile, dataflow, sources, logText, globalMetrics, runtimeConfig } =
+    {@const { profile, dataflow, sources, logText, globalMetrics, connectorStatus, runtimeConfig } =
       getProfileData()}
     <div class="min-h-0 flex-1 px-4 pb-4">
       <SupportBundleViewerLayout
@@ -407,6 +410,7 @@
         programCode={sources}
         {logText}
         {globalMetrics}
+        {connectorStatus}
         {runtimeConfig}
         {triageResults}
         theme={darkMode.current}
