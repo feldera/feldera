@@ -165,16 +165,19 @@
   )
   let highlightRanges: SourcePositionRange[] = $state([])
 
-  // The graph panel's diagram is hoisted to a <PersistentContent> overlay so it survives the
-  // sqlPanelFullHeight layout toggle (which would otherwise unmount/remount the snippet's
-  // <ProfilerDiagram>, discarding the Visualizer's state). The graphPanel snippet renders a
-  // <PersistentPlaceholder> that mirrors its bounding rect onto this shared handle.
+  // The <ProfilerDiagram> is not rendered inside the graphPanel snippet. It is rendered once, at
+  // the root of this component, in a <PersistentContent> overlay with a fixed position. The overlay
+  // follows the position and size of an empty placeholder div in the graphPanel snippet. Thus the
+  // sqlPanelFullHeight layout toggle moves only the placeholder, and the diagram keeps the
+  // Visualizer's state. The placeholder div uses `diagramRect.placeholder` to report its bounding
+  // rect to this shared handle.
   const diagramRect = usePersistentRect()
 
-  // The code panel is hoisted the same way. The layout toggle swaps the {#if} branch that renders
-  // the panel, and Svelte mounts the new branch before it destroys the old branch. An inline panel
-  // would then create a second Monaco model with the same URI, which Monaco rejects. Each layout
-  // branch renders only a placeholder.
+  // The code panel is also rendered once in an overlay at the root, not inside the layout branches.
+  // The layout toggle swaps the {#if} branch that renders the panel, and Svelte mounts the new
+  // branch before it destroys the old branch. A panel inside each branch would then create a second
+  // Monaco model with the same URI, which Monaco rejects. Each layout branch renders only a
+  // placeholder.
   const sourcePanelRect = usePersistentRect()
 
   const lookup = createLookupCoordinator()
