@@ -18,7 +18,7 @@ from feldera import PipelineBuilder
 from feldera.enums import FaultToleranceModel
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
-from tests import TEST_CLIENT
+from tests import TEST_CLIENT, enterprise_only
 from tests.utils import DeltaTestLocation, wait_for_condition
 
 TABLE = "t"
@@ -132,6 +132,7 @@ def test_delta_input_distributed_snapshot_transaction(pipeline_name):
     assert counts == {"n": N_ROWS, "n_distinct": N_ROWS}
 
 
+@enterprise_only
 def test_delta_input_distributed_resume(pipeline_name):
     """After a resume from a checkpoint, the host that follows the table reads
     the commits made while the pipeline was suspended, once, and no host reads
