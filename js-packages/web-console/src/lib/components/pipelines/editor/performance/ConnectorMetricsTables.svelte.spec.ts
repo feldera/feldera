@@ -1,6 +1,6 @@
 import { microseconds } from 'common-lib/duration'
+import { ConnectorMetricsTables } from 'common-ui'
 import { describe, expect, it, vi } from 'vitest'
-
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
@@ -13,7 +13,6 @@ import type {
   OutputEndpointMetrics,
   OutputEndpointStatus
 } from '$lib/services/manager'
-import MetricsTables from './MetricsTables.svelte'
 
 // --- Factories ---
 
@@ -106,7 +105,7 @@ async function renderComponent(
   metrics: { current: PipelineMetrics },
   onConnectorSelect?: (...args: any[]) => void
 ) {
-  return render(MetricsTables, {
+  return render(ConnectorMetricsTables, {
     metrics,
     onConnectorSelect: onConnectorSelect ?? vi.fn()
   })
@@ -118,7 +117,7 @@ async function clickHealthFilter(value: string) {
 
 // --- Tests ---
 
-describe('MetricsTables.svelte', () => {
+describe('ConnectorMetricsTables.svelte', () => {
   describe('A. Basic rendering', () => {
     it('renders nothing when tables and views are empty', async () => {
       await renderComponent(buildMetrics(makeStatus()))

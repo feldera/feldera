@@ -5,17 +5,15 @@
 </script>
 
 <script lang="ts">
+  import type { ConnectorErrorFilter } from 'common-lib/connectorMetrics'
   import { formatDateTime, formatQty } from 'common-lib/format'
   import { sleep } from 'common-lib/promise'
-  import { SegmentedControl } from 'common-ui'
+  import { ConnectorMetricsTables, SegmentedControl } from 'common-ui'
   import Dayjs from 'dayjs'
   import PipelineMemoryGraph from '$lib/components/layout/pipelines/PipelineMemoryGraph.svelte'
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
   import PipelineThroughputGraph from '$lib/components/layout/pipelines/PipelineThroughputGraph.svelte'
-  import MetricsTables from '$lib/components/pipelines/editor/performance/MetricsTables.svelte'
-  import ConnectorErrors, {
-    type ConnectorErrorFilter
-  } from '$lib/components/pipelines/editor/performance/ConnectorErrors.svelte'
+  import ConnectorErrors from '$lib/components/pipelines/editor/performance/ConnectorErrors.svelte'
   import CheckpointsStatus from '$lib/components/pipelines/editor/performance/CheckpointsStatus.svelte'
   import { useIsScreenXl } from '$lib/compositions/layout/useIsMobile.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
@@ -378,7 +376,7 @@
           </div>
           {#if metrics.current.views.size || metrics.current.tables.size}
             <div class="flex flex-wrap gap-4">
-              <MetricsTables {metrics} onConnectorSelect={handleConnectorSelect} />
+              <ConnectorMetricsTables {metrics} onConnectorSelect={handleConnectorSelect} />
             </div>
           {/if}
         </div>
