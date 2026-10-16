@@ -126,7 +126,25 @@ pub(crate) const MAX_LEVEL0_BATCH_SIZE_RECORDS: u16 = 14_999;
 /// something else asks it to, such as a compaction request or memory pressure.
 pub(crate) const MIN_LEVEL0_MERGE_BATCHES: usize = 8;
 
-fn scope_tokio_merger_locals<F>(
+/// Sets the task-local variables of a merger task around `future`.
+///
+/// The variables give the task the worker index, buffer cache, and `FBuf`
+/// slab set of the foreground worker that it works for.  The rest of a merger
+/// task's context, the DBSP runtime and the background thread type, belongs to
+/// the thread.  Only the threads of the merger runtime have it, so the
+/// returned future must run on the merger runtime.
+///
+/// # Arguments
+///
+/// * `worker_index` - the foreground worker that the task works for.
+/// * `buffer_cache` - that worker's background buffer cache.
+/// * `slab_allocator` - that worker's background `FBuf` slab set.
+/// * `future` - the work of the task.
+///
+/// # Returns
+///
+/// A future that runs `future` with the variables set.
+pub(crate) fn scope_tokio_merger_locals<F>(
     worker_index: usize,
     buffer_cache: Arc<BufferCache>,
     slab_allocator: Arc<FBufSlabs>,
@@ -2354,13 +2372,9 @@ where
     }
 
     async fn insert(&mut self, batch: impl Into<Arc<Self::Batch>>) {
-        let batch = Self::maybe_flush_batch(
-            Runtime::runtime().as_ref(),
-            batch,
-            &self.factories,
-            self.layout,
-            || self.merger.state.lock().unwrap().get_filters(),
-        );
+        let batch = Self::maybe_flush_batch(batch, &self.factories, self.layout, || {
+            self.merger.state.lock().unwrap().get_filters()
+        });
         if !batch.is_empty() {
             self.dirty = true;
             if self
@@ -2682,11 +2696,11 @@ where
     /// Returns `batch`, first pushing it to storage if it exceeds the
     /// user-configured `min_storage_bytes` or if we're under high memory
     /// pressure.  A batch pushed to storage is laid out as `layout` asks.
+    /// The runtime of the current thread decides whether to spill.  Outside a
+    /// runtime, the batch stays in memory.
     ///
     /// # Arguments
     ///
-    /// * `runtime` - the runtime whose storage settings and memory pressure
-    ///   decide whether to spill, or `None` to keep the batch in memory.
     /// * `batch` - the batch to keep or spill.
     /// * `factories` - factories for the batch.
     /// * `layout` - how a spilled batch lays out its file.
@@ -2697,7 +2711,6 @@ where
     ///
     /// The batch on storage if it was spilled, and the batch as it arrived otherwise.
     pub fn maybe_flush_batch<F>(
-        runtime: Option<&Runtime>,
         batch: impl Into<Arc<B>>,
         factories: &B::Factories,
         layout: BatchLayout,
@@ -2708,7 +2721,8 @@ where
     {
         let batch = batch.into();
         if batch.location() == BatchLocation::Memory
-            && pick_insert_destination(runtime, &batch) == BatchLocation::Storage
+            && pick_insert_destination(Runtime::runtime().as_ref(), &batch)
+                == BatchLocation::Storage
         {
             let _span = Span::new("eager spill")
                 .with_category("Spine")

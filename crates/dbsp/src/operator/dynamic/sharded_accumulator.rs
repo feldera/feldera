@@ -9,6 +9,7 @@ use std::{
     time::Instant,
 };
 
+use feldera_buffer_cache::ThreadType;
 use feldera_samply::Span;
 use feldera_storage::fbuf::FBuf;
 use itertools::{Itertools as _, zip_eq};
@@ -41,8 +42,9 @@ use crate::{
     },
     profile::{ParkReason, ParkingFor},
     trace::{
-        Batch, BatchLayout, BatchReader as _, Spine, Trace, TraceRole, deserialize_indexed_wset,
-        serialize_indexed_wset,
+        Batch, BatchLayout, BatchLocation, BatchReader as _, Spine, Trace, TraceRole,
+        deserialize_indexed_wset, ord::fallback::pick_insert_destination, serialize_indexed_wset,
+        spine_async::scope_tokio_merger_locals,
     },
 };
 
@@ -408,9 +410,9 @@ where
             .unwrap()
     }
 
-    /// Delivers `batch`, sent by local or remote `sender`, to local worker
-    /// `receiver`.  If `flush` is true, this is the final batch in the
-    /// transaction.  Returns true if the receiving spine has too many batches.
+    /// Delivers `batch`, sent by local `sender`, to local worker `receiver`.
+    /// If `flush` is true, this is the final batch in the transaction.
+    /// Returns true if the receiving spine has too many batches.
     fn deliver(
         &self,
         factories: &B::Factories,
@@ -420,15 +422,78 @@ where
         flush: bool,
     ) -> bool {
         // Spill the batch to disk, if we should, without taking the rxq lock.
-        let batch = Spine::maybe_flush_batch(
-            Some(&self.runtime),
-            batch,
-            factories,
-            self.batch_layout,
-            || (None, None),
-        );
+        let batch = Spine::maybe_flush_batch(batch, factories, self.batch_layout, || (None, None));
+        self.enqueue(sender, receiver, batch, flush)
+    }
+
+    /// Delivers a batch from a remote worker to a local worker.
+    ///
+    /// The exchange calls this outside the runtime, so a batch that must spill
+    /// is spilled on the merger runtime, as the receiving worker's merges are.
+    ///
+    /// # Arguments
+    ///
+    /// * `sender` - the remote worker that sent the batch.
+    /// * `receiver` - the local worker that receives the batch.
+    /// * `batch` - the batch.
+    /// * `flush` - true if this is the sender's final batch in the transaction.
+    async fn deliver_received(
+        self: &Arc<Self>,
+        sender: usize,
+        receiver: usize,
+        batch: B,
+        flush: bool,
+    ) {
+        let batch = if pick_insert_destination(Some(&self.runtime), &batch)
+            == BatchLocation::Storage
+            && let Some(merger_runtime) = self.runtime.tokio_merger_runtime()
+        {
+            let offset = receiver - self.local_workers.start;
+            let buffer_cache = self
+                .runtime
+                .get_buffer_cache(offset, ThreadType::Background);
+            let slab_allocator = self
+                .runtime
+                .get_fbuf_slab_allocator(offset, ThreadType::Background);
+            let this = self.clone();
+            let spill = merger_runtime.spawn(scope_tokio_merger_locals(
+                receiver,
+                buffer_cache,
+                slab_allocator,
+                async move {
+                    Spine::maybe_flush_batch(batch, &this.factories, this.batch_layout, || {
+                        (None, None)
+                    })
+                },
+            ));
+            match spill.await {
+                Ok(batch) => batch,
+                // The merger runtime shut down, or the spill panicked and the
+                // panic hook reported it to the runtime.
+                Err(_) => return,
+            }
+        } else {
+            Arc::new(batch)
+        };
+        self.enqueue(sender, receiver, batch, flush);
+    }
+
+    /// Queues a batch for a local worker without spilling it.
+    ///
+    /// # Arguments
+    ///
+    /// * `sender` - the worker that sent the batch.
+    /// * `receiver` - the local worker that receives the batch.
+    /// * `batch` - the batch.
+    /// * `flush` - true if this is the sender's final batch in the transaction.
+    ///
+    /// # Returns
+    ///
+    /// True if the receiving spine has too many batches.
+    fn enqueue(&self, sender: usize, receiver: usize, batch: Arc<B>, flush: bool) -> bool {
         if flush || !batch.is_empty() {
-            self.rxq(receiver).deliver(factories, sender, batch, flush)
+            self.rxq(receiver)
+                .deliver(&self.factories, sender, batch, flush)
         } else {
             false
         }
@@ -733,7 +798,7 @@ where
                 } else {
                     let flush = pop_flushed(&mut data);
                     let batch = deserialize_indexed_wset(&self.factories, &data);
-                    self.deliver(&self.factories, sender, receiver, batch, flush);
+                    self.deliver_received(sender, receiver, batch, flush).await;
                 }
             }
         })
@@ -1309,16 +1374,22 @@ mod tests {
         circuit::{
             CircuitConfig, Layout, Runtime,
             circuit_builder::CircuitBase,
+            mkconfig,
             operator_traits::{Operator, SinkOperator},
         },
         dynamic::{Data, DowncastTrait, DynData, DynWeightTyped},
-        operator::dynamic::accumulator::EnableCount,
+        operator::{communication::ExchangeDelivery, dynamic::accumulator::EnableCount},
+        storage::file::SerializerInner,
         trace::{
-            Batch, BatchLayout, BatchReader, BatchReaderFactories, Cursor, FallbackWSet, Spine,
+            Batch, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories, Cursor,
+            FallbackWSet, Spine, WithSnapshot, serialize_indexed_wset,
         },
         typed_batch::TypedBatch,
         utils::{Tup2, test::multihost::TestHosts},
     };
+    use feldera_storage::tokio::TOKIO;
+    use feldera_types::memory_pressure::MemoryPressure;
+    use rkyv::AlignedVec;
     use std::{
         borrow::Cow,
         collections::BTreeMap,
@@ -1327,8 +1398,10 @@ mod tests {
             Arc,
             atomic::{AtomicUsize, Ordering},
         },
-        time::Duration,
+        thread::sleep,
+        time::{Duration, Instant},
     };
+    use tempfile::tempdir;
 
     /// Number of rounds for streaming exchange.
     ///
@@ -2129,5 +2202,44 @@ mod tests {
         // Each worker sends its flush to the other host in one message.
         test_hosts.commit_transaction();
         assert_eq!(remote_messages(), WORKERS * (HOSTS - 1));
+    }
+
+    /// A batch from another host spills to storage under memory pressure,
+    /// although the exchange delivers it on a thread outside the runtime.
+    #[test]
+    fn remote_batch_spills_under_memory_pressure() {
+        let temp_dir = tempdir().expect("Can't create temp dir for storage");
+
+        // A one-byte budget puts the runtime under critical memory pressure.
+        let config = mkconfig(temp_dir.path()).with_max_rss_bytes(Some(1));
+        let (dbsp, (_input, exchange)) = Runtime::init_circuit(config, enabled_circuit).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while dbsp.runtime().current_memory_pressure() < MemoryPressure::High {
+            assert!(Instant::now() < deadline, "memory pressure stayed low");
+            sleep(Duration::from_millis(10));
+        }
+
+        // What a worker on another host sends: a serialized batch, then a byte
+        // that says whether it is the sender's final batch.
+        let batch = OrdZSet::from_keys((), vec![Tup2(7usize, 1)]).into_inner();
+        let mut message = AlignedVec::new();
+        message.extend_from_slice(&serialize_indexed_wset(&batch, &mut SerializerInner::new()));
+        message.push(0);
+        TOKIO
+            .block_on(TOKIO.spawn(exchange.clone().received(0, 0, vec![message])))
+            .unwrap();
+
+        let batches = exchange.rxq(0).spines[0]
+            .spine
+            .ro_snapshot()
+            .batches()
+            .to_vec();
+        assert!(!batches.is_empty());
+        assert!(
+            batches
+                .iter()
+                .all(|batch| batch.location() == BatchLocation::Storage)
+        );
+        dbsp.kill().unwrap();
     }
 }
