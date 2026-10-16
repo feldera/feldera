@@ -1,7 +1,7 @@
 <script lang="ts" generics="S extends string, T extends string">
+  import { formatDateTimeRange } from 'common-lib/format'
   import { slide } from 'svelte/transition'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
-  import { formatDateTimeRange } from '$lib/functions/format'
   import type { HealthEventBucket } from '$lib/functions/pipelines/health'
   import type { Snippet } from '$lib/types/svelte'
 

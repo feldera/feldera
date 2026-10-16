@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
+  import { partition } from 'common-lib/array'
+  import { ceilToHour, dateMax } from 'common-lib/date'
   import { match } from 'ts-pattern'
   import EventLogList from '$lib/components/health/EventLogList.svelte'
   import HealthEventList from '$lib/components/health/HealthEventList.svelte'
@@ -16,8 +18,6 @@
   import { ServerDate } from '$lib/compositions/serverTime'
   import { useIsEnterprise } from '$lib/compositions/useEdition.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { partition } from '$lib/functions/common/array'
-  import { ceilToHour, dateMax } from '$lib/functions/common/date'
   import {
     type ClusterBucket,
     type ClusterEventType,

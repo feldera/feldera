@@ -20,6 +20,9 @@ import { SegmentedControl, TabsPanel, PersistentContent, MonacoEditor } from 'co
   that must survive conditional re-renders (see those files for details),
   `ANSIDecoratedText` for rendering ANSI-colored log output.
 
+Code that does not need Svelte (formatting, collections, domain types) lives in
+[`common-lib`](../common-lib/README.md) instead.
+
 `src/lib` is the published surface (re-exported from `src/lib/index.ts`);
 `src/routes` is only a local preview/showcase app and is not published.
 

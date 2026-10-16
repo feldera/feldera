@@ -1,10 +1,10 @@
+import { groupBy } from 'common-lib/array'
+import { type Microseconds, microseconds } from 'common-lib/duration'
+import { normalizeCaseIndependentName } from 'common-lib/felderaRelation'
+import { nonNull } from 'common-lib/function'
+import { discreteDerivative } from 'common-lib/math'
+import { tuple } from 'common-lib/tuple'
 import { ServerDate } from '$lib/compositions/serverTime'
-import { groupBy } from '$lib/functions/common/array'
-import { type Microseconds, microseconds } from '$lib/functions/common/duration'
-import { nonNull } from '$lib/functions/common/function'
-import { discreteDerivative } from '$lib/functions/common/math'
-import { tuple } from '$lib/functions/common/tuple'
-import { normalizeCaseIndependentName } from '$lib/functions/felderaRelation'
 import type {
   CheckpointActivity,
   ControllerStatus,

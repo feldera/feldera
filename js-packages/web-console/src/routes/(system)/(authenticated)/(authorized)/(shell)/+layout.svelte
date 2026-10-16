@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { closedIntervalAction } from 'common-lib/promise'
   import Dayjs from 'dayjs'
   import { invalidateAll } from '$app/navigation'
   import { page } from '$app/state'
@@ -25,7 +26,6 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
-  import { closedIntervalAction } from '$lib/functions/common/promise'
   import { clusterHealthMessage } from '$lib/functions/pipelines/health'
   import { resolve } from '$lib/functions/svelte'
   import type { Snippet } from '$lib/types/svelte'

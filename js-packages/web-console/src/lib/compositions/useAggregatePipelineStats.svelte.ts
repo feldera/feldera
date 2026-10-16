@@ -1,6 +1,6 @@
+import { closedIntervalAction } from 'common-lib/promise'
 import { untrack } from 'svelte'
 import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-import { closedIntervalAction } from '$lib/functions/common/promise'
 import {
   accumulatePipelineMetrics,
   emptyPipelineMetrics,

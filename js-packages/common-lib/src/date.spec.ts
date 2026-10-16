@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { uuidV7Timestamp } from './date'
+import { uuidV7Timestamp } from './date.ts'
 
 describe('uuidV7Timestamp', () => {
   it('returns null for a non-v7 UUID', () => {

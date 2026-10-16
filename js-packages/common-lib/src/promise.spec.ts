@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { promisePool } from './promise'
+import { promisePool } from './promise.ts'
 
 /** A promise whose resolution the test controls explicitly. */
 const deferred = <T>() => {

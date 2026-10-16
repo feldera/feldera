@@ -1,4 +1,4 @@
-import type { SameNullability } from '$lib/types/common/nullable'
+import type { SameNullability } from './types/nullable.ts'
 
 declare const microsecondsBrand: unique symbol
 

@@ -12,6 +12,7 @@
 <!-- svelte-ignore state_referenced_locally -->
 <script lang="ts">
   import { Switch } from '@skeletonlabs/skeleton-svelte'
+  import { count } from 'common-lib/array'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import PanelAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
@@ -23,7 +24,6 @@
   import PanelLogs from '$lib/components/pipelines/editor/TabLogs.svelte'
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-  import { count } from '$lib/functions/common/array'
   import { statusCounterClass, statusToneColors } from '$lib/functions/pipelineStatusColor'
   import { untrack } from 'svelte'
   import { usePermission } from '$lib/compositions/usePermission.svelte'
