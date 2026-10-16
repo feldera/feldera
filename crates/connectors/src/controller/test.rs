@@ -39,10 +39,14 @@ use feldera_adapterlib::{
 use feldera_storage::tokio::TOKIO;
 #[cfg(test)]
 use feldera_types::memory_pressure::MemoryPressure;
+use feldera_types::size::ConfigSize;
 use feldera_types::{
     adapter_stats::ExternalOutputEndpointMetrics,
     checkpoint::CheckpointMetadata,
-    config::{FormatConfig, FtModel, InputEndpointConfig, OutputEndpointConfig, PipelineConfig},
+    config::{
+        DynamicConfig, DynamicResources, FormatConfig, FtModel, InputEndpointConfig,
+        OutputEndpointConfig, PipelineConfig,
+    },
     error::DetailedError,
     postprocess::PostprocessorConfig,
     preprocess::PreprocessorConfig,
@@ -277,6 +281,75 @@ pub fn circuit_thread_panic_is_reported(engine: &dyn PipelineTestEngine) {
         .stop()
         .expect_err("stopping a controller whose circuit thread panicked must fail");
     assert_eq!(stop_error.error_code(), "ControllerPanic");
+}
+
+/// A resize changes the memory budget, unless `max_rss` sets it. The pipeline
+/// reports only the last `memory_max` it got; an update without one changes
+/// nothing.
+#[engine_test]
+pub fn resize_sets_memory_budget(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let resize = |cpu_cores_max: Option<f64>, memory_mb: Option<u64>| DynamicConfig {
+        resources: DynamicResources {
+            cpu_cores_max,
+            memory_max: memory_mb.map(ConfigSize::from_mb),
+            ..Default::default()
+        },
+    };
+
+    // DataFusion keeps 5% of 1000 MB, so the limit is 950 MB; a resize to
+    // 600 MB leaves 550 MB. The test machine has more memory than that.
+    for (max_rss_mb, memory_mb, update, expected_mb) in [
+        (None, Some(1_000), resize(None, Some(600)), 550),
+        // `max_rss` sets the budget.
+        (Some(1_000), None, resize(None, Some(600)), 950),
+        // DataFusion reserved 50 MB, but keeps at most half of 40 MB.
+        (None, Some(1_000), resize(None, Some(40)), 20),
+        // No `memory_max`: CPU only.
+        (None, Some(1_000), resize(Some(4.0), None), 950),
+    ] {
+        let config: PipelineConfig = serde_json::from_value(json!({
+            "name": "test",
+            "workers": 1,
+            "max_rss": max_rss_mb.map(ConfigSize::from_mb),
+            "resources": { "memory_max": memory_mb.map(ConfigSize::from_mb) },
+            "inputs": {}
+        }))
+        .unwrap();
+        let controller = engine
+            .controller(
+                &identity(&[None]),
+                &config,
+                Box::new(|e, _| panic!("error: {e}")),
+            )
+            .unwrap();
+        let limit_mb = || {
+            controller
+                .inner
+                .runtime
+                .metrics()
+                .runtime
+                .unwrap()
+                .max_rss_bytes
+                .unwrap()
+                / 1_000_000
+        };
+        assert_eq!(limit_mb(), 950);
+        assert_eq!(controller.memory_max(), memory_mb.map(ConfigSize::from_mb));
+
+        controller.apply_dynamic_config(update.clone());
+        assert_eq!(limit_mb(), expected_mb, "{update:?}");
+        let reported_mb = match update.resources.memory_max {
+            Some(memory_max) => Some(memory_max.as_bytes() / 1_000_000),
+            None => memory_mb,
+        };
+        assert_eq!(
+            controller.memory_max(),
+            reported_mb.map(ConfigSize::from_mb)
+        );
+        controller.stop().unwrap();
+    }
 }
 
 /// An output endpoint that blocks in `push_buffer` until the test releases it,

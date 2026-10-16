@@ -15422,6 +15422,11 @@
             ],
             "nullable": true
           },
+          "memory_max": {
+            "type": "string",
+            "description": "The `resources.memory_max` the pipeline uses, which a resize changes.\n\nSpecifically useful for: `Paused`, `Running`.",
+            "nullable": true
+          },
           "reason": {
             "type": "string",
             "description": "Free form text giving an explanation why it is currently in this runtime status.\n\nSpecifically useful for: `Unavailable`, `Initializing`.",

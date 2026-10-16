@@ -39,7 +39,7 @@ use actix_web::{
     http::StatusCode,
     http::header,
     middleware::Compress,
-    post, rt,
+    patch, post, rt,
     web::{self, Data as WebData, Payload, Query},
 };
 use arrow::ipc::writer::StreamWriter;
@@ -65,7 +65,7 @@ use feldera_types::circuit::Layout;
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
-use feldera_types::config::{PipelineIdentity, SyncConfig};
+use feldera_types::config::{DynamicConfig, PipelineIdentity, SyncConfig};
 use feldera_types::coordination::{
     AdHocScan, CoordinationActivate, CoordinationCapabilities, CoordinationStatus, InputChoices,
     Labels, RestartArgs, Step, StepRequest,
@@ -1307,9 +1307,9 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
         // The logger is not running yet.
         eprintln!(
             "No memory limit configured ('max_rss' or 'resources.memory_max'); \
-using this host's available memory: 'max_rss' = {available}."
+using this host's available memory: 'resources.memory_max' = {available}."
         );
-        config.global.max_rss = Some(available);
+        config.global.resources.memory_max = Some(available);
     }
 
     eprintln!(
@@ -1631,6 +1631,7 @@ where
         .service(start_output_endpoint)
         .service(rebalance)
         .service(start_compaction)
+        .service(patch_dynamic_config)
         .service(coordination_activate_handler)
         .service(coordination_status)
         .service(coordination_step_request)
@@ -1886,6 +1887,7 @@ fn get_status(
                     },
                     runtime_status_details: RuntimeStatusDetails {
                         connector_stats: Some(connector_stats),
+                        memory_max: controller.memory_max(),
                         ..Default::default()
                     }
                     .serialize_guaranteed(),
@@ -4803,6 +4805,17 @@ async fn start_compaction(state: WebData<ServerState>) -> Result<HttpResponse, P
     Ok(HttpResponse::Ok().into())
 }
 
+/// Applies a resize of the running pipeline. Only the pipeline manager calls
+/// this endpoint.
+#[patch("/dynamic_config")]
+async fn patch_dynamic_config(
+    state: WebData<ServerState>,
+    args: web::Json<DynamicConfig>,
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.apply_dynamic_config(args.into_inner());
+    Ok(HttpResponse::Ok().finish())
+}
+
 #[post("/coordination/activate")]
 async fn coordination_activate_handler(
     state: WebData<ServerState>,
@@ -5370,6 +5383,20 @@ mod test_status {
         assert_eq!(config.name.as_deref(), Some("test"));
     }
 
+    /// Without a memory limit, the pipeline sets `memory_max`, not `max_rss`,
+    /// from the available memory, so that a resize can change the budget.
+    #[test]
+    fn parse_config_sets_memory_max_without_a_limit() {
+        let config = parse_config(json_config_file(&json!({"name": "test"})).path()).unwrap();
+        assert_eq!(config.global.max_rss, None);
+        assert_eq!(
+            config.global.resources.memory_max,
+            feldera_observability::system::total_memory_megabyte()
+                .map(feldera_types::size::ConfigSize::from_mb)
+        );
+        assert!(config.global.resources.memory_max.is_some());
+    }
+
     /// A successful suspend terminates the circuit before the server reports
     /// `PipelinePhase::Suspended`, so `terminated_status` must report a clean
     /// `Suspended` while a suspend is in progress instead of the spurious
@@ -5676,7 +5703,11 @@ pub mod test_http {
         completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
         config::{PipelineConfig, ProgramIr},
         program_schema::Relation,
-        runtime_status::{BootstrapConfig, BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus},
+        runtime_status::{
+            BootstrapConfig, BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus,
+            RuntimeStatus, RuntimeStatusDetails,
+        },
+        size::ConfigSize,
     };
     use futures::Stream;
     use proptest::{
@@ -6143,6 +6174,49 @@ pub mod test_http {
                 batch_num_records(&second) as i64
             );
         })
+    }
+
+    /// `/status` reports the `memory_max` the pipeline uses, and a
+    /// `PATCH /dynamic_config` changes it.
+    #[engine_test]
+    pub fn status_reports_dynamic_config(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let server = start_test_server(
+                engine,
+                &json!({
+                    "name": "test",
+                    "resources": {"memory_max": "1000MB"},
+                    "inputs": {},
+                    "outputs": {},
+                }),
+                Uuid::new_v4(),
+            )
+            .await;
+            start_pipeline(&server).await;
+            let memory_max = || async {
+                let status = server
+                    .get("/status")
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<ExtendedRuntimeStatus>()
+                    .await
+                    .unwrap();
+                serde_json::from_value::<RuntimeStatusDetails>(status.runtime_status_details)
+                    .unwrap()
+                    .memory_max
+            };
+            assert_eq!(memory_max().await, Some(ConfigSize::from_mb(1_000)));
+
+            let response = server
+                .patch("/dynamic_config")
+                .send_json(&json!({"resources": {"memory_max": "600MB"}}))
+                .await
+                .unwrap();
+            assert!(response.status().is_success());
+            assert_eq!(memory_max().await, Some(ConfigSize::from_mb(600)));
+        });
     }
 
     /// `/ingress` rejects JSON update formats that input does not support.
