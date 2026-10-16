@@ -175,6 +175,14 @@ impl PostgresCdcInputEndpoint {
         config.validate().map_err(|e| {
             ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
         })?;
+        // A URI that does not parse fails here, where the other configuration
+        // errors do, rather than once the reader starts.
+        parse_pg_uri(&config.uri, &config.tls, endpoint_name).map_err(|e| {
+            ControllerError::invalid_transport_configuration(
+                endpoint_name,
+                &format!("failed to parse Postgres URI: {e}"),
+            )
+        })?;
 
         Ok(Self {
             inner: Arc::new(PostgresCdcInputInner::new(
@@ -1559,6 +1567,10 @@ fn resume_for(copy_open: bool, pipeline_id: u64, sync_done_lsn: Option<u64>) -> 
     if copy_open {
         Resume::Barrier
     } else {
+        // NOTE: `pipeline_id` is an identity, not a position. The position a
+        // restart resumes from is the replication slot's confirmed LSN in
+        // etl's store, which this id keys. The controller hands the metadata
+        // back as it was, and `ResumedCopy::of` reads only `copy_sync_lsn`.
         Resume::Seek {
             seek: json!({
                 "pipeline_id": pipeline_id,
@@ -1642,7 +1654,7 @@ impl Destination for FelderaDestination {
 
         for row in &table_rows {
             let cells = row.values();
-            let json_value = row_to_json(cells, &column_names);
+            let json_value = row_to_json(cells, &column_names, &self.endpoint_name);
 
             let json_str = json_value.to_string();
             if let Err(e) = stream.insert(json_str.as_bytes(), &None) {
@@ -1699,7 +1711,8 @@ impl Destination for FelderaDestination {
                     else {
                         continue;
                     };
-                    let json_value = row_to_json(insert.table_row.values(), &cols);
+                    let json_value =
+                        row_to_json(insert.table_row.values(), &cols, &self.endpoint_name);
                     let json_str = json_value.to_string();
                     if let Err(e) = stream.insert(json_str.as_bytes(), &None) {
                         errors.push(ParseError::text_event_error(
@@ -1734,9 +1747,13 @@ impl Destination for FelderaDestination {
                     };
                     // Delete the old row first, if PostgreSQL supplied one.
                     if let Some(old_row) = &update.old_table_row {
-                        let old_str =
-                            old_row_to_json(&update.replicated_table_schema, &cols, old_row)
-                                .to_string();
+                        let old_str = old_row_to_json(
+                            &update.replicated_table_schema,
+                            &cols,
+                            old_row,
+                            &self.endpoint_name,
+                        )
+                        .to_string();
                         if let Err(e) = stream.delete(old_str.as_bytes(), &None) {
                             errors.push(ParseError::text_event_error(
                                 "Failed to deserialize CDC update (old)",
@@ -1749,7 +1766,8 @@ impl Destination for FelderaDestination {
                         bytes += old_str.len();
                     }
                     // Insert the new row.
-                    let new_str = row_to_json(new_row.values(), &cols).to_string();
+                    let new_str =
+                        row_to_json(new_row.values(), &cols, &self.endpoint_name).to_string();
                     if let Err(e) = stream.insert(new_str.as_bytes(), &None) {
                         errors.push(ParseError::text_event_error(
                             "Failed to deserialize CDC update (new)",
@@ -1768,9 +1786,13 @@ impl Destination for FelderaDestination {
                         continue;
                     };
                     if let Some(old_row) = &delete.old_table_row {
-                        let old_str =
-                            old_row_to_json(&delete.replicated_table_schema, &cols, old_row)
-                                .to_string();
+                        let old_str = old_row_to_json(
+                            &delete.replicated_table_schema,
+                            &cols,
+                            old_row,
+                            &self.endpoint_name,
+                        )
+                        .to_string();
                         if let Err(e) = stream.delete(old_str.as_bytes(), &None) {
                             errors.push(ParseError::text_event_error(
                                 "Failed to deserialize CDC delete",
@@ -2396,21 +2418,30 @@ fn old_row_to_json(
     schema: &ReplicatedTableSchema,
     full_columns: &[String],
     old_row: &OldTableRow,
+    endpoint_name: &str,
 ) -> Value {
     match old_row {
-        OldTableRow::Full(row) => row_to_json(row.values(), full_columns),
+        OldTableRow::Full(row) => row_to_json(row.values(), full_columns, endpoint_name),
         OldTableRow::Key(row) => {
             let identity_columns: Vec<String> = schema
                 .identity_column_schemas()
                 .map(|c| c.name.clone())
                 .collect();
-            row_to_json(row.values(), &identity_columns)
+            row_to_json(row.values(), &identity_columns, endpoint_name)
         }
     }
 }
 
 /// Convert a row of cells to a JSON object using the given column names.
-fn row_to_json(cells: &[Cell], column_names: &[String]) -> Value {
+fn row_to_json(cells: &[Cell], column_names: &[String], endpoint_name: &str) -> Value {
+    if cells.len() != column_names.len() {
+        warn!(
+            "postgres_cdc {endpoint_name}: a row holds {} values for {} column names; values \
+             past the names are keyed col_<index> and names past the values are left out",
+            cells.len(),
+            column_names.len()
+        );
+    }
     let mut map = serde_json::Map::new();
     for (i, cell) in cells.iter().enumerate() {
         let col_name = column_names
@@ -2675,9 +2706,10 @@ async fn completion_watcher_task(
     answer_durable_on_stop(&mut waiting, &mut pending_rx, watcher.frontier());
 
     // What is left is not durable. Those answers drop, and with them etl's
-    // result senders. AsyncResult's Drop impl reports the error that
-    // `is_shutdown_error` recognizes, so the next start rolls those writes
-    // back.
+    // result senders. `AsyncResult` has no `Drop` of its own: etl's
+    // `PendingAsyncResult` finds its oneshot closed and reports
+    // `RESULT_DROPPED_ON_SHUTDOWN`, which `is_shutdown_error` recognizes, so
+    // the next start rolls those writes back.
     debug!(
         "postgres_cdc {endpoint_name}: completion watcher exiting with {} pending entries",
         waiting.len()
@@ -2919,7 +2951,9 @@ mod tests {
     use etl::schema::PgLsn;
     use feldera_adapterlib::catalog::DeCollectionHandle;
     use feldera_adapterlib::format::BufferSize;
+    use feldera_sqllib::Timestamp;
     use feldera_types::adapter_stats::ConnectorHealth;
+    use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
     use serde_json::json;
     use std::str::FromStr;
     use std::sync::atomic::AtomicBool;
@@ -3170,6 +3204,35 @@ mod tests {
         assert_eq!(v, json!("2024-01-01T12:00:00"));
     }
 
+    /// `%.f` prints 0, 3, 6 or 9 fraction digits, the fewest that lose
+    /// nothing. Feldera's parser for the connector's JSON flavor must take
+    /// all four and keep the microseconds, which is all a Postgres timestamp
+    /// carries.
+    #[test]
+    fn timestamp_fractions_round_trip_through_the_parser() {
+        let config = SqlSerdeConfig::from(JsonFlavor::Datagen);
+        let date = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        for (nanos, fraction) in [
+            (0, ""),
+            (123_000_000, ".123"),
+            (123_456_000, ".123456"),
+            (123_456_789, ".123456789"),
+        ] {
+            let dt =
+                NaiveDateTime::new(date, NaiveTime::from_hms_nano_opt(12, 0, 0, nanos).unwrap());
+            let json = cell_to_json(&Cell::Timestamp(dt));
+            assert_eq!(json, json!(format!("2024-01-01T12:00:00{fraction}")));
+
+            let text = json.to_string();
+            let parsed = <Timestamp as DeserializeWithContext<SqlSerdeConfig, ()>>::deserialize_with_context(
+                &mut serde_json::Deserializer::from_str(&text),
+                &config,
+            )
+            .unwrap_or_else(|e| panic!("Feldera rejects {text}: {e}"));
+            assert_eq!(parsed.microseconds(), dt.and_utc().timestamp_micros());
+        }
+    }
+
     #[test]
     fn test_cell_timestamptz() {
         let dt = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
@@ -3342,7 +3405,7 @@ mod tests {
     fn test_row_to_json_basic() {
         let cells = vec![Cell::I32(1), Cell::String("hello".into()), Cell::Bool(true)];
         let cols = vec!["id".into(), "name".into(), "active".into()];
-        let v = row_to_json(&cells, &cols);
+        let v = row_to_json(&cells, &cols, "cdc_in");
         assert_eq!(v, json!({"id": 1, "name": "hello", "active": true}));
     }
 
@@ -3350,7 +3413,7 @@ mod tests {
     fn test_row_to_json_with_null() {
         let cells = vec![Cell::I32(42), Cell::Null];
         let cols = vec!["id".into(), "value".into()];
-        let v = row_to_json(&cells, &cols);
+        let v = row_to_json(&cells, &cols, "cdc_in");
         assert_eq!(v, json!({"id": 42, "value": null}));
     }
 
@@ -3359,7 +3422,7 @@ mod tests {
         // Extra cells get auto-generated column names
         let cells = vec![Cell::I32(1), Cell::I32(2), Cell::I32(3)];
         let cols = vec!["a".into(), "b".into()];
-        let v = row_to_json(&cells, &cols);
+        let v = row_to_json(&cells, &cols, "cdc_in");
         assert_eq!(v, json!({"a": 1, "b": 2, "col_2": 3}));
     }
 
@@ -3416,7 +3479,7 @@ mod tests {
         .map(String::from)
         .collect();
 
-        let v = row_to_json(&cells, &cols);
+        let v = row_to_json(&cells, &cols, "cdc_in");
         assert_eq!(v["bool_col"], json!(true));
         assert_eq!(v["i16_col"], json!(16));
         assert_eq!(v["i32_col"], json!(32));
@@ -4581,6 +4644,18 @@ mod tests {
             batch: PostgresCdcBatchConfig::default(),
             memory_backpressure: PostgresCdcMemoryBackpressureConfig::default(),
         }
+    }
+
+    #[test]
+    fn a_uri_that_does_not_parse_fails_the_endpoint_at_creation() {
+        let mut config = cdc_config();
+        config.uri = "postgres://localhost:5432/db".to_string();
+        let error =
+            PostgresCdcInputEndpoint::new("cdc_in", &config, Box::new(MockInputConsumer::new()))
+                .err()
+                .expect("a URI without a username does not reach the reader");
+        let message = error.to_string();
+        assert!(message.contains("missing username in URI"), "{message}");
     }
 
     #[test]
