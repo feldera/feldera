@@ -23,7 +23,7 @@ use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::{
     adapter_stats::ExternalOutputEndpointMetrics,
     checkpoint::CheckpointMetadata,
-    config::{FtModel, InputEndpointConfig, OutputEndpointConfig},
+    config::{DynamicConfig, DynamicResources, FtModel, InputEndpointConfig, OutputEndpointConfig},
     constants::{CHECKPOINT_FILE_NAME, STATE_FILE},
     memory_pressure::MemoryPressure,
     program_schema::Relation,
@@ -276,6 +276,78 @@ fn test_circuit_thread_panic_is_reported() {
         .stop()
         .expect_err("stopping a controller whose circuit thread panicked must fail");
     assert_eq!(stop_error.error_code(), "ControllerPanic");
+}
+
+/// A resize changes the memory budget, unless `max_rss_mb` sets it or the new
+/// budget leaves no memory after the memory reserved outside the circuit.
+/// Either way, the pipeline reports the `memory_mb_max` it got, and nothing
+/// else: CPU and `memory_mb_min` mean nothing to it.
+#[test]
+fn test_resize_sets_memory_budget() {
+    init_test_logger();
+
+    let resize = |cpu_cores_max: Option<f64>, memory_mb_max: Option<u64>| DynamicConfig {
+        resources: DynamicResources {
+            cpu_cores_max,
+            memory_mb_max,
+            ..Default::default()
+        },
+    };
+
+    // The 1000 MB budget keeps 50 MB (5%) for DataFusion, so the circuit's
+    // limit is 950 MB. A resize to 600 MB leaves 550 MB. The budgets are far
+    // below the test machine's memory, so the available memory does not cap
+    // them.
+    for (max_rss_mb, memory_mb_max, update, expected_mb) in [
+        (None, Some(1_000), resize(None, Some(600)), 550),
+        // `max_rss_mb` sets the budget.
+        (Some(1_000), None, resize(None, Some(600)), 950),
+        // 40 MB does not exceed the 50 MB for DataFusion.
+        (None, Some(1_000), resize(None, Some(40)), 950),
+        // No `memory_mb_max`: CPU only.
+        (None, Some(1_000), resize(Some(4.0), None), 950),
+    ] {
+        let config: PipelineConfig = serde_json::from_value(json!({
+            "name": "test",
+            "workers": 1,
+            "max_rss_mb": max_rss_mb,
+            "resources": { "memory_mb_max": memory_mb_max },
+            "inputs": {}
+        }))
+        .unwrap();
+        let controller = Controller::with_test_config(
+            |circuit_config| {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &TestStruct::schema(),
+                    &[None],
+                ))
+            },
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+        let limit_mb = || {
+            controller
+                .inner
+                .runtime
+                .upgrade()
+                .unwrap()
+                .max_rss_bytes()
+                .unwrap()
+                / 1_000_000
+        };
+        assert_eq!(limit_mb(), 950);
+        assert_eq!(controller.dynamic_config(), resize(None, memory_mb_max));
+
+        controller.apply_dynamic_config(update.clone());
+        assert_eq!(limit_mb(), expected_mb, "{update:?}");
+        assert_eq!(
+            controller.dynamic_config(),
+            resize(None, update.resources.memory_mb_max)
+        );
+        controller.stop().unwrap();
+    }
 }
 
 /// A full disk must fail the pipeline with the storage error.

@@ -112,7 +112,9 @@ curl -X PATCH "http://localhost:8080/v0/pipelines/example" \
 - Only single-host pipelines can be resized.
 - The runtime configuration does not change. The resize lasts across restarts until storage is
   cleared or CPU or memory is changed in the runtime configuration.
-- Memory budgets set at start, such as `max_rss_mb` derived from `memory_mb_max`, do not change.
+- A change to `memory_mb_max` also changes the pipeline's memory limit, unless `max_rss_mb` is
+  set. A smaller limit applies at once, so the pipeline moves state to storage before the pod
+  shrinks. A larger limit applies when the pod has grown.
 - Requires Kubernetes 1.34 or later and
   `kubernetesRunner.enablePipelineResize` in the [Helm chart](/get-started/enterprise/helm-chart-reference#kubernetes-runner).
 

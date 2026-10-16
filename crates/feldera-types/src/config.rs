@@ -3458,6 +3458,9 @@ impl FormatConfig {
     }
 }
 
+// It is the `deployment_config` of the pipeline manager's
+// `PATCH /v0/pipelines/{name}`, and the body of the pipeline's own
+// `PATCH /runtime`, which the pipeline manager sends to a running pipeline.
 /// The part of a pipeline's config that can change while the pipeline runs.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]

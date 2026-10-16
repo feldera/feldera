@@ -96,6 +96,19 @@ pub fn patch_deployment_config(
         .map_err(|reason| DBError::InvalidDeploymentPatch { reason })?;
     let mut patched = stored.global.clone();
     patched.resources = resources;
+    // The same check as at startup: the DataFusion memory pool must leave
+    // memory for the circuit.
+    if let (Some(budget), Some(datafusion)) = (
+        patched.effective_memory_mb(),
+        patched.resolved_datafusion_memory_mb(),
+    ) && datafusion >= budget
+    {
+        return Err(DBError::InvalidDeploymentPatch {
+            reason: format!(
+                "the memory budget ({budget} MB) must exceed datafusion_memory_mb ({datafusion} MB)"
+            ),
+        });
+    }
     merge_deployment_config(&mut stored, &patched);
     serde_json::to_value(stored).map_err(|e| invalid(e.to_string()))
 }
@@ -261,6 +274,22 @@ mod test {
         .unwrap();
         assert_eq!(new["resources"]["cpu_cores_max"], json!(16.0));
         assert_eq!(new["resources"]["memory_mb_max"], json!(24000));
+    }
+
+    /// A resize that leaves no memory for the circuit is refused, as at
+    /// startup. The default DataFusion pool (5%) always fits.
+    #[test]
+    fn resize_must_leave_memory_after_datafusion() {
+        let mut config = deployment();
+        config["datafusion_memory_mb"] = json!(2_000);
+        let memory = |mb: u64| resize(json!({"memory_mb_min": mb, "memory_mb_max": mb}));
+        let error = try_patch(&config, &memory(2_000)).unwrap_err();
+        assert!(
+            error.contains("must exceed datafusion_memory_mb"),
+            "{error}"
+        );
+        try_patch(&config, &memory(2_001)).unwrap();
+        try_patch(&deployment(), &memory(1)).unwrap();
     }
 
     fn assert_refused(value: Value, expected: &str) {

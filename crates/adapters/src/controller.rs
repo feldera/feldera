@@ -188,8 +188,8 @@ pub use feldera_types::config::{
     RuntimeConfig, TransportConfig,
 };
 use feldera_types::config::{
-    DEFAULT_MAX_WORKER_BATCH_SIZE, DevTweaks, FileBackendConfig, FtConfig, FtModel,
-    OutputBufferConfig, PipelineIdentity, StorageBackendConfig, SyncConfig,
+    DEFAULT_MAX_WORKER_BATCH_SIZE, DevTweaks, DynamicConfig, DynamicResources, FileBackendConfig,
+    FtConfig, FtModel, OutputBufferConfig, PipelineIdentity, StorageBackendConfig, SyncConfig,
 };
 use feldera_types::constants::{CHECKPOINT_FILE_NAME, STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
@@ -2320,6 +2320,48 @@ impl Controller {
         reply_or_controller_exit(receiver.await)?;
         self.inner.request_step();
         Ok(())
+    }
+
+    /// Applies a resize. The pipeline uses only `memory_mb_max`: CPU and
+    /// `memory_mb_min` need nothing from it, as the container enforces them.
+    /// The new `memory_mb_max` becomes the memory budget, unless `max_rss_mb`
+    /// sets the budget, or the new budget leaves no memory after the memory
+    /// reserved outside the circuit. The memory available to the process still
+    /// caps the limit.
+    pub fn apply_dynamic_config(&self, config: DynamicConfig) {
+        if let Some(memory_mb_max) = config.resources.memory_mb_max
+            && self
+                .inner
+                .status
+                .pipeline_config
+                .global
+                .max_rss_mb
+                .is_none()
+            && let Some(runtime) = self.inner.runtime.upgrade()
+        {
+            let budget = memory_mb_max.saturating_mul(1_000_000);
+            let reserved = runtime.reserved_memory_bytes();
+            if budget > reserved {
+                runtime.set_max_rss_bytes(Some(budget));
+            } else {
+                warn!(
+                    "ignoring memory_mb_max = {memory_mb_max} MB: it must exceed the {} MB reserved outside the circuit",
+                    reserved / 1_000_000
+                );
+            }
+        }
+        *self.inner.memory_mb_max.lock().unwrap() = config.resources.memory_mb_max;
+    }
+
+    /// Returns the part of the dynamic config that the pipeline uses, as last
+    /// received: `memory_mb_max`.
+    pub fn dynamic_config(&self) -> DynamicConfig {
+        DynamicConfig {
+            resources: DynamicResources {
+                memory_mb_max: *self.inner.memory_mb_max.lock().unwrap(),
+                ..Default::default()
+            },
+        }
     }
 
     pub async fn start_compaction(&self) -> Result<(), ControllerError> {
@@ -7354,6 +7396,8 @@ pub struct ControllerInner {
     /// Weak reference to the runtime, so we can deallocate the runtime once all DBSP threads and auxiliary threads are done
     /// without waiting for the controller to be dropped.
     runtime: WeakRuntime,
+    /// The `memory_mb_max` last received, which `GET /runtime` reports.
+    memory_mb_max: Mutex<Option<u64>>,
     /// Canceled when the pipeline starts going down.
     ///
     /// A child of the runtime's kill token, so the runtime cancels it too.
@@ -7472,6 +7516,7 @@ impl ControllerInner {
                 next_output_id: Atomic::new(0),
                 layout: runtime.layout().clone(),
                 runtime: runtime.downgrade(),
+                memory_mb_max: Mutex::new(config.global.resources.memory_mb_max),
                 shutdown: runtime.cancellation_token().child_token(),
                 circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
                 backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
