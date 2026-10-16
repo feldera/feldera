@@ -223,39 +223,71 @@ describe('SupportBundleViewerLayout Connectors tab', () => {
 describe('SupportBundleViewerLayout Health tab', () => {
   const healthTab = () => page.getByRole('radio', { name: 'Health' })
 
-  it('is disabled when the bundle has no pipeline events', async () => {
-    render(SupportBundleViewerLayout, baseProps())
+  const event = (event_id: string, recorded_at: string) => ({
+    event_id,
+    recorded_at,
+    program_status: 'Success' as const,
+    storage_status: 'InUse' as const,
+    deployment_has_error: true,
+    deployment_resources_status: 'Provisioned' as const,
+    deployment_resources_desired_status: 'Provisioned' as const,
+    deployment_runtime_status: 'Running' as const
+  })
+  // The range label of the 72-hour timeline that ends at `endAt`.
+  const timelineRange = (endAt: string) => {
+    const end = new Date(endAt)
+    const start = new Date(end.getTime() - 72 * 60 * 60 * 1000)
+    return page.getByText(`${formatDateTime(start)} - ${formatDateTime(end)}`)
+  }
+  // Playwright never finds the segment label visible and stable here, so the test clicks it
+  // through the DOM.
+  const openHealthTab = () =>
+    (page.getByText('Health', { exact: true }).element() as HTMLElement).click()
+
+  it.each([
+    ['has no pipeline_events.json', undefined],
+    ['has an empty pipeline_events.json', []]
+  ])('is disabled when the bundle %s', async (_, pipelineEvents) => {
+    render(SupportBundleViewerLayout, { ...baseProps(), pipelineEvents })
     await expect.element(healthTab()).toBeDisabled()
   })
 
   it('shows the pipeline events of the bundle up to the time it was collected', async () => {
-    const collectedAt = new Date('2026-05-01T12:30:00Z')
     render(SupportBundleViewerLayout, {
       ...baseProps(),
-      selectedTimestamp: collectedAt,
-      pipelineEvents: [
-        {
-          event_id: 'e1',
-          recorded_at: '2026-05-01T12:00:00Z',
-          program_status: 'Success',
-          storage_status: 'InUse',
-          deployment_has_error: true,
-          deployment_resources_status: 'Provisioned',
-          deployment_resources_desired_status: 'Provisioned',
-          deployment_runtime_status: 'Running'
-        }
-      ]
+      selectedTimestamp: new Date('2026-05-01T12:30:00Z'),
+      pipelineEvents: [event('e1', '2026-05-01T12:00:00Z')]
     })
     await expect.element(healthTab()).toBeEnabled()
-    // Playwright never finds the segment label visible and stable here, so the test clicks it
-    // through the DOM.
-    ;(page.getByText('Health', { exact: true }).element() as HTMLElement).click()
+    openHealthTab()
     await expect.element(page.getByText('1 ongoing incident')).toBeInTheDocument()
     // The timeline ends at the hour after the bundle was collected, not after the current time.
-    const endAt = new Date('2026-05-01T13:00:00Z')
-    const startAt = new Date(endAt.getTime() - 72 * 60 * 60 * 1000)
-    await expect
-      .element(page.getByText(`${formatDateTime(startAt)} - ${formatDateTime(endAt)}`))
-      .toBeInTheDocument()
+    await expect.element(timelineRange('2026-05-01T13:00:00Z')).toBeInTheDocument()
+  })
+
+  it('extends the timeline to an event recorded after the bundle was collected', async () => {
+    render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      selectedTimestamp: new Date('2026-05-01T12:30:00Z'),
+      pipelineEvents: [event('e1', '2026-05-01T14:10:00Z')]
+    })
+    openHealthTab()
+    await expect.element(timelineRange('2026-05-01T15:00:00Z')).toBeInTheDocument()
+  })
+
+  it('follows the selected snapshot while the tab is open', async () => {
+    const { rerender } = render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      selectedTimestamp: new Date('2026-05-01T12:30:00Z'),
+      pipelineEvents: [event('e1', '2026-05-01T12:00:00Z')]
+    })
+    openHealthTab()
+    await expect.element(timelineRange('2026-05-01T13:00:00Z')).toBeInTheDocument()
+    await rerender({
+      selectedTimestamp: new Date('2026-05-02T08:15:00Z'),
+      pipelineEvents: [event('e2', '2026-05-02T08:00:00Z')]
+    })
+    await expect.element(timelineRange('2026-05-02T09:00:00Z')).toBeInTheDocument()
+    await expect.element(timelineRange('2026-05-01T13:00:00Z')).not.toBeInTheDocument()
   })
 })
