@@ -807,7 +807,7 @@ def test_runtime_config_edit_restricted(pipeline_name):
         pipeline,
         "`runtime_config.resources.storage_max`",
         {"resources": {"storage_max": "10G"}},
-        lambda r: r["resources"]["storage_max"],
+        lambda r: r["resources"].get("storage_max"),
         "10G",
     )
 
