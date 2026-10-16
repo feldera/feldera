@@ -45,16 +45,20 @@ const toBoolean: ToValue = (raw) => (typeof raw === 'boolean' ? new BooleanValue
 
 const toText: ToValue = (raw) => (typeof raw === 'string' ? StringValue.fromString(raw) : undefined)
 
-/** Formats seconds since the epoch as a UTC date and time, e.g. "2026-10-08 12:30:00 UTC". */
-const epochSecondsToDate: ToValue = (raw) =>
-  isFiniteNumber(raw)
-    ? StringValue.fromString(
-        new Date(raw * 1000)
-          .toISOString()
-          .replace('T', ' ')
-          .replace(/\.\d+Z$/, ' UTC')
-      )
-    : undefined
+/** Formats seconds since the epoch as a UTC date and time, e.g. "2026-10-08 12:30:00 UTC".
+ *  Returns `undefined` for a time outside the `Date` range, where `toISOString()` throws. */
+const epochSecondsToDate: ToValue = (raw) => {
+  const date = isFiniteNumber(raw) ? new Date(raw * 1000) : undefined
+  if (!date || Number.isNaN(date.getTime())) {
+    return undefined
+  }
+  return StringValue.fromString(
+    date
+      .toISOString()
+      .replace('T', ' ')
+      .replace(/\.\d+Z$/, ' UTC')
+  )
+}
 
 /** Formats a `CommitProgressSummary`, which counts operators by flush state. */
 const toCommitProgress: ToValue = (raw) => {
