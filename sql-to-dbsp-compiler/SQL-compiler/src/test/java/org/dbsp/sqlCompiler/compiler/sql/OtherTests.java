@@ -46,7 +46,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.FunctionDocumentation;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.FunctionDocumentation;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.simple.BasicQueriesTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;

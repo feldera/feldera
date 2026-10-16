@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions;
 
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
@@ -27,6 +27,7 @@ import org.apache.calcite.sql.type.SqlTypeTransforms;
 import org.apache.calcite.sql.type.SqlTypeUtil;
 import org.apache.calcite.util.Util;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.util.Utilities;
@@ -41,7 +42,6 @@ import java.util.Objects;
 
 import static java.util.Objects.requireNonNull;
 import static org.apache.calcite.sql.type.OperandTypes.*;
-import static org.apache.calcite.sql.type.ReturnTypes.ARG1;
 import static org.apache.calcite.util.Static.RESOURCE;
 
 /** Several functions that we define and add to the existing ones.
@@ -114,7 +114,6 @@ public class CustomFunctions {
         this.functions.add(VariantMapFunction.INSTANCE);
         this.functions.add(VariantMergeFunction.INSTANCE);
         this.functions.add(XxHashFunction.INSTANCE);
-        this.functions.add(WriteLogFunction.INSTANCE);
         this.udf = new HashMap<>();
         this.aggregates = new HashMap<>();
     }
@@ -726,8 +725,8 @@ public class CustomFunctions {
     }
 
     /** RLIKE used as a function.  RLIKE in SQL uses infix notation */
-    static class RlikeFunction extends NonOptimizedFunction {
-        static final RlikeFunction INSTANCE = new RlikeFunction();
+    public static class RlikeFunction extends NonOptimizedFunction {
+        public static final RlikeFunction INSTANCE = new RlikeFunction();
 
         private RlikeFunction() {
             super("RLIKE",
@@ -796,20 +795,6 @@ public class CustomFunctions {
                             .andThen(SqlTypeTransforms.TO_NULLABLE),
                     OperandTypes.BINARY,
                     SqlFunctionCategory.STRING, "binary#gunzip", FunctionDocumentation.NO_FILE);
-        }
-    }
-
-    /** WRITELOG(format, arg) returns its argument 'arg' unchanged but also logs
-     * its value to stdout.  Used for debugging.  In the format string
-     * each occurrence of %% is replaced with the arg */
-    public static class WriteLogFunction extends NonOptimizedFunction {
-        public static final String NAME = "WRITELOG";
-        public static final WriteLogFunction INSTANCE = new WriteLogFunction();
-
-        private WriteLogFunction() {
-            super(NAME, ARG1,
-                    family(SqlTypeFamily.CHARACTER, SqlTypeFamily.ANY),
-                    SqlFunctionCategory.USER_DEFINED_FUNCTION, "", FunctionDocumentation.NO_FILE);
         }
     }
 

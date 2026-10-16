@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions;
 
 import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -769,8 +769,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                 new HidingOperatorTable(
                         SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(SqlLibrary.STANDARD),
                         operator -> operator.getName().startsWith("JSON_")),
-                new SqlToRelCompiler.CaseInsensitiveOperatorTable(
+                new CaseInsensitiveOperatorTable(
                         SpatialOperatorTable.instance().getOperatorList()),
-                new SqlToRelCompiler.CaseInsensitiveOperatorTable(operators));
+                new CaseInsensitiveOperatorTable(operators));
     }
 }

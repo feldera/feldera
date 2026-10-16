@@ -33,10 +33,8 @@ import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyConditionals;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expandCasts.ExpandCasts;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ImplementStatics;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
@@ -168,9 +166,7 @@ public class CircuitOptimizer extends Passes {
                 g -> new OptimizeProjections(compiler, false, g, operatorsAnalyzed)));
         this.add(new SimplifyWaterline(compiler)
                 .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));
-        this.add(new EliminateDump(compiler).circuitRewriter(false));
         this.add(new Simplify(compiler).circuitRewriter(true));
-        this.add(new ExpandWriteLog(compiler).circuitRewriter(false));
         this.add(new CSE(compiler));
         this.add(new ValidateRecursiveOperators(compiler));
         this.add(new LowerAsof(compiler));
