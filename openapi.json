@@ -3947,6 +3947,92 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/deployment": {
+      "get": {
+        "tags": [
+          "Metrics & Debugging"
+        ],
+        "summary": "Get Pipeline Deployment",
+        "description": "Required role: `read` or higher.\n\nDesired versus current CPU, memory, and storage per host, and the state of each change.\nThe pipeline's `deployment_status` is the lifecycle Feldera wants; this endpoint is what\nexists in the runner's platform (for example Kubernetes) now.\n\n`state` values follow Kubernetes kstatus: `Current`, `InProgress`, `Failed`, `Terminating`,\n`NotFound` and `Unknown`. The top-level `state` summarizes the hosts. Runners that do not\nobserve their resources return the spec only.",
+        "operationId": "get_pipeline_deployment",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pipeline deployment retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineDeployment"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Runner response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline runner to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "RunnerInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/diff": {
       "post": {
         "tags": [
@@ -9434,6 +9520,33 @@
           }
         }
       },
+      "ComputeResources": {
+        "type": "object",
+        "properties": {
+          "cpu_cores_max": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "cpu_cores_min": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "memory_mb_max": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          },
+          "memory_mb_min": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          }
+        }
+      },
       "ConcurrentBootstrapPhase": {
         "type": "string",
         "description": "Phase of a concurrent bootstrap.\n\n`#[repr(u8)]` + `NoUninit` so it can be stored in a lock-free `Atomic`.",
@@ -10447,6 +10560,97 @@
           }
         },
         "additionalProperties": false
+      },
+      "DeploymentSpec": {
+        "type": "object",
+        "description": "What the deployment asks for, from the pipeline's `deployment_config`.",
+        "required": [
+          "resources"
+        ],
+        "properties": {
+          "resources": {
+            "$ref": "#/components/schemas/DeploymentSpecResources"
+          }
+        }
+      },
+      "DeploymentSpecResources": {
+        "type": "object",
+        "description": "Each `*_min` is a Kubernetes request and each `*_max` a limit.",
+        "properties": {
+          "cpu_cores_max": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "cpu_cores_min": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "memory_mb_max": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          },
+          "memory_mb_min": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          },
+          "storage_mb_max": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          },
+          "storage_mb_min": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          }
+        }
+      },
+      "DeploymentState": {
+        "type": "string",
+        "description": "kstatus status of an object or of the whole deployment.\n<https://github.com/kubernetes-sigs/cli-utils/blob/master/pkg/kstatus/status/status.go>",
+        "enum": [
+          "Current",
+          "InProgress",
+          "Failed",
+          "Terminating",
+          "NotFound",
+          "Unknown"
+        ]
+      },
+      "DeploymentStatus": {
+        "type": "object",
+        "description": "Observed status of the deployment. `state`, `reason` and `message` summarize `hosts`.",
+        "required": [
+          "state",
+          "hosts"
+        ],
+        "properties": {
+          "hosts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HostStatus"
+            }
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "$ref": "#/components/schemas/DeploymentState"
+          }
+        }
       },
       "DevTweaks": {
         "type": "object",
@@ -11530,6 +11734,41 @@
           }
         }
       },
+      "HostCompute": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Transition"
+          },
+          {
+            "type": "object",
+            "required": [
+              "manager"
+            ],
+            "properties": {
+              "current": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ComputeResources"
+                  }
+                ],
+                "nullable": true
+              },
+              "desired": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ComputeResources"
+                  }
+                ],
+                "nullable": true
+              },
+              "manager": {
+                "$ref": "#/components/schemas/ResourceManager"
+              }
+            }
+          }
+        ],
+        "description": "CPU and memory of one host."
+      },
       "HostMetrics": {
         "type": "object",
         "description": "Resource usage of one host in a multihost pipeline.",
@@ -11549,6 +11788,65 @@
             "minimum": 0
           }
         }
+      },
+      "HostStatus": {
+        "type": "object",
+        "required": [
+          "ordinal",
+          "compute"
+        ],
+        "properties": {
+          "compute": {
+            "$ref": "#/components/schemas/HostCompute"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "storage": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HostStorage"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "HostStorage": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Transition"
+          },
+          {
+            "type": "object",
+            "required": [
+              "manager"
+            ],
+            "properties": {
+              "current": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StorageResources"
+                  }
+                ],
+                "nullable": true
+              },
+              "desired": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StorageResources"
+                  }
+                ],
+                "nullable": true
+              },
+              "manager": {
+                "$ref": "#/components/schemas/ResourceManager"
+              }
+            }
+          }
+        ],
+        "description": "Storage volume of one host."
       },
       "HttpInputConfig": {
         "type": "object",
@@ -13348,6 +13646,26 @@
         ],
         "description": "Pipeline deployment configuration.\nIt represents configuration entries directly provided by the user\n(e.g., runtime configuration) and entries derived from the schema\nof the compiled program (e.g., connectors). Storage configuration,\nif applicable, is set by the runner."
       },
+      "PipelineDeployment": {
+        "type": "object",
+        "description": "Spec and observed status of a pipeline deployment.",
+        "required": [
+          "spec"
+        ],
+        "properties": {
+          "spec": {
+            "$ref": "#/components/schemas/DeploymentSpec"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeploymentStatus"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
       "PipelineDeploymentConfig": {
         "type": "object",
         "description": "The part of a deployment config that can change while the pipeline runs.",
@@ -15047,6 +15365,14 @@
           }
         }
       },
+      "ResourceManager": {
+        "type": "string",
+        "description": "Who sets the desired value.",
+        "enum": [
+          "User",
+          "Autoscaler"
+        ]
+      },
       "ResourcesDesiredStatus": {
         "type": "string",
         "enum": [
@@ -16261,6 +16587,17 @@
           }
         }
       },
+      "StorageResources": {
+        "type": "object",
+        "properties": {
+          "storage_mb": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          }
+        }
+      },
       "StorageStatus": {
         "type": "string",
         "description": "Storage status.\n\nThe storage status can only transition when the resources status is `Stopped`.\n\n```text\nCleared ───┐\n▲       │\n/clear │       │\n│       │\nClearing   │\n▲       │\n│       │\nInUse ◄───┘\n```",
@@ -16667,6 +17004,33 @@
           "TransactionInProgress",
           "CommitInProgress"
         ]
+      },
+      "Transition": {
+        "type": "object",
+        "description": "State of one object and why it is in it.",
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "last_transition_time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the platform last changed the condition behind `state` (Kubernetes\n`lastTransitionTime`, or `deletionTimestamp` for `Terminating`). Not when `state` itself\nchanged: a reason change keeps the time.",
+            "nullable": true
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "description": "Machine-readable cause, passed through from the runner's platform.",
+            "nullable": true
+          },
+          "state": {
+            "$ref": "#/components/schemas/DeploymentState"
+          }
+        }
       },
       "TransportConfig": {
         "oneOf": [
