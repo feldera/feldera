@@ -1,14 +1,15 @@
 <script lang="ts">
   import triagePlugins, { createBundle, TriageResults } from 'virtual:feldera-triage-plugins'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
-  import type { ConnectorStatus } from 'common-ui/connectorMetrics'
   import { enclosure, nonNull } from 'common-lib/function'
+  import type { ConnectorStatus } from 'common-ui/connectorMetrics'
   import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import {
     createLoadGuard,
     type GlobalMetrics,
     getSuitableProfiles,
     processProfileFiles,
+    type SourceFile,
     SupportBundleViewerLayout,
     type ZipItem
   } from 'profiler-layout'
@@ -61,12 +62,12 @@
     | (() => {
         profile: JsonProfiles | undefined
         dataflow: Dataflow | undefined
-        sources: string[] | undefined
         logText: string | undefined
         globalMetrics: GlobalMetrics | undefined
         connectorStatus: ConnectorStatus | undefined
         runtimeConfig: unknown
         pipelineEvents: PipelineMonitorEvent[] | undefined
+        sourceFiles: SourceFile[] | undefined
       })
     | null = $state(null)
   let triageResults: TriageResults = $state(new TriageResults())
@@ -123,12 +124,12 @@
     getProfileData = enclosure({
       profile: processed.profile,
       dataflow: processed.dataflow,
-      sources: processed.sources,
       logText: processed.logText,
       globalMetrics: processed.globalMetrics,
       connectorStatus: processed.connectorStatus,
       runtimeConfig: processed.runtimeConfig,
-      pipelineEvents: processed.pipelineEvents
+      pipelineEvents: processed.pipelineEvents,
+      sourceFiles: processed.sourceFiles
     })
   }
 
@@ -407,23 +408,23 @@
     {@const {
       profile,
       dataflow,
-      sources,
       logText,
       globalMetrics,
       connectorStatus,
       runtimeConfig,
-      pipelineEvents
+      pipelineEvents,
+      sourceFiles
     } = getProfileData()}
     <div class="min-h-0 flex-1 px-4 pb-4">
       <SupportBundleViewerLayout
         profileData={profile}
         dataflowData={dataflow}
-        programCode={sources}
         {logText}
         {globalMetrics}
         {connectorStatus}
         {runtimeConfig}
         {pipelineEvents}
+        {sourceFiles}
         {triageResults}
         theme={darkMode.current}
         profileFiles={getProfileFiles()}

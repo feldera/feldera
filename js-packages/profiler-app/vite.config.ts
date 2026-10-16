@@ -12,14 +12,13 @@ export default defineConfig({
     tailwindcss(),
     svelte(),
     svg(),
-    // Trim monaco to the bare minimum needed for read-only SQL viewing, and
-    // inline the workers so `viteSingleFile` produces a true self-contained bundle.
-    // The SqlCodeView (consumed via profiler-layout) renders SQL with line numbers,
-    // range highlighting via decorations, and a small lookup-cycling search.
+    // Bundle only the Monaco languages and features that the read-only SourceCodeView of
+    // profiler-layout uses, and inline the workers so that `viteSingleFile` makes one
+    // self-contained file. SourceCodeView shows TOML with the `graphql` grammar.
     // The plugin neuters `vs/language/<x>/` dynamic imports for any language not
     // listed here, so MonacoEditor's optional JSON-schema field costs nothing.
     monaco({
-      languages: ['sql'],
+      languages: ['sql', 'rust', 'graphql'],
       features: ['browser', 'clipboard', 'find', 'wordHighlighter'],
       inlineWorkers: true
     }),

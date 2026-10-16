@@ -6,6 +6,7 @@
     type GlobalMetrics,
     getSuitableProfiles,
     processProfileFiles,
+    type SourceFile,
     SupportBundleViewerLayout,
     type ZipItem
   } from 'profiler-layout'
@@ -24,12 +25,12 @@
   let profileData: {
     profile: JsonProfiles | undefined
     dataflow: Dataflow | undefined
-    sources: string[] | undefined
     logText: string | undefined
     globalMetrics: GlobalMetrics | undefined
     connectorStatus: ConnectorStatus | undefined
     runtimeConfig: unknown
     pipelineEvents: PipelineMonitorEvent[] | undefined
+    sourceFiles: SourceFile[] | undefined
   } | null = $state(null)
 
   let fileInput: HTMLInputElement | null = $state(null)
@@ -50,12 +51,12 @@
     profileData = {
       profile: data.profile,
       dataflow: data.dataflow,
-      sources: data.sources,
       logText: data.logText,
       globalMetrics: data.globalMetrics,
       connectorStatus: data.connectorStatus,
       runtimeConfig: data.runtimeConfig,
-      pipelineEvents: data.pipelineEvents
+      pipelineEvents: data.pipelineEvents,
+      sourceFiles: data.sourceFiles
     }
   }
 
@@ -120,12 +121,12 @@
     <SupportBundleViewerLayout
       profileData={profileData.profile}
       dataflowData={profileData.dataflow}
-      programCode={profileData.sources}
       logText={profileData.logText}
       globalMetrics={profileData.globalMetrics}
       connectorStatus={profileData.connectorStatus}
       runtimeConfig={profileData.runtimeConfig}
       pipelineEvents={profileData.pipelineEvents}
+      sourceFiles={profileData.sourceFiles}
       triageResults={new TriageResults()}
       {profileFiles}
       {selectedTimestamp}

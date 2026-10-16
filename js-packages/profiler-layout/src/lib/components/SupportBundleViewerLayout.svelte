@@ -27,11 +27,12 @@
     WorkerOption
   } from 'profiler-lib'
   import { measurementLabel } from 'profiler-lib'
-  import { type Snippet, untrack } from 'svelte'
+  import { createRawSnippet, type Snippet, untrack } from 'svelte'
   import type { TriageResults } from 'triage-types'
   import type { GlobalMetrics } from '../functions/globalMetrics'
   import { createLookupCoordinator, type SearchProgress } from '../functions/lookup'
   import { type AnalysisView, isNodeView, metricsModeOf } from '../functions/metricsMode'
+  import type { SourceFile } from '../functions/processZipBundle'
   import { severityLabel, uniqueCategories, uniqueSeverities } from '../functions/triage'
   import MetricSelect from './MetricSelect.svelte'
   import type { MetricsMode } from './MetricsView.svelte'
@@ -44,7 +45,7 @@
   import IssuesTab from './tabs/IssuesTab.svelte'
   import LogsTab from './tabs/LogsTab.svelte'
   import MetricsTab, { type AnalysisTabProps } from './tabs/MetricsTab.svelte'
-  import SqlTab, { type SqlTabProps } from './tabs/SqlTab.svelte'
+  import SourceTab, { type SourceTabProps } from './tabs/SourceTab.svelte'
 
   const TABS = ['Metrics', 'Connectors', 'Health', 'Logs', 'Config', 'Issues'] as const
   type AnalysisTab = (typeof TABS)[number]
@@ -53,7 +54,6 @@
     /** Parsed circuit profile */
     profileData?: JsonProfiles
     dataflowData: Dataflow | undefined
-    programCode: string[] | undefined
     logText?: string
     /** Cumulative pipeline-wide metrics from the bundle's `stats.json`; shown in the overview. */
     globalMetrics?: GlobalMetrics
@@ -66,6 +66,9 @@
     /** Pipeline monitor events from the bundle's `pipeline_events.json`, shown in the Health tab.
      *  Absent when the bundle has no events file. The tab is disabled when this is absent or empty. */
     pipelineEvents?: PipelineMonitorEvent[]
+    /** Pipeline source files from the bundle's `pipeline_config.json`, `program.sql` first. Each
+     *  file gets a tab in the code panel. */
+    sourceFiles?: SourceFile[]
     triageResults: TriageResults
     /** Palette the circuit diagram is drawn with; follows the application theme */
     theme?: DiagramTheme
@@ -75,8 +78,6 @@
     sqlPanelFullHeight: boolean
     /** Snippet for the "Load profile" button and timestamp selector in graph-panel header */
     loadProfileControl?: Snippet
-    /** Optional slot for a richer SQL panel; receives current highlight ranges */
-    sqlPanel?: Snippet<[highlightRanges: SourcePositionRange[]]>
     /** Ranges of the SQL that the selected node came from. Their `end` names the last character of
      *  the range, not the position after it. */
     onHighlightSourceRanges?: (ranges: SourcePositionRange[]) => void
@@ -88,12 +89,12 @@
   let {
     profileData,
     dataflowData,
-    programCode,
     logText,
     globalMetrics,
     connectorStatus,
     runtimeConfig,
     pipelineEvents,
+    sourceFiles = [],
     triageResults,
     theme = 'light',
     profileFiles,
@@ -101,7 +102,6 @@
     onSelectTimestamp,
     sqlPanelFullHeight = $bindable(),
     loadProfileControl,
-    sqlPanel,
     onHighlightSourceRanges,
     onRenderingChange
   }: Props = $props()
@@ -165,18 +165,20 @@
   )
   let highlightRanges: SourcePositionRange[] = $state([])
 
-  // The graph panel's diagram is hoisted to a <PersistentContent> overlay so it survives the
-  // sqlPanelFullHeight layout toggle (which would otherwise unmount/remount the snippet's
-  // <ProfilerDiagram>, discarding the Visualizer's state). The graphPanel snippet renders a
-  // <PersistentPlaceholder> that mirrors its bounding rect onto this shared handle.
+  // The <ProfilerDiagram> is not rendered inside the graphPanel snippet. It is rendered once, at
+  // the root of this component, in a <PersistentContent> overlay with a fixed position. The overlay
+  // follows the position and size of an empty placeholder div in the graphPanel snippet. Thus the
+  // sqlPanelFullHeight layout toggle moves only the placeholder, and the diagram keeps the
+  // Visualizer's state. The placeholder div uses `diagramRect.placeholder` to report its bounding
+  // rect to this shared handle.
   const diagramRect = usePersistentRect()
 
-  // The whole SQL panel is hoisted the same way. The layout toggle swaps which {#if} branch
-  // renders the panel, and Svelte mounts the new branch before tearing down the old — so an
-  // inline SQL panel would briefly have two Monaco editors fighting over one model URI on every
-  // expand/collapse. Hoisting keeps a single editor instance (and a single, simply-disposed
-  // model) alive across the toggle; each layout branch only renders a placeholder.
-  const sqlPanelRect = usePersistentRect()
+  // The code panel is also rendered once in an overlay at the root, not inside the layout branches.
+  // The layout toggle swaps the {#if} branch that renders the panel, and Svelte mounts the new
+  // branch before it destroys the old branch. A panel inside each branch would then create a second
+  // Monaco model with the same URI, which Monaco rejects. Each layout branch renders only a
+  // placeholder.
+  const sourcePanelRect = usePersistentRect()
 
   const lookup = createLookupCoordinator()
 
@@ -236,7 +238,7 @@
     }
   }
 
-  /** Show the SQL the node was compiled from, selected and scrolled into view in the SQL panel.
+  /** Show the SQL the node was compiled from, selected and scrolled into view in the code panel.
    *  A node compiled from no SQL selects nothing, so the two panels never show different nodes. */
   function highlightSource(nodeId: string) {
     // A region's double click expands it, so a single click is the only gesture left to reach
@@ -244,6 +246,9 @@
     // `CircuitProfile.getSourceRanges`), so the same call serves regions and operators alike.
     const ranges = profilerDiagram?.getProfile()?.getSourceRanges(nodeId) ?? []
     highlightRanges = ranges
+    if (ranges.length > 0) {
+      sourceCurrentTab = 'program.sql'
+    }
     onHighlightSourceRanges?.(ranges)
   }
 
@@ -308,16 +313,37 @@
     lookupProgress = null
   })
 
-  // SQL panel tab state. Single-tab; bound state is required by TabsPanel.
-  let sqlCurrentTab = $state('SQL')
-  const sqlTabProps = $derived<SqlTabProps>({
-    sqlPanel,
-    code: programCode?.join('\n') ?? '',
-    highlightRanges
+  // The diagram reads the SQL of each node from these lines when the dataflow has no `sources`.
+  const programCode = $derived(sourceFiles.find((f) => f.name === 'program.sql')?.code.split('\n'))
+  let sourceCurrentTab = $state('program.sql')
+  // The file of the selected tab. It is the first file when the bundle does not have the selected
+  // file, and undefined when the bundle has no source files.
+  const currentFile = $derived(
+    sourceFiles.find((f) => f.name === sourceCurrentTab) ?? sourceFiles.at(0)
+  )
+  // All tabs share these props, so only the active tab can be mounted (`keepAlive: false`).
+  const sourceTabProps = $derived<SourceTabProps | undefined>(
+    currentFile && {
+      file: currentFile,
+      // Only the SQL program has node ranges to select.
+      highlightRanges: currentFile.name === 'program.sql' ? highlightRanges : []
+    }
+  )
+  const sourceTabs = $derived<TabSpec<SourceTabProps>[]>(
+    sourceFiles.map((file) => ({
+      id: file.name,
+      label: createRawSnippet(() => ({ render: () => `<span>${file.name}</span>` })),
+      panel: SourceTab,
+      keepAlive: false,
+      tabBarEnd: sourceTabBarEnd
+    }))
+  )
+  // Select the tab of the file that the panel shows, also when `currentFile` is a fallback.
+  $effect(() => {
+    if (currentFile) {
+      sourceCurrentTab = currentFile.name
+    }
   })
-  const sqlTabs = $derived<TabSpec<SqlTabProps>[]>([
-    { id: 'SQL', label: sqlLabel, panel: SqlTab, keepAlive: false, tabBarEnd: sqlTabBarEnd }
-  ])
 
   // Analysis panel (Metrics / Connectors / Health / Logs / Config / Issues) tab spec.
   const analysisTabProps = $derived<AnalysisTabProps>({
@@ -448,19 +474,15 @@
   </div>
 {/snippet}
 
-<!-- ── SQL panel label, tab-bar-end, and tab spec ───────────────────────── -->
-{#snippet sqlLabel()}
-  <span class="">program.sql</span>
-{/snippet}
-
-{#snippet sqlTabBarEnd()}
+<!-- ── Code panel tab-bar-end ──────────────────────────────────────────────── -->
+{#snippet sourceTabBarEnd()}
   <button
     class="btn-icon ml-auto text-[20px] hover:preset-tonal-surface fd {sqlPanelFullHeight
       ? 'fd-layout-panel-top'
       : 'fd-layout-panel-left'}"
-    title={sqlPanelFullHeight ? 'Collapse SQL panel' : 'Expand SQL panel to full height'}
+    title={sqlPanelFullHeight ? 'Collapse code panel' : 'Expand code panel to full height'}
     onclick={() => (sqlPanelFullHeight = !sqlPanelFullHeight)}
-    aria-label={sqlPanelFullHeight ? 'Collapse SQL panel' : 'Expand SQL panel'}
+    aria-label={sqlPanelFullHeight ? 'Collapse code panel' : 'Expand code panel'}
   ></button>
 {/snippet}
 
@@ -557,13 +579,17 @@
   {@render commonTabBarEnd()}
 {/snippet}
 
-<!-- ── SQL panel (SQL code view via TabsPanel) ──────────────────────────── -->
-{#snippet sqlCodePanel()}
-  <TabsPanel
-    tabs={sqlTabs}
-    bind:currentTab={sqlCurrentTab}
-    tabProps={sqlTabProps}
-  />
+<!-- ── Code panel (source files via TabsPanel) ───────────────────────────── -->
+{#snippet sourcePanel()}
+  {#if sourceTabProps}
+    <TabsPanel tabs={sourceTabs} bind:currentTab={sourceCurrentTab} tabProps={sourceTabProps} />
+  {:else}
+    <div
+      class="flex h-full items-center justify-center rounded-container bg-surface-50-950 text-surface-600-400"
+    >
+      Profile does not contain the source code
+    </div>
+  {/if}
 {/snippet}
 
 <!-- ── Analysis panel (tabbed analysis via TabsPanel) ────────────────────────── -->
@@ -598,7 +624,7 @@
     <Pane order={2} defaultSize={belowGraphPaneDefaultSize} minSize={15} class="!overflow-visible">
       <PaneGroup direction="horizontal" class="!overflow-visible h-full">
         <Pane defaultSize={50} minSize={0} class="!overflow-visible">
-          <div use:sqlPanelRect.placeholder class="h-full"></div>
+          <div use:sourcePanelRect.placeholder class="h-full"></div>
         </Pane>
         <PaneResizer class="pane-divider-vertical mx-1.5" />
         <Pane minSize={20} class="!overflow-visible">
@@ -611,7 +637,7 @@
   <!-- ══ Layout: SQL full-height (SQL left, graph + tabs right) ═══════════ -->
   <PaneGroup direction="horizontal" class="!overflow-visible h-full">
     <Pane defaultSize={40} minSize={15} class="!overflow-visible">
-      <div use:sqlPanelRect.placeholder class="h-full"></div>
+      <div use:sourcePanelRect.placeholder class="h-full"></div>
     </Pane>
     <PaneResizer class="pane-divider-vertical mx-1.5" />
     <Pane minSize={20} class="!overflow-visible">
@@ -656,9 +682,8 @@
   </PersistentContent>
 {/if}
 
-<!-- Persistent SQL panel overlay. Hoisted out of the layout branches for the same reason as the
-     diagram: rendered once, it mirrors the placeholder in whichever {#if} branch is active, so the
-     Monaco editor and its model are created once and survive the sqlPanelFullHeight toggle. -->
-<PersistentContent persistent={sqlPanelRect} class="overflow-visible">
-  {@render sqlCodePanel()}
+<!-- Persistent code panel overlay. It renders once and follows the placeholder of the active {#if}
+     branch, so the Monaco editor survives the sqlPanelFullHeight toggle. -->
+<PersistentContent persistent={sourcePanelRect} class="overflow-visible">
+  {@render sourcePanel()}
 </PersistentContent>
