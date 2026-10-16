@@ -384,8 +384,8 @@ Press Enter for the next match, and Shift+Enter for the previous match.
 | `Ctrl-F` (`Cmd-F` on macOS) | Anywhere else | Opens the search of the open tab. It selects the old text, so you can type a new search immediately. |
 | Escape | | Removes the current node, or closes the search |
 
-The **Config** tab does not have its own search. On this tab, `Ctrl-F`
-opens the search of the browser.
+The **Connectors**, **Health** and **Config** tabs do not have their own
+search. On these tabs, `Ctrl-F` opens the search of the browser.
 
 ## Profiling pipelines using samply
 
