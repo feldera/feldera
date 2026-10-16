@@ -201,14 +201,31 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
 }
 
 /**
+ * True for a connector entry that `aggregateConnectorMetrics` can read: it has a name, a
+ * `config.stream` and a `metrics` object.
+ */
+const isConnectorEntry = (entry: unknown): boolean => {
+  const e = entry as { endpoint_name?: unknown; config?: { stream?: unknown }; metrics?: unknown }
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    typeof e.endpoint_name === 'string' &&
+    typeof e.config?.stream === 'string' &&
+    typeof e.metrics === 'object' &&
+    e.metrics !== null
+  )
+}
+
+/**
  * Returns the connector statistics of a parsed `stats.json`, or `undefined` when it lists no
- * input and no output connectors.
+ * valid input and no valid output connectors. Malformed entries are dropped, because the
+ * aggregation runs outside the load's error handling.
  */
 export function parseConnectorStatus(
   stats: Partial<ConnectorStatus> | null | undefined
 ): ConnectorStatus | undefined {
-  const inputs = Array.isArray(stats?.inputs) ? stats.inputs : []
-  const outputs = Array.isArray(stats?.outputs) ? stats.outputs : []
+  const inputs = Array.isArray(stats?.inputs) ? stats.inputs.filter(isConnectorEntry) : []
+  const outputs = Array.isArray(stats?.outputs) ? stats.outputs.filter(isConnectorEntry) : []
   if (inputs.length === 0 && outputs.length === 0) {
     return undefined
   }

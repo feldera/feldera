@@ -143,8 +143,8 @@
   let nodeSearchInput: HTMLInputElement | undefined = $state()
 
   // Ctrl/Cmd-F targets the "Search node" input while focused on the circuit diagram, otherwise the
-  // active tab's search. Inactive on Connectors and Config (no in-tab search), so native find runs
-  // there.
+  // active tab's search. Inactive on Connectors and Config (no in-tab search), so the browser's
+  // native find popup appears there.
   useShortcut(
     isFindShortcut,
     () => {
