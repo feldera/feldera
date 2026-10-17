@@ -6,14 +6,8 @@
 //! orphans the parquet the last one wrote: eight attempts left 113 GB behind for a 20 GB
 //! table. The cap turns that overrun into backpressure.
 //!
-//! Merge mode only. `cdc` mode keeps one writer per thread, as before, and a shared cap
-//! halved its throughput against a store with 150 ms part latency.
-//!
-//! The bin-packing half of `OPTIMIZE` escapes it, because delta-rs opens that table itself
-//! and handing it a bounded store means rebuilding the table from a root store this connector
-//! assembles -- which is what `uc://` credential vending exists to avoid. Its two rewrite
-//! tasks are a tenth of the concurrency that exhausted the socket budget, so the gap is
-//! recorded rather than closed.
+//! Merge mode only, compaction included. `cdc` mode keeps one writer per thread, as before,
+//! and a shared cap halved its throughput against a store with 150 ms part latency.
 
 use std::sync::Arc;
 

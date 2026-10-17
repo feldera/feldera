@@ -64,8 +64,12 @@ pub struct MergeMetrics {
     maintains_table: AtomicBool,
     /// Set when a maintenance run fails, so the warning it suppresses comes back.
     maintenance_failing: AtomicBool,
+    /// A mostly superseded file is too big for a step, so the warning comes back for it too.
+    too_big_to_reclaim: AtomicBool,
     compactions: AtomicU64,
     compaction_failures: AtomicU64,
+    /// Time flushes waited for the step the commit before them started.
+    compaction_wait_micros: AtomicU64,
     reclaimed_rows: AtomicU64,
     /// 1 while the last run left mostly-superseded files behind.
     reclaim_incomplete: AtomicU64,
@@ -91,10 +95,33 @@ impl MergeMetrics {
         self.maintenance_failing.store(false, Ordering::Relaxed);
     }
 
+    /// The last plan found nothing to do, so no reclaim is pending and nothing is failing.
+    pub fn reclaim_caught_up(&self) {
+        self.reclaim_incomplete.store(0, Ordering::Relaxed);
+        self.maintenance_failing.store(false, Ordering::Relaxed);
+    }
+
+    /// Whether the last plan found a mostly superseded file too big for a step.
+    pub fn set_too_big_to_reclaim(&self, too_big: bool) {
+        self.too_big_to_reclaim.store(too_big, Ordering::Relaxed);
+    }
+
     /// Record a maintenance run that failed. The table is intact, but nothing was reclaimed.
     pub fn record_compaction_failure(&self) {
         self.compaction_failures.fetch_add(1, Ordering::Relaxed);
         self.maintenance_failing.store(true, Ordering::Relaxed);
+    }
+
+    /// Whether the superseded-rows warning has fired.
+    #[cfg(test)]
+    pub(super) fn warned(&self) -> bool {
+        self.last_warning.lock().is_some()
+    }
+
+    /// Record how long a flush waited for a compaction step before it started.
+    pub fn record_compaction_wait(&self, waited: Duration) {
+        self.compaction_wait_micros
+            .fetch_add(waited.as_micros() as u64, Ordering::Relaxed);
     }
 
     /// Record how long one flush took, whatever its outcome.
@@ -142,8 +169,8 @@ impl MergeMetrics {
     ///
     /// `live` and `superseded` describe the whole table, as the snapshot says after a commit.
     /// The warning asks an operator to maintain the table, so it is suppressed while the
-    /// connector does that itself -- and due again as soon as that stops working. The gauge
-    /// is recorded either way.
+    /// connector does that itself, and due again when that stops working or a file is too
+    /// big for it. The gauge is recorded either way.
     pub fn record_tombstone_ratio(&self, live: u64, superseded: u64, endpoint: &str, uri: &str) {
         let total = live + superseded;
         if total == 0 {
@@ -153,8 +180,10 @@ impl MergeMetrics {
         self.tombstone_ratio_permille
             .store((ratio * 1000.0) as u64, Ordering::Relaxed);
 
+        let failing = self.maintenance_failing.load(Ordering::Relaxed);
         let maintained = self.maintains_table.load(Ordering::Relaxed)
-            && !self.maintenance_failing.load(Ordering::Relaxed);
+            && !failing
+            && !self.too_big_to_reclaim.load(Ordering::Relaxed);
         if maintained || ratio < TOMBSTONE_WARN_RATIO {
             return;
         }
@@ -168,12 +197,20 @@ impl MergeMetrics {
         *last = Some(Instant::now());
         drop(last);
 
+        // Due here with `auto_compact` set only while its steps fail, or a file is too big.
+        let advice = if !self.maintains_table.load(Ordering::Relaxed) {
+            "Set the connector's 'auto_compact' to reclaim them automatically, or compact the \
+             table yourself"
+        } else if failing {
+            "The connector's 'auto_compact' is failing to reclaim them; see its warnings for why"
+        } else {
+            "Some files are too big for 'auto_compact' to rewrite; run \
+             'REORG TABLE ... APPLY (PURGE)' on the table to reclaim their rows"
+        };
         warn!(
             "delta_table {endpoint}: {:.0}% of the rows in '{uri}' are superseded versions \
-             ({superseded} superseded, {live} live), and reads still scan them. Set the \
-             connector's 'optimize_interval' to reclaim them automatically, or compact \
-             the table yourself. See 'Compaction is required' in the Delta output connector \
-             documentation.",
+             ({superseded} superseded, {live} live), and reads still scan them. {advice}. See \
+             'Compaction is required' in the Delta output connector documentation.",
             ratio * 100.0
         );
     }
@@ -319,14 +356,21 @@ impl ConnectorMetrics for MergeMetrics {
             ),
             (
                 "output_connector_delta_merge_compactions_total",
-                "Maintenance runs the connector completed, when \
-                 'optimize_interval' asks it to maintain the table.",
+                "Maintenance steps the connector completed, when \
+                 'auto_compact' asks it to maintain the table.",
                 ValueType::Counter,
                 get(&self.compactions),
             ),
             (
+                "output_connector_delta_merge_compaction_wait_microseconds_total",
+                "Time flushes waited for the compaction step that the commit before them \
+                 started. Not part of the flush latency.",
+                ValueType::Counter,
+                get(&self.compaction_wait_micros),
+            ),
+            (
                 "output_connector_delta_merge_compaction_failures_total",
-                "Maintenance runs that failed. The table is left intact and the next run \
+                "Maintenance steps that failed. The table is left intact and the next step \
                  retries, but nothing was reclaimed by this one.",
                 ValueType::Counter,
                 get(&self.compaction_failures),
@@ -339,8 +383,8 @@ impl ConnectorMetrics for MergeMetrics {
             ),
             (
                 "output_connector_delta_merge_reclaim_incomplete",
-                "1 when the last maintenance run ran out of time with files still mostly \
-                 superseded. Sustained, it means reclamation is falling behind the writes.",
+                "1 when files a step can rewrite are still mostly superseded after the last \
+                 maintenance step. Sustained, it means reclamation is falling behind the writes.",
                 ValueType::Gauge,
                 get(&self.reclaim_incomplete),
             ),
@@ -529,6 +573,40 @@ mod test {
             metrics.last_warning.lock().is_none(),
             "maintenance recovered"
         );
+    }
+
+    /// A file too big to reclaim brings the warning back, until it is gone.
+    #[test]
+    fn a_file_too_big_to_reclaim_brings_the_warning_back() {
+        let metrics = MergeMetrics::new();
+        metrics.maintains_the_table();
+        metrics.set_too_big_to_reclaim(true);
+        metrics.record_tombstone_ratio(100, 900, "e", "uri");
+        assert!(metrics.warned(), "the operator was not told to REORG");
+
+        *metrics.last_warning.lock() = None;
+        metrics.set_too_big_to_reclaim(false);
+        metrics.record_tombstone_ratio(100, 900, "e", "uri");
+        assert!(
+            !metrics.warned(),
+            "the warning stayed after the file was gone"
+        );
+
+        // Below the threshold it stays quiet, as it does without `auto_compact`.
+        metrics.set_too_big_to_reclaim(true);
+        metrics.record_tombstone_ratio(900, 100, "e", "uri");
+        assert!(!metrics.warned(), "a mostly live table was warned about");
+    }
+
+    /// A plan with nothing to do ends a failure, or the warning keeps blaming `auto_compact`.
+    #[test]
+    fn nothing_to_do_ends_a_failure() {
+        let metrics = MergeMetrics::new();
+        metrics.maintains_the_table();
+        metrics.record_compaction_failure();
+        metrics.reclaim_caught_up();
+        metrics.record_tombstone_ratio(100, 900, "e", "uri");
+        assert!(!metrics.warned(), "the warning still blamed auto_compact");
     }
 
     /// What the maintenance runs report, so falling behind is visible without reading logs.

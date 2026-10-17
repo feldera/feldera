@@ -13,10 +13,10 @@
 //! | [`prune`] | Which files and row groups the lookup can skip without reading them |
 //! | [`probe`] | Turning a set of keys into the (file, row ordinal) pairs to tombstone |
 //! | [`tombstone`] | Turning located row ordinals into deletion vectors and log actions |
-//! | [`rewrite`] | Reclaiming storage from files whose rows are mostly superseded |
+//! | [`rewrite`] | Packing small files, and reclaiming files whose rows are mostly superseded |
 //! | [`startup`] | What the target table must satisfy before the first row moves |
 //! | [`flush`] | The walk that drives all of the above and commits the result |
-//! | [`compact`] | Optional connector-driven OPTIMIZE, for tables nothing else maintains |
+//! | [`compact`] | Optional compaction after each commit, for tables nothing else maintains |
 //! | [`metrics`] | What the connector reports, and when it says the table needs compacting |
 
 use super::WriteError;
@@ -201,7 +201,7 @@ fn first_stale_remove(table: &DeltaTable, actions: &[Action]) -> AnyResult<Optio
 mod model;
 
 #[cfg(test)]
-mod test;
+pub(super) mod test;
 
 #[cfg(test)]
 mod retry_test {

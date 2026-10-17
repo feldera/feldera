@@ -1,21 +1,11 @@
-//! Reclaiming storage from data files whose rows are mostly superseded.
+//! Rewriting data files: packing small ones, and reclaiming mostly superseded ones.
 //!
-//! A superseded row stays in its file, and in every scan of it, until something rewrites the
-//! file. `OPTIMIZE` does not: it bin-packs files below the target size and drops single-file
-//! bins, so a file at the target size is never rewritten however dead it is.
-//!
-//! This rewrites exactly those files: read the live rows, write them as a new file, commit
-//! the swap. `data_change` is false on both actions, as `OPTIMIZE` sets it, so a streaming
-//! reader sees no row appear or disappear.
-//!
-//! One file per commit, re-planned against a fresh snapshot each time, so the vector being
-//! applied stays current with the version the commit declares it read. A flush that
-//! tombstones more rows in that file mid-rewrite then loses the race rather than having its
-//! tombstones undone: both sides `remove` the path, which delta-rs rejects.
+//! Commits go through [`commit_actions`], not delta-rs `OPTIMIZE`, so a flush that tombstones
+//! a file mid-rewrite makes the rewrite lose instead of being undone. `data_change` is false,
+//! so a streaming reader sees no row appear or disappear.
 
 use std::collections::HashMap;
 use std::num::NonZeroU64;
-use std::time::{Duration, Instant};
 
 use anyhow::{Result as AnyResult, anyhow};
 use arrow::array::RecordBatch;
@@ -55,14 +45,35 @@ pub struct ReclaimMetrics {
     /// Superseded rows the pass removed from storage.
     pub rows_reclaimed: u64,
     pub bytes_written: u64,
-    /// The budget ran out with candidates left, so the pass is incomplete.
+    /// The pass reached its file limit with candidates left, so it is incomplete.
     pub stopped_early: bool,
 }
 
-/// A file worth rewriting, as the planning snapshot describes it.
-struct Candidate {
+/// Larger files are left to `REORG TABLE ... APPLY (PURGE)`: one rewrite would stall a flush.
+const MAX_REWRITE_TARGETS: u64 = 2;
+
+/// The largest file a reclaim rewrites: never below two flush files, which ignore the target.
+fn max_rewrite_size(target: u64) -> u64 {
+    MAX_REWRITE_TARGETS * target.max(TARGET_FILE_SIZE.get())
+}
+
+/// A partition also packs once this many small files share a tier, as Delta Lake's
+/// `autoCompact.minNumFiles` does, so a slow pipeline does not pile up thousands first.
+const MIN_PACK_FILES: usize = 50;
+
+/// Files per pack: they are read one after another, so thousands would be slow however small.
+const MAX_PACK_FILES: usize = 2 * MIN_PACK_FILES;
+
+/// A power-of-[`MIN_PACK_FILES`] size band: a pack lands a tier up, so each byte is rewritten
+/// once per tier, not once per pack.
+pub(super) fn size_tier(size: u64) -> u32 {
+    (size.max(1) as f64).log(MIN_PACK_FILES as f64) as u32
+}
+
+/// A file to rewrite, as the planning snapshot describes it.
+pub(super) struct Candidate {
     path: String,
-    deletion_vector: DeletionVectorDescriptor,
+    deletion_vector: Option<DeletionVectorDescriptor>,
     physical_rows: u64,
     superseded_rows: u64,
     partition_values: HashMap<String, Scalar>,
@@ -70,8 +81,37 @@ struct Candidate {
     remove: Remove,
 }
 
-/// Rewrite every file whose rows are mostly superseded, one commit each, until `budget` runs
-/// out.
+impl Candidate {
+    /// `None` without a row count, which the rewrite checks its output against.
+    fn of(view: &LogicalFileView) -> Option<Self> {
+        let deletion_vector = view.deletion_vector_descriptor();
+        Some(Self {
+            path: view.path().to_string(),
+            physical_rows: view.num_records()? as u64,
+            superseded_rows: deletion_vector
+                .as_ref()
+                .map_or(0, |dv| dv.cardinality.max(0) as u64),
+            deletion_vector,
+            partition_values: partition_values_of(view),
+            remove: view.remove_action(false),
+        })
+    }
+
+    fn live_rows(&self) -> u64 {
+        self.physical_rows.saturating_sub(self.superseded_rows)
+    }
+}
+
+/// What packing a set of small files did.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct PackMetrics {
+    pub files_removed: usize,
+    pub files_added: usize,
+    /// Superseded rows the small files held, dropped along the way.
+    pub rows_reclaimed: u64,
+}
+
+/// Rewrite the files whose rows are mostly superseded, one commit each, at most `max_files`.
 ///
 /// Re-plans between files. A rewritten file has no vector left, so it cannot be picked again
 /// and the loop terminates. A failure ends the pass and leaves the rest for the next one.
@@ -80,13 +120,11 @@ struct Candidate {
 /// loses no work. A large backlog is cleared over several passes.
 pub async fn reclaim_superseded_rows(
     table: &mut DeltaTable,
-    budget: Duration,
+    max_files: usize,
 ) -> AnyResult<ReclaimMetrics> {
     let mut metrics = ReclaimMetrics::default();
-    // One partition: the scan shares the runtime a flush blocks on, and reclaiming storage
-    // must not outbid the writes it is making room for.
+    // One partition: the scan runs on the runtime every connector shares.
     let ctx = SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1));
-    let deadline = Instant::now() + budget;
 
     loop {
         table
@@ -98,7 +136,7 @@ pub async fn reclaim_superseded_rows(
             return Ok(metrics);
         };
 
-        if Instant::now() >= deadline {
+        if metrics.files_rewritten >= max_files {
             metrics.stopped_early = true;
             return Ok(metrics);
         }
@@ -107,8 +145,8 @@ pub async fn reclaim_superseded_rows(
             "delta merge mode: rewriting '{}', {} of {} rows superseded",
             candidate.path, candidate.superseded_rows, candidate.physical_rows
         );
-        let bytes = match rewrite_one(table, &candidate, &ctx).await {
-            Ok(bytes) => bytes,
+        let bytes = match rewrite_files(table, std::slice::from_ref(&candidate), &ctx).await {
+            Ok((bytes, _)) => bytes,
             // Each file is its own commit, so the ones before this are durable. Saying so
             // keeps the operator from reading the failure as "nothing was reclaimed".
             Err(e) if metrics.files_rewritten > 0 => {
@@ -128,35 +166,151 @@ pub async fn reclaim_superseded_rows(
     }
 }
 
+/// Whether any file is worth reclaiming now.
+pub(super) fn has_candidate(table: &DeltaTable) -> AnyResult<bool> {
+    Ok(next_candidate(table)?.is_some())
+}
+
 /// The first file in the snapshot past the threshold, or `None` when none is.
-///
-/// A file without statistics has no row count to judge against, so it is left alone: a
-/// missing statistic must not be read as "every row is dead".
 fn next_candidate(table: &DeltaTable) -> AnyResult<Option<Candidate>> {
     let snapshot = table
         .snapshot()
         .map_err(|e| anyhow!("unable to read the Delta table snapshot: {e}"))?;
+    let max_size =
+        max_rewrite_size(rewrite_target_size(snapshot.snapshot().table_properties()).get());
+    Ok(snapshot
+        .log_data()
+        .into_iter()
+        .find(|view| reclaimable(view, max_size))
+        .and_then(|view| Candidate::of(&view)))
+}
 
+/// Whether `view` is worth reclaiming and small enough to rewrite in one step.
+///
+/// A file without statistics has no row count to judge against, so it is left alone: a
+/// missing statistic must not be read as "every row is dead".
+pub(super) fn reclaimable(view: &LogicalFileView, max_size: u64) -> bool {
+    view.size() as u64 <= max_size && mostly_superseded(view)
+}
+
+fn mostly_superseded(view: &LogicalFileView) -> bool {
+    view.deletion_vector_descriptor().is_some_and(|dv| {
+        worth_rewriting(
+            view.num_records().map(|r| r as u64),
+            dv.cardinality.max(0) as u64,
+        )
+    })
+}
+
+/// What one pass over the snapshot found.
+pub(super) struct Plan {
+    /// The small files to pack, or none.
+    pub pack: Vec<Candidate>,
+    /// A file is worth reclaiming.
+    pub reclaim: bool,
+    /// A file is mostly superseded but too big to reclaim, so only `REORG` reclaims it.
+    pub too_big: bool,
+}
+
+/// Finds, in one pass, the small files to pack and what is left to reclaim.
+///
+/// Small is under half the target, so any two fit together and a pick always packs.
+///
+/// # Arguments
+///
+/// * `when_full` - pack only small files that fill a target file or [`MIN_PACK_FILES`] of one
+///   tier; otherwise any partition's small files.
+pub(super) fn plan_rewrites(table: &DeltaTable, when_full: bool) -> AnyResult<Plan> {
+    let snapshot = table
+        .snapshot()
+        .map_err(|e| anyhow!("unable to read the Delta table snapshot: {e}"))?;
+    let target = rewrite_target_size(snapshot.snapshot().table_properties()).get();
+    let max_rewrite = max_rewrite_size(target);
+
+    // Grouped as views, which are cheap, and turned into candidates only once picked.
+    let mut partitions: HashMap<Vec<(String, String)>, Vec<LogicalFileView>> = HashMap::new();
+    let (mut reclaim, mut too_big) = (false, false);
     for view in snapshot.log_data() {
-        let Some(deletion_vector) = view.deletion_vector_descriptor() else {
-            continue;
-        };
-        let physical_rows = view.num_records().map(|r| r as u64);
-        let superseded_rows = deletion_vector.cardinality.max(0) as u64;
-        if !worth_rewriting(physical_rows, superseded_rows) {
+        if mostly_superseded(&view) {
+            if view.size() as u64 <= max_rewrite {
+                reclaim = true;
+            } else {
+                too_big = true;
+            }
+        }
+        if view.size() as u64 >= target / 2 || view.num_records().is_none() {
             continue;
         }
-
-        return Ok(Some(Candidate {
-            path: view.path().to_string(),
-            deletion_vector,
-            physical_rows: physical_rows.expect("worth_rewriting rejects an unknown row count"),
-            superseded_rows,
-            partition_values: partition_values_of(&view),
-            remove: view.remove_action(false),
-        }));
+        let mut partition: Vec<(String, String)> = partition_values_of(&view)
+            .into_iter()
+            .map(|(column, value)| (column, format!("{value:?}")))
+            .collect();
+        partition.sort();
+        partitions.entry(partition).or_default().push(view);
     }
-    Ok(None)
+    // A partition's only small file has nothing to be packed with.
+    let bytes = |files: &[LogicalFileView]| files.iter().map(|f| f.size() as u64).sum::<u64>();
+    let mut sets: Vec<Vec<LogicalFileView>> = Vec::new();
+    for files in partitions.into_values() {
+        if files.len() < 2 {
+            continue;
+        }
+        if !when_full || bytes(&files) >= target {
+            sets.push(files);
+            continue;
+        }
+        let mut tiers: HashMap<u32, Vec<LogicalFileView>> = HashMap::new();
+        for file in files {
+            tiers
+                .entry(size_tier(file.size() as u64))
+                .or_default()
+                .push(file);
+        }
+        sets.extend(
+            tiers
+                .into_values()
+                .filter(|tier| tier.len() >= MIN_PACK_FILES),
+        );
+    }
+    let Some(mut files) = sets.into_iter().max_by_key(|files| bytes(files)) else {
+        return Ok(Plan {
+            pack: Vec::new(),
+            reclaim,
+            too_big,
+        });
+    };
+    // Smallest first, so a pick from a full set holds over half a target and is rarely repacked.
+    files.sort_by_key(|f| f.size());
+    // Bounded in bytes and in files, so a step stays small however many files wait.
+    let mut picked: Vec<Candidate> = Vec::new();
+    let mut picked_bytes = 0;
+    for view in &files {
+        let size = view.size() as u64;
+        if picked.len() >= MAX_PACK_FILES || picked_bytes + size > target {
+            break;
+        }
+        picked_bytes += size;
+        picked.extend(Candidate::of(view));
+    }
+    Ok(Plan {
+        pack: picked,
+        reclaim,
+        too_big,
+    })
+}
+
+/// Rewrite `files`, all from one partition, into as few target-size files as they fill.
+pub(super) async fn pack_files(
+    table: &mut DeltaTable,
+    files: &[Candidate],
+) -> AnyResult<PackMetrics> {
+    let ctx = SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1));
+    let (_, files_added) = rewrite_files(table, files, &ctx).await?;
+    Ok(PackMetrics {
+        files_removed: files.len(),
+        files_added,
+        rows_reclaimed: files.iter().map(|f| f.superseded_rows).sum(),
+    })
 }
 
 /// Whether rewriting a file would reclaim more than it moves.
@@ -186,15 +340,23 @@ fn partition_values_of(view: &LogicalFileView) -> HashMap<String, Scalar> {
         .unwrap_or_default()
 }
 
-/// Rewrite one file's live rows and commit the swap, returning the bytes written.
+/// Rewrite the live rows of `files`, all from one partition, and commit the swap. Returns the
+/// bytes and the number of files written.
 ///
 /// A failed commit leaves the rows it wrote behind for VACUUM, as a failed flush does: the
 /// error can mean the commit landed and only its response was lost.
-async fn rewrite_one(
+async fn rewrite_files(
     table: &mut DeltaTable,
-    candidate: &Candidate,
+    files: &[Candidate],
     ctx: &SessionContext,
-) -> AnyResult<u64> {
+) -> AnyResult<(u64, usize)> {
+    let Some(first) = files.first() else {
+        return Ok((0, 0));
+    };
+    let what = match files.len() {
+        1 => format!("'{}'", first.path),
+        n => format!("{n} files starting with '{}'", first.path),
+    };
     let snapshot = table
         .snapshot()
         .map_err(|e| anyhow!("unable to read the Delta table snapshot: {e}"))?;
@@ -212,19 +374,25 @@ async fn rewrite_one(
             .collect::<Vec<_>>(),
     ));
 
-    let superseded = read_deletion_vector(&candidate.deletion_vector, table).await?;
-    // delta-rs has already decoded the path, so `Path::from` would encode it twice.
-    let path = Path::parse(candidate.path.as_str())
-        .unwrap_or_else(|_| Path::from(candidate.path.as_str()));
+    let mut masked = Vec::with_capacity(files.len());
+    for file in files {
+        let superseded = match &file.deletion_vector {
+            Some(dv) => read_deletion_vector(dv, table).await?,
+            None => Default::default(),
+        };
+        masked.push(MaskedFile {
+            // delta-rs has already decoded the path, so `Path::from` would encode it twice.
+            path: Path::parse(file.path.as_str())
+                .unwrap_or_else(|_| Path::from(file.path.as_str())),
+            bitmap: superseded,
+        });
+    }
     let provider = filtered_parquet_table(
         table.object_store(),
-        vec![MaskedFile {
-            path,
-            bitmap: superseded,
-        }],
+        masked,
         ReadSchema::new(&file_schema),
         ReadMode::NotInBitmap,
-        // One file, read in physical order: splitting it buys nothing here.
+        // Read in physical order: splitting buys nothing here.
         1,
     )
     .await?;
@@ -245,62 +413,53 @@ async fn rewrite_one(
 
     let mut batches = ctx
         .read_table(provider)
-        .map_err(|e| anyhow!("unable to plan a read of '{}': {e}", candidate.path))?
+        .map_err(|e| anyhow!("unable to plan a read of {what}: {e}"))?
         .execute_stream()
         .await
-        .map_err(|e| anyhow!("unable to read '{}': {e}", candidate.path))?;
+        .map_err(|e| anyhow!("unable to read {what}: {e}"))?;
 
     let mut rows_written: u64 = 0;
     while let Some(batch) = batches.next().await {
-        let batch = batch.map_err(|e| {
-            anyhow!(
-                "error reading the live rows of '{}' to rewrite them: {e}",
-                candidate.path
-            )
-        })?;
+        let batch = batch
+            .map_err(|e| anyhow!("error reading the live rows of {what} to rewrite them: {e}"))?;
         if batch.num_rows() == 0 {
             continue;
         }
         rows_written += batch.num_rows() as u64;
         // Through `write`, not `write_partition`: the writer then derives each file's
         // partition from the data, so no row can be filed under the wrong partition.
-        let batch = with_partition_columns(&batch, &table_schema, &candidate.partition_values)
-            .map_err(|e| anyhow!("rewriting '{}': {e}", candidate.path))?;
+        let batch = with_partition_columns(&batch, &table_schema, &first.partition_values)
+            .map_err(|e| anyhow!("rewriting {what}: {e}"))?;
         writer
             .write(&batch)
             .await
-            .map_err(|e| anyhow!("error writing the live rows of '{}': {e:?}", candidate.path))?;
+            .map_err(|e| anyhow!("error writing the live rows of {what}: {e:?}"))?;
     }
 
     let added = writer
         .close()
         .await
-        .map_err(|e| anyhow!("error closing the rewrite of '{}': {e:?}", candidate.path))?;
+        .map_err(|e| anyhow!("error closing the rewrite of {what}: {e:?}"))?;
     let bytes = added.iter().map(|a| a.size.max(0) as u64).sum();
 
-    // The commit below removes the original, so a read that returned the wrong rows would
+    // The commit below removes the originals, so a read that returned the wrong rows would
     // delete them. Nothing downstream would notice: the table would simply be missing rows,
     // or holding resurrected ones. Checked here, before anything is committed, so a mismatch
     // leaves the table untouched and only orphans what this attempt wrote.
-    let live_rows = candidate
-        .physical_rows
-        .saturating_sub(candidate.superseded_rows);
+    let live_rows: u64 = files.iter().map(Candidate::live_rows).sum();
     if rows_written != live_rows {
         return Err(anyhow!(
-            "internal error: rewriting '{}' produced {rows_written} live rows where its \
-             log entry declares {live_rows} ({} rows less {} superseded); the table is \
-             unchanged",
-            candidate.path,
-            candidate.physical_rows,
-            candidate.superseded_rows,
+            "internal error: rewriting {what} produced {rows_written} live rows where the \
+             log declares {live_rows}; the table is unchanged"
         ));
     }
 
-    let mut actions: Vec<Action> = Vec::with_capacity(added.len() + 1);
-    actions.push(Action::Remove(candidate.remove.clone()));
+    let files_added = added.len();
+    let mut actions: Vec<Action> = Vec::with_capacity(added.len() + files.len());
+    actions.extend(files.iter().map(|f| Action::Remove(f.remove.clone())));
     actions.extend(added.into_iter().map(|mut add| {
-        // Reclaiming storage moves no rows in or out of the table, so a reader following the
-        // log must not see these as new data.
+        // A rewrite moves no rows in or out of the table, so a reader following the log must
+        // not see these as new data.
         add.data_change = false;
         Action::Add(add)
     }));
@@ -314,8 +473,8 @@ async fn rewrite_one(
         },
     )
     .await
-    .map_err(|e| anyhow!("committing the rewrite of '{}': {e}", candidate.path))?;
-    Ok(bytes)
+    .map_err(|e| anyhow!("committing the rewrite of {what}: {e}"))?;
+    Ok((bytes, files_added))
 }
 
 /// How large a file the rewrite should write.
@@ -408,14 +567,22 @@ mod test {
             .collect()
     }
 
-    /// Force every data file past the bin-packing threshold, which is what makes OPTIMIZE
-    /// skip it: the case merge mode creates and plain compaction cannot reclaim.
-    async fn with_tiny_target_file_size(table: DeltaTable) -> DeltaTable {
+    /// Put every data file at or past the target, so OPTIMIZE packs none of them: the case
+    /// merge mode creates and plain compaction cannot reclaim.
+    async fn with_files_at_target_size(table: DeltaTable) -> DeltaTable {
+        let smallest = table
+            .snapshot()
+            .unwrap()
+            .log_data()
+            .into_iter()
+            .map(|f| f.size())
+            .min()
+            .unwrap();
         table
             .set_tbl_properties()
             .with_properties(HashMap::from([(
                 TableProperty::TargetFileSize.as_ref().to_string(),
-                "1".to_string(),
+                smallest.to_string(),
             )]))
             .await
             .unwrap()
@@ -430,7 +597,7 @@ mod test {
     async fn a_file_optimize_skips_is_still_reclaimed() {
         let dir = TempDir::new().unwrap();
         let table = fixture_table(&dir, &[1, 2, 3, 4, 5, 6], true).await;
-        let table = with_tiny_target_file_size(table).await;
+        let table = with_files_at_target_size(table).await;
         // Four of six rows superseded, past the half the rewrite asks for.
         let table = tombstone_ids(table, &[2, 3, 4, 5]).await;
         assert_eq!(live_ids(&table).await, vec![1, 6]);
@@ -443,7 +610,7 @@ mod test {
         );
         assert_eq!(vectored_files(&table).len(), 1, "OPTIMIZE left the vector");
 
-        let reclaimed = reclaim_superseded_rows(&mut table, Duration::from_secs(60))
+        let reclaimed = reclaim_superseded_rows(&mut table, usize::MAX)
             .await
             .unwrap();
 
@@ -471,7 +638,7 @@ mod test {
     async fn a_rewrite_that_reads_the_wrong_row_count_is_refused() {
         let dir = TempDir::new().unwrap();
         let table = fixture_table(&dir, &[1, 2, 3, 4, 5, 6], true).await;
-        let table = with_tiny_target_file_size(table).await;
+        let table = with_files_at_target_size(table).await;
         let mut table = tombstone_ids(table, &[2, 3, 4, 5]).await;
 
         let mut candidate = next_candidate(&table)
@@ -484,11 +651,11 @@ mod test {
 
         let before = live_ids(&table).await;
         let ctx = SessionContext::new_with_config(SessionConfig::new());
-        let error = rewrite_one(&mut table, &candidate, &ctx)
+        let error = rewrite_files(&mut table, std::slice::from_ref(&candidate), &ctx)
             .await
             .expect_err("a wrong live-row count must fail the rewrite");
         assert!(
-            format!("{error:#}").contains("log entry declares"),
+            format!("{error:#}").contains("the log declares"),
             "unexpected error: {error:#}"
         );
         assert_eq!(
@@ -498,25 +665,22 @@ mod test {
         );
     }
 
-    /// An exhausted budget must stop before the next file, not after it: a pass that checked
-    /// too late would rewrite one more file every time.
+    /// A spent file limit stops the pass before the next file, not after it.
     #[tokio::test]
-    async fn an_exhausted_budget_stops_the_pass_with_work_left() {
+    async fn a_spent_file_limit_stops_the_pass_with_work_left() {
         let dir = TempDir::new().unwrap();
         let table = fixture_table(&dir, &[1, 2, 3, 4, 5, 6], true).await;
-        let table = with_tiny_target_file_size(table).await;
+        let table = with_files_at_target_size(table).await;
         let mut table = tombstone_ids(table, &[2, 3, 4, 5]).await;
 
-        let reclaimed = reclaim_superseded_rows(&mut table, Duration::ZERO)
-            .await
-            .unwrap();
+        let reclaimed = reclaim_superseded_rows(&mut table, 0).await.unwrap();
 
         assert!(reclaimed.stopped_early, "a candidate was left unrewritten");
         assert_eq!(reclaimed.files_rewritten, 0);
         assert_eq!(
             vectored_files(&table).len(),
             1,
-            "no file may be rewritten once the budget is gone"
+            "no file may be rewritten once the limit is spent"
         );
         assert_eq!(live_ids(&table).await, vec![1, 6]);
     }
@@ -530,7 +694,7 @@ mod test {
         let mut table = tombstone_ids(table, &[2, 3, 4]).await;
 
         assert_eq!(
-            reclaim_superseded_rows(&mut table, Duration::from_secs(60))
+            reclaim_superseded_rows(&mut table, usize::MAX)
                 .await
                 .unwrap()
                 .files_rewritten,
@@ -566,7 +730,7 @@ mod test {
         let mut table = tombstone_ids(table, &[2]).await;
         assert_eq!(vectored_files(&table).len(), 1);
 
-        let reclaimed = reclaim_superseded_rows(&mut table, Duration::from_secs(60))
+        let reclaimed = reclaim_superseded_rows(&mut table, usize::MAX)
             .await
             .unwrap();
 
@@ -602,7 +766,7 @@ mod test {
         tombstone_ids(concurrent, &[1]).await;
 
         let ctx = SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1));
-        let error = rewrite_one(&mut table, &candidate, &ctx)
+        let error = rewrite_files(&mut table, std::slice::from_ref(&candidate), &ctx)
             .await
             .expect_err("the rewrite must not commit over the flush that superseded row 1");
         assert!(
@@ -631,11 +795,11 @@ mod test {
             deltalake::table::builder::ensure_table_uri(dir.path().to_str().unwrap()).unwrap();
         let mut concurrent = deltalake::open_table(uri).await.unwrap();
         let ctx = SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1));
-        rewrite_one(&mut concurrent, &candidate, &ctx)
+        rewrite_files(&mut concurrent, std::slice::from_ref(&candidate), &ctx)
             .await
             .unwrap();
 
-        let error = rewrite_one(&mut table, &candidate, &ctx)
+        let error = rewrite_files(&mut table, std::slice::from_ref(&candidate), &ctx)
             .await
             .expect_err("the file is already compacted away");
         assert!(
@@ -660,7 +824,9 @@ mod test {
         append_ids(deltalake::open_table(uri).await.unwrap(), &[7]).await;
 
         let ctx = SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1));
-        rewrite_one(&mut table, &candidate, &ctx).await.unwrap();
+        rewrite_files(&mut table, std::slice::from_ref(&candidate), &ctx)
+            .await
+            .unwrap();
         assert!(
             vectored_files(&table).is_empty(),
             "the rewrite must have committed"
@@ -681,7 +847,7 @@ mod test {
         // Two thirds of partition "a" superseded, none of "b".
         let mut table = tombstone_ids(table, &[1, 2]).await;
 
-        let reclaimed = reclaim_superseded_rows(&mut table, Duration::from_secs(60))
+        let reclaimed = reclaim_superseded_rows(&mut table, usize::MAX)
             .await
             .unwrap();
         assert_eq!(
@@ -868,7 +1034,7 @@ mod test {
         let dv = write_deletion_vectors(&tombstones, &table).await.unwrap();
         commit(&mut table, dv.actions).await;
 
-        let reclaimed = reclaim_superseded_rows(&mut table, Duration::from_secs(60))
+        let reclaimed = reclaim_superseded_rows(&mut table, usize::MAX)
             .await
             .unwrap();
         assert_eq!(reclaimed.files_rewritten, 1);
