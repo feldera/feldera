@@ -1655,14 +1655,15 @@ export type DeltaTableWriterConfig = {
    */
   log_retention_duration?: string | null
   /**
-   * Ceiling, in bytes, on the encoded keys the connector holds while locating the rows
-   * to supersede.
+   * Ceiling on the encoded keys the connector holds while locating the rows to
+   * supersede, such as `"256Mi"`.
    *
    * Only used when `update_mode` is `merge`. A flush whose key set exceeds this budget
    * is split into successive lookup passes, which bounds memory at the cost of
-   * re-scanning candidate files. Default: 256 MiB.
+   * re-scanning candidate files. Default: `"256Mi"`. Maximum: `"2147483647"`, one byte
+   * less than 2 GiB.
    */
-  lookup_chunk_bytes?: number
+  lookup_chunk_size?: string
   /**
    * Number of data files read concurrently while locating the rows to supersede.
    *
@@ -1734,7 +1735,6 @@ export type DeltaTableWriterConfig = {
     | null
     | string
     | null
-    | number
     | number
     | number
     | null

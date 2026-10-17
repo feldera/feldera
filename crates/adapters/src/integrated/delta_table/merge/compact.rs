@@ -248,7 +248,7 @@ mod test {
             mode: DeltaTableWriteMode::Append,
             variant_encoding: DeltaVariantEncoding::default(),
             update_mode: DeltaTableUpdateMode::Merge,
-            lookup_chunk_bytes: 1 << 20,
+            lookup_chunk_size: feldera_types::size::ConfigSize::from_mib(1),
             max_concurrent_probes: 4,
             checkpoint_interval: None,
             log_retention_duration: None,

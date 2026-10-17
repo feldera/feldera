@@ -75,7 +75,7 @@ pub(super) const MIN_RANGE_CHUNK_ROWS: usize = 8_192;
 /// Encoded keys a range holds per lookup pass. Below this, the split pays for itself in
 /// extra passes, since each pass re-reads the candidates its keys did not rule out.
 ///
-/// It floors the division only: a smaller `lookup_chunk_bytes` is an operator capping what
+/// It floors the division only: a smaller `lookup_chunk_size` is an operator capping what
 /// the flush may hold, and raising a range past that would defeat the setting.
 pub(super) const MIN_RANGE_LOOKUP_BYTES: usize = 8 * 1024 * 1024;
 
@@ -137,7 +137,7 @@ pub struct FlushMetrics {
     /// Keys that reached the lookup, below the changed-key count by what the insert
     /// shortcut saved.
     pub keys_probed: u64,
-    /// Lookup passes run. Above one only when the key set exceeded `lookup_chunk_bytes`.
+    /// Lookup passes run. Above one only when the key set exceeded `lookup_chunk_size`.
     pub lookup_passes: usize,
     pub probe: ProbeMetrics,
     pub dv: DvWriteMetrics,

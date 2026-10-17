@@ -509,7 +509,7 @@ fn build_merge_writer(inner: &DeltaTableWriterInner, table: &DeltaTable) -> AnyR
             .expect("startup::prepare rejects a missing key schema"),
         inner.serde_arrow_schema.clone(),
         inner.arrow_schema.clone(),
-        inner.config.lookup_chunk_bytes,
+        inner.config.lookup_chunk_size.as_usize(),
         inner.config.max_concurrent_probes,
         inner.value_schema.name.clone(),
     )
@@ -1926,7 +1926,7 @@ mod parallel {
                 checkpoint_interval: None,
                 log_retention_duration: None,
                 update_mode: Default::default(),
-                lookup_chunk_bytes: 1 << 20,
+                lookup_chunk_size: feldera_types::size::ConfigSize::from_mib(1),
                 max_concurrent_probes: 4,
                 enable_expired_log_cleanup: None,
             },
@@ -1968,7 +1968,9 @@ mod parallel {
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
                 log_retention_duration: None,
-                lookup_chunk_bytes,
+                lookup_chunk_size: feldera_types::size::ConfigSize::from_bytes(
+                    lookup_chunk_bytes as u64,
+                ),
                 max_concurrent_probes: 4,
                 enable_expired_log_cleanup: None,
             },
@@ -2186,7 +2188,7 @@ mod parallel {
         assert_matches_model(uri, &model, "an insert onto a row from an earlier run");
     }
 
-    /// A key set larger than `lookup_chunk_bytes` is split into several lookup passes, and
+    /// A key set larger than `lookup_chunk_size` is split into several lookup passes, and
     /// the result must not depend on how many.
     ///
     /// The budget below is small enough that a few keys cross it, so the flush runs the
@@ -4165,7 +4167,7 @@ mod parallel {
                 checkpoint_interval: None,
                 log_retention_duration: None,
                 update_mode: Default::default(),
-                lookup_chunk_bytes: 1 << 20,
+                lookup_chunk_size: feldera_types::size::ConfigSize::from_mib(1),
                 max_concurrent_probes: 4,
                 enable_expired_log_cleanup: None,
             },
@@ -4315,7 +4317,7 @@ mod parallel {
                 checkpoint_interval: None,
                 log_retention_duration: None,
                 update_mode: Default::default(),
-                lookup_chunk_bytes: 1 << 20,
+                lookup_chunk_size: feldera_types::size::ConfigSize::from_mib(1),
                 max_concurrent_probes: 4,
                 enable_expired_log_cleanup: None,
             },
@@ -4386,7 +4388,7 @@ mod parallel {
                 checkpoint_interval: None,
                 log_retention_duration: Some("interval 7 days".to_string()),
                 update_mode: Default::default(),
-                lookup_chunk_bytes: 1 << 20,
+                lookup_chunk_size: feldera_types::size::ConfigSize::from_mib(1),
                 max_concurrent_probes: 4,
                 enable_expired_log_cleanup: Some(false),
             },
@@ -4430,7 +4432,7 @@ mod parallel {
             checkpoint_interval: None,
             log_retention_duration: None,
             update_mode: Default::default(),
-            lookup_chunk_bytes: 1 << 20,
+            lookup_chunk_size: feldera_types::size::ConfigSize::from_mib(1),
             max_concurrent_probes: 4,
             enable_expired_log_cleanup: None,
         };
@@ -4628,7 +4630,7 @@ mod parallel {
                 checkpoint_interval: None,
                 log_retention_duration: None,
                 update_mode: Default::default(),
-                lookup_chunk_bytes: 1 << 20,
+                lookup_chunk_size: feldera_types::size::ConfigSize::from_mib(1),
                 max_concurrent_probes: 4,
                 enable_expired_log_cleanup: None,
             },

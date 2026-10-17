@@ -1,4 +1,5 @@
 use crate::duration::ConfigDuration;
+use crate::size::ConfigSize;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
@@ -89,7 +90,7 @@ impl Display for DeltaTableUpdateMode {
     }
 }
 
-/// Ceiling on `lookup_chunk_bytes`.
+/// Ceiling on `lookup_chunk_size`, in bytes.
 ///
 /// The chunk addresses its buffer with 32-bit offsets, so a buffer that reached 4 GiB would
 /// wrap one and mix up where a key ends: the lookup would then compare the wrong bytes and
@@ -98,12 +99,16 @@ impl Display for DeltaTableUpdateMode {
 /// exhausts that room.
 pub const MAX_LOOKUP_CHUNK_BYTES: usize = (u32::MAX / 2) as usize;
 
-/// Default ceiling on the encoded lookup keys held in memory at once, in bytes.
+/// Default ceiling on the encoded lookup keys held in memory at once.
 ///
 /// At roughly 21 bytes per encoded 8-byte key this holds about 12M keys, more than a
 /// steady-state flush produces, so the common case is a single lookup pass.
-const fn default_lookup_chunk_bytes() -> usize {
-    256 * 1024 * 1024
+const fn default_lookup_chunk_size() -> ConfigSize {
+    ConfigSize::from_mib(256)
+}
+
+fn schema_default_lookup_chunk_size() -> String {
+    default_lookup_chunk_size().to_string()
 }
 
 /// Default number of data files read concurrently while locating rows to supersede.
@@ -111,7 +116,7 @@ const fn default_lookup_chunk_bytes() -> usize {
 /// The lookup reads each file in its own task, so this sets how much of the decoding runs in
 /// parallel as well as how many requests are in flight. Sixteen covers a typical core count
 /// and enough object-store round trips to keep those cores fed, for the projected key column
-/// of sixteen files -- tens of megabytes against the hundreds `lookup_chunk_bytes` allows.
+/// of sixteen files -- tens of megabytes against the hundreds `lookup_chunk_size` allows.
 const fn default_max_concurrent_probes() -> usize {
     16
 }
@@ -120,8 +125,8 @@ fn is_default<T: Default + Eq>(t: &T) -> bool {
     *t == T::default()
 }
 
-fn is_default_lookup_chunk_bytes(n: &usize) -> bool {
-    *n == default_lookup_chunk_bytes()
+fn is_default_lookup_chunk_size(n: &ConfigSize) -> bool {
+    *n == default_lookup_chunk_size()
 }
 
 fn is_default_max_concurrent_probes(n: &usize) -> bool {
@@ -153,20 +158,19 @@ pub struct DeltaTableWriterConfig {
     #[serde(default, skip_serializing_if = "is_default")]
     pub update_mode: DeltaTableUpdateMode,
 
-    /// Ceiling, in bytes, on the encoded keys the connector holds while locating the rows
-    /// to supersede.
+    /// Ceiling on the encoded keys the connector holds while locating the rows to
+    /// supersede, such as `"256Mi"`.
     ///
     /// Only used when `update_mode` is `merge`. A flush whose key set exceeds this budget
     /// is split into successive lookup passes, which bounds memory at the cost of
-    /// re-scanning candidate files. Default: 256 MiB.
+    /// re-scanning candidate files. Default: `"256Mi"`. Maximum: `"2147483647"`, one byte
+    /// less than 2 GiB.
     #[serde(
-        default = "default_lookup_chunk_bytes",
-        skip_serializing_if = "is_default_lookup_chunk_bytes"
+        default = "default_lookup_chunk_size",
+        skip_serializing_if = "is_default_lookup_chunk_size"
     )]
-    // The bounds `validate` enforces. `maximum` is `MAX_LOOKUP_CHUNK_BYTES`, which the
-    // schema attribute cannot name; `schema_bounds_match_validation` keeps the two in step.
-    #[schema(minimum = 1, maximum = 2147483647)]
-    pub lookup_chunk_bytes: usize,
+    #[schema(value_type = String, default = schema_default_lookup_chunk_size)]
+    pub lookup_chunk_size: ConfigSize,
 
     /// Number of data files read concurrently while locating the rows to supersede.
     ///
@@ -294,8 +298,8 @@ impl DeltaTableWriterConfig {
         if self.max_concurrent_probes == 0 {
             return Err("max_concurrent_probes must be greater than 0".to_string());
         }
-        if self.lookup_chunk_bytes == 0 {
-            return Err("lookup_chunk_bytes must be greater than 0".to_string());
+        if self.lookup_chunk_size.is_zero() {
+            return Err("lookup_chunk_size must be greater than 0".to_string());
         }
         if self.optimize_interval.is_some_and(|d| d.is_zero()) {
             return Err(
@@ -312,12 +316,12 @@ impl DeltaTableWriterConfig {
                     .to_string(),
             );
         }
-        if self.lookup_chunk_bytes > MAX_LOOKUP_CHUNK_BYTES {
+        if self.lookup_chunk_size > MAX_LOOKUP_CHUNK_BYTES as u64 {
             return Err(format!(
-                "lookup_chunk_bytes is {} but must be at most {MAX_LOOKUP_CHUNK_BYTES} \
+                "lookup_chunk_size is {} but must be at most {MAX_LOOKUP_CHUNK_BYTES} bytes \
                  ({} MiB): the connector locates rows in chunks addressed by 32-bit offsets. \
                  A larger budget does not speed the lookup up; lower the value.",
-                self.lookup_chunk_bytes,
+                self.lookup_chunk_size,
                 MAX_LOOKUP_CHUNK_BYTES >> 20,
             ));
         }
@@ -1030,7 +1034,7 @@ mod log_retention_tests {
             mode: DeltaTableWriteMode::default(),
             variant_encoding: DeltaVariantEncoding::default(),
             update_mode: DeltaTableUpdateMode::default(),
-            lookup_chunk_bytes: default_lookup_chunk_bytes(),
+            lookup_chunk_size: default_lookup_chunk_size(),
             max_concurrent_probes: default_max_concurrent_probes(),
             checkpoint_interval: None,
             log_retention_duration: log_retention.map(str::to_string),
@@ -1126,7 +1130,7 @@ mod log_retention_tests {
             serde_json::from_str(r#"{"uri":"memory://"}"#).unwrap();
         assert_eq!(config.update_mode, DeltaTableUpdateMode::Cdc);
         assert!(!config.is_merge());
-        assert_eq!(config.lookup_chunk_bytes, default_lookup_chunk_bytes());
+        assert_eq!(config.lookup_chunk_size, default_lookup_chunk_size());
         assert_eq!(
             config.max_concurrent_probes,
             default_max_concurrent_probes()
@@ -1223,19 +1227,19 @@ mod log_retention_tests {
         );
 
         let mut cfg = make_config(None);
-        cfg.lookup_chunk_bytes = 0;
-        assert!(cfg.validate().unwrap_err().contains("lookup_chunk_bytes"));
+        cfg.lookup_chunk_size = ConfigSize::ZERO;
+        assert!(cfg.validate().unwrap_err().contains("lookup_chunk_size"));
     }
 
     /// A budget past the chunk's 32-bit addressing has to be rejected rather than wrap.
     #[test]
     fn an_oversized_lookup_chunk_is_rejected() {
         let mut cfg = make_config(None);
-        cfg.lookup_chunk_bytes = MAX_LOOKUP_CHUNK_BYTES;
+        cfg.lookup_chunk_size = ConfigSize::from_bytes(MAX_LOOKUP_CHUNK_BYTES as u64);
         assert!(cfg.validate().is_ok());
 
-        cfg.lookup_chunk_bytes = MAX_LOOKUP_CHUNK_BYTES + 1;
-        assert!(cfg.validate().unwrap_err().contains("lookup_chunk_bytes"));
+        cfg.lookup_chunk_size = ConfigSize::from_bytes(MAX_LOOKUP_CHUNK_BYTES as u64 + 1);
+        assert!(cfg.validate().unwrap_err().contains("lookup_chunk_size"));
     }
 }
 
@@ -1312,32 +1316,23 @@ impl DeltaTableReaderConfig {
 mod writer_config_tests {
     use super::*;
 
-    /// The OpenAPI schema advertises `lookup_chunk_bytes`'s ceiling as a literal, because a
-    /// `#[schema]` attribute cannot name a constant. A drift would tell API clients a value
-    /// is acceptable that `validate` then rejects.
-    #[test]
-    fn schema_bounds_match_validation() {
-        assert_eq!(MAX_LOOKUP_CHUNK_BYTES, 2147483647);
-    }
-
     /// A config that leaves the merge settings unset must serialize without them. The manager
     /// re-serializes it for the runtime, and an older runtime would fail on the integers.
     #[test]
     fn unset_merge_settings_are_not_serialized() {
         let parse = |json: &str| -> DeltaTableWriterConfig { serde_json::from_str(json).unwrap() };
         let serialized = serde_json::to_string(&parse(r#"{"uri":"x"}"#)).unwrap();
-        for key in ["update_mode", "lookup_chunk_bytes", "max_concurrent_probes"] {
+        for key in ["update_mode", "lookup_chunk_size", "max_concurrent_probes"] {
             assert!(
                 !serialized.contains(key),
                 "{key} was serialized: {serialized}"
             );
         }
-        let set =
-            r#"{"uri":"x","update_mode":"merge","lookup_chunk_bytes":7,"max_concurrent_probes":3}"#;
+        let set = r#"{"uri":"x","update_mode":"merge","lookup_chunk_size":"7Ki","max_concurrent_probes":3}"#;
         let serialized = serde_json::to_string(&parse(set)).unwrap();
         for value in [
             r#""update_mode":"merge""#,
-            r#""lookup_chunk_bytes":7"#,
+            r#""lookup_chunk_size":"7Ki""#,
             r#""max_concurrent_probes":3"#,
         ] {
             assert!(serialized.contains(value), "{value} was lost: {serialized}");

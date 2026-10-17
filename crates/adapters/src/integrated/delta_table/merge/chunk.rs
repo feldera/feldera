@@ -227,7 +227,7 @@ fn checked_end(len: usize, added: usize) -> AnyResult<u32> {
     u32::try_from(len.saturating_add(added)).map_err(|_| {
         anyhow!(
             "the keys buffered for one lookup pass exceed the 4 GiB that the connector's \
-             32-bit offsets address. Lower 'lookup_chunk_bytes', or index the view on a \
+             32-bit offsets address. Lower 'lookup_chunk_size', or index the view on a \
              smaller key: the connector buffers a batch of keys past the budget before it \
              checks the budget again."
         )
@@ -297,7 +297,7 @@ mod test {
     }
 
     /// The chunk charges `FILTER_BITS_PER_KEY` to its byte budget before the filter exists,
-    /// so a change to the target rate that outgrew that would overrun `lookup_chunk_bytes`.
+    /// so a change to the target rate that outgrew that would overrun `lookup_chunk_size`.
     #[test]
     fn the_filter_fits_its_budget() {
         // Each module rounds up to a whole word, so a small filter costs a fixed floor
@@ -388,7 +388,7 @@ mod test {
             checked_end(LIMIT, 1)
                 .unwrap_err()
                 .to_string()
-                .contains("lookup_chunk_bytes"),
+                .contains("lookup_chunk_size"),
             "the error must name the setting to lower"
         );
     }
