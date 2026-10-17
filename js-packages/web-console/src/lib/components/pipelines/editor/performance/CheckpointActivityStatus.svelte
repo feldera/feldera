@@ -89,7 +89,7 @@
     <div class="font-dm-mono text-sm">
       for {formatElapsedTime(new Date(activity.started_at))} since {Dayjs(
         activity.started_at
-      ).format('HH:mm:ss')}
+      ).format('HH:mm:ss Z')}
     </div>
   </div>
 {:else if activity.status === 'delayed'}
@@ -119,7 +119,7 @@
     </Tooltip>
     <div class="text-sm">
       <span class="font-dm-mono">#{failure.sequence_number}</span>
-      at {Dayjs(failure.failed_at).format('HH:mm:ss')}
+      at {Dayjs(failure.failed_at).format('HH:mm:ss Z')}
     </div>
   </div>
 {/if}

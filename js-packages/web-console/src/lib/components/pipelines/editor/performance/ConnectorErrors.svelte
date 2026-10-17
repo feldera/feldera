@@ -190,7 +190,7 @@
                 {#if status?.fatal_error != null && item.error.message === status.fatal_error}
                   <span class="fd fd-circle-x text-error-500"></span>
                 {/if}
-                <span class="ml-auto">{Dayjs(item.error.timestamp).format('HH:mm:ss')}</span>
+                <span class="ml-auto">{Dayjs(item.error.timestamp).format('HH:mm:ss Z')}</span>
                 <Tooltip placement="top">{formatDateTime(Dayjs(item.error.timestamp))}</Tooltip>
               </div>
             {/snippet}
