@@ -37,6 +37,9 @@ circuit_cache_key!(AccumulateTraceId<C, D: BatchReader>(StreamId => Stream<C, D>
 // Trace of a sharded collection updated once per clock cycle.
 circuit_cache_key!(ShardedAccumulateTraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
 
+// Trace of a collection sharded to a range of workers, updated once per clock cycle.
+circuit_cache_key!(ShardedWorkersAccumulateTraceId<C, D: BatchReader>((StreamId, Range<usize>) => Stream<C, D>));
+
 circuit_cache_key!(AccumulateBoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
 
 // Trace of a collection delayed by one clock cycle.
@@ -501,65 +504,79 @@ where
         B: Batch<Time = ()>,
         Spine<B>: SizeOf,
     {
-        let circuit = self.circuit();
-        let bounds = self.accumulate_trace_bounds_with_bound(TraceBound::new(), TraceBound::new());
-        let range_str = format!("{}-{}", workers.start, workers.end);
+        self.circuit()
+            .cache_get_or_insert_with(
+                ShardedWorkersAccumulateTraceId::new((self.stream_id(), workers.clone())),
+                || {
+                    let circuit = self.circuit();
+                    let bounds = self
+                        .accumulate_trace_bounds_with_bound(TraceBound::new(), TraceBound::new());
+                    let range_str = format!("{}-{}", workers.start, workers.end);
 
-        let persistent_id = self.get_persistent_id();
+                    let persistent_id = self.get_persistent_id();
 
-        circuit.region(
-            &format!("shard_workers_accumulate_integrate_trace-{range_str}"),
-            || {
-                let z1: AccumulateZ1Trace<C, B, Spine<B>> = AccumulateZ1Trace::new(
-                    factories,
-                    factories,
-                    true,
-                    circuit.root_scope(),
-                    bounds,
-                );
+                    circuit.region(
+                        &format!("shard_workers_accumulate_integrate_trace-{range_str}"),
+                        || {
+                            let z1: AccumulateZ1Trace<C, B, Spine<B>> = AccumulateZ1Trace::new(
+                                factories,
+                                factories,
+                                true,
+                                circuit.root_scope(),
+                                bounds,
+                            );
 
-                let accumulated = self
-                    .dyn_shard_workers_accumulate(factories, workers)
-                    .into_enabled_stream();
+                            let accumulated = self
+                                .dyn_shard_workers_accumulate(factories, workers.clone())
+                                .into_enabled_stream();
 
-                let (
-                    ExportStream {
-                        local: delayed_trace,
-                        export,
-                    },
-                    z1feedback,
-                ) = circuit.add_feedback_with_export_persistent(
-                    persistent_id
-                        .map(|name| format!("{name}.shard_accintegral-{range_str}"))
-                        .as_deref(),
-                    z1,
-                );
+                            let (
+                                ExportStream {
+                                    local: delayed_trace,
+                                    export,
+                                },
+                                z1feedback,
+                            ) = circuit.add_feedback_with_export_persistent(
+                                persistent_id
+                                    .map(|name| format!("{name}.shard_accintegral-{range_str}"))
+                                    .as_deref(),
+                                z1,
+                            );
 
-                let replay_stream = z1feedback.operator_mut().prepare_replay_stream(self);
+                            let replay_stream =
+                                z1feedback.operator_mut().prepare_replay_stream(self);
 
-                let trace = circuit.add_binary_operator_with_preference(
-                    AccumulateUntimedTraceAppend::<Spine<B>>::new(),
-                    (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
-                    (&accumulated, OwnershipPreference::PREFER_OWNED),
-                );
+                            let trace = circuit.add_binary_operator_with_preference(
+                                AccumulateUntimedTraceAppend::<Spine<B>>::new(),
+                                (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                                (&accumulated, OwnershipPreference::PREFER_OWNED),
+                            );
 
-                z1feedback
-                    .connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
+                            z1feedback.connect_with_preference(
+                                &trace,
+                                OwnershipPreference::STRONGLY_PREFER_OWNED,
+                            );
 
-                // Connect the replay stream to the original non-sharded stream, since the dyn_shard_accumulate operator
-                // doesn't expose a sharded stream.
-                // FIXME: this is suboptimal, since this will end up sharding the already sharded data again.
-                // We should instead replay by moving the entire integral into the accumulator. This will require
-                // integrating bootstrapping with transactions better. An additional complication is that the integral
-                // can be timed, while the accumulator stores untimed updates
-                register_replay_stream(circuit, self, &replay_stream, factories);
+                            // Connect the replay stream to the original non-sharded stream, since the dyn_shard_accumulate operator
+                            // doesn't expose a sharded stream.
+                            // FIXME: this is suboptimal, since this will end up sharding the already sharded data again.
+                            // We should instead replay by moving the entire integral into the accumulator. This will require
+                            // integrating bootstrapping with transactions better. An additional complication is that the integral
+                            // can be timed, while the accumulator stores untimed updates
+                            register_replay_stream(circuit, self, &replay_stream, factories);
 
-                circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
-                circuit.cache_insert(ExportId::new(trace.stream_id()), export);
+                            circuit.cache_insert(
+                                DelayedTraceId::new(trace.stream_id()),
+                                delayed_trace,
+                            );
+                            circuit.cache_insert(ExportId::new(trace.stream_id()), export);
 
-                trace
-            },
-        )
+                            trace
+                        },
+                    )
+                },
+            )
+            .clone()
     }
 
     pub fn dyn_accumulate_integrate_trace_with_bound(
@@ -2034,6 +2051,31 @@ mod replay_test {
         let factories = OrdZSetFactories::<DynData>::new::<i32, (), ZWeight>();
         let (_circuit, mut z1, delta, _accumulated) = replay_source(&factories);
         z1.prepare_replay_stream(&delta);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Runtime;
+
+    /// Checks that integrating a stream over the same workers twice returns one
+    /// integral, so that the circuit builds without a duplicate persistent id,
+    /// and that integrating it over other workers returns another integral.
+    #[test]
+    fn shard_workers_integral_is_shared() {
+        let (_dbsp, (first, second, other)) = Runtime::init_circuit(4, |circuit| {
+            let (stream, _input_handle) = circuit.add_input_zset::<i32>();
+            stream.set_persistent_id(Some("stream"));
+            let integral = |workers| {
+                stream
+                    .shard_workers_accumulate_integrate_trace(workers)
+                    .stream_id()
+            };
+            Ok((integral(2..4), integral(2..4), integral(0..2)))
+        })
+        .unwrap();
+        assert_eq!(first, second);
+        assert_ne!(first, other);
     }
 }
 
