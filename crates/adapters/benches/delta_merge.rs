@@ -46,7 +46,7 @@ fn writer(
         update_mode: update,
         lookup_chunk_size: feldera_types::size::ConfigSize::from_mib(1),
         max_concurrent_probes: 4,
-        optimize_interval: None,
+        auto_compact: false,
     };
     let key_schema = Some(BenchKeyStruct::relation_schema());
     let mut value_schema = BenchTestStruct::relation_schema();

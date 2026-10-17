@@ -832,25 +832,47 @@ async fn a_file_maintenance_replaced_is_transient() {
 /// bad minute, and nothing exercised them end to end: the unit tests drive the retry helper
 /// directly, and the probe test only shows a failure that never recovers.
 #[derive(Debug)]
-pub(super) struct FlakyStore {
+pub(in crate::integrated::delta_table) struct FlakyStore {
     inner: Arc<dyn deltalake::ObjectStore>,
     /// Remaining reads of a data file to fail.
     fail_reads: AtomicUsize,
     /// Remaining writes of a deletion vector object to fail.
     fail_writes: AtomicUsize,
     injected: AtomicUsize,
+    /// Data-file reads wait while this is set; `hung_reads` counts those waiting now.
+    hang_reads: std::sync::atomic::AtomicBool,
+    hung_reads: AtomicUsize,
 }
 
 impl FlakyStore {
     /// Wraps the whole local filesystem: `with_storage_backend` wants a store rooted at "/"
     /// and resolves the table's own location against it.
-    pub(super) fn new(fail_reads: usize, fail_writes: usize) -> Arc<Self> {
+    pub(in crate::integrated::delta_table) fn new(
+        fail_reads: usize,
+        fail_writes: usize,
+    ) -> Arc<Self> {
         Arc::new(Self {
             inner: Arc::new(object_store::local::LocalFileSystem::new()),
             fail_reads: AtomicUsize::new(fail_reads),
             fail_writes: AtomicUsize::new(fail_writes),
             injected: AtomicUsize::new(0),
+            hang_reads: Default::default(),
+            hung_reads: AtomicUsize::new(0),
         })
+    }
+
+    /// Make data-file reads wait until `release_data_reads`, to hold a reader mid-run.
+    pub(in crate::integrated::delta_table) fn hang_data_reads(&self) {
+        self.hang_reads.store(true, Ordering::Relaxed);
+    }
+
+    pub(in crate::integrated::delta_table) fn release_data_reads(&self) {
+        self.hang_reads.store(false, Ordering::Relaxed);
+    }
+
+    /// Data-file reads waiting now. A reader that gives up, or is dropped, is no longer counted.
+    pub(in crate::integrated::delta_table) fn hung_reads(&self) -> usize {
+        self.hung_reads.load(Ordering::Relaxed)
     }
 
     /// Whether this request is one of the remaining ones to fail.
@@ -912,6 +934,23 @@ impl deltalake::ObjectStore for FlakyStore {
         if location.as_ref().ends_with(".parquet") && self.should_fail(&self.fail_reads) {
             return Err(Self::outage());
         }
+        // Data files only: a log checkpoint is Parquet too, and a reload may read it.
+        if location.as_ref().ends_with(".parquet")
+            && !location.as_ref().contains("_delta_log")
+            && self.hang_reads.load(Ordering::Relaxed)
+        {
+            struct Waiting<'a>(&'a AtomicUsize);
+            impl Drop for Waiting<'_> {
+                fn drop(&mut self) {
+                    self.0.fetch_sub(1, Ordering::Relaxed);
+                }
+            }
+            self.hung_reads.fetch_add(1, Ordering::Relaxed);
+            let _waiting = Waiting(&self.hung_reads);
+            while self.hang_reads.load(Ordering::Relaxed) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
         self.inner.get_opts(location, options).await
     }
 
@@ -950,7 +989,10 @@ impl deltalake::ObjectStore for FlakyStore {
 }
 
 /// Open `dir`'s table through `store`, so the merge paths read and write through it.
-pub(super) async fn table_over(store: Arc<FlakyStore>, dir: &TempDir) -> DeltaTable {
+pub(in crate::integrated::delta_table) async fn table_over(
+    store: Arc<FlakyStore>,
+    dir: &TempDir,
+) -> DeltaTable {
     let url = deltalake::table::builder::ensure_table_uri(dir.path().to_str().unwrap()).unwrap();
     deltalake::DeltaTableBuilder::from_url(url.clone())
         .unwrap()

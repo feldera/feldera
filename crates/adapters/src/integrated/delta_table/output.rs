@@ -242,7 +242,7 @@ pub struct DeltaTableWriter {
     /// writing files there and committing in `batch_end`.
     merge: Option<Arc<MergeWriter>>,
     merge_metrics: Option<Arc<MergeMetrics>>,
-    /// Present when `optimize_interval` asks the connector to compact the table itself.
+    /// Present when `auto_compact` asks the connector to compact the table itself.
     compactor: Option<Compactor>,
     /// Uniqueness violations handed to the controller, for the test that pins how often a
     /// retried batch reports them. Tests build the endpoint with no controller to report to.
@@ -1366,6 +1366,12 @@ impl DeltaTableWriter {
         );
         let format =
             RecordFormat::Parquet(delta_output_serde_config(inner.config.variant_encoding));
+        // Run beside this flush, the step the last commit started would race it.
+        if let Some(compactor) = compactor.as_mut()
+            && compactor.wait_for_step()
+        {
+            *merge_reload = true;
+        }
 
         let mut retry_count: u32 = 0;
         let mut backoff = Duration::from_secs(1);
@@ -1481,10 +1487,9 @@ impl DeltaTableWriter {
                             (metrics.rows_appended + metrics.dv.rows_tombstoned) as usize,
                         );
                     }
-                    // After the commit, never before: a compaction starting mid-flush would
-                    // replace the files that flush is addressing, forcing a needless retry.
-                    if let Some(compactor) = compactor {
-                        compactor.maybe_start(&inner.shutdown);
+                    // Not waited for, so the batch is acknowledged now.
+                    if let Some(compactor) = compactor.as_mut() {
+                        compactor.after_commit(&task.delta_table, &inner.shutdown);
                     }
 
                     debug!(
@@ -1920,7 +1925,7 @@ mod parallel {
                 mode,
                 max_retries,
                 threads: Some(threads),
-                optimize_interval: None,
+                auto_compact: false,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -1963,7 +1968,7 @@ mod parallel {
                 update_mode: DeltaTableUpdateMode::Merge,
                 max_retries: Some(max_retries),
                 threads: Some(1),
-                optimize_interval: None,
+                auto_compact: false,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -2388,6 +2393,228 @@ mod parallel {
             model.insert(new.bigint, new.clone());
         }
         assert_matches_model(uri, &model, "an update after a concurrent compaction");
+    }
+
+    /// Auto compaction must never make a flush lose its batch, here with `max_retries: 0`.
+    #[test]
+    fn auto_compaction_never_races_a_flush() {
+        use crate::integrated::delta_table::merge::compact::Compactor;
+        use dbsp::circuit::tokio::TOKIO;
+        use futures::StreamExt;
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint =
+            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 0, key_relation());
+        let records = make_records(20_000);
+        for chunk in records.chunks(5_000) {
+            encode_batch(&mut endpoint, &build_insert_batch(chunk));
+        }
+
+        // The inserts are the large files; each update flush adds a small one.
+        let url = url::Url::from_file_path(uri).unwrap();
+        TOKIO.block_on(async move {
+            let table = deltalake::open_table(url).await.unwrap();
+            let smallest = table
+                .snapshot()
+                .unwrap()
+                .log_data()
+                .into_iter()
+                .map(|f| f.size())
+                .min()
+                .unwrap();
+            table
+                .set_tbl_properties()
+                .with_properties(std::collections::HashMap::from([(
+                    deltalake::TableProperty::TargetFileSize
+                        .as_ref()
+                        .to_string(),
+                    smallest.to_string(),
+                )]))
+                .await
+                .unwrap();
+        });
+        // A property change is a metadata change the next flush must read first.
+        endpoint.merge_reload = true;
+        let mut config = endpoint.inner.config.clone();
+        config.auto_compact = true;
+        endpoint.compactor = Compactor::new(
+            &config,
+            "test_merge_endpoint",
+            endpoint.merge_metrics.clone().unwrap(),
+        );
+
+        let mut model: BTreeMap<i64, DeltaTestStruct> =
+            records.iter().map(|r| (r.bigint, r.clone())).collect();
+        let mut seed: u64 = 42;
+        for round in 0..24 {
+            // Keys from the whole table, a fixed sequence, so a flush changes rows in the small
+            // files compaction packs, as real updates do.
+            let mut keys = std::collections::BTreeSet::new();
+            while keys.len() < 500 {
+                seed = seed
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                keys.insert((seed >> 33) as usize % records.len());
+            }
+            let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = keys
+                .into_iter()
+                .enumerate()
+                .map(|(i, k)| {
+                    let old = model[&records[k].bigint].clone();
+                    let mut new = make_record(100_000 + round * 500 + i);
+                    new.bigint = old.bigint;
+                    (old, new)
+                })
+                .collect();
+            // `encode_batch` unwraps: with no retries, a lost race fails here.
+            encode_batch(&mut endpoint, &build_upsert_batch(&updates));
+            for (_, new) in updates {
+                model.insert(new.bigint, new);
+            }
+        }
+        endpoint.compactor.as_mut().unwrap().wait_for_step();
+
+        let url = url::Url::from_file_path(uri).unwrap();
+        let optimizes = TOKIO.block_on(async move {
+            let table = deltalake::open_table(url).await.unwrap();
+            table
+                .history(None)
+                .filter(|c| {
+                    std::future::ready(
+                        c.as_ref()
+                            .is_ok_and(|c| c.operation.as_deref() == Some("OPTIMIZE")),
+                    )
+                })
+                .count()
+                .await
+        });
+        assert!(
+            optimizes > 0,
+            "no compaction committed: it lost to the flushes, or never ran"
+        );
+        assert_matches_model(uri, &model, "flushes with auto compaction");
+    }
+
+    /// A batch is acknowledged before its step ends, and the next flush commits after the step.
+    #[test]
+    fn the_next_flush_waits_for_the_compaction_step() {
+        use crate::integrated::delta_table::merge::compact::Compactor;
+        use crate::integrated::delta_table::merge::test::{FlakyStore, table_over};
+        use dbsp::circuit::tokio::TOKIO;
+        use feldera_adapterlib::metrics::ConnectorMetrics;
+        use futures::StreamExt;
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap().to_string();
+        let mut endpoint = make_merge_endpoint_ex(
+            &uri,
+            DeltaTableWriteMode::Append,
+            1 << 20,
+            0,
+            key_relation(),
+        );
+        let records = make_records(40);
+        for chunk in records[..30].chunks(10) {
+            encode_batch(&mut endpoint, &build_insert_batch(chunk));
+        }
+        // Each file is a third of the target, so with the next one they fill it and the next
+        // commit starts a pack.
+        let store = FlakyStore::new(0, 0);
+        endpoint.task.delta_table = TOKIO.block_on(async {
+            let table = table_over(store.clone(), &dir).await;
+            let size: i64 = table
+                .snapshot()
+                .unwrap()
+                .log_data()
+                .into_iter()
+                .map(|f| f.size())
+                .sum();
+            table
+                .set_tbl_properties()
+                .with_properties(std::collections::HashMap::from([(
+                    deltalake::TableProperty::TargetFileSize
+                        .as_ref()
+                        .to_string(),
+                    size.to_string(),
+                )]))
+                .await
+                .unwrap()
+        });
+        let mut config = endpoint.inner.config.clone();
+        config.auto_compact = true;
+        endpoint.compactor = Compactor::new(
+            &config,
+            "test_merge_endpoint",
+            endpoint.merge_metrics.clone().unwrap(),
+        );
+        store.hang_data_reads();
+
+        let (returned, endpoint_back) = std::sync::mpsc::channel();
+        let batch = records[30..35].to_vec();
+        let returned_first = returned.clone();
+        std::thread::spawn(move || {
+            encode_batch(&mut endpoint, &build_insert_batch(&batch));
+            returned_first.send(endpoint).unwrap();
+        });
+        let mut endpoint = endpoint_back
+            .recv_timeout(Duration::from_secs(60))
+            .expect("the compaction step held up the batch that started it");
+        let start = Instant::now();
+        while store.hung_reads() == 0 {
+            assert!(
+                start.elapsed() < Duration::from_secs(60),
+                "no compaction step started"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        let batch = records[35..].to_vec();
+        std::thread::spawn(move || {
+            encode_batch(&mut endpoint, &build_insert_batch(&batch));
+            returned.send(endpoint).unwrap();
+        });
+        // Time for a flush that does not wait to commit before the step. A flush that waits
+        // passes whatever this is.
+        std::thread::sleep(Duration::from_secs(2));
+        store.release_data_reads();
+        let mut endpoint = endpoint_back
+            .recv_timeout(Duration::from_secs(60))
+            .expect("the flush did not finish once the step could");
+        endpoint.compactor.as_mut().unwrap().wait_for_step();
+
+        let url = url::Url::from_file_path(&uri).unwrap();
+        let operations: Vec<String> = TOKIO.block_on(async move {
+            let table = deltalake::open_table(url).await.unwrap();
+            let mut history: Vec<_> = table.history(None).collect().await;
+            // Oldest first.
+            history.reverse();
+            history
+                .into_iter()
+                .map(|c| c.unwrap().operation.unwrap_or_default())
+                .collect()
+        });
+        let first_pack = operations.iter().position(|op| op == "OPTIMIZE");
+        let last_flush = operations.iter().rposition(|op| op != "OPTIMIZE");
+        assert!(
+            first_pack.is_some_and(|pack| Some(pack) < last_flush),
+            "the flush committed before the step it had to wait for: {operations:?}"
+        );
+        let waited = endpoint
+            .merge_metrics
+            .as_ref()
+            .unwrap()
+            .metrics()
+            .into_iter()
+            .find(|(name, ..)| {
+                *name == "output_connector_delta_merge_compaction_wait_microseconds_total"
+            })
+            .unwrap()
+            .3;
+        assert!(waited > 0.0, "the wait was not recorded");
+        let model: BTreeMap<i64, DeltaTestStruct> =
+            records.iter().map(|r| (r.bigint, r.clone())).collect();
+        assert_matches_model(&uri, &model, "a flush after a compaction step");
     }
 
     /// A duplicate key must be reported once per batch, not once per attempt.
@@ -2919,7 +3146,7 @@ mod parallel {
         let url = url::Url::from_file_path(uri).unwrap();
         let reclaimed = TOKIO.block_on(async move {
             let mut table = open_table(url).await.unwrap();
-            reclaim_superseded_rows(&mut table, std::time::Duration::from_secs(60))
+            reclaim_superseded_rows(&mut table, usize::MAX)
                 .await
                 .unwrap()
         });
@@ -4161,7 +4388,7 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(0),
                 threads: Some(4),
-                optimize_interval: None,
+                auto_compact: false,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -4311,7 +4538,7 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(1),
                 threads: Some(1),
-                optimize_interval: None,
+                auto_compact: false,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -4382,7 +4609,7 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(0),
                 threads: Some(1),
-                optimize_interval: None,
+                auto_compact: false,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -4426,7 +4653,7 @@ mod parallel {
             mode: DeltaTableWriteMode::Truncate,
             max_retries: Some(0),
             threads: Some(0),
-            optimize_interval: None,
+            auto_compact: false,
 
             object_store_config: Default::default(),
             checkpoint_interval: None,
@@ -4624,7 +4851,7 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(1),
                 threads: Some(1),
-                optimize_interval: None,
+                auto_compact: false,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,

@@ -18,7 +18,7 @@ Source edition can be found on github.
   in a deletion vector, so a reader sees one live row per key and a
   flush never rewrites a data file. An existing target table must have
   `delta.enableDeletionVectors` set, and the pipeline must be the only
-  process writing rows to it. `optimize_interval` has the
+  process writing rows to it. `auto_compact` has the
   connector compact the table itself, which reclaims the superseded
   rows. See [merge mode](/connectors/sinks/delta#merge-mode).
 

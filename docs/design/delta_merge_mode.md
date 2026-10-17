@@ -23,7 +23,7 @@ A flush never rewrites a data file. One flush produces one commit.
 
 The design targets tables administered by someone else. The connector is the only party
 writing data; external parties own the schema, the partitioning, the table properties, and
-maintenance. Unless `optimize_interval` is set, it never rewrites a data file, never repartitions, and never alters the table
+maintenance. Unless `auto_compact` is set, it never rewrites a data file, never repartitions, and never alters the table
 protocol.
 
 Two requirements: the view must have a unique key (the connector's `index` property), and
@@ -112,7 +112,7 @@ moves.
 
 Guarantees:
 
-- A flush rewrites no data file. Only the opt-in `optimize_interval` maintenance does.
+- A flush rewrites no data file. Only the opt-in `auto_compact` maintenance does.
 - One flush produces one commit, so a reader never sees half a flush.
 - Memory is bounded by configuration, not by table size, except for the packed deletion
   vector object, which is at most one bit per table row.
@@ -605,7 +605,7 @@ pruned none, at every size up to 2,000 files, so cost per flush is linear in the
 16 ms at 250 files, 134 ms at 1,000, 289 ms at 2,000.
 
 So the file count, not the change rate, sets the cost of this workload, and keeping it down
-is what `optimize_interval` and an administrator's `OPTIMIZE` schedule are for. Pruning
+is what `auto_compact` and an administrator's `OPTIMIZE` schedule are for. Pruning
 pays where the key range of a file is meaningful: a partitioned table, a key-clustered table,
 and a flush whose keys are local.
 
@@ -649,9 +649,9 @@ into two live rows for one key, permanently.
 ## Working alongside table maintenance
 
 What a flush never does: rewrite a data file, change the schema, change the partitioning,
-alter table properties, or upgrade the protocol. The background pass described below does
+alter table properties, or upgrade the protocol. The compaction described below does
 rewrite files, but only ones it has already read, and only when asked for by
-`optimize_interval`.
+`auto_compact`.
 
 Concurrency does not rest on delta-rs's conflict checker. Since delta-rs#4568 that checker
 ignores a concurrent remove with `data_change: false`, so a flush that tombstones a file
@@ -686,7 +686,7 @@ adds a row and tombstones one. Without compaction the table grows without bound 
 cost grows with the number of updates rather than the number of live rows.
 
 By default the table's administrator maintains it, which is why the connector's own
-compaction is off unless `optimize_interval` asks for it.
+compaction is off unless `auto_compact` asks for it.
 
 An OPTIMIZE schedule is not enough on its own, though. OPTIMIZE plans on file size: it
 bin-packs files below the target and drops a bin holding a single file, so a file that has
@@ -715,19 +715,20 @@ template change, as the Delta input connector's `input_connector_delta_*` alread
 | `log_scan_`, `batch_walk_`, `probe_`, `append_`, `deletion_vector_`, `commit_microseconds_total` | Where a flush spent its time, one counter per phase. They partition a single-range flush; with several ranges the three a range runs (`batch_walk`, `probe`, `append`) are summed across ranges, so they measure work rather than elapsed time |
 | `compactions_total`, `compaction_failures_total` | Connector-driven maintenance runs, and how many of them failed |
 | `reclaimed_rows_total` | Superseded rows the reclamation pass took out of storage |
-| `reclaim_incomplete` | 1 while the last run left mostly-superseded files behind, so the backlog is growing faster than the interval clears it |
+| `reclaim_incomplete` | 1 while the last step left mostly-superseded files it can rewrite behind. A step rewrites one, so sustained, the backlog is growing faster than steps clear it |
 
 The connector warns at most once per hour when `tombstone_ratio_permille` exceeds 200, and
 names the remedy. The warning is suppressed while the connector performs that remedy itself
-and it is working: setting `optimize_interval` suppresses it, and a maintenance run that
+and it is working: setting `auto_compact` suppresses it, and a maintenance run that
 fails brings it back, since a remedy that is not running is one the operator has to know
 about.
 
 ## Reclaiming superseded rows
 
 `rewrite.rs` rewrites the files OPTIMIZE leaves behind: read the live rows, write them as a
-new file, commit the swap. It runs after the bin-packing, in the same background task, and
-only when `optimize_interval` is set.
+new file, commit the swap. It runs only when `auto_compact` is set, as a step after a
+commit, when no pack is due or the last step packed. Packing small files uses the same
+code, on several files at once.
 
 | Decision | Why |
 |----------|-----|
@@ -735,11 +736,31 @@ only when `optimize_interval` is set.
 | A file whose row count is unknown is never a candidate | A missing statistic is not "every row is dead". Reading it as one would rewrite a live file down to nothing |
 | One file per commit, re-planned against a fresh snapshot | Keeps the vector being applied current with the version the commit declares it read, so a flush that tombstones more rows in that file mid-rewrite loses the race rather than having its tombstones undone: both sides remove the path |
 | `data_change: false` on both actions, as OPTIMIZE sets it | The rows were already deleted as far as a reader is concerned, so a streaming reader must see nothing appear or disappear |
-| After the bin-packing, never before | A packed file loses its vector, so packing second would drop files from the pass. The other order would rewrite a file and then pack it again |
-| Stop between files when the interval's budget runs out | A file is what commits, so stopping between them loses no work. A large backlog clears over several runs instead of one very long one |
+| Not in a step that packs; after a pack, whenever one is due | A packed file loses its vector, so packing first leaves less to rewrite. Doing both would double the step. Taking turns keeps a steady stream of small files from stopping reclaim for good |
+| One file per step | A file is what commits, so stopping between files loses no work. A backlog clears over several flushes instead of stalling one |
 
 A rewritten file carries no vector, so it cannot be picked again and the loop terminates.
-A failure ends the pass with what it had already committed intact, and the next run continues.
+A failure ends the pass with what it had already committed intact, and a later step continues.
+
+## When the connector compacts
+
+`compact.rs` decides after every commit, from the snapshot alone, and starts at most one of
+these as a step that the next flush waits for:
+
+| Decision | Why |
+|----------|-----|
+| Start after the commit; the next flush waits for it | A background run beside the next flush raced it: whichever committed second redid all its work. Measured on a 1B-row S3 table, a 4 s compaction cost a 195 s flush redo; locally a flush lost to it took 1.1 s instead of 55 ms, and with fast flushes the compaction lost every time and never compacted. Not waiting for the step at the commit acknowledges the batch at once, and the step uses the time until the next batch |
+| Pack a partition once its small files (under half the target) fill one target file, smallest first, up to one target file and 100 files | Each step then rewrites at most one target file, so its delay stays the same however large the table or its backlog. The file cap bounds it too: the files are read one after another, so a pack of thousands of tiny files would take long however few bytes they hold. A timer would let the work grow with the time since the last step. The pick holds over half a target file unless the file cap stops it first, so its output is rarely small again; deleted rows and better compression can still shrink it |
+| Also pack once 50 small files are of one size tier (the same power-of-50 size band), only that tier | Delta Lake's `autoCompact.minNumFiles` default. Without it a slow pipeline piles up thousands of tiny files first. Packing one tier lands the output a tier up, so each byte is rewritten a few times, once per tier, rather than with every 50 new files. Tiny files whose Parquet footer dominates can shrink a lot when merged and take an extra round |
+| Pack with `rewrite.rs`, not delta-rs `OPTIMIZE` | `OPTIMIZE` takes every file up to the target and packs whatever lies next to the small ones, so one step could rewrite the whole table. It also commits through delta-rs's checker, which delta-rs#4851 lets duplicate rows |
+| Count only partitions with two or more small files | A lone small file has nothing to be packed with. Two small files always fit in one target file, so a pick always packs |
+| Reclaim one file per step, and only files up to two target files or 200 MiB, whichever is larger | A bigger file, such as one an open-source Spark `OPTIMIZE` wrote at 1 GiB, would stall a flush; `REORG TABLE ... APPLY (PURGE)` is for those. The 200 MiB floor covers the files a flush writes, which are cut at 100 MiB whatever the table's target |
+| Warn when a mostly superseded file is too big to reclaim | No step rewrites it, and with `auto_compact` set the superseded-rows warning is otherwise off, so its rows would pile up unseen. It comes back at the usual 20% threshold and hourly rate, asking for a `REORG` |
+| Stop a step after 10 minutes, as a failure | The next flush waits for it, so a hung request would otherwise hold up every flush after it. A commit is atomic, so stopping is safe |
+| Pause for 10 minutes after a failed step | A failure that persists, such as missing permissions, would otherwise fail again and warn after every flush |
+| Run on a clone of the writer's table, as a spawned task | The clone saves reopening the table and leaves the writer's snapshot alone while the step runs; the task keeps a delta-rs panic from taking the endpoint down |
+| Reload before the next flush | The step committed through the clone, so the writer's own snapshot is behind |
+| Stop the step at shutdown, or when the connector is dropped | It must not hold up the teardown or outlive the connector. A commit is atomic, so a stopped step leaves the table as it was |
 
 The pass is the only part of merge mode that reads whole rows, so it is the only part that
 needs DataFusion.
@@ -754,7 +775,7 @@ Declared in `crates/feldera-types/src/transport/delta_table.rs`.
 | `lookup_chunk_size` | `ConfigSize` | `"256Mi"` | Ceiling on encoded removal keys held at once. Capped at 2 GiB: the chunk addresses its buffer with 32-bit offsets |
 | `threads` | `Option<usize>` | none | Key ranges a flush may walk at once. A flush splits only when the batch is worth three target-sized files per range, so a small batch stays whole rather than fragmenting the table. The first flush has no write rate to size that against and falls back to a row count, so a backfill splits as far as `threads` allows and pays a partial file per range |
 | `max_concurrent_probes` | `usize` | 16 | Caps the probe working set and its request concurrency |
-| `optimize_interval` | duration, e.g. `1h` | none | Connector-driven maintenance: OPTIMIZE, then the reclamation pass. Off by default, because the table administrator normally maintains the table; set it where Feldera is the only writer. Runs in the background after a flush, one at a time, first run one interval after startup |
+| `auto_compact` | `bool` | `false` | Connector-driven maintenance after each commit: pack small files, or else reclaim one file. Off by default, because the table administrator normally maintains the table; set it where Feldera is the only writer |
 
 `threads` divides the per-flush budgets rather than multiplying them: the ranges share
 `max_concurrent_probes`, `lookup_chunk_size` and the append chunk between them, so raising
@@ -783,7 +804,7 @@ Merge mode lives under `crates/adapters/src/integrated/delta_table/merge/`.
 | `rewrite.rs` | Rewriting a file whose rows are mostly superseded, which is what reclaims their storage |
 | `startup.rs` | What the target table must satisfy before the first row moves |
 | `flush.rs` | The cursor walk that drives all of the above, and the commit |
-| `compact.rs` | The opt-in background maintenance behind `optimize_interval`: `OPTIMIZE`, then `rewrite.rs` |
+| `compact.rs` | The opt-in maintenance behind `auto_compact`: after a commit, pack small files or reclaim one file, both through `rewrite.rs` |
 | `metrics.rs` | The exported counters, and the compaction warning |
 | `model.rs` | Model-based tests: random operation sequences through the real writer, compared against an in-memory oracle after every flush |
 | `test.rs` | Shared test fixtures, and the protocol-level checks the design rests on |
@@ -801,8 +822,8 @@ Changes to the existing connector, in `output.rs`:
 `deletion_vector.rs::read_deletion_vector` is reused for the read side of a vector update.
 
 The flush path involves no DataFusion, so the writer needs no `SessionContext` and does not
-draw on the pipeline memory pool. `rewrite.rs` does use one, on the background compaction
-path, to read a file's live rows.
+draw on the pipeline memory pool. `rewrite.rs` does use one, on the compaction path, to read
+a file's live rows.
 
 External dependencies are pinned in the workspace `Cargo.toml`: delta-rs at rev
 `c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0`, `delta_kernel` (package `buoyant_kernel`) at

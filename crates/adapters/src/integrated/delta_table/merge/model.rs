@@ -516,6 +516,81 @@ async fn a_key_set_past_the_budget_is_looked_up_in_several_passes() {
     assert_eq!(live_rows(&table).await, expected);
 }
 
+/// Auto compaction keeps a partitioned table equal to the view over many flushes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn auto_compaction_keeps_a_partitioned_table_equal_to_the_view() {
+    use super::compact::compact_once;
+
+    const KEYS: i64 = 300;
+    const PARTITIONS: [&str; 3] = ["a", "b", "c"];
+
+    let dir = TempDir::new().unwrap();
+    let mut table = create_partitioned_table(&dir).await;
+    let (writer, _) = writer_for(&table);
+    let mut model: HashMap<i64, String> = HashMap::new();
+    let inserts: Vec<Change> = (0..KEYS)
+        .map(|id| {
+            let partition = PARTITIONS[(id % 3) as usize].to_string();
+            model.insert(id, partition.clone());
+            Change::Insert(id, partition)
+        })
+        .collect();
+    apply(&writer, &mut table, &inserts).await;
+
+    // The backfill's files at the target, so each flush adds files well under it.
+    let largest = table
+        .snapshot()
+        .unwrap()
+        .log_data()
+        .into_iter()
+        .map(|f| f.size())
+        .max()
+        .unwrap();
+    table = table
+        .set_tbl_properties()
+        .with_properties(HashMap::from([(
+            TableProperty::TargetFileSize.as_ref().to_string(),
+            largest.to_string(),
+        )]))
+        .await
+        .unwrap();
+
+    let mut rng = SmallRng::seed_from_u64(7);
+    let mut ran: HashMap<&str, usize> = HashMap::new();
+    for round in 0..40 {
+        let mut changes = Vec::new();
+        let mut touched = std::collections::HashSet::new();
+        for _ in 0..30 {
+            let id = rng.gen_range(0..KEYS);
+            let new = PARTITIONS[rng.gen_range(0..3)].to_string();
+            if !touched.insert(id) || model[&id] == new {
+                continue;
+            }
+            changes.push(Change::Update(id, model[&id].clone(), new.clone()));
+            model.insert(id, new);
+        }
+        apply(&writer, &mut table, &changes).await;
+
+        if let Some(step) = compact_once(table.clone()).await.unwrap() {
+            *ran.entry(step).or_default() += 1;
+            table.update_incremental(None).await.unwrap();
+        }
+        assert_eq!(
+            live_rows(&table).await,
+            model,
+            "round {round}: the table diverged from the view"
+        );
+    }
+    assert!(
+        ran.get("pack").is_some_and(|n| *n > 0),
+        "no pack ran: {ran:?}"
+    );
+    assert!(
+        ran.get("reclaim").is_some_and(|n| *n > 0),
+        "no reclaim ran: {ran:?}"
+    );
+}
+
 /// A partitioned table, keyed on a column that is not the partition column.
 async fn create_partitioned_table(dir: &TempDir) -> DeltaTable {
     CreateBuilder::new()
@@ -755,10 +830,9 @@ async fn tombstones_from_every_range_survive_the_join() {
 /// touched -- so the table each path leaves behind is worth pinning.
 #[tokio::test]
 async fn compaction_and_reclaim_preserve_a_table_written_in_parallel() {
-    use super::compact::compact;
+    use super::compact::pack_small_files;
     use super::rewrite::reclaim_superseded_rows;
     use deltalake::{ensure_table_uri, open_table_with_storage_options};
-    use std::time::Duration;
 
     const KEYS: i64 = 300;
 
@@ -784,9 +858,7 @@ async fn compaction_and_reclaim_preserve_a_table_written_in_parallel() {
     assert_eq!(expected.len(), KEYS as usize);
 
     let uri = dir.path().to_str().unwrap();
-    compact(uri, Default::default(), Duration::from_secs(60))
-        .await
-        .unwrap();
+    pack_small_files(table.clone()).await.unwrap();
 
     let mut table =
         open_table_with_storage_options(ensure_table_uri(uri).unwrap(), Default::default())
@@ -798,7 +870,7 @@ async fn compaction_and_reclaim_preserve_a_table_written_in_parallel() {
         "compaction changed what a reader sees"
     );
 
-    reclaim_superseded_rows(&mut table, Duration::from_secs(60))
+    reclaim_superseded_rows(&mut table, usize::MAX)
         .await
         .unwrap();
     assert_eq!(
@@ -823,7 +895,7 @@ async fn compaction_and_reclaim_preserve_a_table_written_in_parallel() {
 /// a parallel flush leaves a different shape for maintenance to work on.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn maintenance_interleaved_with_flushes_preserves_the_view() {
-    use super::compact::compact;
+    use super::compact::pack_small_files;
     use super::rewrite::reclaim_superseded_rows;
     use deltalake::{ensure_table_uri, open_table_with_storage_options};
 
@@ -865,7 +937,7 @@ async fn maintenance_interleaved_with_flushes_preserves_the_view() {
                 }
                 60..=79 => {
                     let before = shape(&table);
-                    compact(&uri, Default::default(), Duration::from_secs(60))
+                    pack_small_files(table.clone())
                         .await
                         .unwrap_or_else(|e| panic!("seed {seed}, round {round}: compact: {e}"));
                     // Compaction commits through its own handle, so ours is a version behind.
@@ -880,7 +952,7 @@ async fn maintenance_interleaved_with_flushes_preserves_the_view() {
                 }
                 _ => {
                     let before = shape(&table);
-                    reclaim_superseded_rows(&mut table, Duration::from_secs(60))
+                    reclaim_superseded_rows(&mut table, usize::MAX)
                         .await
                         .unwrap_or_else(|e| panic!("seed {seed}, round {round}: reclaim: {e}"));
                     reclaim_worked |= shape(&table).1 < before.1;
