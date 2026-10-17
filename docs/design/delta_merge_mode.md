@@ -494,7 +494,7 @@ are counted and exported, because a nonzero rate signals divergence.
 
 A chunk holds encoded key bytes, not the batch and not values: an `arrow_row::Rows` buffer
 plus offsets and a sort permutation, about 21 bytes per key for an 8-byte integer key. A
-256 MB `lookup_chunk_bytes` holds roughly 12 M keys, more than a steady-state flush
+256 MB `lookup_chunk_size` holds roughly 12 M keys, more than a steady-state flush
 produces, so the normal case is one chunk and one pass over the candidate row groups.
 
 The chunk is sorted explicitly on encoded bytes rather than inheriting the cursor's order.
@@ -545,7 +545,7 @@ keys are held only as encoded bytes, one chunk at a time.
 | Structure | Bound |
 |-----------|-------|
 | Output batch | Not materialized. One forward cursor pass over a disk-backed snapshot |
-| Lookup chunk | `lookup_chunk_bytes` for the flush, divided between its ranges. A range exceeding its share runs successive chunks |
+| Lookup chunk | `lookup_chunk_size` for the flush, divided between its ranges. A range exceeding its share runs successive chunks |
 | Appended rows | Streamed into the writer, as cdc mode's `CHUNK_SIZE` already does |
 | Probe input | One decoded batch per concurrent task, capped by `max_concurrent_probes` for the flush |
 | Deletion vector bitmaps | One bit per table row across all files, and one file's bitmap at any instant |
@@ -751,13 +751,13 @@ Declared in `crates/feldera-types/src/transport/delta_table.rs`.
 | Field | Type | Default | Notes |
 |-------|------|---------|-------|
 | `update_mode` | `cdc \| merge` | `cdc` | Orthogonal to `mode`, which governs what happens to an existing table at startup |
-| `lookup_chunk_bytes` | `usize` | 256 MiB | Ceiling on encoded removal keys held at once. Capped at 2 GiB: the chunk addresses its buffer with 32-bit offsets |
+| `lookup_chunk_size` | `ConfigSize` | `"256Mi"` | Ceiling on encoded removal keys held at once. Capped at 2 GiB: the chunk addresses its buffer with 32-bit offsets |
 | `threads` | `Option<usize>` | none | Key ranges a flush may walk at once. A flush splits only when the batch is worth three target-sized files per range, so a small batch stays whole rather than fragmenting the table. The first flush has no write rate to size that against and falls back to a row count, so a backfill splits as far as `threads` allows and pays a partial file per range |
 | `max_concurrent_probes` | `usize` | 16 | Caps the probe working set and its request concurrency |
 | `optimize_interval` | duration, e.g. `1h` | none | Connector-driven maintenance: OPTIMIZE, then the reclamation pass. Off by default, because the table administrator normally maintains the table; set it where Feldera is the only writer. Runs in the background after a flush, one at a time, first run one interval after startup |
 
 `threads` divides the per-flush budgets rather than multiplying them: the ranges share
-`max_concurrent_probes`, `lookup_chunk_bytes` and the append chunk between them, so raising
+`max_concurrent_probes`, `lookup_chunk_size` and the append chunk between them, so raising
 it buys parallelism without raising the working set.
 
 It does raise the uploads in flight, because delta-rs drives ten concurrent parts per

@@ -227,7 +227,7 @@ impl ConnectorMetrics for MergeMetrics {
             (
                 "output_connector_delta_merge_lookup_passes_total",
                 "Lookup passes run. Above one per flush only when the key set exceeded \
-                 `lookup_chunk_bytes`.",
+                 `lookup_chunk_size`.",
                 ValueType::Counter,
                 get(&self.lookup_passes),
             ),
