@@ -189,9 +189,9 @@ pub struct Cli {
     /// Waits between attempts start at 2 seconds and double per retry. On a
     /// 502 the client probes cluster health to decide between an immediate
     /// retry and a longer wait (e.g. while an upgrade is in progress).
-    /// Requests that are unsafe to repeat (e.g. `ingest`, whose first attempt
-    /// may already have been applied) retry only when the request provably
-    /// never reached its target. Set to 0 to disable retrying.
+    /// Requests that are unsafe to repeat (e.g. `clock-advance`, whose first
+    /// attempt may already have been applied) retry only when the request
+    /// provably never reached its target. Set to 0 to disable retrying.
     #[arg(
         long,
         env = "FELDERA_RETRIES",
@@ -955,7 +955,8 @@ pub enum PipelineAction {
         #[arg(long, short = 'f')]
         force: bool,
     },
-    /// Control an input connector belonging to a table of a pipeline.
+    /// Control an input connector of a table, or an output connector of a
+    /// view, in a pipeline.
     Connector {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
