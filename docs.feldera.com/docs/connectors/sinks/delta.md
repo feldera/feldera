@@ -108,7 +108,7 @@ For more information, see the [documentation on views with unique keys](/connect
 | `update_mode` | <p>How the connector applies the view's changes to the table. Orthogonal to `mode`, which governs what happens to an existing table when the pipeline starts.</p><p>- `cdc`: append a change log with `__feldera_op` and `__feldera_ts` metadata columns, which a job of yours folds into a state table.</p><p>- `merge` (experimental): keep the table in sync with the view. See [Merge mode](#merge-mode).</p><p>Default: `cdc`.</p>|
 | `lookup_chunk_size` | <p>Ceiling on the encoded keys the connector holds while locating rows to supersede. `merge` mode only.</p><p>A flush whose key set exceeds this budget is split into successive lookup passes, which bounds memory at the cost of re-scanning candidate files. Like `max_concurrent_probes`, it is a budget for a flush rather than for a thread: the threads of one flush divide it between them, so raising `threads` does not raise what the lookup holds.</p><p>A size such as `"512Mi"`. Default: `"256Mi"`. Maximum: `"2147483647"`, one byte less than 2 GiB.</p>|
 | `max_concurrent_probes` | <p>Number of data files read concurrently while locating rows to supersede. `merge` mode only.</p><p>The lookup reads each file in its own task, so this sets how much of the decoding runs in parallel as well as how many requests are in flight. Each concurrent read holds one file's projected key column, so it bounds memory too. Like `lookup_chunk_size` it is a budget for a flush rather than for a thread. Default: `16`.</p>|
-| `optimize_interval` | <p>Compact the target table from the connector, at most once per this interval, for example `1h`. `merge` mode only.</p><p>Merge mode marks an old row version deleted but leaves it in place. Without compaction the table keeps growing and reads keep slowing down, however few live rows it holds. See [Compaction is required](#compaction-is-required).</p><p>Off by default, because maintenance is normally the table administrator's job. Set it for tables where Feldera is the only writer and nothing else will maintain them. Hourly (`1h`) or daily (`1d`) is typical. It runs in the background and does not hold up a flush.</p>|
+| `auto_compact` | <p>Compact the target table from the connector, right after a flush commits. `merge` mode only.</p><p>Merge mode marks an old row version deleted but leaves it in place. Without compaction the table keeps growing and reads keep slowing down, however few live rows it holds. See [Compaction is required](#compaction-is-required).</p><p>Off by default, because maintenance is normally the table administrator's job. Set it for tables where Feldera is the only writer and nothing else will maintain them.</p><p>Default: `false`.</p>|
 
 [*]: Required fields
 
@@ -272,11 +272,11 @@ The connector exports these alongside the standard connector metrics.
 | `output_connector_delta_merge_bytes_written_total` | Bytes written: new data files plus deletion vectors |
 | `output_connector_delta_merge_ranges_walked_total` | Key ranges walked, summed over flushes. Above the flush count when `threads` split a batch into ranges written in parallel. |
 | `output_connector_delta_merge_probe_key_bytes_read_total` | Key-column bytes the lookup read. Against `bytes_written_total`, the flush's read amplification |
-| `output_connector_delta_merge_compactions_total`, `output_connector_delta_merge_compaction_failures_total` | Maintenance runs, and how many failed. Only when `optimize_interval` is set |
+| `output_connector_delta_merge_compactions_total`, `output_connector_delta_merge_compaction_failures_total` | Maintenance runs, and how many failed. Only when `auto_compact` is set |
 | `output_connector_delta_merge_flush_latency_microseconds` | Histogram of whole flushes. Where object-store latency shows up; no combination of the counters above reveals it |
 | `output_connector_delta_merge_probe_microseconds_total`, `..._append_...`, `..._deletion_vector_...`, `..._commit_...`, `..._log_scan_...`, `..._batch_walk_...` | Where flush time goes. Only successful flushes report them. At `threads` 1 they partition a flush and sum to what the latency histogram records for it; above 1 the phases a key range performs (`batch_walk`, `probe` and `append`) are summed across ranges that ran at once, so they measure work rather than elapsed time and can exceed the flush's latency |
 | `output_connector_delta_merge_reclaimed_rows_total` | Superseded rows that maintenance removed from storage |
-| `output_connector_delta_merge_reclaim_incomplete` | `1` while the last run ran out of time with files still mostly superseded. Sustained, reclamation is falling behind the writes |
+| `output_connector_delta_merge_reclaim_incomplete` | `1` while more files are mostly superseded than the last run rewrote. A run rewrites one, so sustained, reclamation is falling behind the writes |
 
 These counters start from zero each time the pipeline starts.
 
@@ -289,23 +289,27 @@ The connector warns, at most once an hour, when more than 20% of the table's row
 superseded versions.
 
 If Feldera is the table's only writer and nothing else will compact it, set
-`optimize_interval`. The connector then compacts the table itself, in the background, no
-more often than that interval. How it is scheduled:
+`auto_compact`. The connector then compacts the table itself, right after a flush commits
+and before the next flush starts, as Delta Lake's own auto compaction does. A run never
+overlaps a flush, so neither one has to redo its work. Each run is kept small, so it adds
+about the same short delay to the flush that triggers it:
 
-- The first run comes one interval after the connector starts, not at startup, so adopting a
-  large table does not rewrite it immediately.
-- A run gives itself one interval and stops between files when that runs out, so a large
-  backlog is cleared over several runs rather than one very long one. Every file it does
-  rewrite is committed on its own, so a run that stops early loses no work.
-- A run that fails keeps whatever it had already compacted, and is retried at the next
-  interval.
-- Runs start after a flush, so a pipeline that stops writing stops compacting.
+- It packs the small files once they add up to one target file: the table's
+  `delta.targetFileSize`, or 100 MiB when the table does not set it.
+- Otherwise it rewrites one file whose rows are mostly superseded.
+- If the small files add up to more than four target files, for example on a table that
+  was never compacted, it leaves them alone and logs a warning, rather than stall a flush
+  for minutes. Run `OPTIMIZE` on the table once; the connector keeps it compacted from
+  then on.
+- A run that fails leaves the table intact, and compaction pauses for 10 minutes.
+- A pipeline that stops writing stops compacting.
 - A run replaces files rather than deleting them, so `VACUUM` still reclaims the space, as
   described below.
-- Each file a run rewrites is its own commit. A flush that changes the same file at the
-  same time is redone, so on a busy table a run can slow the flushes down.
 
-Do not set `optimize_interval` when anything else compacts the table, for example
+A pipeline that needs every flush to be equally fast should leave `auto_compact` off and
+compact the table from Spark or Databricks instead.
+
+Do not set `auto_compact` when anything else compacts the table, for example
 Databricks auto compaction or predictive optimization. delta-rs does not detect two
 compactions of the same file, and the rows of that file then appear twice.
 

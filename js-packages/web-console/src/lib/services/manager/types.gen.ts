@@ -1613,6 +1613,27 @@ export type DeltaTableWriteMode = 'append' | 'truncate' | 'error_if_exists'
  */
 export type DeltaTableWriterConfig = {
   /**
+   * Compact the target table from the connector, right after a flush commits.
+   *
+   * Only used when `update_mode` is `merge`. Merge mode marks an old row version deleted
+   * but leaves it in place. Without compaction the table keeps growing and reads keep
+   * slowing down, however few live rows it holds.
+   *
+   * Maintenance is normally the table administrator's job, which is why this is off by
+   * default. Set it for tables where Feldera is the only writer, and nothing else
+   * compacts the table.
+   *
+   * A run does about one target file of work, so the flush that triggers it takes that
+   * much longer: it packs the small files once they add up to `delta.targetFileSize`,
+   * and otherwise rewrites one file whose rows are mostly superseded. Small files beyond
+   * four target files are left alone with a warning; run `OPTIMIZE` once to clear them.
+   * A run replaces files rather than deleting them, so `VACUUM` is still what reclaims
+   * the space.
+   *
+   * Default: `false`.
+   */
+  auto_compact?: boolean
+  /**
    * Checkpoint interval (i.e., the number of commits after which a new checkpoint should be created) for newly created Delta tables.
    *
    * The option is only available when creating the Delta table (`mode = append` and there
@@ -1686,28 +1707,6 @@ export type DeltaTableWriterConfig = {
   max_retries?: number | null
   mode?: DeltaTableWriteMode
   /**
-   * Compact the target table from the connector, at most once per this interval, for
-   * example `1h`.
-   *
-   * Only used when `update_mode` is `merge`. Merge mode marks an old row version deleted
-   * but leaves it in place. Without compaction the table keeps growing and reads keep
-   * slowing down, however few live rows it holds. Compacting also reclaims storage a
-   * scheduled `OPTIMIZE` leaves behind.
-   *
-   * Maintenance is normally the table administrator's job, which is why this is off by
-   * default. Set it for tables where Feldera is the only writer, and nothing else
-   * compacts the table. Hourly (`1h`) or daily (`1d`) is typical. Two runs cannot overlap,
-   * and a large backlog is cleared over several runs.
-   *
-   * A run starts after a flush and works in the background. If it commits while a flush
-   * is in progress, the connector redoes that flush against the new files, so on a busy
-   * table a run can slow the flushes down. A run replaces files rather than deleting
-   * them, so `VACUUM` is still what reclaims the space.
-   *
-   * Default: none, meaning the connector never compacts.
-   */
-  optimize_interval?: string | null
-  /**
    * Number of parallel threads used by the connector.
    *
    * Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.
@@ -1729,6 +1728,7 @@ export type DeltaTableWriterConfig = {
   variant_encoding?: DeltaVariantEncoding
   [key: string]:
     | string
+    | boolean
     | number
     | null
     | boolean
@@ -1739,8 +1739,6 @@ export type DeltaTableWriterConfig = {
     | number
     | null
     | DeltaTableWriteMode
-    | string
-    | null
     | number
     | null
     | DeltaTableUpdateMode

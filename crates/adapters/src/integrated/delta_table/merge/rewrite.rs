@@ -15,7 +15,6 @@
 
 use std::collections::HashMap;
 use std::num::NonZeroU64;
-use std::time::{Duration, Instant};
 
 use anyhow::{Result as AnyResult, anyhow};
 use arrow::array::RecordBatch;
@@ -55,7 +54,7 @@ pub struct ReclaimMetrics {
     /// Superseded rows the pass removed from storage.
     pub rows_reclaimed: u64,
     pub bytes_written: u64,
-    /// The budget ran out with candidates left, so the pass is incomplete.
+    /// The pass reached its file limit with candidates left, so it is incomplete.
     pub stopped_early: bool,
 }
 
@@ -70,8 +69,7 @@ struct Candidate {
     remove: Remove,
 }
 
-/// Rewrite every file whose rows are mostly superseded, one commit each, until `budget` runs
-/// out.
+/// Rewrite the files whose rows are mostly superseded, one commit each, at most `max_files`.
 ///
 /// Re-plans between files. A rewritten file has no vector left, so it cannot be picked again
 /// and the loop terminates. A failure ends the pass and leaves the rest for the next one.
@@ -80,13 +78,11 @@ struct Candidate {
 /// loses no work. A large backlog is cleared over several passes.
 pub async fn reclaim_superseded_rows(
     table: &mut DeltaTable,
-    budget: Duration,
+    max_files: usize,
 ) -> AnyResult<ReclaimMetrics> {
     let mut metrics = ReclaimMetrics::default();
-    // One partition: the scan shares the runtime a flush blocks on, and reclaiming storage
-    // must not outbid the writes it is making room for.
+    // One partition: the scan runs on the runtime every connector shares.
     let ctx = SessionContext::new_with_config(SessionConfig::new().with_target_partitions(1));
-    let deadline = Instant::now() + budget;
 
     loop {
         table
@@ -98,7 +94,7 @@ pub async fn reclaim_superseded_rows(
             return Ok(metrics);
         };
 
-        if Instant::now() >= deadline {
+        if metrics.files_rewritten >= max_files {
             metrics.stopped_early = true;
             return Ok(metrics);
         }
@@ -126,6 +122,11 @@ pub async fn reclaim_superseded_rows(
         metrics.rows_reclaimed += candidate.superseded_rows;
         metrics.bytes_written += bytes;
     }
+}
+
+/// Whether any file in the snapshot is mostly superseded.
+pub(super) fn has_candidate(table: &DeltaTable) -> AnyResult<bool> {
+    Ok(next_candidate(table)?.is_some())
 }
 
 /// The first file in the snapshot past the threshold, or `None` when none is.
@@ -173,7 +174,7 @@ fn worth_rewriting(physical_rows: Option<u64>, superseded_rows: u64) -> bool {
     }
 }
 
-fn partition_values_of(view: &LogicalFileView) -> HashMap<String, Scalar> {
+pub(super) fn partition_values_of(view: &LogicalFileView) -> HashMap<String, Scalar> {
     view.partition_values()
         .map(|values| {
             values
@@ -443,7 +444,7 @@ mod test {
         );
         assert_eq!(vectored_files(&table).len(), 1, "OPTIMIZE left the vector");
 
-        let reclaimed = reclaim_superseded_rows(&mut table, Duration::from_secs(60))
+        let reclaimed = reclaim_superseded_rows(&mut table, usize::MAX)
             .await
             .unwrap();
 
@@ -498,25 +499,23 @@ mod test {
         );
     }
 
-    /// An exhausted budget must stop before the next file, not after it: a pass that checked
+    /// A spent file limit must stop before the next file, not after it: a pass that checked
     /// too late would rewrite one more file every time.
     #[tokio::test]
-    async fn an_exhausted_budget_stops_the_pass_with_work_left() {
+    async fn a_spent_file_limit_stops_the_pass_with_work_left() {
         let dir = TempDir::new().unwrap();
         let table = fixture_table(&dir, &[1, 2, 3, 4, 5, 6], true).await;
         let table = with_tiny_target_file_size(table).await;
         let mut table = tombstone_ids(table, &[2, 3, 4, 5]).await;
 
-        let reclaimed = reclaim_superseded_rows(&mut table, Duration::ZERO)
-            .await
-            .unwrap();
+        let reclaimed = reclaim_superseded_rows(&mut table, 0).await.unwrap();
 
         assert!(reclaimed.stopped_early, "a candidate was left unrewritten");
         assert_eq!(reclaimed.files_rewritten, 0);
         assert_eq!(
             vectored_files(&table).len(),
             1,
-            "no file may be rewritten once the budget is gone"
+            "no file may be rewritten once the limit is spent"
         );
         assert_eq!(live_ids(&table).await, vec![1, 6]);
     }
@@ -530,7 +529,7 @@ mod test {
         let mut table = tombstone_ids(table, &[2, 3, 4]).await;
 
         assert_eq!(
-            reclaim_superseded_rows(&mut table, Duration::from_secs(60))
+            reclaim_superseded_rows(&mut table, usize::MAX)
                 .await
                 .unwrap()
                 .files_rewritten,
@@ -566,7 +565,7 @@ mod test {
         let mut table = tombstone_ids(table, &[2]).await;
         assert_eq!(vectored_files(&table).len(), 1);
 
-        let reclaimed = reclaim_superseded_rows(&mut table, Duration::from_secs(60))
+        let reclaimed = reclaim_superseded_rows(&mut table, usize::MAX)
             .await
             .unwrap();
 
@@ -681,7 +680,7 @@ mod test {
         // Two thirds of partition "a" superseded, none of "b".
         let mut table = tombstone_ids(table, &[1, 2]).await;
 
-        let reclaimed = reclaim_superseded_rows(&mut table, Duration::from_secs(60))
+        let reclaimed = reclaim_superseded_rows(&mut table, usize::MAX)
             .await
             .unwrap();
         assert_eq!(
@@ -868,7 +867,7 @@ mod test {
         let dv = write_deletion_vectors(&tombstones, &table).await.unwrap();
         commit(&mut table, dv.actions).await;
 
-        let reclaimed = reclaim_superseded_rows(&mut table, Duration::from_secs(60))
+        let reclaimed = reclaim_superseded_rows(&mut table, usize::MAX)
             .await
             .unwrap();
         assert_eq!(reclaimed.files_rewritten, 1);

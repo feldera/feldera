@@ -21,7 +21,6 @@ to accept.
 import json
 import pathlib
 import tempfile
-import time
 
 import pytest
 from feldera import PipelineBuilder
@@ -101,8 +100,8 @@ def _transmitted_records(pipeline) -> int:
 def _optimize_commits(loc: DeltaTestLocation) -> list[tuple[int, int]]:
     """`(files added, files removed)` for each OPTIMIZE commit in the log.
 
-    Compaction is asynchronous, so a file count sampled from outside races it. The
-    commit it leaves behind does not move once written.
+    A file count sampled from outside races the flush that compacts; the commit
+    it leaves behind does not move once written.
     """
     commits = []
     for log_path in loc.log_json_paths():
@@ -336,33 +335,40 @@ def test_merge_requires_a_unique_key(pipeline_name):
 
 @enterprise_only
 def test_merge_compacts_when_asked_to(pipeline_name):
-    """`optimize_interval` makes the connector compact its own table.
+    """`auto_compact` makes the connector compact its own table.
 
     Merge mode never rewrites a data file, so a table nothing else maintains
     grows one file per flush. The option hands that job to the connector.
     """
+    import pyarrow as pa
+    from deltalake import write_deltalake
+
     loc = DeltaTestLocation.create(pipeline_name, mode="append")
     try:
-        sql = _sql(loc, {"optimize_interval": "1s"})
-        pipeline = _build_pipeline(pipeline_name, sql)
+        # A small target, so a few tiny flushes fill one and a pack is due.
+        write_deltalake(
+            loc.uri,
+            pa.table(
+                {"id": pa.array([], pa.int32()), "tag": pa.array([], pa.string())}
+            ),
+            configuration={
+                "delta.enableDeletionVectors": "true",
+                "delta.targetFileSize": "8192",
+            },
+            storage_options=loc.writer_storage_options(),
+        )
+        pipeline = _build_pipeline(pipeline_name, _sql(loc, {"auto_compact": True}))
         pipeline.start()
 
-        # One file per flush, enough of them that compacting has something to do. The
-        # interval is a second, so a compaction may fire at any point from here on.
-        for batch in range(3):
+        # One small file per flush, enough of them to fill the target.
+        for batch in range(20):
             pipeline.input_json(
                 "t",
                 [{"id": batch * 10 + i, "tag": f"v{i}"} for i in range(5)],
                 wait=True,
             )
 
-        # A compaction starts from a flush, so give the last one somewhere to hang off.
-        time.sleep(2)
-        pipeline.input_json("t", [{"id": 99, "tag": "last"}], wait=True)
-
-        # It runs in the background, so poll rather than assume it has landed. Folding
-        # is the condition, not the first commit: `with_min_commit_interval` may split
-        # one run across commits, so a single commit can be a partial picture.
+        # `wait` covers the input, not the output flush, so poll for the commit.
         def folded() -> bool:
             commits = _optimize_commits(loc)
             return sum(r for _, r in commits) > sum(a for a, _ in commits)
@@ -373,20 +379,8 @@ def test_merge_compacts_when_asked_to(pipeline_name):
             timeout_s=60.0,
             poll_interval_s=1.0,
         )
-
-        commits = _optimize_commits(loc)
-        # Only bin-packing commits appear here: this test never updates a row, so no
-        # deletion vector exists for the reclaim pass to rewrite a file over. Summing
-        # over every commit keeps the check independent of when compaction fired: a run
-        # that starts mid-seeding leaves fewer files for the next one, but the totals
-        # still show files going in and fewer coming out.
-        removed_total = sum(removed for _, removed in commits)
-        added_total = sum(added for added, _ in commits)
-        assert removed_total > added_total, (
-            f"OPTIMIZE rewrote no files together: {commits}"
-        )
         # Rewriting the files must not lose the rows in them.
-        assert loc.live_row_count() == 16
+        assert loc.live_row_count() == 100
 
         pipeline.stop(force=True)
     finally:
