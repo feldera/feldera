@@ -1,4 +1,3 @@
-use crate::duration::ConfigDuration;
 use crate::size::ConfigSize;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -253,28 +252,26 @@ pub struct DeltaTableWriterConfig {
     #[schema(minimum = 1)]
     pub threads: Option<usize>,
 
-    /// Compact the target table from the connector, at most once per this interval, for
-    /// example `1h`.
+    /// Compact the target table from the connector, right after a flush commits.
     ///
     /// Only used when `update_mode` is `merge`. Merge mode marks an old row version deleted
     /// but leaves it in place. Without compaction the table keeps growing and reads keep
-    /// slowing down, however few live rows it holds. Compacting also reclaims storage a
-    /// scheduled `OPTIMIZE` leaves behind.
+    /// slowing down, however few live rows it holds.
     ///
     /// Maintenance is normally the table administrator's job, which is why this is off by
     /// default. Set it for tables where Feldera is the only writer, and nothing else
-    /// compacts the table. Hourly (`1h`) or daily (`1d`) is typical. Two runs cannot overlap,
-    /// and a large backlog is cleared over several runs.
+    /// compacts the table.
     ///
-    /// A run starts after a flush and works in the background. If it commits while a flush
-    /// is in progress, the connector redoes that flush against the new files, so on a busy
-    /// table a run can slow the flushes down. A run replaces files rather than deleting
-    /// them, so `VACUUM` is still what reclaims the space.
+    /// A run does about one target file of work, so the flush that triggers it takes that
+    /// much longer: it packs the small files once they add up to `delta.targetFileSize`,
+    /// and otherwise rewrites one file whose rows are mostly superseded. Small files beyond
+    /// four target files are left alone with a warning; run `OPTIMIZE` once to clear them.
+    /// A run replaces files rather than deleting them, so `VACUUM` is still what reclaims
+    /// the space.
     ///
-    /// Default: none, meaning the connector never compacts.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Option<String>)]
-    pub optimize_interval: Option<ConfigDuration>,
+    /// Default: `false`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_compact: bool,
 
     /// Storage options for configuring backend object store.
     ///
@@ -301,20 +298,11 @@ impl DeltaTableWriterConfig {
         if self.lookup_chunk_size.is_zero() {
             return Err("lookup_chunk_size must be greater than 0".to_string());
         }
-        if self.optimize_interval.is_some_and(|d| d.is_zero()) {
-            return Err(
-                "optimize_interval must be greater than 0; omit it to leave \
-                 compaction to the table's administrator"
-                    .to_string(),
-            );
-        }
-        if self.optimize_interval.is_some() && self.update_mode != DeltaTableUpdateMode::Merge {
-            return Err(
-                "optimize_interval only applies to 'update_mode: merge', which \
+        if self.auto_compact && self.update_mode != DeltaTableUpdateMode::Merge {
+            return Err("auto_compact only applies to 'update_mode: merge', which \
                  is the only mode that supersedes rows and therefore the only one that \
                  needs compacting"
-                    .to_string(),
-            );
+                .to_string());
         }
         if self.lookup_chunk_size > MAX_LOOKUP_CHUNK_BYTES as u64 {
             return Err(format!(
@@ -1041,7 +1029,7 @@ mod log_retention_tests {
             enable_expired_log_cleanup: None,
             max_retries: None,
             threads: None,
-            optimize_interval: None,
+            auto_compact: false,
             object_store_config: HashMap::new(),
         }
     }
@@ -1152,49 +1140,24 @@ mod log_retention_tests {
     }
 
     /// Connector-driven compaction is opt-in and merge-only, so a misconfiguration fails at
-    /// startup rather than quietly never compacting. `cdc` mode never supersedes a row, and
-    /// zero reads as "constantly" when the way to disable it is to omit it.
+    /// startup rather than quietly never compacting: `cdc` mode never supersedes a row.
     #[test]
-    fn validate_constrains_the_optimize_interval() {
+    fn validate_limits_auto_compact_to_merge_mode() {
         let mut cfg = make_config(None);
         cfg.update_mode = DeltaTableUpdateMode::Merge;
-        cfg.optimize_interval = Some(ConfigDuration::from_secs(3600));
+        cfg.auto_compact = true;
         assert!(cfg.validate().is_ok());
 
-        cfg.optimize_interval = Some(ConfigDuration::from_secs(0));
-        assert!(
-            cfg.validate()
-                .unwrap_err()
-                .contains("optimize_interval must be greater than 0"),
-            "zero must be rejected rather than treated as a cadence"
-        );
-
         cfg.update_mode = DeltaTableUpdateMode::Cdc;
-        cfg.optimize_interval = Some(ConfigDuration::from_secs(3600));
         assert!(
             cfg.validate()
                 .unwrap_err()
                 .contains("only applies to 'update_mode: merge'")
         );
 
-        // Omitted is the default, and valid in either mode.
-        cfg.optimize_interval = None;
+        // Off is the default, and valid in either mode.
+        cfg.auto_compact = false;
         assert!(cfg.validate().is_ok());
-    }
-
-    /// The interval is a duration string, as every duration setting is.
-    #[test]
-    fn optimize_interval_is_a_duration() {
-        let parse = |interval: &str| {
-            serde_json::from_str::<DeltaTableWriterConfig>(&format!(
-                r#"{{"uri":"memory://","update_mode":"merge","optimize_interval":{interval}}}"#
-            ))
-        };
-        assert_eq!(
-            parse(r#""1h30m""#).unwrap().optimize_interval,
-            Some(ConfigDuration::from_secs(5400))
-        );
-        assert!(parse("3600").is_err(), "a bare number has no unit");
     }
 
     /// Merge mode accepts threads: a flush walks its key ranges separately but joins their
@@ -1322,18 +1285,24 @@ mod writer_config_tests {
     fn unset_merge_settings_are_not_serialized() {
         let parse = |json: &str| -> DeltaTableWriterConfig { serde_json::from_str(json).unwrap() };
         let serialized = serde_json::to_string(&parse(r#"{"uri":"x"}"#)).unwrap();
-        for key in ["update_mode", "lookup_chunk_size", "max_concurrent_probes"] {
+        for key in [
+            "update_mode",
+            "lookup_chunk_size",
+            "max_concurrent_probes",
+            "auto_compact",
+        ] {
             assert!(
                 !serialized.contains(key),
                 "{key} was serialized: {serialized}"
             );
         }
-        let set = r#"{"uri":"x","update_mode":"merge","lookup_chunk_size":"7Ki","max_concurrent_probes":3}"#;
+        let set = r#"{"uri":"x","update_mode":"merge","lookup_chunk_size":"7Ki","max_concurrent_probes":3,"auto_compact":true}"#;
         let serialized = serde_json::to_string(&parse(set)).unwrap();
         for value in [
             r#""update_mode":"merge""#,
             r#""lookup_chunk_size":"7Ki""#,
             r#""max_concurrent_probes":3"#,
+            r#""auto_compact":true"#,
         ] {
             assert!(serialized.contains(value), "{value} was lost: {serialized}");
         }

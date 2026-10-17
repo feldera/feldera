@@ -242,7 +242,7 @@ pub struct DeltaTableWriter {
     /// writing files there and committing in `batch_end`.
     merge: Option<Arc<MergeWriter>>,
     merge_metrics: Option<Arc<MergeMetrics>>,
-    /// Present when `optimize_interval` asks the connector to compact the table itself.
+    /// Present when `auto_compact` asks the connector to compact the table itself.
     compactor: Option<Compactor>,
     /// Uniqueness violations handed to the controller, for the test that pins how often a
     /// retried batch reports them. Tests build the endpoint with no controller to report to.
@@ -1481,10 +1481,12 @@ impl DeltaTableWriter {
                             (metrics.rows_appended + metrics.dv.rows_tombstoned) as usize,
                         );
                     }
-                    // After the commit, never before: a compaction starting mid-flush would
-                    // replace the files that flush is addressing, forcing a needless retry.
-                    if let Some(compactor) = compactor {
-                        compactor.maybe_start(&inner.shutdown);
+                    // After the commit and on this thread: beside a flush, a compaction races it,
+                    // and whichever commits second redoes all its work.
+                    if let Some(compactor) = compactor
+                        && compactor.after_commit(&task.delta_table, &inner.shutdown)
+                    {
+                        *merge_reload = true;
                     }
 
                     debug!(
@@ -1920,7 +1922,7 @@ mod parallel {
                 mode,
                 max_retries,
                 threads: Some(threads),
-                optimize_interval: None,
+                auto_compact: false,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -1963,7 +1965,7 @@ mod parallel {
                 update_mode: DeltaTableUpdateMode::Merge,
                 max_retries: Some(max_retries),
                 threads: Some(1),
-                optimize_interval: None,
+                auto_compact: false,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -2388,6 +2390,98 @@ mod parallel {
             model.insert(new.bigint, new.clone());
         }
         assert_matches_model(uri, &model, "an update after a concurrent compaction");
+    }
+
+    /// The connector's own compaction must never make a flush redo its work.
+    ///
+    /// Run beside the next flush, it rewrote the small files that flush was changing, and
+    /// whichever committed second started over; with `max_retries: 0` the flush failed and
+    /// its batch was dropped. On the writer's thread after a commit, the two cannot overlap.
+    #[test]
+    fn auto_compaction_never_races_a_flush() {
+        use crate::integrated::delta_table::merge::compact::Compactor;
+        use dbsp::circuit::tokio::TOKIO;
+        use futures::StreamExt;
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint =
+            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 0, key_relation());
+        let records = make_records(20_000);
+        for chunk in records.chunks(5_000) {
+            encode_batch(&mut endpoint, &build_insert_batch(chunk));
+        }
+
+        // The inserts are the large files; each update flush adds a small one.
+        let url = url::Url::from_file_path(uri).unwrap();
+        TOKIO.block_on(async move {
+            let table = deltalake::open_table(url).await.unwrap();
+            let smallest = table
+                .snapshot()
+                .unwrap()
+                .log_data()
+                .into_iter()
+                .map(|f| f.size())
+                .min()
+                .unwrap();
+            table
+                .set_tbl_properties()
+                .with_properties(std::collections::HashMap::from([(
+                    deltalake::TableProperty::TargetFileSize
+                        .as_ref()
+                        .to_string(),
+                    smallest.to_string(),
+                )]))
+                .await
+                .unwrap();
+        });
+        // A property change is a metadata change the next flush must read first.
+        endpoint.merge_reload = true;
+        let mut config = endpoint.inner.config.clone();
+        config.auto_compact = true;
+        endpoint.compactor = Compactor::new(
+            &config,
+            "test_merge_endpoint",
+            endpoint.merge_metrics.clone().unwrap(),
+        );
+
+        let mut model: BTreeMap<i64, DeltaTestStruct> =
+            records.iter().map(|r| (r.bigint, r.clone())).collect();
+        for round in 0..24 {
+            // Half the keys repeat, so every flush changes rows in the small files compaction
+            // packs; half move on, so those files keep live rows and pile up.
+            let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..500)
+                .map(|i| {
+                    let shift = if i < 250 { 0 } else { round * 11 };
+                    let old = model[&records[(i * 37 + shift) % records.len()].bigint].clone();
+                    let mut new = make_record(100_000 + round * 500 + i);
+                    new.bigint = old.bigint;
+                    (old, new)
+                })
+                .collect();
+            // `encode_batch` unwraps: with no retries, a lost race fails here.
+            encode_batch(&mut endpoint, &build_upsert_batch(&updates));
+            for (_, new) in updates {
+                model.insert(new.bigint, new);
+            }
+        }
+
+        let url = url::Url::from_file_path(uri).unwrap();
+        let optimizes = TOKIO.block_on(async move {
+            let table = deltalake::open_table(url).await.unwrap();
+            table
+                .history(None)
+                .filter(|c| {
+                    std::future::ready(
+                        c.as_ref()
+                            .is_ok_and(|c| c.operation.as_deref() == Some("OPTIMIZE")),
+                    )
+                })
+                .count()
+                .await
+        });
+        assert!(optimizes > 0, "the fixture never triggered a compaction");
+        assert_matches_model(uri, &model, "flushes with auto compaction");
     }
 
     /// A duplicate key must be reported once per batch, not once per attempt.
@@ -2919,7 +3013,7 @@ mod parallel {
         let url = url::Url::from_file_path(uri).unwrap();
         let reclaimed = TOKIO.block_on(async move {
             let mut table = open_table(url).await.unwrap();
-            reclaim_superseded_rows(&mut table, std::time::Duration::from_secs(60))
+            reclaim_superseded_rows(&mut table, usize::MAX)
                 .await
                 .unwrap()
         });
@@ -4161,7 +4255,7 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(0),
                 threads: Some(4),
-                optimize_interval: None,
+                auto_compact: false,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -4311,7 +4405,7 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(1),
                 threads: Some(1),
-                optimize_interval: None,
+                auto_compact: false,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -4382,7 +4476,7 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(0),
                 threads: Some(1),
-                optimize_interval: None,
+                auto_compact: false,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -4426,7 +4520,7 @@ mod parallel {
             mode: DeltaTableWriteMode::Truncate,
             max_retries: Some(0),
             threads: Some(0),
-            optimize_interval: None,
+            auto_compact: false,
 
             object_store_config: Default::default(),
             checkpoint_interval: None,
@@ -4624,7 +4718,7 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(1),
                 threads: Some(1),
-                optimize_interval: None,
+                auto_compact: false,
 
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
