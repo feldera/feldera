@@ -131,7 +131,7 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
             final RelMetadataQuery mq = call.getMetadataQuery();
             final RelOptPredicateList predicates =
                     mq.getPulledUpPredicates(filter.getInput());
-            if (reduceExpressions(filter, expList, predicates, true,
+            if (ReduceExpressionsRule.reduceExpressions(filter, expList, predicates, true,
                     config.matchNullability(), config.treatDynamicCallsAsConstant())) {
                 assert expList.size() == 1;
                 newConditionExp = expList.get(0);
@@ -293,7 +293,7 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
             final RelOptPredicateList predicates =
                     leftPredicates.union(rexBuilder,
                             rightPredicates.shift(rexBuilder, fieldCount));
-            if (!reduceExpressions(join, expList, predicates, true,
+            if (!ReduceExpressionsRule.reduceExpressions(join, expList, predicates, true,
                     config.matchNullability(), config.treatDynamicCallsAsConstant())) {
                 return;
             }
@@ -344,7 +344,7 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
                 expandedExprList.add(expr.accept(shuttle));
             }
             final RelOptPredicateList predicates = RelOptPredicateList.EMPTY;
-            if (reduceExpressions(calc, expandedExprList, predicates, false,
+            if (ReduceExpressionsRule.reduceExpressions(calc, expandedExprList, predicates, false,
                     config.matchNullability(), config.treatDynamicCallsAsConstant())) {
                 final RexProgramBuilder builder =
                         new RexProgramBuilder(
@@ -432,7 +432,8 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
                 List<Window.RexWinAggCall> aggCalls = new ArrayList<>();
                 for (Window.RexWinAggCall aggCall : group.aggCalls) {
                     final List<RexNode> expList = new ArrayList<>(aggCall.getOperands());
-                    if (reduceExpressions(window, expList, predicates)) {
+                    if (ReduceExpressionsRule.reduceExpressions(window, expList, predicates,
+                            false, true, false)) {
                         aggCall =
                                 new Window.RexWinAggCall(aggCall.getParserPosition(),
                                         (SqlAggFunction) aggCall.getOperator(),
