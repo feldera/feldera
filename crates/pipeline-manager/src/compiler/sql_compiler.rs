@@ -20,6 +20,7 @@ use crate::db::types::version::Version;
 use crate::error::source_error;
 use crate::has_unstable_feature;
 use feldera_ir::Dataflow;
+use feldera_types::config::PipelineConfigProgramInfo;
 use futures_util::StreamExt;
 use indoc::formatdoc;
 use serde::{Deserialize, Serialize};
@@ -157,8 +158,9 @@ pub async fn sql_compiler_task(
 /// 4. Performs SQL compilation on `program_code`, configured with `program_config`
 /// 5. Upon completion, the compilation status is set to `SqlCompiled` with the `program_info`
 ///    containing the output of the SQL compiler (inputs, outputs, `main.rs`, `stubs.rs`, etc.).
-///    A Gen-2 program needs no Rust compilation, so its program info is delivered here and
-///    it is set to `Success` directly, ready to run without entering the Rust compiler queue.
+///    A Gen-2 program without Rust UDFs needs no Rust compilation, so its program info is
+///    delivered here and it is set to `Success` directly, ready to run without entering the
+///    Rust compiler queue.
 ///
 /// Note that this function assumes it runs in isolation, and as such at the beginning resets
 /// any lingering pipelines that have `CompilingSql` status to `Pending`. This recovers from
@@ -221,7 +223,6 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
         &pipeline.program_config,
         &pipeline.program_code,
         &pipeline.udf_rust,
-        &pipeline.udf_toml,
         SqlCompilationOutput::Full,
     )
     .await;
@@ -237,23 +238,29 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                 duration.as_secs_f64()
             );
 
-            // The Gen-2 engine needs no Rust compilation: deliver its program info (which
-            // carries the circuit IR) and mark the program ready to run, so it never
-            // enters the serialized Rust compilation queue. Every other runtime moves
-            // to SqlCompiled and waits for the Rust compiler.
+            // A Gen-2 program without Rust UDFs needs no Rust compilation: deliver its
+            // program info (which carries the circuit IR) and mark the program ready to
+            // run, so it never enters the serialized Rust compilation queue. Every other
+            // program moves to SqlCompiled and waits for the Rust compiler, which builds a
+            // Gen-2 program's UDFs into a shared library.
             let is_gen2 = validate_program_config(&pipeline.program_config, true)
                 .map(|config| config.runtime_version().is_gen2())
                 .unwrap_or(false);
-            if is_gen2 {
-                match deliver_gen2_program_info(
-                    common_config,
-                    config,
-                    pipeline.id,
-                    pipeline.program_version,
-                    &program_info,
-                )
-                .await
-                {
+            if is_gen2 && !gen2_has_rust_udfs(&pipeline.udf_rust) {
+                let delivery = match validate_program_info(&program_info) {
+                    Ok(program_info) => {
+                        deliver_gen2_program_info(
+                            common_config,
+                            config,
+                            pipeline.id,
+                            pipeline.program_version,
+                            &program_info.to_pipeline_config_program_info(),
+                        )
+                        .await
+                    }
+                    Err(error) => Err(format!("Gen-2 program info is not valid: {error}")),
+                };
+                match delivery {
                     Ok(program_info_integrity_checksum) => {
                         db.lock()
                             .await
@@ -601,20 +608,17 @@ pub(crate) fn ephemeral_compilation_dir(config: &CompilerConfig) -> PathBuf {
 }
 
 /// Delivers the Gen-2 program info artifact so the runner can fetch its circuit
-/// IR. The Gen-2 engine builds no binary, so the artifact is named by its own integrity
-/// checksum; the runner rebuilds the same name. Returns that checksum. The SQL
-/// compiler completes a Gen-2 program without Rust compilation.
-async fn deliver_gen2_program_info(
+/// IR. The artifact is named by its own integrity checksum; the runner rebuilds the same
+/// name. Returns that checksum. The SQL compiler delivers it for a program without Rust
+/// UDFs, the Rust compiler for a program with them.
+pub(crate) async fn deliver_gen2_program_info(
     common_config: &CommonConfig,
     config: &CompilerConfig,
     pipeline_id: PipelineId,
     program_version: Version,
-    program_info_value: &serde_json::Value,
+    program_info: &PipelineConfigProgramInfo,
 ) -> Result<String, String> {
-    let program_info = validate_program_info(program_info_value)
-        .map_err(|error| format!("Gen-2 program info is not valid: {error}"))?
-        .to_pipeline_config_program_info();
-    let program_info_str = serde_json::to_string(&program_info)
+    let program_info_str = serde_json::to_string(program_info)
         .map_err(|e| format!("failed to serialize Gen-2 program info: {e}"))?;
     let program_info_integrity_checksum = checksum_buffer(program_info_str.as_bytes())
         .await
@@ -648,29 +652,37 @@ async fn deliver_gen2_program_info(
     Ok(program_info_integrity_checksum)
 }
 
+/// Whether a Gen-2 program has Rust UDFs to compile into a shared library.
+pub(crate) fn gen2_has_rust_udfs(udf_rust: &str) -> bool {
+    !udf_rust.trim().is_empty()
+}
+
+/// Missing Gen2 SDK error message.
+pub(crate) const GEN2_UDF_SDK_NOT_CONFIGURED: &str = "The Gen-2 engine runs Rust UDFs only when \
+    the compiler server knows the location of the SDK they are built against. \
+    Ask the operator to set '--gen2-udf-sdk-path' (environment variable 'GEN2_UDF_SDK_PATH'), \
+    remove the 'udf_rust' program field, or select a different runtime version.";
+
 /// Refuses a program the selected runtime cannot run, before any compilation happens.
 ///
-/// A Rust UDF is built by the Rust half of compilation, which the Gen-2 engine skips
-/// entirely: the implementation would never reach a compiler and the pipeline would run with
-/// its UDFs silently absent. Reported as a program error rather than a system error, since
-/// what to change is in the program.
+/// The Gen-2 engine runs Rust UDFs from a shared library built against the UDF SDK. A
+/// compiler server that does not know where the SDK is cannot build that library, and the
+/// pipeline would otherwise run with its UDFs missing. Reported as a program error rather
+/// than a system error, since the program can drop its UDFs or select another runtime.
 fn check_runtime_supports_program(
     runtime_selector: &RuntimeSelector,
     udf_rust: &str,
-    udf_toml: &str,
+    gen2_udf_sdk_path: Option<&str>,
 ) -> Result<(), SqlCompilationError> {
-    let has_udfs = !udf_rust.trim().is_empty() || !udf_toml.trim().is_empty();
-    if runtime_selector.is_gen2() && has_udfs {
-        return Err(SqlCompilationError::SqlError(
-            SqlCompilationInfo::from_error(
-                "UnsupportedRuntimeFeature",
-                "The Gen-2 engine does not support Rust UDFs. Remove the 'udf_rust' and \
-                 'udf_toml' program fields, or select a different runtime version."
-                    .to_string(),
-            ),
-        ));
+    if !runtime_selector.is_gen2() || !gen2_has_rust_udfs(udf_rust) || gen2_udf_sdk_path.is_some() {
+        return Ok(());
     }
-    Ok(())
+    Err(SqlCompilationError::SqlError(
+        SqlCompilationInfo::from_error(
+            "UnsupportedRuntimeFeature",
+            GEN2_UDF_SDK_NOT_CONFIGURED.to_string(),
+        ),
+    ))
 }
 
 /// Performs the SQL compilation:
@@ -690,7 +702,6 @@ pub(crate) async fn perform_sql_compilation(
     program_config: &serde_json::Value,
     program_code: &str,
     udf_rust: &str,
-    udf_toml: &str,
     output: SqlCompilationOutput,
 ) -> Result<(serde_json::Value, Duration, SqlCompilationInfo), SqlCompilationError> {
     let start = Instant::now();
@@ -720,7 +731,11 @@ pub(crate) async fn perform_sql_compilation(
 
     let runtime_selector = program_config.runtime_version();
 
-    check_runtime_supports_program(&runtime_selector, udf_rust, udf_toml)?;
+    check_runtime_supports_program(
+        &runtime_selector,
+        udf_rust,
+        config.gen2_udf_sdk_path.as_deref(),
+    )?;
 
     let use_platform_compiler =
         program_config.use_platform_compiler && !runtime_selector.is_platform();
@@ -1145,7 +1160,6 @@ pub(crate) async fn validate_program(
         program_config,
         program_code,
         "",
-        "",
         SqlCompilationOutput::IrOnly,
     )
     .await;
@@ -1280,39 +1294,92 @@ pub(crate) async fn cleanup_sql_compilation(
 mod test {
     use crate::auth::TenantRecord;
 
-    /// The Gen-2 engine compiles no Rust, so a Rust UDF would silently do nothing. The
-    /// refusal is a program error naming both fields, and it does not fire for a runtime
-    /// that does compile Rust, nor for a Gen-2 program without UDFs.
+    /// A Gen-2 program with Rust UDFs is refused, as a program error naming what to set, only
+    /// when the compiler server does not know the UDF SDK to build them against.
     #[test]
-    fn gen2_refuses_rust_udfs() {
+    fn gen2_rust_udfs_require_the_udf_sdk() {
         use crate::compiler::sql_compiler::{SqlCompilationError, check_runtime_supports_program};
         use crate::db::types::program::RuntimeSelector;
 
         let gen2 = RuntimeSelector::Gen2;
         let platform = RuntimeSelector::Platform("0".repeat(40));
+        let sdk = Some("/opt/feldera-udf");
 
-        // No UDFs: nothing to refuse under either runtime.
-        assert!(check_runtime_supports_program(&gen2, "", "").is_ok());
-        assert!(check_runtime_supports_program(&gen2, "   ", "\n").is_ok());
-        assert!(check_runtime_supports_program(&platform, "fn f() {}", "[deps]").is_ok());
+        // Nothing to build, or the SDK to build it against: accepted.
+        assert!(check_runtime_supports_program(&gen2, "", None).is_ok());
+        assert!(check_runtime_supports_program(&gen2, "   \n", None).is_ok());
+        assert!(check_runtime_supports_program(&gen2, "fn f() {}", sdk).is_ok());
+        assert!(check_runtime_supports_program(&platform, "fn f() {}", None).is_ok());
 
-        for (udf_rust, udf_toml) in [("fn f() {}", ""), ("", "[dependencies]")] {
-            let error = check_runtime_supports_program(&gen2, udf_rust, udf_toml)
-                .expect_err("a Gen-2 program with Rust UDFs must be refused");
-            let SqlCompilationError::SqlError(info) = error else {
-                panic!("a UDF refusal is a program error, not a system error");
-            };
-            assert_eq!(info.exit_code, 1);
-            // `Display` carries the message; the field itself is private.
-            let message = info.messages[0].to_string();
-            assert!(message.contains("does not support Rust UDFs"), "{message}");
-            assert!(message.contains("udf_rust"), "names the field: {message}");
-            assert!(message.contains("udf_toml"), "names the field: {message}");
-            assert!(
-                message.contains("UnsupportedRuntimeFeature"),
-                "carries the error type: {message}"
-            );
+        let error = check_runtime_supports_program(&gen2, "fn f() {}", None)
+            .expect_err("Rust UDFs without the SDK must be refused");
+        let SqlCompilationError::SqlError(info) = error else {
+            panic!("a UDF refusal is a program error, not a system error");
+        };
+        assert_eq!(info.exit_code, 1);
+        // `Display` carries the message; the field itself is private.
+        let message = info.messages[0].to_string();
+        for named in [
+            "UnsupportedRuntimeFeature",
+            "udf_rust",
+            "--gen2-udf-sdk-path",
+            "GEN2_UDF_SDK_PATH",
+        ] {
+            assert!(message.contains(named), "names '{named}': {message}");
         }
+    }
+
+    /// At the SQL stage, a Gen-2 program with Rust UDFs waits for the Rust compiler to build
+    /// its UDF library.
+    #[tokio::test]
+    async fn gen2_sql_stage_leaves_rust_udfs_to_the_rust_compiler() {
+        crate::enable_test_unstable_features();
+        let mut test = CompilerTest::new().await;
+        test.compiler_config.gen2_udf_sdk_path = Some("/opt/feldera-udf".to_string());
+        let tenant_id = TenantRecord::default().id;
+        let gen2 = serde_json::json!({ "runtime_version": "gen2" });
+        let program_code = "CREATE TABLE t (x INT);";
+        let create = |name: &'static str, udf_rust: &'static str, udf_toml: &'static str| {
+            test.create_pipeline_with_program_config(
+                tenant_id,
+                name,
+                "v0",
+                program_code,
+                udf_rust,
+                udf_toml,
+                gen2.clone(),
+            )
+        };
+
+        let with_udfs = create("with-udfs", "pub fn f() {}", "").await;
+        test.sql_compiler_tick().await;
+        let pipeline = test.get_pipeline(tenant_id, with_udfs).await;
+        assert_eq!(pipeline.program_status, ProgramStatus::SqlCompiled);
+        assert_eq!(pipeline.program_info_integrity_checksum, None);
+
+        let toml_only = create("toml-only", "", "chrono = \"0.4\"").await;
+        test.sql_compiler_tick().await;
+        let pipeline = test.get_pipeline(tenant_id, toml_only).await;
+        assert_eq!(pipeline.program_status, ProgramStatus::Success);
+        assert!(pipeline.program_info_integrity_checksum.is_some());
+
+        test.compiler_config.gen2_udf_sdk_path = None;
+        let without_sdk = test
+            .create_pipeline_with_program_config(
+                tenant_id,
+                "without-sdk",
+                "v0",
+                program_code,
+                "pub fn f() {}",
+                "",
+                gen2.clone(),
+            )
+            .await;
+        test.sql_compiler_tick().await;
+        let pipeline = test.get_pipeline(tenant_id, without_sdk).await;
+        assert_eq!(pipeline.program_status, ProgramStatus::SqlError);
+        let message = pipeline.program_error.sql_compilation.unwrap().messages[0].to_string();
+        assert!(message.contains("GEN2_UDF_SDK_PATH"), "{message}");
     }
 
     /// A jar unaccessed past the retention window is removed, a recently

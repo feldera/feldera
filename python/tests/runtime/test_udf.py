@@ -1,13 +1,30 @@
 from datetime import date, datetime, time
 from decimal import Decimal
 import json
+import re
 import unittest
 
 from feldera import PipelineBuilder
-from tests import TEST_CLIENT
+from tests import TEST_CLIENT, runs_on_gen2
 from tests.platform.helper import PipelineTestCase
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
+
+
+def gen2_identity_udfs(sql: str) -> str:
+    """The Gen-2 form of the identity UDFs: every function `sql` declares returns
+    its argument column unchanged."""
+    names = re.findall(r"CREATE FUNCTION (\w+)\(", sql)
+    functions = "".join(
+        f"""
+#[feldera_udf]
+pub fn {name}(i: &ArrayRef) -> ArrayRef {{
+    i.clone()
+}}
+"""
+        for name in names
+    )
+    return "use feldera_udf::prelude::*;\n" + functions
 
 
 class TestUDF(PipelineTestCase):
@@ -239,10 +256,11 @@ pub fn nstruct2nstruct(i: Tup2<Option<i32>, Option<SqlString>>) -> Result<Tup2<O
         # and return FlatVariant; the identity UDF bodies only need the type
         # name swapped.
         import os
-        import re
 
         if os.environ.get("FELDERA_FLAT_VARIANT", "").lower() in ("1", "on", "true"):
             udfs = re.sub(r"\bVariant\b", "FlatVariant", udfs)
+        if runs_on_gen2():
+            udfs = gen2_identity_udfs(sql)
 
         pipeline = PipelineBuilder(
             TEST_CLIENT,

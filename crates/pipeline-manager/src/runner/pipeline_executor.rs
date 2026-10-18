@@ -67,7 +67,9 @@ pub trait PipelineExecutor: Sync + Send {
     ///
     /// When `is_gen2` is true the pipeline is configured with the Gen-2
     /// engine, so no pipeline binary was compiled: the executor launches the
-    /// Gen-2 engine and ignores `program_binary_url`.
+    /// Gen-2 engine and ignores `program_binary_url`. A Gen-2 program with Rust
+    /// UDFs references its UDF library in the program info; the executor fetches
+    /// it from the compiler server and passes it to the engine (`--udf-library`).
     ///
     /// `legacy_spelling` says which settings the pipeline's runtime reads only
     /// in their older spelling, because it is pinned to a runtime other than
