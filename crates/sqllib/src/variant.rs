@@ -13,7 +13,7 @@ use feldera_types::serde_with_context::serde_config::VariantFormat;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
-use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use serde::de::{self, DeserializeSeed, IntoDeserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{self, Error as _};
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
@@ -228,29 +228,32 @@ impl<'de> Deserialize<'de> for Variant {
             where
                 V: MapAccess<'de>,
             {
-                match visitor.next_key_seed(KeyClassifier)? {
+                let (first_key, first_value) = match visitor.next_key_seed(KeyClassifier)? {
+                    None => return Ok(Variant::Map(BTreeMap::new().into())),
+                    Some(KeyClass::Map(key)) => (key, visitor.next_value()?),
                     Some(KeyClass::Number) => {
-                        let number: DynamicDecimal = visitor.next_value()?;
-                        Ok(Variant::SqlDecimal((
-                            number.significand(),
-                            number.exponent(),
-                        )))
-                    }
-                    Some(KeyClass::Map(first_key)) => {
-                        let mut values = BTreeMap::new();
-
-                        values.insert(
-                            Variant::String(SqlString::from(first_key)),
-                            visitor.next_value()?,
-                        );
-                        while let Some((key, value)) = visitor.next_entry::<String, Variant>()? {
-                            values.insert(Variant::String(SqlString::from(key)), value);
+                        match visitor.next_value_seed(NumberTokenValue(VariantVisitor))? {
+                            TokenValue::Number(text) => {
+                                let number =
+                                    DynamicDecimal::deserialize(
+                                        IntoDeserializer::<V::Error>::into_deserializer(text),
+                                    )?;
+                                return Ok(Variant::SqlDecimal((
+                                    number.significand(),
+                                    number.exponent(),
+                                )));
+                            }
+                            TokenValue::Entry(value) => (DECIMAL_KEY_TOKEN.to_string(), value),
                         }
-
-                        Ok(Variant::Map(values.into()))
                     }
-                    None => Ok(Variant::Map(BTreeMap::new().into())),
+                };
+
+                let mut values = BTreeMap::new();
+                values.insert(Variant::String(SqlString::from(first_key)), first_value);
+                while let Some((key, value)) = visitor.next_entry::<String, Variant>()? {
+                    values.insert(Variant::String(SqlString::from(key)), value);
                 }
+                Ok(Variant::Map(values.into()))
             }
         }
 
@@ -330,6 +333,116 @@ impl Visitor<'_> for KeyClassifier {
             DECIMAL_KEY_TOKEN => Ok(KeyClass::Number),
             _ => Ok(KeyClass::Map(s)),
         }
+    }
+}
+
+/// Reads the value of a map entry whose key is [`DECIMAL_KEY_TOKEN`].
+///
+/// serde_json with `arbitrary_precision` hands over a JSON number as a map with
+/// this one entry, and delivers the number's text with `visit_string`. serde_json
+/// delivers the strings of JSON text with `visit_str` or `visit_borrowed_str`.
+/// Every other value belongs to a JSON object that uses the token as an ordinary
+/// key, and the wrapped visitor builds it.
+#[doc(hidden)]
+pub(crate) struct NumberTokenValue<V>(pub(crate) V);
+
+/// The value that [`NumberTokenValue`] reads.
+#[doc(hidden)]
+pub(crate) enum TokenValue<T> {
+    /// The text of a JSON number.
+    Number(String),
+    /// The value of an object entry, built by the wrapped visitor.
+    Entry(T),
+}
+
+impl<'de, V: Visitor<'de>> DeserializeSeed<'de> for NumberTokenValue<V> {
+    type Value = TokenValue<V::Value>;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(self)
+    }
+}
+
+macro_rules! forward_to_entry {
+    ($($method:ident: $type:ty),* $(,)?) => {
+        $(
+            fn $method<E: de::Error>(self, value: $type) -> Result<Self::Value, E> {
+                self.0.$method(value).map(TokenValue::Entry)
+            }
+        )*
+    };
+}
+
+impl<'de, V: Visitor<'de>> Visitor<'de> for NumberTokenValue<V> {
+    type Value = TokenValue<V::Value>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        self.0.expecting(formatter)
+    }
+
+    fn visit_string<E: de::Error>(self, value: String) -> Result<Self::Value, E> {
+        Ok(TokenValue::Number(value))
+    }
+
+    forward_to_entry! {
+        visit_bool: bool,
+        visit_i8: i8,
+        visit_i16: i16,
+        visit_i32: i32,
+        visit_i64: i64,
+        visit_i128: i128,
+        visit_u8: u8,
+        visit_u16: u16,
+        visit_u32: u32,
+        visit_u64: u64,
+        visit_u128: u128,
+        visit_f32: f32,
+        visit_f64: f64,
+        visit_char: char,
+        visit_str: &str,
+        visit_borrowed_str: &'de str,
+        visit_bytes: &[u8],
+        visit_borrowed_bytes: &'de [u8],
+        visit_byte_buf: Vec<u8>,
+    }
+
+    fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+        self.0.visit_none().map(TokenValue::Entry)
+    }
+
+    fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+        self.0.visit_unit().map(TokenValue::Entry)
+    }
+
+    fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        self.0.visit_some(deserializer).map(TokenValue::Entry)
+    }
+
+    fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        self.0
+            .visit_newtype_struct(deserializer)
+            .map(TokenValue::Entry)
+    }
+
+    fn visit_seq<A: SeqAccess<'de>>(self, seq: A) -> Result<Self::Value, A::Error> {
+        self.0.visit_seq(seq).map(TokenValue::Entry)
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
+        self.0.visit_map(map).map(TokenValue::Entry)
+    }
+
+    fn visit_enum<A: de::EnumAccess<'de>>(self, data: A) -> Result<Self::Value, A::Error> {
+        self.0.visit_enum(data).map(TokenValue::Entry)
     }
 }
 
@@ -1645,6 +1758,52 @@ mod test {
             .into(),
         );
         assert_eq!(v, expected);
+    }
+
+    #[test]
+    fn deserialize_number_token_key() {
+        const TOKEN: &str = "$serde_json::private::Number";
+        let string = |s: &str| Variant::String(SqlString::from_ref(s));
+        let map = |entries: Vec<(&str, Variant)>| {
+            Variant::Map(
+                entries
+                    .into_iter()
+                    .map(|(k, v)| (string(k), v))
+                    .collect::<BTreeMap<Variant, Variant>>()
+                    .into(),
+            )
+        };
+        let large = Variant::SqlDecimal((184467440737095516150, 0));
+        let cases = [
+            (
+                format!(r#"{{"{TOKEN}":"1"}}"#),
+                map(vec![(TOKEN, string("1"))]),
+            ),
+            (
+                format!(r#"{{"{TOKEN}":"1","x":2}}"#),
+                map(vec![(TOKEN, string("1")), ("x", Variant::UBigInt(2))]),
+            ),
+            (
+                format!(r#"{{"v":{{"{TOKEN}":"1"}}}}"#),
+                map(vec![("v", map(vec![(TOKEN, string("1"))]))]),
+            ),
+            (
+                format!(r#"{{"{TOKEN}":{{"a":true}}}}"#),
+                map(vec![(TOKEN, map(vec![("a", Variant::Boolean(true))]))]),
+            ),
+            (
+                format!(r#"{{"{TOKEN}":184467440737095516150}}"#),
+                map(vec![(TOKEN, large.clone())]),
+            ),
+            ("184467440737095516150".to_string(), large),
+            ("1.5".to_string(), Variant::SqlDecimal((15, 1))),
+        ];
+        for (input, expected) in cases {
+            let from_str = serde_json::from_str::<Variant>(&input).unwrap();
+            let from_reader = serde_json::from_reader::<_, Variant>(input.as_bytes()).unwrap();
+            assert_eq!(from_str, expected, "from_str({input})");
+            assert_eq!(from_reader, expected, "from_reader({input})");
+        }
     }
 
     #[test]
