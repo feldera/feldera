@@ -63,13 +63,13 @@ use feldera_types::serde_with_context::{
 };
 use rkyv::ser::{ScratchSpace, Serializer as RkyvSerializer};
 use rkyv::vec::{ArchivedVec, VecResolver};
-use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use serde::de::{DeserializeSeed, IntoDeserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use size_of::SizeOf;
 use std::borrow::Cow;
 
-use crate::variant::Variant;
+use crate::variant::{NumberTokenValue, TokenValue, Variant};
 use crate::{
     ByteArray, Date, LongInterval, ShortInterval, SqlString, Time, Timestamp, TimestampTz, Uuid,
 };
@@ -1526,29 +1526,40 @@ impl<'de> Visitor<'de> for BuildValue<'_> {
     where
         V: MapAccess<'de>,
     {
-        match map.next_key_seed(KeyClassifier)? {
-            Some(KeyClass::Number) => {
-                let number: DynamicDecimal = map.next_value()?;
-                Ok(self.w.scalar(
-                    TAG_DECIMAL,
-                    &casts::decimal_payload(number.significand(), number.exponent()),
-                ))
-            }
+        let first_entry = match map.next_key_seed(KeyClassifier)? {
+            None => return Ok(self.w.map(&[])),
             Some(KeyClass::Map(first_key)) => {
-                let mut entries = Vec::new();
                 let key_range = self.w.scalar(TAG_STRING, first_key.as_bytes());
                 let val_range = map.next_value_seed(BuildValue { w: self.w })?;
-                entries.push((key_range, val_range));
-                while let Some(key) = map.next_key::<String>()? {
-                    let key_range = self.w.scalar(TAG_STRING, key.as_bytes());
-                    let val_range = map.next_value_seed(BuildValue { w: self.w })?;
-                    entries.push((key_range, val_range));
-                }
-                sort_map_entries(&self.w.out, &mut entries);
-                Ok(self.w.map(&entries))
+                (key_range, val_range)
             }
-            None => Ok(self.w.map(&[])),
+            Some(KeyClass::Number) => {
+                match map.next_value_seed(NumberTokenValue(BuildValue { w: self.w }))? {
+                    TokenValue::Number(text) => {
+                        let number = DynamicDecimal::deserialize(
+                            IntoDeserializer::<V::Error>::into_deserializer(text),
+                        )?;
+                        return Ok(self.w.scalar(
+                            TAG_DECIMAL,
+                            &casts::decimal_payload(number.significand(), number.exponent()),
+                        ));
+                    }
+                    TokenValue::Entry(val_range) => {
+                        let key_range = self.w.scalar(TAG_STRING, DECIMAL_KEY_TOKEN.as_bytes());
+                        (key_range, val_range)
+                    }
+                }
+            }
+        };
+
+        let mut entries = vec![first_entry];
+        while let Some(key) = map.next_key::<String>()? {
+            let key_range = self.w.scalar(TAG_STRING, key.as_bytes());
+            let val_range = map.next_value_seed(BuildValue { w: self.w })?;
+            entries.push((key_range, val_range));
         }
+        sort_map_entries(&self.w.out, &mut entries);
+        Ok(self.w.map(&entries))
     }
 }
 
@@ -2686,6 +2697,9 @@ mod tests {
             r#""hello""#,
             r#"[1, "two", null, {"a": false}]"#,
             r#"{"b": 1, "a": [2.5]}"#,
+            r#"{"$serde_json::private::Number": "1"}"#,
+            r#"{"$serde_json::private::Number": "1", "x": 2}"#,
+            r#"{"$serde_json::private::Number": {"a": 184467440737095516150}}"#,
         ];
         for case in valid {
             let v1 = crate::string::parse_json_s(SqlString::from_ref(case));

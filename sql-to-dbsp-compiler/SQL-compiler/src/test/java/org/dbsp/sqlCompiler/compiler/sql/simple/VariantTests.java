@@ -1105,6 +1105,23 @@ public class VariantTests extends SqlIoTest {
     }
 
     @Test
+    public void issue7531() {
+        // An object whose key is serde_json's number token is a MAP, not a number
+        this.qst("""
+                SELECT TYPEOF(PARSE_JSON('{"$serde_json::private::Number":"1"}'));
+                 r
+                ---
+                 MAP
+                (1 row)
+
+                SELECT TO_JSON(PARSE_JSON('{"$serde_json::private::Number":"1","x":2}'));
+                 r
+                ---
+                 {"$serde_json::private::Number":"1","x":2}
+                (1 row)""");
+    }
+
+    @Test
     public void issue5938a() {
         // String -> Variant -> type
         this.qst("""
