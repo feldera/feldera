@@ -10,6 +10,18 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Experimental: the Delta Lake output connector can keep a table equal to
+  its view instead of appending a change log. Set `update_mode` to `merge`: the
+  connector appends each new row version and marks the old one deleted
+  in a deletion vector, so a reader sees one live row per key and a
+  flush never rewrites a data file. An existing target table must have
+  `delta.enableDeletionVectors` set, and the pipeline must be the only
+  process writing rows to it. `optimize_interval` has the
+  connector compact the table itself, which reclaims the superseded
+  rows. See [merge mode](/connectors/sinks/delta#merge-mode).
+
+## v0.367.0
+
 - Pipelines without fault tolerance no longer write a checkpoint on
   `SIGTERM`.  On Kubernetes, Force Stop also sends `SIGTERM`, so such a
   pipeline could keep a checkpoint the user did not ask for.
@@ -132,16 +144,6 @@ Source edition can be found on github.
   0.155.0, so a pipeline pinned to that release or a later one is not
   affected. In the Enterprise edition, the pipeline `ConfigMap` carries only
   `config.json`.
-
-- Experimental: the Delta Lake output connector can keep a table equal to
-  its view instead of appending a change log. Set `update_mode` to `merge`: the
-  connector appends each new row version and marks the old one deleted
-  in a deletion vector, so a reader sees one live row per key and a
-  flush never rewrites a data file. An existing target table must have
-  `delta.enableDeletionVectors` set, and the pipeline must be the only
-  process writing rows to it. `optimize_interval` has the
-  connector compact the table itself, which reclaims the superseded
-  rows. See [merge mode](/connectors/sinks/delta#merge-mode).
 
 ## v0.366.0
 
