@@ -1122,6 +1122,23 @@ public class VariantTests extends SqlIoTest {
     }
 
     @Test
+    public void issue7527() {
+        // An out-of-range field after the leading field is a cast error, so the cast returns NULL
+        this.qst("""
+                SELECT CAST(PARSE_JSON('"10:99"') AS INTERVAL HOUR TO MINUTE);
+                 r
+                ---
+                NULL
+                (1 row)
+
+                SELECT CAST(PARSE_JSON('"1 25:00"') AS INTERVAL DAY TO MINUTE);
+                 r
+                ---
+                NULL
+                (1 row)""");
+    }
+
+    @Test
     public void issue5938a() {
         // String -> Variant -> type
         this.qst("""
