@@ -3000,4 +3000,65 @@ mod tests {
         let b2 = FlatVariant::from(&b);
         assert_eq!(v::json_each_bigint_V(b), functions::json_each_bigint_FV(b2));
     }
+
+    #[test]
+    fn decimal_to_number_keeps_fraction() {
+        use crate::flat_variant::casts::{DecodeFV, cast_to_dN_FV, cast_to_fN_FV};
+        use crate::{
+            F32, F64, SqlDecimal, cast_to_d_SqlDecimal, cast_to_dN_V, cast_to_f_SqlDecimal,
+            cast_to_fN_V, cast_to_i8_SqlDecimal, cast_to_u8_SqlDecimal,
+        };
+
+        // Conversions to integers round toward zero
+        for (significand, scale, real, integer) in [(15, 1, 1.5, 1), (-275, 2, -2.75, -2)] {
+            let v = Variant::SqlDecimal((significand, scale));
+            let fv = FlatVariant::from(&v);
+            assert_eq!(F64::try_from(v.clone()).unwrap(), F64::from(real));
+            assert_eq!(F64::decode(fv.as_bytes()).unwrap(), F64::from(real));
+            assert_eq!(F32::try_from(v.clone()).unwrap(), F32::from(real as f32));
+            assert_eq!(F32::decode(fv.as_bytes()).unwrap(), F32::from(real as f32));
+            assert_eq!(i32::try_from(v.clone()).unwrap(), integer);
+            assert_eq!(i32::decode(fv.as_bytes()).unwrap(), integer);
+        }
+
+        // The REAL and DOUBLE values of a DECIMAL with the given scale
+        fn typed<const S: usize>(significand: i128) -> (F32, F64) {
+            let decimal = SqlDecimal::<38, S>::new(significand, S as i32).unwrap();
+            let real = cast_to_f_SqlDecimal(decimal).unwrap();
+            let double = cast_to_d_SqlDecimal(decimal).unwrap();
+            (real, double)
+        }
+
+        // A VARIANT holding a DECIMAL converts to the same value as the DECIMAL itself
+        for (significand, scale, (real, double)) in [
+            (79450944636602, 17, typed::<17>(79450944636602)),
+            (1, 38, typed::<38>(1)),
+        ] {
+            let v = Variant::SqlDecimal((significand, scale));
+            let fv = FlatVariant::from(&v);
+            assert_eq!(cast_to_fN_V(v.clone()).unwrap(), Some(real));
+            assert_eq!(F32::try_from(v.clone()).unwrap(), real);
+            assert_eq!(cast_to_fN_FV(fv.clone()).unwrap(), Some(real));
+            assert_eq!(F32::decode(fv.as_bytes()).unwrap(), real);
+            assert_eq!(cast_to_dN_V(v.clone()).unwrap(), Some(double));
+            assert_eq!(F64::try_from(v).unwrap(), double);
+            assert_eq!(cast_to_dN_FV(fv.clone()).unwrap(), Some(double));
+            assert_eq!(F64::decode(fv.as_bytes()).unwrap(), double);
+        }
+
+        let too_large = Variant::SqlDecimal((3005, 1));
+        let too_large_decimal = SqlDecimal::<38, 1>::new(3005, 1).unwrap();
+        assert!(cast_to_i8_SqlDecimal(too_large_decimal).is_err());
+        assert!(i8::try_from(too_large.clone()).is_err());
+        assert!(i8::decode(FlatVariant::from(&too_large).as_bytes()).is_err());
+
+        let negative = Variant::SqlDecimal((-5, 1));
+        let negative_decimal = SqlDecimal::<38, 1>::new(-5, 1).unwrap();
+        assert_eq!(cast_to_u8_SqlDecimal(negative_decimal).unwrap(), 0);
+        assert_eq!(u8::try_from(negative.clone()).unwrap(), 0);
+        assert_eq!(
+            u8::decode(FlatVariant::from(&negative).as_bytes()).unwrap(),
+            0
+        );
+    }
 }
