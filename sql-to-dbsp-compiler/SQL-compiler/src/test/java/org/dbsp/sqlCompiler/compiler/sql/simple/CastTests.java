@@ -89,7 +89,7 @@ public class CastTests extends SqlIoTest {
     @Test
     public void castFail() {
         this.runtimeConstantFail("SELECT CAST('blah' AS DECIMAL)",
-                "While converting 'blah' to DECIMAL: parse error");
+                "Error converting 'blah' to DECIMAL(38, 0): Syntax error in numeric value");
     }
 
     @Test
