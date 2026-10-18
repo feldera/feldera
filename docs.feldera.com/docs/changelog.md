@@ -26,6 +26,11 @@ Source edition can be found on github.
   `1970-01-01 00:00:00.0015`.  Before this change, the result had no
   fractional seconds (`1970-01-01 00:00:01`).
 
+- Incompatible change (SQL): `REAL` and `DOUBLE` have only one zero and
+  only one `NaN`.  An operation that produced `-0e0` now produces `0e0`:
+  for example, casting `-x` to a string gives `0.0` when `x` is zero,
+  and `1e0 / -0e0` is `Infinity`.
+
 ## v0.368.0
 
 - Incompatible change (SQL): a cast from `DOUBLE` or `REAL` to `DECIMAL`
