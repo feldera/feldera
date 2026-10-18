@@ -162,7 +162,8 @@ The following table defines the `IS NOT TRUE` operator:
 </table>
 
 Casting a string to a Boolean applies the following algorithm:
-- whitespaces are trimmed
+- leading and trailing characters with code points up to U+0020 are
+  removed (see [casts](casts.md))
 - string is converted to lowercase
 - value 'true' is converted to `TRUE`
 - value 'false' is converted to `FALSE`

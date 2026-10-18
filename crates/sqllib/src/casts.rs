@@ -30,7 +30,6 @@ use std::{
     iter::once,
     marker::PhantomData,
     ops::{Div, Mul},
-    str::FromStr,
     sync::LazyLock,
 };
 
@@ -182,6 +181,12 @@ pub(crate) fn cast_null(t: &str) -> Box<SqlRuntimeError> {
     SqlRuntimeError::from_string(format!("cast of NULL value to non-null type {}", t))
 }
 
+/// Removes the leading and trailing characters with code points up to
+/// U+0020, using the same rules as Java's `String.trim`.
+fn java_trim(value: &str) -> &str {
+    value.trim_matches(|c: char| c <= ' ')
+}
+
 // Creates three cast functions based on an existing one
 // The original function is
 // cast_to_ $result_name _ $type_name( value: $arg_type ) -> SqlResult<$result_type>
@@ -311,7 +316,7 @@ cast_to_b!(u, usize);
 
 #[doc(hidden)]
 pub fn cast_to_b_s(value: SqlString) -> SqlResult<bool> {
-    match value.str().to_lowercase().trim() {
+    match java_trim(&value.str().to_lowercase()) {
         "true" => Ok(true),
         "false" => Ok(false),
         _ => Err(SqlRuntimeError::from_string(format!(
@@ -365,7 +370,7 @@ pub fn cast_to_bN_bN(value: Option<bool>) -> SqlResult<Option<bool>> {
 
 #[doc(hidden)]
 pub fn cast_to_Date_s(value: SqlString) -> SqlResult<Date> {
-    match NaiveDate::parse_from_str(value.str(), "%Y-%m-%d") {
+    match NaiveDate::parse_from_str(java_trim(value.str()), "%Y-%m-%d") {
         Ok(value) => Ok(Date::from_days(
             (value.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() / 86400) as i32,
         )),
@@ -410,7 +415,7 @@ cast_function!(Date, Date, Date, Date);
 
 #[doc(hidden)]
 pub fn cast_to_Time_s(value: SqlString) -> SqlResult<Time> {
-    match NaiveTime::parse_from_str(value.str(), "%H:%M:%S%.f") {
+    match NaiveTime::parse_from_str(java_trim(value.str()), "%H:%M:%S%.f") {
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "Error converting {value} to TIME: {}",
             e
@@ -555,11 +560,9 @@ pub fn cast_to_SqlDecimal_fN<const P: usize, const S: usize>(
 pub fn cast_to_SqlDecimal_s<const P: usize, const S: usize>(
     value: SqlString,
 ) -> SqlResult<SqlDecimal<P, S>> {
-    let str = value.str().trim();
-    match str.parse() {
-        Err(_) => Err(SqlRuntimeError::from_string(format!(
-            "While converting '{}' to DECIMAL: parse error",
-            value
+    match java_trim(value.str()).parse::<SqlDecimal<P, S>>() {
+        Err(e) => Err(SqlRuntimeError::from_string(format!(
+            "Error converting '{value}' to DECIMAL({P}, {S}): {e}"
         ))),
         Ok(result) => Ok(result),
     }
@@ -570,7 +573,7 @@ pub fn cast_to_SqlDecimal_sN<const P: usize, const S: usize>(
     value: Option<SqlString>,
 ) -> SqlResult<SqlDecimal<P, S>> {
     match value {
-        None => Ok(<SqlDecimal<P, S> as num_traits::Zero>::zero()),
+        None => Err(cast_null("DECIMAL")),
         Some(value) => cast_to_SqlDecimal_s::<P, S>(value),
     }
 }
@@ -757,13 +760,7 @@ pub fn cast_to_SqlDecimalN_fN<const P: usize, const S: usize>(
 pub fn cast_to_SqlDecimalN_s<const P: usize, const S: usize>(
     value: SqlString,
 ) -> SqlResult<Option<SqlDecimal<P, S>>> {
-    match SqlDecimal::<P, S>::from_str(value.str()) {
-        Ok(value) => Ok(Some(value)),
-        Err(_) => Err(SqlRuntimeError::from_string(format!(
-            "Cannot parse {} into a DECIMAL({P}, {S})",
-            value.str(),
-        ))),
-    }
+    r2o(cast_to_SqlDecimal_s::<P, S>(value))
 }
 
 #[doc(hidden)]
@@ -869,7 +866,7 @@ cast_function!(d, F64, f, F32);
 
 #[doc(hidden)]
 pub fn cast_to_d_s(value: SqlString) -> SqlResult<F64> {
-    match value.str().trim().parse::<f64>() {
+    match java_trim(value.str()).parse::<f64>() {
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "Parse error during conversion of '{value}' to DOUBLE: {}",
             e
@@ -943,7 +940,7 @@ cast_function!(f, F32, f, F32);
 
 #[doc(hidden)]
 pub fn cast_to_f_s(value: SqlString) -> SqlResult<F32> {
-    match value.str().trim().parse::<f32>() {
+    match java_trim(value.str()).parse::<f32>() {
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "Parse error during conversion of '{value}' to REAL: {}",
             e
@@ -1713,7 +1710,7 @@ macro_rules! cast_to_i {
 
             #[doc(hidden)]
             pub fn [< cast_to_ $result_type _s >](value: SqlString) -> SqlResult<$result_type> {
-                match value.str().trim().parse::<$result_type>() {
+                match java_trim(value.str()).parse::<$result_type>() {
                     Ok(value) => Ok(value),
                     Err(e) => Err(SqlRuntimeError::from_string(
                         format!("Error converting '{value}' to {}: {}", tn!($result_type), e)
@@ -2992,7 +2989,8 @@ cast_function!(
 
 #[doc(hidden)]
 pub fn cast_to_Timestamp_s(value: SqlString) -> SqlResult<Timestamp> {
-    if let Ok(v) = NaiveDateTime::parse_from_str(value.str(), "%Y-%m-%d %H:%M:%S%.f") {
+    let trimmed = java_trim(value.str());
+    if let Ok(v) = NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%d %H:%M:%S%.f") {
         //println!("Parsed successfully {} using {} into {:?} ({})",
         //         value, "%Y-%m-%d %H:%M:%S%.f", result, result.microseconds());
         return Ok(Timestamp::from_naiveDateTime(v));
@@ -3000,7 +2998,7 @@ pub fn cast_to_Timestamp_s(value: SqlString) -> SqlResult<Timestamp> {
 
     // Try just a date.
     // parse_from_str fails to parse a datetime if there is no time in the format!
-    if let Ok(v) = NaiveDate::parse_from_str(value.str(), "%Y-%m-%d") {
+    if let Ok(v) = NaiveDate::parse_from_str(trimmed, "%Y-%m-%d") {
         let dt = v.and_hms_opt(0, 0, 0).unwrap();
         let result = Timestamp::from_microseconds(dt.and_utc().timestamp_micros());
         //println!("Parsed successfully {} using {} into {:?} ({})",
@@ -3197,7 +3195,7 @@ cast_ts!(d, F64);
 
 #[doc(hidden)]
 pub fn cast_to_TimestampTz_s(value: SqlString) -> SqlResult<TimestampTz> {
-    parse_timestamp_tz(value.str())
+    parse_timestamp_tz(java_trim(value.str()))
 }
 
 cast_function!(TimestampTz, TimestampTz, s, SqlString);
@@ -4413,6 +4411,89 @@ mod tests {
             assert_eq!(
                 cast_to_s_s(SqlString::from_ref("ab🥳cd"), size, fixed).unwrap(),
                 SqlString::from_ref(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn string_casts_trim_like_java() {
+        use crate::{
+            F32, F64, cast_to_Date_s, cast_to_SqlDecimal_s, cast_to_SqlDecimalN_s,
+            cast_to_SqlDecimalN_sN, cast_to_Time_s, cast_to_Timestamp_s, cast_to_TimestampTz_s,
+            cast_to_b_s, cast_to_d_s, cast_to_f_s, cast_to_i32_s,
+        };
+
+        // Java's String.trim removes all characters up to U+0020, but not U+00A0
+        let padded = |s: &str| SqlString::from_ref(&format!("\u{1} \t{s}\n"));
+        let decimal = SqlDecimal::<10, 2>::new(150, 2).unwrap();
+        assert_eq!(
+            cast_to_SqlDecimal_s::<10, 2>(padded("1.5")).unwrap(),
+            decimal
+        );
+        assert_eq!(
+            cast_to_SqlDecimalN_s::<10, 2>(padded("1.5")).unwrap(),
+            Some(decimal)
+        );
+        assert_eq!(
+            cast_to_SqlDecimalN_sN::<10, 2>(Some(padded("1.5"))).unwrap(),
+            Some(decimal)
+        );
+        assert_eq!(cast_to_i32_s(padded("7")).unwrap(), 7);
+        assert_eq!(cast_to_d_s(padded("1.5")).unwrap(), F64::from(1.5f64));
+        assert_eq!(cast_to_f_s(padded("1.5")).unwrap(), F32::from(1.5f32));
+        assert!(cast_to_b_s(padded("TRUE")).unwrap());
+
+        let date = "2020-01-02";
+        let time = "10:11:12.5";
+        let timestamp = "2020-01-02 10:11:12.5";
+        let timestamp_tz = "2020-01-02 10:11:12.5 +02:00";
+        let plain = SqlString::from_ref;
+        assert_eq!(
+            cast_to_Date_s(padded(date)).unwrap(),
+            cast_to_Date_s(plain(date)).unwrap()
+        );
+        assert_eq!(
+            cast_to_Time_s(padded(time)).unwrap(),
+            cast_to_Time_s(plain(time)).unwrap()
+        );
+        assert_eq!(
+            cast_to_Timestamp_s(padded(timestamp)).unwrap(),
+            cast_to_Timestamp_s(plain(timestamp)).unwrap()
+        );
+        assert_eq!(
+            cast_to_Timestamp_s(padded(date)).unwrap(),
+            cast_to_Timestamp_s(plain(date)).unwrap()
+        );
+        assert_eq!(
+            cast_to_TimestampTz_s(padded(timestamp_tz)).unwrap(),
+            cast_to_TimestampTz_s(plain(timestamp_tz)).unwrap()
+        );
+
+        let nbsp = SqlString::from_ref("\u{a0}7");
+        assert!(cast_to_i32_s(nbsp.clone()).is_err());
+        assert!(cast_to_SqlDecimal_s::<10, 2>(nbsp).is_err());
+    }
+
+    #[test]
+    fn string_to_decimal_errors() {
+        use crate::{cast_to_SqlDecimal_s, cast_to_SqlDecimal_sN};
+
+        assert_eq!(
+            cast_to_SqlDecimal_sN::<10, 2>(None)
+                .unwrap_err()
+                .to_string(),
+            "cast of NULL value to non-null type DECIMAL"
+        );
+
+        for (input, reason) in [
+            ("1.5x", "Syntax error in numeric value"),
+            ("123456789", "Value out of range"),
+        ] {
+            assert_eq!(
+                cast_to_SqlDecimal_s::<10, 2>(SqlString::from_ref(input))
+                    .unwrap_err()
+                    .to_string(),
+                format!("Error converting '{input}' to DECIMAL(10, 2): {reason}")
             );
         }
     }
