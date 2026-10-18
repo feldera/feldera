@@ -855,8 +855,8 @@ macro_rules! into_numeric {
                         Variant::UBigInt(x) => [< cast_to_ $type_name _u64 >](x),
                         Variant::Real(x) => [< cast_to_ $type_name _f >](x),
                         Variant::Double(x) => [< cast_to_ $type_name _d >](x),
-                        Variant::SqlDecimal(d) => match i128::try_from(DynamicDecimal::new(d.0, d.1)) {
-                            Ok(value) => [< cast_to_ $type_name _i128 >](value),
+                        Variant::SqlDecimal(d) => match <$type>::try_from(DynamicDecimal::new(d.0, d.1)) {
+                            Ok(value) => Ok(value),
                             Err(_) => Err(SqlRuntimeError::from_string(format!(
                                 "variant is {}, which cannot be converted to {}",
                                 typeof_(value),

@@ -1179,4 +1179,41 @@ public class VariantTests extends SqlIoTest {
                  2024-02-02
                 (1 row)""");
     }
+
+    @Test
+    public void issue7528() {
+        // A cast of a VARIANT holding a DECIMAL, alone or in a collection, keeps the fraction
+        this.qst("""
+                SELECT CAST(PARSE_JSON('1.5') AS DOUBLE) = 1.5e0;
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(PARSE_JSON('1.5') AS REAL) = CAST(1.5 AS REAL);
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(PARSE_JSON('[1.5, -2.75]') AS DOUBLE ARRAY) = ARRAY[1.5e0, -2.75e0];
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(PARSE_JSON('[1.5, -2.75]') AS REAL ARRAY) =
+                       ARRAY[CAST(1.5 AS REAL), CAST(-2.75 AS REAL)];
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(PARSE_JSON('{"a": 1.5, "b": -2.75}') AS MAP<VARCHAR, DOUBLE>) =
+                       MAP['a', 1.5e0, 'b', -2.75e0];
+                 r
+                ---
+                 true
+                (1 row)""");
+    }
 }
