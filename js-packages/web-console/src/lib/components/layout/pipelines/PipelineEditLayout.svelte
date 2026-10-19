@@ -199,6 +199,8 @@
       show: isScreenLg.current
     }
   ])
+
+  const sideGutters = 'px-2 md:px-5'
 </script>
 
 {#snippet reviewPipelineChanges()}
@@ -229,8 +231,7 @@
 {/snippet}
 
 <div class="flex h-full w-full flex-col">
-  <!-- 20px side gutters on this page, for the header and the panels below it alike. -->
-  <AppHeader class="px-2 md:px-5">
+  <AppHeader class={sideGutters}>
     {#snippet afterStart()}
       <!-- One row that wraps: the status chip drops under the name only when they don't fit. -->
       <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
@@ -321,7 +322,7 @@
     {/snippet}
   </AppHeader>
   <!-- From xl the pipelines list pane's resizer adds 16px on the left, hence the 4px. -->
-  <PaneGroup direction="horizontal" class="!overflow-visible px-2 pb-2 md:pr-5 md:pl-5 xl:pl-1">
+  <PaneGroup direction="horizontal" class="!overflow-visible {sideGutters} pb-2 xl:pl-1">
     <Pane
       defaultSize={15}
       minSize={10}
