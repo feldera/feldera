@@ -230,7 +230,7 @@
 
 <div class="flex h-full w-full flex-col">
   <!-- 20px side gutters on this page, for the header and the panels below it alike. -->
-  <AppHeader paddingX="px-2 md:px-5">
+  <AppHeader class="px-2 md:px-5">
     {#snippet afterStart()}
       <!-- One row that wraps: the status chip drops under the name only when they don't fit. -->
       <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
@@ -388,7 +388,9 @@
                   {statusBarEnd}
                 ></PipelineCodePanel>
               {:else}
-                <div class="panel flex h-full flex-col justify-end px-2 pt-2 pb-0">
+                <div
+                  class="flex h-full flex-col justify-end rounded-lg bg-surface-50-950 px-2 pt-2 pb-0"
+                >
                   <div class="-mx-8 -mt-2 flex flex-1 flex-col items-center gap-4">
                     <Progress class="h-1 w-full px-4" value={null} max={100}>
                       <Progress.Track>
@@ -421,7 +423,7 @@
                     bind:currentTab={currentInteractionTab}
                   ></InteractionPanel>
                 {:else}
-                  <div class="panel flex flex-1 px-2 pt-3 pb-2"></div>
+                  <div class="flex flex-1 rounded-lg bg-surface-50-950 px-2 pt-3 pb-2"></div>
                 {/if}
               </Pane>
             {/if}
@@ -440,7 +442,7 @@
                 bind:currentTab={currentMonitoringTab}
               ></MonitoringPanel>
             {:else}
-              <div class="panel flex flex-1 px-2 pt-3 pb-2"></div>
+              <div class="flex flex-1 rounded-lg bg-surface-50-950 px-2 pt-3 pb-2"></div>
             {/if}
           </Pane>
         {/if}

@@ -95,7 +95,7 @@
        skeleton `<Tabs>` machine is bypassed entirely — it only contributed ARIA roles and
        keyboard nav that the SegmentedControl already provides for its own machine. The
        content area below is rendered manually (it never relied on Tabs.Content). -->
-  <div class="panel flex h-full flex-col space-y-0! px-2 pt-4 pb-2">
+  <div class="bg-surface-50-950 rounded-lg flex h-full flex-col space-y-0! px-2 pt-4 pb-2">
     <div class="flex w-full min-w-0 flex-wrap items-center gap-2 mb-0 {headerClass}">
       <SegmentedControl
         value={currentTab}
@@ -111,7 +111,7 @@
   <Tabs
     value={currentTab}
     onValueChange={(e) => (currentTab = e.value)}
-    class="panel flex h-full flex-col space-y-0! px-2 pt-0 pb-2"
+    class="bg-surface-50-950 rounded-lg flex h-full flex-col space-y-0! px-2 pt-0 pb-2"
   >
     <!-- Header. `flex-wrap` lets the active tabBarEnd contents (selectors, controls, inputs)
          drop to subsequent rows when the panel is narrowed, instead of forcing a horizontal
