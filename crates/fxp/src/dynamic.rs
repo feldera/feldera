@@ -452,8 +452,10 @@ impl From<DynamicDecimal> for f64 {
 }
 
 impl From<DynamicDecimal> for f32 {
+    /// Divides in `f64` and rounds the quotient to `f32`, as the conversion
+    /// from `Fixed` through `f64` does.
     fn from(value: DynamicDecimal) -> Self {
-        value.significand() as f32 / pow10(value.exponent() as usize) as f32
+        f64::from(value) as f32
     }
 }
 

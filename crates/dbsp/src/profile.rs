@@ -554,6 +554,7 @@ mod tests {
         operator::Generator,
         utils::Tup2,
     };
+    use feldera_types::size::ConfigSize;
     use std::io::Read;
 
     /// Runs a circuit that keeps an integral spine busy and returns its profile.
@@ -568,7 +569,7 @@ mod tests {
             CircuitConfig::with_workers(workers).with_temporary_storage(storage.path());
         // Spill every batch, so the mergers fall behind the ingest and the spine
         // reaches the batch count at which it applies backpressure.
-        config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+        config.storage.as_mut().unwrap().options.min_spill_size = Some(ConfigSize::ZERO);
 
         let (mut dbsp, input) = Runtime::init_circuit(config, move |circuit| {
             let (stream, input) = circuit.add_input_indexed_zset::<i32, i32>();

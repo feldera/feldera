@@ -183,10 +183,37 @@ where
         + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
+    iceberg_input_pipeline_with_storage::<T>(
+        schema,
+        table_properties,
+        config,
+        output_file_path,
+        None,
+        false,
+    )
+}
+
+/// Like [`iceberg_input_pipeline`], with storage in `storage_dir`, if any, so
+/// that the pipeline can checkpoint and resume, and with the input connector
+/// `distributed` if requested.
+fn iceberg_input_pipeline_with_storage<T>(
+    schema: &[Field],
+    table_properties: &[(&str, &str)],
+    config: serde_json::Value,
+    output_file_path: &str,
+    storage_dir: Option<&std::path::Path>,
+    distributed: bool,
+) -> (Controller, Receiver<String>)
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
     init_logging();
 
     // Create controller.
-    let config = serde_json::from_value(json!({
+    let mut config = json!({
       "name": "test",
       "workers": 4,
       "outputs": {
@@ -215,8 +242,14 @@ where
           }
         }
       }
-    }))
-    .unwrap();
+    });
+    if let Some(storage_dir) = storage_dir {
+        config["storage_config"] = json!({"path": storage_dir});
+    }
+    if distributed {
+        config["inputs"]["test_input1"]["distributed"] = json!(true);
+    }
+    let config = serde_json::from_value(config).unwrap();
 
     let schema = schema.to_vec();
     let table_properties: Vec<(String, String)> = table_properties
@@ -226,6 +259,8 @@ where
 
     let (err_sender, err_receiver) = crossbeam::channel::unbounded();
 
+    // A checkpoint needs a persistent id for the output.
+    let persistent_output_id = storage_dir.map(|_| "output");
     let controller = Controller::with_test_config(
         move |workers| {
             let table_properties: Vec<(&str, &str)> = table_properties
@@ -236,7 +271,7 @@ where
                 workers,
                 &schema,
                 &table_properties,
-                &[None],
+                &[persistent_output_id],
             ))
         },
         &config,
@@ -884,6 +919,27 @@ fn follow_table_op(op: &str, table: &str, chunk: &[IcebergTestStruct]) -> i64 {
         .unwrap_or_else(|_| panic!("'{script} --op={op}' printed unexpected output: {last:?}"))
 }
 
+/// Create the REST-catalog test table `table` without any snapshot.
+#[cfg(feature = "iceberg-tests-follow")]
+fn follow_table_create_empty(table: &str) {
+    let script = "../iceberg/src/test/follow_table.py";
+    let python = env_or("FELDERA_ICEBERG_PYTHON", "python3");
+    let output = std::process::Command::new(python)
+        .arg(script)
+        .arg("--op=create-empty")
+        .arg(format!("--table={table}"))
+        .output()
+        .unwrap_or_else(|e| panic!("failed to run '{script}': {e}"));
+    if !output.status.success() {
+        panic!(
+            "'{script} --op=create-empty' failed (status {}):\nstdout: {}\nstderr: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+}
+
 /// Read a single custom metric of the Iceberg connector, or `0.0` if absent.
 #[cfg(feature = "iceberg-tests-follow")]
 fn iceberg_metric(pipeline: &Controller, name: &str) -> f64 {
@@ -983,6 +1039,133 @@ fn iceberg_rest_follow_snapshot_and_follow() {
         assert_eq!(zset.len_upper_bound(), 10);
         assert_eq!(zset, expected_zset(&all));
     });
+}
+
+/// `snapshot_and_follow`: a connector that resumes from a checkpoint taken
+/// while it followed the table continues to follow it, without reading the
+/// snapshot again.
+#[test]
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_rest_follow_resume_does_not_reread_snapshot() {
+    use dbsp::trace::BatchReader;
+
+    let all = data(10);
+    let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let table = &format!("{ns}.resume_follow");
+    let storage_dir = tempfile::TempDir::new().unwrap();
+    let run = |out: &NamedTempFile| {
+        iceberg_input_pipeline_with_storage::<IcebergTestStruct>(
+            &IcebergTestStruct::schema_with_lateness(),
+            &[],
+            rest_follow_config(table, "snapshot_and_follow"),
+            &out.path().display().to_string(),
+            Some(storage_dir.path()),
+            false,
+        )
+    };
+
+    // Read the snapshot, then suspend while following.
+    follow_table_op("create", table, &all[..5]);
+    let first_out = NamedTempFile::new().unwrap();
+    let (pipeline, _errors) = run(&first_out);
+    pipeline.start();
+    wait(|| output_record_count(first_out.path()) >= 5, 120_000)
+        .expect("timed out reading the snapshot");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    pipeline.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(100))
+        .expect("timed out suspending")
+        .expect("suspend failed");
+    pipeline.stop().unwrap();
+
+    // Resume after another snapshot.  Only its rows are new.
+    follow_table_op("append", table, &all[5..]);
+    let second_out = NamedTempFile::new().unwrap();
+    let (pipeline, _errors) = run(&second_out);
+    pipeline.start();
+    wait(|| output_record_count(second_out.path()) >= 5, 120_000)
+        .expect("timed out following the table");
+    // Give a read of the snapshot time to show up.
+    std::thread::sleep(std::time::Duration::from_secs(5));
+    pipeline.stop().unwrap();
+
+    let zset = output_zset(second_out.path());
+    assert_eq!(zset.len_upper_bound(), 5, "the snapshot was read again");
+    assert_eq!(zset, expected_zset(&all[5..]));
+}
+
+/// `snapshot_and_follow` on a table with no snapshot, read by a distributed
+/// connector in a transaction: the empty snapshot's transaction commits, so it
+/// does not hold back the pipeline until the table gets a snapshot.  A
+/// connector that resumes then follows the table from its first snapshot.
+#[test]
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_rest_follow_empty_table() {
+    use dbsp::trace::BatchReader;
+    use feldera_types::adapter_stats::TransactionStatus;
+
+    let all = data(5);
+    let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+    let table = &format!("{ns}.empty_follow");
+    let storage_dir = tempfile::TempDir::new().unwrap();
+    let run = |out: &NamedTempFile| {
+        iceberg_input_pipeline_with_storage::<IcebergTestStruct>(
+            &IcebergTestStruct::schema_with_lateness(),
+            &[],
+            rest_follow_config_with(
+                table,
+                "snapshot_and_follow",
+                "transaction_mode",
+                json!("snapshot"),
+            ),
+            &out.path().display().to_string(),
+            Some(storage_dir.path()),
+            true,
+        )
+    };
+
+    follow_table_create_empty(table);
+    let first_out = NamedTempFile::new().unwrap();
+    let (pipeline, _errors) = run(&first_out);
+    pipeline.start();
+    wait(
+        || iceberg_metric(&pipeline, "input_connector_iceberg_phase") > 0.0,
+        60_000,
+    )
+    .expect("timed out reaching follow mode");
+    wait(
+        || {
+            pipeline.api_status(false).global_metrics.transaction_status
+                == TransactionStatus::NoTransaction
+        },
+        10_000,
+    )
+    .expect("the empty snapshot's transaction stayed open");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    pipeline.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(100))
+        .expect("timed out suspending")
+        .expect("suspend failed");
+    pipeline.stop().unwrap();
+
+    // The table gets its first snapshot.  The connector follows it.
+    follow_table_op("append", table, &all);
+    let second_out = NamedTempFile::new().unwrap();
+    let (pipeline, _errors) = run(&second_out);
+    pipeline.start();
+    wait(|| output_record_count(second_out.path()) >= 5, 120_000)
+        .expect("timed out following the table");
+    assert_eq!(
+        iceberg_metric(&pipeline, "input_connector_iceberg_follow_records_total"),
+        5.0
+    );
+    pipeline.stop().unwrap();
+
+    let zset = output_zset(second_out.path());
+    assert_eq!(zset.len_upper_bound(), 5);
+    assert_eq!(zset, expected_zset(&all));
 }
 
 /// `follow`: no initial snapshot; a snapshot committed after startup is tailed.

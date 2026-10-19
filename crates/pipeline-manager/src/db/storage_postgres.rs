@@ -1957,7 +1957,18 @@ impl StoragePostgres {
         #[cfg(feature = "postgresql_embedded")]
         if db_config.uses_postgres_embed() {
             let database_dir = pg_embed_config.pg_embed_data_dir();
-            let pg_inst = pg_setup::install(database_dir, true, Some(8082)).await?;
+            let port = pg_embed_config.pg_embed_port;
+            let pg_inst = pg_setup::install(database_dir, true, Some(port))
+                .await
+                .inspect_err(|_| {
+                    // Postgres only reports that it could not start; name the
+                    // common cause, which is otherwise hidden in its own log.
+                    if std::net::TcpListener::bind(("127.0.0.1", port)).is_err() {
+                        tracing::error!(
+                            "Embedded Postgres could not start because port {port} is already in use; choose another port with --pg-embed-port"
+                        );
+                    }
+                })?;
             let db_name = "postgres";
             if !pg_inst.database_exists(db_name).await? {
                 pg_inst.create_database(db_name).await?;

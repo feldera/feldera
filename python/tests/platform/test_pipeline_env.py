@@ -1,6 +1,6 @@
 from feldera import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
-from tests import TEST_CLIENT
+from tests import TEST_CLIENT, runs_on_gen2
 
 from .helper import cleanup_pipeline, gen_pipeline_name
 
@@ -37,6 +37,15 @@ def test_pipeline_runtime_env_is_visible_in_udf(pipeline_name):
 
         pub fn read_env(_i: i32) -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
             Ok(std::env::var("PIPELINE_E2E_ENV").ok().map(SqlString::from))
+        }
+    """
+    if runs_on_gen2():
+        udf_rust = """
+        use feldera_udf::prelude::*;
+
+        #[feldera_udf]
+        pub fn read_env(_i: i32) -> Option<String> {
+            std::env::var("PIPELINE_E2E_ENV").ok()
         }
     """
 

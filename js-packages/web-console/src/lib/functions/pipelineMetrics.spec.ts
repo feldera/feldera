@@ -5,7 +5,9 @@ import { formatDuration } from './format'
 import {
   accumulatePipelineMetrics,
   calcPipelineThroughput,
-  multihostMemoryLimitMb,
+  configSizeBytes,
+  multihostMemoryLimitBytes,
+  resourceSizeBytes,
   staleSampleCount,
   timeSeriesAxisMax
 } from './pipelineMetrics'
@@ -153,27 +155,68 @@ describe('calcPipelineThroughput', () => {
   })
 })
 
-describe('multihostMemoryLimitMb', () => {
+describe('multihostMemoryLimitBytes', () => {
   it('returns the per-host limit unchanged for a single host', () => {
-    expect(multihostMemoryLimitMb(2048, 1)).toBe(2048)
+    expect(multihostMemoryLimitBytes(2048, 1)).toBe(2048)
   })
 
   it('scales the per-host limit by the number of hosts in a multihost deployment', () => {
     // The reported memory metric sums RSS across all hosts, so the limit line
     // must reflect the aggregate ceiling, not the per-host limit.
-    expect(multihostMemoryLimitMb(2048, 3)).toBe(3 * 2048)
+    expect(multihostMemoryLimitBytes(2048, 3)).toBe(3 * 2048)
   })
 
   it('treats a missing or non-positive host count as a single host', () => {
-    expect(multihostMemoryLimitMb(2048, undefined)).toBe(2048)
-    expect(multihostMemoryLimitMb(2048, null)).toBe(2048)
-    expect(multihostMemoryLimitMb(2048, 0)).toBe(2048)
+    expect(multihostMemoryLimitBytes(2048, undefined)).toBe(2048)
+    expect(multihostMemoryLimitBytes(2048, null)).toBe(2048)
+    expect(multihostMemoryLimitBytes(2048, 0)).toBe(2048)
   })
 
   it('returns undefined when no memory limit is configured', () => {
-    expect(multihostMemoryLimitMb(undefined, 3)).toBeUndefined()
-    expect(multihostMemoryLimitMb(null, 3)).toBeUndefined()
-    expect(multihostMemoryLimitMb(0, 3)).toBeUndefined()
+    expect(multihostMemoryLimitBytes(undefined, 3)).toBeUndefined()
+    expect(multihostMemoryLimitBytes(null, 3)).toBeUndefined()
+    expect(multihostMemoryLimitBytes(0, 3)).toBeUndefined()
+  })
+})
+
+describe('configSizeBytes', () => {
+  it('reads the units the pipeline reads', () => {
+    expect(configSizeBytes('4096')).toBe(4096)
+    expect(configSizeBytes('4096B')).toBe(4096)
+    expect(configSizeBytes('1k')).toBe(1000)
+    expect(configSizeBytes('16G')).toBe(16e9)
+    expect(configSizeBytes('4Gi')).toBe(4 * 2 ** 30)
+    expect(configSizeBytes('512MiB')).toBe(512 * 2 ** 20)
+    expect(configSizeBytes('1.5Gi')).toBe(1.5 * 2 ** 30)
+    expect(configSizeBytes('0')).toBe(0)
+  })
+
+  it('reads a bare number in the unit of the deprecated spelling', () => {
+    expect(configSizeBytes(16000, 'M')).toBe(16e9)
+    expect(configSizeBytes(4096)).toBe(4096)
+  })
+
+  it('returns undefined for an unset or malformed size', () => {
+    expect(configSizeBytes(undefined)).toBeUndefined()
+    expect(configSizeBytes(null)).toBeUndefined()
+    expect(configSizeBytes('')).toBeUndefined()
+    expect(configSizeBytes('Gi')).toBeUndefined()
+    expect(configSizeBytes('1g')).toBeUndefined()
+    expect(configSizeBytes('-1Gi')).toBeUndefined()
+    expect(configSizeBytes(-1)).toBeUndefined()
+  })
+})
+
+describe('resourceSizeBytes', () => {
+  it('prefers the current name and falls back to the deprecated megabyte count', () => {
+    expect(resourceSizeBytes({ memory_max: '16Gi' }, 'memory_max', 'memory_mb_max')).toBe(
+      16 * 2 ** 30
+    )
+    expect(resourceSizeBytes({ memory_mb_max: 16000 }, 'memory_max', 'memory_mb_max')).toBe(16e9)
+    // A bare number under the current name counts megabytes too.
+    expect(resourceSizeBytes({ memory_max: 16000 }, 'memory_max', 'memory_mb_max')).toBe(16e9)
+    expect(resourceSizeBytes({}, 'memory_max', 'memory_mb_max')).toBeUndefined()
+    expect(resourceSizeBytes(undefined, 'memory_max', 'memory_mb_max')).toBeUndefined()
   })
 })
 

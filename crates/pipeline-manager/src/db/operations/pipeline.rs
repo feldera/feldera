@@ -32,13 +32,42 @@ use crate::db::types::utils::{
 use crate::db::types::version::Version;
 use deadpool_postgres::Transaction;
 use feldera_types::config::FtConfig;
+use feldera_types::config::ResourceConfig;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus, RuntimeStatus};
+use feldera_types::size::ConfigSize;
 use rmp_serde::{from_slice, to_vec};
 use serde_json::json;
 use tokio_postgres::Row;
 use tracing::warn;
 use uuid::Uuid;
+
+/// Reports whether a storage size of `resources` differs between two runtime
+/// configurations.
+///
+/// The comparison is on meaning rather than on text, because one setting
+/// carries two spellings: `storage_mb_max: 1000` and `storage_max: "1G"` are
+/// one value, and rewriting the deprecated spelling as the current one must
+/// not be refused as a storage change. Values that do not deserialize fall
+/// back to comparing the raw JSON of `key`, which is what the caller did
+/// before.
+fn storage_size_differs(
+    new: Option<&serde_json::Value>,
+    current: Option<&serde_json::Value>,
+    size: fn(&ResourceConfig) -> Option<ConfigSize>,
+    key: &str,
+) -> bool {
+    fn parse(value: Option<&serde_json::Value>) -> Option<ResourceConfig> {
+        match value {
+            None => Some(ResourceConfig::default()),
+            Some(value) => serde_json::from_value(value.clone()).ok(),
+        }
+    }
+    match (parse(new), parse(current)) {
+        (Some(new), Some(current)) => size(&new) != size(&current),
+        _ => new.map(|v| v.get(key)) != current.map(|v| v.get(key)),
+    }
+}
 
 /// Reports whether two `fault_tolerance` values describe different pipelines.
 ///
@@ -609,25 +638,21 @@ pub(crate) async fn update_pipeline(
             ) {
                 not_allowed.push("`runtime_config.fault_tolerance`");
             }
-            if runtime_config
-                .get("resources")
-                .map(|v| v.get("storage_mb_max"))
-                != current
-                    .runtime_config
-                    .get("resources")
-                    .map(|v| v.get("storage_mb_max"))
-            {
-                not_allowed.push("`runtime_config.resources.storage_mb_max`");
+            if storage_size_differs(
+                runtime_config.get("resources"),
+                current.runtime_config.get("resources"),
+                |resources| resources.storage_max,
+                "storage_max",
+            ) {
+                not_allowed.push("`runtime_config.resources.storage_max`");
             }
-            if runtime_config
-                .get("resources")
-                .map(|v| v.get("storage_mb_min"))
-                != current
-                    .runtime_config
-                    .get("resources")
-                    .map(|v| v.get("storage_mb_min"))
-            {
-                not_allowed.push("`runtime_config.resources.storage_mb_min`");
+            if storage_size_differs(
+                runtime_config.get("resources"),
+                current.runtime_config.get("resources"),
+                |resources| resources.storage_min,
+                "storage_min",
+            ) {
+                not_allowed.push("`runtime_config.resources.storage_min`");
             }
             if runtime_config.get("resources").map(|v| v.get("namespace"))
                 != current
@@ -927,11 +952,12 @@ pub(crate) async fn set_program_status(
             )
         }
         ProgramStatus::Success => {
-            // Two shapes reach Success. A Rust pipeline arrives from CompilingRust,
-            // where its program info and SQL log are already stored, and delivers a
-            // binary plus a Rust log. A Gen-2 pipeline arrives straight from
-            // CompilingSql, so it carries its program info and SQL log here and
-            // delivers no binary and no Rust log. The Rust log is therefore present
+            // Two shapes reach Success. A pipeline arrives from CompilingRust, where its
+            // program info and SQL log are already stored, and delivers a binary plus a
+            // Rust log; for a Gen-2 pipeline with Rust UDFs, the binary checksums describe
+            // its UDF library. A Gen-2 pipeline without Rust UDFs arrives
+            // straight from CompilingSql, so it carries its program info and SQL log here
+            // and delivers no binary and no Rust log. The Rust log is therefore present
             // exactly when a binary was built, and a half-delivered binary is a bug.
             assert!(
                 new_program_error_system_error.is_none()
@@ -2116,9 +2142,10 @@ pub(crate) async fn count_pipelines_needing_compilation(
 ///
 /// Both compiling statuses are included because each one covers a window in which an
 /// artifact is already on disk while the checksum naming it is not yet in the row.
-/// `CompilingRust` covers the binary and program info a legacy program delivers;
-/// `CompilingSql` covers the program info a Gen-2 program delivers, which is its only
-/// artifact and is written before the row moves to `Success`.
+/// `CompilingRust` covers the binary and program info a legacy program delivers, and the
+/// UDF library and program info a Gen-2 program with Rust UDFs delivers; `CompilingSql`
+/// covers the program info a Gen-2 program without them delivers. Either is written before
+/// the row moves to `Success`.
 pub(crate) async fn list_pipeline_programs_across_all_tenants(
     txn: &Transaction<'_>,
 ) -> Result<Vec<PipelineProgramArtifacts>, DBError> {

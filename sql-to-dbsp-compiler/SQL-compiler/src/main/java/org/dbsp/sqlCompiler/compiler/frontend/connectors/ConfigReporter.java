@@ -39,6 +39,25 @@ public final class ConfigReporter {
         this.outerStart = outerStart;
     }
 
+    /** Turns a JSON Pointer suffix such as {@code "a/b"} into the field name {@code "a.b"}. */
+    public static String fieldName(String relativePath) {
+        return relativePath.replace('/', '.');
+    }
+
+    /**
+     * Names the faulty part of a value for an error message: just the part when it is
+     * the whole value, otherwise the part and the value it came from, as in
+     * {@code 'Gi512Mi' in size '1Gi512Mi'}.
+     *
+     * @param part The faulty part.
+     * @param text The whole value as written.
+     * @param kind What the value is, such as {@code "size"}.
+     */
+    public static String partOf(String part, String text, String kind) {
+        String quoted = Utilities.singleQuote(part);
+        return part.equals(text) ? quoted : quoted + " in " + kind + " " + Utilities.singleQuote(text);
+    }
+
     /**
      * Report a warning at the key token identified by
      * {@code relativePath} within the config object.  {@code relativePath} is a

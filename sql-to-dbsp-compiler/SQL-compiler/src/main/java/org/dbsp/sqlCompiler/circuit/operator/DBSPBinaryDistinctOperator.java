@@ -29,6 +29,16 @@ public final class DBSPBinaryDistinctOperator extends DBSPBinaryOperator
     }
 
     @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPBinaryDistinctOperator otherOperator = other.as(DBSPBinaryDistinctOperator.class);
+        if (otherOperator == null)
+            return false;
+        return this.positive == otherOperator.positive;
+    }
+
+    @Override
     public void accept(CircuitVisitor visitor) {
         visitor.push(this);
         VisitDecision decision = visitor.preorder(this);

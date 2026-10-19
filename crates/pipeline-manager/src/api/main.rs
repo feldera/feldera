@@ -340,6 +340,7 @@ It contains the following fields:
         feldera_ir::Op,
         feldera_ir::Condition,
         feldera_types::config::ProgramIr,
+        feldera_types::config::UdfLibrary,
 
         // Storage
         crate::db::types::storage::StorageStatus,
@@ -472,6 +473,7 @@ It contains the following fields:
         feldera_types::transport::delta_table::DeltaTableTransactionMode,
         feldera_types::transport::delta_table::DeltaTableWriteMode,
         feldera_types::transport::delta_table::DeltaVariantEncoding,
+        feldera_types::transport::delta_table::DeltaTableUpdateMode,
         feldera_types::transport::delta_table::DeltaTableReaderConfig,
         feldera_types::transport::delta_table::DeltaTableWriterConfig,
         feldera_types::transport::dynamodb::DynamoDBWriteMode,

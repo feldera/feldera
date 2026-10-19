@@ -1,7 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ExternalFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.ExternalFunction;
 
 /** Represents a CREATE FUNCTION statement */
 public class CreateFunctionStatement extends RelStatement {

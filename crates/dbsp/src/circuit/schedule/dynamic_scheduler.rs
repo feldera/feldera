@@ -804,8 +804,8 @@ mod test {
             circuit_builder::MetadataExchange,
             operator_traits::{Operator, SinkOperator},
         },
-        operator::{Generator, communication::test_circuit},
-        utils::test::init_test_logger,
+        operator::Generator,
+        utils::test::{init_test_logger, multihost::run_on_hosts},
     };
 
     /// Publishes the number of the current transaction as its metadata in
@@ -919,7 +919,7 @@ mod test {
     fn first_step_sees_start_transaction_metadata() {
         init_test_logger();
         for workers in [1, 2, 4] {
-            test_circuit(workers, 1, check_first_step_metadata);
+            run_on_hosts(workers, 1, check_first_step_metadata);
         }
     }
 
@@ -930,7 +930,7 @@ mod test {
     fn first_step_sees_start_transaction_metadata_multihost() {
         init_test_logger();
         for (workers, hosts) in [(2, 2), (4, 2), (3, 3)] {
-            test_circuit(workers, hosts, check_first_step_metadata);
+            run_on_hosts(workers, hosts, check_first_step_metadata);
         }
     }
 }

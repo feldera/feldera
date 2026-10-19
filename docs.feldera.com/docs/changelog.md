@@ -10,11 +10,132 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Experimental: the Delta Lake output connector can keep a table equal to
+  its view instead of appending a change log. Set `update_mode` to `merge`: the
+  connector appends each new row version and marks the old one deleted
+  in a deletion vector, so a reader sees one live row per key and a
+  flush never rewrites a data file. An existing target table must have
+  `delta.enableDeletionVectors` set, and the pipeline must be the only
+  process writing rows to it. `optimize_interval` has the
+  connector compact the table itself, which reclaims the superseded
+  rows. See [merge mode](/connectors/sinks/delta#merge-mode).
+
+## v0.367.0
+
+- Pipelines without fault tolerance no longer write a checkpoint on
+  `SIGTERM`.  On Kubernetes, Force Stop also sends `SIGTERM`, so such a
+  pipeline could keep a checkpoint the user did not ask for.
+
+- Incompatible change (SQL compiler): a pipeline compiled with this release
+  cannot reuse the state that an earlier release saved for its views.  When
+  the pipeline resumes from such a checkpoint, it must bootstrap all its views
+  from its tables, which takes more time than a typical bootstrap.  Materialized tables can reuse their existing saved state.
+
+- Incompatible change (SQL compiler): a pipeline whose program uses `NOW()`
+  cannot resume from a checkpoint that an earlier release saved.
+  Bootstrapping a pipeline compiled with a previous version of the
+  compiler will be impossible. After recompilation stop the pipeline, clear its storage, and start it again.  The
+  pipeline then ingests all its input data again.
+
 - Avro input connector: the new `cdc_field` property names a field that holds
   the operation type of each raw Avro record: `I` (insert), `U` (upsert), or
   `D` (delete).  A Feldera Avro output connector with `cdc_field` set writes
   these values.  See
   [Ingesting change data capture (CDC) records](/formats/avro#ingesting-cdc-records).
+
+- Incompatible change (pipeline process): the pipeline binary reads its
+  configuration file as JSON only, so its `--config-file` argument must name
+  a JSON file. The pipeline manager writes `config.json` and no longer writes
+  `config.yaml`. A pipeline binary has preferred `config.json` since release
+  0.155.0, so a pipeline pinned to that release or a later one is not
+  affected. In the Enterprise edition, the pipeline `ConfigMap` carries only
+  `config.json`.
+
+- Bug fix (Iceberg input connector): in `snapshot_and_follow` mode, a pipeline
+  that restarted from a checkpoint taken after the connector read the
+  initial snapshot read that snapshot again, so a table without a primary
+  key got duplicate rows.  Now the connector continues to follow the table
+  after the last snapshot that it ingested.  A checkpoint taken before this
+  fix still makes the connector read the snapshot again once.  See
+  [Iceberg input connector](/connectors/sources/iceberg).
+
+- In a multihost pipeline, a Kafka input connector can now divide the
+  partitions of its topic among the hosts, and a Delta Lake or Iceberg input
+  connector can divide the data files of its snapshot.  Set the new connector
+  attribute [`distributed`](/connectors#distributed) to `true`.  See
+  distributed connectors for
+  [Kafka](/connectors/sources/kafka#distributed-connectors),
+  [Delta Lake](/connectors/sources/delta#distributed-connectors), and
+  [Iceberg](/connectors/sources/iceberg#distributed-connectors).
+
+- Deprecation (pipeline and connector configuration): every size setting now
+  takes a string with a unit, in the format Kubernetes uses for a quantity,
+  such as `"16G"`, `"4Gi"`, `"512Mi"` or `"4096"`. Accepted units are `k`,
+  `M`, `G`, `T`, `P` and `E` (powers of a thousand) and `Ki`, `Mi`, `Gi`,
+  `Ti`, `Pi` and `Ei` (powers of 1024), each with or without a trailing `B`;
+  a bare number is a number of bytes. A setting whose old name counted
+  megabytes or mebibytes refuses a quoted number with no unit, such as
+  `"16000"`, since the unquoted `16000` meant megabytes: write `"16G"`. Each
+  setting loses the unit from its name, so `memory_mb_max` becomes
+  `memory_max`, and the settings whose name carried no usable unit take a
+  name that says what they measure, as the table below shows. The old name remains a deprecated alias of the new one
+  and takes the bare number it always took, so an existing configuration
+  keeps working, and the pipeline logs a warning that names the setting and
+  the value to write instead. Writing both names of one setting is an error.
+  The old names are removed no earlier than release 0.369.0.
+
+  The NATS consumer's `max_bytes` is not part of this scheme: it is a NATS
+  pull option passed through as NATS spells it.
+
+  | Old name (unit)                          | New name                       |
+  |------------------------------------------|--------------------------------|
+  | `max_rss_mb` (MB)                        | `max_rss`                      |
+  | `datafusion_memory_mb` (MB)              | `datafusion_memory`            |
+  | `storage.cache_mib` (MiB)                | `storage.cache_size`           |
+  | `storage.min_storage_bytes` (bytes)      | `storage.min_spill_size`       |
+  | `storage.min_step_storage_bytes` (bytes) | `storage.min_step_spill_size`  |
+  | `resources.memory_mb_min`, `resources.memory_mb_max` (MB) | `resources.memory_min`, `resources.memory_max` |
+  | `resources.storage_mb_min`, `resources.storage_mb_max` (MB) | `resources.storage_min`, `resources.storage_max` |
+  | `resources.autoscaling.storage.scale_threshold_available_mb` (MB) | `resources.autoscaling.storage.scale_threshold_available` |
+  | connector `max_queued_bytes` (bytes)     | `max_queued_size`              |
+  | `dev_tweaks.storage_mb_max` (MiB)        | `dev_tweaks.storage_max`       |
+  | `dev_tweaks.fbuf_slab_bytes_per_class`, `lazy_input_map_key_block_bytes`, `exchange_channel_capacity_bytes` (bytes) | `fbuf_slab_size_per_class`, `lazy_input_map_key_block_size`, `exchange_channel_capacity` |
+  | File input `buffer_size_bytes` (bytes)   | `buffer_size`                  |
+  | DynamoDB and Postgres output `max_buffer_size_bytes` (bytes) | `max_buffer_size` |
+  | Postgres CDC `batch.max_bytes` (bytes)   | `batch.max_size`               |
+  | `deployment_config.resources.memory_mb_min`, `memory_mb_max` (MB) | `memory_min`, `memory_max` |
+
+  For a client that reads the configuration back:
+
+  - A configuration is stored under the new names the next time it is saved,
+    and the API then returns it under those names, as `"16G"` rather than
+    `16000`. A pipeline stored before this change and not saved since comes
+    back under the old names, so a client must accept either.
+  - The OpenAPI schema lists only the new names.
+  - The Python SDK's `Resources`, `Storage` and `RuntimeConfig` take the new
+    arguments as strings such as `"16Gi"`, and read them back from either
+    spelling. The old arguments and attributes such as `memory_mb_max` remain
+    as deprecated properties that return a whole number of the old unit and
+    warn. The SDK writes each setting to the server under the name it was
+    given, so code that uses the old arguments keeps working against an
+    older server.
+  - The web console reads the memory and storage limits of a pipeline from
+    either spelling.
+
+  Upgrade `fda` together with the server. An `fda` older than this change
+  reads a configuration stored under the new names as if those settings were
+  unset. `fda set-config` takes `memory_min`, `memory_max`, `storage_min`,
+  `storage_max`, `max_rss`, `datafusion_memory` and `min_spill_size` as
+  sizes; its megabyte and byte keys keep working and say which key to use.
+
+  When the pipeline manager starts a pipeline pinned to an older runtime with
+  `runtime_version`, or one compiled by an earlier release and not yet
+  updated, it writes the pipeline's configuration under the old names, in the
+  runtime configuration and in every connector. A size that is not a whole
+  number of the old unit rounds up, so a small limit never becomes `0`. A
+  runtime from before the duration rename gets both the old duration and the
+  old size names; one from between the two renames gets only the old size
+  names. The configuration stored by the API is not changed.
 
 - Incompatible change (pipeline process): the pipeline binary reads its
   configuration file as JSON only, so its `--config-file` argument must name
@@ -176,6 +297,15 @@ Source edition can be found on github.
   when the checkpoint failed.  It now raises `RuntimeError` with the error
   the pipeline reported, as `Pipeline.sync_checkpoint(wait=True)` already
   did.
+
+- Bug fix (Python SDK): the connector methods (`input_connector_stats()`,
+  `pause_input_connector()`, `generate_completion_token()` and the others)
+  failed with `UnknownEndpoint` for a quoted table or view name that contains
+  a character such as `#`, `?`, `%` or `/`.
+
+- The pipeline manager's `--pg-embed-port` option (environment variable
+  `FELDERA_PG_EMBED_PORT`) sets the port of the embedded Postgres instance,
+  which was fixed at 8082.  The default is still 8082.
 
 ## v0.365.0
 

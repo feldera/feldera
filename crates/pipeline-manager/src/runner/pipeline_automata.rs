@@ -24,6 +24,7 @@ use crate::runner::pipeline_logs::{
     FollowRequest, LogMessage, LogsSender, start_thread_pipeline_logs,
 };
 use chrono::{DateTime, Utc};
+use feldera_types::config::LegacySpelling;
 use feldera_types::config::PipelineConfig;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{
@@ -127,33 +128,79 @@ fn elapsed_exceeds(since: DateTime<Utc>, now: DateTime<Utc>, duration: Duration)
 /// earlier platform reads only the older spelling.
 const DURATION_RENAME_VERSION: Version = Version::new(0, 366, 0);
 
-/// Whether a pipeline compiled by `platform_version` predates the duration
-/// rename, in which case the executor hands it its duration settings in the
-/// older spelling. A pipeline keeps the binary it was compiled with until its
-/// runtime is updated, so after an upgrade it may still run an older one.
-/// A version that does not parse is taken to predate the rename: every Feldera
-/// release so far reads the older spelling, so writing it is safe either way.
-fn platform_version_predates_duration_rename(platform_version: &str) -> bool {
-    !Version::parse(platform_version).is_ok_and(|version| version >= DURATION_RENAME_VERSION)
+/// The release that renamed the size settings, likewise.
+const SIZE_RENAME_VERSION: Version = Version::new(0, 367, 0);
+
+/// Whether a pipeline compiled by `platform_version` predates the `rename`
+/// release, in which case the executor hands it the settings that release
+/// renamed in their older spelling. A pipeline keeps the binary it was compiled
+/// with until its runtime is updated, so after an upgrade it may still run an
+/// older one. A version that does not parse is taken to predate the rename:
+/// every Feldera release so far reads the older spelling, so writing it is
+/// safe either way.
+fn platform_version_predates(platform_version: &str, rename: Version) -> bool {
+    !Version::parse(platform_version).is_ok_and(|version| version >= rename)
 }
 
 /// Whether the program configuration pins, with `runtime_version`, a runtime
-/// that may predate the duration rename. The executor hands such a runtime its
-/// duration settings in the older spelling, which every Feldera release so far
-/// accepts. A tagged version is compared with the release that renamed the
-/// settings; a commit hash tells nothing about its age, so it gets the older
-/// spelling. The platform's own runtime and the Gen-2 engine read the current
-/// spelling. A configuration that fails to parse is treated as not pinning.
-fn pinned_runtime_predates_duration_rename(program_config: &serde_json::Value) -> bool {
+/// that may predate the `rename` release. The executor hands such a runtime
+/// the renamed settings in their older spelling, which every Feldera release
+/// so far accepts. A tagged version is compared with the release; a commit
+/// hash tells nothing about its age, so it gets the older spelling. The
+/// platform's own runtime and the Gen-2 engine read the current spelling. A
+/// configuration that fails to parse is treated as not pinning.
+fn pinned_runtime_predates(program_config: &serde_json::Value, rename: Version) -> bool {
     validate_program_config(program_config, false)
         .map(|config| match config.runtime_version() {
             RuntimeSelector::Platform(_) | RuntimeSelector::Gen2 => false,
             RuntimeSelector::Version(tag) => {
-                platform_version_predates_duration_rename(tag.trim_start_matches('v'))
+                platform_version_predates(tag.trim_start_matches('v'), rename)
             }
             RuntimeSelector::Sha(_) => true,
         })
         .unwrap_or(false)
+}
+
+/// Which settings the runtime of a pipeline reads only in their older
+/// spelling: those of each rename that the runtime, whether pinned by the
+/// program configuration or the one the pipeline was compiled with, predates.
+fn legacy_spelling_for(
+    program_config: &serde_json::Value,
+    platform_version: &str,
+) -> LegacySpelling {
+    let predates = |rename: Version| {
+        pinned_runtime_predates(program_config, rename.clone())
+            || platform_version_predates(platform_version, rename)
+    };
+    LegacySpelling {
+        durations: predates(DURATION_RENAME_VERSION),
+        sizes: predates(SIZE_RENAME_VERSION),
+    }
+}
+
+/// URL at which the compiler server serves the pipeline binary or UDF library with these
+/// checksums.
+pub(crate) fn compiler_binary_url(
+    common_config: &CommonConfig,
+    pipeline_id: PipelineId,
+    program_version: crate::db::types::version::Version,
+    source_checksum: &str,
+    integrity_checksum: &str,
+) -> String {
+    format!(
+        "{}://{}:{}/binary/{}/{}/{}/{}",
+        if common_config.enable_https {
+            "https"
+        } else {
+            "http"
+        },
+        common_config.compiler_host,
+        common_config.compiler_port,
+        pipeline_id,
+        program_version,
+        source_checksum,
+        integrity_checksum,
+    )
 }
 
 /// Pipeline automaton monitors the runtime state of a single pipeline and continually reconciles
@@ -1391,16 +1438,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     storage_status_details: None,
                 };
             };
-            // URL where the program binary can be downloaded from
-            let program_binary_url = format!(
-                "{}://{}:{}/binary/{}/{}/{}/{}",
-                if self.common_config.enable_https {
-                    "https"
-                } else {
-                    "http"
-                },
-                self.common_config.compiler_host,
-                self.common_config.compiler_port,
+            let program_binary_url = compiler_binary_url(
+                &self.common_config,
                 self.pipeline_id,
                 pipeline.program_version,
                 source_checksum,
@@ -1442,11 +1481,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Some(program_info) => program_info,
         };
 
-        // A runtime from before the duration rename, whether pinned or the one
-        // this pipeline was compiled with, reads only the older spelling.
-        let legacy_duration_spelling =
-            pinned_runtime_predates_duration_rename(&pipeline.program_config)
-                || platform_version_predates_duration_rename(&pipeline.platform_version);
+        // A runtime from before a rename, whether pinned or the one this
+        // pipeline was compiled with, reads only the older spelling.
+        let legacy_spelling =
+            legacy_spelling_for(&pipeline.program_config, &pipeline.platform_version);
 
         match self
             .pipeline_handle
@@ -1460,7 +1498,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 &program_info_url,
                 pipeline.program_version,
                 engine_is_gen2,
-                legacy_duration_spelling,
+                legacy_spelling,
             )
             .await
         {
@@ -2005,6 +2043,7 @@ mod test {
     use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
     use crate::runner::pipeline_logs::{FollowRequest, LogMessage, LogsSender};
     use async_trait::async_trait;
+    use feldera_types::config::LegacySpelling;
     use feldera_types::config::{PipelineConfig, StorageConfig};
     use feldera_types::error::ErrorResponse;
     use feldera_types::program_schema::ProgramSchema;
@@ -2024,7 +2063,8 @@ mod test {
     /// compiled by that release or a later one reads the current spelling.
     #[test]
     fn a_platform_before_the_rename_gets_the_older_duration_spelling() {
-        use super::platform_version_predates_duration_rename as predates;
+        use super::DURATION_RENAME_VERSION;
+        let predates = |version| super::platform_version_predates(version, DURATION_RENAME_VERSION);
         assert!(predates("0.365.0"));
         assert!(predates("0.365.9+enterprise"));
         assert!(predates("0.357.0+enterprise-dev.abc123"));
@@ -2038,6 +2078,45 @@ mod test {
         assert!(predates(""));
     }
 
+    /// Each rename has its own gate: a platform from between the duration and
+    /// the size rename reads the current durations and the older sizes, and a
+    /// pinned tag is gated the same way, whatever the platform.
+    #[test]
+    fn each_rename_is_gated_on_its_own_release() {
+        crate::enable_test_unstable_features();
+        use super::legacy_spelling_for;
+        use feldera_types::config::LegacySpelling;
+        let both = LegacySpelling {
+            durations: true,
+            sizes: true,
+        };
+        let sizes_only = LegacySpelling {
+            durations: false,
+            sizes: true,
+        };
+        let unpinned = serde_json::json!({});
+        assert_eq!(legacy_spelling_for(&unpinned, "0.365.0"), both);
+        assert_eq!(legacy_spelling_for(&unpinned, "0.366.0"), sizes_only);
+        assert_eq!(
+            legacy_spelling_for(&unpinned, "0.366.3+enterprise"),
+            sizes_only
+        );
+        assert_eq!(
+            legacy_spelling_for(&unpinned, "0.367.0"),
+            LegacySpelling::NONE
+        );
+        let pinned = |tag: &str| serde_json::json!({"runtime_version": tag});
+        assert_eq!(legacy_spelling_for(&pinned("v0.365.0"), "0.367.0"), both);
+        assert_eq!(
+            legacy_spelling_for(&pinned("v0.366.0"), "0.367.0"),
+            sizes_only
+        );
+        assert_eq!(
+            legacy_spelling_for(&pinned("v0.367.0"), "0.367.0"),
+            LegacySpelling::NONE
+        );
+    }
+
     /// One case per kind of runtime selector. The platform's own runtime and
     /// the Gen-2 engine read the current spelling; a tag is compared with the
     /// rename, whose boundary the test above covers; a commit hash tells
@@ -2045,7 +2124,10 @@ mod test {
     #[test]
     fn only_a_pinned_older_runtime_gets_the_older_duration_spelling() {
         crate::enable_test_unstable_features();
-        use super::pinned_runtime_predates_duration_rename as predates;
+        use super::DURATION_RENAME_VERSION;
+        let predates = |config: &serde_json::Value| {
+            super::pinned_runtime_predates(config, DURATION_RENAME_VERSION)
+        };
         assert!(!predates(&serde_json::json!({})));
         assert!(!predates(&serde_json::json!({"runtime_version": "gen2"})));
         assert!(predates(
@@ -2123,7 +2205,7 @@ mod test {
             _: &str,
             _: Version,
             _is_gen2: bool,
-            _legacy_duration_spelling: bool,
+            _legacy_spelling: LegacySpelling,
         ) -> Result<(), ManagerError> {
             Ok(())
         }

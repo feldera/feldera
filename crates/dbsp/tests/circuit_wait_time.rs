@@ -18,6 +18,7 @@ use dbsp::circuit::{
 use dbsp::typed_batch::OrdZSet;
 use dbsp::utils::Tup2;
 use dbsp::{DBSPHandle, Runtime, operator::Generator};
+use feldera_types::size::ConfigSize;
 use std::thread::sleep;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -96,7 +97,7 @@ fn spilling_circuit(workers: usize, steps: i32) -> (DBSPHandle, TempDir) {
             },
             StorageOptions {
                 // Spill every batch, rather than only those past the default size.
-                min_storage_bytes: Some(0),
+                min_spill_size: Some(ConfigSize::ZERO),
                 ..Default::default()
             },
         )

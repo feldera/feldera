@@ -72,7 +72,8 @@ use feldera_types::completion_token::{
 use feldera_types::config::{PipelineIdentity, SyncConfig};
 use feldera_types::constants::STATUS_FILE;
 use feldera_types::coordination::{
-    AdHocScan, CoordinationActivate, CoordinationStatus, Labels, RestartArgs, Step, StepRequest,
+    AdHocScan, CoordinationActivate, CoordinationCapabilities, CoordinationStatus, InputChoices,
+    Labels, RestartArgs, Step, StepRequest,
 };
 use feldera_types::format::json::JsonEncoderConfig;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -85,6 +86,7 @@ use feldera_types::runtime_status::{
     ExtendedRuntimeStatusError, RuntimeDesiredStatus, RuntimeStatus, RuntimeStatusDetails,
     StorageStatusDetails,
 };
+use feldera_types::size::ConfigSize;
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
 use feldera_types::transaction::ConcurrentBootstrapPhase;
@@ -103,7 +105,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::convert::Infallible;
 use std::hash::{BuildHasherDefault, DefaultHasher, Hash, Hasher};
 use std::io::ErrorKind;
@@ -312,6 +314,14 @@ pub(crate) struct ServerState {
 
     coordination_activate: Mutex<Option<CoordinationActivate>>,
 
+    /// Leaf lock.
+    ///
+    /// The values that this host's distributed input connectors chose for all
+    /// the hosts to use, once the connectors have initialized.  This is set
+    /// before initialization completes, because completing it needs the other
+    /// hosts, which the coordinator activates only after it reads this.
+    input_choices: Mutex<Option<BTreeMap<String, serde_json::Value>>>,
+
     /// Current collection of leases.
     leases: Mutex<HashMap<Step, Lease>>,
 }
@@ -398,6 +408,7 @@ impl ServerState {
             rate_limiter,
             samply_state: Default::default(),
             coordination_activate: Default::default(),
+            input_choices: Default::default(),
             leases: Default::default(),
             incarnation_uuid: Uuid::now_v7(),
         }
@@ -555,6 +566,12 @@ impl ServerState {
 
     fn phase(&self) -> PipelinePhase {
         self.lifecycle.lock().unwrap().phase.clone()
+    }
+
+    /// Publishes the values that this host's distributed input connectors
+    /// chose for all the hosts to use (see `/coordination/input/choices`).
+    pub fn set_input_choices(&self, choices: BTreeMap<String, serde_json::Value>) {
+        *self.input_choices.lock().unwrap() = Some(choices);
     }
 
     /// Records `phase` and leaves the controller as it is.
@@ -1121,10 +1138,12 @@ async fn checkpoint_on_sigterm(
     use signal_hook::{consts::SIGTERM, low_level::emulate_default_handler};
 
     sigterm.recv().await;
-    info!("received SIGTERM, writing a checkpoint before exit");
+    info!("received SIGTERM");
     match checkpoint_before_exit(&state).await {
         Ok(true) => info!("checkpoint written, exiting"),
-        Ok(false) => info!("pipeline has no circuit or more than one host, exiting"),
+        Ok(false) => info!(
+            "pipeline has no circuit, no fault tolerance, or more than one host, exiting without a checkpoint"
+        ),
         Err(error) => error!("checkpoint failed ({error}), exiting"),
     }
     // Does not return: if raising SIGTERM fails, it aborts.
@@ -1134,13 +1153,15 @@ async fn checkpoint_on_sigterm(
 /// Writes a checkpoint.
 ///
 /// # Returns
-/// `false` if there is no circuit, or if the pipeline is multihost (only the
-/// coordinator can checkpoint all hosts at once).
+/// `false` if there is no circuit, if fault tolerance is disabled (Force Stop
+/// also sends SIGTERM), or if the pipeline is multihost (only the coordinator
+/// can checkpoint all hosts at once).
 async fn checkpoint_before_exit(state: &ServerState) -> Result<bool, Arc<ControllerError>> {
     let Ok(controller) = state.controller() else {
         return Ok(false);
     };
-    if controller.layout().is_multihost() {
+    let ft = &controller.status().pipeline_config.global.fault_tolerance;
+    if !ft.is_enabled() || controller.layout().is_multihost() {
         return Ok(false);
     }
     controller.async_checkpoint().await.map(|_| true)
@@ -1179,15 +1200,16 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
 
     // This is run in the pipeline process itself, so on a multihost deployment every
     // host derives the limit from its own machine.
-    if config.global.effective_memory_mb().is_none()
+    if config.global.effective_memory().is_none()
         && let Some(available_mb) = observability::system::total_memory_megabyte()
     {
+        let available = ConfigSize::from_mb(available_mb);
         // The logger is not running yet.
         eprintln!(
-            "No memory limit configured ('max_rss_mb' or 'resources.memory_mb_max'); \
-using this host's available memory: 'max_rss_mb' = {available_mb} MB."
+            "No memory limit configured ('max_rss' or 'resources.memory_max'); \
+using this host's available memory: 'max_rss' = {available}."
         );
-        config.global.max_rss_mb = Some(available_mb);
+        config.global.max_rss = Some(available);
     }
 
     eprintln!(
@@ -1343,6 +1365,10 @@ fn do_bootstrap(
                     }
                     builder.config.inputs = std::mem::take(&mut ca.inputs);
                     builder.config.outputs = std::mem::take(&mut ca.outputs);
+                    builder = builder.with_input_distribution(
+                        take(&mut ca.input_distribution),
+                        take(&mut ca.input_choices),
+                    );
                     *state.desired_status.lock().unwrap() = ca.desired_status;
                     match ca.checkpoint {
                         Some(checkpoint_uuid) => {
@@ -1504,6 +1530,7 @@ where
         .service(coordination_adhoc_lease)
         .service(coordination_adhoc_scan)
         .service(coordination_labels_incomplete)
+        .service(coordination_input_choices)
         .service(coordination_restart)
         .service(clock_advance)
 }
@@ -3348,6 +3375,7 @@ async fn coordination_status(state: WebData<ServerState>) -> Result<HttpResponse
             CoordinationStatus {
                 incarnation_uuid: state.incarnation_uuid,
                 status: status.clone(),
+                capabilities: CoordinationCapabilities::current(),
             },
             (state, Some(status)),
         ))
@@ -3742,6 +3770,25 @@ async fn coordination_adhoc_scan(
         }
     };
     Ok(HttpResponseBuilder::new(StatusCode::OK).streaming::<_, PipelineError>(response_stream))
+}
+
+/// Reports the values that this host's distributed input connectors chose for
+/// all the hosts to use.  The coordinator reads this from host 0 before it
+/// activates the other hosts (see `CoordinationActivate::input_choices`).
+///
+/// This is available while the pipeline is still initializing, as soon as the
+/// connectors have initialized.  Before that, it fails like other endpoints
+/// that need a controller.
+#[get("/coordination/input/choices")]
+async fn coordination_input_choices(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    let choices = state.input_choices.lock().unwrap().clone();
+    let choices = match choices {
+        Some(choices) => choices,
+        None => state.controller()?.input_choices(),
+    };
+    Ok(HttpResponse::Ok().json(InputChoices { choices }))
 }
 
 /// Stream the set of incomplete labels.
@@ -4354,6 +4401,7 @@ mod test_http_helpers {
             .unwrap(),
             program_schema: serde_json::json!({ "inputs": [], "outputs": [] }),
             circuit_ir: None,
+            udf_library: None,
         }
     }
 
@@ -5093,11 +5141,12 @@ mod test_http {
         );
     }
 
-    /// `/ingress` rejects the output-only JSON update format `redis`.  It
-    /// used to accept it and panic in the parser while holding the endpoint's
-    /// lock, after which no step could complete.
+    /// `/ingress` rejects JSON update formats that input does not support.
+    /// It used to accept `redis` and `weighted` and panic in the parser while
+    /// holding the endpoint's lock, after which no step could complete.
+    /// `weighted` is no longer a format at all.
     #[actix_web::test]
-    async fn test_ingress_rejects_redis_update_format() {
+    async fn test_ingress_rejects_unsupported_update_formats() {
         ensure_default_crypto_provider();
         let server = start_test_server(
             &json!({"name": "test", "inputs": {}, "outputs": {}}),
@@ -5106,22 +5155,33 @@ mod test_http {
         .await;
         start_pipeline(&server).await;
 
-        let mut response = timeout(
-            Duration::from_secs(20),
-            server
-                .post("/ingress/test_input1?format=json&update_format=redis")
-                .send_body("{}"),
-        )
-        .await
-        .expect("/ingress with update_format=redis did not return")
-        .unwrap();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        let body = response.body().await.unwrap();
-        assert!(
-            String::from_utf8_lossy(&body).contains("not supported for JSON input"),
-            "{}",
-            String::from_utf8_lossy(&body)
-        );
+        for update_format in ["redis", "weighted"] {
+            let mut response = timeout(
+                Duration::from_secs(20),
+                server
+                    .post(format!(
+                        "/ingress/test_input1?format=json&update_format={update_format}"
+                    ))
+                    .send_body(r#"{"weight": 1, "data": {}}"#),
+            )
+            .await
+            .unwrap_or_else(|_| {
+                panic!("/ingress with update_format={update_format} did not return")
+            })
+            .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::BAD_REQUEST,
+                "{update_format}"
+            );
+            let body = response.body().await.unwrap();
+            let body = String::from_utf8_lossy(&body);
+            let expected = match update_format {
+                "redis" => "not supported for JSON input",
+                _ => "unknown variant `weighted`",
+            };
+            assert!(body.contains(expected), "{update_format}: {body}");
+        }
 
         let token = timeout(
             Duration::from_secs(20),
@@ -6127,7 +6187,9 @@ mod test_http {
     #[cfg(unix)]
     #[actix_web::test]
     async fn test_checkpoint_before_exit() {
-        use super::{ControllerError, ServerState, checkpoint_before_exit};
+        use super::{Checkpointer, ControllerError, ServerState, checkpoint_before_exit};
+        use dbsp::{circuit::StorageCacheConfig, storage::backend::posixio_impl::PosixBackend};
+        use feldera_types::config::FileBackendConfig;
         use std::{os::unix::fs::PermissionsExt, sync::Arc};
 
         async fn checkpoint(state: &ServerState) -> Result<bool, Arc<ControllerError>> {
@@ -6141,6 +6203,14 @@ mod test_http {
         let tempdir = TempDir::new().unwrap();
         let storage_dir = tempdir.path().join("storage");
         std::fs::create_dir(&storage_dir).unwrap();
+        let checkpoints = || {
+            let backend = PosixBackend::new(
+                &storage_dir,
+                StorageCacheConfig::default(),
+                &FileBackendConfig::default(),
+            );
+            Checkpointer::read_checkpoints(&backend).unwrap()
+        };
 
         let config_json = json!({
             "name": "test",
@@ -6149,6 +6219,7 @@ mod test_http {
                 "path": storage_dir,
             },
             "storage": true,
+            "fault_tolerance": {"model": "exactly_once"},
             "clock_resolution_usecs": null,
             "inputs": {},
             "outputs": {},
@@ -6166,7 +6237,10 @@ mod test_http {
         let (server, state) = start().await;
         start_pipeline(&server).await;
         send_input(&server, &test_batches(0, 10)).await;
+        let before = checkpoints();
         assert!(checkpoint(&state).await.unwrap());
+        let saved = checkpoints();
+        assert_eq!(saved.len(), before.len() + 1, "no checkpoint written");
 
         // Root can write to read-only storage, so skip the failure case.
         start_pipeline(&server).await;
@@ -6185,11 +6259,60 @@ mod test_http {
         crash_pipeline(&state, &storage_dir).await;
         drop(server);
 
-        // Rows 10..20 were never checkpointed.
+        // The journal replays rows 10..20, so only the list shows the checkpoint.
+        let (server, _state) = start().await;
+        start_pipeline(&server).await;
+        assert_eq!(checkpoints(), saved);
+        let count = adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await;
+        assert_eq!(count, 20);
+
+        suspend_pipeline(&server, Some(&storage_dir)).await;
+    }
+
+    /// Without fault tolerance, SIGTERM must not write a checkpoint: on
+    /// Kubernetes, Force Stop also sends SIGTERM.
+    #[actix_web::test]
+    async fn test_checkpoint_before_exit_without_ft() {
+        use super::checkpoint_before_exit;
+
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        std::fs::create_dir(&storage_dir).unwrap();
+        let config_json = json!({
+            "name": "test",
+            "workers": 1,
+            "storage_config": {"path": storage_dir},
+            "storage": true,
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {},
+        });
+        let start = || {
+            start_test_server_with_state(
+                &config_json,
+                Uuid::new_v4(),
+                BootstrapConfig::from(BootstrapPolicy::Allow),
+                &[Some("v0")],
+                Some(test_program_ir("v0")),
+            )
+        };
+
+        let (server, state) = start().await;
+        start_pipeline(&server).await;
+        send_input(&server, &test_batches(0, 10)).await;
+        assert!(!checkpoint_before_exit(&state).await.unwrap());
+        crash_pipeline(&state, &storage_dir).await;
+        drop(server);
+
         let (server, _state) = start().await;
         start_pipeline(&server).await;
         let count = adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await;
-        assert_eq!(count, 10);
+        assert_eq!(
+            count, 0,
+            "SIGTERM wrote a checkpoint without fault tolerance"
+        );
 
         suspend_pipeline(&server, Some(&storage_dir)).await;
     }
@@ -6213,18 +6336,18 @@ mod test_http {
         let result = timeout(Duration::from_secs(20), checkpoint_before_exit(&state))
             .await
             .expect("the SIGTERM checkpoint must not hang");
-        assert!(result.is_err(), "checkpoint without storage succeeded");
+        assert!(!result.unwrap());
 
         let error = ControllerError::io_error("test", std::io::Error::other("test"));
         let state = ServerState::for_error(error, Uuid::new_v4());
         assert!(!checkpoint_before_exit(&state).await.unwrap());
     }
 
-    /// A real SIGTERM, sent to a pipeline in a child process, must write a
-    /// checkpoint and stop the process with SIGTERM.
+    /// A real SIGTERM, sent to a pipeline without fault tolerance in a child
+    /// process, must stop the process with SIGTERM and write no checkpoint.
     #[cfg(unix)]
     #[test]
-    fn test_sigterm_checkpoint_process() {
+    fn test_sigterm_process_without_ft() {
         use super::{SERVER_PORT_FILE, ServerArgs, run_server};
         use crate::test::test_circuit;
         use feldera_types::{config::PipelineConfig, runtime_status::RuntimeDesiredStatus};
@@ -6290,7 +6413,7 @@ mod test_http {
         .unwrap();
 
         let test_name = format!(
-            "{}::test_sigterm_checkpoint_process",
+            "{}::test_sigterm_process_without_ft",
             module_path!().split_once("::").unwrap().1
         );
         // Kills the child process if the test fails.
@@ -6375,7 +6498,7 @@ mod test_http {
         );
         sigterm(child);
 
-        // Only the SIGTERM checkpoint holds the rows.
+        // No checkpoint holds the rows.
         let (child, url) = start();
         let mut restored = None;
         wait_for(
@@ -6386,7 +6509,7 @@ mod test_http {
             }),
         );
         sigterm(child);
-        assert_eq!(restored, Some(10));
+        assert_eq!(restored, Some(0));
     }
 
     #[actix_web::test]

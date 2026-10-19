@@ -82,10 +82,9 @@ Feldera pipeline:
         "backend": {
           "name": "default"
         },
-        "min_storage_bytes": null,
-        "min_step_storage_bytes": null,
+        "min_spill_size": "10Mi",
         "compression": "default",
-        "cache_mib": null
+        "cache_size": "4Gi"
       }
      ```
 
@@ -142,13 +141,15 @@ request writing a checkpoint immediately.  If automatic checkpoints
 are disabled, then the user should occasionally invoke this API to
 ensure that the checkpoint feature is useful.
 
-On `SIGTERM`, for example when Kubernetes evicts its pod, a pipeline
-writes a checkpoint and then exits.  Kubernetes kills the pipeline
+When fault tolerance is enabled, on `SIGTERM`, for example when
+Kubernetes evicts its pod, a pipeline writes a checkpoint and then
+exits.  Kubernetes kills the pipeline
 `pipeline.terminationGracePeriodSeconds` (a Helm value, default 60)
 after the `SIGTERM`, so set it longer than a checkpoint takes.
 Multihost pipelines exit without a checkpoint.  On Kubernetes, Force
 Stop also sends `SIGTERM`.  If the checkpoint finishes within 2
-seconds, the pipeline keeps it.
+seconds, the pipeline keeps it.  When fault tolerance is disabled, a
+pipeline exits on `SIGTERM` without a checkpoint.
 
 > Writing a checkpoint is ordinarily a fast operation that takes
 several seconds.  However, the [Delta Lake](../connectors/sources/delta.md)

@@ -53,7 +53,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ExternalFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.ExternalFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.WarnFloatingPointEquality;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -1553,8 +1553,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             name += "N";
                         return new DBSPApplyExpression(node, name, type, op0);
                     }
-                    case "writelog":
-                        return new DBSPApplyExpression(node, opName, type, ops.get(0), ops.get(1));
                     case "repeat": {
                         validateArgCount(node, opName, ops.size(), 2);
                         if (ops.get(0).getType().code == BYTES) {

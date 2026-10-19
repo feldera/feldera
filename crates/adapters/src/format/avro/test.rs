@@ -27,6 +27,7 @@ use feldera_adapterlib::transport::OutputBatchType;
 use feldera_sqllib::{
     ByteArray, Date, FlatVariant, SqlDecimal, Time, Timestamp, TimestampTz, Uuid, Variant,
 };
+use feldera_types::size::ConfigSize;
 use feldera_types::{
     deserialize_table_record,
     format::avro::{AvroEncoderConfig, AvroEncoderKeyMode},
@@ -2967,7 +2968,7 @@ fn run_avro_encoder_spine_snapshot_indexed<V>(
 /// This test forces all batches to be FileIndexedWSet batches by setting min storage bytes to 0.
 #[test]
 fn proptest_avro_encoder_spine_snapshot_indexed_posix() {
-    run_in_posix_runtime(Some(0usize), Some(0usize), move || {
+    run_in_posix_runtime(Some(ConfigSize::ZERO), Some(ConfigSize::ZERO), move || {
         let (snapshot, expected_output) =
             datagen_indexed_spine_snapshot_test_struct(0xD00D_F00D, 20, 100);
 

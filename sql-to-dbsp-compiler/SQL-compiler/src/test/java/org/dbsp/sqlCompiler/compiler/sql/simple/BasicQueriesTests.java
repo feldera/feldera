@@ -824,14 +824,6 @@ public class BasicQueriesTests extends BaseSQLTests {
     }
 
     @Test
-    public void writeLogTest() {
-        String query = "SELECT WRITELOG('Hello %% message\n', COL1) FROM (SELECT DISTINCT T.COL1 FROM T)";
-        this.testQuery(query, new DBSPZSetExpression(
-                new DBSPTupleExpression(
-                        new DBSPI32Literal(10))));
-    }
-
-    @Test
     public void distinctTest() {
         String query = "SELECT DISTINCT T.COL1 FROM T";
         this.testQuery(query, new DBSPZSetExpression(

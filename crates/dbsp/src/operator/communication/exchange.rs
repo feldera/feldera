@@ -35,7 +35,7 @@ use std::{
     borrow::Cow,
     collections::{HashMap, VecDeque},
     fmt::{Debug, Display},
-    future::Future,
+    future::{Future, ready},
     io::{Cursor, IoSlice},
     iter::zip,
     marker::PhantomData,
@@ -44,7 +44,7 @@ use std::{
     ops::Range,
     pin::{Pin, pin},
     sync::{
-        Arc, Mutex, MutexGuard, RwLock,
+        Arc, Mutex, MutexGuard, RwLock, Weak,
         atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant, SystemTime},
@@ -799,17 +799,67 @@ impl ExchangeDirectory {
             .clone()
     }
 
-    pub fn get(
+    pub fn insert(&self, exchange_id: ExchangeId, delivery: Arc<dyn ExchangeDelivery>) {
+        self.entries
+            .write()
+            .unwrap()
+            .entry(exchange_id)
+            .and_modify(|_| panic!())
+            .or_insert_with(|| ExchangeDirectoryEntry::new(delivery));
+    }
+
+    /// Returns this directory for the network tasks of the runtime (see
+    /// [WeakExchangeDirectory]).
+    fn downgrade(&self) -> WeakExchangeDirectory {
+        WeakExchangeDirectory {
+            next_sequence: self.next_sequence.clone(),
+            entries: Arc::downgrade(&self.entries),
+            connections: self.connections.clone(),
+        }
+    }
+}
+
+/// An [ExchangeDirectory] for the network tasks of a runtime, which refers to
+/// the exchanges weakly.
+///
+/// The exchanges hold the runtime, and the network tasks continue to run
+/// after the runtime stops.  With strong references, the tasks would keep the
+/// runtime, and the lock on its storage, for as long as they run.
+#[derive(Clone)]
+struct WeakExchangeDirectory {
+    /// See [ExchangeDirectory].
+    next_sequence: Arc<Vec<EnumMap<MessageType, AtomicU64>>>,
+
+    /// See [ExchangeDirectory].  The upgrade fails after the runtime stops.
+    entries: Weak<RwLock<HashMap<ExchangeId, ExchangeDirectoryEntry>>>,
+
+    /// See [ExchangeDirectory].
+    connections: ConnectionRegistry,
+}
+
+impl WeakExchangeDirectory {
+    /// Finds where to deliver message `sequence` of `message_type` from
+    /// `sending_host_idx` to exchange `exchange_id`.
+    ///
+    /// After the runtime stops, there is no exchange, so a message in
+    /// sequence goes to [Discard].
+    fn get(
         &self,
         exchange_id: ExchangeId,
         sending_host_idx: usize,
         message_type: MessageType,
         sequence: u64,
     ) -> Result<ExchangeGet, ExchangeGetError> {
-        let map = self.entries.read().unwrap();
-        let entry = map
-            .get(&exchange_id)
-            .ok_or(ExchangeGetError::UnknownExchange(exchange_id))?;
+        let delivery: Arc<dyn ExchangeDelivery> = match self.entries.upgrade() {
+            Some(entries) => entries
+                .read()
+                .unwrap()
+                .get(&exchange_id)
+                .ok_or(ExchangeGetError::UnknownExchange(exchange_id))?
+                .delivery
+                .clone(),
+            None => Arc::new(Discard),
+        };
         match self.next_sequence[sending_host_idx][message_type].compare_exchange(
             sequence,
             sequence + 1,
@@ -819,7 +869,7 @@ impl ExchangeDirectory {
             Ok(_) => {
                 // Correct sequence number.
                 Ok(ExchangeGet {
-                    delivery: Some(entry.delivery.clone()),
+                    delivery: Some(delivery),
                     next_sequence: sequence + 1,
                 })
             }
@@ -841,15 +891,6 @@ impl ExchangeDirectory {
         }
     }
 
-    pub fn insert(&self, exchange_id: ExchangeId, delivery: Arc<dyn ExchangeDelivery>) {
-        self.entries
-            .write()
-            .unwrap()
-            .entry(exchange_id)
-            .and_modify(|_| panic!())
-            .or_insert_with(|| ExchangeDirectoryEntry::new(delivery));
-    }
-
     /// Registers `cancel`/`handle` as the connection serving
     /// `sending_host_idx` and `message_type`, cancelling any previous
     /// connection serving the same pair and waiting for it to fully exit
@@ -867,9 +908,30 @@ impl ExchangeDirectory {
     }
 }
 
+/// Drops the messages that arrive after the runtime stops.
+///
+/// The server still acknowledges these messages, so that a sender does not
+/// wait for them.
+struct Discard;
+
+impl ExchangeDelivery for Discard {
+    fn name(&self) -> Arc<String> {
+        Arc::new(String::from("Discard"))
+    }
+
+    fn received(
+        self: Arc<Self>,
+        _sender: usize,
+        _round: u64,
+        _data: Vec<AlignedVec>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        Box::pin(ready(()))
+    }
+}
+
 struct ExchangeServer {
     layout: Layout,
-    directory: ExchangeDirectory,
+    directory: WeakExchangeDirectory,
     stream: TcpStream,
 
     /// Cancelled by a subsequent connection that takes over this connection's
@@ -1114,7 +1176,7 @@ impl ExchangeClients {
                     Some(ExchangeListener::new(
                         local_address,
                         runtime.take_exchange_listener(),
-                        directory,
+                        directory.downgrade(),
                         self.layout.clone(),
                     ))
                 } else {
@@ -1381,7 +1443,7 @@ impl ExchangeListener {
     fn new(
         local_address: SocketAddr,
         exchange_listener: Option<std::net::TcpListener>,
-        directory: ExchangeDirectory,
+        directory: WeakExchangeDirectory,
         layout: Layout,
     ) -> Self {
         let token = CancellationToken::new();
@@ -2477,8 +2539,7 @@ fn ping_interval() -> Duration {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
-    use crossbeam::channel::{Select, unbounded};
+mod tests {
     use feldera_storage::tokio::TOKIO;
     use feldera_types::config::DevTweaks;
     use itertools::Itertools;
@@ -2487,7 +2548,7 @@ pub(crate) mod tests {
     use crate::{
         Circuit, RootCircuit,
         circuit::{
-            CircuitConfig, Layout, Runtime, RuntimeHandle,
+            Runtime,
             runtime::{WorkerLocation, WorkerLocations},
             schedule::{DynamicScheduler, Scheduler},
         },
@@ -2497,13 +2558,12 @@ pub(crate) mod tests {
         },
         storage::file::{to_bytes, to_bytes_dyn},
         trace::aligned_deserialize,
-        utils::test::init_test_logger,
+        utils::test::{
+            init_test_logger,
+            multihost::{TestHosts, run_on_hosts},
+        },
     };
-    use std::{
-        iter::zip,
-        net::TcpListener,
-        sync::{Arc, atomic::Ordering},
-    };
+    use std::sync::{Arc, atomic::Ordering};
 
     /// Number of rounds for exchange.
     ///
@@ -2544,133 +2604,14 @@ pub(crate) mod tests {
         });
     }
 
-    /// Runs `circuit` on every worker of a runtime and waits for all of them to
-    /// finish.
-    ///
-    /// With more than one host, this starts one runtime per host in this
-    /// process, connected over localhost TCP, the way a multihost pipeline's
-    /// hosts are.
-    ///
-    /// # Arguments
-    ///
-    /// * `workers` - total number of workers, across all hosts.
-    /// * `hosts` - number of hosts to spread the workers across.
-    /// * `circuit` - function that each worker runs.
-    ///
-    /// # Returns
-    ///
-    /// Nothing.  Panics if a worker panics.
-    pub(crate) fn test_circuit(
-        workers: usize,
-        hosts: usize,
-        circuit: impl FnOnce() + Copy + Clone + Send + Sync + 'static,
-    ) {
-        match hosts {
-            0 => unreachable!(),
-            1 => {
-                let hruntime = Runtime::run(workers, move |_parker| circuit())
-                    .expect("failed to start runtime");
-
-                join_runtimes(vec![hruntime]);
-            }
-            _ => {
-                assert!(workers >= hosts);
-
-                // Bind some listening sockets.
-                let exchange_listeners = (0..hosts)
-                    .map(|_| {
-                        TcpListener::bind("127.0.0.1:0")
-                            .expect("should be able to bind a port on localhost")
-                    })
-                    .collect_vec();
-
-                // Assemble the listening sockets' addresses into something we can pass
-                // to `Layout::new_multihost`.
-                let params = exchange_listeners
-                    .iter()
-                    .enumerate()
-                    .map(|(index, listener)| {
-                        (
-                            listener
-                                .local_addr()
-                                .expect("should be able to get local address"),
-                            workers / hosts + (index < workers % hosts) as usize,
-                        )
-                    })
-                    .collect_vec();
-
-                // Create the runtimes.
-                let mut runtimes = Vec::with_capacity(hosts);
-                for ((local_address, _), exchange_listener) in
-                    zip(params.iter(), exchange_listeners)
-                {
-                    let cconf = CircuitConfig::from(
-                        Layout::new_multihost(&params, *local_address).unwrap(),
-                    )
-                    .with_exchange_listener(exchange_listener);
-
-                    runtimes.push(
-                        Runtime::run(cconf, move |_parker| circuit())
-                            .expect("failed to start runtime"),
-                    );
-                }
-
-                join_runtimes(runtimes);
-            }
-        }
-    }
-
-    /// Waits for all of `runtimes` to finish.
-    ///
-    /// Panics as soon as any worker panics.  Waiting for the other workers
-    /// first could hang the test, because they can wait forever for data
-    /// from the worker that panicked.  Those workers are left behind.
-    fn join_runtimes(runtimes: Vec<RuntimeHandle>) {
-        let panics = runtimes
-            .iter()
-            .map(|runtime| runtime.panic_receiver())
-            .collect_vec();
-
-        // Dropping a runtime also disconnects its panic receiver, so keep the
-        // runtimes alive until we are done.
-        let _keep_alive = runtimes
-            .iter()
-            .map(|runtime| runtime.runtime().clone())
-            .collect_vec();
-
-        let (done_sender, done_receiver) = unbounded();
-        for runtime in runtimes {
-            let done_sender = done_sender.clone();
-            std::thread::spawn(move || {
-                let _ = done_sender.send(runtime.join().is_ok());
-            });
-        }
-
-        let mut select = Select::new();
-        for panic in &panics {
-            select.recv(panic);
-        }
-        let done_index = select.recv(&done_receiver);
-        for _ in 0..panics.len() {
-            let operation = select.select();
-            let index = operation.index();
-            if index == done_index {
-                assert!(operation.recv(&done_receiver).unwrap(), "worker panicked");
-            } else {
-                let _ = operation.recv(&panics[index]);
-                panic!("worker on host {index} panicked");
-            }
-        }
-    }
-
     // A worker panic fails the test, even though the other workers wait
     // forever for data from the worker that panicked.
     #[test]
     #[cfg_attr(miri, ignore)]
     #[should_panic(expected = "panicked")]
-    fn test_circuit_fails_on_worker_panic() {
+    fn run_on_hosts_fails_on_worker_panic() {
         init_test_logger();
-        test_circuit(4, 2, || {
+        run_on_hosts(4, 2, || {
             if Runtime::worker_index() == 0 {
                 panic!("worker 0 fails before its first exchange");
             }
@@ -2684,7 +2625,7 @@ pub(crate) mod tests {
     fn single_host() {
         init_test_logger();
         for workers in [2, 4, 8] {
-            test_circuit(workers, 1, circuit);
+            run_on_hosts(workers, 1, circuit);
         }
     }
 
@@ -2694,7 +2635,7 @@ pub(crate) mod tests {
     fn multihost() {
         init_test_logger();
         for (workers, hosts) in [(2, 2), (4, 2), (8, 2), (3, 3), (4, 4), (16, 4)] {
-            test_circuit(workers, hosts, circuit);
+            run_on_hosts(workers, hosts, circuit);
         }
     }
 
@@ -2780,7 +2721,7 @@ pub(crate) mod tests {
         init_test_logger();
         let seed = mixed_size_seed();
         for (workers, hosts) in [(2, 2), (4, 2), (3, 3), (4, 4)] {
-            test_circuit(workers, hosts, move || mixed_size_circuit(seed, 1));
+            run_on_hosts(workers, hosts, move || mixed_size_circuit(seed, 1));
         }
     }
 
@@ -2793,7 +2734,7 @@ pub(crate) mod tests {
         init_test_logger();
         let seed = mixed_size_seed();
         for (workers, hosts) in [(2, 2), (4, 2), (3, 3), (4, 4)] {
-            test_circuit(workers, hosts, move || mixed_size_circuit(seed, 2));
+            run_on_hosts(workers, hosts, move || mixed_size_circuit(seed, 2));
         }
     }
 
@@ -2922,7 +2863,7 @@ pub(crate) mod tests {
     // `Inspect` - validates the output of the receiver.
     fn test_operators_single_host(circuit: impl FnOnce() + Copy + Clone + Send + Sync + 'static) {
         for workers in [2, 16, 32] {
-            test_circuit(workers, 1, circuit);
+            run_on_hosts(workers, 1, circuit);
         }
     }
 
@@ -2934,7 +2875,7 @@ pub(crate) mod tests {
     // `Inspect` - validates the output of the receiver.
     fn test_operators_multihost(circuit: impl FnOnce() + Copy + Clone + Send + Sync + 'static) {
         for (workers, hosts) in [(2, 2), (4, 2), (8, 2), (3, 3), (4, 4), (16, 4)] {
-            test_circuit(workers, hosts, circuit);
+            run_on_hosts(workers, hosts, circuit);
         }
     }
 
@@ -2950,6 +2891,34 @@ pub(crate) mod tests {
     fn operators_multihost_dynamic() {
         init_test_logger();
         test_operators_multihost(operator_circuit::<DynamicScheduler>);
+    }
+
+    /// Killed hosts drop their runtimes.  The network tasks of a host continue
+    /// to run after a kill, and they find the sharded accumulators of the host
+    /// in its exchange directory.  The accumulators hold the runtime, so if
+    /// the tasks held the directory strongly, a killed host would keep its
+    /// runtime, and the lock on its storage, and could not start again from
+    /// that storage.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn killed_hosts_drop_their_runtimes() {
+        init_test_logger();
+        let mut hosts = TestHosts::start(4, 2, |circuit| {
+            let (input, input_handle) = circuit.add_input_zset::<u64>();
+            // An input stream is already sharded, so `shard_accumulate` on it
+            // would not use a sharded accumulator.  The stream from `map` is
+            // not sharded.
+            let (accumulated, enable_count) = input.map(|x| *x).shard_accumulate().into_parts();
+            enable_count.enable();
+            Ok((input_handle, accumulated.latest_output(), enable_count))
+        });
+        for key in 0..16 {
+            hosts.result(0).0.push(key, 1);
+        }
+        hosts.transaction();
+
+        // Fails unless every host drops its runtime.
+        hosts.kill();
     }
 
     /// Disables the random `inject_fault` failures used by the round-based

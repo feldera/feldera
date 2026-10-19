@@ -42,16 +42,21 @@ def test_pipeline_runtime_config(pipeline_name):
                 "workers": 100,
                 "resources": {
                     "cpu_cores_min": 5,
-                    "storage_mb_max": 2000,
+                    "storage_max": "2G",
                     "storage_class": "normal",
                 },
             },
             lambda rc: (
                 rc.get("workers") == 100
                 and rc.get("resources", {}).get("cpu_cores_min") == 5
-                and rc.get("resources", {}).get("storage_mb_max") == 2000
+                and rc.get("resources", {}).get("storage_max") == "2G"
                 and rc.get("resources", {}).get("storage_class") == "normal"
             ),
+        ),
+        (
+            # The deprecated spelling is read and stored under the current name.
+            {"resources": {"storage_mb_max": 2000}},
+            lambda rc: rc.get("resources", {}).get("storage_max") == "2G",
         ),
         (
             {"env": {"TEST_ENV": "value"}},
@@ -76,6 +81,7 @@ def test_pipeline_runtime_config(pipeline_name):
     # Invalid runtime_config cases
     invalid_cases = [
         {"workers": "not-a-number"},
+        {"resources": {"storage_max": "not-a-size"}},
         {"resources": {"storage_mb_max": "not-a-number"}},
         {"env": {"TOKIO_WORKER_THREADS": "1"}},
     ]
@@ -95,14 +101,14 @@ def test_pipeline_runtime_config(pipeline_name):
     patch_body = {
         "runtime_config": {
             "workers": 1,
-            "resources": {"storage_mb_max": 123},
+            "resources": {"storage_max": "123M"},
         }
     }
     resp = patch_json(_pipeline_url(pipeline_name), patch_body)
     assert resp.status_code == HTTPStatus.OK, resp.text
     rc_modified = resp.json()["runtime_config"]
     assert rc_modified.get("workers") == 1
-    assert rc_modified.get("resources", {}).get("storage_mb_max") == 123
+    assert rc_modified.get("resources", {}).get("storage_max") == "123M"
 
 
 @gen_pipeline_name

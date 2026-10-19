@@ -2894,7 +2894,7 @@ fn batch_config_from(config: &PostgresCdcBatchConfig) -> BatchConfig {
     BatchConfig {
         max_fill_ms: config.max_fill_ms,
         memory_budget_ratio: config.memory_budget_ratio,
-        max_bytes: config.max_bytes,
+        max_bytes: config.max_size.as_usize(),
     }
 }
 
@@ -2920,6 +2920,7 @@ mod tests {
     use feldera_adapterlib::catalog::DeCollectionHandle;
     use feldera_adapterlib::format::BufferSize;
     use feldera_types::adapter_stats::ConnectorHealth;
+    use feldera_types::size::ConfigSize;
     use serde_json::json;
     use std::str::FromStr;
     use std::sync::atomic::AtomicBool;
@@ -4771,7 +4772,7 @@ mod tests {
         let config = PostgresCdcBatchConfig {
             max_fill_ms: 5_000,
             memory_budget_ratio: 0.3,
-            max_bytes: 1024,
+            max_size: ConfigSize::from_bytes(1024),
         };
 
         let etl_config = batch_config_from(&config);

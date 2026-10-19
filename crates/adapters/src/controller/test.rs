@@ -1145,6 +1145,7 @@ fn fault_tolerance_mismatch_unregisters_the_endpoint() {
         &serde_json::from_value(connector.clone()).unwrap(),
         "weak_ft",
         tempdir.path(),
+        None,
     )
     .unwrap()
     .unwrap();
@@ -1270,6 +1271,116 @@ fn fault_tolerance_mismatch_does_not_open_the_endpoint() {
     assert!(controller.status().input_status().is_empty());
 
     controller.stop().unwrap();
+}
+
+/// An input endpoint whose `open()` blocks until the test releases it.
+struct GatedOpenEndpoint {
+    entered: mpsc::Sender<()>,
+    release: Mutex<mpsc::Receiver<()>>,
+    inner: TransactionalInputEndpoint,
+}
+
+impl InputEndpoint for GatedOpenEndpoint {
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        None
+    }
+}
+
+impl TransportInputEndpoint for GatedOpenEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        schema: Relation,
+        resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn InputReader>> {
+        self.entered.send(()).unwrap();
+        self.release.lock().unwrap().recv().unwrap();
+        self.inner.open(consumer, parser, schema, resume_info)
+    }
+}
+
+/// A step that starts while a new endpoint is still in `open()` must not wait
+/// for that endpoint.
+///
+/// The endpoint is visible to the circuit thread before it has a reader, and an
+/// endpoint without a reader never gets `queue()`, so it can never report
+/// progress.  Waiting for it stalls the pipeline forever.  Once `open()`
+/// returns, later steps must consume the endpoint's input.
+#[test]
+fn step_does_not_wait_for_endpoint_without_reader() {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+    let endpoint = TransactionalInputEndpoint::new();
+    let adder = {
+        let controller = controller.clone();
+        let endpoint = endpoint.clone();
+        thread::spawn(move || {
+            controller.add_input_endpoint(
+                "gated",
+                endpoint_config,
+                Box::new(GatedOpenEndpoint {
+                    entered: entered_tx,
+                    release: Mutex::new(release_rx),
+                    inner: endpoint,
+                }),
+                None,
+            )
+        })
+    };
+
+    // The endpoint is now visible, without a reader.
+    entered_rx.recv().unwrap();
+    let steps = controller.status().global_metrics.total_completed_steps();
+    controller.request_step();
+    let progressed = wait(
+        || controller.status().global_metrics.total_completed_steps() > steps,
+        10_000,
+    )
+    .is_ok();
+
+    release_tx.send(()).unwrap();
+    adder.join().unwrap().unwrap();
+    endpoint.push("1,true,,foo\n");
+    let consumed = wait(
+        || controller.status().num_total_processed_records() == 1,
+        10_000,
+    )
+    .is_ok();
+    controller.stop().unwrap();
+    assert!(progressed, "step waited for an endpoint that had no reader");
+    assert!(
+        consumed,
+        "input pushed after open() returned was never processed"
+    );
 }
 
 /// An input endpoint that opens and commits Feldera transactions, the way a
@@ -6606,14 +6717,14 @@ mod queue_limit_tests {
 
     // --- ConnectorConfig::max_queued_bytes() ---
 
-    /// When `max_queued_bytes` is unset, it defaults to `max_queued_records * 1000`.
+    /// When `max_queued_size` is unset, it defaults to `max_queued_records * 1000`.
     #[test]
     fn max_queued_bytes_defaults_to_1000x_records() {
         let endpoint = make_endpoint(100, None);
         assert_eq!(endpoint.config.connector_config.max_queued_bytes(), 100_000);
     }
 
-    /// When `max_queued_bytes` is explicitly set, that value is used directly.
+    /// When `max_queued_size` is explicitly set, that value is used directly.
     #[test]
     fn max_queued_bytes_explicit_value() {
         let endpoint = make_endpoint(100, Some(50_000));
@@ -6707,7 +6818,7 @@ mod queue_limit_tests {
         assert!(endpoint.is_full());
     }
 
-    /// With no explicit `max_queued_bytes`, the default byte threshold
+    /// With no explicit `max_queued_size`, the default byte threshold
     /// (`max_queued_records * 1000`) is used for the `is_full` check.
     #[test]
     fn is_full_uses_default_bytes_threshold() {
@@ -6765,7 +6876,7 @@ mod queue_limit_tests {
     }
 
     /// The backpressure thread is unparked when a batch causes the buffered
-    /// byte count to cross `max_queued_bytes`, even when the records count
+    /// byte count to cross `max_queued_size`, even when the records count
     /// remains well below `max_queued_records`.
     #[test]
     fn backpressure_unparked_when_bytes_threshold_crossed() {
@@ -8690,5 +8801,131 @@ fn a_reader_is_told_the_step_being_fed_not_the_one_the_outputs_finished() {
          and an answer stamped with their count would go out too early"
     );
 
+    controller.stop().unwrap();
+}
+
+/// Returns a controller for `config` and a probe for input connector
+/// `test_input` with endpoint id 0, which has a status entry but no reader.
+fn controller_with_probe(config: serde_json::Value) -> (Controller, super::InputProbe) {
+    init_test_logger();
+    let controller = Controller::with_test_config(
+        |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], &[None])),
+        &serde_json::from_value(config).unwrap(),
+        Box::new(|_e, _| ()),
+    )
+    .unwrap();
+    let input_config = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": {"name": "datagen", "config": {}},
+    }))
+    .unwrap();
+    controller.inner.status.inputs.write().insert(
+        0,
+        super::stats::InputEndpointStatus::new("test_input", input_config, None, None),
+    );
+    let probe = super::InputProbe {
+        endpoint_id: 0,
+        endpoint_name: "test_input".to_string(),
+        controller: controller.inner.clone(),
+        max_batch_size: 1024,
+        transaction_in_progress: AtomicBool::new(false),
+    };
+    (controller, probe)
+}
+
+/// True if `controller`'s open transaction waits for a connector to commit.
+fn waits_for_connector(controller: &Controller) -> bool {
+    let transaction_info = controller.inner.transaction_info.lock().unwrap();
+    transaction_info
+        .initiators
+        .is_ongoing(transaction_info.is_multihost)
+}
+
+/// A connector that fails, or is disconnected, in the middle of a
+/// transaction can never commit it, so its part ends.  Otherwise the
+/// transaction would stay open forever.  A connector that recovers from an
+/// error keeps its part.
+#[test]
+fn stopped_connector_ends_its_transaction() {
+    let config = json!({"name": "test", "workers": 1, "inputs": {}, "outputs": {}});
+    for stop in ["nonfatal", "fatal", "disconnect"] {
+        let (controller, probe) = controller_with_probe(config.clone());
+        probe.start_transaction(Some("t"));
+        assert!(waits_for_connector(&controller));
+        match stop {
+            "nonfatal" => probe.error(false, anyhow!("retrying"), None),
+            "fatal" => probe.error(true, anyhow!("failed"), None),
+            _ => controller.disconnect_input(&0),
+        }
+        assert_eq!(
+            waits_for_connector(&controller),
+            stop == "nonfatal",
+            "{stop}"
+        );
+        controller.stop().unwrap();
+    }
+}
+
+/// In a multihost pipeline, a host whose part of a transaction that needs
+/// every host fails reports the connector as done, so that the coordinator
+/// does not wait for it forever.
+#[test]
+fn stopped_connector_finishes_all_hosts_transaction() {
+    let (controller, probe) = controller_with_probe(json!({
+        "name": "test",
+        "workers": 1,
+        "inputs": {},
+        "outputs": {},
+        "multihost": {"hosts": 1},
+    }));
+    probe.start_transaction_on_all_hosts(Some("snapshot-0"));
+    let all_hosts_done = || {
+        controller
+            .inner
+            .transaction_info
+            .lock()
+            .unwrap()
+            .sender
+            .borrow()
+            .all_hosts_done
+            .clone()
+    };
+    assert!(all_hosts_done().is_empty());
+    probe.error(true, anyhow!("failed"), None);
+    assert_eq!(
+        all_hosts_done(),
+        std::collections::HashMap::from([("test_input".to_string(), None)])
+    );
+    controller.stop().unwrap();
+}
+
+/// The controller reports a paused input connector that the open transaction
+/// waits for, because the transaction cannot commit until it is started.
+#[test]
+fn paused_connector_holds_transaction() {
+    let (controller, probe) = controller_with_probe(json!({
+        "name": "test",
+        "workers": 1,
+        "inputs": {},
+        "outputs": {},
+    }));
+    let paused = || controller.inner.paused_transaction_connectors();
+    let test_input = std::collections::BTreeSet::from(["test_input".to_string()]);
+
+    // A paused connector outside a transaction holds nothing.
+    controller.inner.status.pause_input_endpoint(&0);
+    assert!(paused().is_empty());
+
+    // A connector in the transaction holds it only while it is paused.
+    probe.start_transaction(Some("t"));
+    assert_eq!(paused(), test_input);
+    controller.inner.status.start_input_endpoint(&0);
+    assert!(paused().is_empty());
+    controller.inner.status.pause_input_endpoint(&0);
+    assert_eq!(paused(), test_input);
+
+    // Once it commits its part, it holds the transaction no longer.
+    probe.commit_transaction();
+    assert!(paused().is_empty());
     controller.stop().unwrap();
 }

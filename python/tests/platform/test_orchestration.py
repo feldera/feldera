@@ -26,7 +26,9 @@ from .helper import (
     wait_for_pipeline_reachable,
     get,
 )
+from feldera.pipeline_builder import PipelineBuilder
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS
+from tests import TEST_CLIENT
 
 
 def _basic_orchestration_info(pipeline: str, table: str, connector: str):
@@ -559,3 +561,41 @@ def test_output_connector_orchestration_errors(pipeline_name):
     assert resp.json()["error_code"] == "CommandError", (resp.status_code, resp.text)
 
     reset_pipeline(pipeline_name)
+
+
+@gen_pipeline_name
+def test_sdk_connector_names_need_encoding(pipeline_name):
+    """
+    The Python SDK puts the table name in the URL path of connector requests,
+    so a quoted table name with characters such as a space, `#` or `?` only
+    reaches the right connector if the SDK encodes it.
+    """
+    table_name = '"numbers #1?"'
+    connector_name = "gen_1"
+    sql = f"""
+    CREATE TABLE {table_name} (num INT) WITH (
+        'materialized' = 'true',
+        'connectors' = '[{{
+            "name": "{connector_name}",
+            "paused": true,
+            "transport": {{"name": "datagen", "config": {{"plan": [{{"limit": 5}}]}}}}
+        }}]'
+    );
+    """
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, sql).create_or_replace()
+    pipeline.start()
+
+    assert pipeline.input_connector_stats(table_name, connector_name).paused
+    pipeline.start_input_connector(table_name, connector_name)
+    assert not pipeline.input_connector_stats(table_name, connector_name).paused
+    pipeline.wait_for_token(
+        pipeline.generate_completion_token(table_name, connector_name)
+    )
+    pipeline.pause_input_connector(table_name, connector_name)
+    assert pipeline.input_connector_stats(table_name, connector_name).paused
+
+    pipeline.input_json(table_name, {"num": 6}, wait=True)
+    rows = list(pipeline.query(f"SELECT COUNT(*) AS c FROM {table_name}"))
+    assert rows == [{"c": 6}]
+
+    pipeline.stop(force=True)

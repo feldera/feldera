@@ -189,9 +189,9 @@ pub struct Cli {
     /// Waits between attempts start at 2 seconds and double per retry. On a
     /// 502 the client probes cluster health to decide between an immediate
     /// retry and a longer wait (e.g. while an upgrade is in progress).
-    /// Requests that are unsafe to repeat (e.g. `ingest`, whose first attempt
-    /// may already have been applied) retry only when the request provably
-    /// never reached its target. Set to 0 to disable retrying.
+    /// Requests that are unsafe to repeat (e.g. `clock-advance`, whose first
+    /// attempt may already have been applied) retry only when the request
+    /// provably never reached its target. Set to 0 to disable retrying.
     #[arg(
         long,
         env = "FELDERA_RETRIES",
@@ -586,12 +586,28 @@ pub enum RuntimeConfigKey {
     MaxBufferingDelay,
     CpuCoresMin,
     CpuCoresMax,
+    /// Deprecated: use `memory_min`.
     MemoryMbMin,
+    /// Deprecated: use `memory_max`.
     MemoryMbMax,
+    /// Takes a size such as `4Gi` or `16G`.
+    MemoryMin,
+    MemoryMax,
+    /// Deprecated: use `storage_max`.
     StorageMbMax,
+    /// Takes a size such as `400Gi`.
+    StorageMin,
+    StorageMax,
+    /// Takes a size such as `16G`, the memory limit the pipeline process
+    /// applies to itself.
+    MaxRss,
+    DatafusionMemory,
     StorageClass,
     VolumeAttributesClass,
+    /// Deprecated: use `min_spill_size`.
     MinStorageBytes,
+    /// Takes a size such as `10Mi`.
+    MinSpillSize,
     /// Deprecated: use `clock_resolution`.
     ClockResolutionUsecs,
     ClockResolution,
@@ -939,7 +955,8 @@ pub enum PipelineAction {
         #[arg(long, short = 'f')]
         force: bool,
     },
-    /// Control an input connector belonging to a table of a pipeline.
+    /// Control an input connector of a table, or an output connector of a
+    /// view, in a pipeline.
     Connector {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]

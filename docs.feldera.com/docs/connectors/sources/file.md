@@ -15,8 +15,8 @@ The file connector has the following configuration parameters:
 * `path`: The file to read, which may be specified as a filename or a `file://`
   URL.  In either case, it should use an absolute path.  Required.
 
-* `buffer_size_bytes`: The number of bytes of the file to read at one time.
-  Optional.
+* `buffer_size`: The size of the file to read at one time, such as `"64Ki"`.
+  Optional. `buffer_size_bytes`, a number of bytes, is a deprecated alias.
 
 * `follow`: If false (the default), the file input connector will read the file
   to its end and then stop.  If true, after reading the file's initial

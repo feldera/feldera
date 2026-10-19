@@ -34,6 +34,7 @@ use feldera_types::memory_pressure::{
     CRITICAL_MEMORY_PRESSURE_THRESHOLD, HIGH_MEMORY_PRESSURE_THRESHOLD,
     MODERATE_MEMORY_PRESSURE_THRESHOLD, MemoryPressure,
 };
+use feldera_types::size::ConfigSize;
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
 use serde::Serialize;
@@ -72,6 +73,16 @@ use typedmap::TypedDashMap;
 pub enum Error {
     /// Specified persistent id is not found in the circuit.
     UnknownPersistentId(String),
+    /// Two operators in the circuit have the same persistent id.
+    DuplicatePersistentId {
+        persistent_id: String,
+        first: String,
+        second: String,
+    },
+    /// An operator in the circuit has an empty persistent id.
+    EmptyPersistentId {
+        operator: String,
+    },
     /// One of the worker threads terminated unexpectedly.
     WorkerPanic {
         // Detailed panic information from all threads that
@@ -95,6 +106,8 @@ impl DetailedError for Error {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::UnknownPersistentId(_) => Cow::from("UnknownPersistentId"),
+            Self::DuplicatePersistentId { .. } => Cow::from("DuplicatePersistentId"),
+            Self::EmptyPersistentId { .. } => Cow::from("EmptyPersistentId"),
             Self::WorkerPanic { .. } => Cow::from("WorkerPanic"),
             Self::CheckpointPanic(_) => Cow::from("CheckpointPanic"),
             Self::Terminated => Cow::from("Terminated"),
@@ -110,6 +123,19 @@ impl Display for Error {
         match self {
             Self::UnknownPersistentId(persistent_id) => {
                 write!(f, "Unknown persistent node id: {persistent_id}")
+            }
+            Self::DuplicatePersistentId {
+                persistent_id,
+                first,
+                second,
+            } => {
+                write!(
+                    f,
+                    "Operators {first} and {second} have the same persistent id {persistent_id}"
+                )
+            }
+            Self::EmptyPersistentId { operator } => {
+                write!(f, "Operator {operator} has an empty persistent id")
             }
             Self::WorkerPanic { panic_info } => {
                 writeln!(f, "One or more worker threads terminated unexpectedly")?;
@@ -559,10 +585,7 @@ impl RuntimeInner {
         let buffer_cache_allocation_strategy = config
             .dev_tweaks
             .effective_buffer_cache_allocation_strategy();
-        let fbuf_slab_bytes_per_class = config
-            .dev_tweaks
-            .fbuf_slab_bytes_per_class
-            .unwrap_or(FBufSlabs::DEFAULT_BYTES_PER_CLASS);
+        let fbuf_slab_bytes_per_class = config.dev_tweaks.fbuf_slab_bytes_per_class();
         let storage = if let Some(storage) = config.storage.clone() {
             let locked_directory =
                 LockedDirectory::new_blocking(storage.config.path(), Duration::from_secs(60))?;
@@ -588,8 +611,8 @@ impl RuntimeInner {
         };
 
         let total_cache_bytes = if let Some(storage) = &storage {
-            match storage.options.cache_mib {
-                Some(cache_mib) => cache_mib.saturating_mul(1024 * 1024),
+            match storage.options.cache_size {
+                Some(cache_size) => cache_size.as_usize(),
                 None => 256usize
                     .saturating_mul(1024 * 1024)
                     .saturating_mul(nworkers)
@@ -1363,8 +1386,8 @@ impl Runtime {
 
     /// Returns the minimum number of bytes in a batch produced by a merge operator to spill it to storage.
     ///
-    /// The output is determined by the current memory pressure level and the user-configured `min_storage_bytes` option.
-    /// When memory pressure is low, the output is `min_storage_bytes`; when memory pressure is moderate, high or critical,
+    /// The output is determined by the current memory pressure level and the user-configured `min_spill_size` option.
+    /// When memory pressure is low, the output is `min_spill_size`; when memory pressure is moderate, high or critical,
     /// the output is `0`, meaning all batches are spilled to storage.
     ///
     /// # Returns
@@ -1381,19 +1404,22 @@ impl Runtime {
             if inner.memory_pressure() >= MemoryPressure::Moderate {
                 Some(0)
             } else {
-                Some(storage.options.min_storage_bytes.unwrap_or({
-                    // This reduces the files stored on disk to a reasonable number.
-
-                    10 * 1024 * 1024
-                }))
+                Some(
+                    storage
+                        .options
+                        .min_spill_size
+                        .map(ConfigSize::as_usize)
+                        // This reduces the files stored on disk to a reasonable number.
+                        .unwrap_or(10 * 1024 * 1024),
+                )
             }
         })
     }
 
     /// Returns the minimum number of bytes in a batch inserted into a spine by a foreground worker to spill it to storage.
     ///
-    /// The output is determined by the current memory pressure level and the user-configured `min_storage_bytes` option.
-    /// When memory pressure is low the output is `usize::MAX`, when memory pressure is moderate, the output is `min_storage_bytes`,
+    /// The output is determined by the current memory pressure level and the user-configured `min_spill_size` option.
+    /// When memory pressure is low the output is `usize::MAX`, when memory pressure is moderate, the output is `min_spill_size`,
     /// when memory pressure is high or critical, the output is `0`, meaning all batches are spilled to storage.
     ///
     /// # Returns
@@ -1412,7 +1438,8 @@ impl Runtime {
             Some(
                 storage
                     .options
-                    .min_storage_bytes
+                    .min_spill_size
+                    .map(ConfigSize::as_usize)
                     .unwrap_or(10 * 1024 * 1024),
             )
         } else {
@@ -1425,8 +1452,8 @@ impl Runtime {
     /// Returns the minimum number of bytes in a transient batch exchanged between DBSP operators during a step of the
     /// circuit to spill it to storage.
     ///
-    /// The output is determined by the current memory pressure level and the user-configured `min_step_storage_bytes` option.
-    /// When memory pressure is below critical, the output is `min_step_storage_bytes`, when memory pressure is critical,
+    /// The output is determined by the current memory pressure level and the user-configured `min_step_spill_size` option.
+    /// When memory pressure is below critical, the output is `min_step_spill_size`, when memory pressure is critical,
     /// the output is `0`, meaning every batch that holds anything is spilled to storage.
     ///
     /// # Returns
@@ -1443,7 +1470,13 @@ impl Runtime {
             if inner.memory_pressure() >= MemoryPressure::Critical {
                 Some(0)
             } else {
-                Some(storage.options.min_step_storage_bytes.unwrap_or(usize::MAX))
+                Some(
+                    storage
+                        .options
+                        .min_step_spill_size
+                        .map(ConfigSize::as_usize)
+                        .unwrap_or(usize::MAX),
+                )
             }
         })
     }
@@ -2061,6 +2094,7 @@ pub(crate) mod tests {
         dev_tweaks::{BufferCacheAllocationStrategy, BufferCacheStrategy},
     };
     use feldera_types::memory_pressure::MemoryPressure;
+    use feldera_types::size::ConfigSize;
     use std::{
         cell::RefCell,
         rc::Rc,
@@ -2390,7 +2424,7 @@ pub(crate) mod tests {
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                cache_mib: Some(8),
+                cache_size: Some(ConfigSize::from_mib(8)),
                 ..StorageOptions::default()
             },
         )
@@ -2424,7 +2458,7 @@ pub(crate) mod tests {
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                cache_mib: Some(8),
+                cache_size: Some(ConfigSize::from_mib(8)),
                 ..StorageOptions::default()
             },
         )
@@ -2771,7 +2805,7 @@ pub(crate) mod tests {
             query_runtime_memory_state(circuit.runtime());
         assert_eq!(pressure, MemoryPressure::Low);
 
-        // Verify the spill thresholds: at low pressure, merge threshold is set to the user-configured `min_storage_bytes`,
+        // Verify the spill thresholds: at low pressure, merge threshold is set to the user-configured `min_spill_size`,
         // insert threshold is set to `usize::MAX`, and step threshold is set to `usize::MAX`.
         assert_eq!(min_merge, TEN_MIB);
         assert_eq!(min_insert, usize::MAX);

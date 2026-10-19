@@ -95,7 +95,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -103,6 +102,8 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CustomFunctions;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.SqlSafeCastFunction;
 
 import static com.google.common.base.Preconditions.checkArgument;
 

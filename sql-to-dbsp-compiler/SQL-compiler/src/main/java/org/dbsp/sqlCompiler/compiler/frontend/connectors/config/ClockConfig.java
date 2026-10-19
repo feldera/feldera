@@ -30,11 +30,11 @@ public class ClockConfig implements IValidateConfig {
 
     @Override
     public boolean validate(ConfigReporter reporter) {
-        ConfigDuration.Setting resolution = ConfigDuration.resolve(reporter,
+        ConfigQuantity.Setting resolution = ConfigDuration.resolve(reporter,
                 "clock_resolution", this.clockResolution,
                 "clock_resolution_usecs", this.clockResolutionUsecs,
                 ConfigDuration.NANOS_PER_MICRO);
-        return ConfigDuration.checkMinimum(reporter, resolution, 1,
+        return ConfigQuantity.checkMinimum(reporter, resolution, 1,
                 "greater than 0, for example \"1s\"");
     }
 }

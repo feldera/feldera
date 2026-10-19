@@ -4,6 +4,7 @@ use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::runner::pipeline_logs::LogsSender;
 use async_trait::async_trait;
+use feldera_types::config::LegacySpelling;
 use feldera_types::config::{PipelineConfig, StorageConfig};
 use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus};
 use std::time::Duration;
@@ -66,13 +67,15 @@ pub trait PipelineExecutor: Sync + Send {
     ///
     /// When `is_gen2` is true the pipeline is configured with the Gen-2
     /// engine, so no pipeline binary was compiled: the executor launches the
-    /// Gen-2 engine and ignores `program_binary_url`.
+    /// Gen-2 engine and ignores `program_binary_url`. A Gen-2 program with Rust
+    /// UDFs references its UDF library in the program info; the executor fetches
+    /// it from the compiler server and passes it to the engine (`--udf-library`).
     ///
-    /// When `legacy_duration_spelling` is true the pipeline runs a runtime that
-    /// may predate the duration rename, because it is pinned to one other than
-    /// the platform's or was compiled by an earlier platform: the executor
-    /// writes the configuration the pipeline reads through
-    /// [`feldera_types::config::to_legacy_duration_spelling`].
+    /// `legacy_spelling` says which settings the pipeline's runtime reads only
+    /// in their older spelling, because it is pinned to a runtime other than
+    /// the platform's or was compiled by an earlier platform that predates a
+    /// rename: the executor writes the configuration the pipeline reads through
+    /// [`LegacySpelling::apply`].
     #[allow(clippy::too_many_arguments)]
     async fn provision(
         &mut self,
@@ -85,7 +88,7 @@ pub trait PipelineExecutor: Sync + Send {
         program_info_url: &str,
         program_version: Version,
         is_gen2: bool,
-        legacy_duration_spelling: bool,
+        legacy_spelling: LegacySpelling,
     ) -> Result<(), ManagerError>;
 
     // `is_provisioned()`, `check()`, `stop()` and `clear()` receive the stored deployment config

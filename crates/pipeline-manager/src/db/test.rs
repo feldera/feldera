@@ -62,6 +62,7 @@ use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
     BootstrapConfig, BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus, StorageStatusDetails,
 };
+use feldera_types::size::ConfigSize;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
 use proptest_derive::Arbitrary;
@@ -435,8 +436,8 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
     } else {
         serde_json::to_value(RuntimeConfig {
             workers: val.val0,
-            max_rss_mb: val.val21,
-            datafusion_memory_mb: None,
+            max_rss: val.val21.map(ConfigSize::from_mb),
+            datafusion_memory: None,
             hosts: val.val20,
             cpu_profiler: val.val1,
             min_batch_size_records: val.val2,
@@ -448,14 +449,14 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             resources: ResourceConfig {
                 cpu_cores_min: val.val7,
                 cpu_cores_max: val.val8,
-                memory_mb_min: val.val9,
-                memory_mb_max: val.val10,
-                storage_mb_min: val.val22,
-                storage_mb_max: val.val11,
+                memory_min: val.val9.map(ConfigSize::from_mb),
+                memory_max: val.val10.map(ConfigSize::from_mb),
+                storage_min: val.val22.map(ConfigSize::from_mb),
+                storage_max: val.val11.map(ConfigSize::from_mb),
                 autoscaling: val.val23.then_some(AutoscalingConfig {
                     storage: Some(StorageAutoscalingConfig {
                         scale_threshold: Some(0.8),
-                        scale_threshold_available_mb: Some(10000),
+                        scale_threshold_available: Some(ConfigSize::from_mb(10000)),
                         scale_factor: Some(2.0),
                     }),
                 }),
@@ -672,8 +673,8 @@ fn limited_patch_pipeline_deployment() -> impl Strategy<Value = PipelineDeployme
             resources: DeploymentResources {
                 cpu_cores_min,
                 cpu_cores_max,
-                memory_mb_min,
-                memory_mb_max,
+                memory_min: memory_mb_min.map(ConfigSize::from_mb),
+                memory_max: memory_mb_max.map(ConfigSize::from_mb),
             },
         },
     )
@@ -731,6 +732,7 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
                         .unwrap_or_default(),
                     program_schema: program_info.schema.clone(),
                     circuit_ir: None,
+                    udf_library: None,
                 }),
             })
             .unwrap()
@@ -2619,8 +2621,8 @@ async fn pipeline_versioning() {
     // Edit runtime configuration -> increment version and refresh_version
     let new_runtime_config = serde_json::to_value(RuntimeConfig {
         workers: 100,
-        max_rss_mb: None,
-        datafusion_memory_mb: None,
+        max_rss: None,
+        datafusion_memory: None,
         hosts: 1,
         storage: None,
         fault_tolerance: FtConfig::default(),
@@ -2632,10 +2634,10 @@ async fn pipeline_versioning() {
         resources: ResourceConfig {
             cpu_cores_min: None,
             cpu_cores_max: None,
-            memory_mb_min: None,
-            memory_mb_max: None,
-            storage_mb_min: None,
-            storage_mb_max: None,
+            memory_min: None,
+            memory_max: None,
+            storage_min: None,
+            storage_max: None,
             autoscaling: None,
             storage_class: None,
             volume_attributes_class: None,
@@ -2681,8 +2683,8 @@ async fn pipeline_versioning() {
     assert_eq!(current.refresh_version, Version(7));
 }
 
-/// `storage_mb_min` sizes the volume and cannot change while storage is in
-/// use, like `storage_mb_max`. The autoscaling policy can.
+/// `storage_min` sizes the volume and cannot change while storage is in
+/// use, like `storage_max`. The autoscaling policy can.
 #[tokio::test]
 async fn storage_mb_min_edit_restricted_to_cleared_storage() {
     let handle = test_setup().await;
@@ -2850,24 +2852,24 @@ async fn storage_mb_min_edit_restricted_to_cleared_storage() {
         matches!(
             &err,
             DBError::EditRestrictedToClearedStorage { not_allowed }
-                if not_allowed == &["`runtime_config.resources.storage_mb_min`".to_string()]
+                if not_allowed == &["`runtime_config.resources.storage_min`".to_string()]
         ),
         "{err:?}"
     );
 
-    // Changing the autoscaling policy is allowed.
-    let policy = json!({
-        "storage": {
-            "scale_threshold": 0.9,
-            "scale_threshold_available_mb": 20000,
-            "scale_factor": 3.0
-        }
-    });
+    // Changing the autoscaling policy is allowed. The policy goes in under the
+    // older spelling and comes back stored under the current one.
     update(json!({
         "resources": {
             "storage_mb_min": 1000,
             "storage_mb_max": 8000,
-            "autoscaling": policy
+            "autoscaling": {
+                "storage": {
+                    "scale_threshold": 0.9,
+                    "scale_threshold_available_mb": 20000,
+                    "scale_factor": 3.0
+                }
+            }
         }
     }))
     .await
@@ -2877,7 +2879,16 @@ async fn storage_mb_min_edit_restricted_to_cleared_storage() {
         .get_pipeline(tenant_id, "autoscaled")
         .await
         .unwrap();
-    assert_eq!(stored.runtime_config["resources"]["autoscaling"], policy);
+    assert_eq!(
+        stored.runtime_config["resources"]["autoscaling"],
+        json!({
+            "storage": {
+                "scale_threshold": 0.9,
+                "scale_threshold_available": "20G",
+                "scale_factor": 3.0
+            }
+        })
+    );
 }
 
 /// If the name of a pipeline already exists, it should return an error.
@@ -3747,7 +3758,7 @@ async fn pipeline_deployment_patch() {
     assert_eq!(returned, after);
     let resized = after.deployment_config.clone().unwrap();
     assert_eq!(resized["resources"]["cpu_cores_min"], json!(1.0));
-    assert_eq!(resized["resources"]["memory_mb_min"], json!(3000));
+    assert_eq!(resized["resources"]["memory_min"], json!("3G"));
     assert_eq!(after.runtime_config, before.runtime_config);
     assert_eq!(after.version, before.version);
     assert_eq!(after.refresh_version, Version(before.refresh_version.0 + 1));
@@ -3841,7 +3852,7 @@ async fn pipeline_deployment_patch() {
     runtime_config["resources"]["cpu_cores_min"] = json!(2.5);
     let edited = edit(runtime_config).await;
     assert_eq!(edited["resources"]["cpu_cores_min"], json!(2.5));
-    assert_eq!(edited["resources"]["memory_mb_min"], json!(4000));
+    assert_eq!(edited["resources"]["memory_min"], json!("4G"));
 }
 
 #[tokio::test]
@@ -4980,8 +4991,8 @@ async fn pipeline_provision_version_guard() {
             &Some({
                 let config = RuntimeConfig {
                     workers: 10,
-                    max_rss_mb: None,
-                    datafusion_memory_mb: None,
+                    max_rss: None,
+                    datafusion_memory: None,
                     hosts: 1,
                     storage: None,
                     fault_tolerance: FtConfig::default(),
@@ -7246,25 +7257,20 @@ impl ModelHelpers for Mutex<DbModel> {
                 {
                     not_allowed.push("`runtime_config.fault_tolerance`");
                 }
-                if runtime_config
-                    .get("resources")
-                    .map(|v| v.get("storage_mb_max"))
-                    != pipeline
-                        .runtime_config
+                let storage_size = |config: &serde_json::Value, key: &str, legacy: &str| {
+                    config
                         .get("resources")
-                        .map(|v| v.get("storage_mb_max"))
+                        .map(|v| v.get(key).or(v.get(legacy)).cloned())
+                };
+                if storage_size(runtime_config, "storage_max", "storage_mb_max")
+                    != storage_size(&pipeline.runtime_config, "storage_max", "storage_mb_max")
                 {
-                    not_allowed.push("`runtime_config.resources.storage_mb_max`");
+                    not_allowed.push("`runtime_config.resources.storage_max`");
                 }
-                if runtime_config
-                    .get("resources")
-                    .map(|v| v.get("storage_mb_min"))
-                    != pipeline
-                        .runtime_config
-                        .get("resources")
-                        .map(|v| v.get("storage_mb_min"))
+                if storage_size(runtime_config, "storage_min", "storage_mb_min")
+                    != storage_size(&pipeline.runtime_config, "storage_min", "storage_mb_min")
                 {
-                    not_allowed.push("`runtime_config.resources.storage_mb_min`");
+                    not_allowed.push("`runtime_config.resources.storage_min`");
                 }
                 if runtime_config.get("resources").map(|v| v.get("namespace"))
                     != pipeline
@@ -8721,8 +8727,9 @@ impl Storage for Mutex<DbModel> {
             error: e,
         })?;
 
-        // The Gen-2 engine completes at the SQL stage: it carries its SQL log and program info
-        // (CompilingSql stored neither), delivers no binary, and stores no Rust log.
+        // A Gen-2 program without Rust UDFs completes at the SQL stage: it carries its SQL log
+        // and program info (CompilingSql stored neither), delivers no binary, and stores no
+        // Rust log.
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
         pipeline.program_error = ProgramError {

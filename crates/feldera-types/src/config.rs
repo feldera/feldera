@@ -9,6 +9,7 @@ use crate::duration::ConfigDuration;
 use crate::postprocess::PostprocessorConfig;
 use crate::preprocess::PreprocessorConfig;
 use crate::secret_resolver::default_secrets_directory;
+use crate::size::{ConfigSize, LegacySizeUnit};
 use crate::transport::adhoc::AdHocInputConfig;
 use crate::transport::clock::{ClockConfig, ClockTimezoneOffset};
 use crate::transport::datagen::DatagenInputConfig;
@@ -28,7 +29,7 @@ use crate::transport::redis::RedisOutputConfig;
 use crate::transport::s2::{S2InputConfig, S2OutputConfig};
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
-use crate::{duration::LegacyUnit, duration_setting, nullable_duration_setting};
+use crate::{duration::LegacyUnit, duration_setting, nullable_duration_setting, size_setting};
 use core::fmt;
 use feldera_ir::{MirNode, MirNodeId};
 use serde::de::{self, MapAccess, Visitor};
@@ -122,6 +123,33 @@ duration_setting!(
     "max_output_buffer_time",
     LegacyUnit::Millis
 );
+size_setting!(size_max_rss, "max_rss", LegacySizeUnit::Megabytes);
+size_setting!(
+    size_datafusion_memory,
+    "datafusion_memory",
+    LegacySizeUnit::Megabytes
+);
+size_setting!(size_cache_size, "cache_size", LegacySizeUnit::Mebibytes);
+size_setting!(size_min_spill_size, "min_spill_size", LegacySizeUnit::Bytes);
+size_setting!(
+    size_min_step_spill_size,
+    "min_step_spill_size",
+    LegacySizeUnit::Bytes
+);
+size_setting!(size_memory_min, "memory_min", LegacySizeUnit::Megabytes);
+size_setting!(size_memory_max, "memory_max", LegacySizeUnit::Megabytes);
+size_setting!(size_storage_min, "storage_min", LegacySizeUnit::Megabytes);
+size_setting!(size_storage_max, "storage_max", LegacySizeUnit::Megabytes);
+size_setting!(
+    size_scale_threshold_available,
+    "scale_threshold_available",
+    LegacySizeUnit::Megabytes
+);
+size_setting!(
+    size_max_queued_size,
+    "max_queued_size",
+    LegacySizeUnit::Bytes
+);
 
 /// Program information included in the pipeline configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
@@ -135,6 +163,20 @@ pub struct ProgramIr {
     /// Rust-compiled pipelines, whose circuit is statically linked into the binary.
     #[serde(default)]
     pub circuit_ir: Option<serde_json::Value>,
+    /// The program's Rust UDFs compiled to a native shared library (a Linux `cdylib`), which
+    /// the Gen-2 engine loads into its process. `None` when the program has no Rust UDFs, and
+    /// for Rust-compiled pipelines, which link their UDFs into the binary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub udf_library: Option<UdfLibrary>,
+}
+
+/// A program's UDF library, named by the same checksums as a pipeline binary.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+pub struct UdfLibrary {
+    /// Checksum of the sources the library was built from.
+    pub source_checksum: String,
+    /// sha256 checksum of the library file.
+    pub integrity_checksum: String,
 }
 
 /// Identity of a pipeline, used to record and check ownership of an S3
@@ -395,28 +437,46 @@ pub struct StorageOptions {
     pub backend: StorageBackendConfig,
 
     /// For a batch of data maintained as part of a persistent index during a
-    /// pipeline run, the minimum estimated number of bytes to write it to
-    /// storage.
+    /// pipeline run, the minimum estimated size to write it to storage, such
+    /// as `"10Mi"`.
     ///
     /// This is provided for debugging and fine-tuning and should ordinarily be
     /// left unset.
     ///
     /// A value of 0 will write even empty batches to storage, and nonzero
-    /// values provide a threshold.  `usize::MAX` would effectively disable
-    /// storage for such batches.  The default is 10,048,576 (10 MiB).
-    pub min_storage_bytes: Option<usize>,
+    /// values provide a threshold.  A very large value effectively disables
+    /// storage for such batches.  The default is `"10Mi"`.
+    ///
+    /// Before release 0.367.0 this setting was `min_storage_bytes`, a number
+    /// of bytes. That name is deprecated but still read.
+    #[serde(
+        alias = "min_storage_bytes",
+        deserialize_with = "size_min_spill_size",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub min_spill_size: Option<ConfigSize>,
 
     /// For a batch of data passed through the pipeline during a single step,
-    /// the minimum estimated number of bytes to write it to storage.
+    /// the minimum estimated size to write it to storage, such as `"64Mi"`.
     ///
     /// This is provided for debugging and fine-tuning and should ordinarily be
     /// left unset.  A value of 0 writes every batch that holds anything to
     /// storage; an empty batch stays in memory, since it has nothing to spill
     /// and a layer file is not free.  Nonzero values provide a threshold.
-    /// `usize::MAX`, the default, effectively disables storage for such
-    /// batches.  If it is set to another value, it should ordinarily be
-    /// greater than or equal to `min_storage_bytes`.
-    pub min_step_storage_bytes: Option<usize>,
+    /// Unset, the default, effectively disables storage for such batches.
+    /// If it is set, it should ordinarily be greater than or equal to
+    /// `min_spill_size`.
+    ///
+    /// Before release 0.367.0 this setting was `min_step_storage_bytes`, a
+    /// number of bytes. That name is deprecated but still read.
+    #[serde(
+        alias = "min_step_storage_bytes",
+        deserialize_with = "size_min_step_spill_size",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub min_step_spill_size: Option<ConfigSize>,
 
     /// The form of compression to use in data batches.
     ///
@@ -437,12 +497,21 @@ pub struct StorageOptions {
     /// which selects the algorithm's own default.
     pub compression_level: Option<i32>,
 
-    /// The maximum size of the in-memory storage cache, in MiB.
+    /// The maximum size of the in-memory storage cache, such as `"4Gi"`.
     ///
     /// If set, the specified cache size is spread across all the foreground and
     /// background threads. If unset, each foreground or background thread cache
     /// is limited to 256 MiB.
-    pub cache_mib: Option<usize>,
+    ///
+    /// Before release 0.367.0 this setting was `cache_mib`, a number of
+    /// mebibytes. That name is deprecated but still read.
+    #[serde(
+        alias = "cache_mib",
+        deserialize_with = "size_cache_size",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub cache_size: Option<ConfigSize>,
 
     /// False-positive rate for Bloom filters on batches on storage, as a
     /// fraction f, where 0 < f < 1.
@@ -1077,8 +1146,8 @@ pub struct RuntimeConfig {
     /// used during a step.
     pub workers: u16,
 
-    /// The maximum amount of memory, in Megabytes, that the pipeline is allowed to use
-    /// on each host.
+    /// The maximum amount of memory that the pipeline is allowed to use on
+    /// each host, such as `"16G"` or `"16Gi"`.
     ///
     /// Setting this property activates memory pressure monitoring and backpressure
     /// mechanisms. The pipeline will track the amount of remaining memory and
@@ -1092,23 +1161,32 @@ pub struct RuntimeConfig {
     /// running out of memory. The setting should not exceed the memory limit of the pipeline
     /// instance.
     ///
-    /// When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
+    /// When `max_rss` is not specified but `resources.memory_max` is set, the
     /// latter is used as the effective memory cap for the pipeline.
     ///
     /// The pipeline caps this limit at the memory available to it, which is the
     /// host's memory or the container's memory limit, whichever is smaller. It
     /// rechecks the available memory every second.
     ///
+    /// Before release 0.367.0 this setting was `max_rss_mb`, a number of
+    /// megabytes. That name is deprecated but still read.
+    ///
     /// See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
     /// for more details.
-    pub max_rss_mb: Option<u64>,
+    #[serde(
+        default,
+        alias = "max_rss_mb",
+        deserialize_with = "size_max_rss",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub max_rss: Option<ConfigSize>,
 
-    /// DataFusion memory pool size, in MB, shared by the ad-hoc query
-    /// engine and the Delta Lake / Iceberg connectors.
+    /// DataFusion memory pool size, such as `"1Gi"`, shared by the ad-hoc
+    /// query engine and the Delta Lake / Iceberg connectors.
     ///
-    /// Carved out of `max_rss_mb` (falling back to
-    /// `resources.memory_mb_max`); the remainder goes to the DBSP circuit,
-    /// so the two do not double-book RAM.
+    /// Carved out of `max_rss` (falling back to `resources.memory_max`); the
+    /// remainder goes to the DBSP circuit, so the two do not double-book RAM.
     ///
     /// Unset: defaults to 5% of the effective budget, capped at 2 GB.
     /// Pipelines that don't run heavy ad-hoc / Delta / Iceberg workloads
@@ -1121,9 +1199,19 @@ pub struct RuntimeConfig {
     ///
     /// No pool limit applied if no overall budget is configured.
     ///
+    /// Before release 0.367.0 this setting was `datafusion_memory_mb`, a
+    /// number of megabytes. That name is deprecated but still read.
+    ///
     /// See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
     /// for more details.
-    pub datafusion_memory_mb: Option<u64>,
+    #[serde(
+        default,
+        alias = "datafusion_memory_mb",
+        deserialize_with = "size_datafusion_memory",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub datafusion_memory: Option<ConfigSize>,
 
     /// Number of DBSP hosts.
     ///
@@ -1420,8 +1508,8 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             workers: 8,
-            max_rss_mb: None,
-            datafusion_memory_mb: None,
+            max_rss: None,
+            datafusion_memory: None,
             hosts: 1,
             storage: Some(StorageOptions::default()),
             fault_tolerance: FtConfig::default(),
@@ -1452,10 +1540,10 @@ impl Default for RuntimeConfig {
     }
 }
 
-/// Upper bound on the default DataFusion pool size, in MB.
+/// Upper bound on the default DataFusion pool size.
 ///
 /// Spill-to-disk handles overflow; reserving more starves the circuit.
-pub const DEFAULT_DATAFUSION_MEMORY_MB_CEILING: u64 = 2048;
+pub const DEFAULT_DATAFUSION_MEMORY_CEILING: ConfigSize = ConfigSize::from_mb(2048);
 
 /// Default DataFusion pool size as a percentage of the pipeline's
 /// effective memory budget. The remainder is left for the DBSP circuit.
@@ -1472,23 +1560,25 @@ impl RuntimeConfig {
         self.clock_resolution.unwrap_or(DEFAULT_CLOCK_RESOLUTION)
     }
 
-    /// Pipeline's effective memory budget in MB: `max_rss_mb`, falling back
-    /// to `resources.memory_mb_max` (the k8s pod limit).
-    pub fn effective_memory_mb(&self) -> Option<u64> {
-        self.max_rss_mb.or(self.resources.memory_mb_max)
+    /// Pipeline's effective memory budget: `max_rss`, falling back to
+    /// `resources.memory_max` (the k8s pod limit).
+    pub fn effective_memory(&self) -> Option<ConfigSize> {
+        self.max_rss.or(self.resources.memory_max)
     }
 
-    /// Resolved DataFusion pool size in MB: explicit `datafusion_memory_mb`
-    /// if set, else 5% of the effective budget capped at
-    /// `DEFAULT_DATAFUSION_MEMORY_MB_CEILING`. `None` if no budget is
+    /// Resolved DataFusion pool size: explicit `datafusion_memory` if set,
+    /// else 5% of the effective budget capped at
+    /// `DEFAULT_DATAFUSION_MEMORY_CEILING`. `None` if no budget is
     /// configured.
-    pub fn resolved_datafusion_memory_mb(&self) -> Option<u64> {
-        if let Some(explicit) = self.datafusion_memory_mb {
+    pub fn resolved_datafusion_memory(&self) -> Option<ConfigSize> {
+        if let Some(explicit) = self.datafusion_memory {
             return Some(explicit);
         }
-        let effective = self.effective_memory_mb()?;
-        let fraction = effective * DEFAULT_DATAFUSION_MEMORY_PERCENT / 100;
-        Some(fraction.min(DEFAULT_DATAFUSION_MEMORY_MB_CEILING))
+        let effective = self.effective_memory()?.as_bytes();
+        // In `u128`: a budget near `u64::MAX` times the percentage overflows.
+        let fraction = u128::from(effective) * u128::from(DEFAULT_DATAFUSION_MEMORY_PERCENT) / 100;
+        let fraction = u64::try_from(fraction).unwrap_or(u64::MAX);
+        Some(ConfigSize::from_bytes(fraction).min(DEFAULT_DATAFUSION_MEMORY_CEILING))
     }
 }
 
@@ -1843,19 +1933,294 @@ pub fn to_legacy_duration_spelling(config: &mut serde_json::Value) {
     }
 }
 
+/// Which settings a runtime reads only in their older spelling, because it
+/// predates the release that renamed them.
+///
+/// The pipeline manager computes this for the runtime a pipeline runs, and the
+/// executors apply it to the configuration they hand the pipeline process.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LegacySpelling {
+    /// The runtime predates the duration rename (release 0.366.0).
+    pub durations: bool,
+    /// The runtime predates the size rename (release 0.367.0).
+    pub sizes: bool,
+}
+
+impl LegacySpelling {
+    /// A runtime that reads every current spelling.
+    pub const NONE: LegacySpelling = LegacySpelling {
+        durations: false,
+        sizes: false,
+    };
+
+    /// Whether any setting must be rewritten.
+    pub fn any(self) -> bool {
+        self.durations || self.sizes
+    }
+
+    /// Rewrites `config`, a serialized [`RuntimeConfig`] or
+    /// [`PipelineConfig`], in the spellings the runtime reads.
+    pub fn apply(self, config: &mut serde_json::Value) {
+        if self.durations {
+            to_legacy_duration_spelling(config);
+        }
+        if self.sizes {
+            to_legacy_size_spelling(config);
+        }
+    }
+}
+
+/// Rewrites the size settings of a serialized pipeline configuration in the
+/// spelling that Feldera releases before the size rename read: under the older
+/// key, as a whole number of the unit that key named.
+///
+/// `config` is a serialized [`RuntimeConfig`] or [`PipelineConfig`], as for
+/// [`to_legacy_duration_spelling`], and the pipeline manager applies it in the
+/// same cases, to a runtime that may predate the rename. A size that is not a
+/// whole number of the older unit rounds up to the next one, so a positive
+/// limit never becomes a `0`; a value that does not parse is left as it is,
+/// for the runtime to reject.
+pub fn to_legacy_size_spelling(config: &mut serde_json::Value) {
+    use crate::size::LegacySizeUnit::{self, Bytes, Mebibytes, Megabytes};
+    use serde_json::{Map, Value};
+
+    /// How one setting is spelled before the rename.
+    struct Rule {
+        new: &'static str,
+        old: &'static str,
+        unit: LegacySizeUnit,
+    }
+    const fn rule(new: &'static str, old: &'static str, unit: LegacySizeUnit) -> Rule {
+        Rule { new, old, unit }
+    }
+
+    fn apply(object: &mut Map<String, Value>, rules: &[Rule]) {
+        for rule in rules {
+            let Some(value) = object.remove(rule.new) else {
+                continue;
+            };
+            let legacy = match &value {
+                Value::String(text) => match text.parse::<ConfigSize>() {
+                    Ok(size) => Value::from(size.as_bytes().div_ceil(rule.unit.bytes())),
+                    Err(_) => {
+                        object.insert(rule.new.to_string(), value);
+                        continue;
+                    }
+                },
+                // The older keys took no `null`: it meant "unset".
+                Value::Null => continue,
+                // A bare number already has the older meaning.
+                other => other.clone(),
+            };
+            object.insert(rule.old.to_string(), legacy);
+        }
+    }
+    fn child<'a>(
+        object: &'a mut Map<String, Value>,
+        key: &str,
+    ) -> Option<&'a mut Map<String, Value>> {
+        object.get_mut(key).and_then(Value::as_object_mut)
+    }
+    /// One connector of `inputs` or `outputs`.
+    fn connector(endpoint: &mut Map<String, Value>) {
+        apply(
+            endpoint,
+            &[rule("max_queued_size", "max_queued_bytes", Bytes)],
+        );
+        let name = endpoint
+            .get("transport")
+            .and_then(|transport| transport.get("name"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        if let Some(transport) = child(endpoint, "transport").and_then(|t| child(t, "config")) {
+            match name.as_deref() {
+                Some("file_input") => apply(
+                    transport,
+                    &[rule("buffer_size", "buffer_size_bytes", Bytes)],
+                ),
+                Some("dynamodb_output" | "postgres_output") => apply(
+                    transport,
+                    &[rule("max_buffer_size", "max_buffer_size_bytes", Bytes)],
+                ),
+                Some("postgres_cdc_input") => {
+                    if let Some(batch) = child(transport, "batch") {
+                        apply(batch, &[rule("max_size", "max_bytes", Bytes)]);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let Some(global) = config.as_object_mut() else {
+        return;
+    };
+    apply(
+        global,
+        &[
+            rule("max_rss", "max_rss_mb", Megabytes),
+            rule("datafusion_memory", "datafusion_memory_mb", Megabytes),
+        ],
+    );
+    if let Some(storage) = child(global, "storage") {
+        apply(
+            storage,
+            &[
+                rule("cache_size", "cache_mib", Mebibytes),
+                rule("min_spill_size", "min_storage_bytes", Bytes),
+                rule("min_step_spill_size", "min_step_storage_bytes", Bytes),
+            ],
+        );
+    }
+    if let Some(resources) = child(global, "resources") {
+        apply(
+            resources,
+            &[
+                rule("memory_min", "memory_mb_min", Megabytes),
+                rule("memory_max", "memory_mb_max", Megabytes),
+                rule("storage_min", "storage_mb_min", Megabytes),
+                rule("storage_max", "storage_mb_max", Megabytes),
+            ],
+        );
+        if let Some(storage) = child(resources, "autoscaling").and_then(|a| child(a, "storage")) {
+            apply(
+                storage,
+                &[rule(
+                    "scale_threshold_available",
+                    "scale_threshold_available_mb",
+                    Megabytes,
+                )],
+            );
+        }
+    }
+    if let Some(tweaks) = child(global, "dev_tweaks") {
+        apply(
+            tweaks,
+            &[
+                rule("storage_max", "storage_mb_max", Mebibytes),
+                rule(
+                    "fbuf_slab_size_per_class",
+                    "fbuf_slab_bytes_per_class",
+                    Bytes,
+                ),
+                rule(
+                    "lazy_input_map_key_block_size",
+                    "lazy_input_map_key_block_bytes",
+                    Bytes,
+                ),
+                rule(
+                    "exchange_channel_capacity",
+                    "exchange_channel_capacity_bytes",
+                    Bytes,
+                ),
+            ],
+        );
+    }
+    for endpoints in ["inputs", "outputs"] {
+        if let Some(endpoints) = child(global, endpoints) {
+            for endpoint in endpoints.values_mut().filter_map(Value::as_object_mut) {
+                connector(endpoint);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::deserialize_fault_tolerance;
     use crate::config::{
-        ConnectorConfig, DEFAULT_CLOCK_RESOLUTION, DEFAULT_DATAFUSION_MEMORY_MB_CEILING,
+        ConnectorConfig, DEFAULT_CLOCK_RESOLUTION, DEFAULT_DATAFUSION_MEMORY_CEILING,
         DEFAULT_PULL_INTERVAL, DEFAULT_RETENTION_MIN_AGE, FileBackendConfig, FtConfig, FtModel,
         OutputBufferConfig, PipelineConfig, ResourceConfig, RuntimeConfig, StorageBackendConfig,
         StorageOptions, SyncConfig, TransportConfig,
     };
     use crate::duration::ConfigDuration;
+    use crate::size::ConfigSize;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use std::time::Duration;
+
+    /// Reads `value` as a `T`, writes it back, and reads that again: the
+    /// configuration Feldera stores must load the way the one it was given did.
+    fn assert_reloads<T>(value: serde_json::Value)
+    where
+        T: Serialize + for<'de> Deserialize<'de>,
+    {
+        let first: T = serde_json::from_value(value.clone())
+            .unwrap_or_else(|e| panic!("{value} does not load: {e}"));
+        let written = serde_json::to_value(&first).unwrap();
+        let second: T = serde_json::from_value(written.clone()).unwrap_or_else(|e| {
+            panic!("{value} is written as {written}, which does not load: {e}")
+        });
+        assert_eq!(serde_json::to_value(&second).unwrap(), written, "{value}");
+    }
+
+    /// Every size setting reloads from what Feldera writes back, whatever the
+    /// size. Zero, and a size no named unit divides, are written in bytes,
+    /// and a setting that once counted megabytes refuses a string without a
+    /// unit, so that form must carry one.
+    #[test]
+    fn size_settings_reload_from_what_is_written() {
+        use crate::transport::dynamodb::DynamoDBWriterConfig;
+        use crate::transport::file::FileInputConfig;
+        use crate::transport::postgres::{PostgresCdcBatchConfig, PostgresWriterConfig};
+
+        // Under the earlier names, a bare number in the earlier unit, as
+        // `datafusion_memory_mb: 0` or `cache_mib: 0`.
+        for number in [0u64, 1, 1_100, u64::MAX] {
+            assert_reloads::<RuntimeConfig>(json!({
+                "max_rss_mb": number,
+                "datafusion_memory_mb": number,
+                "storage": {"cache_mib": number, "min_storage_bytes": number},
+                "resources": {"memory_mb_min": number, "storage_mb_max": number},
+                "dev_tweaks": {"storage_mb_max": number},
+            }));
+        }
+
+        let max = format!("{}B", u64::MAX);
+        for size in ["0B", "1B", "999B", "1.1Gi", "1.1G", "16G", "8Gi", &max] {
+            assert_reloads::<RuntimeConfig>(json!({
+                "max_rss": size,
+                "datafusion_memory": size,
+                "storage": {
+                    "cache_size": size,
+                    "min_spill_size": size,
+                    "min_step_spill_size": size,
+                },
+                "resources": {
+                    "memory_min": size,
+                    "memory_max": size,
+                    "storage_min": size,
+                    "storage_max": size,
+                    "autoscaling": {"storage": {"scale_threshold_available": size}},
+                },
+                "dev_tweaks": {
+                    "storage_max": size,
+                    "fbuf_slab_size_per_class": size,
+                    "exchange_channel_capacity": size,
+                },
+            }));
+            assert_reloads::<ConnectorConfig>(json!({
+                "transport": {
+                    "name": "file_input",
+                    "config": {"path": "input.csv", "buffer_size": size},
+                },
+                "max_queued_size": size,
+            }));
+            assert_reloads::<FileInputConfig>(json!({"path": "input.csv", "buffer_size": size}));
+            assert_reloads::<PostgresCdcBatchConfig>(json!({"max_size": size}));
+            assert_reloads::<PostgresWriterConfig>(json!({
+                "uri": "postgres://localhost/db",
+                "table": "t",
+                "max_buffer_size": size,
+            }));
+            assert_reloads::<DynamoDBWriterConfig>(json!({
+                "table": "t",
+                "region": "us-east-1",
+                "max_buffer_size": size,
+            }));
+        }
+    }
 
     /// A configuration written by an older version of Feldera carries no
     /// `soft_delete` field, and a connector that does not use soft deletes
@@ -1931,47 +2296,56 @@ mod test {
     #[test]
     fn resolved_datafusion_memory_explicit_passes_through() {
         let config = RuntimeConfig {
-            max_rss_mb: Some(8_000),
-            datafusion_memory_mb: Some(1_500),
+            max_rss: Some(ConfigSize::from_mb(8_000)),
+            datafusion_memory: Some(ConfigSize::from_mb(1_500)),
             ..Default::default()
         };
-        assert_eq!(config.resolved_datafusion_memory_mb(), Some(1_500));
+        assert_eq!(
+            config.resolved_datafusion_memory(),
+            Some(ConfigSize::from_mb(1_500))
+        );
     }
 
     #[test]
     fn resolved_datafusion_memory_unconfigured_returns_none() {
         let config = RuntimeConfig::default();
-        assert!(config.max_rss_mb.is_none());
-        assert!(config.resources.memory_mb_max.is_none());
-        assert_eq!(config.resolved_datafusion_memory_mb(), None);
+        assert!(config.max_rss.is_none());
+        assert!(config.resources.memory_max.is_none());
+        assert_eq!(config.resolved_datafusion_memory(), None);
     }
 
     #[test]
     fn resolved_datafusion_memory_small_budget_scales_down() {
         // Small pipelines must provision cleanly; the default just shrinks.
         let config = RuntimeConfig {
-            max_rss_mb: Some(256),
+            max_rss: Some(ConfigSize::from_mb(256)),
             ..Default::default()
         };
-        assert_eq!(config.resolved_datafusion_memory_mb(), Some(12));
+        assert_eq!(
+            config.resolved_datafusion_memory(),
+            Some(ConfigSize::from_bytes(12_800_000))
+        );
 
         let config = RuntimeConfig {
-            max_rss_mb: Some(512),
+            max_rss: Some(ConfigSize::from_mb(512)),
             ..Default::default()
         };
-        assert_eq!(config.resolved_datafusion_memory_mb(), Some(25));
+        assert_eq!(
+            config.resolved_datafusion_memory(),
+            Some(ConfigSize::from_bytes(25_600_000))
+        );
     }
 
     #[test]
     fn resolved_datafusion_memory_clamps_to_ceiling_for_large_budgets() {
         // 5% of 64 GB = 3.2 GB, above the 2 GB ceiling.
         let config = RuntimeConfig {
-            max_rss_mb: Some(64_000),
+            max_rss: Some(ConfigSize::from_mb(64_000)),
             ..Default::default()
         };
         assert_eq!(
-            config.resolved_datafusion_memory_mb(),
-            Some(DEFAULT_DATAFUSION_MEMORY_MB_CEILING),
+            config.resolved_datafusion_memory(),
+            Some(DEFAULT_DATAFUSION_MEMORY_CEILING),
         );
     }
 
@@ -1979,24 +2353,30 @@ mod test {
     fn resolved_datafusion_memory_midrange_uses_five_percent() {
         // 5% of 16 GB = 800 MB, inside the clamp range.
         let config = RuntimeConfig {
-            max_rss_mb: Some(16_000),
+            max_rss: Some(ConfigSize::from_mb(16_000)),
             ..Default::default()
         };
-        assert_eq!(config.resolved_datafusion_memory_mb(), Some(800));
+        assert_eq!(
+            config.resolved_datafusion_memory(),
+            Some(ConfigSize::from_mb(800))
+        );
     }
 
     #[test]
     fn resolved_datafusion_memory_falls_back_to_resources() {
-        // No max_rss_mb, but resources.memory_mb_max is set.
+        // No max_rss, but resources.memory_max is set.
         let config = RuntimeConfig {
-            max_rss_mb: None,
+            max_rss: None,
             resources: ResourceConfig {
-                memory_mb_max: Some(16_000),
+                memory_max: Some(ConfigSize::from_mb(16_000)),
                 ..Default::default()
             },
             ..Default::default()
         };
-        assert_eq!(config.resolved_datafusion_memory_mb(), Some(800));
+        assert_eq!(
+            config.resolved_datafusion_memory(),
+            Some(ConfigSize::from_mb(800))
+        );
     }
 
     #[test]
@@ -2328,6 +2708,159 @@ mod test {
         let legacy = serde_json::json!({"clock_resolution_usecs": 5, "workers": 1});
         let mut again = legacy.clone();
         super::to_legacy_duration_spelling(&mut again);
+        assert_eq!(again, legacy);
+    }
+
+    /// The configuration handed to a runtime from before the size rename
+    /// carries every size setting under its older key, as a whole number of
+    /// the older unit rounded up, and nothing under the current names.
+    #[test]
+    fn legacy_size_spelling_uses_the_older_keys() {
+        let mut config = serde_json::json!({
+            "workers": 2,
+            "max_rss": "16G",
+            "datafusion_memory": "1.5G",
+            "storage": {"cache_size": "4Gi", "min_spill_size": "10Mi", "min_step_spill_size": "0"},
+            "resources": {
+                "memory_min": "4G", "memory_max": "16Gi",
+                "storage_min": "100G", "storage_max": "400Gi",
+                "autoscaling": {"storage": {"scale_threshold_available": "10G", "scale_factor": 2.0}}
+            },
+            "dev_tweaks": {
+                "storage_max": "1Gi", "fbuf_slab_size_per_class": "16Mi",
+                "lazy_input_map_key_block_size": "32Ki", "exchange_channel_capacity": "10M"
+            },
+            "inputs": {
+                "t.file": {"stream": "t", "max_queued_size": "1Mi",
+                    "transport": {"name": "file_input", "config": {"path": "x", "buffer_size": "64Ki"}}},
+                "t.cdc": {"stream": "t",
+                    "transport": {"name": "postgres_cdc_input", "config": {"batch": {"max_size": "32Mi"}}}},
+            },
+            "outputs": {
+                "v.ddb": {"stream": "v",
+                    "transport": {"name": "dynamodb_output", "config": {"max_buffer_size": "1Mi"}}},
+                "v.pg": {"stream": "v",
+                    "transport": {"name": "postgres_output", "config": {"max_buffer_size": "2Mi"}}},
+            },
+        });
+        super::to_legacy_size_spelling(&mut config);
+        assert_eq!(
+            config,
+            serde_json::json!({
+                "workers": 2,
+                "max_rss_mb": 16_000,
+                "datafusion_memory_mb": 1_500,
+                "storage": {"cache_mib": 4096, "min_storage_bytes": 10 * 1024 * 1024, "min_step_storage_bytes": 0},
+                "resources": {
+                    // 16Gi and 400Gi are not whole megabytes: they round up.
+                    "memory_mb_min": 4_000, "memory_mb_max": 17_180,
+                    "storage_mb_min": 100_000, "storage_mb_max": 429_497,
+                    "autoscaling": {"storage": {"scale_threshold_available_mb": 10_000, "scale_factor": 2.0}}
+                },
+                "dev_tweaks": {
+                    "storage_mb_max": 1024, "fbuf_slab_bytes_per_class": 16 * 1024 * 1024,
+                    "lazy_input_map_key_block_bytes": 32 * 1024, "exchange_channel_capacity_bytes": 10_000_000
+                },
+                "inputs": {
+                    "t.file": {"stream": "t", "max_queued_bytes": 1024 * 1024,
+                        "transport": {"name": "file_input", "config": {"path": "x", "buffer_size_bytes": 64 * 1024}}},
+                    "t.cdc": {"stream": "t",
+                        "transport": {"name": "postgres_cdc_input", "config": {"batch": {"max_bytes": 32 * 1024 * 1024}}}},
+                },
+                "outputs": {
+                    "v.ddb": {"stream": "v",
+                        "transport": {"name": "dynamodb_output", "config": {"max_buffer_size_bytes": 1024 * 1024}}},
+                    "v.pg": {"stream": "v",
+                        "transport": {"name": "postgres_output", "config": {"max_buffer_size_bytes": 2 * 1024 * 1024}}},
+                },
+            })
+        );
+    }
+
+    /// The older size spelling means the same settings to this release, so a
+    /// configuration survives the trip out to a pinned runtime and back.
+    #[test]
+    fn legacy_size_spelling_round_trips() {
+        let config: PipelineConfig = serde_json::from_value(serde_json::json!({
+            "name": "p",
+            "max_rss": "16G",
+            // Whole megabytes, mebibytes and bytes: a size the older unit
+            // cannot express rounds up and does not come back the same.
+            "datafusion_memory": "1G",
+            "storage": {"cache_size": "4Gi", "min_spill_size": "10Mi"},
+            "resources": {"memory_max": "16G", "storage_max": "400G"},
+            "dev_tweaks": {"lazy_input_map_key_block_size": "32Ki"},
+            "inputs": {"t.file": {"stream": "t", "max_queued_size": "1Mi",
+                "transport": {"name": "file_input", "config": {"path": "x", "buffer_size": "64Ki"}}}},
+            "outputs": {},
+        }))
+        .unwrap();
+        let mut value = serde_json::to_value(&config).unwrap();
+        super::to_legacy_size_spelling(&mut value);
+        assert_eq!(value["max_rss_mb"], serde_json::json!(16_000));
+        assert_eq!(
+            value["inputs"]["t.file"]["max_queued_bytes"],
+            serde_json::json!(1024 * 1024)
+        );
+        let reread: PipelineConfig = serde_json::from_value(value).unwrap();
+        assert_eq!(reread, config);
+    }
+
+    /// The executors rewrite only what the runtime needs: a runtime from
+    /// between the two renames gets the current durations and the older sizes.
+    #[test]
+    fn legacy_spelling_applies_each_rename_separately() {
+        let current = serde_json::json!({"clock_resolution": "1s", "max_rss": "16G"});
+        let mut both = current.clone();
+        super::LegacySpelling {
+            durations: true,
+            sizes: true,
+        }
+        .apply(&mut both);
+        assert_eq!(
+            both,
+            serde_json::json!({"clock_resolution_usecs": 1_000_000, "max_rss_mb": 16_000})
+        );
+        let mut sizes_only = current.clone();
+        super::LegacySpelling {
+            durations: false,
+            sizes: true,
+        }
+        .apply(&mut sizes_only);
+        assert_eq!(
+            sizes_only,
+            serde_json::json!({"clock_resolution": "1s", "max_rss_mb": 16_000})
+        );
+        let mut none = current.clone();
+        super::LegacySpelling::NONE.apply(&mut none);
+        assert_eq!(none, current);
+        assert!(!super::LegacySpelling::NONE.any());
+    }
+
+    #[test]
+    fn legacy_size_spelling_edge_cases() {
+        // A value that does not parse stays under the current key, for the
+        // runtime to reject, and a `null` meant "unset" under either key.
+        let mut config = serde_json::json!({
+            "max_rss": "lots",
+            "resources": {"memory_max": null, "memory_min": 4000}
+        });
+        super::to_legacy_size_spelling(&mut config);
+        assert_eq!(
+            config,
+            serde_json::json!({"max_rss": "lots", "resources": {"memory_mb_min": 4000}})
+        );
+
+        // A fraction of the older unit rounds up, so a small cap never
+        // becomes a `0` the older runtime reads as no cap.
+        let mut small = serde_json::json!({"max_rss": "1"});
+        super::to_legacy_size_spelling(&mut small);
+        assert_eq!(small, serde_json::json!({"max_rss_mb": 1}));
+
+        // Already in the older spelling: nothing to do.
+        let legacy = serde_json::json!({"max_rss_mb": 5, "workers": 1});
+        let mut again = legacy.clone();
+        super::to_legacy_size_spelling(&mut again);
         assert_eq!(again, legacy);
     }
 
@@ -3047,9 +3580,19 @@ pub struct ConnectorConfig {
     /// the backpressure mechanism is triggered and the endpoint is paused, during
     /// which more data may be queued.
     ///
-    /// When this is unspecified, it defaults to `1000 * max_queued_records`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_queued_bytes: Option<u64>,
+    /// When this is unspecified, it defaults to `1000 * max_queued_records`
+    /// bytes.
+    ///
+    /// Before release 0.367.0 this setting was `max_queued_bytes`, a number
+    /// of bytes. That name is deprecated but still read.
+    #[serde(
+        default,
+        alias = "max_queued_bytes",
+        deserialize_with = "size_max_queued_size",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub max_queued_size: Option<ConfigSize>,
 
     /// Create connector in paused state.
     ///
@@ -3079,6 +3622,20 @@ pub struct ConnectorConfig {
     #[serde(deserialize_with = "deserialize_start_after")]
     #[serde(default)]
     pub start_after: Option<Vec<String>>,
+
+    /// Divide the input of this connector among the hosts of a multihost
+    /// pipeline. Valid for input connectors only.
+    ///
+    /// When `false` (the default), the connector runs on one host, which
+    /// reads all of its input. When `true`, the connector runs on every host,
+    /// and each host reads a different part of the input. Only the Kafka,
+    /// Delta Lake, and Iceberg input transports support this setting.
+    ///
+    /// In a single-host pipeline, this setting has no effect.
+    ///
+    /// Versions of Feldera that predate this option ignore it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub distributed: bool,
 }
 
 impl ConnectorConfig {
@@ -3095,10 +3652,11 @@ impl ConnectorConfig {
             max_batch_size: None,
             max_worker_batch_size: None,
             max_queued_records: default_max_queued_records(),
-            max_queued_bytes: None,
+            max_queued_size: None,
             paused: false,
             labels: Vec::new(),
             start_after: None,
+            distributed: false,
         }
     }
 
@@ -3160,7 +3718,7 @@ impl ConnectorConfig {
         self.max_batch_size = None;
         self.max_worker_batch_size = None;
         self.max_queued_records = default_max_queued_records();
-        self.max_queued_bytes = None;
+        self.max_queued_size = None;
         self.normalize_durations();
     }
 
@@ -3170,7 +3728,7 @@ impl ConnectorConfig {
         self.max_batch_size = other.max_batch_size;
         self.max_worker_batch_size = other.max_worker_batch_size;
         self.max_queued_records = other.max_queued_records;
-        self.max_queued_bytes = other.max_queued_bytes;
+        self.max_queued_size = other.max_queued_size;
     }
 
     /// Returns `max_queued_records` or, if it is not set, the default.
@@ -3178,10 +3736,11 @@ impl ConnectorConfig {
         self.max_queued_records
     }
 
-    /// Returns `max_queued_bytes` or, if it is not set, the default based on
-    /// `max_queued_records`.
+    /// Returns `max_queued_size` in bytes or, if it is not set, the default
+    /// based on `max_queued_records`.
     pub fn max_queued_bytes(&self) -> u64 {
-        self.max_queued_bytes
+        self.max_queued_size
+            .map(ConfigSize::as_bytes)
             .unwrap_or_else(|| self.max_queued_records().saturating_mul(1000))
     }
 }
@@ -3409,6 +3968,49 @@ impl TransportConfig {
     pub fn is_http_input(&self) -> bool {
         matches!(self, TransportConfig::HttpInput(_))
     }
+
+    /// Returns true if an input connector with this transport can divide its
+    /// input among the hosts of a multihost pipeline (see
+    /// [`ConnectorConfig::distributed`]).
+    pub fn supports_distribution(&self) -> bool {
+        matches!(
+            self,
+            TransportConfig::KafkaInput(_)
+                | TransportConfig::DeltaTableInput(_)
+                | TransportConfig::IcebergInput(_)
+        )
+    }
+
+    /// Returns true if host 0 of a distributed input connector with this
+    /// transport must choose a value for all of the hosts before they read any
+    /// input.
+    ///
+    /// For example, the hosts of a Delta Lake connector must read the snapshot
+    /// at the same table version, and the hosts of an Iceberg connector at the
+    /// same snapshot ID, or they could lose or duplicate records.
+    /// Host 0 chooses the value, and the coordinator passes it to the other
+    /// hosts in [CoordinationActivate::input_choices].
+    ///
+    /// [CoordinationActivate::input_choices]: crate::coordination::CoordinationActivate::input_choices
+    pub fn needs_input_choice(&self) -> bool {
+        matches!(
+            self,
+            TransportConfig::DeltaTableInput(_) | TransportConfig::IcebergInput(_)
+        )
+    }
+
+    /// Returns how to combine the completed frontiers' metadata that the hosts
+    /// of a distributed input connector with this transport report.
+    pub fn frontier_merge(&self) -> crate::adapter_stats::FrontierMerge {
+        use crate::adapter_stats::FrontierMerge;
+        match self {
+            TransportConfig::KafkaInput(_) => FrontierMerge::Partitioned,
+            TransportConfig::DeltaTableInput(_) | TransportConfig::IcebergInput(_) => {
+                FrontierMerge::Shared
+            }
+            _ => FrontierMerge::Opaque,
+        }
+    }
 }
 
 /// Data format specification used to parse raw data received from the
@@ -3471,27 +4073,63 @@ pub struct ResourceConfig {
     #[serde(deserialize_with = "crate::serde_via_value::deserialize")]
     pub cpu_cores_max: Option<f64>,
 
-    /// The minimum memory in Megabytes to reserve
-    /// for an instance of this pipeline
-    pub memory_mb_min: Option<u64>,
+    /// The minimum memory to reserve for an instance of this pipeline, such
+    /// as `"4Gi"`.
+    ///
+    /// Before release 0.367.0 this setting was `memory_mb_min`, a number of
+    /// megabytes. That name is deprecated but still read.
+    #[serde(
+        alias = "memory_mb_min",
+        deserialize_with = "size_memory_min",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub memory_min: Option<ConfigSize>,
 
-    /// The maximum memory in Megabytes to reserve
-    /// for an instance of this pipeline
-    pub memory_mb_max: Option<u64>,
+    /// The maximum memory to reserve for an instance of this pipeline, such
+    /// as `"16Gi"`.
+    ///
+    /// Before release 0.367.0 this setting was `memory_mb_max`, a number of
+    /// megabytes. That name is deprecated but still read.
+    #[serde(
+        alias = "memory_mb_max",
+        deserialize_with = "size_memory_max",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub memory_max: Option<ConfigSize>,
 
-    /// The initial storage in Megabytes to reserve for an instance of this
-    /// pipeline. Set together with `storage_mb_max` to enable storage
+    /// The initial storage to reserve for an instance of this pipeline, such
+    /// as `"100Gi"`. Set together with `storage_max` to enable storage
     /// autoscaling.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub storage_mb_min: Option<u64>,
+    ///
+    /// Before release 0.367.0 this setting was `storage_mb_min`, a number of
+    /// megabytes. That name is deprecated but still read.
+    #[serde(
+        alias = "storage_mb_min",
+        deserialize_with = "size_storage_min",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub storage_min: Option<ConfigSize>,
 
-    /// The maximum storage in Megabytes for an instance of this pipeline.
+    /// The maximum storage for an instance of this pipeline, such as
+    /// `"400Gi"`.
     ///
-    /// Without `storage_mb_min`, this much storage is reserved up front.
+    /// Without `storage_min`, this much storage is reserved up front.
     ///
-    /// With `storage_mb_min`, storage starts there and autoscaling expands it
-    /// up to this limit.
-    pub storage_mb_max: Option<u64>,
+    /// With `storage_min`, storage starts there and autoscaling expands it up
+    /// to this limit.
+    ///
+    /// Before release 0.367.0 this setting was `storage_mb_max`, a number of
+    /// megabytes. That name is deprecated but still read.
+    #[serde(
+        alias = "storage_mb_max",
+        deserialize_with = "size_storage_max",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub storage_max: Option<ConfigSize>,
 
     /// Autoscaling policy for an instance of this pipeline.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3532,8 +4170,8 @@ pub struct AutoscalingConfig {
     pub storage: Option<StorageAutoscalingConfig>,
 }
 
-/// Storage autoscaling policy: expand storage from `storage_mb_min` toward
-/// `storage_mb_max` as it fills up.
+/// Storage autoscaling policy: expand storage from `storage_min` toward
+/// `storage_max` as it fills up.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct StorageAutoscalingConfig {
@@ -3544,14 +4182,19 @@ pub struct StorageAutoscalingConfig {
     )]
     pub scale_threshold: Option<f64>,
 
-    /// Expand storage when available space falls below this many MB, even if
-    /// usage is still under `scale_threshold`. Either condition triggers
-    /// expansion. Unset by default.
+    /// Expand storage when available space falls below this size, such as
+    /// `"10Gi"`, even if usage is still under `scale_threshold`. Either
+    /// condition triggers expansion. Unset by default.
+    ///
+    /// Before release 0.367.0 this setting was `scale_threshold_available_mb`,
+    /// a number of megabytes. That name is deprecated but still read.
     #[serde(
-        deserialize_with = "crate::serde_via_value::deserialize",
+        alias = "scale_threshold_available_mb",
+        deserialize_with = "size_scale_threshold_available",
         skip_serializing_if = "Option::is_none"
     )]
-    pub scale_threshold_available_mb: Option<u64>,
+    #[schema(value_type = Option<String>)]
+    pub scale_threshold_available: Option<ConfigSize>,
 
     /// Expansion multiplier. Defaults to 2.0.
     #[serde(
@@ -3564,43 +4207,44 @@ pub struct StorageAutoscalingConfig {
 #[cfg(test)]
 mod resource_config_tests {
     use super::{AutoscalingConfig, ResourceConfig, StorageAutoscalingConfig};
+    use crate::size::ConfigSize;
     use serde_json::json;
 
     #[test]
     fn storage_autoscaling_round_trips_through_json() {
         let input = json!({
-            "storage_mb_min": 1000,
-            "storage_mb_max": 8000,
+            "storage_min": "1G",
+            "storage_max": "8G",
             "autoscaling": {
                 "storage": {
                     "scale_threshold": 0.8,
-                    "scale_threshold_available_mb": 10000,
+                    "scale_threshold_available": "10G",
                     "scale_factor": 2.0
                 }
             }
         });
         let config: ResourceConfig = serde_json::from_value(input).unwrap();
-        assert_eq!(config.storage_mb_min, Some(1000));
-        assert_eq!(config.storage_mb_max, Some(8000));
+        assert_eq!(config.storage_min, Some(ConfigSize::from_mb(1000)));
+        assert_eq!(config.storage_max, Some(ConfigSize::from_mb(8000)));
         assert_eq!(
             config.autoscaling,
             Some(AutoscalingConfig {
                 storage: Some(StorageAutoscalingConfig {
                     scale_threshold: Some(0.8),
-                    scale_threshold_available_mb: Some(10000),
+                    scale_threshold_available: Some(ConfigSize::from_mb(10000)),
                     scale_factor: Some(2.0),
                 }),
             })
         );
         let output = serde_json::to_value(&config).unwrap();
-        assert_eq!(output["storage_mb_min"], json!(1000));
+        assert_eq!(output["storage_min"], json!("1G"));
         assert_eq!(
             output["autoscaling"]["storage"]["scale_threshold"],
             json!(0.8)
         );
         assert_eq!(
-            output["autoscaling"]["storage"]["scale_threshold_available_mb"],
-            json!(10000)
+            output["autoscaling"]["storage"]["scale_threshold_available"],
+            json!("10G")
         );
         assert_eq!(output["autoscaling"]["storage"]["scale_factor"], json!(2.0));
     }
@@ -3608,15 +4252,15 @@ mod resource_config_tests {
     #[test]
     fn autoscaling_fields_default_to_none() {
         let config: ResourceConfig = serde_json::from_value(json!({})).unwrap();
-        assert_eq!(config.storage_mb_min, None);
+        assert_eq!(config.storage_min, None);
         assert_eq!(config.autoscaling, None);
 
         // Unset autoscaling fields stay out of the serialized config so they
         // do not clutter configs of users who never touch them.
         let output = serde_json::to_value(&config).unwrap();
-        assert!(output.get("storage_mb_min").is_none());
+        assert!(output.get("storage_min").is_none());
         assert!(output.get("autoscaling").is_none());
-        assert!(output.get("storage_mb_max").is_some());
+        assert!(output.get("storage_max").is_none());
 
         // A partially set policy serializes only the fields the user set.
         let input = json!({ "autoscaling": { "storage": { "scale_threshold": 0.9 } } });

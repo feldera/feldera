@@ -48,6 +48,9 @@ public final class DBSPIndexedZSetExpression extends DBSPExpression
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
         // This is accurate only for empty IndexedZSets, which is the only supported case so far
         Utilities.enforce(this.isEmpty());
+        DBSPIndexedZSetExpression otherExpression = other.as(DBSPIndexedZSetExpression.class);
+        if (otherExpression == null || !otherExpression.isEmpty())
+            return false;
         return this.getType().sameType(other.getType());
     }
 
