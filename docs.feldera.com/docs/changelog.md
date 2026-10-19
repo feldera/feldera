@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Python SDK: preserve view columns and their pandas types when an output batch is empty.
+
 - Experimental: the Delta Lake output connector can keep a table equal to
   its view instead of appending a change log. Set `update_mode` to `merge`: the
   connector appends each new row version and marks the old one deleted
