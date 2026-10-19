@@ -126,8 +126,6 @@
               <FelderaLogomarkLight class="hidden h-[70px] w-[102px] shrink-0 sm:inline"
               ></FelderaLogomarkLight>
             {/if}
-            <!-- The title (styled as "Your pipelines") with its links right below it, the
-                 two centred together beside the logo. -->
             <div class="flex w-full flex-col justify-center gap-y-4">
               <div class="flex flex-nowrap justify-between">
                 <div class="text-xl font-semibold">Explore our communities and documentation</div>
@@ -206,7 +204,6 @@
       {#if demos.current.length}
         <!-- Held at the bottom of the screen while the pipelines table scrolls. -->
         <PinnedSections class="max-w-[100cqi] gap-8">
-          <!-- Right padding less the scrollbar gutter, as for the banner above. -->
           <div class="px-2 md:pr-[calc(--spacing(5)-var(--scrollbar-width))] md:pl-5">
             <InlineDropdown bind:open={showSuggestedDemos.value}>
               {#snippet header(open, toggle)}
