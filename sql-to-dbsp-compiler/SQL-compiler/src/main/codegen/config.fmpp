@@ -984,6 +984,7 @@ data: {
     includeIntervalWithoutQualifier: false
     includeStarExclude: true
     includeDistinctOn: true
+    includeSelectListTrailingComma: true
 
     # Method for parsing "SET [OR RESET]" calls.
     setOptionParserMethod: "SqlSetOption"

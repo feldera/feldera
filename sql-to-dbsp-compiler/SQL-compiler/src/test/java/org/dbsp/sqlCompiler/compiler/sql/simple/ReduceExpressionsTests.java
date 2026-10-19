@@ -83,6 +83,19 @@ public class ReduceExpressionsTests extends SqlIoTest {
     }
 
     @Test
+    public void nestedCastToVarchar() {
+        // The normalizing RexSimplify must keep the inner cast; the text depends on its type (CALCITE-7870)
+        var ccs = this.getCCS("""
+                CREATE TABLE t(i INT);
+                CREATE VIEW v AS SELECT CAST(CAST(i AS DOUBLE) AS VARCHAR) AS d FROM t;""")
+                .withStringTrim();
+        ccs.step("INSERT INTO t VALUES (-12);", """
+                 d     | weight
+                ----------------
+                 -12.0 | 1""");
+    }
+
+    @Test
     public void datetimeIntervalFilter() {
         var ccs = this.getCCS("""
                 CREATE TABLE t(d DATE, i INT);
