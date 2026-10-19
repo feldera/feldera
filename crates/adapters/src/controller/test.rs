@@ -1208,6 +1208,84 @@ fn start_exactly_once_controller(tempdir: &TempDir) -> Controller {
     controller
 }
 
+/// A failed reader's last seek cursor belongs in checkpoints, not in a new
+/// step's input log: it did not consume any input in that step.
+#[test]
+fn closed_reader_seek_cursor_is_not_journaled() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    create_dir(tempdir.path().join("storage")).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test", "workers": 4,
+        "storage_config": {"path": tempdir.path().join("storage")},
+        "storage": true, "fault_tolerance": {}, "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |config| {
+            Ok(test_circuit::<TestStruct>(
+                config,
+                &TestStruct::schema(),
+                &[Some("output")],
+            ))
+        },
+        &config,
+        Box::new(|e, _| tprintln!("controller error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), 10_000).unwrap();
+    let input_file = tempdir.path().join("input.csv");
+    File::create(&input_file).unwrap();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": {"name": "file_input", "config": {"path": input_file, "follow": true}},
+        "format": {"name": "csv"}
+    }))
+    .unwrap();
+    let cursor = json!({"offset": 0});
+    let endpoint = input_transport_config_to_endpoint(
+        &endpoint_config.connector_config.transport,
+        "closed",
+        tempdir.path(),
+        None,
+    )
+    .unwrap()
+    .unwrap();
+    let id = controller
+        .inner
+        .add_input_endpoint("closed", endpoint_config, Some(endpoint), None)
+        .unwrap();
+    let closed = ManualInputEndpoint::new();
+    closed.closed.store(true, Ordering::Release);
+    {
+        let mut statuses = controller.status().inputs.write();
+        let status = statuses.get_mut(&id).unwrap();
+        status.reader.as_ref().unwrap().disconnect();
+        status.reader = Some(Arc::new(closed));
+        *status.fatal_error.lock().unwrap() = Some("injected fatal reader failure".into());
+    }
+    controller.pause();
+    let saved_cursor = cursor.clone();
+    *controller.inner.input_step_hook.lock().unwrap() = Some(Box::new(move |metadata| {
+        metadata.insert(
+            "closed".into(),
+            Some(super::Resume::Seek { seek: saved_cursor }),
+        );
+    }));
+    let before = controller.status().global_metrics.total_initiated_steps();
+    controller.request_step();
+    let stepped = wait(
+        || controller.status().global_metrics.total_committed_steps() > before,
+        10_000,
+    )
+    .is_ok();
+    let checkpoint = controller.checkpoint();
+    controller.stop().unwrap();
+    assert!(stepped, "closed reader prevented an otherwise empty step");
+    assert_eq!(checkpoint.unwrap().input_metadata.0["closed"], cursor);
+}
+
 /// A non-fault-tolerant input endpoint that records whether it was opened.
 struct OpenRecordingEndpoint {
     opened: Arc<AtomicBool>,
@@ -1392,6 +1470,7 @@ fn step_does_not_wait_for_endpoint_without_reader() {
 #[derive(Clone)]
 struct TransactionalInputEndpoint {
     details: Arc<Mutex<Option<TransactionalInputEndpointDetails>>>,
+    closed: Arc<AtomicBool>,
 }
 
 struct TransactionalInputEndpointDetails {
@@ -1403,7 +1482,31 @@ impl TransactionalInputEndpoint {
     fn new() -> Self {
         Self {
             details: Arc::new(Mutex::new(None)),
+            closed: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Close with an unflushed batch after reporting a fatal error. The lock
+    /// keeps a concurrent `Queue` from flushing the batch before closing.
+    fn fail_with_buffered_input(&self, data: &str) {
+        let consumer = self
+            .details
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .queue
+            .consumer
+            .clone();
+        // Report before closing, outside the details lock: the controller
+        // invokes its error callback here, which may itself inspect the reader.
+        consumer.error(true, anyhow!("injected fatal reader failure"), None);
+        let mut guard = self.details.lock().unwrap();
+        let details = guard.as_mut().unwrap();
+        let parsed = details.parser.parse(data.as_bytes(), None);
+        details.queue.push(parsed, Utc::now());
+        self.closed.store(true, Ordering::Release);
+        guard.take();
     }
 
     /// Opens the transaction labeled `label`, or joins it if another connector
@@ -1471,10 +1574,12 @@ impl InputReader for TransactionalInputEndpoint {
     }
 
     fn request(&self, command: InputReaderCommand) {
+        let guard = self.details.lock().unwrap();
+        if self.closed.load(Ordering::Acquire) {
+            return;
+        }
         match command {
-            InputReaderCommand::Queue { .. } => {
-                self.details.lock().unwrap().as_ref().unwrap().queue.queue()
-            }
+            InputReaderCommand::Queue { .. } => guard.as_ref().unwrap().queue.queue(),
             InputReaderCommand::Extend
             | InputReaderCommand::Pause
             | InputReaderCommand::Disconnect => (),
@@ -1485,8 +1590,104 @@ impl InputReader for TransactionalInputEndpoint {
     }
 
     fn is_closed(&self) -> bool {
-        false
+        self.closed.load(Ordering::Acquire)
     }
+}
+
+/// A fatally failed reader stays visible, but its unflushed input cannot be
+/// consumed. Counting that input in the step trigger spins on empty steps.
+#[test]
+fn failed_connector_with_buffered_input_does_not_spin_the_circuit() {
+    init_test_logger();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "min_batch_size_records": 0,
+        "max_buffering_delay_usecs": 0,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None, None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| tprintln!("controller error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    let add_endpoint = |name: &str, stream: &str| {
+        let endpoint = TransactionalInputEndpoint::new();
+        let config = serde_json::from_value(json!({
+            "stream": stream,
+            "transport": {"name": "file_input", "config": {"path": "unused"}},
+            "format": {"name": "csv"},
+        }))
+        .unwrap();
+        let id = controller
+            .add_input_endpoint(name, config, Box::new(endpoint.clone()), None)
+            .unwrap();
+        (id, endpoint)
+    };
+    let (failed_id, failed) = add_endpoint("failed", "test_input1");
+    let (_, healthy) = add_endpoint("healthy", "test_input2");
+
+    failed.fail_with_buffered_input(&"1,true,,foo\n".repeat(100));
+    assert!(failed.is_closed());
+    assert_eq!(controller.status().num_buffered_input_records(), 100);
+
+    // Match the existing committed-connector spin test: no input, clock or
+    // checkpoint timer can legitimately keep taking steps during this window.
+    let before = controller.status().global_metrics.total_initiated_steps();
+    sleep(Duration::from_secs(1));
+    let steps = controller.status().global_metrics.total_initiated_steps() - before;
+    let retained_fatal = controller
+        .status()
+        .input_status()
+        .get(&failed_id)
+        .is_some_and(|status| status.fatal_error.lock().unwrap().is_some());
+    let polls_failed = controller
+        .status()
+        .input_status()
+        .get(&failed_id)
+        .is_some_and(|status| {
+            super::StepSelection {
+                inputs: super::StepInputs::All,
+                committed: Default::default(),
+            }
+            .polls(status)
+        });
+
+    // Parking must not become a hang: the other reader can still advance.
+    healthy.push("2,true,,bar\n");
+    let progressed = wait(
+        || controller.status().num_total_processed_records() == 1,
+        10_000,
+    )
+    .is_ok();
+    controller.stop().unwrap();
+
+    assert!(
+        retained_fatal,
+        "the failed connector lost its status or error"
+    );
+    assert!(
+        steps < 10,
+        "the circuit took {steps} empty steps in a second after its reader failed"
+    );
+    assert!(
+        !polls_failed,
+        "step selection still polls the closed reader"
+    );
+    assert!(
+        progressed,
+        "input on the healthy reader was never processed"
+    );
 }
 
 /// Input buffered by a connector that has committed the in-progress
@@ -1642,6 +1843,7 @@ fn committed_connector_input_does_not_spin_the_circuit() {
 #[derive(Clone)]
 struct ManualInputEndpoint {
     details: Arc<Mutex<Option<ManualInputEndpointDetails>>>,
+    closed: Arc<AtomicBool>,
 }
 
 struct ManualInputEndpointDetails {
@@ -1653,6 +1855,7 @@ impl ManualInputEndpoint {
     fn new() -> Self {
         Self {
             details: Arc::new(Mutex::new(None)),
+            closed: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1699,6 +1902,9 @@ impl InputReader for ManualInputEndpoint {
     }
 
     fn request(&self, command: InputReaderCommand) {
+        if self.is_closed() {
+            return;
+        }
         match command {
             // Report no input: the test releases it with
             // `ManualInputEndpoint::release`.
@@ -1721,8 +1927,77 @@ impl InputReader for ManualInputEndpoint {
     }
 
     fn is_closed(&self) -> bool {
-        false
+        self.closed.load(Ordering::Acquire)
     }
+}
+
+/// A final batch reported before closure must still be collected and counted.
+#[test]
+fn closed_reader_final_progress_is_collected() {
+    init_test_logger();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "min_batch_size_records": 1_000_000,
+        "max_buffering_delay_usecs": 1_000_000_000,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |config| {
+            Ok(test_circuit::<TestStruct>(
+                config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+    let endpoint = ManualInputEndpoint::new();
+    let endpoint_config = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": {"name": "file_input", "config": {"path": "unused"}},
+        "format": {"name": "csv"}
+    }))
+    .unwrap();
+    let id = controller
+        .add_input_endpoint("manual", endpoint_config, Box::new(endpoint.clone()), None)
+        .unwrap();
+    endpoint.push("1,true,,foo\n2,true,,foo\n3,true,,foo\n");
+    endpoint.release();
+    endpoint.closed.store(true, Ordering::Release);
+    assert_eq!(controller.status().num_total_processed_records(), 0);
+    assert!(
+        controller
+            .status()
+            .input_status()
+            .get(&id)
+            .unwrap()
+            .progress
+            .lock()
+            .unwrap()
+            .is_some()
+    );
+    controller.request_step();
+    let collected = wait(
+        || controller.status().num_total_processed_records() == 3,
+        10_000,
+    )
+    .is_ok();
+    let pending = controller
+        .status()
+        .input_status()
+        .get(&id)
+        .is_some_and(|s| s.progress.lock().unwrap().is_some());
+    controller.stop().unwrap();
+    assert!(
+        collected,
+        "closed reader's final records were never counted"
+    );
+    assert!(!pending, "closed reader's final progress was not collected");
 }
 
 /// Removing an input endpoint must not take the count of the input it already
@@ -4613,9 +4888,9 @@ fn failed_input_at_barrier_fails_suspend() {
 /// A checkpoint taken after an input endpoint was removed while it held a
 /// barrier must not crash the pipeline.
 ///
-/// After each step the controller now starts from the previous step's resume
-/// entries, so a removed endpoint keeps its last entry. A barrier entry has no
-/// seek position, and writing the next checkpoint panics on it.
+/// Pruning resume entries during an input step is not enough: an immediate
+/// checkpoint can run without another step. A removed barrier entry has no
+/// seek position, and must not be serialized into that checkpoint.
 #[test]
 fn checkpoint_after_removing_input_at_barrier() {
     init_test_logger();
@@ -4644,15 +4919,46 @@ fn checkpoint_after_removing_input_at_barrier() {
     );
 
     controller.disconnect_input(&0);
-    for _ in 0..10 {
-        controller.request_step();
-        sleep(Duration::from_millis(200));
-    }
-
-    controller
+    // Do not request intervening steps: they would prune the stale entry and
+    // hide the immediate-checkpoint failure.
+    let checkpoint = controller
         .checkpoint()
-        .expect("checkpoint after removing the input endpoint failed");
+        .expect("checkpoint immediately after removing the input endpoint failed");
+    assert!(checkpoint.config.inputs.is_empty());
+    assert!(checkpoint.input_metadata.0.is_empty());
+    assert!(checkpoint.input_statistics.is_empty());
     controller.stop().unwrap();
+}
+
+/// Removal after capturing configuration must not discard that input's cursor
+/// or statistics from the same checkpoint.
+#[test]
+fn checkpoint_removal_between_snapshots_keeps_cursor() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_file = File::create(input_path(&storage_dir, 0)).unwrap();
+    let mut writer = CsvWriterBuilder::new()
+        .has_headers(false)
+        .from_writer(&input_file);
+    for id in 0..1000 {
+        writer.serialize(TestStruct::for_id(id)).unwrap();
+    }
+    writer.flush().unwrap();
+    let controller = start_controller(&storage_dir, &[0]);
+    wait_for_records(&controller, &[1000]);
+    let inner = controller.inner.clone();
+    *controller.inner.checkpoint_snapshot_hook.lock().unwrap() =
+        Some(Box::new(move || inner.disconnect_input(&0)));
+    let checkpoint = controller.checkpoint().unwrap();
+    controller.stop().unwrap();
+    assert!(checkpoint.config.inputs.contains_key("test_input1"));
+    assert!(
+        checkpoint.input_metadata.0.contains_key("test_input1"),
+        "checkpoint restores the input, but omits its seek cursor"
+    );
+    assert!(checkpoint.input_statistics.contains_key("test_input1"));
 }
 
 /// Test suspend when barriers are involved, with one input

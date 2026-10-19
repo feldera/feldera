@@ -4427,6 +4427,10 @@ impl CircuitThread {
     ///   recovered, so the pipeline process should exit as soon as it can.
     /// - `Err(error)` if there was an error.
     fn input_step(&mut self) -> Result<Option<BufferSize>, ControllerError> {
+        #[cfg(test)]
+        if let Some(hook) = self.controller.input_step_hook.lock().unwrap().take() {
+            hook(&mut self.input_metadata);
+        }
         // Reset; set again at the end only if this step fed input. Early returns
         // below leave them as is, so those steps neither journal nor
         // advance the replay cursor.
@@ -4512,6 +4516,9 @@ impl CircuitThread {
         let coordination_request = self.controller.coordination_request.lock().unwrap().clone();
         let selection = self.next_step_selection(coordination_request.as_ref());
 
+        // Only newly reported input belongs in this step's journal. An
+        // unpolled endpoint keeps its checkpoint cursor in `input_metadata`,
+        // but that cursor may be Seek-only and is not a replayable input log.
         // Collect the ids of the endpoints that we'll flush to the circuit.
         //
         // The set of endpoint ids could change while we're waiting, because
@@ -4523,20 +4530,15 @@ impl CircuitThread {
         let mut waiting = HashMap::with_capacity(statuses.len());
 
         for (&endpoint_id, status) in statuses.iter() {
-            if !selection.polls(status) {
-                if let Some(resume) = self.input_metadata.remove(&status.endpoint_name) {
-                    step_metadata.insert(
-                        endpoint_id,
-                        (
-                            status.endpoint_name.clone(),
-                            StepResults {
-                                amt: BufferSize::empty(),
-                                resume,
-                            },
-                        ),
-                    );
-                }
+            let polled = if self.replaying() {
+                // Wait for exactly the readers sent Replay for this journal
+                // entry, even if one closed without answering. Other readers
+                // consumed no input in the recorded step and owe no response.
+                step_metadata.contains_key(&endpoint_id)
             } else {
+                selection.polls(status)
+            };
+            if polled {
                 if !self.replaying() {
                     // `polls` only selects endpoints that have a reader.
                     let reader = status.reader.as_ref().unwrap();
@@ -4567,6 +4569,7 @@ impl CircuitThread {
             // Process input and check for failed input adapters.
             let statuses = self.controller.status.input_status();
             let mut failed = Vec::new();
+            let mut failed_replay = None;
             waiting.retain(|&endpoint_id, _| {
                 let Some(status) = statuses.get(&endpoint_id) else {
                     // Input adapter was deleted. Input that it had already
@@ -4586,6 +4589,17 @@ impl CircuitThread {
                         .map(|reader| reader.is_closed())
                         .unwrap_or(false)
                     {
+                        if self.replaying() {
+                            // A missing replay response means this input was
+                            // never ingested. Do not advance the journal cursor
+                            // or run the circuit with its recorded checksums.
+                            failed_replay = Some(ControllerError::input_transport_error(
+                                &status.endpoint_name,
+                                true,
+                                anyhow!("input reader closed before completing replay"),
+                            ));
+                            return false;
+                        }
                         if status.metrics.end_of_input.load(Ordering::Acquire) {
                             warn!("Input endpoint {} exited", status.endpoint_name);
                         } else {
@@ -4617,6 +4631,9 @@ impl CircuitThread {
                 false
             });
             drop(statuses);
+            if let Some(error) = failed_replay {
+                return Err(error);
+            }
             for endpoint_id in failed {
                 self.controller.disconnect_input(&endpoint_id);
             }
@@ -5601,7 +5618,13 @@ impl StepSelection {
         // An endpoint whose `open()` has not returned yet has no reader, so it
         // cannot be queued and would never report progress.  Nothing it
         // buffered can be consumed yet, so leave it for a future step.
-        if status.reader.is_none() {
+        let Some(reader) = status.reader.as_ref() else {
+            return false;
+        };
+        // A closed reader cannot consume its abandoned buffers, but it may
+        // have reported a final batch before closing. Collect that progress
+        // before excluding it from polling and step-trigger accounting.
+        if reader.is_closed() && status.progress.lock().unwrap().is_none() {
             return false;
         }
         if self.committed.contains(&status.endpoint_name) {
@@ -7683,7 +7706,16 @@ pub struct ControllerInner {
     /// out caught up with the pipeline's output, which seeds its
     /// `total_processed_input_records` counter.
     bootstrapped_output_endpoints: HashSet<String>,
+
+    /// Runs after capturing the checkpoint's input snapshot.
+    #[cfg(test)]
+    checkpoint_snapshot_hook: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    #[cfg(test)]
+    input_step_hook: Mutex<Option<InputStepHook>>,
 }
+
+#[cfg(test)]
+type InputStepHook = Box<dyn FnOnce(&mut HashMap<String, Option<Resume>>) + Send>;
 
 impl Drop for ControllerInner {
     fn drop(&mut self) {
@@ -7771,6 +7803,10 @@ impl ControllerInner {
                 checkpoint_activity: Mutex::new(CheckpointActivity::Idle),
                 modified_output_endpoints,
                 bootstrapped_output_endpoints,
+                #[cfg(test)]
+                checkpoint_snapshot_hook: Mutex::new(None),
+                #[cfg(test)]
+                input_step_hook: Mutex::new(None),
             }
         });
 
@@ -10217,9 +10253,9 @@ impl RunningCheckpoint {
         // Replace the input connector configuration in the pipeline
         // configuration by the current inputs.  (HTTP input connectors might
         // have been added or removed.)
-        let inputs = {
+        let (inputs, input_statistics) = {
             let input_status = circuit.controller.status.input_status();
-            input_status
+            let inputs = input_status
                 .values()
                 .map(|status| {
                     (Cow::from(status.endpoint_name.clone()), {
@@ -10228,8 +10264,28 @@ impl RunningCheckpoint {
                         config
                     })
                 })
-                .collect()
+                .collect();
+            let statistics = input_status
+                .values()
+                .map(|status| {
+                    (
+                        status.endpoint_name.clone(),
+                        CheckpointInputEndpointMetrics::from_endpoint_status(status),
+                    )
+                })
+                .collect();
+            (inputs, statistics)
         };
+        #[cfg(test)]
+        if let Some(hook) = circuit
+            .controller
+            .checkpoint_snapshot_hook
+            .lock()
+            .unwrap()
+            .take()
+        {
+            hook();
+        }
 
         // Unlike the inputs, the outputs are taken from the pipeline
         // configuration rather than from the live endpoints, so that an output
@@ -10266,9 +10322,13 @@ impl RunningCheckpoint {
             ..circuit.controller.status.pipeline_config.clone()
         };
 
+        // Removal need not trigger an input step that prunes stale metadata.
+        // Use this checkpoint's input snapshot, not a second live-status read:
+        // removal between the two would retain config but lose its seek cursor.
         let input_metadata = circuit
             .input_metadata
             .iter()
+            .filter(|(name, _)| config.inputs.contains_key(name.as_str()))
             .map(|(name, resume)| {
                 (
                     name.clone(),
@@ -10282,18 +10342,6 @@ impl RunningCheckpoint {
             .global_metrics
             .num_total_processed_records();
         let initial_start_time = circuit.controller.status.global_metrics.initial_start_time;
-        let input_statistics = circuit
-            .controller
-            .status
-            .input_status()
-            .values()
-            .map(|endpoint| {
-                (
-                    endpoint.endpoint_name.clone(),
-                    CheckpointInputEndpointMetrics::from_endpoint_status(endpoint),
-                )
-            })
-            .collect();
         // Ask the output endpoints to record what they have transmitted once
         // they catch up with this checkpoint. `CheckpointThread` waits for
         // them and collects the readings.
