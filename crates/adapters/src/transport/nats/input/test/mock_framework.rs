@@ -50,7 +50,10 @@ pub(super) enum NatsMockAction {
     /// JetStream sequences are **1-based** (first message = sequence 1), and
     /// the runner's `published` vec uses the same numbering, so sequence `s`
     /// is simply `published[s]`.
-    Replay { start: u64, end: u64 },
+    Replay {
+        start: u64,
+        end: u64,
+    },
     /// Call `endpoint.disconnect()`.
     Disconnect,
     /// Disconnect without asserting absence of non-fatal endpoint errors.
@@ -77,21 +80,32 @@ pub(super) enum NatsMockAction {
     PurgeStream,
 
     /// Assert that a fatal error appears within [min, max] time window.
-    ExpectFatalErrorWithin { min: Duration, max: Duration },
+    ExpectFatalErrorWithin {
+        min: Duration,
+        max: Duration,
+    },
     /// Assert that a fatal error appears within `timeout` and includes `needle`.
     ExpectFatalErrorContains {
         timeout: Duration,
         needle: &'static str,
     },
     /// Wait until `error_count` reaches at least `count`.
-    WaitForErrorCountAtLeast { count: usize, timeout: Duration },
+    WaitForErrorCountAtLeast {
+        count: usize,
+        timeout: Duration,
+    },
     /// Assert that no additional endpoint errors are reported for `duration`.
-    AssertNoErrorCountIncrease { duration: Duration },
+    AssertNoErrorCountIncrease {
+        duration: Duration,
+    },
 
     /// Verify that `count` output records starting at `output_index` match
     /// the corresponding published records. The NATS sequence is derived
     /// automatically (`output_index + 1`), since `published` is 1-based.
-    VerifyRecords { output_index: usize, count: usize },
+    VerifyRecords {
+        output_index: usize,
+        count: usize,
+    },
     /// Verify that the output records starting at `output_index` match
     /// the published records starting at JetStream sequence `nats_seq`.
     ///
@@ -110,7 +124,10 @@ pub(super) enum NatsMockAction {
     ///
     /// Verifies that the connector deletes the consumers it abandons instead
     /// of leaving them for the server's `inactive_threshold` to reap.
-    WaitForConsumerCount { count: usize, timeout: Duration },
+    WaitForConsumerCount {
+        count: usize,
+        timeout: Duration,
+    },
     /// Assert that every consumer on the stream is named `<prefix>_<suffix>`.
     AssertConsumerNamesStartWith(&'static str),
 
@@ -131,6 +148,16 @@ pub(super) enum NatsMockAction {
     /// Call `endpoint.disconnect()` and assert that the worker exits within
     /// the given duration.
     DisconnectWithin(Duration),
+    /// Wait until a delete reaches the proxy's gate.
+    WaitForDeleteRequests {
+        count: usize,
+        timeout: Duration,
+    },
+    /// Disconnect with cleanup held at the proxy. The worker must stay alive
+    /// until the test releases the delete, then exit with no consumer left.
+    DisconnectWaitsForHeldDelete,
+    /// Dropping the command sender must still join earlier cleanup.
+    DropWaitsForHeldDelete,
     /// Assert that the consumer counters agree with the server: the
     /// connector cannot have deleted more consumers than it created, and
     /// `created - deleted` equals the consumers left on the stream.
@@ -811,6 +838,77 @@ impl NatsMockRunner {
                 assert!(
                     wait(|| endpoint.is_closed(), duration.as_millis()).is_ok(),
                     "disconnect took more than {duration:?}"
+                );
+            }
+
+            NatsMockAction::DropWaitsForHeldDelete => {
+                let endpoint = self
+                    .endpoint
+                    .take()
+                    .expect("CreatePipeline must be called first");
+                let completion = endpoint
+                    .take_completion()
+                    .expect("reader has no completion future");
+                let proxy = self
+                    .proxy
+                    .as_ref()
+                    .expect("StartProxy must be called first");
+                let task = self.rt.spawn(completion);
+                drop(endpoint);
+                let exited_while_held = wait(|| task.is_finished(), 200).is_ok();
+                proxy.release_deletes();
+                let joined = self
+                    .rt
+                    .block_on(async { tokio::time::timeout(Duration::from_secs(10), task).await });
+                joined
+                    .expect("worker did not exit after releasing delete")
+                    .unwrap();
+                assert!(
+                    !exited_while_held,
+                    "dropping the reader skipped pending cleanup"
+                );
+                assert!(
+                    self.rt
+                        .block_on(util::list_consumers(self.nats_url(), STREAM_NAME))?
+                        .is_empty()
+                );
+            }
+
+            NatsMockAction::WaitForDeleteRequests { count, timeout } => {
+                self.proxy
+                    .as_ref()
+                    .expect("StartProxy must be called before this action")
+                    .wait_for_delete_requests(*count, *timeout)?;
+            }
+
+            NatsMockAction::DisconnectWaitsForHeldDelete => {
+                let proxy = self
+                    .proxy
+                    .as_ref()
+                    .expect("StartProxy must be called first");
+                self.endpoint().disconnect();
+                let exited_while_held = wait(
+                    || self.endpoint().is_closed(),
+                    Duration::from_millis(200).as_millis(),
+                )
+                .is_ok();
+                // Release before any assertion, even on the buggy connector,
+                // so failure does not leave cleanup blocked in the proxy.
+                proxy.release_deletes();
+                assert!(
+                    wait(|| self.endpoint().is_closed(), 10_000).is_ok(),
+                    "worker did not exit after releasing the consumer delete"
+                );
+                assert!(
+                    !exited_while_held,
+                    "worker exited while the consumer delete from Pause was still held"
+                );
+                let consumers = self
+                    .rt
+                    .block_on(util::list_consumers(self.nats_url(), STREAM_NAME))?;
+                assert!(
+                    consumers.is_empty(),
+                    "consumer still exists after worker exit"
                 );
             }
 

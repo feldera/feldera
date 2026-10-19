@@ -351,6 +351,103 @@ fn test_nats_disconnect_deletes_consumer_before_exit() -> AnyResult<()> {
     )
 }
 
+/// Disconnect must join cleanup already detached by Pause, not just cleanup
+/// belonging to a reader still active at the time of Disconnect.
+#[test]
+fn test_nats_pause_then_disconnect_waits_for_consumer_delete() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        basic_nats_config,
+        &[
+            StartNats,
+            CreateStream,
+            Publish(2),
+            StartProxy(ProxyFaults {
+                hold_deletes: true,
+                ..Default::default()
+            }),
+            CreatePipeline,
+            Extend,
+            WaitForRecords(2),
+            Pause,
+            WaitForDeleteRequests {
+                count: 1,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+            AssertServerConsumerCount(1),
+            DisconnectWaitsForHeldDelete,
+        ],
+    )
+}
+
+/// Channel closure is also a worker exit: it must not bypass Pause cleanup.
+#[test]
+fn test_nats_pause_then_drop_waits_for_consumer_delete() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        basic_nats_config,
+        &[
+            StartNats,
+            CreateStream,
+            Publish(2),
+            StartProxy(ProxyFaults {
+                hold_deletes: true,
+                ..Default::default()
+            }),
+            CreatePipeline,
+            Extend,
+            WaitForRecords(2),
+            Pause,
+            WaitForDeleteRequests {
+                count: 1,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+            DropWaitsForHeldDelete,
+        ],
+    )
+}
+
+/// A process may exit when Controller::stop returns. Waiting only for the
+/// circuit thread does not guarantee the NATS worker finished its delete.
+#[test]
+fn test_nats_controller_stop_waits_for_consumer_delete() -> AnyResult<()> {
+    test_controller_stop_waits_for_delete(false, false)
+}
+
+/// Controller shutdown also has to join cleanup detached by an earlier Pause.
+#[test]
+fn test_nats_controller_stop_after_pause_waits_for_consumer_delete() -> AnyResult<()> {
+    test_controller_stop_waits_for_delete(true, false)
+}
+
+/// A removed reader's cleanup is still part of controller shutdown.
+#[test]
+fn test_nats_controller_stop_after_disconnect_waits_for_consumer_delete() -> AnyResult<()> {
+    test_controller_stop_waits_for_delete(false, true)
+}
+
+fn test_controller_stop_waits_for_delete(
+    pause_first: bool,
+    disconnect_first: bool,
+) -> AnyResult<()> {
+    use NatsControllerAction::*;
+    run_nats_controller_test(
+        NatsControllerRunner::new()?,
+        &[
+            StartNats,
+            CreateStream,
+            StartProxy(ProxyFaults {
+                hold_deletes: true,
+                ..Default::default()
+            }),
+            StopWaitsForHeldDelete {
+                pause_first,
+                disconnect_first,
+            },
+        ],
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Exactly-once
 // ---------------------------------------------------------------------------
