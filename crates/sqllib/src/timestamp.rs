@@ -27,7 +27,7 @@ use size_of::SizeOf;
 use std::{
     borrow::Cow,
     fmt::{self, Debug},
-    ops::{Add, Deref, Sub},
+    ops::{Add, Deref, RangeInclusive, Sub},
 };
 
 use crate::{
@@ -1106,18 +1106,28 @@ some_function2!(
 
 #[doc(hidden)]
 pub fn plus_Date_Date_ShortInterval__(left: Date, right: ShortInterval) -> Date {
-    let days = (right.microseconds() / (86400i64 * 1000 * 1000)) as i32;
-    let diff = left.days() + days;
-    Date::from_days(diff)
+    let days = right.microseconds() / (86400i64 * 1000 * 1000);
+    Date::legal_from_days(left.days() as i64 + days).unwrap_or_else(|| {
+        panic!(
+            "Cannot add interval '{:?}' to date '{:?}'",
+            right,
+            left.to_date()
+        )
+    })
 }
 
 some_function2!(plus_Date_Date_ShortInterval, Date, ShortInterval, Date);
 
 #[doc(hidden)]
 pub fn minus_Date_Date_ShortInterval__(left: Date, right: ShortInterval) -> Date {
-    let days = (right.microseconds() / (86400i64 * 1000 * 1000)) as i32;
-    let diff = left.days() - days;
-    Date::from_days(diff)
+    let days = right.microseconds() / (86400i64 * 1000 * 1000);
+    Date::legal_from_days(left.days() as i64 - days).unwrap_or_else(|| {
+        panic!(
+            "Cannot subtract interval '{:?}' from date '{:?}'",
+            right,
+            left.to_date()
+        )
+    })
 }
 
 some_function2!(minus_Date_Date_ShortInterval, Date, ShortInterval, Date);
@@ -1125,17 +1135,15 @@ some_function2!(minus_Date_Date_ShortInterval, Date, ShortInterval, Date);
 #[doc(hidden)]
 pub fn plus_Date_Date_LongInterval__(left: Date, right: LongInterval) -> Date {
     let date = left.to_date();
-    if right.months() < 0 {
-        let result = date
-            .checked_sub_months(Months::new(-right.months() as u32))
-            .unwrap_or_else(|| panic!("Cannot add interval '{:?}' to date '{:?}'", right, date));
-        Date::from_date(result)
+    let months = Months::new(right.months().unsigned_abs());
+    let result = if right.months() < 0 {
+        date.checked_sub_months(months)
     } else {
-        let result = date
-            .checked_add_months(Months::new(right.months() as u32))
-            .unwrap_or_else(|| panic!("Cannot add interval '{:?}' to date '{:?}'", right, date));
-        Date::from_date(result)
-    }
+        date.checked_add_months(months)
+    };
+    result
+        .and_then(Date::legal_from_date)
+        .unwrap_or_else(|| panic!("Cannot add interval '{:?}' to date '{:?}'", right, date))
 }
 
 some_function2!(plus_Date_Date_LongInterval, Date, LongInterval, Date);
@@ -1143,27 +1151,18 @@ some_function2!(plus_Date_Date_LongInterval, Date, LongInterval, Date);
 #[doc(hidden)]
 pub fn minus_Date_Date_LongInterval__(left: Date, right: LongInterval) -> Date {
     let date = left.to_date();
-    if right.months() < 0 {
-        let result = date
-            .checked_add_months(Months::new(-right.months() as u32))
-            .unwrap_or_else(|| {
-                panic!(
-                    "Cannot subtract interval '{:?}' from date '{:?}'",
-                    right, date
-                )
-            });
-        Date::from_date(result)
+    let months = Months::new(right.months().unsigned_abs());
+    let result = if right.months() < 0 {
+        date.checked_add_months(months)
     } else {
-        let result = date
-            .checked_sub_months(Months::new(right.months() as u32))
-            .unwrap_or_else(|| {
-                panic!(
-                    "Cannot subtract interval '{:?}' from date '{:?}'",
-                    right, date
-                )
-            });
-        Date::from_date(result)
-    }
+        date.checked_sub_months(months)
+    };
+    result.and_then(Date::legal_from_date).unwrap_or_else(|| {
+        panic!(
+            "Cannot subtract interval '{:?}' from date '{:?}'",
+            right, date
+        )
+    })
 }
 
 some_function2!(minus_Date_Date_LongInterval, Date, LongInterval, Date);
@@ -2226,7 +2225,7 @@ some_nullable_function2!(parse_timestamp, SqlString, SqlString, Timestamp);
 // Date
 
 /// A representation of a Date in the Gregorian calendar.
-/// The range of legal dates is 0001-01-01 to 9999-12-12.
+/// The range of legal dates is 0001-01-01 to 9999-12-31.
 #[derive(
     Default,
     Clone,
@@ -2252,11 +2251,37 @@ pub struct Date {
     days: i32,
 }
 
+/// The number of days from the Unix epoch to `date`.
+const fn days_since_epoch(date: NaiveDate) -> i64 {
+    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+    date.signed_duration_since(epoch).num_days()
+}
+
+/// The day numbers of the legal dates, 0001-01-01 to 9999-12-31.
+static LEGAL_DAYS: RangeInclusive<i64> = days_since_epoch(NaiveDate::from_ymd_opt(1, 1, 1).unwrap())
+    ..=days_since_epoch(NaiveDate::from_ymd_opt(9999, 12, 31).unwrap());
+
 impl Date {
     /// Create a [Date] from a number of days since the Unix epoch
     /// (January 1st, 1970).
     pub const fn from_days(days: i32) -> Self {
         Self { days }
+    }
+
+    /// Create a [Date] from a number of days since the Unix epoch, or
+    /// `None` if the date is outside the legal range.
+    pub fn legal_from_days(days: i64) -> Option<Self> {
+        LEGAL_DAYS
+            .contains(&days)
+            .then(|| Self::from_days(days as i32))
+    }
+
+    /// Create a [Date] from a chrono [NaiveDate], or `None` if the date
+    /// is outside the years 1 to 9999.
+    pub fn legal_from_date(date: NaiveDate) -> Option<Self> {
+        (1..=9999)
+            .contains(&date.year())
+            .then(|| Self::from_date(date))
     }
 
     /// Create a [Date] from a chrono [NaiveDate]
@@ -2418,11 +2443,21 @@ some_operator!(neq, Date, Date, bool);
 some_operator!(gte, Date, Date, bool);
 some_operator!(lte, Date, Date, bool);
 
+/// The date `rounded`, the result of rounding `date` to a `unit`; panics
+/// if the result is outside the legal range.
+fn legal_rounding(date: NaiveDate, unit: &str, rounded: NaiveDate) -> Date {
+    Date::legal_from_date(rounded).unwrap_or_else(|| {
+        panic!(
+            "Rounding date '{date}' to a {unit} produces a date outside the range 0001-01-01 to 9999-12-31"
+        )
+    })
+}
+
 #[doc(hidden)]
 pub fn floor_millennium_Date(value: Date) -> Date {
     let d = value.to_date();
     let naive = NaiveDate::from_ymd_opt((d.year() / 1000) * 1000, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "millennium", naive)
 }
 
 some_polymorphic_function1!(floor_millennium, Date, Date, Date);
@@ -2445,7 +2480,7 @@ some_nullable_function3!(make_date, i32, i32, i32, Date);
 pub fn floor_century_Date(value: Date) -> Date {
     let d = value.to_date();
     let naive = NaiveDate::from_ymd_opt((d.year() / 100) * 100, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "century", naive)
 }
 
 some_polymorphic_function1!(floor_century, Date, Date, Date);
@@ -2454,7 +2489,7 @@ some_polymorphic_function1!(floor_century, Date, Date, Date);
 pub fn floor_decade_Date(value: Date) -> Date {
     let d = value.to_date();
     let naive = NaiveDate::from_ymd_opt((d.year() / 10) * 10, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "decade", naive)
 }
 
 some_polymorphic_function1!(floor_decade, Date, Date, Date);
@@ -2551,7 +2586,7 @@ pub fn ceil_millennium_Date(value: Date) -> Date {
         return value;
     }
     let naive = NaiveDate::from_ymd_opt((d.year() / 1000 + 1) * 1000, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "millennium", naive)
 }
 
 some_polymorphic_function1!(ceil_millennium, Date, Date, Date);
@@ -2563,7 +2598,7 @@ pub fn ceil_century_Date(value: Date) -> Date {
         return value;
     }
     let naive = NaiveDate::from_ymd_opt((d.year() / 100 + 1) * 100, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "century", naive)
 }
 
 some_polymorphic_function1!(ceil_century, Date, Date, Date);
@@ -2575,7 +2610,7 @@ pub fn ceil_decade_Date(value: Date) -> Date {
         return value;
     }
     let naive = NaiveDate::from_ymd_opt((d.year() / 10 + 1) * 10, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "decade", naive)
 }
 
 some_polymorphic_function1!(ceil_decade, Date, Date, Date);
@@ -2587,7 +2622,7 @@ pub fn ceil_year_Date(value: Date) -> Date {
         return value;
     }
     let naive = NaiveDate::from_ymd_opt(d.year() + 1, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "year", naive)
 }
 
 some_polymorphic_function1!(ceil_year, Date, Date, Date);
@@ -2611,7 +2646,7 @@ pub fn ceil_quarter_Date(value: Date) -> Date {
         d.year()
     };
     let naive = NaiveDate::from_ymd_opt(year, next_quarter_month, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "quarter", naive)
 }
 
 some_polymorphic_function1!(ceil_quarter, Date, Date, Date);
@@ -2629,7 +2664,7 @@ pub fn ceil_month_Date(value: Date) -> Date {
         d.year()
     };
     let naive = NaiveDate::from_ymd_opt(next_year, next_month, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "month", naive)
 }
 
 some_polymorphic_function1!(ceil_month, Date, Date, Date);
@@ -2939,7 +2974,7 @@ some_function2!(format_timestamp, SqlString, Timestamp, SqlString);
 pub fn parse_date__(format: SqlString, st: SqlString) -> Option<Date> {
     let nd = NaiveDate::parse_from_str(st.str(), format.str());
     match nd {
-        Ok(nd) => Some(Date::from_date(nd)),
+        Ok(nd) => Date::legal_from_date(nd),
         Err(e) => match e.kind() {
             ParseErrorKind::BadFormat | ParseErrorKind::NotEnough | ParseErrorKind::Impossible => {
                 panic!("Invalid format in PARSE_DATE: {}\n{}", format.str(), e)
@@ -3269,7 +3304,7 @@ pub fn date_trunc_century_Date(date: Date) -> Date {
 pub fn date_trunc_decade_Date(date: Date) -> Date {
     let date = date.to_dateTime();
     let rounded = NaiveDate::from_ymd_opt((date.year() / 10) * 10, 1, 1).unwrap();
-    Date::from_date(rounded)
+    legal_rounding(date.date_naive(), "decade", rounded)
 }
 
 #[doc(hidden)]
@@ -3305,7 +3340,7 @@ pub fn date_trunc_week_Date(date: Date) -> Date {
     let naive = date.to_date();
     let weekday = naive.weekday().num_days_from_sunday();
     let rounded = naive - Duration::days(weekday.into());
-    Date::from_date(rounded)
+    legal_rounding(naive, "week", rounded)
 }
 
 #[doc(hidden)]
@@ -3965,6 +4000,7 @@ mod test {
     use std::sync::LazyLock;
 
     use super::{Date, Time, Timestamp, TimestampTz};
+    use crate::{LongInterval, SqlString};
     use feldera_types::format::json::JsonFlavor;
     use feldera_types::serde_with_context::{
         DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -4116,6 +4152,99 @@ mod test {
             .unwrap(),
             r#"{"date":"2023-09-28","time":"23:21:15.123","timestamp":"2018-06-20 13:37:03","timestampTz":"2018-06-20 13:37:03+00:00"}"#
         );
+    }
+
+    #[test]
+    fn legal_dates() {
+        use chrono::NaiveDate;
+
+        let first = NaiveDate::from_ymd_opt(1, 1, 1).unwrap();
+        let last = NaiveDate::from_ymd_opt(9999, 12, 31).unwrap();
+        let first_days = Date::from_date(first).days() as i64;
+        let last_days = Date::from_date(last).days() as i64;
+        assert_eq!(Date::legal_from_days(first_days).unwrap().to_date(), first);
+        assert_eq!(Date::legal_from_days(last_days).unwrap().to_date(), last);
+        assert!(Date::legal_from_days(first_days - 1).is_none());
+        assert!(Date::legal_from_days(last_days + 1).is_none());
+        assert!(Date::legal_from_days(i64::MAX).is_none());
+        assert!(Date::legal_from_date(last.succ_opt().unwrap()).is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot add interval")]
+    fn date_plus_days_out_of_range() {
+        use super::{ShortInterval, plus_Date_Date_ShortInterval__};
+
+        let last = Date::from_date(chrono::NaiveDate::from_ymd_opt(9999, 12, 31).unwrap());
+        plus_Date_Date_ShortInterval__(last, ShortInterval::from_seconds(86400));
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot subtract interval")]
+    fn date_minus_months_out_of_range() {
+        use super::{LongInterval, minus_Date_Date_LongInterval__};
+
+        let first = Date::from_date(chrono::NaiveDate::from_ymd_opt(1, 1, 1).unwrap());
+        minus_Date_Date_LongInterval__(first, LongInterval::from_months(1));
+    }
+
+    fn date(year: i32, month: u32, day: u32) -> Date {
+        Date::from_date(chrono::NaiveDate::from_ymd_opt(year, month, day).unwrap())
+    }
+
+    #[test]
+    fn rounding_to_legal_dates() {
+        use super::{ceil_month_Date, floor_decade_Date};
+
+        assert_eq!(ceil_month_Date(date(9999, 11, 2)), date(9999, 12, 1));
+        assert_eq!(floor_decade_Date(date(10, 5, 5)), date(10, 1, 1));
+    }
+
+    #[test]
+    #[should_panic(expected = "Rounding date '9999-12-02' to a month")]
+    fn ceil_out_of_range() {
+        super::ceil_month_Date(date(9999, 12, 2));
+    }
+
+    #[test]
+    #[should_panic(expected = "Rounding date '0005-05-05' to a decade")]
+    fn floor_out_of_range() {
+        super::floor_decade_Date(date(5, 5, 5));
+    }
+
+    /// Whether `f` panics.
+    fn panics(f: impl FnOnce() + std::panic::UnwindSafe) -> bool {
+        std::panic::catch_unwind(f).is_err()
+    }
+
+    #[test]
+    fn date_rounding_at_the_edges() {
+        use super::*;
+
+        // 0001-01-01 is a Monday, and weeks start on Sunday
+        assert!(panics(|| _ = date_trunc_week_Date(date(1, 1, 1))));
+        assert!(panics(|| _ = date_trunc_decade_Date(date(5, 1, 1))));
+        assert!(panics(|| _ = floor_millennium_Date(date(500, 6, 1))));
+        assert!(panics(|| _ = floor_century_Date(date(50, 6, 1))));
+        assert!(panics(|| _ = ceil_quarter_Date(date(9999, 11, 2))));
+        assert!(panics(|| _ = ceil_year_Date(date(9999, 6, 1))));
+        assert!(panics(|| _ = ceil_millennium_Date(date(9999, 6, 1))));
+        assert_eq!(date_trunc_week_Date(date(1, 1, 7)), date(1, 1, 7));
+        assert_eq!(floor_millennium_Date(date(1500, 6, 1)), date(1000, 1, 1));
+        assert_eq!(ceil_quarter_Date(date(9999, 8, 2)), date(9999, 10, 1));
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot add interval")]
+    fn date_plus_most_negative_months() {
+        super::plus_Date_Date_LongInterval__(date(2000, 1, 1), LongInterval::from_months(i32::MIN));
+    }
+
+    #[test]
+    fn parse_date_out_of_range() {
+        let format = SqlString::from_ref("%Y-%m-%d");
+        assert!(super::parse_date__(format.clone(), SqlString::from_ref("0000-01-01")).is_none());
+        assert!(super::parse_date__(format, SqlString::from_ref("0001-01-01")).is_some());
     }
 }
 
