@@ -109,6 +109,63 @@ CREATE publication feldera_orders FOR TABLE public.orders;
 `REPLICA IDENTITY FULL` is recommended so update and delete events include the
 old row values needed to retract records from the Feldera input table.
 
+### Inherited tables
+
+PostgreSQL table inheritance spreads one logical table over a parent and its
+children. A common use is an archive of old orders that queries on the parent
+still see:
+
+```sql
+CREATE TABLE public.orders_archive (PRIMARY KEY (id)) INHERITS (public.orders);
+```
+
+A query on `public.orders` returns the rows of both tables. The connector does
+not: it reads and streams the rows stored in its `source_table` itself, because
+PostgreSQL publishes the rows of `public.orders_archive` under that name. With
+`source_table` set to `public.orders`, the archived orders never reach Feldera.
+
+To ingest them, add the archive to the publication and attach a second
+connector, with the archive as its `source_table`, to the same Feldera table:
+
+```sql
+ALTER TABLE public.orders_archive REPLICA IDENTITY FULL;
+
+ALTER PUBLICATION feldera_orders ADD TABLE public.orders_archive;
+```
+
+```sql
+CREATE TABLE orders (
+    id BIGINT NOT NULL,
+    customer TEXT NOT NULL,
+    amount DECIMAL(10, 2),
+    status TEXT NOT NULL
+) WITH (
+    'connectors' = '[{
+        "transport": {
+            "name": "postgres_cdc_input",
+            "config": {
+                "uri": "postgres://feldera:password@localhost:5432/postgres",
+                "publication": "feldera_orders",
+                "source_table": "public.orders"
+            }
+        }
+    }, {
+        "transport": {
+            "name": "postgres_cdc_input",
+            "config": {
+                "uri": "postgres://feldera:password@localhost:5432/postgres",
+                "publication": "feldera_orders",
+                "source_table": "public.orders_archive"
+            }
+        }
+    }]'
+);
+```
+
+`CREATE PUBLICATION ... FOR TABLE public.orders` includes the children that
+exist at that moment, so the `ALTER PUBLICATION` above is needed only for a
+child created later, or when the publication was created with `FOR TABLE ONLY`.
+
 ### Objects the connector installs
 
 The connector embeds the [etl](https://github.com/feldera/etl) replication
@@ -277,6 +334,11 @@ Feldera matches columns by name.
 - Extra PostgreSQL columns that do not exist in Feldera are ignored.
 - If a required Feldera column is removed from PostgreSQL while the connector is
   running, the connector reports a fatal error.
+- The special PostgreSQL values `infinity` and `-infinity` of a `DATE`,
+  `TIMESTAMP` or `TIMESTAMPTZ` column, and the `TIME` value `24:00:00`, have no
+  counterpart in the Feldera types. A row that holds one is reported as a
+  malformed record and skipped, like any other row that fails to parse. All
+  other values of these columns are unaffected.
 
 ## Example
 

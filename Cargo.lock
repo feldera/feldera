@@ -2002,7 +2002,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "regex",
@@ -2020,7 +2020,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -4987,7 +4987,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.0",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5332,7 +5332,7 @@ dependencies = [
 [[package]]
 name = "etl"
 version = "0.1.0"
-source = "git+https://github.com/feldera/etl?rev=cdfb3c7e6581b63d8876c3c1b335b3a99e676c55#cdfb3c7e6581b63d8876c3c1b335b3a99e676c55"
+source = "git+https://github.com/feldera/etl?rev=dbb7c00bf536b04108f399bb1fe56636d044d22a#dbb7c00bf536b04108f399bb1fe56636d044d22a"
 dependencies = [
  "bytes",
  "chrono",
@@ -5355,6 +5355,7 @@ dependencies = [
  "tokio",
  "tokio-postgres 0.7.18 (git+https://github.com/supabase/rust-postgres?rev=8086f1fd19bd9abc0da86ba80f8b7dbdd676cb3e)",
  "tokio-stream",
+ "tokio-util",
  "tracing",
  "uuid",
 ]
@@ -5362,7 +5363,7 @@ dependencies = [
 [[package]]
 name = "etl-config"
 version = "0.1.0"
-source = "git+https://github.com/feldera/etl?rev=cdfb3c7e6581b63d8876c3c1b335b3a99e676c55#cdfb3c7e6581b63d8876c3c1b335b3a99e676c55"
+source = "git+https://github.com/feldera/etl?rev=dbb7c00bf536b04108f399bb1fe56636d044d22a#dbb7c00bf536b04108f399bb1fe56636d044d22a"
 dependencies = [
  "config",
  "secrecy",
@@ -5376,7 +5377,7 @@ dependencies = [
 [[package]]
 name = "etl-postgres"
 version = "0.1.0"
-source = "git+https://github.com/feldera/etl?rev=cdfb3c7e6581b63d8876c3c1b335b3a99e676c55#cdfb3c7e6581b63d8876c3c1b335b3a99e676c55"
+source = "git+https://github.com/feldera/etl?rev=dbb7c00bf536b04108f399bb1fe56636d044d22a#dbb7c00bf536b04108f399bb1fe56636d044d22a"
 dependencies = [
  "aws-lc-rs",
  "byteorder",
@@ -6808,7 +6809,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -6828,7 +6829,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.58.0",
 ]
 
 [[package]]
@@ -7595,7 +7596,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -8131,7 +8132,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -10161,7 +10162,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -10200,9 +10201,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -11240,9 +11241,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.45"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
+checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -11316,7 +11317,7 @@ dependencies = [
  "security-framework 3.6.0",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

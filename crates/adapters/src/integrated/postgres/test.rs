@@ -3564,6 +3564,11 @@ mod cdc_tests {
     use super::*;
     use crate::test::wait;
     use dbsp::DBData;
+    use etl::config::{PgConnectionConfig, TcpKeepaliveConfig, TlsConfig};
+    use etl::error::ErrorKind;
+    use etl::etl_error;
+    use etl::schema::TableId;
+    use etl::store::{CachedStore, PostgresStore, StateStore, TableRetryPolicy, TableState};
     use feldera_types::config::PipelineConfig;
     use feldera_types::serde_with_context::DeserializeWithContext;
     use pg::pg_connect;
@@ -3719,65 +3724,134 @@ mod cdc_tests {
 
     impl CdcTestTable {
         /// Drop the replication slots etl created for this pipeline.
-        ///
-        /// etl names slots after the *pipeline ID* (e.g.
-        /// `supabase_etl_apply_<id>` and `supabase_etl_table_sync_<id>_<oid>`),
-        /// not the publication, so we reconstruct that ID exactly as the
-        /// connector does. The slot limit is small (4 by default on
-        /// `debezium/postgres`); leaking even one slot per test exhausts it
-        /// within a couple of tests, so cleanup must be reliable.
         fn drop_replication_slots(&mut self) {
-            let connector_url = cdc_connector_url(&self.url);
             let source_table = format!("public.{}", self.table_name);
-            let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
-                &connector_url,
+            drop_pipeline_slots(
+                &mut self.client,
+                &self.url,
                 &self.publication_name,
                 &source_table,
-            )
-            .to_string();
+            );
+        }
+    }
 
-            // The pipeline ID appears as a `_`-delimited token in every slot
-            // name etl creates, so an exact-token match avoids dropping an
-            // unrelated slot whose ID merely shares these digits.
-            let owns_slot = |name: &str| name.split('_').any(|token| token == pipeline_id);
+    /// Drop the replication slots etl created for the pipeline that reads
+    /// `source_table` from `publication`.
+    ///
+    /// etl names slots after the *pipeline ID* (e.g.
+    /// `supabase_etl_apply_<id>` and `supabase_etl_table_sync_<id>_<oid>`),
+    /// not the publication, so we reconstruct that ID exactly as the
+    /// connector does. The slot limit is small (4 by default on
+    /// `debezium/postgres`); leaking even one slot per test exhausts it
+    /// within a couple of tests, so cleanup must be reliable.
+    fn drop_pipeline_slots(
+        client: &mut postgres::Client,
+        url: &str,
+        publication: &str,
+        source_table: &str,
+    ) {
+        let connector_url = cdc_connector_url(url);
+        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+            &connector_url,
+            publication,
+            source_table,
+        )
+        .to_string();
 
-            for _attempt in 0..20 {
-                let slots: Vec<(String, Option<i32>)> = self
-                    .client
-                    .query(
-                        "SELECT slot_name, active_pid FROM pg_replication_slots",
-                        &[],
+        // The pipeline ID appears as a `_`-delimited token in every slot
+        // name etl creates, so an exact-token match avoids dropping an
+        // unrelated slot whose ID merely shares these digits.
+        let owns_slot = |name: &str| name.split('_').any(|token| token == pipeline_id);
+
+        for _attempt in 0..20 {
+            let slots: Vec<(String, Option<i32>)> = client
+                .query(
+                    "SELECT slot_name, active_pid FROM pg_replication_slots",
+                    &[],
+                )
+                .unwrap_or_default()
+                .into_iter()
+                .map(|r| {
+                    (
+                        r.get::<_, String>("slot_name"),
+                        r.get::<_, Option<i32>>("active_pid"),
                     )
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|r| {
-                        (
-                            r.get::<_, String>("slot_name"),
-                            r.get::<_, Option<i32>>("active_pid"),
-                        )
-                    })
-                    .filter(|(name, _)| owns_slot(name))
-                    .collect();
+                })
+                .filter(|(name, _)| owns_slot(name))
+                .collect();
 
-                if slots.is_empty() {
-                    return;
-                }
-
-                for (slot, active_pid) in &slots {
-                    if let Some(pid) = active_pid {
-                        let _ = self
-                            .client
-                            .execute(&format!("SELECT pg_terminate_backend({pid})"), &[]);
-                    }
-                    let _ = self
-                        .client
-                        .execute(&format!("SELECT pg_drop_replication_slot('{slot}')"), &[]);
-                }
-
-                // Any slots left over had a backend that has not detached yet;
-                // wait for it to clear, then retry.
-                std::thread::sleep(std::time::Duration::from_millis(250));
+            if slots.is_empty() {
+                return;
             }
+
+            for (slot, active_pid) in &slots {
+                if let Some(pid) = active_pid {
+                    let _ = client.execute(&format!("SELECT pg_terminate_backend({pid})"), &[]);
+                }
+                let _ = client.execute(&format!("SELECT pg_drop_replication_slot('{slot}')"), &[]);
+            }
+
+            // Any slots left over had a backend that has not detached yet;
+            // wait for it to clear, then retry.
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+    }
+
+    /// A table that inherits from a [`CdcTestTable`]'s table and is a member
+    /// of its publication.
+    ///
+    /// Declare it after the parent so that it drops first: PostgreSQL refuses
+    /// to drop a parent that still has a child.
+    struct InheritedChild {
+        client: postgres::Client,
+        table_name: String,
+        publication_name: String,
+        url: String,
+    }
+
+    impl InheritedChild {
+        fn new(parent: &mut CdcTestTable, table_name: &str) -> Self {
+            let parent_name = parent.table_name.clone();
+            let publication_name = parent.publication_name.clone();
+            let url = parent.url.clone();
+            parent.execute(&format!("DROP TABLE IF EXISTS {table_name}"));
+            parent.execute(&format!(
+                "CREATE TABLE {table_name} (PRIMARY KEY (id)) INHERITS ({parent_name})"
+            ));
+            parent.execute(&format!("ALTER TABLE {table_name} REPLICA IDENTITY FULL"));
+            // A child created after the publication is not a member of it, as
+            // PostgreSQL expands `FOR TABLE` only when the publication is
+            // created or altered.
+            parent.execute(&format!(
+                "ALTER PUBLICATION {publication_name} ADD TABLE {table_name}"
+            ));
+            InheritedChild {
+                client: pg_connect(&url, &None),
+                table_name: table_name.to_string(),
+                publication_name,
+                url,
+            }
+        }
+
+        fn execute(&mut self, query: &str) {
+            self.client
+                .execute(query, &[])
+                .unwrap_or_else(|e| panic!("failed to execute '{query}': {e}"));
+        }
+    }
+
+    impl Drop for InheritedChild {
+        fn drop(&mut self) {
+            let source_table = format!("public.{}", self.table_name);
+            drop_pipeline_slots(
+                &mut self.client,
+                &self.url,
+                &self.publication_name,
+                &source_table,
+            );
+            let _ = self
+                .client
+                .execute(&format!("DROP TABLE IF EXISTS {}", self.table_name), &[]);
         }
     }
 
@@ -4450,6 +4524,16 @@ mod cdc_tests {
                 .and_then(|v| v.as_i64())
                 == Some(id)
         })
+    }
+
+    /// The `id` of every "insert" entry in the output, in ascending order.
+    fn sorted_insert_ids(rows: &[serde_json::Value]) -> Vec<i64> {
+        let mut ids: Vec<i64> = rows
+            .iter()
+            .filter_map(|r| r.get("insert")?.get("id")?.as_i64())
+            .collect();
+        ids.sort_unstable();
+        ids
     }
 
     // -------------------------------------------------------------------
@@ -5418,6 +5502,424 @@ mod cdc_tests {
         );
 
         controller_2.stop().unwrap();
+    }
+
+    /// A parent's initial read carries only the parent's own rows: etl reads
+    /// each table of an inheritance tree with `select ... from only`, and the
+    /// connector skips the rows of every publication table other than
+    /// `source_table`, in the initial read and in the change stream alike. A
+    /// child's rows reach Feldera through a connector of their own.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_inherited_child_rows_need_their_own_connector() {
+        let url = postgres_url();
+        let parent_name = unique_pg_name("cdc_test_inherit_parent");
+        let child_name = unique_pg_name("cdc_test_inherit_child");
+        let publication = unique_pg_name("cdc_pub_inherit");
+
+        let mut parent = CdcTestTable::new_simple(&parent_name, &publication, &url);
+        let mut child = InheritedChild::new(&mut parent, &child_name);
+        parent.execute(&format!(
+            "INSERT INTO {parent_name} VALUES (1, true, NULL, 'parent')"
+        ));
+        child.execute(&format!(
+            "INSERT INTO {child_name} VALUES (10, true, NULL, 'child')"
+        ));
+
+        // --- A connector on the parent ---
+        let parent_output = NamedTempFile::new().unwrap();
+        let parent_output_path = parent_output.path().to_owned();
+        let (controller, err_receiver) = cdc_simple_test_circuit(
+            &url,
+            &publication,
+            &format!("public.{parent_name}"),
+            &parent_output_path,
+        );
+        controller.start();
+        wait(
+            || has_insert_id(&read_output_json(&parent_output_path), 1) || !err_receiver.is_empty(),
+            60_000,
+        )
+        .expect("timeout: the parent's own row did not arrive");
+        assert!(err_receiver.is_empty(), "unexpected errors in CDC pipeline");
+
+        // The child's change precedes the parent's in the log, so once the
+        // parent's row is out the child's has been skipped, not merely delayed.
+        child.execute(&format!(
+            "INSERT INTO {child_name} VALUES (11, false, 42, 'child')"
+        ));
+        parent.execute(&format!(
+            "INSERT INTO {parent_name} VALUES (2, false, 42, 'parent')"
+        ));
+        wait(
+            || has_insert_id(&read_output_json(&parent_output_path), 2) || !err_receiver.is_empty(),
+            60_000,
+        )
+        .expect("timeout: the parent's streamed row did not arrive");
+        assert!(err_receiver.is_empty(), "unexpected errors in CDC pipeline");
+        assert_eq!(
+            sorted_insert_ids(&read_output_json(&parent_output_path)),
+            vec![1, 2]
+        );
+        controller.stop().unwrap();
+        // Free the parent connector's slots before the child connector takes
+        // its own: CI's PostgreSQL allows four, and the child's start takes
+        // three at once, an apply slot and one per table of the publication.
+        wait_for_slots_released(&mut parent);
+        parent.drop_replication_slots();
+
+        // --- A connector on the child ---
+        let child_output = NamedTempFile::new().unwrap();
+        let child_output_path = child_output.path().to_owned();
+        let (controller, err_receiver) = cdc_simple_test_circuit(
+            &url,
+            &publication,
+            &format!("public.{child_name}"),
+            &child_output_path,
+        );
+        controller.start();
+        wait(
+            || has_insert_id(&read_output_json(&child_output_path), 11) || !err_receiver.is_empty(),
+            60_000,
+        )
+        .expect("timeout: the child's rows did not arrive");
+        assert!(err_receiver.is_empty(), "unexpected errors in CDC pipeline");
+
+        parent.execute(&format!(
+            "INSERT INTO {parent_name} VALUES (3, true, 100, 'parent')"
+        ));
+        child.execute(&format!(
+            "INSERT INTO {child_name} VALUES (12, true, 100, 'child')"
+        ));
+        wait(
+            || has_insert_id(&read_output_json(&child_output_path), 12) || !err_receiver.is_empty(),
+            60_000,
+        )
+        .expect("timeout: the child's streamed row did not arrive");
+        assert!(err_receiver.is_empty(), "unexpected errors in CDC pipeline");
+        assert_eq!(
+            sorted_insert_ids(&read_output_json(&child_output_path)),
+            vec![10, 11, 12]
+        );
+        controller.stop().unwrap();
+    }
+
+    /// etl's state store for the pipeline that reads `table` from its
+    /// publication, opened as the connector opens it.
+    fn etl_store(table: &CdcTestTable) -> (tokio::runtime::Runtime, PostgresStore) {
+        let connector_url = cdc_connector_url(&table.url);
+        let url = url::Url::parse(&connector_url).unwrap();
+        let pg_conn = PgConnectionConfig {
+            host: url.host_str().unwrap().to_string(),
+            hostaddr: None,
+            port: url.port().unwrap_or(5432),
+            name: url.path().trim_start_matches('/').to_string(),
+            username: url.username().to_string(),
+            password: url.password().map(|p| p.to_string().into()),
+            tls: TlsConfig::disabled(),
+            keepalive: TcpKeepaliveConfig::default(),
+        };
+        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+            &connector_url,
+            &table.publication_name,
+            &format!("public.{}", table.table_name),
+        );
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let store = runtime.block_on(async {
+            let store = PostgresStore::new(pipeline_id, pg_conn).await.unwrap();
+            store.load_cache().await.unwrap();
+            store
+        });
+        (runtime, store)
+    }
+
+    /// Wait until etl has completed the sync of every table of `table`'s
+    /// publication, `tables` of them.
+    fn wait_for_etl_sync_completed_on(table: &mut CdcTestTable, tables: usize) {
+        wait(
+            || {
+                let states = etl_table_states(table);
+                states.len() == tables
+                    && states
+                        .iter()
+                        .all(|s| ETL_SYNC_COMPLETED_STATES.contains(&s.as_str()))
+            },
+            60_000,
+        )
+        .unwrap_or_else(|_| {
+            panic!(
+                "timeout waiting for etl to complete the sync of {tables} tables; current \
+                 states: {:?}",
+                etl_table_states(table)
+            )
+        });
+    }
+
+    /// An older connector refused the writes of every publication table at a
+    /// stop, and etl recorded the refusal as a manual-retry error on the
+    /// table it was writing, which may be one other than the source table.
+    /// etl never retries such an error, and the monitor reports it as fatal,
+    /// so the start after an upgrade must roll it back on every table.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_legacy_stop_error_on_another_table_is_cleared_at_start() {
+        let url = postgres_url();
+        let name_a = unique_pg_name("cdc_test_legacy_a");
+        let publication_a = unique_pg_name("cdc_pub_legacy_a");
+        let name_b = unique_pg_name("cdc_test_legacy_b");
+        let publication_b = unique_pg_name("cdc_pub_legacy_b");
+        let mut table_a = CdcTestTable::new_simple(&name_a, &publication_a, &url);
+        let mut table_b = CdcTestTable::new_simple(&name_b, &publication_b, &url);
+        table_a.execute(&format!(
+            "ALTER PUBLICATION {publication_a} ADD TABLE {name_b}"
+        ));
+        table_a.execute(&format!(
+            "INSERT INTO {name_a} VALUES (1, true, NULL, 'first')"
+        ));
+
+        // --- Run 1: etl syncs both tables under A's pipeline ---
+        let output_1 = NamedTempFile::new().unwrap();
+        let output_path_1 = output_1.path().to_owned();
+        let (controller, err_receiver) = cdc_simple_test_circuit(
+            &url,
+            &publication_a,
+            &format!("public.{name_a}"),
+            &output_path_1,
+        );
+        controller.start();
+        wait(
+            || has_insert_id(&read_output_json(&output_path_1), 1) || !err_receiver.is_empty(),
+            60_000,
+        )
+        .expect("timeout: the copied row did not arrive");
+        assert!(err_receiver.is_empty(), "unexpected errors in run 1");
+        wait_for_etl_sync_completed_on(&mut table_a, 2);
+        controller.stop().unwrap();
+        wait_for_slots_released(&mut table_a);
+
+        // Leave on table B what an older connector left on the table it was
+        // writing when it stopped.
+        let oid: u32 = table_b
+            .client
+            .query_one("SELECT oid FROM pg_class WHERE relname = $1", &[&name_b])
+            .unwrap()
+            .get(0);
+        let (runtime, store) = etl_store(&table_a);
+        runtime
+            .block_on(
+                store.update_table_state(
+                    TableId::new(oid),
+                    TableState::Errored {
+                        reason: "Postgres CDC input connector terminated before accepting batch"
+                            .to_string(),
+                        solution: None,
+                        retry_policy: TableRetryPolicy::ManualRetry,
+                        source_err: etl_error!(ErrorKind::DestinationError, "left by a stop"),
+                    },
+                ),
+            )
+            .unwrap();
+        drop(store);
+        drop(runtime);
+        assert!(
+            etl_table_states(&mut table_a)
+                .iter()
+                .any(|s| s == "errored"),
+            "the planted error must be current"
+        );
+
+        // --- Run 2: the start clears the error and streams as before ---
+        let output_2 = NamedTempFile::new().unwrap();
+        let output_path_2 = output_2.path().to_owned();
+        let (controller, err_receiver) = cdc_simple_test_circuit(
+            &url,
+            &publication_a,
+            &format!("public.{name_a}"),
+            &output_path_2,
+        );
+        controller.start();
+        wait(
+            || {
+                let states = etl_table_states(&mut table_a);
+                !err_receiver.is_empty()
+                    || (states.len() == 2
+                        && states
+                            .iter()
+                            .all(|s| ETL_SYNC_COMPLETED_STATES.contains(&s.as_str())))
+            },
+            60_000,
+        )
+        .expect("timeout: etl neither cleared the error nor reported it");
+        assert!(
+            err_receiver.is_empty(),
+            "the start must clear the error an older connector left on another table: {:?}",
+            err_receiver.try_recv()
+        );
+        table_a.execute(&format!(
+            "INSERT INTO {name_a} VALUES (2, false, 42, 'second')"
+        ));
+        wait(
+            || has_insert_id(&read_output_json(&output_path_2), 2) || !err_receiver.is_empty(),
+            60_000,
+        )
+        .expect("timeout: the streamed row did not arrive");
+        assert!(err_receiver.is_empty(), "unexpected errors in run 2");
+        controller.stop().unwrap();
+    }
+
+    /// A record with the temporal types that have PostgreSQL values Feldera
+    /// cannot hold.
+    #[derive(
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        serde::Serialize,
+        serde::Deserialize,
+        Clone,
+        Hash,
+        size_of::SizeOf,
+        rkyv::Archive,
+        rkyv::Serialize,
+        rkyv::Deserialize,
+        feldera_macros::IsNone,
+        feldera_macros::OrdRepr,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    struct CdcTemporalStruct {
+        id: i32,
+        d: Option<feldera_sqllib::Date>,
+        t: Option<feldera_sqllib::Time>,
+    }
+
+    feldera_types::deserialize_table_record!(CdcTemporalStruct["CdcTemporalStruct", Variant, 3] {
+        (id, "id", false, i32, |_| None),
+        (d, "d", true, Option<feldera_sqllib::Date>, |_| Some(None)),
+        (t, "t", true, Option<feldera_sqllib::Time>, |_| Some(None))
+    });
+
+    feldera_types::serialize_table_record!(CdcTemporalStruct[3]{
+        id["id"]: i32,
+        d["d"]: Option<feldera_sqllib::Date>,
+        t["t"]: Option<feldera_sqllib::Time>
+    });
+
+    impl CdcTemporalStruct {
+        fn schema() -> Vec<Field> {
+            vec![
+                Field::new("id".into(), ColumnType::int(false)),
+                Field::new("d".into(), ColumnType::date(true)),
+                Field::new("t".into(), ColumnType::time(true)),
+            ]
+        }
+    }
+
+    /// PostgreSQL's `infinity` dates and `24:00:00` time have no Feldera
+    /// counterpart. A row that holds one is reported as a malformed record,
+    /// in the initial read and in the stream alike, and the rows around it
+    /// still arrive.
+    ///
+    /// Requires: wal_level=logical, user with REPLICATION privilege.
+    #[test]
+    #[serial]
+    fn test_cdc_temporal_special_values_fail_per_row() {
+        let url = postgres_url();
+        let table_name = unique_pg_name("cdc_test_temporal");
+        let publication = unique_pg_name("cdc_pub_temporal");
+        let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
+        table.execute(&format!(
+            "ALTER TABLE {table_name} ADD COLUMN d DATE, ADD COLUMN t TIME"
+        ));
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (1, true, NULL, 'x', 'infinity', '14:30:00')"
+        ));
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (2, true, NULL, 'x', '2024-06-15', '24:00:00')"
+        ));
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (3, true, NULL, 'x', '2024-06-15', '14:30:00')"
+        ));
+
+        let storage = tempfile::tempdir().unwrap();
+        let output = NamedTempFile::new().unwrap();
+        let output_path = output.path().to_owned();
+        let (controller, err_receiver) = cdc_ft_test_circuit_for::<CdcTemporalStruct>(
+            &url,
+            &publication,
+            &format!("public.{table_name}"),
+            storage.path(),
+            &output_path,
+            &CdcTemporalStruct::schema(),
+            CircuitShape::default(),
+        );
+        controller.start();
+
+        // The good row of the initial read arrives; the two bad ones are
+        // reported, one error each, and nothing is fatal.
+        wait(|| has_insert_id(&read_output_json(&output_path), 3), 60_000)
+            .expect("timeout: the well-formed copied row did not arrive");
+        let errors = collect_errors(&err_receiver, 2);
+        assert!(
+            errors.iter().any(|e| e.contains("infinity"))
+                && errors.iter().any(|e| e.contains("24:00:00")),
+            "each special value is reported once: {errors:?}"
+        );
+        assert!(
+            errors.iter().all(|e| !e.contains("FATAL")),
+            "a malformed row is not fatal: {errors:?}"
+        );
+
+        // The same in the stream. Stream only once etl has recorded the sync
+        // as done: under fault tolerance a change committed before that is
+        // delivered during catch-up, and its acknowledgment waits for a
+        // checkpoint the connector holds back until the sync is recorded, so
+        // etl never gets there (known issue, found while reviewing this test's
+        // PR).
+        wait_for_etl_sync_completed(&mut table);
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (4, true, NULL, 'x', '-infinity', '14:30:00')"
+        ));
+        table.execute(&format!(
+            "INSERT INTO {table_name} VALUES (5, true, NULL, 'x', '2024-06-16', '15:00:00')"
+        ));
+        wait(|| has_insert_id(&read_output_json(&output_path), 5), 60_000)
+            .expect("timeout: the well-formed streamed row did not arrive");
+        let errors = collect_errors(&err_receiver, 1);
+        assert!(
+            errors.iter().any(|e| e.contains("-infinity")),
+            "the streamed special value is reported: {errors:?}"
+        );
+        assert_eq!(
+            sorted_insert_ids(&read_output_json(&output_path)),
+            vec![3, 5]
+        );
+        controller.stop().unwrap();
+    }
+
+    /// Wait for at least `at_least` reported errors and return all of them.
+    fn collect_errors(
+        err_receiver: &crossbeam::channel::Receiver<String>,
+        at_least: usize,
+    ) -> Vec<String> {
+        let mut errors = Vec::new();
+        wait(
+            || {
+                errors.extend(err_receiver.try_iter());
+                errors.len() >= at_least
+            },
+            60_000,
+        )
+        .unwrap_or_else(|_| panic!("timeout: expected {at_least} errors, got {errors:?}"));
+        errors
     }
 
     // -------------------------------------------------------------------
