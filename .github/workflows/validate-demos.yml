@@ -1,0 +1,5 @@
+jobs:
+  validate-demos:
+    steps:
+      - name: Validate pipeline-manager Demos
+        run: scripts/validate-demos.sh

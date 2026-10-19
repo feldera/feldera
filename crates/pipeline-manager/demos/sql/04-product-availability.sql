@@ -112,7 +112,6 @@ CREATE MATERIALIZED VIEW product_stored AS
              SUM(storage.num_available * product.volume) AS total_volume
     FROM     product
              LEFT JOIN storage ON product.id = storage.product_id
-             LEFT JOIN warehouse ON storage.warehouse_id = warehouse.id
     GROUP BY (product.id, product.name)
 );
 

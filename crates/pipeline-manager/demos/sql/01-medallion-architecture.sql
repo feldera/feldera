@@ -66,6 +66,9 @@
  ============================================================================
  */
 
+-- The schema is intentionally more complete than what is used within the views.
+SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = 1;
+
 CREATE TABLE bronze_clickstream_events (
     event_id BIGINT NOT NULL PRIMARY KEY,
     user_id BIGINT,
@@ -559,7 +562,7 @@ CREATE MATERIALIZED VIEW gold_supplier_performance AS with orders_by_supplier as
                     ELSE 0
                 END
             ) AS DOUBLE
-        ) / NULLIF(CAST(COUNT(*) AS DOUBLE), 0) AS reliability_score
+        ) / CAST(NULLIF(COUNT(*), 0) AS DOUBLE) AS reliability_score
     from
         silver_confirmed_order_items oi
     group by
@@ -817,15 +820,15 @@ SELECT
             ORDER BY
                 week_start RANGE UNBOUNDED PRECEDING
         ) AS DOUBLE
-    ) / NULLIF(
-        CAST(
+    ) / CAST(
+        NULLIF(
             SUM(weekly_total_orders) OVER (
                 PARTITION BY category
                 ORDER BY
                     week_start RANGE UNBOUNDED PRECEDING
-            ) AS DOUBLE
-        ),
-        0
+            ),
+            0
+        ) AS DOUBLE
     ) AS cumulative_cancellation_rate,
     SUM(weekly_cancelled_revenue) OVER (
         PARTITION BY category
@@ -839,16 +842,16 @@ SELECT
                 week_start RANGE BETWEEN INTERVAL 3 WEEKS PRECEDING
                 AND CURRENT ROW
         ) AS DOUBLE
-    ) / NULLIF(
-        CAST(
+    ) / CAST(
+        NULLIF(
             SUM(weekly_total_orders) OVER (
                 PARTITION BY category
                 ORDER BY
                     week_start RANGE BETWEEN INTERVAL 3 WEEKS PRECEDING
                     AND CURRENT ROW
-            ) AS DOUBLE
-        ),
-        0
+            ),
+            0
+        ) AS DOUBLE
     ) AS cancellation_rate_4wk
 FROM
     (
@@ -967,10 +970,10 @@ SELECT
     s.lead_time_days,
     -- Days of stock cover at the current daily add-to-cart rate (1-day window
     -- => recent_add_to_carts is a per-day rate). Stock clamped at >= 0.
-    CAST(GREATEST(COALESCE(s.total_stock_all_warehouses, 0), 0) AS DOUBLE) / NULLIF(CAST(d.recent_add_to_carts AS DOUBLE), 0) AS days_of_stock_cover,
+    CAST(GREATEST(COALESCE(s.total_stock_all_warehouses, 0), 0) AS DOUBLE) / CAST(NULLIF(d.recent_add_to_carts, 0) AS DOUBLE) AS days_of_stock_cover,
     -- DEMO-ONLY: valid because the generator attaches one product_id per funnel
     -- journey; in production begin_checkout is cart-level with no product_id.
-    CAST(d.recent_checkouts AS DOUBLE) / NULLIF(CAST(d.recent_views AS DOUBLE), 0) AS view_to_checkout_rate,
+    CAST(d.recent_checkouts AS DOUBLE) / CAST(NULLIF(d.recent_views, 0) AS DOUBLE) AS view_to_checkout_rate,
     -- Stockout risk: stock cover shorter than a supplier restock cycle.
     CASE
         WHEN d.recent_add_to_carts = 0 THEN 'OK'
