@@ -39,6 +39,9 @@ The date type represents a Gregorian calendar date, independent of
 time zone.  This extends to dates before the Gregorian calendar was
 introduced, effectively meaning that the dates use a <a href="https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar">Proleptic calendar</a>.
 
+The legal dates are `0001-01-01` to `9999-12-31`.  A computation whose
+result is outside this range stops the pipeline with an error.
+
 ### Date literals
 
 `DATE` literals have the form `DATE 'YYYY-MM-DD'`.  Trailing spaces
@@ -492,7 +495,7 @@ https://docs.rs/chrono/latest/chrono/format/strftime/index.html
 
 |Spec. | Example | Description |
 |------|---------|-------------|
-| %Y   |2001     |The full proleptic Gregorian year, zero-padded to 4 digits. chrono supports years from -262144 to 262143. Note: years before 1 BCE or after 9999 CE, require an initial sign (+/-). |
+| %Y   |2001     |The full proleptic Gregorian year, zero-padded to 4 digits. Legal years are 1 to 9999. |
 | %C   |20       |The proleptic Gregorian year divided by 100, zero-padded to 2 digits. |
 | %y   |01       |The proleptic Gregorian year modulo 100, zero-padded to 2 digits. |
 | %m   |07       |Month number (01–12), zero-padded to 2 digits. |

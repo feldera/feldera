@@ -10,6 +10,12 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (SQL): a `DATE` computation whose result is before
+  `0001-01-01` or after `9999-12-31` now stops the pipeline with an
+  error.  Before this change, such a computation produced an illegal
+  date: for example, `DATE '9999-12-31' + INTERVAL '1' DAY` produced
+  `10000-01-01`.
+
 - Incompatible change (SQL): a cast from `DOUBLE` or `REAL` to `DECIMAL`
   now gives the same result as Calcite.  It uses the shortest decimal form
   of the value, then truncates it to the scale.  Before, the cast

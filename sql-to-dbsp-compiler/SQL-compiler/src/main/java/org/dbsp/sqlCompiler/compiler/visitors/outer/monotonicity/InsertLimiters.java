@@ -1777,9 +1777,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPExpression lateness = column.getLateness();
             if (lateness != null) {
                 DBSPExpression field = t.deref().field(index);
-                field = ExpressionCompiler.makeBinaryExpression(operator.getRelNode(), columnType,
-                        DBSPOpcode.SUB, field, lateness);
-                timestamps.add(field);
+                DBSPExpression waterline = ExpressionCompiler.makeBinaryExpression(operator.getRelNode(),
+                        columnType, DBSPOpcode.SUB, field, lateness);
+                if (columnType.is(IsBoundedType.class)) {
+                    // The waterline of a value within the lateness of the minimum is the minimum;
+                    // the subtraction would produce a value outside the range of the type
+                    DBSPExpression lowest = ExpressionCompiler.makeBinaryExpression(operator.getRelNode(),
+                            columnType, DBSPOpcode.ADD, columnType.minimumValue(), lateness.deepCopy());
+                    DBSPExpression below = ExpressionCompiler.makeBinaryExpression(operator.getRelNode(),
+                            DBSPTypeBool.create(columnType.mayBeNull), DBSPOpcode.LT,
+                            t.deref().field(index), lowest).wrapBoolIfNeeded();
+                    waterline = new DBSPIfExpression(operator.getNode(), below,
+                            columnType.minimumValue(), waterline);
+                }
+                timestamps.add(waterline);
                 declaredFields.add(new MonotoneType(columnType));
             } else {
                 declaredFields.add(NonMonotoneType.nonMonotone(columnType));

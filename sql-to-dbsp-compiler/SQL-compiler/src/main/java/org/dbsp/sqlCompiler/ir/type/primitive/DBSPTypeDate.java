@@ -79,7 +79,7 @@ public class DBSPTypeDate extends DBSPTypeBaseType implements IsDateType, IsTime
 
     @Override
     public DBSPExpression getMaxValue() {
-        return new DBSPDateLiteral(this.getNode(), this, new DateString("9999-12-12"));
+        return new DBSPDateLiteral(this.getNode(), this, new DateString("9999-12-31"));
     }
 
     @Override

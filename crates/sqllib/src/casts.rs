@@ -371,9 +371,12 @@ pub fn cast_to_bN_bN(value: Option<bool>) -> SqlResult<Option<bool>> {
 #[doc(hidden)]
 pub fn cast_to_Date_s(value: SqlString) -> SqlResult<Date> {
     match NaiveDate::parse_from_str(java_trim(value.str()), "%Y-%m-%d") {
-        Ok(value) => Ok(Date::from_days(
-            (value.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() / 86400) as i32,
-        )),
+        Ok(date) => Date::legal_from_date(date).ok_or_else(|| {
+            SqlRuntimeError::from_string(format!(
+                "Converting '{value}' to DATE produces a value outside the range \
+                 0001-01-01 to 9999-12-31"
+            ))
+        }),
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "Error converting {value} to DATE: {}",
             e
@@ -4080,6 +4083,18 @@ mod tests {
         interval::{LongInterval, ShortInterval},
         limit_or_size_string,
     };
+
+    #[test]
+    fn date_casts_out_of_range() {
+        // An out-of-range result is an error, not a panic, so SAFE_CAST produces NULL
+        use crate::cast_to_Date_s;
+
+        let s = SqlString::from_ref;
+        assert!(cast_to_Date_s(s("0000-01-01")).is_err());
+        assert!(cast_to_Date_s(s("-0001-01-01")).is_err());
+        assert!(cast_to_Date_s(s("+10000-01-01")).is_err());
+        assert!(cast_to_Date_s(s("0001-01-01")).is_ok());
+    }
 
     #[test]
     fn binary_to_uuid() {
