@@ -190,11 +190,11 @@
   --color-surface-300: oklch(75.08% 0 none);
   --color-surface-400: oklch(67.31% 0 none);
   --color-surface-500: oklch(59.31% 0 none);
-  --color-surface-600: oklch(54.86% 0 none);
-  --color-surface-700: oklch(50.68% 0 none);
-  --color-surface-800: oklch(46.04% 0 none);
-  --color-surface-900: oklch(41.65% 0 none);
-  --color-surface-950: oklch(36.77% 0 none);
+  --color-surface-600: oklch(53.23% 0 none);
+  --color-surface-700: oklch(47.52% 0 none);
+  --color-surface-800: oklch(41.18% 0 none);
+  --color-surface-900: oklch(35.19% 0 none);
+  --color-surface-950: oklch(28.52% 0 none);
   --color-surface-contrast-dark: var(--color-surface-950);
   --color-surface-contrast-light: var(--color-surface-50);
   --color-surface-contrast-50: var(--color-surface-contrast-dark);
@@ -224,19 +224,6 @@
 }
 .bg-dark-white:where(.dark, .dark *) {
   background-color: #ffffff;
-}
-
-/* ── Panels ──────────────────────────────────────────────────────────────────
-   The grey content panels, such as the pipeline editor and its tabbed panels. In dark
-   mode they sit close to the near-black page (#2a2a2a is the Radix dark grey step 4,
-   the scale of the status tones) rather than at surface-950, which light mode uses for
-   text. Their corners are a little tighter than `rounded-container`. */
-.panel {
-  border-radius: 8px;
-  background-color: var(--color-surface-50);
-}
-.panel:where(.dark, .dark *) {
-  background-color: #2a2a2a;
 }
 
 /* ── Status tones ────────────────────────────────────────────────────────────

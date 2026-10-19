@@ -330,7 +330,7 @@
                         { value: 'age', label: 'Age' },
                         { value: 'updated', label: 'Last status update' }
                       ]}
-                      class="-mt-3"
+                      class="-mt-1"
                     />
                     {#if statusTab === 'age'}
                       {@render age()}

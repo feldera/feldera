@@ -78,7 +78,7 @@
 {/snippet}
 
 <!-- The home page uses 20px side gutters (as the pipeline page) rather than the default 32px. -->
-<AppHeader paddingX="px-2 md:px-5">
+<AppHeader class="px-2 md:px-5">
   {#snippet beforeEnd()}
     {#if !isScreenMd.current}
       <button
