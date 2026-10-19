@@ -69,6 +69,11 @@ jobs:
     uses: ./.github/workflows/build-docker.yml
     secrets: inherit
 
+  invoke-validate-demos:
+    name: Validate pipeline-manager Demos
+    uses: ./.github/workflows/validate-demos.yml
+    secrets: inherit
+
   invoke-generate-sbom:
     name: Generate SBOMs
     needs: [invoke-build-docker]
