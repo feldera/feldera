@@ -624,6 +624,8 @@ impl NatsControllerRunner {
 
                 let got_fatal = Arc::new(AtomicBool::new(false));
                 let got_fatal_clone = got_fatal.clone();
+                let panicked = Arc::new(AtomicBool::new(false));
+                let panicked_clone = panicked.clone();
                 let config = self.pipeline_config().clone();
                 let controller = Controller::with_test_config(
                     |circuit_config| {
@@ -637,6 +639,9 @@ impl NatsControllerRunner {
                     Box::new(move |e, _tag| {
                         println!("Controller error: {e}");
                         got_fatal_clone.store(true, Ordering::Release);
+                        if matches!(e.as_ref(), crate::ControllerError::ControllerPanic) {
+                            panicked_clone.store(true, Ordering::Release);
+                        }
                     }),
                 )
                 .unwrap();
@@ -657,6 +662,10 @@ impl NatsControllerRunner {
                 }
 
                 controller.stop().unwrap();
+                assert!(
+                    !panicked.load(Ordering::Acquire),
+                    "startup failure panicked the circuit"
+                );
             }
 
             NatsControllerAction::RunUntilConnectorFatal { publish } => {
