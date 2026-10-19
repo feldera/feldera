@@ -29,6 +29,7 @@ use crate::has_unstable_feature;
 use feldera_types::config::{PipelineConfigProgramInfo, UdfLibrary};
 use indoc::formatdoc;
 use std::collections::HashSet;
+use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -373,9 +374,10 @@ async fn build_udf_library(
     .await
 }
 
-/// The file name cargo gives the shared library of crate `crate_name`.
+/// The file name cargo gives the shared library of crate `crate_name`. The UDF crate builds for
+/// the host, so the host's naming applies: `lib<crate>.so` on Linux, `lib<crate>.dylib` on macOS.
 fn library_file_name(crate_name: &str) -> String {
-    format!("lib{crate_name}.so")
+    format!("{DLL_PREFIX}{crate_name}{DLL_SUFFIX}")
 }
 
 /// Where cargo puts the UDF library of the pipeline built with `profile`.
@@ -692,6 +694,25 @@ mod test {
                 .await
                 .is_err()
         );
+    }
+
+    /// The library is found under the name rustc gives a `cdylib` on this host.
+    #[test]
+    fn library_file_name_matches_rustc() {
+        let crate_name = crate_name_pipeline_udf(PipelineId(Uuid::now_v7()));
+        let output = std::process::Command::new("rustc")
+            .args(["--crate-type", "cdylib", "--crate-name", &crate_name])
+            .args(["--print", "file-names", "-"])
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let rustc_name = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(rustc_name.trim(), library_file_name(&crate_name));
     }
 
     /// The library is stored under the name of a pipeline binary with its checksums.
