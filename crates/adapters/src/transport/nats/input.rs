@@ -63,8 +63,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::cmp;
 use std::hash::Hasher;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::{
     select,
@@ -237,6 +237,7 @@ impl TransportInputEndpoint for NatsInputEndpoint {
 
 struct NatsReader {
     command_sender: UnboundedSender<InputReaderCommand>,
+    worker: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl NatsReader {
@@ -263,7 +264,7 @@ impl NatsReader {
         let consumer_name_prefix = consumer_name_prefix(&config.consumer_config, table_name);
 
         let consumer_clone = consumer.clone();
-        TOKIO.spawn(async move {
+        let worker = TOKIO.spawn(async move {
             Self::worker_task(
                 config,
                 resume_info,
@@ -278,7 +279,10 @@ impl NatsReader {
             .unwrap_or_else(|e| consumer.error(true, e, Some("nats-input")));
         });
 
-        Ok(Self { command_sender })
+        Ok(Self {
+            command_sender,
+            worker: Mutex::new(Some(worker)),
+        })
     }
 
     async fn connect_nats(
@@ -408,6 +412,11 @@ impl NatsReader {
     ) -> Result<(), AnyError> {
         let mut state = ReaderLifecycleState::Paused;
         let mut canceller: Option<Canceller> = None;
+        // Deletes detached by `cancel_and_join` (e.g. on `Pause`): the worker
+        // must join these before it exits, or a consumer delete already
+        // queued at the server can still be in flight after the process
+        // that owns it is gone.
+        let mut pending_deletes: Vec<JoinHandle<()>> = Vec::new();
         let mut next_retry_at: Option<tokio::time::Instant> = None;
         let mut retry_count: u32 = 0;
         let (mut reader_error_sender, mut reader_error_receiver) =
@@ -571,7 +580,12 @@ impl NatsReader {
             }
         }
 
-        loop {
+        // All command-loop exits must join reader and delete work, including
+        // errors and a dropped command sender, not just explicit Disconnect.
+        let result = loop {
+            // Pause/retry cleanup runs concurrently with command handling. Do
+            // not retain completed tasks for the lifetime of a long-lived input.
+            pending_deletes.retain(|handle| !handle.is_finished());
             let command = match state {
                 ReaderLifecycleState::Running => {
                     select! {
@@ -579,7 +593,7 @@ impl NatsReader {
                             match maybe_error {
                                 Some(error) => {
                                     if let Some(canceller) = canceller.take() {
-                                        canceller.cancel_and_join().await;
+                                        pending_deletes.push(canceller.cancel_and_join().await);
                                     }
                                     // Drain any additional errors queued before cancellation
                                     // to prevent stale errors from affecting the next reader.
@@ -630,7 +644,7 @@ impl NatsReader {
                                     // dropped the sender without sending an error,
                                     // e.g. due to a panic). Treat as retryable.
                                     if let Some(canceller) = canceller.take() {
-                                        canceller.cancel_and_join().await;
+                                        pending_deletes.push(canceller.cancel_and_join().await);
                                     }
                                     retry_count += 1;
                                     if retry_policy.exhausted(retry_count) {
@@ -649,7 +663,10 @@ impl NatsReader {
                             }
                             continue;
                         }
-                        command = command_receiver.recv() => command?,
+                        command = command_receiver.recv() => match command {
+                            Ok(command) => command,
+                            Err(error) => break Err(error.into()),
+                        },
                     }
                 }
                 ReaderLifecycleState::ErrorRetrying => {
@@ -744,11 +761,17 @@ impl NatsReader {
                             }
                             continue;
                         }
-                        command = command_receiver.recv() => command?,
+                        command = command_receiver.recv() => match command {
+                            Ok(command) => command,
+                            Err(error) => break Err(error.into()),
+                        },
                     }
                 }
-                ReaderLifecycleState::Paused => command_receiver.recv().await?,
-                ReaderLifecycleState::Stopped => break,
+                ReaderLifecycleState::Paused => match command_receiver.recv().await {
+                    Ok(command) => command,
+                    Err(error) => break Err(error.into()),
+                },
+                ReaderLifecycleState::Stopped => break Ok(()),
             };
 
             match command {
@@ -779,9 +802,12 @@ impl NatsReader {
                     } else {
                         trace!("Queued 0 records ({sequence_number_range:?})");
                     }
-                    let metadata_json = serde_json::to_value(&Metadata {
+                    let metadata_json = match serde_json::to_value(&Metadata {
                         sequence_numbers: sequence_number_range,
-                    })?;
+                    }) {
+                        Ok(metadata) => metadata,
+                        Err(error) => break Err(error.into()),
+                    };
                     let timestamp = batches.last().map(|(ts, _)| *ts).unwrap_or_else(Utc::now);
                     let hash = hasher.map(|h| h.finish()).unwrap_or(0);
                     let resume = Resume::Replay {
@@ -798,7 +824,7 @@ impl NatsReader {
                 }
                 InputReaderCommand::Pause => {
                     if let Some(canceller) = canceller.take() {
-                        canceller.cancel_and_join().await;
+                        pending_deletes.push(canceller.cancel_and_join().await);
                     }
                     // Drain errors sent by the reader before/during cancellation
                     // so they don't leak into the next Extend cycle.
@@ -880,11 +906,17 @@ impl NatsReader {
                     metrics.set_retry_state(RetryState::Healthy);
                 }
             }
-        }
+        };
         if let Some(canceller) = canceller.take() {
             canceller.cancel_join_and_delete().await;
         }
-        Ok(())
+        // Join deletes detached by an earlier Pause/retry cycle too: the
+        // worker must not exit, and so must not close the reader's command
+        // channel, while one of its own deletes is still in flight.
+        for pending_delete in pending_deletes {
+            let _ = pending_delete.await;
+        }
+        result
     }
 }
 
@@ -1468,8 +1500,12 @@ impl Canceller {
     /// task shutdown, not by anything server-side: the consumer delete runs
     /// in the background (see below) so a slow server cannot stall whoever
     /// is awaiting this, such as the worker's command loop after a `Pause`.
-    async fn cancel_and_join(self) {
-        tokio::spawn(self.cancel_and_join_reader().await);
+    ///
+    /// The caller must hold onto the returned handle and join it before the
+    /// worker task exits: the delete it spawned still has to reach the
+    /// server, and nothing else is tracking it once it is detached here.
+    async fn cancel_and_join(self) -> JoinHandle<()> {
+        tokio::spawn(self.cancel_and_join_reader().await)
     }
 
     /// Like [Self::cancel_and_join], but also waits for the consumer delete,
@@ -1513,6 +1549,15 @@ impl InputReader for NatsReader {
 
     fn is_closed(&self) -> bool {
         self.command_sender.is_closed()
+    }
+
+    fn take_completion(&self) -> Option<futures::future::BoxFuture<'static, ()>> {
+        let worker = self.worker.lock().unwrap().take()?;
+        Some(Box::pin(async move {
+            if let Err(error) = worker.await {
+                warn!("NATS input worker failed during shutdown: {error}");
+            }
+        }))
     }
 }
 

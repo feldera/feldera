@@ -1575,12 +1575,25 @@ impl Controller {
         debug!("Stopping the circuit");
 
         self.initiate_stop();
-        if let Some(handle) = self.circuit_thread_handle.lock().unwrap().take() {
-            handle
+        let circuit_result = match self.circuit_thread_handle.lock().unwrap().take() {
+            Some(handle) => handle
                 .join()
-                .map_err(|_| ControllerError::controller_panic())??;
-        }
-        Ok(())
+                .map_err(|_| ControllerError::controller_panic())
+                .and_then(|result| result),
+            None => Ok(()),
+        };
+        // Cleanup can call back into the controller, so hold no status lock
+        // while waiting. Finish it even if the circuit panicked.
+        //
+        // The completions run on TOKIO already, so wait with a plain executor:
+        // `TOKIO.block_on` panics when the caller is itself inside a runtime.
+        let completions = mem::take(&mut *self.inner.input_completions.lock().unwrap());
+        futures::executor::block_on(async {
+            for completion in completions {
+                let _ = completion.await;
+            }
+        });
+        circuit_result
     }
 
     /// A token that is cancelled when the pipeline goes down.
@@ -7707,6 +7720,9 @@ pub struct ControllerInner {
     /// `total_processed_input_records` counter.
     bootstrapped_output_endpoints: HashSet<String>,
 
+    /// Worker completion, including readers removed before controller shutdown.
+    input_completions: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+
     /// Runs after capturing the checkpoint's input snapshot.
     #[cfg(test)]
     checkpoint_snapshot_hook: Mutex<Option<Box<dyn FnOnce() + Send>>>,
@@ -7803,6 +7819,7 @@ impl ControllerInner {
                 checkpoint_activity: Mutex::new(CheckpointActivity::Idle),
                 modified_output_endpoints,
                 bootstrapped_output_endpoints,
+                input_completions: Mutex::new(Vec::new()),
                 #[cfg(test)]
                 checkpoint_snapshot_hook: Mutex::new(None),
                 #[cfg(test)]
@@ -8092,7 +8109,7 @@ impl ControllerInner {
             .remove_input(endpoint_id, &self.circuit_thread_unparker)
         {
             if let Some(reader) = ep.reader.as_ref() {
-                reader.disconnect()
+                reader.disconnect();
             }
             self.end_transaction_for_stopped_connector(&ep.endpoint_name, "was disconnected");
             self.unpark_circuit();
@@ -8307,7 +8324,15 @@ impl ControllerInner {
                 fault_tolerance,
                 initial_statistics.as_ref(),
             ),
-            open,
+            || {
+                let reader = open()?;
+                if let Some(completion) = reader.take_completion() {
+                    let mut completions = self.input_completions.lock().unwrap();
+                    completions.retain(|handle| !handle.is_finished());
+                    completions.push(TOKIO.spawn(completion));
+                }
+                Ok(reader)
+            },
         )?;
 
         self.unpark_backpressure();
@@ -9102,7 +9127,7 @@ impl ControllerInner {
 
         for ep in inputs.values() {
             if let Some(reader) = ep.reader.as_ref() {
-                reader.disconnect()
+                reader.disconnect();
             }
         }
         inputs.clear();

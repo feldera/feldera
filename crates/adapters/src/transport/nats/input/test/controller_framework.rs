@@ -1,3 +1,4 @@
+use super::jetstream_proxy::{JetStreamProxy, ProxyFaults};
 use super::mock_framework::{STREAM_NAME, SUBJECT_NAME};
 use super::util;
 use crate::controller::{ControllerBuilder, ControllerStatusContext, TransactionInfo};
@@ -32,6 +33,14 @@ pub(super) enum NatsControllerAction {
     PurgeStream,
     /// Delete the JetStream stream entirely.
     DeleteStream,
+    /// Put a fault-injecting proxy in front of subsequently started pipelines.
+    StartProxy(ProxyFaults),
+    /// Start with input, optionally pause the connector, and verify that
+    /// Controller::stop waits for consumer cleanup held at the proxy.
+    StopWaitsForHeldDelete {
+        pause_first: bool,
+        disconnect_first: bool,
+    },
 
     /// Publish `n` records, start a Controller pipeline, wait for all
     /// outstanding records (including replayed from previous uncommitted
@@ -91,6 +100,7 @@ pub(super) struct NatsControllerRunner {
     // NATS process / runtime
     nats_guard: Option<util::ProcessKillGuard>,
     nats_url: Option<String>,
+    proxy: Option<JetStreamProxy>,
     rt: tokio::runtime::Runtime,
 
     // Temp FS state kept alive for duration of test
@@ -125,6 +135,7 @@ impl NatsControllerRunner {
         Ok(Self {
             nats_guard: None,
             nats_url: None,
+            proxy: None,
             rt: tokio::runtime::Runtime::new()?,
             _tempdir: tempdir,
             storage_dir,
@@ -190,7 +201,11 @@ impl NatsControllerRunner {
     /// Build (or return cached) the pipeline config from current runner state.
     fn pipeline_config(&mut self) -> &PipelineConfig {
         if self.pipeline_config.is_none() {
-            let nats_url = self.nats_url();
+            let nats_url = self
+                .proxy
+                .as_ref()
+                .map(|proxy| proxy.url())
+                .unwrap_or_else(|| self.nats_url());
             let storage_dir = &self.storage_dir;
             let output_path = &self.output_path;
 
@@ -520,6 +535,70 @@ impl NatsControllerRunner {
                 // isn't stale if the stream is recreated.
                 self.pipeline_config = None;
                 println!("Stream deleted");
+            }
+
+            NatsControllerAction::StartProxy(faults) => {
+                assert!(self.controller.is_none());
+                self.proxy = Some(JetStreamProxy::start(
+                    &self.rt,
+                    self.nats_url(),
+                    faults.clone(),
+                )?);
+                self.pipeline_config = None;
+            }
+
+            NatsControllerAction::StopWaitsForHeldDelete {
+                pause_first,
+                disconnect_first,
+            } => {
+                self.publish_records(2)?;
+                self.start_pipeline();
+                self.wait_for_transmitted();
+                let proxy = self
+                    .proxy
+                    .as_ref()
+                    .expect("StartProxy must be called first");
+                if *pause_first {
+                    self.controller().pause_input_endpoint("test_input1")?;
+                    proxy.wait_for_delete_requests(1, Duration::from_secs(5))?;
+                }
+
+                if *disconnect_first {
+                    let endpoint_id = self.controller().input_endpoint_id_by_name("test_input1")?;
+                    self.controller().disconnect_input(&endpoint_id);
+                    proxy.wait_for_delete_requests(1, Duration::from_secs(5))?;
+                }
+
+                let controller = self.controller.take().unwrap();
+                let (sender, receiver) = std::sync::mpsc::channel();
+                let stopper = std::thread::spawn(move || {
+                    sender.send(controller.stop()).unwrap();
+                });
+                let delete_seen = proxy.wait_for_delete_requests(1, Duration::from_secs(5));
+                let early_result = receiver.recv_timeout(Duration::from_millis(200));
+                proxy.release_deletes();
+                let stopped_while_held = early_result.is_ok();
+                let result = match early_result {
+                    Ok(result) => result,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => receiver
+                        .recv_timeout(Duration::from_secs(10))
+                        .expect("Controller::stop did not finish after releasing cleanup"),
+                    Err(error) => panic!("stop thread disconnected: {error}"),
+                };
+                stopper.join().unwrap();
+                delete_seen?;
+                result?;
+                assert!(
+                    !stopped_while_held,
+                    "Controller::stop returned while consumer cleanup was still held (pause_first={pause_first}, disconnect_first={disconnect_first})"
+                );
+                let consumers = self
+                    .rt
+                    .block_on(util::list_consumers(self.nats_url(), STREAM_NAME))?;
+                assert!(
+                    consumers.is_empty(),
+                    "consumer still exists after Controller::stop"
+                );
             }
 
             NatsControllerAction::RunFtCycle {

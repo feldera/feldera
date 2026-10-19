@@ -893,6 +893,16 @@ pub trait InputReader: Send + Sync {
         self.request(InputReaderCommand::Disconnect);
     }
 
+    /// Takes a future that completes when the reader's worker and cleanup have
+    /// finished. The controller registers it when opening the reader and waits
+    /// for it in blocking shutdown, including for readers removed earlier.
+    ///
+    /// Taking this future must not initiate shutdown or block. Readers without
+    /// asynchronous cleanup need not implement this hook.
+    fn take_completion(&self) -> Option<futures::future::BoxFuture<'static, ()>> {
+        None
+    }
+
     /// Returns the approximate amount of memory used by the connector's
     /// underlying implementation.  For the Kafka connectors, for example, this
     /// is the amount of memory used by librdkafka.  Not all connectors use a

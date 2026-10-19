@@ -38,6 +38,8 @@ pub(super) struct ProxyFaults {
     pub hold_create_until_delete: Option<usize>,
     /// Holds every consumer delete for this long before forwarding it.
     pub delay_deletes: Option<Duration>,
+    /// Holds consumer deletes until the test calls `release_deletes()`.
+    pub hold_deletes: bool,
 }
 
 /// State shared by all connections of one proxy.
@@ -46,6 +48,8 @@ struct ProxyState {
     faults: ProxyFaults,
     creates: usize,
     pulls: usize,
+    deletes: usize,
+    delete_gate: Option<Arc<tokio::sync::Semaphore>>,
     /// Reply subjects whose server message must not reach the client.
     dropped_replies: HashSet<String>,
     /// The held create: consumer name and raw frame.
@@ -70,8 +74,12 @@ impl JetStreamProxy {
             .to_string();
         let listener = rt.block_on(TcpListener::bind("127.0.0.1:0"))?;
         let url = format!("nats://{}", listener.local_addr()?);
+        let delete_gate = faults
+            .hold_deletes
+            .then(|| Arc::new(tokio::sync::Semaphore::new(0)));
         let state = Arc::new(Mutex::new(ProxyState {
             faults,
+            delete_gate,
             ..Default::default()
         }));
         let accept_state = state.clone();
@@ -103,10 +111,28 @@ impl JetStreamProxy {
     pub(super) fn drop_stream_info_replies(&self, n: usize) {
         self.state.lock().unwrap().stream_info_replies_to_drop = n;
     }
+
+    /// Waits until cleanup has actually reached the proxy, not merely until
+    /// the test sent a Pause or Disconnect command.
+    pub(super) fn wait_for_delete_requests(&self, n: usize, timeout: Duration) -> AnyResult<()> {
+        crate::test::wait(
+            || self.state.lock().unwrap().deletes >= n,
+            timeout.as_millis(),
+        )
+        .map(|_| ())
+        .map_err(|()| anyhow!("proxy did not receive {n} consumer deletes within {timeout:?}"))
+    }
+
+    pub(super) fn release_deletes(&self) {
+        if let Some(gate) = &self.state.lock().unwrap().delete_gate {
+            gate.close();
+        }
+    }
 }
 
 impl Drop for JetStreamProxy {
     fn drop(&mut self) {
+        self.release_deletes();
         self.accept_task.abort();
     }
 }
@@ -237,6 +263,7 @@ async fn proxy_connection(
             let mut to_server = Vec::new();
             let mut to_client = Vec::new();
             let mut delay = None;
+            let mut delete_gate = None;
             {
                 let mut state = state.lock().unwrap();
                 if consumer_name(subject, "MSG.NEXT").is_some() {
@@ -268,6 +295,8 @@ async fn proxy_connection(
                         to_server.push(frame.bytes());
                     }
                 } else if let Some(name) = consumer_name(subject, "DELETE") {
+                    state.deletes += 1;
+                    delete_gate = state.delete_gate.clone();
                     delay = state.faults.delay_deletes;
                     to_server.push(frame.bytes());
                     if state
@@ -288,6 +317,11 @@ async fn proxy_connection(
                     }
                     to_server.push(frame.bytes());
                 }
+            }
+            if let Some(gate) = delete_gate {
+                // Closing the semaphore releases all held deletes. Never
+                // hold the synchronous state lock across this await.
+                let _ = gate.acquire().await;
             }
             if let Some(delay) = delay {
                 tokio::time::sleep(delay).await;
