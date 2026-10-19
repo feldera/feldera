@@ -50,6 +50,7 @@ struct ProxyState {
     pulls: usize,
     deletes: usize,
     delete_gate: Option<Arc<tokio::sync::Semaphore>>,
+    stream_info_gate: Option<Arc<tokio::sync::Semaphore>>,
     /// Reply subjects whose server message must not reach the client.
     dropped_replies: HashSet<String>,
     /// The held create: consumer name and raw frame.
@@ -123,6 +124,18 @@ impl JetStreamProxy {
         .map_err(|()| anyhow!("proxy did not receive {n} consumer deletes within {timeout:?}"))
     }
 
+    /// Keep replay validation from observing a partially repopulated stream.
+    pub(super) fn hold_stream_info(&self) {
+        self.state.lock().unwrap().stream_info_gate =
+            Some(Arc::new(tokio::sync::Semaphore::new(0)));
+    }
+
+    pub(super) fn release_stream_info(&self) {
+        if let Some(gate) = self.state.lock().unwrap().stream_info_gate.take() {
+            gate.close();
+        }
+    }
+
     pub(super) fn release_deletes(&self) {
         if let Some(gate) = &self.state.lock().unwrap().delete_gate {
             gate.close();
@@ -133,6 +146,7 @@ impl JetStreamProxy {
 impl Drop for JetStreamProxy {
     fn drop(&mut self) {
         self.release_deletes();
+        self.release_stream_info();
         self.accept_task.abort();
     }
 }
@@ -263,7 +277,7 @@ async fn proxy_connection(
             let mut to_server = Vec::new();
             let mut to_client = Vec::new();
             let mut delay = None;
-            let mut delete_gate = None;
+            let mut request_gate = None;
             {
                 let mut state = state.lock().unwrap();
                 if consumer_name(subject, "MSG.NEXT").is_some() {
@@ -296,7 +310,7 @@ async fn proxy_connection(
                     }
                 } else if let Some(name) = consumer_name(subject, "DELETE") {
                     state.deletes += 1;
-                    delete_gate = state.delete_gate.clone();
+                    request_gate = state.delete_gate.clone();
                     delay = state.faults.delay_deletes;
                     to_server.push(frame.bytes());
                     if state
@@ -308,6 +322,9 @@ async fn proxy_connection(
                         to_server.push(create);
                     }
                 } else {
+                    if subject.starts_with("$JS.API.STREAM.INFO.") {
+                        request_gate = state.stream_info_gate.clone();
+                    }
                     if subject.starts_with("$JS.API.STREAM.INFO.")
                         && state.stream_info_replies_to_drop > 0
                         && let Some(reply) = reply
@@ -318,7 +335,7 @@ async fn proxy_connection(
                     to_server.push(frame.bytes());
                 }
             }
-            if let Some(gate) = delete_gate {
+            if let Some(gate) = request_gate {
                 // Closing the semaphore releases all held deletes. Never
                 // hold the synchronous state lock across this await.
                 let _ = gate.acquire().await;

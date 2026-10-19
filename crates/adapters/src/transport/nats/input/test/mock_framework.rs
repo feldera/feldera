@@ -134,6 +134,14 @@ pub(super) enum NatsMockAction {
     /// Put a fault-injecting proxy in front of the server. Pipelines created
     /// afterwards connect through it; the runner's own requests do not.
     StartProxy(ProxyFaults),
+    /// Gate replay's stream validation while direct-server publication runs.
+    HoldStreamInfo,
+    ReleaseStreamInfo,
+    /// Observe retry errors without sending Queue (which interrupts replay).
+    WaitForReplayErrorCountAtLeast {
+        count: usize,
+        timeout: Duration,
+    },
     /// Suspend the server (SIGSTOP), so requests time out.
     FreezeServer,
     /// Resume a frozen server (SIGCONT).
@@ -794,6 +802,26 @@ impl NatsMockRunner {
             NatsMockAction::StartProxy(faults) => {
                 let proxy = JetStreamProxy::start(&self.rt, self.nats_url(), faults.clone())?;
                 self.proxy = Some(proxy);
+            }
+
+            NatsMockAction::HoldStreamInfo => {
+                self.proxy
+                    .as_ref()
+                    .expect("StartProxy must be called first")
+                    .hold_stream_info();
+            }
+            NatsMockAction::ReleaseStreamInfo => {
+                self.proxy
+                    .as_ref()
+                    .expect("StartProxy must be called first")
+                    .release_stream_info();
+            }
+            NatsMockAction::WaitForReplayErrorCountAtLeast { count, timeout } => {
+                wait(
+                    || self.error_count.load(Ordering::Acquire) >= *count,
+                    timeout.as_millis(),
+                )
+                .map_err(|()| anyhow::anyhow!("no replay retry error within {timeout:?}"))?;
             }
 
             NatsMockAction::FreezeServer => self.nats_guard().freeze()?,
