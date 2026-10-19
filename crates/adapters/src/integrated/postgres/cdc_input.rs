@@ -3,12 +3,12 @@ use crate::transport::{
 };
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState, RecordFormat};
 use anyhow::{Result as AnyResult, anyhow};
-use chrono::Utc;
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use etl::config::{
     BatchConfig, InvalidatedSlotBehavior, MemoryBackpressureConfig, PgConnectionConfig,
     PipelineConfig, TableSyncCopyConfig, TcpKeepaliveConfig,
 };
-use etl::data::{ArrayCell, Cell, OldTableRow, TableRow, UpdatedTableRow};
+use etl::data::{ArrayCell, Cell, Date, OldTableRow, PgTime, TableRow, Timestamp, UpdatedTableRow};
 use etl::destination::{
     Destination, DestinationWriteStatus, DropTableForCopyResult, TableCopyBatchId,
     WriteEventsDurability, WriteEventsResult, WriteTableRowsResult,
@@ -16,10 +16,11 @@ use etl::destination::{
 use etl::error::{ErrorKind, EtlResult};
 use etl::etl_error;
 use etl::event::Event;
-use etl::pipeline::{Pipeline, ShutdownTx};
+use etl::pipeline::Pipeline;
 use etl::schema::{ReplicatedTableSchema, TableId};
 use etl::store::{
-    PostgresStore, SchemaStore, StateStore, TableRetryPolicy, TableState, TableStateType,
+    CachedStore, PostgresStore, SchemaStore, StateStore, TableRetryPolicy, TableState,
+    TableStateType,
 };
 use feldera_adapterlib::catalog::{DeCollectionStream, InputCollectionHandle};
 use feldera_adapterlib::format::ParseError;
@@ -32,6 +33,7 @@ use feldera_types::transport::postgres::{
     PostgresTlsConfig,
 };
 use serde_json::{Value, json};
+use std::any::Any;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
 use std::future::Future;
@@ -49,6 +51,9 @@ use url::Url;
 use xxhash_rust::xxh3::xxh3_64;
 
 use super::tls::{make_etl_tls_config, make_tls_connector};
+
+/// The etl pipeline the connector runs: Postgres-backed state, Feldera sink.
+type EtlPipeline = Pipeline<PostgresStore, FelderaDestination>;
 
 /// Answers one etl write. etl keeps the constructor of its result senders
 /// private, so the connector boxes the answer rather than move the sender
@@ -69,23 +74,26 @@ struct HeldAcks {
     acks: DeferredAcks,
 }
 
-/// Error the destination returns when Feldera terminates the connector while
-/// etl is waiting to hand over a batch. etl persists it as a table error, so
-/// the next start rolls it back (see [`reconcile_table_state`]).
-const TERMINATED_BEFORE_BATCH: &str =
-    "Postgres CDC input connector terminated before accepting batch";
+/// Table errors a connector older than the `drain_on_shutdown` pin left behind
+/// when Feldera stopped it mid-write: the refusal it recorded itself, and the
+/// error etl records for a result whose sender was dropped. etl persisted both
+/// as `ManualRetry` table errors, which it never retries on its own, so a
+/// start after an upgrade rolls them back (see [`reconcile_table_state`]).
+/// A stop records neither any more: etl now abandons the pending write, and
+/// the connector parks the results it cannot answer instead of dropping them.
+/// The second text is etl's, from `destination/async_result.rs`, for a result
+/// sender dropped unanswered, which only a connector bug does now.
+const LEGACY_STOP_ERRORS: [&str; 2] = [
+    "Postgres CDC input connector terminated before accepting batch",
+    "Async result channel closed before sending",
+];
 
-/// Error etl records when the connector drops a write's result without
-/// answering it, which happens to every deferred acknowledgment when Feldera
-/// stops the connector. etl's table-sync worker persists it as a `ManualRetry`
-/// table error, which etl never retries on its own. The text is etl's, from
-/// `destination/async_result.rs`, where etl's own unit test pins it.
-const RESULT_DROPPED_ON_SHUTDOWN: &str = "Async result channel closed before sending";
-
-/// Whether an etl table error was caused by Feldera stopping the connector.
+/// Whether a stored table error is one an older connector left at a stop.
 /// Such writes were never acknowledged, so replaying them is safe.
-fn is_shutdown_error(reason: &str) -> bool {
-    reason.contains(TERMINATED_BEFORE_BATCH) || reason.contains(RESULT_DROPPED_ON_SHUTDOWN)
+fn is_legacy_stop_error(reason: &str) -> bool {
+    LEGACY_STOP_ERRORS
+        .iter()
+        .any(|marker| reason.contains(marker))
 }
 
 /// etl persists table failures as text, so use the same diagnostics for startup
@@ -381,6 +389,23 @@ impl Drop for PostgresCdcInputReader {
     }
 }
 
+/// etl result senders the connector keeps alive without answering, once it is
+/// stopping.
+///
+/// etl's workers leave their waits when the shutdown request reaches them,
+/// and with draining off the apply loop abandons the result it has pending.
+/// A sender dropped before then is an error instead, which etl's table-sync
+/// worker persists as a manual retry that only a rollback at the next start
+/// clears. Parked senders drop with the connector, after etl has stopped.
+#[derive(Default)]
+struct ParkedResults(Mutex<Vec<Box<dyn Any + Send>>>);
+
+impl ParkedResults {
+    fn park(&self, result: impl Any + Send) {
+        self.0.lock().unwrap().push(Box::new(result));
+    }
+}
+
 /// The checkpoint barrier the connector holds while a copy of the source table
 /// is on its way into the circuit.
 ///
@@ -523,17 +548,18 @@ impl CopyBarrier {
         true
     }
 
-    /// Drop a held terminal barrier when the connector stops.
+    /// Take a held terminal barrier away when the connector stops, for the
+    /// caller to park.
     ///
     /// etl's copy worker stops waiting on the barrier as soon as the shutdown
     /// reaches it, so there is nothing left to answer, and the copy is not
-    /// recorded as finished: the next start reads the table again. What the
-    /// drop guards is the flush that races the stop. A buffer the reader
-    /// flushes after the stop must not find a barrier to answer, or it would
-    /// take the barrier down and record as finished a copy that etl has
-    /// abandoned; with the barrier gone, the copy stays open.
-    fn release_terminal(&self) {
-        drop(self.state.lock().unwrap().terminal.take());
+    /// recorded as finished: the next start reads the table again. What this
+    /// guards is the flush that races the stop. A buffer the reader flushes
+    /// after the stop must not find a barrier to answer, or it would take the
+    /// barrier down and record as finished a copy that etl has abandoned; with
+    /// the barrier gone, the copy stays open.
+    fn take_terminal(&self) -> Option<Ack> {
+        self.state.lock().unwrap().terminal.take()
     }
 
     /// Account for snapshot buffers the reader has flushed into the circuit,
@@ -608,19 +634,17 @@ struct PostgresCdcInputInner {
     completion_task_tx: Option<mpsc::UnboundedSender<HeldAcks>>,
     /// Receiver half, taken once by worker_task_inner to spawn the background task.
     completion_task_rx: Mutex<Option<mpsc::UnboundedReceiver<HeldAcks>>>,
-    /// etl shutdown handle for the currently running pipeline.
-    /// Used to stop etl workers when Feldera terminates the connector.
-    etl_shutdown_tx: Mutex<Option<ShutdownTx>>,
     /// The checkpoint barrier of the initial copy, which the destination, this
     /// reader and [`TableErrorMonitor`] share; see [`CopyBarrier`].
     copy: Arc<CopyBarrier>,
     /// Fault tolerance is enabled: the slot advances only past checkpoints.
     strict: bool,
-    /// The connector is shutting etl down. The destination reads it after
-    /// every push, so a write that queues an answer while the shutdown drains
-    /// the queue does not leave that answer behind; see
-    /// [`PostgresCdcInputInner::shutdown_etl_pipeline`].
+    /// The connector is shutting etl down. A write that starts afterwards
+    /// queues nothing and parks its result; see
+    /// [`FelderaDestination::wait_unpaused`].
     stopping: Arc<AtomicBool>,
+    /// Results the stop could not answer; see [`ParkedResults`].
+    parked: Arc<ParkedResults>,
 }
 
 impl PostgresCdcInputInner {
@@ -658,10 +682,10 @@ impl PostgresCdcInputInner {
             watcher_rx: Mutex::new(watcher_rx),
             completion_task_tx,
             completion_task_rx: Mutex::new(completion_task_rx),
-            etl_shutdown_tx: Mutex::new(None),
             copy: Arc::new(CopyBarrier::new()),
             strict,
             stopping: Arc::new(AtomicBool::new(false)),
+            parked: Arc::new(ParkedResults::default()),
         }
     }
 
@@ -703,10 +727,10 @@ impl PostgresCdcInputInner {
             // these up. A flush that lands while the stop is draining the
             // channel is as durable as one that landed before it, so answer
             // the writes the frontier has passed by the same rule the watcher
-            // used, and let the rest drop: etl reads their rows again on the
-            // next start.
+            // used, and park the rest: etl reads their rows again on the next
+            // start.
             let HeldAcks { flush_step, acks } = send_error.0;
-            answer_durable_after_stop(&self.watcher_rx, flush_step, acks);
+            answer_durable_after_stop(&self.watcher_rx, &self.parked, flush_step, acks);
         }
     }
 
@@ -826,6 +850,15 @@ impl PostgresCdcInputInner {
             // The initial copy needs etl's schema helpers. When migrations are
             // disabled, an administrator must have installed them beforehand.
             run_source_migrations: self.config.run_source_migrations,
+            replication_lag_refresh_interval_ms:
+                PipelineConfig::DEFAULT_REPLICATION_LAG_REFRESH_INTERVAL_MS,
+            settle_durable_interval_ms: None,
+            // A write becomes durable only when the circuit commits a step,
+            // and the circuit stops stepping once the connector is told to
+            // stop. Draining would wait for an answer that never comes, so
+            // etl abandons the pending write and the buffered batch instead;
+            // PostgreSQL offers them again on the next start.
+            drain_on_shutdown: false,
         };
 
         // Use PostgresStore to persist table replication phases across restarts.
@@ -895,6 +928,7 @@ impl PostgresCdcInputInner {
             copy: Arc::clone(&self.copy),
             consumer: self.consumer.clone(),
             stopping: Arc::clone(&self.stopping),
+            parked: Arc::clone(&self.parked),
         };
 
         let table_error_monitor = TableErrorMonitor {
@@ -907,8 +941,10 @@ impl PostgresCdcInputInner {
             copy: Arc::clone(&self.copy),
             pipeline_state_rx: receiver.clone(),
         };
+        // Stopping the pipeline needs the pipeline itself, so a stop that
+        // arrives while `start` runs takes effect once it returns: the
+        // termination branch below fires at once.
         let mut pipeline = Pipeline::new(pipeline_config, store, destination);
-        self.set_etl_shutdown_tx(pipeline.shutdown_tx());
 
         let started = match pipeline.start().await {
             Ok(()) if self.config.run_source_migrations => match &catalog {
@@ -941,7 +977,7 @@ impl PostgresCdcInputInner {
                     true,
                     e,
                 )));
-                self.shutdown_etl_pipeline();
+                self.shutdown_etl_pipeline(Some(&pipeline));
                 return;
             }
         }
@@ -964,6 +1000,7 @@ impl PostgresCdcInputInner {
                         watcher,
                         rx,
                         shutdown_rx,
+                        Arc::clone(&self.parked),
                         self.endpoint_name.clone(),
                     )),
                 })
@@ -993,12 +1030,12 @@ impl PostgresCdcInputInner {
                     "postgres_cdc {}: received termination command; shutting down etl pipeline",
                     &self.endpoint_name
                 );
-                self.shutdown_etl_pipeline();
+                self.shutdown_etl_pipeline(Some(&pipeline));
                 stop_completion_watcher(&mut completion_handle, &self.endpoint_name).await;
                 (self.await_etl_stop(&mut pipeline_wait).await, false)
             }
             _ = table_error_monitor.run() => {
-                self.shutdown_etl_pipeline();
+                self.shutdown_etl_pipeline(Some(&pipeline));
                 stop_completion_watcher(&mut completion_handle, &self.endpoint_name).await;
                 (self.await_etl_stop(&mut pipeline_wait).await, false)
             }
@@ -1026,10 +1063,6 @@ impl PostgresCdcInputInner {
         stop_completion_watcher(&mut completion_handle, &self.endpoint_name).await;
 
         self.consumer.eoi();
-    }
-
-    fn set_etl_shutdown_tx(&self, shutdown_tx: ShutdownTx) {
-        *self.etl_shutdown_tx.lock().unwrap() = Some(shutdown_tx);
     }
 
     fn warn_publication_unlisted(&self, error: &anyhow::Error) {
@@ -1074,37 +1107,31 @@ impl PostgresCdcInputInner {
         }
     }
 
-    fn shutdown_etl_pipeline(&self) {
-        // Raise the flag before draining, so a write that queues an answer
-        // just after the drain sees it and drains that answer itself.
-        self.stopping.store(true, Ordering::SeqCst);
-        if let Some(shutdown_tx) = self.etl_shutdown_tx.lock().unwrap().take() {
-            let _ = shutdown_tx.shutdown();
+    /// Stops etl. With draining off, etl abandons the write it has pending
+    /// and the batch it has buffered, so nothing holds the replication slot
+    /// open; PostgreSQL offers those changes again on the next start. The
+    /// answers still queued stay queued: a flush after the stop answers into
+    /// a channel nobody reads, and the rest drop with the queue, after etl
+    /// has stopped.
+    ///
+    /// `pipeline` is `None` once the worker that owned it has returned, when
+    /// only a held copy barrier is left to park.
+    fn shutdown_etl_pipeline(&self, pipeline: Option<&EtlPipeline>) {
+        if let Some(pipeline) = pipeline {
+            pipeline.shutdown();
         }
-        release_pending_answers(&self.queue);
-        self.copy.release_terminal();
+        // etl is asked to stop first; the flag then turns away the writes it
+        // still issues before it sees the request.
+        self.stopping.store(true, Ordering::SeqCst);
+        if let Some(terminal) = self.copy.take_terminal() {
+            self.parked.park(terminal);
+        }
     }
-}
-
-/// Fail every queued write by releasing the answer it waits on.
-///
-/// A write whose rows are still queued waits on a step that may not come, and
-/// etl does not finish shutting down while it waits, which holds the
-/// replication slot open. Releasing the answer fails the write instead: it was
-/// never acknowledged, so etl reads its rows again on the next start, and the
-/// error it records is the one `is_shutdown_error` rolls back.
-///
-/// The entries stay queued. Their records were charged to the endpoint when
-/// they were queued and only a flush credits them back, and a queued snapshot
-/// buffer is likewise still counted by the copy barrier until a flush reports
-/// it; see [`InputQueue::release_aux`].
-fn release_pending_answers(queue: &InputQueue<QueueAux>) {
-    queue.release_aux(|aux| drop(aux.ack.take()));
 }
 
 impl Drop for PostgresCdcInputInner {
     fn drop(&mut self) {
-        self.shutdown_etl_pipeline();
+        self.shutdown_etl_pipeline(None);
     }
 }
 
@@ -1350,11 +1377,10 @@ impl TableErrorMonitor {
             return false;
         }
 
-        // Feldera stopping the connector is what leaves a shutdown error
-        // behind, and the next start rolls it back, so report nothing while
-        // the pipeline is paused or terminated. An error seen while the
-        // pipeline runs is one the rollback could not clear, or one etl raised
-        // mid-run; the table has stalled either way.
+        // Report nothing while the pipeline is paused or terminated: a start
+        // reconciles what a stop left behind. An error seen while the
+        // pipeline runs is one etl raised mid-run, or one the start could not
+        // clear; the table has stalled either way.
         if *self.pipeline_state_rx.borrow() != PipelineState::Running {
             return false;
         }
@@ -1465,8 +1491,20 @@ struct FelderaDestination {
     /// [`FelderaDestination::hold_copy_barrier`].
     consumer: Box<dyn InputConsumer>,
     /// The connector is shutting etl down; see
-    /// [`FelderaDestination::push_event_buffer`].
+    /// [`FelderaDestination::wait_unpaused`].
     stopping: Arc<AtomicBool>,
+    /// Where a write that starts once the connector stops leaves its result;
+    /// see [`ParkedResults`].
+    parked: Arc<ParkedResults>,
+}
+
+/// What [`FelderaDestination::wait_unpaused`] lets a write do.
+#[derive(Debug, PartialEq, Eq)]
+enum Admission {
+    /// The pipeline runs: queue the rows.
+    Admit,
+    /// The connector is stopping: queue nothing and park the result.
+    Stopping,
 }
 
 /// How a streamed write ends, once its rows are in the queue.
@@ -1594,7 +1632,10 @@ impl Destination for FelderaDestination {
         replicated_table_schema: &ReplicatedTableSchema,
         async_result: DropTableForCopyResult<()>,
     ) -> EtlResult<()> {
-        self.wait_unpaused().await?;
+        if self.wait_unpaused().await == Admission::Stopping {
+            self.parked.park(async_result);
+            return Ok(());
+        }
 
         // Feldera owns no physical destination object to drop; the data lives
         // in the circuit, and a copy that starts over simply re-snapshots
@@ -1627,7 +1668,10 @@ impl Destination for FelderaDestination {
         table_rows: Vec<TableRow>,
         async_result: WriteTableRowsResult,
     ) -> EtlResult<()> {
-        self.wait_unpaused().await?;
+        if self.wait_unpaused().await == Admission::Stopping {
+            self.parked.park(async_result);
+            return Ok(());
+        }
 
         let target_columns = self.column_names_for_target_schema(replicated_table_schema)?;
         let column_names = match classify_copy_write(target_columns, batch_id.is_some()) {
@@ -1695,7 +1739,10 @@ impl Destination for FelderaDestination {
         _durability: WriteEventsDurability,
         async_result: WriteEventsResult,
     ) -> EtlResult<()> {
-        self.wait_unpaused().await?;
+        if self.wait_unpaused().await == Admission::Stopping {
+            self.parked.park(async_result);
+            return Ok(());
+        }
 
         let mut stream = self.input_stream.lock().unwrap();
         let mut queued = 0usize;
@@ -1916,14 +1963,6 @@ impl FelderaDestination {
                 ack,
             },
         );
-        // etl runs alongside the shutdown, so this push may land after the
-        // shutdown released the queued answers, leaving an answer nothing will
-        // flush and etl waiting on it for good. A release that missed this
-        // entry ran after the flag was raised, so this read sees the flag and
-        // releases the entry's answer here instead.
-        if self.stopping.load(Ordering::SeqCst) {
-            release_pending_answers(&self.queue);
-        }
     }
 
     /// Queue a buffer of initial-copy rows and account for it, so the reader
@@ -1951,34 +1990,31 @@ impl FelderaDestination {
     }
 
     /// Wait until the Feldera pipeline is running before accepting a new etl
-    /// batch.
+    /// batch, and say whether the batch may still be accepted.
     ///
-    /// Once the connector is stopping, the write is refused at once. etl may
-    /// outlive the stop by up to [`RUNTIME_SHUTDOWN_TIMEOUT`] after the reader
-    /// has signalled end of input, and its rows must not reach the queue then.
-    /// The refusal carries the same marker as a termination, so the next start
-    /// rolls it back and etl reads the rows again.
-    async fn wait_unpaused(&self) -> EtlResult<()> {
+    /// Once the connector is stopping, a write queues nothing: etl may outlive
+    /// the stop by up to [`RUNTIME_SHUTDOWN_TIMEOUT`] after the reader has
+    /// signalled end of input, and rows that reach the queue then never reach
+    /// the circuit. The write is not refused either, since etl would record
+    /// the refusal as a table error. Its result is parked, and etl, asked to
+    /// stop before the flag went up, abandons the write and reads its rows
+    /// again on the next start.
+    async fn wait_unpaused(&self) -> Admission {
         if self.stopping.load(Ordering::SeqCst) {
-            return Err(etl_error!(
-                ErrorKind::DestinationError,
-                TERMINATED_BEFORE_BATCH,
-                "the connector is stopping"
-            ));
+            return Admission::Stopping;
         }
         let mut rx = self.pipeline_state_rx.clone();
         match rx.wait_for(|state| state != &PipelineState::Paused).await {
-            Ok(state) if *state == PipelineState::Running => Ok(()),
-            Ok(_) => Err(etl_error!(
-                ErrorKind::DestinationError,
-                TERMINATED_BEFORE_BATCH
-            )),
-            // Same marker as above so startup rolls this back too.
-            Err(_) => Err(etl_error!(
-                ErrorKind::DestinationError,
-                TERMINATED_BEFORE_BATCH,
-                "state channel closed"
-            )),
+            // A stop on a table error leaves the pipeline running, so the
+            // flag is the authority, not the state.
+            Ok(state) if *state == PipelineState::Running => {
+                if self.stopping.load(Ordering::SeqCst) {
+                    Admission::Stopping
+                } else {
+                    Admission::Admit
+                }
+            }
+            Ok(_) | Err(_) => Admission::Stopping,
         }
     }
 
@@ -2268,7 +2304,7 @@ fn reconcile_decision(
         retry_policy,
         ..
     } = state
-        && (is_shutdown_error(reason)
+        && (is_legacy_stop_error(reason)
             || matches!(retry_policy, TableRetryPolicy::TimedRetry { .. }))
     {
         return Reconcile::RollBack;
@@ -2315,6 +2351,68 @@ fn reconcile_decision(
 ///    until the copy is in the circuit, so this is the only case where a
 ///    resumed pipeline can be missing it.
 ///
+/// Roll `table_id` back from `state`, an error a stop left behind, to the
+/// state before it, and return that state.
+///
+/// etl deletes the row it rolls back from, so a table whose history holds
+/// only the error has nothing to go back to. Such a table is read again
+/// instead, reported as `None`: that clears the error and costs a copy, where
+/// failing the start would need the state edited by hand and leaving it would
+/// stall the table for good.
+async fn roll_back_stop_error(
+    store: &PostgresStore,
+    table_id: TableId,
+    state: &TableState,
+    endpoint_name: &str,
+) -> EtlResult<Option<TableState>> {
+    let rolled_back = format!("{state:?}");
+    match store.rollback_table_state(table_id).await {
+        Ok(previous) => {
+            info!(
+                "postgres_cdc {endpoint_name}: rolled back {rolled_back} for table {table_id}; \
+                 resuming from state {previous:?}"
+            );
+            Ok(Some(previous))
+        }
+        Err(e) => {
+            warn!(
+                "postgres_cdc {endpoint_name}: cannot roll back {rolled_back} for table \
+                 {table_id} ({e}); reading the table again"
+            );
+            store.update_table_state(table_id, TableState::Init).await?;
+            Ok(None)
+        }
+    }
+}
+
+/// Clear the stop errors an older connector left on the other tables of the
+/// publication, before etl starts.
+///
+/// etl copies every table of the publication under this pipeline, and the
+/// older connector refused the write of any table at a stop, so a table other
+/// than the source table can carry such an error too. etl never retries a
+/// `ManualRetry` error on its own, and the monitor reports an error on any
+/// table as fatal, so left in place it would stop the connector at every
+/// start. The source table's own state is reconciled by its caller.
+async fn roll_back_legacy_stop_errors(
+    store: &PostgresStore,
+    source_table_id: Option<TableId>,
+    endpoint_name: &str,
+) -> EtlResult<()> {
+    let states = store.get_table_states().await?;
+    for (table_id, state) in states.iter() {
+        if Some(*table_id) == source_table_id {
+            continue;
+        }
+        if let TableState::Errored { reason, .. } = state
+            && is_legacy_stop_error(reason)
+        {
+            roll_back_stop_error(store, *table_id, state, endpoint_name).await?;
+        }
+    }
+    Ok(())
+}
+
 /// What startup found out about the source table.
 struct Reconciled {
     /// etl still has the source table to copy, which is what the connector
@@ -2336,9 +2434,10 @@ async fn reconcile_table_state(
         copy_outstanding: true,
         sync_done_lsn: None,
     };
-    store.load_table_states().await?;
-    store.load_table_schemas().await?;
-    let Some(table_id) = target_table_id(store, source_table).await? else {
+    store.load_cache().await?;
+    let table_id = target_table_id(store, source_table).await?;
+    roll_back_legacy_stop_errors(store, table_id, endpoint_name).await?;
+    let Some(table_id) = table_id else {
         return Ok(outstanding);
     };
     let Some(mut state) = store.get_table_state(table_id).await? else {
@@ -2348,27 +2447,10 @@ async fn reconcile_table_state(
     loop {
         match reconcile_decision(&state, redo_snapshot, resumed_copy) {
             Reconcile::RollBack => {
-                let rolled_back = format!("{state:?}");
-                // etl deletes the row it rolls back from, so a table whose
-                // history holds only the error has nothing to go back to.
-                // Read the table again instead: that clears the error and
-                // costs a copy, where failing the start would need the state
-                // edited by hand and leaving it would stall the table for good.
-                match store.rollback_table_state(table_id).await {
-                    Ok(previous) => state = previous,
-                    Err(e) => {
-                        warn!(
-                            "postgres_cdc {endpoint_name}: cannot roll back {rolled_back} for \
-                             table {table_id} ({e}); reading the table again"
-                        );
-                        store.update_table_state(table_id, TableState::Init).await?;
-                        return Ok(outstanding);
-                    }
+                match roll_back_stop_error(store, table_id, &state, endpoint_name).await? {
+                    Some(previous) => state = previous,
+                    None => return Ok(outstanding),
                 }
-                info!(
-                    "postgres_cdc {endpoint_name}: rolled back {rolled_back} for table \
-                     {table_id}; resuming from state {state:?}"
-                );
             }
             Reconcile::RedoCopy => {
                 warn!(
@@ -2453,6 +2535,41 @@ fn row_to_json(cells: &[Cell], column_names: &[String], endpoint_name: &str) -> 
     Value::Object(map)
 }
 
+/// Postgres `infinity` and `-infinity` dates keep their Postgres spelling:
+/// Feldera's `DATE` has no such values, so the row fails to parse and is
+/// reported like any other malformed record, instead of silently moving.
+fn date_to_json(d: &Date<NaiveDate>) -> Value {
+    match d {
+        Date::Value(d) => json!(d.to_string()),
+        Date::PosInfinity => json!("infinity"),
+        Date::NegInfinity => json!("-infinity"),
+    }
+}
+
+/// Postgres allows `24:00:00`, which `PgTime` spells as such and Feldera's
+/// `TIME` rejects; see [`date_to_json`].
+fn time_to_json(t: &PgTime) -> Value {
+    json!(t.to_string())
+}
+
+/// See [`date_to_json`] for the infinite values.
+fn timestamp_to_json(ts: &Timestamp<NaiveDateTime>) -> Value {
+    match ts {
+        Timestamp::Value(ts) => json!(ts.format("%Y-%m-%dT%H:%M:%S%.f").to_string()),
+        Timestamp::PosInfinity => json!("infinity"),
+        Timestamp::NegInfinity => json!("-infinity"),
+    }
+}
+
+/// See [`date_to_json`] for the infinite values.
+fn timestamptz_to_json(ts: &Timestamp<DateTime<Utc>>) -> Value {
+    match ts {
+        Timestamp::Value(ts) => json!(ts.to_rfc3339()),
+        Timestamp::PosInfinity => json!("infinity"),
+        Timestamp::NegInfinity => json!("-infinity"),
+    }
+}
+
 /// Convert an etl Cell to a serde_json Value.
 fn cell_to_json(cell: &Cell) -> Value {
     match cell {
@@ -2481,13 +2598,13 @@ fn cell_to_json(cell: &Cell) -> Value {
             // Preserve precision by encoding as string.
             json!(n.to_string())
         }
-        Cell::Date(d) => json!(d.to_string()),
-        Cell::Time(t) => json!(t.to_string()),
+        Cell::Date(d) => date_to_json(d),
+        Cell::Time(t) => time_to_json(t),
         // Feldera has no time-with-time-zone type, so the cell keeps the text
         // form Postgres itself uses, UTC offset included.
         Cell::TimeTz(t) => json!(t.to_string()),
-        Cell::Timestamp(ts) => json!(ts.format("%Y-%m-%dT%H:%M:%S%.f").to_string()),
-        Cell::TimestampTz(ts) => json!(ts.to_rfc3339()),
+        Cell::Timestamp(ts) => timestamp_to_json(ts),
+        Cell::TimestampTz(ts) => timestamptz_to_json(ts),
         Cell::Uuid(u) => json!(u.to_string()),
         Cell::Json(j) => j.clone(),
         Cell::Bytes(b) => {
@@ -2543,7 +2660,7 @@ fn array_cell_to_json(arr: &ArrayCell) -> Value {
             let vals: Vec<Value> = v
                 .iter()
                 .map(|opt| match opt {
-                    Some(d) => json!(d.to_string()),
+                    Some(d) => date_to_json(d),
                     None => Value::Null,
                 })
                 .collect();
@@ -2553,7 +2670,7 @@ fn array_cell_to_json(arr: &ArrayCell) -> Value {
             let vals: Vec<Value> = v
                 .iter()
                 .map(|opt| match opt {
-                    Some(t) => json!(t.to_string()),
+                    Some(t) => time_to_json(t),
                     None => Value::Null,
                 })
                 .collect();
@@ -2573,7 +2690,7 @@ fn array_cell_to_json(arr: &ArrayCell) -> Value {
             let vals: Vec<Value> = v
                 .iter()
                 .map(|opt| match opt {
-                    Some(ts) => json!(ts.format("%Y-%m-%dT%H:%M:%S%.f").to_string()),
+                    Some(ts) => timestamp_to_json(ts),
                     None => Value::Null,
                 })
                 .collect();
@@ -2583,7 +2700,7 @@ fn array_cell_to_json(arr: &ArrayCell) -> Value {
             let vals: Vec<Value> = v
                 .iter()
                 .map(|opt| match opt {
-                    Some(ts) => json!(ts.to_rfc3339()),
+                    Some(ts) => timestamptz_to_json(ts),
                     None => Value::Null,
                 })
                 .collect();
@@ -2660,12 +2777,13 @@ impl WatcherReceiver {
 /// frontier has to pass `flush_step` strictly.
 ///
 /// `shutdown_rx` stops the task, which then answers the writes the frontier
-/// has already passed and drops the rest, so a stop costs etl only the writes
+/// has already passed and parks the rest, so a stop costs etl only the writes
 /// that are not durable.
 async fn completion_watcher_task(
     mut watcher: WatcherReceiver,
     mut pending_rx: mpsc::UnboundedReceiver<HeldAcks>,
     mut shutdown_rx: tokio::sync::oneshot::Receiver<()>,
+    parked: Arc<ParkedResults>,
     endpoint_name: String,
 ) {
     let mut waiting: Vec<HeldAcks> = Vec::new();
@@ -2699,21 +2817,24 @@ async fn completion_watcher_task(
     }
 
     // Answer the writes the frontier has already passed, by the same rule the
-    // loop uses, and judge what the channel still holds by that rule too.
-    // Dropping the answer of a durable write makes etl record a manual retry,
-    // which rolls the table back to a state that is not a completed sync, and
-    // the next start reads the whole source table again.
+    // loop uses, and judge what the channel still holds by that rule too. An
+    // answer etl still sees before it stops advances its checkpoint past the
+    // write, which keeps the replay after the next start short.
     answer_durable_on_stop(&mut waiting, &mut pending_rx, watcher.frontier());
 
-    // What is left is not durable. Those answers drop, and with them etl's
-    // result senders. `AsyncResult` has no `Drop` of its own: etl's
-    // `PendingAsyncResult` finds its oneshot closed and reports
-    // `RESULT_DROPPED_ON_SHUTDOWN`, which `is_shutdown_error` recognizes, so
-    // the next start rolls those writes back.
+    // What is left is not durable. etl has been asked to stop and abandons
+    // those writes, so PostgreSQL offers their changes again on the next
+    // start. Their senders are parked rather than dropped; see
+    // `ParkedResults`.
     debug!(
         "postgres_cdc {endpoint_name}: completion watcher exiting with {} pending entries",
         waiting.len()
     );
+    for held in waiting {
+        for ack in held.acks {
+            parked.park(ack);
+        }
+    }
 }
 
 /// Answer the writes a stop finds durable, and leave the rest waiting.
@@ -2752,11 +2873,11 @@ fn fire_completed(waiting: &mut Vec<HeldAcks>, frontier: Step) {
 /// The watcher task closes its channel when it stops, so a flush that lands
 /// while the stop drains that channel has its send refused. The frontier is
 /// still readable through the watcher clone the reader keeps, so the writes it
-/// has passed are answered and the rest dropped, by the same rule the watcher
-/// would have used: dropping a durable answer costs etl a full re-read of the
-/// source table on the next start.
+/// has passed are answered and the rest parked, by the same rule the watcher
+/// would have used.
 fn answer_durable_after_stop(
     watcher_rx: &Mutex<Option<WatcherReceiver>>,
+    parked: &ParkedResults,
     flush_step: Step,
     acks: DeferredAcks,
 ) {
@@ -2765,9 +2886,11 @@ fn answer_durable_after_stop(
         .unwrap()
         .as_ref()
         .is_some_and(|watcher| watcher.frontier() > flush_step);
-    if durable {
-        for ack in acks {
+    for ack in acks {
+        if durable {
             ack();
+        } else {
+            parked.park(ack);
         }
     }
 }
@@ -2947,11 +3070,11 @@ mod tests {
     use crate::test::{MockDeZSet, MockInputConsumer, TestStruct};
     use anyhow::Error as AnyError;
     use chrono::{FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
-    use etl::data::{PgNumeric, PgTimeTz};
+    use etl::data::{Date, PgNumeric, PgTime, PgTimeTz, Timestamp};
     use etl::schema::PgLsn;
     use feldera_adapterlib::catalog::DeCollectionHandle;
     use feldera_adapterlib::format::BufferSize;
-    use feldera_sqllib::Timestamp;
+    use feldera_sqllib::Timestamp as SqlTimestamp;
     use feldera_types::adapter_stats::ConnectorHealth;
     use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
     use feldera_types::size::ConfigSize;
@@ -3072,40 +3195,29 @@ mod tests {
         assert!(!error.contains("in either case"), "{error}");
     }
 
-    /// The startup rollback recognizes both errors a stop leaves behind: the
-    /// one the connector records itself when Feldera stops it mid-batch, and
-    /// the one etl records for a deferred result the connector dropped.
+    /// The startup rollback recognizes both errors an older connector left
+    /// behind at a stop: the one it recorded itself when Feldera stopped it
+    /// mid-batch, and the one etl records for a deferred result it dropped.
     #[test]
-    fn shutdown_error_matcher_accepts_both_stop_literals() {
+    fn startup_rollback_recognizes_the_stop_errors_of_older_connectors() {
         let terminated = etl_error!(
             ErrorKind::DestinationError,
-            TERMINATED_BEFORE_BATCH,
+            LEGACY_STOP_ERRORS[0],
             "state channel closed"
         );
-        assert!(is_shutdown_error(&terminated.to_string()));
+        assert!(is_legacy_stop_error(&terminated.to_string()));
         let dropped = etl_error!(
             ErrorKind::DestinationError,
-            RESULT_DROPPED_ON_SHUTDOWN,
+            LEGACY_STOP_ERRORS[1],
             "table sync worker drained during shutdown"
         );
-        assert!(is_shutdown_error(&dropped.to_string()));
+        assert!(is_legacy_stop_error(&dropped.to_string()));
         // A rollback that fired on an unrelated destination error would replay
         // writes etl already acknowledged, so the matcher must stay narrow.
-        assert!(!is_shutdown_error("connection refused"));
-        assert!(!is_shutdown_error(
+        assert!(!is_legacy_stop_error("connection refused"));
+        assert!(!is_legacy_stop_error(
             "Table copy durability barrier did not confirm durability"
         ));
-        // Spelled out here so an edit to either constant is deliberate. The
-        // second is etl's text: check `destination/async_result.rs` on an etl
-        // revision bump.
-        assert_eq!(
-            TERMINATED_BEFORE_BATCH,
-            "Postgres CDC input connector terminated before accepting batch"
-        );
-        assert_eq!(
-            RESULT_DROPPED_ON_SHUTDOWN,
-            "Async result channel closed before sending"
-        );
     }
 
     // -----------------------------------------------------------------------
@@ -3174,14 +3286,14 @@ mod tests {
     #[test]
     fn test_cell_date() {
         let d = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap();
-        let v = cell_to_json(&Cell::Date(d));
+        let v = cell_to_json(&Cell::Date(Date::Value(d)));
         assert_eq!(v, json!("2024-06-15"));
     }
 
     #[test]
     fn test_cell_time() {
         let t = NaiveTime::from_hms_opt(14, 30, 0).unwrap();
-        let v = cell_to_json(&Cell::Time(t));
+        let v = cell_to_json(&Cell::Time(PgTime::Value(t)));
         assert_eq!(v, json!("14:30:00"));
     }
 
@@ -3201,7 +3313,7 @@ mod tests {
             NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
             NaiveTime::from_hms_opt(12, 0, 0).unwrap(),
         );
-        let v = cell_to_json(&Cell::Timestamp(dt));
+        let v = cell_to_json(&Cell::Timestamp(Timestamp::Value(dt)));
         assert_eq!(v, json!("2024-01-01T12:00:00"));
     }
 
@@ -3221,11 +3333,11 @@ mod tests {
         ] {
             let dt =
                 NaiveDateTime::new(date, NaiveTime::from_hms_nano_opt(12, 0, 0, nanos).unwrap());
-            let json = cell_to_json(&Cell::Timestamp(dt));
+            let json = cell_to_json(&Cell::Timestamp(Timestamp::Value(dt)));
             assert_eq!(json, json!(format!("2024-01-01T12:00:00{fraction}")));
 
             let text = json.to_string();
-            let parsed = <Timestamp as DeserializeWithContext<SqlSerdeConfig, ()>>::deserialize_with_context(
+            let parsed = <SqlTimestamp as DeserializeWithContext<SqlSerdeConfig, ()>>::deserialize_with_context(
                 &mut serde_json::Deserializer::from_str(&text),
                 &config,
             )
@@ -3237,9 +3349,35 @@ mod tests {
     #[test]
     fn test_cell_timestamptz() {
         let dt = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
-        let v = cell_to_json(&Cell::TimestampTz(dt));
+        let v = cell_to_json(&Cell::TimestampTz(Timestamp::Value(dt)));
         // RFC 3339 format
         assert_eq!(v, json!("2024-01-01T12:00:00+00:00"));
+    }
+
+    #[test]
+    fn test_cell_temporal_special_values_keep_postgres_spelling() {
+        assert_eq!(
+            cell_to_json(&Cell::Date(Date::PosInfinity)),
+            json!("infinity")
+        );
+        assert_eq!(
+            cell_to_json(&Cell::Date(Date::NegInfinity)),
+            json!("-infinity")
+        );
+        assert_eq!(
+            cell_to_json(&Cell::Time(PgTime::EndOfDay)),
+            json!("24:00:00")
+        );
+        assert_eq!(
+            cell_to_json(&Cell::Timestamp(Timestamp::PosInfinity)),
+            json!("infinity")
+        );
+        assert_eq!(
+            cell_to_json(&Cell::TimestampTz(Timestamp::NegInfinity)),
+            json!("-infinity")
+        );
+        let arr = ArrayCell::Timestamp(vec![Some(Timestamp::NegInfinity), None]);
+        assert_eq!(array_cell_to_json(&arr), json!(["-infinity", null]));
     }
 
     #[test]
@@ -3332,7 +3470,7 @@ mod tests {
     #[test]
     fn test_array_date() {
         let d = NaiveDate::from_ymd_opt(2024, 12, 25).unwrap();
-        let arr = ArrayCell::Date(vec![Some(d), None]);
+        let arr = ArrayCell::Date(vec![Some(Date::Value(d)), None]);
         let v = array_cell_to_json(&arr);
         assert_eq!(v, json!(["2024-12-25", null]));
     }
@@ -3340,7 +3478,7 @@ mod tests {
     #[test]
     fn test_array_time() {
         let t = NaiveTime::from_hms_opt(8, 30, 0).unwrap();
-        let arr = ArrayCell::Time(vec![Some(t), None]);
+        let arr = ArrayCell::Time(vec![Some(PgTime::Value(t)), None]);
         let v = array_cell_to_json(&arr);
         assert_eq!(v, json!(["08:30:00", null]));
     }
@@ -3362,7 +3500,7 @@ mod tests {
             NaiveDate::from_ymd_opt(2024, 6, 1).unwrap(),
             NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
         );
-        let arr = ArrayCell::Timestamp(vec![Some(dt), None]);
+        let arr = ArrayCell::Timestamp(vec![Some(Timestamp::Value(dt)), None]);
         let v = array_cell_to_json(&arr);
         assert_eq!(v, json!(["2024-06-01T00:00:00", null]));
     }
@@ -3370,7 +3508,7 @@ mod tests {
     #[test]
     fn test_array_timestamptz() {
         let dt = Utc.with_ymd_and_hms(2024, 6, 1, 0, 0, 0).unwrap();
-        let arr = ArrayCell::TimestampTz(vec![Some(dt), None]);
+        let arr = ArrayCell::TimestampTz(vec![Some(Timestamp::Value(dt)), None]);
         let v = array_cell_to_json(&arr);
         assert_eq!(v, json!(["2024-06-01T00:00:00+00:00", null]));
     }
@@ -3446,10 +3584,10 @@ mod tests {
             Cell::F64(2.5),
             Cell::Numeric(n),
             Cell::String("text".into()),
-            Cell::Date(d),
-            Cell::Time(t),
-            Cell::Timestamp(ts),
-            Cell::TimestampTz(tstz),
+            Cell::Date(Date::Value(d)),
+            Cell::Time(PgTime::Value(t)),
+            Cell::Timestamp(Timestamp::Value(ts)),
+            Cell::TimestampTz(Timestamp::Value(tstz)),
             Cell::Uuid(u),
             Cell::Json(json!({"key": "val"})),
             Cell::Bytes(vec![0xab, 0xcd]),
@@ -3722,23 +3860,27 @@ mod tests {
     }
 
     #[test]
-    fn a_stop_drops_a_held_terminal_barrier() {
+    fn a_stop_takes_a_held_terminal_barrier_away_unanswered() {
         let barrier = CopyBarrier::new();
         barrier.note_copy_batch();
         barrier.note_buffer_queued();
         let flag = Arc::new(AtomicBool::new(false));
         assert!(!barrier.hold_terminal(terminal(&flag)));
 
-        barrier.release_terminal();
+        let taken = barrier.take_terminal();
+        assert!(
+            taken.is_some(),
+            "the stop takes the held barrier, to park it"
+        );
         assert!(!answered(&flag), "a stop answers no terminal barrier");
         assert!(barrier.copy_open(), "the copy stays open across a stop");
 
         // The reader may still flush the buffer the barrier waited for, after
-        // the stop dropped the barrier. The copy is not finished, so nothing
-        // may record it as such.
+        // the stop took the barrier. The copy is not finished, so nothing may
+        // record it as such.
         assert!(
             !barrier.note_buffers_flushed(1),
-            "no barrier is held once the stop dropped it"
+            "no barrier is held once the stop took it"
         );
         assert!(!answered(&flag));
         assert!(
@@ -3753,8 +3895,8 @@ mod tests {
         barrier.note_copy_batch();
         // A stop before any copy barrier arrived, and a second stop, which
         // `Drop` makes after `shutdown_etl_pipeline` already ran.
-        barrier.release_terminal();
-        barrier.release_terminal();
+        assert!(barrier.take_terminal().is_none());
+        assert!(barrier.take_terminal().is_none());
         assert!(barrier.copy_open());
 
         let flag = Arc::new(AtomicBool::new(false));
@@ -4022,6 +4164,7 @@ mod tests {
             copy: Arc::clone(copy),
             consumer: Box::new(consumer),
             stopping: Arc::clone(stopping),
+            parked: Arc::new(ParkedResults::default()),
         }
     }
 
@@ -4158,38 +4301,7 @@ mod tests {
     }
 
     #[test]
-    fn a_write_queued_while_the_connector_stops_keeps_nothing_waiting() {
-        let copy = Arc::new(CopyBarrier::new());
-        let consumer = MockInputConsumer::new();
-        let stopping = Arc::new(AtomicBool::new(false));
-        let destination = destination_stopping(&copy, consumer, true, &stopping);
-
-        // etl runs alongside the shutdown, so a write can reach the queue
-        // after the shutdown drained it. Leaving its answer there would keep
-        // etl waiting for a step that no longer comes.
-        stopping.store(true, Ordering::SeqCst);
-        let flag = Arc::new(AtomicBool::new(false));
-        let buffer = event_buffer(&destination, 0);
-        destination.push_event_buffer(buffer, Utc::now(), Some(terminal(&flag)));
-
-        assert!(
-            !answered(&flag),
-            "the write was never in a step, so it must fail rather than be answered"
-        );
-
-        // The rows stay queued. They were charged to the endpoint when they
-        // were queued and only a flush credits them back, so discarding them
-        // would leave the endpoint owing records no step can consume.
-        let (size, _, flushed) = destination.queue.flush_with_aux();
-        assert_eq!(size.records, 1, "the flush credits the queued record back");
-        assert!(
-            take_acks(flushed).is_empty(),
-            "the stop already failed the write, so the flush answers nothing"
-        );
-    }
-
-    #[test]
-    fn a_write_that_starts_once_the_connector_stops_is_refused() {
+    fn a_write_that_starts_once_the_connector_stops_is_turned_away_without_error() {
         let copy = Arc::new(CopyBarrier::new());
         let stopping = Arc::new(AtomicBool::new(false));
         let destination = destination_stopping(&copy, MockInputConsumer::new(), true, &stopping);
@@ -4198,22 +4310,119 @@ mod tests {
             .build()
             .unwrap();
 
-        assert!(runtime.block_on(destination.wait_unpaused()).is_ok());
+        assert_eq!(
+            runtime.block_on(destination.wait_unpaused()),
+            Admission::Admit
+        );
 
+        // etl may still issue a write after the stop raised the flag. Refusing
+        // it would make etl record a table error; turning it away leaves etl
+        // to abandon it, and nothing reaches the queue.
         stopping.store(true, Ordering::SeqCst);
-        let error = runtime
-            .block_on(destination.wait_unpaused())
-            .expect_err("a write that starts once the connector stops is refused");
-        assert!(
-            is_shutdown_error(&error.to_string()),
-            "the next start must roll the refusal back, got: {error}"
+        assert_eq!(
+            runtime.block_on(destination.wait_unpaused()),
+            Admission::Stopping
         );
         let (size, _, _) = destination.queue.flush_with_aux();
         assert_eq!(size.records, 0, "nothing reached the queue");
     }
 
+    /// An acknowledgment that answers into a oneshot, so a test can tell an
+    /// answered write from a parked one.
+    fn oneshot_ack() -> (Ack, tokio::sync::oneshot::Receiver<()>) {
+        let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+        (Box::new(move || tx.send(()).unwrap()), rx)
+    }
+
     #[test]
-    fn a_stop_leaves_no_snapshot_buffer_charged_to_the_copy_barrier() {
+    fn a_flush_racing_the_stop_answers_the_durable_acks_and_parks_the_rest() {
+        use tokio::sync::oneshot::error::TryRecvError;
+
+        // The checkpoint frontier stands at 5: steps below 5 are durable.
+        let (_frontier_tx, frontier_rx) = tokio::sync::watch::channel(5u64);
+        let watcher_rx = Mutex::new(Some(WatcherReceiver::Strict(frontier_rx)));
+        let parked = ParkedResults::default();
+
+        let (durable, mut durable_rx) = oneshot_ack();
+        answer_durable_after_stop(&watcher_rx, &parked, 4, vec![durable]);
+        assert!(durable_rx.try_recv().is_ok());
+
+        // A write the frontier has not passed is parked: unanswered while the
+        // connector lives, closed once it drops.
+        let (pending, mut pending_rx) = oneshot_ack();
+        answer_durable_after_stop(&watcher_rx, &parked, 5, vec![pending]);
+        assert!(matches!(pending_rx.try_recv(), Err(TryRecvError::Empty)));
+        drop(parked);
+        assert!(matches!(pending_rx.try_recv(), Err(TryRecvError::Closed)));
+    }
+
+    #[test]
+    fn the_completion_watcher_answers_the_durable_acks_and_parks_the_rest_on_stop() {
+        use tokio::sync::oneshot::error::TryRecvError;
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (_frontier_tx, frontier_rx) = tokio::sync::watch::channel(5u64);
+        let (pending_tx, pending_rx) = mpsc::unbounded_channel();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let parked = Arc::new(ParkedResults::default());
+        let (durable, mut durable_rx) = oneshot_ack();
+        let (pending, mut pending_ack_rx) = oneshot_ack();
+
+        pending_tx
+            .send(HeldAcks {
+                flush_step: 4,
+                acks: vec![durable],
+            })
+            .unwrap();
+        pending_tx
+            .send(HeldAcks {
+                flush_step: 9,
+                acks: vec![pending],
+            })
+            .unwrap();
+        shutdown_tx.send(()).unwrap();
+
+        runtime.block_on(completion_watcher_task(
+            WatcherReceiver::Strict(frontier_rx),
+            pending_rx,
+            shutdown_rx,
+            Arc::clone(&parked),
+            "test".to_string(),
+        ));
+
+        assert!(durable_rx.try_recv().is_ok());
+        assert!(matches!(
+            pending_ack_rx.try_recv(),
+            Err(TryRecvError::Empty)
+        ));
+        drop(parked);
+        assert!(matches!(
+            pending_ack_rx.try_recv(),
+            Err(TryRecvError::Closed)
+        ));
+    }
+
+    #[test]
+    fn a_parked_result_keeps_its_sender_alive_until_the_connector_drops() {
+        use tokio::sync::oneshot::error::TryRecvError;
+
+        let parked = ParkedResults::default();
+        let (tx, mut rx) = tokio::sync::oneshot::channel::<()>();
+        parked.park(tx);
+
+        // etl sees a parked result as a write still pending, never as an
+        // error: the sender lives on, unanswered.
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Empty)));
+
+        drop(parked);
+        assert!(matches!(rx.try_recv(), Err(TryRecvError::Closed)));
+    }
+
+    #[test]
+    fn a_queued_snapshot_buffer_stays_charged_to_the_copy_barrier_until_flushed() {
         let copy = Arc::new(CopyBarrier::new());
         let destination = destination_stopping(
             &copy,
@@ -4224,10 +4433,9 @@ mod tests {
 
         let buffer = event_buffer(&destination, 0);
         destination.push_snapshot_buffer(buffer, Utc::now());
-        release_pending_answers(&destination.queue);
 
-        // The reader still flushes the buffer, and the barrier still counts it,
-        // which is what lets a terminal barrier be answered afterwards.
+        // The reader flushes the buffer, and the barrier counts it, which is
+        // what lets a terminal barrier be answered afterwards.
         let (_, _, flushed) = destination.queue.flush_with_aux();
         assert_eq!(count_snapshot_buffers(&flushed), 1);
         copy.note_buffers_flushed(count_snapshot_buffers(&flushed));
@@ -4348,7 +4556,8 @@ mod tests {
 
     #[test]
     fn startup_rolls_back_only_what_a_restart_makes_moot() {
-        let shutdown = errored(TERMINATED_BEFORE_BATCH, TableRetryPolicy::ManualRetry);
+        // An older connector's stop left this behind; see `LEGACY_STOP_ERRORS`.
+        let shutdown = errored(LEGACY_STOP_ERRORS[0], TableRetryPolicy::ManualRetry);
         assert_eq!(
             reconcile_decision(&shutdown, false, ResumedCopy::NoCheckpoint),
             Reconcile::RollBack

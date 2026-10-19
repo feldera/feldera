@@ -15,6 +15,25 @@ Source edition can be found on github.
   encoder error for that batch instead; the Parquet format still cannot
   represent deletes.
 
+- Incompatible change (PostgreSQL CDC input connector): a connector whose
+  `source_table` has `INHERITS` children used to deliver the children's rows
+  in its initial read, but never their later changes. The initial read now
+  delivers the parent's own rows only, as the change stream always did. A
+  pipeline that reads `public.orders` and relied on seeing the rows of
+  `public.orders_archive INHERITS (public.orders)` gets them after the
+  upgrade only once the child has a connector of its own: run
+  `ALTER PUBLICATION feldera_orders ADD TABLE public.orders_archive` and
+  attach a second `postgres_cdc_input` connector with
+  `"source_table": "public.orders_archive"` to the same Feldera table. See
+  [Inherited tables](/connectors/sources/postgresql-cdc#inherited-tables).
+
+- PostgreSQL CDC input connector: the special values `infinity` and
+  `-infinity` of a `DATE`, `TIMESTAMP` or `TIMESTAMPTZ` column, and the `TIME`
+  value `24:00:00`, have no counterpart in the Feldera types. A row that holds
+  one is now reported as a malformed record and skipped, like any other row
+  that fails to parse; all other values of these columns are unaffected. The
+  connector used to report an etl decoding error for such a row instead.
+
 ## v0.369.0
 
 - Python SDK: the new `reloadable_tables` argument of `Pipeline.start()`,
