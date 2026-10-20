@@ -1819,6 +1819,140 @@ fn replay_does_not_feed_http_input_during_commit() {
     controller.stop().unwrap();
 }
 
+/// An HTTP input endpoint whose `open` waits for a message on `gate`.
+struct GatedHttpEndpoint {
+    inner: HttpInputEndpoint,
+    gate: Mutex<std::sync::mpsc::Receiver<()>>,
+}
+
+impl InputEndpoint for GatedHttpEndpoint {
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        self.inner.fault_tolerance()
+    }
+}
+
+impl TransportInputEndpoint for GatedHttpEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        schema: Relation,
+        resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn InputReader>> {
+        let _ = self.gate.lock().unwrap().recv();
+        self.inner.open(consumer, parser, schema, resume_info)
+    }
+}
+
+/// Replay must not wait for input from an endpoint that the replayed step
+/// did not record.
+///
+/// `add_input_endpoint` registers an endpoint before `open` returns its
+/// reader.  A checkpoint in that window records the endpoint, but the next
+/// step skips it, because it has no reader yet, so the journal holds no
+/// input for it.  On restart, the checkpoint restores the endpoint and replay
+/// of that step must not wait for it.
+#[test]
+fn replay_does_not_wait_for_endpoint_without_journaled_input() {
+    init_test_logger();
+    const OPENED: &str = "test_input1.api-ingress-opened";
+    const BLOCKED: &str = "test_input1.api-ingress-blocked";
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let circuit = |circuit_config| {
+        Ok(test_circuit::<TestStruct>(
+            circuit_config,
+            &TestStruct::schema(),
+            &[Some("output")],
+        ))
+    };
+    let controller =
+        Controller::with_test_config(circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+            .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    // Register BLOCKED.  Its `open` blocks until the test sends on `open_gate`.
+    let (open_gate, gate) = std::sync::mpsc::channel();
+    let adding = thread::spawn({
+        let controller = controller.clone();
+        move || {
+            let endpoint = GatedHttpEndpoint {
+                inner: HttpInputEndpoint::new(HttpInputConfig {
+                    name: BLOCKED.into(),
+                }),
+                gate: Mutex::new(gate),
+            };
+            controller.add_input_endpoint(
+                BLOCKED,
+                http_input_config(BLOCKED),
+                Box::new(endpoint),
+                None,
+            )
+        }
+    });
+    wait(
+        || {
+            controller
+                .status()
+                .input_status()
+                .values()
+                .any(|status| status.endpoint_name == BLOCKED)
+        },
+        DEFAULT_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    // The checkpoint records BLOCKED, and the step that takes OPENED's row
+    // skips BLOCKED.
+    controller.checkpoint().unwrap();
+    let token = ingress_rows(&controller, OPENED, 0..1);
+    wait_for_completion(&controller, &token);
+    open_gate.send(()).unwrap();
+    adding.join().unwrap().unwrap();
+    controller.stop().unwrap();
+
+    // Restart from the checkpoint and the journal.  The restart replays the
+    // journal, so a replay that waits forever blocks it: give it a deadline.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let (sender, receiver) = std::sync::mpsc::channel();
+    thread::spawn({
+        let errors = errors.clone();
+        move || {
+            let _ = sender.send(Controller::with_test_config(
+                circuit,
+                &config,
+                Box::new(move |e, _| errors.lock().unwrap().push(e.to_string())),
+            ));
+        }
+    });
+    let controller = receiver
+        .recv_timeout(Duration::from_secs(30))
+        .expect("restart never finished")
+        .unwrap_or_else(|e| panic!("restart failed: {e}"));
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        DEFAULT_TIMEOUT_MS,
+    );
+    let errors = errors.lock().unwrap().clone();
+    assert!(errors.is_empty(), "replay failed: {errors:?}");
+    replayed.expect("replay never finished");
+    assert_eq!(count_rows(&controller, "test_input1"), 1);
+    controller.stop().unwrap();
+}
+
 /// Returns the names of the ad hoc INSERT input endpoints of `controller`.
 fn adhoc_input_endpoints(controller: &Controller) -> Vec<String> {
     controller
