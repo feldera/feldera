@@ -20,6 +20,7 @@ export {
     compareMetrics,
     CircuitProfile,
     PropertyValue,
+    type PropertyValueParser,
     MissingValue,
     BytesValue,
     CountValue,

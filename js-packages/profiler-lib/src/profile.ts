@@ -324,6 +324,17 @@ export abstract class PropertyValue implements Comparable<PropertyValue> {
     abstract average(others: PropertyValue[]): PropertyValue;
 }
 
+/** Parses an untyped JSON value into a `PropertyValue`. A `PropertyValue` class implements this
+ * interface with a static `fromJson`, because TypeScript has no abstract static methods. */
+export interface PropertyValueParser {
+    /** Returns `undefined` when `raw` has the wrong JSON type for this parser. */
+    fromJson(raw: unknown): PropertyValue | undefined;
+}
+
+function isFiniteNumber(raw: unknown): raw is number {
+    return typeof raw === "number" && Number.isFinite(raw);
+}
+
 /** A property value represented as a numerator and denominator, which are supposed to represent a percentage. */
 export class PercentValue extends PropertyValue {
     readonly numerator: number;
@@ -432,6 +443,10 @@ export class CountValue extends PropertyValue {
         return new CountValue(value.value);
     }
 
+    static fromJson(raw: unknown): CountValue | undefined {
+        return isFiniteNumber(raw) ? new CountValue(raw) : undefined;
+    }
+
     getNumericValue(): Option<number> {
         return Option.some(this.value);
     }
@@ -478,6 +493,10 @@ export class BytesValue extends PropertyValue {
 
     static fromBytesMetric(value: BytesMetricValue): BytesValue {
         return new BytesValue(value.value);
+    }
+
+    static fromJson(raw: unknown): BytesValue | undefined {
+        return isFiniteNumber(raw) ? new BytesValue(raw) : undefined;
     }
 
     getNumericValue(): Option<number> {
@@ -531,6 +550,10 @@ export class BooleanValue extends PropertyValue {
 
     static fromBoolMetric(value: BoolMetricValue): BooleanValue {
         return new BooleanValue(value.value);
+    }
+
+    static fromJson(raw: unknown): BooleanValue | undefined {
+        return typeof raw === "boolean" ? new BooleanValue(raw) : undefined;
     }
 
     override isComparable(): boolean {
@@ -605,6 +628,10 @@ export class StringValue extends PropertyValue {
 
     static fromString(value: string): StringValue {
         return new StringValue(value);
+    }
+
+    static fromJson(raw: unknown): StringValue | undefined {
+        return typeof raw === "string" ? new StringValue(raw) : undefined;
     }
 
     override isComparable(): boolean {
