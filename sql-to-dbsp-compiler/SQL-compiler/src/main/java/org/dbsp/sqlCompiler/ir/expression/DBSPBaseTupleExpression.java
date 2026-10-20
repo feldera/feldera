@@ -34,7 +34,9 @@ import org.dbsp.util.Shuffle;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 
@@ -46,6 +48,52 @@ public abstract class DBSPBaseTupleExpression
     public final DBSPExpression[] fields;
 
     public int size() { return Objects.requireNonNull(this.fields).length; }
+
+    /** The fields a tuple expression was built from, or the fields of the components of a raw
+     * tuple, each a tuple expression or a raw tuple, concatenated; null for any other expression. */
+    @Nullable
+    public static List<DBSPExpression> columns(DBSPExpression expression) {
+        if (expression.is(DBSPTupleExpression.class)) {
+            DBSPExpression[] fields = expression.to(DBSPTupleExpression.class).fields;
+            return fields == null ? null : Arrays.asList(fields);
+        }
+        if (!expression.is(DBSPRawTupleExpression.class))
+            return null;
+        DBSPExpression[] parts = expression.to(DBSPRawTupleExpression.class).fields;
+        if (parts == null)
+            return null;
+        List<DBSPExpression> result = new ArrayList<>();
+        for (DBSPExpression part : parts) {
+            List<DBSPExpression> fields = columns(part);
+            if (fields == null)
+                return null;
+            result.addAll(fields);
+        }
+        return result;
+    }
+
+    /** The expression rebuilt in the shape of {@code expression} from {@code columns}, which
+     * replace the fields that {@link #columns} returns, in the same order. */
+    public static DBSPExpression withColumns(DBSPExpression expression, List<DBSPExpression> columns) {
+        Iterator<DBSPExpression> remaining = columns.iterator();
+        DBSPExpression result = withColumns(expression, remaining);
+        Utilities.enforce(!remaining.hasNext(), () -> "More columns than fields in " + expression);
+        return result;
+    }
+
+    private static DBSPExpression withColumns(DBSPExpression expression, Iterator<DBSPExpression> columns) {
+        if (expression.is(DBSPTupleExpression.class)) {
+            List<DBSPExpression> fields = new ArrayList<>();
+            for (int i = 0; i < expression.to(DBSPTupleExpression.class).size(); i++)
+                fields.add(columns.next());
+            return new DBSPTupleExpression(fields, expression.getType().mayBeNull);
+        }
+        DBSPExpression[] parts = Objects.requireNonNull(expression.to(DBSPRawTupleExpression.class).fields);
+        DBSPExpression[] rebuilt = new DBSPExpression[parts.length];
+        for (int i = 0; i < parts.length; i++)
+            rebuilt[i] = withColumns(parts[i], columns);
+        return new DBSPRawTupleExpression(rebuilt);
+    }
 
     public DBSPBaseTupleExpression(CalciteObject node, DBSPType type) {
         super(node, type);
