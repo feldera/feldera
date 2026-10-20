@@ -259,13 +259,9 @@ public class BaseSQLTests {
     public final TestRule gen2Run = (base, description) -> new Statement() {
         @Override
         public void evaluate() throws Throwable {
-            try {
-                base.evaluate();
-                for (TestCase testCase : BaseSQLTests.this.gen2Cases)
-                    Gen2Runner.run(testCase);
-            } finally {
-                Gen2Runner.testFinished();
-            }
+            base.evaluate();
+            for (TestCase testCase : BaseSQLTests.this.gen2Cases)
+                Gen2Runner.run(testCase);
         }
     };
 
@@ -477,8 +473,7 @@ public class BaseSQLTests {
     }
 
     public static DBSPCircuit getCircuit(DBSPCompiler compiler) {
-        Gen2Runner.beforeCompile(compiler);
-        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        DBSPCircuit circuit = Gen2Runner.getFinalCircuit(compiler);
         if (circuit == null) {
             compiler.showErrors(System.err);
             throw new RuntimeException("No circuit produced");
