@@ -3,7 +3,7 @@ use crate::{
     algebra::{AddAssignByRef, HasOne, HasZero, IndexedZSet, PartialOrder, ZTrace},
     circuit::{
         OwnershipPreference, Scope, WithClock,
-        circuit_builder::register_replay_stream,
+        bootstrap::register_replay_stream,
         metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::{BinaryOperator, Operator},
     },
@@ -315,7 +315,7 @@ where
         }
 
         let result = builder.done();
-        self.output_batch_stats.add_batch(result.len());
+        self.output_batch_stats.add_batch(result.len_upper_bound());
         result
     }
 

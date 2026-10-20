@@ -46,7 +46,7 @@
     {#if drawer.isMobileDrawer}
       <button
         onclick={() => (drawer.value = !drawer.value)}
-        class="fd fd-book-open btn-icon flex preset-tonal-surface text-[20px]"
+        class="fd fd-book-open btn-icon flex preset-tonal-surface text-[16px]"
         aria-label="Open the right navigation drawer"
       >
       </button>

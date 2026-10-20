@@ -122,13 +122,13 @@ impl fmt::Display for Timestamp {
         if micro == 0 {
             write!(
                 f,
-                "{}-{:02}-{:02} {:02}:{:02}:{:02}",
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
                 year, month, day, hr, min, sec
             )
         } else {
             write!(
                 f,
-                "{}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}",
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}",
                 year, month, day, hr, min, sec, micro
             )
         }
@@ -439,13 +439,13 @@ impl fmt::Display for TimestampTz {
         if micro == 0 {
             write!(
                 f,
-                "{}-{:02}-{:02} {:02}:{:02}:{:02} +00:00",
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02} +00:00",
                 year, month, day, hr, min, sec
             )
         } else {
             write!(
                 f,
-                "{}-{:02}-{:02} {:02}:{:02}:{:02}.{:06} +00:00",
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06} +00:00",
                 year, month, day, hr, min, sec, micro
             )
         }
@@ -2322,7 +2322,7 @@ impl fmt::Display for Date {
         let month = dt.month();
         let day = dt.day();
         let year = dt.year();
-        write!(f, "{}-{:02}-{:02}", year, month, day)
+        write!(f, "{:04}-{:02}-{:02}", year, month, day)
     }
 }
 

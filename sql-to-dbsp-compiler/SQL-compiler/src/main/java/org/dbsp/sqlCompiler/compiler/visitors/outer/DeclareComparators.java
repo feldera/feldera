@@ -31,6 +31,11 @@ public class DeclareComparators extends InnerRewriteVisitor {
         super(compiler, false);
     }
 
+    @Override
+    protected boolean rewritesTypes() {
+        return false;
+    }
+
     DBSPPathExpression process(DBSPComparatorExpression expression) {
         // Some comparators can be reused.
         DBSPPathExpression path = this.done.get(expression);

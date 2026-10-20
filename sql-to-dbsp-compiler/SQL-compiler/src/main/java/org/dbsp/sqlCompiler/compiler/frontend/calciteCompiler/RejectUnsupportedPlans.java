@@ -20,6 +20,7 @@ import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.util.Utilities;
@@ -30,7 +31,10 @@ import org.dbsp.util.Utilities;
  * <ul>
  *   <li>equality comparisons applied to ROW values;</li>
  *   <li>{@code MODE(DISTINCT value)};</li>
- *   <li>RANGE window frames with an offset bound over a nullable ORDER BY expression.</li>
+ *   <li>window aggregates with {@code DISTINCT}, such as {@code COUNT(DISTINCT x) OVER (...)};</li>
+ *   <li>aggregate calls with a {@code WITHIN DISTINCT} clause;</li>
+ *   <li>RANGE window frames with an offset bound over a nullable ORDER BY expression;</li>
+ *   <li>{@code SIMILAR TO} and {@code NOT SIMILAR TO}, which Feldera does not implement.</li>
  * </ul>
  *
  * <p>The SQL standard gives ROW comparisons a meaning that may be surprising:
@@ -55,6 +59,10 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
     public static final Documentation.Link WINDOW_DOCUMENTATION =
             new Documentation.Link("sql/unsupported-operations",
                     "range-frames-with-offsets-over-nullable-columns");
+    public static final Documentation.Link DISTINCT_WINDOW_DOCUMENTATION =
+            new Documentation.Link("sql/unsupported-operations", "distinct-in-window-aggregates");
+    public static final Documentation.Link WITHIN_DISTINCT_DOCUMENTATION =
+            new Documentation.Link("sql/unsupported-operations", "within-distinct-not-supported");
 
     private final CheckExpression checker;
 
@@ -66,7 +74,7 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
     public RelNode visit(RelNode other) {
         RelNode node = super.visitChildren(other);
         if (node instanceof Aggregate aggregate)
-            checkAggregates(aggregate);
+            this.checkAggregates(aggregate);
         // OVER only appears in a Project; the predicates of its input can prove a column NOT NULL
         RelOptPredicateList enclosingPredicates = this.checker.inputPredicates;
         this.checker.inputPredicates = node instanceof Project project ?
@@ -78,12 +86,16 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
         return result;
     }
 
-    /** MODE is rather useless with DISTINCT */
-    static void checkAggregates(Aggregate aggregate) {
+    /** MODE is rather useless with DISTINCT; WITHIN DISTINCT is not implemented */
+    void checkAggregates(Aggregate aggregate) {
         for (AggregateCall agg : aggregate.getAggCallList()) {
             if (agg.getAggregation().getKind() == SqlKind.MODE && agg.isDistinct())
                 throw new UnsupportedException("MODE does not support DISTINCT",
                         CalciteObject.create(aggregate, agg));
+            if (agg.distinctKeys != null)
+                this.checker.reporter.reportError(new SourcePositionRange(agg.getParserPosition()),
+                        UnsupportedException.KIND,
+                        "WITHIN DISTINCT is not supported.\n" + WITHIN_DISTINCT_DOCUMENTATION.citation());
         }
     }
 
@@ -105,8 +117,17 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
 
         @Override
         public RexNode visitOver(RexOver over) {
+            checkDistinct(over);
             this.checkRangeFrame(over);
             return super.visitOver(over);
+        }
+
+        /** Throw if a window aggregate uses DISTINCT; the plan cannot be translated */
+        static void checkDistinct(RexOver over) {
+            if (over.isDistinct())
+                throw new UnsupportedException("Window aggregates do not support DISTINCT.\n" +
+                        DISTINCT_WINDOW_DOCUMENTATION.citation(),
+                        new SourcePositionRange(over.getParserPosition()));
         }
 
         /** Report an error if a RANGE frame with an offset bound orders by an expression that
@@ -156,9 +177,17 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
 
         @Override
         public RexNode visitCall(RexCall call) {
+            checkSimilar(call);
             if (!call.operands.isEmpty() && call.operands.get(0).getType().isStruct())
                 this.checkEquality(call);
             return super.visitCall(call);
+        }
+
+        /** Throw if 'call' is SIMILAR TO; Calcite would otherwise fold it when its operands are constant */
+        static void checkSimilar(RexCall call) {
+            if (call.getKind() == SqlKind.SIMILAR)
+                throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
+                        + " not yet implemented", 1265, CalciteObject.create(call.getParserPosition()));
         }
 
         /** Report an error if 'call' compares its ROW-typed operands for equality */

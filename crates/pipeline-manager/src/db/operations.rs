@@ -1,5 +1,7 @@
 // Database operations that can be performed, grouped into categories.
 // Every operation is implemented to be part of a transaction.
+// A single read-only statement takes `&impl GenericClient` instead, so it can
+// run without a transaction.
 // These operations are building blocks and should be used accordingly as incorrect
 // usage may result in a panic.
 //

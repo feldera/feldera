@@ -6,7 +6,6 @@ use clap::Parser;
 use csv::ReaderBuilder;
 use dbsp::{
     Circuit, OrdZSet, RootCircuit, Runtime, Stream,
-    mimalloc::MiMalloc,
     monitor::TraceMonitor,
     operator::CsvSource,
     typed_batch::DynBatchReader,
@@ -20,9 +19,6 @@ use std::{
     time::Instant,
 };
 use zip::ZipArchive;
-
-#[global_allocator]
-static ALLOC: MiMalloc = MiMalloc;
 
 /*
 .decl p(X: Number, Z: Number)
@@ -248,12 +244,12 @@ fn main() -> Result<()> {
                 .unwrap();
             outp.gather(0).inspect(|zs: &OrdZSet<_>| {
                 if Runtime::worker_index() == 0 {
-                    assert_eq!(zs.len(), 7560179);
+                    assert_eq!(zs.len_upper_bound(), 7560179);
                 }
             });
             outq.gather(0).inspect(|zs: &OrdZSet<_>| {
                 if Runtime::worker_index() == 0 {
-                    assert_eq!(zs.len(), 16595494);
+                    assert_eq!(zs.len_upper_bound(), 16595494);
                 }
             });
             Ok(())

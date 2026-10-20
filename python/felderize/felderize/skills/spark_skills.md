@@ -380,6 +380,7 @@ Feldera uses a `VARIANT` type for JSON. Core functions:
 | Function | Purpose |
 |----------|---------|
 | `PARSE_JSON(string)` | JSON string → `VARIANT` |
+| `TRY_PARSE_JSON(string)` | JSON string → `VARIANT`, `NULL` for invalid JSON |
 | `TO_JSON(variant)` | `VARIANT` → JSON string |
 | `CAST(variant AS type)` | Extract typed value from VARIANT |
 
@@ -396,6 +397,7 @@ VARIANT access patterns:
 | Spark | Feldera | Notes |
 |-------|---------|-------|
 | `parse_json(s)` | `PARSE_JSON(s)` | Returns VARIANT |
+| `try_parse_json(s)` | `TRY_PARSE_JSON(s)` | Returns VARIANT; NULL for invalid JSON |
 | `to_json(v)` | `TO_JSON(v)` | |
 | `json_array_length(s)` | `CARDINALITY(CAST(PARSE_JSON(s) AS VARIANT ARRAY))` | |
 

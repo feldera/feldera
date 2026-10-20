@@ -9,9 +9,91 @@ use std::time::{Duration, Instant};
 use anyhow::{Result as AnyResult, bail};
 use dashmap::DashMap;
 use feldera_adapterlib::catalog::SerCursor;
+pub(crate) use feldera_adapterlib::utils::long_operation::LongOperationWarning;
 use feldera_types::program_schema::SqlIdentifier;
 use itertools::Itertools;
-use tracing::warn;
+use size_of::HumanBytes;
+use tracing::{info, warn};
+
+/// Tracks and reports memory use.
+pub(crate) struct MemoryUseReporter {
+    /// When we were created.
+    ///
+    /// We don't want to report on memory use for a while afterward, since it
+    /// will take some time to reach what we hope is a steady state.
+    start: Instant,
+
+    /// The most recently measured memory use, in bytes.
+    current: u64,
+
+    /// The peak memory use we last reported, in bytes, and when we reported it.
+    ///
+    /// This is a peak value: we only ever report a new value when the usage
+    /// increases substantially from the previously reported value.
+    peak: Option<(Instant, u64)>,
+
+    /// Minimum amount of memory to report on, in bytes.
+    min_memory: u64,
+
+    /// Name of the resource being reported, for use in log messages.
+    name: &'static str,
+}
+
+impl MemoryUseReporter {
+    pub(crate) fn new(name: &'static str, min_memory: u64) -> Self {
+        Self {
+            start: Instant::now(),
+            current: 0,
+            peak: None,
+            min_memory,
+            name,
+        }
+    }
+
+    /// The most recent measured memory use in bytes.
+    pub(crate) fn current(&self) -> usize {
+        self.current as usize
+    }
+
+    /// Updates the record of memory in use to `memory`, in bytes, and logs the
+    /// change if appropriate, which means either:
+    ///
+    /// - Over `min_memory`, after 60 seconds from initialization, or
+    ///
+    /// - Over 10% growth since the previous report.
+    pub(crate) fn update(&mut self, memory: u64) {
+        /// Minimum time before first report.
+        const REPORT_DELAY: Duration = Duration::from_secs(60);
+
+        self.current = memory;
+        if self.start.elapsed() < REPORT_DELAY {
+            return;
+        }
+
+        match &self.peak {
+            None if memory > self.min_memory => {
+                info!(
+                    "{}: {} after {} seconds",
+                    self.name,
+                    HumanBytes::new(memory),
+                    self.start.elapsed().as_secs()
+                );
+            }
+            Some((last_time, last_memory)) if memory > *last_memory * 11 / 10 => {
+                info!(
+                    "{}: Grew {:.0}%, from {} to {}, in last {} seconds",
+                    self.name,
+                    memory as f64 / *last_memory as f64 * 100.0 - 100.0,
+                    HumanBytes::new(*last_memory),
+                    HumanBytes::new(memory),
+                    last_time.elapsed().as_secs()
+                );
+            }
+            _ => return,
+        }
+        self.peak = Some((Instant::now(), memory));
+    }
+}
 
 /// Operations over an indexed view.
 #[derive(Debug)]
@@ -387,7 +469,7 @@ impl TokenBucket {
     fn try_consume_token(&self) -> Option<RateLimitCheckResult> {
         if self
             .available_tokens
-            .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |old| {
+            .try_update(Ordering::AcqRel, Ordering::Relaxed, |old| {
                 if old > 0 { Some(old - 1) } else { None }
             })
             .is_ok()
@@ -448,7 +530,7 @@ impl TokenBucket {
         {
             // Safely add tokens but cap to capacity.
             self.available_tokens
-                .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |old| {
+                .try_update(Ordering::AcqRel, Ordering::Relaxed, |old| {
                     Some((old.saturating_add(tokens_to_add as u32)).min(self.max_tokens))
                 })
                 .ok();
@@ -554,43 +636,13 @@ impl<K: Eq + Hash> TokenBucketRateLimiter<K> {
     }
 }
 
-pub(crate) struct LongOperationWarning {
-    start: Instant,
-    warn_threshold: Duration,
-}
-
-impl LongOperationWarning {
-    pub fn new(warn_threshold: Duration) -> Self {
-        Self {
-            start: Instant::now(),
-            warn_threshold,
-        }
-    }
-
-    pub fn check(&mut self, warn: impl FnOnce(Duration)) {
-        let elapsed = self.start.elapsed();
-        if elapsed >= self.warn_threshold {
-            warn(elapsed);
-            self.warn_threshold *= 2;
-        }
-    }
-
-    pub fn next_warning(&self) -> Instant {
-        self.start + self.warn_threshold
-    }
-
-    pub fn elapsed(&self) -> Duration {
-        self.start.elapsed()
-    }
-}
-
 /// Run any function in a single-worker dbsp::Runtime configured with POSIX storage backend.
 ///
 /// Used to test code that needs to write to storage without creating a circuit.
 #[cfg(test)]
 pub(crate) fn run_in_posix_runtime<F>(
-    min_storage_bytes: Option<usize>,
-    min_step_storage_bytes: Option<usize>,
+    min_spill_size: Option<feldera_types::size::ConfigSize>,
+    min_step_spill_size: Option<feldera_types::size::ConfigSize>,
     test_fn: F,
 ) where
     F: FnOnce() + Send + 'static,
@@ -608,8 +660,8 @@ pub(crate) fn run_in_posix_runtime<F>(
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                min_storage_bytes,
-                min_step_storage_bytes,
+                min_spill_size,
+                min_step_spill_size,
                 ..StorageOptions::default()
             },
         )

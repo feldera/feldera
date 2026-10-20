@@ -10,6 +10,7 @@ use crate::{
             OUTPUT_REDUNDANCY_PERCENT, OperatorMeta, PREFIX_BATCHES_STATS, SHARED_MEMORY_BYTES,
             STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
         },
+        operator_traits::OperatorCheckpoint,
         splitter_output_chunk_size,
     },
     dynamic::{
@@ -22,7 +23,7 @@ use crate::{
     utils::Tup2,
 };
 use async_stream::stream;
-use feldera_storage::{FileCommitter, StoragePath};
+use feldera_storage::StoragePath;
 use futures::{Stream as AsyncStream, StreamExt};
 use size_of::{Context, SizeOf};
 use std::{
@@ -279,11 +280,11 @@ impl MatchStats {
     }
 
     pub fn add_output_batch<Z: ZBatch>(&mut self, batch: &Z) {
-        self.output_batch_stats.add_batch(batch.len())
+        self.output_batch_stats.add_batch(batch.len_upper_bound())
     }
 
     pub fn add_prefix_batch<Z: BatchReader>(&mut self, batch: &Z) {
-        self.prefix_batch_stats.add_batch(batch.len())
+        self.prefix_batch_stats.add_batch(batch.len_upper_bound())
     }
 }
 
@@ -330,9 +331,13 @@ where
         let smallest_snapshot_index = snapshots
             .iter()
             .enumerate()
-            .min_by_key(
-                |(_, (s, _factory, saturate))| if *saturate { usize::MAX } else { s.key_count() },
-            )
+            .min_by_key(|(_, (s, _factory, saturate))| {
+                if *saturate {
+                    usize::MAX
+                } else {
+                    s.key_count_upper_bound()
+                }
+            })
             .unwrap()
             .0;
 
@@ -344,7 +349,8 @@ where
             .collect::<Vec<_>>();
 
         let smallest_trace_cursor = if !snapshots[smallest_snapshot_index].2
-            && snapshots[smallest_snapshot_index].0.key_count() < prefix.key_count()
+            && snapshots[smallest_snapshot_index].0.key_count_upper_bound()
+                < prefix.key_count_upper_bound()
         {
             Some(smallest_snapshot_index)
         } else {
@@ -492,7 +498,7 @@ where
 
         stream! {
             self.stats.borrow_mut().add_prefix_batch(&prefix);
-            self.stats.borrow_mut().trace_sizes = snapshots.iter().map(|(s, _factories, _saturate)| s.len()).collect();
+            self.stats.borrow_mut().trace_sizes = snapshots.iter().map(|(s, _factories, _saturate)| s.len_upper_bound()).collect();
 
             self.empty_input.set(prefix.is_empty());
             self.empty_output.set(true);
@@ -760,7 +766,7 @@ where
             .future_outputs
             .borrow()
             .values()
-            .map(|spine| spine.len())
+            .map(|spine| spine.len_upper_bound())
             .sum();
 
         // let batch_sizes = MetaItem::Array(
@@ -865,12 +871,8 @@ where
         self
     }
 
-    fn checkpoint(
-        &mut self,
-        _base: &StoragePath,
-        _files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), crate::Error> {
-        Ok(())
+    fn checkpoint(&mut self) -> Result<Option<Box<dyn OperatorCheckpoint>>, crate::Error> {
+        Ok(None)
     }
 
     fn restore(&mut self, _base: &StoragePath) -> Result<(), crate::Error> {

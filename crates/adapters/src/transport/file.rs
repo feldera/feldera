@@ -11,6 +11,7 @@ use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark, parse_resume_info};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
+use feldera_types::size::ConfigSize;
 use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -127,7 +128,7 @@ impl FileInputReader {
             .spawn({
                 let follow = config.follow;
                 let path = config.path.clone();
-                let buffer_size = match config.buffer_size_bytes {
+                let buffer_size = match config.buffer_size.map(ConfigSize::as_usize) {
                     Some(size) if size > 0 => size,
                     _ => 8192,
                 };

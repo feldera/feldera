@@ -15,10 +15,10 @@ import {
 } from './chips.js'
 import {
     buildGraphStyle,
+    COLLAPSED_REGION_CORNER_RADIUS,
+    COLLAPSED_REGION_OUTER_HEIGHT,
     DIAGRAM_PALETTES,
     type DiagramTheme,
-    COMPOSITE_CORNER_RADIUS,
-    COMPOSITE_OUTER_HEIGHT,
     ID_FONT_WEIGHT,
     labelWidth,
     NODE_CORNER_RADIUS,
@@ -28,6 +28,7 @@ import {
     REGION_OPACITY,
     REGION_PADDING
 } from './diagramTheme.js'
+import { regionMinWidth } from './regionSize.js'
 
 const graph = (theme: DiagramTheme) =>
     cytoscape({
@@ -40,7 +41,7 @@ const graph = (theme: DiagramTheme) =>
                 { data: { id: 'cool', label: 'cool', value: 5, chips: nodeChips(false, 0, theme) } },
                 { data: { id: 'hot', label: 'hot', value: 99, chips: nodeChips(false, 0, theme) } },
                 { data: { id: 'both', label: 'both', has_source: true, chips: nodeChips(true, 9, theme) } },
-                // A composite that is still collapsed: children exist but are not on the graph.
+                // A circuit region that is still collapsed: children exist but are not on the graph.
                 {
                     data: {
                         id: 'collapsed',
@@ -207,29 +208,29 @@ describe('node geometry', () => {
         expect(node.outerHeight()).toBe(NODE_OUTER_HEIGHT)
     })
 
-    it('gives a collapsed composite a first row for its counter chip', () => {
+    it('gives a collapsed circuit region a first row for its counter chip', () => {
         // The chip sits inside the node, in a row of its own above the text, so the node is taller
         // than an operator by that row.
         const cy = graph('light')
-        expect(cy.$id('collapsed').outerHeight()).toBe(COMPOSITE_OUTER_HEIGHT)
-        expect(COMPOSITE_OUTER_HEIGHT).toBeGreaterThan(NODE_OUTER_HEIGHT)
+        expect(cy.$id('collapsed').outerHeight()).toBe(COLLAPSED_REGION_OUTER_HEIGHT)
+        expect(COLLAPSED_REGION_OUTER_HEIGHT).toBeGreaterThan(NODE_OUTER_HEIGHT)
         // Tall enough for the chip and the gap around it. The stylesheet cannot read chip geometry,
         // the two modules importing each other, so this is where the two are held together.
-        expect(COMPOSITE_OUTER_HEIGHT - NODE_OUTER_HEIGHT)
+        expect(COLLAPSED_REGION_OUTER_HEIGHT - NODE_OUTER_HEIGHT)
             .toBeGreaterThanOrEqual(BADGE_HEIGHT + 2 * CHIP_INSET)
         // An expanded region ignores `height` and sizes itself to its children instead.
-        expect(cy.$id('region').outerHeight()).not.toBe(COMPOSITE_OUTER_HEIGHT)
+        expect(cy.$id('region').outerHeight()).not.toBe(COLLAPSED_REGION_OUTER_HEIGHT)
     })
 
-    it('rounds a composite more softly than the operators it holds', () => {
+    it('rounds a circuit region more softly than the operators it holds', () => {
         const cy = graph('light')
         expect(cy.$id('plain').style('shape')).toBe('round-rectangle')
         expect(cy.$id('plain').style('corner-radius')).toBe(`${NODE_CORNER_RADIUS}px`)
-        expect(cy.$id('collapsed').style('corner-radius')).toBe(`${COMPOSITE_CORNER_RADIUS}px`)
+        expect(cy.$id('collapsed').style('corner-radius')).toBe(`${COLLAPSED_REGION_CORNER_RADIUS}px`)
         expect(cy.$id('region').style('corner-radius')).toBe(`${REGION_CORNER_RADIUS}px`)
         // Every node is a round rectangle, so the radius is one of the two things that separate an
-        // operator from a composite, the border style below being the other.
-        expect(NODE_CORNER_RADIUS).toBeLessThan(COMPOSITE_CORNER_RADIUS)
+        // operator from a circuit region, the border style below being the other.
+        expect(NODE_CORNER_RADIUS).toBeLessThan(COLLAPSED_REGION_CORNER_RADIUS)
     })
 
     it('dashes the region border and leaves operator borders solid', () => {
@@ -255,6 +256,79 @@ describe('expanded regions', () => {
     it('leaves the operators inside a region opaque', () => {
         const cy = graph('light')
         expect(Number(cy.$id('inside').style('background-opacity'))).toBe(1)
+    })
+})
+
+describe('the width of an expanded region', () => {
+    /** A region named `label` that holds one operator `child` pixels wide, sized the way the diagram
+     *  sizes it: `min_width` comes from the node definition, everything else from the stylesheet. */
+    const region = (label: string, leafCount: number, child: number) =>
+        cytoscape({
+            headless: true,
+            styleEnabled: true,
+            style: buildGraphStyle('light'),
+            elements: {
+                nodes: [
+                    {
+                        data: {
+                            id: 'region',
+                            label,
+                            operator: label,
+                            has_children: true,
+                            text_width: labelWidth(label),
+                            min_width: regionMinWidth(label, leafCount),
+                            chips: nodeChips(false, leafCount, 'light')
+                        }
+                    },
+                    {
+                        data: {
+                            id: 'inside',
+                            label: 'inside',
+                            text_width: child,
+                            parent: 'region',
+                            chips: nodeChips(false, 0, 'light')
+                        },
+                        position: { x: 0, y: 0 }
+                    }
+                ]
+            }
+        }).$id('region')
+
+    const LONG = 'region shard_by_index_and_key'
+    const COUNT = 12
+
+    it('pads a narrow region out to what its own name needs', () => {
+        // Cytoscape sizes a parent from its children and ignores the parent's own label, so a region
+        // around one short operator would come out narrower than the name in its top band, and the name
+        // would overflow both borders and run under the counter chip.
+        const node = region(LONG, COUNT, 30)
+        expect(node.children().boundingBox().w).toBeLessThan(labelWidth(LONG))
+        expect(node.outerWidth())
+            .toBeGreaterThanOrEqual(labelWidth(LONG) + 2 * badgePillWidth(formatLeafCount(COUNT)))
+        // The floor is measured against the children, so the region adds its padding around it. That
+        // padding lies inside the band holding the name, which is why `regionMinWidth` subtracts it.
+        expect(node.numericStyle('padding')).toBe(REGION_PADDING)
+    })
+
+    it('leaves a region sized by the nodes inside it when those are the wider ones', () => {
+        // The name of this region fits within the operator it holds, so the floor never applies and the
+        // region stays exactly as wide as that operator.
+        const node = region('region r', 1, 600)
+        // `width()` is the node's body, which for a parent is the box around its children. The padding
+        // drawn outside that box is covered by `node geometry` above.
+        expect(node.width()).toBeCloseTo(node.children().boundingBox().w, 0)
+    })
+
+    it('adds every extra pixel on the right, the side ELK reserves it on', () => {
+        // By default cytoscape splits the extra width evenly between the two sides, which would push
+        // the region into whatever the layout placed to its left.
+        const node = region(LONG, COUNT, 30)
+        const inside = node.children().boundingBox()
+        // Both distances are measured from the body rather than the padded box, so that they are
+        // comparable: the left edge stays on the nodes inside, and the whole widening is on the right.
+        expect(inside.x1 - (node.position().x - node.width() / 2)).toBeCloseTo(0, 0)
+        expect(node.position().x + node.width() / 2 - inside.x2)
+            .toBeCloseTo(regionMinWidth(LONG, COUNT) - inside.w, 0)
     })
 })
 

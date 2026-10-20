@@ -16,6 +16,11 @@
     AggregatedOutputEndpointMetrics,
     PipelineMetrics
   } from '$lib/functions/pipelineMetrics'
+  import {
+    statusChipClass,
+    statusCounterClass,
+    statusToneColors
+  } from '$lib/functions/pipelineStatusColor'
   import type { InputEndpointMetrics, OutputEndpointMetrics } from '$lib/services/manager'
   import type { Snippet } from '$lib/types/svelte'
   import type { ConnectorErrorFilter } from './ConnectorErrors.svelte'
@@ -275,7 +280,7 @@
 {#snippet unhealthyChip(description: string)}
   <span
     data-testid="box-unhealthy-chip"
-    class="-my-1 ml-2 chip preset-filled-error-50-950 uppercase">unhealthy</span
+    class="-my-1 ml-2 {statusChipClass} {statusToneColors.error.chip}">Unhealthy</span
   >
   <Popover class="z-20 max-w-lg">
     <div class="flex flex-row-reverse flex-nowrap items-start gap-4">
@@ -362,7 +367,7 @@
   >
     {#snippet label(item)}
       {item.value}{#if item.value === 'unhealthy' && unhealthyCount > 0}<span
-          class="ml-2 rounded bg-error-50-950 px-2">{unhealthyCount}</span
+          class="ml-2 {statusCounterClass} {statusToneColors.error.chip}">{unhealthyCount}</span
         >{/if}
     {/snippet}
   </SegmentedControl>

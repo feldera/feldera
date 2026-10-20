@@ -20,13 +20,11 @@ use crate::{
     },
     utils::{ConsolidatePairedSlices, Tup2},
 };
-use feldera_storage::FileReader;
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::any::TypeId;
 use std::fmt::{self, Debug, Display, Formatter};
-use std::sync::Arc;
 
 pub type VecValBatchLayer<K, V, T, R, O> = Layer<K, Layer<V, Leaf<DynDataTyped<T>, R>, O>, O>;
 
@@ -354,6 +352,12 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
+    fn is_empty(&self) -> bool {
+        // `len_upper_bound` counts a (key, value) pair once per time for this batch
+        // type, so it can exceed the pair count, but it is zero exactly when the
+        // batch is empty.
+        self.len_upper_bound() == 0
+    }
     type Key = K;
     type Val = V;
     type Time = T;
@@ -381,11 +385,11 @@ where
         todo!()
     }*/
 
-    fn key_count(&self) -> usize {
+    fn key_count_upper_bound(&self) -> usize {
         <VecValBatchLayer<K, V, T, R, O> as Trie>::keys(&self.layer)
     }
 
-    fn len(&self) -> usize {
+    fn len_upper_bound(&self) -> usize {
         <VecValBatchLayer<K, V, T, R, O> as Trie>::tuples(&self.layer)
     }
 
@@ -416,10 +420,6 @@ where
     type Timed<T2: Timestamp> = VecValBatch<K, V, T2, R, O>;
     type Batcher = MergeBatcher<Self>;
     type Builder = VecValBuilder<K, V, T, R, O>;
-
-    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
-        unimplemented!()
-    }
 
     fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
         Some((self.layer.keys.first()?, self.layer.keys.last()?))
@@ -470,6 +470,13 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // The layer stores a key's values contiguously, so the value cursor's
+        // bounds are the count.  The times under each value are not counted.
+        let (start, end) = self.cursor.child.bounds();
+        end - start
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.cursor.child.child.storage.factories.diff
     }

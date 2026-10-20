@@ -46,7 +46,7 @@ state is tracked by the storage status.
 
 **Relevant API fields:**
 - `deployment_id` (set becoming `Provisioning`, unset becoming `Stopping`)
-- `deployment_config` (set becoming `Provisioning`, unset becoming `Stopping`)
+- `deployment_config` (set becoming `Provisioning`, kept afterwards as the configuration of the most recent deployment)
 - `deployment_error` (set becoming `Stopping` or `Stopped` (if error), must be unset to have desired status
    become `Provisioned` (either via `/start?dismiss_error=true` (default) or `/dismiss_error`))
 - `deployment_initial` (set when desired status becomes `Provisioned`, unset becoming `Stopping`
@@ -187,6 +187,34 @@ There are several transition restrictions:
   `Paused` or `Running` again by stopping (which will happen automatically) and starting the pipeline.
 
 The diagram will be added in the future.
+
+### Multihost pipeline startup
+
+A multihost pipeline runs one pipeline process on each host, and a
+coordinator in front of them.  While it starts, its runtime status is
+`Initializing`, except while it waits for the user's approval
+(`AwaitingApproval`) or computes modified views (`Bootstrapping`).  The
+`reason` in `deployment_runtime_status_details` tells which stage of
+startup it is in.  The stages happen in this order, but a pipeline skips
+those that do not apply to it:
+
+| Reason | What is happening | If it lasts a long time |
+|--------|-------------------|-------------------------|
+| Looking up pipeline hosts | The coordinator decides which host runs which connectors and views. | This stage is normally instant. |
+| Waiting for pipelines to arrive at Coordination state | The coordinator waits for the pipeline process on every host to start.  A process left over from an earlier run is restarted. | A host has not started, for example because the cluster cannot schedule it. |
+| Waiting in standby mode | The pipeline is in standby, and waits to be activated. | The pipeline waits for `/activate`. |
+| Pulling latest checkpoint from object storage | Every host downloads the latest checkpoint. | The checkpoint is large, or object storage is slow. |
+| Obtaining checkpoint lists from pipelines | The coordinator chooses the latest checkpoint that every host has. | This stage is normally quick. |
+| Initializing input connectors on host 0, before activating the other hosts | A [distributed input connector](/connectors#distributed) needs host 0 to choose a value before the other hosts start, such as the version of a Delta Lake table.  Host 0 restores its checkpoint and initializes its connectors; the other hosts wait. | Host 0 restores a large checkpoint, or one of its connectors is slow to connect to its source. |
+| Activating pipelines | The coordinator tells every host to start. | This stage is normally quick. |
+| Waiting for pipelines to arrive at Paused state | Every host restores its checkpoint and initializes its connectors. | A host restores a large checkpoint, or a connector is slow to connect to its source or sink. |
+
+If the pipeline needs approval for changes, the status becomes
+`AwaitingApproval` during the stages in which hosts initialize, and the
+pipeline continues after one approval, even when it starts host 0 first.
+
+If the pipeline process on any host restarts, the whole pipeline restarts
+from the beginning of this sequence.
 
 ## Program status (compilation status)
 

@@ -1,10 +1,7 @@
 use dbsp::{
-    Circuit, OrdZSet, RootCircuit, Runtime, Stream, mimalloc::MiMalloc, operator::Generator,
+    Circuit, OrdZSet, RootCircuit, Runtime, Stream, operator::Generator,
     typed_batch::DynBatchReader, utils::Tup2,
 };
-
-#[global_allocator]
-static ALLOC: MiMalloc = MiMalloc;
 
 fn main() {
     let hruntime = Runtime::run(16, |_parker| {
@@ -115,7 +112,7 @@ fn main() {
 
             paths.gather(0).inspect(|zs: &OrdZSet<_>| {
                 if Runtime::worker_index() == 0 {
-                    println!("paths: {}", zs.len())
+                    println!("paths: {}", zs.len_upper_bound())
                 }
             });
             Ok(())

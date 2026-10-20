@@ -4,10 +4,20 @@ on:
   pull_request:
     # review once when the PR appears (drafts included) and once more when marked ready;
     types: [opened, ready_for_review]
+  # re-run fred on a PR by hand from the Actions tab
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to review"
+        required: true
+        type: number
+
+env:
+  PR: ${{ github.event.pull_request.number || inputs.pr }}
 
 # one review at a time per PR;
 concurrency:
-  group: fred-review-${{ github.event.pull_request.number }}
+  group: fred-review-${{ github.event.pull_request.number || inputs.pr }}
   cancel-in-progress: false
 
 jobs:
@@ -16,14 +26,27 @@ jobs:
   # confirmed the author is a feldera org member.
   gate:
     name: Check the PR author
+    # fork PRs get no secrets, so skip them before the token step fails
     if: >-
+      github.event_name == 'workflow_dispatch' || (
       github.event.pull_request.head.repo.full_name == github.repository &&
-      !endsWith(github.event.pull_request.user.login, '[bot]')
+      !endsWith(github.event.pull_request.user.login, '[bot]'))
     runs-on: ubuntu-latest-amd64
     timeout-minutes: 5
+    permissions:
+      pull-requests: read
     outputs:
       author_is_member: ${{ steps.membership.outputs.is_member }}
     steps:
+      # a manual run has no PR in its event, so look the PR up the same way for both triggers
+      - name: Look up the PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" \
+            --jq '"author=\(.user.login)\nhead_repo=\(.head.repo.full_name)"' >> "$GITHUB_OUTPUT"
+
       - name: Generate org membership lookup token
         id: app-token-org
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
@@ -38,9 +61,14 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token-org.outputs.token }}
           ORG: ${{ github.repository_owner }}
-          AUTHOR: ${{ github.event.pull_request.user.login }}
+          AUTHOR: ${{ steps.pr.outputs.author }}
+          HEAD_REPO: ${{ steps.pr.outputs.head_repo }}
         run: |
-          if gh api --silent "orgs/$ORG/members/$AUTHOR"; then
+          # forks and bots never get a review, also not by hand
+          if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ] || [[ "$AUTHOR" == *"[bot]" ]]; then
+            echo "$AUTHOR / $HEAD_REPO is a fork or a bot; no review"
+            echo "is_member=false" >> "$GITHUB_OUTPUT"
+          elif gh api --silent "orgs/$ORG/members/$AUTHOR"; then
             echo "$AUTHOR is a member of $ORG"
             echo "is_member=true" >> "$GITHUB_OUTPUT"
           else
@@ -56,7 +84,7 @@ jobs:
     # no build cache on this runner: crate-scoped checks only, see the prompt
     timeout-minutes: 60
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-6f8e388fcd3b56c72a9305f108ae43dd07e3897e
+      image: ghcr.io/feldera/feldera-dev:sha-a112fd877176bba0f4e5f3475853f918b276d1ef
     permissions:
       # only needed for the Anthropic WIF token exchange; all GitHub access goes through the app token
       id-token: write
@@ -90,6 +118,8 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           token: ${{ steps.app-token-ro.outputs.token }}
+          # a pull_request run checks out the merge ref by default; a manual run must ask for it
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/merge', inputs.pr) || '' }}
           persist-credentials: false
 
       - name: Install review skills
@@ -106,7 +136,18 @@ jobs:
         run: |
           [ -n "$PROMPT" ] || { echo "vars.FRED_REVIEW_PROMPT is unset or empty"; exit 1; }
 
+      - name: Record the review start time
+        id: start
+        run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - uses: anthropics/claude-code-action@8cf3482550831fb35a4fc3fbf7ca139cf8028b4c # v1.0.233
+        env:
+          # The action stops at the SDK's first result message, and the SDK sends one as soon as
+          # Claude ends a turn to wait for a background task. The session then ends green with no
+          # review posted. Foreground-only commands keep the session alive until the work is done.
+          CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+          # crate builds and tests can take longer than the 10 minute default cap
+          BASH_MAX_TIMEOUT_MS: "1800000"
         with:
           settings: ${{ vars.CLAUDE_SETTINGS_JSON }}
           anthropic_federation_rule_id: fdrl_0174FBQ1qv4mn5FPEKjDyhea
@@ -121,7 +162,7 @@ jobs:
           # expressions inside a variable value are not expanded, so the run context stays here
           prompt: |
             REPO: ${{ github.repository }}
-            PR NUMBER: ${{ github.event.pull_request.number }}
+            PR NUMBER: ${{ env.PR }}
 
             ${{ vars.FRED_REVIEW_PROMPT }}
           # the deny list is a cost guard
@@ -132,12 +173,26 @@ jobs:
             --disallowedTools "Bash(git push:*),Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh pr edit:*),Bash(gh pr ready:*),Bash(gh run:*),Bash(gh workflow:*),Bash(cargo build --release:*),Bash(docker:*)"
             --max-turns 180
 
+      - name: Check that fred posted something
+        # a green run with nothing on the PR looks like a review that found nothing
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SINCE: ${{ steps.start.outputs.at }}
+        run: |
+          bot='mythical-fred-oss[bot]'
+          count() { gh api --paginate "repos/$GITHUB_REPOSITORY/$1" \
+            --jq "[.[] | select(.user.login == \"$bot\" and (.${2} // \"\") >= \"$SINCE\")] | length" \
+            | awk '{s+=$1} END {print s+0}'; }
+          n=$(( $(count "issues/$PR/comments" created_at) + $(count "pulls/$PR/comments" created_at) + $(count "pulls/$PR/reviews" submitted_at) ))
+          echo "fred posted $n comment(s) or review(s) since $SINCE"
+          [ "$n" -gt 0 ] || { echo "::error::Claude finished without posting a review"; exit 1; }
+
       - name: Report review failure
         # a silent red X is indistinguishable from "nothing found"; say so on the PR
         if: failure() || cancelled()
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          gh pr comment ${{ github.event.pull_request.number }} \
+          gh pr comment "$PR" \
             --body "fred-review did not finish; see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             || echo "could not post failure comment"

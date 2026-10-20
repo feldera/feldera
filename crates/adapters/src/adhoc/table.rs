@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
@@ -11,6 +10,8 @@ use arrow::datatypes::{Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use datafusion::catalog::{Session, TableProvider};
+use datafusion::common::Result as DFResult;
+use datafusion::common::tree_node::TreeNodeRecursion;
 use datafusion::common::{SchemaExt, exec_err, not_impl_err, plan_err};
 use datafusion::datasource::TableType;
 use datafusion::datasource::sink::{DataSink, DataSinkExec};
@@ -18,7 +19,7 @@ use datafusion::error::DataFusionError;
 use datafusion::execution::{SendableRecordBatchStream, TaskContext};
 use datafusion::logical_expr::Expr;
 use datafusion::logical_expr::dml::InsertOp;
-use datafusion::physical_expr::EquivalenceProperties;
+use datafusion::physical_expr::{EquivalenceProperties, PhysicalExpr};
 use datafusion::physical_plan::execution_plan::{Boundedness, EmissionType};
 use datafusion::physical_plan::metrics::MetricsSet;
 use datafusion::physical_plan::stream::{
@@ -119,10 +120,6 @@ impl AdHocTable {
 
 #[async_trait]
 impl TableProvider for AdHocTable {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn schema(&self) -> SchemaRef {
         self.schema.clone()
     }
@@ -259,10 +256,6 @@ impl DisplayAs for AdHocTableSink {
 
 #[async_trait]
 impl DataSink for AdHocTableSink {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn metrics(&self) -> Option<MetricsSet> {
         None
     }
@@ -398,12 +391,15 @@ impl ExecutionPlan for AdHocQueryExecution {
         "AdHocQueryExecution"
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn properties(&self) -> &Arc<PlanProperties> {
         &self.plan_properties
+    }
+
+    fn apply_expressions(
+        &self,
+        _f: &mut dyn FnMut(&Arc<dyn PhysicalExpr>) -> DFResult<TreeNodeRecursion>,
+    ) -> DFResult<TreeNodeRecursion> {
+        Ok(TreeNodeRecursion::Continue)
     }
 
     fn children(&self) -> Vec<&Arc<dyn ExecutionPlan>> {

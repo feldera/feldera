@@ -58,7 +58,7 @@ impl BuildTo {
             }
 
             // A threshold of zero comes from Critical memory pressure or from
-            // a user who set `min_step_storage_bytes` to 0, and either way the
+            // a user who set `min_step_spill_size` to 0, and either way the
             // point is to keep a step's records out of memory.  An empty batch
             // holds none, and a batch that turns out to hold some spills at
             // its first item through `Threshold` below.  Going to storage on
@@ -76,7 +76,7 @@ impl BuildTo {
             }
             min_step_storage_bytes => {
                 // Start out in memory and spill to storage if
-                // `min_storage_bytes` is used.
+                // `min_spill_size` is used.
                 Self::Threshold(min_step_storage_bytes)
             }
         }

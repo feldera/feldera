@@ -28,7 +28,7 @@ import org.dbsp.util.Utilities;
 import javax.annotation.CheckReturnValue;
 import javax.annotation.Nullable;
 import java.util.Comparator;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -38,6 +38,7 @@ import java.util.function.Function;
  * Most such expressions are constants, but not always. */
 public final class DBSPZSetExpression extends DBSPExpression
         implements IDBSPContainer, ToIndentableString, ISameValue, IConstructor {
+    /** Rows and their weights, in insertion order: visitors must see the rows in a deterministic order */
     public final Map<DBSPExpression, Long> data;
     public final DBSPType elementType;
 
@@ -68,7 +69,7 @@ public final class DBSPZSetExpression extends DBSPExpression
     public DBSPZSetExpression(DBSPExpression... data) {
         super(CalciteObject.EMPTY, new DBSPTypeZSet(getType(data)));
         this.elementType = data[0].getType();
-        this.data = new HashMap<>();
+        this.data = new LinkedHashMap<>();
         for (DBSPExpression e : data) {
             if (!e.getType().sameType(data[0].getType()))
                 throw new RuntimeException("Cannot add value " + e +
@@ -80,7 +81,7 @@ public final class DBSPZSetExpression extends DBSPExpression
 
     public DBSPZSetExpression(Map<DBSPExpression, Long> data, DBSPType elementType) {
         super(CalciteObject.EMPTY, new DBSPTypeZSet(elementType));
-        this.data = data;
+        this.data = new LinkedHashMap<>(data);
         this.elementType = elementType;
     }
 
@@ -90,7 +91,7 @@ public final class DBSPZSetExpression extends DBSPExpression
     public DBSPZSetExpression(DBSPType elementType) {
         super(CalciteObject.EMPTY, new DBSPTypeZSet(elementType));
         this.elementType = elementType;
-        this.data = new HashMap<>();
+        this.data = new LinkedHashMap<>();
     }
 
     /**
@@ -119,7 +120,7 @@ public final class DBSPZSetExpression extends DBSPExpression
 
     @SuppressWarnings("MethodDoesntCallSuperMethod")
     public DBSPZSetExpression clone() {
-        return new DBSPZSetExpression(new HashMap<>(this.data), this.elementType);
+        return new DBSPZSetExpression(this.data, this.elementType);
     }
 
     public DBSPType getElementType() {
@@ -304,7 +305,7 @@ public final class DBSPZSetExpression extends DBSPExpression
     }
 
     public DBSPZSetExpression deepCopy() {
-        Map<DBSPExpression, Long> newData = new HashMap<>();
+        Map<DBSPExpression, Long> newData = new LinkedHashMap<>();
         for (Map.Entry<DBSPExpression, Long> d : this.data.entrySet()) {
             newData.put(d.getKey().deepCopy(), d.getValue());
         }
@@ -358,7 +359,7 @@ public final class DBSPZSetExpression extends DBSPExpression
         JsonNode w = Utilities.getProperty(node, "weights");
         List<Long> weights = Linq.list(Linq.map(w.elements(), JsonNode::asLong));
         Utilities.enforce(data.size() == weights.size());
-        Map<DBSPExpression, Long> map = new HashMap<>();
+        Map<DBSPExpression, Long> map = new LinkedHashMap<>();
         for (int i = 0; i < data.size(); i++)
             map.put(data.get(i), weights.get(i));
         return new DBSPZSetExpression(map, elementType);

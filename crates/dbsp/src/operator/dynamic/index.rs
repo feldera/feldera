@@ -137,8 +137,11 @@ where
     CI: BatchReader<Key = DynPair<CO::Key, CO::Val>, Val = DynUnit, Time = (), R = CO::R>,
 {
     async fn eval(&mut self, input: &CI) -> CO {
-        let mut builder =
-            <CO as Batch>::Builder::with_capacity(&self.factories, input.len(), input.len());
+        let mut builder = <CO as Batch>::Builder::with_capacity(
+            &self.factories,
+            input.len_upper_bound(),
+            input.len_upper_bound(),
+        );
 
         let mut cursor = input.cursor();
         let mut prev_key = self.factories.key_factory().default_box();
@@ -241,7 +244,7 @@ where
 {
     async fn eval(&mut self, i: &CI) -> CO {
         let mut tuples = self.factories.weighted_items_factory().default_box();
-        tuples.reserve(i.len());
+        tuples.reserve(i.len_upper_bound());
 
         let mut item = self.factories.weighted_item_factory().default_box();
 

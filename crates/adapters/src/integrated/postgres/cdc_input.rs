@@ -27,7 +27,10 @@ use feldera_adapterlib::transport::{Resume, Step, Watermark};
 use feldera_types::config::FtModel;
 use feldera_types::coordination::Completion;
 use feldera_types::format::json::JsonFlavor;
-use feldera_types::transport::postgres::{PostgresCdcReaderConfig, PostgresTlsConfig};
+use feldera_types::transport::postgres::{
+    PostgresCdcBatchConfig, PostgresCdcMemoryBackpressureConfig, PostgresCdcReaderConfig,
+    PostgresTlsConfig,
+};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
@@ -83,6 +86,79 @@ const RESULT_DROPPED_ON_SHUTDOWN: &str = "Async result channel closed before sen
 /// Such writes were never acknowledged, so replaying them is safe.
 fn is_shutdown_error(reason: &str) -> bool {
     reason.contains(TERMINATED_BEFORE_BATCH) || reason.contains(RESULT_DROPPED_ON_SHUTDOWN)
+}
+
+/// etl persists table failures as text, so use the same diagnostics for startup
+/// errors and failures reported later by the table monitor. Keep unrelated
+/// errors free of setup advice and retain the original PostgreSQL diagnostic.
+/// Return a single-layer error so the controller's root-cause formatter shows
+/// the complete message and hint without repeating etl's embedded diagnostics.
+fn with_setup_hint(error: anyhow::Error, run_source_migrations: bool) -> anyhow::Error {
+    let message = error.to_string();
+    let diagnostic = message.to_ascii_lowercase();
+    let permission_denied = [
+        "permission denied",
+        "must be superuser",
+        "must be a superuser",
+        "must be owner",
+    ]
+    .iter()
+    .any(|text| diagnostic.contains(text));
+    let missing_helper = diagnostic.contains("does not exist")
+        && ["etl.describe_table_schema(", "etl.describe_table_identity("]
+            .iter()
+            .any(|function| diagnostic.contains(function));
+    if !permission_denied && !missing_helper {
+        return error;
+    }
+
+    let hint = if run_source_migrations {
+        "With run_source_migrations=true, connect as a superuser to install etl's source \
+         objects. To use a non-superuser role instead, have an administrator install the \
+         source objects and apply the required runtime grants before setting \
+         run_source_migrations=false."
+    } else {
+        "With run_source_migrations=false, have an administrator install or update etl's \
+         source objects and grant EXECUTE on its schema helper functions, SELECT on every \
+         table in the publication and USAGE on their schemas, plus the required database, \
+         etl schema, and state-table privileges. The runtime role also needs the REPLICATION \
+         attribute."
+    };
+    let message = message.trim_end();
+    let separator = if message.ends_with('.') { " " } else { ". " };
+    anyhow!(
+        "{message}{separator}Hint: {hint} State-store migrations still run regardless of this flag. \
+         See 'Running as a non-superuser': {NON_SUPERUSER_DOCS}"
+    )
+}
+
+const NON_SUPERUSER_DOCS: &str =
+    "https://docs.feldera.com/connectors/sources/postgresql-cdc#running-as-a-non-superuser";
+
+/// The `ddl_command_end` event trigger that etl's source migrations install.
+const DDL_EVENT_TRIGGER: &str = "supabase_etl_ddl_message_trigger";
+
+/// Fail when etl's DDL event trigger is missing or disabled. Without it the
+/// source emits no schema-change messages: a dropped column or a changed
+/// column type would then be decoded silently against the stale schema.
+/// `pg_event_trigger` is readable by every role, so the check needs no grant.
+async fn verify_ddl_event_trigger(client: &tokio_postgres::Client) -> AnyResult<()> {
+    let row = client
+        .query_opt(
+            "select evtenabled::text from pg_event_trigger where evtname = $1",
+            &[&DDL_EVENT_TRIGGER],
+        )
+        .await?;
+    let problem = match row {
+        None => "does not exist in the source database",
+        Some(row) if row.get::<_, String>(0) == "D" => "is disabled in the source database",
+        Some(_) => return Ok(()),
+    };
+    Err(anyhow!(
+        "etl's event trigger '{DDL_EVENT_TRIGGER}' {problem}, so schema changes to the \
+         published tables would go unnoticed. Have an administrator recreate or enable it \
+         (see 'Running as a non-superuser': {NON_SUPERUSER_DOCS})"
+    ))
 }
 
 /// Integrated input connector that reads from Postgres via logical replication (CDC).
@@ -676,34 +752,43 @@ impl PostgresCdcInputInner {
         // error, and the most likely one after an unqualified name came to
         // mean `public`. Say so now, with the publication's table list, rather
         // than ingest nothing until the stall monitor speaks.
-        match publication_tables(
-            &self.config.uri,
-            &self.config.tls,
-            &self.config.publication,
-            &self.endpoint_name,
-        )
-        .await
-        {
-            Ok(tables) => {
-                if let Some(problem) = source_table_missing_from(
-                    &self.config.source_table,
-                    &self.config.publication,
-                    &tables,
-                ) {
-                    let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
-                        &self.endpoint_name,
-                        true,
-                        anyhow!(problem),
-                    )));
-                    return;
+        let catalog = connect_pg(&self.config.uri, &self.config.tls, &self.endpoint_name).await;
+        match &catalog {
+            Ok(client) => match publication_tables(client, &self.config.publication).await {
+                Ok(tables) => {
+                    if let Some(problem) = source_table_missing_from(
+                        &self.config.source_table,
+                        &self.config.publication,
+                        &tables,
+                    ) {
+                        let _ =
+                            init_status_sender.send(Err(ControllerError::input_transport_error(
+                                &self.endpoint_name,
+                                true,
+                                anyhow!(problem),
+                            )));
+                        return;
+                    }
                 }
-            }
-            Err(e) => warn!(
-                "postgres_cdc {}: could not list the tables of publication '{}' ({e}); a \
-                 source table the publication does not carry is reported by the stall \
-                 monitor instead",
-                &self.endpoint_name, &self.config.publication
-            ),
+                Err(e) => self.warn_publication_unlisted(&e),
+            },
+            Err(e) => self.warn_publication_unlisted(e),
+        }
+
+        // Skipped source migrations leave the event trigger to an
+        // administrator, so check it before touching the state store: a
+        // never-bootstrapped database then stays untouched. With migrations
+        // enabled the trigger is checked after etl installs it. A failed
+        // catalog connection is left for the state store to report.
+        if let (false, Ok(client)) = (self.config.run_source_migrations, &catalog)
+            && let Err(e) = verify_ddl_event_trigger(client).await
+        {
+            let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
+                &self.endpoint_name,
+                true,
+                e,
+            )));
+            return;
         }
 
         let pipeline_config = PipelineConfig {
@@ -717,20 +802,22 @@ impl PostgresCdcInputInner {
             // failover slots need PostgreSQL 17 or later, so the connector
             // keeps the default slot configuration.
             replication_slot: Default::default(),
-            batch: BatchConfig::default(),
+            batch: batch_config_from(&self.config.batch),
             table_error_retry_delay_ms: PipelineConfig::DEFAULT_TABLE_ERROR_RETRY_DELAY_MS,
             table_error_retry_max_attempts: PipelineConfig::DEFAULT_TABLE_ERROR_RETRY_MAX_ATTEMPTS,
             max_table_sync_workers: PipelineConfig::DEFAULT_MAX_TABLE_SYNC_WORKERS,
             max_copy_connections_per_table: PipelineConfig::DEFAULT_MAX_COPY_CONNECTIONS_PER_TABLE,
             memory_refresh_interval_ms: PipelineConfig::DEFAULT_MEMORY_REFRESH_INTERVAL_MS,
-            memory_backpressure: Some(MemoryBackpressureConfig::default()),
+            memory_backpressure: Some(memory_backpressure_config_from(
+                &self.config.memory_backpressure,
+            )),
             table_sync_copy: TableSyncCopyConfig::IncludeAllTables,
             table_sync_monitor_refresh_interval_ms:
                 PipelineConfig::DEFAULT_TABLE_SYNC_MONITOR_REFRESH_INTERVAL_MS,
             invalidated_slot_behavior: InvalidatedSlotBehavior::default(),
-            // etl reads the source schema through helper functions that its own
-            // source migrations install, so the initial copy needs them.
-            run_source_migrations: true,
+            // The initial copy needs etl's schema helpers. When migrations are
+            // disabled, an administrator must have installed them beforehand.
+            run_source_migrations: self.config.run_source_migrations,
         };
 
         // Use PostgresStore to persist table replication phases across restarts.
@@ -739,10 +826,14 @@ impl PostgresCdcInputInner {
         let store = match PostgresStore::new(self.pipeline_id, pg_conn).await {
             Ok(store) => store,
             Err(e) => {
+                let message = format!("failed to initialize PostgresStore: {e}");
                 let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
                     &self.endpoint_name,
                     true,
-                    anyhow!("failed to initialize PostgresStore: {e}"),
+                    with_setup_hint(
+                        anyhow!(e).context(message),
+                        self.config.run_source_migrations,
+                    ),
                 )));
                 return;
             }
@@ -764,15 +855,19 @@ impl PostgresCdcInputInner {
                 self.copy.set_copy_open(reconciled.copy_outstanding);
             }
             Err(e) => {
+                let message = format!(
+                    "could not reconcile the replication state of table '{}' before \
+                     starting: {e}. The connector keeps its resume position in schema 'etl' \
+                     of the source database and must read and update it at startup; fix the \
+                     reported problem, then restart the pipeline",
+                    self.config.source_table
+                );
                 let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
                     &self.endpoint_name,
                     true,
-                    anyhow!(
-                        "could not reconcile the replication state of table '{}' before \
-                         starting: {e}. The connector keeps its resume position in schema 'etl' \
-                         of the source database and must read and update it at startup; fix the \
-                         reported problem, then restart the pipeline",
-                        self.config.source_table
+                    with_setup_hint(
+                        anyhow!(e).context(message),
+                        self.config.run_source_migrations,
                     ),
                 )));
                 return;
@@ -796,6 +891,7 @@ impl PostgresCdcInputInner {
 
         let table_error_monitor = TableErrorMonitor {
             endpoint_name: self.endpoint_name.clone(),
+            run_source_migrations: self.config.run_source_migrations,
             consumer: self.consumer.clone(),
             store: store.clone(),
             source_table: self.config.source_table.clone(),
@@ -806,7 +902,24 @@ impl PostgresCdcInputInner {
         let mut pipeline = Pipeline::new(pipeline_config, store, destination);
         self.set_etl_shutdown_tx(pipeline.shutdown_tx());
 
-        match pipeline.start().await {
+        let started = match pipeline.start().await {
+            Ok(()) if self.config.run_source_migrations => match &catalog {
+                // The migrations have installed the trigger by now; an
+                // administrator may still have disabled it since.
+                Ok(client) => verify_ddl_event_trigger(client).await,
+                Err(_) => Ok(()),
+            },
+            Ok(()) => Ok(()),
+            Err(e) => {
+                let message = format!("failed to start etl pipeline: {e}");
+                Err(with_setup_hint(
+                    anyhow!(e).context(message),
+                    self.config.run_source_migrations,
+                ))
+            }
+        };
+        drop(catalog);
+        match started {
             Ok(()) => {
                 info!(
                     "postgres_cdc {}: etl pipeline started for publication '{}', table '{}'",
@@ -818,7 +931,7 @@ impl PostgresCdcInputInner {
                 let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
                     &self.endpoint_name,
                     true,
-                    anyhow!("failed to start etl pipeline: {e}"),
+                    e,
                 )));
                 self.shutdown_etl_pipeline();
                 return;
@@ -889,7 +1002,11 @@ impl PostgresCdcInputInner {
                     "postgres_cdc {}: etl pipeline error: {e}",
                     &self.endpoint_name
                 );
-                self.consumer.error(true, anyhow!(e), None);
+                self.consumer.error(
+                    true,
+                    with_setup_hint(anyhow!(e), self.config.run_source_migrations),
+                    None,
+                );
             } else {
                 debug!(
                     "postgres_cdc {}: etl pipeline stopped during shutdown: {e}",
@@ -905,6 +1022,15 @@ impl PostgresCdcInputInner {
 
     fn set_etl_shutdown_tx(&self, shutdown_tx: ShutdownTx) {
         *self.etl_shutdown_tx.lock().unwrap() = Some(shutdown_tx);
+    }
+
+    fn warn_publication_unlisted(&self, error: &anyhow::Error) {
+        warn!(
+            "postgres_cdc {}: could not list the tables of publication '{}' ({error}); a \
+             source table the publication does not carry is reported by the stall \
+             monitor instead",
+            &self.endpoint_name, &self.config.publication
+        );
     }
 
     /// Wait for etl to stop after [`Self::shutdown_etl_pipeline`], for at
@@ -977,6 +1103,7 @@ impl Drop for PostgresCdcInputInner {
 /// Monitor that turns etl table-state failures into Feldera connector failures.
 struct TableErrorMonitor {
     endpoint_name: String,
+    run_source_migrations: bool,
     consumer: Box<dyn InputConsumer>,
     store: PostgresStore,
     source_table: String,
@@ -1231,12 +1358,15 @@ impl TableErrorMonitor {
         let table = if Some(table_id) == target {
             format!(
                 "source table '{}' (etl table {table_id})",
-                &self.source_table
+                self.source_table
             )
         } else {
             format!("table {table_id}")
         };
-        let error = anyhow!("postgres replication error on {table}: {detail}");
+        let error = with_setup_hint(
+            anyhow!("postgres replication error on {table}: {detail}"),
+            self.run_source_migrations,
+        );
         error!("postgres_cdc {}: {error}", &self.endpoint_name);
         self.consumer.error(true, error, None);
         true
@@ -1279,9 +1409,9 @@ impl TableErrorMonitor {
                      seconds, having no other table of publication '{}' left to copy. Its \
                      replication state is {state}. Check that the pipeline and Postgres server \
                      logs report no replication failure{errors}",
-                    &self.source_table,
+                    self.source_table,
                     TABLE_STALL_REPORT.as_secs(),
-                    &self.publication,
+                    self.publication,
                 )
             }
             None => anyhow!(
@@ -1290,8 +1420,8 @@ impl TableErrorMonitor {
                  that the publication carries this table (an unqualified name refers to schema \
                  'public') and that the pipeline and Postgres server logs report no replication \
                  failure{errors}",
-                &self.source_table,
-                &self.publication,
+                self.source_table,
+                self.publication,
                 TABLE_STALL_REPORT.as_secs(),
             ),
         };
@@ -1913,14 +2043,14 @@ enum CopyWrite {
 
 /// Tables `publication` carries, as `(schema, table)`, read from
 /// `pg_publication_tables` over a plain connection to the source.
-async fn publication_tables(
+/// A plain (non-replication) connection for catalog queries at startup.
+async fn connect_pg(
     uri: &str,
     tls: &PostgresTlsConfig,
-    publication: &str,
     endpoint_name: &str,
-) -> AnyResult<Vec<(String, String)>> {
+) -> AnyResult<tokio_postgres::Client> {
     let config: tokio_postgres::Config = uri.parse()?;
-    let client = match make_tls_connector(tls, endpoint_name)? {
+    Ok(match make_tls_connector(tls, endpoint_name)? {
         Some(connector) => {
             let (client, connection) = config.connect(connector).await?;
             tokio::spawn(connection);
@@ -1931,7 +2061,13 @@ async fn publication_tables(
             tokio::spawn(connection);
             client
         }
-    };
+    })
+}
+
+async fn publication_tables(
+    client: &tokio_postgres::Client,
+    publication: &str,
+) -> AnyResult<Vec<(String, String)>> {
     let rows = client
         .query(
             "select schemaname, tablename from pg_publication_tables where pubname = $1",
@@ -2753,6 +2889,26 @@ fn parse_pg_uri(
     })
 }
 
+/// Convert the connector's batch configuration into etl's `BatchConfig`.
+fn batch_config_from(config: &PostgresCdcBatchConfig) -> BatchConfig {
+    BatchConfig {
+        max_fill_ms: config.max_fill_ms,
+        memory_budget_ratio: config.memory_budget_ratio,
+        max_bytes: config.max_size.as_usize(),
+    }
+}
+
+/// Convert the connector's memory backpressure configuration into etl's
+/// `MemoryBackpressureConfig`.
+fn memory_backpressure_config_from(
+    config: &PostgresCdcMemoryBackpressureConfig,
+) -> MemoryBackpressureConfig {
+    MemoryBackpressureConfig {
+        activate_threshold: config.activate_threshold,
+        resume_threshold: config.resume_threshold,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2764,9 +2920,123 @@ mod tests {
     use feldera_adapterlib::catalog::DeCollectionHandle;
     use feldera_adapterlib::format::BufferSize;
     use feldera_types::adapter_stats::ConnectorHealth;
+    use feldera_types::size::ConfigSize;
     use serde_json::json;
     use std::str::FromStr;
     use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn setup_hint_only_for_permission_or_missing_etl_helper_errors() {
+        for run_source_migrations in [false, true] {
+            for diagnostic in [
+                "permission denied for schema etl",
+                "permission denied for table public.orders",
+                "must be superuser to create an event trigger",
+                "must be a superuser to create an event trigger",
+                "must be owner of function emit_schema_change_messages",
+                "function etl.describe_table_schema(integer) does not exist",
+                "function etl.describe_table_identity(oid) does not exist",
+            ] {
+                let error = with_setup_hint(anyhow!(diagnostic), run_source_migrations).to_string();
+                assert!(error.starts_with(diagnostic), "{error}");
+                assert!(
+                    error.contains(&format!(
+                        "With run_source_migrations={run_source_migrations}"
+                    )),
+                    "{error}"
+                );
+                assert!(error.contains("#running-as-a-non-superuser"), "{error}");
+                // A missing SELECT names the table, so the runtime hint must
+                // point at the published tables and not only at etl's objects.
+                assert_eq!(
+                    error.contains("SELECT on every table in the publication"),
+                    !run_source_migrations,
+                    "{error}"
+                );
+            }
+            for diagnostic in [
+                "connection refused",
+                "password authentication failed",
+                "relation public.orders does not exist",
+                "function public.unrelated(oid) does not exist",
+                "Postgres CDC source table is missing required Feldera columns",
+            ] {
+                assert_eq!(
+                    with_setup_hint(anyhow!(diagnostic), run_source_migrations).to_string(),
+                    diagnostic
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn setup_hint_startup_diagnostic_is_displayed_once() {
+        const DIAGNOSTIC: &str = "permission denied for schema etl";
+        const CONTEXT: &str = "failed to start etl pipeline";
+        for run_source_migrations in [false, true] {
+            let e = etl_error!(
+                ErrorKind::SourceQueryFailed,
+                "Failed to run ETL source migrations"
+            )
+            .with_source(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                DIAGNOSTIC,
+            ));
+            // Match pipeline.start()'s error path, including the etl source
+            // and the startup context that already embeds its diagnostic.
+            let message = format!("{CONTEXT}: {e}");
+            let error = with_setup_hint(anyhow!(e).context(message), run_source_migrations);
+            let controller_error = ControllerError::input_transport_error("cdc", true, error);
+            let displayed = controller_error.to_string();
+            assert_eq!(displayed.matches(DIAGNOSTIC).count(), 1, "{displayed}");
+            assert_eq!(displayed.matches(CONTEXT).count(), 1, "{displayed}");
+            assert_eq!(displayed.matches("Hint:").count(), 1, "{displayed}");
+
+            let serialized = serde_json::to_value(&controller_error).unwrap();
+            let serialized_error = serialized["error"].as_str().unwrap();
+            assert_eq!(
+                serialized_error.matches(DIAGNOSTIC).count(),
+                1,
+                "{serialized_error}"
+            );
+            assert_eq!(
+                serialized_error.matches(CONTEXT).count(),
+                1,
+                "{serialized_error}"
+            );
+            assert_eq!(
+                serialized_error.matches("Hint:").count(),
+                1,
+                "{serialized_error}"
+            );
+        }
+    }
+
+    #[test]
+    fn setup_hint_covers_replication_and_avoids_duplicate_periods() {
+        for diagnostic in [
+            "permission denied to start WAL sender",
+            "permission denied to start WAL sender.",
+            "permission denied to start WAL sender.\n",
+        ] {
+            let error = with_setup_hint(anyhow!(diagnostic), false).to_string();
+            assert!(error.contains("WAL sender. Hint:"), "{error}");
+            assert!(
+                error.contains("runtime role also needs the REPLICATION attribute"),
+                "{error}"
+            );
+        }
+        let error = with_setup_hint(anyhow!("permission denied for schema etl"), true).to_string();
+        assert!(
+            error.contains("connect as a superuser to install etl's source objects."),
+            "{error}"
+        );
+        assert!(
+            error.contains("To use a non-superuser role instead, have an administrator install the source objects and apply the required runtime grants"),
+            "{error}"
+        );
+        assert!(!error.contains("in either case"), "{error}");
+    }
 
     /// The startup rollback recognizes both errors a stop leaves behind: the
     /// one the connector records itself when Feldera stops it mid-batch, and
@@ -4307,7 +4577,10 @@ mod tests {
             uri: "postgres://user@localhost:5432/db".to_string(),
             publication: "pub".to_string(),
             source_table: "public.t".to_string(),
+            run_source_migrations: true,
             tls: PostgresTlsConfig::default(),
+            batch: PostgresCdcBatchConfig::default(),
+            memory_backpressure: PostgresCdcMemoryBackpressureConfig::default(),
         }
     }
 
@@ -4491,6 +4764,61 @@ mod tests {
             !answered(&flag),
             "the frontier has not passed the step the flush fed, so the write is not durable and \
              its answer drops, which etl records as a re-read on the next start"
+        );
+    }
+
+    #[test]
+    fn test_batch_config_from_maps_all_fields() {
+        let config = PostgresCdcBatchConfig {
+            max_fill_ms: 5_000,
+            memory_budget_ratio: 0.3,
+            max_size: ConfigSize::from_bytes(1024),
+        };
+
+        let etl_config = batch_config_from(&config);
+
+        assert_eq!(etl_config.max_fill_ms, 5_000);
+        assert_eq!(etl_config.memory_budget_ratio, 0.3);
+        assert_eq!(etl_config.max_bytes, 1024);
+    }
+
+    #[test]
+    fn test_batch_config_from_default_matches_connector_default() {
+        let etl_config = batch_config_from(&PostgresCdcBatchConfig::default());
+
+        assert_eq!(etl_config.max_fill_ms, BatchConfig::default().max_fill_ms);
+        assert_eq!(
+            etl_config.memory_budget_ratio,
+            BatchConfig::default().memory_budget_ratio
+        );
+        assert_eq!(etl_config.max_bytes, BatchConfig::default().max_bytes);
+    }
+
+    #[test]
+    fn test_memory_backpressure_config_from_maps_all_fields() {
+        let config = PostgresCdcMemoryBackpressureConfig {
+            activate_threshold: 0.6,
+            resume_threshold: 0.4,
+        };
+
+        let etl_config = memory_backpressure_config_from(&config);
+
+        assert_eq!(etl_config.activate_threshold, 0.6);
+        assert_eq!(etl_config.resume_threshold, 0.4);
+    }
+
+    #[test]
+    fn test_memory_backpressure_config_from_default_matches_connector_default() {
+        let etl_config =
+            memory_backpressure_config_from(&PostgresCdcMemoryBackpressureConfig::default());
+
+        assert_eq!(
+            etl_config.activate_threshold,
+            MemoryBackpressureConfig::default().activate_threshold
+        );
+        assert_eq!(
+            etl_config.resume_threshold,
+            MemoryBackpressureConfig::default().resume_threshold
         );
     }
 }

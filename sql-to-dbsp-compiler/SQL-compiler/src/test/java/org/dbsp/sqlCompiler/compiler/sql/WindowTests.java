@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.quidem.ScottBaseTests;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
@@ -794,5 +795,110 @@ public class WindowTests extends ScottBaseTests {
                  3
                  3
                 (14 rows)""");
+    }
+
+    /** LEAD and LAG with default values supplied as casts of literals;
+     * LAG and LEAD reject a default value that is not a window constant. */
+    @Test
+    public void issue7388() {
+        // Validated on Postgres
+        var ccs = this.getCCS("""
+                CREATE TABLE t (id BIGINT, grp BIGINT, ord_col DATE, val DECIMAL(10,2));
+                CREATE VIEW v AS SELECT id,
+                    SUM(val) OVER (PARTITION BY grp ORDER BY ord_col ROWS BETWEEN 3 PRECEDING AND CURRENT ROW) AS rolling_sum,
+                    LEAD(ord_col, 1, CAST('9999-12-31' AS DATE)) OVER (PARTITION BY grp ORDER BY ord_col ASC) AS next_date,
+                    LAG(ord_col, 1, CAST('0001-01-01' AS DATE)) OVER (PARTITION BY grp ORDER BY ord_col) AS prev_date,
+                    LAG(CAST(ord_col AS TIMESTAMP), 1, CAST('2000-01-01 00:00:00' AS TIMESTAMP))
+                        OVER (PARTITION BY grp ORDER BY ord_col) AS prev_ts
+                FROM t;""");
+        ccs.stepWeightOne("""
+                INSERT INTO t VALUES
+                    (1, 1, '2024-01-01', 10.00),
+                    (2, 1, '2024-02-01', 20.00),
+                    (3, 1, '2024-03-01', 30.00),
+                    (4, 1, '2024-04-01', 40.00),
+                    (5, 1, '2024-05-01', 50.00),
+                    (6, 2, '2024-01-15', 5.50),
+                    (7, 2, '2024-02-15', NULL);""", """
+                 id | rolling_sum | next_date  | prev_date  | prev_ts
+                ---------------------------------------------------------------------
+                 1  | 10.00       | 2024-02-01 | 0001-01-01 | 2000-01-01 00:00:00
+                 2  | 30.00       | 2024-03-01 | 2024-01-01 | 2024-01-01 00:00:00
+                 3  | 60.00       | 2024-04-01 | 2024-02-01 | 2024-02-01 00:00:00
+                 4  | 100.00      | 2024-05-01 | 2024-03-01 | 2024-03-01 00:00:00
+                 5  | 140.00      | 9999-12-31 | 2024-04-01 | 2024-04-01 00:00:00
+                 6  | 5.50        | 2024-02-15 | 0001-01-01 | 2000-01-01 00:00:00
+                 7  | 5.50        | 9999-12-31 | 2024-01-15 | 2024-01-15 00:00:00""");
+        this.statementsFailingInCompilation("""
+                CREATE TABLE t (id BIGINT, grp BIGINT, ord_col DATE, val DECIMAL(10,2));
+                CREATE VIEW v AS SELECT id,
+                    LEAD(val, 1, val) OVER (PARTITION BY grp ORDER BY ord_col) AS next_val
+                FROM t;""", """
+                While compiling:
+                   49|CREATE VIEW v AS SELECT id,
+                   50|    LEAD(val, 1, val) OVER (PARTITION BY grp ORDER BY ord_col) AS next_val
+                   51|FROM t;
+                error: Not yet implemented: 'LEAD' with a default value that is not a constant
+                This is tracked by issue https://github.com/feldera/feldera/issues/7392""");
+    }
+
+    /** Issue 7337: DISTINCT in a window aggregate is rejected. */
+    @Test
+    public void distinctWindowAggregateRejected() {
+        String program = """
+                CREATE TABLE T (
+                    p0 VARCHAR NOT NULL,
+                    ts TIMESTAMP NOT NULL,
+                    p1 VARCHAR
+                );
+
+                CREATE VIEW V AS
+                SELECT
+                    COUNT(DISTINCT p1) OVER w AS dp
+                FROM T
+                WINDOW w AS (
+                    PARTITION BY p0
+                    ORDER BY ts
+                    RANGE BETWEEN INTERVAL '1' HOUR PRECEDING AND CURRENT ROW
+                );""";
+        this.statementsFailingInCompilation(program, """
+                56:5: error: Not supported: Window aggregates do not support DISTINCT.
+                See https://docs.feldera.com/sql/unsupported-operations#distinct-in-window-aggregates
+                   56|    COUNT(DISTINCT p1) OVER w AS dp
+                          ^^^^^^^^^^^^^^^^^^""");
+        // Compilation stops at the unsupported construct, so it is the only error,
+        // even with an index on the rejected view, a view that reads it, and a valid view
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.submitStatementsForCompilation(program + """
+                
+                CREATE INDEX IV ON V(dp);
+                CREATE VIEW W AS SELECT * FROM V WHERE dp > 1;
+                CREATE VIEW X AS SELECT p0 FROM T;
+                CREATE INDEX IX ON X(p0);""");
+        compiler.getFinalCircuit(true);
+        Assert.assertEquals(compiler.messages.toString(), 1, compiler.messages.errorCount());
+        Assert.assertTrue(compiler.messages.toString(),
+                compiler.messages.toString().contains("Window aggregates do not support DISTINCT"));
+        // Calcite expands SUM into SUM0 and COUNT; the error marks the SUM call
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T (p INT NOT NULL, x INT);
+                CREATE VIEW V AS SELECT p, SUM(DISTINCT x) OVER (PARTITION BY p) AS s FROM T;""", """
+                49:28: error: Not supported: Window aggregates do not support DISTINCT.
+                See https://docs.feldera.com/sql/unsupported-operations#distinct-in-window-aggregates
+                   48|CREATE TABLE T (p INT NOT NULL, x INT);
+                   49|CREATE VIEW V AS SELECT p, SUM(DISTINCT x) OVER (PARTITION BY p) AS s FROM T;
+                                                 ^^^^^^^^^^^^^^^""");
+        // DISTINCT does not change the result of these aggregates
+        this.getCC("""
+                CREATE TABLE T (p INT NOT NULL, ts INT NOT NULL, x INT, b BOOLEAN);
+                CREATE VIEW V AS SELECT
+                  MIN(DISTINCT x) OVER w, MAX(DISTINCT x) OVER w,
+                  BIT_AND(DISTINCT x) OVER w, BIT_OR(DISTINCT x) OVER w,
+                  EVERY(DISTINCT b) OVER w, SOME(DISTINCT b) OVER w,
+                  BOOL_AND(DISTINCT b) OVER w, BOOL_OR(DISTINCT b) OVER w,
+                  LOGICAL_AND(DISTINCT b) OVER w, LOGICAL_OR(DISTINCT b) OVER w
+                FROM T
+                WINDOW w AS (PARTITION BY p ORDER BY ts ROWS BETWEEN 2 PRECEDING AND CURRENT ROW);""");
     }
     }

@@ -13,6 +13,11 @@ The following aggregate functions are not supported:
 `REGR_SLOPE`, `REGR_INTERCEPT`, `REGR_R2`, `JSON_AGG`,
 `JSON_OBJECT_AGG`, `LISTAGG`.
 
+### `WITHIN DISTINCT` not supported
+
+The `WITHIN DISTINCT` clause of aggregate functions, as in `SUM(x)
+WITHIN DISTINCT (k)`, is not supported.
+
 ## Window functions (`OVER` clause)
 
 ### Statistics window functions
@@ -60,6 +65,18 @@ requires an `ORDER BY` column that cannot be `NULL`.  To use such a
 frame over a nullable column, filter out the `NULL` values first, for
 example with `WHERE ts IS NOT NULL`.
 See [#7277](https://github.com/feldera/feldera/issues/7277).
+
+### `DISTINCT` in window aggregates
+
+Window aggregates cannot use `DISTINCT`; for example,
+`COUNT(DISTINCT x) OVER (PARTITION BY p ORDER BY ts RANGE BETWEEN
+INTERVAL 1 HOUR PRECEDING AND CURRENT ROW)` is rejected.  The
+exceptions are the aggregates whose results are the same with or
+without `DISTINCT`: `MIN`, `MAX`, `BIT_AND`, `BIT_OR`, `EVERY`,
+`SOME`, `BOOL_AND`, `BOOL_OR`, `LOGICAL_AND`, and `LOGICAL_OR`.  An
+aggregate over a whole partition,
+such as `COUNT(DISTINCT x) OVER (PARTITION BY p)`, can be computed with
+`GROUP BY p` and joined back on `p`.
 
 ### Constant Window Boundaries
 
@@ -159,7 +176,7 @@ details.
 
 The `NOW()` function returns the current timestamp and is updated at
 every processing step (every 1 second by default, configurable via
-`clock_resolution_usecs`).
+`clock_resolution`).
 
 - **In filters**: `NOW()` in `WHERE` clauses for temporal filtering
   (e.g., `WHERE ts >= NOW() - INTERVAL 1 DAY`) is efficient and

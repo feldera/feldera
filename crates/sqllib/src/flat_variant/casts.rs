@@ -408,8 +408,8 @@ macro_rules! decode_numeric {
                         FVRef::Real(x) => Ok([<cast_to_ $name _f>](x)?),
                         FVRef::Double(x) => Ok([<cast_to_ $name _d>](x)?),
                         FVRef::Decimal(sig, scale) => {
-                            match i128::try_from(DynamicDecimal::new(sig, scale)) {
-                                Ok(value) => Ok([<cast_to_ $name _i128>](value)?),
+                            match <$type>::try_from(DynamicDecimal::new(sig, scale)) {
+                                Ok(value) => Ok(value),
                                 Err(_) => Err(cannot_convert(bytes, $sqlname).into()),
                             }
                         }

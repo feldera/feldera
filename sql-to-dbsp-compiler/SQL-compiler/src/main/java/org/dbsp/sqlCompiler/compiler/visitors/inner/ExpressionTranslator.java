@@ -33,7 +33,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
@@ -612,7 +612,7 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> imple
     public void postorder(DBSPZSetExpression node) {
         if (this.done(node))
             return;
-        Map<DBSPExpression, Long> data = new HashMap<>();
+        Map<DBSPExpression, Long> data = new LinkedHashMap<>();
         for (Map.Entry<DBSPExpression, Long> e : node.data.entrySet()) {
             DBSPExpression key = this.getE(e.getKey());
             if (data.containsKey(key))

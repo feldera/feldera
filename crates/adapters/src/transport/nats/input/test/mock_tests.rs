@@ -1,5 +1,6 @@
 use super::mock_framework::*;
 use anyhow::Result as AnyResult;
+use serde_json::json;
 use std::time::Duration;
 
 // ---------------------------------------------------------------------------
@@ -255,26 +256,30 @@ fn test_nats_connection_refused_enters_retry_loop() -> AnyResult<()> {
     let nonexistent_url = "nats://127.0.0.1:59999";
     run_nats_mock_test(
         |_: &str| {
-            format!(
-                r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {nonexistent_url}
-            request_timeout_secs: 1
-        stream_name: {STREAM_NAME}
-        inactivity_timeout_secs: 1
-        consumer_config:
-            deliver_policy: All
-            subjects: [{SUBJECT_NAME}]
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            )
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": nonexistent_url,
+                            "request_timeout_secs": 1,
+                        },
+                        "stream_name": STREAM_NAME,
+                        "inactivity_timeout_secs": 1,
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                            "subjects": [SUBJECT_NAME],
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
@@ -298,27 +303,31 @@ fn test_nats_startup_connection_refused_retries_repeatedly() -> AnyResult<()> {
     let nonexistent_url = "nats://127.0.0.1:59999";
     run_nats_mock_test(
         |_: &str| {
-            format!(
-                r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {nonexistent_url}
-            request_timeout_secs: 1
-        stream_name: {STREAM_NAME}
-        inactivity_timeout_secs: 1
-        retry_interval_secs: 1
-        consumer_config:
-            deliver_policy: All
-            subjects: [{SUBJECT_NAME}]
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            )
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": nonexistent_url,
+                            "request_timeout_secs": 1,
+                        },
+                        "stream_name": STREAM_NAME,
+                        "inactivity_timeout_secs": 1,
+                        "retry_interval_secs": 1,
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                            "subjects": [SUBJECT_NAME],
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
@@ -340,26 +349,30 @@ fn test_nats_stream_not_found_enters_retry_loop() -> AnyResult<()> {
     use NatsMockAction::*;
     run_nats_mock_test(
         |nats_url| {
-            format!(
-                r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {nats_url}
-            request_timeout_secs: 1
-        stream_name: this_stream_does_not_exist
-        inactivity_timeout_secs: 1
-        consumer_config:
-            deliver_policy: All
-            subjects: [{SUBJECT_NAME}]
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            )
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": nats_url,
+                            "request_timeout_secs": 1,
+                        },
+                        "stream_name": "this_stream_does_not_exist",
+                        "inactivity_timeout_secs": 1,
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                            "subjects": [SUBJECT_NAME],
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
@@ -384,26 +397,30 @@ fn test_nats_connection_timeout() -> AnyResult<()> {
     let non_routable_url = "nats://10.255.255.1:4222";
     run_nats_mock_test(
         |_: &str| {
-            format!(
-                r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {non_routable_url}
-            connection_timeout_secs: 1
-            request_timeout_secs: 1
-        stream_name: some_stream
-        inactivity_timeout_secs: 1
-        consumer_config:
-            deliver_policy: All
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            )
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": non_routable_url,
+                            "connection_timeout_secs": 1,
+                            "request_timeout_secs": 1,
+                        },
+                        "stream_name": "some_stream",
+                        "inactivity_timeout_secs": 1,
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
@@ -428,27 +445,31 @@ fn test_nats_pause_interrupts_inflight_retry_attempt() -> AnyResult<()> {
     let non_routable_url = "nats://10.255.255.1:4222";
     run_nats_mock_test(
         |_: &str| {
-            format!(
-                r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {non_routable_url}
-            connection_timeout_secs: 8
-            request_timeout_secs: 8
-        stream_name: some_stream
-        inactivity_timeout_secs: 1
-        retry_interval_secs: 1
-        consumer_config:
-            deliver_policy: All
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            )
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": non_routable_url,
+                            "connection_timeout_secs": 8,
+                            "request_timeout_secs": 8,
+                        },
+                        "stream_name": "some_stream",
+                        "inactivity_timeout_secs": 1,
+                        "retry_interval_secs": 1,
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
@@ -470,27 +491,31 @@ fn test_nats_retry_interval_config_is_honored() -> AnyResult<()> {
     use NatsMockAction::*;
     run_nats_mock_test(
         |nats_url| {
-            format!(
-                r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {nats_url}
-            request_timeout_secs: 1
-        stream_name: missing_stream
-        inactivity_timeout_secs: 1
-        retry_interval_secs: 1
-        consumer_config:
-            deliver_policy: All
-            subjects: [{SUBJECT_NAME}]
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            )
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": nats_url,
+                            "request_timeout_secs": 1,
+                        },
+                        "stream_name": "missing_stream",
+                        "inactivity_timeout_secs": 1,
+                        "retry_interval_secs": 1,
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                            "subjects": [SUBJECT_NAME],
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
@@ -512,31 +537,36 @@ fn test_nats_retry_interval_zero_rejected() {
     use NatsMockAction::*;
     run_nats_mock_test(
         |_nats_url| {
-            r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: nats://127.0.0.1:4222
-        stream_name: some_stream
-        inactivity_timeout_secs: 1
-        retry_interval_secs: 0
-        consumer_config:
-            deliver_policy: All
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            .to_string()
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": "nats://127.0.0.1:4222",
+                        },
+                        "stream_name": "some_stream",
+                        "inactivity_timeout_secs": 1,
+                        "retry_interval_secs": 0,
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
             CreatePipeline,
             ExpectFatalErrorContains {
                 timeout: Duration::from_secs(1),
-                needle: "retry_interval_secs",
+                needle: "`retry_interval`",
             },
         ],
     )

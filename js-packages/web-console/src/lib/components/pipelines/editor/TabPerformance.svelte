@@ -265,7 +265,7 @@
               </WarningBanner>
             {/if}
             <div class="flex flex-wrap gap-4">
-              <div class="mt-1 flex flex-wrap items-center gap-4">
+              <div class="mt-2.5 flex flex-wrap items-center gap-4">
                 <div class="flex flex-col">
                   <div class="text-start text-sm text-nowrap">Records Ingested</div>
                   <div class="pt-2">

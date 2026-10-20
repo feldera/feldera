@@ -28,7 +28,6 @@ use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, 
 use dbsp::{
     Circuit, CircuitBase, Consensus, DBSPHandle, NestedCircuit, NumEntries, OrdIndexedZSet,
     OutputHandle, Runtime, Stream, ZSetHandle, ZWeight,
-    mimalloc::MiMalloc,
     operator::{Min, Z1},
     trace::BatchReaderFactories,
     typed_batch::SpineSnapshot,
@@ -37,9 +36,6 @@ use dbsp::{
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::cell::Cell;
-
-#[global_allocator]
-static ALLOC: MiMalloc = MiMalloc;
 
 type NodeId = u64;
 type Weight = u64;

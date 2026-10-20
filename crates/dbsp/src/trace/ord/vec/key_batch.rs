@@ -18,15 +18,11 @@ use crate::{
     },
     utils::{ConsolidatePairedSlices, Tup2},
 };
-use feldera_storage::FileReader;
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::any::TypeId;
-use std::{
-    fmt::{self, Debug, Display},
-    sync::Arc,
-};
+use std::fmt::{self, Debug, Display};
 
 pub struct VecKeyBatchFactories<K, T, R>
 where
@@ -293,6 +289,12 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
+    fn is_empty(&self) -> bool {
+        // `len_upper_bound` counts a (key, value) pair once per time for this batch
+        // type, so it can exceed the pair count, but it is zero exactly when the
+        // batch is empty.
+        self.len_upper_bound() == 0
+    }
     type Key = K;
     type Val = DynUnit;
     type Time = T;
@@ -319,11 +321,11 @@ where
         todo!()
     }*/
 
-    fn key_count(&self) -> usize {
+    fn key_count_upper_bound(&self) -> usize {
         <VecKeyBatchLayer<K, T, R, O> as Trie>::keys(&self.layer)
     }
 
-    fn len(&self) -> usize {
+    fn len_upper_bound(&self) -> usize {
         <VecKeyBatchLayer<K, T, R, O> as Trie>::tuples(&self.layer)
     }
 
@@ -353,9 +355,6 @@ where
     type Timed<T2: Timestamp> = VecKeyBatch<K, T2, R, O>;
     type Batcher = MergeBatcher<Self>;
     type Builder = VecKeyBuilder<K, T, R, O>;
-    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
-        unimplemented!()
-    }
 
     fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
         Some((self.layer.keys.first()?, self.layer.keys.last()?))
@@ -405,6 +404,12 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // A key batch has no values of its own; the times it carries under the
+        // one unit value are not counted here.
+        self.key_valid() as usize
+    }
+
     // fn key_factory(&self) -> &'static Factory<K> {
     //     self.cursor.storage.factories.key
     // }

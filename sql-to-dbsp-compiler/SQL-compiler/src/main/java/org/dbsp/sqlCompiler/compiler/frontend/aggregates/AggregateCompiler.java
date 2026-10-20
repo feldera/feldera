@@ -48,7 +48,8 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlUserDefinedAggregationFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.SqlArrayAggFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.SqlUserDefinedAggregationFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
@@ -366,10 +367,7 @@ public class AggregateCompiler implements ICompilerComponent {
         }
     }
 
-    void processArrayAgg(SqlBasicAggFunction function) {
-        SqlKind kind = function.getKind();
-        Utilities.enforce(kind == SqlKind.ARRAY_AGG);
-
+    void processArrayAgg(SqlArrayAggFunction function) {
         boolean ignoreNulls = this.call.ignoreNulls();
         boolean distinct = this.call.isDistinct();
         // The result type is ARRAY, but the accumulator is just Vec.
@@ -436,25 +434,19 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression empty = DBSPArrayExpression.emptyWithElementType(elementType, this.resultType.mayBeNull);
         DBSPExpression zero = accumulatorType.emptyVector();
         DBSPVariablePath accumulator = accumulatorType.var();
-        String functionName;
-        DBSPExpression[] arguments;
-        if (ignoreNulls && elementType.mayBeNull) {
-            functionName = "array_agg_opt" + this.resultType.nullableSuffix();
-            arguments = new DBSPExpression[6];
-        } else {
-            functionName = "array_agg" + this.resultType.nullableSuffix();
-            arguments = new DBSPExpression[5];
-        }
-        arguments[0] = accumulator.borrow(true);
-        arguments[1] = ExpressionCompiler.expandTuple(this.node, aggregatedValue);
-        arguments[2] = this.compiler.weightVar;
-        arguments[3] = new DBSPBoolLiteral(distinct);
-        arguments[4] = this.filterArgument >= 0 ? this.filterArgument() : new DBSPBoolLiteral(true);
-        if (arguments.length == 6) {
-            arguments[5] = new DBSPBoolLiteral(ignoreNulls);
-        }
+        String functionName = "array_agg" + this.resultType.nullableSuffix();
+        DBSPExpression keep;
+        if (ignoreNulls && elementType.mayBeNull)
+            keep = this.combinedFilter();
+        else
+            keep = this.filterArgument >= 0 ? this.filterArgument() : new DBSPBoolLiteral(true);
         DBSPExpression increment = new DBSPApplyExpression(
-                node, functionName, DBSPTypeVoid.INSTANCE, arguments);
+                node, functionName, DBSPTypeVoid.INSTANCE,
+                accumulator.borrow(true),
+                ExpressionCompiler.expandTuple(this.node, aggregatedValue),
+                this.compiler.weightVar,
+                new DBSPBoolLiteral(distinct),
+                keep);
         DBSPTypeUser semigroup = new DBSPTypeUser(
                 node, SEMIGROUP, "ConcatSemigroup", false, accumulatorType);
         DBSPVariablePath p = accumulatorType.var();
@@ -489,14 +481,9 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processBasic(SqlBasicAggFunction function) {
-        // ARRAY_AGG or
-        // ARG_MAX(value, compared).
-        // For ARG_MAX first argument is the output, and has type `this.returnType`
+        // ARG_MAX(value, compared) or ARG_MIN(value, compared).
+        // The first argument is the output, and has type `this.returnType`
         SqlKind kind = function.getKind();
-        if (kind == SqlKind.ARRAY_AGG) {
-            this.processArrayAgg(function);
-            return;
-        }
         MinMaxAggregate.Operation operation;
         DBSPOpcode opcode;
         String semigroupName;
@@ -1253,7 +1240,8 @@ public class AggregateCompiler implements ICompilerComponent {
     public IAggregate compile() {
         boolean success =
                 this.process(this.aggFunction, SqlCountAggFunction.class, this::processCount) ||
-                this.process(this.aggFunction, SqlBasicAggFunction.class, this::processBasic) || // arg_max or array_agg
+                this.process(this.aggFunction, SqlArrayAggFunction.class, this::processArrayAgg) ||
+                this.process(this.aggFunction, SqlBasicAggFunction.class, this::processBasic) || // arg_max, arg_min
                 this.process(this.aggFunction, SqlMinMaxAggFunction.class, this::processMinMax) ||
                 this.process(this.aggFunction, SqlSumAggFunction.class, this::processSum) ||
                 this.process(this.aggFunction, SqlSumEmptyIsZeroAggFunction.class, this::processSumZero) ||

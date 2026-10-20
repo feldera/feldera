@@ -30,7 +30,6 @@ use std::{
     iter::once,
     marker::PhantomData,
     ops::{Div, Mul},
-    str::FromStr,
     sync::LazyLock,
 };
 
@@ -182,6 +181,12 @@ pub(crate) fn cast_null(t: &str) -> Box<SqlRuntimeError> {
     SqlRuntimeError::from_string(format!("cast of NULL value to non-null type {}", t))
 }
 
+/// Removes the leading and trailing characters with code points up to
+/// U+0020, using the same rules as Java's `String.trim`.
+fn java_trim(value: &str) -> &str {
+    value.trim_matches(|c: char| c <= ' ')
+}
+
 // Creates three cast functions based on an existing one
 // The original function is
 // cast_to_ $result_name _ $type_name( value: $arg_type ) -> SqlResult<$result_type>
@@ -311,7 +316,7 @@ cast_to_b!(u, usize);
 
 #[doc(hidden)]
 pub fn cast_to_b_s(value: SqlString) -> SqlResult<bool> {
-    match value.str().to_lowercase().trim() {
+    match java_trim(&value.str().to_lowercase()) {
         "true" => Ok(true),
         "false" => Ok(false),
         _ => Err(SqlRuntimeError::from_string(format!(
@@ -365,7 +370,7 @@ pub fn cast_to_bN_bN(value: Option<bool>) -> SqlResult<Option<bool>> {
 
 #[doc(hidden)]
 pub fn cast_to_Date_s(value: SqlString) -> SqlResult<Date> {
-    match NaiveDate::parse_from_str(value.str(), "%Y-%m-%d") {
+    match NaiveDate::parse_from_str(java_trim(value.str()), "%Y-%m-%d") {
         Ok(value) => Ok(Date::from_days(
             (value.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp() / 86400) as i32,
         )),
@@ -410,7 +415,7 @@ cast_function!(Date, Date, Date, Date);
 
 #[doc(hidden)]
 pub fn cast_to_Time_s(value: SqlString) -> SqlResult<Time> {
-    match NaiveTime::parse_from_str(value.str(), "%H:%M:%S%.f") {
+    match NaiveTime::parse_from_str(java_trim(value.str()), "%H:%M:%S%.f") {
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "Error converting {value} to TIME: {}",
             e
@@ -555,11 +560,9 @@ pub fn cast_to_SqlDecimal_fN<const P: usize, const S: usize>(
 pub fn cast_to_SqlDecimal_s<const P: usize, const S: usize>(
     value: SqlString,
 ) -> SqlResult<SqlDecimal<P, S>> {
-    let str = value.str().trim();
-    match str.parse() {
-        Err(_) => Err(SqlRuntimeError::from_string(format!(
-            "While converting '{}' to DECIMAL: parse error",
-            value
+    match java_trim(value.str()).parse::<SqlDecimal<P, S>>() {
+        Err(e) => Err(SqlRuntimeError::from_string(format!(
+            "Error converting '{value}' to DECIMAL({P}, {S}): {e}"
         ))),
         Ok(result) => Ok(result),
     }
@@ -570,7 +573,7 @@ pub fn cast_to_SqlDecimal_sN<const P: usize, const S: usize>(
     value: Option<SqlString>,
 ) -> SqlResult<SqlDecimal<P, S>> {
     match value {
-        None => Ok(<SqlDecimal<P, S> as num_traits::Zero>::zero()),
+        None => Err(cast_null("DECIMAL")),
         Some(value) => cast_to_SqlDecimal_s::<P, S>(value),
     }
 }
@@ -757,13 +760,7 @@ pub fn cast_to_SqlDecimalN_fN<const P: usize, const S: usize>(
 pub fn cast_to_SqlDecimalN_s<const P: usize, const S: usize>(
     value: SqlString,
 ) -> SqlResult<Option<SqlDecimal<P, S>>> {
-    match SqlDecimal::<P, S>::from_str(value.str()) {
-        Ok(value) => Ok(Some(value)),
-        Err(_) => Err(SqlRuntimeError::from_string(format!(
-            "Cannot parse {} into a DECIMAL({P}, {S})",
-            value.str(),
-        ))),
-    }
+    r2o(cast_to_SqlDecimal_s::<P, S>(value))
 }
 
 #[doc(hidden)]
@@ -869,7 +866,7 @@ cast_function!(d, F64, f, F32);
 
 #[doc(hidden)]
 pub fn cast_to_d_s(value: SqlString) -> SqlResult<F64> {
-    match value.str().trim().parse::<f64>() {
+    match java_trim(value.str()).parse::<f64>() {
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "Parse error during conversion of '{value}' to DOUBLE: {}",
             e
@@ -943,7 +940,7 @@ cast_function!(f, F32, f, F32);
 
 #[doc(hidden)]
 pub fn cast_to_f_s(value: SqlString) -> SqlResult<F32> {
-    match value.str().trim().parse::<f32>() {
+    match java_trim(value.str()).parse::<f32>() {
         Err(e) => Err(SqlRuntimeError::from_string(format!(
             "Parse error during conversion of '{value}' to REAL: {}",
             e
@@ -1713,7 +1710,7 @@ macro_rules! cast_to_i {
 
             #[doc(hidden)]
             pub fn [< cast_to_ $result_type _s >](value: SqlString) -> SqlResult<$result_type> {
-                match value.str().trim().parse::<$result_type>() {
+                match java_trim(value.str()).parse::<$result_type>() {
                     Ok(value) => Ok(value),
                     Err(e) => Err(SqlRuntimeError::from_string(
                         format!("Error converting '{value}' to {}: {}", tn!($result_type), e)
@@ -1970,12 +1967,12 @@ pub fn cast_to_ShortInterval_HOURS_i32(value: i32) -> SqlResult<ShortInterval> {
 
 #[doc(hidden)]
 pub fn cast_to_ShortInterval_HOURS_i64(value: i64) -> SqlResult<ShortInterval> {
-    let val = value.checked_mul(3600 * 1000);
+    let val = value.checked_mul(3600 * 1000 * 1000);
     match val {
         None => Err(SqlRuntimeError::from_string(format!(
             "Overflow during conversion of {value} to INTERVAL HOURS"
         ))),
-        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
+        Some(value) => Ok(ShortInterval::from_microseconds(value)),
     }
 }
 
@@ -2006,12 +2003,12 @@ pub fn cast_to_ShortInterval_MINUTES_i32(value: i32) -> SqlResult<ShortInterval>
 
 #[doc(hidden)]
 pub fn cast_to_ShortInterval_MINUTES_i64(value: i64) -> SqlResult<ShortInterval> {
-    let val = value.checked_mul(60 * 1000);
+    let val = value.checked_mul(60 * 1000 * 1000);
     match val {
         None => Err(SqlRuntimeError::from_string(format!(
             "Overflow during conversion of {value} to INTERVAL MINUTES"
         ))),
-        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
+        Some(value) => Ok(ShortInterval::from_microseconds(value)),
     }
 }
 
@@ -2042,12 +2039,12 @@ pub fn cast_to_ShortInterval_SECONDS_i32(value: i32) -> SqlResult<ShortInterval>
 
 #[doc(hidden)]
 pub fn cast_to_ShortInterval_SECONDS_i64(value: i64) -> SqlResult<ShortInterval> {
-    let val = value.checked_mul(1000);
+    let val = value.checked_mul(1000 * 1000);
     match val {
         None => Err(SqlRuntimeError::from_string(format!(
             "Overflow during conversion of {value} to INTERVAL SECONDS"
         ))),
-        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
+        Some(value) => Ok(ShortInterval::from_microseconds(value)),
     }
 }
 
@@ -2086,13 +2083,7 @@ pub fn cast_to_ShortInterval_DAYS_u64(value: u64) -> SqlResult<ShortInterval> {
             )));
         }
     };
-    let val = value.checked_mul(86400 * 1000);
-    match val {
-        None => Err(SqlRuntimeError::from_string(format!(
-            "Overflow during conversion of {value} to INTERVAL DAYS"
-        ))),
-        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
-    }
+    cast_to_ShortInterval_DAYS_i64(value)
 }
 
 #[doc(hidden)]
@@ -2123,13 +2114,7 @@ pub fn cast_to_ShortInterval_HOURS_u64(value: u64) -> SqlResult<ShortInterval> {
             )));
         }
     };
-    let val = value.checked_mul(3600 * 1000);
-    match val {
-        None => Err(SqlRuntimeError::from_string(format!(
-            "Overflow during conversion of {value} to INTERVAL HOURS"
-        ))),
-        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
-    }
+    cast_to_ShortInterval_HOURS_i64(value)
 }
 
 #[doc(hidden)]
@@ -2160,13 +2145,7 @@ pub fn cast_to_ShortInterval_MINUTES_u64(value: u64) -> SqlResult<ShortInterval>
             )));
         }
     };
-    let val = value.checked_mul(60 * 1000);
-    match val {
-        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
-        None => Err(SqlRuntimeError::from_string(format!(
-            "Overflow during conversion of {value} to INTERVAL MINUTES"
-        ))),
-    }
+    cast_to_ShortInterval_MINUTES_i64(value)
 }
 
 #[doc(hidden)]
@@ -2197,13 +2176,7 @@ pub fn cast_to_ShortInterval_SECONDS_u64(value: u64) -> SqlResult<ShortInterval>
             )));
         }
     };
-    let val = value.checked_mul(1000);
-    match val {
-        Some(value) => Ok(ShortInterval::from_milliseconds(value)),
-        None => Err(SqlRuntimeError::from_string(format!(
-            "Overflow during conversion of {value} to INTERVAL SECONDS"
-        ))),
-    }
+    cast_to_ShortInterval_SECONDS_i64(value)
 }
 
 cast_function!(ShortInterval_DAYS, ShortInterval, i8, i8);
@@ -2447,12 +2420,13 @@ pub fn cast_to_LongInterval_YEARS_s(value: SqlString) -> SqlResult<LongInterval>
 }
 
 static YEARS_TO_MONTHS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^([-+]?\d+)(-(\d+))?$").unwrap());
+    LazyLock::new(|| Regex::new(r"^([-+])?(\d+)(-(\d+))?$").unwrap());
 
 #[doc(hidden)]
 pub fn cast_to_LongInterval_YEARS_TO_MONTHS_s(value: SqlString) -> SqlResult<LongInterval> {
     if let Some(captures) = YEARS_TO_MONTHS.captures(value.str()) {
-        let yearcap = captures.get(1).unwrap().as_str();
+        let negative = negative(&captures);
+        let yearcap = captures.get(2).unwrap().as_str();
         let mut years = match yearcap.parse::<i32>() {
             Err(e) => {
                 return Err(SqlRuntimeError::from_string(format!(
@@ -2463,13 +2437,13 @@ pub fn cast_to_LongInterval_YEARS_TO_MONTHS_s(value: SqlString) -> SqlResult<Lon
             Ok(years) => years,
         };
         let months: i32;
-        match captures.get(2) {
+        match captures.get(3) {
             None => {
                 months = years;
                 years = 0;
             }
             _ => {
-                let monthcap = captures.get(3).unwrap().as_str();
+                let monthcap = captures.get(4).unwrap().as_str();
                 months = match monthcap.parse() {
                     Ok(months) => months,
                     Err(e) => {
@@ -2478,14 +2452,19 @@ pub fn cast_to_LongInterval_YEARS_TO_MONTHS_s(value: SqlString) -> SqlResult<Lon
                             e
                         )));
                     }
-                }
+                };
+                validate_unit(months as i64, "month", 12)?;
             }
         }
-        let months = if years < 0 {
-            12 * years - months
-        } else {
-            12 * years + months
+        let Some(months) = years
+            .checked_mul(12)
+            .and_then(|year_months| year_months.checked_add(months))
+        else {
+            return Err(SqlRuntimeError::from_string(format!(
+                "Interval '{value}' is out of range for INTERVAL YEAR TO MONTH"
+            )));
         };
+        let months = if negative { -months } else { months };
         Ok(LongInterval::from_months(months))
     } else {
         Err(SqlRuntimeError::from_string(format!(
@@ -2540,22 +2519,58 @@ static MINUTES_TO_SECONDS: LazyLock<Regex> =
 static SECONDS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([+-])?(\d+)([.](\d{1,6}))?$").unwrap());
 
-fn validate_unit(value: i64, name: &str, max: i64) {
+fn validate_unit(value: i64, name: &str, max: i64) -> SqlResult<()> {
     if num::abs(value) >= max {
-        panic!("{name} '{value}' must be between 0 and {max}");
+        return Err(SqlRuntimeError::from_string(format!(
+            "{name} '{value}' must be between 0 and {}",
+            max - 1
+        )));
     }
+    Ok(())
 }
 
-fn validate_hours(value: i64) {
+fn validate_hours(value: i64) -> SqlResult<()> {
     validate_unit(value, "hour", 24)
 }
 
-fn validate_minutes(value: i64) {
+fn validate_minutes(value: i64) -> SqlResult<()> {
     validate_unit(value, "minute", 60)
 }
 
-fn validate_seconds(value: i64) {
+fn validate_seconds(value: i64) -> SqlResult<()> {
     validate_unit(value, "second", 60)
+}
+
+/// Total microseconds in the fields days, hours, minutes, seconds, and milliseconds;
+/// `None` when the total does not fit in an `i64`.
+fn total_microseconds(fields: [i64; 5]) -> Option<i64> {
+    let [days, hours, minutes, seconds, milliseconds] = fields;
+    let hours = days.checked_mul(24)?.checked_add(hours)?;
+    let minutes = hours.checked_mul(60)?.checked_add(minutes)?;
+    let seconds = minutes.checked_mul(60)?.checked_add(seconds)?;
+    let milliseconds = seconds.checked_mul(1000)?.checked_add(milliseconds)?;
+    milliseconds.checked_mul(1000)
+}
+
+/// Builds the interval of type `type_name` parsed from the string `value`
+/// from its non-negative fields days, hours, minutes, seconds, and milliseconds.
+fn short_interval_from_fields(
+    value: &SqlString,
+    type_name: &str,
+    negative: bool,
+    fields: [i64; 5],
+) -> SqlResult<ShortInterval> {
+    let Some(microseconds) = total_microseconds(fields) else {
+        return Err(SqlRuntimeError::from_string(format!(
+            "Interval '{value}' is out of range for {type_name}"
+        )));
+    };
+    let microseconds = if negative {
+        -microseconds
+    } else {
+        microseconds
+    };
+    Ok(ShortInterval::from_microseconds(microseconds))
 }
 
 #[doc(hidden)]
@@ -2609,13 +2624,13 @@ pub fn cast_to_ShortInterval_DAYS_TO_HOURS_s(value: SqlString) -> SqlResult<Shor
             }
             Ok(hours) => hours,
         };
-        validate_hours(hours);
-        let hours = if negative {
-            -days * 24 - hours
-        } else {
-            days * 24 + hours
-        };
-        Ok(ShortInterval::from_milliseconds(hours * 3600 * 1000))
+        validate_hours(hours)?;
+        short_interval_from_fields(
+            &value,
+            "INTERVAL DAY TO HOUR",
+            negative,
+            [days, hours, 0, 0, 0],
+        )
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'days hours'",
@@ -2658,7 +2673,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(value: SqlString) -> SqlResult<Sh
             }
             Ok(hours) => hours,
         };
-        validate_hours(hours);
+        validate_hours(hours)?;
         let mincap = captures.get(4).unwrap().as_str().trim();
         let minutes = match mincap.parse::<i64>() {
             Err(e) => {
@@ -2669,13 +2684,13 @@ pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(value: SqlString) -> SqlResult<Sh
             }
             Ok(minutes) => minutes,
         };
-        validate_minutes(minutes);
-        let minutes = if negative {
-            -(days * 24 + hours) * 60 - minutes
-        } else {
-            (days * 24 + hours) * 60 + minutes
-        };
-        Ok(ShortInterval::from_milliseconds(minutes * 60 * 1000))
+        validate_minutes(minutes)?;
+        short_interval_from_fields(
+            &value,
+            "INTERVAL DAY TO MINUTE",
+            negative,
+            [days, hours, minutes, 0, 0],
+        )
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'days hours:minutes'",
@@ -2716,13 +2731,13 @@ pub fn cast_to_ShortInterval_HOURS_TO_MINUTES_s(value: SqlString) -> SqlResult<S
             }
             Ok(minutes) => minutes,
         };
-        validate_minutes(minutes);
-        let minutes = if negative {
-            -hours * 60 - minutes
-        } else {
-            hours * 60 + minutes
-        };
-        Ok(ShortInterval::from_milliseconds(minutes * 60 * 1000))
+        validate_minutes(minutes)?;
+        short_interval_from_fields(
+            &value,
+            "INTERVAL HOUR TO MINUTE",
+            negative,
+            [0, hours, minutes, 0, 0],
+        )
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'hours:minutes'",
@@ -2761,12 +2776,7 @@ pub fn cast_to_ShortInterval_SECONDS_s(value: SqlString) -> SqlResult<ShortInter
             }
             Ok(ms) => ms,
         };
-        let ms = if negative {
-            -seconds * 1000 - ms
-        } else {
-            seconds * 1000 + ms
-        };
-        Ok(ShortInterval::from_milliseconds(ms))
+        short_interval_from_fields(&value, "INTERVAL SECOND", negative, [0, 0, 0, seconds, ms])
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'seconds.fractions'",
@@ -2798,7 +2808,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(value: SqlString) -> SqlResult<Sh
             }
             Ok(hours) => hours,
         };
-        validate_hours(hours);
+        validate_hours(hours)?;
         let mincap = captures.get(4).unwrap().as_str().trim();
         let minutes = match mincap.parse::<i64>() {
             Err(_) => {
@@ -2809,7 +2819,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(value: SqlString) -> SqlResult<Sh
             }
             Ok(minutes) => minutes,
         };
-        validate_minutes(minutes);
+        validate_minutes(minutes)?;
         let seccap = captures.get(5).unwrap().as_str().trim();
         let seconds = match seccap.parse::<i64>() {
             Err(e) => {
@@ -2820,7 +2830,7 @@ pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(value: SqlString) -> SqlResult<Sh
             }
             Ok(seconds) => seconds,
         };
-        validate_seconds(seconds);
+        validate_seconds(seconds)?;
         let ms = match captures.get(6) {
             None => Ok(0i64),
             Some(_) => {
@@ -2838,12 +2848,12 @@ pub fn cast_to_ShortInterval_DAYS_TO_SECONDS_s(value: SqlString) -> SqlResult<Sh
             }
             Ok(ms) => ms,
         };
-        let ms = if negative {
-            -((days * 24 + hours) * 60 + minutes) * 60000 - seconds * 1000 - ms
-        } else {
-            ((days * 24 + hours) * 60 + minutes) * 60000 + seconds * 1000 + ms
-        };
-        Ok(ShortInterval::from_milliseconds(ms))
+        short_interval_from_fields(
+            &value,
+            "INTERVAL DAY TO SECOND",
+            negative,
+            [days, hours, minutes, seconds, ms],
+        )
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'days hours:minutes:seconds'"
@@ -2875,7 +2885,7 @@ pub fn cast_to_ShortInterval_HOURS_TO_SECONDS_s(value: SqlString) -> SqlResult<S
             }
             Ok(minutes) => minutes,
         };
-        validate_minutes(minutes);
+        validate_minutes(minutes)?;
         let seccap = captures.get(4).unwrap().as_str().trim();
         let seconds = match seccap.parse::<i64>() {
             Err(e) => {
@@ -2886,7 +2896,7 @@ pub fn cast_to_ShortInterval_HOURS_TO_SECONDS_s(value: SqlString) -> SqlResult<S
             }
             Ok(seconds) => seconds,
         };
-        validate_seconds(seconds);
+        validate_seconds(seconds)?;
         let ms = match captures.get(5) {
             None => Ok(0i64),
             Some(_) => {
@@ -2904,12 +2914,12 @@ pub fn cast_to_ShortInterval_HOURS_TO_SECONDS_s(value: SqlString) -> SqlResult<S
             }
             Ok(ms) => ms,
         };
-        let ms = if negative {
-            (-hours * 60 - minutes) * 60000 - seconds * 1000 - ms
-        } else {
-            (hours * 60 + minutes) * 60000 + seconds * 1000 + ms
-        };
-        Ok(ShortInterval::from_milliseconds(ms))
+        short_interval_from_fields(
+            &value,
+            "INTERVAL HOUR TO SECOND",
+            negative,
+            [0, hours, minutes, seconds, ms],
+        )
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'hours:minutes:seconds.fractions'"
@@ -2941,7 +2951,7 @@ pub fn cast_to_ShortInterval_MINUTES_TO_SECONDS_s(value: SqlString) -> SqlResult
             }
             Ok(seconds) => seconds,
         };
-        validate_seconds(seconds);
+        validate_seconds(seconds)?;
         let ms = match captures.get(4) {
             None => Ok(0i64),
             Some(_) => {
@@ -2959,12 +2969,12 @@ pub fn cast_to_ShortInterval_MINUTES_TO_SECONDS_s(value: SqlString) -> SqlResult
             }
             Ok(ms) => ms,
         };
-        let ms = if negative {
-            -minutes * 60000 - seconds * 1000 - ms
-        } else {
-            minutes * 60000 + seconds * 1000 + ms
-        };
-        Ok(ShortInterval::from_milliseconds(ms))
+        short_interval_from_fields(
+            &value,
+            "INTERVAL MINUTE TO SECOND",
+            negative,
+            [0, 0, minutes, seconds, ms],
+        )
     } else {
         Err(SqlRuntimeError::from_string(format!(
             "Interval '{value}' does not have format 'minutes:seconds.fractions'"
@@ -2992,7 +3002,8 @@ cast_function!(
 
 #[doc(hidden)]
 pub fn cast_to_Timestamp_s(value: SqlString) -> SqlResult<Timestamp> {
-    if let Ok(v) = NaiveDateTime::parse_from_str(value.str(), "%Y-%m-%d %H:%M:%S%.f") {
+    let trimmed = java_trim(value.str());
+    if let Ok(v) = NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%d %H:%M:%S%.f") {
         //println!("Parsed successfully {} using {} into {:?} ({})",
         //         value, "%Y-%m-%d %H:%M:%S%.f", result, result.microseconds());
         return Ok(Timestamp::from_naiveDateTime(v));
@@ -3000,7 +3011,7 @@ pub fn cast_to_Timestamp_s(value: SqlString) -> SqlResult<Timestamp> {
 
     // Try just a date.
     // parse_from_str fails to parse a datetime if there is no time in the format!
-    if let Ok(v) = NaiveDate::parse_from_str(value.str(), "%Y-%m-%d") {
+    if let Ok(v) = NaiveDate::parse_from_str(trimmed, "%Y-%m-%d") {
         let dt = v.and_hms_opt(0, 0, 0).unwrap();
         let result = Timestamp::from_microseconds(dt.and_utc().timestamp_micros());
         //println!("Parsed successfully {} using {} into {:?} ({})",
@@ -3197,7 +3208,7 @@ cast_ts!(d, F64);
 
 #[doc(hidden)]
 pub fn cast_to_TimestampTz_s(value: SqlString) -> SqlResult<TimestampTz> {
-    parse_timestamp_tz(value.str())
+    parse_timestamp_tz(java_trim(value.str()))
 }
 
 cast_function!(TimestampTz, TimestampTz, s, SqlString);
@@ -4415,5 +4426,231 @@ mod tests {
                 SqlString::from_ref(expected)
             );
         }
+    }
+
+    #[test]
+    fn string_casts_trim_like_java() {
+        use crate::{
+            F32, F64, cast_to_Date_s, cast_to_SqlDecimal_s, cast_to_SqlDecimalN_s,
+            cast_to_SqlDecimalN_sN, cast_to_Time_s, cast_to_Timestamp_s, cast_to_TimestampTz_s,
+            cast_to_b_s, cast_to_d_s, cast_to_f_s, cast_to_i32_s,
+        };
+
+        // Java's String.trim removes all characters up to U+0020, but not U+00A0
+        let padded = |s: &str| SqlString::from_ref(&format!("\u{1} \t{s}\n"));
+        let decimal = SqlDecimal::<10, 2>::new(150, 2).unwrap();
+        assert_eq!(
+            cast_to_SqlDecimal_s::<10, 2>(padded("1.5")).unwrap(),
+            decimal
+        );
+        assert_eq!(
+            cast_to_SqlDecimalN_s::<10, 2>(padded("1.5")).unwrap(),
+            Some(decimal)
+        );
+        assert_eq!(
+            cast_to_SqlDecimalN_sN::<10, 2>(Some(padded("1.5"))).unwrap(),
+            Some(decimal)
+        );
+        assert_eq!(cast_to_i32_s(padded("7")).unwrap(), 7);
+        assert_eq!(cast_to_d_s(padded("1.5")).unwrap(), F64::from(1.5f64));
+        assert_eq!(cast_to_f_s(padded("1.5")).unwrap(), F32::from(1.5f32));
+        assert!(cast_to_b_s(padded("TRUE")).unwrap());
+
+        let date = "2020-01-02";
+        let time = "10:11:12.5";
+        let timestamp = "2020-01-02 10:11:12.5";
+        let timestamp_tz = "2020-01-02 10:11:12.5 +02:00";
+        let plain = SqlString::from_ref;
+        assert_eq!(
+            cast_to_Date_s(padded(date)).unwrap(),
+            cast_to_Date_s(plain(date)).unwrap()
+        );
+        assert_eq!(
+            cast_to_Time_s(padded(time)).unwrap(),
+            cast_to_Time_s(plain(time)).unwrap()
+        );
+        assert_eq!(
+            cast_to_Timestamp_s(padded(timestamp)).unwrap(),
+            cast_to_Timestamp_s(plain(timestamp)).unwrap()
+        );
+        assert_eq!(
+            cast_to_Timestamp_s(padded(date)).unwrap(),
+            cast_to_Timestamp_s(plain(date)).unwrap()
+        );
+        assert_eq!(
+            cast_to_TimestampTz_s(padded(timestamp_tz)).unwrap(),
+            cast_to_TimestampTz_s(plain(timestamp_tz)).unwrap()
+        );
+
+        let nbsp = SqlString::from_ref("\u{a0}7");
+        assert!(cast_to_i32_s(nbsp.clone()).is_err());
+        assert!(cast_to_SqlDecimal_s::<10, 2>(nbsp).is_err());
+    }
+
+    #[test]
+    fn string_to_decimal_errors() {
+        use crate::{cast_to_SqlDecimal_s, cast_to_SqlDecimal_sN};
+
+        assert_eq!(
+            cast_to_SqlDecimal_sN::<10, 2>(None)
+                .unwrap_err()
+                .to_string(),
+            "cast of NULL value to non-null type DECIMAL"
+        );
+
+        for (input, reason) in [
+            ("1.5x", "Syntax error in numeric value"),
+            ("123456789", "Value out of range"),
+        ] {
+            assert_eq!(
+                cast_to_SqlDecimal_s::<10, 2>(SqlString::from_ref(input))
+                    .unwrap_err()
+                    .to_string(),
+                format!("Error converting '{input}' to DECIMAL(10, 2): {reason}")
+            );
+        }
+    }
+
+    #[test]
+    fn string_to_short_interval_field_out_of_range() {
+        use crate::{
+            cast_to_ShortInterval_DAYS_TO_HOURS_s, cast_to_ShortInterval_DAYS_TO_MINUTES_s,
+            cast_to_ShortInterval_DAYS_TO_SECONDS_s, cast_to_ShortInterval_HOURS_TO_MINUTES_s,
+            cast_to_ShortInterval_HOURS_TO_SECONDS_s, cast_to_ShortInterval_MINUTES_TO_SECONDS_s,
+        };
+
+        let s = SqlString::from_ref;
+        for (result, message) in [
+            (
+                cast_to_ShortInterval_DAYS_TO_HOURS_s(s("1 24")),
+                "hour '24' must be between 0 and 23",
+            ),
+            (
+                cast_to_ShortInterval_DAYS_TO_MINUTES_s(s("1 23:60")),
+                "minute '60' must be between 0 and 59",
+            ),
+            (
+                cast_to_ShortInterval_DAYS_TO_SECONDS_s(s("1 23:59:60")),
+                "second '60' must be between 0 and 59",
+            ),
+            (
+                cast_to_ShortInterval_HOURS_TO_MINUTES_s(s("10:99")),
+                "minute '99' must be between 0 and 59",
+            ),
+            (
+                cast_to_ShortInterval_HOURS_TO_SECONDS_s(s("10:59:60")),
+                "second '60' must be between 0 and 59",
+            ),
+            (
+                cast_to_ShortInterval_MINUTES_TO_SECONDS_s(s("10:60")),
+                "second '60' must be between 0 and 59",
+            ),
+        ] {
+            assert_eq!(result.unwrap_err().to_string(), message);
+        }
+    }
+
+    #[test]
+    fn string_to_interval_overflow() {
+        use crate::{
+            SqlResult, cast_to_LongInterval_YEARS_TO_MONTHS_s,
+            cast_to_ShortInterval_DAYS_TO_HOURS_s, cast_to_ShortInterval_DAYS_TO_MINUTES_s,
+            cast_to_ShortInterval_DAYS_TO_SECONDS_s, cast_to_ShortInterval_HOURS_TO_MINUTES_s,
+            cast_to_ShortInterval_HOURS_TO_SECONDS_s, cast_to_ShortInterval_MINUTES_TO_SECONDS_s,
+            cast_to_ShortInterval_SECONDS_s,
+        };
+
+        let s = SqlString::from_ref;
+        // 100000000 days fit in microseconds; 200000000 days fit only in milliseconds
+        assert_eq!(
+            cast_to_ShortInterval_DAYS_TO_HOURS_s(s("-100000000 0")).unwrap(),
+            ShortInterval::from_microseconds(-100_000_000 * 86_400_000_000)
+        );
+        assert_eq!(
+            cast_to_ShortInterval_DAYS_TO_SECONDS_s(s("-1 10:10:10.123")).unwrap(),
+            ShortInterval::from_microseconds(-123_010_123_000)
+        );
+        let cases: [(fn(SqlString) -> SqlResult<ShortInterval>, &str, &str); 7] = [
+            (
+                cast_to_ShortInterval_DAYS_TO_HOURS_s,
+                "200000000 0",
+                "INTERVAL DAY TO HOUR",
+            ),
+            (
+                cast_to_ShortInterval_DAYS_TO_MINUTES_s,
+                "-200000000 0:0",
+                "INTERVAL DAY TO MINUTE",
+            ),
+            (
+                cast_to_ShortInterval_DAYS_TO_SECONDS_s,
+                "9223372036854775807 0:0:0",
+                "INTERVAL DAY TO SECOND",
+            ),
+            (
+                cast_to_ShortInterval_HOURS_TO_MINUTES_s,
+                "9223372036854775807:0",
+                "INTERVAL HOUR TO MINUTE",
+            ),
+            (
+                cast_to_ShortInterval_HOURS_TO_SECONDS_s,
+                "9223372036854775807:0:0",
+                "INTERVAL HOUR TO SECOND",
+            ),
+            (
+                cast_to_ShortInterval_MINUTES_TO_SECONDS_s,
+                "9223372036854775807:0",
+                "INTERVAL MINUTE TO SECOND",
+            ),
+            (
+                cast_to_ShortInterval_SECONDS_s,
+                "9223372036854775807",
+                "INTERVAL SECOND",
+            ),
+        ];
+        for (cast, input, type_name) in cases {
+            assert_eq!(
+                cast(s(input)).unwrap_err().to_string(),
+                format!("Interval '{input}' is out of range for {type_name}")
+            );
+        }
+        assert_eq!(
+            cast_to_LongInterval_YEARS_TO_MONTHS_s(s("200000000-0"))
+                .unwrap_err()
+                .to_string(),
+            "Interval '200000000-0' is out of range for INTERVAL YEAR TO MONTH"
+        );
+    }
+
+    #[test]
+    fn string_to_year_month_interval() {
+        use crate::cast_to_LongInterval_YEARS_TO_MONTHS_s;
+
+        let cast = |input: &str| cast_to_LongInterval_YEARS_TO_MONTHS_s(SqlString::from_ref(input));
+        for (input, months) in [
+            ("-0-5", -5),
+            ("-1-1", -13),
+            ("+1-11", 23),
+            ("15", 15),
+            ("-15", -15),
+        ] {
+            assert_eq!(cast(input).unwrap(), LongInterval::from_months(months));
+        }
+        assert_eq!(
+            cast("1-12").unwrap_err().to_string(),
+            "month '12' must be between 0 and 11"
+        );
+    }
+
+    #[test]
+    fn number_to_interval_overflow() {
+        use crate::{
+            cast_to_ShortInterval_HOURS_i64, cast_to_ShortInterval_MINUTES_u64,
+            cast_to_ShortInterval_SECONDS_i64,
+        };
+
+        // Each value fits in milliseconds, but not in microseconds
+        assert!(cast_to_ShortInterval_HOURS_i64(2_000_000_000_000).is_err());
+        assert!(cast_to_ShortInterval_MINUTES_u64(200_000_000_000_000).is_err());
+        assert!(cast_to_ShortInterval_SECONDS_i64(10_000_000_000_000_000).is_err());
     }
 }

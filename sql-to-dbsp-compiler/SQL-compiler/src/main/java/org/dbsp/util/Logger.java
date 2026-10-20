@@ -83,6 +83,7 @@ public class Logger {
     * relative to root. */
     static final String[] packages = new String[] {
             "",
+            "visitors",
             "visitors.inner",
             "visitors.outer",
             "visitors.multi",
@@ -92,6 +93,7 @@ public class Logger {
             "visitors.outer.monotonicity",
             "visitors.outer.keys",
             "visitors.outer.indexSharing",
+            "visitors.outer.merkle",
             "visitors.outer.recursive",
             "visitors.outer.temporal",
             "visitors.monotone",

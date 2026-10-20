@@ -1,103 +1,80 @@
 import { match, P } from 'ts-pattern'
 import type { PipelineStatus } from '$lib/services/pipelineManager'
 
+/**
+ * The colour family of a pipeline status. Each tone maps to a pair of
+ * `--color-status-<tone>` theme colours defined in `feldera-theme/feldera-modern.css`.
+ *
+ * - `neutral`: idle or shutting down
+ * - `blue`: busy with a transition (starting, pausing, bootstrapping)
+ * - `jade`: running and processing data
+ * - `warning`: compiling, or needs the user's attention
+ * - `error`: failed
+ */
+export type StatusTone = 'neutral' | 'blue' | 'jade' | 'warning' | 'error'
+
 export interface StatusColors {
   chip: string
   dot: string
-  deploymentChip: string
 }
 
-export const pipelineStatusColor = (status: PipelineStatus): StatusColors => {
-  return (
-    match(status)
-      .with('Stopped', () => ({
-        chip: 'bg-surface-100-900',
-        dot: 'preset-filled-surface-400-600',
-        deploymentChip: ''
-      }))
-      .with('Preparing', 'Provisioning', 'Initializing', () => ({
-        chip: 'preset-filled-tertiary-50-950',
-        dot: 'preset-filled-tertiary-100-900',
-        deploymentChip: 'preset-filled-tertiary-50-950'
-      }))
-      .with('Paused', () => ({
-        chip: 'bg-blue-200 dark:bg-blue-800',
-        dot: 'bg-blue-400 dark:bg-blue-600',
-        deploymentChip: 'bg-blue-200 dark:bg-blue-800'
-      }))
-      .with('Standby', () => ({
-        chip: 'bg-blue-200 dark:bg-blue-800',
-        dot: 'preset-filled-secondary-200-800',
-        deploymentChip: 'preset-filled-secondary-200-800'
-      }))
-      .with('Bootstrapping', () => ({
-        chip: 'bg-blue-200 dark:bg-blue-800',
-        dot: 'preset-filled-secondary-200-800',
-        deploymentChip: 'preset-filled-secondary-200-800'
-      }))
-      .with('Replaying', () => ({
-        chip: 'bg-blue-200 dark:bg-blue-800',
-        dot: 'preset-filled-secondary-200-800',
-        deploymentChip: 'preset-filled-secondary-200-800'
-      }))
-      // Views backfill in the background while the pipeline keeps running.
-      .with('ConcurrentBootstrapping', () => ({
-        chip: 'bg-blue-200 dark:bg-blue-800',
-        dot: 'preset-filled-secondary-200-800',
-        deploymentChip: 'preset-filled-secondary-200-800'
-      }))
-      // Warning coloring flags the brief cutover pause.
-      .with('Synchronizing', () => ({
-        chip: 'preset-filled-warning-200-800',
-        dot: 'preset-filled-warning-400-600',
-        deploymentChip: 'preset-filled-warning-200-800'
-      }))
-      .with('AwaitingApproval', () => ({
-        chip: 'bg-warning-200-800',
-        dot: 'preset-filled-warning-200-800',
-        deploymentChip: 'preset-filled-warning-200-800'
-      }))
-      .with('Running', () => ({
-        chip: 'preset-filled-success-200-800',
-        dot: 'preset-filled-success-400-600',
-        deploymentChip: 'preset-tonal-success'
-      }))
-      .with('Pausing', () => ({
-        chip: 'preset-filled-secondary-200-800',
-        dot: 'preset-filled-secondary-200-800',
-        deploymentChip: 'preset-filled-secondary-200-800'
-      }))
-      .with('Resuming', () => ({
-        chip: 'preset-filled-tertiary-50-950',
-        dot: 'preset-filled-tertiary-100-9000',
-        deploymentChip: 'preset-filled-tertiary-50-950'
-      }))
-      .with('Suspending', 'Suspended', 'Stopping', () => ({
-        chip: 'preset-filled-secondary-200-800',
-        dot: 'preset-filled-secondary-200-800',
-        deploymentChip: 'preset-filled-secondary-200-800'
-      }))
-      .with(
-        { Queued: P.any },
-        { CompilingSql: P.any },
-        { SqlCompiled: P.any },
-        { CompilingRust: P.any },
-        () => ({
-          chip: 'preset-filled-warning-200-800',
-          dot: 'preset-filled-warning-400-600',
-          deploymentChip: ''
-        })
-      )
-      .with('Unavailable', () => ({
-        chip: 'bg-orange-200 dark:bg-orange-800',
-        dot: 'bg-orange-300 dark:bg-orange-700',
-        deploymentChip: 'bg-orange-300 dark:bg-orange-700'
-      }))
-      .with('SqlError', 'RustError', 'SystemError', () => ({
-        chip: 'preset-filled-error-50-950',
-        dot: 'preset-filled-error-400-600',
-        deploymentChip: ''
-      }))
-      .exhaustive()
-  )
+export const pipelineStatusTone = (status: PipelineStatus): StatusTone =>
+  match(status)
+    .returnType<StatusTone>()
+    .with('Stopped', 'Stopping', 'Suspending', 'Suspended', () => 'neutral')
+    .with(
+      { Queued: P.any },
+      { CompilingSql: P.any },
+      { SqlCompiled: P.any },
+      { CompilingRust: P.any },
+      () => 'warning'
+    )
+    .with(
+      'Preparing',
+      'Provisioning',
+      'Initializing',
+      'Pausing',
+      'Paused',
+      'Resuming',
+      'Standby',
+      'Bootstrapping',
+      'Replaying',
+      'ConcurrentBootstrapping',
+      'Synchronizing',
+      () => 'blue'
+    )
+    .with('Running', () => 'jade')
+    .with('AwaitingApproval', 'Unavailable', () => 'warning')
+    .with('SqlError', 'RustError', 'SystemError', () => 'error')
+    .exhaustive()
+
+/**
+ * The shape and type of every status chip: the pipeline status, the transaction
+ * status and the commit progress chips. Combine it with a tone's `chip` colours.
+ */
+export const statusChipClass =
+  'inline-flex items-center rounded-[3px] px-1.5 py-0.5 text-[12px] leading-4 font-medium tracking-[0.04px] whitespace-nowrap'
+
+/**
+ * The shape of a numeric badge next to a tab label or filter, such as an error
+ * count. Combine it with a tone's `chip` colours.
+ */
+export const statusCounterClass = 'inline-block min-w-6 rounded-[3px] px-1 text-center font-medium'
+
+// Class names are spelled out in full so that Tailwind can find them in the source.
+export const statusToneColors: Record<StatusTone, StatusColors> = {
+  neutral: {
+    chip: 'bg-status-neutral-subtle text-status-neutral',
+    dot: 'bg-status-neutral-dot'
+  },
+  blue: { chip: 'bg-status-blue-subtle text-status-blue', dot: 'bg-status-blue-dot' },
+  jade: { chip: 'bg-status-jade-subtle text-status-jade', dot: 'bg-status-jade-dot' },
+  warning: {
+    chip: 'bg-status-warning-subtle text-status-warning',
+    dot: 'bg-status-warning-dot'
+  },
+  error: { chip: 'bg-status-error-subtle text-status-error', dot: 'bg-status-error' }
 }
+
+export const pipelineStatusColor = (status: PipelineStatus): StatusColors =>
+  statusToneColors[pipelineStatusTone(status)]

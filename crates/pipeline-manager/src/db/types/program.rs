@@ -261,8 +261,35 @@ impl SqlCompilationInfo {
     }
 }
 
-/// Rust compilation information.
+/// One rustc diagnostic (error or warning).
 #[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
+pub struct RustCompilerMessage {
+    pub(crate) file: Option<String>,
+    pub(crate) start_line_number: usize,
+    pub(crate) start_column: usize,
+    pub(crate) end_line_number: usize,
+    pub(crate) end_column: usize,
+    pub(crate) warning: bool,
+    pub(crate) error_type: String,
+    pub(crate) message: String,
+    pub(crate) rendered: Option<String>,
+}
+
+impl Display for RustCompilerMessage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{error_type}: {message} (line {start_line_number}, column {start_column})",
+            error_type = self.error_type,
+            message = self.message,
+            start_line_number = self.start_line_number,
+            start_column = self.start_column
+        )
+    }
+}
+
+/// Rust compilation information.
+#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone, Default)]
 pub struct RustCompilationInfo {
     /// Exit code of the `cargo` compilation command.
     pub exit_code: i32,
@@ -270,15 +297,23 @@ pub struct RustCompilationInfo {
     pub stdout: String,
     /// Output printed to stderr by the `cargo` compilation command.
     pub stderr: String,
+    /// Parsed rustc diagnostics. Older stored JSON omits this field.
+    #[serde(default)]
+    pub messages: Vec<RustCompilerMessage>,
 }
 
 impl RustCompilationInfo {
     #[cfg(test)]
-    pub(crate) fn success() -> Self {
+    pub(crate) fn from_process_output_streams(
+        exit_code: i32,
+        stdout: String,
+        stderr: String,
+    ) -> Self {
         Self {
-            exit_code: 0,
-            stdout: "".to_string(),
-            stderr: "".to_string(),
+            exit_code,
+            stdout,
+            stderr,
+            ..Self::default()
         }
     }
 }
@@ -363,15 +398,17 @@ pub struct PipelineProgramArtifacts {
     /// artifact yet, or to a previous version, so cleanup must not name a file from them.
     pub program_status: ProgramStatus,
     /// Checksum of the sources the binary was built from. `None` while `CompilingRust`, and
-    /// for a Gen-2 program, which builds no binary.
+    /// for a Gen-2 program without Rust UDFs, which builds nothing. For a Gen-2 program with
+    /// Rust UDFs, it describes the UDF library.
     pub program_binary_source_checksum: Option<String>,
-    /// Checksum of the binary itself. `None` while `CompilingRust`, and for a Gen-2 program.
+    /// Checksum of the binary itself. `None` while `CompilingRust`, and for a Gen-2 program
+    /// without Rust UDFs.
     pub program_binary_integrity_checksum: Option<String>,
     /// Checksum of the delivered program info.
     pub program_info_integrity_checksum: Option<String>,
-    /// Whether the Gen-2 engine runs this program. A Gen-2 program delivers program info and
-    /// no binary, so its artifact is named by the program-info checksum on both halves; the
-    /// flag is what lets cleanup rebuild that name rather than fall back to a prefix.
+    /// Whether the Gen-2 engine runs this program. A Gen-2 program's program info is named by
+    /// the program-info checksum on both halves; the flag is what lets cleanup rebuild that
+    /// name rather than fall back to a prefix.
     pub is_gen2: bool,
 }
 
@@ -392,8 +429,8 @@ pub enum RuntimeSelector {
     /// The string corresponds to the git SHA of feldera/feldera at the time of the build.
     Platform(String),
     /// The Gen-2 engine runs the pipeline. The SQL compiler captures the JIT
-    /// circuit IR into the program info; the Rust half compiles against the
-    /// platform sources, so no runtime commit is selected.
+    /// circuit IR into the program info, and the Rust half compiles only the
+    /// Rust UDFs, into a shared library, so no runtime commit is selected.
     Gen2,
 }
 
@@ -781,6 +818,7 @@ impl ProgramInfo {
                     .unwrap_or_default(),
                 program_schema: self.schema.clone(),
                 circuit_ir: self.circuit_ir.clone(),
+                udf_library: None,
             });
 
         PipelineConfigProgramInfo {
@@ -876,6 +914,7 @@ pub fn generate_program_info(
                 | TransportConfig::KafkaOutput(_)
                 | TransportConfig::DeltaTableOutput(_)
                 | TransportConfig::DynamoDBOutput(_)
+                | TransportConfig::NatsOutput(_)
                 | TransportConfig::RedisOutput(_)
                 | TransportConfig::S2Output(_)
                 | TransportConfig::NullOutput => {}
@@ -994,8 +1033,8 @@ mod tests {
     #[test]
     fn gen2_sql_stage_reaches_success_directly() {
         use super::{ProgramStatus, validate_program_status_transition};
-        // The Gen-2 engine skips Rust compilation: the SQL compiler moves the program from
-        // CompilingSql straight to Success.
+        // A Gen-2 program without Rust UDFs skips Rust compilation: the SQL compiler moves
+        // the program from CompilingSql straight to Success.
         assert!(
             validate_program_status_transition(ProgramStatus::CompilingSql, ProgramStatus::Success)
                 .is_ok()
@@ -1024,10 +1063,11 @@ mod tests {
             max_batch_size: Some(0),
             max_worker_batch_size: None,
             max_queued_records: 0,
-            max_queued_bytes: None,
+            max_queued_size: None,
             paused: false,
             labels: vec![],
             start_after: None,
+            distributed: false,
         };
 
         // Reuse property value as it is only used in the errors

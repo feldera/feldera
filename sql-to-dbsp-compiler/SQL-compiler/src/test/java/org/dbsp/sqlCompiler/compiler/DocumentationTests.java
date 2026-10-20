@@ -20,6 +20,8 @@ public class DocumentationTests {
             WarnFloatingPointEquality.DOCUMENTATION,
             RejectUnsupportedPlans.ROW_DOCUMENTATION,
             RejectUnsupportedPlans.WINDOW_DOCUMENTATION,
+            RejectUnsupportedPlans.DISTINCT_WINDOW_DOCUMENTATION,
+            RejectUnsupportedPlans.WITHIN_DISTINCT_DOCUMENTATION,
             SqlToRelCompiler.RECURSION_DOCUMENTATION,
             RewriteNow.NOW_DOCUMENTATION,
             StubsWriter.UDF_DOCUMENTATION,

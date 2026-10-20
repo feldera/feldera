@@ -129,10 +129,13 @@ S3 and GCP FileIO implementations require additional configuration options docum
 | Property                    | Type   | Description   |
 |-----------------------------|--------|---------------|
 | `gcs.project-id`            | string | Google Cloud Project ID.|
-| `gcs.service.path`          | string | Google Cloud Storage endpoint.|
+| `gcs.service.host`          | string | Google Cloud Storage endpoint. The old name `gcs.service.path` is still accepted.|
 | `gcs.no-auth`               | string | Set to `"true"` to allow unauthenticated requests.|
 | `gcs.credentials-json`      | string | Google Cloud Storage credentials JSON string, base64 encoded.|
 | `gcs.oauth2.token`          | string | String representation of the access token used for temporary access.|
+
+The S3 and GCS FileIO also accept `opendal.io-timeout-ms`: the time limit, in milliseconds, for one read
+call before it is retried. The connector sets it to `60000` (60 s) unless you set it.
 
 ## Data type mapping
 
@@ -159,8 +162,9 @@ The following table lists supported Iceberg data types and corresponding Feldera
 | `struct`                    | `ROW(...)`       | Read as a whole column; nested fields map by name.|
 | `list`                      | `<element> ARRAY`| |
 | `map`                       | `MAP<<key>, <value>>` | |
+| `variant`                   |                  | Not supported: a table with a `variant` column opens, but reading that column fails. |
 
-All Iceberg data types are supported, including the nested types (`struct`, `list`,
+All other Iceberg data types are supported, including the nested types (`struct`, `list`,
 and `map`), which the connector reads as whole columns.
 
 ## Column selection
@@ -244,7 +248,83 @@ An unordered read has no seekable interior boundary, so a checkpoint taken while
 progress resumes by re-reading the whole snapshot. Set `timestamp_column` to get incremental,
 bounded-re-read checkpointing on large tables. Once the snapshot has been fully ingested, a
 restart resumes directly into the completed state and reads nothing further, regardless of
-`timestamp_column`.
+`timestamp_column`.  In `snapshot_and_follow` mode, such a restart continues to follow the
+table after the last snapshot that the connector ingested, without reading the initial
+snapshot again.  If the table had no snapshot when the connector started, a restart follows
+the table from its first snapshot.
+
+## Distributed connectors
+
+In a multihost pipeline, Feldera assigns each input connector to one
+host by default.  That host does all of the work to read the
+connector's data.  When one input connector reads most of the
+pipeline's data, one host does most of the work.
+
+To spread the work of reading an Iceberg table's snapshot across the
+hosts, set the generic [`distributed`](/connectors#distributed)
+attribute to `true`.  Then the connector runs on every host, and each
+host reads a different subset of the snapshot's data files.  Together,
+the hosts read each file exactly once.
+
+```json
+{
+  "transport": {
+    "name": "iceberg_input",
+    "config": {
+      "mode": "snapshot_and_follow",
+      "transaction_mode": "snapshot",
+      "catalog_type": "rest",
+      "rest.uri": "http://iceberg-rest:8181",
+      "table_name": "analytics.events"
+    }
+  },
+  "distributed": true
+}
+```
+
+A distributed connector works as follows:
+
+- Host 0 picks the snapshot that the connector's configuration selects
+  (the current snapshot, or the one that `snapshot_id` or `datetime`
+  selects).  The other hosts read the same snapshot, so that all of
+  the hosts read one snapshot.
+- The hosts divide the snapshot's data files, not its partitions, so an
+  unpartitioned table divides as well as a partitioned one.  Each data
+  file's delete files go with it.
+- In `follow` and `snapshot_and_follow` modes, only one host follows the
+  table's new snapshots, because they form a single sequence.  The
+  other hosts end their input after their part of the snapshot.
+- With `transaction_mode` set to `snapshot`, `catchup`, or `always`,
+  the hosts read the snapshot in one transaction, which commits after
+  every host has read its part.  If the pipeline resumes from a
+  checkpoint taken before the snapshot completed, each host reads its
+  part in its own transaction.
+- In `snapshot_and_follow` mode, a distributed connector requires a
+  [`transaction_mode`](#transactions) other than `none`, so that the
+  host that follows the table reads changes only after every host has
+  read its part of the snapshot.  Otherwise, it could read changes to
+  rows before the other hosts read those rows from the snapshot.  (After
+  a resume from a checkpoint taken before the snapshot completed, the
+  hosts read their parts in separate transactions, so this can still
+  happen.)
+- When the pipeline resumes from a checkpoint, each host continues from
+  its own checkpointed state.
+  As for any multihost pipeline, the pipeline must have the same number
+  of hosts as when it took the checkpoint (see [checkpoint
+  sync](/pipelines/checkpoint-sync#how-sync-works)).
+
+Limits:
+
+- A distributed connector does not support
+  [`timestamp_column`](#ingesting-time-series-data-from-iceberg),
+  because each host reads its part of the snapshot in its own order.
+  Thus, [tables with LATENESS] that need the snapshot in timestamp order
+  cannot use a distributed connector.
+- The pipeline and its multihost coordinator must both support
+  distributed Iceberg connectors.  Otherwise, the pipeline fails to
+  start.
+
+[tables with LATENESS]: /sql/streaming/#lateness-expressions
 
 ## Ingesting time series data from Iceberg
 

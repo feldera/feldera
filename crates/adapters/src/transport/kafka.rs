@@ -20,7 +20,6 @@ use rdkafka::{
     types::RDKafkaErrorCode,
 };
 use sha2::Digest;
-use size_of::HumanBytes;
 use std::cmp::min;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -33,7 +32,7 @@ use std::thread::sleep;
 use std::time::SystemTime;
 use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::warn;
 
 pub use ft::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint};
 pub use nonft::KafkaOutputEndpoint;
@@ -593,75 +592,14 @@ fn generate_oauthbearer_token(auth: &OauthbearerAuth) -> Result<OAuthToken, Box<
     }
 }
 
-/// Tracks and reports memory use for a consumer or producer.
-struct MemoryUseReporter {
-    /// When we were created.
-    ///
-    /// We don't want to report on memory use for a while afterward, since it
-    /// will take some time to reach what we hope is a steady state.
-    start: Instant,
-
-    /// The most recently measured memory use, in bytes.
-    current: u64,
-
-    /// The peak memory use we last reported, in bytes, and when we reported it.
-    ///
-    /// This is a peak value: we only ever report a new value when the usage
-    /// increases substantially from the previously reported value.
-    peak: Option<(Instant, u64)>,
-}
-
-impl MemoryUseReporter {
-    fn new() -> Self {
-        Self {
-            start: Instant::now(),
-            current: 0,
-            peak: None,
+fn buffered_bytes(statistics: &Statistics) -> u64 {
+    let mut bytes = 0;
+    for topic in statistics.topics.values() {
+        for partition in topic.partitions.values() {
+            bytes += partition.msgq_bytes + partition.xmit_msgq_bytes + partition.fetchq_size;
         }
     }
-    /// The most recent measured memory use in bytes.
-    fn current(&self) -> usize {
-        self.current as usize
-    }
-    fn update(&mut self, statistics: &Statistics) {
-        /// Minimum time before first report.
-        const REPORT_DELAY: Duration = Duration::from_secs(60);
-
-        /// Minimum amount of memory to report on.
-        const MIN_MEMORY: u64 = 1024 * 1024;
-
-        let mut memory = 0;
-        for topic in statistics.topics.values() {
-            for partition in topic.partitions.values() {
-                memory += partition.msgq_bytes + partition.xmit_msgq_bytes + partition.fetchq_size;
-            }
-        }
-        self.current = memory;
-        if self.start.elapsed() < REPORT_DELAY {
-            return;
-        }
-
-        match &self.peak {
-            None if memory > MIN_MEMORY => {
-                info!(
-                    "Buffered {} after {} seconds",
-                    HumanBytes::new(memory),
-                    self.start.elapsed().as_secs()
-                );
-            }
-            Some((last_time, last_memory)) if memory > *last_memory * 3 / 2 => {
-                info!(
-                    "Buffers grew {:.0}%, from {} to {}, in last {} seconds",
-                    memory as f64 / *last_memory as f64 * 100.0 - 100.0,
-                    HumanBytes::new(*last_memory),
-                    HumanBytes::new(memory),
-                    last_time.elapsed().as_secs()
-                );
-            }
-            _ => return,
-        }
-        self.peak = Some((Instant::now(), memory));
-    }
+    bytes
 }
 
 #[cfg(test)]

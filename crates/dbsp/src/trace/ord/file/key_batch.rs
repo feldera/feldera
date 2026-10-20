@@ -18,8 +18,8 @@ use crate::{
         },
     },
     trace::{
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        WeightedItem,
+        Batch, BatchFactories, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories,
+        Builder, Cursor, WeightedItem,
         filter::BatchFilters,
         ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
     },
@@ -273,6 +273,12 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    fn is_empty(&self) -> bool {
+        // `len_upper_bound` counts a (key, value) pair once per time for this batch
+        // type, so it can exceed the pair count, but it is zero exactly when the
+        // batch is empty.
+        self.len_upper_bound() == 0
+    }
     type Factories = FileKeyBatchFactories<K, T, R>;
     type Key = K;
     type Val = DynUnit;
@@ -289,12 +295,12 @@ where
     }
 
     #[inline]
-    fn key_count(&self) -> usize {
+    fn key_count_upper_bound(&self) -> usize {
         self.file.n_rows(0) as usize
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    fn len_upper_bound(&self) -> usize {
         self.file.n_rows(1) as usize
     }
 
@@ -327,7 +333,7 @@ where
     where
         RG: Rng,
     {
-        let size = self.key_count();
+        let size = self.key_count_upper_bound();
         let mut cursor = self.cursor();
         if sample_size >= size {
             output.reserve(size);
@@ -486,6 +492,12 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // Each key has exactly one value, the unit value, which can occur at
+        // more than one time.
+        self.key_valid() as usize
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.batch.factories.weight_factory
     }
@@ -705,12 +717,17 @@ where
         factories: &FileKeyBatchFactories<K, T, R>,
         batches: I,
         _location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = DynUnit, Time = T, R = R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
+        let key_capacity = batches
+            .clone()
+            .into_iter()
+            .map(|b| b.key_count_upper_bound())
+            .sum();
         let key_filter = if collect_roaring_metadata() {
             let filter_plan = FilterPlan::from_batches(batches.clone());
             filter_plan.map_or_else(
@@ -727,7 +744,7 @@ where
                 &factories.factories1,
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
-                Runtime::file_writer_parameters(),
+                Runtime::file_writer_parameters_for(layout),
                 key_filter,
             )
             .unwrap_storage(),

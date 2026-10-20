@@ -439,7 +439,11 @@ export type ClockAdvanceResponse = {
 }
 
 export type ClockConfig = {
-  clock_resolution_usecs: number
+  /**
+   * How often the clock ticks, for example `1s`. Unset selects the
+   * default, `DEFAULT_CLOCK_RESOLUTION`.
+   */
+  clock_resolution?: string | null
   /**
    * If `true`, the clock does not advance on wall-clock cadence.
    * `NOW()` is held at its current value and only advances when an
@@ -799,18 +803,19 @@ export type ConfiguredOwners = {
 export type ConnectOptions = {
   auth?: Auth
   /**
-   * Connection timeout
+   * Connection timeout, for example `10s`.
    *
    * How long to wait when establishing the initial connection to the
-   * NATS server.
+   * NATS server. Unset selects the default, `DEFAULT_CONNECTION_TIMEOUT`.
    */
-  connection_timeout_secs?: number
+  connection_timeout?: string | null
   /**
-   * Request timeout in seconds.
+   * Request timeout, for example `10s`.
    *
-   * How long to wait for responses to requests.
+   * How long to wait for responses to requests. Unset selects
+   * the default, `DEFAULT_REQUEST_TIMEOUT`.
    */
-  request_timeout_secs?: number
+  request_timeout?: string | null
   /**
    * NATS server URL (e.g., "nats://localhost:4222").
    */
@@ -819,6 +824,20 @@ export type ConnectOptions = {
 }
 
 export type ConnectorConfig = OutputBufferConfig & {
+  /**
+   * Divide the input of this connector among the hosts of a multihost
+   * pipeline. Valid for input connectors only.
+   *
+   * When `false` (the default), the connector runs on one host, which
+   * reads all of its input. When `true`, the connector runs on every host,
+   * and each host reads a different part of the input. Only the Kafka,
+   * Delta Lake, and Iceberg input transports support this setting.
+   *
+   * In a single-host pipeline, this setting has no effect.
+   *
+   * Versions of Feldera that predate this option ignore it.
+   */
+  distributed?: boolean
   format?: FormatConfig | null
   /**
    * Name of the index that the connector is attached to.
@@ -860,26 +879,6 @@ export type ConnectorConfig = OutputBufferConfig & {
    */
   max_batch_size?: number | null
   /**
-   * Backpressure threshold, in bytes.
-   *
-   * Maximal number of bytes queued by the endpoint before the endpoint
-   * is paused by the backpressure mechanism.
-   *
-   * For input endpoints, this setting bounds the number of bytes that have
-   * been received from the input transport but haven't yet been consumed by
-   * the circuit since the circuit, since the circuit is still busy processing
-   * previous inputs.
-   *
-   * This setting is not yet implemented for output endpoints.
-   *
-   * Note that this is not a hard bound: there can be a small delay between
-   * the backpressure mechanism is triggered and the endpoint is paused, during
-   * which more data may be queued.
-   *
-   * When this is unspecified, it defaults to `1000 * max_queued_records`.
-   */
-  max_queued_bytes?: number | null
-  /**
    * Backpressure threshold, in records.
    *
    * Maximal number of records queued by the endpoint before the endpoint
@@ -900,6 +899,30 @@ export type ConnectorConfig = OutputBufferConfig & {
    * The default is 1 million.
    */
   max_queued_records?: number
+  /**
+   * Backpressure threshold, in bytes.
+   *
+   * Maximal number of bytes queued by the endpoint before the endpoint
+   * is paused by the backpressure mechanism.
+   *
+   * For input endpoints, this setting bounds the number of bytes that have
+   * been received from the input transport but haven't yet been consumed by
+   * the circuit since the circuit, since the circuit is still busy processing
+   * previous inputs.
+   *
+   * This setting is not yet implemented for output endpoints.
+   *
+   * Note that this is not a hard bound: there can be a small delay between
+   * the backpressure mechanism is triggered and the endpoint is paused, during
+   * which more data may be queued.
+   *
+   * When this is unspecified, it defaults to `1000 * max_queued_records`
+   * bytes.
+   *
+   * Before release 0.367.0 this setting was `max_queued_bytes`, a number
+   * of bytes. That name is deprecated but still read.
+   */
+  max_queued_size?: string | null
   /**
    * Maximum number of records processed per batch, per worker thread.
    *
@@ -1045,7 +1068,13 @@ export type ConsumerConfig = {
   filter_subjects?: Array<string>
   max_batch?: number | null
   max_bytes?: number | null
-  max_expires?: string | null
+  /**
+   * How long a pull request may stay parked on the server before it
+   * expires, for example `30s`.
+   *
+   * Unset leaves the NATS server's own default in place.
+   */
+  max_expiry?: string | null
   max_waiting?: number
   metadata?: {
     [key: string]: string
@@ -1067,6 +1096,10 @@ export type ConsumerConfig = {
 export type ControllerStatus = {
   checkpoint_activity?: CheckpointActivity | null
   global_metrics: GlobalControllerMetrics
+  /**
+   * Resource usage of each host in a multihost pipeline, by ordinal.
+   */
+  host_metrics?: Array<HostMetrics>
   /**
    * Input endpoint configs and metrics.
    */
@@ -1561,6 +1594,14 @@ export type DeltaTableReaderConfig = {
 export type DeltaTableTransactionMode = 'none' | 'snapshot' | 'always' | 'catchup'
 
 /**
+ * How the Delta table connector applies pipeline updates to the target table.
+ *
+ * This is orthogonal to `mode`, which governs what happens to an existing table
+ * when the connector starts.
+ */
+export type DeltaTableUpdateMode = 'cdc' | 'merge'
+
+/**
  * Delta table write mode.
  *
  * Determines how the Delta table connector handles an existing table at the target location.
@@ -1614,6 +1655,24 @@ export type DeltaTableWriterConfig = {
    */
   log_retention_duration?: string | null
   /**
+   * Ceiling on the encoded keys the connector holds while locating the rows to
+   * supersede, such as `"256Mi"`.
+   *
+   * Only used when `update_mode` is `merge`. A flush whose key set exceeds this budget
+   * is split into successive lookup passes, which bounds memory at the cost of
+   * re-scanning candidate files. Default: `"256Mi"`. Maximum: `"2147483647"`, one byte
+   * less than 2 GiB.
+   */
+  lookup_chunk_size?: string
+  /**
+   * Number of data files read concurrently while locating the rows to supersede.
+   *
+   * Only used when `update_mode` is `merge`. Each concurrent read holds one file's
+   * projected key column, so this bounds memory as well as request concurrency.
+   * Default: 16.
+   */
+  max_concurrent_probes?: number
+  /**
    * Maximum number of retries for failed operations.
    *
    * The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits,
@@ -1627,11 +1686,34 @@ export type DeltaTableWriterConfig = {
   max_retries?: number | null
   mode?: DeltaTableWriteMode
   /**
+   * Compact the target table from the connector, at most once per this interval, for
+   * example `1h`.
+   *
+   * Only used when `update_mode` is `merge`. Merge mode marks an old row version deleted
+   * but leaves it in place. Without compaction the table keeps growing and reads keep
+   * slowing down, however few live rows it holds. Compacting also reclaims storage a
+   * scheduled `OPTIMIZE` leaves behind.
+   *
+   * Maintenance is normally the table administrator's job, which is why this is off by
+   * default. Set it for tables where Feldera is the only writer, and nothing else
+   * compacts the table. Hourly (`1h`) or daily (`1d`) is typical. Two runs cannot overlap,
+   * and a large backlog is cleared over several runs.
+   *
+   * A run starts after a flush and works in the background. If it commits while a flush
+   * is in progress, the connector redoes that flush against the new files, so on a busy
+   * table a run can slow the flushes down. A run replaces files rather than deleting
+   * them, so `VACUUM` is still what reclaims the space.
+   *
+   * Default: none, meaning the connector never compacts.
+   */
+  optimize_interval?: string | null
+  /**
    * Number of parallel threads used by the connector.
    *
-   * Increasing this value can improve Delta Lake write throughput
-   * by enabling concurrent writes. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.
+   * Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.
    * Values above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly.
+   * With `update_mode: merge` the connector splits a batch only when each thread would get a
+   * substantial share of it, so a small change still writes one file rather than one small file per thread.
    * Define the key with `CREATE INDEX` and set the connector's `index` property to that index;
    * see [views with unique keys](https://docs.feldera.com/connectors/sinks/delta/#views-with-unique-keys) and
    * [writing in parallel](https://docs.feldera.com/connectors/sinks/delta/#writing-in-parallel).
@@ -1639,6 +1721,7 @@ export type DeltaTableWriterConfig = {
    * Default: 1.
    */
   threads?: number | null
+  update_mode?: DeltaTableUpdateMode
   /**
    * Table URI.
    */
@@ -1653,10 +1736,14 @@ export type DeltaTableWriterConfig = {
     | string
     | null
     | number
-    | null
-    | DeltaTableWriteMode
     | number
     | null
+    | DeltaTableWriteMode
+    | string
+    | null
+    | number
+    | null
+    | DeltaTableUpdateMode
     | DeltaVariantEncoding
     | undefined
 }
@@ -1694,12 +1781,38 @@ export type Demo = {
 }
 
 /**
+ * CPU and memory, the only fields that can change while the pipeline runs.
+ */
+export type DeploymentResources = {
+  cpu_cores_max?: number | null
+  cpu_cores_min?: number | null
+  /**
+   * The maximum memory, such as `"16Gi"`. `memory_mb_max`, a number of
+   * megabytes, is a deprecated alias.
+   */
+  memory_max?: string | null
+  /**
+   * The minimum memory, such as `"4Gi"`. `memory_mb_min`, a number of
+   * megabytes, is a deprecated alias.
+   */
+  memory_min?: string | null
+}
+
+/**
  * Optional settings for tweaking Feldera internals.
  *
  * These settings reflect experiments that may come and go and change from
  * version to version.  Users should not consider them to be stable.
  */
 export type DevTweaks = {
+  /**
+   * Merge threshold of an accumulator's spine: how many batches each
+   * level above level 1 waits for before it merges them.
+   *
+   * Zero restores the built-in minimum.  A spine that garbage-collects old
+   * records always uses the built-in minimum.
+   */
+  accumulator_merge_threshold_batches?: number | null
   /**
    * Enable adaptive joins.
    *
@@ -1823,8 +1936,8 @@ export type DevTweaks = {
    */
   enable_roaring?: boolean | null
   /**
-   * Maximum number of bytes of queued but unacknowledged exchange messages
-   * per pair of remote host and message type.
+   * Maximum size of the queued but unacknowledged exchange messages per
+   * pair of remote host and message type.
    *
    * A sender that pushes past this budget waits for the receiver to
    * acknowledge earlier messages before it queues more.  There are three
@@ -1832,15 +1945,17 @@ export type DevTweaks = {
    * each of the other hosts, plus any single message that exceeds the
    * budget on its own.
    *
-   * The default is 10,000,000 bytes.
+   * The default is `"10M"`. Before release 0.367.0 this setting was
+   * `exchange_channel_capacity_bytes`, a number of bytes.
    */
-  exchange_channel_capacity_bytes?: number | null
+  exchange_channel_capacity?: string | null
   /**
-   * Target number of cached bytes retained in each `FBuf` slab size class.
+   * Target size of the cache retained in each `FBuf` slab size class.
    *
-   * The default is 16 MiB.
+   * The default is `"16Mi"`. Before release 0.367.0 this setting was
+   * `fbuf_slab_bytes_per_class`, a number of bytes.
    */
-  fbuf_slab_bytes_per_class?: number | null
+  fbuf_slab_size_per_class?: string | null
   /**
    * Whether to asynchronously fetch keys needed for the distinct operator
    * from storage.  Asynchronous fetching should be faster for high-latency
@@ -1856,6 +1971,50 @@ export type DevTweaks = {
    */
   fetch_join?: boolean | null
   /**
+   * Merge threshold of an integral's spine: how many batches each level
+   * above level 1 waits for before it merges them.
+   *
+   * The default is ten.  Zero restores the built-in minimum.  A spine
+   * that garbage-collects old records always uses the built-in minimum.
+   */
+  integral_merge_threshold_batches?: number | null
+  /**
+   * How many data blocks a layer-file cursor that declared a sequential
+   * walk reads ahead of its position.
+   *
+   * Each block a cursor steps into that the buffer cache does not hold is a
+   * device round trip the worker waits out, and a key column is a strided
+   * subset of its file that the kernel's readahead never serves.  Reading
+   * ahead this many blocks keeps that many round trips in flight.  Zero
+   * disables it.  The default is 8.
+   */
+  layer_file_read_ahead_blocks?: number | null
+  /**
+   * Minimum size of the key blocks in the batches a lazy input map's
+   * accumulator writes for itself.  A power of two, at least 4096 bytes.
+   *
+   * The map resolves a transaction by walking the accumulated updates in
+   * key order without reading values, one storage request per key block,
+   * so larger blocks mean fewer requests.  Only the accumulator's own
+   * batches (merge outputs and spills) take this size; the batches that
+   * reach the integral keep it until its merger rewrites them at the
+   * default size.  The default is `"32Ki"`; `"8Ki"` is the file writer's
+   * default. Before release 0.367.0 this setting was
+   * `lazy_input_map_key_block_bytes`, a number of bytes.
+   */
+  lazy_input_map_key_block_size?: string | null
+  /**
+   * How many keys a lazy input map resolves against its integral in one step.
+   *
+   * The lazy upsert operator may scan a large number of keys without
+   * producing any output. Therefore bounding its step by the number of
+   * outputs is not sufficient. This setting additionally bounds it by its
+   * input.
+   *
+   * The default is 100,000.
+   */
+  lazy_input_map_keys_per_step?: number | null
+  /**
    * Maximum batch size in records for level 0 merges.
    */
   max_level0_batch_size_records?: number | null
@@ -1866,20 +2025,6 @@ export type DevTweaks = {
    * The default value is equal to the number of worker threads.
    */
   merger_threads?: number | null
-  /**
-   * Minimum number of batches an accumulator's spine merges at once,
-   * at every level above level 1.
-   *
-   * Zero restores the built-in minimum.
-   */
-  min_accumulator_merge_batches?: number | null
-  /**
-   * Minimum number of batches an integral's spine merges at once, at
-   * every level above level 1.
-   *
-   * Unset or zero keeps the built-in minimum.
-   */
-  min_integral_merge_batches?: number | null
   /**
    * Additional bias the merger assigns to records with negative weights
    * (retractions) to promote them to higher levels of the LSM tree sooner.
@@ -1944,16 +2089,31 @@ export type DevTweaks = {
    */
   stack_overflow_backtrace?: boolean | null
   /**
-   * If set, the maximum amount of storage, in MiB, for the POSIX backend to
-   * allow to be in use before failing all writes with `StorageFull`.  This
-   * is useful for testing on top of storage that does not implement its own
-   * quota mechanism.
+   * If set, the maximum amount of storage for the POSIX backend to allow to
+   * be in use before failing all writes with `StorageFull`.  This is useful
+   * for testing on top of storage that does not implement its own quota
+   * mechanism.
+   *
+   * Before release 0.367.0 this setting was `storage_mb_max`, a number of
+   * mebibytes.
    */
-  storage_mb_max?: number | null
+  storage_max?: string | null
   /**
    * Enable streaming exchange.
    */
   streaming_exchange?: boolean | null
+  /**
+   * The share of the records at a spine's highest level with negative
+   * weights above which the level merges its batches.
+   *
+   * A spine keeps most of its records at its highest level.  When many of
+   * them are retractions, merging the level's batches cancels them against
+   * the records they retract, which shrinks the spine's storage.
+   *
+   * A fraction from 0 through 1; the default is 0.2.  At 1 the level never
+   * merges for this reason.
+   */
+  top_level_negative_weight_fraction?: number | null
   [key: string]: unknown
 }
 
@@ -2023,11 +2183,15 @@ export type DynamoDbWriterConfig = {
    */
   endpoint_url?: string | null
   /**
-   * Maximum number of bytes buffered by each worker before flushing writes.
+   * Maximum size of the data buffered by each worker before flushing
+   * writes, such as `"1Mi"`.
    *
    * This is an approximate size based on encoded DynamoDB attributes.
+   *
+   * Before release 0.367.0 this setting was `max_buffer_size_bytes`, a
+   * number of bytes. That name is deprecated but still read.
    */
-  max_buffer_size_bytes?: number
+  max_buffer_size?: string
   /**
    * Maximum number of DynamoDB write requests in flight per worker thread.
    *
@@ -2174,12 +2338,12 @@ export type FileBackendConfig = {
    */
   async_threads?: boolean | null
   /**
-   * Per-I/O operation sleep duration, in milliseconds.
+   * Per-I/O operation sleep duration, for example `5ms`.
    *
    * This is for simulating slow storage devices.  Do not use this in
    * production.
    */
-  ioop_delay?: number | null
+  ioop_latency?: string | null
   sync?: SyncConfig | null
   sync_mode?: StorageSyncMode | null
 }
@@ -2189,12 +2353,15 @@ export type FileBackendConfig = {
  */
 export type FileInputConfig = {
   /**
-   * Read buffer size.
+   * Read buffer size, such as `"64Ki"`.
    *
    * Default: when this parameter is not specified, a platform-specific
    * default is used.
+   *
+   * Before release 0.367.0 this setting was `buffer_size_bytes`, a number
+   * of bytes. That name is deprecated but still read.
    */
-  buffer_size_bytes?: number | null
+  buffer_size?: string | null
   /**
    * Enable file following.
    *
@@ -2253,12 +2420,14 @@ export type FormatConfig = {
  */
 export type FtConfig = {
   /**
-   * Interval between automatic checkpoints, in seconds.
+   * Interval between automatic checkpoints, for example `60s`.
    *
-   * The default is 60 seconds.  Values less than 1 or greater than 3600 will
-   * be forced into that range.
+   * Unset selects the default, `DEFAULT_CHECKPOINT_INTERVAL`; `null`
+   * disables periodic checkpointing.
+   * Values less than 1 second or greater than 1 hour will be forced into
+   * that range.
    */
-  checkpoint_interval_secs?: number | null
+  checkpoint_interval?: string | null
   model?: FtModel | 'none'
 }
 
@@ -2650,6 +2819,20 @@ export type HealthStatus = {
 }
 
 /**
+ * Resource usage of one host in a multihost pipeline.
+ */
+export type HostMetrics = {
+  /**
+   * Bytes the host can still write to its storage disk; absent when unknown.
+   */
+  disk_available_bytes?: number | null
+  /**
+   * Capacity of the host's storage disk, in bytes; absent when unknown.
+   */
+  disk_total_bytes?: number | null
+}
+
+/**
  * Configuration for data input via HTTP.
  *
  * HTTP input adapters cannot be usefully configured as part of pipeline
@@ -2962,7 +3145,8 @@ export type InputEndpointStatus = {
    */
   parse_errors?: Array<ConnectorError> | null
   /**
-   * Endpoint has been paused by the user.
+   * Endpoint has been paused by the user.  A distributed connector in a
+   * multihost pipeline is paused only if it is paused on every host.
    */
   paused: boolean
   /**
@@ -3013,34 +3197,6 @@ export type JsonLines = 'multiple' | 'single'
  * {"insert": {"column1": "hello, world!", "column2": 100}}
  * ```
  *
- * ### `Weighted`
- *
- * Each element in the input stream consists of a record and a weight
- * which indicates how many times the row appears.
- *
- * ```json
- * {"weight": 2, "data": {"column1": "hello, world!", "column2": 100}}
- * ```
- *
- * Note that the line above would be equivalent to the following input in the `InsertDelete` format:
- *
- * ```json
- * {"insert": {"column1": "hello, world!", "column2": 100}}
- * {"insert": {"column1": "hello, world!", "column2": 100}}
- * ```
- *
- * Similarly, negative weights are equivalent to deletions:
- *
- * ```json
- * {"weight": -1, "data": {"column1": "hello, world!", "column2": 100}}
- * ```
- *
- * is equivalent to in the `InsertDelete` format:
- *
- * ```json
- * {"delete": {"column1": "hello, world!", "column2": 100}}
- * ```
- *
  * ### `Debezium`
  *
  * Debezium CDC format.  Refer to [Debezium input connector documentation](https://docs.feldera.com/connectors/sources/debezium) for details.
@@ -3066,13 +3222,7 @@ export type JsonLines = 'multiple' | 'single'
  * Each element in the input stream contains a record without any
  * additional envelope that gets inserted in the input table.
  */
-export type JsonUpdateFormat =
-  | 'insert_delete'
-  | 'weighted'
-  | 'debezium'
-  | 'snowflake'
-  | 'raw'
-  | 'redis'
+export type JsonUpdateFormat = 'insert_delete' | 'debezium' | 'snowflake' | 'raw' | 'redis'
 
 /**
  * Kafka message header.
@@ -3092,10 +3242,11 @@ export type KafkaHeaderValue = Blob | File
  */
 export type KafkaInputConfig = {
   /**
-   * Maximum timeout in seconds to wait for the endpoint to join the Kafka
-   * consumer group during initialization.
+   * Maximum time to wait for the endpoint to join the Kafka consumer group
+   * during initialization, for example `10s`. Unset selects
+   * the default, `DEFAULT_GROUP_JOIN_TIMEOUT`.
    */
-  group_join_timeout_secs?: number
+  group_join_timeout?: string | null
   header_filter?: HeaderFilter | null
   /**
    * Whether to include Kafka headers in the record metadata.
@@ -3228,7 +3379,8 @@ export type KafkaInputConfig = {
   topic: string
   [key: string]:
     | string
-    | number
+    | string
+    | null
     | HeaderFilter
     | null
     | boolean
@@ -3285,12 +3437,10 @@ export type KafkaOutputConfig = {
    */
   headers?: Array<KafkaHeader>
   /**
-   * Maximum timeout in seconds to wait for the endpoint to connect to
-   * a Kafka broker.
-   *
-   * Defaults to 60.
+   * Maximum time to wait for the endpoint to connect to a Kafka broker, for
+   * example `60s`. Unset selects the default, `DEFAULT_INITIALIZATION_TIMEOUT`.
    */
-  initialization_timeout_secs?: number
+  initialization_timeout?: string | null
   /**
    * If specified, this service is used to provide defaults for the Kafka options.
    */
@@ -3310,7 +3460,8 @@ export type KafkaOutputConfig = {
     | KafkaOutputFtConfig
     | null
     | Array<KafkaHeader>
-    | number
+    | string
+    | null
     | string
     | null
     | KafkaLogLevel
@@ -3505,20 +3656,76 @@ export type MultihostConfig = {
   hosts: number
 }
 
+/**
+ * A header attached to every message published by `nats_output`.
+ */
+export type NatsHeader = {
+  key: string
+  value: string
+}
+
 export type NatsInputConfig = {
   connection_config: ConnectOptions
   consumer_config: ConsumerConfig
   /**
-   * Maximum time in seconds to wait for the next message before running
-   * a stream/server health check. Must be at least 1.
+   * Maximum time to wait for the next message before running a
+   * stream/server health check, for example `60s`. Must be at least one
+   * second. Unset selects the default, `DEFAULT_INACTIVITY_TIMEOUT`.
    */
-  inactivity_timeout_secs?: number
+  inactivity_timeout?: string | null
   /**
-   * Delay between automatic reconnect attempts while in retry mode.
-   * Must be at least 1.
+   * Delay between automatic reconnect attempts while in retry mode, for
+   * example `5s`. Must be at least one second. Unset selects
+   * the default, `DEFAULT_RETRY_INTERVAL`.
    */
-  retry_interval_secs?: number
+  retry_interval?: string | null
   stream_name: string
+}
+
+/**
+ * How `nats_output` chooses the `Nats-Msg-Id` header of each message.
+ */
+export type NatsMessageId = 'content_hash' | 'none'
+
+/**
+ * Configuration for writing data to a NATS subject with `nats_output`.
+ *
+ * The connector publishes to JetStream: each message is published with an
+ * acknowledgment request and the publish is retried until the server
+ * acknowledges it or the pipeline shuts down, so data is not lost to a
+ * server that is momentarily unavailable. The subject must be bound to a
+ * JetStream stream; publishing to a subject with no stream raises
+ * "no responders" and the publish fails.
+ */
+export type NatsOutputConfig = {
+  connection_config: ConnectOptions
+  /**
+   * Headers to add to every message published by this connector, as
+   * key/value pairs. Values are UTF-8 strings.
+   */
+  headers?: Array<NatsHeader>
+  /**
+   * Override for the maximum message size in bytes the connector offers to
+   * the encoder. When unset, the connector discovers the limit at connect
+   * time: the bound stream's `max_message_size` when the stream sets one,
+   * else the server's max payload. The encoder splits output records across
+   * messages by this limit; a record larger than the limit fails the
+   * pipeline with an error naming the record rather than reaching the
+   * server.
+   */
+  max_message_size?: number | null
+  message_id?: NatsMessageId
+  /**
+   * How long to wait for the server's publish acknowledgment before
+   * retrying the publish, for example `5s`. Must be at least one second.
+   * Unset selects the default, `DEFAULT_PUBLISH_TIMEOUT`.
+   */
+  publish_timeout?: string | null
+  /**
+   * NATS subject to publish to (e.g., "orders.created"). The subject
+   * must be bound to a JetStream stream on the target server.
+   */
+  subject: string
 }
 
 /**
@@ -3730,8 +3937,8 @@ export type OutputBufferConfig = {
    * updates produced by the pipeline are consolidated in an internal buffer and are
    * pushed to the output transport when one of several conditions is satisfied:
    *
-   * * data has been accumulated in the buffer for more than `max_output_buffer_time_millis`
-   * milliseconds.
+   * * data has been accumulated in the buffer for longer than
+   * `max_output_buffer_time`.
    * * buffer size exceeds `max_output_buffer_size_records` records.
    *
    * This flag is `false` by default.
@@ -3752,17 +3959,16 @@ export type OutputBufferConfig = {
    */
   max_output_buffer_size_records?: number
   /**
-   * Maximum time in milliseconds data is kept in the output buffer.
+   * Maximum time data is kept in the output buffer, for example `500ms`.
    *
    * By default, data is kept in the buffer indefinitely until one of
    * the other output conditions is satisfied.  When this option is
-   * set the buffer will be flushed at most every
-   * `max_output_buffer_time_millis` milliseconds.
+   * set the buffer will be flushed at least that often.
    *
    * NOTE: this configuration option requires the `enable_output_buffer` flag
    * to be set.
    */
-  max_output_buffer_time_millis?: number
+  max_output_buffer_time?: string | null
 }
 
 /**
@@ -3942,6 +4148,7 @@ export type PatchClientMetadata = {
  * change.
  */
 export type PatchPipeline = PatchClientMetadata & {
+  deployment_config?: PipelineDeploymentConfig | null
   name?: string | null
   program_code?: string | null
   program_config?: ProgramConfig | null
@@ -3973,17 +4180,17 @@ export type PipelineConfig = {
    */
   checkpoint_during_suspend?: boolean
   /**
-   * Real-time clock resolution in microseconds.
+   * Real-time clock resolution, for example `1s`.
    *
    * This parameter controls the execution of queries that use the `NOW()` function.  The output of such
    * queries depends on the real-time clock and can change over time without any external
    * inputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental
-   * recomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use
+   * recomputation at most once per `clock_resolution`.  If the query does not use
    * `NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.
    *
-   * It is set to 1 second (1,000,000 microseconds) by default.
+   * Unset or `null` selects the default, `DEFAULT_CLOCK_RESOLUTION`.
    */
-  clock_resolution_usecs?: number | null
+  clock_resolution?: string | null
   /**
    * Fixed timezone offset for the SQL `NOW()` clock.
    *
@@ -4004,12 +4211,11 @@ export type PipelineConfig = {
    */
   cpu_profiler?: boolean
   /**
-   * DataFusion memory pool size, in MB, shared by the ad-hoc query
-   * engine and the Delta Lake / Iceberg connectors.
+   * DataFusion memory pool size, such as `"1Gi"`, shared by the ad-hoc
+   * query engine and the Delta Lake / Iceberg connectors.
    *
-   * Carved out of `max_rss_mb` (falling back to
-   * `resources.memory_mb_max`); the remainder goes to the DBSP circuit,
-   * so the two do not double-book RAM.
+   * Carved out of `max_rss` (falling back to `resources.memory_max`); the
+   * remainder goes to the DBSP circuit, so the two do not double-book RAM.
    *
    * Unset: defaults to 5% of the effective budget, capped at 2 GB.
    * Pipelines that don't run heavy ad-hoc / Delta / Iceberg workloads
@@ -4022,10 +4228,13 @@ export type PipelineConfig = {
    *
    * No pool limit applied if no overall budget is configured.
    *
+   * Before release 0.367.0 this setting was `datafusion_memory_mb`, a
+   * number of megabytes. That name is deprecated but still read.
+   *
    * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
    * for more details.
    */
-  datafusion_memory_mb?: number | null
+  datafusion_memory?: string | null
   dev_tweaks?: DevTweaks
   /**
    * Environment variables for the pipeline process.
@@ -4087,10 +4296,10 @@ export type PipelineConfig = {
    */
   logging?: string | null
   /**
-   * Maximal delay in microseconds to wait for `min_batch_size_records` to
-   * get buffered by the controller, defaults to 0.
+   * Maximal delay to wait for `min_batch_size_records` to get buffered by
+   * the controller, for example `10ms`. Defaults to no delay.
    */
-  max_buffering_delay_usecs?: number
+  max_buffering_delay?: string | null
   /**
    * The maximum number of connectors initialized in parallel during pipeline
    * startup.
@@ -4105,8 +4314,8 @@ export type PipelineConfig = {
    */
   max_parallel_connector_init?: number | null
   /**
-   * The maximum amount of memory, in Megabytes, that the pipeline is allowed to use
-   * on each host.
+   * The maximum amount of memory that the pipeline is allowed to use on
+   * each host, such as `"16G"` or `"16Gi"`.
    *
    * Setting this property activates memory pressure monitoring and backpressure
    * mechanisms. The pipeline will track the amount of remaining memory and
@@ -4120,20 +4329,27 @@ export type PipelineConfig = {
    * running out of memory. The setting should not exceed the memory limit of the pipeline
    * instance.
    *
-   * When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
+   * When `max_rss` is not specified but `resources.memory_max` is set, the
    * latter is used as the effective memory cap for the pipeline.
+   *
+   * The pipeline caps this limit at the memory available to it, which is the
+   * host's memory or the container's memory limit, whichever is smaller. It
+   * rechecks the available memory every second.
+   *
+   * Before release 0.367.0 this setting was `max_rss_mb`, a number of
+   * megabytes. That name is deprecated but still read.
    *
    * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
    * for more details.
    */
-  max_rss_mb?: number | null
+  max_rss?: string | null
   /**
    * Minimal input batch size.
    *
    * The controller delays pushing input records to the circuit until at
    * least `min_batch_size_records` records have been received (total
-   * across all endpoints) or `max_buffering_delay_usecs` microseconds
-   * have passed since at least one input records has been buffered.
+   * across all endpoints) or `max_buffering_delay` has passed
+   * since the first input record was buffered.
    * Defaults to 0.
    */
   min_batch_size_records?: number
@@ -4150,10 +4366,10 @@ export type PipelineConfig = {
   pin_cpus?: Array<number>
   pipeline_template_configmap?: PipelineTemplateConfig | null
   /**
-   * Timeout in seconds for the `Provisioning` phase of the pipeline.
+   * Timeout for the `Provisioning` phase of the pipeline, for example `5m`.
    * Setting this value will override the default of the runner.
    */
-  provisioning_timeout_secs?: number | null
+  provisioning_timeout?: string | null
   resources?: ResourceConfig
   storage?: StorageOptions | null
   /**
@@ -4216,6 +4432,13 @@ export type PipelineConfig = {
 }
 
 /**
+ * The part of a deployment config that can change while the pipeline runs.
+ */
+export type PipelineDeploymentConfig = {
+  resources?: DeploymentResources
+}
+
+/**
  * Summary of changes in the pipeline between checkpointed and new versions.
  */
 export type PipelineDiff = {
@@ -4259,6 +4482,7 @@ export type PipelineId = string
  */
 export type PipelineInfo = ClientMetadata & {
   created_at: string
+  deployment_config?: PipelineDeploymentConfig | null
   deployment_desired_status: CombinedDesiredStatus
   deployment_desired_status_since: string
   deployment_error?: ErrorResponse | null
@@ -4330,6 +4554,7 @@ export type PipelineMonitorEventSelectedInfo = {
 export type PipelineSelectedInfo = ClientMetadata & {
   connectors?: ConnectorStats | null
   created_at: string
+  deployment_config?: PipelineDeploymentConfig | null
   deployment_desired_status: CombinedDesiredStatus
   deployment_desired_status_since: string
   deployment_error?: ErrorResponse | null
@@ -4418,6 +4643,7 @@ export type PipelineTemplateConfig = {
  * (for strings: an empty string `""`, for objects: an empty dictionary `{}`).
  */
 export type PostPutPipeline = ClientMetadata & {
+  deployment_config?: PipelineDeploymentConfig | null
   name: string
   program_code: string
   program_config?: ProgramConfig | null
@@ -4439,10 +4665,79 @@ export type PostStopPipelineParameters = {
 }
 
 /**
+ * Batch processing configuration for the Postgres CDC connector.
+ *
+ * Controls how replication events are buffered into a batch before being
+ * flushed to Feldera. Mirrors the batch configuration of the underlying
+ * `etl` replication library; fields omitted from the configuration fall
+ * back to `etl`'s own defaults.
+ */
+export type PostgresCdcBatchConfig = {
+  /**
+   * Maximum time, in milliseconds, to wait before flushing a partially
+   * filled batch. This is the latency bound for batching: once the first
+   * event enters a batch, the batch is flushed when this timer elapses,
+   * even if `max_size` was not reached.
+   *
+   * Default: 10000 (10 seconds).
+   */
+  max_fill_ms?: number
+  /**
+   * Maximum preferred size for one batch per active stream, such as
+   * `"32Mi"`. This is a ceiling, not a target: the runtime still chooses
+   * the smaller value between this limit and the memory-ratio budget
+   * computed from `memory_budget_ratio`.
+   *
+   * Default: `"32Mi"`, the same as etl.
+   *
+   * Before release 0.367.0 this setting was `max_bytes`, a number of
+   * bytes. That name is deprecated but still read.
+   */
+  max_size?: string
+  /**
+   * Ratio of process memory reserved for incoming replication batch
+   * bytes, in the `(0.0, 1.0]` interval. The configured memory is divided
+   * by the number of active streams at runtime, so each stream gets only
+   * a per-stream share of the global memory budget.
+   *
+   * Default: 0.2.
+   */
+  memory_budget_ratio?: number
+}
+
+/**
+ * Memory-based backpressure configuration for the Postgres CDC connector.
+ *
+ * When the connector's memory usage rises above `activate_threshold`, it
+ * pauses reading further replication events until usage drops back below
+ * `resume_threshold`. Mirrors the memory backpressure configuration of the
+ * underlying `etl` replication library.
+ */
+export type PostgresCdcMemoryBackpressureConfig = {
+  /**
+   * Memory usage ratio above which backpressure is activated, in the
+   * `(0.0, 1.0]` interval.
+   *
+   * Default: 0.85.
+   */
+  activate_threshold?: number
+  /**
+   * Memory usage ratio below which backpressure is released, in the
+   * `[0.0, 1.0)` interval. Must be lower than `activate_threshold`.
+   *
+   * Default: 0.75.
+   */
+  resume_threshold?: number
+}
+
+/**
  * Postgres CDC input connector configuration.
  *
  * Uses logical replication to capture ongoing changes from a Postgres database.
- * Requires a pre-created publication and a user with REPLICATION privilege.
+ * Requires a pre-created publication. Automatic source migrations require a
+ * superuser; with administrator-installed source objects and
+ * `run_source_migrations = false`, a replication role with the documented
+ * source-table and etl state-store privileges can be used instead.
  * Tables must have primary keys and `REPLICA IDENTITY FULL` is recommended
  * for UPDATE/DELETE support.
  */
@@ -4487,10 +4782,25 @@ export type PostgresCdcReaderConfig = {
    */
   verify_hostname?: boolean | null
 } & {
+  batch?: PostgresCdcBatchConfig
+  memory_backpressure?: PostgresCdcMemoryBackpressureConfig
   /**
    * Name of the pre-created Postgres publication to replicate from.
    */
   publication: string
+  /**
+   * Whether the connector runs etl's source migrations on startup.
+   *
+   * The source migrations install the schema helper functions and the
+   * `ddl_command_end` event trigger. Creating the event trigger requires a
+   * superuser, so a de-elevated role can set this to `false` and have an
+   * administrator install the source objects out-of-band. Disabling this
+   * does not skip the state-store migrations, which run on every start
+   * regardless.
+   *
+   * Default: `true`.
+   */
+  run_source_migrations?: boolean
   /**
    * Postgres table to replicate, schema-qualified (e.g. "public.orders").
    * A name given without a schema refers to a table in "public".
@@ -4498,7 +4808,9 @@ export type PostgresCdcReaderConfig = {
    */
   source_table: string
   /**
-   * Postgres connection URI. The user must have REPLICATION privilege.
+   * Postgres connection URI. Automatic source migrations require a superuser.
+   * With `run_source_migrations = false`, the user needs REPLICATION and the
+   * grants described in [Running as a non-superuser](https://docs.feldera.com/connectors/sources/postgresql-cdc#running-as-a-non-superuser).
    * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
    */
   uri: string
@@ -4684,12 +4996,15 @@ export type PostgresWriterConfig = {
    */
   extra_columns?: Array<string>
   /**
-   * The maximum buffer size in for a single operation.
+   * The maximum buffer size for a single operation, such as `"1Mi"`.
    * Note that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are
    * separate.
-   * Default: 1 MiB
+   * Default: `"1Mi"`.
+   *
+   * Before release 0.367.0 this setting was `max_buffer_size_bytes`, a
+   * number of bytes. That name is deprecated but still read.
    */
-  max_buffer_size_bytes?: number
+  max_buffer_size?: string
   /**
    * The maximum number of records in a single buffer.
    */
@@ -4913,6 +5228,7 @@ export type ProgramIr = {
    * Program schema.
    */
   program_schema: unknown
+  udf_library?: UdfLibrary | null
 }
 
 /**
@@ -4961,9 +5277,9 @@ export type ProviderGenericOidc = {
  */
 export type PubSubInputConfig = {
   /**
-   * gRPC connection timeout.
+   * gRPC connection timeout, for example `10s`.
    */
-  connect_timeout_seconds?: number | null
+  connect_timeout?: string | null
   /**
    * The content of a Google Cloud credentials JSON file.
    *
@@ -5013,9 +5329,9 @@ export type PubSubInputConfig = {
    */
   subscription: string
   /**
-   * gRPC request timeout.
+   * gRPC request timeout, for example `30s`.
    */
-  timeout_seconds?: number | null
+  timeout?: string | null
   /**
    * Reset subscription's backlog to a given timestamp on startup,
    * using the Pub/Sub `Seek` API.
@@ -5125,15 +5441,21 @@ export type ResourceConfig = {
    */
   cpu_cores_min?: number | null
   /**
-   * The maximum memory in Megabytes to reserve
-   * for an instance of this pipeline
+   * The maximum memory to reserve for an instance of this pipeline, such
+   * as `"16Gi"`.
+   *
+   * Before release 0.367.0 this setting was `memory_mb_max`, a number of
+   * megabytes. That name is deprecated but still read.
    */
-  memory_mb_max?: number | null
+  memory_max?: string | null
   /**
-   * The minimum memory in Megabytes to reserve
-   * for an instance of this pipeline
+   * The minimum memory to reserve for an instance of this pipeline, such
+   * as `"4Gi"`.
+   *
+   * Before release 0.367.0 this setting was `memory_mb_min`, a number of
+   * megabytes. That name is deprecated but still read.
    */
-  memory_mb_min?: number | null
+  memory_min?: string | null
   /**
    * Kubernetes namespace to use for an instance of this pipeline.
    * The namespace determines the scope of names for resources created
@@ -5153,20 +5475,35 @@ export type ResourceConfig = {
    */
   storage_class?: string | null
   /**
-   * The maximum storage in Megabytes for an instance of this pipeline.
+   * The maximum storage for an instance of this pipeline, such as
+   * `"400Gi"`.
    *
-   * Without `storage_mb_min`, this much storage is reserved up front.
+   * Without `storage_min`, this much storage is reserved up front.
    *
-   * With `storage_mb_min`, storage starts there and autoscaling expands it
-   * up to this limit.
+   * With `storage_min`, storage starts there and autoscaling expands it up
+   * to this limit.
+   *
+   * Before release 0.367.0 this setting was `storage_mb_max`, a number of
+   * megabytes. That name is deprecated but still read.
    */
-  storage_mb_max?: number | null
+  storage_max?: string | null
   /**
-   * The initial storage in Megabytes to reserve for an instance of this
-   * pipeline. Set together with `storage_mb_max` to enable storage
+   * The initial storage to reserve for an instance of this pipeline, such
+   * as `"100Gi"`. Set together with `storage_max` to enable storage
    * autoscaling.
+   *
+   * Before release 0.367.0 this setting was `storage_mb_min`, a number of
+   * megabytes. That name is deprecated but still read.
    */
-  storage_mb_min?: number | null
+  storage_min?: string | null
+  /**
+   * Kubernetes volume attributes class to use for the storage of an
+   * instance of this pipeline. The class sets mutable storage parameters
+   * such as IOPS and throughput. Requires Kubernetes 1.34 or later (or
+   * the `VolumeAttributesClass` feature gate) and CSI driver support.
+   * A change takes effect on the next start, also for existing storage.
+   */
+  volume_attributes_class?: string | null
 }
 
 export type ResourcesDesiredStatus = 'Stopped' | 'Provisioned'
@@ -5360,17 +5697,17 @@ export type RuntimeConfig = {
    */
   checkpoint_during_suspend?: boolean
   /**
-   * Real-time clock resolution in microseconds.
+   * Real-time clock resolution, for example `1s`.
    *
    * This parameter controls the execution of queries that use the `NOW()` function.  The output of such
    * queries depends on the real-time clock and can change over time without any external
    * inputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental
-   * recomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use
+   * recomputation at most once per `clock_resolution`.  If the query does not use
    * `NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.
    *
-   * It is set to 1 second (1,000,000 microseconds) by default.
+   * Unset or `null` selects the default, `DEFAULT_CLOCK_RESOLUTION`.
    */
-  clock_resolution_usecs?: number | null
+  clock_resolution?: string | null
   /**
    * Fixed timezone offset for the SQL `NOW()` clock.
    *
@@ -5391,12 +5728,11 @@ export type RuntimeConfig = {
    */
   cpu_profiler?: boolean
   /**
-   * DataFusion memory pool size, in MB, shared by the ad-hoc query
-   * engine and the Delta Lake / Iceberg connectors.
+   * DataFusion memory pool size, such as `"1Gi"`, shared by the ad-hoc
+   * query engine and the Delta Lake / Iceberg connectors.
    *
-   * Carved out of `max_rss_mb` (falling back to
-   * `resources.memory_mb_max`); the remainder goes to the DBSP circuit,
-   * so the two do not double-book RAM.
+   * Carved out of `max_rss` (falling back to `resources.memory_max`); the
+   * remainder goes to the DBSP circuit, so the two do not double-book RAM.
    *
    * Unset: defaults to 5% of the effective budget, capped at 2 GB.
    * Pipelines that don't run heavy ad-hoc / Delta / Iceberg workloads
@@ -5409,10 +5745,13 @@ export type RuntimeConfig = {
    *
    * No pool limit applied if no overall budget is configured.
    *
+   * Before release 0.367.0 this setting was `datafusion_memory_mb`, a
+   * number of megabytes. That name is deprecated but still read.
+   *
    * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
    * for more details.
    */
-  datafusion_memory_mb?: number | null
+  datafusion_memory?: string | null
   dev_tweaks?: DevTweaks
   /**
    * Environment variables for the pipeline process.
@@ -5474,10 +5813,10 @@ export type RuntimeConfig = {
    */
   logging?: string | null
   /**
-   * Maximal delay in microseconds to wait for `min_batch_size_records` to
-   * get buffered by the controller, defaults to 0.
+   * Maximal delay to wait for `min_batch_size_records` to get buffered by
+   * the controller, for example `10ms`. Defaults to no delay.
    */
-  max_buffering_delay_usecs?: number
+  max_buffering_delay?: string | null
   /**
    * The maximum number of connectors initialized in parallel during pipeline
    * startup.
@@ -5492,8 +5831,8 @@ export type RuntimeConfig = {
    */
   max_parallel_connector_init?: number | null
   /**
-   * The maximum amount of memory, in Megabytes, that the pipeline is allowed to use
-   * on each host.
+   * The maximum amount of memory that the pipeline is allowed to use on
+   * each host, such as `"16G"` or `"16Gi"`.
    *
    * Setting this property activates memory pressure monitoring and backpressure
    * mechanisms. The pipeline will track the amount of remaining memory and
@@ -5507,20 +5846,27 @@ export type RuntimeConfig = {
    * running out of memory. The setting should not exceed the memory limit of the pipeline
    * instance.
    *
-   * When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
+   * When `max_rss` is not specified but `resources.memory_max` is set, the
    * latter is used as the effective memory cap for the pipeline.
+   *
+   * The pipeline caps this limit at the memory available to it, which is the
+   * host's memory or the container's memory limit, whichever is smaller. It
+   * rechecks the available memory every second.
+   *
+   * Before release 0.367.0 this setting was `max_rss_mb`, a number of
+   * megabytes. That name is deprecated but still read.
    *
    * See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
    * for more details.
    */
-  max_rss_mb?: number | null
+  max_rss?: string | null
   /**
    * Minimal input batch size.
    *
    * The controller delays pushing input records to the circuit until at
    * least `min_batch_size_records` records have been received (total
-   * across all endpoints) or `max_buffering_delay_usecs` microseconds
-   * have passed since at least one input records has been buffered.
+   * across all endpoints) or `max_buffering_delay` has passed
+   * since the first input record was buffered.
    * Defaults to 0.
    */
   min_batch_size_records?: number
@@ -5537,10 +5883,10 @@ export type RuntimeConfig = {
   pin_cpus?: Array<number>
   pipeline_template_configmap?: PipelineTemplateConfig | null
   /**
-   * Timeout in seconds for the `Provisioning` phase of the pipeline.
+   * Timeout for the `Provisioning` phase of the pipeline, for example `5m`.
    * Setting this value will override the default of the runner.
    */
-  provisioning_timeout_secs?: number | null
+  provisioning_timeout?: string | null
   resources?: ResourceConfig
   storage?: StorageOptions | null
   /**
@@ -5622,6 +5968,10 @@ export type RustCompilationInfo = {
    */
   exit_code: number
   /**
+   * Parsed rustc diagnostics. Older stored JSON omits this field.
+   */
+  messages?: Array<RustCompilerMessage>
+  /**
    * Output printed to stderr by the `cargo` compilation command.
    */
   stderr: string
@@ -5629,6 +5979,21 @@ export type RustCompilationInfo = {
    * Output printed to stdout by the `cargo` compilation command.
    */
   stdout: string
+}
+
+/**
+ * One rustc diagnostic (error or warning).
+ */
+export type RustCompilerMessage = {
+  end_column: number
+  end_line_number: number
+  error_type: string
+  file?: string | null
+  message: string
+  rendered?: string | null
+  start_column: number
+  start_line_number: number
+  warning: boolean
 }
 
 /**
@@ -5857,6 +6222,13 @@ export type SessionInfo = {
    * Acting tenant name; `null` exactly when `tenant_id` is.
    */
   tenant_name?: string | null
+  /**
+   * When the user got the first tenant membership, usually at the first
+   * login. The web console uses it to report a signup. Is `null` for
+   * principals that are not human logins, for users without memberships, and
+   * for users with a membership from before the manager recorded this time.
+   */
+  user_created_at?: string | null
 }
 
 /**
@@ -5992,8 +6364,8 @@ export type StartTransactionResponse = {
 }
 
 /**
- * Storage autoscaling policy: expand storage from `storage_mb_min` toward
- * `storage_mb_max` as it fills up.
+ * Storage autoscaling policy: expand storage from `storage_min` toward
+ * `storage_max` as it fills up.
  */
 export type StorageAutoscalingConfig = {
   /**
@@ -6005,11 +6377,14 @@ export type StorageAutoscalingConfig = {
    */
   scale_threshold?: number | null
   /**
-   * Expand storage when available space falls below this many MB, even if
-   * usage is still under `scale_threshold`. Either condition triggers
-   * expansion. Unset by default.
+   * Expand storage when available space falls below this size, such as
+   * `"10Gi"`, even if usage is still under `scale_threshold`. Either
+   * condition triggers expansion. Unset by default.
+   *
+   * Before release 0.367.0 this setting was `scale_threshold_available_mb`,
+   * a number of megabytes. That name is deprecated but still read.
    */
-  scale_threshold_available_mb?: number | null
+  scale_threshold_available?: string | null
 }
 
 /**
@@ -6079,13 +6454,16 @@ export type StorageOptions = {
    */
   bloom_false_positive_rate?: number | null
   /**
-   * The maximum size of the in-memory storage cache, in MiB.
+   * The maximum size of the in-memory storage cache, such as `"4Gi"`.
    *
    * If set, the specified cache size is spread across all the foreground and
    * background threads. If unset, each foreground or background thread cache
    * is limited to 256 MiB.
+   *
+   * Before release 0.367.0 this setting was `cache_mib`, a number of
+   * mebibytes. That name is deprecated but still read.
    */
-  cache_mib?: number | null
+  cache_size?: string | null
   compression?: StorageCompression
   /**
    * Compression level, for compression algorithms that have one.
@@ -6101,31 +6479,37 @@ export type StorageOptions = {
    */
   compression_level?: number | null
   /**
-   * For a batch of data passed through the pipeline during a single step,
-   * the minimum estimated number of bytes to write it to storage.
-   *
-   * This is provided for debugging and fine-tuning and should ordinarily be
-   * left unset.  A value of 0 writes every batch that holds anything to
-   * storage; an empty batch stays in memory, since it has nothing to spill
-   * and a layer file is not free.  Nonzero values provide a threshold.
-   * `usize::MAX`, the default, effectively disables storage for such
-   * batches.  If it is set to another value, it should ordinarily be
-   * greater than or equal to `min_storage_bytes`.
-   */
-  min_step_storage_bytes?: number | null
-  /**
    * For a batch of data maintained as part of a persistent index during a
-   * pipeline run, the minimum estimated number of bytes to write it to
-   * storage.
+   * pipeline run, the minimum estimated size to write it to storage, such
+   * as `"10Mi"`.
    *
    * This is provided for debugging and fine-tuning and should ordinarily be
    * left unset.
    *
    * A value of 0 will write even empty batches to storage, and nonzero
-   * values provide a threshold.  `usize::MAX` would effectively disable
-   * storage for such batches.  The default is 10,048,576 (10 MiB).
+   * values provide a threshold.  A very large value effectively disables
+   * storage for such batches.  The default is `"10Mi"`.
+   *
+   * Before release 0.367.0 this setting was `min_storage_bytes`, a number
+   * of bytes. That name is deprecated but still read.
    */
-  min_storage_bytes?: number | null
+  min_spill_size?: string | null
+  /**
+   * For a batch of data passed through the pipeline during a single step,
+   * the minimum estimated size to write it to storage, such as `"64Mi"`.
+   *
+   * This is provided for debugging and fine-tuning and should ordinarily be
+   * left unset.  A value of 0 writes every batch that holds anything to
+   * storage; an empty batch stays in memory, since it has nothing to spill
+   * and a layer file is not free.  Nonzero values provide a threshold.
+   * Unset, the default, effectively disables storage for such batches.
+   * If it is set, it should ordinarily be greater than or equal to
+   * `min_spill_size`.
+   *
+   * Before release 0.367.0 this setting was `min_step_storage_bytes`, a
+   * number of bytes. That name is deprecated but still read.
+   */
+  min_step_spill_size?: string | null
 }
 
 /**
@@ -6214,6 +6598,14 @@ export type SyncConfig = {
    */
   checkers?: number | null
   /**
+   * The interval between each push of checkpoints to object store, for
+   * example `1h`.
+   *
+   * The default is no periodic push; `null` disables periodic pushes
+   * explicitly.
+   */
+  checkpoint_push_interval?: string | null
+  /**
    * The endpoint URL for the storage service.
    *
    * This is typically required for custom or local S3-compatible storage providers like MinIO.
@@ -6251,6 +6643,12 @@ export type SyncConfig = {
    */
   ignore_checksum?: boolean | null
   /**
+   * The minimum age a checkpoint must reach before it becomes eligible for
+   * deletion, for example `30d`. All younger checkpoints will be preserved.
+   * Unset selects the default, `DEFAULT_RETENTION_MIN_AGE`.
+   */
+  min_retention?: string | null
+  /**
    * Use multi-thread download for files above this size.
    * Format: `[size][Suffix]` (Example: 1G, 500M)
    * Supported suffixes: k|M|G|T
@@ -6285,21 +6683,6 @@ export type SyncConfig = {
    */
   provider?: string | null
   /**
-   * The interval (in seconds) between each attempt to fetch the latest
-   * checkpoint from object store while in standby mode.
-   *
-   * Applies only when `start_from_checkpoint` is set to `latest`.
-   *
-   * Default: 10 seconds
-   */
-  pull_interval?: number
-  /**
-   * The interval (in seconds) between each push of checkpoints to object store.
-   *
-   * Default: disabled (no periodic push).
-   */
-  push_interval?: number | null
-  /**
    * A read-only bucket used as a fallback checkpoint source.
    *
    * When the pipeline has no local checkpoint and `bucket` contains no
@@ -6321,13 +6704,6 @@ export type SyncConfig = {
    */
   region?: string | null
   /**
-   * The minimum age (in days) a checkpoint must reach before it becomes
-   * eligible for deletion. All younger checkpoints will be preserved.
-   *
-   * Default: 30
-   */
-  retention_min_age?: number
-  /**
    * The minimum number of checkpoints to retain in object store.
    * No checkpoints will be deleted if the total count is below this threshold.
    *
@@ -6348,6 +6724,14 @@ export type SyncConfig = {
    * @deprecated
    */
   standby?: boolean
+  /**
+   * The interval between each attempt to fetch the latest checkpoint from
+   * object store while in standby mode, for example `10s`.
+   *
+   * Applies only when `start_from_checkpoint` is set to `latest`. Unset
+   * selects the default, `DEFAULT_PULL_INTERVAL`.
+   */
+  standby_pull_interval?: string | null
   start_from_checkpoint?: StartFromCheckpoint | null
   /**
    * Take ownership of `bucket` when the pipeline starts, even if another
@@ -6530,6 +6914,10 @@ export type TransportConfig =
       name: 'nats_input'
     }
   | {
+      config: NatsOutputConfig
+      name: 'nats_output'
+    }
+  | {
       config: KafkaInputConfig
       name: 'kafka_input'
     }
@@ -6620,6 +7008,20 @@ export type TransportConfig =
       name: 'empty_input'
     }
 
+/**
+ * A program's UDF library, named by the same checksums as a pipeline binary.
+ */
+export type UdfLibrary = {
+  /**
+   * sha256 checksum of the library file.
+   */
+  integrity_checksum: string
+  /**
+   * Checksum of the sources the library was built from.
+   */
+  source_checksum: string
+}
+
 export type UpdateInformation = {
   /**
    * URL that navigates the user to instructions on how to update their deployment's version
@@ -6646,15 +7048,17 @@ export type UrlInputConfig = {
    */
   path: string
   /**
-   * Timeout before disconnection when paused, in seconds.
+   * Timeout before disconnection when paused, for example `60s`.
    *
    * If the pipeline is paused, or if the input adapter reads data faster
    * than the pipeline can process it, then the controller will pause the
    * input adapter. If the input adapter stays paused longer than this
    * timeout, it will drop the network connection to the server. It will
    * automatically reconnect when the input adapter starts running again.
+   *
+   * Unset selects the default, `DEFAULT_PAUSE_TIMEOUT`.
    */
-  pause_timeout?: number
+  pause_linger?: string | null
 }
 
 export type UserAndPassword = {
@@ -7339,6 +7743,10 @@ export type PatchPipelineErrors = {
    * Pipeline with that name does not exist
    */
   404: ErrorResponse
+  /**
+   * The runner of this installation cannot resize a running pipeline in place
+   */
+  405: ErrorResponse
   /**
    * Cannot rename pipeline as the name already exists
    */
@@ -8214,7 +8622,7 @@ export type HttpInputData = {
      */
     force: boolean
     /**
-     * Input data format, either `csv' or 'json'.
+     * Input data format: `csv`, `json`, `parquet`, `avro`, or `raw`. The default is `csv`.
      */
     format: string
     /**
@@ -8225,6 +8633,10 @@ export type HttpInputData = {
      * JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'.
      */
     update_format?: JsonUpdateFormat | null
+    /**
+     * Connector metadata for every record of this request, as a JSON object.  `CONNECTOR_METADATA()` returns the object for the records, so a column declared with `DEFAULT CAST(CONNECTOR_METADATA()['name'] AS type)` takes its value from the object's `name` attribute.  Works with every input format.
+     */
+    connector_metadata?: string | null
   }
   url: '/v0/pipelines/{pipeline_name}/ingress/{table_name}'
 }

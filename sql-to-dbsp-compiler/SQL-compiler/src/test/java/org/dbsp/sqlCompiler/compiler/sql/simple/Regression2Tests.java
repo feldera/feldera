@@ -96,7 +96,7 @@ public class Regression2Tests extends SqlIoTest {
                 HashString hash = OperatorHash.getHash(operator, true);
                 Utilities.enforce(hash != null);
                 Utilities.enforce(hash.toString()
-                        .equals("1f3808fdce7cee3559c13945ba24280abf22b777542af1bac25aa7d57cf29892"));
+                        .equals("2fe2fc9849c1570862393e7c86f5d2e4df1842a08c7c074ee0b886854b0fece9"));
             }
 
             @Override
@@ -253,6 +253,17 @@ public class Regression2Tests extends SqlIoTest {
                 CREATE VIEW v AS SELECT
                 str SIMILAR TO '(abc|def)%' AS str
                 FROM tbl;""", "Function 'SIMILAR TO' not yet implemented");
+    }
+
+    @Test
+    public void constantSimilarTo() {
+        // Calcite can evaluate SIMILAR TO when both operands are constant
+        this.statementsFailingInCompilation(
+                "CREATE VIEW v AS SELECT 'abc' SIMILAR TO 'a%' AS b;",
+                "Function 'SIMILAR TO' not yet implemented");
+        this.statementsFailingInCompilation(
+                "CREATE VIEW v AS SELECT 'abc' NOT SIMILAR TO '(b|c)%' AS b;",
+                "Function 'SIMILAR TO' not yet implemented");
     }
 
     @Test

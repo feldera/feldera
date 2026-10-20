@@ -357,7 +357,8 @@ pub struct ExtendedPipelineDescr {
     /// Pipeline platform version.
     pub platform_version: String,
 
-    /// Pipeline runtime configuration.
+    /// Pipeline runtime configuration, as set by the client through the API. A pipeline start
+    /// copies it into the deployment configuration.
     pub runtime_config: serde_json::Value,
 
     /// Program SQL code.
@@ -404,7 +405,9 @@ pub struct ExtendedPipelineDescr {
     /// Can only be set when `Stopping` or `Stopped`.
     pub deployment_error: Option<ErrorResponse>,
 
-    // Pipeline deployment configuration.
+    /// Configuration of the current or most recent deployment: the runtime configuration at start,
+    /// plus the fields added at start. The runner manages the deployment from it. `None` until the
+    /// pipeline is first started.
     pub deployment_config: Option<serde_json::Value>,
 
     /// Location where the pipeline can be reached at runtime
@@ -505,6 +508,7 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub program_status: ProgramStatus,
     pub program_status_since: DateTime<Utc>,
     pub deployment_error: Option<ErrorResponse>,
+    pub deployment_config: Option<serde_json::Value>,
     pub deployment_location: Option<String>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,

@@ -26,7 +26,8 @@ We support several Avro-based formats:
 * **Raw** - every message contains a single Avro-encoded record that represents a row in a SQL
   table or view.
   * **Raw input**: An input connector configured with the raw Avro format treats all
-   incoming messages as inserts.
+   incoming messages as inserts, unless the `cdc_field` property names a field that holds
+   the operation type of each message (see [Ingesting change data capture (CDC) records](#ingesting-cdc-records)).
   * **Raw output**: An output connector configured with the raw Avro format includes an operation type
    (`"op"`) as a header in each output Kafka message: `"op": "insert"` represents an insertion, `"op": "update"`
    represents an update, and `"op": "delete"` representa a deletion. The message key can optionally store
@@ -140,9 +141,10 @@ either `registry_urls` or `schema` properties must be specified.
 | `update_format`               | `"raw"` or `"debezium"`|`"raw"` | Format used to encode data change events in this stream|
 | `schema`                      | string | | Avro schema used to encode all records in this stream, specified as a JSON-encoded string. When this property is set, the connector uses the provided schema instead of retrieving the schema from the schema registry. This setting is mutually exclusive with `registry_urls`. |
 | `skip_schema_id` | Boolean | `false` | `true` if serialized messages only contain raw data without the header carrying schema ID. See [Confluent documentation](<https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format>) for more details|
+| `cdc_field` | string | | Name of the field that holds the operation type of each record: `"I"` (insert), `"U"` (upsert), or `"D"` (delete). Only valid with the `raw` update format. See [Ingesting change data capture (CDC) records](#ingesting-cdc-records).|
 | `registry_urls`               | array of strings|`[]`| List of schema registry URLs. When non-empty, the connector retrieves Avro message schemas from the registry.|
 | `registry_proxy`              | string          | | Proxy that will be used to access the schema registry. Requires `registry_urls` to be set.|
-| `registry_timeout_secs`       | string          | | Timeout in seconds used to connect to the registry. Requires `registry_urls` to be set.|
+| `registry_timeout`   | duration        | | Timeout used to connect to the registry, for example `10s`. Replaces the deprecated `registry_timeout_secs`. Requires `registry_urls` to be set.|
 | `registry_username`           | string          | | Username used to authenticate with the registry.Requires `registry_urls` to be set. This option is mutually exclusive with token-based authentication (see `registry_authorization_token`).|
 | `registry_password`           | string          | | Password used to authenticate with the registry. Requires `registry_urls` to be set.|
 | `registry_authorization_token`| string          | | Token used to authenticate with the registry. Requires `registry_urls` to be set. This option is mutually exclusive with password-based authentication (see `registry_username` and `registry_password`).|
@@ -202,6 +204,62 @@ CREATE TABLE my_table (
 }]');
 ```
 
+### <a name="ingesting-cdc-records"></a>Ingesting change data capture (CDC) records
+
+Set the `cdc_field` property to ingest a raw Avro stream where each record holds its
+operation type in a field, such as the output of a Feldera Avro connector with
+[`cdc_field`](#emitting-change-data-capture-cdc-metadata) set.  The field must be a
+`string` or an `enum`, optionally nullable, and must hold one of the following values:
+
+| Value | Operation | Table with a primary key                                   | Table without a primary key                                              |
+|-------|-----------|------------------------------------------------------------|--------------------------------------------------------------------------|
+| `I`   | Insert    | Inserts the record, or replaces the row with the same key. | Adds the record as a new row.                                            |
+| `U`   | Upsert    | Same as `I`.                                               | Same as `I`: adds a new row and keeps the old one.                       |
+| `D`   | Delete    | Deletes the row with the same key, if there is one.        | Deletes one row equal to the record. The record must match the row in all columns. |
+
+`I` and `U` have the same effect.  A `U` record replaces the old row only when the table
+has a primary key, because it holds the new row, but not the old one.
+
+A record with a different value, or a null, is a parse error.  The connector checks every
+Avro schema it receives, from the `schema` property or from the schema registry: a schema
+without the field, or with a field of a different type, is an error.
+
+The field is also ingested as a column if the table has a column with the same name.
+
+:::warning
+
+Use `cdc_field` with a table that has a [primary key](/connectors/unique_keys).  In a
+table without a primary key, a `U` record adds a row instead of replacing the old one,
+and a `D` record that does not match a row in the table produces incorrect results.  The
+connector logs a warning at startup when the table has no primary key.
+
+:::
+
+```sql
+CREATE TABLE my_table (
+    id INT NOT NULL PRIMARY KEY,
+    ts TIMESTAMP
+) WITH (
+  'connectors' = '[{
+    "transport": {
+      "name": "kafka_input",
+      "config": {
+        "topic": "my_topic",
+        "start_from": "earliest",
+        "bootstrap.servers": "127.0.0.1:19092"
+      }
+    },
+    "format": {
+      "name": "avro",
+      "config": {
+        "registry_urls": ["http://127.0.0.1:18081"],
+        "update_format": "raw",
+        "cdc_field": "op"
+      }
+    }
+}]');
+```
+
 ### <a name="metadata"></a>Accessing Avro metadata
 
 The Avro connector exposes the following metadata with every ingested record:
@@ -241,6 +299,27 @@ CREATE TABLE my_table(
         }
       }
     }]');
+```
+
+### Ingesting Avro data via HTTP
+
+You can also push Avro data to a pipeline via [HTTP](/connectors/sources/http).
+The query parameters of the request configure the parser the way the
+`config` object of a connector does: `format=avro`, the `schema` as a
+URL-encoded JSON string, and `skip_schema_id=true`, because the request body
+holds a bare Avro datum without the schema id header.  Each request body
+holds exactly one datum.  A body with bytes after the datum is rejected.
+
+The following request inserts the datum stored in the file `datum.avro`
+into the table `my_table` of the first example above, using the schema of
+that example.  Any Avro library can write such a file, for example
+`fastavro.schemaless_writer` in Python.
+
+```bash
+curl -X 'POST' \
+  'http://127.0.0.1:8080/v0/pipelines/my_pipeline/ingress/my_table?format=avro&update_format=raw&skip_schema_id=true&schema=%7B%22type%22%3A%22record%22%2C%22name%22%3A%22ExampleSchema%22%2C%22fields%22%3A%5B%7B%22name%22%3A%22id%22%2C%22type%22%3A%22int%22%7D%2C%7B%22name%22%3A%22ts%22%2C%22type%22%3A%5B%22null%22%2C%7B%22type%22%3A%22long%22%2C%22logicalType%22%3A%22timestamp-micros%22%7D%5D%7D%5D%7D' \
+  -H 'Content-Type: application/octet-stream' \
+  --data-binary @datum.avro
 ```
 
 ## Avro output
@@ -285,7 +364,7 @@ However, exactly one of `registry_urls` and `schema` properties must be specifie
 | `skip_schema_id`               | Boolean | `false` | Set to `true` if serialized messages should only contain raw data without the header carrying schema ID. `False` by default. See https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format|
 | `registry_urls`                | array of strings| `[]` | List of schema registry URLs. When non-empty, the connector retrieves Avro message schemas from the registry.|
 | `registry_proxy`               | string          | | Proxy that will be used to access the schema registry. Requires `registry_urls` to be set.|
-| `registry_timeout_secs`        | string          | | Timeout in seconds used to connect to the registry. Requires `registry_urls` to be set.|
+| `registry_timeout`    | duration        | | Timeout used to connect to the registry, for example `10s`. Replaces the deprecated `registry_timeout_secs`. Requires `registry_urls` to be set.|
 | `registry_username`            | string          | | Username used to authenticate with the registry.Requires `registry_urls` to be set. This option is mutually exclusive with token-based authentication (see `registry_authorization_token`).|
 | `registry_password`            | string          | | Password used to authenticate with the registry. Requires `registry_urls` to be set.|
 | `registry_authorization_token` | string          | | Token used to authenticate with the registry. Requires `registry_urls` to be set. This option is mutually exclusive with password-based authentication (see `registry_username` and `registry_password`).|

@@ -77,9 +77,9 @@ pub mod typed_batch;
 pub mod circuit;
 pub mod algebra;
 pub mod ir;
-pub mod mimalloc;
 pub mod monitor;
 pub mod operator;
+pub mod process_stats;
 pub mod profile;
 pub mod storage;
 pub mod time;
@@ -107,7 +107,7 @@ pub use circuit::{
 pub use operator::FilterMap;
 pub use operator::{
     CmpFunc, OrdPartitionedIndexedZSet, OutputHandle,
-    input::{IndexedZSetHandle, InputHandle, MapHandle, ZSetHandle},
+    input::{IndexedZSetHandle, InputHandle, LazyMapHandle, MapHandle, ZSetHandle},
 };
 pub use trace::{DBData, DBWeight, cursor::Position};
 pub use typed_batch::{

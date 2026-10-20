@@ -3,6 +3,7 @@ use crate::db::types::combined_status::CombinedStatus;
 use crate::db::types::pipeline::ExtendedPipelineDescrMonitoring;
 use crate::db::{storage::Storage as _, types::tenant::TenantId};
 use crate::error::ManagerError;
+use crate::runner::interaction::RunnerInteraction;
 use actix_web::web::Bytes;
 use actix_web::{
     HttpResponse, get,
@@ -87,7 +88,6 @@ pub(crate) fn status_metrics_json(pipelines: &[ExtendedPipelineDescrMonitoring])
 pub(crate) async fn fetch_pipeline_metrics(
     state: &ServerState,
     client: &awc::Client,
-    tenant_id: TenantId,
     pipeline: &ExtendedPipelineDescrMonitoring,
     query_string: &str,
 ) -> Option<Bytes> {
@@ -98,20 +98,25 @@ pub(crate) async fn fetch_pipeline_metrics(
     }
 
     let name = &pipeline.name;
-    match state
-        .runner
-        .forward_http_request_to_pipeline_by_name(
+    // Forward to the location in `pipeline`, without a database read.
+    let response = async {
+        let location = pipeline.deployment_location_based_on_status()?;
+        RunnerInteraction::forward_http_request_to_pipeline(
+            &state.common_config,
             client,
-            tenant_id,
             name,
+            &location,
             Method::GET,
             "metrics",
             query_string,
             None,
             None,
+            None,
         )
         .await
-    {
+    }
+    .await;
+    match response {
         Ok(response) if response.status().is_success() => {
             response.into_body().try_into_bytes().ok()
         }
@@ -162,9 +167,7 @@ pub(crate) async fn get_metrics(
     let mut result = status_metrics(&pipelines).into_bytes();
 
     for pipeline in &pipelines {
-        if let Some(bytes) =
-            fetch_pipeline_metrics(&state, client.as_ref(), *tenant_id, pipeline, "").await
-        {
+        if let Some(bytes) = fetch_pipeline_metrics(&state, client.as_ref(), pipeline, "").await {
             result.extend(bytes);
             result.push(NEWLINE);
         }
@@ -203,6 +206,7 @@ mod test {
             program_status: ProgramStatus::Pending,
             program_status_since: Default::default(),
             deployment_error: None,
+            deployment_config: None,
             deployment_location: None,
             refresh_version: Version(1),
             storage_status: StorageStatus::Cleared,
@@ -422,5 +426,39 @@ pipeline_status{pipeline="pipeline-00000000-0000-0000-0000-000000000001",pipelin
         pipeline.deployment_runtime_status = None;
 
         assert_eq!(reported(&family(&pipeline)), "Unavailable");
+    }
+
+    /// The metrics come from the location in the given descriptor. The pipeline
+    /// is not in the database, so any database read for it fails.
+    #[actix_web::test]
+    async fn metrics_are_fetched_from_the_given_location() {
+        use super::fetch_pipeline_metrics;
+        use crate::api::main::ServerState;
+        use crate::db::test::setup_pg;
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+        use wiremock::matchers::{method, path, query_param};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let (db, _db_handle) = setup_pg().await;
+        let state = ServerState::test_state(Arc::new(Mutex::new(db))).await;
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/metrics"))
+            .and(query_param("format", "json"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("from the pipeline"))
+            .expect(1)
+            .mount(&mock_server)
+            .await;
+
+        let mut pipeline = stopped_pipeline("p1");
+        pipeline.deployment_resources_status = ResourcesStatus::Provisioned;
+        pipeline.deployment_runtime_status = Some(RuntimeStatus::Running);
+        pipeline.deployment_location = Some(mock_server.address().to_string());
+
+        let bytes =
+            fetch_pipeline_metrics(&state, &awc::Client::default(), &pipeline, "format=json").await;
+        assert_eq!(bytes.as_deref(), Some(&b"from the pipeline"[..]));
     }
 }

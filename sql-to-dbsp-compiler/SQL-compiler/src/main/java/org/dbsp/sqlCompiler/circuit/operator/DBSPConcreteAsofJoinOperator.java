@@ -121,7 +121,8 @@ public final class DBSPConcreteAsofJoinOperator extends DBSPJoinBaseOperator imp
         DBSPConcreteAsofJoinOperator otherOperator = other.as(DBSPConcreteAsofJoinOperator.class);
         if (otherOperator == null)
             return false;
-        return this.leftTimestamp.equivalent(otherOperator.leftTimestamp) &&
+        return this.isLeft == otherOperator.isLeft &&
+                this.leftTimestamp.equivalent(otherOperator.leftTimestamp) &&
                 this.rightTimestamp.equivalent(otherOperator.rightTimestamp) &&
                 this.comparator.equivalent(otherOperator.comparator);
     }

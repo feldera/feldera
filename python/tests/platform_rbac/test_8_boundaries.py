@@ -217,6 +217,14 @@ def test_api_keys_accept_only_their_own_tenant(api: Api, boundaries, role):
         assert response.status_code == 403, response.text
 
 
+@pytest.mark.parametrize("role", ["read", "write"])
+def test_api_key_session_has_no_signup_time(api: Api, boundaries, role):
+    tokens, _ = boundaries
+    response = api.v0("GET", "/config/session", token=tokens["key", role])
+    assert response.status_code == 200, response.text
+    assert response.json()["user_created_at"] is None
+
+
 @pytest.mark.parametrize("kind,role", CREDENTIALS)
 def test_empty_tenant_selector_is_rejected(api: Api, boundaries, kind, role):
     tokens, _ = boundaries

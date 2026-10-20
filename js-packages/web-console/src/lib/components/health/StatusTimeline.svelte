@@ -394,7 +394,7 @@
           {#each ['no_data' as const, ...legend] as status}
             {@const style = resolveStyle(status)}
             <div class="flex items-center gap-1.5">
-              <div class="h-3 w-3 rounded-sm {style.bg}"></div>
+              <div class="h-3 w-3 rounded-md {style.bg}"></div>
               <span class="text-surface-600-300">{style.label}</span>
             </div>
           {/each}

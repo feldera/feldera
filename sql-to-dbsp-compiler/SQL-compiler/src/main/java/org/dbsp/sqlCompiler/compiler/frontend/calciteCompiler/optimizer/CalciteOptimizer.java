@@ -287,6 +287,8 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.PROJECT_CORRELATE_TRANSPOSE,
                 CoreRules.FILTER_CORRELATE));
         this.addStep(merge);
+        this.addStep(new SimpleOptimizerStep("Right joins to left joins", 0,
+                CoreRules.JOIN_COMMUTE_RIGHT_TO_LEFT));
 
         var joinOrder = new BaseOptimizerStep("Join order", 2) {
             @Override

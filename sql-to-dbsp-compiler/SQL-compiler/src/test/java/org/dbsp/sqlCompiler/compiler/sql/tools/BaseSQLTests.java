@@ -456,6 +456,7 @@ public class BaseSQLTests {
     protected void runtimeFail(String query, String message, InputOutputChangeStream data) {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.testCompiler();
+        this.prepareInputs(compiler);
         compiler.submitStatementForCompilation(query);
         new CompilerCircuitStream(compiler, data, this, message);
     }

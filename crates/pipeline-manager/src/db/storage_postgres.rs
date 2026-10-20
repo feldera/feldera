@@ -8,6 +8,9 @@ use crate::db::pg_setup;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::transaction;
 use crate::db::types::api_key::ApiKeyDescr;
+use crate::db::types::deployment::{
+    PipelineDeploymentConfig, patch_deployment_config, running_deployment_config,
+};
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
     ExtendedPipelineMonitorEvent, NewClusterMonitorEvent, PipelineMonitorEvent,
@@ -34,6 +37,7 @@ use crate::is_supported_runtime;
 use crate::oidc::destination::TenantIssuerPolicy;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
@@ -225,12 +229,10 @@ impl Storage for StoragePostgres {
         &self,
         provider: &str,
         subject: &str,
-    ) -> Result<Vec<UserMembership>, DBError> {
-        let mut client = self.pool.get().await?;
-        let txn = transaction::begin(&mut client).await?;
-        let result = operations::user::list_user_memberships(&txn, provider, subject).await?;
-        txn.commit().await?;
-        Ok(result)
+    ) -> Result<(Vec<UserMembership>, Option<DateTime<Utc>>), DBError> {
+        // One read-only statement needs no transaction.
+        let client = self.pool.get().await?;
+        operations::user::list_user_memberships(&client, provider, subject).await
     }
 
     async fn enroll_in_existing_tenants(
@@ -768,6 +770,36 @@ impl Storage for StoragePostgres {
         txn.commit().await?;
 
         Ok(())
+    }
+
+    async fn patch_pipeline_deployment(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        patch: &PipelineDeploymentConfig,
+    ) -> Result<ExtendedPipelineDescr, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = transaction::begin(&mut client).await?;
+        let current =
+            operations::pipeline::get_pipeline(&txn, tenant_id, pipeline_name, true).await?;
+        let patched = patch_deployment_config(running_deployment_config(&current)?, patch)?;
+
+        let stmt = txn
+            .prepare_cached(
+                "UPDATE pipeline
+                     SET deployment_config = $1,
+                         refresh_version = refresh_version + 1
+                     WHERE tenant_id = $2 AND id = $3",
+            )
+            .await?;
+        let rows_affected = txn
+            .execute(&stmt, &[&patched.to_string(), &tenant_id.0, &current.id.0])
+            .await?;
+        assert_eq!(rows_affected, 1);
+        let pipeline =
+            operations::pipeline::get_pipeline(&txn, tenant_id, pipeline_name, true).await?;
+        txn.commit().await?;
+        Ok(pipeline)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1925,7 +1957,18 @@ impl StoragePostgres {
         #[cfg(feature = "postgresql_embedded")]
         if db_config.uses_postgres_embed() {
             let database_dir = pg_embed_config.pg_embed_data_dir();
-            let pg_inst = pg_setup::install(database_dir, true, Some(8082)).await?;
+            let port = pg_embed_config.pg_embed_port;
+            let pg_inst = pg_setup::install(database_dir, true, Some(port))
+                .await
+                .inspect_err(|_| {
+                    // Postgres only reports that it could not start; name the
+                    // common cause, which is otherwise hidden in its own log.
+                    if std::net::TcpListener::bind(("127.0.0.1", port)).is_err() {
+                        tracing::error!(
+                            "Embedded Postgres could not start because port {port} is already in use; choose another port with --pg-embed-port"
+                        );
+                    }
+                })?;
             let db_name = "postgres";
             if !pg_inst.database_exists(db_name).await? {
                 pg_inst.create_database(db_name).await?;

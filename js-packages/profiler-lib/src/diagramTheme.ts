@@ -15,20 +15,20 @@ export const REGION_PADDING = 10;
 export const NODE_PADDING_X = 8;
 const NODE_BORDER_WIDTH = 1;
 export const NODE_OUTER_HEIGHT = 25;
-/** The node box itself, which is what `renderedHeight` measures, so `FOCUS_ZOOM` is picked against it. */
+/** The `height` style of an operator node: the body height without padding and border. */
 export const NODE_INNER_HEIGHT = NODE_OUTER_HEIGHT - 2 * NODE_PADDING_X - NODE_BORDER_WIDTH;
-/** First row of a collapsed composite, holding its counter chip, with the text in the second row. Has
- *  to fit the chip and the gap around it, which cannot be read from `chips.ts` here: the two modules
- *  import each other, so cross-reads only work inside a function body. `diagramTheme.test.ts` pins the
- *  relation instead. */
+/** First row of a collapsed circuit region, holding its counter chip, with the text in the second row.
+ *  Has to fit the chip and the gap around it, which cannot be read from `chips.ts` here: the two
+ *  modules import each other, so cross-reads only work inside a function body. `diagramTheme.test.ts`
+ *  pins the relation instead. */
 const BADGE_ROW_HEIGHT = 24;
-export const COMPOSITE_OUTER_HEIGHT = NODE_OUTER_HEIGHT + BADGE_ROW_HEIGHT;
-const COMPOSITE_INNER_HEIGHT = NODE_INNER_HEIGHT + BADGE_ROW_HEIGHT;
+export const COLLAPSED_REGION_OUTER_HEIGHT = NODE_OUTER_HEIGHT + BADGE_ROW_HEIGHT;
+const COLLAPSED_REGION_INNER_HEIGHT = NODE_INNER_HEIGHT + BADGE_ROW_HEIGHT;
 
 /** Corner radius per node kind. All three are round rectangles, so the radius is what tells them
  *  apart at a glance. */
 export const NODE_CORNER_RADIUS = 3;
-export const COMPOSITE_CORNER_RADIUS = 8;
+export const COLLAPSED_REGION_CORNER_RADIUS = 8;
 export const REGION_CORNER_RADIUS = 8;
 
 /** Weight of the id run of a node's text. The whole label is measured at this weight and the operator
@@ -118,6 +118,9 @@ export interface DiagramPalette {
     /** Edges reachable from the hovered node, and edges that reach it. */
     edgeForward: Color;
     edgeBackward: Color;
+    /** The same, for the edges that connect directly to the hovered node. */
+    edgeForwardAdjacent: Color;
+    edgeBackwardAdjacent: Color;
     /** Corner chips: background, outline, and glyph. */
     chipFill: Color;
     chipBorder: Color;
@@ -143,6 +146,8 @@ export const DIAGRAM_PALETTES: Record<DiagramTheme, DiagramPalette> = {
         region: '#8cabfa',
         edgeForward: '#ff0000',
         edgeBackward: '#0000ff',
+        edgeForwardAdjacent: '#ff2ee0',
+        edgeBackwardAdjacent: '#4da6ff',
         chipFill: '#ffffff',
         chipBorder: '#c7ccd4',
         chipInk: '#2f353c',
@@ -165,6 +170,8 @@ export const DIAGRAM_PALETTES: Record<DiagramTheme, DiagramPalette> = {
         region: '#0f38ad',
         edgeForward: '#ff6b6b',
         edgeBackward: '#74a9ff',
+        edgeForwardAdjacent: '#d91abc',
+        edgeBackwardAdjacent: '#2f62d9',
         chipFill: '#2c3137',
         chipBorder: '#454b52',
         chipInk: '#e8eaed',
@@ -184,8 +191,8 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
             css: {
                 'shape': 'round-rectangle',
                 'corner-radius': `${NODE_CORNER_RADIUS}`,
-                // The label is measured but never drawn: `nodeText.ts` paints the text as two runs,
-                // which one label cannot be. Keeping it is what sizes the node to its text.
+                // The label is never drawn: `nodeText.ts` paints the text as two runs, which one
+                // label cannot be. The node width comes from `text_width` below, not from the label.
                 'content': 'data(label)',
                 'text-opacity': 0,
                 'text-valign': 'center',
@@ -209,13 +216,13 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
             }
         },
         {
-            // Any composite, collapsed or expanded. `has_children` comes from the node definition, so
-            // both hold from the first paint. A collapsed one is a row taller, for its counter chip; an
-            // expanded one ignores `height` and sizes itself to its children.
+            // Any circuit region, collapsed or expanded. `has_children` comes from the node definition,
+            // so both hold from the first paint. A collapsed one is a row taller, for its counter chip;
+            // an expanded one ignores `height` and sizes itself to its children.
             selector: 'node[?has_children]',
             css: {
-                'corner-radius': `${COMPOSITE_CORNER_RADIUS}`,
-                'height': `${COMPOSITE_INNER_HEIGHT}px`,
+                'corner-radius': `${COLLAPSED_REGION_CORNER_RADIUS}`,
+                'height': `${COLLAPSED_REGION_INNER_HEIGHT}px`,
             }
         },
         {
@@ -297,6 +304,21 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
                 'target-arrow-color': p.edgeForward,
                 'width': 3,
                 'z-index': TRACED_EDGE_Z_INDEX
+            }
+        },
+        // After the two styles above, so that these colors shadow theirs.
+        {
+            selector: 'edge.highlight-backward-adjacent',
+            style: {
+                'line-color': p.edgeBackwardAdjacent,
+                'target-arrow-color': p.edgeBackwardAdjacent
+            }
+        },
+        {
+            selector: 'edge.highlight-forward-adjacent',
+            style: {
+                'line-color': p.edgeForwardAdjacent,
+                'target-arrow-color': p.edgeForwardAdjacent
             }
         },
     ];

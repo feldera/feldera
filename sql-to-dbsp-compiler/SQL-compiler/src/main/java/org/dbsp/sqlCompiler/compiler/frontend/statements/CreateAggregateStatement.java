@@ -2,7 +2,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
 import org.apache.calcite.sql.validate.SqlUserDefinedAggFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlUserDefinedAggregationFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.SqlUserDefinedAggregationFunction;
 
 public class CreateAggregateStatement extends RelStatement {
     public final SqlUserDefinedAggFunction function;

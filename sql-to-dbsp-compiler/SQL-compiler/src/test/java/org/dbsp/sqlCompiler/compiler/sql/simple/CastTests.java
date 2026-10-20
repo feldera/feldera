@@ -45,6 +45,8 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 public class CastTests extends SqlIoTest {
     final DBSPTypeDecimal tenTwo = new DBSPTypeDecimal(CalciteObject.EMPTY, 10, 2, true);
@@ -81,24 +83,25 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void testTinyInt() {
-        this.runtimeConstantFail("SELECT CAST(256 AS TINYINT)", "out of range integral type conversion attempted");
+        this.runtimeConstantFail("SELECT CAST(256 AS TINYINT)", "number too large to fit in target type");
     }
 
     @Test
     public void castFail() {
         this.runtimeConstantFail("SELECT CAST('blah' AS DECIMAL)",
-                "While converting 'blah' to DECIMAL: parse error");
+                "Error converting 'blah' to DECIMAL(38, 0): Syntax error in numeric value");
     }
 
     @Test
     public void castFailPosition() {
-        // use bround to inhibit compile-time optimization
+        // use bround to inhibit compile-time optimization;
+        // line numbers include the 2 lines of DDL from prepareInputs
         this.runtimeConstantFail("""
                         SELECT
                             CAST(bround(100000, 0)
                             AS DECIMAL
                                (3,2))""",
-                "line 2 column 5: Cannot represent 100000 as DECIMAL(3, 2): " +
+                "line 4 column 5: Cannot represent 100000 as DECIMAL(3, 2): " +
                         "precision of DECIMAL type too small to represent value");
     }
 
@@ -133,7 +136,7 @@ public class CastTests extends SqlIoTest {
     @Test
     public void decimalOutOfRange() {
         this.runtimeFail("SELECT CAST(100103123 AS DECIMAL(10, 4))",
-                "Could not convert 100103123 to DECIMAL(10, 4)",
+                "Error converting 100103123 to DECIMAL(10, 4): Value out of range",
                 this.streamWithEmptyChanges());
     }
 
@@ -271,6 +274,41 @@ public class CastTests extends SqlIoTest {
                  i
                 ---
                  13 months ago
+                (1 row)
+
+                SELECT CAST('-0-5' AS INTERVAL YEAR TO MONTH);
+                 i
+                ---
+                 5 months ago
+                (1 row)""");
+    }
+
+    @Test
+    public void issue7527() {
+        // An out-of-range field after the leading field is a cast error, so SAFE_CAST returns NULL
+        this.qst("""
+                SELECT SAFE_CAST('10:99' AS INTERVAL HOUR TO MINUTE);
+                 r
+                ---
+                NULL
+                (1 row)
+
+                SELECT SAFE_CAST('1 25:00' AS INTERVAL DAY TO MINUTE);
+                 r
+                ---
+                NULL
+                (1 row)
+
+                SELECT SAFE_CAST('200000000 0' AS INTERVAL DAY TO HOUR);
+                 r
+                ---
+                NULL
+                (1 row)
+
+                SELECT SAFE_CAST('1-12' AS INTERVAL YEAR TO MONTH);
+                 r
+                ---
+                NULL
                 (1 row)""");
     }
 
@@ -801,5 +839,173 @@ public class CastTests extends SqlIoTest {
                 "Cast function cannot convert value of type INTERVAL MONTH NOT NULL to type DOUBLE NOT NULL");
         this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CAST(INTERVAL '10' SECONDS AS REAL)",
                 "Cast function cannot convert value of type INTERVAL SECOND NOT NULL to type REAL NOT NULL");
+    }
+
+    /** Casts of the values to each target type.
+     *
+     * @param source      Type of the values.
+     * @param castLiteral If true, a value is a literal of a different type, cast to the source type.
+     *                    If false, a value is a literal of the source type, or a string literal
+     *                    when the source type is VARCHAR.
+     * @param values      Values that the casts convert.
+     * @param targets     Target types of the casts. */
+    record FoldedCasts(String source, boolean castLiteral, List<String> values, List<String> targets) {}
+
+    /** The compiler folds a cast of a literal into a constant, using Calcite's evaluation.
+     * Each folded cast must produce the same value as the runtime cast of the same value
+     * stored in a table.
+     *
+     * <p>For example, {@code new FoldedCasts("TINYINT", true, List.of("0", "1"), List.of("BOOLEAN"))}
+     * as the second entry generates:
+     * <pre>
+     * CREATE TABLE S1 (id INT NOT NULL, v TINYINT);
+     *
+     * SELECT 'S1: TINYINT' AS source, id,
+     *        'BOOLEAN=' || COALESCE(CAST(f0 AS VARCHAR), 'NULL') || '; ' AS folded,
+     *        'BOOLEAN=' || COALESCE(CAST(r0 AS VARCHAR), 'NULL') || '; ' AS runtime
+     * FROM (SELECT id,
+     *              CASE id WHEN 0 THEN CAST(CAST(0 AS TINYINT) AS BOOLEAN)
+     *                      WHEN 1 THEN CAST(CAST(1 AS TINYINT) AS BOOLEAN) END AS f0,
+     *              CAST(v AS BOOLEAN) AS r0
+     *       FROM S1)
+     * WHERE f0 IS DISTINCT FROM r0
+     * </pre>
+     * and these insertions into the table:
+     * <pre>
+     * INSERT INTO S1 VALUES(0, 0);
+     * INSERT INTO S1 VALUES(1, 1);
+     * </pre>
+     * The compiler folds the casts in the CASE branches into constants; the cast of column
+     * v runs at runtime. */
+    @Test
+    public void foldedCastsMatchRuntime() {
+        List<String> integers = List.of("TINYINT", "SMALLINT", "INTEGER", "BIGINT");
+        List<FoldedCasts> casts = List.of(
+                new FoldedCasts("BOOLEAN", false, List.of("TRUE", "FALSE"),
+                        List.of("CHAR(5)", "VARCHAR")),
+                new FoldedCasts("TINYINT", true, List.of("0", "1", "-128", "127"),
+                        List.of("SMALLINT", "INTEGER", "BIGINT", "DECIMAL(5, 1)", "REAL", "DOUBLE",
+                                "BOOLEAN", "CHAR(4)", "VARCHAR", "VARBINARY")),
+                new FoldedCasts("SMALLINT", true, List.of("0", "-32768", "32767"),
+                        List.of("INTEGER", "BIGINT", "DECIMAL(7, 1)", "REAL", "DOUBLE",
+                                "BOOLEAN", "VARCHAR", "VARBINARY")),
+                new FoldedCasts("SMALLINT", true, List.of("-100", "100"), List.of("TINYINT")),
+                new FoldedCasts("INTEGER", true, List.of("0", "-2147483648", "2147483647", "123456789"),
+                        List.of("BIGINT", "DECIMAL(12, 2)", "REAL", "DOUBLE", "BOOLEAN", "VARCHAR", "VARBINARY")),
+                new FoldedCasts("INTEGER", true, List.of("-100", "100"), List.of("TINYINT", "SMALLINT")),
+                new FoldedCasts("BIGINT", true,
+                        List.of("0", "-9223372036854775808", "9223372036854775807", "9007199254740993"),
+                        List.of("DECIMAL(20, 0)", "REAL", "DOUBLE", "BOOLEAN", "VARCHAR", "VARBINARY")),
+                new FoldedCasts("BIGINT", true, List.of("-100", "100"),
+                        List.of("TINYINT", "SMALLINT", "INTEGER")),
+                new FoldedCasts("DECIMAL(10, 3)", true,
+                        List.of("0", "1.5", "-1.5", "2.5", "1.999", "-99.999", "0.001"),
+                        List.of("TINYINT", "SMALLINT", "INTEGER", "BIGINT", "DECIMAL(5, 1)",
+                                "DECIMAL(12, 5)", "REAL", "DOUBLE", "BOOLEAN")),
+                new FoldedCasts("DOUBLE", true,
+                        List.of("0e0", "-1.5e0", "2.5e0", "0.1e0", "1e-7", "123.456e0", "-99.99e0"),
+                        List.of("TINYINT", "SMALLINT", "INTEGER", "BIGINT", "REAL", "BOOLEAN")),
+                new FoldedCasts("DOUBLE", true, List.of("1e18", "-9.2e18"), List.of("BIGINT")),
+                new FoldedCasts("REAL", true, List.of("0e0", "-1.5e0", "0.1e0", "99.5e0", "2.5e0"),
+                        List.of("TINYINT", "INTEGER", "BIGINT", "BOOLEAN")),
+                new FoldedCasts("VARCHAR", false, List.of("'true'", "'FALSE'", "'TrUe'"),
+                        List.of("BOOLEAN")),
+                new FoldedCasts("VARCHAR", false, List.of("'12'", "'-7'", "'+5'", "'0'", "' 42 '"),
+                        integers),
+                new FoldedCasts("VARCHAR", false,
+                        List.of("'1.5'", "'-2e3'", "'0.1'", "'1e-7'", "'  3.25  '"),
+                        List.of("REAL", "DOUBLE")),
+                new FoldedCasts("VARCHAR", false, List.of("'2024-02-29'", "'0001-01-01'", "'9999-12-31'"),
+                        List.of("DATE")),
+                new FoldedCasts("VARCHAR", false,
+                        List.of("'2000-01-01 00:00:00'", "'2024-02-29 10:20:30.5'", "'0001-01-01 00:00:00'",
+                                "'9999-12-31 23:59:59.999999'"),
+                        List.of("TIMESTAMP")),
+                new FoldedCasts("VARCHAR", false, List.of("'00:00:00'", "'23:59:59.123456'", "'10:20:30.123456789'"),
+                        List.of("TIME")),
+                new FoldedCasts("VARCHAR", false,
+                        List.of("'123e4567-e89b-12d3-a456-426614174000'", "'ABCDEF01-2345-6789-ABCD-EF0123456789'"),
+                        List.of("UUID")),
+                new FoldedCasts("VARCHAR", false, List.of("'ab'", "'abcdef'", "'x'", "''"),
+                        List.of("CHAR(4)", "VARCHAR(3)", "VARCHAR", "VARBINARY")),
+                new FoldedCasts("VARBINARY", true, List.of("x'0102'", "x''", "x'ff00'"),
+                        List.of("VARCHAR", "BINARY(2)")),
+                new FoldedCasts("VARBINARY", true, List.of("x'123e4567e89b12d3a456426614174000'"),
+                        List.of("UUID")),
+                new FoldedCasts("DATE", false, List.of("DATE '2024-02-29'", "DATE '0001-01-01'", "DATE '9999-12-31'"),
+                        List.of("VARCHAR", "CHAR(10)")),
+                new FoldedCasts("UUID", true, List.of("'123e4567-e89b-12d3-a456-426614174000'"),
+                        List.of("VARCHAR", "CHAR(36)", "VARBINARY")));
+        this.checkFoldedCasts(casts);
+    }
+
+    /** Casts of temporal literals that Calcite would convert into constants with values
+     * different from the runtime while converting SQL to relational expressions. */
+    @Test
+    public void foldedTemporalCastsMatchRuntime() {
+        this.checkFoldedCasts(List.of(
+                // Calcite would truncate the excess fractional digits, the runtime rounds them
+                new FoldedCasts("VARCHAR", false,
+                        List.of("'2000-01-01 00:00:00.1234567'", "'2000-01-01 00:00:00.9999996'"),
+                        List.of("TIMESTAMP")),
+                // Calcite would generate the significant fractional digits, the runtime generates
+                // 6 digits for a TIMESTAMP and 9 digits for a TIME
+                new FoldedCasts("TIMESTAMP", false,
+                        List.of("TIMESTAMP '2020-01-01 10:00:00.5'", "TIMESTAMP '2020-01-01 10:00:00'"),
+                        List.of("VARCHAR")),
+                new FoldedCasts("TIME", false, List.of("TIME '10:20:30.5'"), List.of("VARCHAR"))));
+    }
+
+    /** Compile a program that compares each folded cast in {@code casts} with the runtime
+     * cast of the same value, and check that no comparison differs. */
+    void checkFoldedCasts(List<FoldedCasts> casts) {
+        StringBuilder program = new StringBuilder();
+        StringBuilder inserts = new StringBuilder();
+        List<String> mismatches = new ArrayList<>();
+        for (int t = 0; t < casts.size(); t++) {
+            FoldedCasts cast = casts.get(t);
+            String table = "S" + t;
+            program.append("CREATE TABLE ").append(table)
+                    .append(" (id INT NOT NULL, v ").append(cast.source()).append(");\n");
+            for (int i = 0; i < cast.values().size(); i++)
+                inserts.append("INSERT INTO ").append(table)
+                        .append(" VALUES(").append(i).append(", ").append(cast.values().get(i)).append(");\n");
+            List<String> columns = new ArrayList<>();
+            List<String> different = new ArrayList<>();
+            List<String> folded = new ArrayList<>();
+            List<String> runtime = new ArrayList<>();
+            for (int j = 0; j < cast.targets().size(); j++) {
+                String target = cast.targets().get(j);
+                // Each branch is a cast of a constant, which the compiler folds
+                StringBuilder foldedCast = new StringBuilder("CASE id");
+                for (int i = 0; i < cast.values().size(); i++) {
+                    String value = cast.values().get(i);
+                    String literal = cast.castLiteral() ? "CAST(" + value + " AS " + cast.source() + ")" : value;
+                    foldedCast.append(" WHEN ").append(i)
+                            .append(" THEN CAST(").append(literal).append(" AS ").append(target).append(")");
+                }
+                foldedCast.append(" END");
+                columns.add(foldedCast + " AS f" + j);
+                columns.add("CAST(v AS " + target + ") AS r" + j);
+                different.add("f" + j + " IS DISTINCT FROM r" + j);
+                folded.add(showValue(target, "f" + j));
+                runtime.add(showValue(target, "r" + j));
+            }
+            mismatches.add("SELECT '" + table + ": " + cast.source() + "' AS source, id, " +
+                    String.join(" || ", folded) + " AS folded, " +
+                    String.join(" || ", runtime) + " AS runtime FROM (" +
+                    "SELECT id, " + String.join(", ", columns) + " FROM " + table + ") WHERE " +
+                    String.join(" OR ", different));
+        }
+        program.append("CREATE VIEW MISMATCHES AS\n")
+                .append(String.join("\nUNION ALL\n", mismatches))
+                .append(";\n");
+        CompilerCircuitStream ccs = this.getCCS(program.toString());
+        ccs.step(inserts.toString(), " source | id | folded | runtime | weight\n---");
+    }
+
+    /** A string with the target type and the value of a column, for the output of a mismatch */
+    static String showValue(String target, String column) {
+        return "'" + target + "=' || COALESCE(CAST(" + column + " AS VARCHAR), 'NULL') || '; '";
     }
 }

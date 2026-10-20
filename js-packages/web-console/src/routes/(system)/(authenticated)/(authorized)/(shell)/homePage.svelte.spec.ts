@@ -334,23 +334,35 @@ describe('/ (home) header', () => {
   beforeEach(() => page.viewport(1400, 900))
   afterEach(() => page.viewport(narrow.width, narrow.height))
 
-  it('offers the support bundle dialog between the community menu and New Pipeline', async () => {
+  it('offers the support bundle dialog between the community menu and Book a demo', async () => {
     const { container } = await renderHome()
 
-    // The button is a direct child of the header row, which distinguishes the header's
-    // New Pipeline button from the table's.
+    // The button is a direct child of the header row, so its parent is the header.
     const bundles = container.querySelector<HTMLElement>('[data-testid=btn-open-support-bundle]')!
     const header = bundles.parentElement!
     const labelled = (text: string) =>
-      [...header.querySelectorAll<HTMLElement>('button')]
-        .find((button) => button.textContent?.includes(text))!
+      [...header.querySelectorAll<HTMLElement>('a, button')]
+        .find((control) => control.textContent?.includes(text))!
         .getBoundingClientRect()
     expect(labelled('Community').right).toBeLessThanOrEqual(
       bundles.getBoundingClientRect().left + 1
     )
     expect(bundles.getBoundingClientRect().right).toBeLessThanOrEqual(
-      labelled('New Pipeline').left + 1
+      labelled('Book a demo').left + 1
     )
+  })
+  it('leaves New Pipeline to the pipeline table, out of the header', async () => {
+    const { container } = await renderHome()
+    const bundles = container.querySelector<HTMLElement>('[data-testid=btn-open-support-bundle]')!
+    const header = bundles.parentElement!
+
+    expect(header.textContent).not.toContain('New Pipeline')
+  })
+  it('spaces the header controls 8px apart', async () => {
+    const { container } = await renderHome()
+    const bundles = container.querySelector<HTMLElement>('[data-testid=btn-open-support-bundle]')!
+
+    expect(getComputedStyle(bundles.parentElement!).columnGap).toBe('8px')
   })
   it('opens the support bundle dialog from an icon button with a title', async () => {
     const { container } = await renderHome()

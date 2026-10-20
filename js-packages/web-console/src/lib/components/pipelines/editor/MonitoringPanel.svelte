@@ -24,6 +24,7 @@
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import { count } from '$lib/functions/common/array'
+  import { statusCounterClass, statusToneColors } from '$lib/functions/pipelineStatusColor'
   import { untrack } from 'svelte'
   import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
@@ -236,7 +237,7 @@
 {#snippet TabControlPerformance()}
   {@render TabPerformance.Label()}
   {#if runtimeErrorsCount > 0}
-    <span class="ml-1 inline-block min-w-6 rounded preset-filled-error-50-950 px-1 font-medium">
+    <span class="ml-1 {statusCounterClass} {statusToneColors.error.chip}">
       {runtimeErrorsCount}
     </span>
   {/if}
@@ -247,12 +248,12 @@
   {@const errorCount = errors.length - warningCount}
   <span class="">Compiler</span>
   {#if warningCount !== 0}
-    <span class="ml-1 inline-block min-w-6 rounded preset-filled-warning-200-800 px-1 font-medium">
+    <span class="ml-1 {statusCounterClass} {statusToneColors.warning.chip}">
       {warningCount}
     </span>
   {/if}
   {#if errorCount !== 0}
-    <span class="ml-1 inline-block min-w-6 rounded preset-filled-error-50-950 px-1 font-medium">
+    <span class="ml-1 {statusCounterClass} {statusToneColors.error.chip}">
       {errorCount}
     </span>
   {/if}
@@ -287,24 +288,21 @@
       onnext={() => submitLogSearch('next')}
       onprevious={() => submitLogSearch('prev')}
       onclear={resetLogSearch}
-      inputClass="h-8 w-40 text-sm"
+      inputClass="h-8 w-40 rounded-[4px] py-0"
     />
     {@render PipelineInfoHeader()}
   </div>
 {/snippet}
 
 {#snippet TabBarEndPipelineInfo()}
-  <div class="ml-auto flex gap-2">
+  <div class="ml-auto flex items-center gap-2">
     {@render PipelineInfoHeader()}
   </div>
 {/snippet}
 
 {#snippet PipelineInfoHeader()}
-  <ClipboardCopyButton
-    value={pipeline.current.id}
-    class="h-4! w-auto! gap-2 preset-tonal-surface px-4"
-  >
-    <span class="text-base font-normal text-surface-950-50"> Pipeline ID </span>
+  <ClipboardCopyButton value={pipeline.current.id} class="preset-tonal-surface btn-sm">
+    <span class="font-normal text-surface-950-50"> Pipeline ID </span>
   </ClipboardCopyButton>
   <Tooltip placement="top">
     {pipeline.current.id}

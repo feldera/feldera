@@ -10,7 +10,6 @@ using the following grammar:
 ```
 aggregateCall:
       agg '(' [ ALL | DISTINCT ] value [, value ]* ')'
-      [ WITHIN DISTINCT '(' expression [, expression ]* ')' ]
       [ FILTER '(' WHERE condition ')' ]
   |   agg '(' '*' ')' [ FILTER (WHERE condition) ]
 ```
@@ -22,10 +21,6 @@ which condition evaluates to `TRUE`.
 
 If `DISTINCT` is present, duplicate argument values are eliminated
 before being passed to the aggregate function.
-
-If `WITHIN DISTINCT` is present, argument values are made distinct
-within each value of specified keys before being passed to the
-aggregate function.
 
 Most aggregation functions produce results of the same type as the
 input data, but compute using higher precision intermediate data
@@ -45,7 +40,9 @@ in the size of input values, such as `VAR_*` or `REGR_*`.
   </tr>
   <tr>
      <td><a id="array_agg"></a><code>ARRAY_AGG([ ALL | DISTINCT ] value [ RESPECT NULLS | IGNORE NULLS ] [ORDER BY orderItem [, orderItem]*] )</code></td>
-     <td>Gathers all values in an array.  If <code>ORDER BY</code> is not present, the order of the values in the array is unspecified (but it is deterministic).</td>
+     <td>Gathers all values in an array.  If <code>ORDER BY</code> is not present, the order of the values in the array is unspecified (but it is deterministic).
+         The array keeps <code>NULL</code> values, unless <code>IGNORE NULLS</code> is specified.
+         Returns an empty array if there are no rows, or if <code>FILTER</code> or <code>IGNORE NULLS</code> removes all values.</td>
   </tr>
   <tr>
      <td><a id="avg"></a><code>AVG( [ ALL | DISTINCT ] numeric)</code></td>
@@ -206,6 +203,10 @@ The following window aggregate functions are supported:
   <tr>
     <th>Aggregate</th>
     <th>Description</th>
+  </tr>
+  <tr>
+    <td><a id="window-array_agg"></a><code>ARRAY_AGG(</code>value [ RESPECT NULLS | IGNORE NULLS ]<code>)</code></td>
+    <td>Returns an array with the values in window; with <code>IGNORE NULLS</code>, the array omits <code>NULL</code> values</td>
   </tr>
   <tr>
     <td><a id="window-avg"></a><code>AVG(</code>numeric<code>)</code></td>

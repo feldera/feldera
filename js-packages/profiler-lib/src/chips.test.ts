@@ -161,8 +161,8 @@ describe('counter controls', () => {
     })
 
     it('centers the control in the pill, the icon giving way to it', () => {
-        // A pill under the pointer is a button about to be pressed, so it carries the one glyph that
-        // says what pressing it does and nothing else.
+        // When the pointer is on the pill, the pill shows only the icon of the action that a click
+        // does.
         for (const glyph of ['expand', 'collapse'] as const) {
             const svg = counter(7, glyph)
             expect(svg, glyph).not.toContain('<g')
@@ -181,12 +181,12 @@ describe('counter controls', () => {
                 .toBe(width(counter(leafCount)))
         }
         // Which is only worth anything if the count's own width varies in the first place.
-        expect(badgePillWidth('7')).toBeLessThan(badgePillWidth('1000M'))
-        expect(badgePillWidth('1000M')).toBe(BADGE_CANVAS_WIDTH)
+        expect(badgePillWidth('7')).toBeLessThan(badgePillWidth('9.9K'))
+        expect(badgePillWidth('9.9K')).toBe(BADGE_CANVAS_WIDTH)
     })
 
     it('leaves an empty counter slot empty, control or not', () => {
-        // A primitive operator counts nothing, so it has no control to press either.
+        // An operator has no counter chip, so it has no expand or collapse icon either.
         expect(nodeChips(true, 0, 'light', 'expand')[1]).toBe(CHIP_NONE)
     })
 
@@ -222,17 +222,25 @@ describe('formatLeafCount', () => {
         expect(formatLeafCount(1_000)).toBe('1K')
         expect(formatLeafCount(1_540)).toBe('1.5K')
         expect(formatLeafCount(12_345)).toBe('12K')
+        expect(formatLeafCount(123_456)).toBe('123K')
         expect(formatLeafCount(2_400_000)).toBe('2.4M')
+        expect(formatLeafCount(Number.MAX_SAFE_INTEGER)).toBe('9Q')
     })
 
-    it('keeps one decimal below ten of a unit and none above it', () => {
-        // Which is what holds every label to the five characters the canvas is sized for.
+    it('rounds to two significant digits, half up, or three when they fill a group', () => {
+        expect(formatLeafCount(1_049)).toBe('1K')
         expect(formatLeafCount(1_050)).toBe('1.1K')
-        expect(formatLeafCount(9_949)).toBe('9.9K')
         expect(formatLeafCount(9_950)).toBe('10K')
-        expect(formatLeafCount(999_999)).toBe('1000K')
-        for (const count of [0, 999, 1_000, 9_950, 999_999, 999_999_999, Number.MAX_SAFE_INTEGER]) {
-            expect(formatLeafCount(count).length, String(count)).toBeLessThanOrEqual('1000M'.length)
+        expect(formatLeafCount(99_500)).toBe('100K')
+        expect(formatLeafCount(999_499)).toBe('999K')
+        expect(formatLeafCount(999_500)).toBe('1M')
+        expect(formatLeafCount(999_999)).toBe('1M')
+    })
+
+    it('fits every label in the four characters the canvas is sized for', () => {
+        const counts = [0, 999, 1_000, 9_949, 99_499, 999_999, 999_999_999, Number.MAX_SAFE_INTEGER]
+        for (const count of counts) {
+            expect(formatLeafCount(count).length, String(count)).toBeLessThanOrEqual('9.9K'.length)
         }
     })
 })

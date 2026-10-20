@@ -301,7 +301,7 @@
       <span class="col-span-3">Select Samply profile duration:</span>
       {#each [30, 60, 120, 300] as time}
         <button
-          class="btn h-8 py-0! {time === duration
+          class="btn {time === duration
             ? '-mx-px preset-outlined-primary-500'
             : 'preset-tonal-surface'}"
           onclick={() => {

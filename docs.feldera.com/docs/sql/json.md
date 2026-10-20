@@ -140,7 +140,8 @@ the map corresponds to a field of the user-defined structure.
 |-------------------------------|-------------|
 | `VARIANTNULL()`               | Can be used to create an instance of the `VARIANT` `null` value. |
 | `TYPEOF(variant)`             | Argument must be a `VARIANT` value.  Returns a string describing the runtime type of the value |
-| `PARSE_JSON(string)`          | Parses a string that represents a JSON value, returns a `VARIANT` object, or `NULL` if parsing fails (more details [below](#parse_json)) |
+| `PARSE_JSON(string)`          | Parses a string that represents a JSON value and returns a `VARIANT` object; fails at runtime if the string is not valid JSON (more details [below](#parse_json)) |
+| `TRY_PARSE_JSON(string)`      | Like `PARSE_JSON`, but returns `NULL` if the string is not valid JSON (more details [below](#try_parse_json)) |
 | `TO_JSON(variant)`            | Argument must be a `VARIANT` value.  Returns a string that represents the serialization of a `VARIANT` value. If the value cannot be represented as JSON, the result is `NULL` (more details [below](#to_json)) |
 | `JSON_EACH_<type>(variant)`   | A family of functions; each extracts from a `VARIANT` holding a JSON object the fields whose values have a specified runtime type, as a `MAP` (more details [below](#json_each)) |
 | `JSON_OBJECT_KEYS(variant)`   | Returns the top-level keys of a `VARIANT` holding a JSON object, as a sorted `ARRAY` of strings (more details [below](#json_object_keys)) |
@@ -175,6 +176,23 @@ SELECT CAST(
           VARIANTNULL()
                                       ] AS VARIANT)
       ] AS VARIANT)
+```
+
+If the string is not valid JSON, `PARSE_JSON` fails at runtime.  Use
+[`TRY_PARSE_JSON`](#try_parse_json) for input that may be invalid.
+
+### `TRY_PARSE_JSON`
+
+`TRY_PARSE_JSON` converts a valid JSON string exactly as `PARSE_JSON`
+does, and returns a SQL `NULL` if the string is not valid JSON.  The
+string `'null'` is valid JSON, so `TRY_PARSE_JSON('null')` returns the
+`VARIANT` `null` value, not a SQL `NULL`.
+
+```sql
+SELECT TRY_PARSE_JSON('{') IS NULL;
+-- TRUE
+SELECT TRY_PARSE_JSON('null') IS NULL;
+-- FALSE
 ```
 
 ### `TO_JSON`

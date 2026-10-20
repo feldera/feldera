@@ -8,7 +8,7 @@ use arrow_json::writer::LineDelimited;
 use async_stream::{stream, try_stream};
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
-use datafusion::common::hash_utils::create_hashes;
+use datafusion::common::hash_utils::{RandomState as DfRandomState, create_hashes};
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::dataframe::DataFrame;
 use datafusion::execution::SendableRecordBatchStream;
@@ -120,13 +120,14 @@ pub(crate) fn stream_text_query(
 
 /// Incremental, order-independent hasher for record batches.
 ///
-/// Uses DataFusion's `create_hashes` (ahash) per batch with two independent
-/// seeds for ~128-bit collision resistance. Row hashes are combined via
-/// wrapping u64 addition (commutative), so no sorting is required. Memory
-/// usage is O(batch_size).
+/// Uses DataFusion's `create_hashes` per batch with two seeds. Primitive and
+/// view columns after the first ignore the seed, so the lanes can agree on a
+/// row whose seeded columns are all NULL (64 bits, not 128). Row hashes are
+/// combined via wrapping u64 addition (commutative), so no sorting is
+/// required. Memory usage is O(batch_size).
 struct BatchHasher {
-    rs1: ahash::RandomState,
-    rs2: ahash::RandomState,
+    rs1: DfRandomState,
+    rs2: DfRandomState,
     buf1: Vec<u64>,
     buf2: Vec<u64>,
     acc1: u64,
@@ -137,8 +138,8 @@ struct BatchHasher {
 impl BatchHasher {
     fn new() -> Self {
         Self {
-            rs1: ahash::RandomState::with_seeds('M' as u64, 'U' as u64, 'A' as u64, 'Y' as u64),
-            rs2: ahash::RandomState::with_seeds('T' as u64, 'H' as u64, 'A' as u64, 'I' as u64),
+            rs1: DfRandomState::with_seed(u64::from_be_bytes(*b"MUAY____")),
+            rs2: DfRandomState::with_seed(u64::from_be_bytes(*b"THAI____")),
             buf1: Vec::new(),
             buf2: Vec::new(),
             acc1: 0,
@@ -357,7 +358,7 @@ pub(crate) fn stream_parquet_query(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::{Int32Array, Int64Array, StringArray};
+    use arrow::array::{Float64Array, Int32Array, Int64Array, StringArray};
     use arrow::datatypes::{DataType, Field, Schema};
     use std::sync::Arc;
 
@@ -367,6 +368,83 @@ mod tests {
             hasher.update(batch).unwrap();
         }
         hasher.finalize(schema)
+    }
+
+    /// A spilling grouped aggregation must fail or finish, never hang (apache/datafusion#24883).
+    /// Any pipeline with a memory budget gets the spill pool.
+    #[test]
+    #[ignore = "apache/datafusion#24883: the fix is not in the pinned DataFusion"]
+    fn a_spilling_aggregation_does_not_deadlock() {
+        use datafusion::execution::memory_pool::FairSpillPool;
+        use datafusion::execution::runtime_env::RuntimeEnvBuilder;
+        use datafusion::prelude::{SessionConfig, SessionContext};
+        use std::time::Duration;
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(4)
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let env = RuntimeEnvBuilder::new()
+                .with_memory_pool(Arc::new(FairSpillPool::new(2 * 1024 * 1024)))
+                .build_arc()
+                .unwrap();
+            let config = SessionConfig::new()
+                .with_target_partitions(2)
+                .with_batch_size(64);
+            let ctx = SessionContext::new_with_config_rt(config, env);
+            ctx.sql(
+                "create table t as select v % 13 as g, \
+                 concat(cast(v % 337 as varchar), repeat('x', 64)) as trace_id \
+                 from generate_series(1, 40000) as s(v)",
+            )
+            .await
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+
+            let query = ctx
+                .sql("select g, count(distinct trace_id) as n from t group by g")
+                .await
+                .unwrap();
+            // Either outcome is correct; only a hang is not.
+            let result = tokio::time::timeout(Duration::from_secs(60), query.collect()).await;
+            assert!(
+                result.is_ok(),
+                "the query neither returned nor failed within 60s"
+            );
+        });
+    }
+
+    /// Pins the digest of a fixed batch; DataFusion row hashes change across releases.
+    /// A new value needs a release note and new hashes in the Python tests.
+    #[test]
+    fn hash_digest_is_pinned() {
+        let schema = Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("name", DataType::Utf8, true),
+            Field::new("amt", DataType::Float64, false),
+        ]);
+        let batch = RecordBatch::try_new(
+            Arc::new(schema.clone()),
+            vec![
+                Arc::new(Int64Array::from(vec![1i64, 2, 3, 4])),
+                Arc::new(StringArray::from(vec![
+                    Some("alpha"),
+                    None,
+                    Some("gamma"),
+                    Some("a-much-longer-string-value-here"),
+                ])),
+                Arc::new(Float64Array::from(vec![0.5f64, 1.5, 2.5, 3.5])),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            hash_batches(&schema, &[batch]),
+            "93824BD255DBBF538A4568A5C03508643A736A7B9D4E4653CB768EFF49C24091"
+        );
     }
 
     #[test]

@@ -4,6 +4,7 @@ use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::runner::pipeline_logs::LogsSender;
 use async_trait::async_trait;
+use feldera_types::config::LegacySpelling;
 use feldera_types::config::{PipelineConfig, StorageConfig};
 use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus};
 use std::time::Duration;
@@ -50,11 +51,7 @@ pub trait PipelineExecutor: Sync + Send {
     /// exist (even if provisioning failed), and be able to delete them if they exist.
     ///
     /// This is called during the `Stopped` resources status.
-    async fn can_provision(
-        &self,
-        deployment_config: &PipelineConfig,
-        runtime_config: &serde_json::Value,
-    ) -> Result<(), ManagerError>;
+    async fn can_provision(&self, deployment_config: &PipelineConfig) -> Result<(), ManagerError>;
 
     /// Provisions compute and (optionally) storage resources.
     ///
@@ -70,7 +67,15 @@ pub trait PipelineExecutor: Sync + Send {
     ///
     /// When `is_gen2` is true the pipeline is configured with the Gen-2
     /// engine, so no pipeline binary was compiled: the executor launches the
-    /// Gen-2 engine and ignores `program_binary_url`.
+    /// Gen-2 engine and ignores `program_binary_url`. A Gen-2 program with Rust
+    /// UDFs references its UDF library in the program info; the executor fetches
+    /// it from the compiler server and passes it to the engine (`--udf-library`).
+    ///
+    /// `legacy_spelling` says which settings the pipeline's runtime reads only
+    /// in their older spelling, because it is pinned to a runtime other than
+    /// the platform's or was compiled by an earlier platform that predates a
+    /// rename: the executor writes the configuration the pipeline reads through
+    /// [`LegacySpelling::apply`].
     #[allow(clippy::too_many_arguments)]
     async fn provision(
         &mut self,
@@ -82,9 +87,12 @@ pub trait PipelineExecutor: Sync + Send {
         program_binary_url: &str,
         program_info_url: &str,
         program_version: Version,
-        runtime_config: &serde_json::Value,
         is_gen2: bool,
+        legacy_spelling: LegacySpelling,
     ) -> Result<(), ManagerError>;
+
+    // `is_provisioned()`, `check()`, `stop()` and `clear()` receive the stored deployment config
+    // as JSON: it can be from an older platform version, and must not fail to parse.
 
     /// Validates whether the compute and possibly storage resources provisioning
     /// initiated by `provision()` is completed. An error is returned only if the resources
@@ -93,7 +101,7 @@ pub trait PipelineExecutor: Sync + Send {
     /// This is called during the `Provisioning` resources status.
     async fn is_provisioned(
         &mut self,
-        runtime_config: &serde_json::Value,
+        deployment_config: &serde_json::Value,
     ) -> Result<ProvisionStatus, ManagerError>;
 
     /// Checks the healthiness of the pipeline compute and storage resources.
@@ -102,31 +110,29 @@ pub trait PipelineExecutor: Sync + Send {
     /// This is called during the `Provisioned` resources status.
     async fn check(
         &mut self,
-        runtime_config: &serde_json::Value,
+        deployment_config: &serde_json::Value,
     ) -> Result<serde_json::Value, ManagerError>;
 
     /// Scales down to zero or deallocates the compute resources, but retains storage resources.
     /// This operation is idempotent and blocks until finished.
     ///
     /// This is called during the `Stopping` resources status.
-    async fn stop(&mut self, runtime_config: &serde_json::Value) -> Result<(), ManagerError>;
+    async fn stop(&mut self, deployment_config: &serde_json::Value) -> Result<(), ManagerError>;
 
     /// Clears the storage resources.
     /// This operation is idempotent and blocks until finished.
     ///
     /// This is called during the `Clearing` storage status.
-    async fn clear(&mut self, runtime_config: &serde_json::Value) -> Result<(), ManagerError>;
+    async fn clear(&mut self, deployment_config: &serde_json::Value) -> Result<(), ManagerError>;
 }
 
-/// Discovers the namespace from the runtime configuration JSON and returns it.
+/// Discovers the namespace from a pipeline configuration JSON and returns it.
 ///
-/// The runtime configuration itself is not deserialized to avoid any future backward incompatible
+/// The configuration itself is not deserialized to avoid any future backward incompatible
 /// changes to it from affecting the ability to find out the namespace. This is a utility function
 /// for runners that make use of the namespace field.
-pub fn discover_namespace_from_runtime_config_json(
-    runtime_config: &serde_json::Value,
-) -> Option<String> {
-    runtime_config.as_object().and_then(|m| {
+pub fn discover_namespace_from_pipeline_config_json(config: &serde_json::Value) -> Option<String> {
+    config.as_object().and_then(|m| {
         m.get("resources").and_then(|resources_value| {
             resources_value.as_object().and_then(|resources_obj| {
                 resources_obj
@@ -139,9 +145,12 @@ pub fn discover_namespace_from_runtime_config_json(
 
 #[cfg(test)]
 mod test {
-    use super::discover_namespace_from_runtime_config_json;
+    use super::discover_namespace_from_pipeline_config_json;
+    use crate::db::types::pipeline::PipelineId;
+    use crate::db::types::program::generate_pipeline_config;
     use crate::db::types::utils::validate_runtime_config;
     use serde_json::json;
+    use uuid::Uuid;
 
     /// This test should detect if ever the placement or type of the namespace in the runtime
     /// configuration is changed, as such a change could cause orphaned Kubernetes resources.
@@ -150,7 +159,7 @@ mod test {
         // Default
         let runtime_config = validate_runtime_config(&json!({}), false).unwrap();
         let value = serde_json::to_value(runtime_config).unwrap();
-        assert_eq!(discover_namespace_from_runtime_config_json(&value), None);
+        assert_eq!(discover_namespace_from_pipeline_config_json(&value), None);
 
         // Set explicitly to `null`
         let runtime_config = validate_runtime_config(
@@ -163,7 +172,7 @@ mod test {
         )
         .unwrap();
         let value = serde_json::to_value(runtime_config).unwrap();
-        assert_eq!(discover_namespace_from_runtime_config_json(&value), None);
+        assert_eq!(discover_namespace_from_pipeline_config_json(&value), None);
 
         // Set explicitly to `default`
         let runtime_config = validate_runtime_config(
@@ -177,7 +186,7 @@ mod test {
         .unwrap();
         let value = serde_json::to_value(runtime_config).unwrap();
         assert_eq!(
-            discover_namespace_from_runtime_config_json(&value),
+            discover_namespace_from_pipeline_config_json(&value),
             Some("default".to_string())
         );
 
@@ -193,7 +202,7 @@ mod test {
         .unwrap();
         let value = serde_json::to_value(runtime_config).unwrap();
         assert_eq!(
-            discover_namespace_from_runtime_config_json(&value),
+            discover_namespace_from_pipeline_config_json(&value),
             Some("example123".to_string())
         );
 
@@ -209,8 +218,34 @@ mod test {
         .unwrap();
         let value = serde_json::to_value(runtime_config).unwrap();
         assert_eq!(
-            discover_namespace_from_runtime_config_json(&value),
+            discover_namespace_from_pipeline_config_json(&value),
             Some("feldera".to_string())
+        );
+    }
+
+    /// `stop()` and `clear()` read the namespace from the stored deployment config, which is a
+    /// serialized `PipelineConfig`, while `provision()` reads it from the typed one.
+    #[test]
+    pub fn test_namespace_discovery_in_pipeline_config() {
+        let runtime_config = validate_runtime_config(
+            &json!({
+                "resources": {
+                    "namespace": "example"
+                }
+            }),
+            false,
+        )
+        .unwrap();
+        let pipeline_config =
+            generate_pipeline_config(PipelineId(Uuid::nil()), "example", &runtime_config);
+        let value = serde_json::to_value(&pipeline_config).unwrap();
+        assert_eq!(
+            discover_namespace_from_pipeline_config_json(&value),
+            pipeline_config.global.resources.namespace
+        );
+        assert_eq!(
+            discover_namespace_from_pipeline_config_json(&value),
+            Some("example".to_string())
         );
     }
 }

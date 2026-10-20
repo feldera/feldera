@@ -171,7 +171,7 @@ class illarg_sum_illegal1(TstView):
         self.sql = """CREATE MATERIALIZED VIEW illarg_sum_illegal1 AS SELECT
                       SUM(str) AS str
                       FROM illegal_tbl"""
-        self.expected_error = "Cannot parse hello  into a DECIMAL(38, 19)"
+        self.expected_error = "Error converting 'hello ' to DECIMAL(38, 19): Syntax error in numeric value"
 
 
 # STDDEV

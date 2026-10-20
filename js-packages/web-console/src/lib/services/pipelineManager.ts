@@ -83,6 +83,7 @@ export type {
   OutputEndpointStatus,
   Role,
   RuntimeConfig,
+  RustCompilerMessage,
   SqlCompilerMessage
 } from '$lib/services/manager'
 

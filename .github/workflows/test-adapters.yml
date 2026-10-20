@@ -11,11 +11,16 @@ on:
 permissions:
   actions: read
   contents: read
+  id-token: write # exchanged for a Databricks token; see the Unity Catalog auth step below
 
 jobs:
   adapter-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'adapter-tests') }}
     name: Test Adapters
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
     # The suite runs in 3 to 10 minutes. Without a bound, a test that blocks
     # instead of failing holds a runner for the 6 hour default and stalls the
     # merge queue behind it; the cancel-if-* sentinels cannot help, because a
@@ -32,7 +37,7 @@ jobs:
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
     container:
-      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-6f8e388fcd3b56c72a9305f108ae43dd07e3897e
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-a112fd877176bba0f4e5f3475853f918b276d1ef
     services:
       postgres:
         image: debezium/postgres:15
@@ -54,6 +59,23 @@ jobs:
           --health-retries 5
       dynamodb:
         image: amazon/dynamodb-local:latest
+      iceberg-rest:
+        image: apache/iceberg-rest-fixture:1.9.1@sha256:1cd0b86579b423cf260508bc8bdbb0220268f2447b86ddef71482baf74aca1d7
+        env:
+          CATALOG_WAREHOUSE: gs://feldera-ci-test-feldera-ci/iceberg-follow
+          # Keep this on a file. In-memory sqlite gives each connection its own
+          # empty database, and the catalog loses its tables.
+          CATALOG_URI: jdbc:sqlite:file:/tmp/iceberg_rest.db
+          CATALOG_IO__IMPL: org.apache.iceberg.gcp.gcs.GCSFileIO
+          # Java takes a quarter of `--memory` as heap, and 128m killed this
+          # catalog. `JAVA_OPTS` does nothing: the entrypoint is `java -jar`.
+          JAVA_TOOL_OPTIONS: -Xmx512m
+        options: >-
+          --memory=1g
+          --health-cmd "curl -fsS 'http://localhost:8181/v1/config?warehouse=gs://feldera-ci-test-feldera-ci/iceberg-follow' || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -102,6 +124,58 @@ jobs:
           docker logs redpanda >&2
           exit 1
 
+      - name: Configure AWS Credentials
+        if: ${{ vars.CI_DRY_RUN != 'true' && vars.ICEBERG_TEST_ROLE != '' }}
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ vars.ICEBERG_TEST_ROLE }}
+          role-session-name: gha-${{ github.run_id }}
+          aws-region: ${{ vars.ICEBERG_TEST_REGION }}
+
+      # feldera-ci has no OAuth secret; it authenticates through Databricks
+      # workload identity federation instead, exchanging this job's own
+      # GitHub OIDC token for a Databricks access token (see
+      # infrastructure/terraform/databricks/access_control.tf for the
+      # federation policy this matches). The token is scoped to this job
+      # only and lives only as long as it takes the test step below to run.
+      - name: Get GitHub OIDC token for Databricks federation
+        id: github-oidc
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ACTIONS_ID_TOKEN_REQUEST_URL:?no OIDC token URL -- the calling job is missing permissions: id-token: write}"
+          token=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=feldera-databricks-unity-test" \
+              | jq -r '.value')
+          echo "::add-mask::$token"
+          [ -n "$token" ] && [ "$token" != "null" ] || { echo "ERROR: empty OIDC token" >&2; exit 1; }
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Exchange for a Databricks access token
+        id: databricks-oidc
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${DATABRICKS_HOST:?DATABRICKS_WORKSPACE_HOST repo variable is not set}"
+          : "${UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID:?UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID repo variable is not set}"
+          db_token=$(curl -sS -X POST "$DATABRICKS_HOST/oidc/v1/token" \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
+              --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:token-exchange' \
+              --data-urlencode 'subject_token_type=urn:ietf:params:oauth:token-type:jwt' \
+              --data-urlencode "subject_token=$GITHUB_OIDC_TOKEN" \
+              --data-urlencode "client_id=$UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID" \
+              --data-urlencode 'scope=all-apis' \
+              | jq -r '.access_token // empty')
+          echo "::add-mask::$db_token"
+          [ -n "$db_token" ] || { echo "ERROR: no access_token from Databricks" >&2; exit 1; }
+          echo "token=$db_token" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_OIDC_TOKEN: ${{ steps.github-oidc.outputs.token }}
+          DATABRICKS_HOST: ${{ vars.DATABRICKS_WORKSPACE_HOST }}
+          UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID: ${{ vars.UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID }}
+
       # Pubsub tests are only supported on x86_64, see below
       - name: Run adapters tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
@@ -112,6 +186,8 @@ jobs:
         shell: bash
         env:
           RUST_BACKTRACE: 1
+          DELTA_TABLE_TEST_UNITY_ACCESS_TOKEN: ${{ steps.databricks-oidc.outputs.token }}
+          DELTA_TABLE_TEST_UNITY_HOST: ${{ vars.DATABRICKS_WORKSPACE_HOST }}
           # Cap libtest parallelism at the runner core budget. Adapter tests
           # share the pod with postgres/redpanda/redis sidecars; if those start
           # starving we can lower CI_RUNNER_CORES or switch this to its own var.
@@ -120,13 +196,21 @@ jobs:
           # dind runners and are addressed by service name, not localhost.
           REDIS_URL: redis://redis:6379/0
           DYNAMODB_ENDPOINT: http://dynamodb:8000
+          # Pinned: the Iceberg credentials step exports AWS_REGION.
+          DYNAMODB_REGION: us-east-1
           POSTGRES_URL: postgres://postgres:password@postgres:5432
           REDPANDA_BROKERS: redpanda
+          FELDERA_ICEBERG_REST_URI: http://iceberg-rest:8181
+          FELDERA_ICEBERG_WAREHOUSE: gs://feldera-ci-test-feldera-ci/iceberg-follow
+          # The bucket is shared and both matrix legs run at once.
+          FELDERA_ICEBERG_NAMESPACE: follow_${{ github.run_id }}_${{ matrix.arch }}
+          # The tests shell out to a pyiceberg writer; `python3` on PATH
+          # lacks pyiceberg.
+          FELDERA_ICEBERG_PYTHON: ${{ github.workspace }}/crates/adapters/.venv/bin/python
           # No pubsub emulator runs in this job; the probe sees
           # connection-refused here and the pubsub tests skip.
           PUBSUB_EMULATOR_HOST: 127.0.0.1:8681
-          ICEBERG_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
-          ICEBERG_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
+          ICEBERG_TEST_REGION: ${{ vars.ICEBERG_TEST_REGION }}
           # The Delta object-store tests, same stores and variables as the
           # Python suite. No credentials: Workload Identity authenticates the
           # runner. Tables the tests write go to the per-run store, which
@@ -154,7 +238,7 @@ jobs:
     # it. Pulled from ghcr.io directly: this runner lacks the GCP registry
     # identity the gke runners use for the ghcr-remote mirror.
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-6f8e388fcd3b56c72a9305f108ae43dd07e3897e
+      image: ghcr.io/feldera/feldera-dev:sha-a112fd877176bba0f4e5f3475853f918b276d1ef
     services:
       pubsub:
         image: ghcr.io/feldera/gcloud-pubsub-emulator:e852273e07

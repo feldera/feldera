@@ -3,7 +3,6 @@ use crossbeam::channel::{Sender, bounded};
 use dbsp::circuit::{CircuitConfig, CircuitStorageConfig};
 use dbsp::{
     Runtime,
-    mimalloc::MiMalloc,
     operator::{MapHandle, Update},
     utils::{Tup2, Tup5},
 };
@@ -29,9 +28,6 @@ type Value = Tup5<u64, u64, u64, u64, u64>;
 type BatchRecord = Tup2<u64, Update<Value, Value>>;
 type Batch = Vec<BatchRecord>;
 
-#[global_allocator]
-static ALLOC: MiMalloc = MiMalloc;
-
 fn main() -> Result<()> {
     validate_constants()?;
     let temp = tempdir().context("failed to create temp directory for storage backend")?;
@@ -42,8 +38,8 @@ fn main() -> Result<()> {
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                min_storage_bytes: None,
-                min_step_storage_bytes: None,
+                min_spill_size: None,
+                min_step_spill_size: None,
                 ..StorageOptions::default()
             },
         )

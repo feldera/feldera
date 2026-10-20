@@ -126,6 +126,12 @@ impl InputReader for PostgresInputReader {
     }
 
     fn is_closed(&self) -> bool {
+        // This reports the reader as closed once its worker exits, which also
+        // happens after the end of input.  [InputReader::is_closed] does not
+        // allow that, but here it does no harm: [Self::request] answers
+        // [InputReaderCommand::Queue] itself, without the worker, so the
+        // controller never finds the reader closed without an answer, and so
+        // never removes it.
         self.inner.queue.is_empty() && self.sender.is_closed()
     }
 }

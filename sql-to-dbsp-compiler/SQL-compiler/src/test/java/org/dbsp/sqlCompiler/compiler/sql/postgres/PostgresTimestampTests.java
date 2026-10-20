@@ -1254,4 +1254,28 @@ public class PostgresTimestampTests extends SqlIoTest {
     //                              '2020-01-02 03:00'::timestamp,
     //                              '1 hour'::interval);
     // Calcite does not support generate_series
+
+    @Test
+    public void testTimestampToString() {
+        // The first query is validated on Postgres; Postgres formats the time zone of the
+        // second one differently.  The timestamps of the first query are row values:
+        // Calcite converts a cast of a TIMESTAMP literal to a string before the runtime sees it.
+        this.qst("""
+                SELECT CAST(ts AS VARCHAR) AS r FROM (VALUES
+                    (TIMESTAMP '0001-01-01 00:00:00'),
+                    (TIMESTAMP '0999-12-31 23:59:59'),
+                    (TIMESTAMP '2024-02-29 10:20:30')) AS t(ts);
+                          r
+                ---------------------
+                 0001-01-01 00:00:00
+                 0999-12-31 23:59:59
+                 2024-02-29 10:20:30
+                (3 rows)
+
+                SELECT CAST(TIMESTAMP WITH TIME ZONE '0001-01-01 00:00:00 UTC' AS VARCHAR) AS r;
+                 r
+                ---
+                 0001-01-01 00:00:00 +00:00
+                (1 row)""");
+    }
 }

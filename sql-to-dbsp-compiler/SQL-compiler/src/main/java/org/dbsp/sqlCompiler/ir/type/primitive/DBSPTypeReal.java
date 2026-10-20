@@ -89,14 +89,15 @@ public class DBSPTypeReal extends DBSPTypeFP implements IsNumericType {
         return 7;
     }
 
+    /** In OrderedFloat NaN is larger than every other value. */
     @Override
     public DBSPExpression getMaxValue() {
-        return new DBSPRealLiteral(Float.MAX_VALUE, this.mayBeNull);
+        return new DBSPRealLiteral(Float.NaN, this.mayBeNull);
     }
 
     @Override
     public DBSPExpression getMinValue() {
-        return new DBSPRealLiteral(Float.MIN_VALUE, this.mayBeNull);
+        return new DBSPRealLiteral(Float.NEGATIVE_INFINITY, this.mayBeNull);
     }
 
     @Override

@@ -1,3 +1,4 @@
+use crate::size::{ConfigSize, LegacySizeUnit};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use utoipa::ToSchema;
@@ -71,15 +72,198 @@ impl PostgresTlsConfig {
     }
 }
 
+/// Batch processing configuration for the Postgres CDC connector.
+///
+/// Controls how replication events are buffered into a batch before being
+/// flushed to Feldera. Mirrors the batch configuration of the underlying
+/// `etl` replication library; fields omitted from the configuration fall
+/// back to `etl`'s own defaults.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, ToSchema)]
+pub struct PostgresCdcBatchConfig {
+    /// Maximum time, in milliseconds, to wait before flushing a partially
+    /// filled batch. This is the latency bound for batching: once the first
+    /// event enters a batch, the batch is flushed when this timer elapses,
+    /// even if `max_size` was not reached.
+    ///
+    /// Default: 10000 (10 seconds).
+    #[serde(default = "default_batch_max_fill_ms")]
+    #[schema(default = default_batch_max_fill_ms)]
+    pub max_fill_ms: u64,
+
+    /// Ratio of process memory reserved for incoming replication batch
+    /// bytes, in the `(0.0, 1.0]` interval. The configured memory is divided
+    /// by the number of active streams at runtime, so each stream gets only
+    /// a per-stream share of the global memory budget.
+    ///
+    /// Default: 0.2.
+    #[serde(
+        default = "default_batch_memory_budget_ratio",
+        deserialize_with = "crate::serde_via_value::deserialize"
+    )]
+    #[schema(default = default_batch_memory_budget_ratio)]
+    pub memory_budget_ratio: f32,
+
+    /// Maximum preferred size for one batch per active stream, such as
+    /// `"32Mi"`. This is a ceiling, not a target: the runtime still chooses
+    /// the smaller value between this limit and the memory-ratio budget
+    /// computed from `memory_budget_ratio`.
+    ///
+    /// Default: `"32Mi"`, the same as etl.
+    ///
+    /// Before release 0.367.0 this setting was `max_bytes`, a number of
+    /// bytes. That name is deprecated but still read.
+    #[serde(
+        default = "default_batch_max_size",
+        alias = "max_bytes",
+        deserialize_with = "size_batch_max_size"
+    )]
+    #[schema(value_type = String, default = schema_default_batch_max_size)]
+    pub max_size: ConfigSize,
+}
+
+impl Default for PostgresCdcBatchConfig {
+    fn default() -> Self {
+        Self {
+            max_fill_ms: default_batch_max_fill_ms(),
+            memory_budget_ratio: default_batch_memory_budget_ratio(),
+            max_size: default_batch_max_size(),
+        }
+    }
+}
+
+// `f32` doesn't implement `Eq` because of NaN, so it can't be derived here.
+// `validate()` rejects NaN/out-of-range ratios, so equality is reflexive for
+// any value that passes validation; this lets `PostgresCdcReaderConfig` (and
+// its containing `TransportConfig` enum) keep deriving `Eq`.
+impl Eq for PostgresCdcBatchConfig {}
+
+impl PostgresCdcBatchConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if !(0.0..=1.0).contains(&self.memory_budget_ratio) || self.memory_budget_ratio == 0.0 {
+            return Err(format!(
+                "batch.memory_budget_ratio must be in the (0.0, 1.0] interval, got {}",
+                self.memory_budget_ratio
+            ));
+        }
+
+        if self.max_size.is_zero() {
+            return Err("batch.max_size must be greater than 0, got 0".to_string());
+        }
+
+        Ok(())
+    }
+}
+
+fn default_batch_max_fill_ms() -> u64 {
+    10_000
+}
+
+fn default_batch_memory_budget_ratio() -> f32 {
+    0.2
+}
+
+fn default_batch_max_size() -> ConfigSize {
+    ConfigSize::from_mib(32)
+}
+fn schema_default_batch_max_size() -> String {
+    default_batch_max_size().to_string()
+}
+crate::required_size_setting!(size_batch_max_size, "max_size", LegacySizeUnit::Bytes);
+
+/// Memory-based backpressure configuration for the Postgres CDC connector.
+///
+/// When the connector's memory usage rises above `activate_threshold`, it
+/// pauses reading further replication events until usage drops back below
+/// `resume_threshold`. Mirrors the memory backpressure configuration of the
+/// underlying `etl` replication library.
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize, ToSchema)]
+pub struct PostgresCdcMemoryBackpressureConfig {
+    /// Memory usage ratio above which backpressure is activated, in the
+    /// `(0.0, 1.0]` interval.
+    ///
+    /// Default: 0.85.
+    #[serde(
+        default = "default_memory_backpressure_activate_threshold",
+        deserialize_with = "crate::serde_via_value::deserialize"
+    )]
+    #[schema(default = default_memory_backpressure_activate_threshold)]
+    pub activate_threshold: f32,
+
+    /// Memory usage ratio below which backpressure is released, in the
+    /// `[0.0, 1.0)` interval. Must be lower than `activate_threshold`.
+    ///
+    /// Default: 0.75.
+    #[serde(
+        default = "default_memory_backpressure_resume_threshold",
+        deserialize_with = "crate::serde_via_value::deserialize"
+    )]
+    #[schema(default = default_memory_backpressure_resume_threshold)]
+    pub resume_threshold: f32,
+}
+
+impl Default for PostgresCdcMemoryBackpressureConfig {
+    fn default() -> Self {
+        Self {
+            activate_threshold: default_memory_backpressure_activate_threshold(),
+            resume_threshold: default_memory_backpressure_resume_threshold(),
+        }
+    }
+}
+
+// See the corresponding `impl Eq for PostgresCdcBatchConfig` above for why
+// this is sound despite the `f32` fields.
+impl Eq for PostgresCdcMemoryBackpressureConfig {}
+
+impl PostgresCdcMemoryBackpressureConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if !(0.0..=1.0).contains(&self.activate_threshold) || self.activate_threshold == 0.0 {
+            return Err(format!(
+                "memory_backpressure.activate_threshold must be in the (0.0, 1.0] interval, got {}",
+                self.activate_threshold
+            ));
+        }
+
+        if !(0.0..=1.0).contains(&self.resume_threshold) || self.resume_threshold == 1.0 {
+            return Err(format!(
+                "memory_backpressure.resume_threshold must be in the [0.0, 1.0) interval, got {}",
+                self.resume_threshold
+            ));
+        }
+
+        if self.resume_threshold >= self.activate_threshold {
+            return Err(format!(
+                "memory_backpressure.resume_threshold ({}) must be lower than \
+                 memory_backpressure.activate_threshold ({})",
+                self.resume_threshold, self.activate_threshold
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+fn default_memory_backpressure_activate_threshold() -> f32 {
+    0.85
+}
+
+fn default_memory_backpressure_resume_threshold() -> f32 {
+    0.75
+}
+
 /// Postgres CDC input connector configuration.
 ///
 /// Uses logical replication to capture ongoing changes from a Postgres database.
-/// Requires a pre-created publication and a user with REPLICATION privilege.
+/// Requires a pre-created publication. Automatic source migrations require a
+/// superuser; with administrator-installed source objects and
+/// `run_source_migrations = false`, a replication role with the documented
+/// source-table and etl state-store privileges can be used instead.
 /// Tables must have primary keys and `REPLICA IDENTITY FULL` is recommended
 /// for UPDATE/DELETE support.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct PostgresCdcReaderConfig {
-    /// Postgres connection URI. The user must have REPLICATION privilege.
+    /// Postgres connection URI. Automatic source migrations require a superuser.
+    /// With `run_source_migrations = false`, the user needs REPLICATION and the
+    /// grants described in [Running as a non-superuser](https://docs.feldera.com/connectors/sources/postgresql-cdc#running-as-a-non-superuser).
     /// See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
     pub uri: String,
 
@@ -91,10 +275,45 @@ pub struct PostgresCdcReaderConfig {
     /// Must be included in the publication.
     pub source_table: String,
 
+    /// Whether the connector runs etl's source migrations on startup.
+    ///
+    /// The source migrations install the schema helper functions and the
+    /// `ddl_command_end` event trigger. Creating the event trigger requires a
+    /// superuser, so a de-elevated role can set this to `false` and have an
+    /// administrator install the source objects out-of-band. Disabling this
+    /// does not skip the state-store migrations, which run on every start
+    /// regardless.
+    ///
+    /// Default: `true`.
+    #[serde(default = "default_run_source_migrations")]
+    #[schema(default = default_run_source_migrations)]
+    pub run_source_migrations: bool,
+
     /// TLS/SSL configuration.
     #[serde(flatten)]
     #[schema(inline)]
     pub tls: PostgresTlsConfig,
+
+    /// Batch processing configuration.
+    ///
+    /// Controls how replication events are buffered before being flushed to
+    /// Feldera. When omitted, uses the defaults listed on each field, which
+    /// match the underlying `etl` library's defaults.
+    #[serde(default)]
+    pub batch: PostgresCdcBatchConfig,
+
+    /// Memory-based backpressure configuration.
+    ///
+    /// Controls when the connector pauses reading further replication
+    /// events to avoid exceeding available memory. When omitted, uses the
+    /// defaults listed on each field, which match the underlying `etl`
+    /// library's defaults.
+    #[serde(default)]
+    pub memory_backpressure: PostgresCdcMemoryBackpressureConfig,
+}
+
+fn default_run_source_migrations() -> bool {
+    true
 }
 
 impl PostgresCdcReaderConfig {
@@ -106,6 +325,9 @@ impl PostgresCdcReaderConfig {
         if self.source_table.trim().is_empty() {
             return Err("source_table cannot be empty".to_string());
         }
+
+        self.batch.validate()?;
+        self.memory_backpressure.validate()?;
 
         if self.tls.ssl_client_pem.is_some()
             || self.tls.ssl_client_location.is_some()
@@ -202,13 +424,20 @@ pub struct PostgresWriterConfig {
     /// The maximum number of records in a single buffer.
     pub max_records_in_buffer: Option<usize>,
 
-    /// The maximum buffer size in for a single operation.
+    /// The maximum buffer size for a single operation, such as `"1Mi"`.
     /// Note that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are
     /// separate.
-    /// Default: 1 MiB
-    #[schema(default = default_max_buffer_size)]
-    #[serde(default = "default_max_buffer_size")]
-    pub max_buffer_size_bytes: usize,
+    /// Default: `"1Mi"`.
+    ///
+    /// Before release 0.367.0 this setting was `max_buffer_size_bytes`, a
+    /// number of bytes. That name is deprecated but still read.
+    #[schema(value_type = String, default = schema_default_max_buffer_size)]
+    #[serde(
+        default = "default_max_buffer_size",
+        alias = "max_buffer_size_bytes",
+        deserialize_with = "size_max_buffer_size"
+    )]
+    pub max_buffer_size: ConfigSize,
 
     /// Specifies how the connector handles conflicts when executing an `INSERT`
     /// into a table with a primary key. By default, an existing row with the same
@@ -241,9 +470,17 @@ pub struct PostgresWriterConfig {
     pub extra_columns: Vec<String>,
 }
 
-fn default_max_buffer_size() -> usize {
-    usize::pow(2, 20)
+fn default_max_buffer_size() -> ConfigSize {
+    ConfigSize::from_mib(1)
 }
+fn schema_default_max_buffer_size() -> String {
+    default_max_buffer_size().to_string()
+}
+crate::required_size_setting!(
+    size_max_buffer_size,
+    "max_buffer_size",
+    LegacySizeUnit::Bytes
+);
 
 fn default_writer_threads() -> usize {
     1
@@ -309,13 +546,17 @@ impl PostgresWriterConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn postgres_cdc_config(tls: PostgresTlsConfig) -> PostgresCdcReaderConfig {
         PostgresCdcReaderConfig {
             uri: "postgres://user:password@localhost:5432/database".to_string(),
             publication: "publication".to_string(),
             source_table: "public.table".to_string(),
+            run_source_migrations: true,
             tls,
+            batch: PostgresCdcBatchConfig::default(),
+            memory_backpressure: PostgresCdcMemoryBackpressureConfig::default(),
         }
     }
 
@@ -366,5 +607,200 @@ mod tests {
 
         let err = config.validate().unwrap_err();
         assert!(err.contains("source_table cannot be empty"));
+    }
+
+    #[test]
+    fn postgres_cdc_config_defaults_run_source_migrations_to_true() {
+        let config: PostgresCdcReaderConfig = serde_json::from_value(json!({
+            "uri": "postgres://user:password@localhost:5432/database",
+            "publication": "publication",
+            "source_table": "public.table",
+        }))
+        .unwrap();
+
+        assert!(config.run_source_migrations);
+    }
+
+    #[test]
+    fn postgres_cdc_config_honors_run_source_migrations_false() {
+        let config: PostgresCdcReaderConfig = serde_json::from_value(json!({
+            "uri": "postgres://user:password@localhost:5432/database",
+            "publication": "publication",
+            "source_table": "public.table",
+            "run_source_migrations": false,
+        }))
+        .unwrap();
+
+        assert!(!config.run_source_migrations);
+    }
+
+    #[test]
+    fn postgres_cdc_config_round_trips_run_source_migrations() {
+        for enabled in [true, false] {
+            let mut config = postgres_cdc_config(PostgresTlsConfig::default());
+            config.run_source_migrations = enabled;
+            let json = serde_json::to_value(&config).unwrap();
+            assert_eq!(json["run_source_migrations"], enabled);
+            let decoded: PostgresCdcReaderConfig = serde_json::from_value(json).unwrap();
+            assert_eq!(decoded, config);
+        }
+    }
+
+    #[test]
+    fn postgres_cdc_config_deserializes_without_batch_or_memory_backpressure() {
+        let json = r#"{
+            "uri": "postgres://user:password@localhost:5432/database",
+            "publication": "publication",
+            "source_table": "public.table"
+        }"#;
+        let config: PostgresCdcReaderConfig = serde_json::from_str(json).unwrap();
+
+        assert_eq!(config.batch, PostgresCdcBatchConfig::default());
+        assert_eq!(
+            config.memory_backpressure,
+            PostgresCdcMemoryBackpressureConfig::default()
+        );
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn postgres_cdc_batch_config_deserializes_with_partial_fields() {
+        let json = r#"{"max_size": "4Mi"}"#;
+        let config: PostgresCdcBatchConfig = serde_json::from_str(json).unwrap();
+
+        assert_eq!(config.max_size, ConfigSize::from_mib(4));
+        // The superseded spelling still reads, as a number of bytes.
+        let legacy: PostgresCdcBatchConfig =
+            serde_json::from_str(r#"{"max_bytes": 4194304}"#).unwrap();
+        assert_eq!(legacy.max_size, ConfigSize::from_mib(4));
+        assert_eq!(config.max_fill_ms, default_batch_max_fill_ms());
+        assert_eq!(
+            config.memory_budget_ratio,
+            default_batch_memory_budget_ratio()
+        );
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn postgres_cdc_batch_config_rejects_zero_memory_budget_ratio() {
+        let config = PostgresCdcBatchConfig {
+            memory_budget_ratio: 0.0,
+            ..Default::default()
+        };
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("batch.memory_budget_ratio"));
+    }
+
+    #[test]
+    fn postgres_cdc_batch_config_rejects_out_of_range_memory_budget_ratio() {
+        let config = PostgresCdcBatchConfig {
+            memory_budget_ratio: 1.5,
+            ..Default::default()
+        };
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("batch.memory_budget_ratio"));
+        assert!(err.contains("got 1.5"));
+    }
+
+    #[test]
+    fn postgres_cdc_batch_config_rejects_zero_max_size() {
+        let config = PostgresCdcBatchConfig {
+            max_size: ConfigSize::ZERO,
+            ..Default::default()
+        };
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("batch.max_size"));
+    }
+
+    #[test]
+    fn postgres_cdc_memory_backpressure_config_rejects_zero_activate_threshold() {
+        let config = PostgresCdcMemoryBackpressureConfig {
+            activate_threshold: 0.0,
+            ..Default::default()
+        };
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("memory_backpressure.activate_threshold"));
+    }
+
+    #[test]
+    fn postgres_cdc_memory_backpressure_config_rejects_resume_threshold_of_one() {
+        let config = PostgresCdcMemoryBackpressureConfig {
+            resume_threshold: 1.0,
+            ..Default::default()
+        };
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("memory_backpressure.resume_threshold"));
+    }
+
+    #[test]
+    fn postgres_cdc_memory_backpressure_config_rejects_resume_gte_activate() {
+        let config = PostgresCdcMemoryBackpressureConfig {
+            activate_threshold: 0.5,
+            resume_threshold: 0.5,
+        };
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("must be lower than"));
+    }
+
+    #[test]
+    fn postgres_cdc_config_rejects_invalid_batch_config() {
+        let mut config = postgres_cdc_config(PostgresTlsConfig::default());
+        config.batch.max_size = ConfigSize::ZERO;
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("batch.max_size"));
+    }
+
+    #[test]
+    fn postgres_cdc_config_rejects_invalid_memory_backpressure_config() {
+        let mut config = postgres_cdc_config(PostgresTlsConfig::default());
+        config.memory_backpressure.activate_threshold = 0.0;
+
+        let err = config.validate().unwrap_err();
+        assert!(err.contains("memory_backpressure.activate_threshold"));
+    }
+
+    /// Regression test: the `f32` fields must survive the JSON-string
+    /// round-trip a checkpoint takes through `PipelineConfig`, whose
+    /// `InputEndpointConfig` flattens the connector config. With `serde_json`'s
+    /// `arbitrary_precision` feature enabled, the serde `Content` buffer that
+    /// `#[serde(flatten)]` uses represents floats as maps, which breaks plain
+    /// `f32` deserialization (serde-rs/json#1157). `serde_via_value` on each
+    /// `f32` field fixes this.
+    #[test]
+    fn postgres_cdc_config_f32_fields_roundtrip_through_pipeline_config() {
+        use crate::config::PipelineConfig;
+
+        let pipeline: PipelineConfig = serde_json::from_value(json!({
+            "name": "cdc_test",
+            "workers": 1,
+            "inputs": {
+                "cdc_in": {
+                    "stream": "test_input1",
+                    "transport": {
+                        "name": "postgres_cdc_input",
+                        "config": {
+                            "uri": "postgres://user:password@localhost:5432/database",
+                            "publication": "publication",
+                            "source_table": "public.table",
+                            "batch": {"memory_budget_ratio": 0.3},
+                            "memory_backpressure": {"activate_threshold": 0.9, "resume_threshold": 0.7},
+                        },
+                    },
+                },
+            },
+            "outputs": {},
+        }))
+        .unwrap();
+
+        let json = serde_json::to_string(&pipeline).unwrap();
+        let back: PipelineConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, pipeline);
     }
 }

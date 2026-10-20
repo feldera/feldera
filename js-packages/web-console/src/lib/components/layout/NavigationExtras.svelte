@@ -51,8 +51,7 @@
     {:else}
       <span class="hidden sm:inline">{full}</span>
       <span class="inline sm:hidden">{short}</span>
-      <span class="fd fd-chevron-down text-[20px] transition-transform" class:rotate-180={isOpen}
-      ></span>
+      <span class="fd fd-chevron-down transition-transform" class:rotate-180={isOpen}></span>
     {/if}
   </button>
 {/snippet}

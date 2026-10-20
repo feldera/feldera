@@ -3,8 +3,9 @@ use crate::{
     algebra::{IndexedZSet, ZBatch},
     circuit::{
         GlobalNodeId, NodeId, OwnershipPreference, WithClock,
+        bootstrap::register_accumulated_replay_stream,
         checkpointer::EmptyCheckpoint,
-        circuit_builder::{MetadataExchange, StreamId, register_replay_stream},
+        circuit_builder::{MetadataExchange, StreamId},
         metadata::{
             ACCUMULATOR_RECORDS_TO_REPARTITION_COUNT, BALANCER_POLICY, BatchSizeStats,
             INPROGRESS_REBALANCING_TIME_SECONDS, INPUT_BATCHES_STATS,
@@ -12,7 +13,7 @@ use crate::{
             MetaItem, OperatorLocation, OperatorMeta, RABALANCINGS_COUNT, REBALANCING_IN_PROGRESS,
             TOTAL_REBALANCING_TIME_SECONDS,
         },
-        operator_traits::Operator,
+        operator_traits::{FileOperatorCheckpoint, Operator, OperatorCheckpoint},
         splitter_output_chunk_size, splitter_output_first_chunk_size,
     },
     circuit_cache_key, default_hasher,
@@ -38,7 +39,7 @@ use crate::{
     },
 };
 use async_stream::stream;
-use feldera_storage::{FileCommitter, StoragePath, fbuf::FBuf};
+use feldera_storage::{StoragePath, fbuf::FBuf};
 use rkyv::AlignedVec;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -190,9 +191,14 @@ where
                         ),
                     );
 
+                    // The integral replays straight into the accumulator's output,
+                    // bypassing the exchange and the accumulator.  The replay stays
+                    // local to each worker, which keeps the integral partitioned as
+                    // its checkpointed policy requires (under `Broadcast`, every
+                    // worker replays its own full copy).
                     let replay_stream = z1feedback
                         .operator_mut()
-                        .prepare_replay_stream(&sharded_stream);
+                        .prepare_accumulated_replay_stream(&accumulator_stream);
 
                     let trace = circuit.add_binary_operator_with_preference(
                         <AccumulateTraceAppend<TimedSpine<B, C>, B, C>>::new(
@@ -208,9 +214,9 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    register_replay_stream(
+                    register_accumulated_replay_stream(
                         circuit,
-                        &sharded_stream,
+                        &accumulator_stream,
                         &replay_stream,
                         batch_factories,
                     );
@@ -901,8 +907,8 @@ where
             // `Builder` API (instead of `Batcher`) to construct output batches.
             builders.push(B::Builder::with_capacity(
                 &self.batch_factories,
-                batch.key_count() / shards,
-                batch.len() / shards,
+                batch.key_count_upper_bound() / shards,
+                batch.len_upper_bound() / shards,
             ));
         }
 
@@ -959,8 +965,8 @@ where
                 &self.batch_factories,
                 B::Builder::with_capacity(
                     &self.batch_factories,
-                    batch.key_count() / shards,
-                    batch.len() / shards,
+                    batch.key_count_upper_bound() / shards,
+                    batch.len_upper_bound() / shards,
                 ),
             ));
         }
@@ -1030,9 +1036,8 @@ where
         outputs
     }
 
-    fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
-        base.clone()
-            .join(format!("rebalancing-exchange-{}.dat", persistent_id))
+    fn checkpoint_file(persistent_id: &str) -> String {
+        format!("rebalancing-exchange-{}.dat", persistent_id)
     }
 
     async fn send(
@@ -1066,8 +1071,8 @@ where
             .into_iter()
             .map(|builder| builder.done())
             .inspect(|batch| {
-                if batch.key_count() > *capacity {
-                    *capacity = batch.key_count();
+                if batch.key_count_upper_bound() > *capacity {
+                    *capacity = batch.key_count_upper_bound();
                 }
             });
 
@@ -1197,35 +1202,25 @@ where
     /// Checkpoint the current sharding policy only.
     fn checkpoint(
         &mut self,
-        base: &StoragePath,
-        pid: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), crate::Error> {
-        let pid = require_persistent_id(pid, &self.global_id)?;
+        persistent_id: Option<&str>,
+    ) -> Result<Option<Box<dyn OperatorCheckpoint>>, crate::Error> {
+        let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
 
         let checkpoint = RebalanceExchangeSenderCheckpoint {
             current_policy: self.current_policy.get(),
             key_distribution: self.key_distribution.borrow().clone(),
         };
 
-        let checkpoint_bytes = serde_json::to_vec(&checkpoint).unwrap();
-
-        let mut buf = FBuf::new();
-        buf.extend_from_slice(&checkpoint_bytes);
-
-        files.push(
-            Runtime::storage_backend()
-                .unwrap()
-                .write(&Self::checkpoint_file(base, pid), buf)?,
-        );
-
-        Ok(())
+        Ok(Some(Box::new(FileOperatorCheckpoint {
+            name: Self::checkpoint_file(persistent_id),
+            content: FBuf::from_slice(&serde_json::to_vec(&checkpoint).unwrap()),
+        })))
     }
 
     fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), crate::Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
 
-        let file_path = Self::checkpoint_file(base, pid);
+        let file_path = base.clone().join(Self::checkpoint_file(pid));
         let content = Runtime::storage_backend().unwrap().read(&file_path)?;
 
         let checkpoint = serde_json::from_slice::<RebalanceExchangeSenderCheckpoint>(&content)
@@ -1416,9 +1411,9 @@ where
                 rebalance_trace,
             } = self.rebalance_state.borrow_mut().take().unwrap();
 
-            self.rebalance_accumulator_size.set(accumulator.len());
+            self.rebalance_accumulator_size.set(accumulator.len_upper_bound());
             self.rebalance_integral_size.set(if rebalance_trace {
-                delayed_trace.len()
+                delayed_trace.len_upper_bound()
             } else {
                 0
             });

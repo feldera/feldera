@@ -27,6 +27,7 @@
 //! the `(time, diff)` pairs associated with a key and value.
 
 use crate::circuit::metadata::OperatorMeta;
+use crate::circuit::operator_traits::OperatorCheckpoint;
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 use crate::storage::file::SerializerInner;
@@ -35,14 +36,14 @@ pub use crate::storage::file::{DbspSerializer, Deserializable, Deserializer, Rky
 use crate::storage::file::{FilterKind, FilterStats};
 use crate::trace::cursor::{
     DefaultPushCursor, FilteredMergeCursor, FilteredMergeCursorWithSnapshot, PushCursor,
-    UnfilteredMergeCursor,
+    UnfilteredMergeCursor, merge_cursor_over,
 };
 use crate::utils::{IsNone, SupportsRoaring};
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use enum_map::Enum;
 use feldera_storage::fbuf::FBufSerializer;
-use feldera_storage::{FileCommitter, FileReader, StoragePath};
+use feldera_storage::{FileReader, StoragePath};
 use rand::{Rng, thread_rng};
 use rkyv::with::{CopyOptimize, With};
 use size_of::SizeOf;
@@ -84,7 +85,7 @@ use crate::{
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
     storage::file::reader::Error as ReaderError,
 };
-pub use cursor::{Cursor, MergeCursor};
+pub use cursor::{AccessHint, Cursor, MergeCursor};
 pub use filter::{BatchFilterStats, BatchFilters, Filter, GroupFilter};
 pub use layers::Trie;
 
@@ -219,10 +220,10 @@ pub trait BatchFactories<K: DataTrait + ?Sized, V: DataTrait + ?Sized, T, R: Wei
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TraceRole {
     /// Nothing searches the trace until its contents are output, so it can
-    /// merge less eagerly; see `dev_tweaks.min_accumulator_merge_batches`.
+    /// merge less eagerly; see `dev_tweaks.accumulator_merge_threshold_batches`.
     Accumulator,
     /// The trace is searched continuously, so it merges eagerly; see
-    /// `dev_tweaks.min_integral_merge_batches`.
+    /// `dev_tweaks.integral_merge_threshold_batches`.
     Integral,
 }
 
@@ -363,15 +364,9 @@ pub trait Trace: BatchReader {
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
     fn value_filter(&self) -> &Option<GroupFilter<Self::Val>>;
 
-    /// Writes this trace to storage beneath `base`, using `pid` as a file name
-    /// prefix.  Adds the files that were written to `files` so that they can be
-    /// committed later.
-    fn save(
-        &mut self,
-        base: &StoragePath,
-        pid: &str,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error>;
+    /// Obtains an object that can write a snapshot of this trace to
+    /// persistent storage
+    fn save(&mut self, pid: &str) -> Result<Box<dyn OperatorCheckpoint>, Error>;
 
     /// Reads this trace back from storage under `base` with `pid` as the
     /// prefix.
@@ -396,6 +391,21 @@ pub enum BatchLocation {
 
     /// On disk.
     Storage,
+}
+
+/// How a spine lays out the batches it writes for itself: merge outputs and
+/// eager spills.  A batch inserted into a spine keeps the layout it arrived
+/// with until a merge rewrites it.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct BatchLayout {
+    /// Minimum size of a key-column data block in a file-backed batch, in
+    /// bytes; `None` is the writer's default.  Must be a power of 2 and at
+    /// least 4096.
+    ///
+    /// A walk over keys alone reads one key block per storage request, so a
+    /// larger block means fewer requests for the same keys, at the price of
+    /// more to decompress per point lookup.
+    pub key_block_bytes: Option<usize>,
 }
 
 // impl BatchLocation {
@@ -495,6 +505,24 @@ where
     /// Acquires a cursor to the batch's contents.
     fn cursor(&self) -> Self::Cursor<'_>;
 
+    /// Acquires a cursor to the batch's contents, with an access hint.
+    ///
+    /// A file-backed batch reads ahead for a cursor that declared a
+    /// sequential walk; a batch that doesn't support the hint ignores it.
+    /// See [`AccessHint`].
+    ///
+    /// # Arguments
+    ///
+    /// * `hint` - how the cursor will be moved; see [`AccessHint`].
+    ///
+    /// # Returns
+    ///
+    /// A cursor over the batch, which may read ahead for the walk the hint declared.
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        let _ = hint;
+        self.cursor()
+    }
+
     /// Acquires a [PushCursor] for the batch's contents.
     fn push_cursor(
         &self,
@@ -508,19 +536,7 @@ where
         key_filter: Option<Filter<Self::Key>>,
         value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
-        if key_filter.is_none() && value_filter.is_none() {
-            Box::new(UnfilteredMergeCursor::new(self.cursor()))
-        } else if let Some(GroupFilter::Simple(filter)) = value_filter {
-            Box::new(FilteredMergeCursor::new(
-                self.cursor(),
-                key_filter,
-                Some(filter),
-            ))
-        } else {
-            // Other forms of GroupFilters cannot be evaluated without a trace snapshot -- don't filter values
-            // in such cursors.
-            Box::new(FilteredMergeCursor::new(self.cursor(), key_filter, None))
-        }
+        merge_cursor_over(self.cursor(), key_filter, value_filter)
     }
 
     /// Similar to `merge_cursor`, but invoked in the context of a spine merger.
@@ -567,15 +583,32 @@ where
     }
     //fn consumer(self) -> Self::Consumer;
 
-    /// The number of keys in the batch.
-    // TODO: return `(usize, Option<usize>)`, similar to
-    // `Iterator::size_hint`, since not all implementations
-    // can compute the number of keys precisely.  Same for
-    // `len()`.
-    fn key_count(&self) -> usize;
+    /// An upper bound on the number of keys in the batch.
+    ///
+    /// Not all implementations can compute this precisely: a batch that hides a
+    /// value column consolidates runs of values as its cursor walks them, and a
+    /// key whose values all cancel disappears, so the count can only be an
+    /// over-estimate.  Use [`Self::is_empty`], which is exact, to test for
+    /// emptiness rather than comparing this against zero.
+    ///
+    /// # Returns
+    ///
+    /// A count that may exceed the keys a cursor yields, never fall short of them.
+    fn key_count_upper_bound(&self) -> usize;
 
-    /// The number of updates in the batch.
-    fn len(&self) -> usize;
+    /// An upper bound on the number of (key, value) pairs in the batch.
+    ///
+    /// A batch of keys without values pairs each key with the unit value.  A
+    /// batch with timestamps can hold updates at several times for one pair,
+    /// and an implementation may count each of them, which only raises the
+    /// bound.  See [`Self::key_count_upper_bound`] for the other reason this
+    /// is not exact.
+    ///
+    /// # Returns
+    ///
+    /// A count that may exceed the (key, value) pairs a cursor yields, never
+    /// fall short of them.
+    fn len_upper_bound(&self) -> usize;
 
     /// The memory or storage size of the batch in bytes.
     ///
@@ -626,10 +659,17 @@ where
         CacheStats::default()
     }
 
-    /// True if the batch is empty.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
+    /// True if the batch contains no updates.
+    ///
+    /// This must be exact even where [`Self::len_upper_bound`] is not, because
+    /// fixed-point detection in nested scopes decides "nothing changed" from
+    /// it: a batch that reports itself non-empty while its cursor yields
+    /// nothing keeps a recursive scope from ever converging.
+    ///
+    /// # Returns
+    ///
+    /// True if and only if a cursor over the batch yields nothing.
+    fn is_empty(&self) -> bool;
 
     /// Returns a uniform random sample of distincts keys from the batch.
     ///
@@ -657,9 +697,12 @@ where
     /// * The output sample can only contain keys present in `self` (with
     ///   non-zero weights).
     ///
-    /// * If `sample_size` is greater than or equal to the number of keys
-    ///   present in `self` (with non-zero weights), the resulting sample must
-    ///   contain all such keys.
+    /// * If `sample_size` is at least [`Self::key_count_upper_bound`], the
+    ///   output sample contains all keys present in `self` (with non-zero
+    ///   weights).  A smaller `sample_size` can miss some of them even if it
+    ///   is no smaller than their number, since an implementation may draw
+    ///   from every key the bound counts, including keys whose weights
+    ///   cancel, and discard the cancelled ones afterwards.
     ///
     /// * The output sample contains keys sorted in ascending order.
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
@@ -688,7 +731,7 @@ where
             return;
         }
 
-        let sample_size = partition_sample_size(self.key_count(), num_partitions);
+        let sample_size = partition_sample_size(self.key_count_upper_bound(), num_partitions);
 
         let mut sample = self.factories().keys_factory().default_box();
         self.sample_keys(&mut thread_rng(), sample_size, sample.as_mut());
@@ -773,6 +816,10 @@ where
     fn cursor(&self) -> Self::Cursor<'_> {
         (**self).cursor()
     }
+
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        (**self).cursor_with_hint(hint)
+    }
     fn merge_cursor(
         &self,
         key_filter: Option<Filter<Self::Key>>,
@@ -780,11 +827,11 @@ where
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         (**self).merge_cursor(key_filter, value_filter)
     }
-    fn key_count(&self) -> usize {
-        (**self).key_count()
+    fn key_count_upper_bound(&self) -> usize {
+        (**self).key_count_upper_bound()
     }
-    fn len(&self) -> usize {
-        (**self).len()
+    fn len_upper_bound(&self) -> usize {
+        (**self).len_upper_bound()
     }
     fn approximate_byte_size(&self) -> usize {
         (**self).approximate_byte_size()
@@ -899,8 +946,8 @@ where
                 batch.cursor(),
                 timestamp,
                 factories,
-                batch.key_count(),
-                batch.len(),
+                batch.key_count_upper_bound(),
+                batch.len_upper_bound(),
             )
         }
     }
@@ -924,8 +971,8 @@ where
                 batch.cursor(),
                 timestamp,
                 factories,
-                batch.key_count(),
-                batch.len(),
+                batch.key_count_upper_bound(),
+                batch.len_upper_bound(),
             ))
         }
     }
@@ -1010,6 +1057,25 @@ where
 
     fn from_path(_factories: &Self::Factories, _path: &StoragePath) -> Result<Self, ReaderError> {
         Err(ReaderError::Unsupported)
+    }
+
+    /// Returns whether [`Self::from_path`], given `factories`, can restore the
+    /// file that a checkpoint records for this batch.
+    ///
+    /// A batch on storage can hide a column that its file holds, and only
+    /// factories that describe the hidden column can reopen such a file.  Any
+    /// other batch, including one in memory, which a checkpoint writes out
+    /// afresh, can be restored with any factories for its type.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - the factories that a restore would read the file with.
+    ///
+    /// # Returns
+    ///
+    /// True unless the batch's file needs factories that `factories` lack.
+    fn restorable_with(&self, _factories: &Self::Factories) -> bool {
+        true
     }
 
     /// Minimum and maximum keys in this batch.
@@ -1164,18 +1230,33 @@ where
 
     /// Creates an empty builder to hold the result of merging
     /// `batches`. Optionally, `location` can specify the preferred location for
-    /// the result of the merge.
+    /// the result of the merge.  `layout` says how a builder that writes a file
+    /// lays it out; a builder that builds in memory ignores it.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - factories for the batch being built.
+    /// * `batches` - the batches to be merged, read for their capacities.
+    /// * `location` - where the result should be built, or `None` to let the builder
+    ///   decide.
+    /// * `layout` - how a builder that writes a file lays it out; a builder that builds
+    ///   in memory ignores it.
     fn for_merge<'a, B, I>(
         factories: &Output::Factories,
         batches: I,
         location: Option<BatchLocation>,
+        _layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = Output::Key, Val = Output::Val, Time = Output::Time, R = Output::R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
-        let value_capacity = batches.into_iter().map(|b| b.len()).sum();
+        let key_capacity = batches
+            .clone()
+            .into_iter()
+            .map(|b| b.key_count_upper_bound())
+            .sum();
+        let value_capacity = batches.into_iter().map(|b| b.len_upper_bound()).sum();
         Self::with_capacity_in_location(factories, key_capacity, value_capacity, location)
     }
 
@@ -1405,7 +1486,12 @@ where
         let mut inputs = batches.split_off(batches.len().saturating_sub(64));
         let result: B = ListMerger::merge(
             factories,
-            B::Builder::for_merge(factories, &inputs, Some(BatchLocation::Memory)),
+            B::Builder::for_merge(
+                factories,
+                &inputs,
+                Some(BatchLocation::Memory),
+                BatchLayout::default(),
+            ),
             inputs
                 .iter_mut()
                 .map(|b| b.consuming_cursor(key_filter.clone(), value_filter.clone()))
@@ -1455,6 +1541,7 @@ where
                 factories,
                 inputs.iter().cloned(),
                 Some(BatchLocation::Memory),
+                BatchLayout::default(),
             ),
             inputs
                 .into_iter()
@@ -1517,7 +1604,7 @@ where
     R: WeightTrait + ?Sized,
 {
     SerializerInner::to_fbuf_with_thread_local(|s| {
-        let mut offsets = Vec::with_capacity(2 * batch.len());
+        let mut offsets = Vec::with_capacity(2 * batch.len_upper_bound());
         let mut cursor = batch.cursor();
         while cursor.key_valid() {
             offsets.push(cursor.key().serialize(s)?);
@@ -1692,7 +1779,10 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    let mut serializer = IndexedWSetSerializer::with_capacity(batch.key_count(), batch.len());
+    let mut serializer = IndexedWSetSerializer::with_capacity(
+        batch.key_count_upper_bound(),
+        batch.len_upper_bound(),
+    );
     let mut cursor = batch.cursor();
 
     while cursor.key_valid() {

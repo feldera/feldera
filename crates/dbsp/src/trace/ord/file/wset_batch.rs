@@ -2,6 +2,7 @@ use crate::storage::file::format::BatchMetadata;
 use crate::storage::file::{
     FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter, collect_roaring_metadata,
 };
+use crate::trace::AccessHint;
 use crate::{
     DBData, DBWeight, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
@@ -18,8 +19,9 @@ use crate::{
         },
     },
     trace::{
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        DbspSerializer, Deserializer, FileKeyBatch, VecWSetFactories, WeightedItem,
+        Batch, BatchFactories, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories,
+        Builder, Cursor, DbspSerializer, Deserializer, FileKeyBatch, VecWSetFactories,
+        WeightedItem,
         cursor::{CursorFactoryWrapper, Pending, Position, PushCursor},
         filter::BatchFilters,
         merge_batches_by_reference,
@@ -268,7 +270,7 @@ where
             Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap(),
             Runtime::file_writer_parameters(),
-            FilterPlan::<K>::decide_filter(None, self.key_count()),
+            FilterPlan::<K>::decide_filter(None, self.key_count_upper_bound()),
         )
         .unwrap_storage();
 
@@ -282,6 +284,7 @@ where
             negative_weight_count: (self.len() as u64)
                 .saturating_sub(self.stats().negative_weight_count),
             touched_window_count: self.stats().touched_window_count,
+            value_stamp: self.stats().value_stamp,
         };
         let (file, filters) = writer.into_reader(stats).unwrap_storage();
         Self::from_parts(self.factories.clone(), Arc::new(file), filters)
@@ -358,6 +361,11 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    fn is_empty(&self) -> bool {
+        // `len_upper_bound` is exact for this batch type: the file holds only the
+        // (key, value) pairs that its cursor yields.
+        self.len_upper_bound() == 0
+    }
     type Factories = FileWSetFactories<K, R>;
     type Key = K;
     type Val = DynUnit;
@@ -380,14 +388,18 @@ where
         FileWSetCursor::new(self)
     }
 
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        FileWSetCursor::with_hint(self, hint)
+    }
+
     #[inline]
-    fn key_count(&self) -> usize {
+    fn key_count_upper_bound(&self) -> usize {
         self.file.n_rows(0) as usize
     }
 
     #[inline]
-    fn len(&self) -> usize {
-        self.key_count()
+    fn len_upper_bound(&self) -> usize {
+        self.key_count_upper_bound()
     }
 
     fn approximate_byte_size(&self) -> usize {
@@ -419,7 +431,7 @@ where
     where
         RG: Rng,
     {
-        let size = self.key_count();
+        let size = self.key_count_upper_bound();
         let mut cursor = self.cursor();
         if sample_size >= size {
             output.reserve(size);
@@ -454,7 +466,7 @@ where
             keys
         } else {
             keys_vec = self.factories.vec_wset_factory.keys_factory().default_box();
-            keys_vec.reserve(keys.len());
+            keys_vec.reserve(keys.len_upper_bound());
             let mut cursor = keys.cursor();
             while cursor.key_valid() {
                 keys_vec.push_ref(cursor.key());
@@ -644,7 +656,17 @@ where
     R: WeightTrait + ?Sized,
 {
     fn new(wset: &'s FileWSet<K, R>) -> Self {
-        let cursor = unsafe { wset.file.rows().first().unwrap_storage() };
+        Self::with_hint(wset, AccessHint::Unknown)
+    }
+
+    /// A cursor told how it will be moved; see [`AccessHint`].
+    ///
+    /// # Arguments
+    ///
+    /// * `wset` - the batch to walk.
+    /// * `hint` - how the cursor will be moved; see [`AccessHint`].
+    fn with_hint(wset: &'s FileWSet<K, R>, hint: AccessHint) -> Self {
+        let cursor = unsafe { wset.file.rows().with_hint(hint).first().unwrap_storage() };
         let diff = wset.factories.weight_factory().default_box();
         let valid = cursor.has_value();
 
@@ -670,6 +692,11 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // A w-set has no values of its own: a key is one tuple.
+        self.key_valid() as usize
+    }
+
     fn key(&self) -> &K {
         self.cursor.key().unwrap()
     }
@@ -866,12 +893,17 @@ where
         factories: &<FileWSet<K, R> as BatchReader>::Factories,
         batches: I,
         _location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = DynUnit, Time = (), R = R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
+        let key_capacity = batches
+            .clone()
+            .into_iter()
+            .map(|b| b.key_count_upper_bound())
+            .sum();
         let key_filter = if collect_roaring_metadata() {
             let filter_plan = FilterPlan::from_batches(batches.clone());
             filter_plan.map_or_else(
@@ -887,7 +919,7 @@ where
                 &factories.file_factories,
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
-                Runtime::file_writer_parameters(),
+                Runtime::file_writer_parameters_for(layout),
                 key_filter,
             )
             .unwrap_storage(),

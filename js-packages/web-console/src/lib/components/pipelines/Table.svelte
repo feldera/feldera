@@ -78,7 +78,8 @@
     ['Paused', ['Paused']],
     ['Ready To Start', ['Stopped']],
     ['Compiling', ['Queued', 'CompilingSql', 'SqlCompiled', 'CompilingRust']],
-    ['Failed', ['SystemError', 'SqlError', 'RustError']]
+    ['Failed', ['SystemError', 'SqlError', 'RustError']],
+    ['Unavailable', ['Unavailable']]
   ]
 
   let nameSearch = $state('')
@@ -129,7 +130,7 @@
       >
         <input
           data-testid="input-pipeline-search"
-          class="input h-9 sm:w-60"
+          class="input sm:w-60"
           type="search"
           placeholder="Search pipelines..."
           oninput={(e) => {
@@ -138,7 +139,7 @@
         />
         <Select
           data-testid="select-pipeline-status"
-          class="h-9 text-base! sm:w-40"
+          class="sm:w-40"
           onchange={(e) => {
             statusFilter.value = filterStatuses.find((v) => e.currentTarget.value === v[0])![0]
             statusFilter.set()
@@ -172,7 +173,7 @@
           <th class="h-10 px-3 text-left"
             ><span class="text-base font-normal text-surface-950-50">Storage</span></th
           >
-          <ThSort {table} class="h-10 justify-center px-3" field="status" {...sortColumn('status')}
+          <ThSort {table} class="h-10 px-3" field="status" {...sortColumn('status')}
             ><span class="text-base font-normal text-surface-950-50">Status</span></ThSort
           >
           <th class="h-10 px-3 text-left"
@@ -193,7 +194,7 @@
           </ThSort>
           <ThSort
             {table}
-            class="h-10 w-20 justify-end px-3 xl:w-32"
+            class="h-10 w-20 px-3 xl:w-32"
             field={(p) => p.connectors?.numErrors}
             {...sortColumn('numErrors')}
           >
@@ -243,7 +244,7 @@
               <div
                 class="fd {pipeline.storageStatus === 'Cleared'
                   ? 'fd-database-off text-surface-500'
-                  : 'fd-database'} text-center text-[20px]"
+                  : 'fd-database'} text-center text-[16px]"
               ></div>
               <Tooltip
                 >{match(pipeline.storageStatus)
@@ -254,7 +255,7 @@
               >
             </td>
             <td
-              class="px-3 {rowTd} w-36 border-surface-100-900 text-center group-hover:bg-surface-50-950"
+              class="px-3 {rowTd} w-36 border-surface-100-900 text-left group-hover:bg-surface-50-950"
               ><PipelineStatus status={pipeline.status}></PipelineStatus></td
             >
             <td
@@ -265,7 +266,7 @@
               >
                 {#if pipeline.deploymentError}
                   {@const message = pipeline.deploymentError.message}
-                  <span class="fd fd-circle-alert pr-2 text-[20px] text-error-500"></span>
+                  <span class="fd fd-circle-alert pr-2 text-[16px] text-error-500"></span>
                   <Popover class="z-20" strategy="fixed">
                     <div
                       class="scrollbar flex max-h-[50vh] max-w-[80vw] overflow-auto whitespace-pre-wrap"
@@ -291,21 +292,21 @@
               </div>
             </td>
             <td class="{rowTd} border-surface-100-900 px-3 group-hover:bg-surface-50-950">
-              <div class="text-right text-nowrap">
+              <div class="text-nowrap">
                 {pipeline.connectors?.numErrors ?? '-'}
               </div>
             </td>
             <td
               class="{rowTd} relative w-28 border-surface-100-900 px-3 group-hover:bg-surface-50-950"
             >
-              <div class="w-32 text-right text-nowrap">
+              <div class="text-nowrap">
                 {formatElapsedTime(pipeline.lastStatusSince, 'dhm')} ago
               </div>
             </td>
             <td
               class="{rowTd} relative w-40 border-surface-100-900 px-3 group-hover:bg-surface-50-950"
             >
-              <div class="text-right text-nowrap">
+              <div class="text-nowrap">
                 {pipeline.deploymentResourcesStatus === 'Provisioned'
                   ? formatDateTime(pipeline.deploymentResourcesStatusSince)
                   : ''}

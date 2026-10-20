@@ -1,3 +1,4 @@
+use crate::size::{ConfigSize, LegacySizeUnit};
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
@@ -10,7 +11,33 @@ use utoipa::ToSchema;
 /// threshold never merges.  With threshold `n`, `14 + 7 * (n - 1)` batches
 /// can wait with no merge due, which reaches 128 at `n = 18`.  15 is a
 /// conservative choice; `merge_threshold_test` pins it.
-pub const MAX_MIN_MERGE_BATCHES: u16 = 15;
+pub const MAX_MERGE_THRESHOLD_BATCHES: u16 = 15;
+
+/// Smallest key block a layer file writer accepts, in bytes; see
+/// [`DevTweaks::lazy_input_map_key_block_bytes`].
+///
+/// A copy of the floor the writer asserts on `Parameters::min_key_data_block`,
+/// kept here because this crate sits below the one that owns it.  It buys the
+/// user a named error where they set the size, instead of a panic once a
+/// builder reaches for it.
+pub const MIN_KEY_BLOCK_BYTES: u64 = 4096;
+
+crate::size_setting!(
+    size_fbuf_slab_size_per_class,
+    "fbuf_slab_size_per_class",
+    LegacySizeUnit::Bytes
+);
+crate::size_setting!(size_storage_max, "storage_max", LegacySizeUnit::Mebibytes);
+crate::size_setting!(
+    size_lazy_input_map_key_block_size,
+    "lazy_input_map_key_block_size",
+    LegacySizeUnit::Bytes
+);
+crate::size_setting!(
+    size_exchange_channel_capacity,
+    "exchange_channel_capacity",
+    LegacySizeUnit::Bytes
+);
 
 /// Optional settings for tweaking Feldera internals.
 ///
@@ -40,11 +67,17 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub buffer_cache_allocation_strategy: Option<BufferCacheAllocationStrategy>,
 
-    /// Target number of cached bytes retained in each `FBuf` slab size class.
+    /// Target size of the cache retained in each `FBuf` slab size class.
     ///
-    /// The default is 16 MiB.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fbuf_slab_bytes_per_class: Option<usize>,
+    /// The default is `"16Mi"`. Before release 0.367.0 this setting was
+    /// `fbuf_slab_bytes_per_class`, a number of bytes.
+    #[serde(
+        alias = "fbuf_slab_bytes_per_class",
+        deserialize_with = "size_fbuf_slab_size_per_class",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub fbuf_slab_size_per_class: Option<ConfigSize>,
 
     /// Whether to asynchronously fetch keys needed for the join operator from
     /// storage.  Asynchronous fetching should be faster for high-latency
@@ -64,12 +97,20 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub merger: Option<MergerType>,
 
-    /// If set, the maximum amount of storage, in MiB, for the POSIX backend to
-    /// allow to be in use before failing all writes with `StorageFull`.  This
-    /// is useful for testing on top of storage that does not implement its own
-    /// quota mechanism.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub storage_mb_max: Option<u64>,
+    /// If set, the maximum amount of storage for the POSIX backend to allow to
+    /// be in use before failing all writes with `StorageFull`.  This is useful
+    /// for testing on top of storage that does not implement its own quota
+    /// mechanism.
+    ///
+    /// Before release 0.367.0 this setting was `storage_mb_max`, a number of
+    /// mebibytes.
+    #[serde(
+        alias = "storage_mb_max",
+        deserialize_with = "size_storage_max",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub storage_max: Option<ConfigSize>,
 
     /// Attempt to print a stack trace on stack overflow.
     ///
@@ -89,6 +130,47 @@ pub struct DevTweaks {
     // than records, and if it were configurable per-operator.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub splitter_chunk_size_records: Option<u64>,
+
+    /// How many keys a lazy input map resolves against its integral in one step.
+    ///
+    /// The lazy upsert operator may scan a large number of keys without
+    /// producing any output. Therefore bounding its step by the number of
+    /// outputs is not sufficient. This setting additionally bounds it by its
+    /// input.
+    ///
+    /// The default is 100,000.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lazy_input_map_keys_per_step: Option<u64>,
+
+    /// Minimum size of the key blocks in the batches a lazy input map's
+    /// accumulator writes for itself.  A power of two, at least 4096 bytes.
+    ///
+    /// The map resolves a transaction by walking the accumulated updates in
+    /// key order without reading values, one storage request per key block,
+    /// so larger blocks mean fewer requests.  Only the accumulator's own
+    /// batches (merge outputs and spills) take this size; the batches that
+    /// reach the integral keep it until its merger rewrites them at the
+    /// default size.  The default is `"32Ki"`; `"8Ki"` is the file writer's
+    /// default. Before release 0.367.0 this setting was
+    /// `lazy_input_map_key_block_bytes`, a number of bytes.
+    #[serde(
+        alias = "lazy_input_map_key_block_bytes",
+        deserialize_with = "size_lazy_input_map_key_block_size",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub lazy_input_map_key_block_size: Option<ConfigSize>,
+
+    /// How many data blocks a layer-file cursor that declared a sequential
+    /// walk reads ahead of its position.
+    ///
+    /// Each block a cursor steps into that the buffer cache does not hold is a
+    /// device round trip the worker waits out, and a key column is a strided
+    /// subset of its file that the kernel's readahead never serves.  Reading
+    /// ahead this many blocks keeps that many round trips in flight.  Zero
+    /// disables it.  The default is 8.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layer_file_read_ahead_blocks: Option<u64>,
 
     /// Enable adaptive joins.
     ///
@@ -206,19 +288,21 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_level0_batch_size_records: Option<u16>,
 
-    /// Minimum number of batches an accumulator's spine merges at once,
-    /// at every level above level 1.
+    /// Merge threshold of an accumulator's spine: how many batches each
+    /// level above level 1 waits for before it merges them.
     ///
-    /// Zero restores the built-in minimum.
+    /// Zero restores the built-in minimum.  A spine that garbage-collects old
+    /// records always uses the built-in minimum.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_accumulator_merge_batches: Option<u16>,
+    pub accumulator_merge_threshold_batches: Option<u16>,
 
-    /// Minimum number of batches an integral's spine merges at once, at
-    /// every level above level 1.
+    /// Merge threshold of an integral's spine: how many batches each level
+    /// above level 1 waits for before it merges them.
     ///
-    /// Unset or zero keeps the built-in minimum.
+    /// The default is ten.  Zero restores the built-in minimum.  A spine
+    /// that garbage-collects old records always uses the built-in minimum.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_integral_merge_batches: Option<u16>,
+    pub integral_merge_threshold_batches: Option<u16>,
 
     /// The number of merger threads.
     ///
@@ -235,6 +319,19 @@ pub struct DevTweaks {
     /// any additional bias.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub negative_weight_multiplier: Option<u16>,
+
+    /// The share of the records at a spine's highest level with negative
+    /// weights above which the level merges its batches.
+    ///
+    /// A spine keeps most of its records at its highest level.  When many of
+    /// them are retractions, merging the level's batches cancels them against
+    /// the records they retract, which shrinks the spine's storage.
+    ///
+    /// A fraction from 0 through 1; the default is 0.2.  At 1 the level never
+    /// merges for this reason.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, deserialize_with = "crate::serde_via_value::deserialize")]
+    pub top_level_negative_weight_fraction: Option<f64>,
 
     /// Don't automatically start a transaction for every step.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -279,8 +376,8 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub streaming_exchange: Option<bool>,
 
-    /// Maximum number of bytes of queued but unacknowledged exchange messages
-    /// per pair of remote host and message type.
+    /// Maximum size of the queued but unacknowledged exchange messages per
+    /// pair of remote host and message type.
     ///
     /// A sender that pushes past this budget waits for the receiver to
     /// acknowledge earlier messages before it queues more.  There are three
@@ -288,9 +385,15 @@ pub struct DevTweaks {
     /// each of the other hosts, plus any single message that exceeds the
     /// budget on its own.
     ///
-    /// The default is 10,000,000 bytes.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub exchange_channel_capacity_bytes: Option<usize>,
+    /// The default is `"10M"`. Before release 0.367.0 this setting was
+    /// `exchange_channel_capacity_bytes`, a number of bytes.
+    #[serde(
+        alias = "exchange_channel_capacity_bytes",
+        deserialize_with = "size_exchange_channel_capacity",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub exchange_channel_capacity: Option<ConfigSize>,
 
     /// Optimize input operators during transaction commit.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -332,6 +435,22 @@ impl DevTweaks {
     pub fn splitter_chunk_size_records(&self) -> u64 {
         self.splitter_chunk_size_records.unwrap_or(10_000)
     }
+    pub fn lazy_input_map_keys_per_step(&self) -> u64 {
+        self.lazy_input_map_keys_per_step.unwrap_or(100_000)
+    }
+    pub fn lazy_input_map_key_block_bytes(&self) -> u64 {
+        self.lazy_input_map_key_block_size
+            .unwrap_or(ConfigSize::from_kib(32))
+            .as_bytes()
+    }
+    pub fn fbuf_slab_bytes_per_class(&self) -> usize {
+        self.fbuf_slab_size_per_class
+            .map(ConfigSize::as_usize)
+            .unwrap_or(16 << 20)
+    }
+    pub fn layer_file_read_ahead_blocks(&self) -> u64 {
+        self.layer_file_read_ahead_blocks.unwrap_or(8)
+    }
     pub fn adaptive_joins(&self) -> bool {
         self.adaptive_joins.unwrap_or(false)
     }
@@ -361,43 +480,71 @@ impl DevTweaks {
 
     /// Rejects settings outside their valid range, naming the field, the
     /// value and the range.
+    ///
+    /// # Returns
+    ///
+    /// `Ok` if every setting is in range, otherwise the first one that is not,
+    /// described for the user who wrote it.
     pub fn validate(&self) -> Result<(), String> {
         for (name, value) in [
             (
-                "min_accumulator_merge_batches",
-                self.min_accumulator_merge_batches,
+                "accumulator_merge_threshold_batches",
+                self.accumulator_merge_threshold_batches,
             ),
             (
-                "min_integral_merge_batches",
-                self.min_integral_merge_batches,
+                "integral_merge_threshold_batches",
+                self.integral_merge_threshold_batches,
             ),
         ] {
             if let Some(value) = value
-                && value > MAX_MIN_MERGE_BATCHES
+                && value > MAX_MERGE_THRESHOLD_BATCHES
             {
                 return Err(format!(
                     "dev_tweaks.{name} is {value}, but the valid range is 0 through \
-                     {MAX_MIN_MERGE_BATCHES}; 0 keeps the built-in minimum"
+                     {MAX_MERGE_THRESHOLD_BATCHES}; 0 keeps the built-in minimum"
                 ));
             }
+        }
+        if let Some(fraction) = self.top_level_negative_weight_fraction
+            && !(0.0..=1.0).contains(&fraction)
+        {
+            return Err(format!(
+                "dev_tweaks.top_level_negative_weight_fraction is {fraction}, but the valid \
+                 range is 0 through 1"
+            ));
+        }
+        if let Some(size) = self.lazy_input_map_key_block_size
+            && let bytes = size.as_bytes()
+            && !(bytes.is_power_of_two() && bytes >= MIN_KEY_BLOCK_BYTES)
+        {
+            return Err(format!(
+                "dev_tweaks.lazy_input_map_key_block_size is {bytes} bytes, but it must be a \
+                 power of two and at least {MIN_KEY_BLOCK_BYTES}"
+            ));
         }
         Ok(())
     }
 
     /// Batches an accumulator's spine waits for above level 1; zero means the
     /// built-in minimum.
-    pub fn min_accumulator_merge_batches(&self) -> u16 {
-        self.min_accumulator_merge_batches.unwrap_or(10)
+    pub fn accumulator_merge_threshold_batches(&self) -> u16 {
+        self.accumulator_merge_threshold_batches.unwrap_or(10)
     }
 
     /// Batches an integral's spine waits for above level 1; zero means the
     /// built-in minimum.
-    pub fn min_integral_merge_batches(&self) -> u16 {
-        self.min_integral_merge_batches.unwrap_or(0)
+    pub fn integral_merge_threshold_batches(&self) -> u16 {
+        self.integral_merge_threshold_batches.unwrap_or(10)
     }
 
     pub fn negative_weight_multiplier(&self) -> u16 {
         self.negative_weight_multiplier.unwrap_or(0)
+    }
+
+    /// The share of the records at a spine's highest level with negative
+    /// weights above which the level merges its batches.
+    pub fn top_level_negative_weight_fraction(&self) -> f64 {
+        self.top_level_negative_weight_fraction.unwrap_or(0.2)
     }
 
     pub fn disable_auto_transaction(&self) -> bool {
@@ -419,7 +566,9 @@ impl DevTweaks {
     }
 
     pub fn exchange_channel_capacity_bytes(&self) -> usize {
-        self.exchange_channel_capacity_bytes.unwrap_or(10_000_000)
+        self.exchange_channel_capacity
+            .map(ConfigSize::as_usize)
+            .unwrap_or(10_000_000)
     }
 
     pub fn optimize_input_during_commit(&self) -> bool {
@@ -481,30 +630,84 @@ mod tests {
     fn merge_thresholds_are_bounded() {
         assert_eq!(DevTweaks::default().validate(), Ok(()));
         for field in [
-            "min_accumulator_merge_batches",
-            "min_integral_merge_batches",
+            "accumulator_merge_threshold_batches",
+            "integral_merge_threshold_batches",
         ] {
             let with = |value: u16| {
                 let mut tweaks = DevTweaks::default();
-                if field == "min_accumulator_merge_batches" {
-                    tweaks.min_accumulator_merge_batches = Some(value);
+                if field == "accumulator_merge_threshold_batches" {
+                    tweaks.accumulator_merge_threshold_batches = Some(value);
                 } else {
-                    tweaks.min_integral_merge_batches = Some(value);
+                    tweaks.integral_merge_threshold_batches = Some(value);
                 }
                 tweaks
             };
             assert_eq!(with(0).validate(), Ok(()), "{field} = 0");
             assert_eq!(
-                with(MAX_MIN_MERGE_BATCHES).validate(),
+                with(MAX_MERGE_THRESHOLD_BATCHES).validate(),
                 Ok(()),
                 "{field} at the bound"
             );
-            let error = with(MAX_MIN_MERGE_BATCHES + 1)
+            let error = with(MAX_MERGE_THRESHOLD_BATCHES + 1)
                 .validate()
                 .expect_err("a value past the bound must be rejected");
             assert!(error.contains(field), "{error}");
             assert!(error.contains("16"), "{error}");
             assert!(error.contains("0 through 15"), "{error}");
+        }
+    }
+
+    /// The share of negative weights that merges a spine's highest level
+    /// defaults to a fifth, and is accepted from 0 through 1 and rejected
+    /// outside that range or when it is not a number at all.
+    #[test]
+    fn top_level_negative_weight_fraction_is_a_share() {
+        assert_eq!(
+            DevTweaks::default().top_level_negative_weight_fraction(),
+            0.2
+        );
+        let with = |fraction| DevTweaks {
+            top_level_negative_weight_fraction: Some(fraction),
+            ..DevTweaks::default()
+        };
+        for fraction in [0.0, 0.2, 1.0] {
+            assert_eq!(with(fraction).validate(), Ok(()), "{fraction}");
+        }
+        for fraction in [-0.1, 1.5, f64::INFINITY, f64::NAN] {
+            let error = with(fraction)
+                .validate()
+                .expect_err("a share outside 0 through 1 must be rejected");
+            assert!(
+                error.contains("top_level_negative_weight_fraction"),
+                "{error}"
+            );
+            assert!(error.contains("0 through 1"), "{error}");
+        }
+    }
+
+    /// The lazy map's key block size is accepted at the bound and above it on a
+    /// power of two, and rejected otherwise, by name and with the value.
+    ///
+    /// The writer asserts the same thing, but only a caller that reached it: a
+    /// value this rejects never gets that far, and the user is told which
+    /// setting of theirs is wrong instead of losing a pipeline to a panic.
+    #[test]
+    fn the_key_block_size_must_be_a_power_of_two() {
+        let with = |bytes: u64| DevTweaks {
+            lazy_input_map_key_block_size: Some(ConfigSize::from_bytes(bytes)),
+            ..DevTweaks::default()
+        };
+        for good in [MIN_KEY_BLOCK_BYTES, 8192, 32768, 1 << 30] {
+            assert_eq!(with(good).validate(), Ok(()), "{good} bytes");
+        }
+        for bad in [0, 1, 512, MIN_KEY_BLOCK_BYTES - 1, 5000, 6144, u64::MAX] {
+            let error = with(bad)
+                .validate()
+                .expect_err("a size off a power of two, or under the bound, must be rejected");
+            assert!(error.contains("lazy_input_map_key_block_size"), "{error}");
+            assert!(error.contains(&bad.to_string()), "{error}");
+            assert!(error.contains("power of two"), "{error}");
+            assert!(error.contains("4096"), "{error}");
         }
     }
 
@@ -523,6 +726,7 @@ mod tests {
                 balancer_balance_tax: Some(1.1),
                 balancer_min_relative_improvement_threshold: Some(1.2),
                 balancer_key_distribution_refresh_threshold: Some(0.1),
+                top_level_negative_weight_fraction: Some(0.25),
                 ..Default::default()
             },
             ..Default::default()
@@ -556,6 +760,10 @@ mod tests {
                 .dev_tweaks
                 .balancer_key_distribution_refresh_threshold,
             Some(0.1)
+        );
+        assert_eq!(
+            pc2.global.dev_tweaks.top_level_negative_weight_fraction,
+            Some(0.25)
         );
 
         // serde_json::Value round-trip (the path the pipeline manager takes).

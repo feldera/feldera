@@ -8,6 +8,10 @@ use crate::db::storage_postgres::{StoragePostgres, is_pipeline_assigned_to_worke
 use crate::db::transaction;
 use crate::db::transaction::LOCK_TIMEOUT;
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId};
+use crate::db::types::deployment::{
+    DeploymentResources, PipelineDeploymentConfig, merge_deployment_config_on_edit,
+    parse_deployment_config_patch, patch_deployment_config, running_deployment_config,
+};
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
     ExtendedPipelineMonitorEvent, MonitorStatus, NewClusterMonitorEvent, PipelineMonitorEvent,
@@ -52,11 +56,13 @@ use feldera_types::config::{
     AutoscalingConfig, DevTweaks, FtConfig, PipelineConfig, ProgramIr, ResourceConfig,
     RuntimeConfig, StorageAutoscalingConfig,
 };
+use feldera_types::duration::ConfigDuration;
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
     BootstrapConfig, BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus, StorageStatusDetails,
 };
+use feldera_types::size::ConfigSize;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
 use proptest_derive::Arbitrary;
@@ -308,6 +314,7 @@ struct RuntimeConfigPropVal {
     val21: Option<u64>,
     val22: Option<u64>,
     val23: bool,
+    val24: Option<String>,
 }
 type ProgramConfigPropVal = (u8, bool, bool, bool, u8);
 type ProgramInfoPropVal = (u8, u8, u8);
@@ -429,12 +436,12 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
     } else {
         serde_json::to_value(RuntimeConfig {
             workers: val.val0,
-            max_rss_mb: val.val21,
-            datafusion_memory_mb: None,
+            max_rss: val.val21.map(ConfigSize::from_mb),
+            datafusion_memory: None,
             hosts: val.val20,
             cpu_profiler: val.val1,
             min_batch_size_records: val.val2,
-            max_buffering_delay_usecs: val.val3,
+            max_buffering_delay: Some(ConfigDuration::from_micros(val.val3)),
             storage: val.val4.then(Default::default),
             fault_tolerance: FtConfig::default(),
             tracing: val.val5,
@@ -442,22 +449,23 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             resources: ResourceConfig {
                 cpu_cores_min: val.val7,
                 cpu_cores_max: val.val8,
-                memory_mb_min: val.val9,
-                memory_mb_max: val.val10,
-                storage_mb_min: val.val22,
-                storage_mb_max: val.val11,
+                memory_min: val.val9.map(ConfigSize::from_mb),
+                memory_max: val.val10.map(ConfigSize::from_mb),
+                storage_min: val.val22.map(ConfigSize::from_mb),
+                storage_max: val.val11.map(ConfigSize::from_mb),
                 autoscaling: val.val23.then_some(AutoscalingConfig {
                     storage: Some(StorageAutoscalingConfig {
                         scale_threshold: Some(0.8),
-                        scale_threshold_available_mb: Some(10000),
+                        scale_threshold_available: Some(ConfigSize::from_mb(10000)),
                         scale_factor: Some(2.0),
                     }),
                 }),
                 storage_class: val.val12,
+                volume_attributes_class: val.val24,
                 service_account_name: val.val13,
                 namespace: val.val14,
             },
-            clock_resolution_usecs: val.val15,
+            clock_resolution: val.val15.map(ConfigDuration::from_micros),
             // Varies so the proptest exercises the "cannot edit unless
             // storage is cleared" restriction on this field.
             clock_timezone_offset: match val.val0 % 3 {
@@ -466,7 +474,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
                 _ => Some("-08:00".parse().unwrap()),
             },
             pin_cpus: Vec::new(),
-            provisioning_timeout_secs: val.val16,
+            provisioning_timeout: val.val16.map(ConfigDuration::from_secs),
             max_parallel_connector_init: None,
             init_containers: None,
             checkpoint_during_suspend: val.val17,
@@ -656,6 +664,22 @@ fn limited_option_program_config() -> impl Strategy<Value = Option<serde_json::V
     any::<Option<ProgramConfigPropVal>>().prop_map(|val| val.map(map_val_to_limited_program_config))
 }
 
+/// Generates different deployment patches, valid and invalid.
+fn limited_patch_pipeline_deployment() -> impl Strategy<Value = PipelineDeploymentConfig> {
+    let cpu = proptest::option::of(prop_oneof![Just(-1.0), Just(0.5), Just(1.0), Just(2.0)]);
+    let memory = proptest::option::of(prop_oneof![Just(0u64), Just(1000), Just(2000)]);
+    (cpu.clone(), cpu, memory.clone(), memory).prop_map(
+        |(cpu_cores_min, cpu_cores_max, memory_mb_min, memory_mb_max)| PipelineDeploymentConfig {
+            resources: DeploymentResources {
+                cpu_cores_min,
+                cpu_cores_max,
+                memory_min: memory_mb_min.map(ConfigSize::from_mb),
+                memory_max: memory_mb_max.map(ConfigSize::from_mb),
+            },
+        },
+    )
+}
+
 /// Generates different SQL compilation information.
 fn limited_sql_compilation_info() -> impl Strategy<Value = SqlCompilationInfo> {
     any::<u8>().prop_map(|v| SqlCompilationInfo {
@@ -666,10 +690,12 @@ fn limited_sql_compilation_info() -> impl Strategy<Value = SqlCompilationInfo> {
 
 /// Generates different Rust compilation information.
 fn limited_rust_compilation_info() -> impl Strategy<Value = RustCompilationInfo> {
-    any::<(u8, u8, u8)>().prop_map(|v| RustCompilationInfo {
-        exit_code: (v.0 % 4) as i32,
-        stdout: format!("stdout-{}", v.1),
-        stderr: format!("stderr-{}", v.1),
+    any::<(u8, u8, u8)>().prop_map(|v| {
+        RustCompilationInfo::from_process_output_streams(
+            (v.0 % 4) as i32,
+            format!("stdout-{}", v.1),
+            format!("stderr-{}", v.1),
+        )
     })
 }
 
@@ -706,6 +732,7 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
                         .unwrap_or_default(),
                     program_schema: program_info.schema.clone(),
                     circuit_ir: None,
+                    udf_library: None,
                 }),
             })
             .unwrap()
@@ -990,7 +1017,7 @@ async fn membership_origin_is_recorded() {
     assert_eq!(bob_row.role, Role::Admin);
     assert_eq!(bob_row.origin, Some(MembershipOrigin::Api));
 
-    let memberships = handle
+    let (memberships, _) = handle
         .db
         .list_user_memberships(&provider, "alice")
         .await
@@ -1006,8 +1033,81 @@ async fn membership_origin_is_recorded() {
             .list_user_memberships(&provider, "nobody")
             .await
             .unwrap()
+            .0
             .is_empty()
     );
+}
+
+/// The creation time of a user is the time of the first tenant membership. A
+/// user without memberships, and a user with a membership from before V36
+/// (NULL), have none.
+#[tokio::test]
+async fn user_created_at_is_recorded() {
+    let handle = test_setup().await;
+    let provider = "https://idp.test";
+    let created_at = async |subject: &str| {
+        handle
+            .db
+            .list_user_memberships(provider, subject)
+            .await
+            .unwrap()
+            .1
+    };
+    let login = async |tenant: &str| {
+        handle
+            .db
+            .resolve_login(
+                Uuid::now_v7(),
+                Uuid::now_v7(),
+                tenant.to_string(),
+                provider.to_string(),
+                "alice".to_string(),
+                None,
+                Role::Read,
+                Role::Admin,
+                MembershipOrigin::Derived,
+            )
+            .await
+            .unwrap()
+    };
+    assert_eq!(created_at("alice").await, None);
+
+    // A user record without a membership has no creation time.
+    handle
+        .db
+        .get_or_create_user(Uuid::now_v7(), provider, "alice", None)
+        .await
+        .unwrap();
+    assert_eq!(created_at("alice").await, None);
+
+    let before = Utc::now();
+    login("acme").await;
+    let first = created_at("alice")
+        .await
+        .expect("the first membership records the creation time");
+    assert!(first >= before - chrono::Duration::seconds(5));
+
+    // A later login and a later membership do not move the creation time.
+    login("acme").await;
+    let (beta, alice, _) = login("beta").await;
+    assert_eq!(created_at("alice").await, Some(first));
+
+    // Make the `acme` membership older than V36. The `beta` membership has a
+    // time, but it is not the signup time.
+    handle
+        .db
+        .pool
+        .get()
+        .await
+        .unwrap()
+        .execute(
+            "UPDATE tenant_membership SET created_at = NULL \
+             WHERE user_id = $1 AND tenant_id <> $2",
+            &[&alice.0, &beta.0],
+        )
+        .await
+        .unwrap();
+    assert_eq!(created_at("alice").await, None);
 }
 
 /// Creation, deletion and validation of API keys.
@@ -1058,6 +1158,63 @@ async fn api_key_store_and_validation() {
         let err = handle.db.validate_api_key(&api_key_2).await.unwrap_err();
         assert!(matches!(err, DBError::InvalidApiKey));
     }
+}
+
+/// `V37` copies the CPU and memory of the runtime config into the stored deployment config of
+/// stopped pipelines only, leaving every other field alone.
+#[tokio::test]
+async fn stopped_deployment_resources_are_synced_once() {
+    let handle = test_setup().await;
+    let client = handle.db.pool.get().await.unwrap();
+    // Temp tables shadow the real one, so the migration runs unmodified.
+    client
+        .batch_execute(
+            r#"CREATE TEMP TABLE pipeline (id int PRIMARY KEY, deployment_resources_status varchar,
+                 runtime_config varchar, deployment_config varchar);
+               INSERT INTO pipeline VALUES
+                 (1, 'stopped', '{"resources": {"cpu_cores_min": 8, "memory_mb_max": 2000}}',
+                  '{"workers": 4, "resources": {"cpu_cores_min": 4.0, "cpu_cores_max": 6.0, "memory_mb_max": 1000, "storage_mb_max": 50}}'),
+                 (2, 'provisioned', '{"resources": {"cpu_cores_min": 8}}', '{"resources": {"cpu_cores_min": 2.0}}'),
+                 (3, 'stopped', '{}', NULL);"#,
+        )
+        .await
+        .unwrap();
+    client
+        .batch_execute(include_str!(
+            "../../migrations/V37__sync_stopped_deployment_resources.sql"
+        ))
+        .await
+        .unwrap();
+    let deployment_config = |id: i32| {
+        let client = &client;
+        async move {
+            client
+                .query_one(
+                    "SELECT deployment_config FROM pipeline WHERE id = $1",
+                    &[&id],
+                )
+                .await
+                .unwrap()
+                .get::<_, Option<String>>(0)
+                .map(|config| serde_json::from_str::<serde_json::Value>(&config).unwrap())
+        }
+    };
+    assert_eq!(
+        deployment_config(1).await,
+        Some(json!({"workers": 4, "resources": {
+            "cpu_cores_min": 8, "cpu_cores_max": null, "memory_mb_min": null,
+            "memory_mb_max": 2000, "storage_mb_max": 50
+        }}))
+    );
+    assert_eq!(
+        deployment_config(2).await,
+        Some(json!({"resources": {"cpu_cores_min": 2.0}}))
+    );
+    assert_eq!(deployment_config(3).await, None);
+    client
+        .batch_execute("DROP TABLE pg_temp.pipeline;")
+        .await
+        .unwrap();
 }
 
 /// The tenant-identity section of `V35__rbac.sql`, delimited in the file by
@@ -2464,8 +2621,8 @@ async fn pipeline_versioning() {
     // Edit runtime configuration -> increment version and refresh_version
     let new_runtime_config = serde_json::to_value(RuntimeConfig {
         workers: 100,
-        max_rss_mb: None,
-        datafusion_memory_mb: None,
+        max_rss: None,
+        datafusion_memory: None,
         hosts: 1,
         storage: None,
         fault_tolerance: FtConfig::default(),
@@ -2473,23 +2630,24 @@ async fn pipeline_versioning() {
         tracing: false,
         tracing_endpoint_jaeger: "".to_string(),
         min_batch_size_records: 0,
-        max_buffering_delay_usecs: 0,
+        max_buffering_delay: None,
         resources: ResourceConfig {
             cpu_cores_min: None,
             cpu_cores_max: None,
-            memory_mb_min: None,
-            memory_mb_max: None,
-            storage_mb_min: None,
-            storage_mb_max: None,
+            memory_min: None,
+            memory_max: None,
+            storage_min: None,
+            storage_max: None,
             autoscaling: None,
             storage_class: None,
+            volume_attributes_class: None,
             service_account_name: None,
             namespace: None,
         },
-        clock_resolution_usecs: None,
+        clock_resolution: None,
         clock_timezone_offset: None,
         pin_cpus: Vec::new(),
-        provisioning_timeout_secs: None,
+        provisioning_timeout: None,
         max_parallel_connector_init: None,
         init_containers: None,
         checkpoint_during_suspend: true,
@@ -2525,8 +2683,8 @@ async fn pipeline_versioning() {
     assert_eq!(current.refresh_version, Version(7));
 }
 
-/// `storage_mb_min` sizes the volume and cannot change while storage is in
-/// use, like `storage_mb_max`. The autoscaling policy can.
+/// `storage_min` sizes the volume and cannot change while storage is in
+/// use, like `storage_max`. The autoscaling policy can.
 #[tokio::test]
 async fn storage_mb_min_edit_restricted_to_cleared_storage() {
     let handle = test_setup().await;
@@ -2597,11 +2755,7 @@ async fn storage_mb_min_edit_restricted_to_cleared_storage() {
             tenant_id,
             pipeline.id,
             Version(1),
-            &RustCompilationInfo {
-                exit_code: 0,
-                stdout: "".to_string(),
-                stderr: "".to_string(),
-            },
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -2698,24 +2852,24 @@ async fn storage_mb_min_edit_restricted_to_cleared_storage() {
         matches!(
             &err,
             DBError::EditRestrictedToClearedStorage { not_allowed }
-                if not_allowed == &["`runtime_config.resources.storage_mb_min`".to_string()]
+                if not_allowed == &["`runtime_config.resources.storage_min`".to_string()]
         ),
         "{err:?}"
     );
 
-    // Changing the autoscaling policy is allowed.
-    let policy = json!({
-        "storage": {
-            "scale_threshold": 0.9,
-            "scale_threshold_available_mb": 20000,
-            "scale_factor": 3.0
-        }
-    });
+    // Changing the autoscaling policy is allowed. The policy goes in under the
+    // older spelling and comes back stored under the current one.
     update(json!({
         "resources": {
             "storage_mb_min": 1000,
             "storage_mb_max": 8000,
-            "autoscaling": policy
+            "autoscaling": {
+                "storage": {
+                    "scale_threshold": 0.9,
+                    "scale_threshold_available_mb": 20000,
+                    "scale_factor": 3.0
+                }
+            }
         }
     }))
     .await
@@ -2725,7 +2879,16 @@ async fn storage_mb_min_edit_restricted_to_cleared_storage() {
         .get_pipeline(tenant_id, "autoscaled")
         .await
         .unwrap();
-    assert_eq!(stored.runtime_config["resources"]["autoscaling"], policy);
+    assert_eq!(
+        stored.runtime_config["resources"]["autoscaling"],
+        json!({
+            "storage": {
+                "scale_threshold": 0.9,
+                "scale_threshold_available": "20G",
+                "scale_factor": 3.0
+            }
+        })
+    );
 }
 
 /// If the name of a pipeline already exists, it should return an error.
@@ -2908,11 +3071,7 @@ async fn pipeline_program_compilation() {
             tenant_id,
             pipeline1.id,
             Version(1),
-            &RustCompilationInfo {
-                exit_code: 0,
-                stdout: "".to_string(),
-                stderr: "".to_string(),
-            },
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "abc",
             "123",
             "456",
@@ -3010,11 +3169,8 @@ async fn count_pipelines_needing_compilation() {
             exit_code: 0,
             messages: vec![],
         };
-        let rust_compilation = RustCompilationInfo {
-            exit_code: 0,
-            stdout: "".to_string(),
-            stderr: "".to_string(),
-        };
+        let rust_compilation =
+            RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string());
         for status in statuses {
             match status {
                 ProgramStatus::Pending => db
@@ -3321,11 +3477,7 @@ async fn pipeline_transition_after_quick_stop() {
             tenant_id,
             pipeline1.id,
             Version(1),
-            &RustCompilationInfo {
-                exit_code: 0,
-                stdout: "".to_string(),
-                stderr: "".to_string(),
-            },
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -3439,7 +3591,270 @@ async fn pipeline_transition_after_quick_stop() {
     );
 }
 
-/// Deployment of a pipeline by starting it and progressing through various deployment statuses.
+/// Deployment patch of a running pipeline.
+#[tokio::test]
+async fn pipeline_deployment_patch() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let pipeline = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            "v0",
+            PipelineDescr {
+                name: "resized".to_string(),
+                description: "".to_string(),
+                tags: vec![],
+                runtime_config: json!({
+                    "workers": 4,
+                    "resources": {"cpu_cores_min": 2, "cpu_cores_max": 3, "memory_mb_min": 4000, "memory_mb_max": 4000}
+                }),
+                program_code: "".to_string(),
+                udf_rust: "".to_string(),
+                udf_toml: "".to_string(),
+                program_config: json!({}),
+            },
+        )
+        .await
+        .unwrap();
+    let patch = parse_deployment_config_patch(
+        &json!({"resources": {"cpu_cores_min": 1.0, "memory_mb_min": 3000, "memory_mb_max": 3000}}),
+    )
+    .unwrap();
+
+    // Stopped
+    assert!(matches!(
+        handle
+            .db
+            .patch_pipeline_deployment(tenant_id, "resized", &patch)
+            .await
+            .unwrap_err(),
+        DBError::DeploymentRestrictedToRunning
+    ));
+
+    // Compile
+    handle
+        .db
+        .transit_program_status_to_compiling_sql(tenant_id, pipeline.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_sql_compiled(
+            tenant_id,
+            pipeline.id,
+            Version(1),
+            &SqlCompilationInfo {
+                exit_code: 0,
+                messages: vec![],
+            },
+            &serde_json::to_value(ProgramInfo {
+                schema: serde_json::to_value(ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                })
+                .unwrap(),
+                main_rust: "".to_string(),
+                udf_stubs: "".to_string(),
+                input_connectors: BTreeMap::new(),
+                output_connectors: BTreeMap::new(),
+                circuit_ir: None,
+                dataflow: None,
+            })
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_compiling_rust(tenant_id, pipeline.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_success(
+            tenant_id,
+            pipeline.id,
+            Version(1),
+            &RustCompilationInfo {
+                exit_code: 0,
+                stdout: "".to_string(),
+                stderr: "".to_string(),
+                messages: vec![],
+            },
+            "def",
+            "123",
+            "456",
+        )
+        .await
+        .unwrap();
+    async fn start(db: &StoragePostgres, tenant_id: TenantId, version: Version) {
+        let pipeline = db.get_pipeline(tenant_id, "resized").await.unwrap();
+        db.set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            "resized",
+            RuntimeDesiredStatus::Paused,
+            BootstrapConfig::default(),
+            false,
+        )
+        .await
+        .unwrap();
+        db.transit_deployment_resources_status_to_provisioning(
+            tenant_id,
+            pipeline.id,
+            version,
+            Uuid::nil(),
+            serde_json::to_value(generate_pipeline_config(
+                pipeline.id,
+                &pipeline.name,
+                &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
+            ))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        db.transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline.id,
+            version,
+            "location",
+            json!({}),
+            RuntimeStatus::Initializing,
+            json!(""),
+            RuntimeDesiredStatus::Paused,
+        )
+        .await
+        .unwrap();
+    }
+    async fn stop(db: &StoragePostgres, tenant_id: TenantId, version: Version) {
+        let pipeline = db.get_pipeline(tenant_id, "resized").await.unwrap();
+        db.set_deployment_resources_desired_status_stopped(tenant_id, "resized")
+            .await
+            .unwrap();
+        db.transit_deployment_resources_status_to_stopping(
+            tenant_id,
+            pipeline.id,
+            version,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        db.transit_deployment_resources_status_to_stopped(tenant_id, pipeline.id, version)
+            .await
+            .unwrap();
+    }
+
+    // Running: the patch writes the deployment configuration only
+    start(&handle.db, tenant_id, Version(1)).await;
+    let before = handle.db.get_pipeline(tenant_id, "resized").await.unwrap();
+    let returned = handle
+        .db
+        .patch_pipeline_deployment(tenant_id, "resized", &patch)
+        .await
+        .unwrap();
+    let after = handle.db.get_pipeline(tenant_id, "resized").await.unwrap();
+    assert_eq!(returned, after);
+    let resized = after.deployment_config.clone().unwrap();
+    assert_eq!(resized["resources"]["cpu_cores_min"], json!(1.0));
+    assert_eq!(resized["resources"]["memory_min"], json!("3G"));
+    assert_eq!(after.runtime_config, before.runtime_config);
+    assert_eq!(after.version, before.version);
+    assert_eq!(after.refresh_version, Version(before.refresh_version.0 + 1));
+
+    // Running: an invalid patch changes nothing
+    let invalid =
+        parse_deployment_config_patch(&json!({"resources": {"cpu_cores_min": 9.0}})).unwrap();
+    assert!(matches!(
+        handle
+            .db
+            .patch_pipeline_deployment(tenant_id, "resized", &invalid)
+            .await
+            .unwrap_err(),
+        DBError::InvalidDeploymentPatch { .. }
+    ));
+    let unchanged = handle.db.get_pipeline(tenant_id, "resized").await.unwrap();
+    assert_eq!(unchanged.deployment_config, after.deployment_config);
+    assert_eq!(unchanged.refresh_version, after.refresh_version);
+
+    // Stopping requested: refused although still provisioned
+    handle
+        .db
+        .set_deployment_resources_desired_status_stopped(tenant_id, "resized")
+        .await
+        .unwrap();
+    assert!(matches!(
+        handle
+            .db
+            .patch_pipeline_deployment(tenant_id, "resized", &patch)
+            .await
+            .unwrap_err(),
+        DBError::DeploymentRestrictedToRunning
+    ));
+
+    // Stopped: the resized deployment configuration is kept
+    stop(&handle.db, tenant_id, Version(1)).await;
+    let stopped = handle.db.get_pipeline(tenant_id, "resized").await.unwrap();
+    assert_eq!(stopped.deployment_config, Some(resized.clone()));
+
+    // Stopped: a full update (PUT) with the same runtime config keeps the resize
+    let (is_new, put) = handle
+        .db
+        .new_or_update_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            "resized",
+            "v0",
+            true,
+            PipelineDescr {
+                name: "resized".to_string(),
+                description: "after a PUT".to_string(),
+                tags: vec![],
+                runtime_config: stopped.runtime_config.clone(),
+                program_code: "".to_string(),
+                udf_rust: "".to_string(),
+                udf_toml: "".to_string(),
+                program_config: stopped.program_config.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(!is_new);
+    assert_eq!(put.deployment_config, Some(resized.clone()));
+
+    // Stopped: an edit of other fields keeps the resize, a CPU or memory edit replaces it
+    let edit = |runtime_config: serde_json::Value| {
+        let db = &handle.db;
+        async move {
+            db.update_pipeline(
+                tenant_id,
+                "resized",
+                &None,
+                &PatchClientMetadata::default(),
+                "v0",
+                false,
+                &Some(runtime_config),
+                &None,
+                &None,
+                &None,
+                &None,
+            )
+            .await
+            .unwrap()
+            .deployment_config
+            .unwrap()
+        }
+    };
+    let mut runtime_config = stopped.runtime_config.clone();
+    runtime_config["min_batch_size_records"] = json!(7);
+    assert_eq!(edit(runtime_config.clone()).await, resized);
+    runtime_config["resources"]["cpu_cores_min"] = json!(2.5);
+    let edited = edit(runtime_config).await;
+    assert_eq!(edited["resources"]["cpu_cores_min"], json!(2.5));
+    assert_eq!(edited["resources"]["memory_min"], json!("4G"));
+}
+
 #[tokio::test]
 async fn pipeline_deployment() {
     let handle = test_setup().await;
@@ -3544,11 +3959,7 @@ async fn pipeline_deployment() {
             tenant_id,
             pipeline1.id,
             Version(1),
-            &RustCompilationInfo {
-                exit_code: 0,
-                stdout: "".to_string(),
-                stderr: "".to_string(),
-            },
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -3766,11 +4177,24 @@ async fn pipeline_deployment() {
             .refresh_version,
         Version(10)
     );
+    let before_stop = handle
+        .db
+        .get_pipeline_by_id(tenant_id, pipeline1.id)
+        .await
+        .unwrap();
+    assert!(before_stop.deployment_config.is_some());
     handle
         .db
         .transit_deployment_resources_status_to_stopped(tenant_id, pipeline1.id, Version(1))
         .await
         .unwrap();
+    let stopped = handle
+        .db
+        .get_pipeline_by_id(tenant_id, pipeline1.id)
+        .await
+        .unwrap();
+    assert_eq!(stopped.deployment_config, before_stop.deployment_config);
+    assert_eq!(stopped.deployment_location, None);
     handle
         .db
         .set_deployment_resources_desired_status_provisioned(
@@ -3911,6 +4335,15 @@ async fn pipeline_deployment() {
         .transit_storage_status_to_cleared(tenant_id, pipeline1.id)
         .await
         .unwrap();
+    assert!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .deployment_config
+            .is_some()
+    );
     handle
         .db
         .set_deployment_resources_desired_status_provisioned(
@@ -4379,11 +4812,8 @@ async fn runner_descriptor_uses_runtime_compatibility_not_string_equality() {
         exit_code: 0,
         messages: vec![],
     };
-    let rust_info = RustCompilationInfo {
-        exit_code: 0,
-        stdout: "".to_string(),
-        stderr: "".to_string(),
-    };
+    let rust_info =
+        RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string());
 
     // Compile the pipeline to Success on platform version "v0", on both sides.
     for db in [&model as &dyn Storage, &handle.db as &dyn Storage] {
@@ -4520,11 +4950,7 @@ async fn pipeline_provision_version_guard() {
             tenant_id,
             pipeline.id,
             Version(1),
-            &RustCompilationInfo {
-                exit_code: 0,
-                stdout: "".to_string(),
-                stderr: "".to_string(),
-            },
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -4562,11 +4988,11 @@ async fn pipeline_provision_version_guard() {
             &PatchClientMetadata::default(),
             "v0",
             false,
-            &Some(
-                serde_json::to_value(RuntimeConfig {
+            &Some({
+                let config = RuntimeConfig {
                     workers: 10,
-                    max_rss_mb: None,
-                    datafusion_memory_mb: None,
+                    max_rss: None,
+                    datafusion_memory: None,
                     hosts: 1,
                     storage: None,
                     fault_tolerance: FtConfig::default(),
@@ -4574,12 +5000,12 @@ async fn pipeline_provision_version_guard() {
                     tracing: false,
                     tracing_endpoint_jaeger: "".to_string(),
                     min_batch_size_records: 0,
-                    max_buffering_delay_usecs: 0,
+                    max_buffering_delay: None,
                     resources: Default::default(),
-                    clock_resolution_usecs: None,
+                    clock_resolution: None,
                     clock_timezone_offset: None,
                     pin_cpus: Vec::new(),
-                    provisioning_timeout_secs: None,
+                    provisioning_timeout: None,
                     max_parallel_connector_init: None,
                     init_containers: None,
                     checkpoint_during_suspend: false,
@@ -4589,9 +5015,9 @@ async fn pipeline_provision_version_guard() {
                     env: BTreeMap::new(),
                     logging: None,
                     pipeline_template_configmap: None,
-                })
-                .unwrap(),
-            ),
+                };
+                serde_json::to_value(config).unwrap()
+            }),
             &None,
             &None,
             &None,
@@ -4776,11 +5202,7 @@ async fn pipeline_client_metadata_update_while_running() {
             tenant_id,
             pipeline.id,
             Version(1),
-            &RustCompilationInfo {
-                exit_code: 0,
-                stdout: "".to_string(),
-                stderr: "".to_string(),
-            },
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -5315,18 +5737,21 @@ async fn check_rbac_action(
         RbacAction::ListUserMemberships((provider, subject)) => {
             // Sorted by id on both sides: Postgres collates names by locale,
             // Rust by bytes, and the order is not what this action checks.
-            let mut model_response = model
+            // The clocks differ, so only the presence of a creation time is
+            // compared.
+            let (mut model_memberships, model_created_at) = model
                 .list_user_memberships(&provider, &subject)
                 .await
                 .unwrap();
-            let mut impl_response = handle
+            let (mut impl_memberships, impl_created_at) = handle
                 .db
                 .list_user_memberships(&provider, &subject)
                 .await
                 .unwrap();
-            model_response.sort_by_key(|m| m.tenant_id);
-            impl_response.sort_by_key(|m| m.tenant_id);
-            assert_eq!(model_response, impl_response);
+            model_memberships.sort_by_key(|m| m.tenant_id);
+            impl_memberships.sort_by_key(|m| m.tenant_id);
+            assert_eq!(model_memberships, impl_memberships);
+            assert_eq!(model_created_at.is_some(), impl_created_at.is_some());
         }
         RbacAction::UpsertMemberRole(tenant_id, (provider, subject), role) => {
             let user_id = user_id_for_identity(&provider, &subject);
@@ -5584,6 +6009,11 @@ enum StorageAction {
         PipelineId,
         Version,
         #[proptest(strategy = "limited_resources_details()")] serde_json::Value,
+    ),
+    PatchPipelineDeployment(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+        #[proptest(strategy = "limited_patch_pipeline_deployment()")] PipelineDeploymentConfig,
     ),
     TransitDeploymentResourcesStatusToProvisioned(
         TenantId,
@@ -6363,6 +6793,12 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.remain_deployment_resources_status_provisioning(tenant_id, pipeline_id, version_guard, deployment_resources_status_details.clone()).await;
                                 check_responses(i, model_response, impl_response);
                             }
+                            StorageAction::PatchPipelineDeployment(tenant_id, pipeline_name, patch) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.patch_pipeline_deployment(tenant_id, &pipeline_name, &patch).await;
+                                let impl_response = handle.db.patch_pipeline_deployment(tenant_id, &pipeline_name, &patch).await;
+                                check_responses(i, model_response, impl_response);
+                            }
                             StorageAction::TransitDeploymentResourcesStatusToProvisioned(tenant_id, pipeline_id, version_guard, deployment_location, deployment_resources_status_details, runtime_status, runtime_status_details, runtime_desired_status) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.transit_deployment_resources_status_to_provisioned(tenant_id, pipeline_id, version_guard, &deployment_location, deployment_resources_status_details.clone(), runtime_status, runtime_status_details.clone(), runtime_desired_status).await;
@@ -6632,7 +7068,8 @@ struct DbModel {
     pub oidc_trusts: BTreeMap<(TenantId, String), OidcTrustDescr>,
     /// Keyed by the `(provider, subject)` identity.
     pub users: BTreeMap<(String, String), UserRecord>,
-    pub memberships: BTreeMap<(TenantId, UserId), (Role, MembershipOrigin)>,
+    /// The role, the origin and the creation time of each membership.
+    pub memberships: BTreeMap<(TenantId, UserId), (Role, MembershipOrigin, DateTime<Utc>)>,
 }
 
 #[async_trait]
@@ -6820,25 +7257,20 @@ impl ModelHelpers for Mutex<DbModel> {
                 {
                     not_allowed.push("`runtime_config.fault_tolerance`");
                 }
-                if runtime_config
-                    .get("resources")
-                    .map(|v| v.get("storage_mb_max"))
-                    != pipeline
-                        .runtime_config
+                let storage_size = |config: &serde_json::Value, key: &str, legacy: &str| {
+                    config
                         .get("resources")
-                        .map(|v| v.get("storage_mb_max"))
+                        .map(|v| v.get(key).or(v.get(legacy)).cloned())
+                };
+                if storage_size(runtime_config, "storage_max", "storage_mb_max")
+                    != storage_size(&pipeline.runtime_config, "storage_max", "storage_mb_max")
                 {
-                    not_allowed.push("`runtime_config.resources.storage_mb_max`");
+                    not_allowed.push("`runtime_config.resources.storage_max`");
                 }
-                if runtime_config
-                    .get("resources")
-                    .map(|v| v.get("storage_mb_min"))
-                    != pipeline
-                        .runtime_config
-                        .get("resources")
-                        .map(|v| v.get("storage_mb_min"))
+                if storage_size(runtime_config, "storage_min", "storage_mb_min")
+                    != storage_size(&pipeline.runtime_config, "storage_min", "storage_mb_min")
                 {
-                    not_allowed.push("`runtime_config.resources.storage_mb_min`");
+                    not_allowed.push("`runtime_config.resources.storage_min`");
                 }
                 if runtime_config.get("resources").map(|v| v.get("namespace"))
                     != pipeline
@@ -6911,6 +7343,15 @@ impl ModelHelpers for Mutex<DbModel> {
         if let Some(runtime_config) = runtime_config {
             if *runtime_config != pipeline.runtime_config {
                 version_increment = true;
+            }
+            if let Some(deployment_config) = &pipeline.deployment_config
+                && let Some(edited) = merge_deployment_config_on_edit(
+                    deployment_config,
+                    &pipeline.runtime_config,
+                    runtime_config,
+                )
+            {
+                pipeline.deployment_config = Some(edited);
             }
             pipeline.runtime_config = runtime_config.clone();
         }
@@ -7002,6 +7443,7 @@ fn convert_descriptor_to_monitoring(
         program_status: pipeline.program_status,
         program_status_since: pipeline.program_status_since,
         deployment_error: pipeline.deployment_error.clone(),
+        deployment_config: pipeline.deployment_config.clone(),
         deployment_location: pipeline.deployment_location.clone(),
         refresh_version: pipeline.refresh_version,
         storage_status: pipeline.storage_status,
@@ -7605,7 +8047,7 @@ impl Storage for Mutex<DbModel> {
             .memberships
             .iter()
             .filter(|((t, _), _)| *t == tenant_id)
-            .filter_map(|((_, user_id), (role, origin))| {
+            .filter_map(|((_, user_id), (role, origin, _))| {
                 s.users.iter().find(|(_, user)| user.id == *user_id).map(
                     |((provider, subject), user)| TenantMember {
                         user_id: user.id,
@@ -7660,7 +8102,7 @@ impl Storage for Mutex<DbModel> {
             // Enroll only where no membership exists; never touch a role.
             s.memberships
                 .entry((tenant_id, user_id))
-                .or_insert((role, origin));
+                .or_insert((role, origin, Utc::now()));
         }
         Ok(())
     }
@@ -7669,16 +8111,24 @@ impl Storage for Mutex<DbModel> {
         &self,
         provider: &str,
         subject: &str,
-    ) -> DBResult<Vec<UserMembership>> {
+    ) -> DBResult<(Vec<UserMembership>, Option<DateTime<Utc>>)> {
         let s = self.lock().await;
         let Some(user) = s.users.get(&(provider.to_string(), subject.to_string())) else {
-            return Ok(vec![]);
+            return Ok((vec![], None));
         };
+        // The model has no memberships from before V36, so the creation time
+        // is the time of the first membership.
+        let created_at = s
+            .memberships
+            .iter()
+            .filter(|((_, u), _)| *u == user.id)
+            .map(|(_, (_, _, created_at))| *created_at)
+            .min();
         let mut memberships: Vec<UserMembership> = s
             .memberships
             .iter()
             .filter(|((_, u), _)| *u == user.id)
-            .filter_map(|((t, _), (role, _))| {
+            .filter_map(|((t, _), (role, _, _))| {
                 s.tenants.get(t).map(|rec| UserMembership {
                     tenant_id: *t,
                     name: rec.tenant.clone(),
@@ -7687,7 +8137,7 @@ impl Storage for Mutex<DbModel> {
             })
             .collect();
         memberships.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(memberships)
+        Ok((memberships, created_at))
     }
 
     async fn upsert_member_role(
@@ -7710,8 +8160,8 @@ impl Storage for Mutex<DbModel> {
         // SQL upsert does.
         s.memberships
             .entry((tenant_id, user_id))
-            .and_modify(|(r, _)| *r = role)
-            .or_insert((role, origin));
+            .and_modify(|(r, _, _)| *r = role)
+            .or_insert((role, origin, Utc::now()));
         Ok(())
     }
 
@@ -8056,6 +8506,23 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
+    async fn patch_pipeline_deployment(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        patch: &PipelineDeploymentConfig,
+    ) -> Result<ExtendedPipelineDescr, DBError> {
+        let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
+        let patched = patch_deployment_config(running_deployment_config(&pipeline)?, patch)?;
+        pipeline.deployment_config = Some(patched);
+        pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(pipeline)
+    }
+
     async fn delete_pipeline(
         &self,
         tenant_id: TenantId,
@@ -8260,8 +8727,9 @@ impl Storage for Mutex<DbModel> {
             error: e,
         })?;
 
-        // The Gen-2 engine completes at the SQL stage: it carries its SQL log and program info
-        // (CompilingSql stored neither), delivers no binary, and stores no Rust log.
+        // A Gen-2 program without Rust UDFs completes at the SQL stage: it carries its SQL log
+        // and program info (CompilingSql stored neither), delivers no binary, and stores no
+        // Rust log.
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
         pipeline.program_error = ProgramError {
@@ -8782,7 +9250,7 @@ impl Storage for Mutex<DbModel> {
         // and clears it at Stopped.
         pipeline.deployment_initial = None;
         pipeline.bootstrap_policy = None;
-        pipeline.deployment_config = None;
+        // Retain: pipeline.deployment_config
         pipeline.deployment_location = None;
         pipeline.deployment_error = deployment_error;
         pipeline.deployment_resources_status = new_resources_status;
@@ -8837,7 +9305,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_id = None;
         pipeline.deployment_initial = None;
         pipeline.bootstrap_policy = None;
-        pipeline.deployment_config = None;
+        // Retain: pipeline.deployment_config
         pipeline.deployment_location = None;
         pipeline.deployment_error = Some(deployment_error);
         pipeline.deployment_resources_status = new_resources_status;
@@ -8906,7 +9374,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_id = None;
         pipeline.deployment_initial = None;
         pipeline.bootstrap_policy = None;
-        pipeline.deployment_config = None;
+        // Retain: pipeline.deployment_config
         pipeline.deployment_location = None;
         // Retain: pipeline.deployment_error
         pipeline.deployment_resources_status = new_resources_status;

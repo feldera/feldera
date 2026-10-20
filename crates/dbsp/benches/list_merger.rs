@@ -10,11 +10,15 @@
 use dbsp::circuit::{CircuitConfig, CircuitStorageConfig};
 use dbsp::{
     OrdIndexedZSet, Runtime, ZWeight,
-    trace::{Batch as DynBatch, BatchLocation, BatchReader as DynBatchReader, Builder, ListMerger},
+    trace::{
+        Batch as DynBatch, BatchLayout, BatchLocation, BatchReader as DynBatchReader, Builder,
+        ListMerger,
+    },
     typed_batch::BatchReader as TypedBatchReader,
     utils::{Tup2, Tup10},
 };
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
+use feldera_types::size::ConfigSize;
 use rand::{Rng, RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
 use std::hint::black_box;
@@ -88,8 +92,12 @@ fn merge_with_list_merger(
         .map(|batch| batch.into_inner())
         .collect();
     let factories = inner_batches[0].factories();
-    let builder =
-        <InnerBatch as DynBatch>::Builder::for_merge(&factories, inner_batches.iter(), None);
+    let builder = <InnerBatch as DynBatch>::Builder::for_merge(
+        &factories,
+        inner_batches.iter(),
+        None,
+        BatchLayout::default(),
+    );
 
     let output: InnerBatch = ListMerger::merge(
         &factories,
@@ -99,7 +107,7 @@ fn merge_with_list_merger(
             .map(|batch| batch.consuming_cursor(None, None))
             .collect(),
     );
-    let output_len = output.len();
+    let output_len = output.len_upper_bound();
     let actual_location = output.location();
     (output, output_len, actual_location)
 }
@@ -113,8 +121,12 @@ fn bench(generate_on_storage: bool) {
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                min_storage_bytes: Some(0),
-                min_step_storage_bytes: if generate_on_storage { Some(0) } else { None },
+                min_spill_size: Some(ConfigSize::ZERO),
+                min_step_spill_size: if generate_on_storage {
+                    Some(ConfigSize::ZERO)
+                } else {
+                    None
+                },
                 ..StorageOptions::default()
             },
         )

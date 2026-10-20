@@ -95,7 +95,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -103,6 +102,8 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CustomFunctions;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.SqlSafeCastFunction;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
@@ -280,6 +281,13 @@ public class ConvertletTable extends ReflectiveConvertletTable {
                         SqlStdOperatorTable.NOT.createCall(call.getParserPosition(),
                                 SqlLibraryOperators.RLIKE.createCall(call.getParserPosition(),
                                         call.getOperandList()))));
+
+        // Convert "x RLIKE y" into "RLIKE(x, y)", so that constant folding
+        // does not evaluate the regular expression with Java semantics
+        registerOp(SqlLibraryOperators.RLIKE,
+                (cx, call) -> cx.convertExpression(
+                        CustomFunctions.RlikeFunction.INSTANCE.createCall(call.getParserPosition(),
+                                call.getOperandList())));
 
         // Expand "x NOT SIMILAR y" into "NOT (x SIMILAR y)"
         registerOp(SqlStdOperatorTable.NOT_SIMILAR_TO,

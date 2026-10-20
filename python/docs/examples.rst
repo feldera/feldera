@@ -99,7 +99,7 @@ Creating a Pipeline with Fault Tolerance Enabled
     client = FelderaClient.localhost()
     runtime_config = RuntimeConfig(
         fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
-        checkpoint_interval_secs=60
+        checkpoint_interval="60s"
     )
 
     pipeline = PipelineBuilder(client, name, sql, runtime_config=runtime_config).create()
@@ -118,31 +118,30 @@ Runtime configuration of a Pipeline
             "backend": {
                 "name": "default"
             },
-            "min_storage_bytes": None,
-            "min_step_storage_bytes": None,
+            "min_spill_size": "10Mi",
             "compression": "default",
-            "cache_mib": None
+            "cache_size": "4Gi"
         },
         "fault_tolerance": {
             "model": "at_least_once",
-            "checkpoint_interval_secs": 60
+            "checkpoint_interval": "60s"
         },
         "cpu_profiler": True,
         "tracing": False,
         "tracing_endpoint_jaeger": "",
         "min_batch_size_records": 0,
-        "max_buffering_delay_usecs": 0,
+        "max_buffering_delay": "0us",
         "resources": {
             "cpu_cores_min": None,
             "cpu_cores_max": None,
-            "memory_mb_min": None,
-            "memory_mb_max": None,
-            "storage_mb_max": None,
+            "memory_min": None,
+            "memory_max": "16Gi",
+            "storage_max": "400Gi",
             "storage_class": None
         },
-        "clock_resolution_usecs": 1_000_000,
+        "clock_resolution": "1s",
         "pin_cpus": [],
-        "provisioning_timeout_secs": None,
+        "provisioning_timeout": None,
         "max_parallel_connector_init": None,
         "init_containers": None,
         "checkpoint_during_suspend": True,

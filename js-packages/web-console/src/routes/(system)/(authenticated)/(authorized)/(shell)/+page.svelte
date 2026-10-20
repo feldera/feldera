@@ -72,23 +72,19 @@
     {#if drawer.isMobileDrawer}
       <button
         onclick={() => (drawer.value = !drawer.value)}
-        class="fd fd-book-open btn-icon flex preset-tonal-surface text-[20px]"
+        class="fd fd-book-open btn-icon flex preset-tonal-surface text-[16px]"
         aria-label="Open the right navigation drawer"
       >
       </button>
     {:else}
       <NavigationExtras></NavigationExtras>
       <button
-        class="fd fd-stethoscope btn-icon preset-tonal-surface text-[24px]"
+        class="fd fd-stethoscope btn-icon preset-tonal-surface text-[16px]"
         onclick={() => (globalDialog.dialog = supportBundleDialog)}
         title="Open support bundle"
         data-testid="btn-open-support-bundle"
       >
       </button>
-      <div class="relative">
-        <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
-        ></CreatePipelineButton>
-      </div>
       <BookADemo class="btn preset-filled-primary-500" placement="home">Book a demo</BookADemo>
     {/if}
   {/snippet}
@@ -119,7 +115,7 @@
               <div class="flex flex-nowrap justify-between">
                 <div class="text-2xl font-semibold">Explore our communities and documentation</div>
                 <button
-                  class="fd fd-x w-7 text-[24px]"
+                  class="fd fd-x w-7 text-[20px]"
                   aria-label="Close"
                   onclick={() => (welcomed.value = !welcomed.value)}
                 ></button>
@@ -140,10 +136,13 @@
           </div>
         </div>
       {/if}
-      <div class="flex flex-col" data-testid="box-pipelines-section">
+      <!-- Without the banner, pad the section so it starts 40px below the header logo. -->
+      <div class="flex flex-col" class:pt-4={welcomed.value} data-testid="box-pipelines-section">
         {#snippet header()}
           <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
-            <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
+            <span class="fd fd-network text-[20px] text-surface-500"></span><span
+              >Your pipelines</span
+            >
           </div>
         {/snippet}
         {#if !pipelines.pipelines}
@@ -177,8 +176,8 @@
             <div class="">Your pipelines will appear here</div>
             <div class="relative flex gap-5">
               <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
-              <a class="btn h-9 preset-tonal-surface" href="https://docs.feldera.com">
-                <span class="fd fd-book-open text-xl"></span>
+              <a class="btn preset-tonal-surface" href="https://docs.feldera.com">
+                <span class="fd fd-book-open"></span>
                 Documentation
               </a>
             </div>

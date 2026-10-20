@@ -1,3 +1,4 @@
+use feldera_types::size::ConfigSize;
 use std::{
     backtrace::Backtrace,
     borrow::Cow,
@@ -13,7 +14,7 @@ use actix_web::{HttpResponse, HttpResponseBuilder, ResponseError};
 use anyhow::Error as AnyError;
 use dbsp::{
     Error as DbspError,
-    circuit::{LayoutError, circuit_builder::BootstrapInfo},
+    circuit::{LayoutError, bootstrap::BootstrapInfo},
     storage::backend::StorageError,
 };
 use feldera_types::{
@@ -173,12 +174,12 @@ pub enum ConfigError {
     FtRequiresStorage,
     FtRequiresFtInput,
 
-    /// `datafusion_memory_mb` was set to a value greater than or equal to
-    /// the pipeline's effective memory budget, which would leave no memory
-    /// for the DBSP circuit.
+    /// `datafusion_memory` was set to a value greater than or equal to the
+    /// pipeline's effective memory budget, which would leave no memory for
+    /// the DBSP circuit.
     DatafusionMemoryExceedsBudget {
-        datafusion_memory_mb: u64,
-        max_rss_mb: u64,
+        datafusion_memory: ConfigSize,
+        max_rss: ConfigSize,
     },
 
     /// A `dev_tweaks` setting is outside the range it accepts.
@@ -450,11 +451,11 @@ impl Display for ConfigError {
                 "Fault tolerance is configured, but it cannot be enabled because the pipeline has at least one non-fault-tolerant input adapter"
             ),
             Self::DatafusionMemoryExceedsBudget {
-                datafusion_memory_mb,
-                max_rss_mb,
+                datafusion_memory,
+                max_rss,
             } => write!(
                 f,
-                "'datafusion_memory_mb' ({datafusion_memory_mb} MB) must be less than the pipeline's memory budget ({max_rss_mb} MB); the difference is the budget available to the DBSP circuit"
+                "'datafusion_memory' ({datafusion_memory}) must be less than the pipeline's memory budget ({max_rss}); the difference is the budget available to the DBSP circuit"
             ),
             Self::InvalidDevTweaks { error } => write!(f, "invalid dev_tweaks: {error}"),
             Self::InvalidLayout(e) => write!(f, "Multihost layout error: {e}"),
@@ -494,9 +495,9 @@ impl ConfigError {
         }
     }
 
-    pub fn duplicate_input_endpoint(endpoint_name: &str) -> Self {
+    pub fn duplicate_input_endpoint(endpoint_name: impl Into<String>) -> Self {
         Self::DuplicateInputEndpoint {
-            endpoint_name: endpoint_name.to_owned(),
+            endpoint_name: endpoint_name.into(),
         }
     }
 
@@ -1388,7 +1389,7 @@ impl ControllerError {
         }
     }
 
-    pub fn duplicate_input_endpoint(endpoint_name: &str) -> Self {
+    pub fn duplicate_input_endpoint(endpoint_name: impl Into<String>) -> Self {
         Self::Config {
             config_error: Box::new(ConfigError::duplicate_input_endpoint(endpoint_name)),
         }

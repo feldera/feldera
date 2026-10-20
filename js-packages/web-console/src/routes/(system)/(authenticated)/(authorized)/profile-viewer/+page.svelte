@@ -20,6 +20,7 @@
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { receiveUploadedBundle, storedBundleUrl } from '$lib/compositions/profileBundleHandoff'
   import { type PickedBundle, useBundlePicker } from '$lib/compositions/useBundlePicker'
+  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
@@ -39,6 +40,7 @@
   const toast = useToast()
   const layoutSettings = useLayoutSettings()
   const picker = useBundlePicker()
+  const darkMode = useDarkMode()
 
   let downloadProgress = useDownloadProgress()
   // If the URL provides no pipelineName, the remote-download path has no
@@ -407,6 +409,7 @@
         {globalMetrics}
         {runtimeConfig}
         {triageResults}
+        theme={darkMode.current}
         profileFiles={getProfileFiles()}
         selectedTimestamp={selectedProfile}
         onSelectTimestamp={handleSelectTimestamp}
@@ -416,14 +419,14 @@
         {#snippet loadProfileControl()}
           <Popup>
             {#snippet trigger(toggle)}
-              <button class="btn h-6 !bg-surface-100-900 px-3 text-sm" onclick={toggle}>
+              <button class="btn preset-outlined-surface-200-800 btn-sm" onclick={toggle}>
                 Load profile
               </button>
             {/snippet}
             {#snippet content(close)}
               <div
                 transition:fade={{ duration: 100 }}
-                class="absolute top-10 left-0 z-30 w-max min-w-[200px]"
+                class="absolute top-full left-0 z-30 mt-2 w-max min-w-[200px]"
               >
                 <div class="bg-white-dark flex flex-col overflow-hidden rounded shadow-md">
                   <SupportBundleMenu

@@ -175,7 +175,10 @@ WITH (
 For the available metadata properties that can be extracted, see the
 documentation for each connector.  One property, `is_delete`, is reported by any
 input connector configured with
-[soft deletes](/connectors#soft-deletes).
+[soft deletes](/connectors#soft-deletes).  A request to the
+[HTTP input connector](/connectors/sources/http#connector-metadata) can
+attach any properties to its records through the `connector_metadata` query
+parameter.
 
 #### Materialized tables
 
@@ -712,6 +715,14 @@ windowRange
 Where `agg` is a window aggregate function as described in the [section
 on aggregation](aggregates.md#window-aggregate-functions).
 
+Window aggregates generally do not support `DISTINCT` qualifiers, e.g.:
+`SELECT COUNT(DISTINCT x) OVER (PARTITION BY p ORDER BY ts RANGE BETWEEN
+INTERVAL 1 HOUR PRECEDING AND CURRENT ROW)` is rejected.
+However, for the following aggregate functions the result is the same with or
+without the `DISTINCT` qualifier, and thus the compiler accepts them
+in even in a window with `DISTINCT`: `MIN`, `MAX`, `BIT_AND`, `BIT_OR`, `EVERY`,
+`SOME`, `BOOL_AND`, `BOOL_OR`, `LOGICAL_AND`, and `LOGICAL_OR`.
+
 Currently we require window ranges to have constant values.  This
 precludes ranges such as `INTERVAL 1 YEAR`, which have variable sizes.
 The window bounds must be non-negative constant values.
@@ -828,6 +839,14 @@ default in a future release.  The storage formats of the two
 representations are not compatible: changing the option modifies the
 circuit and therefore forces the pipeline to rebuild its state from
 scratch, so switching back and forth is not recommended.
+
+`FELDERA_LAZY_UPSERT` if set to `ON`, the pipeline uses an optimized
+implementation for tables with a primary key.  This implementation
+does not support partial updates (JSON
+[`update` events](/formats/json#the-insertdelete-format)).  Do not
+enable this option if you need partial updates.  The default is `OFF`.
+A change of this option can make the pipeline re-ingest its input data
+(see [Bootstrapping](/pipelines/modifying#bootstrapping)).
 
 `FELDERA_WINDOW_SHARING_THRESHOLD` how windows formed by temporal
 filters share inputs.  Two temporal filters that share an input keep

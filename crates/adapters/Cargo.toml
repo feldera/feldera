@@ -30,14 +30,14 @@ default = [
     "with-s2",
 ]
 with-kafka = ["rdkafka"]
-# `parquet/async` + `parquet/object_store` serve only the deletion-vector
-# reader (`integrated/delta_table/deletion_vector.rs`).
+# `parquet/async` serves only the deletion-vector reader.
 with-deltalake = [
     "deltalake",
     "deltalake-catalog-unity",
+    "feldera-modular-bloom",
     "roaring",
+    "z85",
     "parquet/async",
-    "parquet/object_store",
 ]
 with-iceberg = ["feldera-iceberg"]
 with-pubsub = ["google-cloud-pubsub", "google-cloud-gax"]
@@ -110,7 +110,6 @@ semver = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_dynamo = { workspace = true, optional = true }
 erased-serde = { workspace = true }
-serde_yaml = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
 serde_urlencoded = { workspace = true }
 form_urlencoded = { workspace = true }
@@ -146,7 +145,7 @@ futures-util = { workspace = true }
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
 clap = { workspace = true }
-tokio = { workspace = true, features = ["sync", "macros", "fs", "rt", "time"] }
+tokio = { workspace = true, features = ["sync", "macros", "fs", "rt", "time", "signal"] }
 utoipa = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 colored = { workspace = true }
@@ -190,17 +189,17 @@ dbsp_nexmark = { workspace = true, features = [], optional = true }
 enum-map = { workspace = true }
 google-cloud-pubsub = { workspace = true, optional = true }
 google-cloud-gax = { workspace = true, optional = true }
-tokio-util = { workspace = true, features = ["io"] }
+tokio-util = { workspace = true, features = ["io", "rt"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 home = { workspace = true }
 datafusion = { workspace = true }
-ahash = { workspace = true }
 sha2 = { workspace = true }
 rmp-serde = { workspace = true }
 rmpv = { workspace = true, features = ["with-serde"] }
 serde_bytes = { workspace = true }
 governor = { workspace = true }
 nonzero_ext = { workspace = true }
+feldera-modular-bloom = { workspace = true, optional = true }
 xxhash-rust = { workspace = true, features = ["xxh3"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
@@ -243,6 +242,7 @@ parking_lot = { workspace = true }
 smallvec = { workspace = true }
 delta_kernel = { workspace = true }
 roaring = { workspace = true, optional = true }
+z85 = { workspace = true, optional = true }
 etl = { workspace = true, optional = true }
 
 [package.metadata.cargo-machete]
@@ -259,6 +259,7 @@ jemalloc_pprof = { workspace = true, features = ["symbolize"], optional = true }
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 nix = { workspace = true, features = ["signal", "mman", "feature"] }
+signal-hook = { workspace = true }
 
 [build-dependencies]
 vergen-gitcl = { workspace = true }
@@ -306,4 +307,8 @@ required-features = ["bench-mode"]
 
 [[bench]]
 name = "delta_encoder"
+harness = false
+
+[[bench]]
+name = "delta_merge"
 harness = false

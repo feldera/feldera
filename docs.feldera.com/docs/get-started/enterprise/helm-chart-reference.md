@@ -64,6 +64,7 @@ The Kubernetes runner manages pipeline pod lifecycle.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `kubernetesRunner.enablePerPipelineNamespace` | `false` | When `true`, pipelines can run in their own namespaces (requires `ClusterRole`/`ClusterRoleBinding`). When `false`, pipelines run in the same namespace as Feldera. |
+| `kubernetesRunner.enablePipelineResize` | `false` | **Experimental.** Allow changing the CPU and memory of a running single-host pipeline without a restart. Requires Kubernetes 1.34 or later. See [resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline). |
 | `kubernetesRunner.allowCustomPipelineTemplate` | `false` | **Experimental.** Allow pipelines to reference a ConfigMap containing a custom StatefulSet YAML template. The template format may change incompatibly across Feldera upgrades. |
 | `kubernetesRunner.pipelineStatefulSetLabels` | `[]` | Labels added to pipeline StatefulSet `metadata.labels`. Format: `["key=value"]`. |
 | `kubernetesRunner.pipelineStatefulSetPodLabels` | `[]` | Labels added to pipeline StatefulSet `spec.template.metadata.labels`. Format: `["key=value"]`. |
@@ -88,6 +89,16 @@ These values set cluster-wide bounds for pipeline resource requests. See [pipeli
 | `kubernetesRunner.storageClassName` | `null` | Storage class for pipeline persistent volumes. `null` uses the cluster default. |
 | `kubernetesRunner.enableStorageClassNamesSupported` | `false` | When `true`, only storage classes listed in `storageClassNamesSupported` can be used. |
 | `kubernetesRunner.storageClassNamesSupported` | `[]` | Allowlist of permitted storage class names. Only effective when `enableStorageClassNamesSupported` is `true`. |
+
+### Pipeline Volume Attributes Class
+
+Requires Kubernetes 1.34 or later and a CSI driver that supports [volume attributes classes](https://kubernetes.io/docs/concepts/storage/volume-attributes-classes/).
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `kubernetesRunner.volumeAttributesClassName` | `null` | Volume attributes class for pipeline persistent volumes that do not set `resources.volume_attributes_class`. `null` sets none. |
+| `kubernetesRunner.enableVolumeAttributesClassNamesSupported` | `false` | When `true`, only volume attributes classes listed in `volumeAttributesClassNamesSupported` can be used. |
+| `kubernetesRunner.volumeAttributesClassNamesSupported` | `[]` | Allowlist of permitted volume attributes class names. Only effective when `enableVolumeAttributesClassNamesSupported` is `true`. |
 
 ### Connector Kubernetes Secrets
 
@@ -134,6 +145,8 @@ When running multiple compiler replicas, sccache allows them to share compiled a
 | `parallelCompilation.sccache.s3.endpoint` | *(unset)* | Custom S3-compatible server endpoint (e.g., `minio.svc.cluster.local:9000`). Omit for AWS S3. |
 | `parallelCompilation.sccache.s3.existingSecret` | *(unset)* | Name of a Kubernetes secret with `access_key_id` and `secret_access_key` keys. Omit if using IRSA. |
 | `parallelCompilation.sccache.s3.serverSideEncryption` | *(unset)* | Enable server-side encryption with S3-managed keys (SSE-S3). |
+| `parallelCompilation.sccache.s3.serverSideEncryptionAwsKms` | *(unset)* | Enable SSE-KMS with the AWS-managed key (`aws/s3`). Requires sccache 0.17 or newer. |
+| `parallelCompilation.sccache.s3.serverSideEncryptionKmsKeyId` | *(unset)* | Enable SSE-KMS with a customer-managed KMS key, given as its ARN. Takes precedence over the two settings above. Requires sccache 0.17 or newer, and `kms:GenerateDataKey` plus `kms:Decrypt` on the key. |
 
 ---
 
@@ -192,6 +205,7 @@ Default settings applied to all pipeline pods.
 | `pipeline.env` | `null` | List of environment variables injected into all pipeline pods. |
 | `pipeline.allowInitContainers` | `true` | Allow pipelines to specify init containers (e.g., sidecars) via runtime configuration. See [sidecar containers](/pipelines/sidecar). |
 | `pipeline.allowProfiling` | `false` | Grant the `PERFMON` and `IPC_LOCK` capabilities to pipeline containers, enabling performance profiling. Node kernel settings may also be required, see [Visualizing profiles](/operations/visualizing-profiles.md#enterprise-environments). |
+| `pipeline.terminationGracePeriodSeconds` | `60` | Seconds a pipeline has to write a checkpoint when Kubernetes evicts its pod or drains its node. See [Writing checkpoints](/pipelines/fault-tolerance#writing-checkpoints). |
 
 ---
 

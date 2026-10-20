@@ -200,6 +200,14 @@ In this case, Feldera automatically combines these individual transaction reques
 For example, if several connectors performing backfill are configured to use transactions, their operations will be merged into one composite transaction, effectively
 equivalent to initiating a single transaction through the REST API that ingests all historical inputs together.
 
+If a connector is [paused](/connectors/orchestration#input-connectors) before it commits its
+part of a transaction, the transaction stays open until the connector is
+started again and commits.  Until then, the pipeline produces no output
+and takes no checkpoints.  The pipeline logs a warning while a paused
+connector holds a transaction open.  If a connector fails, or is
+removed, before it commits its part, its part commits with the input
+that it had already sent.
+
 ### Supported Connectors
 
 The following input connectors support automatic transaction

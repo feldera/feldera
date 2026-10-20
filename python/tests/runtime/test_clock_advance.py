@@ -69,6 +69,7 @@ class TestClockAdvance(unittest.TestCase):
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 # 1-second resolution; advance() values are rounded to this
                 # and `advance(null)` moves NOW() by exactly this much.
+                # Older spelling: the runtime integration platform may predate the rename.
                 clock_resolution_usecs=CLOCK_RESOLUTION_MS * 1_000,
                 dev_tweaks={
                     "now_offset": ANCHOR_RFC,
@@ -149,6 +150,7 @@ class TestClockAdvance(unittest.TestCase):
             runtime_config=RuntimeConfig(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
+                # Older spelling: the runtime integration platform may predate the rename.
                 clock_resolution_usecs=CLOCK_RESOLUTION_MS * 1_000,
                 dev_tweaks={
                     "now_offset": pre_epoch_rfc,

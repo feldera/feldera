@@ -11,7 +11,8 @@ use crate::operator::communication::{Exchange, ExchangeActivity};
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
-use crate::utils::process_rss_bytes;
+use crate::trace::BatchLayout;
+use crate::utils::{available_memory_bytes, process_rss_bytes};
 use crate::{
     DetailedError,
     storage::{
@@ -33,11 +34,13 @@ use feldera_types::memory_pressure::{
     CRITICAL_MEMORY_PRESSURE_THRESHOLD, HIGH_MEMORY_PRESSURE_THRESHOLD,
     MODERATE_MEMORY_PRESSURE_THRESHOLD, MemoryPressure,
 };
+use feldera_types::size::ConfigSize;
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::convert::identity;
 use std::iter::repeat;
+use std::marker::PhantomData;
 use std::net::TcpListener;
 use std::ops::{Index, Range};
 use std::path::Path;
@@ -63,19 +66,31 @@ use tokio::runtime::Builder as TokioBuilder;
 use tokio::runtime::Runtime as TokioRuntime;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use typedmap::TypedDashMap;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum Error {
     /// Specified persistent id is not found in the circuit.
     UnknownPersistentId(String),
+    /// Two operators in the circuit have the same persistent id.
+    DuplicatePersistentId {
+        persistent_id: String,
+        first: String,
+        second: String,
+    },
+    /// An operator in the circuit has an empty persistent id.
+    EmptyPersistentId {
+        operator: String,
+    },
     /// One of the worker threads terminated unexpectedly.
     WorkerPanic {
         // Detailed panic information from all threads that
         // reported panics.
         panic_info: Vec<(usize, ThreadType, WorkerPanicInfo)>,
     },
+    /// Panic while writing a checkpoint.
+    CheckpointPanic(Option<String>),
     /// The storage directory supplied does not match the runtime circuit.
     IncompatibleStorage,
     /// Error deserializing checkpointed state.
@@ -91,7 +106,10 @@ impl DetailedError for Error {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::UnknownPersistentId(_) => Cow::from("UnknownPersistentId"),
+            Self::DuplicatePersistentId { .. } => Cow::from("DuplicatePersistentId"),
+            Self::EmptyPersistentId { .. } => Cow::from("EmptyPersistentId"),
             Self::WorkerPanic { .. } => Cow::from("WorkerPanic"),
+            Self::CheckpointPanic(_) => Cow::from("CheckpointPanic"),
             Self::Terminated => Cow::from("Terminated"),
             Self::IncompatibleStorage => Cow::from("IncompatibleStorage"),
             Self::CheckpointParseError(_) => Cow::from("CheckpointParseError"),
@@ -106,12 +124,32 @@ impl Display for Error {
             Self::UnknownPersistentId(persistent_id) => {
                 write!(f, "Unknown persistent node id: {persistent_id}")
             }
+            Self::DuplicatePersistentId {
+                persistent_id,
+                first,
+                second,
+            } => {
+                write!(
+                    f,
+                    "Operators {first} and {second} have the same persistent id {persistent_id}"
+                )
+            }
+            Self::EmptyPersistentId { operator } => {
+                write!(f, "Operator {operator} has an empty persistent id")
+            }
             Self::WorkerPanic { panic_info } => {
                 writeln!(f, "One or more worker threads terminated unexpectedly")?;
 
                 for (worker, thread_type, worker_panic_info) in panic_info.iter() {
                     writeln!(f, "{thread_type} worker thread {worker} panicked")?;
                     writeln!(f, "{worker_panic_info}")?;
+                }
+                Ok(())
+            }
+            Self::CheckpointPanic(message) => {
+                write!(f, "Panic while writing checkpoint")?;
+                if let Some(message) = message {
+                    write!(f, ": {message}")?;
                 }
                 Ok(())
             }
@@ -272,6 +310,20 @@ struct RuntimeStorage {
     locked_directory: LockedDirectory,
 }
 
+/// Stored in `RuntimeInner::max_rss` to mean "no memory limit".
+const UNLIMITED_RSS: u64 = u64::MAX;
+
+/// Returns the circuit's memory limit: the smaller of the `configured` budget
+/// and the `available` memory, minus the memory `reserved` outside the circuit.
+///
+/// The reservation never takes more than half of the available memory, so a
+/// container smaller than the reservation still leaves the circuit a limit.
+fn circuit_max_rss(configured: Option<u64>, available: Option<u64>, reserved: u64) -> Option<u64> {
+    let from_configured = configured.map(|bytes| bytes.saturating_sub(reserved));
+    let from_available = available.map(|bytes| bytes - reserved.min(bytes / 2));
+    from_configured.into_iter().chain(from_available).min()
+}
+
 struct RuntimeInner {
     layout: Layout,
     mode: Mode,
@@ -279,8 +331,16 @@ struct RuntimeInner {
     allow_input_during_commit: bool,
     dev_tweaks: DevTweaks,
 
-    /// User-configured process memory limit.
-    max_rss: Option<u64>,
+    /// Process memory budget from the circuit config.
+    configured_max_rss: Option<u64>,
+
+    /// Part of the budget used outside the circuit.
+    reserved_memory: u64,
+
+    /// The circuit's memory limit in bytes, or [`UNLIMITED_RSS`] if there is
+    /// none. See [`circuit_max_rss`]. The RSS monitor refreshes it every
+    /// second, so it picks up changes to the container's memory limit.
+    max_rss: AtomicU64,
 
     /// Current process RSS.
     process_rss: AtomicU64,
@@ -525,10 +585,7 @@ impl RuntimeInner {
         let buffer_cache_allocation_strategy = config
             .dev_tweaks
             .effective_buffer_cache_allocation_strategy();
-        let fbuf_slab_bytes_per_class = config
-            .dev_tweaks
-            .fbuf_slab_bytes_per_class
-            .unwrap_or(FBufSlabs::DEFAULT_BYTES_PER_CLASS);
+        let fbuf_slab_bytes_per_class = config.dev_tweaks.fbuf_slab_bytes_per_class();
         let storage = if let Some(storage) = config.storage.clone() {
             let locked_directory =
                 LockedDirectory::new_blocking(storage.config.path(), Duration::from_secs(60))?;
@@ -554,8 +611,8 @@ impl RuntimeInner {
         };
 
         let total_cache_bytes = if let Some(storage) = &storage {
-            match storage.options.cache_mib {
-                Some(cache_mib) => cache_mib.saturating_mul(1024 * 1024),
+            match storage.options.cache_size {
+                Some(cache_size) => cache_size.as_usize(),
                 None => 256usize
                     .saturating_mul(1024 * 1024)
                     .saturating_mul(nworkers)
@@ -612,7 +669,12 @@ impl RuntimeInner {
             step_size: config.step_size,
             allow_input_during_commit: config.allow_input_during_commit,
             dev_tweaks: config.dev_tweaks,
-            max_rss: config.max_rss_bytes,
+            configured_max_rss: config.max_rss_bytes,
+            reserved_memory: config.reserved_memory_bytes,
+            max_rss: AtomicU64::new(
+                circuit_max_rss(config.max_rss_bytes, None, config.reserved_memory_bytes)
+                    .unwrap_or(UNLIMITED_RSS),
+            ),
             process_rss: AtomicU64::new(process_rss_bytes().unwrap_or_default()),
             memory_pressure: AtomicU8::new(MemoryPressure::Low as u8),
             memory_pressure_epoch: AtomicU64::new(0),
@@ -669,13 +731,48 @@ impl RuntimeInner {
         MemoryPressure::try_from(self.memory_pressure.load(Ordering::Relaxed)).unwrap()
     }
 
+    fn max_rss(&self) -> Option<u64> {
+        Some(self.max_rss.load(Ordering::Relaxed)).filter(|&bytes| bytes != UNLIMITED_RSS)
+    }
+
+    /// Recomputes the circuit's memory limit from the `available` memory, and
+    /// logs the new limit if it changed.
+    fn update_max_rss(&self, available: Option<u64>) {
+        let max_rss = circuit_max_rss(self.configured_max_rss, available, self.reserved_memory);
+        let previous = self
+            .max_rss
+            .swap(max_rss.unwrap_or(UNLIMITED_RSS), Ordering::Relaxed);
+        if previous != max_rss.unwrap_or(UNLIMITED_RSS) {
+            let mb = |bytes: Option<u64>| {
+                bytes.map_or("none".to_string(), |bytes| {
+                    format!("{} MB", bytes / 1_000_000)
+                })
+            };
+            info!(
+                "process memory limit set to {} (configured: {}, available: {}, reserved: {})",
+                mb(max_rss),
+                mb(self.configured_max_rss),
+                mb(available),
+                mb(Some(self.reserved_memory))
+            );
+            if available.is_some_and(|available| self.reserved_memory > available / 2) {
+                warn!(
+                    "reserved memory ({}) exceeds half of the available memory ({}); \
+reserving only half",
+                    mb(Some(self.reserved_memory)),
+                    mb(available)
+                );
+            }
+        }
+    }
+
     /// Compute memory pressure based on the current process RSS.
     ///
     /// Final memory pressure is computed taking into account the previous memory pressure level as well.
     fn raw_memory_pressure(&self, process_rss: u64) -> MemoryPressure {
         let process_rss = process_rss as f64;
 
-        let Some(max_rss) = self.max_rss else {
+        let Some(max_rss) = self.max_rss() else {
             return MemoryPressure::Low;
         };
 
@@ -845,6 +942,7 @@ impl Runtime {
 
             let mut pressure_span = None;
             while !Runtime::kill_in_progress() {
+                runtime.inner().update_max_rss(available_memory_bytes());
                 let process_rss = process_rss_bytes().unwrap_or_default();
                 runtime
                     .inner()
@@ -1020,20 +1118,6 @@ impl Runtime {
             }
         } else {
             // Fallback path for threads outside a [Runtime].
-            //
-            // This cache is shared by all auxiliary threads in the runtime.  In
-            // particular, output connector threads use it to maintain their
-            // output buffers.
-            //
-            // FIXME: We may need a tunable strategy for aux threads. We cannot
-            // simply give each of them the same cache as DBSP worker threads,
-            // as there can be dozens of aux threads (currently one per output
-            // connector), which do not necessarily need a large cache. OTOH,
-            // sharing the same cache across all of them may potentially cause
-            // performance issues.
-            static AUXILIARY_CACHE: LazyLock<Arc<BufferCache>> =
-                LazyLock::new(|| Arc::new(BufferCache::new(1024 * 1024 * 256)));
-
             let buffer_cache = AUXILIARY_CACHE.clone();
             BUFFER_CACHE.set(Some(buffer_cache.clone()));
             Some(buffer_cache)
@@ -1042,9 +1126,15 @@ impl Runtime {
 
     /// Spawn an auxiliary thread inside the runtime.
     ///
-    /// The auxiliary thread will have access to the runtime's resources, including the
-    /// storage backend. The current use case for this is to be able to use spines outside
-    /// of the DBSP worker threads, e.g., to maintain output buffers.
+    /// The auxiliary thread will have access to the runtime's resources,
+    /// including the storage backend. The current use case for this is to be
+    /// able to use spines outside of the DBSP worker threads, e.g., to maintain
+    /// output buffers.
+    ///
+    /// This doesn't give the thread a worker index or a [ThreadType], so it
+    /// won't have access to a particular worker's storage cache.  Instead, it
+    /// will use the small global storage cache, which is probably sufficient
+    /// for simple purposes like output buffers or writing checkpoints.
     ///
     /// `f` must return once [Runtime::kill_in_progress] holds, because
     /// [RuntimeHandle::join] joins the aux threads. An aux thread that waits
@@ -1070,7 +1160,7 @@ impl Runtime {
         let handle = Builder::new()
             .name(thread_name.to_string())
             .spawn(move || {
-                RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
+                let _guard = runtime.enter();
                 f(parker)
             })
             .expect("failed to spawn auxiliary thread");
@@ -1080,6 +1170,31 @@ impl Runtime {
             .lock()
             .unwrap()
             .push((handle, unparker))
+    }
+
+    /// Makes the current thread run in this runtime.  [Runtime::runtime] will
+    /// return this runtime and [Runtime::storage_backend] will return its
+    /// storage backend.  Returns a guard that, when dropped, will take this
+    /// thread out of the runtime.
+    ///
+    /// This doesn't give the thread a worker index or a [ThreadType], so it
+    /// won't have access to a particular worker's storage cache.  Instead, it
+    /// will use the small global storage cache, which is probably sufficient
+    /// for simple purposes like output buffers or writing checkpoints.
+    ///
+    /// This must not be called from a thread that is already running in a
+    /// thread associated with a runtime.
+    ///
+    /// This is meant for short-lived uses of the runtime that will complete on
+    /// their own.  For daemon threads, [Runtime::spawn_aux_thread] is a better
+    /// choice.
+    pub fn enter(&self) -> RuntimeGuard {
+        RUNTIME.with(|rt| {
+            let mut runtime = rt.borrow_mut();
+            assert!(runtime.is_none());
+            *runtime = Some(self.clone());
+        });
+        RuntimeGuard::new()
     }
 
     /// Returns this runtime's buffer-cache handle for thread type `thread_type`
@@ -1254,8 +1369,11 @@ impl Runtime {
         self.inner().memory_pressure()
     }
 
+    /// Returns the circuit's memory limit, which is the smaller of the
+    /// configured budget and the memory available to the process, minus the
+    /// memory reserved outside the circuit.
     pub fn max_rss_bytes(&self) -> Option<u64> {
-        self.inner().max_rss
+        self.inner().max_rss()
     }
 
     pub fn memory_pressure_epoch(&self) -> u64 {
@@ -1268,8 +1386,8 @@ impl Runtime {
 
     /// Returns the minimum number of bytes in a batch produced by a merge operator to spill it to storage.
     ///
-    /// The output is determined by the current memory pressure level and the user-configured `min_storage_bytes` option.
-    /// When memory pressure is low, the output is `min_storage_bytes`; when memory pressure is moderate, high or critical,
+    /// The output is determined by the current memory pressure level and the user-configured `min_spill_size` option.
+    /// When memory pressure is low, the output is `min_spill_size`; when memory pressure is moderate, high or critical,
     /// the output is `0`, meaning all batches are spilled to storage.
     ///
     /// # Returns
@@ -1286,19 +1404,22 @@ impl Runtime {
             if inner.memory_pressure() >= MemoryPressure::Moderate {
                 Some(0)
             } else {
-                Some(storage.options.min_storage_bytes.unwrap_or({
-                    // This reduces the files stored on disk to a reasonable number.
-
-                    10 * 1024 * 1024
-                }))
+                Some(
+                    storage
+                        .options
+                        .min_spill_size
+                        .map(ConfigSize::as_usize)
+                        // This reduces the files stored on disk to a reasonable number.
+                        .unwrap_or(10 * 1024 * 1024),
+                )
             }
         })
     }
 
     /// Returns the minimum number of bytes in a batch inserted into a spine by a foreground worker to spill it to storage.
     ///
-    /// The output is determined by the current memory pressure level and the user-configured `min_storage_bytes` option.
-    /// When memory pressure is low the output is `usize::MAX`, when memory pressure is moderate, the output is `min_storage_bytes`,
+    /// The output is determined by the current memory pressure level and the user-configured `min_spill_size` option.
+    /// When memory pressure is low the output is `usize::MAX`, when memory pressure is moderate, the output is `min_spill_size`,
     /// when memory pressure is high or critical, the output is `0`, meaning all batches are spilled to storage.
     ///
     /// # Returns
@@ -1317,7 +1438,8 @@ impl Runtime {
             Some(
                 storage
                     .options
-                    .min_storage_bytes
+                    .min_spill_size
+                    .map(ConfigSize::as_usize)
                     .unwrap_or(10 * 1024 * 1024),
             )
         } else {
@@ -1330,8 +1452,8 @@ impl Runtime {
     /// Returns the minimum number of bytes in a transient batch exchanged between DBSP operators during a step of the
     /// circuit to spill it to storage.
     ///
-    /// The output is determined by the current memory pressure level and the user-configured `min_step_storage_bytes` option.
-    /// When memory pressure is below critical, the output is `min_step_storage_bytes`, when memory pressure is critical,
+    /// The output is determined by the current memory pressure level and the user-configured `min_step_spill_size` option.
+    /// When memory pressure is below critical, the output is `min_step_spill_size`, when memory pressure is critical,
     /// the output is `0`, meaning every batch that holds anything is spilled to storage.
     ///
     /// # Returns
@@ -1348,7 +1470,13 @@ impl Runtime {
             if inner.memory_pressure() >= MemoryPressure::Critical {
                 Some(0)
             } else {
-                Some(storage.options.min_step_storage_bytes.unwrap_or(usize::MAX))
+                Some(
+                    storage
+                        .options
+                        .min_step_spill_size
+                        .map(ConfigSize::as_usize)
+                        .unwrap_or(usize::MAX),
+                )
             }
         })
     }
@@ -1365,6 +1493,25 @@ impl Runtime {
         Parameters::default()
             .with_compression(Self::file_compression(options.compression))
             .with_compression_level(options.compression_level)
+    }
+
+    /// The parameters a layer file writer takes for a batch laid out as
+    /// `layout` asks.
+    ///
+    /// # Arguments
+    ///
+    /// * `layout` - what the batch being written asks of its file.
+    ///
+    /// # Returns
+    ///
+    /// The writer's defaults with `layout` applied, which for a batch that asks nothing
+    /// are the defaults themselves.
+    pub fn file_writer_parameters_for(layout: BatchLayout) -> Parameters {
+        let parameters = Self::file_writer_parameters();
+        match layout.key_block_bytes {
+            Some(bytes) => parameters.with_min_key_data_block(bytes),
+            None => parameters,
+        }
     }
 
     /// Maps the configured storage compression to the file-format algorithm.
@@ -1390,6 +1537,29 @@ impl Runtime {
             rt.borrow()
                 .as_ref()
                 .map_or(1, |runtime| runtime.layout().n_workers())
+        })
+    }
+
+    /// Returns the number of hosts in the runtime's [`Layout`].
+    ///
+    /// If this thread is not in a [Runtime], returns 1.
+    pub fn num_hosts() -> usize {
+        RUNTIME.with(|rt| {
+            rt.borrow()
+                .as_ref()
+                .map_or(1, |runtime| runtime.layout().n_hosts())
+        })
+    }
+
+    /// Returns the 0-based index of this thread's host in the runtime's
+    /// [`Layout`].
+    ///
+    /// If this thread is not in a [Runtime], returns 0.
+    pub fn host_index() -> usize {
+        RUNTIME.with(|rt| {
+            rt.borrow()
+                .as_ref()
+                .map_or(0, |runtime| runtime.layout().local_host_idx())
         })
     }
 
@@ -1475,9 +1645,10 @@ impl Runtime {
     fn panic(&self, panic_info: &PanicHookInfo) {
         let local_worker_offset = Self::local_worker_offset();
         let Some(thread_type) = current_thread_type() else {
-            // We only install panic hooks on foreground and background threads,
-            // so this shouldn't happen, but we cannot panic here.
-            error!("panic hook called outside of a runtime or on an aux thread");
+            // The panic hook is process-wide, so it also runs on aux and helper
+            // threads, which have `RUNTIME` but no worker slot.  Their owners
+            // report the panic through the thread's `JoinHandle`.
+            debug!("panic on a runtime thread that is not a worker");
             return;
         };
         let panic_info = WorkerPanicInfo::new(panic_info);
@@ -1515,6 +1686,64 @@ impl Runtime {
     /// Use [Runtime::with_dev_tweaks] if there's not a `Runtime` handy already.
     pub fn dev_tweaks(&self) -> &DevTweaks {
         &self.inner().dev_tweaks
+    }
+}
+
+/// Buffer cache for threads that have no worker's cache.
+///
+/// This cache is shared by all auxiliary threads in the runtime.  In
+/// particular, output connector threads use it to maintain their output
+/// buffers.
+///
+/// FIXME: We may need a tunable strategy for aux threads. We cannot simply give
+/// each of them the same cache as DBSP worker threads, as there can be dozens
+/// of aux threads (currently one per output connector), which do not
+/// necessarily need a large cache. OTOH, sharing the same cache across all of
+/// them may potentially cause performance issues.
+pub(crate) static AUXILIARY_CACHE: LazyLock<Arc<BufferCache>> =
+    LazyLock::new(|| Arc::new(BufferCache::new(1024 * 1024 * 256)));
+
+/// A guard returned by [Runtime::enter].
+///
+/// Dropping the guard takes the thread out of the runtime, so it must be kept
+/// for as long as the thread uses the runtime.
+#[must_use = "the thread leaves the runtime as soon as the guard is dropped"]
+pub struct RuntimeGuard {
+    /// Set to true if `with_private_cache` was used.
+    has_private_cache: bool,
+    /// Make this type `!Send` and `!Sync`.
+    _phantom: PhantomData<*const ()>,
+}
+
+impl RuntimeGuard {
+    fn new() -> Self {
+        Self {
+            has_private_cache: false,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Installs a thread-local buffer cache of `max_cost` size.  The buffer
+    /// cache will be uninstalled when the guard is dropped.
+    pub fn with_private_cache(mut self, max_cost: usize) -> Self {
+        assert!(!self.has_private_cache);
+        BUFFER_CACHE.set(Some(Arc::new(BufferCache::new(max_cost))));
+        self.has_private_cache = true;
+        self
+    }
+}
+
+impl Drop for RuntimeGuard {
+    fn drop(&mut self) {
+        RUNTIME.with(|rt| {
+            let mut runtime = rt.borrow_mut();
+            debug_assert!(runtime.is_some());
+            *runtime = None;
+        });
+
+        if self.has_private_cache {
+            BUFFER_CACHE.set(None);
+        }
     }
 }
 
@@ -1865,6 +2094,7 @@ pub(crate) mod tests {
         dev_tweaks::{BufferCacheAllocationStrategy, BufferCacheStrategy},
     };
     use feldera_types::memory_pressure::MemoryPressure;
+    use feldera_types::size::ConfigSize;
     use std::{
         cell::RefCell,
         rc::Rc,
@@ -1914,6 +2144,16 @@ pub(crate) mod tests {
         }
     }
 
+    fn set_mock_available_memory_bytes(bytes: Option<u64>) {
+        // Safety: We assume that only DBSP code accesses the environment variables.
+        unsafe {
+            match bytes {
+                Some(bytes) => std::env::set_var("MOCK_AVAILABLE_MEMORY_BYTES", bytes.to_string()),
+                None => std::env::remove_var("MOCK_AVAILABLE_MEMORY_BYTES"),
+            }
+        }
+    }
+
     struct MockRssVarGuard;
 
     impl Drop for MockRssVarGuard {
@@ -1921,6 +2161,7 @@ pub(crate) mod tests {
             // Safety: We assume that only DBSP code accesses the environment variables.
             unsafe {
                 std::env::remove_var("MOCK_PROCESS_RSS_BYTES");
+                std::env::remove_var("MOCK_AVAILABLE_MEMORY_BYTES");
             }
         }
     }
@@ -2183,7 +2424,7 @@ pub(crate) mod tests {
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                cache_mib: Some(8),
+                cache_size: Some(ConfigSize::from_mib(8)),
                 ..StorageOptions::default()
             },
         )
@@ -2217,7 +2458,7 @@ pub(crate) mod tests {
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                cache_mib: Some(8),
+                cache_size: Some(ConfigSize::from_mib(8)),
                 ..StorageOptions::default()
             },
         )
@@ -2435,6 +2676,98 @@ pub(crate) mod tests {
         hruntime.kill().unwrap();
     }
 
+    /// Waits for the runtime's memory limit and memory pressure to reach the
+    /// expected values.
+    fn wait_for_max_rss(runtime: &Runtime, max_rss: Option<u64>, pressure: MemoryPressure) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while runtime.max_rss_bytes() != max_rss || runtime.current_memory_pressure() != pressure {
+            assert!(
+                Instant::now() < deadline,
+                "expected memory limit {max_rss:?} and pressure {pressure:?}, got {:?} and {:?}",
+                runtime.max_rss_bytes(),
+                runtime.current_memory_pressure()
+            );
+            sleep(Duration::from_millis(100));
+        }
+    }
+
+    /// The memory limit tracks the memory available to the process, for
+    /// example when the container's memory limit changes at runtime.
+    #[test]
+    fn max_rss_follows_available_memory() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        let _clear_mock_rss = MockRssVarGuard;
+        set_mock_process_rss_bytes(4 * GIB);
+
+        let config = CircuitConfig::with_workers(1).with_max_rss_bytes(Some(10 * GIB));
+        let (circuit, _input_handle) =
+            Runtime::init_circuit(config, |circuit| Ok(circuit.add_input_zset::<u64>().1)).unwrap();
+        let runtime = circuit.runtime();
+        wait_for_max_rss(runtime, Some(10 * GIB), MemoryPressure::Low);
+
+        // Available memory drops below the configured limit and becomes the
+        // new limit. Using 4 GiB out of 4.3 GiB is high pressure.
+        set_mock_available_memory_bytes(Some(43 * GIB / 10));
+        wait_for_max_rss(runtime, Some(43 * GIB / 10), MemoryPressure::High);
+
+        // Available memory rises above the configured limit, so the
+        // configured limit applies again.
+        set_mock_available_memory_bytes(Some(20 * GIB));
+        wait_for_max_rss(runtime, Some(10 * GIB), MemoryPressure::Low);
+    }
+
+    /// With no configured limit, the memory available to the process becomes
+    /// the limit.
+    #[test]
+    fn max_rss_defaults_to_available_memory() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        let _clear_mock_rss = MockRssVarGuard;
+        set_mock_process_rss_bytes(4 * GIB);
+
+        let config = CircuitConfig::with_workers(1);
+        let (circuit, _input_handle) =
+            Runtime::init_circuit(config, |circuit| Ok(circuit.add_input_zset::<u64>().1)).unwrap();
+        let runtime = circuit.runtime();
+        wait_for_max_rss(runtime, None, MemoryPressure::Low);
+
+        set_mock_available_memory_bytes(Some(43 * GIB / 10));
+        wait_for_max_rss(runtime, Some(43 * GIB / 10), MemoryPressure::High);
+    }
+
+    /// Memory reserved outside the circuit comes out of the budget, whether the
+    /// budget is the configured limit or the available memory.
+    #[test]
+    fn max_rss_excludes_reserved_memory() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        let _clear_mock_rss = MockRssVarGuard;
+        set_mock_process_rss_bytes(GIB / 10);
+        set_mock_available_memory_bytes(Some(20 * GIB));
+
+        // A 10 GiB budget with 2 GiB reserved leaves 8 GiB for the circuit.
+        let config = CircuitConfig::with_workers(1)
+            .with_max_rss_bytes(Some(10 * GIB))
+            .with_reserved_memory_bytes(2 * GIB);
+        let (circuit, _input_handle) =
+            Runtime::init_circuit(config, |circuit| Ok(circuit.add_input_zset::<u64>().1)).unwrap();
+        let runtime = circuit.runtime();
+        wait_for_max_rss(runtime, Some(8 * GIB), MemoryPressure::Low);
+
+        // The container shrinks to 6 GiB, and the 2 GiB stay reserved.
+        set_mock_available_memory_bytes(Some(6 * GIB));
+        wait_for_max_rss(runtime, Some(4 * GIB), MemoryPressure::Low);
+
+        // The container shrinks below the reservation. The reservation takes
+        // at most half, so the circuit keeps a limit and pressure stays low.
+        set_mock_available_memory_bytes(Some(GIB));
+        wait_for_max_rss(runtime, Some(GIB / 2), MemoryPressure::Low);
+    }
+
     /// Test the memory pressure thresholds and how merger threads behave
     /// under different memory pressure levels.
     #[test]
@@ -2472,7 +2805,7 @@ pub(crate) mod tests {
             query_runtime_memory_state(circuit.runtime());
         assert_eq!(pressure, MemoryPressure::Low);
 
-        // Verify the spill thresholds: at low pressure, merge threshold is set to the user-configured `min_storage_bytes`,
+        // Verify the spill thresholds: at low pressure, merge threshold is set to the user-configured `min_spill_size`,
         // insert threshold is set to `usize::MAX`, and step threshold is set to `usize::MAX`.
         assert_eq!(min_merge, TEN_MIB);
         assert_eq!(min_insert, usize::MAX);

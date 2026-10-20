@@ -4,7 +4,6 @@ use crate::{
     format::{Encoder, InputFormat, OutputFormat, ParseError, Parser},
     util::truncate_ellipse,
 };
-use actix_web::HttpRequest;
 use anyhow::{Result as AnyResult, bail};
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
@@ -70,10 +69,10 @@ impl InputFormat for CsvInputFormat {
     /// Create a parser using configuration extracted from an HTTP request.
     // We could just rely on serde to deserialize the config from the
     // HTTP query, but a specialized method gives us more flexibility.
-    fn config_from_http_request(
+    fn config_from_http_query(
         &self,
         _endpoint_name: &str,
-        _request: &HttpRequest,
+        _query: &str,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         Ok(Box::new(CsvFormatConfig::default()))
     }
@@ -304,22 +303,16 @@ impl OutputFormat for CsvOutputFormat {
         Cow::Borrowed("csv")
     }
 
-    fn config_from_http_request(
+    fn config_from_http_query(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        query: &str,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         Ok(Box::new(
             CsvEncoderConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
-                request.query_string().as_bytes(),
+                query.as_bytes(),
             )))
-            .map_err(|e| {
-                ControllerError::encoder_config_parse_error(
-                    endpoint_name,
-                    &e,
-                    request.query_string(),
-                )
-            })?,
+            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, query))?,
         ))
     }
 

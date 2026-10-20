@@ -22,6 +22,7 @@ use feldera_types::config::{
     FileBackendConfig, StorageBackendConfig, StorageCacheConfig, StorageConfig, StorageOptions,
     StorageSyncMode,
 };
+use feldera_types::size::ConfigSize;
 
 /// Observations recorded so far, as (per-file syncs, commit_all calls).
 fn counts() -> (u64, u64) {
@@ -52,7 +53,7 @@ fn circuit_with_storage(path: &std::path::Path) -> DBSPHandle {
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                min_storage_bytes: Some(0),
+                min_spill_size: Some(ConfigSize::ZERO),
                 backend: StorageBackendConfig::File(Box::new(FileBackendConfig {
                     sync_mode: Some(StorageSyncMode::PerFile),
                     ..FileBackendConfig::default()

@@ -13,19 +13,10 @@ public final class TupleOfFields extends IUsedFields {
         this.fields = fields;
     }
 
-    public ParameterFieldUse getParameterUse() {
-        // The result is the union of the uses of all fields of the tuple */
-        if (this.fields.isEmpty())
-            return new ParameterFieldUse();
-        ParameterFieldUse result = null;
-        for (var u : this.fields) {
-            ParameterFieldUse next = u.getParameterUse();
-            if (result == null)
-                result = next;
-            else
-                result.union(next);
-        }
-        return result;
+    @Override
+    void markParameterUse(ParameterFieldUse use) {
+        for (var u : this.fields)
+            u.markParameterUse(use);
     }
 
     @Override

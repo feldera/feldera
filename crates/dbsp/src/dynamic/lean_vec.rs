@@ -724,8 +724,7 @@ impl RawVec {
     /// Selects the given capacity's next growth target
     ///
     /// Expects that the current element's size is non-zero
-    // TODO: We could be allocator-aware here and specialize for something like
-    // mimalloc here
+    // TODO: We could be allocator-aware here and specialize for the allocator
     fn next_capacity(&self, capacity: usize) -> usize {
         debug_assert_ne!(self.val_size, 0);
         let size = self.val_size;
@@ -746,8 +745,7 @@ impl RawVec {
     /// Selects the given capacity's next growth target
     ///
     /// Expects that the current element's size is non-zero
-    // TODO: We could be allocator-aware here and specialize for something like
-    // mimalloc here
+    // TODO: We could be allocator-aware here and specialize for the allocator
     fn try_next_capacity(&self, capacity: usize) -> Option<usize> {
         debug_assert_ne!(self.val_size, 0);
         let size = self.val_size;

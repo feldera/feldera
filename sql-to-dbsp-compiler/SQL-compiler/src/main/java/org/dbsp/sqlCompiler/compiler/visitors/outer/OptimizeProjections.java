@@ -394,8 +394,8 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         }
 
         @Override
-        public VisitDecision preorder(DBSPType type) {
-            return VisitDecision.STOP;
+        protected boolean rewritesTypes() {
+            return false;
         }
 
         @Override

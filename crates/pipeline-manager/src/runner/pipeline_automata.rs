@@ -2,11 +2,12 @@ use crate::config::CommonConfig;
 use crate::db::error::DBError;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::StoragePostgres;
+use crate::db::types::deployment::merge_deployment_config;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineId,
     runtime_desired_status_to_string, runtime_status_to_string,
 };
-use crate::db::types::program::{ProgramStatus, generate_pipeline_config};
+use crate::db::types::program::{ProgramStatus, RuntimeSelector, generate_pipeline_config};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
@@ -22,7 +23,9 @@ use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
 use crate::runner::pipeline_logs::{
     FollowRequest, LogMessage, LogsSender, start_thread_pipeline_logs,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use feldera_types::config::LegacySpelling;
+use feldera_types::config::PipelineConfig;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{
     ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus, RuntimeStatusDetails,
@@ -111,6 +114,95 @@ fn program_config_is_gen2(program_config: &serde_json::Value) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether more than `duration` has passed between `since` and `now`. A
+/// duration longer than `i64::MAX` milliseconds never passes; cast to `i64` it
+/// would go negative and pass at once.
+fn elapsed_exceeds(since: DateTime<Utc>, now: DateTime<Utc>, duration: Duration) -> bool {
+    let elapsed = now
+        .timestamp_millis()
+        .saturating_sub(since.timestamp_millis());
+    i64::try_from(duration.as_millis()).is_ok_and(|duration| elapsed > duration)
+}
+
+/// The release that renamed the duration settings. A binary compiled by an
+/// earlier platform reads only the older spelling.
+const DURATION_RENAME_VERSION: Version = Version::new(0, 366, 0);
+
+/// The release that renamed the size settings, likewise.
+const SIZE_RENAME_VERSION: Version = Version::new(0, 367, 0);
+
+/// Whether a pipeline compiled by `platform_version` predates the `rename`
+/// release, in which case the executor hands it the settings that release
+/// renamed in their older spelling. A pipeline keeps the binary it was compiled
+/// with until its runtime is updated, so after an upgrade it may still run an
+/// older one. A version that does not parse is taken to predate the rename:
+/// every Feldera release so far reads the older spelling, so writing it is
+/// safe either way.
+fn platform_version_predates(platform_version: &str, rename: Version) -> bool {
+    !Version::parse(platform_version).is_ok_and(|version| version >= rename)
+}
+
+/// Whether the program configuration pins, with `runtime_version`, a runtime
+/// that may predate the `rename` release. The executor hands such a runtime
+/// the renamed settings in their older spelling, which every Feldera release
+/// so far accepts. A tagged version is compared with the release; a commit
+/// hash tells nothing about its age, so it gets the older spelling. The
+/// platform's own runtime and the Gen-2 engine read the current spelling. A
+/// configuration that fails to parse is treated as not pinning.
+fn pinned_runtime_predates(program_config: &serde_json::Value, rename: Version) -> bool {
+    validate_program_config(program_config, false)
+        .map(|config| match config.runtime_version() {
+            RuntimeSelector::Platform(_) | RuntimeSelector::Gen2 => false,
+            RuntimeSelector::Version(tag) => {
+                platform_version_predates(tag.trim_start_matches('v'), rename)
+            }
+            RuntimeSelector::Sha(_) => true,
+        })
+        .unwrap_or(false)
+}
+
+/// Which settings the runtime of a pipeline reads only in their older
+/// spelling: those of each rename that the runtime, whether pinned by the
+/// program configuration or the one the pipeline was compiled with, predates.
+fn legacy_spelling_for(
+    program_config: &serde_json::Value,
+    platform_version: &str,
+) -> LegacySpelling {
+    let predates = |rename: Version| {
+        pinned_runtime_predates(program_config, rename.clone())
+            || platform_version_predates(platform_version, rename)
+    };
+    LegacySpelling {
+        durations: predates(DURATION_RENAME_VERSION),
+        sizes: predates(SIZE_RENAME_VERSION),
+    }
+}
+
+/// URL at which the compiler server serves the pipeline binary or UDF library with these
+/// checksums.
+pub(crate) fn compiler_binary_url(
+    common_config: &CommonConfig,
+    pipeline_id: PipelineId,
+    program_version: crate::db::types::version::Version,
+    source_checksum: &str,
+    integrity_checksum: &str,
+) -> String {
+    format!(
+        "{}://{}:{}/binary/{}/{}/{}/{}",
+        if common_config.enable_https {
+            "https"
+        } else {
+            "http"
+        },
+        common_config.compiler_host,
+        common_config.compiler_port,
+        pipeline_id,
+        program_version,
+        source_checksum,
+        integrity_checksum,
+    )
+}
+
 /// Pipeline automaton monitors the runtime state of a single pipeline and continually reconciles
 /// actual with desired state. The automaton runs as a separate tokio task.
 pub struct PipelineAutomaton<T>
@@ -146,8 +238,8 @@ where
     client: reqwest::Client,
 
     /// Set when the pipeline executor `provision()` is called in the `Provisioning` stage.
-    /// Content is the provisioning timeout in seconds.
-    provision_called: Option<u64>,
+    /// Content is the provisioning timeout.
+    provision_called: Option<Duration>,
 
     /// Default maximum time to wait for the pipeline resources to be provisioned.
     /// This can differ significantly between the type of runner.
@@ -1007,6 +1099,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // Deployment configuration
         let mut deployment_config =
             generate_pipeline_config(pipeline.id, &pipeline.name, &runtime_config);
+        // A resize lasts until storage is cleared.
+        if let Some(previous_deployment_config) = &pipeline.deployment_config
+            && pipeline.storage_status != StorageStatus::Cleared
+            && let Ok(previous) =
+                serde_json::from_value::<PipelineConfig>(previous_deployment_config.clone())
+        {
+            merge_deployment_config(&mut deployment_config, &previous.global);
+        }
         deployment_config.storage_config =
             Some(self.pipeline_handle.generate_storage_config().await);
         let deployment_config_json = match serde_json::to_value(&deployment_config) {
@@ -1023,11 +1123,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
         // Validate that the backing compute and storage resources, if they were attempted to be
         // provisioned, can be managed
-        if let Err(e) = self
-            .pipeline_handle
-            .can_provision(&deployment_config, &pipeline.runtime_config)
-            .await
-        {
+        if let Err(e) = self.pipeline_handle.can_provision(&deployment_config).await {
             return Action::RemainStoppedUpdateError { error: e.into() };
         }
 
@@ -1342,16 +1438,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     storage_status_details: None,
                 };
             };
-            // URL where the program binary can be downloaded from
-            let program_binary_url = format!(
-                "{}://{}:{}/binary/{}/{}/{}/{}",
-                if self.common_config.enable_https {
-                    "https"
-                } else {
-                    "http"
-                },
-                self.common_config.compiler_host,
-                self.common_config.compiler_port,
+            let program_binary_url = compiler_binary_url(
+                &self.common_config,
                 self.pipeline_id,
                 pipeline.program_version,
                 source_checksum,
@@ -1393,6 +1481,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Some(program_info) => program_info,
         };
 
+        // A runtime from before a rename, whether pinned or the one this
+        // pipeline was compiled with, reads only the older spelling.
+        let legacy_spelling =
+            legacy_spelling_for(&pipeline.program_config, &pipeline.platform_version);
+
         match self
             .pipeline_handle
             .provision(
@@ -1404,17 +1497,19 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 &program_binary_url,
                 &program_info_url,
                 pipeline.program_version,
-                &pipeline.runtime_config,
                 engine_is_gen2,
+                legacy_spelling,
             )
             .await
         {
             Ok(()) => {
+                // Keep the configured value whole: truncating to seconds would
+                // turn a sub-second timeout into no timeout at all.
                 self.provision_called = Some(
                     deployment_config
                         .global
-                        .provisioning_timeout_secs
-                        .unwrap_or(self.default_provisioning_timeout.as_secs()),
+                        .provisioning_timeout
+                        .map_or(self.default_provisioning_timeout, Into::into),
                 );
                 info!(
                     pipeline_id = %pipeline.id,
@@ -1455,10 +1550,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Action {
         assert!(self.provision_called.is_some());
-        let provisioning_timeout = Duration::from_secs(
-            self.provision_called
-                .expect("Provision must have been called"),
-        );
+        let provisioning_timeout = self
+            .provision_called
+            .expect("Provision must have been called");
 
         // Deployment initial runtime desired state is expected
         let deployment_initial = match &pipeline.deployment_initial {
@@ -1472,11 +1566,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         };
 
         // Check whether the pipeline has finished provisioning the resources
-        let provision_status = match self
-            .pipeline_handle
-            .is_provisioned(&pipeline.runtime_config)
-            .await
-        {
+        let Some(deployment_config) = &pipeline.deployment_config else {
+            return Action::TransitionToStopping {
+                error: Some(RunnerError::AutomatonMissingDeploymentConfig.into()),
+                storage_status_details: None,
+            };
+        };
+        let provision_status = match self.pipeline_handle.is_provisioned(deployment_config).await {
             Ok(provision_status) => provision_status,
             Err(e) => {
                 error!(
@@ -1501,12 +1597,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 );
 
                 // Provisioning can time out if it takes too long
-                if Utc::now().timestamp_millis()
-                    - pipeline
-                        .deployment_resources_status_since
-                        .timestamp_millis()
-                    > provisioning_timeout.as_millis() as i64
-                {
+                if elapsed_exceeds(
+                    pipeline.deployment_resources_status_since,
+                    Utc::now(),
+                    provisioning_timeout,
+                ) {
                     error!(
                         pipeline_id = %pipeline.id,
                         pipeline = %pipeline.name,
@@ -1710,8 +1805,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Action {
         // Retrieve latest resources status details
+        let Some(deployment_config) = &pipeline.deployment_config else {
+            return Action::TransitionToStopping {
+                error: Some(RunnerError::AutomatonMissingDeploymentConfig.into()),
+                storage_status_details: None,
+            };
+        };
         let latest_resources_status_details =
-            match self.pipeline_handle.check(&pipeline.runtime_config).await {
+            match self.pipeline_handle.check(deployment_config).await {
                 Ok(details) => details,
                 Err(e) => {
                     return Action::TransitionToStopping {
@@ -1843,7 +1944,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         &mut self,
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Action {
-        if let Err(e) = self.pipeline_handle.stop(&pipeline.runtime_config).await {
+        // A missing deployment config must not block stopping. The runtime config fields are at
+        // the top level of both, which is all the runner reads.
+        let deployment_config = pipeline
+            .deployment_config
+            .as_ref()
+            .unwrap_or(&pipeline.runtime_config);
+        if let Err(e) = self.pipeline_handle.stop(deployment_config).await {
             let message = format!("Pipeline could not be stopped (will retry): {e}");
             error!(
                 pipeline_id = %pipeline.id,
@@ -1896,7 +2003,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         &mut self,
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Action {
-        if let Err(e) = self.pipeline_handle.clear(&pipeline.runtime_config).await {
+        // Pipelines stopped before `deployment_config` was kept after stop have none.
+        // The runtime config fields are at the top level of both, which is all the runner reads.
+        // TODO: remove this fallback once no pipeline stopped before that change remains.
+        let deployment_config = pipeline
+            .deployment_config
+            .as_ref()
+            .unwrap_or(&pipeline.runtime_config);
+        if let Err(e) = self.pipeline_handle.clear(deployment_config).await {
             error!(
                 pipeline_id = %pipeline.id,
                 pipeline = %pipeline.name,
@@ -1915,11 +2029,12 @@ mod test {
     use crate::config::CommonConfig;
     use crate::db::storage::Storage;
     use crate::db::storage_postgres::StoragePostgres;
-    use crate::db::types::pipeline::{PipelineDescr, PipelineId};
+    use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineDescr, PipelineId};
     use crate::db::types::program::{
         ProgramInfo, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
     };
     use crate::db::types::resources_status::ResourcesStatus;
+    use crate::db::types::storage::StorageStatus;
     use crate::db::types::version::Version;
     use crate::error::ManagerError;
     use crate::logging;
@@ -1928,6 +2043,7 @@ mod test {
     use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
     use crate::runner::pipeline_logs::{FollowRequest, LogMessage, LogsSender};
     use async_trait::async_trait;
+    use feldera_types::config::LegacySpelling;
     use feldera_types::config::{PipelineConfig, StorageConfig};
     use feldera_types::error::ErrorResponse;
     use feldera_types::program_schema::ProgramSchema;
@@ -1942,8 +2058,114 @@ mod test {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate, http};
 
+    /// A pipeline compiled by a platform before the duration rename runs a
+    /// binary that reads only the older spelling, however it is pinned. One
+    /// compiled by that release or a later one reads the current spelling.
+    #[test]
+    fn a_platform_before_the_rename_gets_the_older_duration_spelling() {
+        use super::DURATION_RENAME_VERSION;
+        let predates = |version| super::platform_version_predates(version, DURATION_RENAME_VERSION);
+        assert!(predates("0.365.0"));
+        assert!(predates("0.365.9+enterprise"));
+        assert!(predates("0.357.0+enterprise-dev.abc123"));
+        assert!(!predates("0.366.0"));
+        assert!(!predates("0.366.0+enterprise"));
+        assert!(!predates("0.367.1"));
+        assert!(!predates("1.0.0"));
+        // A version that does not parse is treated as predating the rename:
+        // the older spelling is safe for every runtime.
+        assert!(predates("v0"));
+        assert!(predates(""));
+    }
+
+    /// Each rename has its own gate: a platform from between the duration and
+    /// the size rename reads the current durations and the older sizes, and a
+    /// pinned tag is gated the same way, whatever the platform.
+    #[test]
+    fn each_rename_is_gated_on_its_own_release() {
+        crate::enable_test_unstable_features();
+        use super::legacy_spelling_for;
+        use feldera_types::config::LegacySpelling;
+        let both = LegacySpelling {
+            durations: true,
+            sizes: true,
+        };
+        let sizes_only = LegacySpelling {
+            durations: false,
+            sizes: true,
+        };
+        let unpinned = serde_json::json!({});
+        assert_eq!(legacy_spelling_for(&unpinned, "0.365.0"), both);
+        assert_eq!(legacy_spelling_for(&unpinned, "0.366.0"), sizes_only);
+        assert_eq!(
+            legacy_spelling_for(&unpinned, "0.366.3+enterprise"),
+            sizes_only
+        );
+        assert_eq!(
+            legacy_spelling_for(&unpinned, "0.367.0"),
+            LegacySpelling::NONE
+        );
+        let pinned = |tag: &str| serde_json::json!({"runtime_version": tag});
+        assert_eq!(legacy_spelling_for(&pinned("v0.365.0"), "0.367.0"), both);
+        assert_eq!(
+            legacy_spelling_for(&pinned("v0.366.0"), "0.367.0"),
+            sizes_only
+        );
+        assert_eq!(
+            legacy_spelling_for(&pinned("v0.367.0"), "0.367.0"),
+            LegacySpelling::NONE
+        );
+    }
+
+    /// One case per kind of runtime selector. The platform's own runtime and
+    /// the Gen-2 engine read the current spelling; a tag is compared with the
+    /// rename, whose boundary the test above covers; a commit hash tells
+    /// nothing about its age, so it gets the older spelling.
+    #[test]
+    fn only_a_pinned_older_runtime_gets_the_older_duration_spelling() {
+        crate::enable_test_unstable_features();
+        use super::DURATION_RENAME_VERSION;
+        let predates = |config: &serde_json::Value| {
+            super::pinned_runtime_predates(config, DURATION_RENAME_VERSION)
+        };
+        assert!(!predates(&serde_json::json!({})));
+        assert!(!predates(&serde_json::json!({"runtime_version": "gen2"})));
+        assert!(predates(
+            &serde_json::json!({"runtime_version": "v0.357.0"})
+        ));
+        assert!(!predates(
+            &serde_json::json!({"runtime_version": "v0.366.0"})
+        ));
+        assert!(predates(
+            &serde_json::json!({"runtime_version": "d0b45d8f87056c9d2c89c6f63b2531b0c5905f9b"})
+        ));
+        // A configuration that does not parse pins nothing.
+        assert!(!predates(&serde_json::json!({"runtime_version": 7})));
+    }
+
+    /// A provisioning timeout longer than `i64::MAX` milliseconds, which a
+    /// duration setting can now say, never passes rather than passing at once.
+    #[test]
+    fn a_huge_provisioning_timeout_never_passes() {
+        use super::elapsed_exceeds;
+        use chrono::{TimeDelta, Utc};
+        use std::time::Duration;
+        let since = Utc::now();
+        let later = since + TimeDelta::seconds(2);
+        assert!(elapsed_exceeds(since, later, Duration::from_secs(1)));
+        assert!(!elapsed_exceeds(since, later, Duration::from_secs(3)));
+        assert!(!elapsed_exceeds(
+            since,
+            later,
+            Duration::from_secs(u64::MAX)
+        ));
+        assert!(!elapsed_exceeds(since, later, Duration::MAX));
+    }
+
     struct MockRunner {
         deployment_location: String,
+        /// The config each of `is_provisioned`, `check`, `stop` and `clear` received.
+        received: Arc<std::sync::Mutex<Vec<(&'static str, serde_json::Value)>>>,
     }
 
     #[async_trait]
@@ -1968,11 +2190,7 @@ mod test {
             }
         }
 
-        async fn can_provision(
-            &self,
-            _: &PipelineConfig,
-            _: &serde_json::Value,
-        ) -> Result<(), ManagerError> {
+        async fn can_provision(&self, _: &PipelineConfig) -> Result<(), ManagerError> {
             Ok(())
         }
 
@@ -1986,16 +2204,20 @@ mod test {
             _: &str,
             _: &str,
             _: Version,
-            _: &serde_json::Value,
             _is_gen2: bool,
+            _legacy_spelling: LegacySpelling,
         ) -> Result<(), ManagerError> {
             Ok(())
         }
 
         async fn is_provisioned(
             &mut self,
-            _runtime_config: &serde_json::Value,
+            deployment_config: &serde_json::Value,
         ) -> Result<ProvisionStatus, ManagerError> {
+            self.received
+                .lock()
+                .unwrap()
+                .push(("is_provisioned", deployment_config.clone()));
             Ok(ProvisionStatus::Provisioned {
                 location: self.deployment_location.clone(),
                 details: json!(""),
@@ -2004,16 +2226,34 @@ mod test {
 
         async fn check(
             &mut self,
-            _runtime_config: &serde_json::Value,
+            deployment_config: &serde_json::Value,
         ) -> Result<serde_json::Value, ManagerError> {
+            self.received
+                .lock()
+                .unwrap()
+                .push(("check", deployment_config.clone()));
             Ok(json!(""))
         }
 
-        async fn stop(&mut self, _runtime_config: &serde_json::Value) -> Result<(), ManagerError> {
+        async fn stop(
+            &mut self,
+            deployment_config: &serde_json::Value,
+        ) -> Result<(), ManagerError> {
+            self.received
+                .lock()
+                .unwrap()
+                .push(("stop", deployment_config.clone()));
             Ok(())
         }
 
-        async fn clear(&mut self, _runtime_config: &serde_json::Value) -> Result<(), ManagerError> {
+        async fn clear(
+            &mut self,
+            deployment_config: &serde_json::Value,
+        ) -> Result<(), ManagerError> {
+            self.received
+                .lock()
+                .unwrap()
+                .push(("clear", deployment_config.clone()));
             Ok(())
         }
     }
@@ -2022,6 +2262,7 @@ mod test {
         db: Arc<Mutex<StoragePostgres>>,
         automaton: PipelineAutomaton<MockRunner>,
         _follow_request_sender: Sender<FollowRequest>,
+        received: Arc<std::sync::Mutex<Vec<(&'static str, serde_json::Value)>>>,
     }
 
     impl AutomatonTest {
@@ -2115,6 +2356,62 @@ mod test {
         async fn tick(&mut self) {
             self.automaton.do_run().await.unwrap();
         }
+
+        async fn pipeline(&self) -> ExtendedPipelineDescr {
+            let automaton = &self.automaton;
+            self.db
+                .lock()
+                .await
+                .get_pipeline_by_id(automaton.tenant_id, automaton.pipeline_id)
+                .await
+                .unwrap()
+        }
+
+        async fn tick_until(
+            &mut self,
+            resources_status: ResourcesStatus,
+            storage_status: StorageStatus,
+        ) {
+            for _ in 0..10 {
+                let pipeline = self.pipeline().await;
+                if pipeline.deployment_resources_status == resources_status
+                    && pipeline.storage_status == storage_status
+                {
+                    return;
+                }
+                self.tick().await;
+            }
+            panic!("did not reach {resources_status:?} with storage {storage_status:?}");
+        }
+
+        /// Adds an environment variable the current version reserves, as an older version could
+        /// have stored it.
+        async fn reserve_env_in(&self, column: &str) {
+            let statement = format!(
+                "UPDATE pipeline SET {column} = jsonb_set({column}::jsonb, '{{env}}', '{{\"RUST_LOG\": \"debug\"}}')::varchar WHERE id = $1"
+            );
+            self.db
+                .lock()
+                .await
+                .pool
+                .get()
+                .await
+                .unwrap()
+                .execute(&statement, &[&self.automaton.pipeline_id.0])
+                .await
+                .unwrap();
+        }
+
+        async fn clear_storage(&self) {
+            let automaton = &self.automaton;
+            let name = self.pipeline().await.name;
+            self.db
+                .lock()
+                .await
+                .transit_storage_status_to_clearing_if_not_cleared(automaton.tenant_id, &name)
+                .await
+                .unwrap();
+        }
     }
 
     async fn setup(
@@ -2191,11 +2488,11 @@ mod test {
                 tenant_id,
                 pipeline_id,
                 Version(1),
-                &RustCompilationInfo {
-                    exit_code: 0,
-                    stdout: "".to_string(),
-                    stderr: "".to_string(),
-                },
+                &RustCompilationInfo::from_process_output_streams(
+                    0,
+                    "".to_string(),
+                    "".to_string(),
+                ),
                 "not-used-program-binary-source-checksum",
                 "not-used-program-binary-integrity-checksum",
                 "not-used-program-info-integrity-checksum",
@@ -2220,6 +2517,7 @@ mod test {
             .map(|(host, port)| (host.to_string(), port.parse().unwrap_or(8085)))
             .unwrap_or_else(|| ("127.0.0.1".to_string(), 8085));
 
+        let received = Arc::new(std::sync::Mutex::new(vec![]));
         let automaton = PipelineAutomaton::new(
             CommonConfig {
                 platform_version: "v0".to_string(),
@@ -2248,6 +2546,7 @@ mod test {
             client,
             MockRunner {
                 deployment_location,
+                received: received.clone(),
             },
             Duration::from_secs(1),
             follow_request_receiver,
@@ -2258,6 +2557,7 @@ mod test {
             db: db.clone(),
             automaton,
             _follow_request_sender,
+            received,
         }
     }
 
@@ -2444,6 +2744,213 @@ mod test {
         test.tick().await;
         assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
         assert_eq!(test.runtime_status().await, None);
+    }
+
+    /// `stop()` and `clear()` receive the stored deployment config, which is kept after stop and
+    /// after storage is cleared, and a restart builds the same one again.
+    #[tokio::test]
+    async fn runner_receives_the_stored_deployment_config() {
+        let (mut server, _temp, mut test) = setup_complete().await;
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(
+            &mut server,
+            vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))],
+        )
+        .await;
+        assert_eq!(test.pipeline().await.deployment_config, None);
+
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        let deployment_config = test.pipeline().await.deployment_config.unwrap();
+        assert_ne!(deployment_config, test.pipeline().await.runtime_config);
+
+        test.desire_stopped().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::InUse)
+            .await;
+        assert_eq!(
+            test.pipeline().await.deployment_config.as_ref(),
+            Some(&deployment_config)
+        );
+
+        test.clear_storage().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::Cleared)
+            .await;
+        assert_eq!(
+            test.pipeline().await.deployment_config.as_ref(),
+            Some(&deployment_config)
+        );
+
+        let received = test.received.lock().unwrap().clone();
+        let names: Vec<_> = received.iter().map(|(name, _)| *name).collect();
+        assert!(
+            names.contains(&"stop") && names.contains(&"clear"),
+            "{names:?}"
+        );
+        for (name, config) in &received {
+            assert_eq!(config, &deployment_config, "{name}");
+        }
+
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        assert_eq!(
+            test.pipeline().await.deployment_config,
+            Some(deployment_config)
+        );
+    }
+
+    /// A resize stored in the deployment config is kept by a restart and reset once storage is
+    /// cleared.
+    #[tokio::test]
+    async fn restart_keeps_a_resize_until_storage_is_cleared() {
+        let (mut server, _temp, mut test) = setup_complete().await;
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(
+            &mut server,
+            vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))],
+        )
+        .await;
+        let cpu_cores_min = |test_pipeline: &ExtendedPipelineDescr| {
+            test_pipeline.deployment_config.as_ref().unwrap()["resources"]["cpu_cores_min"].clone()
+        };
+
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        let initial = cpu_cores_min(&test.pipeline().await);
+        let mut resized = test.pipeline().await.deployment_config.unwrap();
+        resized["resources"]["cpu_cores_min"] = json!(0.25);
+        test.db
+            .lock()
+            .await
+            .pool
+            .get()
+            .await
+            .unwrap()
+            .execute(
+                "UPDATE pipeline SET deployment_config = $1 WHERE id = $2",
+                &[&resized.to_string(), &test.automaton.pipeline_id.0],
+            )
+            .await
+            .unwrap();
+
+        test.desire_stopped().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::InUse)
+            .await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        assert_eq!(cpu_cores_min(&test.pipeline().await), json!(0.25));
+
+        test.desire_stopped().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::InUse)
+            .await;
+        test.clear_storage().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::Cleared)
+            .await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        assert_eq!(cpu_cores_min(&test.pipeline().await), initial);
+    }
+
+    /// Without a stored deployment config, `stop()` and `clear()` receive the runtime config
+    /// instead of blocking the pipeline in `Stopping` or `Clearing`.
+    #[tokio::test]
+    async fn stop_and_clear_fall_back_to_the_runtime_config() {
+        let (mut server, _temp, mut test) = setup_complete().await;
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(
+            &mut server,
+            vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))],
+        )
+        .await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        test.db
+            .lock()
+            .await
+            .pool
+            .get()
+            .await
+            .unwrap()
+            .execute(
+                "UPDATE pipeline SET deployment_config = NULL WHERE id = $1",
+                &[&test.automaton.pipeline_id.0],
+            )
+            .await
+            .unwrap();
+
+        test.desire_stopped().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::InUse)
+            .await;
+        test.clear_storage().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::Cleared)
+            .await;
+
+        let runtime_config = test.pipeline().await.runtime_config;
+        let received = test.received.lock().unwrap().clone();
+        assert!(
+            received.contains(&("stop", runtime_config.clone())),
+            "{received:?}"
+        );
+        assert!(
+            received.contains(&("clear", runtime_config)),
+            "{received:?}"
+        );
+    }
+
+    /// A stored deployment config that the current version rejects does not block stopping.
+    #[tokio::test]
+    async fn invalid_stored_deployment_config_does_not_block_stopping() {
+        let (mut server, _temp, mut test) = setup_complete().await;
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(
+            &mut server,
+            vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))],
+        )
+        .await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        test.desire_stopped().await;
+        test.tick_until(ResourcesStatus::Stopping, StorageStatus::InUse)
+            .await;
+        test.reserve_env_in("deployment_config").await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::InUse)
+            .await;
+    }
+
+    /// A stored deployment config that the current version rejects does not hide why a start
+    /// failed.
+    #[tokio::test]
+    async fn invalid_stored_deployment_config_does_not_hide_start_error() {
+        let (mut server, _temp, mut test) = setup_complete().await;
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(
+            &mut server,
+            vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))],
+        )
+        .await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        test.desire_stopped().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::InUse)
+            .await;
+        test.reserve_env_in("deployment_config").await;
+        test.reserve_env_in("runtime_config").await;
+
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick().await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        let error = test
+            .deployment_error()
+            .await
+            .expect("the start error is recorded");
+        assert!(error.message.contains("RUST_LOG"), "{}", error.message);
     }
 
     #[tokio::test]

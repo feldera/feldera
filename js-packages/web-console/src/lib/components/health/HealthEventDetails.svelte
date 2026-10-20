@@ -76,7 +76,7 @@
       {eventParts.title}
     </span>
     <button
-      class="fd fd-x -m-1 ml-auto btn-icon text-[24px]"
+      class="fd fd-x -m-1 ml-auto btn-icon text-[20px]"
       onclick={onClose}
       aria-label="Confirm dangerous action"
     ></button>

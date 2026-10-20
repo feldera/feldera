@@ -38,6 +38,13 @@ interval expressed in the interval's unit.  For example, `CAST(INTERVAL
 INTEGER)` returns 10.  Long intervals use years or months as the unit;
 short intervals use days, hours, minutes, or seconds.
 
+Casts of strings to numeric types, `BOOLEAN`, `DATE`, `TIME`,
+`TIMESTAMP`, and `TIMESTAMP WITH TIME ZONE` first remove the
+leading and trailing characters with code points up to U+0020: the
+space, the tab, the newline, and the other ASCII control characters.
+For example, `CAST(' 1.5 ' AS DECIMAL(10, 2))` returns 1.5.  Other
+Unicode spaces, such as U+00A0, are not removed.
+
 Casts of strings to numeric types produce a runtime error when the
 string cannot be interpreted as a number.  Use `SAFE_CAST` if runtime
 errors are undesired.

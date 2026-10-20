@@ -1,9 +1,12 @@
 # TODO: these tests should be part of runtime tests
 
+import io
 import json
 import time
 from http import HTTPStatus
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
+
+import fastavro
 
 from .helper import (
     http_request,
@@ -849,4 +852,357 @@ def test_upsert(pipeline_name):
                 "int2": None,
             }
         },
+    ]
+
+
+@gen_pipeline_name
+def test_upsert_with_lazy_upsert_on(pipeline_name):
+    """
+    In a program that turns FELDERA_LAZY_UPSERT on, for a table with a primary
+    key, which then does not accept partial updates:
+    - Insert several rows with composite PK.
+    - Overwrite rows by inserting whole records, one of them unchanged.
+    - Delete an existing key and a non-existing one.
+    - Send an update record, which the table rejects, keeping its contents.
+    """
+    sql = (
+        "SET FELDERA_LAZY_UPSERT = ON;"
+        "CREATE TABLE t1("
+        "id1 bigint not null,"
+        "id2 bigint not null,"
+        "str1 varchar not null,"
+        "str2 varchar,"
+        "primary key(id1,id2));"
+    )
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    stream = _change_stream_start(pipeline_name, "T1", True)
+    reader = JsonLineReader(stream)
+
+    _ingress_and_wait_token(
+        pipeline_name,
+        "T1",
+        '[{"insert":{"id1":1,"id2":1,"str1":"1"}},'
+        '{"insert":{"id1":2,"id2":1,"str1":"1"}},'
+        '{"insert":{"id1":3,"id2":1,"str1":"1"}}]',
+        format="json",
+        update_format="insert_delete",
+        array=True,
+    )
+    evs = reader.read_events(3)
+    assert evs == [
+        {"insert": {"id1": 1, "id2": 1, "str1": "1", "str2": None}},
+        {"insert": {"id1": 2, "id2": 1, "str1": "1", "str2": None}},
+        {"insert": {"id1": 3, "id2": 1, "str1": "1", "str2": None}},
+    ]
+
+    # Rewriting id1=2 with the row it holds changes nothing, and neither does
+    # deleting the missing id1=4.
+    _ingress_and_wait_token(
+        pipeline_name,
+        "T1",
+        '[{"insert":{"id1":1,"id2":1,"str1":"2","str2":"foo"}},'
+        '{"insert":{"id1":2,"id2":1,"str1":"1"}},'
+        '{"delete":{"id1":3,"id2":1}},'
+        '{"delete":{"id1":4,"id2":1}}]',
+        format="json",
+        update_format="insert_delete",
+        array=True,
+    )
+    evs = reader.read_events(3)
+    assert evs == [
+        {"delete": {"id1": 1, "id2": 1, "str1": "1", "str2": None}},
+        {"delete": {"id1": 3, "id2": 1, "str1": "1", "str2": None}},
+        {"insert": {"id1": 1, "id2": 1, "str1": "2", "str2": "foo"}},
+    ]
+
+    r = _ingress(
+        pipeline_name,
+        "T1",
+        '{"update":{"id1":1,"id2":1,"str1":"3"}}',
+        format="json",
+        update_format="insert_delete",
+    )
+    assert r.status_code == HTTPStatus.BAD_REQUEST, r.text
+    assert "FELDERA_LAZY_UPSERT" in r.text, r.text
+    got = adhoc_query_json(pipeline_name, "select * from t1 order by id1, id2")
+    assert got == [
+        {"id1": 1, "id2": 1, "str1": "2", "str2": "foo"},
+        {"id1": 2, "id2": 1, "str1": "1", "str2": None},
+    ]
+
+
+@gen_pipeline_name
+def test_upsert_with_lazy_upsert_off(pipeline_name):
+    """
+    In a program that sets FELDERA_LAZY_UPSERT to OFF, a table with a primary
+    key accepts partial updates:
+    - Insert two rows with composite PK.
+    - Update one column of each row, which keeps the other columns.
+    """
+    sql = (
+        "SET FELDERA_LAZY_UPSERT = OFF;"
+        "CREATE TABLE t1("
+        "id1 bigint not null,"
+        "id2 bigint not null,"
+        "str1 varchar not null,"
+        "str2 varchar,"
+        "primary key(id1,id2));"
+    )
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    stream = _change_stream_start(pipeline_name, "T1", True)
+    reader = JsonLineReader(stream)
+
+    _ingress_and_wait_token(
+        pipeline_name,
+        "T1",
+        '[{"insert":{"id1":1,"id2":1,"str1":"1"}},'
+        '{"insert":{"id1":2,"id2":1,"str1":"1","str2":"bar"}}]',
+        format="json",
+        update_format="insert_delete",
+        array=True,
+    )
+    evs = reader.read_events(2)
+    assert evs == [
+        {"insert": {"id1": 1, "id2": 1, "str1": "1", "str2": None}},
+        {"insert": {"id1": 2, "id2": 1, "str1": "1", "str2": "bar"}},
+    ]
+
+    _ingress_and_wait_token(
+        pipeline_name,
+        "T1",
+        '[{"update":{"id1":1,"id2":1,"str2":"foo"}},'
+        '{"update":{"id1":2,"id2":1,"str1":"2"}}]',
+        format="json",
+        update_format="insert_delete",
+        array=True,
+    )
+    evs = reader.read_events(4)
+    assert evs == [
+        {"delete": {"id1": 1, "id2": 1, "str1": "1", "str2": None}},
+        {"delete": {"id1": 2, "id2": 1, "str1": "1", "str2": "bar"}},
+        {"insert": {"id1": 1, "id2": 1, "str1": "1", "str2": "foo"}},
+        {"insert": {"id1": 2, "id2": 1, "str1": "2", "str2": "bar"}},
+    ]
+
+
+@gen_pipeline_name
+def test_avro_ingress(pipeline_name):
+    """
+    Avro over `/ingress`: the schema travels in the query string, and each
+    request body is one bare Avro datum (issue 7397).
+    """
+    sql = (
+        "CREATE TABLE t1(c1 integer, c2 bool, c3 varchar) "
+        "WITH ('materialized' = 'true');"
+    )
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    schema = {
+        "type": "record",
+        "name": "t1",
+        "fields": [
+            {"name": "c1", "type": ["null", "int"]},
+            {"name": "c2", "type": ["null", "boolean"]},
+            {"name": "c3", "type": ["null", "string"]},
+        ],
+    }
+    query = urlencode(
+        {
+            "format": "avro",
+            "update_format": "raw",
+            "skip_schema_id": "true",
+            "schema": json.dumps(schema),
+        }
+    )
+    path = api_url(f"/pipelines/{pipeline_name}/ingress/t1?{query}")
+    records = [
+        {"c1": 10, "c2": True, "c3": "foo"},
+        {"c1": 20, "c2": None, "c3": None},
+    ]
+    for record in records:
+        buffer = io.BytesIO()
+        fastavro.schemaless_writer(buffer, schema, record)
+        r = http_request(
+            "POST",
+            path,
+            data=buffer.getvalue(),
+            headers={"Content-Type": "application/octet-stream"},
+        )
+        assert r.status_code == HTTPStatus.OK, r.text
+        _wait_token(pipeline_name, r.json()["token"])
+
+    got = adhoc_query_json(pipeline_name, "select * from t1 order by c1")
+    assert got == records
+
+
+@gen_pipeline_name
+def test_avro_ingress_cdc_field(pipeline_name):
+    """
+    Raw Avro with `cdc_field`: the `op` field of each record selects insert,
+    upsert or delete.
+    """
+    sql = (
+        "CREATE TABLE t_pk(id int NOT NULL PRIMARY KEY, s varchar) "
+        "WITH ('materialized' = 'true');"
+        "CREATE TABLE t_no_pk(id int NOT NULL, s varchar) "
+        "WITH ('materialized' = 'true');"
+    )
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    schema = {
+        "type": "record",
+        "name": "row",
+        "fields": [
+            {"name": "id", "type": "int"},
+            {"name": "s", "type": ["null", "string"]},
+            {"name": "op", "type": "string"},
+        ],
+    }
+
+    def ingress(table: str, records: list[dict]):
+        query = urlencode(
+            {
+                "format": "avro",
+                "update_format": "raw",
+                "skip_schema_id": "true",
+                "schema": json.dumps(schema),
+                "cdc_field": "op",
+            }
+        )
+        responses = []
+        for record in records:
+            buffer = io.BytesIO()
+            fastavro.schemaless_writer(buffer, schema, record)
+            r = http_request(
+                "POST",
+                api_url(f"/pipelines/{pipeline_name}/ingress/{table}?{query}"),
+                data=buffer.getvalue(),
+                headers={"Content-Type": "application/octet-stream"},
+            )
+            if r.status_code == HTTPStatus.OK:
+                _wait_token(pipeline_name, r.json()["token"])
+            responses.append(r)
+        return responses
+
+    # With a primary key, U replaces the row and D deletes by key.
+    for r in ingress(
+        "t_pk",
+        [
+            {"id": 1, "s": "a", "op": "I"},
+            {"id": 2, "s": "b", "op": "I"},
+            {"id": 1, "s": "a2", "op": "U"},
+            {"id": 2, "s": "b2", "op": "D"},
+        ],
+    ):
+        assert r.status_code == HTTPStatus.OK, r.text
+    got = adhoc_query_json(pipeline_name, "select id, s from t_pk order by id")
+    assert got == [{"id": 1, "s": "a2"}]
+
+    # Without a primary key, U adds a row and D deletes the matching row.
+    for r in ingress(
+        "t_no_pk",
+        [
+            {"id": 1, "s": "a", "op": "I"},
+            {"id": 1, "s": "a2", "op": "U"},
+            {"id": 1, "s": "a", "op": "D"},
+        ],
+    ):
+        assert r.status_code == HTTPStatus.OK, r.text
+    got = adhoc_query_json(pipeline_name, "select id, s from t_no_pk order by id")
+    assert got == [{"id": 1, "s": "a2"}]
+
+    # An unknown operation is a parse error.
+    [r] = ingress("t_pk", [{"id": 3, "s": "c", "op": "X"}])
+    assert r.status_code == HTTPStatus.BAD_REQUEST, r.text
+    assert "invalid value 'X' in the 'op' field" in r.text
+
+    # The table without a primary key logs a warning.
+    deadline = time.monotonic() + 30
+    for line in TEST_CLIENT.get_pipeline_logs(pipeline_name):
+        if "table 't_no_pk' has no primary key" in line:
+            break
+        assert time.monotonic() < deadline, "no warning about 't_no_pk' in the logs"
+    else:
+        raise AssertionError("log stream ended without the 't_no_pk' warning")
+
+
+@gen_pipeline_name
+def test_connector_metadata_ingress(pipeline_name):
+    """
+    The `connector_metadata` query parameter of `/ingress` reaches every
+    record of the request through `CONNECTOR_METADATA()`.
+    """
+    sql = (
+        "CREATE TABLE t1("
+        "  c1 integer,"
+        "  kafka_topic varchar DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR),"
+        "  kafka_offset bigint DEFAULT CAST(CONNECTOR_METADATA()['kafka_offset'] AS BIGINT)"
+        ") WITH ('materialized' = 'true');"
+    )
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    def ingress(connector_metadata: dict | None, body: str):
+        params = {"format": "json", "update_format": "raw"}
+        if connector_metadata is not None:
+            params["connector_metadata"] = json.dumps(connector_metadata)
+        path = api_url(f"/pipelines/{pipeline_name}/ingress/t1?{urlencode(params)}")
+        return http_request(
+            "POST",
+            path,
+            data=body.encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+
+    # Every record of a request takes the metadata of that request.
+    r = ingress({"kafka_topic": "events", "kafka_offset": 42}, '{"c1": 1}\n{"c1": 2}')
+    assert r.status_code == HTTPStatus.OK, r.text
+    _wait_token(pipeline_name, r.json()["token"])
+    r = ingress({"kafka_topic": "audit", "kafka_offset": 7}, '{"c1": 3}')
+    assert r.status_code == HTTPStatus.OK, r.text
+    _wait_token(pipeline_name, r.json()["token"])
+
+    # Without the parameter the metadata columns take their NULL default.
+    r = ingress(None, '{"c1": 4}')
+    assert r.status_code == HTTPStatus.OK, r.text
+    _wait_token(pipeline_name, r.json()["token"])
+
+    # A value that is not a JSON object is rejected before any record is ingested.
+    for invalid in ("[1, 2]", "not json"):
+        path = api_url(
+            f"/pipelines/{pipeline_name}/ingress/t1?"
+            + urlencode(
+                {
+                    "format": "json",
+                    "update_format": "raw",
+                    "connector_metadata": invalid,
+                }
+            )
+        )
+        r = http_request(
+            "POST",
+            path,
+            data=b'{"c1": 5}',
+            headers={"Content-Type": "application/json"},
+        )
+        assert r.status_code == HTTPStatus.BAD_REQUEST, r.text
+        assert "connector_metadata" in r.text
+
+    got = adhoc_query_json(pipeline_name, "select * from t1 order by c1")
+    assert got == [
+        {"c1": 1, "kafka_topic": "events", "kafka_offset": 42},
+        {"c1": 2, "kafka_topic": "events", "kafka_offset": 42},
+        {"c1": 3, "kafka_topic": "audit", "kafka_offset": 7},
+        {"c1": 4, "kafka_topic": None, "kafka_offset": None},
     ]

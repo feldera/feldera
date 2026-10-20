@@ -9,16 +9,19 @@ use std::{
     time::Instant,
 };
 
+use feldera_buffer_cache::ThreadType;
 use feldera_samply::Span;
+use feldera_storage::fbuf::FBuf;
 use itertools::{Itertools as _, zip_eq};
 use rkyv::AlignedVec;
 use size_of::{HumanBytes, SizeOf, TotalSize};
+use tokio::sync::Notify;
 
 use crate::{
     Circuit, NumEntries, Runtime, Scope, Stream,
     circuit::{
         GlobalNodeId, NodeId, OwnershipPreference, StepSize, WorkerLocation, WorkerLocations,
-        circuit_builder::StreamId,
+        circuit_builder::{MetadataExchange, StreamId},
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT,
             MetaItem, OUTPUT_BATCHES_STATS, OperatorLocation, OperatorMeta, SHARED_MEMORY_BYTES,
@@ -29,7 +32,7 @@ use crate::{
     circuit_cache_key,
     operator::{
         communication::{
-            ExchangeClients, ExchangeDelivery, ExchangeDirectory, ExchangeId, MessageType,
+            ExchangeClients, ExchangeDelivery, ExchangeDirectory, ExchangeId, Mailbox, MessageType,
             pop_flushed,
         },
         dynamic::{
@@ -37,7 +40,12 @@ use crate::{
             shard_batch,
         },
     },
-    trace::{Batch, BatchReader as _, Spine, Trace, TraceRole, deserialize_indexed_wset},
+    profile::{ParkReason, ParkingFor},
+    trace::{
+        Batch, BatchLayout, BatchLocation, BatchReader as _, Spine, Trace, TraceRole,
+        deserialize_indexed_wset, ord::fallback::pick_insert_destination, serialize_indexed_wset,
+        spine_async::scope_tokio_merger_locals,
+    },
 };
 
 circuit_cache_key!(local StreamingExchangeCacheId<B: Batch>(ExchangeId => Arc<ShardedAccumulator<B>>));
@@ -64,11 +72,53 @@ where
         self.dyn_shard_workers_accumulate(factories, 0..Runtime::num_workers())
     }
 
+    /// Like [`dyn_shard_accumulate`](Self::dyn_shard_accumulate), with
+    /// `batch_layout` configured for the accumulator's spine.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - factories for the batches the spines hold.
+    /// * `batch_layout` - how those spines lay out the batches they write for
+    ///   themselves.
+    ///
+    /// # Returns
+    ///
+    /// The accumulation, whose stream carries this worker's shard of the transaction at
+    /// the end of it.
+    #[track_caller]
+    pub fn dyn_shard_accumulate_with_layout(
+        &self,
+        factories: &B::Factories,
+        batch_layout: BatchLayout,
+    ) -> Accumulation<Stream<C, Option<Spine<B>>>>
+    where
+        B: Batch<Time = ()>,
+    {
+        self.dyn_shard_workers_accumulate_with_layout(
+            factories,
+            0..Runtime::num_workers(),
+            batch_layout,
+        )
+    }
+
     #[track_caller]
     pub fn dyn_shard_workers_accumulate(
         &self,
         factories: &B::Factories,
         workers: Range<usize>,
+    ) -> Accumulation<Stream<C, Option<Spine<B>>>>
+    where
+        B: Batch<Time = ()>,
+    {
+        self.dyn_shard_workers_accumulate_with_layout(factories, workers, BatchLayout::default())
+    }
+
+    #[track_caller]
+    pub fn dyn_shard_workers_accumulate_with_layout(
+        &self,
+        factories: &B::Factories,
+        workers: Range<usize>,
+        batch_layout: BatchLayout,
     ) -> Accumulation<Stream<C, Option<Spine<B>>>>
     where
         B: Batch<Time = ()>,
@@ -79,67 +129,154 @@ where
             && runtime.layout().n_workers() > 1
             && runtime.step_size() == StepSize::Microsteps
         {
-            let remote_waiter_node_id = if runtime.layout().is_multihost() {
-                let clients = ExchangeClients::for_runtime(&runtime);
-                Some(*self.circuit().cache_get_or_insert_with(
-                    ShardedAccumulatorRemoteWaiterId::new(()),
-                    move || {
-                        let waiter = self
-                            .circuit()
-                            .add_source(ShardedAccumulatorRemoteWaiter::new(clients.clone()));
-                        waiter.local_node_id()
-                    },
-                ))
-            } else {
-                None
-            };
-
+            let remote_waiter_node_id = self.sharded_accumulator_remote_waiter(&runtime);
             self.circuit()
                 .cache_get_or_insert_with(
                     ShardedAccumulatorId::new((self.stream_id(), workers.clone())),
                     || {
-                        let exchange_id: ExchangeId = runtime.sequence_next().try_into().unwrap();
-                        let exchange = ShardedAccumulator::<B>::with_runtime(
+                        self.new_sharded_accumulator(
                             &runtime,
-                            workers.clone(),
-                            exchange_id,
                             factories,
-                        );
-                        let enable_count = exchange.enable_count.clone();
-                        let local_waiter =
-                            self.circuit()
-                                .add_source(ShardedAccumulatorLocalWaiter::new(
-                                    Some(Location::caller()),
-                                    exchange.clone(),
-                                ));
-                        let receiver = self
-                            .circuit()
-                            .add_exchange(
-                                ShardedAccumulatorSender::new(
-                                    Some(Location::caller()),
-                                    exchange.clone(),
-                                ),
-                                ShardedAccumulatorReceiver::new(Some(Location::caller()), exchange),
-                                self,
-                            )
-                            .mark_sharded_workers(workers.clone());
-                        self.circuit()
-                            .add_dependency(receiver.local_node_id(), local_waiter.local_node_id());
-                        if let Some(remote_waiter_node_id) = remote_waiter_node_id {
-                            self.circuit()
-                                .add_dependency(receiver.local_node_id(), remote_waiter_node_id);
-                        }
-                        Accumulation {
-                            stream: receiver,
-                            enable_count,
-                        }
+                            workers.clone(),
+                            batch_layout,
+                            remote_waiter_node_id,
+                            Location::caller(),
+                        )
+                        .0
                     },
                 )
                 .clone()
         } else {
             self.dyn_shard_workers(workers, factories)
-                .dyn_accumulate(factories)
+                .dyn_accumulate_with_layout(factories, batch_layout)
         }
+    }
+}
+
+impl<C, B> Stream<C, B>
+where
+    C: Circuit,
+    B: Batch<Time = ()>,
+{
+    /// Returns the node ID of the circuit's [ShardedAccumulatorRemoteWaiter],
+    /// first adding it if necessary, or `None` on a single-host runtime.
+    fn sharded_accumulator_remote_waiter(&self, runtime: &Runtime) -> Option<NodeId> {
+        if !runtime.layout().is_multihost() {
+            return None;
+        }
+        let clients = ExchangeClients::for_runtime(runtime);
+        Some(*self.circuit().cache_get_or_insert_with(
+            ShardedAccumulatorRemoteWaiterId::new(()),
+            move || {
+                let waiter = self
+                    .circuit()
+                    .add_source(ShardedAccumulatorRemoteWaiter::new(clients.clone()));
+                waiter.local_node_id()
+            },
+        ))
+    }
+
+    /// Adds the operators for a new sharded accumulator over `self` to the
+    /// circuit.  Returns the accumulated stream and the [ShardedAccumulator]
+    /// that connects the operators.
+    fn new_sharded_accumulator(
+        &self,
+        runtime: &Runtime,
+        factories: &B::Factories,
+        workers: Range<usize>,
+        batch_layout: BatchLayout,
+        remote_waiter_node_id: Option<NodeId>,
+        location: &'static Location<'static>,
+    ) -> (
+        Accumulation<Stream<C, Option<Spine<B>>>>,
+        Arc<ShardedAccumulator<B>>,
+    ) {
+        let (receiver, exchange) = self.add_sharded_accumulator_receiver(
+            runtime,
+            factories,
+            workers.clone(),
+            batch_layout,
+            remote_waiter_node_id,
+            location,
+        );
+        let sender = self.circuit().add_sink(
+            ShardedAccumulatorSender::new(
+                Some(location),
+                exchange.clone(),
+                // Only the root circuit exchanges metadata.
+                (self.circuit().root_scope() == 0)
+                    .then(|| self.circuit().metadata_exchange().clone()),
+            ),
+            self,
+        );
+        self.circuit()
+            .add_dependency(sender.local_node_id().unwrap(), receiver.local_node_id());
+        let accumulation = Accumulation {
+            stream: receiver.mark_sharded_workers(workers),
+            enable_count: exchange.enable_count.clone(),
+        };
+        (accumulation, exchange)
+    }
+
+    /// Adds a new [ShardedAccumulator], with its receiver and the receiver's
+    /// waiters, but no sender.
+    ///
+    /// Constructs the receiving half of a sharded accumulator circuit, leaving
+    /// the following to the caller:
+    /// - Create a sender - an operator that reads `self` and sends to
+    ///   the accumulator
+    /// - Add a dependency from the sender to the receiver.
+    /// - Mark the receiver's output as sharded, if the sender produces sharded
+    ///   output.
+    ///
+    /// # Arguments
+    ///
+    /// * `runtime` - the runtime to exchange data in.
+    /// * `factories` - factories for the accumulated batches.
+    /// * `workers` - the workers that receive data.
+    /// * `batch_layout` - how the receiving spines lay out the batches that
+    ///   they write.
+    /// * `remote_waiter_node_id` - the circuit's
+    ///   [ShardedAccumulatorRemoteWaiter], on a multihost runtime.
+    /// * `location` - the source location to report for the operators.
+    ///
+    /// # Returns
+    ///
+    /// The receiver's output stream and the [ShardedAccumulator].
+    fn add_sharded_accumulator_receiver(
+        &self,
+        runtime: &Runtime,
+        factories: &B::Factories,
+        workers: Range<usize>,
+        batch_layout: BatchLayout,
+        remote_waiter_node_id: Option<NodeId>,
+        location: &'static Location<'static>,
+    ) -> (Stream<C, Option<Spine<B>>>, Arc<ShardedAccumulator<B>>) {
+        let exchange_id: ExchangeId = runtime.sequence_next().try_into().unwrap();
+        let exchange = ShardedAccumulator::<B>::with_runtime(
+            runtime,
+            workers,
+            exchange_id,
+            factories,
+            batch_layout,
+        );
+        let local_waiter = self
+            .circuit()
+            .add_source(ShardedAccumulatorLocalWaiter::new(
+                Some(location),
+                exchange.clone(),
+            ));
+        let receiver = self.circuit().add_source(ShardedAccumulatorReceiver::new(
+            Some(location),
+            exchange.clone(),
+        ));
+        self.circuit()
+            .add_dependency(receiver.local_node_id(), local_waiter.local_node_id());
+        if let Some(remote_waiter_node_id) = remote_waiter_node_id {
+            self.circuit()
+                .add_dependency(receiver.local_node_id(), remote_waiter_node_id);
+        }
+        (receiver, exchange)
     }
 }
 
@@ -159,6 +296,9 @@ where
 
     factories: B::Factories,
 
+    /// How the receiving spines lay out the batches they write for themselves.
+    batch_layout: BatchLayout,
+
     /// Range of worker IDs on the local host.
     local_workers: Range<usize>,
 
@@ -168,7 +308,16 @@ where
     /// One [Rxq] for each of `local_workers`.
     rxq: Vec<Mutex<Rxq<B>>>,
 
+    /// One [Notify] for each of `local_workers`, signaled when its [Rxq]
+    /// records an arrival marker from any sender.
+    arrivals: Vec<Notify>,
+
     enable_count: EnableCount,
+
+    /// The number of messages that this accumulator has received from remote
+    /// hosts.
+    #[cfg(test)]
+    remote_messages: std::sync::atomic::AtomicUsize,
 }
 
 impl<B> ShardedAccumulator<B>
@@ -180,6 +329,7 @@ where
         workers: Range<usize>,
         exchange_id: ExchangeId,
         factories: &B::Factories,
+        batch_layout: BatchLayout,
     ) -> Arc<Self> {
         // It's tempting to move the following calls to create the
         // `ExchangeDirectory` and `ExchangeClients` into
@@ -198,6 +348,7 @@ where
                     exchange_id,
                     &directory,
                     factories,
+                    batch_layout,
                 )
             })
             .value()
@@ -213,6 +364,7 @@ where
         exchange_id: ExchangeId,
         directory: &ExchangeDirectory,
         factories: &B::Factories,
+        batch_layout: BatchLayout,
     ) -> Arc<Self> {
         let layout = runtime.layout();
         let npeers = layout.n_workers();
@@ -224,15 +376,26 @@ where
             workers,
             local_workers: layout.local_workers(),
             factories: factories.clone(),
+            batch_layout,
             clients,
             rxq: layout
                 .local_workers()
                 .map(|receiver| {
-                    Mutex::new(Rxq::new(runtime, receiver, factories, npeers, name.get()))
+                    Mutex::new(Rxq::new(
+                        runtime,
+                        receiver,
+                        factories,
+                        npeers,
+                        name.get(),
+                        batch_layout,
+                    ))
                 })
                 .collect(),
+            arrivals: layout.local_workers().map(|_| Notify::new()).collect(),
             name,
             enable_count: EnableCount::default(),
+            #[cfg(test)]
+            remote_messages: Default::default(),
         });
 
         directory.insert(exchange_id, exchange.clone());
@@ -247,9 +410,9 @@ where
             .unwrap()
     }
 
-    /// Delivers `batch`, sent by local or remote `sender`, to local worker
-    /// `receiver`.  If `flush` is true, this is the final batch in the
-    /// transaction.  Returns true if the receiving spine has too many batches.
+    /// Delivers `batch`, sent by local `sender`, to local worker `receiver`.
+    /// If `flush` is true, this is the final batch in the transaction.
+    /// Returns true if the receiving spine has too many batches.
     fn deliver(
         &self,
         factories: &B::Factories,
@@ -259,31 +422,155 @@ where
         flush: bool,
     ) -> bool {
         // Spill the batch to disk, if we should, without taking the rxq lock.
-        let batch =
-            Spine::maybe_flush_batch(Some(&self.runtime), batch, factories, || (None, None));
+        let batch = Spine::maybe_flush_batch(batch, factories, self.batch_layout, || (None, None));
+        self.enqueue(sender, receiver, batch, flush)
+    }
+
+    /// Delivers a batch from a remote worker to a local worker.
+    ///
+    /// The exchange calls this outside the runtime, so a batch that must spill
+    /// is spilled on the merger runtime, as the receiving worker's merges are.
+    ///
+    /// # Arguments
+    ///
+    /// * `sender` - the remote worker that sent the batch.
+    /// * `receiver` - the local worker that receives the batch.
+    /// * `batch` - the batch.
+    /// * `flush` - true if this is the sender's final batch in the transaction.
+    async fn deliver_received(
+        self: &Arc<Self>,
+        sender: usize,
+        receiver: usize,
+        batch: B,
+        flush: bool,
+    ) {
+        let batch = if pick_insert_destination(Some(&self.runtime), &batch)
+            == BatchLocation::Storage
+            && let Some(merger_runtime) = self.runtime.tokio_merger_runtime()
+        {
+            let offset = receiver - self.local_workers.start;
+            let buffer_cache = self
+                .runtime
+                .get_buffer_cache(offset, ThreadType::Background);
+            let slab_allocator = self
+                .runtime
+                .get_fbuf_slab_allocator(offset, ThreadType::Background);
+            let this = self.clone();
+            let spill = merger_runtime.spawn(scope_tokio_merger_locals(
+                receiver,
+                buffer_cache,
+                slab_allocator,
+                async move {
+                    Spine::maybe_flush_batch(batch, &this.factories, this.batch_layout, || {
+                        (None, None)
+                    })
+                },
+            ));
+            match spill.await {
+                Ok(batch) => batch,
+                // The merger runtime shut down, or the spill panicked and the
+                // panic hook reported it to the runtime.
+                Err(_) => return,
+            }
+        } else {
+            Arc::new(batch)
+        };
+        self.enqueue(sender, receiver, batch, flush);
+    }
+
+    /// Queues a batch for a local worker without spilling it.
+    ///
+    /// # Arguments
+    ///
+    /// * `sender` - the worker that sent the batch.
+    /// * `receiver` - the local worker that receives the batch.
+    /// * `batch` - the batch.
+    /// * `flush` - true if this is the sender's final batch in the transaction.
+    ///
+    /// # Returns
+    ///
+    /// True if the receiving spine has too many batches.
+    fn enqueue(&self, sender: usize, receiver: usize, batch: Arc<B>, flush: bool) -> bool {
         if flush || !batch.is_empty() {
-            self.rxq(receiver).deliver(factories, sender, batch, flush)
+            self.rxq(receiver)
+                .deliver(&self.factories, sender, batch, flush)
         } else {
             false
         }
     }
 
-    async fn send(self: &Arc<Self>, name: Arc<String>, batch: B, flush: bool) {
-        let sender = Runtime::worker_index();
+    /// Delivers an arrival marker from local or remote `sender` to local
+    /// worker `receiver` (see [Self::wait_for_arrival]).
+    fn deliver_marker(&self, sender: usize, receiver: usize) {
+        self.rxq(receiver).record_marker(sender);
+        self.arrivals[receiver - self.local_workers.start].notify_waiters();
+    }
 
-        let runtime = Runtime::runtime().unwrap();
-        let layout = runtime.layout();
-        let mut builders = Vec::with_capacity(layout.n_workers());
-        let mut batches = Vec::with_capacity(layout.n_workers());
+    /// Shards `batch` by key and sends it to the receivers.
+    async fn send(self: &Arc<Self>, name: Arc<String>, batch: B, flush: bool) {
+        let n_workers = Runtime::num_workers();
+        let mut builders = Vec::with_capacity(n_workers);
+        let mut mailboxes = Vec::with_capacity(n_workers);
         shard_batch(
             batch,
             &self.workers,
             &mut builders,
-            &mut batches,
+            &mut mailboxes,
             &self.factories,
         );
+        self.send_mailboxes(name, mailboxes, flush).await;
+    }
+
+    /// Sends `batches`, which the caller has partitioned, to the receivers.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - the sending operator's name, for profiles.
+    /// * `batches` - one batch for each worker in the runtime, in order of
+    ///   worker index.  The batch for a worker that is not a destination of
+    ///   this accumulator must be empty.
+    /// * `flush` - whether these are the sender's last batches in the
+    ///   transaction.
+    #[cfg_attr(not(test), expect(dead_code, reason = "awaiting first caller"))]
+    async fn send_partitioned(self: &Arc<Self>, name: Arc<String>, batches: Vec<B>, flush: bool) {
+        let mut serializer_inner = None;
+        let mailboxes = zip_eq(batches, WorkerLocations::new())
+            .enumerate()
+            .map(|(worker, (batch, location))| {
+                debug_assert!(
+                    self.workers.contains(&worker) || batch.is_empty(),
+                    "batch for worker {worker}, which does not receive from this accumulator"
+                );
+                match location {
+                    WorkerLocation::Local => Mailbox::Plain(batch),
+                    WorkerLocation::Remote => Mailbox::Tx(serialize_indexed_wset(
+                        &batch,
+                        serializer_inner.get_or_insert_default(),
+                    )),
+                }
+            })
+            .collect();
+        self.send_mailboxes(name, mailboxes, flush).await;
+    }
+
+    /// Sends `mailboxes`, one for each worker in the runtime in order of
+    /// worker index.
+    ///
+    /// Local workers' mailboxes hold batches, which this delivers directly.
+    /// Remote workers' mailboxes hold serialized batches, which this sends to
+    /// their hosts, each followed by a flush byte.
+    async fn send_mailboxes(
+        self: &Arc<Self>,
+        name: Arc<String>,
+        mailboxes: Vec<Mailbox<B>>,
+        flush: bool,
+    ) {
+        let sender = Runtime::worker_index();
+
+        let runtime = Runtime::runtime().unwrap();
+        let layout = runtime.layout();
         let worker_locations = WorkerLocations::for_layout(layout);
-        let mut data = batches.into_iter();
+        let mut data = mailboxes.into_iter();
         let mut remote_waiters = Vec::new();
         let mut serialized_bytes = 0;
         for receivers in layout.all_hosts() {
@@ -329,7 +616,7 @@ where
                             .clients
                             .connect(receivers.start, MessageType::Streaming)
                             .await
-                            .send(name.clone(), this.exchange_id, sender, items)
+                            .send(name.clone(), this.exchange_id, sender, 0, items)
                         {
                             remote_waiters.push(waiter);
                         }
@@ -357,6 +644,82 @@ where
     fn receive(&self) -> Option<Spine<B>> {
         let receiver = Runtime::worker_index();
         self.rxq(receiver).receive()
+    }
+
+    /// Waits until this worker's receive queue holds all of the data that each
+    /// worker sent to it before that worker called this method.
+    ///
+    /// Every worker must call this in the same step, from the same operator.
+    /// The call sends an arrival marker from this worker to every receiver,
+    /// after the data that this worker has sent, and then waits for the
+    /// markers from every worker.
+    ///
+    /// This does not wait for the receive queue to deliver the data to the
+    /// circuit, which happens only at the end of the transaction.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - the calling operator's name, for profiles.
+    #[cfg_attr(not(test), expect(dead_code, reason = "awaiting first caller"))]
+    async fn wait_for_arrival(&self, name: Arc<String>) {
+        let worker = Runtime::worker_index();
+        let runtime = Runtime::runtime().unwrap();
+        let layout = runtime.layout();
+        let worker_locations = WorkerLocations::for_layout(layout);
+        for receivers in layout.all_hosts() {
+            match worker_locations[receivers.start] {
+                WorkerLocation::Local => {
+                    for receiver in receivers {
+                        self.deliver_marker(worker, receiver);
+                    }
+                }
+                WorkerLocation::Remote => {
+                    // A marker is an empty message, without the flush byte
+                    // that follows every batch.
+                    let markers = receivers.clone().map(|_| FBuf::new()).collect();
+                    if let Some(drained) = self
+                        .clients
+                        .connect(receivers.start, MessageType::Streaming)
+                        .await
+                        .send(name.clone(), self.exchange_id, worker, 0, markers)
+                    {
+                        drained.await;
+                    }
+                }
+            }
+        }
+
+        let arrivals = &self.arrivals[worker - self.local_workers.start];
+        loop {
+            // Create the future before checking, so that a notification
+            // between the check and the wait can't get lost.
+            let arrival = arrivals.notified();
+            if self.rxq(worker).has_arrived() {
+                return;
+            }
+            let _parked = ParkingFor::new(ParkReason::Peers);
+            arrival.await;
+        }
+    }
+
+    /// Takes the batches that this worker has received in the current
+    /// transaction, leaving its receive queue empty, so that the caller can
+    /// redistribute them.
+    ///
+    /// Call this after [Self::wait_for_arrival], in a step in which no sender
+    /// has flushed the transaction.  The result then holds every batch that
+    /// any worker sent to this worker in the transaction before its call to
+    /// `wait_for_arrival`.  It can also hold batches that workers sent after
+    /// their calls in the same step, but none from later steps, because no
+    /// sender starts the next step before every worker finishes this one.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a sender has already flushed the current transaction.
+    #[cfg_attr(not(test), expect(dead_code, reason = "awaiting first caller"))]
+    fn take_received(&self) -> Vec<Arc<B>> {
+        let receiver = Runtime::worker_index();
+        self.rxq(receiver).take(&self.factories).get_batches()
     }
 
     fn set_name(&self, global_id: &GlobalNodeId) {
@@ -418,16 +781,25 @@ where
         self.name.get()
     }
 
-    fn received<'a>(
-        &'a self,
+    fn received(
+        self: Arc<Self>,
         sender: usize,
+        _round: u64,
         data: Vec<AlignedVec>,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         Box::pin(async move {
+            #[cfg(test)]
+            self.remote_messages
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             for (receiver, mut data) in zip_eq(self.local_workers.clone(), data) {
-                let flush = pop_flushed(&mut data);
-                let batch = deserialize_indexed_wset(&self.factories, &data);
-                self.deliver(&self.factories, sender, receiver, batch, flush);
+                if data.is_empty() {
+                    // An arrival marker (see `wait_for_arrival`).
+                    self.deliver_marker(sender, receiver);
+                } else {
+                    let flush = pop_flushed(&mut data);
+                    let batch = deserialize_indexed_wset(&self.factories, &data);
+                    self.deliver_received(sender, receiver, batch, flush).await;
+                }
             }
         })
     }
@@ -461,12 +833,18 @@ where
     /// For each sender, the number of flushes it has sent.
     n_flushes: Vec<usize>,
 
+    /// For each sender, the number of arrival markers it has delivered.
+    n_markers: Vec<usize>,
+
     /// The number of entries that have been popped off `spines` and received by
     /// the circuit.
     n_received: usize,
 
     /// Name for use in profiles.
     name: Arc<String>,
+
+    /// How the spines lay out the batches they write for themselves.
+    batch_layout: BatchLayout,
 }
 
 /// A spine that a [ShardedAccumulatorReceiver] is building from batches
@@ -495,6 +873,7 @@ where
         worker_index: usize,
         factories: &B::Factories,
         name: Arc<String>,
+        batch_layout: BatchLayout,
     ) -> Self {
         Self {
             n_unflushed: npeers,
@@ -504,7 +883,8 @@ where
                 factories,
                 name,
                 TraceRole::Accumulator,
-            ),
+            )
+            .with_layout(batch_layout),
         }
     }
 }
@@ -519,6 +899,7 @@ where
         factories: &B::Factories,
         npeers: usize,
         name: Arc<String>,
+        batch_layout: BatchLayout,
     ) -> Self {
         Self {
             runtime: runtime.clone(),
@@ -530,9 +911,12 @@ where
                 worker_index,
                 factories,
                 name.clone(),
+                batch_layout,
             )]),
             name,
+            batch_layout,
             n_flushes: repeat_n(0, npeers).collect(),
+            n_markers: repeat_n(0, npeers).collect(),
             n_received: 0,
         }
     }
@@ -559,11 +943,24 @@ where
                     self.worker_index,
                     factories,
                     self.name.clone(),
+                    self.batch_layout,
                 ));
             }
         }
 
         should_block
+    }
+
+    /// Records an arrival marker from `sender`.
+    fn record_marker(&mut self, sender: usize) {
+        self.n_markers[sender] += 1;
+    }
+
+    /// Returns true if every sender has delivered as many arrival markers as
+    /// this worker.
+    fn has_arrived(&self) -> bool {
+        let n = self.n_markers[self.worker_index];
+        self.n_markers.iter().all(|&n_markers| n_markers >= n)
     }
 
     fn receive(&mut self) -> Option<Spine<B>> {
@@ -573,6 +970,33 @@ where
                 self.n_received += 1;
                 entry.spine
             })
+    }
+
+    /// Takes the spine of the current transaction and leaves an empty one in
+    /// its place (see [ShardedAccumulator::take_received]).
+    ///
+    /// # Panics
+    ///
+    /// Panics if a sender has already flushed the current transaction: its
+    /// later batches belong to the next transaction.
+    fn take(&mut self, factories: &B::Factories) -> Spine<B> {
+        let entry = self
+            .spines
+            .front_mut()
+            .expect("the receive queue always has a spine under construction");
+        assert_eq!(
+            entry.n_unflushed, self.npeers,
+            "cannot take received batches after a sender flushed the transaction"
+        );
+        let empty = RxqEntry::new(
+            self.npeers,
+            &self.runtime,
+            self.worker_index,
+            factories,
+            self.name.clone(),
+            self.batch_layout,
+        );
+        std::mem::replace(entry, empty).spine
     }
 
     fn set_name(&mut self, name: Arc<String>) {
@@ -588,8 +1012,13 @@ where
     B: Batch,
 {
     location: OperatorLocation,
+    local_node_id: NodeId,
     name: OperatorName,
     exchange: Arc<ShardedAccumulator<B>>,
+
+    /// Used to share `enable_count` with the other hosts, in the root circuit.
+    /// `None` in a nested circuit, which does not exchange metadata.
+    metadata_exchange: Option<MetadataExchange>,
 
     /// Whether the accumulator is enabled during the current transaction.
     ///
@@ -609,11 +1038,17 @@ impl<B> ShardedAccumulatorSender<B>
 where
     B: Batch,
 {
-    fn new(location: OperatorLocation, exchange: Arc<ShardedAccumulator<B>>) -> Self {
+    fn new(
+        location: OperatorLocation,
+        exchange: Arc<ShardedAccumulator<B>>,
+        metadata_exchange: Option<MetadataExchange>,
+    ) -> Self {
         Self {
             location,
             name: OperatorName::new("ShardedAccumulatorSender"),
             exchange,
+            local_node_id: NodeId::root(),
+            metadata_exchange,
             enabled_during_current_transaction: None,
             input_batch_stats: BatchSizeStats::new(),
             flushed: false,
@@ -630,6 +1065,7 @@ where
     }
 
     fn init(&mut self, global_id: &GlobalNodeId) {
+        self.local_node_id = global_id.local_node_id().unwrap();
         self.name.init(global_id);
     }
 
@@ -653,6 +1089,17 @@ where
     fn flush(&mut self) {
         self.flushed = true;
     }
+
+    fn start_transaction(&mut self) {
+        if let Some(metadata_exchange) = &self.metadata_exchange
+            && Runtime::local_worker_offset() == 0
+        {
+            metadata_exchange.set_local_operator_metadata_typed(
+                self.local_node_id,
+                self.exchange.enable_count.is_enabled(),
+            );
+        }
+    }
 }
 
 impl<B> ShardedAccumulatorSender<B>
@@ -660,14 +1107,21 @@ where
     B: Batch<Time = ()>,
 {
     async fn eval_inner<'a>(&mut self, batch: Cow<'a, B>) {
-        // We don't have a start-of-transaction signal, so we sample enable_count when
-        // we get the first non-empty batch.  This batch should belong to the next transaction
-        // after the last one that was flushed, since the accumulator should not receive any
-        // non-empty batches from the previous transaction at that point (in the top-level circuit).
-        // This may not be the first batch in the transaction, but it's ok to admit some empty batches.
-        let len = batch.len();
+        // Sample enable_count when we get the first non-empty batch in a
+        // transaction.  This batch should belong to the next transaction after
+        // the last one that was flushed, since the accumulator should not
+        // receive any non-empty batches from the previous transaction at that
+        // point (in the top-level circuit).  This may not be the first batch in
+        // the transaction, but it's ok to admit some empty batches.
+        let len = batch.len_upper_bound();
         if (len > 0 || self.flushed) && self.enabled_during_current_transaction.is_none() {
-            self.enabled_during_current_transaction = Some(self.exchange.enable_count.is_enabled());
+            self.enabled_during_current_transaction = Some(match &self.metadata_exchange {
+                Some(metadata_exchange) => metadata_exchange
+                    .get_global_operator_metadata_typed(self.local_node_id)
+                    .into_iter()
+                    .any(|enable| enable == Some(true)),
+                None => self.exchange.enable_count.is_enabled(),
+            });
         }
         let Some(enabled) = self.enabled_during_current_transaction else {
             return;
@@ -725,6 +1179,12 @@ impl Operator for ShardedAccumulatorRemoteWaiter {
 impl SourceOperator<()> for ShardedAccumulatorRemoteWaiter {
     async fn eval(&mut self) {
         self.clients.wait(MessageType::Streaming).await;
+    }
+
+    /// The remote waiter waits for every sharded accumulator in the circuit,
+    /// and a bootstrap of one of them must not run all of them.
+    fn is_waiter(&self) -> bool {
+        true
     }
 }
 
@@ -895,7 +1355,7 @@ where
     async fn eval(&mut self) -> Option<Spine<B>> {
         let output = self.exchange.receive();
         if let Some(spine) = &output {
-            self.output_batch_stats.add_batch(spine.len());
+            self.output_batch_stats.add_batch(spine.len_upper_bound());
             spine.backpressure_wait().await;
             self.flushed = true;
         }
@@ -905,17 +1365,43 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crossbeam::thread;
     use itertools::Itertools;
 
+    use super::{Rxq, ShardedAccumulator};
     use crate::{
-        DBSPHandle, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
-        circuit::{CircuitConfig, Layout, Runtime},
-        dynamic::{Data, DowncastTrait, DynWeightTyped},
-        trace::{BatchReader, Cursor, FallbackWSet, Spine},
+        Circuit, OrdZSet, OutputHandle, RootCircuit, Stream, ZSetHandle, ZWeight,
+        algebra::{OrdZSet as DynOrdZSet, OrdZSetFactories},
+        circuit::{
+            CircuitConfig, Layout, Runtime,
+            circuit_builder::CircuitBase,
+            mkconfig,
+            operator_traits::{Operator, SinkOperator},
+        },
+        dynamic::{Data, DowncastTrait, DynData, DynWeightTyped},
+        operator::{communication::ExchangeDelivery, dynamic::accumulator::EnableCount},
+        storage::file::SerializerInner,
+        trace::{
+            Batch, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories, Cursor,
+            FallbackWSet, Spine, WithSnapshot, serialize_indexed_wset,
+        },
         typed_batch::TypedBatch,
+        utils::{Tup2, test::multihost::TestHosts},
     };
-    use std::{collections::BTreeMap, iter::zip, net::TcpListener};
+    use feldera_storage::tokio::TOKIO;
+    use feldera_types::memory_pressure::MemoryPressure;
+    use rkyv::AlignedVec;
+    use std::{
+        borrow::Cow,
+        collections::BTreeMap,
+        panic::Location,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        thread::sleep,
+        time::{Duration, Instant},
+    };
+    use tempfile::tempdir;
 
     /// Number of rounds for streaming exchange.
     ///
@@ -923,130 +1409,152 @@ mod tests {
     /// `n` steps and exchanges `O(n**2)` data.
     const STREAMING_ROUNDS: usize = 64;
 
-    fn test_config(workers: usize) -> CircuitConfig {
-        CircuitConfig::with_workers(workers).with_streaming_exchange(true)
+    type TestOutput = OutputHandle<
+        TypedBatch<usize, (), i64, Spine<FallbackWSet<dyn Data + 'static, DynWeightTyped<i64>>>>,
+    >;
+
+    /// How the test circuit gathers its output.
+    #[derive(Copy, Clone, Debug)]
+    struct Gather {
+        /// Enables the streaming exchange.  Without it, `shard_accumulate`
+        /// falls back to a plain shard and [Accumulator](super::super::accumulator::Accumulator).
+        streaming_exchange: bool,
+
+        /// Gathers to the first host's workers only, the way a multihost
+        /// pipeline gathers a view to the host that owns its connectors.
+        /// Otherwise, gathers to every worker.
+        to_first_host: bool,
     }
 
-    fn test_circuit(workers: usize, hosts: usize) {
-        let (mut dbsp_handles, input_handles, output_handles) = match hosts {
-            0 => unreachable!(),
-            1 => {
-                let (dbsp_handle, (input_handle, output_handle)) =
-                    Runtime::init_circuit(test_config(workers), circuit)
-                        .expect("failed to start runtime");
-                (vec![dbsp_handle], vec![input_handle], vec![output_handle])
-            }
-            _ => {
-                assert!(workers >= hosts);
-
-                // Bind some listening sockets.
-                let exchange_listeners = (0..hosts)
-                    .map(|_| {
-                        TcpListener::bind("127.0.0.1:0")
-                            .expect("should be able to bind a port on localhost")
-                    })
-                    .collect_vec();
-
-                // Assemble the listening sockets' addresses into something we can pass
-                // to `Layout::new_multihost`.
-                let params = exchange_listeners
-                    .iter()
-                    .enumerate()
-                    .map(|(index, listener)| {
-                        (
-                            listener
-                                .local_addr()
-                                .expect("should be able to get local address"),
-                            workers / hosts + (index < workers % hosts) as usize,
-                        )
-                    })
-                    .collect_vec();
-
-                // Create the runtimes.
-                let mut handles = Vec::with_capacity(params.len());
-                for ((local_address, _), exchange_listener) in
-                    zip(params.iter(), exchange_listeners)
-                {
-                    let cconf = CircuitConfig::from(
-                        Layout::new_multihost(&params, *local_address).unwrap(),
-                    )
-                    .with_exchange_listener(exchange_listener)
-                    .with_streaming_exchange(true);
-
-                    let (dbsp_handle, (input_handle, output_handle)) =
-                        Runtime::init_circuit(cconf, circuit).expect("failed to start runtime");
-                    handles.push((dbsp_handle, input_handle, output_handle));
-                }
-                handles.into_iter().multiunzip()
-            }
+    impl Gather {
+        /// Gathers to every worker with `ShardedAccumulator`.
+        const ALL_WORKERS: Self = Self {
+            streaming_exchange: true,
+            to_first_host: false,
         };
+    }
 
-        /// Executes `f` on all of the handles in `dbsp_handles` in parallel and
-        /// waits for them to complete.
-        fn for_each_host<F>(dbsp_handles: &mut [DBSPHandle], f: F)
-        where
-            F: Fn(&mut DBSPHandle) + Send + Sync + 'static,
-        {
-            thread::scope(|s| {
-                dbsp_handles
-                    .iter_mut()
-                    .map(|h| s.spawn(|_| f(h)))
-                    .collect_vec()
-                    .into_iter()
-                    .for_each(|h| h.join().unwrap())
-            })
-            .unwrap();
+    fn test_config(workers: usize, gather: Gather) -> CircuitConfig {
+        CircuitConfig::with_workers(workers).with_streaming_exchange(gather.streaming_exchange)
+    }
+
+    /// The handles of [circuit] on one host.
+    struct Handles {
+        input: ZSetHandle<usize>,
+        output: TestOutput,
+
+        /// The host's enable count for the accumulator.  The accumulator
+        /// starts out disabled on every host.
+        enable_count: EnableCount,
+    }
+
+    /// Starts [circuit] with `workers` workers spread over `hosts` hosts, with
+    /// the circuit gathering its output as `gather` says.
+    fn start_circuit(workers: usize, hosts: usize, gather: Gather) -> TestHosts<Handles> {
+        TestHosts::start_with(
+            workers,
+            hosts,
+            move |_host, config| config.with_streaming_exchange(gather.streaming_exchange),
+            move |c| circuit(c, gather),
+        )
+    }
+
+    /// Runs one transaction that inserts the records `0..n_records`, spread
+    /// round-robin over the hosts, one record per step.
+    ///
+    /// Calls `after_first_step` after the first step, for a test that changes
+    /// the enable counts in the middle of the transaction.
+    ///
+    /// # Returns
+    ///
+    /// The output of the transaction, summed over every host, sorted by
+    /// record.
+    fn run_transaction(
+        test_hosts: &mut TestHosts<Handles>,
+        n_records: usize,
+        after_first_step: impl FnOnce(&TestHosts<Handles>),
+    ) -> Vec<(usize, ZWeight)> {
+        let hosts = test_hosts.n_hosts();
+        let mut after_first_step = Some(after_first_step);
+        test_hosts.start_transaction();
+        for i in 0..n_records {
+            test_hosts.result(i % hosts).input.push(i, 1);
+            test_hosts.step();
+            if let Some(f) = after_first_step.take() {
+                f(test_hosts);
+            }
         }
+        test_hosts.commit_transaction();
 
+        let mut results = BTreeMap::<usize, ZWeight>::new();
+        for spine in test_hosts
+            .results()
+            .iter()
+            .flat_map(|handles| handles.output.take_from_all())
+        {
+            let mut cursor = spine.cursor();
+            while let Some(key) = cursor.get_key() {
+                let key = *unsafe { key.downcast() };
+                let weight = *unsafe { cursor.weight().downcast::<ZWeight>() };
+                *results.entry(key).or_default() += weight;
+                cursor.step_key();
+            }
+        }
+        results.into_iter().collect_vec()
+    }
+
+    /// The output of a transaction that inserts `0..n_records` with the
+    /// accumulator enabled.
+    fn expected_output(n_records: usize) -> Vec<(usize, ZWeight)> {
+        (0..n_records).map(|i| (i, 1)).collect_vec()
+    }
+
+    /// Enables the accumulator on the hosts in `enabled_hosts` and checks
+    /// that every transaction gathers the records of every host.
+    ///
+    /// # Arguments
+    ///
+    /// * `workers` - total number of workers, across all hosts.
+    /// * `hosts` - number of hosts to spread the workers across.
+    /// * `enabled_hosts` - indexes of the hosts that enable the accumulator.
+    fn test_circuit(workers: usize, hosts: usize, enabled_hosts: &[usize]) {
+        test_gather(workers, hosts, Gather::ALL_WORKERS, enabled_hosts);
+    }
+
+    /// Like [test_circuit], with the circuit gathering its output as `gather`
+    /// says.
+    fn test_gather(workers: usize, hosts: usize, gather: Gather, enabled_hosts: &[usize]) {
+        let mut test_hosts = start_circuit(workers, hosts, gather);
+        for &host in enabled_hosts {
+            test_hosts.result(host).enable_count.enable();
+        }
         for round in 0..STREAMING_ROUNDS {
-            for_each_host(&mut dbsp_handles, |h| h.start_transaction().unwrap());
-
-            for i in 0..=round {
-                input_handles[i % hosts].push(i, 1);
-                for_each_host(&mut dbsp_handles, |h| {
-                    h.step().unwrap();
-                });
-            }
-            for_each_host(&mut dbsp_handles, |h| h.commit_transaction().unwrap());
-
-            let mut results = BTreeMap::<usize, ZWeight>::new();
-            for spine in output_handles
-                .iter()
-                .flat_map(|handle| handle.take_from_all())
-            {
-                let mut cursor = spine.cursor();
-                while let Some(key) = cursor.get_key() {
-                    let key = *unsafe { key.downcast() };
-                    let weight = *unsafe { cursor.weight().downcast::<ZWeight>() };
-                    *results.entry(key).or_default() += weight;
-                    cursor.step_key();
-                }
-            }
-            let results = results.into_iter().collect_vec();
-            let expected = (0..=round).map(|i| (i, 1)).collect_vec();
-            assert_eq!(&results, &expected);
+            let n_records = round + 1;
+            assert_eq!(
+                run_transaction(&mut test_hosts, n_records, |_| ()),
+                expected_output(n_records),
+                "round {round} with {workers} workers on {hosts} hosts, {gather:?}"
+            );
         }
     }
 
-    fn circuit(
-        circuit: &mut RootCircuit,
-    ) -> anyhow::Result<(
-        ZSetHandle<usize>,
-        OutputHandle<
-            TypedBatch<
-                usize,
-                (),
-                i64,
-                Spine<FallbackWSet<dyn Data + 'static, DynWeightTyped<i64>>>,
-            >,
-        >,
-    )> {
+    fn circuit(circuit: &mut RootCircuit, gather: Gather) -> anyhow::Result<Handles> {
         let (input, input_handle) = circuit.add_input_zset::<usize>();
-        let output_handle = input
-            .shard_accumulate()
-            .into_enabled_stream()
-            .latest_output();
-        Ok((input_handle, output_handle))
+
+        // An input stream is already sharded, so `shard_accumulate` on it would
+        // fall back to a plain shard and accumulate.  `map` yields a stream
+        // that is not, so that the test exercises `ShardedAccumulator`.
+        let stream = input.map(|x| *x);
+        let workers = match Runtime::runtime().unwrap().layout() {
+            Layout::Multihost { hosts, .. } if gather.to_first_host => hosts[0].workers.clone(),
+            _ => 0..Runtime::num_workers(),
+        };
+        let (stream, enable_count) = stream.shard_workers_accumulate(workers).into_parts();
+        Ok(Handles {
+            input: input_handle,
+            output: stream.latest_output(),
+            enable_count,
+        })
     }
 
     // Create a circuit with `WORKERS` concurrent workers with the following
@@ -1058,14 +1566,680 @@ mod tests {
     #[test]
     fn sharded_accumulator_single_host() {
         for workers in [2, 16, 32] {
-            test_circuit(workers, 1);
+            test_circuit(workers, 1, &[0]);
         }
     }
 
     #[test]
     fn sharded_accumulator_multihost() {
         for (workers, hosts) in [(2, 2), (4, 2), (8, 2), (3, 3), (4, 4), (16, 4)] {
-            test_circuit(workers, hosts);
+            test_circuit(workers, hosts, &(0..hosts).collect_vec());
         }
+    }
+
+    /// An accumulator that only one host enables still gathers every host's
+    /// records, the way an output connector on the host that a view is
+    /// gathered to enables only that host's accumulator.
+    #[test]
+    fn sharded_accumulator_multihost_one_host_enables() {
+        for (workers, hosts) in [(2, 2), (4, 2), (3, 3), (4, 4)] {
+            for enabled_host in [0, hosts - 1] {
+                test_circuit(workers, hosts, &[enabled_host]);
+            }
+        }
+    }
+
+    /// A gather to the first host that only that host enables still gathers
+    /// every host's records, with and without the streaming exchange.  This
+    /// is how a multihost pipeline gathers a view to the host that owns its
+    /// output connectors.  Without the streaming exchange, the gather falls
+    /// back to a plain shard to the first host and an `Accumulator` there.
+    #[test]
+    fn sharded_accumulator_multihost_gather_to_first_host() {
+        for streaming_exchange in [true, false] {
+            let gather = Gather {
+                streaming_exchange,
+                to_first_host: true,
+            };
+            for (workers, hosts) in [(2, 2), (4, 2), (3, 3), (4, 4)] {
+                test_gather(workers, hosts, gather, &[0]);
+            }
+        }
+    }
+
+    /// A `ShardedAccumulator` in a nested circuit gathers every worker's
+    /// records.  Only the root circuit exchanges metadata, so the accumulator
+    /// must use its local enable count there.
+    ///
+    /// A join in a recursive scope uses a `ShardedAccumulator`, so this
+    /// finds the nodes that are reachable from node 0 along a chain.
+    #[test]
+    fn sharded_accumulator_nested_circuit() {
+        const N_NODES: usize = 16;
+        for workers in [2, 4] {
+            let (mut dbsp, (edges_handle, roots_handle, output)) =
+                Runtime::init_circuit(test_config(workers, Gather::ALL_WORKERS), |circuit| {
+                    let (edges, edges_handle) = circuit.add_input_zset::<Tup2<usize, usize>>();
+                    let (roots, roots_handle) = circuit.add_input_zset::<usize>();
+                    let reachable =
+                        circuit.recursive(|child, reachable: Stream<_, OrdZSet<usize>>| {
+                            let edges =
+                                edges.delta0(child).map_index(|Tup2(from, to)| (*from, *to));
+                            let roots = roots.delta0(child);
+                            Ok(reachable
+                                .map_index(|node| (*node, ()))
+                                .join(&edges, |_from, _, to| *to)
+                                .plus(&roots))
+                        })?;
+                    Ok((edges_handle, roots_handle, reachable.output()))
+                })
+                .unwrap();
+
+            edges_handle.append(
+                &mut (0..N_NODES - 1)
+                    .map(|node| Tup2(Tup2(node, node + 1), 1))
+                    .collect(),
+            );
+            roots_handle.push(0, 1);
+            dbsp.transaction().unwrap();
+
+            assert_eq!(
+                output.consolidate(),
+                OrdZSet::from_keys((), (0..N_NODES).map(|node| Tup2(node, 1)).collect()),
+                "{workers} workers"
+            );
+            dbsp.kill().unwrap();
+        }
+    }
+
+    /// An accumulator that one host enables in the middle of a transaction
+    /// outputs nothing in that transaction and every host's records in the
+    /// next one.  Disabling it again takes effect at the next transaction in
+    /// the same way.
+    #[test]
+    fn sharded_accumulator_multihost_enable_mid_transaction() {
+        const N_RECORDS: usize = 8;
+        for (workers, hosts) in [(2, 2), (4, 2), (3, 3)] {
+            let mut test_hosts = start_circuit(workers, hosts, Gather::ALL_WORKERS);
+            assert_eq!(run_transaction(&mut test_hosts, N_RECORDS, |_| ()), vec![]);
+
+            assert_eq!(
+                run_transaction(&mut test_hosts, N_RECORDS, |test_hosts| test_hosts
+                    .result(0)
+                    .enable_count
+                    .enable()),
+                vec![],
+                "enabled during the transaction, with {workers} workers on {hosts} hosts"
+            );
+            assert_eq!(
+                run_transaction(&mut test_hosts, N_RECORDS, |_| ()),
+                expected_output(N_RECORDS),
+                "enabled before the transaction, with {workers} workers on {hosts} hosts"
+            );
+
+            assert_eq!(
+                run_transaction(&mut test_hosts, N_RECORDS, |test_hosts| test_hosts
+                    .result(0)
+                    .enable_count
+                    .disable()),
+                expected_output(N_RECORDS),
+                "disabled during the transaction, with {workers} workers on {hosts} hosts"
+            );
+            assert_eq!(
+                run_transaction(&mut test_hosts, N_RECORDS, |_| ()),
+                vec![],
+                "disabled before the transaction, with {workers} workers on {hosts} hosts"
+            );
+        }
+    }
+
+    /// Sink that waits for its worker's [ShardedAccumulator] to receive all of
+    /// the current step's data, then records the number of records that the
+    /// worker has received so far in the transaction.
+    struct ArrivalProbe<B>
+    where
+        B: Batch,
+    {
+        exchange: Arc<ShardedAccumulator<B>>,
+
+        /// Record counts, indexed by worker.
+        counts: Arc<Vec<AtomicUsize>>,
+    }
+
+    impl<B> Operator for ArrivalProbe<B>
+    where
+        B: Batch,
+    {
+        fn name(&self) -> Cow<'static, str> {
+            Cow::Borrowed("ArrivalProbe")
+        }
+
+        fn fixedpoint(&self, _scope: crate::circuit::Scope) -> bool {
+            true
+        }
+    }
+
+    impl<B> SinkOperator<Option<Spine<B>>> for ArrivalProbe<B>
+    where
+        B: Batch<Time = ()>,
+    {
+        async fn eval(&mut self, _input: &Option<Spine<B>>) {
+            self.exchange
+                .wait_for_arrival(Arc::new("ArrivalProbe".to_string()))
+                .await;
+            let worker = Runtime::worker_index();
+            let count = self
+                .exchange
+                .rxq(worker)
+                .spines
+                .iter()
+                .map(|entry| entry.spine.len_upper_bound())
+                .sum();
+            self.counts[worker].store(count, Ordering::Release);
+        }
+    }
+
+    /// Builds a circuit that feeds its input into a sharded accumulator with an
+    /// [ArrivalProbe] after it.  If `enabled`, it enables the accumulator.
+    ///
+    /// The input handle already partitions records the way the sharded
+    /// accumulator does, so the circuit changes each key to make records
+    /// move between workers.  Then workers with input sleep before they send,
+    /// so that the probes in the workers without input run before all of the
+    /// data has been sent.
+    fn arrival_circuit(
+        circuit: &mut RootCircuit,
+        counts: Arc<Vec<AtomicUsize>>,
+        enabled: bool,
+    ) -> anyhow::Result<ZSetHandle<usize>> {
+        let (input, input_handle) = circuit.add_input_zset::<usize>();
+        let input = input
+            .map(|key| key + 1)
+            .apply(|batch| {
+                if !batch.is_empty() {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                batch.clone()
+            })
+            .inner();
+        let runtime = Runtime::runtime().unwrap();
+        let factories = BatchReaderFactories::new::<usize, (), ZWeight>();
+        let (accumulation, exchange) = input.new_sharded_accumulator(
+            &runtime,
+            &factories,
+            0..Runtime::num_workers(),
+            BatchLayout::default(),
+            input.sharded_accumulator_remote_waiter(&runtime),
+            Location::caller(),
+        );
+        let (stream, enable_count) = accumulation.into_parts();
+        if enabled {
+            enable_count.enable();
+        }
+        circuit.add_sink(ArrivalProbe { exchange, counts }, &stream);
+        Ok(input_handle)
+    }
+
+    /// Checks that, after `wait_for_arrival`, each worker holds all of the data
+    /// sent to it so far in the transaction, including in steps that send no
+    /// data.  If the accumulator is disabled, checks that the wait still
+    /// finishes and that no data arrives.
+    fn test_arrival(workers: usize, hosts: usize, enabled: bool) {
+        const ROUNDS: usize = 4;
+        const STEPS: usize = 8;
+
+        let counts = Arc::new((0..workers).map(|_| AtomicUsize::new(0)).collect_vec());
+        let mut test_hosts = TestHosts::start(workers, hosts, {
+            let counts = counts.clone();
+            move |circuit| arrival_circuit(circuit, counts, enabled)
+        });
+
+        let mut next_key = 0;
+        for _round in 0..ROUNDS {
+            test_hosts.start_transaction();
+            let mut n_sent = 0;
+            for step in 0..STEPS {
+                // Leave every third step empty.  Send the rest from a
+                // different host each time, so that data crosses hosts.
+                if step % 3 != 2 {
+                    for _ in 0..step {
+                        test_hosts.result(step % hosts).push(next_key, 1);
+                        next_key += 1;
+                        n_sent += 1;
+                    }
+                }
+                test_hosts.step();
+
+                let n_received: usize = counts.iter().map(|c| c.load(Ordering::Acquire)).sum();
+                let expected = if enabled { n_sent } else { 0 };
+                assert_eq!(
+                    n_received, expected,
+                    "workers={workers} hosts={hosts} enabled={enabled} step={step}"
+                );
+            }
+            test_hosts.commit_transaction();
+        }
+    }
+
+    #[test]
+    fn arrival_single_host() {
+        for workers in [2, 16] {
+            for enabled in [true, false] {
+                test_arrival(workers, 1, enabled);
+            }
+        }
+    }
+
+    #[test]
+    fn arrival_multihost() {
+        for (workers, hosts) in [(2, 2), (8, 2), (3, 3), (16, 4)] {
+            for enabled in [true, false] {
+                test_arrival(workers, hosts, enabled);
+            }
+        }
+    }
+
+    /// Sender that sends all of its input to one worker with
+    /// [ShardedAccumulator::send_partitioned].
+    struct PartitionedSender<B>
+    where
+        B: Batch,
+    {
+        exchange: Arc<ShardedAccumulator<B>>,
+
+        /// The worker that receives every record.
+        destination: usize,
+
+        /// If set, every worker takes its received batches once per
+        /// transaction.
+        take: Option<Take>,
+
+        /// The number of steps so far in the current transaction.
+        steps_in_transaction: usize,
+
+        flushed: bool,
+    }
+
+    /// When [PartitionedSender] takes its worker's received batches.
+    #[derive(Clone)]
+    struct Take {
+        /// The step in each transaction, counting from 1, after which every
+        /// worker takes its received batches.
+        step: usize,
+
+        /// A worker that sleeps before it sends in `step`, so that the other
+        /// workers would take before its batches arrive if they did not wait
+        /// for them.
+        slow_worker: usize,
+
+        /// Numbers of records taken, indexed by worker.
+        taken: Arc<Vec<AtomicUsize>>,
+    }
+
+    impl<B> Operator for PartitionedSender<B>
+    where
+        B: Batch,
+    {
+        fn name(&self) -> Cow<'static, str> {
+            Cow::Borrowed("PartitionedSender")
+        }
+
+        fn fixedpoint(&self, _scope: crate::circuit::Scope) -> bool {
+            true
+        }
+
+        fn start_transaction(&mut self) {
+            self.steps_in_transaction = 0;
+        }
+
+        fn flush(&mut self) {
+            self.flushed = true;
+        }
+    }
+
+    impl<B> SinkOperator<B> for PartitionedSender<B>
+    where
+        B: Batch<Time = ()>,
+    {
+        async fn eval(&mut self, batch: &B) {
+            self.steps_in_transaction += 1;
+            let take = self
+                .take
+                .as_ref()
+                .filter(|take| take.step == self.steps_in_transaction);
+            if let Some(take) = take
+                && take.slow_worker == Runtime::worker_index()
+            {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+
+            let mut batches = (0..Runtime::num_workers())
+                .map(|_| B::dyn_empty(&self.exchange.factories))
+                .collect_vec();
+            batches[self.destination] = batch.clone();
+            let name = Arc::new("PartitionedSender".to_string());
+            self.exchange
+                .send_partitioned(name.clone(), batches, self.flushed)
+                .await;
+
+            if let Some(take) = take {
+                self.exchange.wait_for_arrival(name).await;
+                let n_taken = self
+                    .exchange
+                    .take_received()
+                    .iter()
+                    .map(|batch| batch.len_upper_bound())
+                    .sum();
+                take.taken[Runtime::worker_index()].fetch_add(n_taken, Ordering::AcqRel);
+            }
+            self.flushed = false;
+        }
+    }
+
+    /// Sink that adds the number of records in each spine that its worker's
+    /// receiver outputs to the worker's count.
+    struct OutputCounter {
+        /// Record counts, indexed by worker.
+        counts: Arc<Vec<AtomicUsize>>,
+    }
+
+    impl Operator for OutputCounter {
+        fn name(&self) -> Cow<'static, str> {
+            Cow::Borrowed("OutputCounter")
+        }
+
+        fn fixedpoint(&self, _scope: crate::circuit::Scope) -> bool {
+            true
+        }
+    }
+
+    impl<B> SinkOperator<Option<Spine<B>>> for OutputCounter
+    where
+        B: Batch<Time = ()>,
+    {
+        async fn eval(&mut self, spine: &Option<Spine<B>>) {
+            if let Some(spine) = spine {
+                self.counts[Runtime::worker_index()]
+                    .fetch_add(spine.len_upper_bound(), Ordering::AcqRel);
+            }
+        }
+    }
+
+    /// Builds a circuit in which every worker sends its input to
+    /// `destination` through a sharded accumulator, taking its received
+    /// batches as `take` says, and the receivers count the records they
+    /// output in `counts`.
+    fn partitioned_circuit(
+        circuit: &mut RootCircuit,
+        destination: usize,
+        take: Option<Take>,
+        counts: Arc<Vec<AtomicUsize>>,
+    ) -> anyhow::Result<ZSetHandle<usize>> {
+        let (input, input_handle) = circuit.add_input_zset::<usize>();
+        let input = input.inner();
+        let runtime = Runtime::runtime().unwrap();
+        let factories = BatchReaderFactories::new::<usize, (), ZWeight>();
+        let (stream, exchange) = input.add_sharded_accumulator_receiver(
+            &runtime,
+            &factories,
+            0..Runtime::num_workers(),
+            BatchLayout::default(),
+            input.sharded_accumulator_remote_waiter(&runtime),
+            Location::caller(),
+        );
+        let sender = circuit.add_sink(
+            PartitionedSender {
+                exchange,
+                destination,
+                take,
+                steps_in_transaction: 0,
+                flushed: false,
+            },
+            &input,
+        );
+        circuit.add_dependency(sender.local_node_id().unwrap(), stream.local_node_id());
+        circuit.add_sink(OutputCounter { counts }, &stream);
+        Ok(input_handle)
+    }
+
+    /// Checks that `send_partitioned` delivers each batch to the worker that
+    /// it is for, whether local or remote, by sending every record to
+    /// `destination`.
+    fn test_partitioned_send(workers: usize, hosts: usize, destination: usize) {
+        const TRANSACTIONS: usize = 3;
+        const STEPS: usize = 4;
+
+        let counts = Arc::new((0..workers).map(|_| AtomicUsize::new(0)).collect_vec());
+        let mut test_hosts = TestHosts::start(workers, hosts, {
+            let counts = counts.clone();
+            move |circuit| partitioned_circuit(circuit, destination, None, counts)
+        });
+
+        let mut next_key = 0;
+        for _transaction in 0..TRANSACTIONS {
+            test_hosts.start_transaction();
+            let mut n_sent = 0;
+            for step in 0..STEPS {
+                for _ in 0..=step {
+                    test_hosts.result(step % hosts).push(next_key, 1);
+                    next_key += 1;
+                    n_sent += 1;
+                }
+                test_hosts.step();
+            }
+            test_hosts.commit_transaction();
+
+            let received = counts
+                .iter()
+                .map(|count| count.swap(0, Ordering::AcqRel))
+                .collect_vec();
+            let expected = (0..workers)
+                .map(|worker| if worker == destination { n_sent } else { 0 })
+                .collect_vec();
+            assert_eq!(
+                received, expected,
+                "workers={workers} hosts={hosts} destination={destination}"
+            );
+        }
+    }
+
+    #[test]
+    fn partitioned_send() {
+        for (workers, hosts) in [(4, 1), (4, 2), (3, 3)] {
+            for destination in [0, workers - 1] {
+                test_partitioned_send(workers, hosts, destination);
+            }
+        }
+    }
+
+    /// Checks that `take_received`, after `wait_for_arrival`, takes exactly
+    /// the records sent so far in the transaction, even from a slow sender,
+    /// and that the receiver outputs only the records sent afterward.
+    fn test_take_received(workers: usize, hosts: usize, destination: usize) {
+        const TRANSACTIONS: usize = 3;
+        const STEPS: usize = 4;
+        const TAKE_STEP: usize = 3;
+
+        let taken = Arc::new((0..workers).map(|_| AtomicUsize::new(0)).collect_vec());
+        let received = Arc::new((0..workers).map(|_| AtomicUsize::new(0)).collect_vec());
+        let take = Take {
+            step: TAKE_STEP,
+            slow_worker: (destination + 1) % workers,
+            taken: taken.clone(),
+        };
+        let mut test_hosts = TestHosts::start(workers, hosts, {
+            let received = received.clone();
+            move |circuit| partitioned_circuit(circuit, destination, Some(take), received)
+        });
+
+        let mut next_key = 0;
+        for transaction in 0..TRANSACTIONS {
+            test_hosts.start_transaction();
+            let mut n_before = 0;
+            let mut n_after = 0;
+            for step in 1..=STEPS {
+                for _ in 0..step {
+                    test_hosts.result(step % hosts).push(next_key, 1);
+                    next_key += 1;
+                    if step <= TAKE_STEP {
+                        n_before += 1;
+                    } else {
+                        n_after += 1;
+                    }
+                }
+                test_hosts.step();
+            }
+            test_hosts.commit_transaction();
+
+            let only_destination = |n| {
+                (0..workers)
+                    .map(|worker| if worker == destination { n } else { 0 })
+                    .collect_vec()
+            };
+            let take_counts = |counts: &Arc<Vec<AtomicUsize>>| {
+                counts
+                    .iter()
+                    .map(|count| count.swap(0, Ordering::AcqRel))
+                    .collect_vec()
+            };
+            assert_eq!(
+                take_counts(&taken),
+                only_destination(n_before),
+                "taken: workers={workers} hosts={hosts} destination={destination} transaction={transaction}"
+            );
+            assert_eq!(
+                take_counts(&received),
+                only_destination(n_after),
+                "received: workers={workers} hosts={hosts} destination={destination}"
+            );
+        }
+    }
+
+    #[test]
+    fn take_received() {
+        for (workers, hosts) in [(4, 1), (4, 2), (3, 3)] {
+            for destination in [0, workers - 1] {
+                test_take_received(workers, hosts, destination);
+            }
+        }
+    }
+
+    /// Checks that the spine that `take` leaves in a receive queue has the
+    /// queue's batch layout.
+    #[test]
+    fn take_keeps_batch_layout() {
+        Runtime::run(CircuitConfig::with_workers(1), |_parker| {
+            let layout = BatchLayout {
+                key_block_bytes: Some(65536),
+            };
+            let factories = <OrdZSetFactories<DynData>>::new::<usize, (), ZWeight>();
+            let mut rxq = Rxq::<DynOrdZSet<DynData>>::new(
+                &Runtime::runtime().unwrap(),
+                0,
+                &factories,
+                1,
+                Arc::new("Rxq".to_string()),
+                layout,
+            );
+            rxq.take(&factories);
+            assert_eq!(rxq.spines[0].spine.layout(), layout);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    }
+
+    /// Builds a circuit that feeds its input into an enabled sharded
+    /// accumulator.  Returns the input handle and the accumulator.
+    fn enabled_circuit(
+        circuit: &mut RootCircuit,
+    ) -> anyhow::Result<(
+        ZSetHandle<usize>,
+        Arc<ShardedAccumulator<DynOrdZSet<DynData>>>,
+    )> {
+        let (input, input_handle) = circuit.add_input_zset::<usize>();
+        let input = input.inner();
+        let runtime = Runtime::runtime().unwrap();
+        let factories = BatchReaderFactories::new::<usize, (), ZWeight>();
+        let (accumulation, exchange) = input.new_sharded_accumulator(
+            &runtime,
+            &factories,
+            0..Runtime::num_workers(),
+            BatchLayout::default(),
+            input.sharded_accumulator_remote_waiter(&runtime),
+            Location::caller(),
+        );
+        accumulation.into_parts().1.enable();
+        Ok((input_handle, exchange))
+    }
+
+    /// Checks that the senders send nothing to remote hosts in steps without
+    /// data, and only their flushes when the transaction commits.
+    #[test]
+    fn no_remote_messages_without_data() {
+        const WORKERS: usize = 4;
+        const HOSTS: usize = 2;
+
+        let mut test_hosts = TestHosts::start(WORKERS, HOSTS, enabled_circuit);
+        let exchanges = test_hosts
+            .results()
+            .iter()
+            .map(|(_input, exchange)| exchange.clone())
+            .collect_vec();
+        let remote_messages = || {
+            exchanges
+                .iter()
+                .map(|exchange| exchange.remote_messages.load(Ordering::Acquire))
+                .sum::<usize>()
+        };
+
+        test_hosts.start_transaction();
+        for _ in 0..8 {
+            test_hosts.step();
+        }
+        assert_eq!(remote_messages(), 0);
+
+        // Each worker sends its flush to the other host in one message.
+        test_hosts.commit_transaction();
+        assert_eq!(remote_messages(), WORKERS * (HOSTS - 1));
+    }
+
+    /// A batch from another host spills to storage under memory pressure,
+    /// although the exchange delivers it on a thread outside the runtime.
+    #[test]
+    fn remote_batch_spills_under_memory_pressure() {
+        let temp_dir = tempdir().expect("Can't create temp dir for storage");
+
+        // A one-byte budget puts the runtime under critical memory pressure.
+        let config = mkconfig(temp_dir.path()).with_max_rss_bytes(Some(1));
+        let (dbsp, (_input, exchange)) = Runtime::init_circuit(config, enabled_circuit).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while dbsp.runtime().current_memory_pressure() < MemoryPressure::High {
+            assert!(Instant::now() < deadline, "memory pressure stayed low");
+            sleep(Duration::from_millis(10));
+        }
+
+        // What a worker on another host sends: a serialized batch, then a byte
+        // that says whether it is the sender's final batch.
+        let batch = OrdZSet::from_keys((), vec![Tup2(7usize, 1)]).into_inner();
+        let mut message = AlignedVec::new();
+        message.extend_from_slice(&serialize_indexed_wset(&batch, &mut SerializerInner::new()));
+        message.push(0);
+        TOKIO
+            .block_on(TOKIO.spawn(exchange.clone().received(0, 0, vec![message])))
+            .unwrap();
+
+        let batches = exchange.rxq(0).spines[0]
+            .spine
+            .ro_snapshot()
+            .batches()
+            .to_vec();
+        assert!(!batches.is_empty());
+        assert!(
+            batches
+                .iter()
+                .all(|batch| batch.location() == BatchLocation::Storage)
+        );
+        dbsp.kill().unwrap();
     }
 }

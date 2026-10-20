@@ -42,6 +42,7 @@ PIPELINE_FIELD_SELECTOR_ALL_FIELDS = [
     "deployment_desired_status",
     "deployment_desired_status_since",
     "deployment_error",
+    "deployment_config",
     "refresh_version",
     "storage_status",
     "storage_status_details",

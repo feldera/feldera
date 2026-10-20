@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDirectComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
@@ -23,7 +24,7 @@ import java.util.Objects;
 /** A high-level representation of the ASOF JOIN.  Converted to a pair of
  * {@link DBSPMapIndexOperator} and one {@link DBSPConcreteAsofJoinOperator}. */
 public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator implements IIncremental {
-    // Usually a DBSPComparatorExpression; currently not used
+    // Usually a DBSPComparatorExpression
     // https://github.com/feldera/feldera/issues/2212
     public final DBSPExpression comparator;
     public final int leftTimestampIndex;
@@ -85,6 +86,13 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator implements 
         this.comparator.accept(visitor);
     }
 
+    /** True if the match condition requires the left timestamp to be after the right one, with
+     * {@code >} or {@code >=}, so that a left row matches the latest right row preceding it. */
+    public boolean isLeftAfterRight() {
+        return this.comparator.is(DBSPDirectComparatorExpression.class) &&
+                this.comparator.to(DBSPDirectComparatorExpression.class).ascending;
+    }
+
     @Override
     public DBSPSimpleOperator with(
             @Nullable DBSPExpression function, DBSPType outputType,
@@ -106,7 +114,8 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator implements 
         DBSPAsofJoinOperator otherOperator = other.as(DBSPAsofJoinOperator.class);
         if (otherOperator == null)
             return false;
-        return this.leftTimestampIndex == otherOperator.leftTimestampIndex &&
+        return this.isLeft == otherOperator.isLeft &&
+                this.leftTimestampIndex == otherOperator.leftTimestampIndex &&
                 this.rightTimestampIndex == otherOperator.rightTimestampIndex &&
                 this.comparator.equivalent(otherOperator.comparator);
     }
