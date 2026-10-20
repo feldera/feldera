@@ -251,8 +251,26 @@ public class CastTests extends SqlIoTest {
                 SELECT CAST(CAST(T.COL2 / 10 AS TIMESTAMP) AS DOUBLE) FROM T;
                  i
                 ---
-                 0
+                 1
                 (1 row)""");
+    }
+
+    @Test
+    public void floatToTimestampKeepsMicroseconds() {
+        // A number is a count of milliseconds.  The casts to TIMESTAMP and to
+        // TIMESTAMP WITH TIME ZONE keep the same fraction of a millisecond.
+        var ccs = this.getCCS("""
+                CREATE TABLE F(r REAL, d DOUBLE);
+                CREATE VIEW V AS SELECT
+                    CAST(r AS TIMESTAMP) AS ts_r,
+                    CAST(r AS TIMESTAMP WITH TIME ZONE) AS tz_r,
+                    CAST(d AS TIMESTAMP) AS ts_d,
+                    CAST(d AS TIMESTAMP WITH TIME ZONE) AS tz_d
+                FROM F;""");
+        ccs.stepWeightOne("INSERT INTO F VALUES (-57681.18, -38.2711234601246);", """
+                 ts_r                       | tz_r                           | ts_d                       | tz_d
+                ------------------------------------------------------------------------------------------------------------------
+                 1969-12-31 23:59:02.318820 | 1969-12-31 23:59:02.318820 GMT | 1969-12-31 23:59:59.961729 | 1969-12-31 23:59:59.961729 GMT""");
     }
 
     @Test
