@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -25,7 +24,6 @@ final class Gen2Pipeline {
     static final long POLL_INTERVAL_MS = 2;
     static final int LOG_TAIL_CHARS = 8000;
     static final String DEPLOYMENT_ID = "00000000-0000-0000-0000-00000000c0de";
-    static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** The pipeline failed, exited, or did not answer; {@code logTail} holds its last output. */
     static final class EngineException extends Exception {
@@ -93,7 +91,7 @@ final class Gen2Pipeline {
         } catch (IOException error) {
             throw new EngineException("cannot start " + this.binary + ": " + error.getMessage(), "", false);
         }
-        this.port = this.waitForPort(runDirectory.resolve("port"));
+        this.port = this.readPortFile(runDirectory.resolve("port"));
         this.waitUntilRunning();
     }
 
@@ -122,7 +120,7 @@ final class Gen2Pipeline {
         List<String> tokens = new ArrayList<>();
         for (Map.Entry<String, byte[]> input : inputs.entrySet()) {
             JsonNode answer = this.parse(this.request(
-                    "POST", "/ingress/" + input.getKey() + "?format=arrow_ipc", input.getValue()));
+                    "POST", "/ingress/" + input.getKey() + "?format=" + Gen2Runner.DATA_FORMAT, input.getValue()));
             tokens.add(answer.get("token").asText());
         }
         this.request("POST", "/commit_transaction", null);
@@ -201,8 +199,9 @@ final class Gen2Pipeline {
         }
     }
 
-    /** Waits for the network port the pipeline listens on, which it writes to {@code portFile}. */
-    private int waitForPort(Path portFile) throws EngineException {
+    /** Waits until the pipeline writes the port number of its HTTP server to {@code portFile},
+     * and returns the number. */
+    private int readPortFile(Path portFile) throws EngineException {
         while (this.isAlive()) {
             try {
                 if (Files.isRegularFile(portFile)) {
@@ -238,7 +237,7 @@ final class Gen2Pipeline {
 
     private JsonNode parse(byte[] body) throws EngineException {
         try {
-            return MAPPER.readTree(body);
+            return Gen2Runner.MAPPER.readTree(body);
         } catch (IOException error) {
             throw new EngineException("unreadable answer: " + error.getMessage(), this.logTail(), false);
         }
