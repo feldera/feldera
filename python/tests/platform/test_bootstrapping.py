@@ -2,7 +2,10 @@ import json
 import os
 import uuid
 
+import pytest
+
 from feldera.enums import BootstrapPolicy, PipelineStatus
+from feldera.rest.errors import TableReloadNotAllowedError
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT, enterprise_only
@@ -948,5 +951,145 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
 
     result = list(pipeline.query("SELECT * FROM v1;"))
     assert result == [{"c": 10}]
+
+    pipeline.stop(force=True)
+
+
+@enterprise_only
+@gen_pipeline_name
+def test_bootstrap_reloadable_tables(pipeline_name):
+    """
+    Enterprise: with `BootstrapPolicy.ALLOW`, `reloadable_tables` lets the SDK
+    approve a bootstrap only if every modified table is in the list.
+    """
+
+    def gen_sql(t2_columns: str) -> str:
+        return f"""CREATE TABLE t1(x int) WITH ('materialized'='true');
+CREATE TABLE t2({t2_columns}) WITH ('materialized'='true');
+CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
+CREATE MATERIALIZED VIEW v2 AS SELECT COUNT(*) AS c FROM t2;
+"""
+
+    pipeline = PipelineBuilder(
+        TEST_CLIENT,
+        pipeline_name,
+        sql=gen_sql("y int"),
+        runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
+            fault_tolerance_model=None,  # We will make manual checkpoints in this test.
+        ),
+    ).create_or_replace()
+
+    pipeline.start()
+    pipeline.execute("INSERT INTO t1 VALUES (1), (2), (3);")
+    pipeline.execute("INSERT INTO t2 VALUES (10), (20);")
+    pipeline.checkpoint(True)
+    pipeline.stop(force=True)
+
+    # Modify t2, so bootstrapping must reload it.
+    pipeline.modify(sql=gen_sql("y int, s string"))
+
+    # t2 is not in the list: the pipeline must wait for approval, even with ALLOW.
+    with pytest.raises(TableReloadNotAllowedError) as e:
+        pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW, reloadable_tables=["t1"])
+    assert e.value.blocked_tables == ["t2"]
+    assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
+
+    # Reject. A force stop makes no checkpoint, so the next start sees the same diff.
+    pipeline.stop(force=True)
+
+    pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW, reloadable_tables=["t2"])
+    assert pipeline.status() == PipelineStatus.RUNNING
+
+    # t2 was reloaded: bootstrapping truncated it. t1 kept its state.
+    assert list(pipeline.query("SELECT * FROM v1;")) == [{"c": 3}]
+    assert list(pipeline.query("SELECT * FROM v2;")) == [{"c": 0}]
+
+    pipeline.stop(force=True)
+
+
+@enterprise_only
+@gen_pipeline_name
+def test_bootstrap_reloadable_tables_names(pipeline_name):
+    """
+    Enterprise: `reloadable_tables` matches table names exactly as the
+    bootstrap diff reports them: an unquoted name in lowercase, a quoted name
+    without its quotes, and `""` in a quoted name as one `"`.
+    """
+
+    # Name in SQL, name in the bootstrap diff, view that counts its rows.
+    tables = [
+        ("lower_t", "lower_t", "v_lower"),
+        ("UPPER_T", "upper_t", "v_upper"),
+        ('"MixedCase"', "MixedCase", "v_mixed"),
+        ('"esc""aped"', 'esc"aped', "v_escaped"),
+    ]
+
+    def gen_sql(extra_column: str) -> str:
+        sql = ""
+        for sql_name, _, view in tables:
+            sql += f"CREATE TABLE {sql_name}(x int{extra_column}) WITH ('materialized'='true');\n"
+            sql += f"CREATE MATERIALIZED VIEW {view} AS SELECT COUNT(*) AS c FROM {sql_name};\n"
+        # A table that does not change, so bootstrapping must not reload it.
+        sql += "CREATE TABLE kept_t(x int) WITH ('materialized'='true');\n"
+        sql += "CREATE MATERIALIZED VIEW v_kept AS SELECT COUNT(*) AS c FROM kept_t;\n"
+        return sql
+
+    pipeline = PipelineBuilder(
+        TEST_CLIENT,
+        pipeline_name,
+        sql=gen_sql(""),
+        runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
+            fault_tolerance_model=None,  # We will make manual checkpoints in this test.
+        ),
+    ).create_or_replace()
+
+    pipeline.start()
+    for _, diff_name, _ in tables + [("kept_t", "kept_t", "v_kept")]:
+        # Ad-hoc queries cannot find a table with `"` in its name; use ingress.
+        # Ingress strips the outer quotes and does not unescape `""`.
+        pipeline.input_json(f'"{diff_name}"', [{"x": 1}, {"x": 2}])
+    pipeline.checkpoint(True)
+    pipeline.stop(force=True)
+
+    # Modify the four tables, so bootstrapping must reload them.
+    pipeline.modify(sql=gen_sql(", s string"))
+
+    # The escaped table is not in the list.
+    with pytest.raises(TableReloadNotAllowedError) as e:
+        pipeline.start(
+            bootstrap_policy=BootstrapPolicy.ALLOW,
+            reloadable_tables=["lower_t", "upper_t", "MixedCase"],
+        )
+    assert e.value.blocked_tables == ['esc"aped']
+    assert e.value.approval_diff["program_diff"]["modified_tables"] == sorted(
+        diff_name for _, diff_name, _ in tables
+    )
+    assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
+
+    # Names as written in SQL do not match, except where they equal the diff name.
+    # restart() force-stops without a checkpoint, so the same diff comes back.
+    with pytest.raises(TableReloadNotAllowedError) as e:
+        pipeline.restart(
+            bootstrap_policy=BootstrapPolicy.ALLOW,
+            reloadable_tables=[sql_name for sql_name, _, _ in tables],
+        )
+    assert e.value.blocked_tables == ["MixedCase", 'esc"aped', "upper_t"]
+    assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
+
+    # The names in blocked_tables can be passed back.
+    pipeline.restart(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        reloadable_tables=["lower_t", *e.value.blocked_tables],
+    )
+    assert pipeline.status() == PipelineStatus.RUNNING
+
+    # The modified tables were reloaded: bootstrapping truncated them.
+    for _, _, view in tables:
+        assert list(pipeline.query(f"SELECT * FROM {view};")) == [{"c": 0}], view
+    assert list(pipeline.query("SELECT * FROM v_kept;")) == [{"c": 2}]
 
     pipeline.stop(force=True)

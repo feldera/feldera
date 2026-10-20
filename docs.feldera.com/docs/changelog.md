@@ -10,6 +10,14 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Python SDK: the new `reloadable_tables` argument of `Pipeline.start()`,
+  `start_paused()`, `start_standby()`, and `restart()` lists the tables that
+  bootstrapping may reload. With `bootstrap_policy=BootstrapPolicy.ALLOW`, the
+  SDK approves the bootstrap only if each modified table is in the list.
+  Otherwise it raises `TableReloadNotAllowedError`, and the pipeline stays in
+  `AwaitingApproval`. See
+  [Approving reloads of selected tables](/pipelines/modifying#approving-reloads-of-selected-tables-python-sdk).
+
 - Incompatible change (SQL): a `DATE` computation whose result is before
   `0001-01-01` or after `9999-12-31` now stops the pipeline with an
   error.  Before this change, such a computation produced an illegal
