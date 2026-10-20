@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.ExpressionOracleHarvest;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
@@ -62,7 +63,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     public LowerCircuitVisitor(DBSPCompiler compiler) {
         super(compiler, false);
-        this.keepAggregateLists = compiler.options.ioOptions.gen2;
+        this.keepAggregateLists = ExpressionOracleHarvest.usesGen2ExpressionShape(compiler.options);
     }
 
     /** Rewrite a flatmap operation into a Rust method call.

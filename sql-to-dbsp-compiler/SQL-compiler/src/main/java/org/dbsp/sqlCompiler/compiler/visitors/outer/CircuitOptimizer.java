@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.ExpressionOracleHarvest;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
@@ -233,14 +234,16 @@ public class CircuitOptimizer extends Passes {
         // self-contained.
         this.add(new Conditional(compiler,
                 new StaticDeclarations(compiler, new ImplementStatics(compiler, !options.ioOptions.multiCrates())),
-                () -> !options.ioOptions.gen2));
+                () -> !ExpressionOracleHarvest.usesGen2ExpressionShape(options)));
         // From now on we cannot really change the graph anymore.
 
         // this.add(new TestSerialize(compiler));
         this.add(new CheckHints(compiler));
         this.add(new ComparatorDeclarations(compiler, new DeclareComparators(compiler)));
-        // Before the Merkle hashes, so that they hash the circuit the Gen-2 engine reads
-        this.add(new Conditional(compiler, new Gen2Passes(compiler), () -> options.ioOptions.gen2));
+        // Before the Merkle hashes, so that they hash the circuit the Gen-2 engine reads.  A
+        // harvest renders the circuit as Rust and applies these passes to its own copy of the IR.
+        this.add(new Conditional(compiler, new Gen2Passes(compiler),
+                () -> options.ioOptions.gen2 && !ExpressionOracleHarvest.isEnabled()));
         this.add(new CompactNames(compiler));
         this.add(new MerkleHashes(compiler));
         this.add(new TagRegions(compiler));
