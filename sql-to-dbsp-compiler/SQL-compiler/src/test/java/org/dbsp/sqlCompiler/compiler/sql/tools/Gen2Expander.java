@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import javax.annotation.Nullable;
 import java.io.BufferedReader;
@@ -19,10 +18,9 @@ import java.util.List;
 /** An {@code ir-expander serve} process: it evaluates the compiler's Z-set literals into
  * actual Z-sets.  Each request and each answer is one JSON line on the process's standard
  * input and output.  A literal travels as the compiler's JSON IR; an actual Z-set travels
- * as the bytes the pipeline reads or writes, in base64. */
+ * as the bytes the pipeline reads or writes, in base64, in the format
+ * {@link Gen2Runner#DATA_FORMAT}. */
 final class Gen2Expander {
-    static final ObjectMapper MAPPER = new ObjectMapper();
-
     /** A data stream and how many distinct rows it holds. */
     record Expanded(byte[] stream, int rows) {}
 
@@ -43,7 +41,7 @@ final class Gen2Expander {
     /** The literal {@code literal} (IR JSON) as a stream whose columns are named {@code columns}. */
     Expanded expand(String literal, List<String> columns) throws IOException {
         // The literal is spliced in as written: parsing it would round decimals that do not fit a double.
-        JsonNode expanded = this.call("{\"expand\":{\"columns\":" + MAPPER.writeValueAsString(columns)
+        JsonNode expanded = this.call("{\"expand\":{\"columns\":" + Gen2Runner.MAPPER.writeValueAsString(columns)
                 + ",\"literal\":" + literal + "}}").get("expanded");
         return new Expanded(Base64.getDecoder().decode(expanded.get("stream").asText()), expanded.get("rows").asInt());
     }
@@ -71,7 +69,7 @@ final class Gen2Expander {
             this.stop();
             throw new IOException("ir-expander exited: " + Files.readString(this.logPath).trim());
         }
-        JsonNode answer = MAPPER.readTree(line);
+        JsonNode answer = Gen2Runner.MAPPER.readTree(line);
         if (answer.has("error"))
             throw new IOException("ir-expander: " + answer.get("error").asText());
         return answer;

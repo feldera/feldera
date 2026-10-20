@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.tools;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.util.RawValue;
@@ -10,7 +11,6 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
-import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
@@ -20,6 +20,7 @@ import org.dbsp.util.IndentStream;
 import org.dbsp.util.JsonStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -29,8 +30,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -42,15 +41,14 @@ public final class Gen2Runner {
     static final String ENV_VARIABLE = "GEN2_PATH";
     static final String PIPELINE_BINARY = "pipeline";
     static final String EXPANDER_BINARY = "ir-expander";
+    /** The format of the data the pipeline ingests and its output connectors write. */
+    static final String DATA_FORMAT = "arrow_ipc";
     static final int MAX_REPORTED_ROWS = 20;
     static final int MAX_PIPELINE_NAME_CHARS = 200;
-    static final ObjectMapper MAPPER = new ObjectMapper();
+    static final ObjectMapper MAPPER = Utilities.deterministicObjectMapper();
 
     @Nullable
     private static final Path BINARIES = binaries();
-    /** Whether each test compiler was incremental before {@link #beforeCompile} forced it. */
-    private static final Map<CompilerOptions, Boolean> SOURCE_INCREMENTAL =
-            Collections.synchronizedMap(new IdentityHashMap<>());
     @Nullable
     private static Engine engine;
     @Nullable
@@ -67,11 +65,13 @@ public final class Gen2Runner {
         }
     }
 
-    /** The table a step feeds: its name in the HTTP API, its column names, and the change. */
-    private record Input(String table, List<String> columns, String literal) {}
+    /** One table's change in a step: the table's name in the HTTP API, its column names, and
+     * the change as the compiler's JSON IR of a Z-set literal. */
+    private record Input(String table, List<String> columns, String changeJson) {}
 
-    /** One step: each table's change, each checked view's expected change by connector index,
-     * and whether the pipeline compacts its state after the step. */
+    /** One step: the change of each table it feeds, the expected change of each view it checks,
+     * and whether the pipeline compacts its state after the step.  The {@code outputs} key is
+     * the number of the view's output connector, its value the change as JSON IR. */
     private record Step(List<Input> inputs, Map<Integer, String> outputs, boolean shouldCompact) {}
 
     @Nullable
@@ -90,17 +90,19 @@ public final class Gen2Runner {
             options.ioOptions.gen2 = true;
     }
 
-    /** Sets compiler options for test execution. */
-    static void beforeCompile(DBSPCompiler compiler) {
-        CompilerOptions options = compiler.options;
-        if (!isEnabled() || !options.ioOptions.gen2)
-            return;
-        SOURCE_INCREMENTAL.putIfAbsent(options, options.languageOptions.incrementalize);
-        options.languageOptions.incrementalize = true;
-    }
-
-    static void testFinished() {
-        SOURCE_INCREMENTAL.clear();
+    /** Compiles the program.  When the runner is enabled the circuit is incremental, as the
+     * platform compiles it, and the options stay as the test set them. */
+    @Nullable
+    static DBSPCircuit getFinalCircuit(DBSPCompiler compiler) {
+        CompilerOptions.Language language = compiler.options.languageOptions;
+        boolean isIncrementalTest = language.incrementalize;
+        if (isEnabled() && compiler.options.ioOptions.gen2)
+            language.incrementalize = true;
+        try {
+            return compiler.getFinalCircuit(false);
+        } finally {
+            language.incrementalize = isIncrementalTest;
+        }
     }
 
     /** Runs {@code testCase} on the Gen-2 engine.
@@ -111,6 +113,8 @@ public final class Gen2Runner {
         if (!compiler.options.ioOptions.gen2)
             throw new IllegalStateException("The test builds its own compiler without the Gen-2 options");
         DBSPCircuit circuit = testCase.ccs.circuit;
+        if (!circuit.incremental)
+            throw new IllegalStateException("The test compiles its circuit without BaseSQLTests.getCircuit");
         List<IInputOperator> sources = new ArrayList<>(circuit.sourceOperators.values());
         List<DBSPSinkOperator> sinks = new ArrayList<>(circuit.sinkOperators.values());
         List<DBSPSinkOperator> checked = new ArrayList<>();
@@ -149,7 +153,7 @@ public final class Gen2Runner {
             Step step = steps.get(stepIndex);
             Map<String, byte[]> inputs = new LinkedHashMap<>();
             for (Input input : step.inputs) {
-                Gen2Expander.Expanded expanded = engine.expander.expand(input.literal, input.columns);
+                Gen2Expander.Expanded expanded = engine.expander.expand(input.changeJson, input.columns);
                 if (expanded.rows() > 0)
                     inputs.put(input.table, expanded.stream());
             }
@@ -164,7 +168,7 @@ public final class Gen2Runner {
                         continue;
                     List<String> rows = engine.expander.compare(expected, produced);
                     if (!rows.isEmpty())
-                        differences.add(describe(stepIndex, views.get(view), rows));
+                        differences.add(formatDifferences(stepIndex, views.get(view), rows));
                 }
                 if (step.shouldCompact)
                     pipeline.compact();
@@ -193,7 +197,7 @@ public final class Gen2Runner {
         return testCase.message != null && failure.contains(testCase.message);
     }
 
-    private static String describe(int stepIndex, String view, List<String> rows) {
+    private static String formatDifferences(int stepIndex, String view, List<String> rows) {
         List<String> shown = rows.subList(0, Math.min(rows.size(), MAX_REPORTED_ROWS));
         StringBuilder text = new StringBuilder("step " + stepIndex + ", view " + view + ":");
         for (String row : shown)
@@ -204,19 +208,21 @@ public final class Gen2Runner {
     }
 
     /** The steps of the case.  Adds each view some step checks to {@code checked}, which
-     * numbers the views' output connectors. */
+     * numbers the views' output connectors.  The engine runs the incremental circuit, so a
+     * non-incremental case, which lists each step's whole tables and whole views, becomes an
+     * incremental one: each step's inputs and outputs become their change since the previous step. */
     private static List<Step> steps(TestCase testCase, List<IInputOperator> sources,
                                     List<DBSPSinkOperator> sinks, List<DBSPSinkOperator> checked) {
         DBSPCompiler compiler = testCase.ccs.compiler;
         InputOutputChangeStream stream = testCase.ccs.stream;
         Shuffle inputShuffle = streamToCircuitOrder(stream.inputTables, Linq.map(sources, IInputOperator::getTableName));
         Shuffle outputShuffle = streamToCircuitOrder(stream.outputTables, Linq.map(sinks, sink -> sink.metadata.viewName));
-        boolean sourceIncremental = SOURCE_INCREMENTAL.getOrDefault(compiler.options, true);
+        boolean isIncrementalTest = compiler.options.languageOptions.incrementalize;
         List<List<String>> columns = Linq.map(sources, source -> columnNames(compiler, source.getTableName()));
 
         List<Step> steps = new ArrayList<>();
-        @Nullable Change previousInputs = null;
-        @Nullable Change previousOutputs = null;
+        Change previousInputs = new Change();
+        Change previousOutputs = new Change();
         for (IStreamCommand command : stream.commands) {
             if (command instanceof BlockForCompaction) {
                 // A stream never starts with a compaction, so a step precedes it.
@@ -227,14 +233,11 @@ public final class Gen2Runner {
             InputOutputChange change = (InputOutputChange) command;
             Change inputs = change.getInputs().shuffle(inputShuffle).simplify(compiler);
             Change outputs = change.getOutputs().shuffle(outputShuffle).simplify(compiler);
-            if (!sourceIncremental) {
-                // A non-incremental test lists each step's whole tables and whole views. The engine
-                // runs the incremental circuit, which takes the tables' change since the previous
-                // step and emits the views' change, so the step becomes those differences.
+            if (!isIncrementalTest) {
                 Change wholeInputs = inputs;
                 Change wholeOutputs = outputs;
-                inputs = delta(inputs, previousInputs);
-                outputs = delta(outputs, previousOutputs);
+                inputs = inputs.minus(previousInputs);
+                outputs = outputs.minus(previousOutputs);
                 previousInputs = wholeInputs;
                 previousOutputs = wholeOutputs;
             }
@@ -256,11 +259,13 @@ public final class Gen2Runner {
             DBSPZSetExpression data = inputs.getSet(index).data();
             if (!data.isEmpty())
                 result.add(new Input(sqlName(sources.get(index).getTableName()), columns.get(index),
-                        literal(compiler, data)));
+                        asJson(compiler, data)));
         }
         return result;
     }
 
+    /** The expected change of each view the step lists, as JSON IR, keyed by the number of the
+     * view's output connector.  Adds a view to {@code checked} the first time a step lists it. */
     private static Map<Integer, String> outputs(DBSPCompiler compiler, Change outputs, List<DBSPSinkOperator> sinks,
                                                 List<DBSPSinkOperator> checked) {
         if (outputs.getSetCount() == 0)
@@ -277,21 +282,9 @@ public final class Gen2Runner {
             DBSPSinkOperator sink = listed.get(index);
             if (!checked.contains(sink))
                 checked.add(sink);
-            result.put(checked.indexOf(sink), literal(compiler, outputs.getSet(index).data()));
+            result.put(checked.indexOf(sink), asJson(compiler, outputs.getSet(index).data()));
         }
         return result;
-    }
-
-    private static Change delta(Change current, @Nullable Change previous) {
-        if (previous == null || previous.getSetCount() == 0 || current.getSetCount() == 0)
-            return current;
-        if (previous.getSetCount() != current.getSetCount())
-            throw new IllegalStateException("Steps list " + previous.getSetCount() + " and "
-                    + current.getSetCount() + " sets");
-        TableData[] sets = new TableData[current.getSetCount()];
-        for (int index = 0; index < sets.length; index++)
-            sets[index] = current.getSet(index).minus(previous.getSet(index).data());
-        return new Change(sets);
     }
 
     /** A test may list its tables or views in its own order; an empty list means circuit order. */
@@ -313,7 +306,7 @@ public final class Gen2Runner {
         return identifier.isQuoted() ? "\"" + identifier.name() + "\"" : identifier.name();
     }
 
-    private static String literal(DBSPCompiler compiler, DBSPZSetExpression zset) {
+    private static String asJson(DBSPCompiler compiler, DBSPZSetExpression zset) {
         IndentStream stream = new IndentStream(new StringBuilder());
         stream.setIndentAmount(0);
         ToJsonInnerVisitor visitor = new ToJsonInnerVisitor(compiler, new JsonStream(stream), 1);
@@ -332,7 +325,7 @@ public final class Gen2Runner {
             transport.put("name", "file_output");
             transport.putObject("config").put("path", outputFile(outputDirectory, index).toString());
             ObjectNode format = connector.putObject("format");
-            format.put("name", "arrow_ipc");
+            format.put("name", DATA_FORMAT);
             format.putObject("config");
         }
         String name = testCase.javaTestName;
@@ -346,12 +339,15 @@ public final class Gen2Runner {
     }
 
     /** The configuration's {@code program_ir}, as the platform composes it from the compiler's
-     * outputs.  The circuit IR is spliced in as written: parsing it would round decimals that
-     * do not fit a double. */
-    private static String programIr(CompilerCircuitStream ccs) {
+     * {@code --dataflow}, {@code -js}, and {@code --gen2} outputs.  The circuit IR is spliced in
+     * as written: parsing it would round decimals that do not fit a double. */
+    private static String programIr(CompilerCircuitStream ccs) throws IOException {
+        StringBuilder dataflow = new StringBuilder();
+        ccs.compiler.getDataflow(dataflow, ccs.circuit);
+        JsonNode mir = MAPPER.readTree(dataflow.toString()).get("mir");
         ToJsonOuterVisitor visitor = ToJsonOuterVisitor.create(ccs.compiler, 1);
         visitor.apply(ccs.circuit);
-        return "{\"mir\":{},\"program_schema\":" + ccs.compiler.metadata.asJson()
+        return "{\"mir\":" + mir + ",\"program_schema\":" + ccs.compiler.metadata.asJson()
                 + ",\"circuit_ir\":" + visitor.getJsonString() + "}";
     }
 
@@ -376,7 +372,7 @@ public final class Gen2Runner {
                 // Under the build directory, so a clean removes the logs.
                 Path workDirectory = Files.createTempDirectory(
                         Files.createDirectories(Paths.get("target", "gen2")), "run-").toAbsolutePath();
-                build(binaries, workDirectory);
+                buildEngineBinaries(binaries, workDirectory);
                 engine = new Engine(new Gen2Pipeline(binaries.resolve(PIPELINE_BINARY), workDirectory),
                         new Gen2Expander(binaries.resolve(EXPANDER_BINARY), workDirectory), workDirectory);
                 Engine started = engine;
@@ -390,9 +386,8 @@ public final class Gen2Runner {
         return engine;
     }
 
-    /** Builds the binaries when {@code binaries} is a Cargo target directory, so a run never
-     * uses stale ones.  Anywhere else, such as an unpacked CI artifact, they must exist. */
-    private static void build(Path binaries, Path workDirectory) throws IOException, InterruptedException {
+    /** Builds the binaries when {@code binaries} is a Cargo target directory. */
+    private static void buildEngineBinaries(Path binaries, Path workDirectory) throws IOException, InterruptedException {
         Path target = binaries.getParent();
         Path workspace = target == null ? null : target.getParent();
         boolean isCargoTarget = target != null && workspace != null
