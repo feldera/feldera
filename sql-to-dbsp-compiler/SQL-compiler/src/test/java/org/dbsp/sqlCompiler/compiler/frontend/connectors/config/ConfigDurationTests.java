@@ -26,7 +26,7 @@ public class ConfigDurationTests {
         try {
             ConfigDuration.parseNanos(text);
             Assert.fail("expected " + text + " to be rejected");
-        } catch (ConfigDuration.ParseException e) {
+        } catch (ConfigQuantity.ParseException e) {
             Assert.assertTrue(e.getMessage(), e.getMessage().contains(expected));
         }
     }

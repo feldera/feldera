@@ -18,6 +18,7 @@ use dbsp::{
     utils::{Tup2, Tup10},
 };
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
+use feldera_types::size::ConfigSize;
 use rand::{Rng, RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
 use std::hint::black_box;
@@ -120,8 +121,12 @@ fn bench(generate_on_storage: bool) {
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                min_storage_bytes: Some(0),
-                min_step_storage_bytes: if generate_on_storage { Some(0) } else { None },
+                min_spill_size: Some(ConfigSize::ZERO),
+                min_step_spill_size: if generate_on_storage {
+                    Some(ConfigSize::ZERO)
+                } else {
+                    None
+                },
                 ..StorageOptions::default()
             },
         )

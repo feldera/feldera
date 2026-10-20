@@ -200,8 +200,8 @@ pipeline.foreach_chunk("q3", callback)
 # run the pipeline
 pipeline.start()
 
-# wait for the pipeline to finish and shutdown
-pipeline.wait_for_completion(shutdown=True)
+# wait for the pipeline to finish and stop it
+pipeline.wait_for_completion(force_stop=True)
 ```
 
 This is useful for:

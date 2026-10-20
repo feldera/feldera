@@ -173,9 +173,10 @@ fn create_reader_config(
     }))
     .unwrap();
 
-    let endpoint = input_transport_config_to_endpoint(&config, "", default_secrets_directory())
-        .unwrap()
-        .unwrap();
+    let endpoint =
+        input_transport_config_to_endpoint(&config, "", default_secrets_directory(), None)
+            .unwrap()
+            .unwrap();
     assert!(endpoint.fault_tolerance() == Some(FtModel::ExactlyOnce));
 
     let receiver = DummyInputReceiver::new();
@@ -296,6 +297,8 @@ fn test_synchronization() {
     reader.queue(false);
     let metadata = Metadata {
         offsets: expect_lens.into_iter().map(|len| 0..len).collect(),
+        shard: None,
+        partitions: None,
     };
     receiver.expect(vec![ConsumerCall::Extended {
         num_records: n,
@@ -357,6 +360,8 @@ fn test_synchronization_backpressure() {
     reader.queue(false);
     let metadata = Metadata {
         offsets: [2001, 1].into_iter().map(|len| 0..len).collect(),
+        shard: None,
+        partitions: None,
     };
     receiver.expect(vec![ConsumerCall::Extended {
         num_records: expect,
@@ -399,6 +404,8 @@ fn test_synchronization_backpressure() {
     reader.queue(false);
     let metadata = Metadata {
         offsets: [2001..3500, 1..1].into_iter().collect(),
+        shard: None,
+        partitions: None,
     };
     receiver.expect(vec![ConsumerCall::Extended {
         num_records: expect,
@@ -421,6 +428,8 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
         #[allow(clippy::single_range_in_vec_init)]
         let metadata = Metadata {
             offsets: vec![batch.start as i64..batch.end as i64],
+            shard: None,
+            partitions: None,
         };
         serde_json::to_value(metadata).unwrap()
     }
@@ -533,6 +542,8 @@ fn test_input_tombstone() {
 
     let metadata = Metadata {
         offsets: vec![0..4],
+        shard: None,
+        partitions: None,
     };
     receiver.expect(vec![ConsumerCall::Extended {
         num_records: 3,
@@ -591,6 +602,8 @@ fn test_input_header_filter() {
     // dropped offsets inside and beyond the range do not change it.
     let metadata = Metadata {
         offsets: vec![0..5],
+        shard: None,
+        partitions: None,
     };
     receiver.expect(vec![ConsumerCall::Extended {
         num_records: 3,
@@ -665,6 +678,8 @@ fn test_input_header_filter_boolean() {
     // (3), skipping the leading drop at offset 0.
     let metadata = Metadata {
         offsets: vec![1..4],
+        shard: None,
+        partitions: None,
     };
     receiver.expect(vec![ConsumerCall::Extended {
         num_records: 2,
@@ -3690,6 +3705,414 @@ fn test_kafka_metadata_raw() {
     assert_eq!(received, expected);
 }
 
+/// Tests for distributed connectors, which divide a topic's partitions among
+/// the hosts of a multihost pipeline.
+mod distributed {
+    use std::collections::BTreeSet;
+
+    use super::*;
+    use crate::transport::kafka::KafkaFtInputEndpoint;
+    use crate::transport::kafka::ft::input::select_partitions;
+    use feldera_types::coordination::{InputDistribution, InputShard};
+    use rdkafka::producer::Producer;
+
+    fn shard(host: usize, n_hosts: usize, home: usize) -> InputShard {
+        InputShard::new(host, n_hosts, InputDistribution { home }).unwrap()
+    }
+
+    fn config(extra: JsonValue) -> KafkaInputConfig {
+        let mut config = json!({
+            "topic": "t",
+            "bootstrap.servers": "localhost:9092",
+        });
+        config
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        serde_json::from_value(config).unwrap()
+    }
+
+    #[test]
+    fn select_all_partitions_of_topic() {
+        // Three hosts, home host 1: partition p goes to host (p + 1) % 3.
+        let selected = |host| {
+            select_partitions(config(json!({})), 5, &shard(host, 3, 1))
+                .unwrap()
+                .partitions
+                .unwrap()
+        };
+        assert_eq!(selected(0), [2]);
+        assert_eq!(selected(1), [0, 3]);
+        assert_eq!(selected(2), [1, 4]);
+    }
+
+    #[test]
+    fn select_from_explicit_partitions_and_offsets() {
+        let config = config(json!({
+            "partitions": [7, 2, 4],
+            "start_from": {"offsets": [70, 20, 40]},
+        }));
+        let selected = select_partitions(config.clone(), 10, &shard(0, 2, 0)).unwrap();
+        assert_eq!(selected.partitions.unwrap(), [2, 7]);
+        assert_eq!(
+            selected.start_from,
+            KafkaStartFromConfig::Offsets(vec![20, 70])
+        );
+
+        let selected = select_partitions(config, 10, &shard(1, 2, 0)).unwrap();
+        assert_eq!(selected.partitions.unwrap(), [4]);
+        assert_eq!(selected.start_from, KafkaStartFromConfig::Offsets(vec![40]));
+    }
+
+    /// An explicit list of partitions that are not consecutive divides
+    /// evenly, because the hosts divide it by position.
+    #[test]
+    fn explicit_partitions_divide_evenly() {
+        let config = config(json!({"partitions": [0, 2, 4, 6]}));
+        let selected = |host| {
+            select_partitions(config.clone(), 8, &shard(host, 2, 0))
+                .unwrap()
+                .partitions
+                .unwrap()
+        };
+        assert_eq!(selected(0), [0, 4]);
+        assert_eq!(selected(1), [2, 6]);
+    }
+
+    /// Resume metadata is positional in a host's partition list, so a
+    /// partition that the topic gains must go after the host's existing ones.
+    #[test]
+    fn new_partitions_go_last() {
+        for host in 0..3 {
+            let before = select_partitions(config(json!({})), 4, &shard(host, 3, 2))
+                .unwrap()
+                .partitions
+                .unwrap();
+            let after = select_partitions(config(json!({})), 9, &shard(host, 3, 2))
+                .unwrap()
+                .partitions
+                .unwrap();
+            assert_eq!(after[..before.len()], before[..]);
+        }
+    }
+
+    #[test]
+    fn mismatched_offsets_are_rejected() {
+        let config = config(json!({"start_from": {"offsets": [1, 2]}}));
+        assert!(select_partitions(config, 3, &shard(0, 2, 0)).is_err());
+    }
+
+    #[test]
+    fn synchronize_partitions_is_rejected() {
+        let sync = config(json!({"synchronize_partitions": true}));
+        assert!(KafkaFtInputEndpoint::new(sync.clone(), Some(InputShard::ALL)).is_err());
+        assert!(KafkaFtInputEndpoint::new(sync, None).is_ok());
+    }
+
+    fn create_reader(
+        topic: &str,
+        shard: InputShard,
+        start_from: JsonValue,
+    ) -> (
+        Box<dyn TransportInputEndpoint>,
+        DummyInputReceiver,
+        Box<dyn InputReader>,
+    ) {
+        create_resumed_reader(topic, shard, start_from, None)
+    }
+
+    fn create_resumed_reader(
+        topic: &str,
+        shard: InputShard,
+        start_from: JsonValue,
+        resume_info: Option<&Metadata>,
+    ) -> (
+        Box<dyn TransportInputEndpoint>,
+        DummyInputReceiver,
+        Box<dyn InputReader>,
+    ) {
+        let config = serde_json::from_value(json!({
+          "name": "kafka_input",
+          "config": {
+              "topic": topic,
+              "log_level": "debug",
+              "start_from": start_from,
+          },
+        }))
+        .unwrap();
+        let endpoint = input_transport_config_to_endpoint(
+            &config,
+            "",
+            default_secrets_directory(),
+            Some(shard),
+        )
+        .unwrap()
+        .unwrap();
+        let receiver = DummyInputReceiver::new();
+        let reader = endpoint
+            .open(
+                receiver.consumer(),
+                Box::new(DummyParser::new(&receiver)),
+                Relation::empty(),
+                resume_info.map(|metadata| serde_json::to_value(metadata).unwrap()),
+            )
+            .unwrap();
+        (endpoint, receiver, reader)
+    }
+
+    /// Produces `n` records into `partition`, with IDs `first..first + n`.
+    fn produce(producer: &TestProducer, topic: &str, partition: i32, first: u32, n: u32) {
+        for id in first..first + n {
+            let mut writer = CsvWriterBuilder::new()
+                .has_headers(false)
+                .from_writer(Vec::new());
+            writer.serialize(TestStruct::for_id(id)).unwrap();
+            let bytes = writer.into_inner().unwrap();
+            let record = <BaseRecord<(), [u8], ()>>::to(topic)
+                .payload(&bytes)
+                .partition(partition);
+            producer.producer.send(record).unwrap();
+        }
+        producer.producer.flush(Duration::from_secs(10)).unwrap();
+    }
+
+    /// Three hosts together read every record of a topic exactly once, and
+    /// each one reads only its own partitions.
+    #[test]
+    fn hosts_divide_partitions() {
+        init_test_logger();
+        const TOPIC: &str = "distributed_partitions";
+        let _kafka_resources = KafkaResources::create_topics(&[(TOPIC, 5)]);
+
+        // Partition `p` gets `p + 1` records, with IDs that start at `10 * p`.
+        let producer = TestProducer::new();
+        for partition in 0..5 {
+            produce(
+                &producer,
+                TOPIC,
+                partition,
+                10 * partition as u32,
+                partition as u32 + 1,
+            );
+        }
+
+        // With home host 1, host 0 reads partition 2, host 1 reads partitions
+        // 0 and 3, and host 2 reads partitions 1 and 4.
+        let mut all_records = BTreeSet::new();
+        for (host, partitions) in [(0, vec![2]), (1, vec![0, 3]), (2, vec![1, 4])] {
+            let (_endpoint, receiver, reader) =
+                create_reader(TOPIC, shard(host, 3, 1), json!("earliest"));
+            reader.extend();
+            let n: usize = partitions.iter().map(|p| p + 1).sum();
+            receiver.expect_buffering(n);
+            reader.queue(false);
+            let metadata = Metadata {
+                offsets: partitions.iter().map(|&p| 0..p as i64 + 1).collect(),
+                shard: Some(shard(host, 3, 1)),
+                partitions: Some(partitions.iter().map(|&p| p as i32).collect()),
+            };
+            receiver.expect(vec![ConsumerCall::Extended {
+                num_records: n,
+                metadata: serde_json::to_value(&metadata).unwrap(),
+            }]);
+            for record in take_flushed(&receiver) {
+                let id: u32 = record.split(',').next().unwrap().parse().unwrap();
+                assert!(
+                    partitions.contains(&(id as usize / 10)),
+                    "host {host} read record {id} from a partition it does not own"
+                );
+                assert!(all_records.insert(id), "record {id} read twice");
+            }
+        }
+        let expected = (0..5u32)
+            .flat_map(|p| 10 * p..10 * p + p + 1)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(all_records, expected);
+    }
+
+    /// A host resumes only from metadata that it wrote while reading the same
+    /// shard, because the offsets in the metadata are positional in the
+    /// shard's partitions.
+    #[test]
+    // A shard with one partition has one range of offsets.
+    #[allow(clippy::single_range_in_vec_init)]
+    fn resume_requires_the_same_shard() {
+        init_test_logger();
+        const TOPIC: &str = "distributed_resume_shard";
+        let _kafka_resources = KafkaResources::create_topics(&[(TOPIC, 2)]);
+        let producer = TestProducer::new();
+        produce(&producer, TOPIC, 0, 0, 3);
+
+        // Host 0 of 2 with home host 0 reads partition 0.  It read 1 record
+        // before the checkpoint, so 2 remain.
+        let ours = shard(0, 2, 0);
+        // An older checkpoint, which does not name its partitions.
+        let checkpoint = |shard| Metadata {
+            offsets: vec![0..1],
+            shard: Some(shard),
+            partitions: None,
+        };
+        let (_endpoint, receiver, reader) =
+            create_resumed_reader(TOPIC, ours, json!("earliest"), Some(&checkpoint(ours)));
+        reader.extend();
+        receiver.expect_buffering(2);
+        reader.queue(false);
+        receiver.expect(vec![ConsumerCall::Extended {
+            num_records: 2,
+            metadata: serde_json::to_value(Metadata {
+                offsets: vec![1..3],
+                shard: Some(ours),
+                partitions: Some(vec![0]),
+            })
+            .unwrap(),
+        }]);
+
+        // With home host 1, host 0 would read partition 1 instead, so it must
+        // not apply the checkpoint's offsets.
+        let (_endpoint, receiver, _reader) = create_resumed_reader(
+            TOPIC,
+            ours,
+            json!("earliest"),
+            Some(&checkpoint(shard(0, 2, 1))),
+        );
+        receiver.expect(vec![ConsumerCall::Error(true)]);
+
+        // A host that reads all of the partitions must not either.
+        let (_endpoint, receiver, _reader) = super::create_reader(
+            TOPIC,
+            Some(serde_json::to_value(checkpoint(ours)).unwrap()),
+            false,
+        );
+        receiver.expect(vec![ConsumerCall::Error(true)]);
+    }
+
+    /// A host that owns no partitions reads nothing, and ends its input once
+    /// it runs, so that it does not hold back the connector's merged
+    /// frontier.  Its reader keeps running, so that the controller keeps the
+    /// endpoint.  This holds for every way to choose where to start reading.
+    #[test]
+    fn host_without_partitions_ends_input() {
+        init_test_logger();
+        const TOPIC: &str = "distributed_idle_host";
+        let _kafka_resources = KafkaResources::create_topics(&[(TOPIC, 2)]);
+        let producer = TestProducer::new();
+        produce(&producer, TOPIC, 0, 0, 3);
+        produce(&producer, TOPIC, 1, 3, 3);
+
+        // With 3 hosts and home host 0, partitions 0 and 1 go to hosts 0 and
+        // 1, so host 2 has none.
+        for start_from in [
+            json!("earliest"),
+            json!("latest"),
+            json!({"timestamp": 0}),
+            json!({"offsets": [1, 2]}),
+        ] {
+            println!("start_from: {start_from}");
+            let (_endpoint, receiver, reader) = create_reader(TOPIC, shard(2, 3, 0), start_from);
+
+            // While paused, the host does not end its input.
+            reader.pause();
+            sleep(Duration::from_secs(1));
+            assert_eq!(*receiver.inner.calls.lock().unwrap(), vec![]);
+
+            reader.extend();
+            receiver.expect(vec![ConsumerCall::Eoi]);
+            assert_eq!(take_flushed(&receiver), Vec::<String>::new());
+
+            // The reader neither exits nor ends its input again.
+            sleep(Duration::from_secs(2));
+            assert!(!reader.is_closed());
+            assert_eq!(*receiver.inner.calls.lock().unwrap(), vec![]);
+        }
+    }
+}
+
+/// Tests for the end of input, with `enable.partition.eof`.
+mod end_of_input {
+    use super::*;
+    use rdkafka::producer::Producer;
+
+    fn produce(producer: &TestProducer, topic: &str, ids: Range<u32>) {
+        for id in ids {
+            let mut writer = CsvWriterBuilder::new()
+                .has_headers(false)
+                .from_writer(Vec::new());
+            writer.serialize(TestStruct::for_id(id)).unwrap();
+            let bytes = writer.into_inner().unwrap();
+            let record = <BaseRecord<(), [u8], ()>>::to(topic)
+                .payload(&bytes)
+                .partition(0);
+            producer.producer.send(record).unwrap();
+        }
+        producer.producer.flush(Duration::from_secs(10)).unwrap();
+    }
+
+    /// Once the reader reaches the end of every partition, it ends its input
+    /// and reads nothing more, even if more records arrive, but it keeps
+    /// running, so that the controller keeps the endpoint.
+    #[test]
+    fn reads_nothing_after_end_of_input() {
+        init_test_logger();
+        const TOPIC: &str = "end_of_input";
+        let _kafka_resources = KafkaResources::create_topics(&[(TOPIC, 1)]);
+        let producer = TestProducer::new();
+        produce(&producer, TOPIC, 0..3);
+
+        let config = serde_json::from_value(json!({
+          "name": "kafka_input",
+          "config": {
+              "topic": TOPIC,
+              "log_level": "debug",
+              "start_from": "earliest",
+              "enable.partition.eof": "true",
+          },
+        }))
+        .unwrap();
+        let endpoint =
+            input_transport_config_to_endpoint(&config, "", default_secrets_directory(), None)
+                .unwrap()
+                .unwrap();
+        let receiver = DummyInputReceiver::new();
+        let reader = endpoint
+            .open(
+                receiver.consumer(),
+                Box::new(DummyParser::new(&receiver)),
+                Relation::empty(),
+                None,
+            )
+            .unwrap();
+        reader.extend();
+        let ended = || {
+            receiver
+                .inner
+                .calls
+                .lock()
+                .unwrap()
+                .contains(&ConsumerCall::Eoi)
+        };
+        let buffered = || {
+            receiver
+                .inner
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|call| match call {
+                    ConsumerCall::Buffered(amt) => amt.records,
+                    _ => 0,
+                })
+                .sum::<usize>()
+        };
+        wait(ended, 60_000).expect("timed out reaching the end of input");
+        assert_eq!(buffered(), 3);
+
+        produce(&producer, TOPIC, 3..6);
+        sleep(Duration::from_secs(3));
+        assert_eq!(buffered(), 3);
+        assert!(!reader.is_closed());
+    }
+}
+
 /// Tests for a `partitions` list that is not in ascending order.
 ///
 /// The reader keeps its partitions in ascending order internally, so it must
@@ -3710,7 +4133,7 @@ mod unsorted_partitions {
 
     #[test]
     fn sort_keeps_offsets_with_their_partitions() {
-        let sorted = sort_partitions(&config(json!({
+        let sorted = sort_partitions(config(json!({
             "partitions": [7, 2, 4],
             "start_from": {"offsets": [70, 20, 40]},
         })));
@@ -3720,15 +4143,15 @@ mod unsorted_partitions {
             KafkaStartFromConfig::Offsets(vec![20, 40, 70])
         );
 
-        let sorted = sort_partitions(&config(json!({"partitions": [3, 1, 2]})));
+        let sorted = sort_partitions(config(json!({"partitions": [3, 1, 2]})));
         assert_eq!(sorted.partitions.unwrap(), [1, 2, 3]);
 
         // Without a list, there is nothing to sort.
-        assert_eq!(sort_partitions(&config(json!({}))).partitions, None);
+        assert_eq!(sort_partitions(config(json!({}))).partitions, None);
 
         // Mismatched offsets keep their order, so that the reader can report
         // the mismatch as the user wrote it.
-        let sorted = sort_partitions(&config(json!({
+        let sorted = sort_partitions(config(json!({
             "partitions": [7, 2],
             "start_from": {"offsets": [70, 20, 40]},
         })));
@@ -3762,9 +4185,10 @@ mod unsorted_partitions {
           "config": inner_config,
         }))
         .unwrap();
-        let endpoint = input_transport_config_to_endpoint(&config, "", default_secrets_directory())
-            .unwrap()
-            .unwrap();
+        let endpoint =
+            input_transport_config_to_endpoint(&config, "", default_secrets_directory(), None)
+                .unwrap()
+                .unwrap();
         let receiver = DummyInputReceiver::new();
         let reader = endpoint
             .open(
@@ -3832,6 +4256,8 @@ mod unsorted_partitions {
         reader.queue(false);
         let metadata = Metadata {
             offsets: vec![0..2, 0..0, 0..0],
+            shard: None,
+            partitions: None,
         };
         receiver.expect(vec![ConsumerCall::Extended {
             num_records: 2,
@@ -3855,6 +4281,8 @@ mod unsorted_partitions {
         // from partition 1, so 4 records remain, all from partition 0.
         let resume_info = Metadata {
             offsets: vec![0..1, 0..5],
+            shard: None,
+            partitions: None,
         };
         let (_endpoint, receiver, reader) = create_reader(
             TOPIC,
@@ -3866,6 +4294,8 @@ mod unsorted_partitions {
         reader.queue(false);
         let metadata = Metadata {
             offsets: vec![1..5, 5..5],
+            shard: None,
+            partitions: None,
         };
         receiver.expect(vec![ConsumerCall::Extended {
             num_records: 4,

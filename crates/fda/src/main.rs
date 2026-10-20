@@ -9,6 +9,7 @@ use feldera_types::checkpoint::CheckpointResponse;
 use feldera_types::config::{FtModel, RuntimeConfig, StorageOptions};
 use feldera_types::duration::ConfigDuration;
 use feldera_types::error::ErrorResponse;
+use feldera_types::size::ConfigSize;
 use feldera_types::transport::clock::ClockAdvanceRequest;
 use futures_util::StreamExt;
 use json_to_table::json_to_table;
@@ -285,6 +286,7 @@ impl CacheDisabler {
                 udf_toml: None,
                 program_config: Some(pc),
                 runtime_config: None,
+                deployment_config: None,
             })
             .send()
             .await
@@ -1004,6 +1006,23 @@ where
     })
 }
 
+/// Parses a size for a key that once counted megabytes, refusing a bare
+/// number: `16000` meant sixteen gigabytes under the deprecated key, and as a
+/// size it would mean sixteen kilobytes, so the value must say its unit.
+fn parse_size_with_unit(key: RuntimeConfigKey, value: &str) -> Result<ConfigSize, String> {
+    match ConfigSize::from_str_with_unit(value) {
+        Ok((size, true)) => Ok(size),
+        Ok((_, false)) => Err(format!(
+            "`{value}` is not a valid value for `{}`: write a size with a unit, such as `{value}M`",
+            key_name(key)
+        )),
+        Err(error) => Err(format!(
+            "`{value}` is not a valid value for `{}`: {error}",
+            key_name(key)
+        )),
+    }
+}
+
 fn patch_runtime_config(
     rc: &mut RuntimeConfig,
     key: RuntimeConfigKey,
@@ -1083,13 +1102,34 @@ fn patch_runtime_config(
             rc.resources.cpu_cores_max = Some(parse_value(key, value)?);
         }
         RuntimeConfigKey::MemoryMbMin => {
-            rc.resources.memory_mb_min = Some(parse_value(key, value)?);
+            eprintln!("`memory_mb_min` is deprecated; use `memory_min` instead");
+            rc.resources.memory_min = Some(ConfigSize::from_mb(parse_value(key, value)?));
         }
         RuntimeConfigKey::MemoryMbMax => {
-            rc.resources.memory_mb_max = Some(parse_value(key, value)?);
+            eprintln!("`memory_mb_max` is deprecated; use `memory_max` instead");
+            rc.resources.memory_max = Some(ConfigSize::from_mb(parse_value(key, value)?));
+        }
+        RuntimeConfigKey::MemoryMin => {
+            rc.resources.memory_min = Some(parse_size_with_unit(key, value)?);
+        }
+        RuntimeConfigKey::MemoryMax => {
+            rc.resources.memory_max = Some(parse_size_with_unit(key, value)?);
         }
         RuntimeConfigKey::StorageMbMax => {
-            rc.resources.storage_mb_max = Some(parse_value(key, value)?);
+            eprintln!("`storage_mb_max` is deprecated; use `storage_max` instead");
+            rc.resources.storage_max = Some(ConfigSize::from_mb(parse_value(key, value)?));
+        }
+        RuntimeConfigKey::StorageMin => {
+            rc.resources.storage_min = Some(parse_size_with_unit(key, value)?);
+        }
+        RuntimeConfigKey::StorageMax => {
+            rc.resources.storage_max = Some(parse_size_with_unit(key, value)?);
+        }
+        RuntimeConfigKey::MaxRss => {
+            rc.max_rss = Some(parse_size_with_unit(key, value)?);
+        }
+        RuntimeConfigKey::DatafusionMemory => {
+            rc.datafusion_memory = Some(parse_size_with_unit(key, value)?);
         }
         RuntimeConfigKey::StorageClass => {
             rc.resources.storage_class = Some(parse_value(key, value)?);
@@ -1098,8 +1138,14 @@ fn patch_runtime_config(
             rc.resources.volume_attributes_class = Some(parse_value(key, value)?);
         }
         RuntimeConfigKey::MinStorageBytes => {
+            eprintln!("`min_storage_bytes` is deprecated; use `min_spill_size` instead");
             if let Some(storage) = rc.storage.as_mut() {
-                storage.min_storage_bytes = Some(parse_value(key, value)?);
+                storage.min_spill_size = Some(ConfigSize::from_bytes(parse_value(key, value)?));
+            }
+        }
+        RuntimeConfigKey::MinSpillSize => {
+            if let Some(storage) = rc.storage.as_mut() {
+                storage.min_spill_size = Some(parse_value(key, value)?);
             }
         }
         RuntimeConfigKey::ClockResolutionUsecs => {
@@ -1442,6 +1488,7 @@ async fn set_pipeline_tags(client: &Client, name: &str, tags: Vec<String>) -> Ve
             udf_toml: None,
             program_config: None,
             runtime_config: None,
+            deployment_config: None,
         })
         .send()
         .await
@@ -1523,6 +1570,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                             use_platform_compiler,
                         }),
                         runtime_config: None,
+                        deployment_config: None,
                     })
                     .send()
                     .await
@@ -1604,6 +1652,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     udf_toml: source_pipeline.udf_toml,
                     program_config: Some(program_config),
                     runtime_config: Some(runtime_config),
+                    deployment_config: None,
                 })
                 .send()
                 .await
@@ -1700,6 +1749,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         udf_toml: None,
                         program_config: None,
                         runtime_config: None,
+                        deployment_config: None,
                     })
                     .send()
                     .await
@@ -2306,6 +2356,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     udf_toml: None,
                     program_config: None,
                     runtime_config: Some(rc),
+                    deployment_config: None,
                 })
                 .send()
                 .await
@@ -3577,6 +3628,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                     use_platform_compiler,
                 }),
                 runtime_config: None,
+                deployment_config: None,
             };
             let response = client
                 .patch_pipeline()
@@ -3705,6 +3757,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                     udf_toml,
                     program_config: None,
                     runtime_config: None,
+                    deployment_config: None,
                 };
                 let response = client
                     .patch_pipeline()
@@ -4096,6 +4149,7 @@ mod tests {
         ProgramError, RustCompilationInfo, SqlCompilationInfo, SqlCompilerMessage,
     };
     use feldera_types::duration::ConfigDuration;
+    use feldera_types::size::ConfigSize;
     use std::io::Write;
     use std::time::Duration;
 
@@ -4113,6 +4167,50 @@ mod tests {
             Some(ConfigDuration::from_millis(10))
         );
         assert_eq!(config.clock_resolution, Some(ConfigDuration::from_secs(2)));
+    }
+
+    /// A size key stores what the user typed as a size, and the deprecated
+    /// megabyte and byte keys reach the same field.
+    #[test]
+    fn setting_a_size_key_stores_a_size() {
+        let mut config = RuntimeConfig::default();
+
+        patch_runtime_config(&mut config, RuntimeConfigKey::MemoryMax, "16Gi").unwrap();
+        patch_runtime_config(&mut config, RuntimeConfigKey::MemoryMbMin, "4000").unwrap();
+        patch_runtime_config(&mut config, RuntimeConfigKey::StorageMax, "400G").unwrap();
+        patch_runtime_config(&mut config, RuntimeConfigKey::MaxRss, "12G").unwrap();
+        patch_runtime_config(&mut config, RuntimeConfigKey::Storage, "true").unwrap();
+        patch_runtime_config(&mut config, RuntimeConfigKey::MinSpillSize, "10Mi").unwrap();
+
+        assert_eq!(config.resources.memory_max, Some(ConfigSize::from_gib(16)));
+        assert_eq!(config.resources.memory_min, Some(ConfigSize::from_mb(4000)));
+        assert_eq!(
+            config.resources.storage_max,
+            Some(ConfigSize::from_mb(400_000))
+        );
+        assert_eq!(config.max_rss, Some(ConfigSize::from_mb(12_000)));
+        assert_eq!(
+            config.storage.as_ref().unwrap().min_spill_size,
+            Some(ConfigSize::from_mib(10))
+        );
+
+        let error =
+            patch_runtime_config(&mut config, RuntimeConfigKey::MemoryMax, "16 GB").unwrap_err();
+        assert!(
+            error.contains("memory_max") && error.contains("unknown unit"),
+            "{error}"
+        );
+
+        // A bare number meant megabytes under the deprecated key and would mean
+        // bytes as a size, so a megabyte key asks for the unit; a byte key reads it.
+        let error =
+            patch_runtime_config(&mut config, RuntimeConfigKey::MemoryMax, "16000").unwrap_err();
+        assert!(error.contains("`16000M`"), "{error}");
+        patch_runtime_config(&mut config, RuntimeConfigKey::MinSpillSize, "4096").unwrap();
+        assert_eq!(
+            config.storage.as_ref().unwrap().min_spill_size,
+            Some(ConfigSize::from_bytes(4096))
+        );
     }
 
     /// `none` turns periodic checkpointing off. The bare number of seconds

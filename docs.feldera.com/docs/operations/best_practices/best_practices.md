@@ -41,14 +41,14 @@ For cross-region recovery or blue-green deployment strategies, also see [Checkpo
 
 ## Provision 2-4x your input data size for storage
 
-Start with `storage_mb_max` set to **two to four times the size of your input
+Start with `storage_max` set to **two to four times the size of your input
 data**, then measure.  The `resources` section is enforced only in Feldera
 Enterprise.
 
 ```json
 {
   "resources": {
-    "storage_mb_max": 400000,
+    "storage_max": "400G",
     "storage_class": "gp3"
   }
 }
@@ -63,8 +63,8 @@ and some programs need less than 2x while others need more than 4x.
 | `LATENESS` annotations that let Feldera garbage-collect | Materialized views, tables with primary keys |
 | Few or no materialized views | Many large or complex materialized views |
 
-`storage_mb_max` cannot be edited while a stopped pipeline still holds
-storage, so size it generously up front. [Storage can be expanded out of band](/operations/guide/#expand-existing-pipeline-storage) but will result in a mismatch between the volume size and the reported `storage_mb_max`. `storage_class` determines IOPS and throughput; backfill is
+`storage_max` cannot be edited while a stopped pipeline still holds
+storage, so size it generously up front. [Storage can be expanded out of band](/operations/guide/#expand-existing-pipeline-storage) but will result in a mismatch between the volume size and the reported `storage_max`. `storage_class` determines IOPS and throughput; backfill is
 frequently storage-bound. Use a volume with [fast IO and throughput](/get-started/enterprise/helm-guide/#persistent-volume-sizing) when performing a large backfill.
 
 `volume_attributes_class` names a Kubernetes

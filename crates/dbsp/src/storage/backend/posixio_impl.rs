@@ -741,11 +741,14 @@ impl PosixWriter {
 
     fn flush(&mut self) -> Result<(), StorageError> {
         WRITE_LATENCY_MICROSECONDS.record_callback(|| {
-            if let Some(storage_mb_max) = Runtime::with_dev_tweaks(|tweaks| tweaks.storage_mb_max) {
-                let usage_mb = (self.drop.usage.load(Ordering::Relaxed) / 1024 / 1024)
+            if let Some(storage_max) = Runtime::with_dev_tweaks(|tweaks| tweaks.storage_max) {
+                let usage = self
+                    .drop
+                    .usage
+                    .load(Ordering::Relaxed)
                     .max(0)
                     .cast_unsigned();
-                if usage_mb > storage_mb_max {
+                if usage > storage_max.as_bytes() {
                     return Err(StorageError::stdio(
                         ErrorKind::StorageFull,
                         "write",

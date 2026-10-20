@@ -126,7 +126,25 @@ pub(crate) const MAX_LEVEL0_BATCH_SIZE_RECORDS: u16 = 14_999;
 /// something else asks it to, such as a compaction request or memory pressure.
 pub(crate) const MIN_LEVEL0_MERGE_BATCHES: usize = 8;
 
-fn scope_tokio_merger_locals<F>(
+/// Sets the task-local variables of a merger task around `future`.
+///
+/// The variables give the task the worker index, buffer cache, and `FBuf`
+/// slab set of the foreground worker that it works for.  The rest of a merger
+/// task's context, the DBSP runtime and the background thread type, belongs to
+/// the thread.  Only the threads of the merger runtime have it, so the
+/// returned future must run on the merger runtime.
+///
+/// # Arguments
+///
+/// * `worker_index` - the foreground worker that the task works for.
+/// * `buffer_cache` - that worker's background buffer cache.
+/// * `slab_allocator` - that worker's background `FBuf` slab set.
+/// * `future` - the work of the task.
+///
+/// # Returns
+///
+/// A future that runs `future` with the variables set.
+pub(crate) fn scope_tokio_merger_locals<F>(
     worker_index: usize,
     buffer_cache: Arc<BufferCache>,
     slab_allocator: Arc<FBufSlabs>,
@@ -368,10 +386,15 @@ where
         taken
     }
 
-    /// Returns true if the slot must relieve memory pressure, i.e., if the memory pressure level is >=high
-    /// and there's at least one in-memory batch in this slot.
+    /// Returns true if the slot must relieve memory pressure, i.e., if the memory pressure level is >=high,
+    /// the runtime has storage, and there's at least one in-memory batch in this slot.
     /// In this case, we will initiate a new merge regardless of the number of loose batches.
     fn must_relieve_memory_pressure(&self) -> bool {
+        // Without storage, the merge would leave its output in memory, and the
+        // slot would merge that output again, forever.
+        if Runtime::min_merge_storage_bytes().is_none() {
+            return false;
+        }
         if let Some(memory_pressure) = Runtime::memory_pressure() {
             memory_pressure >= MemoryPressure::High
                 && self
@@ -2354,13 +2377,9 @@ where
     }
 
     async fn insert(&mut self, batch: impl Into<Arc<Self::Batch>>) {
-        let batch = Self::maybe_flush_batch(
-            Runtime::runtime().as_ref(),
-            batch,
-            &self.factories,
-            self.layout,
-            || self.merger.state.lock().unwrap().get_filters(),
-        );
+        let batch = Self::maybe_flush_batch(batch, &self.factories, self.layout, || {
+            self.merger.state.lock().unwrap().get_filters()
+        });
         if !batch.is_empty() {
             self.dirty = true;
             if self
@@ -2680,13 +2699,13 @@ where
     }
 
     /// Returns `batch`, first pushing it to storage if it exceeds the
-    /// user-configured `min_storage_bytes` or if we're under high memory
+    /// user-configured `min_spill_size` or if we're under high memory
     /// pressure.  A batch pushed to storage is laid out as `layout` asks.
+    /// The runtime of the current thread decides whether to spill.  Outside a
+    /// runtime, the batch stays in memory.
     ///
     /// # Arguments
     ///
-    /// * `runtime` - the runtime whose storage settings and memory pressure
-    ///   decide whether to spill, or `None` to keep the batch in memory.
     /// * `batch` - the batch to keep or spill.
     /// * `factories` - factories for the batch.
     /// * `layout` - how a spilled batch lays out its file.
@@ -2697,7 +2716,6 @@ where
     ///
     /// The batch on storage if it was spilled, and the batch as it arrived otherwise.
     pub fn maybe_flush_batch<F>(
-        runtime: Option<&Runtime>,
         batch: impl Into<Arc<B>>,
         factories: &B::Factories,
         layout: BatchLayout,
@@ -2708,7 +2726,8 @@ where
     {
         let batch = batch.into();
         if batch.location() == BatchLocation::Memory
-            && pick_insert_destination(runtime, &batch) == BatchLocation::Storage
+            && pick_insert_destination(Runtime::runtime().as_ref(), &batch)
+                == BatchLocation::Storage
         {
             let _span = Span::new("eager spill")
                 .with_category("Spine")
@@ -2844,16 +2863,21 @@ mod tests {
 #[cfg(test)]
 mod merge_rule_test {
     use super::{CompactionStatus, MERGE_COUNTS, Merge, MergerType, SharedState, Slot};
-    use crate::ZWeight;
     use crate::algebra::{OrdZSet, OrdZSetFactories};
+    use crate::circuit::{CircuitConfig, mkconfig};
     use crate::dynamic::{DynData, DynUnit};
     use crate::trace::{
         BatchLayout, BatchLocation, BatchReader, BatchReaderFactories, Builder, Filter,
-        GroupFilter, TraceRole,
+        GroupFilter, TraceRole, test::run_in_circuit_with_storage_config,
     };
     use crate::typed_batch::OrdZSet as TypedOrdZSet;
     use crate::utils::Tup2;
-    use std::sync::Arc;
+    use crate::{Runtime, ZWeight};
+    use feldera_types::memory_pressure::MemoryPressure;
+    use std::sync::{Arc, Mutex};
+    use std::thread::sleep;
+    use std::time::{Duration, Instant};
+    use tempfile::tempdir;
 
     /// A batch of `n` distinct records.
     fn batch(n: usize) -> Arc<OrdZSet<DynData>> {
@@ -2916,6 +2940,50 @@ mod merge_rule_test {
         assert_eq!(taken.len(), 3, "every in-memory batch goes");
         assert!(slot.loose_batches.is_empty());
         assert_eq!(slot.merging_batches.as_ref().map(Vec::len), Some(3));
+    }
+
+    /// Memory pressure merges a level's in-memory batches only if the runtime
+    /// has storage to move them to.
+    #[test]
+    fn memory_pressure_merges_only_with_storage() {
+        let temp_dir = tempdir().expect("Can't create temp dir for storage");
+        for (has_storage, config) in [
+            (false, CircuitConfig::with_workers(1)),
+            (true, mkconfig(temp_dir.path())),
+        ] {
+            // A one-byte budget puts the runtime under critical memory pressure.
+            let config = config.with_max_rss_bytes(Some(1));
+
+            // Under memory pressure, the runtime would write a new batch to
+            // storage, so this one is built outside it.
+            let in_memory = batch(10);
+            assert_eq!(in_memory.location(), BatchLocation::Memory);
+
+            let observed = Arc::new(Mutex::new(None));
+            let reporter = Arc::clone(&observed);
+            run_in_circuit_with_storage_config(config, move || {
+                let deadline = Instant::now() + Duration::from_secs(10);
+                while Runtime::memory_pressure() < Some(MemoryPressure::High)
+                    && Instant::now() < deadline
+                {
+                    sleep(Duration::from_millis(10));
+                }
+
+                // One batch is short of every merge rule but memory pressure.
+                let mut slot = Slot::default();
+                slot.loose_batches.push_back(in_memory);
+                let mut state = state_with(2, slot);
+                let merged = state.try_start_merge(2).is_some();
+                *reporter.lock().unwrap() = Some((Runtime::memory_pressure(), merged));
+            });
+
+            let (pressure, merged) = observed.lock().unwrap().take().unwrap();
+            assert!(
+                pressure >= Some(MemoryPressure::High),
+                "memory pressure is {pressure:?}"
+            );
+            assert_eq!(merged, has_storage, "has_storage: {has_storage}");
+        }
     }
 
     /// Relieving memory pressure can leave one in-memory batch to merge, so a

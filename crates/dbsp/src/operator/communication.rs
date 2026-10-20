@@ -9,6 +9,3 @@ pub(crate) use exchange::{
 pub use exchange::{
     ExchangeActivity, ExchangeReceiver, ExchangeSender, Mailbox, new_exchange_operators,
 };
-
-#[cfg(test)]
-pub(crate) use exchange::tests::test_circuit;

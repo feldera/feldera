@@ -48,12 +48,12 @@
   },
   "scripts": {
     "dev": "vite dev",
-    "build": "svelte-kit sync && vite build && bun run prepack",
-    "preview": "vite preview",
-    "prepare": "bun run prepack",
-    "prepack": "svelte-kit sync && svelte-package && publint",
-    "check": "svelte-kit sync && svelte-check --threshold error",
-    "check:watch": "svelte-kit sync && svelte-check --threshold error --watch",
+    "build": "bun run build:self",
+    "build:self": "svelte-package && publint",
+    "prepare": "svelte-kit sync && bun run build:self",
+    "check": "bun run check:self",
+    "check:self": "svelte-check --threshold error",
+    "check:watch": "svelte-check --threshold error --watch",
     "format": "biome check --write ."
   },
   "sideEffects": ["**/*.css"],

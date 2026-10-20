@@ -18,7 +18,7 @@ async function createPipelineWithStorage() {
     program_code: 'CREATE TABLE t1 (id INT NOT NULL PRIMARY KEY);',
     runtime_config: {
       workers: 1,
-      storage: { min_storage_bytes: 1048576 }
+      storage: { min_spill_size: '1Mi' }
     },
     program_config: { profile: TEST_COMPILATION_PROFILE }
   })

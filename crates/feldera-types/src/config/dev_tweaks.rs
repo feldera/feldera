@@ -1,3 +1,4 @@
+use crate::size::{ConfigSize, LegacySizeUnit};
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
@@ -20,6 +21,23 @@ pub const MAX_MERGE_THRESHOLD_BATCHES: u16 = 15;
 /// user a named error where they set the size, instead of a panic once a
 /// builder reaches for it.
 pub const MIN_KEY_BLOCK_BYTES: u64 = 4096;
+
+crate::size_setting!(
+    size_fbuf_slab_size_per_class,
+    "fbuf_slab_size_per_class",
+    LegacySizeUnit::Bytes
+);
+crate::size_setting!(size_storage_max, "storage_max", LegacySizeUnit::Mebibytes);
+crate::size_setting!(
+    size_lazy_input_map_key_block_size,
+    "lazy_input_map_key_block_size",
+    LegacySizeUnit::Bytes
+);
+crate::size_setting!(
+    size_exchange_channel_capacity,
+    "exchange_channel_capacity",
+    LegacySizeUnit::Bytes
+);
 
 /// Optional settings for tweaking Feldera internals.
 ///
@@ -49,11 +67,17 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub buffer_cache_allocation_strategy: Option<BufferCacheAllocationStrategy>,
 
-    /// Target number of cached bytes retained in each `FBuf` slab size class.
+    /// Target size of the cache retained in each `FBuf` slab size class.
     ///
-    /// The default is 16 MiB.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fbuf_slab_bytes_per_class: Option<usize>,
+    /// The default is `"16Mi"`. Before release 0.367.0 this setting was
+    /// `fbuf_slab_bytes_per_class`, a number of bytes.
+    #[serde(
+        alias = "fbuf_slab_bytes_per_class",
+        deserialize_with = "size_fbuf_slab_size_per_class",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub fbuf_slab_size_per_class: Option<ConfigSize>,
 
     /// Whether to asynchronously fetch keys needed for the join operator from
     /// storage.  Asynchronous fetching should be faster for high-latency
@@ -73,12 +97,20 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub merger: Option<MergerType>,
 
-    /// If set, the maximum amount of storage, in MiB, for the POSIX backend to
-    /// allow to be in use before failing all writes with `StorageFull`.  This
-    /// is useful for testing on top of storage that does not implement its own
-    /// quota mechanism.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub storage_mb_max: Option<u64>,
+    /// If set, the maximum amount of storage for the POSIX backend to allow to
+    /// be in use before failing all writes with `StorageFull`.  This is useful
+    /// for testing on top of storage that does not implement its own quota
+    /// mechanism.
+    ///
+    /// Before release 0.367.0 this setting was `storage_mb_max`, a number of
+    /// mebibytes.
+    #[serde(
+        alias = "storage_mb_max",
+        deserialize_with = "size_storage_max",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub storage_max: Option<ConfigSize>,
 
     /// Attempt to print a stack trace on stack overflow.
     ///
@@ -111,17 +143,23 @@ pub struct DevTweaks {
     pub lazy_input_map_keys_per_step: Option<u64>,
 
     /// Minimum size of the key blocks in the batches a lazy input map's
-    /// accumulator writes for itself, in bytes.  A power of two, at least
-    /// 4096.
+    /// accumulator writes for itself.  A power of two, at least 4096 bytes.
     ///
     /// The map resolves a transaction by walking the accumulated updates in
     /// key order without reading values, one storage request per key block,
     /// so larger blocks mean fewer requests.  Only the accumulator's own
     /// batches (merge outputs and spills) take this size; the batches that
     /// reach the integral keep it until its merger rewrites them at the
-    /// default size.  The default is 32768; 8192 is the file writer's default.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub lazy_input_map_key_block_bytes: Option<u64>,
+    /// default size.  The default is `"32Ki"`; `"8Ki"` is the file writer's
+    /// default. Before release 0.367.0 this setting was
+    /// `lazy_input_map_key_block_bytes`, a number of bytes.
+    #[serde(
+        alias = "lazy_input_map_key_block_bytes",
+        deserialize_with = "size_lazy_input_map_key_block_size",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub lazy_input_map_key_block_size: Option<ConfigSize>,
 
     /// How many data blocks a layer-file cursor that declared a sequential
     /// walk reads ahead of its position.
@@ -338,8 +376,8 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub streaming_exchange: Option<bool>,
 
-    /// Maximum number of bytes of queued but unacknowledged exchange messages
-    /// per pair of remote host and message type.
+    /// Maximum size of the queued but unacknowledged exchange messages per
+    /// pair of remote host and message type.
     ///
     /// A sender that pushes past this budget waits for the receiver to
     /// acknowledge earlier messages before it queues more.  There are three
@@ -347,9 +385,15 @@ pub struct DevTweaks {
     /// each of the other hosts, plus any single message that exceeds the
     /// budget on its own.
     ///
-    /// The default is 10,000,000 bytes.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub exchange_channel_capacity_bytes: Option<usize>,
+    /// The default is `"10M"`. Before release 0.367.0 this setting was
+    /// `exchange_channel_capacity_bytes`, a number of bytes.
+    #[serde(
+        alias = "exchange_channel_capacity_bytes",
+        deserialize_with = "size_exchange_channel_capacity",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub exchange_channel_capacity: Option<ConfigSize>,
 
     /// Optimize input operators during transaction commit.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -395,7 +439,14 @@ impl DevTweaks {
         self.lazy_input_map_keys_per_step.unwrap_or(100_000)
     }
     pub fn lazy_input_map_key_block_bytes(&self) -> u64 {
-        self.lazy_input_map_key_block_bytes.unwrap_or(32 * 1024)
+        self.lazy_input_map_key_block_size
+            .unwrap_or(ConfigSize::from_kib(32))
+            .as_bytes()
+    }
+    pub fn fbuf_slab_bytes_per_class(&self) -> usize {
+        self.fbuf_slab_size_per_class
+            .map(ConfigSize::as_usize)
+            .unwrap_or(16 << 20)
     }
     pub fn layer_file_read_ahead_blocks(&self) -> u64 {
         self.layer_file_read_ahead_blocks.unwrap_or(8)
@@ -462,11 +513,12 @@ impl DevTweaks {
                  range is 0 through 1"
             ));
         }
-        if let Some(bytes) = self.lazy_input_map_key_block_bytes
+        if let Some(size) = self.lazy_input_map_key_block_size
+            && let bytes = size.as_bytes()
             && !(bytes.is_power_of_two() && bytes >= MIN_KEY_BLOCK_BYTES)
         {
             return Err(format!(
-                "dev_tweaks.lazy_input_map_key_block_bytes is {bytes}, but it must be a \
+                "dev_tweaks.lazy_input_map_key_block_size is {bytes} bytes, but it must be a \
                  power of two and at least {MIN_KEY_BLOCK_BYTES}"
             ));
         }
@@ -514,7 +566,9 @@ impl DevTweaks {
     }
 
     pub fn exchange_channel_capacity_bytes(&self) -> usize {
-        self.exchange_channel_capacity_bytes.unwrap_or(10_000_000)
+        self.exchange_channel_capacity
+            .map(ConfigSize::as_usize)
+            .unwrap_or(10_000_000)
     }
 
     pub fn optimize_input_during_commit(&self) -> bool {
@@ -640,7 +694,7 @@ mod tests {
     #[test]
     fn the_key_block_size_must_be_a_power_of_two() {
         let with = |bytes: u64| DevTweaks {
-            lazy_input_map_key_block_bytes: Some(bytes),
+            lazy_input_map_key_block_size: Some(ConfigSize::from_bytes(bytes)),
             ..DevTweaks::default()
         };
         for good in [MIN_KEY_BLOCK_BYTES, 8192, 32768, 1 << 30] {
@@ -650,7 +704,7 @@ mod tests {
             let error = with(bad)
                 .validate()
                 .expect_err("a size off a power of two, or under the bound, must be rejected");
-            assert!(error.contains("lazy_input_map_key_block_bytes"), "{error}");
+            assert!(error.contains("lazy_input_map_key_block_size"), "{error}");
             assert!(error.contains(&bad.to_string()), "{error}");
             assert!(error.contains("power of two"), "{error}");
             assert!(error.contains("4096"), "{error}");

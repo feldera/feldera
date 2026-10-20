@@ -55,17 +55,17 @@ public class NatsInputConfig implements IValidateConfig {
                     "required field \"stream_name\" is missing or empty");
             ok = false;
         }
-        ConfigDuration.Setting inactivityTimeout = ConfigDuration.resolve(reporter,
+        ConfigQuantity.Setting inactivityTimeout = ConfigDuration.resolve(reporter,
                 "inactivity_timeout", this.inactivityTimeout,
                 "inactivity_timeout_secs", this.inactivityTimeoutSecs,
                 ConfigDuration.NANOS_PER_SECOND);
-        ok &= ConfigDuration.checkMinimum(reporter, inactivityTimeout,
+        ok &= ConfigQuantity.checkMinimum(reporter, inactivityTimeout,
                 ConfigDuration.NANOS_PER_SECOND, "at least 1 second, for example \"1s\"");
-        ConfigDuration.Setting retryInterval = ConfigDuration.resolve(reporter,
+        ConfigQuantity.Setting retryInterval = ConfigDuration.resolve(reporter,
                 "retry_interval", this.retryInterval,
                 "retry_interval_secs", this.retryIntervalSecs,
                 ConfigDuration.NANOS_PER_SECOND);
-        ok &= ConfigDuration.checkMinimum(reporter, retryInterval,
+        ok &= ConfigQuantity.checkMinimum(reporter, retryInterval,
                 ConfigDuration.NANOS_PER_SECOND, "at least 1 second, for example \"1s\"");
         if (connectionConfig == null) {
             reporter.warn("Invalid configuration",

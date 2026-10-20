@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 import unittest
 from http import HTTPStatus
@@ -40,6 +41,9 @@ from tests.utils import wait_for_condition, wait_for_records
 
 API_PREFIX = "/v0"
 
+# Pipeline create (POST /pipelines) and replace or update (PUT/PATCH /pipelines/<name>).
+_PIPELINE_WRITE_PATH = re.compile(rf"^{API_PREFIX}/pipelines(/[^/?]+)?/?(\?.*)?$")
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,6 +66,31 @@ def api_url(fragment: str) -> str:
     return f"{API_PREFIX}{fragment}"
 
 
+def _with_pinned_runtime_version(method: str, path: str, body: Any) -> Any:
+    """
+    Mirror `PipelineBuilder`: when `FELDERA_RUNTIME_VERSION` is set, a pipeline
+    write that names no runtime version gets it, so raw REST tests run on the
+    same engine as the SDK tests.
+    """
+    runtime_version = os.environ.get("FELDERA_RUNTIME_VERSION")
+    if not runtime_version or not isinstance(body, dict):
+        return body
+    if method.upper() not in ("POST", "PUT", "PATCH"):
+        return body
+    if not _PIPELINE_WRITE_PATH.match(path):
+        return body
+    # A PATCH without program_config leaves the stored one untouched.
+    if method.upper() == "PATCH" and "program_config" not in body:
+        return body
+    program_config = body.get("program_config", {})
+    if not isinstance(program_config, dict) or "runtime_version" in program_config:
+        return body
+    return {
+        **body,
+        "program_config": {**program_config, "runtime_version": runtime_version},
+    }
+
+
 def http_request(method: str, path: str, **kwargs) -> requests.Response:
     """
     Low-level request wrapper (no retries). Raises only on network errors.
@@ -76,6 +105,8 @@ def http_request(method: str, path: str, **kwargs) -> requests.Response:
     if not path.startswith("/"):
         path = "/" + path
     url = BASE_URL.rstrip("/") + path
+    if "json" in kwargs:
+        kwargs["json"] = _with_pinned_runtime_version(method, path, kwargs["json"])
 
     # Allow override of base headers for testing unauthenticated requests
     base_headers_arg = kwargs.pop("base_headers", None)
@@ -137,14 +168,6 @@ def create_pipeline(name: str, sql: str):
             "logging": "debug",
         },
     }
-    # Mirror `PipelineBuilder`: in CI `FELDERA_RUNTIME_VERSION` pins the runtime
-    # in theory this isn't needed because all platform tests should NOT run with
-    # a runtime version set and a runtime test should NOT use this function and
-    # use PipelineBuilder, but it avoids a footgun in case a runtime test were to
-    # ever use this helper by accident
-    runtime_version = os.environ.get("FELDERA_RUNTIME_VERSION")
-    if runtime_version:
-        payload["program_config"] = {"runtime_version": runtime_version}
     r = post_json(api_url("/pipelines"), payload)
     assert r.status_code == HTTPStatus.CREATED, r.text
     wait_for_program_success(name, 1)

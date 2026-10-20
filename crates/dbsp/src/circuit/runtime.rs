@@ -12,7 +12,7 @@ use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
 use crate::trace::BatchLayout;
-use crate::utils::process_rss_bytes;
+use crate::utils::{available_memory_bytes, process_rss_bytes};
 use crate::{
     DetailedError,
     storage::{
@@ -34,6 +34,7 @@ use feldera_types::memory_pressure::{
     CRITICAL_MEMORY_PRESSURE_THRESHOLD, HIGH_MEMORY_PRESSURE_THRESHOLD,
     MODERATE_MEMORY_PRESSURE_THRESHOLD, MemoryPressure,
 };
+use feldera_types::size::ConfigSize;
 use indexmap::IndexSet;
 use once_cell::sync::Lazy;
 use serde::Serialize;
@@ -72,6 +73,16 @@ use typedmap::TypedDashMap;
 pub enum Error {
     /// Specified persistent id is not found in the circuit.
     UnknownPersistentId(String),
+    /// Two operators in the circuit have the same persistent id.
+    DuplicatePersistentId {
+        persistent_id: String,
+        first: String,
+        second: String,
+    },
+    /// An operator in the circuit has an empty persistent id.
+    EmptyPersistentId {
+        operator: String,
+    },
     /// One of the worker threads terminated unexpectedly.
     WorkerPanic {
         // Detailed panic information from all threads that
@@ -95,6 +106,8 @@ impl DetailedError for Error {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::UnknownPersistentId(_) => Cow::from("UnknownPersistentId"),
+            Self::DuplicatePersistentId { .. } => Cow::from("DuplicatePersistentId"),
+            Self::EmptyPersistentId { .. } => Cow::from("EmptyPersistentId"),
             Self::WorkerPanic { .. } => Cow::from("WorkerPanic"),
             Self::CheckpointPanic(_) => Cow::from("CheckpointPanic"),
             Self::Terminated => Cow::from("Terminated"),
@@ -110,6 +123,19 @@ impl Display for Error {
         match self {
             Self::UnknownPersistentId(persistent_id) => {
                 write!(f, "Unknown persistent node id: {persistent_id}")
+            }
+            Self::DuplicatePersistentId {
+                persistent_id,
+                first,
+                second,
+            } => {
+                write!(
+                    f,
+                    "Operators {first} and {second} have the same persistent id {persistent_id}"
+                )
+            }
+            Self::EmptyPersistentId { operator } => {
+                write!(f, "Operator {operator} has an empty persistent id")
             }
             Self::WorkerPanic { panic_info } => {
                 writeln!(f, "One or more worker threads terminated unexpectedly")?;
@@ -284,6 +310,20 @@ struct RuntimeStorage {
     locked_directory: LockedDirectory,
 }
 
+/// Stored in `RuntimeInner::max_rss` to mean "no memory limit".
+const UNLIMITED_RSS: u64 = u64::MAX;
+
+/// Returns the circuit's memory limit: the smaller of the `configured` budget
+/// and the `available` memory, minus the memory `reserved` outside the circuit.
+///
+/// The reservation never takes more than half of the available memory, so a
+/// container smaller than the reservation still leaves the circuit a limit.
+fn circuit_max_rss(configured: Option<u64>, available: Option<u64>, reserved: u64) -> Option<u64> {
+    let from_configured = configured.map(|bytes| bytes.saturating_sub(reserved));
+    let from_available = available.map(|bytes| bytes - reserved.min(bytes / 2));
+    from_configured.into_iter().chain(from_available).min()
+}
+
 struct RuntimeInner {
     layout: Layout,
     mode: Mode,
@@ -291,8 +331,16 @@ struct RuntimeInner {
     allow_input_during_commit: bool,
     dev_tweaks: DevTweaks,
 
-    /// User-configured process memory limit.
-    max_rss: Option<u64>,
+    /// Process memory budget from the circuit config.
+    configured_max_rss: Option<u64>,
+
+    /// Part of the budget used outside the circuit.
+    reserved_memory: u64,
+
+    /// The circuit's memory limit in bytes, or [`UNLIMITED_RSS`] if there is
+    /// none. See [`circuit_max_rss`]. The RSS monitor refreshes it every
+    /// second, so it picks up changes to the container's memory limit.
+    max_rss: AtomicU64,
 
     /// Current process RSS.
     process_rss: AtomicU64,
@@ -537,10 +585,7 @@ impl RuntimeInner {
         let buffer_cache_allocation_strategy = config
             .dev_tweaks
             .effective_buffer_cache_allocation_strategy();
-        let fbuf_slab_bytes_per_class = config
-            .dev_tweaks
-            .fbuf_slab_bytes_per_class
-            .unwrap_or(FBufSlabs::DEFAULT_BYTES_PER_CLASS);
+        let fbuf_slab_bytes_per_class = config.dev_tweaks.fbuf_slab_bytes_per_class();
         let storage = if let Some(storage) = config.storage.clone() {
             let locked_directory =
                 LockedDirectory::new_blocking(storage.config.path(), Duration::from_secs(60))?;
@@ -566,8 +611,8 @@ impl RuntimeInner {
         };
 
         let total_cache_bytes = if let Some(storage) = &storage {
-            match storage.options.cache_mib {
-                Some(cache_mib) => cache_mib.saturating_mul(1024 * 1024),
+            match storage.options.cache_size {
+                Some(cache_size) => cache_size.as_usize(),
                 None => 256usize
                     .saturating_mul(1024 * 1024)
                     .saturating_mul(nworkers)
@@ -624,7 +669,12 @@ impl RuntimeInner {
             step_size: config.step_size,
             allow_input_during_commit: config.allow_input_during_commit,
             dev_tweaks: config.dev_tweaks,
-            max_rss: config.max_rss_bytes,
+            configured_max_rss: config.max_rss_bytes,
+            reserved_memory: config.reserved_memory_bytes,
+            max_rss: AtomicU64::new(
+                circuit_max_rss(config.max_rss_bytes, None, config.reserved_memory_bytes)
+                    .unwrap_or(UNLIMITED_RSS),
+            ),
             process_rss: AtomicU64::new(process_rss_bytes().unwrap_or_default()),
             memory_pressure: AtomicU8::new(MemoryPressure::Low as u8),
             memory_pressure_epoch: AtomicU64::new(0),
@@ -681,13 +731,48 @@ impl RuntimeInner {
         MemoryPressure::try_from(self.memory_pressure.load(Ordering::Relaxed)).unwrap()
     }
 
+    fn max_rss(&self) -> Option<u64> {
+        Some(self.max_rss.load(Ordering::Relaxed)).filter(|&bytes| bytes != UNLIMITED_RSS)
+    }
+
+    /// Recomputes the circuit's memory limit from the `available` memory, and
+    /// logs the new limit if it changed.
+    fn update_max_rss(&self, available: Option<u64>) {
+        let max_rss = circuit_max_rss(self.configured_max_rss, available, self.reserved_memory);
+        let previous = self
+            .max_rss
+            .swap(max_rss.unwrap_or(UNLIMITED_RSS), Ordering::Relaxed);
+        if previous != max_rss.unwrap_or(UNLIMITED_RSS) {
+            let mb = |bytes: Option<u64>| {
+                bytes.map_or("none".to_string(), |bytes| {
+                    format!("{} MB", bytes / 1_000_000)
+                })
+            };
+            info!(
+                "process memory limit set to {} (configured: {}, available: {}, reserved: {})",
+                mb(max_rss),
+                mb(self.configured_max_rss),
+                mb(available),
+                mb(Some(self.reserved_memory))
+            );
+            if available.is_some_and(|available| self.reserved_memory > available / 2) {
+                warn!(
+                    "reserved memory ({}) exceeds half of the available memory ({}); \
+reserving only half",
+                    mb(Some(self.reserved_memory)),
+                    mb(available)
+                );
+            }
+        }
+    }
+
     /// Compute memory pressure based on the current process RSS.
     ///
     /// Final memory pressure is computed taking into account the previous memory pressure level as well.
     fn raw_memory_pressure(&self, process_rss: u64) -> MemoryPressure {
         let process_rss = process_rss as f64;
 
-        let Some(max_rss) = self.max_rss else {
+        let Some(max_rss) = self.max_rss() else {
             return MemoryPressure::Low;
         };
 
@@ -857,6 +942,7 @@ impl Runtime {
 
             let mut pressure_span = None;
             while !Runtime::kill_in_progress() {
+                runtime.inner().update_max_rss(available_memory_bytes());
                 let process_rss = process_rss_bytes().unwrap_or_default();
                 runtime
                     .inner()
@@ -1283,8 +1369,11 @@ impl Runtime {
         self.inner().memory_pressure()
     }
 
+    /// Returns the circuit's memory limit, which is the smaller of the
+    /// configured budget and the memory available to the process, minus the
+    /// memory reserved outside the circuit.
     pub fn max_rss_bytes(&self) -> Option<u64> {
-        self.inner().max_rss
+        self.inner().max_rss()
     }
 
     pub fn memory_pressure_epoch(&self) -> u64 {
@@ -1297,8 +1386,8 @@ impl Runtime {
 
     /// Returns the minimum number of bytes in a batch produced by a merge operator to spill it to storage.
     ///
-    /// The output is determined by the current memory pressure level and the user-configured `min_storage_bytes` option.
-    /// When memory pressure is low, the output is `min_storage_bytes`; when memory pressure is moderate, high or critical,
+    /// The output is determined by the current memory pressure level and the user-configured `min_spill_size` option.
+    /// When memory pressure is low, the output is `min_spill_size`; when memory pressure is moderate, high or critical,
     /// the output is `0`, meaning all batches are spilled to storage.
     ///
     /// # Returns
@@ -1315,19 +1404,22 @@ impl Runtime {
             if inner.memory_pressure() >= MemoryPressure::Moderate {
                 Some(0)
             } else {
-                Some(storage.options.min_storage_bytes.unwrap_or({
-                    // This reduces the files stored on disk to a reasonable number.
-
-                    10 * 1024 * 1024
-                }))
+                Some(
+                    storage
+                        .options
+                        .min_spill_size
+                        .map(ConfigSize::as_usize)
+                        // This reduces the files stored on disk to a reasonable number.
+                        .unwrap_or(10 * 1024 * 1024),
+                )
             }
         })
     }
 
     /// Returns the minimum number of bytes in a batch inserted into a spine by a foreground worker to spill it to storage.
     ///
-    /// The output is determined by the current memory pressure level and the user-configured `min_storage_bytes` option.
-    /// When memory pressure is low the output is `usize::MAX`, when memory pressure is moderate, the output is `min_storage_bytes`,
+    /// The output is determined by the current memory pressure level and the user-configured `min_spill_size` option.
+    /// When memory pressure is low the output is `usize::MAX`, when memory pressure is moderate, the output is `min_spill_size`,
     /// when memory pressure is high or critical, the output is `0`, meaning all batches are spilled to storage.
     ///
     /// # Returns
@@ -1346,7 +1438,8 @@ impl Runtime {
             Some(
                 storage
                     .options
-                    .min_storage_bytes
+                    .min_spill_size
+                    .map(ConfigSize::as_usize)
                     .unwrap_or(10 * 1024 * 1024),
             )
         } else {
@@ -1359,8 +1452,8 @@ impl Runtime {
     /// Returns the minimum number of bytes in a transient batch exchanged between DBSP operators during a step of the
     /// circuit to spill it to storage.
     ///
-    /// The output is determined by the current memory pressure level and the user-configured `min_step_storage_bytes` option.
-    /// When memory pressure is below critical, the output is `min_step_storage_bytes`, when memory pressure is critical,
+    /// The output is determined by the current memory pressure level and the user-configured `min_step_spill_size` option.
+    /// When memory pressure is below critical, the output is `min_step_spill_size`, when memory pressure is critical,
     /// the output is `0`, meaning every batch that holds anything is spilled to storage.
     ///
     /// # Returns
@@ -1377,7 +1470,13 @@ impl Runtime {
             if inner.memory_pressure() >= MemoryPressure::Critical {
                 Some(0)
             } else {
-                Some(storage.options.min_step_storage_bytes.unwrap_or(usize::MAX))
+                Some(
+                    storage
+                        .options
+                        .min_step_spill_size
+                        .map(ConfigSize::as_usize)
+                        .unwrap_or(usize::MAX),
+                )
             }
         })
     }
@@ -1995,6 +2094,7 @@ pub(crate) mod tests {
         dev_tweaks::{BufferCacheAllocationStrategy, BufferCacheStrategy},
     };
     use feldera_types::memory_pressure::MemoryPressure;
+    use feldera_types::size::ConfigSize;
     use std::{
         cell::RefCell,
         rc::Rc,
@@ -2044,6 +2144,16 @@ pub(crate) mod tests {
         }
     }
 
+    fn set_mock_available_memory_bytes(bytes: Option<u64>) {
+        // Safety: We assume that only DBSP code accesses the environment variables.
+        unsafe {
+            match bytes {
+                Some(bytes) => std::env::set_var("MOCK_AVAILABLE_MEMORY_BYTES", bytes.to_string()),
+                None => std::env::remove_var("MOCK_AVAILABLE_MEMORY_BYTES"),
+            }
+        }
+    }
+
     struct MockRssVarGuard;
 
     impl Drop for MockRssVarGuard {
@@ -2051,6 +2161,7 @@ pub(crate) mod tests {
             // Safety: We assume that only DBSP code accesses the environment variables.
             unsafe {
                 std::env::remove_var("MOCK_PROCESS_RSS_BYTES");
+                std::env::remove_var("MOCK_AVAILABLE_MEMORY_BYTES");
             }
         }
     }
@@ -2313,7 +2424,7 @@ pub(crate) mod tests {
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                cache_mib: Some(8),
+                cache_size: Some(ConfigSize::from_mib(8)),
                 ..StorageOptions::default()
             },
         )
@@ -2347,7 +2458,7 @@ pub(crate) mod tests {
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                cache_mib: Some(8),
+                cache_size: Some(ConfigSize::from_mib(8)),
                 ..StorageOptions::default()
             },
         )
@@ -2565,6 +2676,98 @@ pub(crate) mod tests {
         hruntime.kill().unwrap();
     }
 
+    /// Waits for the runtime's memory limit and memory pressure to reach the
+    /// expected values.
+    fn wait_for_max_rss(runtime: &Runtime, max_rss: Option<u64>, pressure: MemoryPressure) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while runtime.max_rss_bytes() != max_rss || runtime.current_memory_pressure() != pressure {
+            assert!(
+                Instant::now() < deadline,
+                "expected memory limit {max_rss:?} and pressure {pressure:?}, got {:?} and {:?}",
+                runtime.max_rss_bytes(),
+                runtime.current_memory_pressure()
+            );
+            sleep(Duration::from_millis(100));
+        }
+    }
+
+    /// The memory limit tracks the memory available to the process, for
+    /// example when the container's memory limit changes at runtime.
+    #[test]
+    fn max_rss_follows_available_memory() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        let _clear_mock_rss = MockRssVarGuard;
+        set_mock_process_rss_bytes(4 * GIB);
+
+        let config = CircuitConfig::with_workers(1).with_max_rss_bytes(Some(10 * GIB));
+        let (circuit, _input_handle) =
+            Runtime::init_circuit(config, |circuit| Ok(circuit.add_input_zset::<u64>().1)).unwrap();
+        let runtime = circuit.runtime();
+        wait_for_max_rss(runtime, Some(10 * GIB), MemoryPressure::Low);
+
+        // Available memory drops below the configured limit and becomes the
+        // new limit. Using 4 GiB out of 4.3 GiB is high pressure.
+        set_mock_available_memory_bytes(Some(43 * GIB / 10));
+        wait_for_max_rss(runtime, Some(43 * GIB / 10), MemoryPressure::High);
+
+        // Available memory rises above the configured limit, so the
+        // configured limit applies again.
+        set_mock_available_memory_bytes(Some(20 * GIB));
+        wait_for_max_rss(runtime, Some(10 * GIB), MemoryPressure::Low);
+    }
+
+    /// With no configured limit, the memory available to the process becomes
+    /// the limit.
+    #[test]
+    fn max_rss_defaults_to_available_memory() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        let _clear_mock_rss = MockRssVarGuard;
+        set_mock_process_rss_bytes(4 * GIB);
+
+        let config = CircuitConfig::with_workers(1);
+        let (circuit, _input_handle) =
+            Runtime::init_circuit(config, |circuit| Ok(circuit.add_input_zset::<u64>().1)).unwrap();
+        let runtime = circuit.runtime();
+        wait_for_max_rss(runtime, None, MemoryPressure::Low);
+
+        set_mock_available_memory_bytes(Some(43 * GIB / 10));
+        wait_for_max_rss(runtime, Some(43 * GIB / 10), MemoryPressure::High);
+    }
+
+    /// Memory reserved outside the circuit comes out of the budget, whether the
+    /// budget is the configured limit or the available memory.
+    #[test]
+    fn max_rss_excludes_reserved_memory() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        let _clear_mock_rss = MockRssVarGuard;
+        set_mock_process_rss_bytes(GIB / 10);
+        set_mock_available_memory_bytes(Some(20 * GIB));
+
+        // A 10 GiB budget with 2 GiB reserved leaves 8 GiB for the circuit.
+        let config = CircuitConfig::with_workers(1)
+            .with_max_rss_bytes(Some(10 * GIB))
+            .with_reserved_memory_bytes(2 * GIB);
+        let (circuit, _input_handle) =
+            Runtime::init_circuit(config, |circuit| Ok(circuit.add_input_zset::<u64>().1)).unwrap();
+        let runtime = circuit.runtime();
+        wait_for_max_rss(runtime, Some(8 * GIB), MemoryPressure::Low);
+
+        // The container shrinks to 6 GiB, and the 2 GiB stay reserved.
+        set_mock_available_memory_bytes(Some(6 * GIB));
+        wait_for_max_rss(runtime, Some(4 * GIB), MemoryPressure::Low);
+
+        // The container shrinks below the reservation. The reservation takes
+        // at most half, so the circuit keeps a limit and pressure stays low.
+        set_mock_available_memory_bytes(Some(GIB));
+        wait_for_max_rss(runtime, Some(GIB / 2), MemoryPressure::Low);
+    }
+
     /// Test the memory pressure thresholds and how merger threads behave
     /// under different memory pressure levels.
     #[test]
@@ -2602,7 +2805,7 @@ pub(crate) mod tests {
             query_runtime_memory_state(circuit.runtime());
         assert_eq!(pressure, MemoryPressure::Low);
 
-        // Verify the spill thresholds: at low pressure, merge threshold is set to the user-configured `min_storage_bytes`,
+        // Verify the spill thresholds: at low pressure, merge threshold is set to the user-configured `min_spill_size`,
         // insert threshold is set to `usize::MAX`, and step threshold is set to `usize::MAX`.
         assert_eq!(min_merge, TEN_MIB);
         assert_eq!(min_insert, usize::MAX);

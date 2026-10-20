@@ -13,7 +13,6 @@ mismatch in the recorded vs replay input digest.
 """
 
 import json
-import os
 import time
 from http import HTTPStatus
 
@@ -99,9 +98,6 @@ def _create_ft_pipeline(name: str, workers: int):
             "logging": "debug",
         },
     }
-    runtime_version = os.environ.get("FELDERA_RUNTIME_VERSION")
-    if runtime_version:
-        payload["program_config"] = {"runtime_version": runtime_version}
     r = post_json(api_url("/pipelines"), payload)
     assert r.status_code == HTTPStatus.CREATED, r.text
     wait_for_program_success(name, 1)

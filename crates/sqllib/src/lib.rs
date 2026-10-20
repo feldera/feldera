@@ -1058,29 +1058,6 @@ some_polymorphic_function2!(power, i32, i32, i32, i32, F64);
 
 ////////////////////////////////////////////////
 
-// Functions called by 'writelog'
-#[doc(hidden)]
-pub fn dump<T>(prefix: SqlString, data: &T) -> T
-where
-    T: Debug + Clone,
-{
-    println!("{}: {:?}", prefix.str(), data);
-    data.clone()
-}
-
-#[doc(hidden)]
-pub fn print(str: SqlString) {
-    print!("{}", str.str())
-}
-
-#[doc(hidden)]
-pub fn print_opt(str: Option<SqlString>) {
-    match str {
-        None => print!("NULL"),
-        Some(x) => print!("{}", x.str()),
-    }
-}
-
 #[doc(hidden)]
 pub fn zset_map<D, T, F>(data: &WSet<D>, mapper: F) -> WSet<T>
 where

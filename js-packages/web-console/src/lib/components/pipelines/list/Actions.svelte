@@ -68,6 +68,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
   import {
     deletePipelineDisabledReason,
+    editSettingsDisabledReason,
     getDeploymentStatusLabel,
     isPipelineShutdown
   } from '$lib/functions/pipelines/status'
@@ -975,7 +976,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   {#if !canWriteConfig.allowed}
     <Tooltip placement="top">You have read-only access to the configuration</Tooltip>
   {:else if editConfigDisabled}
-    <Tooltip placement="top">Stop the pipeline to edit settings</Tooltip>
+    <Tooltip placement="top">{editSettingsDisabledReason(pipeline.current.status)}</Tooltip>
   {:else}
     <Tooltip placement="top">Compilation and runtime configuration</Tooltip>
   {/if}

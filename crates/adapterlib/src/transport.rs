@@ -3,8 +3,9 @@ use chrono::{DateTime, Utc};
 use dyn_clone::DynClone;
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::FtModel;
-use feldera_types::coordination::Completion;
+use feldera_types::coordination::{Completion, InputShard};
 use feldera_types::program_schema::Relation;
+use feldera_types::transaction::TransactionId;
 use rmpv::{Value as RmpValue, ext::Error as RmpDecodeError};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -14,6 +15,7 @@ use std::fmt::Display;
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::error::TryRecvError;
 use xxhash_rust::xxh3::Xxh3Default;
@@ -22,6 +24,7 @@ use crate::PipelineState;
 use crate::catalog::InputCollectionHandle;
 use crate::format::{BufferSize, InputBuffer, ParseError, Parser};
 use crate::metrics::ConnectorMetrics;
+use crate::utils::long_operation::LongOperationWarning;
 
 /// Step number for fault-tolerant circuits.
 ///
@@ -73,6 +76,19 @@ pub trait TransportInputEndpoint: InputEndpoint {
         schema: Relation,
         resume_info: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>>;
+}
+
+/// What a host of a distributed integrated input connector needs to know to
+/// read its part of the input.
+#[derive(Clone, Debug)]
+pub struct DistributedInput {
+    /// The part of the input that this host reads.
+    pub shard: InputShard,
+
+    /// The value that host 0 chose for all the hosts to use, if the transport
+    /// needs a choice and this host is not host 0 (see
+    /// `CoordinationActivate::input_choices`).
+    pub choice: Option<JsonValue>,
 }
 
 #[doc(hidden)]
@@ -287,6 +303,11 @@ pub struct InputQueueEntry<A, B> {
     /// unless a transaction is already in progress.
     start_transaction: Option<Option<String>>,
 
+    /// Whether the transaction in `start_transaction` must contain the input of
+    /// every host of a distributed connector (see
+    /// [InputConsumer::start_transaction_on_all_hosts]).
+    on_all_hosts: bool,
+
     /// Commit the transaction after pushing the buffer to the circuit if there is a transaction in progress.
     commit_transaction: bool,
 
@@ -301,6 +322,7 @@ impl<A, B> InputQueueEntry<A, B> {
             buffer: None,
             timestamp,
             start_transaction: None,
+            on_all_hosts: false,
             commit_transaction: false,
             aux,
         }
@@ -316,6 +338,18 @@ impl<A, B> InputQueueEntry<A, B> {
     pub fn with_start_transaction(self, start_transaction: Option<Option<String>>) -> Self {
         Self {
             start_transaction,
+            on_all_hosts: false,
+            ..self
+        }
+    }
+
+    /// Like [Self::with_start_transaction], for a transaction that must contain
+    /// the input of every host of a distributed connector (see
+    /// [InputConsumer::start_transaction_on_all_hosts]).
+    pub fn with_start_transaction_on_all_hosts(self, label: Option<String>) -> Self {
+        Self {
+            start_transaction: Some(label),
+            on_all_hosts: true,
             ..self
         }
     }
@@ -338,6 +372,62 @@ pub struct InputQueue<A = (), B = Box<dyn InputBuffer>> {
     pub queue: Mutex<VecDeque<InputQueueEntry<A, B>>>,
     pub consumer: Box<dyn InputConsumer>,
     pub transaction_in_progress: AtomicBool,
+
+    /// A transaction boundary that the connector requested and the pipeline
+    /// has not reached yet.  The queue flushes nothing until it does.
+    pending_boundary: Mutex<Pending>,
+}
+
+/// How long a connector may wait for a transaction boundary before
+/// [InputQueue] reports it.  It reports it again each time the wait doubles.
+const BOUNDARY_WARNING_THRESHOLD: Duration = Duration::from_secs(60);
+
+#[cfg(test)]
+thread_local! {
+    /// The time that [now] returns on this thread, if a test set one.
+    static FAKE_NOW: std::cell::Cell<Option<Instant>> = const { std::cell::Cell::new(None) };
+}
+
+/// Returns the current time, which a test can replace with [FAKE_NOW] so that
+/// it does not depend on how fast it runs.
+fn now() -> Instant {
+    #[cfg(test)]
+    if let Some(now) = FAKE_NOW.with(|now| now.get()) {
+        return now;
+    }
+    Instant::now()
+}
+
+/// A pending transaction boundary, with how long the connector has waited.
+struct Pending {
+    boundary: PendingBoundary,
+    wait: LongOperationWarning,
+}
+
+impl Pending {
+    fn new(boundary: PendingBoundary) -> Self {
+        Self {
+            boundary,
+            wait: LongOperationWarning::new_at(now(), BOUNDARY_WARNING_THRESHOLD),
+        }
+    }
+}
+
+/// A transaction boundary that the pipeline has not reached yet (see
+/// [InputConsumer::open_transaction]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum PendingBoundary {
+    /// No boundary is pending.
+    #[default]
+    None,
+
+    /// The connector requested a transaction, which the pipeline has not
+    /// opened yet.
+    Open,
+
+    /// The connector committed transaction `id`, which the pipeline has not
+    /// closed yet.
+    Close(TransactionId),
 }
 
 impl<A, B: InputBuffer> InputQueue<A, B> {
@@ -346,7 +436,98 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
             queue: Mutex::new(VecDeque::new()),
             consumer,
             transaction_in_progress: AtomicBool::new(false),
+            pending_boundary: Mutex::new(Pending::new(PendingBoundary::None)),
         }
+    }
+
+    fn set_pending_boundary(&self, boundary: PendingBoundary) {
+        *self.pending_boundary.lock().unwrap() = Pending::new(boundary);
+    }
+
+    /// Returns true if the connector must not flush now, because the pipeline
+    /// has not reached the transaction boundary that the connector requested.
+    ///
+    /// The wait ends without anything here doing more, because:
+    ///
+    /// - The connector's request is already with the pipeline: the queue
+    ///   passes a request to the consumer before it starts to wait.  A
+    ///   multihost host reports its connectors' requests to the coordinator.
+    ///
+    /// - The coordinator opens a transaction whenever a host reports a request,
+    ///   and adds the connector to an open transaction when it sees the
+    ///   request.  It commits the transaction when no host reports a request
+    ///   for it any more.
+    ///
+    /// - After a request, the connector waits until it is in the open
+    ///   transaction (see [InputConsumer::joined_transaction]), not only until
+    ///   a transaction is open.  The coordinator may already have decided to
+    ///   commit that transaction without the connector.
+    ///
+    /// - The records that wait still count as buffered, so the host requests
+    ///   another step, which flushes them once the boundary is reached.
+    ///
+    /// - The coordinator commits a transaction with steps that flush no input,
+    ///   so no records can land in a transaction that is committing.
+    ///
+    fn awaiting_boundary(&self) -> bool {
+        let mut pending = self.pending_boundary.lock().unwrap();
+        if pending.boundary == PendingBoundary::None {
+            return false;
+        }
+        let reached = match pending.boundary {
+            PendingBoundary::None => true,
+            PendingBoundary::Open => self
+                .consumer
+                .joined_transaction()
+                .is_none_or(|joined| joined.is_some()),
+            // A transaction that opens right after the commit is a different
+            // transaction, so its records may land in it.  This checks the open
+            // transaction, not membership: the coordinator may stop counting the
+            // connector in the transaction before it commits.
+            PendingBoundary::Close(id) => self
+                .consumer
+                .open_transaction()
+                .is_none_or(|open| open != Some(id)),
+        };
+        if reached {
+            *pending = Pending::new(PendingBoundary::None);
+        }
+        !reached
+    }
+
+    /// If the connector has input that waits for a transaction boundary, and
+    /// has waited longer than [BOUNDARY_WARNING_THRESHOLD], reports it to the
+    /// consumer as a non-fatal error, and again each time the wait doubles.
+    ///
+    /// A connector with nothing queued holds nothing back, so a long wait is
+    /// normal: for example, a connector that commits its part of a
+    /// transaction early waits for the transaction's other connectors to
+    /// finish theirs.
+    ///
+    /// The caller must not hold the lock on `queue`.
+    fn report_long_wait(&self) {
+        if self.queue.lock().unwrap().is_empty() {
+            return;
+        }
+        let mut pending = self.pending_boundary.lock().unwrap();
+        let boundary = pending.boundary;
+        if boundary == PendingBoundary::None {
+            return;
+        }
+        pending.wait.check_at(now(), |elapsed| {
+            let waiting_for = match boundary {
+                PendingBoundary::Close(id) => format!("to commit transaction {id}"),
+                _ => "to open the transaction that it requested".to_string(),
+            };
+            self.consumer.error(
+                false,
+                anyhow::anyhow!(
+                    "this connector has waited {} seconds for the pipeline {waiting_for}, and it reads no more input until then",
+                    elapsed.as_secs()
+                ),
+                Some("transaction_boundary"),
+            );
+        });
     }
 
     pub fn push_entry(&self, entry: InputQueueEntry<A, B>, errors: Vec<ParseError>) {
@@ -438,12 +619,13 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
 
         let mut stop = false;
 
-        while !stop && total.records < n {
+        while !stop && total.records < n && !self.awaiting_boundary() {
             let Some(InputQueueEntry {
                 buffer,
                 timestamp,
                 aux,
                 start_transaction,
+                on_all_hosts,
                 commit_transaction,
             }) = self.queue.lock().unwrap().pop_front()
             else {
@@ -451,7 +633,21 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
             };
 
             if let Some(label) = start_transaction {
-                self.start_transaction(label.as_deref());
+                self.start_transaction(label.as_deref(), on_all_hosts);
+                if self.awaiting_boundary() {
+                    // Keep the entry, without its request, for when the
+                    // transaction opens.
+                    self.queue.lock().unwrap().push_front(InputQueueEntry {
+                        buffer,
+                        timestamp,
+                        aux,
+                        start_transaction: None,
+                        on_all_hosts: false,
+                        commit_transaction,
+                    });
+                    stop = true;
+                    break;
+                }
             }
 
             if let Some(mut buffer) = buffer {
@@ -473,6 +669,7 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
         // Process any entries with aux data only.
         let mut queue = self.queue.lock().unwrap();
         while !stop
+            && !self.awaiting_boundary()
             && queue
                 .front()
                 .is_some_and(|InputQueueEntry { buffer, .. }| buffer.is_none())
@@ -481,6 +678,7 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
                 timestamp,
                 aux,
                 start_transaction,
+                on_all_hosts,
                 commit_transaction,
                 ..
             }) = queue.pop_front()
@@ -489,7 +687,18 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
             };
 
             if let Some(label) = start_transaction {
-                self.start_transaction(label.as_deref());
+                self.start_transaction(label.as_deref(), on_all_hosts);
+                if self.awaiting_boundary() {
+                    queue.push_front(InputQueueEntry {
+                        buffer: None,
+                        timestamp,
+                        aux,
+                        start_transaction: None,
+                        on_all_hosts: false,
+                        commit_transaction,
+                    });
+                    break;
+                }
             }
 
             stop = stop_at(&aux);
@@ -499,6 +708,8 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
                 break;
             }
         }
+        drop(queue);
+        self.report_long_wait();
 
         (total, hasher, consumed_aux)
     }
@@ -511,13 +722,18 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
         self.len() == 0
     }
 
-    fn start_transaction(&self, label: Option<&str>) -> bool {
+    fn start_transaction(&self, label: Option<&str>, on_all_hosts: bool) -> bool {
         if self
             .transaction_in_progress
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
         {
-            self.consumer.start_transaction(label);
+            if on_all_hosts {
+                self.consumer.start_transaction_on_all_hosts(label);
+            } else {
+                self.consumer.start_transaction(label);
+            }
+            self.set_pending_boundary(PendingBoundary::Open);
             true
         } else {
             false
@@ -531,10 +747,20 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
             .is_ok()
         {
             self.consumer.commit_transaction();
+            self.pending_close();
             true
         } else {
             false
         }
+    }
+
+    /// Records that the connector committed the transaction that is open now,
+    /// if any.
+    fn pending_close(&self) {
+        self.set_pending_boundary(match self.consumer.open_transaction() {
+            Some(Some(id)) => PendingBoundary::Close(id),
+            _ => PendingBoundary::None,
+        });
     }
 }
 
@@ -558,11 +784,12 @@ impl InputQueue<(), Box<dyn InputBuffer>> {
         let n = self.consumer.max_batch_size();
         let mut consumed = Vec::new();
 
-        while total.records < n {
+        while total.records < n && !self.awaiting_boundary() {
             let Some(InputQueueEntry {
                 buffer,
                 timestamp,
                 start_transaction,
+                on_all_hosts,
                 commit_transaction,
                 ..
             }) = self.queue.lock().unwrap().pop_front()
@@ -570,13 +797,21 @@ impl InputQueue<(), Box<dyn InputBuffer>> {
                 break;
             };
 
-            if let Some(label) = start_transaction
-                && self
-                    .transaction_in_progress
-                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                    .is_ok()
-            {
-                self.consumer.start_transaction(label.as_deref());
+            if let Some(label) = start_transaction {
+                self.start_transaction(label.as_deref(), on_all_hosts);
+                if self.awaiting_boundary() {
+                    // Keep the entry, without its request, for when the
+                    // transaction opens.
+                    self.queue.lock().unwrap().push_front(InputQueueEntry {
+                        buffer,
+                        timestamp,
+                        start_transaction: None,
+                        on_all_hosts: false,
+                        commit_transaction,
+                        aux: (),
+                    });
+                    break;
+                }
             }
 
             if let Some(mut buffer) = buffer {
@@ -590,6 +825,7 @@ impl InputQueue<(), Box<dyn InputBuffer>> {
                         buffer: Some(buffer),
                         timestamp,
                         start_transaction: None,
+                        on_all_hosts: false,
                         commit_transaction,
                         aux: (),
                     });
@@ -598,16 +834,11 @@ impl InputQueue<(), Box<dyn InputBuffer>> {
             }
 
             if commit_transaction {
-                if self
-                    .transaction_in_progress
-                    .compare_exchange(true, false, Ordering::AcqRel, Ordering::Acquire)
-                    .is_ok()
-                {
-                    self.consumer.commit_transaction();
-                }
+                self.commit_transaction();
                 break;
             }
         }
+        self.report_long_wait();
         self.consumer.extended(total, None, consumed);
     }
 }
@@ -622,9 +853,18 @@ pub trait InputReader: Send + Sync {
     fn request(&self, command: InputReaderCommand);
 
     /// Returns true if the endpoint is closed, meaning that it has already
-    /// acted on all of the commands that it ever will. A closed endpoint can be
-    /// one that came to the end of its input (and is not waiting for more to
-    /// arrive) or one that encountered a fatal error and cannot continue.
+    /// acted on all of the commands that it ever will.  An endpoint closes
+    /// after [InputReaderCommand::Disconnect] or after a fatal error.
+    ///
+    /// An endpoint should not close just because it came to the end of its
+    /// input.  An endpoint that calls [InputConsumer::eoi] must keep acting on
+    /// commands until it is told to [InputReaderCommand::Disconnect].
+    /// (Otherwise, the controller removes the endpoint, so it no longer
+    /// appears in statistics, cannot be paused or started or issue completion
+    /// tokens, and is left out of checkpoints.  When the pipeline resumes from
+    /// such a checkpoint, the endpoint appears to be new, so the pipeline
+    /// waits for approval and the endpoint starts reading again from the
+    /// beginning.)
     ///
     /// An endpoint is often implemented in terms of a channel to a thread. In
     /// such a case, this can be implemented in terms of `is_closed` on the
@@ -659,6 +899,17 @@ pub trait InputReader: Send + Sync {
     /// substantial amount of memory, so the default implementation returns 0.
     fn memory(&self) -> usize {
         0
+    }
+
+    /// For a distributed connector whose hosts must all use a value that one
+    /// host chooses before they read input, returns the value that this host
+    /// chose, if this host is the one that chooses it (see
+    /// `TransportConfig::needs_input_choice`).  The reader must choose the
+    /// value before its endpoint's `open` returns.
+    ///
+    /// The default implementation returns `None`.
+    fn startup_choice(&self) -> Option<JsonValue> {
+        None
     }
 }
 
@@ -751,6 +1002,10 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// the controller will request them in future [InputReaderCommand::Queue]
     /// messages. The endpoint must not make further calls to
     /// [InputConsumer::buffered] or [InputConsumer::parse_errors].
+    ///
+    /// The endpoint must keep acting on commands after this call, until
+    /// [InputReaderCommand::Disconnect], because the controller removes an
+    /// endpoint that closes (see [InputReader::is_closed]).
     fn eoi(&self);
 
     /// Request the controller to schedule a step even if the connector hasn't queued
@@ -773,12 +1028,69 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// when all the connectors have committed it.
     fn start_transaction(&self, label: Option<&str>);
 
+    /// Like [`start_transaction`](Self::start_transaction), for a transaction
+    /// that must contain the input of every host of a distributed connector.
+    /// Every host calls this, and the pipeline keeps the transaction open
+    /// until all of the hosts have committed it.
+    ///
+    /// The default implementation calls `start_transaction`, which is right
+    /// for a single-host pipeline.
+    fn start_transaction_on_all_hosts(&self, label: Option<&str>) {
+        self.start_transaction(label);
+    }
+
     /// The connector is committing a transaction started by a previous `start_transaction` call.
     ///
     /// This function can be invoked in response to a `Queue` command after pushing all updates that
     /// belong to the the transaction, immediately before calling `extended`. The connector cannot
     /// queue any more updates after this function is invoked, until the next `Queue` command.
     fn commit_transaction(&self);
+
+    /// Reports which transaction, if any, the records that the connector
+    /// flushes now land in.  [InputQueue] uses this to keep each of a
+    /// connector's records on the side of a transaction boundary that the
+    /// connector requested.
+    ///
+    /// The answer differs between single-host and multihost pipelines:
+    ///
+    /// - A single-host pipeline acts on
+    ///   [`start_transaction`](Self::start_transaction) and
+    ///   [`commit_transaction`](Self::commit_transaction) at once, so records
+    ///   that the connector flushes after a request already land on the
+    ///   requested side of the boundary.  This returns `None`, and
+    ///   [InputQueue] never holds records back.
+    ///
+    /// - A host of a multihost pipeline only reports its connectors' requests
+    ///   to the coordinator, which opens and commits the transaction on every
+    ///   host later, between steps.  Records flushed before then would land on
+    ///   the wrong side of the boundary.  This returns `Some(Some(id))` while
+    ///   transaction `id` is open and `Some(None)` while no transaction is
+    ///   open.  After a request, [InputQueue] holds the connector's records
+    ///   until the coordinator has acted on it: after a start, until a
+    ///   transaction is open; after a commit of transaction `id`, until `id`
+    ///   is no longer open.
+    ///
+    /// The default implementation returns `None`, which is right for a
+    /// single-host pipeline.
+    fn open_transaction(&self) -> Option<Option<TransactionId>> {
+        None
+    }
+
+    /// Like [`open_transaction`](Self::open_transaction), but reports an open
+    /// transaction only if the pipeline counts this connector in it.
+    ///
+    /// In a multihost pipeline, the coordinator decides which connectors are
+    /// in a transaction, from requests that reach it late.  It may already
+    /// have decided to commit the open transaction without the connector, so
+    /// records that the connector flushes into it after a request would leave
+    /// the rest of the connector's transaction for another one, or for none.
+    /// [InputQueue] uses this to wait after a request until the connector is
+    /// in the open transaction.
+    ///
+    /// The default implementation returns the same as `open_transaction`.
+    fn joined_transaction(&self) -> Option<Option<TransactionId>> {
+        self.open_transaction()
+    }
 
     /// Register connector-specific metrics for Prometheus export.
     ///
@@ -1351,5 +1663,897 @@ mod test {
         assert!(matches!(replay, InputReaderCommand::Replay { .. }));
         let pause = commands.try_recv().unwrap().unwrap();
         assert!(matches!(pause, InputReaderCommand::Pause));
+    }
+}
+
+/// Tests that a connector's records land inside the transaction that it
+/// requests, when the pipeline opens and closes transactions later than the
+/// connector asks, as a multihost pipeline does.
+#[cfg(test)]
+mod transaction_boundary_tests {
+    use std::hash::Hasher;
+    use std::sync::{Arc, Mutex};
+    use std::time::{Duration, Instant};
+
+    use anyhow::Error as AnyError;
+    use chrono::Utc;
+    use feldera_types::adapter_stats::ConnectorHealth;
+    use feldera_types::config::FtModel;
+    use feldera_types::coordination::Completion;
+
+    use feldera_types::transaction::TransactionId;
+
+    use super::{InputConsumer, InputQueue, InputQueueEntry, Resume, Watermark};
+    use crate::format::{BufferSize, InputBuffer, ParseError};
+
+    /// What the pipeline does with the connector's requests.
+    #[derive(Default)]
+    struct PipelineState {
+        /// The transaction that the pipeline has open, if any.  Only the test
+        /// changes this, as the coordinator would, after the connector asks.
+        open: Option<TransactionId>,
+
+        /// True if the pipeline acts on the connector's requests at once, as a
+        /// single-host pipeline does.
+        immediate: bool,
+
+        /// Each record that the connector flushed, with whether a
+        /// transaction was open when it did.
+        flushed: Vec<(u32, bool)>,
+
+        /// Errors that the connector reported.
+        errors: Vec<String>,
+
+        /// The number of requests that every host makes.
+        on_all_hosts: usize,
+
+        /// The number of requests to start a transaction.
+        starts: usize,
+    }
+
+    /// A consumer that, like a host of a multihost pipeline, only records the
+    /// connector's transaction requests.
+    #[derive(Clone, Default)]
+    struct Pipeline(Arc<Mutex<PipelineState>>);
+
+    impl Pipeline {
+        fn set_open(&self, open: Option<TransactionId>) {
+            self.0.lock().unwrap().open = open;
+        }
+
+        /// Returns the records flushed so far, and forgets them.
+        fn take_flushed(&self) -> Vec<(u32, bool)> {
+            std::mem::take(&mut self.0.lock().unwrap().flushed)
+        }
+
+        fn starts(&self) -> usize {
+            self.0.lock().unwrap().starts
+        }
+    }
+
+    impl InputConsumer for Pipeline {
+        fn max_batch_size(&self) -> usize {
+            usize::MAX
+        }
+        fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
+            None
+        }
+        fn parse_errors(&self, _errors: Vec<ParseError>) {}
+        fn buffered(&self, _amt: BufferSize) {}
+        fn replayed(&self, _amt: BufferSize, _hash: u64) {}
+        fn extended(&self, _amt: BufferSize, _resume: Option<Resume>, _watermarks: Vec<Watermark>) {
+        }
+        fn eoi(&self) {}
+        fn request_step(&self) {}
+        fn start_transaction(&self, _label: Option<&str>) {
+            let mut state = self.0.lock().unwrap();
+            state.starts += 1;
+            if state.immediate {
+                state.open = Some(1);
+            }
+        }
+        fn start_transaction_on_all_hosts(&self, label: Option<&str>) {
+            self.0.lock().unwrap().on_all_hosts += 1;
+            self.start_transaction(label);
+        }
+        fn commit_transaction(&self) {
+            let mut state = self.0.lock().unwrap();
+            if state.immediate {
+                state.open = None;
+            }
+        }
+        fn open_transaction(&self) -> Option<Option<TransactionId>> {
+            let state = self.0.lock().unwrap();
+            (!state.immediate).then_some(state.open)
+        }
+        fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<Completion>> {
+            None
+        }
+        fn error(&self, _fatal: bool, error: AnyError, _tag: Option<&'static str>) {
+            self.0.lock().unwrap().errors.push(error.to_string());
+        }
+        fn update_connector_health(&self, _health: ConnectorHealth) {}
+    }
+
+    /// Records with consecutive IDs.
+    struct Records {
+        ids: Vec<u32>,
+        pipeline: Pipeline,
+    }
+
+    impl InputBuffer for Records {
+        fn flush(&mut self) {
+            let mut state = self.pipeline.0.lock().unwrap();
+            let open = state.open.is_some();
+            state
+                .flushed
+                .extend(self.ids.drain(..).map(|id| (id, open)));
+        }
+        fn len(&self) -> BufferSize {
+            BufferSize {
+                records: self.ids.len(),
+                bytes: self.ids.len(),
+            }
+        }
+        fn hash(&self, _hasher: &mut dyn Hasher) {}
+        fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+            let n = n.min(self.ids.len());
+            (n > 0).then(|| {
+                Box::new(Records {
+                    ids: self.ids.drain(..n).collect(),
+                    pipeline: self.pipeline.clone(),
+                }) as Box<dyn InputBuffer>
+            })
+        }
+    }
+
+    /// A queue entry with records `ids`.
+    fn records(pipeline: &Pipeline, ids: &[u32]) -> InputQueueEntry<(), Box<dyn InputBuffer>> {
+        InputQueueEntry::new_with_aux(Utc::now(), ()).with_buffer(Some(Box::new(Records {
+            ids: ids.to_vec(),
+            pipeline: pipeline.clone(),
+        })
+            as Box<dyn InputBuffer>))
+    }
+
+    /// A queue entry with no records.
+    fn marker() -> InputQueueEntry<(), Box<dyn InputBuffer>> {
+        InputQueueEntry::new_with_aux(Utc::now(), ())
+    }
+
+    /// The two ways that a connector flushes its queue.
+    #[derive(Clone, Copy, Debug)]
+    enum Flush {
+        WithAux,
+        Queue,
+    }
+
+    impl Flush {
+        fn flush(self, queue: &InputQueue) {
+            match self {
+                Flush::WithAux => {
+                    queue.flush_with_aux();
+                }
+                Flush::Queue => queue.queue(),
+            }
+        }
+    }
+
+    const FLUSHES: [Flush; 2] = [Flush::WithAux, Flush::Queue];
+
+    /// Records after a request to start a transaction wait until the
+    /// transaction is open.
+    #[test]
+    fn records_wait_for_the_transaction_to_open() {
+        for flush in FLUSHES {
+            let pipeline = Pipeline::default();
+            let queue = InputQueue::new(Box::new(pipeline.clone()));
+            queue.push_entry(marker().with_start_transaction(Some(None)), Vec::new());
+            queue.push_entry(records(&pipeline, &[1, 2]), Vec::new());
+
+            // The pipeline has not opened the transaction yet.
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [], "{flush:?}");
+
+            pipeline.set_open(Some(1));
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [(1, true), (2, true)], "{flush:?}");
+        }
+    }
+
+    /// Records after a request to commit a transaction wait until the
+    /// transaction is closed.
+    #[test]
+    fn records_wait_for_the_transaction_to_close() {
+        for flush in FLUSHES {
+            let pipeline = Pipeline::default();
+            pipeline.set_open(Some(1));
+            let queue = InputQueue::new(Box::new(pipeline.clone()));
+            queue.push_entry(
+                records(&pipeline, &[1]).with_start_transaction(Some(None)),
+                Vec::new(),
+            );
+            queue.push_entry(marker().with_commit_transaction(true), Vec::new());
+            queue.push_entry(records(&pipeline, &[2]), Vec::new());
+
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [(1, true)], "{flush:?}");
+
+            // The pipeline has not committed the transaction yet.
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [], "{flush:?}");
+
+            pipeline.set_open(None);
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [(2, false)], "{flush:?}");
+        }
+    }
+
+    /// A transaction that opens right after the connector's commit is a
+    /// different transaction, so the connector's next records may land in it.
+    #[test]
+    fn records_may_land_in_the_next_transaction() {
+        for flush in FLUSHES {
+            let pipeline = Pipeline::default();
+            pipeline.set_open(Some(1));
+            let queue = InputQueue::new(Box::new(pipeline.clone()));
+            queue.push_entry(
+                records(&pipeline, &[1]).with_start_transaction(Some(None)),
+                Vec::new(),
+            );
+            queue.push_entry(marker().with_commit_transaction(true), Vec::new());
+            queue.push_entry(records(&pipeline, &[2]), Vec::new());
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [(1, true)], "{flush:?}");
+
+            pipeline.set_open(Some(2));
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [(2, true)], "{flush:?}");
+        }
+    }
+
+    /// A connector that commits a transaction and then starts another, while
+    /// the pipeline keeps the first one open for other participants, does not
+    /// request the second one until the first one closes.  A coordinator
+    /// ignores a request from a connector that already joined and committed
+    /// the open transaction, so that the transaction can commit.
+    #[test]
+    fn next_request_waits_for_the_transaction_to_close() {
+        for flush in FLUSHES {
+            let pipeline = Pipeline::default();
+            pipeline.set_open(Some(1));
+            let queue = InputQueue::new(Box::new(pipeline.clone()));
+            for id in [1, 2] {
+                queue.push_entry(
+                    records(&pipeline, &[id]).with_start_transaction(Some(None)),
+                    Vec::new(),
+                );
+                queue.push_entry(marker().with_commit_transaction(true), Vec::new());
+            }
+
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [(1, true)], "{flush:?}");
+            assert_eq!(pipeline.starts(), 1, "{flush:?}");
+
+            // Another participant keeps the transaction open.
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [], "{flush:?}");
+            assert_eq!(pipeline.starts(), 1, "{flush:?}");
+
+            // Once it closes, the connector requests the next transaction and
+            // waits for it to open.
+            pipeline.set_open(None);
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [], "{flush:?}");
+            assert_eq!(pipeline.starts(), 2, "{flush:?}");
+
+            pipeline.set_open(Some(2));
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [(2, true)], "{flush:?}");
+        }
+    }
+
+    /// A request that every host makes reaches the consumer as one.
+    #[test]
+    fn requests_on_all_hosts_are_marked() {
+        for flush in FLUSHES {
+            let pipeline = Pipeline::default();
+            pipeline.set_open(Some(1));
+            let queue = InputQueue::new(Box::new(pipeline.clone()));
+            queue.push_entry(
+                records(&pipeline, &[1]).with_start_transaction_on_all_hosts(None),
+                Vec::new(),
+            );
+            queue.push_entry(marker().with_commit_transaction(true), Vec::new());
+            queue.push_entry(
+                records(&pipeline, &[2]).with_start_transaction(None),
+                Vec::new(),
+            );
+            flush.flush(&queue);
+            pipeline.set_open(Some(2));
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [(1, true), (2, true)], "{flush:?}");
+            assert_eq!(pipeline.0.lock().unwrap().on_all_hosts, 1, "{flush:?}");
+        }
+    }
+
+    /// Makes the queue's clock read `start + elapsed` on this thread.
+    fn set_clock(start: Instant, elapsed: Duration) {
+        super::FAKE_NOW.with(|now| now.set(Some(start + elapsed)));
+    }
+
+    /// A connector that waits a long time for a boundary reports it.
+    #[test]
+    fn long_waits_are_reported() {
+        let threshold = super::BOUNDARY_WARNING_THRESHOLD;
+        let start = Instant::now();
+        set_clock(start, Duration::ZERO);
+        let pipeline = Pipeline::default();
+        let queue = InputQueue::new(Box::new(pipeline.clone()));
+        queue.push_entry(marker().with_start_transaction(Some(None)), Vec::new());
+        queue.flush_with_aux();
+        set_clock(start, threshold - Duration::from_nanos(1));
+        queue.flush_with_aux();
+        assert_eq!(pipeline.0.lock().unwrap().errors.len(), 0);
+
+        set_clock(start, threshold);
+        queue.flush_with_aux();
+        let errors = std::mem::take(&mut pipeline.0.lock().unwrap().errors);
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(errors[0].contains("to open the transaction"), "{errors:?}");
+
+        // Not again until the wait doubles.
+        set_clock(start, threshold * 2 - Duration::from_nanos(1));
+        queue.flush_with_aux();
+        assert_eq!(pipeline.0.lock().unwrap().errors.len(), 0);
+        set_clock(start, threshold * 2);
+        queue.flush_with_aux();
+        assert_eq!(pipeline.0.lock().unwrap().errors.len(), 1);
+    }
+
+    /// A connector that waits for a boundary but holds nothing back does not
+    /// report the wait.
+    #[test]
+    fn waits_without_input_are_not_reported() {
+        let start = Instant::now();
+        set_clock(start, Duration::ZERO);
+        let pipeline = Pipeline::default();
+        pipeline.set_open(Some(1));
+        let queue = InputQueue::new(Box::new(pipeline.clone()));
+        queue.push_entry(
+            records(&pipeline, &[1])
+                .with_start_transaction(Some(None))
+                .with_commit_transaction(true),
+            Vec::new(),
+        );
+        queue.flush_with_aux();
+        assert_eq!(pipeline.take_flushed(), [(1, true)]);
+
+        // The transaction stays open, but nothing waits for it to close.
+        set_clock(start, super::BOUNDARY_WARNING_THRESHOLD);
+        queue.flush_with_aux();
+        assert_eq!(pipeline.0.lock().unwrap().errors.len(), 0);
+    }
+
+    /// A pipeline that acts on requests at once never holds records back.
+    #[test]
+    fn immediate_pipeline_never_waits() {
+        for flush in FLUSHES {
+            let pipeline = Pipeline::default();
+            pipeline.0.lock().unwrap().immediate = true;
+            let queue = InputQueue::new(Box::new(pipeline.clone()));
+            queue.push_entry(
+                records(&pipeline, &[1]).with_start_transaction(Some(None)),
+                Vec::new(),
+            );
+            queue.push_entry(records(&pipeline, &[2]), Vec::new());
+            queue.push_entry(marker().with_commit_transaction(true), Vec::new());
+            queue.push_entry(records(&pipeline, &[3]), Vec::new());
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [(1, true), (2, true)], "{flush:?}");
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [(3, false)], "{flush:?}");
+        }
+    }
+}
+
+/// A model-based test of transaction boundaries in a multihost pipeline, which
+/// learns of a connector's requests only after a delay.
+///
+/// The model has one or two hosts, each of which runs the real [InputQueue]
+/// for its part of one connector, as for a distributed connector.  A
+/// coordinator sees each host's requests after a random delay.  It opens a
+/// transaction when it sees a request or when another participant needs
+/// one, counts the connector in the open transaction once it sees a host
+/// request it, and commits the transaction once neither the connector nor the
+/// other participant is in it.  It tells each host that the connector is in
+/// the transaction only once it has seen that host's own request.  A random
+/// sequence of actions interleaves the hosts, their queues, the other
+/// participant, and the coordinator, and then a fair drain runs every action
+/// until nothing is left.
+#[cfg(test)]
+mod transaction_boundary_model_tests {
+    use std::collections::{BTreeMap, BTreeSet, VecDeque};
+    use std::hash::Hasher;
+    use std::sync::{Arc, Mutex};
+
+    use anyhow::Error as AnyError;
+    use chrono::Utc;
+    use feldera_types::adapter_stats::ConnectorHealth;
+    use feldera_types::config::FtModel;
+    use feldera_types::coordination::Completion;
+    use feldera_types::transaction::TransactionId;
+    use proptest::prelude::*;
+
+    use super::{InputConsumer, InputQueue, InputQueueEntry, Resume, Watermark};
+    use crate::format::{BufferSize, InputBuffer, ParseError};
+
+    /// What one host reports, and what the coordinator has seen of it.
+    #[derive(Default)]
+    struct HostWorld {
+        /// Changes to the host's request that the coordinator has not seen yet.
+        updates: VecDeque<bool>,
+
+        /// Whether the coordinator believes that the host requests a
+        /// transaction.
+        seen_request: bool,
+
+        /// Each record that the host flushed, with the transaction it landed
+        /// in.
+        flushed: Vec<(u32, Option<TransactionId>)>,
+    }
+
+    #[derive(Default)]
+    struct World {
+        hosts: Vec<HostWorld>,
+
+        /// The transaction that the coordinator has open on the hosts.
+        open: Option<TransactionId>,
+
+        /// Whether another participant holds a transaction open.
+        other: bool,
+
+        /// Whether the coordinator counts the connector in the open
+        /// transaction.
+        membership: Membership,
+
+        /// The last transaction ID that the coordinator used.
+        last_id: TransactionId,
+
+        /// The number of records that a flush may take.
+        max_batch_size: usize,
+    }
+
+    /// Whether the coordinator counts the connector in the open transaction.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    enum Membership {
+        /// The coordinator has not seen any host request it.
+        #[default]
+        NotMember,
+
+        /// The coordinator saw a host request it, and has not seen every host
+        /// withdraw.
+        Member,
+
+        /// The connector joined and left, and cannot join again.
+        Left,
+    }
+
+    /// The model's world, shared by all of its hosts.
+    #[derive(Clone, Default)]
+    struct Shared(Arc<Mutex<World>>);
+
+    impl Shared {
+        fn world(&self) -> std::sync::MutexGuard<'_, World> {
+            self.0.lock().unwrap()
+        }
+
+        /// The coordinator sees the oldest change to host `host`'s request.
+        fn deliver(&self, host: usize) -> bool {
+            let mut world = self.world();
+            let host = &mut world.hosts[host];
+            match host.updates.pop_front() {
+                Some(request) => {
+                    host.seen_request = request;
+                    true
+                }
+                None => false,
+            }
+        }
+
+        /// The coordinator opens a transaction, updates the connector's
+        /// membership, or commits the transaction, if it should.
+        fn coordinate(&self) -> bool {
+            let mut world = self.world();
+            let requested = world.hosts.iter().any(|host| host.seen_request);
+            if world.open.is_none() {
+                if !requested && !world.other {
+                    return false;
+                }
+                world.last_id += 1;
+                world.open = Some(world.last_id);
+                world.membership = if requested {
+                    Membership::Member
+                } else {
+                    Membership::NotMember
+                };
+                return true;
+            }
+            let membership = match (world.membership, requested) {
+                (Membership::NotMember, true) => Membership::Member,
+                (Membership::Member, false) => Membership::Left,
+                (membership, _) => membership,
+            };
+            let mut changed = membership != world.membership;
+            world.membership = membership;
+            if membership != Membership::Member && !world.other {
+                world.open = None;
+                world.membership = Membership::NotMember;
+                changed = true;
+            }
+            changed
+        }
+    }
+
+    /// One host, as its connector's [InputQueue] sees it.
+    #[derive(Clone)]
+    struct Host {
+        shared: Shared,
+        index: usize,
+    }
+
+    impl InputConsumer for Host {
+        fn max_batch_size(&self) -> usize {
+            self.shared.world().max_batch_size
+        }
+        fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
+            None
+        }
+        fn parse_errors(&self, _errors: Vec<ParseError>) {}
+        fn buffered(&self, _amt: BufferSize) {}
+        fn replayed(&self, _amt: BufferSize, _hash: u64) {}
+        fn extended(&self, _amt: BufferSize, _resume: Option<Resume>, _watermarks: Vec<Watermark>) {
+        }
+        fn eoi(&self) {}
+        fn request_step(&self) {}
+        fn start_transaction(&self, _label: Option<&str>) {
+            self.shared.world().hosts[self.index]
+                .updates
+                .push_back(true);
+        }
+        fn commit_transaction(&self) {
+            self.shared.world().hosts[self.index]
+                .updates
+                .push_back(false);
+        }
+        fn open_transaction(&self) -> Option<Option<TransactionId>> {
+            Some(self.shared.world().open)
+        }
+        fn joined_transaction(&self) -> Option<Option<TransactionId>> {
+            let world = self.shared.world();
+            Some(world.open.filter(|_| {
+                world.membership == Membership::Member && world.hosts[self.index].seen_request
+            }))
+        }
+        fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<Completion>> {
+            None
+        }
+        fn error(&self, _fatal: bool, _error: AnyError, _tag: Option<&'static str>) {}
+        fn update_connector_health(&self, _health: ConnectorHealth) {}
+    }
+
+    struct Records {
+        ids: Vec<u32>,
+        host: Host,
+    }
+
+    impl InputBuffer for Records {
+        fn flush(&mut self) {
+            let mut world = self.host.shared.world();
+            let open = world.open;
+            world.hosts[self.host.index]
+                .flushed
+                .extend(self.ids.drain(..).map(|id| (id, open)));
+        }
+        fn len(&self) -> BufferSize {
+            BufferSize {
+                records: self.ids.len(),
+                bytes: self.ids.len(),
+            }
+        }
+        fn hash(&self, _hasher: &mut dyn Hasher) {}
+        fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+            let n = n.min(self.ids.len());
+            (n > 0).then(|| {
+                Box::new(Records {
+                    ids: self.ids.drain(..n).collect(),
+                    host: self.host.clone(),
+                }) as Box<dyn InputBuffer>
+            })
+        }
+    }
+
+    /// One queue entry that the connector pushes.
+    #[derive(Clone, Debug)]
+    struct Entry {
+        n_records: u32,
+        start: bool,
+        commit: bool,
+    }
+
+    /// Returns a strategy for a connector's entries: plain records, and
+    /// transactions whose start and commit entries may or may not have records.
+    fn entries() -> impl Strategy<Value = Vec<Entry>> {
+        let plain = (1u32..3).prop_map(|n_records| {
+            vec![Entry {
+                n_records,
+                start: false,
+                commit: false,
+            }]
+        });
+        let transaction = (0u32..3, prop::collection::vec(1u32..3, 0..3), 0u32..3).prop_map(
+            |(first, middle, last)| {
+                let mut entries = vec![Entry {
+                    n_records: first,
+                    start: true,
+                    commit: false,
+                }];
+                entries.extend(middle.into_iter().map(|n_records| Entry {
+                    n_records,
+                    start: false,
+                    commit: false,
+                }));
+                entries.push(Entry {
+                    n_records: last,
+                    start: false,
+                    commit: true,
+                });
+                entries
+            },
+        );
+        prop::collection::vec(prop_oneof![plain, transaction], 0..6)
+            .prop_map(|segments| segments.into_iter().flatten().collect())
+    }
+
+    /// An action, for host `usize` if it has one.
+    #[derive(Clone, Copy, Debug)]
+    enum Action {
+        Push(usize),
+        FlushWithAux(usize),
+        Queue(usize),
+        Deliver(usize),
+        Coordinate,
+        /// Another participant starts or stops holding a transaction open.
+        ToggleOther,
+    }
+
+    fn action(n_hosts: usize) -> impl Strategy<Value = Action> {
+        let host = 0..n_hosts;
+        prop_oneof![
+            host.clone().prop_map(Action::Push),
+            host.clone().prop_map(Action::FlushWithAux),
+            host.clone().prop_map(Action::Queue),
+            host.prop_map(Action::Deliver),
+            Just(Action::Coordinate),
+            Just(Action::ToggleOther),
+        ]
+    }
+
+    /// One host's connector, with the records that it has yet to push.
+    struct Connector {
+        host: Host,
+        queue: InputQueue,
+        pending: VecDeque<(Entry, Vec<u32>)>,
+    }
+
+    impl Connector {
+        fn push(&mut self) -> bool {
+            let Some((entry, ids)) = self.pending.pop_front() else {
+                return false;
+            };
+            let buffer = (!ids.is_empty()).then(|| {
+                Box::new(Records {
+                    ids,
+                    host: self.host.clone(),
+                }) as Box<dyn InputBuffer>
+            });
+            self.queue.push_entry(
+                InputQueueEntry::new_with_aux(Utc::now(), ())
+                    .with_buffer(buffer)
+                    .with_start_transaction(entry.start.then_some(None))
+                    .with_commit_transaction(entry.commit),
+                Vec::new(),
+            );
+            true
+        }
+
+        fn flush(&self, queue_flush: bool) -> bool {
+            let n_flushed = || {
+                self.host.shared.world().hosts[self.host.index]
+                    .flushed
+                    .len()
+            };
+            let before = n_flushed();
+            if queue_flush {
+                self.queue.queue();
+            } else {
+                self.queue.flush_with_aux();
+            }
+            n_flushed() > before
+        }
+    }
+
+    /// Runs the model.  `queue_flush` selects [InputQueue::queue] instead of
+    /// [InputQueue::flush_with_aux] for flushes in the drain.
+    fn run(
+        host_entries: Vec<Vec<Entry>>,
+        actions: Vec<Action>,
+        max_batch_size: usize,
+        queue_flush: bool,
+    ) {
+        let shared = Shared::default();
+        {
+            let mut world = shared.world();
+            world.max_batch_size = max_batch_size;
+            world.hosts = host_entries.iter().map(|_| HostWorld::default()).collect();
+        }
+
+        // Assign record IDs, and remember which connector transaction, if
+        // any, each record belongs to.  A connector transaction is a host
+        // and that host's sequence number for it.
+        let mut next_id = 0;
+        let mut owner = BTreeMap::new();
+        let mut connectors = Vec::new();
+        for (index, entries) in host_entries.into_iter().enumerate() {
+            let host = Host {
+                shared: shared.clone(),
+                index,
+            };
+            let mut transaction = None;
+            let mut n_transactions = 0;
+            let mut pending = VecDeque::new();
+            for entry in entries {
+                if entry.start {
+                    transaction = Some((index, n_transactions));
+                    n_transactions += 1;
+                }
+                let ids = (next_id..next_id + entry.n_records).collect::<Vec<_>>();
+                next_id += entry.n_records;
+                for id in &ids {
+                    owner.insert(*id, transaction);
+                }
+                if entry.commit {
+                    transaction = None;
+                }
+                pending.push_back((entry, ids));
+            }
+            connectors.push(Connector {
+                queue: InputQueue::new(Box::new(host.clone())),
+                host,
+                pending,
+            });
+        }
+
+        for action in actions {
+            match action {
+                Action::Push(host) => {
+                    connectors[host].push();
+                }
+                Action::FlushWithAux(host) => {
+                    connectors[host].flush(false);
+                }
+                Action::Queue(host) => {
+                    connectors[host].flush(true);
+                }
+                Action::Deliver(host) => {
+                    shared.deliver(host);
+                }
+                Action::Coordinate => {
+                    shared.coordinate();
+                }
+                Action::ToggleOther => {
+                    let mut world = shared.world();
+                    world.other = !world.other;
+                }
+            }
+        }
+
+        // The other participant finishes, so that every transaction can commit.
+        shared.world().other = false;
+
+        // Drain fairly.  Every round makes progress until nothing is left,
+        // so a round that makes none ends the drain.
+        for _ in 0..10_000 {
+            let mut progress = false;
+            for (index, connector) in connectors.iter_mut().enumerate() {
+                progress |= connector.push();
+                progress |= connector.flush(queue_flush);
+                while shared.deliver(index) {
+                    progress = true;
+                }
+                progress |= !connector.queue.is_empty();
+            }
+            progress |= shared.coordinate();
+            if !progress {
+                break;
+            }
+        }
+
+        // Liveness: everything got through.
+        for connector in &connectors {
+            assert!(connector.queue.is_empty(), "records stuck in the queue");
+        }
+        let world = shared.world();
+        let flushed = world
+            .hosts
+            .iter()
+            .flat_map(|host| host.flushed.iter().copied())
+            .collect::<Vec<_>>();
+        assert_eq!(flushed.len(), next_id as usize, "records lost");
+
+        // Safety: each connector transaction lands in exactly one pipeline
+        // transaction, which no other connector transaction of the same host
+        // shares, and no later record of the same host lands in it.  (Records
+        // before it may: another participant can hold the pipeline transaction
+        // open before the connector joins it.  Different hosts' parts of the
+        // connector may share a pipeline transaction.)
+        let mut landed = BTreeMap::<(usize, usize), BTreeSet<Option<TransactionId>>>::new();
+        let mut last_id = BTreeMap::<(usize, usize), u32>::new();
+        for (id, open) in &flushed {
+            if let Some(transaction) = owner[id] {
+                landed.entry(transaction).or_default().insert(*open);
+                let last = last_id.entry(transaction).or_default();
+                *last = (*last).max(*id);
+            }
+        }
+        let mut used = BTreeSet::new();
+        for (&(host, sequence), opens) in &landed {
+            assert_eq!(
+                opens.len(),
+                1,
+                "connector transaction {sequence} of host {host} landed in {opens:?}"
+            );
+            let open = *opens.first().unwrap();
+            assert!(
+                open.is_some(),
+                "connector transaction {sequence} of host {host} landed outside"
+            );
+            assert!(
+                used.insert((host, open)),
+                "two connector transactions of host {host} shared {open:?}"
+            );
+            for (id, later) in &world.hosts[host].flushed {
+                assert!(
+                    !(*id > last_id[&(host, sequence)] && owner[id].is_none() && *later == open),
+                    "record {id} after connector transaction {sequence} of host {host} landed in {open:?}"
+                );
+            }
+        }
+    }
+
+    /// Returns a strategy for one to `max_hosts` hosts' entries, actions for
+    /// them, a batch size, and the flush to use in the drain.
+    fn scenario(
+        max_hosts: usize,
+    ) -> impl Strategy<Value = (Vec<Vec<Entry>>, Vec<Action>, usize, bool)> {
+        (1..=max_hosts).prop_flat_map(|n_hosts| {
+            (
+                prop::collection::vec(entries(), n_hosts),
+                prop::collection::vec(action(n_hosts), 0..80),
+                1usize..5,
+                any::<bool>(),
+            )
+        })
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(2000))]
+
+        #[test]
+        fn boundaries_hold_and_input_drains(
+            (host_entries, actions, max_batch_size, queue_flush) in scenario(2),
+        ) {
+            run(host_entries, actions, max_batch_size, queue_flush);
+        }
     }
 }

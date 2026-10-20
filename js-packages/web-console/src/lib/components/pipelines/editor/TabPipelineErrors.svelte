@@ -20,7 +20,7 @@
 
 <div class="scrollbar h-full w-full overflow-y-auto">
   <div
-    class="flex min-h-full w-fit min-w-full flex-col gap-4 rounded"
+    class="flex min-h-full w-fit min-w-full flex-col gap-4 rounded pt-2"
     use:selectScope
     role="textbox"
     tabindex={-1}

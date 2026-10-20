@@ -9,13 +9,21 @@
   import { resolve } from '$lib/functions/svelte'
   import type { Snippet } from '$lib/types/svelte'
 
-  const { afterStart, beforeEnd }: { afterStart?: Snippet; beforeEnd?: Snippet } = $props()
+  const {
+    afterStart,
+    beforeEnd,
+    class: class_ = 'px-2 md:px-8'
+  }: {
+    afterStart?: Snippet
+    beforeEnd?: Snippet
+    class?: string
+  } = $props()
   const darkMode = useDarkMode()
 
   const healthStatus = useClusterHealth()
 </script>
 
-<div class="flex flex-row items-center justify-between gap-2 px-2 py-1.5 md:px-8">
+<div class="flex flex-row items-center justify-between gap-2 py-1.5 {class_}">
   <a class="flex h-12 items-center lg:items-start lg:pr-2.5" href={resolve('/')}>
     <span class="hidden lg:flex">
       {#if darkMode.current === 'dark'}

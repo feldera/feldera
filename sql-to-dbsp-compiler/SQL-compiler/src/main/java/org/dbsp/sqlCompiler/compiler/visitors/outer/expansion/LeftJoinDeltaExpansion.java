@@ -7,16 +7,16 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 
 /** Expansion of a {@link org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator} or a
- * {@link org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator} into the change of its
- * output: ΔL ⋈ z⁻¹I(R) + z⁻¹I(L) ⋈ ΔR + ΔL ⋈ ΔR + pad(Δ(L ▷ R)). */
+ * {@link org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator}:
+ * ΔL ⋈ z⁻¹R + z⁻¹L ⋈ ΔR + ΔL ⋈ ΔR + pad(Δ(L ▷ R)). */
 public class LeftJoinDeltaExpansion extends OperatorDeltaExpansion implements CommonJoinDeltaExpansion {
-    /** z⁻¹I(L) */
+    /** z⁻¹L, the delayed integral of ΔL */
     public final DBSPDelayedIntegralOperator leftIntegrator;
-    /** z⁻¹I(R) */
+    /** z⁻¹R, the delayed integral of ΔR */
     public final DBSPDelayedIntegralOperator rightIntegrator;
-    /** ΔL ⋈ z⁻¹I(R) */
+    /** ΔL ⋈ z⁻¹R */
     public final DBSPJoinBaseOperator leftDelta;
-    /** z⁻¹I(L) ⋈ ΔR */
+    /** z⁻¹L ⋈ ΔR */
     public final DBSPJoinBaseOperator rightDelta;
     /** ΔL ⋈ ΔR */
     public final DBSPJoinBaseOperator join;

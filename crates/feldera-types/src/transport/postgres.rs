@@ -1,3 +1,4 @@
+use crate::size::{ConfigSize, LegacySizeUnit};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use utoipa::ToSchema;
@@ -82,7 +83,7 @@ pub struct PostgresCdcBatchConfig {
     /// Maximum time, in milliseconds, to wait before flushing a partially
     /// filled batch. This is the latency bound for batching: once the first
     /// event enters a batch, the batch is flushed when this timer elapses,
-    /// even if `max_bytes` was not reached.
+    /// even if `max_size` was not reached.
     ///
     /// Default: 10000 (10 seconds).
     #[serde(default = "default_batch_max_fill_ms")]
@@ -102,15 +103,22 @@ pub struct PostgresCdcBatchConfig {
     #[schema(default = default_batch_memory_budget_ratio)]
     pub memory_budget_ratio: f32,
 
-    /// Maximum preferred byte size for one batch per active stream. This is
-    /// a ceiling, not a target: the runtime still chooses the smaller value
-    /// between this limit and the memory-ratio budget computed from
-    /// `memory_budget_ratio`.
+    /// Maximum preferred size for one batch per active stream, such as
+    /// `"32Mi"`. This is a ceiling, not a target: the runtime still chooses
+    /// the smaller value between this limit and the memory-ratio budget
+    /// computed from `memory_budget_ratio`.
     ///
-    /// Default: 33554432 (32 MiB), the same as etl.
-    #[serde(default = "default_batch_max_bytes")]
-    #[schema(default = default_batch_max_bytes)]
-    pub max_bytes: usize,
+    /// Default: `"32Mi"`, the same as etl.
+    ///
+    /// Before release 0.367.0 this setting was `max_bytes`, a number of
+    /// bytes. That name is deprecated but still read.
+    #[serde(
+        default = "default_batch_max_size",
+        alias = "max_bytes",
+        deserialize_with = "size_batch_max_size"
+    )]
+    #[schema(value_type = String, default = schema_default_batch_max_size)]
+    pub max_size: ConfigSize,
 }
 
 impl Default for PostgresCdcBatchConfig {
@@ -118,7 +126,7 @@ impl Default for PostgresCdcBatchConfig {
         Self {
             max_fill_ms: default_batch_max_fill_ms(),
             memory_budget_ratio: default_batch_memory_budget_ratio(),
-            max_bytes: default_batch_max_bytes(),
+            max_size: default_batch_max_size(),
         }
     }
 }
@@ -138,8 +146,8 @@ impl PostgresCdcBatchConfig {
             ));
         }
 
-        if self.max_bytes == 0 {
-            return Err("batch.max_bytes must be greater than 0, got 0".to_string());
+        if self.max_size.is_zero() {
+            return Err("batch.max_size must be greater than 0, got 0".to_string());
         }
 
         Ok(())
@@ -154,9 +162,13 @@ fn default_batch_memory_budget_ratio() -> f32 {
     0.2
 }
 
-fn default_batch_max_bytes() -> usize {
-    32 * 1024 * 1024
+fn default_batch_max_size() -> ConfigSize {
+    ConfigSize::from_mib(32)
 }
+fn schema_default_batch_max_size() -> String {
+    default_batch_max_size().to_string()
+}
+crate::required_size_setting!(size_batch_max_size, "max_size", LegacySizeUnit::Bytes);
 
 /// Memory-based backpressure configuration for the Postgres CDC connector.
 ///
@@ -412,13 +424,20 @@ pub struct PostgresWriterConfig {
     /// The maximum number of records in a single buffer.
     pub max_records_in_buffer: Option<usize>,
 
-    /// The maximum buffer size in for a single operation.
+    /// The maximum buffer size for a single operation, such as `"1Mi"`.
     /// Note that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are
     /// separate.
-    /// Default: 1 MiB
-    #[schema(default = default_max_buffer_size)]
-    #[serde(default = "default_max_buffer_size")]
-    pub max_buffer_size_bytes: usize,
+    /// Default: `"1Mi"`.
+    ///
+    /// Before release 0.367.0 this setting was `max_buffer_size_bytes`, a
+    /// number of bytes. That name is deprecated but still read.
+    #[schema(value_type = String, default = schema_default_max_buffer_size)]
+    #[serde(
+        default = "default_max_buffer_size",
+        alias = "max_buffer_size_bytes",
+        deserialize_with = "size_max_buffer_size"
+    )]
+    pub max_buffer_size: ConfigSize,
 
     /// Specifies how the connector handles conflicts when executing an `INSERT`
     /// into a table with a primary key. By default, an existing row with the same
@@ -451,9 +470,17 @@ pub struct PostgresWriterConfig {
     pub extra_columns: Vec<String>,
 }
 
-fn default_max_buffer_size() -> usize {
-    usize::pow(2, 20)
+fn default_max_buffer_size() -> ConfigSize {
+    ConfigSize::from_mib(1)
 }
+fn schema_default_max_buffer_size() -> String {
+    default_max_buffer_size().to_string()
+}
+crate::required_size_setting!(
+    size_max_buffer_size,
+    "max_buffer_size",
+    LegacySizeUnit::Bytes
+);
 
 fn default_writer_threads() -> usize {
     1
@@ -638,10 +665,14 @@ mod tests {
 
     #[test]
     fn postgres_cdc_batch_config_deserializes_with_partial_fields() {
-        let json = r#"{"max_bytes": 4194304}"#;
+        let json = r#"{"max_size": "4Mi"}"#;
         let config: PostgresCdcBatchConfig = serde_json::from_str(json).unwrap();
 
-        assert_eq!(config.max_bytes, 4 * 1024 * 1024);
+        assert_eq!(config.max_size, ConfigSize::from_mib(4));
+        // The superseded spelling still reads, as a number of bytes.
+        let legacy: PostgresCdcBatchConfig =
+            serde_json::from_str(r#"{"max_bytes": 4194304}"#).unwrap();
+        assert_eq!(legacy.max_size, ConfigSize::from_mib(4));
         assert_eq!(config.max_fill_ms, default_batch_max_fill_ms());
         assert_eq!(
             config.memory_budget_ratio,
@@ -674,14 +705,14 @@ mod tests {
     }
 
     #[test]
-    fn postgres_cdc_batch_config_rejects_zero_max_bytes() {
+    fn postgres_cdc_batch_config_rejects_zero_max_size() {
         let config = PostgresCdcBatchConfig {
-            max_bytes: 0,
+            max_size: ConfigSize::ZERO,
             ..Default::default()
         };
 
         let err = config.validate().unwrap_err();
-        assert!(err.contains("batch.max_bytes"));
+        assert!(err.contains("batch.max_size"));
     }
 
     #[test]
@@ -720,10 +751,10 @@ mod tests {
     #[test]
     fn postgres_cdc_config_rejects_invalid_batch_config() {
         let mut config = postgres_cdc_config(PostgresTlsConfig::default());
-        config.batch.max_bytes = 0;
+        config.batch.max_size = ConfigSize::ZERO;
 
         let err = config.validate().unwrap_err();
-        assert!(err.contains("batch.max_bytes"));
+        assert!(err.contains("batch.max_size"));
     }
 
     #[test]

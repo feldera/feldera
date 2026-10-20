@@ -1,3 +1,7 @@
+### Linked Issue
+
+<!-- Link the issue and the approved design, e.g. "Closes #1234". Not needed for trivial changes. -->
+
 ### Describe Manual Test Plan
 
 <!-- Add a few sentences describing the steps you took to test this change. -->

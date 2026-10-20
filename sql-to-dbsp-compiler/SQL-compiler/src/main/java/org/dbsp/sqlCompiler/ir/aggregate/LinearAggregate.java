@@ -197,7 +197,9 @@ public class LinearAggregate extends IAggregate {
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        return false;
+        if (this.getClass() != other.getClass())
+            return false;
+        return this.equivalent(context, other.to(LinearAggregate.class));
     }
 
     /** The user-defined accumulator type for a linear user-defined aggregate function */

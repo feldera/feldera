@@ -400,6 +400,7 @@ async fn unbundle_support_bundle(
                     udf_toml,
                     program_config,
                     runtime_config,
+                    deployment_config: None,
                 })
                 .send()
                 .await

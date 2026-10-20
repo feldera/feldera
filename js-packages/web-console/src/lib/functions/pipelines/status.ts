@@ -226,6 +226,17 @@ export const deletePipelineDisabledReason = (
   return undefined
 }
 
+/**
+ * The hint shown when a pipeline's settings can't be edited. If its status
+ * allows editing, the lock comes from a runtime update pending while storage is
+ * in use (see `isUpgradeRequired`), so asking to stop it is not a helpful
+ * suggestion.
+ */
+export const editSettingsDisabledReason = (status: PipelineStatus) =>
+  isPipelineCodeEditable(status)
+    ? 'Update the runtime or clear storage to edit settings'
+    : 'Stop the pipeline to edit settings'
+
 export const isMetricsAvailable = (status: PipelineStatus) => {
   return match(status)
     .returnType<'yes' | 'no' | 'soon' | 'missing'>()

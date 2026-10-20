@@ -63,13 +63,13 @@ use feldera_types::serde_with_context::{
 };
 use rkyv::ser::{ScratchSpace, Serializer as RkyvSerializer};
 use rkyv::vec::{ArchivedVec, VecResolver};
-use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use serde::de::{DeserializeSeed, IntoDeserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use size_of::SizeOf;
 use std::borrow::Cow;
 
-use crate::variant::Variant;
+use crate::variant::{NumberTokenValue, TokenValue, Variant};
 use crate::{
     ByteArray, Date, LongInterval, ShortInterval, SqlString, Time, Timestamp, TimestampTz, Uuid,
 };
@@ -1526,29 +1526,40 @@ impl<'de> Visitor<'de> for BuildValue<'_> {
     where
         V: MapAccess<'de>,
     {
-        match map.next_key_seed(KeyClassifier)? {
-            Some(KeyClass::Number) => {
-                let number: DynamicDecimal = map.next_value()?;
-                Ok(self.w.scalar(
-                    TAG_DECIMAL,
-                    &casts::decimal_payload(number.significand(), number.exponent()),
-                ))
-            }
+        let first_entry = match map.next_key_seed(KeyClassifier)? {
+            None => return Ok(self.w.map(&[])),
             Some(KeyClass::Map(first_key)) => {
-                let mut entries = Vec::new();
                 let key_range = self.w.scalar(TAG_STRING, first_key.as_bytes());
                 let val_range = map.next_value_seed(BuildValue { w: self.w })?;
-                entries.push((key_range, val_range));
-                while let Some(key) = map.next_key::<String>()? {
-                    let key_range = self.w.scalar(TAG_STRING, key.as_bytes());
-                    let val_range = map.next_value_seed(BuildValue { w: self.w })?;
-                    entries.push((key_range, val_range));
-                }
-                sort_map_entries(&self.w.out, &mut entries);
-                Ok(self.w.map(&entries))
+                (key_range, val_range)
             }
-            None => Ok(self.w.map(&[])),
+            Some(KeyClass::Number) => {
+                match map.next_value_seed(NumberTokenValue(BuildValue { w: self.w }))? {
+                    TokenValue::Number(text) => {
+                        let number = DynamicDecimal::deserialize(
+                            IntoDeserializer::<V::Error>::into_deserializer(text),
+                        )?;
+                        return Ok(self.w.scalar(
+                            TAG_DECIMAL,
+                            &casts::decimal_payload(number.significand(), number.exponent()),
+                        ));
+                    }
+                    TokenValue::Entry(val_range) => {
+                        let key_range = self.w.scalar(TAG_STRING, DECIMAL_KEY_TOKEN.as_bytes());
+                        (key_range, val_range)
+                    }
+                }
+            }
+        };
+
+        let mut entries = vec![first_entry];
+        while let Some(key) = map.next_key::<String>()? {
+            let key_range = self.w.scalar(TAG_STRING, key.as_bytes());
+            let val_range = map.next_value_seed(BuildValue { w: self.w })?;
+            entries.push((key_range, val_range));
         }
+        sort_map_entries(&self.w.out, &mut entries);
+        Ok(self.w.map(&entries))
     }
 }
 
@@ -2686,6 +2697,9 @@ mod tests {
             r#""hello""#,
             r#"[1, "two", null, {"a": false}]"#,
             r#"{"b": 1, "a": [2.5]}"#,
+            r#"{"$serde_json::private::Number": "1"}"#,
+            r#"{"$serde_json::private::Number": "1", "x": 2}"#,
+            r#"{"$serde_json::private::Number": {"a": 184467440737095516150}}"#,
         ];
         for case in valid {
             let v1 = crate::string::parse_json_s(SqlString::from_ref(case));
@@ -2985,5 +2999,66 @@ mod tests {
         let b = Variant::Map(map.into());
         let b2 = FlatVariant::from(&b);
         assert_eq!(v::json_each_bigint_V(b), functions::json_each_bigint_FV(b2));
+    }
+
+    #[test]
+    fn decimal_to_number_keeps_fraction() {
+        use crate::flat_variant::casts::{DecodeFV, cast_to_dN_FV, cast_to_fN_FV};
+        use crate::{
+            F32, F64, SqlDecimal, cast_to_d_SqlDecimal, cast_to_dN_V, cast_to_f_SqlDecimal,
+            cast_to_fN_V, cast_to_i8_SqlDecimal, cast_to_u8_SqlDecimal,
+        };
+
+        // Conversions to integers round toward zero
+        for (significand, scale, real, integer) in [(15, 1, 1.5, 1), (-275, 2, -2.75, -2)] {
+            let v = Variant::SqlDecimal((significand, scale));
+            let fv = FlatVariant::from(&v);
+            assert_eq!(F64::try_from(v.clone()).unwrap(), F64::from(real));
+            assert_eq!(F64::decode(fv.as_bytes()).unwrap(), F64::from(real));
+            assert_eq!(F32::try_from(v.clone()).unwrap(), F32::from(real as f32));
+            assert_eq!(F32::decode(fv.as_bytes()).unwrap(), F32::from(real as f32));
+            assert_eq!(i32::try_from(v.clone()).unwrap(), integer);
+            assert_eq!(i32::decode(fv.as_bytes()).unwrap(), integer);
+        }
+
+        // The REAL and DOUBLE values of a DECIMAL with the given scale
+        fn typed<const S: usize>(significand: i128) -> (F32, F64) {
+            let decimal = SqlDecimal::<38, S>::new(significand, S as i32).unwrap();
+            let real = cast_to_f_SqlDecimal(decimal).unwrap();
+            let double = cast_to_d_SqlDecimal(decimal).unwrap();
+            (real, double)
+        }
+
+        // A VARIANT holding a DECIMAL converts to the same value as the DECIMAL itself
+        for (significand, scale, (real, double)) in [
+            (79450944636602, 17, typed::<17>(79450944636602)),
+            (1, 38, typed::<38>(1)),
+        ] {
+            let v = Variant::SqlDecimal((significand, scale));
+            let fv = FlatVariant::from(&v);
+            assert_eq!(cast_to_fN_V(v.clone()).unwrap(), Some(real));
+            assert_eq!(F32::try_from(v.clone()).unwrap(), real);
+            assert_eq!(cast_to_fN_FV(fv.clone()).unwrap(), Some(real));
+            assert_eq!(F32::decode(fv.as_bytes()).unwrap(), real);
+            assert_eq!(cast_to_dN_V(v.clone()).unwrap(), Some(double));
+            assert_eq!(F64::try_from(v).unwrap(), double);
+            assert_eq!(cast_to_dN_FV(fv.clone()).unwrap(), Some(double));
+            assert_eq!(F64::decode(fv.as_bytes()).unwrap(), double);
+        }
+
+        let too_large = Variant::SqlDecimal((3005, 1));
+        let too_large_decimal = SqlDecimal::<38, 1>::new(3005, 1).unwrap();
+        assert!(cast_to_i8_SqlDecimal(too_large_decimal).is_err());
+        assert!(i8::try_from(too_large.clone()).is_err());
+        assert!(i8::decode(FlatVariant::from(&too_large).as_bytes()).is_err());
+
+        let negative = Variant::SqlDecimal((-5, 1));
+        let negative_decimal = SqlDecimal::<38, 1>::new(-5, 1).unwrap();
+        assert_eq!(cast_to_u8_SqlDecimal(negative_decimal).unwrap(), 0);
+        assert_eq!(u8::try_from(negative.clone()).unwrap(), 0);
+        assert_eq!(
+            u8::decode(FlatVariant::from(&negative).as_bytes()).unwrap(),
+            0
+        );
     }
 }

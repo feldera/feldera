@@ -137,14 +137,30 @@ describe('Tags.svelte', () => {
       // Empty pool skips the search list and lands on create immediately.
       await expect.element(page.getByPlaceholder('Tag name')).toBeVisible()
       await expect.element(page.getByRole('button', { name: 'Create' })).toBeVisible()
-      expect(page.getByPlaceholder('Search').elements()).toHaveLength(0)
+      expect(page.getByPlaceholder('Search or add tags').elements()).toHaveLength(0)
     })
 
     it('shows search when known tags exist', async () => {
       renderTags({ tags: [], knownTags: ['dev'] })
       await page.getByRole('button', { name: 'Tag' }).click()
 
-      await expect.element(page.getByPlaceholder('Search')).toBeVisible()
+      await expect.element(page.getByPlaceholder('Search or add tags')).toBeVisible()
+    })
+
+    it('offers to create the searched name only when no tag has that name', async () => {
+      renderTags({ tags: [], knownTags: ['dev'] })
+      await page.getByRole('button', { name: 'Tag' }).click()
+      const search = page.getByPlaceholder('Search or add tags')
+
+      await expect.element(page.getByRole('button', { name: 'Create a new tag' })).toBeVisible()
+
+      await search.fill('prod')
+      await expect
+        .element(page.getByRole('button', { name: 'Create new tag: “prod”' }))
+        .toBeVisible()
+
+      await search.fill('dev')
+      await expect.element(page.getByRole('button', { name: 'Create a new tag' })).toBeVisible()
     })
   })
 

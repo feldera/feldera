@@ -11,7 +11,7 @@
 
 <!-- svelte-ignore state_referenced_locally -->
 <script lang="ts">
-  import { Switch } from '@skeletonlabs/skeleton-svelte'
+  import CompactSwitch from '$lib/components/common/CompactSwitch.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import PanelAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
@@ -321,17 +321,12 @@
     </label>
     <label class="flex cursor-pointer items-center gap-2 rounded">
       Verbatim errors
-      <Switch
+      <CompactSwitch
+        size="sm"
         name="verbatimErrors"
         checked={layoutSettings.verbatimErrors.value}
         onCheckedChange={(e) => (layoutSettings.verbatimErrors.value = e.checked)}
-      >
-        <Switch.Control>
-          <Switch.Thumb />
-        </Switch.Control>
-        <Switch.Label />
-        <Switch.HiddenInput />
-      </Switch>
+      />
     </label>
   </div>
 {/snippet}

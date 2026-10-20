@@ -89,7 +89,7 @@ public class CastTests extends SqlIoTest {
     @Test
     public void castFail() {
         this.runtimeConstantFail("SELECT CAST('blah' AS DECIMAL)",
-                "While converting 'blah' to DECIMAL: parse error");
+                "Error converting 'blah' to DECIMAL(38, 0): Syntax error in numeric value");
     }
 
     @Test
@@ -274,6 +274,41 @@ public class CastTests extends SqlIoTest {
                  i
                 ---
                  13 months ago
+                (1 row)
+
+                SELECT CAST('-0-5' AS INTERVAL YEAR TO MONTH);
+                 i
+                ---
+                 5 months ago
+                (1 row)""");
+    }
+
+    @Test
+    public void issue7527() {
+        // An out-of-range field after the leading field is a cast error, so SAFE_CAST returns NULL
+        this.qst("""
+                SELECT SAFE_CAST('10:99' AS INTERVAL HOUR TO MINUTE);
+                 r
+                ---
+                NULL
+                (1 row)
+
+                SELECT SAFE_CAST('1 25:00' AS INTERVAL DAY TO MINUTE);
+                 r
+                ---
+                NULL
+                (1 row)
+
+                SELECT SAFE_CAST('200000000 0' AS INTERVAL DAY TO HOUR);
+                 r
+                ---
+                NULL
+                (1 row)
+
+                SELECT SAFE_CAST('1-12' AS INTERVAL YEAR TO MONTH);
+                 r
+                ---
+                NULL
                 (1 row)""");
     }
 

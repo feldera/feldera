@@ -684,14 +684,6 @@ some_function3!(
     SqlString
 );
 
-#[doc(hidden)]
-pub fn writelog<T: std::fmt::Display>(format: SqlString, argument: T) -> T {
-    let format_arg = format!("{}", argument);
-    let formatted = format.str().replace("%%", &format_arg);
-    print!("{}", formatted);
-    argument
-}
-
 /// Panics on invalid JSON.
 #[doc(hidden)]
 pub fn parse_json_s(value: SqlString) -> Variant {

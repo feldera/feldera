@@ -96,7 +96,7 @@ public class Regression2Tests extends SqlIoTest {
                 HashString hash = OperatorHash.getHash(operator, true);
                 Utilities.enforce(hash != null);
                 Utilities.enforce(hash.toString()
-                        .equals("1f3808fdce7cee3559c13945ba24280abf22b777542af1bac25aa7d57cf29892"));
+                        .equals("2fe2fc9849c1570862393e7c86f5d2e4df1842a08c7c074ee0b886854b0fece9"));
             }
 
             @Override

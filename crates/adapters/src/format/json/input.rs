@@ -1,6 +1,6 @@
 //! JSON format parser.
 
-use super::{DebeziumUpdate, InsDelUpdate, WeightedUpdate};
+use super::{DebeziumUpdate, InsDelUpdate};
 use crate::catalog::InputCollectionHandle;
 use crate::format::{InputBuffer, LineSplitter};
 use crate::{
@@ -140,34 +140,6 @@ impl UpdateFormat for DebeziumUpdate<&'_ RawValue> {
     }
 }
 
-impl UpdateFormat for WeightedUpdate<&'_ RawValue> {
-    fn error() -> &'static str {
-        "error deserializing JSON string as a weighted record"
-    }
-
-    fn array_error() -> &'static str {
-        "error deserializing string as a JSON array of weighted records"
-    }
-
-    fn example() -> Option<&'static str> {
-        Some("Example valid JSON: '{{\"weight\": 1, \"data\": {{...}} }}'")
-    }
-
-    fn array_example() -> Option<&'static str> {
-        Some(
-            "Example valid JSON: '[{{\"weight\": 1, \"data\": {{...}} }}, {{\"weight\": -1, \"data\": {{...}} }}]'",
-        )
-    }
-
-    fn apply(
-        self,
-        _parser: &mut JsonParser,
-        _metadata: &Option<Variant>,
-    ) -> Result<usize, ParseError> {
-        todo!()
-    }
-}
-
 impl UpdateFormat for &'_ RawValue {
     fn error() -> &'static str {
         "failed to parse JSON string"
@@ -238,10 +210,9 @@ fn validate_parser_config(
     // No wildcard: a new update format must be classified here, because the
     // parser panics on a format it does not support.
     match config.update_format {
-        JsonUpdateFormat::InsertDelete
-        | JsonUpdateFormat::Weighted
-        | JsonUpdateFormat::Debezium
-        | JsonUpdateFormat::Raw => Ok(()),
+        JsonUpdateFormat::InsertDelete | JsonUpdateFormat::Debezium | JsonUpdateFormat::Raw => {
+            Ok(())
+        }
         JsonUpdateFormat::Snowflake | JsonUpdateFormat::Redis => {
             Err(ControllerError::input_format_not_supported(
                 endpoint_name,
@@ -257,8 +228,8 @@ fn validate_parser_config(
 /// accepts.
 fn unsupported_update_format(update_format: &JsonUpdateFormat) -> String {
     format!(
-        "update format '{update_format}' is output-only and not supported for JSON input \
-         streams; use one of 'insert_delete', 'weighted', 'debezium', or 'raw'"
+        "update format '{update_format}' is not supported for JSON input streams; use one of \
+         'insert_delete', 'debezium', or 'raw'"
     )
 }
 
@@ -450,9 +421,6 @@ impl Parser for JsonParser {
                 }
                 JsonUpdateFormat::Debezium => {
                     self.apply_update::<DebeziumUpdate<_>>(update, &metadata, &mut errors)
-                }
-                JsonUpdateFormat::Weighted => {
-                    self.apply_update::<WeightedUpdate<_>>(update, &metadata, &mut errors)
                 }
                 JsonUpdateFormat::Raw => {
                     let errors_before = errors.len();
@@ -1336,10 +1304,11 @@ mod test {
         run_test_cases(test_cases);
     }
 
-    /// Output-only update formats must be rejected when the parser is
-    /// created.  Otherwise, the parser panics on the first record.
+    /// Update formats that JSON input does not support must be rejected when
+    /// the parser is created.  Otherwise, the parser panics on the first
+    /// record.
     #[test]
-    fn output_only_update_formats_are_rejected() {
+    fn unsupported_update_formats_are_rejected() {
         for update_format in [JsonUpdateFormat::Snowflake, JsonUpdateFormat::Redis] {
             let config = JsonParserConfig {
                 update_format: update_format.clone(),

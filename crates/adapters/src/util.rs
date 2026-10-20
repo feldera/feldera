@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Result as AnyResult, bail};
 use dashmap::DashMap;
 use feldera_adapterlib::catalog::SerCursor;
+pub(crate) use feldera_adapterlib::utils::long_operation::LongOperationWarning;
 use feldera_types::program_schema::SqlIdentifier;
 use itertools::Itertools;
 use size_of::HumanBytes;
@@ -635,43 +636,13 @@ impl<K: Eq + Hash> TokenBucketRateLimiter<K> {
     }
 }
 
-pub(crate) struct LongOperationWarning {
-    start: Instant,
-    warn_threshold: Duration,
-}
-
-impl LongOperationWarning {
-    pub fn new(warn_threshold: Duration) -> Self {
-        Self {
-            start: Instant::now(),
-            warn_threshold,
-        }
-    }
-
-    pub fn check(&mut self, warn: impl FnOnce(Duration)) {
-        let elapsed = self.start.elapsed();
-        if elapsed >= self.warn_threshold {
-            warn(elapsed);
-            self.warn_threshold *= 2;
-        }
-    }
-
-    pub fn next_warning(&self) -> Instant {
-        self.start + self.warn_threshold
-    }
-
-    pub fn elapsed(&self) -> Duration {
-        self.start.elapsed()
-    }
-}
-
 /// Run any function in a single-worker dbsp::Runtime configured with POSIX storage backend.
 ///
 /// Used to test code that needs to write to storage without creating a circuit.
 #[cfg(test)]
 pub(crate) fn run_in_posix_runtime<F>(
-    min_storage_bytes: Option<usize>,
-    min_step_storage_bytes: Option<usize>,
+    min_spill_size: Option<feldera_types::size::ConfigSize>,
+    min_step_spill_size: Option<feldera_types::size::ConfigSize>,
     test_fn: F,
 ) where
     F: FnOnce() + Send + 'static,
@@ -689,8 +660,8 @@ pub(crate) fn run_in_posix_runtime<F>(
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                min_storage_bytes,
-                min_step_storage_bytes,
+                min_spill_size,
+                min_step_spill_size,
                 ..StorageOptions::default()
             },
         )

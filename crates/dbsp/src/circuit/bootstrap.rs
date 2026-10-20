@@ -1034,6 +1034,13 @@ impl CircuitHandle {
             .collect()
     }
 
+    /// Returns `true` if node `node_id` is a waiter (see
+    /// [`SourceOperator::is_waiter`](crate::circuit::operator_traits::SourceOperator::is_waiter)).
+    fn is_waiter(&self, node_id: NodeId) -> bool {
+        self.circuit
+            .map_local_node_mut(node_id, &mut |node| node.is_waiter())
+    }
+
     /// Compute all transitive successors of need_backfill nodes.
     fn propagate_need_backfill_forward(
         &self,
@@ -1049,7 +1056,9 @@ impl CircuitHandle {
             }
             visited.insert(node_id);
 
-            // Get all successors of this node
+            // Get all successors of this node, except for waiters (see
+            // `SourceOperator::is_waiter`): the live copy keeps running a
+            // waiter for the other nodes that it waits for.
             let successors: Vec<NodeId> = self
                 .circuit
                 .edges()
@@ -1057,6 +1066,7 @@ impl CircuitHandle {
                 .get(&node_id)
                 .into_iter()
                 .flat_map(|edges| edges.iter().map(|edge| edge.to))
+                .filter(|successor| !self.is_waiter(*successor))
                 .collect();
 
             for successor in successors {
@@ -1114,6 +1124,13 @@ impl CircuitHandle {
         let mut inputs = BTreeSet::new();
 
         for node_id in participate_in_backfill_new.iter() {
+            // A waiter (see `SourceOperator::is_waiter`) joins the region, so
+            // that the bootstrap runs it, but the nodes that it waits for do
+            // not: they are unrelated to each other.
+            if self.is_waiter(*node_id) {
+                continue;
+            }
+
             // Compute immediate ancestors of node_id, including:
             // 1. Nodes connected to node_id by a stream.
             // 2. Nodes that depend on node_id -- makes sure that if we schedule the output half of a strict operator,

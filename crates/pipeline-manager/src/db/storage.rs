@@ -1,6 +1,7 @@
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
 use crate::db::types::api_key::ApiKeyDescr;
+use crate::db::types::deployment::PipelineDeploymentConfig;
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
     ExtendedPipelineMonitorEvent, NewClusterMonitorEvent, PipelineMonitorEvent,
@@ -412,6 +413,15 @@ pub(crate) trait Storage {
         platform_version: &str,
     ) -> Result<(), DBError>;
 
+    /// Applies `patch` to the deployment config of a running pipeline, and returns the updated
+    /// pipeline.
+    async fn patch_pipeline_deployment(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        patch: &PipelineDeploymentConfig,
+    ) -> Result<ExtendedPipelineDescr, DBError>;
+
     /// Updates an existing pipeline.
     ///
     /// # Arguments
@@ -494,9 +504,10 @@ pub(crate) trait Storage {
     ) -> Result<(), DBError>;
 
     /// Transitions program status from `CompilingSql` to `Success` for a Gen-2
-    /// program, which the SQL compiler completes without Rust compilation. It carries
-    /// the SQL log and program info (neither is stored yet at `CompilingSql`), delivers
-    /// no pipeline binary (both binary checksums stay cleared), and stores no Rust log.
+    /// program without Rust UDFs, which the SQL compiler completes without Rust
+    /// compilation. It carries the SQL log and program info (neither is stored yet at
+    /// `CompilingSql`), delivers no pipeline binary (both binary checksums stay
+    /// cleared), and stores no Rust log.
     async fn transit_program_status_to_success_no_binary(
         &self,
         tenant_id: TenantId,

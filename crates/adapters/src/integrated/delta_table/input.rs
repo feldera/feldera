@@ -1,5 +1,6 @@
 use crate::catalog::{ArrowStream, InputCollectionHandle};
 use crate::format::InputBuffer;
+use crate::integrated::DistributedInput;
 use crate::integrated::delta_table::deletion_vector::{
     MaskedFile, ReadMode, filtered_parquet_table, read_deletion_vector,
 };
@@ -64,8 +65,11 @@ use feldera_adapterlib::utils::job_queue::JobQueue;
 use feldera_storage::tokio::TOKIO_DEDICATED_IO;
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::{FtModel, PipelineConfig};
+use feldera_types::coordination::InputShard;
 use feldera_types::program_schema::{Field, Relation};
-use feldera_types::transport::delta_table::{DeltaTableReaderConfig, DeltaTableTransactionMode};
+use feldera_types::transport::delta_table::{
+    DeltaTableIngestMode, DeltaTableReaderConfig, DeltaTableTransactionMode,
+};
 use futures_util::StreamExt;
 use roaring::RoaringTreemap;
 use serde::{Deserialize, Serialize};
@@ -137,7 +141,7 @@ fn format_datafusion_error(
             "{base}\n\
              DataFusion memory pool is exhausted. Current datafusion memory pool limit: {current_pool_limit}. \
              The query needs more memory than the pool holds; consider setting or increasing \
-             'datafusion_memory_mb' in the pipeline runtime config. If raising the budget is not \
+             'datafusion_memory' (a size such as \"4Gi\") in the pipeline runtime config. If raising the budget is not \
              an option, reduce 'io_workers' / 'workers' or set the env var \
              'DELTA_DF_TARGET_PARTITIONS=1' to scan fewer files at a time, which lowers how much \
              of the scan is held in memory at once.\n"
@@ -170,7 +174,7 @@ fn env_override(endpoint_name: &str, name: &str) -> Option<usize> {
 /// at once.
 ///
 /// Parquet decode buffers are invisible to the DataFusion memory pool, so
-/// `datafusion_memory_mb` does not bound them. What does is the batch size,
+/// `datafusion_memory` does not bound them. What does is the batch size,
 /// which DataFusion states in *rows* (8192 by default), leaving the byte total
 /// unbounded: a wide row makes one batch arbitrarily large, and up to
 /// `target_partitions` files decode at once.
@@ -696,6 +700,7 @@ pub struct DeltaTableInputEndpoint {
     config: DeltaTableReaderConfig,
     datafusion: SessionContext,
     consumer: Box<dyn InputConsumer>,
+    distributed: Option<DistributedInput>,
 }
 
 impl DeltaTableInputEndpoint {
@@ -705,6 +710,7 @@ impl DeltaTableInputEndpoint {
         pipeline_config: &PipelineConfig,
         runtime_env: Arc<datafusion::execution::runtime_env::RuntimeEnv>,
         consumer: Box<dyn InputConsumer>,
+        distributed: Option<DistributedInput>,
     ) -> Self {
         register_storage_handlers();
 
@@ -754,6 +760,7 @@ impl DeltaTableInputEndpoint {
             config: config.clone(),
             datafusion,
             consumer,
+            distributed,
         }
     }
 }
@@ -776,6 +783,7 @@ impl IntegratedInputEndpoint for DeltaTableInputEndpoint {
             self.consumer,
             input_handle,
             resume_info,
+            self.distributed,
         )?))
     }
 }
@@ -811,6 +819,45 @@ fn change_data_feed_state(actions: &[Action]) -> Option<bool> {
     })
 }
 
+/// For testing only: if this environment variable is set, a distributed
+/// connector does not request its snapshot transaction on every host (see
+/// `DeltaTableInputEndpointInner::start_distributed_snapshot_transaction`).
+/// Instead, each host requests an ordinary transaction when it reads its first
+/// records, so that several hosts request one connector's transaction
+/// separately, which exercises how the coordinator handles that.
+const PER_HOST_SNAPSHOT_TRANSACTIONS_ENV: &str = "FELDERA_TEST_PER_HOST_SNAPSHOT_TRANSACTIONS";
+
+/// Returns an error if a distributed connector cannot honor `config`.
+fn validate_distributed(config: &DeltaTableReaderConfig) -> AnyResult<()> {
+    // A distributed connector divides the snapshot's files among the hosts,
+    // which read their parts independently.  Reading the snapshot in
+    // timestamp order, or a change data feed's rows in `cdc_order_by`
+    // order, needs a single reader.
+    if config.timestamp_column.is_some() {
+        bail!(
+            "a distributed DeltaLake connector does not support 'timestamp_column', because each host reads its part of the snapshot in its own order"
+        );
+    }
+    if config.is_cdc() {
+        bail!(
+            "a distributed DeltaLake connector does not support 'cdc' mode, because 'cdc_order_by' requires a single reader"
+        );
+    }
+    // Only the home host follows the table, and it starts as soon as it has
+    // read its own part of the snapshot.  The changes that it reads could then
+    // reach the pipeline before the rows that they change, which other hosts
+    // are still reading, unless the snapshot's transaction across the hosts
+    // holds them back.
+    if matches!(config.mode, DeltaTableIngestMode::SnapshotAndFollow)
+        && config.transaction_mode == DeltaTableTransactionMode::None
+    {
+        bail!(
+            "a distributed DeltaLake connector in 'snapshot_and_follow' mode requires a 'transaction_mode' other than 'none', so that the host that follows the table does not read changes to rows before the other hosts read those rows from the snapshot"
+        );
+    }
+    Ok(())
+}
+
 impl DeltaTableInputReader {
     fn new(
         endpoint_name: String,
@@ -819,6 +866,7 @@ impl DeltaTableInputReader {
         consumer: Box<dyn InputConsumer>,
         input_handle: &InputCollectionHandle,
         resume_info: Option<JsonValue>,
+        distributed: Option<DistributedInput>,
     ) -> AnyResult<Self> {
         let (sender, receiver) = channel(PipelineState::Paused);
         let receiver_clone = receiver.clone();
@@ -838,6 +886,15 @@ impl DeltaTableInputReader {
                 } => {
                     info!(
                         "delta_table {endpoint_name}: resuming to ingest the initial snapshot from table version {version} at timestamp {snapshot_timestamp}"
+                    );
+                }
+                DeltaResumeInfo {
+                    version: Some(version),
+                    snapshot_pending: true,
+                    ..
+                } => {
+                    info!(
+                        "delta_table {endpoint_name}: resuming to ingest the initial snapshot from table version {version}"
                     );
                 }
                 DeltaResumeInfo {
@@ -872,6 +929,10 @@ impl DeltaTableInputReader {
 
         if config.num_parsers == 0 {
             bail!("invalid 'num_parsers' value: 'num_parsers' must be greater than 0");
+        }
+
+        if distributed.is_some() {
+            validate_distributed(&config)?;
         }
 
         if config.end_version.is_some() && !config.follow() {
@@ -967,6 +1028,7 @@ impl DeltaTableInputReader {
             consumer,
             schema,
             resume_info.clone(),
+            distributed,
         ));
 
         // This is needed to initialize completed_frontier for the connector. It's not ideal, as the completion
@@ -1033,6 +1095,10 @@ impl InputReader for DeltaTableInputReader {
         self
     }
 
+    fn startup_choice(&self) -> Option<JsonValue> {
+        self.inner.startup_choice.lock().unwrap().clone()
+    }
+
     fn request(&self, command: InputReaderCommand) {
         match command {
             InputReaderCommand::Replay { .. } => panic!(
@@ -1047,56 +1113,7 @@ impl InputReader for DeltaTableInputReader {
             InputReaderCommand::Queue {
                 checkpoint_requested,
             } => {
-                // When initiating a checkpoint, try to stop at a delta table transaction boundary.
-                let stop_at: &dyn Fn(&QueueEntry) -> bool = if checkpoint_requested {
-                    &|entry: &QueueEntry| {
-                        matches!(
-                            entry,
-                            QueueEntry::ResumeInfo(Some(_)) | QueueEntry::Rollback
-                        )
-                    }
-                } else {
-                    &|_: &QueueEntry| false
-                };
-
-                let (total, _, resume_info) = self.inner.queue.flush_with_aux_until(stop_at);
-                let resume_status = match resume_info.last() {
-                    None => self.inner.last_resume_status.lock().unwrap().clone(),
-                    Some((_ts, QueueEntry::ResumeInfo(resume_info))) => resume_info.clone(),
-                    Some((_ts, QueueEntry::Rollback)) => Some(
-                        self.inner
-                            .last_checkpointable_status
-                            .lock()
-                            .unwrap()
-                            .clone(),
-                    ),
-                };
-
-                *self.inner.last_resume_status.lock().unwrap() = resume_status.clone();
-                if let Some(resume_status) = &resume_status {
-                    *self.inner.last_checkpointable_status.lock().unwrap() = resume_status.clone();
-                }
-
-                let resume = match resume_status {
-                    None => Resume::Barrier,
-                    Some(delta_resume_info) => delta_resume_info.to_resume(),
-                };
-
-                // We use the same format (DeltaResumeInfo) for resume info and watermark metadata.
-                self.inner.consumer.extended(
-                    total,
-                    Some(resume),
-                    resume_info
-                        .into_iter()
-                        .filter_map(|(timestamp, metadata)| match metadata {
-                            QueueEntry::ResumeInfo(resume_info) => Some(Watermark::new(
-                                timestamp,
-                                resume_info.map(|m| serde_json::to_value(m).unwrap()),
-                            )),
-                            QueueEntry::Rollback => None,
-                        })
-                        .collect(),
-                );
+                self.inner.queue(checkpoint_requested);
             }
             InputReaderCommand::Disconnect => {
                 let _ = self.sender.send_replace(PipelineState::Terminated);
@@ -1105,6 +1122,12 @@ impl InputReader for DeltaTableInputReader {
     }
 
     fn is_closed(&self) -> bool {
+        // This reports the reader as closed once its worker exits, which also
+        // happens after the end of input.  [InputReader::is_closed] does not
+        // allow that, but here it does no harm: [Self::request] answers
+        // [InputReaderCommand::Queue] itself, without the worker, so the
+        // controller never finds the reader closed without an answer, and so
+        // never removes it.
         self.inner.queue.is_empty() && self.sender.is_closed()
     }
 }
@@ -1147,6 +1170,26 @@ struct DeltaResumeInfo {
 
     /// True if the connector reached the end-of-input state.
     eoi: bool,
+
+    /// True if a distributed connector opened the table at `version` to read
+    /// its share of the initial snapshot, but has not read any of it yet.  On
+    /// resume, the host reads its share at `version`, so that every host reads
+    /// the same version even if they stopped at different points.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    snapshot_pending: bool,
+
+    /// True if a distributed connector with `snapshot_pending` had already
+    /// requested the transaction for its share of the snapshot, which every
+    /// host joins (see
+    /// [`DeltaTableInputEndpointInner::start_distributed_snapshot_transaction`]).
+    ///
+    /// A host saves this state only if that transaction committed without its
+    /// share, for example because the host failed or the pipeline suspended.
+    /// The other hosts may then have finished their shares, and they will not
+    /// join a new such transaction, so on resume this host reads its share in
+    /// a transaction of its own.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    snapshot_started: bool,
 }
 
 impl DeltaResumeInfo {
@@ -1156,6 +1199,8 @@ impl DeltaResumeInfo {
             version: None,
             snapshot_timestamp: None,
             eoi: false,
+            snapshot_pending: false,
+            snapshot_started: false,
         }
     }
 
@@ -1165,6 +1210,8 @@ impl DeltaResumeInfo {
             version: None,
             snapshot_timestamp: None,
             eoi: true,
+            snapshot_pending: false,
+            snapshot_started: false,
         }
     }
 
@@ -1180,6 +1227,8 @@ impl DeltaResumeInfo {
             version: Some(version),
             snapshot_timestamp: None,
             eoi,
+            snapshot_pending: false,
+            snapshot_started: false,
         }
     }
 
@@ -1192,6 +1241,20 @@ impl DeltaResumeInfo {
             version: Some(version),
             snapshot_timestamp: Some(timestamp.to_string()),
             eoi: false,
+            snapshot_pending: false,
+            snapshot_started: false,
+        }
+    }
+
+    /// Checkpoint taken after a distributed connector opened the table at
+    /// `version` to read the initial snapshot, before it read any of it.
+    fn snapshot_pending(version: i64) -> Self {
+        Self {
+            version: Some(version),
+            snapshot_timestamp: None,
+            eoi: false,
+            snapshot_pending: true,
+            snapshot_started: false,
         }
     }
 
@@ -1378,7 +1441,7 @@ type DirectCdcFile<'a> = (&'a CdcFile<'a>, Option<&'a DeletionVectorDescriptor>)
 /// whichever file the log listed first decide the value for both.
 type PartitionKey = Vec<Option<Option<String>>>;
 
-/// One data file of a CDC transaction, as the log describes it.
+/// One data file of a CDC transaction or a snapshot, as the log describes it.
 struct CdcFile<'a> {
     path: &'a str,
     partition_values: Option<&'a HashMap<String, Option<String>>>,
@@ -1569,6 +1632,20 @@ struct DeltaTableInputEndpointInner {
     /// so the warning below fires on the transition rather than on every commit
     /// of a table that never recorded one.
     change_data_feed_enabled: AtomicBool,
+
+    /// For a distributed connector, this host's part of the input and the
+    /// table version that host 0 chose.
+    distributed: Option<DistributedInput>,
+
+    /// On host 0 of a distributed connector, the table version that it opened,
+    /// for the other hosts to read the snapshot at (see
+    /// [`InputReader::startup_choice`]).
+    startup_choice: Mutex<Option<JsonValue>>,
+
+    /// The label of the snapshot transaction that
+    /// [`Self::start_distributed_snapshot_transaction`] requested, until the
+    /// snapshot query takes it.
+    started_snapshot_transaction: Mutex<Option<Option<Option<String>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -1581,7 +1658,8 @@ enum QueueEntry {
     /// between retries.
     ///
     /// Note: this is not the actual transaction rollback: the current transaction,
-    /// if any, will be committed.
+    /// if any, will be committed, except for a distributed snapshot's
+    /// transaction, which stays open.
     Rollback,
 }
 
@@ -1593,6 +1671,7 @@ impl DeltaTableInputEndpointInner {
         consumer: Box<dyn InputConsumer>,
         schema: Relation,
         resume_info: Option<DeltaResumeInfo>,
+        distributed: Option<DistributedInput>,
     ) -> Self {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
 
@@ -1620,7 +1699,105 @@ impl DeltaTableInputEndpointInner {
             config_referenced_columns: OnceLock::new(),
             schema_table: Mutex::new(None),
             change_data_feed_enabled: AtomicBool::new(false),
+            distributed,
+            startup_choice: Mutex::new(None),
+            started_snapshot_transaction: Mutex::new(None),
         }
+    }
+
+    /// Flushes queued input to the circuit, for [InputReaderCommand::Queue].
+    fn queue(&self, checkpoint_requested: bool) {
+        // When initiating a checkpoint, try to stop at a delta table transaction boundary.
+        let stop_at: &dyn Fn(&QueueEntry) -> bool = if checkpoint_requested {
+            &|entry: &QueueEntry| {
+                matches!(
+                    entry,
+                    QueueEntry::ResumeInfo(Some(_)) | QueueEntry::Rollback
+                )
+            }
+        } else {
+            &|_: &QueueEntry| false
+        };
+
+        let (total, _, resume_info) = self.queue.flush_with_aux_until(stop_at);
+        let resume_status = match resume_info.last() {
+            None => self.last_resume_status.lock().unwrap().clone(),
+            Some((_ts, QueueEntry::ResumeInfo(resume_info))) => resume_info.clone(),
+            Some((_ts, QueueEntry::Rollback)) => {
+                Some(self.last_checkpointable_status.lock().unwrap().clone())
+            }
+        };
+
+        *self.last_resume_status.lock().unwrap() = resume_status.clone();
+        if let Some(resume_status) = &resume_status {
+            *self.last_checkpointable_status.lock().unwrap() = resume_status.clone();
+        }
+
+        let resume = match resume_status {
+            None => Resume::Barrier,
+            Some(delta_resume_info) => delta_resume_info.to_resume(),
+        };
+
+        // We use the same format (DeltaResumeInfo) for resume info and watermark metadata.
+        self.consumer.extended(
+            total,
+            Some(resume),
+            resume_info
+                .into_iter()
+                .filter_map(|(timestamp, metadata)| match metadata {
+                    QueueEntry::ResumeInfo(resume_info) => Some(Watermark::new(
+                        timestamp,
+                        resume_info.map(|m| serde_json::to_value(m).unwrap()),
+                    )),
+                    QueueEntry::Rollback => None,
+                })
+                .collect(),
+        );
+    }
+
+    /// Returns true if this host follows the table's log after the snapshot.
+    ///
+    /// The log is a single sequence of commits, so only one host of a
+    /// distributed connector follows it: the home host.  The other hosts stop
+    /// after their part of the snapshot.
+    fn follows(&self) -> bool {
+        self.config.follow()
+            && self
+                .distributed
+                .as_ref()
+                .is_none_or(|distributed| distributed.shard.is_home())
+    }
+
+    /// On a host other than host 0 of a distributed connector, returns the
+    /// table version that host 0 chose, which this host must read the snapshot
+    /// at.  Returns `None` on host 0 and for a connector that is not
+    /// distributed.
+    ///
+    /// Only a host that has no version to resume from may call this: a host
+    /// that resumes uses its own version, and host 0 may then have chosen none.
+    fn chosen_version(&self) -> Result<Option<u64>, ControllerError> {
+        let Some(distributed) = &self.distributed else {
+            return Ok(None);
+        };
+        if distributed.shard.is_leader() {
+            return Ok(None);
+        }
+        let Some(choice) = &distributed.choice else {
+            return Err(ControllerError::invalid_transport_configuration(
+                &self.endpoint_name,
+                "the coordinator did not provide the table version that host 0 chose for this distributed connector",
+            ));
+        };
+        serde_json::from_value::<u64>(choice.clone())
+            .map(Some)
+            .map_err(|e| {
+                ControllerError::invalid_transport_configuration(
+                    &self.endpoint_name,
+                    &format!(
+                        "invalid table version {choice} from host 0 for this distributed connector: {e}"
+                    ),
+                )
+            })
     }
 
     fn catchup_target(&self) -> Option<i64> {
@@ -1740,6 +1917,127 @@ impl DeltaTableInputEndpointInner {
             Some(end_version) => min(latest, end_version),
             None => latest,
         })
+    }
+
+    /// Returns true if we haven't completed a snapshot before the checkpoint
+    /// that `resume_status` came from was taken, that is, if:
+    /// - there is no checkpoint,
+    /// - the checkpoint was taken in the initial state,
+    /// - the checkpoint was taken mid-snapshot (`snapshot_timestamp` is set), or
+    /// - the checkpoint was taken before the snapshot started
+    ///   (`snapshot_pending` is set).
+    fn snapshot_incomplete(resume_status: &Option<DeltaResumeInfo>) -> bool {
+        matches!(
+            resume_status,
+            None | Some(DeltaResumeInfo { version: None, .. })
+                | Some(DeltaResumeInfo {
+                    snapshot_timestamp: Some(_),
+                    ..
+                })
+                | Some(DeltaResumeInfo {
+                    snapshot_pending: true,
+                    ..
+                })
+        )
+    }
+
+    /// For a distributed connector that has not started its snapshot, records
+    /// that it opened `table` for the snapshot, so that a checkpoint taken
+    /// before it reads anything holds the version.
+    ///
+    /// Without this, such a checkpoint would hold no version.  On resume, the
+    /// host would then need host 0's choice, which a host 0 at end of input
+    /// does not make, or which names a newer version than the one that the
+    /// hosts that finished their shares read.
+    fn record_snapshot_version(&self, table: &DeltaTable) {
+        let mut last_resume_status = self.last_resume_status.lock().unwrap();
+        if self.distributed.is_some()
+            && self.config.snapshot()
+            && matches!(
+                *last_resume_status,
+                Some(DeltaResumeInfo {
+                    version: None,
+                    eoi: false,
+                    ..
+                })
+            )
+        {
+            // We verified that the table version is not None in `open_table`.
+            let pending = DeltaResumeInfo::snapshot_pending(table.version().unwrap() as i64);
+            *last_resume_status = Some(pending.clone());
+            *self.last_checkpointable_status.lock().unwrap() = pending;
+        }
+    }
+
+    /// For a distributed connector that reads its snapshot in a transaction,
+    /// waits until the connector runs, through `receiver`, and then requests
+    /// the transaction, before this host reads.  A paused connector does not
+    /// request it, because the transaction would stay open, holding back
+    /// output and checkpoints, until the connector reads its part.
+    ///
+    /// For testing only, setting [PER_HOST_SNAPSHOT_TRANSACTIONS_ENV] in the
+    /// environment skips this, so that each host requests an ordinary
+    /// transaction when it reads its first records.
+    ///
+    /// Otherwise, a host requests the transaction only when it reads its first
+    /// records, and a host whose part of the snapshot has no files never
+    /// requests it.  The request marks the transaction as one that every host
+    /// requests, so the coordinator commits it only after every host has
+    /// committed its part of the snapshot.  The snapshot query reuses the label (see
+    /// [`Self::snapshot_transaction_label`]), and the snapshot's final queue
+    /// entry commits the transaction as usual.
+    async fn start_distributed_snapshot_transaction(&self, receiver: &mut Receiver<PipelineState>) {
+        if self.distributed.is_none()
+            || std::env::var_os(PER_HOST_SNAPSHOT_TRANSACTIONS_ENV).is_some()
+            || !self.config.snapshot()
+            || !Self::snapshot_incomplete(&self.last_resume_status.lock().unwrap())
+            || self
+                .last_resume_status
+                .lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|status| status.snapshot_started)
+        {
+            return;
+        }
+        wait_running(receiver).await;
+        let Some(label) = self.allocate_snapshot_transaction_label() else {
+            return;
+        };
+        // A checkpoint taken after the transaction commits without this
+        // host's share records that this host started it.  Both copies of the
+        // status get the flag: a flush that consumes nothing, because the
+        // queue holds this request until the host joins the transaction,
+        // copies the last status over the checkpointable one.
+        let mark_started = |status: &mut DeltaResumeInfo| {
+            if status.snapshot_pending {
+                status.snapshot_started = true;
+            }
+        };
+        mark_started(&mut self.last_checkpointable_status.lock().unwrap());
+        if let Some(status) = self.last_resume_status.lock().unwrap().as_mut() {
+            mark_started(status);
+        }
+        // Every host makes this request, so the coordinator keeps the
+        // transaction open until every host has committed its part.  During a
+        // snapshot, every queue entry's resume info is `None`.
+        self.queue.push_entry(
+            InputQueueEntry::new_with_aux(Utc::now(), QueueEntry::ResumeInfo(None))
+                .with_start_transaction_on_all_hosts(label.clone()),
+            Vec::new(),
+        );
+        *self.started_snapshot_transaction.lock().unwrap() = Some(Some(label));
+    }
+
+    /// Returns the label of the transaction for the snapshot query: the one
+    /// that [`Self::start_distributed_snapshot_transaction`] requested, if any,
+    /// or a new one.
+    fn snapshot_transaction_label(&self) -> Option<Option<String>> {
+        self.started_snapshot_transaction
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap_or_else(|| self.allocate_snapshot_transaction_label())
     }
 
     fn allocate_snapshot_transaction_label(&self) -> Option<Option<String>> {
@@ -1947,9 +2245,9 @@ impl DeltaTableInputEndpointInner {
     /// Load the entire table snapshot as a single "select * where <filter>" query.
     /// Returns the total number of records processed.
     ///
-    /// Fails with an error if the function fails to read the snapshot.  This function
-    /// doesn't retry (the idea being that the snapshot can be large, and it's better to
-    /// fail fast and give the user a chance to restart the pipeline).
+    /// Fails with an error if the function fails to read the snapshot after
+    /// [`DeltaTableReaderConfig::max_retries`] retries.  Each retry reads the
+    /// whole snapshot again.
     async fn read_unordered_snapshot(
         &self,
         table: &DeltaTable,
@@ -1993,7 +2291,7 @@ impl DeltaTableInputEndpointInner {
                 QueueEntry::ResumeInfo(Some(DeltaResumeInfo::follow_mode(
                     // We verified that the table version is not None in the open_table method.
                     table.version().unwrap() as i64,
-                    !self.config.follow(),
+                    !self.follows(),
                 ))),
             )
             // If we started a transaction while processing the snapshot, commit it now.
@@ -2039,7 +2337,7 @@ impl DeltaTableInputEndpointInner {
                 QueueEntry::ResumeInfo(Some(DeltaResumeInfo::follow_mode(
                     // We verified that the table version is not None in the open_table method.
                     table.version().unwrap() as i64,
-                    !self.config.follow(),
+                    !self.follows(),
                 ))),
             )
             // If we started a transaction while processing the snapshot, commit it now.
@@ -2279,6 +2577,14 @@ impl DeltaTableInputEndpointInner {
         };
 
         let table = Arc::new(table);
+        self.record_snapshot_version(&table);
+
+        if let Some(distributed) = &self.distributed
+            && distributed.shard.is_leader()
+        {
+            // We verified that the table version is not None in `open_table`.
+            *self.startup_choice.lock().unwrap() = Some(JsonValue::from(table.version().unwrap()));
+        }
 
         // The opened table is the schema source until following pins it to the
         // latest version; this makes it available to the snapshot reads below.
@@ -2304,6 +2610,9 @@ impl DeltaTableInputEndpointInner {
         // shutdown command from the controller.
         let _ = init_status_sender.send(Ok(())).await;
 
+        self.start_distributed_snapshot_transaction(&mut receiver)
+            .await;
+
         // Wait for the pipeline to start before reading.
         wait_running(&mut receiver).await;
 
@@ -2311,6 +2620,7 @@ impl DeltaTableInputEndpointInner {
 
         if let Some(DeltaResumeInfo {
             version: Some(version),
+            snapshot_pending: false,
             ..
         }) = &last_resume_status
         {
@@ -2320,18 +2630,7 @@ impl DeltaTableInputEndpointInner {
         // We verified that the table version is not None in the open_table method.
         let mut version = table.version().unwrap() as i64;
 
-        // We haven't completed a snapshot before the checkpoint was taken if
-        // - there is no checkpoint
-        // - the checkpoint was taken in the initial state
-        // - the checkpoint was taken mid-snapshot (snapshot_timestamp is set)
-        let snapshot_incomplete = matches!(
-            last_resume_status,
-            None | Some(DeltaResumeInfo { version: None, .. })
-                | Some(DeltaResumeInfo {
-                    snapshot_timestamp: Some(_),
-                    ..
-                })
-        );
+        let snapshot_incomplete = Self::snapshot_incomplete(&last_resume_status);
 
         let snapshot_record_count = if snapshot_incomplete
             && self.config.snapshot()
@@ -2357,7 +2656,7 @@ impl DeltaTableInputEndpointInner {
         };
 
         // Start following the table if required by the configuration.
-        if self.config.follow() {
+        if self.follows() {
             // The schema source stays at the version we opened at; each commit's
             // schema change advances it as the loop reaches that commit (see
             // `advance_schema`), so every commit's data is read against the
@@ -2610,6 +2909,10 @@ impl DeltaTableInputEndpointInner {
                 {
                     // If we are resuming from a checkpoint, use the version specified in the checkpoint.
                     table_builder.with_version(version as u64)
+                } else if let Some(version) = self.chosen_version()? {
+                    // Read the snapshot at the version that host 0 chose, so
+                    // that the hosts together read one version's files.
+                    table_builder.with_version(version)
                 } else {
                     match &self.config {
                         DeltaTableReaderConfig {
@@ -2750,6 +3053,15 @@ impl DeltaTableInputEndpointInner {
                 anyhow!("failed to obtain Delta table provider for snapshot: {e}"),
             )
         })?;
+        let provider = match &self.distributed {
+            Some(distributed) => self
+                .snapshot_share(table, provider, &distributed.shard)
+                .await
+                .map_err(|e| {
+                    ControllerError::input_transport_error(&self.endpoint_name, true, e)
+                })?,
+            None => provider,
+        };
         self.datafusion
             .register_table("snapshot", provider)
             .map_err(|e| {
@@ -2761,6 +3073,66 @@ impl DeltaTableInputEndpointInner {
             })?;
 
         Ok(())
+    }
+
+    /// Returns a table of this host's part of the snapshot of `table`, given
+    /// the `whole` table.
+    ///
+    /// The hosts of a distributed connector divide the snapshot's data files:
+    /// in order by path, the `i`th file goes to the host that `shard` says owns
+    /// unit `i`.  Every host opened the same table version, so every host sees
+    /// the same files in the same order, and each file goes to exactly one
+    /// host.
+    async fn snapshot_share(
+        &self,
+        table: &DeltaTable,
+        whole: Arc<dyn TableProvider>,
+        shard: &InputShard,
+    ) -> AnyResult<Arc<dyn TableProvider>> {
+        let snapshot = table
+            .snapshot()
+            .map_err(|e| anyhow!("error accessing Delta table snapshot: {e}"))?;
+        // `Add` supplies each file's partition values as the log's strings,
+        // which `add_partition_columns` needs.
+        #[allow(deprecated)]
+        let mut adds = snapshot
+            .log_data()
+            .iter()
+            .map(|file| file.add_action())
+            .collect::<Vec<_>>();
+        adds.sort_by(|a, b| a.path.cmp(&b.path));
+        let n_files = adds.len();
+        let files = adds
+            .iter()
+            .enumerate()
+            .filter(|(index, _add)| shard.contains(*index as u64))
+            .map(|(_index, add)| CdcFile {
+                path: &add.path,
+                partition_values: Some(&add.partition_values),
+                deletion_vector: add.deletion_vector.as_ref(),
+            })
+            .collect::<Vec<_>>();
+        info!(
+            "delta_table {}: host {} reads {} of the snapshot's {n_files} files",
+            &self.endpoint_name,
+            shard.host(),
+            files.len(),
+        );
+
+        let df = match self.files_dataframe(table, &files, "snapshot").await? {
+            Some(df) => df,
+            // No files: an empty table with the columns that the snapshot query
+            // reads.
+            None => self
+                .project_cdc_columns(
+                    self.datafusion
+                        .read_table(whole)
+                        .map_err(|e| anyhow!("error reading Delta table: {e}"))?,
+                )?
+                .limit(0, Some(0))
+                .map_err(|e| anyhow!("error creating an empty snapshot: {e}"))?,
+        };
+        Ok(df.into_view())
     }
 
     /// Validate the filter expression specified in the 'snapshot_filter' parameter.
@@ -3029,7 +3401,7 @@ impl DeltaTableInputEndpointInner {
             &descr,
             input_stream,
             receiver,
-            self.allocate_snapshot_transaction_label(),
+            self.snapshot_transaction_label(),
             num_retries,
             None,
             // The snapshot reads through delta-rs's table provider, which
@@ -3193,6 +3565,14 @@ impl DeltaTableInputEndpointInner {
         wait_running(receiver).await;
         let transaction = self.follow_start_transaction(transaction);
 
+        // A distributed snapshot's transaction must contain every host's whole
+        // part of the snapshot, so that the home host's changes to the table
+        // cannot reach the circuit before rows that this host reads again
+        // after an error.  So an error keeps the transaction open, and the
+        // retry reads into it again.
+        let commit_on_error =
+            !(self.distributed.is_some() && Self::is_snapshot_transaction_label(&transaction));
+
         // Limit the number of connectors simultaneously reading from Delta Lake.
         let _token = DELTA_READER_SEMAPHORE.acquire().await.unwrap();
 
@@ -3287,7 +3667,7 @@ impl DeltaTableInputEndpointInner {
                     self.queue.push_entry(
                         InputQueueEntry::new_with_aux(timestamp, QueueEntry::Rollback)
                             // If we started a transaction while processing the log entry, commit it now.
-                            .with_commit_transaction(true),
+                            .with_commit_transaction(commit_on_error),
                         Vec::new(),
                     );
 
@@ -3931,7 +4311,7 @@ impl DeltaTableInputEndpointInner {
         }
 
         let Some(adds_df) = self
-            .cdc_side_dataframe(table, &add_files, &description)
+            .files_dataframe(table, &add_files, &description)
             .await?
         else {
             // Every add paired with a remove (a pure soft-delete commit):
@@ -3940,7 +4320,7 @@ impl DeltaTableInputEndpointInner {
         };
 
         // The removes left unpaired by the loop above feed the `EXCEPT ALL`;
-        // `cdc_side_dataframe` masks any with an active DV so only live rows
+        // `files_dataframe` masks any with an active DV so only live rows
         // subtract.
         let remove_files: Vec<CdcFile<'_>> = removes_by_path
             .values()
@@ -3951,7 +4331,7 @@ impl DeltaTableInputEndpointInner {
             })
             .collect();
         let removes_df = self
-            .cdc_side_dataframe(table, &remove_files, &description)
+            .files_dataframe(table, &remove_files, &description)
             .await?;
 
         // The `cdc_order_by` expression is mandatory in CDC mode (enforced
@@ -4398,8 +4778,9 @@ impl DeltaTableInputEndpointInner {
         }
     }
 
-    /// Build the [`DataFrame`] for one side (adds or removes) of a CDC
-    /// transaction, or `None` when the side has no files.
+    /// Build the [`DataFrame`] for a set of data files, or `None` when there are
+    /// no files: one side (adds or removes) of a CDC transaction, or a
+    /// distributed host's part of the snapshot.
     ///
     /// Each file is `(path, deletion_vector)`. A file with an active DV streams
     /// through a [`filtered_parquet_table`] that drops its deleted rows, and so
@@ -4414,7 +4795,7 @@ impl DeltaTableInputEndpointInner {
     /// folds the table path into the URL host (slashes become dashes), which
     /// routes DataFusion's object store but is malformed once joined with
     /// `Add.path`. `start_input_endpoint` registers the store under `root_url()`.
-    async fn cdc_side_dataframe(
+    async fn files_dataframe(
         &self,
         table: &DeltaTable,
         files: &[CdcFile<'_>],
@@ -4792,7 +5173,7 @@ mod format_datafusion_error_tests {
             "missing actionable hint; got: {msg}"
         );
         assert!(
-            msg.contains("datafusion_memory_mb"),
+            msg.contains("'datafusion_memory'"),
             "missing knob name; got: {msg}"
         );
     }
@@ -6302,6 +6683,7 @@ mod cdc_projection_tests {
             Box::new(MockInputConsumer::new()),
             relation(skip_unused_columns),
             None,
+            None,
         )
     }
 
@@ -6461,6 +6843,7 @@ mod object_store_routing_tests {
             &pipeline_config(),
             with_private_object_store_registry(shared_env).unwrap(),
             Box::new(MockInputConsumer::new()),
+            None,
         )
     }
 
@@ -6546,5 +6929,498 @@ mod object_store_routing_tests {
                 &shared_env.cache_manager.get_list_files_cache().unwrap(),
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod distributed_snapshot_tests {
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::sync::Arc;
+
+    use super::{
+        DeltaResumeInfo, DeltaTableInputEndpointInner, Polarity, QueueEntry, validate_distributed,
+    };
+    use crate::integrated::DistributedInput;
+    use crate::test::{MockDeZSet, MockInputConsumer, TestStruct};
+    use crate::{DeCollectionHandle, PipelineState};
+    use arrow::array::{Array, Int64Array, RecordBatch, StringArray};
+    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
+    use chrono::Utc;
+    use datafusion::datasource::MemTable;
+    use deltalake::DeltaTable;
+    use deltalake::datafusion::prelude::SessionContext;
+    use deltalake::kernel::{DataType, PrimitiveType, StructField};
+    use deltalake::operations::create::CreateBuilder;
+    use deltalake::protocol::SaveMode;
+    use feldera_adapterlib::transport::InputQueueEntry;
+    use feldera_types::coordination::{InputDistribution, InputShard};
+    use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
+    use feldera_types::serde_with_context::SqlSerdeConfig;
+    use feldera_types::transport::delta_table::DeltaTableReaderConfig;
+    use serde_json::json;
+    use std::time::Duration;
+    use tokio::sync::watch::channel;
+    use tokio::time::timeout;
+
+    /// Writes a table partitioned by `part`, whose rows have IDs `0..n_rows`
+    /// and `part` equal to `p{id % 3}`, in `n_writes` appends, so that the
+    /// table has several files.  Returns the table and its URI.
+    async fn write_table(
+        dir: &std::path::Path,
+        n_rows: i64,
+        n_writes: i64,
+    ) -> (DeltaTable, String) {
+        let uri = format!("file://{}", dir.display());
+        let mut table = CreateBuilder::new()
+            .with_location(&uri)
+            .with_save_mode(SaveMode::Ignore)
+            .with_columns([
+                StructField::new("id", DataType::Primitive(PrimitiveType::Long), false),
+                StructField::new("part", DataType::Primitive(PrimitiveType::String), true),
+            ])
+            .with_partition_columns(["part"])
+            .await
+            .unwrap();
+        let schema = Arc::new(ArrowSchema::new(vec![
+            ArrowField::new("id", ArrowDataType::Int64, false),
+            ArrowField::new("part", ArrowDataType::Utf8, true),
+        ]));
+        for write in 0..n_writes {
+            let ids = (0..n_rows)
+                .filter(|id| id % n_writes == write)
+                .collect::<Vec<_>>();
+            let parts = ids
+                .iter()
+                .map(|id| format!("p{}", id % 3))
+                .collect::<Vec<_>>();
+            let batch = RecordBatch::try_new(
+                schema.clone(),
+                vec![
+                    Arc::new(Int64Array::from(ids)),
+                    Arc::new(StringArray::from(parts)),
+                ],
+            )
+            .unwrap();
+            table = table
+                .write(vec![batch])
+                .with_save_mode(SaveMode::Append)
+                .await
+                .unwrap();
+        }
+        (table, uri)
+    }
+
+    fn endpoint(uri: &str, shard: InputShard) -> DeltaTableInputEndpointInner {
+        endpoint_with(uri, "snapshot", Some(shard), None)
+    }
+
+    fn endpoint_with(
+        uri: &str,
+        mode: &str,
+        shard: Option<InputShard>,
+        choice: Option<serde_json::Value>,
+    ) -> DeltaTableInputEndpointInner {
+        endpoint_with_config(json!({"uri": uri, "mode": mode}), shard, choice)
+    }
+
+    fn endpoint_with_config(
+        config: serde_json::Value,
+        shard: Option<InputShard>,
+        choice: Option<serde_json::Value>,
+    ) -> DeltaTableInputEndpointInner {
+        endpoint_with_consumer(config, shard, choice, MockInputConsumer::new())
+    }
+
+    fn endpoint_with_consumer(
+        config: serde_json::Value,
+        shard: Option<InputShard>,
+        choice: Option<serde_json::Value>,
+        consumer: MockInputConsumer,
+    ) -> DeltaTableInputEndpointInner {
+        resumed_endpoint(config, shard, choice, consumer, None)
+    }
+
+    fn resumed_endpoint(
+        config: serde_json::Value,
+        shard: Option<InputShard>,
+        choice: Option<serde_json::Value>,
+        consumer: MockInputConsumer,
+        resume_info: Option<DeltaResumeInfo>,
+    ) -> DeltaTableInputEndpointInner {
+        let config: DeltaTableReaderConfig = serde_json::from_value(config).unwrap();
+        let relation = Relation::new(
+            SqlIdentifier::new("t", false),
+            vec![
+                Field::new(SqlIdentifier::new("id", false), ColumnType::bigint(false)),
+                Field::new(SqlIdentifier::new("part", false), ColumnType::varchar(true)),
+            ],
+            false,
+            BTreeMap::new(),
+        );
+        DeltaTableInputEndpointInner::new(
+            "t.delta",
+            config,
+            SessionContext::new(),
+            Box::new(consumer),
+            relation,
+            resume_info,
+            shard.map(|shard| DistributedInput { shard, choice }),
+        )
+    }
+
+    fn shard(host: usize) -> InputShard {
+        InputShard::new(host, 3, InputDistribution { home: 1 }).unwrap()
+    }
+
+    /// Only the home host follows the log.
+    #[test]
+    fn home_host_follows() {
+        let follows = |mode, shard| endpoint_with("/tmp/t", mode, shard, None).follows();
+        assert!(follows("snapshot_and_follow", None));
+        assert!(follows("snapshot_and_follow", Some(shard(1))));
+        assert!(!follows("snapshot_and_follow", Some(shard(0))));
+        assert!(!follows("snapshot_and_follow", Some(shard(2))));
+        assert!(!follows("snapshot", Some(shard(1))));
+    }
+
+    /// A distributed connector that reads its snapshot in a transaction
+    /// requests the transaction once it runs, before it reads, and the
+    /// snapshot query reuses its label.  Other connectors request it only when
+    /// they read.
+    #[tokio::test]
+    async fn distributed_snapshot_transaction_starts_early() {
+        let endpoint = |transaction_mode, shard| {
+            endpoint_with_config(
+                json!({"uri": "/tmp/t", "mode": "snapshot", "transaction_mode": transaction_mode}),
+                shard,
+                None,
+            )
+        };
+
+        let consumer = MockInputConsumer::new();
+        let distributed = endpoint_with_consumer(
+            json!({"uri": "/tmp/t", "mode": "snapshot", "transaction_mode": "snapshot"}),
+            Some(shard(2)),
+            None,
+            consumer.clone(),
+        );
+
+        // A paused connector does not request the transaction.
+        let (sender, mut receiver) = channel(PipelineState::Paused);
+        let request = distributed.start_distributed_snapshot_transaction(&mut receiver);
+        let mut request = std::pin::pin!(request);
+        assert!(
+            timeout(Duration::from_millis(100), request.as_mut())
+                .await
+                .is_err()
+        );
+        assert_eq!(distributed.queue.len(), 0);
+
+        // Once it runs, it does.
+        sender.send_replace(PipelineState::Running);
+        request.await;
+        assert_eq!(distributed.queue.len(), 1);
+        // The request is one that every host makes.
+        distributed.queue.flush_with_aux();
+        assert!(consumer.state().transaction_on_all_hosts);
+        let label = Some(Some("snapshot-0".to_string()));
+        assert_eq!(distributed.snapshot_transaction_label(), label);
+        // Only the first snapshot query reuses it.
+        assert_eq!(
+            distributed.snapshot_transaction_label(),
+            Some(Some("snapshot-1".to_string()))
+        );
+
+        for (transaction_mode, shard) in [("none", Some(shard(2))), ("snapshot", None)] {
+            let endpoint = endpoint(transaction_mode, shard);
+            let (_sender, mut receiver) = channel(PipelineState::Running);
+            endpoint
+                .start_distributed_snapshot_transaction(&mut receiver)
+                .await;
+            assert_eq!(endpoint.queue.len(), 0, "{transaction_mode} {shard:?}");
+        }
+    }
+
+    /// A host that resumes before it started its share of the snapshot reads
+    /// it in the transaction that every host joins, and records that it
+    /// started it, also across a flush that the transaction holds back.  A
+    /// host that resumes after it started its share reads it in a transaction
+    /// of its own, because the other hosts may have finished theirs and will
+    /// not join.
+    #[tokio::test]
+    async fn resumed_share_joins_all_hosts_transaction_only_if_not_started() {
+        let config = json!({"uri": "/tmp/t", "mode": "snapshot", "transaction_mode": "snapshot"});
+        for started in [false, true] {
+            let resume_info = DeltaResumeInfo {
+                snapshot_started: started,
+                ..DeltaResumeInfo::snapshot_pending(7)
+            };
+            let consumer = MockInputConsumer::new();
+            // A multihost pipeline without an open transaction holds the
+            // request back.
+            consumer.state().open_transaction = Some(None);
+            let endpoint = resumed_endpoint(
+                config.clone(),
+                Some(shard(2)),
+                None,
+                consumer.clone(),
+                Some(resume_info),
+            );
+            let (_sender, mut receiver) = channel(PipelineState::Running);
+            endpoint
+                .start_distributed_snapshot_transaction(&mut receiver)
+                .await;
+            assert_eq!(endpoint.queue.len(), usize::from(!started), "{started}");
+            endpoint.queue(false);
+            assert_eq!(endpoint.queue.len(), usize::from(!started), "{started}");
+            assert!(
+                endpoint
+                    .last_checkpointable_status
+                    .lock()
+                    .unwrap()
+                    .snapshot_started
+            );
+        }
+    }
+
+    /// A read error in a distributed snapshot keeps the snapshot's
+    /// transaction open, so that the retry reads into the same transaction.
+    /// Without distribution, the error commits the transaction.
+    #[tokio::test]
+    async fn distributed_snapshot_error_keeps_transaction_open() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let (table, uri) = write_table(dir.path(), 3, 1).await;
+        let table = Arc::new(table);
+
+        // Dividing by zero fails while the query runs, after planning.
+        let ctx = SessionContext::new();
+        let zero = RecordBatch::try_new(
+            Arc::new(ArrowSchema::new(vec![ArrowField::new(
+                "id",
+                ArrowDataType::Int64,
+                false,
+            )])),
+            vec![Arc::new(Int64Array::from(vec![0]))],
+        )
+        .unwrap();
+        ctx.register_table(
+            "zero",
+            Arc::new(MemTable::try_new(zero.schema(), vec![vec![zero]]).unwrap()),
+        )
+        .unwrap();
+
+        for (shard, stays_open) in [(Some(shard(2)), true), (None, false)] {
+            let consumer = MockInputConsumer::new();
+            let endpoint = endpoint_with_consumer(
+                json!({"uri": uri, "mode": "snapshot", "transaction_mode": "snapshot"}),
+                shard,
+                None,
+                consumer.clone(),
+            );
+            *endpoint.schema_table.lock().unwrap() = Some(table.clone());
+
+            // The snapshot's first records start its transaction.
+            let transaction = Some(Some("snapshot-0".to_string()));
+            endpoint.queue.push_entry(
+                InputQueueEntry::new_with_aux(Utc::now(), QueueEntry::ResumeInfo(None))
+                    .with_start_transaction(transaction.clone()),
+                Vec::new(),
+            );
+            endpoint.queue.flush_with_aux();
+            assert!(consumer.state().transaction_in_progress);
+
+            let dataframe = ctx.sql("select 10 / id as id from zero").await.unwrap();
+            let mut input_stream = MockDeZSet::<TestStruct, TestStruct>::new()
+                .configure_arrow_deserializer(SqlSerdeConfig::default())
+                .unwrap();
+            let (_sender, mut receiver) = channel(PipelineState::Running);
+            assert!(
+                endpoint
+                    .execute_df_inner(
+                        dataframe,
+                        Polarity::Fixed(true),
+                        input_stream.as_mut(),
+                        &mut receiver,
+                        &transaction,
+                        None,
+                    )
+                    .await
+                    .is_err()
+            );
+            endpoint.queue.flush_with_aux();
+            assert_eq!(
+                consumer.state().transaction_in_progress,
+                stays_open,
+                "{shard:?}"
+            );
+        }
+    }
+
+    /// A distributed connector rejects the settings that it cannot honor.
+    #[test]
+    fn distributed_rejects_unsupported_settings() {
+        let validate = |config: serde_json::Value| {
+            let mut config = config;
+            config["uri"] = json!("/tmp/t");
+            validate_distributed(&serde_json::from_value(config).unwrap())
+        };
+        for config in [
+            json!({"mode": "snapshot"}),
+            json!({"mode": "follow"}),
+            json!({"mode": "snapshot", "transaction_mode": "snapshot"}),
+            json!({"mode": "snapshot_and_follow", "transaction_mode": "snapshot"}),
+        ] {
+            assert!(validate(config.clone()).is_ok(), "{config}");
+        }
+        for config in [
+            json!({"mode": "snapshot_and_follow"}),
+            json!({"mode": "cdc"}),
+            json!({"mode": "snapshot", "timestamp_column": "ts"}),
+        ] {
+            assert!(validate(config.clone()).is_err(), "{config}");
+        }
+    }
+
+    /// Hosts other than host 0 read the snapshot at host 0's version.
+    #[test]
+    fn followers_read_the_chosen_version() {
+        let chosen =
+            |shard, choice| endpoint_with("/tmp/t", "snapshot", shard, choice).chosen_version();
+        assert_eq!(chosen(None, None).unwrap(), None);
+        assert_eq!(chosen(Some(shard(0)), None).unwrap(), None);
+        assert_eq!(chosen(Some(shard(2)), Some(json!(7))).unwrap(), Some(7));
+        assert!(chosen(Some(shard(2)), None).is_err());
+        assert!(chosen(Some(shard(2)), Some(json!("seven"))).is_err());
+    }
+
+    /// Returns the `(id, part)` rows of `shard`'s part of `table`'s snapshot,
+    /// sorted.
+    async fn read_share(
+        table: &Arc<DeltaTable>,
+        uri: &str,
+        shard: InputShard,
+    ) -> Vec<(i64, String)> {
+        let endpoint = endpoint(uri, shard);
+        *endpoint.schema_table.lock().unwrap() = Some(table.clone());
+        endpoint.register_snapshot_table(table).await.unwrap();
+        let batches = endpoint
+            .datafusion
+            .sql("select id, part from snapshot")
+            .await
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+        let mut rows = Vec::new();
+        for batch in batches {
+            let ids = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let parts = arrow::compute::cast(batch.column(1), &ArrowDataType::Utf8).unwrap();
+            let parts = parts.as_any().downcast_ref::<StringArray>().unwrap();
+            for i in 0..batch.num_rows() {
+                assert!(!parts.is_null(i));
+                rows.push((ids.value(i), parts.value(i).to_string()));
+            }
+        }
+        // The files are read in parallel, so the order varies.
+        rows.sort();
+        rows
+    }
+
+    /// The hosts together read every row of the snapshot exactly once, with
+    /// its partition value, whether or not every host has files.
+    #[tokio::test]
+    async fn hosts_divide_the_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let (table, uri) = write_table(dir.path(), 60, 4).await;
+        let table = Arc::new(table);
+        let n_files = table.snapshot().unwrap().log_data().num_files();
+        assert!(n_files >= 3, "the table should have several files");
+
+        // Three hosts, and more hosts than files, so that some hosts read none.
+        for n_hosts in [3, n_files + 2] {
+            let mut all = Vec::new();
+            for host in 0..n_hosts {
+                let shard = InputShard::new(host, n_hosts, InputDistribution { home: 1 }).unwrap();
+                all.extend(read_share(&table, &uri, shard).await);
+            }
+            let ids = all.iter().map(|(id, _part)| *id).collect::<BTreeSet<_>>();
+            assert_eq!(all.len(), 60, "{n_hosts} hosts read {} rows", all.len());
+            assert_eq!(ids, (0..60).collect::<BTreeSet<_>>());
+            for (id, part) in &all {
+                assert_eq!(part, &format!("p{}", id % 3));
+            }
+        }
+    }
+
+    /// A host that opened the table for its snapshot share but read nothing
+    /// yet checkpoints the version, and on resume reads its share at that
+    /// version, even if the table changed and host 0 made no choice.
+    #[tokio::test]
+    async fn checkpoint_before_snapshot_keeps_the_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let (table, uri) = write_table(dir.path(), 60, 4).await;
+        let version = table.version().unwrap() as i64;
+        let config = json!({"uri": uri, "mode": "snapshot"});
+
+        // Host 2 opens the table at host 0's version.
+        let host2 = endpoint_with(&uri, "snapshot", Some(shard(2)), Some(json!(version)));
+        let opened = host2.open_table().await.unwrap();
+        host2.record_snapshot_version(&opened);
+        let checkpoint = host2.last_resume_status.lock().unwrap().clone().unwrap();
+        assert_eq!(checkpoint, DeltaResumeInfo::snapshot_pending(version));
+        assert_eq!(
+            *host2.last_checkpointable_status.lock().unwrap(),
+            checkpoint
+        );
+        let expected = read_share(&Arc::new(opened), &uri, shard(2)).await;
+        assert!(!expected.is_empty());
+
+        // The table changes, and host 2 resumes from the checkpoint, without
+        // a choice from host 0.
+        let (newer, _uri) = write_table(dir.path(), 90, 1).await;
+        assert!(newer.version().unwrap() as i64 > version);
+        let checkpoint =
+            serde_json::from_value(serde_json::to_value(&checkpoint).unwrap()).unwrap();
+        let resumed = resumed_endpoint(
+            config.clone(),
+            Some(shard(2)),
+            None,
+            MockInputConsumer::new(),
+            Some(checkpoint),
+        );
+        assert!(DeltaTableInputEndpointInner::snapshot_incomplete(
+            &resumed.last_resume_status.lock().unwrap()
+        ));
+        let reopened = resumed.open_table().await.unwrap();
+        assert_eq!(reopened.version().unwrap() as i64, version);
+        assert_eq!(
+            read_share(&Arc::new(reopened), &uri, shard(2)).await,
+            expected
+        );
+
+        // A connector that is not distributed records nothing, and neither
+        // does a host that resumes.
+        for endpoint in [endpoint_with(&uri, "snapshot", None, None), resumed] {
+            let before = endpoint.last_resume_status.lock().unwrap().clone();
+            let opened = endpoint.open_table().await.unwrap();
+            endpoint.record_snapshot_version(&opened);
+            assert_eq!(*endpoint.last_resume_status.lock().unwrap(), before);
+        }
+
+        // Older checkpoints, without the new field, still parse.
+        let old: DeltaResumeInfo =
+            serde_json::from_value(json!({"version": 3, "snapshot_timestamp": null, "eoi": false}))
+                .unwrap();
+        assert_eq!(old, DeltaResumeInfo::follow_mode(3, false));
+        assert!(
+            serde_json::to_value(&old)
+                .unwrap()
+                .get("snapshot_pending")
+                .is_none()
+        );
     }
 }

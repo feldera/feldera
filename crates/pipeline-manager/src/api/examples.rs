@@ -1,4 +1,5 @@
 //! Example data and error types for use in OpenAPI docs.
+use feldera_types::size::ConfigSize;
 use std::collections::BTreeMap;
 
 use crate::api::endpoints::pipeline_management::{
@@ -103,8 +104,8 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         platform_version: "v0".to_string(),
         runtime_config: serde_json::to_value(RuntimeConfig {
             workers: 10,
-            max_rss_mb: None,
-            datafusion_memory_mb: None,
+            max_rss: None,
+            datafusion_memory: None,
             hosts: 1,
             storage: Some(StorageOptions::default()),
             fault_tolerance: FtConfig::default(),
@@ -116,10 +117,10 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             resources: ResourceConfig {
                 cpu_cores_min: None,
                 cpu_cores_max: None,
-                memory_mb_min: Some(1000),
-                memory_mb_max: None,
-                storage_mb_min: None,
-                storage_mb_max: Some(10000),
+                memory_min: Some(ConfigSize::from_mb(1000)),
+                memory_max: None,
+                storage_min: None,
+                storage_max: Some(ConfigSize::from_mb(10000)),
                 autoscaling: None,
                 storage_class: None,
                 volume_attributes_class: None,
@@ -198,6 +199,9 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
         platform_version: pipeline.platform_version,
         runtime_config: validate_runtime_config(&pipeline.runtime_config, true)
             .expect("example must have a valid runtime_config"),
+        deployment_config: pipeline.deployment_config.map(|v| {
+            serde_json::from_value(v).expect("example must have a valid deployment_config")
+        }),
         program_code: pipeline.program_code,
         udf_rust: pipeline.udf_rust,
         udf_toml: pipeline.udf_toml,
@@ -263,6 +267,11 @@ fn pipeline_selected_info_internal_to_external(
         platform_version: pipeline.platform_version,
         runtime_config: pipeline.runtime_config.map(|v| {
             validate_runtime_config(&v, true).expect("example must have a valid runtime_config")
+        }),
+        deployment_config: pipeline.deployment_config.map(|v| {
+            v.map(|v| {
+                serde_json::from_value(v).expect("example must have a valid deployment_config")
+            })
         }),
         program_code: pipeline.program_code,
         udf_rust: pipeline.udf_rust,
@@ -355,6 +364,7 @@ pub(crate) fn pipeline_post_put() -> PostPutPipeline {
             tracing_endpoint_jaeger: "".to_string(),
             ..RuntimeConfig::default()
         }),
+        deployment_config: None,
         program_code: "CREATE TABLE table1 ( col1 INT );".to_string(),
         udf_rust: None,
         udf_toml: None,
@@ -376,6 +386,7 @@ pub(crate) fn patch_pipeline() -> PatchPipeline {
             ..PatchClientMetadata::default()
         },
         runtime_config: None,
+        deployment_config: None,
         program_code: Some("CREATE TABLE table3 ( col3 INT );".to_string()),
         udf_rust: None,
         udf_toml: None,
@@ -418,6 +429,16 @@ pub(crate) fn error_unknown_pipeline_name() -> ErrorResponse {
 
 pub(crate) fn error_update_restricted_to_stopped() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::UpdateRestrictedToStopped)
+}
+
+pub(crate) fn error_deployment_restricted_to_running() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::DeploymentRestrictedToRunning)
+}
+
+pub(crate) fn error_invalid_deployment_patch() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::InvalidDeploymentPatch {
+        reason: "cpu_cores_min (9) exceeds cpu_cores_max (8)".to_string(),
+    })
 }
 
 pub(crate) fn error_delete_restricted_to_fully_stopped() -> ErrorResponse {

@@ -163,6 +163,12 @@
   const matchesSearch = (text: string) =>
     tagDisplayName(text).toLowerCase().includes(search.trim().toLowerCase())
 
+  // A search that names no existing tag offers to create a tag with that name.
+  const searchedNewTagName = $derived.by(() => {
+    const name = search.trim()
+    return name && ![...knownTags].some((tag) => tagDisplayName(tag) === name) ? name : ''
+  })
+
   // Selected tags float to the top; both groups are sorted a–z (see design).
   const [selectedTags, unselectedTags] = $derived(
     partition([...knownTags].filter(matchesSearch), (t) => tags.includes(t)).map((group) =>
@@ -296,11 +302,15 @@
       {@render inlineTagRow(open)}
     {/snippet}
     {#snippet content()}
+      <!-- Grows with its content from 304px up to 380px; past that, long text (such as the
+           "Create new tag" button) is truncated. `grid-cols-1` lets the panels shrink
+           below their content width so the truncation can happen. -->
       <div
         transition:slide={{ duration: 100 }}
-        class="bg-white-dark absolute top-8 left-0 z-30 flex w-[304px] flex-col overflow-hidden rounded shadow-md"
+        class="bg-white-dark absolute top-8 left-0 z-30 flex w-max max-w-[380px] min-w-[304px] flex-col overflow-hidden rounded shadow-md"
       >
         <SlidingPanels
+          class="grid-cols-1"
           current={page}
           width={280}
           pages={[
@@ -315,7 +325,12 @@
       {#snippet listPage()}
         {#if knownTags.size > 0}
           <div class="p-2">
-            <input class="input w-full" type="search" placeholder="Search" bind:value={search} />
+            <input
+              class="input w-full"
+              type="search"
+              placeholder="Search or add tags"
+              bind:value={search}
+            />
           </div>
         {/if}
         <div class="scrollbar flex max-h-[280px] flex-col overflow-y-auto pb-1">
@@ -331,7 +346,9 @@
           onclick={() => openCreate(search)}
         >
           <span class="fd fd-plus text-[16px]"></span>
-          Create a new tag
+          <span class="min-w-0 truncate">
+            {searchedNewTagName ? `Create new tag: “${searchedNewTagName}”` : 'Create a new tag'}
+          </span>
         </button>
       {/snippet}
 
@@ -358,14 +375,14 @@
       {/snippet}
 
       {#snippet deletePage()}
-        <div class="flex items-center gap-2 px-2 py-2">
+        <div class="flex items-center gap-1 px-2 py-2">
           <button
-            class="btn-icon h-7 w-7"
+            class="btn-icon btn-icon-sm"
             onclick={() => (page = 'edit')}
             aria-label="Back"
             title="Back"
           >
-            <span class="fd fd-chevron-left text-[20px]"></span>
+            <span class="fd fd-chevron-left text-[16px]"></span>
           </button>
           <span class="text-sm font-medium">Delete tag</span>
         </div>
@@ -489,9 +506,14 @@
 })}
   {@const selectedColor = opts.lockedColor ?? newTagColor}
   {@const colorName = tagColorPalette.find((c) => c.color === selectedColor)?.name ?? 'Custom'}
-  <div class="flex items-center gap-2 px-2 py-2">
-    <button class="btn-icon h-7 w-7" onclick={() => (page = 'list')} aria-label="Back" title="Back">
-      <span class="fd fd-chevron-left text-[20px]"></span>
+  <div class="flex items-center gap-1 px-2 py-2">
+    <button
+      class="btn-icon btn-icon-sm"
+      onclick={() => (page = 'list')}
+      aria-label="Back"
+      title="Back"
+    >
+      <span class="fd fd-chevron-left text-[16px]"></span>
     </button>
     <span class="text-sm font-medium">{opts.title}</span>
     {#if opts.onDelete}

@@ -1,6 +1,6 @@
 [workspace.package]
 authors = ["Feldera Team <dev@feldera.com>"]
-version = "0.366.0"
+version = "0.368.0"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/feldera/feldera"
 repository = "https://github.com/feldera/feldera"
@@ -131,7 +131,7 @@ dashmap = "6.1.0"
 # TODO: un-ignore `a_spilling_aggregation_does_not_deadlock` once a release
 # carries apache/datafusion#24891.
 datafusion = "55"
-dbsp = { path = "crates/dbsp", version = "0.366.0" }
+dbsp = { path = "crates/dbsp", version = "0.368.0" }
 # JSON functions applied to strings.
 datafusion-functions-json = "0.55.4"
 dbsp_nexmark = { path = "crates/nexmark" }
@@ -164,21 +164,21 @@ erased-serde = "0.3.31"
 fake = "2.10"
 fastbloom = "0.14.0"
 fdlimit = "0.3.0"
-feldera-buffer-cache = { version = "0.366.0", path = "crates/buffer-cache" }
+feldera-buffer-cache = { version = "0.368.0", path = "crates/buffer-cache" }
 feldera-cloud1-client = "0.3.0"
 feldera-datagen = { path = "crates/datagen" }
-feldera-fxp = { version = "0.366.0", path = "crates/fxp", features = ["dbsp"] }
+feldera-fxp = { version = "0.368.0", path = "crates/fxp", features = ["dbsp"] }
 feldera-iceberg = { path = "crates/iceberg" }
-feldera-observability = { version = "0.366.0", path = "crates/feldera-observability" }
-feldera-macros = { version = "0.366.0", path = "crates/feldera-macros" }
-feldera-modular-bloom = { version = "0.366.0", path = "crates/modular-bloom" }
-feldera-sqllib = { version = "0.366.0", path = "crates/sqllib" }
-feldera-storage = { version = "0.366.0", path = "crates/storage" }
-feldera-types = { version = "0.366.0", path = "crates/feldera-types" }
-feldera-rest-api = { version = "0.366.0", path = "crates/rest-api" }
-feldera-ir = { version = "0.366.0", path = "crates/ir" }
-feldera-adapterlib = { version = "0.366.0", path = "crates/adapterlib" }
-feldera-samply = { version = "0.366.0", path = "crates/samply" }
+feldera-observability = { version = "0.368.0", path = "crates/feldera-observability" }
+feldera-macros = { version = "0.368.0", path = "crates/feldera-macros" }
+feldera-modular-bloom = { version = "0.368.0", path = "crates/modular-bloom" }
+feldera-sqllib = { version = "0.368.0", path = "crates/sqllib" }
+feldera-storage = { version = "0.368.0", path = "crates/storage" }
+feldera-types = { version = "0.368.0", path = "crates/feldera-types" }
+feldera-rest-api = { version = "0.368.0", path = "crates/rest-api" }
+feldera-ir = { version = "0.368.0", path = "crates/ir" }
+feldera-adapterlib = { version = "0.368.0", path = "crates/adapterlib" }
+feldera-samply = { version = "0.368.0", path = "crates/samply" }
 flate2 = "1.1.0"
 form_urlencoded = "1.2.0"
 fs_extra = "1.3.0"
@@ -336,7 +336,7 @@ lz4_flex = { version = "0.13.1", default-features = false, features = ["std", "s
 static-files = "0.2.3"
 static_assertions = "1.1.0"
 syn = "2.0.77"
-sysinfo = "0.38.4"
+sysinfo = "0.39.6"
 tabled = "0.17"
 tar = "0.4.46"
 tarpc = "0.38.0"
@@ -364,6 +364,7 @@ uuid = { version = "1.17.0", features = ["serde"] }
 vergen-gitcl = "1.0.0"
 wiremock = "0.6"
 xxhash-rust = "0.8.6"
+z85 = "3.0.6"
 zip = "9.0.1"
 zstd = "0.12.0"
 backtrace = "0.3.75"

@@ -1,3 +1,4 @@
+use crate::size::{ConfigSize, LegacySizeUnit};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -15,9 +16,17 @@ fn default_max_retries() -> Option<u8> {
     Some(10)
 }
 
-fn default_max_buffer_size_bytes() -> usize {
-    1024 * 1024
+fn default_max_buffer_size() -> ConfigSize {
+    ConfigSize::from_mib(1)
 }
+fn schema_default_max_buffer_size() -> String {
+    default_max_buffer_size().to_string()
+}
+crate::required_size_setting!(
+    size_max_buffer_size,
+    "max_buffer_size",
+    LegacySizeUnit::Bytes
+);
 
 /// Number of concurrent requests made to DynamoDB at any time.
 /// Increasing this may improve the throughput, but may also cause
@@ -104,12 +113,20 @@ pub struct DynamoDBWriterConfig {
     #[schema(default = default_write_mode)]
     pub write_mode: DynamoDBWriteMode,
 
-    /// Maximum number of bytes buffered by each worker before flushing writes.
+    /// Maximum size of the data buffered by each worker before flushing
+    /// writes, such as `"1Mi"`.
     ///
     /// This is an approximate size based on encoded DynamoDB attributes.
-    #[serde(default = "default_max_buffer_size_bytes")]
-    #[schema(default = default_max_buffer_size_bytes)]
-    pub max_buffer_size_bytes: usize,
+    ///
+    /// Before release 0.367.0 this setting was `max_buffer_size_bytes`, a
+    /// number of bytes. That name is deprecated but still read.
+    #[serde(
+        default = "default_max_buffer_size",
+        alias = "max_buffer_size_bytes",
+        deserialize_with = "size_max_buffer_size"
+    )]
+    #[schema(value_type = String, default = schema_default_max_buffer_size)]
+    pub max_buffer_size: ConfigSize,
 
     /// Maximum number of DynamoDB write requests in flight per worker thread.
     ///
@@ -218,8 +235,8 @@ impl DynamoDBWriterConfig {
         if self.threads == 0 {
             return Err("threads must be at least 1".to_string());
         }
-        if self.max_buffer_size_bytes == 0 {
-            return Err("max_buffer_size_bytes must be greater than 0".to_string());
+        if self.max_buffer_size.is_zero() {
+            return Err("max_buffer_size must be greater than 0".to_string());
         }
         if self.max_concurrent_requests == 0 {
             return Err("max_concurrent_requests must be greater than 0".to_string());
@@ -278,7 +295,7 @@ mod tests {
             aws_secret_access_key: None,
             batch_size,
             write_mode,
-            max_buffer_size_bytes: 1024 * 1024,
+            max_buffer_size: ConfigSize::from_mib(1),
             max_concurrent_requests: 16,
             threads: 1,
             max_retries: Some(10u8),

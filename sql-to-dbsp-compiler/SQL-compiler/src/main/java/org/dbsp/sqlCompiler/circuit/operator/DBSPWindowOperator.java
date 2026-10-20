@@ -53,6 +53,18 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements IHas
     }
 
     @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPWindowOperator otherOperator = other.as(DBSPWindowOperator.class);
+        if (otherOperator == null)
+            return false;
+        return this.lowerInclusive == otherOperator.lowerInclusive &&
+                this.upperInclusive == otherOperator.upperInclusive &&
+                this.lowerUnbounded == otherOperator.lowerUnbounded;
+    }
+
+    @Override
     public DBSPSimpleOperator with(
             @Nullable DBSPExpression function, DBSPType outputType,
             List<OutputPort> newInputs, boolean force) {
@@ -71,6 +83,13 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements IHas
     public boolean hasInputIntegrator(int inputIndex) {
         // Input 1 carries the window bounds
         return inputIndex == 0;
+    }
+
+    @Override
+    public boolean garbageCollectsInput(int inputIndex) {
+        // The runtime truncates the trace of input 0 below the lower window bound; a window
+        // without a lower bound truncates nothing
+        return inputIndex == 0 && !this.lowerUnbounded;
     }
 
     @Override

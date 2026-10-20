@@ -24,6 +24,7 @@ import java.util.List;
 /** Some tests that use the profiling API to measure perf at runtime */
 public class ProfilingTests extends StreamingTestBase {
     Long[] measure(String program, String main) throws IOException, InterruptedException, SQLException {
+        BaseSQLTests.assumeRustBackend();
         File script = createInputScript(program);
         CompilerMessages messages = CompilerMain.execute(
                 "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i",
