@@ -16,7 +16,11 @@ from feldera.enums import BootstrapPolicy, PipelineFieldSelector, PipelineStatus
 from feldera.rest._helpers import determine_client_version
 from feldera.rest._httprequests import HttpRequests
 from feldera.rest.config import ApiKey, Config  # noqa: F401 — re-exported
-from feldera.rest.errors import FelderaAPIError, FelderaTimeoutError
+from feldera.rest.errors import (
+    TableReloadNotAllowedError,
+    FelderaAPIError,
+    FelderaTimeoutError,
+)
 from feldera.rest.feldera_config import FelderaConfig
 from feldera.rest.logs import LogPosition, LogStream
 from feldera.rest.pipeline import Pipeline
@@ -24,6 +28,50 @@ from feldera.tags import _normalize_tags
 from feldera.rest.retry import RetryConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_reloadable_tables(
+    pipeline_name: str,
+    runtime_status_details: Optional[Mapping[str, Any]],
+    reloadable_tables: List[str],
+) -> None:
+    """Raise `TableReloadNotAllowedError` unless every table that the bootstrap
+    awaiting approval modifies is in `reloadable_tables`.
+
+    Bootstrapping truncates a modified table and resets its input connectors,
+    so the table is reloaded from its connectors.
+
+    Names must match the diff exactly
+    """
+
+    approval_diff = (runtime_status_details or {}).get("approval_diff")
+    if not approval_diff:
+        raise TableReloadNotAllowedError(
+            pipeline_name,
+            "the pipeline did not report the changes awaiting approval",
+            approval_diff,
+        )
+
+    program_diff = approval_diff["program_diff"]
+    if program_diff is None:
+        raise TableReloadNotAllowedError(
+            pipeline_name,
+            "the pipeline could not compute the program diff: "
+            f"{approval_diff['program_diff_error']}",
+            approval_diff,
+        )
+
+    allowed = set(reloadable_tables)
+    blocked = [
+        table for table in program_diff["modified_tables"] if table not in allowed
+    ]
+    if blocked:
+        raise TableReloadNotAllowedError(
+            pipeline_name,
+            f"modified tables not in reloadable_tables: {', '.join(blocked)}",
+            approval_diff,
+            blocked,
+        )
 
 
 def _validate_no_none_keys_in_map(data):
@@ -600,6 +648,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
+        reloadable_tables: Optional[List[str]] = None,
     ) -> Optional[PipelineStatus]:
         """
 
@@ -611,7 +660,20 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             pipeline to start.
         :param dismiss_error: Set True to dismiss any deployment error before starting;
             set False to make it fail in that case. True by default.
+        :param reloadable_tables: Tables that bootstrapping may reload, with
+            `bootstrap_policy=BootstrapPolicy.ALLOW`. See `Pipeline.start`.
         """
+        if reloadable_tables is not None:
+            if bootstrap_policy != BootstrapPolicy.ALLOW:
+                raise ValueError(
+                    "reloadable_tables requires bootstrap_policy=BootstrapPolicy.ALLOW"
+                )
+            if not wait:
+                raise ValueError("reloadable_tables requires wait=True")
+            # With ALLOW the pipeline bootstraps before the SDK sees the diff.
+            # Make it wait, and approve below if the diff permits.
+            bootstrap_policy = BootstrapPolicy.AWAIT_APPROVAL
+
         start_params = {}
 
         # Any error is dismissed separately in order to make sure we only dismiss any error
@@ -644,10 +706,29 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if not wait:
             return None
 
-        return self.__wait_for_pipeline_state_one_of(
+        deadline = None if timeout_s is None else time.monotonic() + timeout_s
+        status = self.__wait_for_pipeline_state_one_of(
             pipeline_name,
             [initial, "AwaitingApproval"],
             timeout_s,
+        )
+        if reloadable_tables is None or status != PipelineStatus.AWAITINGAPPROVAL:
+            return status
+
+        details = self.get_pipeline(
+            pipeline_name, PipelineFieldSelector.STATUS
+        ).deployment_runtime_status_details
+        _validate_reloadable_tables(pipeline_name, details, reloadable_tables)
+
+        self.approve_pipeline(
+            pipeline_name,
+            silent_bootstrap=silent_bootstrap,
+            concurrent_bootstrap=concurrent_bootstrap,
+        )
+        return self.__wait_for_pipeline_state_one_of(
+            pipeline_name,
+            [initial],
+            None if deadline is None else max(0.0, deadline - time.monotonic()),
         )
 
     def start_pipeline(
@@ -659,6 +740,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
+        reloadable_tables: Optional[List[str]] = None,
     ) -> Optional[PipelineStatus]:
         """
 
@@ -669,6 +751,8 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             pipeline to start.
         :param dismiss_error: Set True to dismiss any deployment error before starting;
             set False to make it fail in that case. True by default.
+        :param reloadable_tables: Tables that bootstrapping may reload, with
+            `bootstrap_policy=BootstrapPolicy.ALLOW`. See `Pipeline.start`.
         """
 
         return self._inner_start_pipeline(
@@ -680,6 +764,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             wait,
             timeout_s,
             dismiss_error,
+            reloadable_tables,
         )
 
     def start_pipeline_as_paused(
@@ -691,6 +776,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         wait: bool = True,
         timeout_s: float | None = None,
         dismiss_error: bool = True,
+        reloadable_tables: Optional[List[str]] = None,
     ) -> Optional[PipelineStatus]:
         """
         :param pipeline_name: The name of the pipeline to start as paused.
@@ -700,6 +786,8 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             pipeline to start.
         :param dismiss_error: Set True to dismiss any deployment error before starting;
             set False to make it fail in that case. True by default.
+        :param reloadable_tables: Tables that bootstrapping may reload, with
+            `bootstrap_policy=BootstrapPolicy.ALLOW`. See `Pipeline.start`.
         """
 
         return self._inner_start_pipeline(
@@ -711,6 +799,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             wait,
             timeout_s,
             dismiss_error,
+            reloadable_tables,
         )
 
     def start_pipeline_as_standby(
@@ -722,6 +811,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
+        reloadable_tables: Optional[List[str]] = None,
     ):
         """
         :param pipeline_name: The name of the pipeline to start as standby.
@@ -731,6 +821,8 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             pipeline to start.
         :param dismiss_error: Set True to dismiss any deployment error before starting;
             set False to make it fail in that case. True by default.
+        :param reloadable_tables: Tables that bootstrapping may reload, with
+            `bootstrap_policy=BootstrapPolicy.ALLOW`. See `Pipeline.start`.
         """
 
         self._inner_start_pipeline(
@@ -742,6 +834,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             wait,
             timeout_s,
             dismiss_error,
+            reloadable_tables,
         )
 
     def resume_pipeline(

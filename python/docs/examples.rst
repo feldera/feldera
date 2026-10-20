@@ -160,6 +160,56 @@ Starting a Pipeline
 
     pipeline.start()
 
+Approving Reloads of Selected Tables when Bootstrapping
+=======================================================
+
+When a modified pipeline restarts from a checkpoint, if a table is modified,
+bootstrapping will reload the table: it truncates the table and resets its input
+connectors. With ``bootstrap_policy=BootstrapPolicy.ALLOW``, and ``wait=True``,
+``reloadable_tables``  lists the tables that bootstrapping may reload.
+If a modified table is not in the list, ``start()`` raises ``TableReloadNotAllowedError``
+and the pipeline stays in the ``AWAITINGAPPROVAL`` state.
+Bootstrapping is an Enterprise feature.
+
+.. code-block:: python
+
+    from feldera.enums import BootstrapPolicy
+    from feldera.rest.errors import TableReloadNotAllowedError
+
+    try:
+        pipeline.start(
+            bootstrap_policy=BootstrapPolicy.ALLOW,
+            reloadable_tables=["dim_customers", "dim_products"],
+        )
+    except TableReloadNotAllowedError as e:
+        print(f"Bootstrapping would reload: {e.blocked_tables}")
+        print(e.approval_diff)
+
+        # Reject: stop the pipeline. A force stop makes no checkpoint.
+        pipeline.stop(force=True)
+
+        # Or approve: bootstrap with the changes as they are.
+        # pipeline.approve()
+
+Write each name exactly as the pipeline reports it in the approval diff: an
+unquoted SQL name in lowercase, a quoted name without its quotes. For example,
+write ``dim_customers`` for ``CREATE TABLE DIM_CUSTOMERS`` and ``DimCustomers``
+for ``CREATE TABLE "DimCustomers"``. The names in ``e.blocked_tables`` use the
+same spelling, so you can pass them back:
+
+.. code-block:: python
+
+    pipeline.restart(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        reloadable_tables=["dim_customers", "dim_products", *e.blocked_tables],
+    )
+
+Use ``reloadable_tables=[]`` to allow no table reloads. Changes to views only
+are still approved.
+
+For more information, refer to the docs at:
+https://docs.feldera.com/pipelines/modifying#approving-reloads-of-selected-tables-python-sdk
+
 Analyzing Existing Feldera Pipeline for Errors
 ==============================================
 

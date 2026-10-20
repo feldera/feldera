@@ -716,6 +716,7 @@ metrics"""
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
+        reloadable_tables: Optional[List[str]] = None,
     ):
         """
         .. _start:
@@ -737,7 +738,22 @@ metrics"""
         :param wait: Set True to wait for the pipeline to start. True by default
         :param dismiss_error: Set True to dismiss any deployment error before starting;
             set False to make it fail in that case. True by default.
+        :param reloadable_tables: Tables that bootstrapping may reload. Use it
+            with `bootstrap_policy=BootstrapPolicy.ALLOW` and `wait=True`.
+            If a table is modified, bootstrapping will reload the table: it truncates the table and
+            resets its input connectors. Write each name exactly as the pipeline
+            reports it in the approval diff: an unquoted SQL name in lowercase,
+            a quoted name without its quotes. For example, write `t1` for
+            `CREATE TABLE T1` and `MyTable` for `CREATE TABLE "MyTable"`.
+            None by default: ALLOW bootstraps without a check. If no tables are
+            acceptable to reload, set `reloadable_tables=[]`.
         :raises RuntimeError: If the pipeline is not in STOPPED state.
+        :raises TableReloadNotAllowedError: If a modified table is not in
+            `reloadable_tables`, or the pipeline cannot compute the program
+            diff. The pipeline stays in the AWAITINGAPPROVAL state: call
+            `approve()` to bootstrap or `stop(force=True)` to reject.
+        :raises ValueError: If `reloadable_tables` is set with a bootstrap
+            policy other than ALLOW, or with `wait=False`.
         """
 
         self.client.start_pipeline(
@@ -748,6 +764,7 @@ metrics"""
             wait=wait,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
+            reloadable_tables=reloadable_tables,
         )
 
     def start_paused(
@@ -758,6 +775,7 @@ metrics"""
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
+        reloadable_tables: Optional[List[str]] = None,
     ):
         """
         Starts the pipeline in the paused state.
@@ -773,6 +791,8 @@ metrics"""
             pipeline to start (defaults to `None` = no timeout is enforced).
         :param dismiss_error: Set True to dismiss any deployment error before starting;
             set False to make it fail in that case. True by default.
+        :param reloadable_tables: Tables that bootstrapping may reload. See
+            :meth:`start`.
         """
 
         return self.client.start_pipeline_as_paused(
@@ -783,6 +803,7 @@ metrics"""
             wait=wait,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
+            reloadable_tables=reloadable_tables,
         )
 
     def start_standby(
@@ -793,6 +814,7 @@ metrics"""
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
+        reloadable_tables: Optional[List[str]] = None,
     ):
         """
         Starts the pipeline in the standby state.
@@ -808,6 +830,8 @@ metrics"""
             pipeline to start (defaults to `None` = no timeout is enforced).
         :param dismiss_error: Set True to dismiss any deployment error before starting;
             set False to make it fail in that case. True by default.
+        :param reloadable_tables: Tables that bootstrapping may reload. See
+            :meth:`start`.
         """
 
         self.client.start_pipeline_as_standby(
@@ -818,6 +842,7 @@ metrics"""
             wait=wait,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
+            reloadable_tables=reloadable_tables,
         )
 
     def restart(
@@ -827,6 +852,7 @@ metrics"""
         concurrent_bootstrap: bool = False,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
+        reloadable_tables: Optional[List[str]] = None,
     ):
         """
         Restarts the pipeline.
@@ -845,6 +871,8 @@ metrics"""
             pipeline to restart.
         :param dismiss_error: Set True to dismiss any deployment error before starting;
             set False to make it fail in that case. True by default.
+        :param reloadable_tables: Tables that bootstrapping may reload. See
+            :meth:`start`.
         """
 
         self.stop(force=True, timeout_s=timeout_s)
@@ -854,6 +882,7 @@ metrics"""
             concurrent_bootstrap=concurrent_bootstrap,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
+            reloadable_tables=reloadable_tables,
         )
 
     def pause(self, wait: bool = True, timeout_s: Optional[float] = None):
