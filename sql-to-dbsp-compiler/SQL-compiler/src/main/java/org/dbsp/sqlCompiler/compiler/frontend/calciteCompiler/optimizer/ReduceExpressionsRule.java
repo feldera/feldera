@@ -818,8 +818,6 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
          * <ul>
          *   <li>a cast of a DECIMAL or floating point value to a string: Calcite and Feldera
          *       format these numbers differently, e.g., 1.50 and 1.5, or 1.0E-7 and 1e-7</li>
-         *   <li>a cast of a floating point value to DECIMAL: Feldera converts e.g. the DOUBLE 0.29
-         *       to the DECIMAL(10, 5) 0.28999 (https://github.com/feldera/feldera/issues/7395)</li>
          *   <li>a cast of a string to DECIMAL: Calcite truncates, e.g., '1.239' to the
          *       DECIMAL(5, 2) 1.23, where Feldera rounds to 1.24</li>
          * </ul> */
@@ -828,8 +826,7 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
                 return false;
             SqlTypeName from = call.getOperands().get(0).getType().getSqlTypeName();
             SqlTypeName to = call.getType().getSqlTypeName();
-            if (to == SqlTypeName.DECIMAL
-                    && (SqlTypeName.APPROX_TYPES.contains(from) || SqlTypeName.CHAR_TYPES.contains(from)))
+            if (to == SqlTypeName.DECIMAL && SqlTypeName.CHAR_TYPES.contains(from))
                 return true;
             return SqlTypeName.CHAR_TYPES.contains(to)
                     && (from == SqlTypeName.DECIMAL || SqlTypeName.APPROX_TYPES.contains(from));
