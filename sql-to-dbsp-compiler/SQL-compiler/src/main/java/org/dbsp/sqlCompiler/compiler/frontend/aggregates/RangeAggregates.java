@@ -26,11 +26,11 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -270,6 +270,7 @@ public class RangeAggregates extends WindowAggregates {
 
         DBSPSimpleOperator windowAgg;
         DBSPTypeTuple aggResultType;
+        DBSPExpression emptySetResult;
         {
             // Compute the window aggregate
 
@@ -301,6 +302,7 @@ public class RangeAggregates extends WindowAggregates {
                             .closure(pr);
 
             aggResultType = list.getEmptySetResultType().to(DBSPTypeTuple.class);
+            emptySetResult = list.getEmptySetResult();
             // Prepare a type that will make the operator following the window aggregate happy
             // (that operator is a map_index).  Currently, the compiler cannot represent
             // exactly the output type of the WindowAggregateOperator, so it lies about the actual type.
@@ -323,7 +325,7 @@ public class RangeAggregates extends WindowAggregates {
             // map_index(|(key_ts_agg)| (
             //         Tup2::new(key_ts_agg.0.0,
             //                   UnsignedWrappers::to_signed::<i32, i32, i64, u64>(key_ts_agg.1.0, true, true)),
-            //         key_ts_agg.1.1.unwrap_or_default() ))
+            //         if key_ts_agg.1.1.is_none() { emptySetResult } else { key_ts_agg.1.1.unwrap() } ))
             DBSPVariablePath var = new DBSPVariablePath("key_ts_agg",
                     new DBSPTypeRawTuple(
                             partitionType.ref(),
@@ -332,7 +334,7 @@ public class RangeAggregates extends WindowAggregates {
                                     aggResultType.withMayBeNull(true)).ref()));
             // new DBSPTypeOption(aggResultType)).ref()));
             DBSPExpression ts = var.field(1).deref().field(0);
-            DBSPExpression agg = var.field(1).deref().field(1).applyCloneIfNeeded();
+            DBSPExpression agg = var.field(1).deref().field(1);
             DBSPExpression unwrap = new DBSPUnsignedUnwrapExpression(
                     this.node, ts, sortType, ascending, nullsLast);
             if (originalSortType.is(DBSPTypeDecimal.class)) {
@@ -364,9 +366,12 @@ public class RangeAggregates extends WindowAggregates {
             List<DBSPExpression> keyFields = new ArrayList<>(Arrays.asList(
                     Objects.requireNonNull(DBSPTupleExpression.flatten(ixKey).fields)));
             keyFields.add(unwrap);
+            // An empty window holds the results of the aggregates on an empty set.  The if computes
+            // them only for an empty window, since a postprocessing step can fail on an empty set.
+            DBSPExpression value = new DBSPIfExpression(this.node, agg.is_null(),
+                    emptySetResult, agg.applyCloneIfNeeded().neverFailsUnwrap(this.node));
             DBSPExpression body = new DBSPRawTupleExpression(
-                    new DBSPTupleExpression(keyFields, false),
-                    new DBSPApplyMethodExpression(this.node, "unwrap_or_default", aggResultType, agg));
+                    new DBSPTupleExpression(keyFields, false), value);
             index = new DBSPMapIndexOperator(this.node, body.closure(var), windowAgg.outputPort())
                     .addAnnotation(new NoChain(), DBSPMapIndexOperator.class);
             this.compiler.addOperator(index);
