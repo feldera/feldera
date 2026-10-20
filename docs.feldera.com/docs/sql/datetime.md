@@ -148,6 +148,10 @@ precision of microseconds (6 digits for fractions of second).  The
 specified scale for the `TIMESTAMP` data type is ignored, and it is
 always assumed to be `TIMESTAMP(6)`.
 
+The legal timestamps are `0001-01-01 00:00:00` to `9999-12-31
+23:59:59.999999` (in UTC for `TIMESTAMP WITH TIME ZONE`).  Values
+outside this range behave as for [dates](#dates).
+
 ### Timestamp literals
 
 `TIMESTAMP` literals have the form `TIMESTAMP 'YYYY-MM-DD
@@ -163,9 +167,11 @@ In general any operation that is available on a `TIMESTAMP` value can
 also be applied on a `TIMESTAMP WITH TIME ZONE` value.
 
 A cast from a numeric value to a `TIMESTAMP` interprets the numeric
-value as an (big integer) number of milliseconds since the Unix epoch.
-Conversely, a cast from a `TIMESTAMP` to a numeric value retrieves the
-number of milliseconds since the Unix epoch from the timestamp.
+value as a number of milliseconds since the Unix epoch; a fraction of a
+millisecond is rounded to the nearest microsecond.  Conversely, a cast
+from a `TIMESTAMP` to a numeric value retrieves the number of
+milliseconds since the Unix epoch from the timestamp; a cast to an
+integer or floating point type rounds down to whole milliseconds.
 
 <table>
   <tr>

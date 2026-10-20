@@ -2190,30 +2190,30 @@ public class StreamingTests extends StreamingTestBase {
                 GROUP BY TIMESTAMP_TRUNC(ts, MINUTE);""";
         var ccs = this.getCCS(sql);
         ccs.step("""
-                 INSERT INTO T VALUES ('0001-01-01 00:00:00');
-                 INSERT INTO now VALUES ('0001-01-01 00:00:00');""",
+                 INSERT INTO T VALUES ('2020-01-01 00:00:00');
+                 INSERT INTO now VALUES ('2020-01-01 00:00:00');""",
                 """
                   sum | timestamp | weight
                  --------------------------""");
         ccs.step("""
-                 INSERT INTO T VALUES ('0001-01-01 00:00:10');
-                 INSERT INTO now VALUES ('0001-01-01 00:00:10');""",
+                 INSERT INTO T VALUES ('2020-01-01 00:00:10');
+                 INSERT INTO now VALUES ('2020-01-01 00:00:10');""",
                 """
                   sum | timestamp           | weight
                  ------------------------------------""");
         ccs.step("""
-                 INSERT INTO T VALUES ('0001-01-01 00:01:00');
-                 INSERT INTO now VALUES ('0001-01-01 00:01:00');""",
+                 INSERT INTO T VALUES ('2020-01-01 00:01:00');
+                 INSERT INTO now VALUES ('2020-01-01 00:01:00');""",
                 """
                   sum | timestamp           | weight
                  ------------------------------------""");
         ccs.step("""
-                 INSERT INTO T VALUES ('0001-01-01 00:02:01');
-                 INSERT INTO now VALUES ('0001-01-01 00:02:01');""",
+                 INSERT INTO T VALUES ('2020-01-01 00:02:01');
+                 INSERT INTO now VALUES ('2020-01-01 00:02:01');""",
                 """
                   sum | timestamp           | weight
                  ------------------------------------
-                    2 | 0001-01-01 00:00:00 | 1""");
+                 4040 | 2020-01-01 00:00:00 | 1""");
     }
 
     @Test

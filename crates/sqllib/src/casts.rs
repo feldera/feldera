@@ -3019,17 +3019,18 @@ pub fn cast_to_Timestamp_s(value: SqlString) -> SqlResult<Timestamp> {
     if let Ok(v) = NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%d %H:%M:%S%.f") {
         //println!("Parsed successfully {} using {} into {:?} ({})",
         //         value, "%Y-%m-%d %H:%M:%S%.f", result, result.microseconds());
-        return Ok(Timestamp::from_naiveDateTime(v));
+        return Timestamp::legal_from_naiveDateTime(v)
+            .ok_or_else(|| timestamp_out_of_range(&value, "TIMESTAMP"));
     }
 
     // Try just a date.
     // parse_from_str fails to parse a datetime if there is no time in the format!
     if let Ok(v) = NaiveDate::parse_from_str(trimmed, "%Y-%m-%d") {
         let dt = v.and_hms_opt(0, 0, 0).unwrap();
-        let result = Timestamp::from_microseconds(dt.and_utc().timestamp_micros());
         //println!("Parsed successfully {} using {} into {:?} ({})",
         //         value, "%Y-%m-%d", result, result.microseconds());
-        return Ok(result);
+        return Timestamp::legal_from_naiveDateTime(dt)
+            .ok_or_else(|| timestamp_out_of_range(&value, "TIMESTAMP"));
     }
 
     Err(SqlRuntimeError::from_string(format!(
@@ -3081,8 +3082,16 @@ cast_function!(Timestamp, Timestamp, TimestampTz, TimestampTz);
 
 #[doc(hidden)]
 pub fn cast_to_Timestamp_i64(value: i64) -> SqlResult<Timestamp> {
-    // Calcite ignores sub-second units
-    Ok(Timestamp::from_milliseconds((value / 1000) * 1000))
+    Timestamp::legal_from_milliseconds(value)
+        .ok_or_else(|| timestamp_out_of_range(&value, "TIMESTAMP"))
+}
+
+/// The error for a value whose conversion to `type_name` is not a legal timestamp.
+fn timestamp_out_of_range(value: &dyn Display, type_name: &str) -> Box<SqlRuntimeError> {
+    SqlRuntimeError::from_string(format!(
+        "Converting '{value}' to {type_name} produces a value outside the range \
+         0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999"
+    ))
 }
 
 cast_function!(Timestamp, Timestamp, i64, i64);
@@ -3091,15 +3100,43 @@ cast_function!(Timestamp, Timestamp, i64, i64);
 pub fn cast_to_Timestamp_SqlDecimal<const P: usize, const S: usize>(
     value: SqlDecimal<P, S>,
 ) -> SqlResult<Timestamp> {
-    match TryInto::<i64>::try_into(value) {
-        // Calcite ignores sub-second units
-        Ok(value) => Ok(Timestamp::from_milliseconds((value / 1000) * 1000)),
-        Err(e) => Err(SqlRuntimeError::from_string(format!(
-            "Error converting {value} to TIMESTAMP: {}",
-            e
-        ))),
-    }
+    // The value is a number of milliseconds; round it to the nearest microsecond
+    let thousand = SqlDecimal::<4, 0>::new(1000, 0).unwrap();
+    let micros = value
+        .convert_round_even::<38, 3>()
+        .and_then(|millis| millis.checked_mul_generic::<4, 0, 38, 0>(thousand))
+        .and_then(|micros| i64::try_from(<i128 as From<SqlDecimal<38, 0>>>::from(micros)).ok());
+    micros
+        .and_then(Timestamp::legal_from_microseconds)
+        .ok_or_else(|| timestamp_out_of_range(&value, "TIMESTAMP"))
 }
+
+/// The TIMESTAMP `millis` milliseconds after the Unix epoch, rounded to the
+/// nearest microsecond, or `None` if it is outside the legal range.
+fn timestamp_from_float_millis(millis: f64) -> Option<Timestamp> {
+    let micros = (millis * 1000.0).round_ties_even();
+    // NaN and infinities are outside this range
+    if !(i64::MIN as f64..=i64::MAX as f64).contains(&micros) {
+        return None;
+    }
+    Timestamp::legal_from_microseconds(micros as i64)
+}
+
+#[doc(hidden)]
+pub fn cast_to_Timestamp_d(value: F64) -> SqlResult<Timestamp> {
+    timestamp_from_float_millis(value.into_inner())
+        .ok_or_else(|| timestamp_out_of_range(&value, "TIMESTAMP"))
+}
+
+cast_function!(Timestamp, Timestamp, d, F64);
+
+#[doc(hidden)]
+pub fn cast_to_Timestamp_f(value: F32) -> SqlResult<Timestamp> {
+    timestamp_from_float_millis(value.into_inner() as f64)
+        .ok_or_else(|| timestamp_out_of_range(&value, "TIMESTAMP"))
+}
+
+cast_function!(Timestamp, Timestamp, f, F32);
 
 cast_function!(Timestamp <const P: usize, const S: usize>, Timestamp, SqlDecimal, SqlDecimal<P, S>);
 
@@ -3111,7 +3148,7 @@ pub fn cast_to_Timestamp_u64(value: u64) -> SqlResult<Timestamp> {
             "Error converting {value} to TIMESTAMP: {}",
             e
         ))),
-        Ok(result) => Ok(Timestamp::from_milliseconds(result)),
+        Ok(result) => cast_to_Timestamp_i64(result),
     }
 }
 
@@ -3190,7 +3227,15 @@ macro_rules! cast_ts {
             }
 
             cast_function!(Timestamp, Timestamp, $type_name, $arg_type);
+            cast_from_ts!($type_name, $arg_type);
+        }
+    };
+}
 
+/// Casts from TIMESTAMP, through the number of milliseconds since the epoch.
+macro_rules! cast_from_ts {
+    ($type_name: ident, $arg_type: ty) => {
+        ::paste::paste! {
             #[doc(hidden)]
                         pub fn [<cast_to_ $type_name _Timestamp>](value: Timestamp) -> SqlResult<$arg_type> {
                 match cast_to_i64_Timestamp(value) {
@@ -3214,8 +3259,9 @@ cast_ts!(i8, i8);
 cast_ts!(u32, u32);
 cast_ts!(u16, u16);
 cast_ts!(u8, u8);
-cast_ts!(f, F32);
-cast_ts!(d, F64);
+// The casts from floating point to TIMESTAMP are defined separately
+cast_from_ts!(f, F32);
+cast_from_ts!(d, F64);
 
 //////// casts to TimestampTz
 
@@ -3286,7 +3332,7 @@ pub fn cast_to_TimestampTz_u64(value: u64) -> SqlResult<TimestampTz> {
             "Error converting {value} to TIMESTAMP WITH TIME ZONE: {}",
             e
         ))),
-        Ok(result) => Ok(TimestampTz::from_milliseconds(result)),
+        Ok(result) => cast_to_TimestampTz_i64(result),
     }
 }
 
@@ -4094,6 +4140,86 @@ mod tests {
         assert!(cast_to_Date_s(s("-0001-01-01")).is_err());
         assert!(cast_to_Date_s(s("+10000-01-01")).is_err());
         assert!(cast_to_Date_s(s("0001-01-01")).is_ok());
+    }
+
+    #[test]
+    fn timestamp_casts_out_of_range() {
+        // An out-of-range result is an error, not a panic, so SAFE_CAST produces NULL
+        use crate::{
+            cast_to_Timestamp_i64, cast_to_Timestamp_s, cast_to_Timestamp_u64,
+            cast_to_TimestampTz_s, cast_to_TimestampTz_u64,
+        };
+
+        let millis = |text: &str| {
+            chrono::NaiveDate::parse_from_str(text, "%Y-%m-%d")
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .and_utc()
+                .timestamp_millis()
+        };
+        let year_10000 = millis("+10000-01-01");
+        assert!(cast_to_Timestamp_i64(year_10000).is_err());
+        assert!(cast_to_Timestamp_i64(year_10000 - 1000).is_ok());
+        assert!(cast_to_Timestamp_i64(i64::MAX).is_err());
+        assert!(cast_to_Timestamp_u64(year_10000 as u64).is_err());
+        assert!(cast_to_TimestampTz_u64(year_10000 as u64).is_err());
+
+        let s = SqlString::from_ref;
+        assert!(cast_to_Timestamp_s(s("0000-06-01 00:00:00")).is_err());
+        assert!(cast_to_Timestamp_s(s("+10000-01-01")).is_err());
+        assert!(cast_to_Timestamp_s(s("9999-12-31 23:59:59.999999")).is_ok());
+        assert!(cast_to_TimestampTz_s(s("0001-01-01 00:00:00 +05:00")).is_err());
+        assert!(cast_to_TimestampTz_s(s("0001-01-01 05:00:00 +05:00")).is_ok());
+    }
+
+    #[test]
+    fn integer_casts_to_timestamp_keep_milliseconds() {
+        // Signed and unsigned integers give the same timestamp
+        use crate::{
+            cast_to_Timestamp_i64, cast_to_Timestamp_u64, cast_to_TimestampTz_i64,
+            cast_to_TimestampTz_u64,
+        };
+
+        let unsigned = cast_to_Timestamp_u64(1500).unwrap();
+        assert_eq!(unsigned, cast_to_Timestamp_i64(1500).unwrap());
+        assert_eq!(unsigned.microseconds(), 1_500_000);
+        assert_eq!(
+            cast_to_Timestamp_i64(-1500).unwrap().microseconds(),
+            -1_500_000
+        );
+        let unsigned = cast_to_TimestampTz_u64(1500).unwrap();
+        assert_eq!(unsigned, cast_to_TimestampTz_i64(1500).unwrap());
+    }
+
+    #[test]
+    fn fractional_milliseconds_to_timestamp() {
+        // A fraction of a millisecond is rounded to the nearest microsecond, ties to even
+        use crate::{
+            SqlResult, Timestamp, cast_to_Timestamp_SqlDecimal, cast_to_Timestamp_d,
+            cast_to_Timestamp_f,
+        };
+        use dbsp::algebra::{F32, F64};
+
+        let micros = |ts: SqlResult<Timestamp>| ts.unwrap().microseconds();
+        let decimal = |value: i128| SqlDecimal::<10, 4>::new(value, 4).unwrap();
+        assert_eq!(
+            micros(cast_to_Timestamp_SqlDecimal(decimal(102_000))),
+            10_200
+        );
+        assert_eq!(
+            micros(cast_to_Timestamp_SqlDecimal(decimal(-15_000))),
+            -1_500
+        );
+        assert_eq!(micros(cast_to_Timestamp_SqlDecimal(decimal(10_005))), 1_000);
+        assert_eq!(micros(cast_to_Timestamp_SqlDecimal(decimal(10_015))), 1_002);
+        // 4.35 * 1000 is 4349.999... in binary floating point
+        assert_eq!(micros(cast_to_Timestamp_d(F64::new(4.35))), 4_350);
+        assert_eq!(micros(cast_to_Timestamp_d(F64::new(-1.5))), -1_500);
+        assert_eq!(micros(cast_to_Timestamp_f(F32::new(1.5))), 1_500);
+        assert!(cast_to_Timestamp_d(F64::new(f64::NAN)).is_err());
+        assert!(cast_to_Timestamp_d(F64::new(f64::INFINITY)).is_err());
+        assert!(cast_to_Timestamp_d(F64::new(1e300)).is_err());
     }
 
     #[test]
