@@ -16,6 +16,16 @@ Source edition can be found on github.
   date: for example, `DATE '9999-12-31' + INTERVAL '1' DAY` produced
   `10000-01-01`.
 
+- Incompatible change (SQL): the same applies to `TIMESTAMP` and
+  `TIMESTAMP WITH TIME ZONE` computations, whose legal range is
+  `0001-01-01 00:00:00` to `9999-12-31 23:59:59.999999`.
+
+- Incompatible change (SQL): a cast from a number to `TIMESTAMP` keeps
+  the fraction of a second, as documented: `CAST(1500 AS TIMESTAMP)` is
+  now `1970-01-01 00:00:01.500`, and `CAST(1.5e0 AS TIMESTAMP)` is
+  `1970-01-01 00:00:00.0015`.  Before this change, the result had no
+  fractional seconds (`1970-01-01 00:00:01`).
+
 - Incompatible change (SQL): a cast from `DOUBLE` or `REAL` to `DECIMAL`
   now gives the same result as Calcite.  It uses the shortest decimal form
   of the value, then truncates it to the scale.  Before, the cast
