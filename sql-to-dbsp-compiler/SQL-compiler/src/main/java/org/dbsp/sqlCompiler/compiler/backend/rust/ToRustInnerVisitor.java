@@ -633,18 +633,25 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(expression);
         if (expression.getType().mayBeNull)
             this.builder.append("Some(");
-        this.builder.append("Arc::new(vec!(");
-        if (expression.data.size() > 1)
-            this.builder.increase();
-        for (DBSPExpression exp: expression.data) {
-            exp.accept(this);
-            this.builder.append(",");
+        if (expression.data.isEmpty()) {
+            // Rust cannot always infer the element type of an empty vector
+            this.builder.append("Arc::new(Vec::<");
+            expression.getElementType().accept(this);
+            this.builder.append(">::new())");
+        } else {
+            this.builder.append("Arc::new(vec!(");
             if (expression.data.size() > 1)
-                this.builder.newline();
+                this.builder.increase();
+            for (DBSPExpression exp : expression.data) {
+                exp.accept(this);
+                this.builder.append(",");
+                if (expression.data.size() > 1)
+                    this.builder.newline();
+            }
+            if (expression.data.size() > 1)
+                this.builder.decrease();
+            this.builder.append("))");
         }
-        if (expression.data.size() > 1)
-            this.builder.decrease();
-        this.builder.append("))");
         if (expression.getType().mayBeNull)
             this.builder.append(")");
         this.pop(expression);

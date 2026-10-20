@@ -996,6 +996,22 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 +----+-------------------------+
                 (7 rows)""");
     }
+
+    @Test
+    public void testOverArrayAggEmptyFrame() {
+        // An empty frame gives an empty array, also when the elements are nullable
+        this.qst("""
+                SELECT x, ARRAY_AGG(y) OVER (ORDER BY x RANGE BETWEEN 3 PRECEDING AND 1 PRECEDING) AS a
+                FROM (VALUES (1, 10), (2, NULL), (6, 30)) AS t(x, y);
+                +---+------+
+                | x | a    |
+                +---+------+
+                | 1 | {}   |
+                | 2 | {10} |
+                | 6 | {}   |
+                +---+------+
+                (3 rows)""");
+    }
     
     @Test
     public void testArrayIntersect() {

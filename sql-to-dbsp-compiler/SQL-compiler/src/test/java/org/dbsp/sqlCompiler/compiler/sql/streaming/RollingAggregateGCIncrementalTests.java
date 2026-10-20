@@ -1,8 +1,15 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.DifferentialTester;
 import org.dbsp.sqlCompiler.compiler.sql.tools.TablePair;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseIntoArrayAgg;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.junit.Assert;
 import org.junit.Test;
 
 import javax.annotation.Nullable;
@@ -10,7 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-/** GC of rolling aggregates. */
+/** GC of rolling aggregates, and the state of ARRAY_AGG after {@link FuseIntoArrayAgg}. */
 public class RollingAggregateGCIncrementalTests extends StreamingTestBase {
     /** Insert a row whose window covers row 60 once the waterline of ts is far past 60.
      * Expected outputs validated with Postgres. */
@@ -296,5 +303,320 @@ public class RollingAggregateGCIncrementalTests extends StreamingTestBase {
         tester.insert(row(0, 230, 230), row(0, 231, 231), row(0, 232, 232));
         tester.insert(Set.of("N", "L"), row(0, 222, 9), row(1, 222, 10));
         tester.delete(Set.of("N", "L"), row(0, 230, 230));
+    }
+
+    /** The number of array types in the values of all aggregate operators of the circuit */
+    private static int storedArrays(CompilerCircuitStream ccs) {
+        int[] count = new int[1];
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPAggregateOperatorBase operator) {
+                new InnerVisitor(this.compiler()) {
+                    @Override
+                    public void postorder(DBSPTypeArray type) {
+                        count[0]++;
+                    }
+                }.apply(operator.getOutputIndexedZSetType().elementType);
+            }
+        });
+        return count[0];
+    }
+
+    @Test
+    public void issue7507() {
+        // Validated with Postgres: ARRAY_AGG(c IGNORE NULLS) as array_agg(c) FILTER (WHERE c IS NOT NULL),
+        // ARRAY_DISTINCT as ARRAY(SELECT DISTINCT unnest(..)), ARRAY_MAX(TRANSFORM(.., x -> x * 2)) as max(x * 2) over unnest
+        // Fused: 2 aggregates of 3; SUM is not an ARRAY_AGG
+        var ccs = this.getCCS("""
+                CREATE TABLE t(k INT, c INT);
+                CREATE VIEW v AS
+                SELECT k, SUM(c) AS s,
+                       CARDINALITY(ARRAY_DISTINCT(ARRAY_AGG(c IGNORE NULLS))) AS d,
+                       ARRAY_MAX(TRANSFORM(ARRAY_AGG(c), x -> x * 2)) AS m
+                FROM t GROUP BY k;""");
+        ccs.step("INSERT INTO t VALUES (1, 10), (1, 10), (1, 20), (1, NULL), (2, NULL);",
+                """
+                         k | s  | d | m  | weight
+                        -------------------------
+                         1 | 40 | 2 | 40 | 1
+                         2 |    | 0 |    | 1""");
+        ccs.step("REMOVE FROM t VALUES (1, 20);",
+                """
+                         k | s  | d | m  | weight
+                        -------------------------
+                         1 | 40 | 2 | 40 | -1
+                         1 | 20 | 1 | 20 | 1""");
+        ccs.step("REMOVE FROM t VALUES (2, NULL);",
+                """
+                         k | s  | d | m  | weight
+                        -------------------------
+                         2 |    | 0 |    | -1""");
+        Assert.assertEquals(0, storedArrays(ccs));
+    }
+
+    @Test
+    public void issue7507OneOfTwo() {
+        // Validated with Postgres: ARRAY_MAX and ARRAY_MIN as max and min over unnest
+        // Fused: 1 aggregate of 2; the second is read by two columns
+        var ccs = this.getCCS("""
+                CREATE TABLE t(k INT, c INT);
+                CREATE VIEW v AS
+                SELECT k, CARDINALITY(ARRAY_DISTINCT(ARRAY_AGG(c IGNORE NULLS))) AS d,
+                       ARRAY_MAX(ARRAY_AGG(c)) AS m, ARRAY_MIN(ARRAY_AGG(c)) AS n
+                FROM t GROUP BY k;""");
+        ccs.step("INSERT INTO t VALUES (1, 10), (1, 10), (1, 20), (1, NULL), (2, NULL);",
+                """
+                         k | d | m  | n  | weight
+                        -------------------------
+                         1 | 2 | 20 | 10 | 1
+                         2 | 0 |    |    | 1""");
+        ccs.step("REMOVE FROM t VALUES (1, 20);",
+                """
+                         k | d | m  | n  | weight
+                        -------------------------
+                         1 | 2 | 20 | 10 | -1
+                         1 | 1 | 10 | 10 | 1""");
+        // Both ARRAY_AGGs are computed by one fold, which keeps one array
+        Assert.assertEquals(1, storedArrays(ccs));
+    }
+
+    @Test
+    public void issue7507Window() {
+        // Validated with Postgres: array_agg(c) FILTER (WHERE c IS NOT NULL) OVER (..)
+        // Fused: 1 aggregate of 1
+        var ccs = this.getCCS("""
+                CREATE TABLE t(p INT, ts INT NOT NULL, c INT);
+                CREATE VIEW v AS
+                SELECT p, ts, c, CARDINALITY(ARRAY_DISTINCT(ARRAY_AGG(c IGNORE NULLS) OVER
+                    (PARTITION BY p ORDER BY ts RANGE BETWEEN 2 PRECEDING AND CURRENT ROW))) AS d
+                FROM t;""");
+        ccs.step("INSERT INTO t VALUES (1, 1, 10), (1, 2, 10), (1, 3, 20), (1, 6, NULL), (2, 1, 5);",
+                """
+                         p | ts | c  | d | weight
+                        -------------------------
+                         1 | 1  | 10 | 1 | 1
+                         1 | 2  | 10 | 1 | 1
+                         1 | 3  | 20 | 2 | 1
+                         1 | 6  |    | 0 | 1
+                         2 | 1  | 5  | 1 | 1""");
+        ccs.step("REMOVE FROM t VALUES (1, 2, 10);",
+                """
+                         p | ts | c  | d | weight
+                        -------------------------
+                         1 | 2  | 10 | 1 | -1""");
+        Assert.assertEquals(0, storedArrays(ccs));
+    }
+
+    @Test
+    public void issue7507Join() {
+        // Validated with Postgres.  Fused: 1 aggregate of 1
+        var ccs = this.getCCS("""
+                CREATE TABLE t(k INT NOT NULL, c INT);
+                CREATE VIEW v AS
+                SELECT t.k, t.c, CARDINALITY(ARRAY_DISTINCT(a.arr)) AS d
+                FROM t JOIN (SELECT k, ARRAY_AGG(c IGNORE NULLS) AS arr FROM t GROUP BY k) a ON t.k = a.k;""");
+        ccs.step("INSERT INTO t VALUES (1, 10), (1, 30), (1, 20), (1, NULL), (2, NULL);",
+                """
+                         k | c  | d | weight
+                        --------------------
+                         1 | 10 | 3 | 1
+                         1 | 20 | 3 | 1
+                         1 | 30 | 3 | 1
+                         1 |    | 3 | 1
+                         2 |    | 0 | 1""");
+        ccs.step("REMOVE FROM t VALUES (1, 20);",
+                """
+                         k | c  | d | weight
+                        --------------------
+                         1 | 10 | 3 | -1
+                         1 | 20 | 3 | -1
+                         1 | 30 | 3 | -1
+                         1 |    | 3 | -1
+                         1 | 10 | 2 | 1
+                         1 | 30 | 2 | 1
+                         1 |    | 2 | 1""");
+        Assert.assertEquals(0, storedArrays(ccs));
+    }
+
+    @Test
+    public void issue7507MapIndex() {
+        // Validated with Postgres.  Fused: 1 aggregate of 1
+        var ccs = this.getCCS("""
+                CREATE TABLE t(k INT NOT NULL, c INT);
+                CREATE TABLE s(x INT NOT NULL);
+                CREATE VIEW w AS
+                SELECT s.x, a.k
+                FROM (SELECT k, ARRAY_AGG(c IGNORE NULLS) AS arr FROM t GROUP BY k) a
+                JOIN s ON s.x = COALESCE(CARDINALITY(ARRAY_DISTINCT(a.arr)), 0);""");
+        ccs.step("""
+                INSERT INTO t VALUES (1, 10), (1, 30), (1, 20), (1, NULL), (2, NULL);
+                INSERT INTO s VALUES (0), (1), (2), (3);""",
+                """
+                         x | k | weight
+                        ---------------
+                         0 | 2 | 1
+                         3 | 1 | 1""");
+        ccs.step("REMOVE FROM t VALUES (1, 20);",
+                """
+                         x | k | weight
+                        ---------------
+                         3 | 1 | -1
+                         2 | 1 | 1""");
+        Assert.assertEquals(0, storedArrays(ccs));
+    }
+
+    @Test
+    public void issue7507TwoProducers() {
+        // Validated with Postgres.  Fused: 2 aggregates of 2, one on each side of the join
+        var ccs = this.getCCS("""
+                CREATE TABLE t(k INT NOT NULL, c INT);
+                CREATE TABLE s(k INT NOT NULL, c INT);
+                CREATE VIEW v AS
+                SELECT a.k, CARDINALITY(ARRAY_DISTINCT(a.arr)) AS d, ARRAY_MAX(TRANSFORM(b.arr, x -> x * 2)) AS m
+                FROM (SELECT k, ARRAY_AGG(c IGNORE NULLS) AS arr FROM t GROUP BY k) a
+                JOIN (SELECT k, ARRAY_AGG(c) AS arr FROM s GROUP BY k) b ON a.k = b.k;""");
+        ccs.step("""
+                INSERT INTO t VALUES (1, 10), (1, 10), (1, 20), (1, NULL), (2, NULL);
+                INSERT INTO s VALUES (1, 5), (1, 7), (2, NULL), (3, 1);""",
+                """
+                         k | d | m  | weight
+                        --------------------
+                         1 | 2 | 14 | 1
+                         2 | 0 |    | 1""");
+        ccs.step("REMOVE FROM t VALUES (1, 20);",
+                """
+                         k | d | m  | weight
+                        --------------------
+                         1 | 2 | 14 | -1
+                         1 | 1 | 14 | 1""");
+        Assert.assertEquals(0, storedArrays(ccs));
+    }
+
+    @Test
+    public void issue7507Windows() {
+        // Validated with Postgres.  Fused: 3 aggregates of 3, behind one star join
+        var ccs = this.getCCS("""
+                CREATE TABLE t(p INT, ts INT NOT NULL, c INT);
+                CREATE VIEW v AS
+                SELECT p, ts, c,
+                    CARDINALITY(ARRAY_DISTINCT(ARRAY_AGG(c IGNORE NULLS) OVER
+                        (PARTITION BY p ORDER BY ts RANGE BETWEEN 2 PRECEDING AND CURRENT ROW))) AS d2,
+                    CARDINALITY(ARRAY_DISTINCT(ARRAY_AGG(c IGNORE NULLS) OVER
+                        (PARTITION BY p ORDER BY ts RANGE BETWEEN 3 PRECEDING AND CURRENT ROW))) AS d3,
+                    CARDINALITY(ARRAY_DISTINCT(ARRAY_AGG(c IGNORE NULLS) OVER
+                        (PARTITION BY p ORDER BY ts RANGE BETWEEN 4 PRECEDING AND CURRENT ROW))) AS d4
+                FROM t;""");
+        ccs.step("INSERT INTO t VALUES (1, 1, 10), (1, 2, 10), (1, 3, 20), (1, 6, NULL), (2, 1, 5);",
+                """
+                         p | ts | c  | d2 | d3 | d4 | weight
+                        -----------------------------------
+                         1 | 1  | 10 | 1  | 1  | 1  | 1
+                         1 | 2  | 10 | 1  | 1  | 1  | 1
+                         1 | 3  | 20 | 2  | 2  | 2  | 1
+                         1 | 6  |    | 0  | 1  | 2  | 1
+                         2 | 1  | 5  | 1  | 1  | 1  | 1""");
+        ccs.step("REMOVE FROM t VALUES (1, 2, 10);",
+                """
+                         p | ts | c  | d2 | d3 | d4 | weight
+                        -----------------------------------
+                         1 | 2  | 10 | 1  | 1  | 1  | -1
+                         1 | 6  |    | 0  | 1  | 2  | -1
+                         1 | 6  |    | 0  | 1  | 1  | 1""");
+        Assert.assertEquals(0, storedArrays(ccs));
+    }
+
+    @Test
+    public void issue7507EmptyWindow() {
+        // Fused: 1 aggregate of 1.  The frame excludes the current row, so the first row of each partition
+        // has an empty frame, where ARRAY_AGG is an empty array and d is 0.  Validated with Postgres for
+        // the other rows (Postgres returns NULL for empty data, we return an empty array.)
+        var ccs = this.getCCS("""
+                CREATE TABLE t(p INT, ts INT NOT NULL, c INT);
+                CREATE VIEW v AS
+                SELECT p, ts, c, CARDINALITY(ARRAY_DISTINCT(ARRAY_AGG(c IGNORE NULLS) OVER
+                    (PARTITION BY p ORDER BY ts RANGE BETWEEN 3 PRECEDING AND 1 PRECEDING))) AS d
+                FROM t;""");
+        ccs.step("INSERT INTO t VALUES (1, 1, 10), (1, 2, 10), (1, 3, 20), (1, 6, NULL), (2, 1, 5);",
+                """
+                         p | ts | c  | d | weight
+                        -------------------------
+                         1 | 1  | 10 | 0 | 1
+                         1 | 2  | 10 | 1 | 1
+                         1 | 3  | 20 | 1 | 1
+                         1 | 6  |    | 1 | 1
+                         2 | 1  | 5  | 0 | 1""");
+        ccs.step("REMOVE FROM t VALUES (1, 2, 10);",
+                """
+                         p | ts | c  | d | weight
+                        -------------------------
+                         1 | 2  | 10 | 1 | -1""");
+        Assert.assertEquals(0, storedArrays(ccs));
+    }
+
+    @Test
+    public void issue7507Ordered() {
+        // Validated with Postgres.  Fused: 2 aggregates of 2; the index is cheap, and its result is an INT
+        var ccs = this.getCCS("""
+                CREATE TABLE t(k INT, c INT);
+                CREATE VIEW v AS
+                SELECT k, (ARRAY_AGG(c ORDER BY c))[2] AS second, CARDINALITY(ARRAY_AGG(DISTINCT c)) AS d
+                FROM t GROUP BY k;""");
+        ccs.step("INSERT INTO t VALUES (1, 30), (1, 10), (1, 20), (1, 10), (2, 5);",
+                """
+                         k | second | d | weight
+                        ------------------------
+                         1 | 10     | 3 | 1
+                         2 |        | 1 | 1""");
+        ccs.step("REMOVE FROM t VALUES (1, 10);",
+                """
+                         k | second | d | weight
+                        ------------------------
+                         1 | 10     | 3 | -1
+                         1 | 20     | 3 | 1""");
+        ccs.step("REMOVE FROM t VALUES (1, 10);",
+                """
+                         k | second | d | weight
+                        ------------------------
+                         1 | 20     | 3 | -1
+                         1 | 30     | 2 | 1""");
+        Assert.assertEquals(0, storedArrays(ccs));
+    }
+
+    @Test
+    public void issue7507ReadsKey() {
+        // Fused: 0 aggregates of 1; the column reads the key and the array
+        var ccs = this.getCCS("""
+                CREATE TABLE t(k INT, c INT);
+                CREATE VIEW v AS SELECT k, ARRAY_CONTAINS(ARRAY_AGG(c), k) AS h FROM t GROUP BY k;""");
+        Assert.assertEquals(1, storedArrays(ccs));
+    }
+
+    @Test
+    public void issue7507EmptyWindowNotNull() {
+        // Fused: 1 aggregate of 1.  An empty frame gives an empty array also when c is NOT NULL, so n is 0
+        // there.  Validated with Postgres for the other rows (Postgres differs for empty data)
+        var ccs = this.getCCS("""
+                CREATE TABLE t(p INT, ts INT NOT NULL, c INT NOT NULL);
+                CREATE VIEW v AS
+                SELECT p, ts, c, CARDINALITY(ARRAY_AGG(c) OVER
+                    (PARTITION BY p ORDER BY ts RANGE BETWEEN 3 PRECEDING AND 1 PRECEDING)) AS n
+                FROM t;""");
+        ccs.step("INSERT INTO t VALUES (1, 1, 10), (1, 2, 10), (1, 3, 20), (1, 6, 30), (2, 1, 5);",
+                """
+                         p | ts | c  | n | weight
+                        -------------------------
+                         1 | 1  | 10 | 0 | 1
+                         1 | 2  | 10 | 1 | 1
+                         1 | 3  | 20 | 2 | 1
+                         1 | 6  | 30 | 1 | 1
+                         2 | 1  | 5  | 0 | 1""");
+        ccs.step("REMOVE FROM t VALUES (1, 3, 20);",
+                """
+                         p | ts | c  | n | weight
+                        -------------------------
+                         1 | 3  | 20 | 2 | -1
+                         1 | 6  | 30 | 1 | -1
+                         1 | 6  | 30 | 0 | 1""");
+        Assert.assertEquals(0, storedArrays(ccs));
     }
 }
