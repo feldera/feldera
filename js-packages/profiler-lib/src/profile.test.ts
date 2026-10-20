@@ -12,6 +12,7 @@ import {
     MissingValue,
     PercentValue,
     PropertyValue,
+    type PropertyValueParser,
     RatioValue,
     SimpleNode,
     StringValue,
@@ -488,6 +489,43 @@ describe('StringValue / BooleanValue', () => {
         expect((b as BooleanValue).value).toBe(true)
         const s = new StringValue('A').average([MissingValue.INSTANCE, new StringValue('A')])
         expect(s.toString()).toBe('A')
+    })
+})
+
+describe('fromJson', () => {
+    const parsers: [string, PropertyValueParser][] = [
+        ['CountValue', CountValue],
+        ['BytesValue', BytesValue],
+        ['BooleanValue', BooleanValue],
+        ['StringValue', StringValue]
+    ]
+
+    it.each([
+        ['CountValue', 1500, CountValue, '1.5K'],
+        ['CountValue', 0, CountValue, '0'],
+        ['BytesValue', 2048, BytesValue, '2KiB'],
+        ['BooleanValue', false, BooleanValue, 'false'],
+        ['StringValue', 'Running', StringValue, 'Running'],
+        ['StringValue', '', StringValue, '']
+    ])('%s parses %j', (name, raw, cls, expected) => {
+        const parser = parsers.find(([n]) => n === name)![1]
+        const value = parser.fromJson(raw)
+        expect(value).toBeInstanceOf(cls)
+        expect(value!.toString()).toBe(expected)
+    })
+
+    // Each class accepts exactly one JSON type, so every other JSON type and every non-finite
+    // number returns `undefined`.
+    const rejected: Record<string, unknown[]> = {
+        CountValue: ['10', true, null, undefined, {}, [1], Number.NaN, Number.POSITIVE_INFINITY],
+        BytesValue: ['10', true, null, undefined, {}, [1], Number.NaN, Number.NEGATIVE_INFINITY],
+        BooleanValue: ['true', 1, 0, null, undefined, {}, []],
+        StringValue: [5, true, null, undefined, {}, ['a']]
+    }
+    it.each(parsers)('%s returns undefined for the wrong JSON type', (name, parser) => {
+        for (const raw of rejected[name]!) {
+            expect(parser.fromJson(raw), `${name}.fromJson(${String(raw)})`).toBeUndefined()
+        }
     })
 })
 
