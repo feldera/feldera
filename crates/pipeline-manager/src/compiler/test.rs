@@ -67,6 +67,7 @@ impl CompilerTest {
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
             gen2_udf_sdk_path: None,
+            gen2_udf_sdk_version: None,
         };
 
         // Test in-memory database

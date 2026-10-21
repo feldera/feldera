@@ -506,7 +506,7 @@ fn map_val_to_limited_program_config(val: ProgramConfigPropVal) -> serde_json::V
             // Exercise setting and unsetting the Gen-2 engine across create and
             // update transitions; a third of valid configs select it.
             runtime_version: if val.4.is_multiple_of(3) {
-                Some(RuntimeSelector::Gen2)
+                Some(RuntimeSelector::Gen2(None))
             } else {
                 None
             },

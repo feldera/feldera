@@ -105,13 +105,19 @@ impl<T: PipelineExecutor> Drop for PipelineAutomaton<T> {
     }
 }
 
+/// The runtime the program configuration selects. A configuration that fails to
+/// parse selects the platform's runtime.
+fn program_runtime_selector(program_config: &serde_json::Value) -> RuntimeSelector {
+    validate_program_config(program_config, false)
+        .map(|config| config.runtime_version())
+        .unwrap_or_default()
+}
+
 /// Whether the program configuration selects the Gen-2 engine, which runs the
 /// pipeline directly and so compiles no pipeline binary (only program info is
 /// delivered). A configuration that fails to parse is treated as not Gen-2.
 fn program_config_is_gen2(program_config: &serde_json::Value) -> bool {
-    validate_program_config(program_config, false)
-        .map(|config| config.runtime_version().is_gen2())
-        .unwrap_or(false)
+    program_runtime_selector(program_config).is_gen2()
 }
 
 /// Whether more than `duration` has passed between `since` and `now`. A
@@ -152,7 +158,7 @@ fn platform_version_predates(platform_version: &str, rename: Version) -> bool {
 fn pinned_runtime_predates(program_config: &serde_json::Value, rename: Version) -> bool {
     validate_program_config(program_config, false)
         .map(|config| match config.runtime_version() {
-            RuntimeSelector::Platform(_) | RuntimeSelector::Gen2 => false,
+            RuntimeSelector::Platform(_) | RuntimeSelector::Gen2(_) => false,
             RuntimeSelector::Version(tag) => {
                 platform_version_predates(tag.trim_start_matches('v'), rename)
             }
@@ -1411,8 +1417,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // then launches the engine) and name the program info artifact by its own
         // integrity checksum. A normal pipeline builds a binary URL and names the
         // program info by the binary source checksum.
-        let engine_is_gen2 = program_config_is_gen2(&pipeline.program_config);
-        let (program_binary_url, program_info_source_checksum) = if engine_is_gen2 {
+        let runtime_selector = program_runtime_selector(&pipeline.program_config);
+        let (program_binary_url, program_info_source_checksum) = if runtime_selector.is_gen2() {
             (String::new(), program_info_integrity_checksum.clone())
         } else {
             let Some(source_checksum) = pipeline.program_binary_source_checksum.as_ref() else {
@@ -1497,7 +1503,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 &program_binary_url,
                 &program_info_url,
                 pipeline.program_version,
-                engine_is_gen2,
+                &runtime_selector,
                 legacy_spelling,
             )
             .await
@@ -2031,7 +2037,7 @@ mod test {
     use crate::db::storage_postgres::StoragePostgres;
     use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineDescr, PipelineId};
     use crate::db::types::program::{
-        ProgramInfo, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
+        ProgramInfo, ProgramStatus, RuntimeSelector, RustCompilationInfo, SqlCompilationInfo,
     };
     use crate::db::types::resources_status::ResourcesStatus;
     use crate::db::types::storage::StorageStatus;
@@ -2204,7 +2210,7 @@ mod test {
             _: &str,
             _: &str,
             _: Version,
-            _is_gen2: bool,
+            _: &RuntimeSelector,
             _legacy_spelling: LegacySpelling,
         ) -> Result<(), ManagerError> {
             Ok(())

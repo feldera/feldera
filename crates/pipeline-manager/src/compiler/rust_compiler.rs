@@ -1365,8 +1365,8 @@ pub async fn resolve_runtime_sha(
     match runtime_version {
         RuntimeSelector::Sha(sha) => Ok(sha.clone()),
         RuntimeSelector::Platform(platform_sha) => Ok(platform_sha.clone()),
-        RuntimeSelector::Gen2 => unreachable!(
-            "a Gen-2 program builds its UDF library against the UDF SDK; no runtime SHA is resolved"
+        RuntimeSelector::Gen2(_) => unreachable!(
+            "a Gen2 program builds its UDF library against the UDF SDK; no runtime SHA is resolved"
         ),
         RuntimeSelector::Version(version) => {
             let repo_location = runtime_version.runtime_sources(config);
@@ -2905,6 +2905,7 @@ mod test {
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
             gen2_udf_sdk_path: None,
+            gen2_udf_sdk_version: None,
             precompile: false,
         };
 
