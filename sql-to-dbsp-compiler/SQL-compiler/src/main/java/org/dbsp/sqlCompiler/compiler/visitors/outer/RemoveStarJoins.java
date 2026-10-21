@@ -40,6 +40,11 @@ public class RemoveStarJoins extends Repeat {
         super(compiler, new RemoveStarJoinsPass(compiler));
     }
 
+    @Override
+    public String getName() {
+        return "RemoveStarJoins";
+    }
+
     static class RemoveStarJoinsPass extends CircuitCloneVisitor {
         RemoveStarJoinsPass(DBSPCompiler compiler) {
             super(compiler, false);

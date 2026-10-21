@@ -49,7 +49,7 @@ public class ExpandAggregates extends Passes {
     final AppendOnly appendOnly;
 
     public ExpandAggregates(DBSPCompiler compiler, DBSPVariablePath weightVar) {
-        super("OptimizeAggregates", compiler);
+        super("ExpandAggregates", compiler);
         this.appendOnly = new AppendOnly(compiler);
         this.add(this.appendOnly);
         this.add(new ExpandStreamAggregates(compiler, weightVar, this.appendOnly::isAppendOnly));

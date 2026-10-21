@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
@@ -52,11 +53,46 @@ import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.Utilities;
 
+import java.util.HashSet;
+import java.util.Set;
+import java.util.TreeSet;
+
 /** All optimizations applied to circuits. */
 public class CircuitOptimizer extends Passes {
+    /** Names of the passes that {@link ProgramMetadata#DISABLE_OPTIMIZATIONS} lists. */
+    final Set<String> disabled;
+    /** Names of all the passes, sorted. */
+    final Set<String> passNames;
+
     public CircuitOptimizer(DBSPCompiler compiler) {
         super("Optimizer", compiler);
+        this.disabled = new HashSet<>(compiler.metadata.disabledOptimizations());
+        this.passNames = new TreeSet<>();
         this.createOptimizer();
+        this.checkDisabled();
+    }
+
+    /** Add {@code pass} unless {@link ProgramMetadata#DISABLE_OPTIMIZATIONS} lists its name. */
+    @Override
+    public void add(CircuitTransform pass) {
+        String name = pass.getName();
+        this.passNames.add(name);
+        if (!this.disabled.contains(name))
+            super.add(pass);
+    }
+
+    /** Warn about each name in {@link ProgramMetadata#DISABLE_OPTIMIZATIONS} that is not
+     * the name of a pass. */
+    void checkDisabled() {
+        for (String name : this.compiler.metadata.disabledOptimizations()) {
+            if (this.passNames.contains(name))
+                continue;
+            this.compiler.reportWarning(
+                    this.compiler.metadata.getPosition(ProgramMetadata.DISABLE_OPTIMIZATIONS),
+                    "Unknown optimization", Utilities.singleQuote(name) +
+                            " is not the name of a compiler pass; the passes are: " +
+                            String.join(", ", this.passNames));
+        }
     }
 
     static class StopOnError extends CircuitVisitor {

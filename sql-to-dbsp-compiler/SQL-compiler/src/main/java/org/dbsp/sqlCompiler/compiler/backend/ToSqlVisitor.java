@@ -114,7 +114,7 @@ public class ToSqlVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPStringLiteral literal) {
         if (literal.value != null)
-            this.appendable.append(Utilities.doubleQuote(literal.value, false));
+            this.appendable.append("'" + literal.value.replace("'", "''") + "'");
         else
             this.appendable.append(DBSPNullLiteral.NULL);
         return VisitDecision.STOP;

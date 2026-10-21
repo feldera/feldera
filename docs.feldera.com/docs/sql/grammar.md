@@ -829,6 +829,26 @@ generate code using the new feature of "star joins", which are a
 simple form of multi-joins.  We expect that option will be removed in
 the near future.
 
+`FELDERA_DISABLE_OPTIMIZATIONS` is a string containing a comma-separated list
+of compiler passes.  The compiler does not run the passes in the list.
+Use this option to work around a compiler bug, or to find which
+optimization causes a problem.  Example:
+`SET FELDERA_DISABLE_OPTIMIZATIONS = 'FuseExpensiveMaps,RemoveUselessLeftJoins';`.
+The names are case-sensitive.  For a name that is not the name of a
+compiler pass, the compiler gives a warning with the list of all the
+pass names.
+
+:::warning
+Incorrect use of this option can produce unexpected results.  The
+compiler does not check if a pass in the list is necessary: without a
+necessary pass, the compilation can fail, or the pipeline can compute
+incorrect results.  The names and the order of the compiler passes
+are not stable: a new release can change, remove, or reorder them
+without notice.  After a change of this option, the pipeline can fail
+to restart from a checkpoint, or it may need to
+[bootstrap](/pipelines/modifying#bootstrapping).
+:::
+
 If `FELDERA_FLAT_VARIANT` is set to `OFF`, the pipeline reverts to the
 previous runtime representation for values of type
 [`VARIANT`](/sql/json/#the-variant-type).

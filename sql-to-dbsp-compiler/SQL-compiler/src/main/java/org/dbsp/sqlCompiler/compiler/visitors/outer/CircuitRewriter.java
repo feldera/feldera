@@ -1006,4 +1006,9 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     public String toString() {
         return super.toString() + "-" + this.transform;
     }
+
+    @Override
+    public String getName() {
+        return this.transform.getName();
+    }
 }

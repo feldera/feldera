@@ -34,6 +34,6 @@ public class Conditional implements IWritesLogs, CircuitTransform {
 
     @Override
     public String getName() {
-        return this.toString();
+        return this.transform.getName();
     }
 }
