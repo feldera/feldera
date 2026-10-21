@@ -467,21 +467,31 @@ def test_output_connector_orchestration(pipeline_name):
     # The connector is now quiet, and stays quiet however much the pipeline
     # produces. It does not hold the pipeline back either: it reports the
     # output it discards as processed, so its own progress counter passes the
-    # pipeline's count at the moment it went quiet.
-    processed_at_pause = pipeline_stats(pipeline_name)["global_metrics"][
-        "total_processed_records"
-    ]
-    wait_for_condition(
-        "paused connector reports input processed after the pause",
-        lambda: (
-            output_connector_stats(pipeline_name, "v", "sink")["metrics"][
-                "total_processed_input_records"
-            ]
-            > processed_at_pause
-        ),
-        timeout_s=30.0,
-        poll_interval_s=0.5,
-    )
+    # pipeline's count at the moment it went quiet. Its step counter, which
+    # the wait above checks, does not hold back completed steps; this check
+    # shows that its record counter does not hold back completed records or
+    # completion tokens.
+    #
+    # Only with one host: the connector's record counter counts the input of
+    # its own host, but the pipeline's count is the sum over all hosts. The
+    # connector's host can even have no input at all, which keeps its counter
+    # at zero. With more than one host, the coordinator tracks completion by
+    # steps, which the wait above checks.
+    if FELDERA_TEST_NUM_HOSTS == 1:
+        processed_at_pause = pipeline_stats(pipeline_name)["global_metrics"][
+            "total_processed_records"
+        ]
+        wait_for_condition(
+            "paused connector reports input processed after the pause",
+            lambda: (
+                output_connector_stats(pipeline_name, "v", "sink")["metrics"][
+                    "total_processed_input_records"
+                ]
+                > processed_at_pause
+            ),
+            timeout_s=30.0,
+            poll_interval_s=0.5,
+        )
     metrics = output_connector_stats(pipeline_name, "v", "sink")["metrics"]
     assert metrics["transmitted_records"] == paused_at
     assert metrics["queued_records"] == 0
