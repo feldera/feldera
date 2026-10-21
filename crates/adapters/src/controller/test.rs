@@ -1559,6 +1559,344 @@ fn api_transaction_started_during_commit_does_not_stall_it() {
     x_committed.expect("X's commit stalled after Y started");
 }
 
+/// Starts a controller for an API transaction test, with input endpoint
+/// "feeder" that hands the circuit at most 10 records per step.  If
+/// `multi_step_commit` is true, each commit of more than one record takes
+/// more than one step.
+///
+/// Input never triggers a step on its own, because it never reaches
+/// `min_batch_size_records` and the buffering delay is an hour.  The clock
+/// ticks once an hour, so it does not trigger steps either.  Only a commit or
+/// [Controller::request_step] does.
+///
+/// Returns the controller, the endpoint, and the controller's transaction
+/// count after the step that the controller takes when it starts.
+fn start_api_transaction_test(
+    multi_step_commit: bool,
+) -> (Controller, TransactionalInputEndpoint, u64) {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "min_batch_size_records": 1_000_000_000,
+        "max_buffering_delay_usecs": 3_600_000_000u64,
+        "clock_resolution_usecs": 3_600_000_000u64,
+        // A commit processes one chunk of this many records per step.
+        "dev_tweaks": { "splitter_chunk_size_records": 1 },
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        move |circuit_config| {
+            if multi_step_commit {
+                Ok(test_circuit_with_aggregate(circuit_config, 16))
+            } else {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &TestStruct::schema(),
+                    &[None],
+                ))
+            }
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    let feeder = TransactionalInputEndpoint::new();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" },
+        "max_batch_size": 10,
+    }))
+    .unwrap();
+    controller
+        .add_input_endpoint("feeder", endpoint_config, Box::new(feeder.clone()), None)
+        .unwrap();
+
+    wait(
+        || controller.status().global_metrics.total_completed_steps() >= 1,
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .expect("the controller's first step never ran");
+    let transactions = controller.inner.get_transaction_number();
+
+    (controller, feeder, transactions)
+}
+
+/// Each wait in the API transaction tests is for a few steps of a small
+/// circuit.
+const API_TRANSACTION_TIMEOUT_MS: u128 = 20_000;
+
+/// Pushes records `ids` to `feeder`.
+fn push_records(feeder: &TransactionalInputEndpoint, ids: Range<usize>) {
+    feeder.push(
+        &ids.map(|id| format!("{id},true,{id},record-{id}\n"))
+            .collect::<String>(),
+    );
+}
+
+/// Waits until `controller` has committed `records` records and has no
+/// transaction, then returns how many transactions it ran after `before`.
+fn transactions_to_commit(controller: &Controller, records: u64, before: u64) -> u64 {
+    wait(
+        || {
+            controller.status().num_total_processed_records() >= records
+                && controller.inner.get_transaction_state() == TransactionState::None
+        },
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .unwrap_or_else(|()| {
+        panic!(
+            "only {} of {records} records were committed",
+            controller.status().num_total_processed_records()
+        )
+    });
+    controller.inner.get_transaction_number() - before
+}
+
+/// An API transaction committed before any step started it keeps the records
+/// queued for it, in one transaction.
+#[test]
+fn api_transaction_committed_before_it_starts() {
+    let (controller, feeder, before) = start_api_transaction_test(false);
+
+    // No step runs between the start and the commit.
+    controller.start_transaction().unwrap();
+    push_records(&feeder, 0..100);
+    controller.start_commit_transaction().unwrap();
+
+    assert_eq!(transactions_to_commit(&controller, 100, before), 1);
+    controller.stop().unwrap();
+}
+
+/// An API transaction's commit includes every record queued before the
+/// commit request, even more than one step takes from an endpoint.
+#[test]
+fn api_transaction_commit_includes_queued_records() {
+    let (controller, feeder, before) = start_api_transaction_test(false);
+
+    controller.start_transaction().unwrap();
+    controller.request_step();
+    wait(
+        || controller.inner.get_transaction_state().is_started(),
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .expect("the transaction never started");
+
+    // The step trigger ignores this input, so it is all still queued when the
+    // commit request arrives.
+    push_records(&feeder, 0..100);
+    controller.start_commit_transaction().unwrap();
+
+    assert_eq!(transactions_to_commit(&controller, 100, before), 1);
+    controller.stop().unwrap();
+}
+
+/// Waits until `controller` has run a transaction after `before` and has no
+/// transaction open, that is, until a commit that the test requested is done.
+fn wait_for_commit(controller: &Controller, before: u64) {
+    wait(
+        || {
+            controller.inner.get_transaction_number() > before
+                && controller.inner.get_transaction_state() == TransactionState::None
+        },
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .expect("the commit never finished");
+}
+
+/// A connector that commits its own part of an API transaction holds back the
+/// input that it queued after that.  The API commit must not wait for that
+/// input.  (The input goes into the next step's transaction.)
+#[test]
+fn api_transaction_commit_does_not_wait_for_held_back_input() {
+    let (controller, feeder, before) = start_api_transaction_test(false);
+
+    // The connector joins the transaction, sends 5 records, commits its part,
+    // and then queues 95 records for later.
+    controller.start_transaction().unwrap();
+    feeder.start_transaction("t");
+    push_records(&feeder, 0..5);
+    feeder.commit_transaction();
+    push_records(&feeder, 5..100);
+    controller.start_commit_transaction().unwrap();
+
+    wait_for_commit(&controller, before);
+    controller.stop().unwrap();
+}
+
+/// An API commit must not wait for input that a client keeps sending after
+/// the commit request.
+#[test]
+fn api_transaction_commit_is_not_starved_by_later_input() {
+    let (controller, feeder, before) = start_api_transaction_test(false);
+    controller.start_transaction().unwrap();
+    controller.request_step();
+    wait(
+        || controller.inner.get_transaction_state().is_started(),
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .expect("the transaction never started");
+
+    // A client sends 100 records every millisecond, faster than the commit
+    // takes them (10 records per step).
+    let stop = Arc::new(AtomicBool::new(false));
+    let sender = {
+        let feeder = feeder.clone();
+        let stop = stop.clone();
+        std::thread::spawn(move || {
+            let mut id = 0;
+            while !stop.load(Ordering::Acquire) {
+                push_records(&feeder, id..id + 100);
+                id += 100;
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        })
+    };
+    wait(
+        || controller.status().num_buffered_input_records() >= 1000,
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    controller.start_commit_transaction().unwrap();
+    wait_for_commit(&controller, before);
+    stop.store(true, Ordering::Release);
+    sender.join().unwrap();
+    controller.stop().unwrap();
+}
+
+/// An API commit must not wait for input queued in an endpoint that is
+/// removed before it feeds that input.
+#[test]
+fn api_transaction_commit_does_not_wait_for_removed_endpoint() {
+    let (controller, feeder, before) = start_api_transaction_test(false);
+    controller.start_transaction().unwrap();
+    controller.request_step();
+    wait(
+        || controller.inner.get_transaction_state().is_started(),
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .expect("the transaction never started");
+    push_records(&feeder, 0..100);
+
+    // The first step after the commit request removes the endpoint before it
+    // feeds anything.
+    let inner = controller.inner.clone();
+    let endpoint_id = inner.input_endpoint_id_by_name("feeder").unwrap();
+    *controller.inner.input_step_hook.lock().unwrap() = Some(Box::new(move |_| {
+        inner.disconnect_input(&endpoint_id);
+    }));
+    controller.start_commit_transaction().unwrap();
+
+    wait_for_commit(&controller, before);
+    controller.stop().unwrap();
+}
+
+/// In a multihost pipeline, the coordinator commits an API transaction with a
+/// step that feeds no input.  A host must finish the commit in that step even
+/// if the transaction was committed before any step started it, so that every
+/// host reports the same transaction status.
+#[test]
+fn multihost_api_transaction_committed_before_it_starts() {
+    use feldera_types::coordination::{StepAction, StepInputs, StepRequest};
+
+    init_test_logger();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 1,
+        "clock_resolution_usecs": null,
+        "multihost": { "hosts": 1 },
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+    let feeder = TransactionalInputEndpoint::new();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" },
+    }))
+    .unwrap();
+    controller
+        .add_input_endpoint("feeder", endpoint_config, Box::new(feeder.clone()), None)
+        .unwrap();
+
+    // The coordinator has not asked for a step, so none runs.
+    controller.start_transaction().unwrap();
+    push_records(&feeder, 0..100);
+    controller.start_commit_transaction().unwrap();
+
+    let step = controller.step_watcher().borrow().step;
+    controller.set_coordination_request(StepRequest::new(step, StepAction::Step, StepInputs::None));
+    wait(
+        || controller.step_watcher().borrow().step > step,
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .expect("the coordinator's step never ran");
+
+    assert_eq!(
+        controller.inner.get_transaction_state(),
+        TransactionState::None
+    );
+    assert_eq!(controller.status().num_buffered_input_records(), 100);
+    controller.stop().unwrap();
+}
+
+/// An API transaction that is started and committed while another
+/// transaction commits keeps the records queued for it, in one transaction.
+#[test]
+fn api_transaction_committed_during_another_commit() {
+    let (controller, feeder, before) = start_api_transaction_test(true);
+
+    // Transaction X has more records than fit in one chunk, so its commit
+    // takes more than one step.
+    controller.start_transaction().unwrap();
+    controller.request_step();
+    wait(
+        || controller.inner.get_transaction_state().is_started(),
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .expect("transaction X never started");
+    push_records(&feeder, 0..100);
+
+    // Right after the first step of X's commit, a client starts transaction
+    // Y, sends it records, and commits it.
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let y_feeder = feeder.clone();
+    *controller.inner.commit_step_hook.lock().unwrap() = Some(Box::new(move |inner| {
+        let result = inner.start_transaction_from_api().and_then(|_| {
+            push_records(&y_feeder, 100..200);
+            inner.start_commit_transaction_from_api()
+        });
+        sender.send(result.is_ok()).unwrap();
+    }));
+    controller.start_commit_transaction().unwrap();
+    assert!(
+        receiver
+            .recv_timeout(Duration::from_millis(API_TRANSACTION_TIMEOUT_MS as u64))
+            .expect("X's commit finished in one step, so the test cannot run Y during it"),
+        "the API refused to start Y during X's commit"
+    );
+
+    assert_eq!(transactions_to_commit(&controller, 200, before), 2);
+    controller.stop().unwrap();
+}
+
 /// A step must replay even if an ad hoc INSERT whose input it consumed removed
 /// its endpoint before the step was journaled.
 ///

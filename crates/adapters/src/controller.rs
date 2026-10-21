@@ -2912,6 +2912,11 @@ struct CircuitThread {
     /// meantime.
     pending_new_inputs: HashMap<EndpointId, (String, InputEndpointConfig, bool)>,
 
+    /// The number of records that [Self::input_step] fed this step from each
+    /// input endpoint that it polled, or `None` if it did not poll all of them.
+    /// See [CommitTarget::drained].
+    step_feed: Option<HashMap<EndpointId, u64>>,
+
     /// Whether [Self::input_step] fed a replay step to the circuit this step.
     /// Used by [FtState::next_step] to decide whether to advance the replay
     /// cursor (it must not advance on steps that only commit the open replay
@@ -3420,6 +3425,7 @@ impl CircuitThread {
             bootstrapping,
             pending_step_metadata: None,
             pending_new_inputs: HashMap::new(),
+            step_feed: None,
             replay_consumed: false,
             concurrent_phase,
             replay_finalize: false,
@@ -3971,7 +3977,10 @@ impl CircuitThread {
     /// Starts or commits a transaction in the circuit, if the controller's
     /// transaction state calls for it.
     fn advance_transaction(&mut self) -> Result<(), DbspError> {
-        match self.controller.advance_transaction_state() {
+        match self
+            .controller
+            .advance_transaction_state(self.step_feed.as_ref())
+        {
             Some(AdvanceTransaction::Start) => {
                 self.controller.increment_transaction_number();
                 self.circuit.start_transaction()
@@ -4491,6 +4500,7 @@ impl CircuitThread {
         // advance the replay cursor.
         self.pending_step_metadata = None;
         self.pending_new_inputs.clear();
+        self.step_feed = None;
         self.replay_consumed = false;
         // No ingestion during bootstrap, while committing a transaction, or at a
         // replay transaction boundary.
@@ -4792,6 +4802,17 @@ impl CircuitThread {
                     .collect()
             }
         };
+
+        if !self.replaying() && selection.inputs == StepInputs::All {
+            self.step_feed = Some(
+                step_metadata
+                    .iter()
+                    .map(|(&endpoint_id, (_name, results))| {
+                        (endpoint_id, results.amt.records as u64)
+                    })
+                    .collect(),
+            );
+        }
 
         // Defer journaling to `step()`, after `step_circuit` assigns the
         // transaction id that this step's circuit evaluation belongs to.
@@ -7188,6 +7209,7 @@ impl TransactionState {
         matches!(self, TransactionState::Committing { .. })
     }
 
+    #[cfg(test)]
     fn is_started(&self) -> bool {
         matches!(self, TransactionState::Started { .. })
     }
@@ -7454,6 +7476,11 @@ pub struct TransactionInfo {
     /// from its latest step request (see [StepRequest::transaction_id]).
     coordinator_transaction_id: Option<TransactionId>,
 
+    /// In a single-host pipeline, the input that the API committed the current
+    /// transaction with.  The transaction does not start to commit until the
+    /// circuit has it.  `None` if the API has not committed the transaction.
+    commit_target: Option<CommitTarget>,
+
     /// For sending updates to the coordination status to the coordinator.
     sender: tokio::sync::watch::Sender<TransactionCoordination>,
 }
@@ -7473,6 +7500,7 @@ impl TransactionInfo {
             replay_open_transaction_id: None,
             coordinator_members: None,
             coordinator_transaction_id: None,
+            commit_target: None,
             sender,
         }
     }
@@ -7717,6 +7745,7 @@ impl TransactionInfo {
 
     fn clear_initiators(&mut self) {
         self.initiators.clear(self.is_multihost);
+        self.commit_target = None;
         // A report without an id was not counted in the transaction that is
         // committing (see [Self::set_coordinator_transaction]), so it stays
         // for a later transaction.
@@ -9690,21 +9719,16 @@ impl ControllerInner {
     /// Fails if transaction_requested is already None, i.e., there is no transaction in
     /// progress or commit has already been initiated for the current transaction.
     pub fn start_commit_transaction_from_api(&self) -> Result<(), ControllerError> {
+        // Lock the input statuses first, like `input_step`.
+        let statuses = self.status.input_status();
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
         transaction_info.start_commit_transaction_from_api()?;
 
-        // All initiators have committed the transaction before it even started.
-        //
-        // This isn't just a momentary race: it can happen across an arbitrary
-        // amount of time because we only transition `transaction_state` when we
-        // take a step, which we will only do when input arrives.
-        if transaction_info
-            .initiators
-            .is_ready_to_commit(transaction_info.is_multihost)
-            && !transaction_info.transaction_state.is_started()
-        {
-            transaction_info.clear_initiators();
+        // The input queued now belongs to the transaction.  In a multihost
+        // pipeline, the coordinator commits with steps that feed no input.
+        if !transaction_info.is_multihost {
+            transaction_info.commit_target = Some(CommitTarget::new(&statuses));
         }
         transaction_info.update_transaction_status();
         self.unpark_circuit();
@@ -9756,16 +9780,6 @@ impl ControllerInner {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
         transaction_info.commit_transaction_from_connector(endpoint_name)?;
-
-        // All initiators have committed the transaction before it even started.
-        if transaction_info
-            .initiators
-            .is_ready_to_commit(transaction_info.is_multihost)
-            && transaction_info.transaction_state == TransactionState::None
-        {
-            transaction_info.clear_initiators();
-        }
-
         transaction_info.update_transaction_status();
 
         self.unpark_circuit();
@@ -9822,8 +9836,8 @@ impl ControllerInner {
         self.transaction_info.lock().unwrap().transaction_state
     }
 
-    /// Returns true if a transaction is committing, or if a transaction is
-    /// running and its initiators have asked to commit it.
+    /// Returns true if a transaction is committing, or if its initiators have
+    /// asked to commit a transaction, whether or not a step has started it.
     ///
     /// Used to decide whether the circuit needs to perform a step in order to advance
     /// commit processing.
@@ -9836,7 +9850,7 @@ impl ControllerInner {
         } = &*self.transaction_info.lock().unwrap();
 
         match transaction_state {
-            TransactionState::None => false,
+            TransactionState::None => transaction_requested.is_ready_to_commit(*is_multihost),
             TransactionState::Started { .. } => !transaction_requested.is_ongoing(*is_multihost),
             // The API can start the next transaction during a commit, which
             // makes the initiators ongoing again, but the commit still
@@ -9856,14 +9870,33 @@ impl ControllerInner {
             .is_committing()
     }
 
-    /// Advance transaction state before performing a step:
+    /// Advances the transaction state before a step, by applying two rules in
+    /// order:
     ///
-    /// - from None to Started if a transaction is requested by the API or a connector.
-    /// - from Started to Committing if transaction commit is requested
-    /// - from None to Committing if no transaction has been requested.
+    /// - Start: in state None, start a transaction if the API or a connector
+    ///   asked for one, or otherwise an automatic transaction (unless the
+    ///   `disable_auto_transaction` dev tweak is set).
+    ///
+    /// - Commit: in state Started, start to commit once no initiator still
+    ///   adds input to the transaction and the input queued at the API's
+    ///   commit request is in the circuit (see [CommitTarget]).  An automatic
+    ///   transaction has no initiators, so it commits in the step that starts
+    ///   it.
+    ///
+    /// During fault-tolerance replay, a single-host pipeline instead
+    /// reproduces the journaled transaction boundaries.
+    ///
+    /// `feed` is the number of records that this step fed from each input
+    /// endpoint that it polled, or `None` if it did not poll all of them (see
+    /// [CommitTarget::drained]).
     ///
     /// Returns how the transaction is advancing (if it is).
-    fn advance_transaction_state(&self) -> Option<AdvanceTransaction> {
+    fn advance_transaction_state(
+        &self,
+        feed: Option<&HashMap<EndpointId, u64>>,
+    ) -> Option<AdvanceTransaction> {
+        // Lock the input statuses first, like `input_step`.
+        let statuses = self.status.input_status();
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
         let is_multihost = transaction_info.is_multihost;
@@ -9937,38 +9970,50 @@ impl ControllerInner {
                 // Same transaction: keep feeding it; or a commit is in progress.
                 TransactionState::Started { .. } | TransactionState::Committing { .. } => None,
             }
-        } else if transaction_info.initiators.is_ongoing(is_multihost) {
-            // The API and connectors want us to be in a transaction, so start a
-            // new one if there's not one already.
-            match transaction_info.transaction_state {
-                TransactionState::None => {
-                    // Start a new transaction.
-                    let transaction_id = transaction_info.initiators.transaction_id.unwrap();
-                    info!("Transaction {transaction_id}: Starting");
-                    transaction_info.transaction_state = TransactionState::Started {
-                        tid: transaction_id,
-                        start: Instant::now(),
-                        processed_records: self.status.global_metrics.num_total_processed_records(),
-                    };
-                    Some(AdvanceTransaction::Start)
-                }
-                TransactionState::Started { .. } => {
-                    // We are already in a transaction, so there is nothing to do.
-                    None
-                }
-                // Don't start a new transaction until the current transaction has committed.
-                TransactionState::Committing { .. } => None,
-            }
         } else {
-            // The API and connectors want us to not be in a transaction, so
-            // start committing one if we are.
-            match transaction_info.transaction_state {
-                TransactionState::Started {
+            let processed_records = self.status.global_metrics.num_total_processed_records();
+
+            // Start rule.
+            let initiators = &transaction_info.initiators;
+            let started = transaction_info.transaction_state == TransactionState::None
+                && (initiators.is_active(is_multihost)
+                    || !self
+                        .status
+                        .pipeline_config
+                        .global
+                        .dev_tweaks
+                        .disable_auto_transaction());
+            if started {
+                let tid = match transaction_info.initiators.transaction_id {
+                    Some(tid) => {
+                        info!("Transaction {tid}: Starting");
+                        tid
+                    }
+                    None => {
+                        transaction_info.last_transaction_id += 1;
+                        transaction_info.last_transaction_id
+                    }
+                };
+                transaction_info.transaction_state = TransactionState::Started {
                     tid,
-                    start,
+                    start: Instant::now(),
                     processed_records,
-                } => {
-                    // Commit the running transaction.
+                };
+            }
+
+            // Commit rule.
+            if let TransactionState::Started {
+                tid,
+                start,
+                processed_records,
+            } = transaction_info.transaction_state
+                && !transaction_info.initiators.is_ongoing(is_multihost)
+                && transaction_info
+                    .commit_target
+                    .as_ref()
+                    .is_none_or(|target| target.drained(&statuses, feed))
+            {
+                if !started {
                     let duration = start.elapsed();
                     TRANSACTION_INGEST_TIME_MICROSECONDS.record_duration(duration);
                     let n = self.status.global_metrics.num_total_processed_records()
@@ -9982,73 +10027,72 @@ impl ControllerInner {
                         .with_tooltip(|| format!("transaction {tid} ingested {n} records"))
                         .with_start(start)
                         .record();
-                    transaction_info.transaction_state = TransactionState::Committing {
-                        tid,
-                        start: Instant::now(),
-                        processed_records,
-                    };
-                    transaction_info.clear_initiators();
-                    Some(AdvanceTransaction::Commit)
                 }
-                TransactionState::Committing { .. } => {
-                    // Nothing to do.
-                    //
-                    // We know that there must not be any active initiators
-                    // because we cleared them when we started committing the
-                    // transaction (the previous case).  Since then, connectors
-                    // can't initiate a transaction, and the API can, but an
-                    // ongoing initiator takes the branch above and one that
-                    // has already asked to commit was cleared by
-                    // `start_commit_transaction_from_api`, because its
-                    // transaction never started.
-                    assert!(!transaction_info.initiators.is_active(is_multihost));
-                    None
-                }
-                TransactionState::None => {
-                    // We know that there must not be any active initiators
-                    // because:
-                    //
-                    // - If any of them are ongoing, then we wouldn't arrive
-                    //   here; instead, we'd be ensuring that a transaction is
-                    //   running.
-                    //
-                    // - They cannot all be committed, because
-                    //   [ControllerInner::start_commit_transaction_from_api] and
-                    //   [ControllerInner::commit_transaction_from_connector],
-                    //   which are the only paths that commit transactions, both
-                    //   clear all the initiators if they commit the last
-                    //   initiator and no transaction has started.
-                    assert!(!transaction_info.initiators.is_active(is_multihost));
-                    assert!(transaction_info.initiators.transaction_id.is_none());
-
-                    if self
-                        .status
-                        .pipeline_config
-                        .global
-                        .dev_tweaks
-                        .disable_auto_transaction()
-                    {
-                        None
-                    } else {
-                        // Start and instantly commit a new transaction.
-                        transaction_info.last_transaction_id += 1;
-
-                        transaction_info.transaction_state = TransactionState::Committing {
-                            tid: transaction_info.last_transaction_id,
-                            start: Instant::now(),
-                            processed_records: self
-                                .status
-                                .global_metrics
-                                .num_total_processed_records(),
-                        };
-                        Some(AdvanceTransaction::StartAndCommit)
-                    }
-                }
+                transaction_info.transaction_state = TransactionState::Committing {
+                    tid,
+                    start: Instant::now(),
+                    processed_records,
+                };
+                transaction_info.clear_initiators();
+                Some(if started {
+                    AdvanceTransaction::StartAndCommit
+                } else {
+                    AdvanceTransaction::Commit
+                })
+            } else {
+                started.then_some(AdvanceTransaction::Start)
             }
         };
 
         transaction_info.update_transaction_status();
         result
+    }
+}
+
+/// The input that an API commit includes: for each input endpoint, its
+/// [InputEndpointMetrics::total_records] at the commit request.
+#[derive(Clone, Debug)]
+struct CommitTarget(BTreeMap<EndpointId, u64>);
+
+impl CommitTarget {
+    /// Returns the input that the endpoints in `statuses` have received.
+    fn new(statuses: &BTreeMap<EndpointId, InputEndpointStatus>) -> Self {
+        Self(
+            statuses
+                .iter()
+                .map(|(endpoint_id, status)| {
+                    (
+                        *endpoint_id,
+                        status.metrics.total_records.load(Ordering::Acquire),
+                    )
+                })
+                .collect(),
+        )
+    }
+
+    /// Returns true if the endpoints in `statuses` have fed the target input
+    /// to the circuit.
+    ///
+    /// An endpoint also counts as drained if it has no input buffered, if it
+    /// was removed, or if `feed`, the records that this step fed from each
+    /// endpoint that it polled, has none from it.  The last case covers an
+    /// endpoint that this step did not poll, and one that holds its input
+    /// back.  Thus, each step that polls all endpoints either feeds more of
+    /// the queued input or ends the wait, even if other clients keep sending.
+    fn drained(
+        &self,
+        statuses: &BTreeMap<EndpointId, InputEndpointStatus>,
+        feed: Option<&HashMap<EndpointId, u64>>,
+    ) -> bool {
+        self.0.iter().all(|(endpoint_id, target)| {
+            let Some(status) = statuses.get(endpoint_id) else {
+                return true;
+            };
+            status.metrics.circuit_input_records.load(Ordering::Acquire) >= *target
+                || status.metrics.buffered_records.load(Ordering::Acquire) == 0
+                || feed
+                    .is_some_and(|feed| feed.get(endpoint_id).is_none_or(|&records| records == 0))
+        })
     }
 }
 
