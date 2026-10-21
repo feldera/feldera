@@ -13,7 +13,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
  * - Validate contents of nested operators. */
 public class RecursiveComponents extends Passes {
     public RecursiveComponents(DBSPCompiler compiler) {
-        super("Recursive", compiler);
+        super("RecursiveComponents", compiler);
         Graph graph = new Graph(compiler);
         this.add(graph);
         this.add(new FixupViewReferences(compiler, graph.getGraphs()));

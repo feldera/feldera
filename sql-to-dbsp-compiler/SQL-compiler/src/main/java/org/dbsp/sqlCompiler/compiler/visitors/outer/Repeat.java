@@ -73,6 +73,6 @@ public class Repeat implements IWritesLogs, CircuitTransform, ICompilerComponent
 
     @Override
     public String getName() {
-        return "Repeat_" + this.transform.getName();
+        return this.transform.getName();
     }
 }

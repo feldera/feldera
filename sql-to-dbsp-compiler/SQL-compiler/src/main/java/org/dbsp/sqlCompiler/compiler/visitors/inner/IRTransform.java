@@ -13,4 +13,9 @@ public interface IRTransform extends Function<IDBSPInnerNode, IDBSPInnerNode>, I
     void setCircuitContext(DBSPCircuit circuit);
     /** The operator containing the inner node that is being transformed */
     void setOperatorContext(DBSPOperator operator);
+
+    /** Name of the transformation */
+    default String getName() {
+        return this.getClass().getSimpleName();
+    }
 }

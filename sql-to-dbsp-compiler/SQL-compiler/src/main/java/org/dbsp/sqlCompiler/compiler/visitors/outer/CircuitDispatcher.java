@@ -57,4 +57,9 @@ public class CircuitDispatcher extends CircuitVisitor {
     public String toString() {
         return super.toString() + "-" + this.innerVisitor;
     }
+
+    @Override
+    public String getName() {
+        return this.innerVisitor.getName();
+    }
 }

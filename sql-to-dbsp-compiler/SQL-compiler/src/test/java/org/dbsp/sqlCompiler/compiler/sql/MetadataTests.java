@@ -684,6 +684,71 @@ public class MetadataTests extends BaseSQLTests {
         }
     }
 
+    /** A program with a LEFT JOIN that RemoveUselessLeftJoins removes; that pass is the
+     * only one that reports a LEFT JOIN without effect. */
+    static final String USELESS_LEFT_JOIN = """
+            CREATE TABLE t(a INT NOT NULL PRIMARY KEY, c INT);
+            CREATE TABLE s(x INT NOT NULL PRIMARY KEY, y INT);
+            CREATE VIEW v AS SELECT t.a, t.c FROM t LEFT JOIN s ON t.c = s.x;""";
+
+    /** FELDERA_DISABLE_OPTIMIZATIONS skips the passes it lists; spaces around names are ignored. */
+    @Test
+    public void disableOptimization() {
+        String disable = "SET feldera_disable_optimizations = ' CSE,RemoveUselessLeftJoins';\n";
+        for (String setting : List.of("", disable)) {
+            DBSPCompiler compiler = this.testCompiler();
+            compiler.submitStatementsForCompilation(setting + USELESS_LEFT_JOIN);
+            getCircuit(compiler);
+            boolean removed = false;
+            for (var message : compiler.messages.messages) {
+                Assert.assertFalse(message.toString(), message.errorType.equals("Unknown optimization"));
+                removed |= message.warning && message.errorType.equals("LEFT JOIN has no effect");
+            }
+            Assert.assertEquals(setting, setting.isEmpty(), removed);
+        }
+    }
+
+    /** Overwriting a variable, even with different case, produces a warning; the last value wins. */
+    @Test
+    public void overwriteSetting() {
+        DBSPCompiler compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation("""
+                SET FELDERA_DISABLE_OPTIMIZATIONS = 'RemoveUselessLeftJoins';
+                SET feldera_disable_optimizations = 'CSE';
+                """ + USELESS_LEFT_JOIN);
+        getCircuit(compiler);
+        TestUtil.assertMessagesContain(compiler, """
+                warning: Overwriting value: Variable 'feldera_disable_optimizations' is already set to 'RemoveUselessLeftJoins'
+                    2|SET feldera_disable_optimizations = 'CSE';
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^""");
+        // The second list does not name RemoveUselessLeftJoins, so the pass runs
+        TestUtil.assertMessagesContain(compiler, "LEFT JOIN has no effect");
+    }
+
+    /** A name that is not a pass, or a pass name with the wrong case, produces a warning. */
+    @Test
+    public void disableUnknownOptimization() {
+        DBSPCompiler compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation("""
+                SET feldera_disable_optimizations = 'CSE,Fake,cse';
+                CREATE TABLE t(a INT);
+                CREATE VIEW v AS SELECT * FROM t;""");
+        getCircuit(compiler);
+        String text = " is not the name of a compiler pass; the passes are: AdjustSqlIndex, BalancedJoins, CSE,";
+        TestUtil.assertMessagesContain(compiler, "warning: Unknown optimization: 'Fake'" + text);
+        TestUtil.assertMessagesContain(compiler, "warning: Unknown optimization: 'cse'" + text);
+        TestUtil.assertMessagesContain(compiler, """
+                    1|SET feldera_disable_optimizations = 'CSE,Fake,cse';
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                """);
+        Assert.assertEquals(2, compiler.messages.warningCount());
+        // The list names the visitors that wrapper passes run, not the wrappers
+        String messages = compiler.messages.toString();
+        Assert.assertTrue(messages.contains(" RemoveNoops,"));
+        for (String wrapper : List.of("OptimizeWithGraph", "Conditional", "CircuitRewriter", "CircuitDispatcher"))
+            Assert.assertFalse(wrapper, Pattern.compile("\\b" + wrapper + "\\b").matcher(messages).find());
+    }
+
     @Test
     public void issue5436() {
         DBSPCompiler compiler = this.chattyCompiler();
