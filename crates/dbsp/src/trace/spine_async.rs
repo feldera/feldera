@@ -1367,7 +1367,7 @@ where
                 BLOOM_FILTER_HIT_RATE_PERCENT,
                 Vec::new(),
                 MetaItem::Percent {
-                    numerator: bloom_filter_stats.hits as u64,
+                    numerator: bloom_filter_stats.hits as i64,
                     denominator: bloom_filter_stats.hits as u64 + bloom_filter_stats.misses as u64,
                 },
             ),
@@ -1390,7 +1390,7 @@ where
                 ROARING_FILTER_HIT_RATE_PERCENT,
                 Vec::new(),
                 MetaItem::Percent {
-                    numerator: roaring_filter_stats.hits as u64,
+                    numerator: roaring_filter_stats.hits as i64,
                     denominator: roaring_filter_stats.hits as u64
                         + roaring_filter_stats.misses as u64,
                 },
@@ -1414,7 +1414,7 @@ where
                 RANGE_FILTER_HIT_RATE_PERCENT,
                 Vec::new(),
                 MetaItem::Percent {
-                    numerator: range_filter_stats.hits as u64,
+                    numerator: range_filter_stats.hits as i64,
                     denominator: range_filter_stats.hits as u64 + range_filter_stats.misses as u64,
                 },
             ),
@@ -1821,11 +1821,12 @@ impl SpineStats {
         self.cache_stats += cache_stats;
     }
 
-    /// Reports the percentage (in range `0..=100`) of updates that merging
-    /// eliminated.
+    /// Reports the percentage of updates that merging eliminated. The
+    /// percentage is negative when the merges output more updates than their
+    /// inputs.
     fn merge_reduction(&self) -> MetaItem {
         MetaItem::Percent {
-            numerator: self.pre_len - self.post_len,
+            numerator: self.pre_len as i64 - self.post_len as i64,
             denominator: self.pre_len,
         }
     }
@@ -2809,8 +2810,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{BackpressureWait, LooseBatchCount};
+    use super::{BackpressureWait, LooseBatchCount, SpineStats};
+    use crate::circuit::metadata::MetaItem;
     use crate::profile::{ParkReason, current_park_reason};
+    use crate::storage::buffer_cache::CacheStats;
     use std::{
         future::Future,
         sync::Arc,
@@ -2857,6 +2860,21 @@ mod tests {
         assert_eq!(wait.as_mut().poll(&mut context), Poll::Pending);
         drop(wait);
         assert_eq!(current_park_reason(), ParkReason::Unattributed);
+    }
+
+    /// Merges that output more updates than their inputs report a negative
+    /// reduction.
+    #[test]
+    fn merge_reduction_can_be_negative() {
+        let mut stats = SpineStats::default();
+        stats.report_merge(10, 15, CacheStats::default());
+        assert_eq!(
+            stats.merge_reduction(),
+            MetaItem::Percent {
+                numerator: -5,
+                denominator: 10
+            }
+        );
     }
 }
 

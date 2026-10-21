@@ -799,7 +799,7 @@ where
 
         // Find the percentage of consolidated outputs
         let output_redundancy = MetaItem::Percent {
-            numerator: (stats.output_tuples - stats.output_batch_stats.total_size()) as u64,
+            numerator: stats.output_tuples as i64 - stats.output_batch_stats.total_size() as i64,
             denominator: stats.output_tuples as u64,
         };
 
