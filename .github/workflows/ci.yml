@@ -71,6 +71,7 @@ jobs:
 
   invoke-validate-demos:
     name: Validate pipeline-manager Demos
+    needs: [invoke-build-java]
     uses: ./.github/workflows/validate-demos.yml
     secrets: inherit
 
@@ -294,6 +295,21 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
 
+  cancel-if-validate-demos-failed:
+    name: Cancel if Demo Validation Failed
+    needs: [invoke-validate-demos]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
   cancel-if-publish-crates-dry-run-failed:
     name: Cancel if Publish Crates Dry Run Failed
     needs: [invoke-publish-crates-dry-run]
@@ -329,6 +345,7 @@ jobs:
       - invoke-tests-integration-runtime
       - invoke-tests-java
       - invoke-publish-crates-dry-run
+      - invoke-validate-demos
     steps:
       - name: Finalize Workflow
         run: echo "All tasks completed!"
