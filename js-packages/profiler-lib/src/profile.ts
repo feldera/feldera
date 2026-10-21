@@ -1057,6 +1057,14 @@ export class Measurement {
      * for every node and every worker.  Named "runtime_elapsed" in legacy profiles. */
     public static readonly RUNTIME_ELAPSED = "circuit_runtime_elapsed_seconds";
 
+    /** Metric counting the steps a circuit took.  Every worker takes the same steps, so the
+     * readings repeat rather than add up.  Named "steps" in legacy profiles. */
+    public static readonly STEPS_COUNT = "steps_count";
+
+    /** Metric counting how many times a node ran, once per step of its circuit, so it repeats
+     * across workers like the steps.  Named "invocations" in legacy profiles. */
+    public static readonly INVOCATIONS_COUNT = "invocations_count";
+
     constructor(
         readonly property: string,
         readonly value: Option<PropertyValue>,
@@ -1107,7 +1115,12 @@ export class Measurement {
             case "count": {
                 let m = metric.value as CountMetricValue;
                 let count = CountValue.fromCountMetric(m);
-                return [new Measurement(metric_id, Option.some(count), AggregationMode.Sum)];
+                // Counts add up, except the counts of steps, which every worker repeats.
+                const mode = metric.metric_id === Measurement.STEPS_COUNT
+                    || metric.metric_id === Measurement.INVOCATIONS_COUNT
+                    ? AggregationMode.Max
+                    : AggregationMode.Sum;
+                return [new Measurement(metric_id, Option.some(count), mode)];
             }
             case "hits":
             case "misses": {
@@ -1325,12 +1338,15 @@ export class Measurement {
             case "input batches/max size":
             case "output batches/max size":
                 return Measurement.tagged(new CountValue(value[0]), AggregationMode.Max);
+            case "invocations":
+            case "steps":
+                // Every worker takes the same steps, so these repeat rather than add up.
+                return Measurement.tagged(new CountValue(value[0]), AggregationMode.Max);
             case "Bloom filter size":
             case "Bloom filter bits/key":
             case "Bloom filter hits":
             case "Bloom filter misses":
             case "total size":
-            case "invocations":
             case "allocated bytes":
             case "used bytes":
             case "shared bytes":
@@ -1343,7 +1359,6 @@ export class Measurement {
             case "right inputs":
             case "computed outputs":
             case "inputs":
-            case "steps":
             case "input batches/batches":
             case "input batches/total records":
             case "output batches/batches":
