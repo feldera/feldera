@@ -68,8 +68,8 @@ pub trait PipelineExecutor: Sync + Send {
     ///
     /// When `runtime_selector` selects the Gen2 engine, no pipeline binary was
     /// compiled: the executor launches the Gen2 engine and ignores
-    /// `program_binary_url`. An executor that can select engine builds runs the
-    /// one `gen2:<sha>` names. A Gen2 program with Rust UDFs references its UDF
+    /// `program_binary_url`. An executor runs the engine build `gen2:<sha>` names,
+    /// or refuses the pipeline if it cannot select builds. A Gen2 program with Rust UDFs references its UDF
     /// library in the program info; the executor fetches it from the compiler
     /// server and passes it to the engine (`--udf-library`).
     ///

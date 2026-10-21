@@ -2172,6 +2172,8 @@ mod test {
         deployment_location: String,
         /// The config each of `is_provisioned`, `check`, `stop` and `clear` received.
         received: Arc<std::sync::Mutex<Vec<(&'static str, serde_json::Value)>>>,
+        /// The runtime selector each `provision` received.
+        provisioned_runtimes: Arc<std::sync::Mutex<Vec<RuntimeSelector>>>,
     }
 
     #[async_trait]
@@ -2210,9 +2212,13 @@ mod test {
             _: &str,
             _: &str,
             _: Version,
-            _: &RuntimeSelector,
+            runtime_selector: &RuntimeSelector,
             _legacy_spelling: LegacySpelling,
         ) -> Result<(), ManagerError> {
+            self.provisioned_runtimes
+                .lock()
+                .unwrap()
+                .push(runtime_selector.clone());
             Ok(())
         }
 
@@ -2269,6 +2275,7 @@ mod test {
         automaton: PipelineAutomaton<MockRunner>,
         _follow_request_sender: Sender<FollowRequest>,
         received: Arc<std::sync::Mutex<Vec<(&'static str, serde_json::Value)>>>,
+        provisioned_runtimes: Arc<std::sync::Mutex<Vec<RuntimeSelector>>>,
     }
 
     impl AutomatonTest {
@@ -2524,6 +2531,7 @@ mod test {
             .unwrap_or_else(|| ("127.0.0.1".to_string(), 8085));
 
         let received = Arc::new(std::sync::Mutex::new(vec![]));
+        let provisioned_runtimes = Arc::new(std::sync::Mutex::new(vec![]));
         let automaton = PipelineAutomaton::new(
             CommonConfig {
                 platform_version: "v0".to_string(),
@@ -2553,6 +2561,7 @@ mod test {
             MockRunner {
                 deployment_location,
                 received: received.clone(),
+                provisioned_runtimes: provisioned_runtimes.clone(),
             },
             Duration::from_secs(1),
             follow_request_receiver,
@@ -2564,6 +2573,7 @@ mod test {
             automaton,
             _follow_request_sender,
             received,
+            provisioned_runtimes,
         }
     }
 
@@ -2685,6 +2695,33 @@ mod test {
         assert!(
             error.message.contains("Gen-2 engine does not support multihost pipelines"),
             "unexpected error: {}", error.message
+        );
+    }
+
+    /// A program pinned to a Gen2 engine build hands that pin to the executor.
+    #[tokio::test]
+    #[rustfmt::skip]
+    async fn gen2_engine_pin_reaches_provision() {
+        crate::enable_test_unstable_features();
+        let sha = "d0b45d8f87056c9d2c89c6f63b2531b0c5905f9b";
+        let (mut server, _temp, mut test) = setup_complete_with(
+            json!({}),
+            json!({ "runtime_version": format!("gen2:{sha}"), "profile": "unoptimized", "cache": false }),
+        ).await;
+        let artifacts_path = format!(
+            "/artifacts/{}/1/{}/none/{}",
+            test.automaton.pipeline_id,
+            "not-used-program-info-integrity-checksum",
+            "not-used-program-info-integrity-checksum",
+        );
+        mock_endpoints(&mut server, vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))]).await;
+
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick().await;
+        test.tick().await; // provision()
+        assert_eq!(
+            *test.provisioned_runtimes.lock().unwrap(),
+            vec![RuntimeSelector::Gen2(Some(sha.to_string()))]
         );
     }
 

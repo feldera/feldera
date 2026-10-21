@@ -195,10 +195,10 @@ fn default_sql_compiler_path() -> String {
     "sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar".to_string()
 }
 
-/// Default location of the Rust compilation `Cargo.lock`.
 /// The `feldera-udf` release that Gen2 UDFs build against by default.
 const DEFAULT_GEN2_UDF_SDK_VERSION: &str = "0.0.1";
 
+/// Default location of the Rust compilation `Cargo.lock`.
 fn default_compilation_cargo_lock_path() -> String {
     "Cargo.lock".to_string()
 }
