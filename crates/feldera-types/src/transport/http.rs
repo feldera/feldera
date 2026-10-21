@@ -1,3 +1,4 @@
+use crate::coordination::Step;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use utoipa::ToSchema;
@@ -38,13 +39,27 @@ pub struct HttpInputConfig {
 /// The `sequence_number` field stores the offset of the chunk relative to the
 /// start of the stream and can be used to implement reliable delivery.
 /// The payload is stored in the `bin_data`, `text_data`, or `json_data` field
-/// depending on the data format used.
+/// depending on the data format used.  A chunk without a payload marks the
+/// end of a step's output, when it carries `processed_steps`, or is a
+/// keep-alive.
 #[derive(Deserialize, ToSchema)]
 pub struct Chunk {
     pub sequence_number: u64,
     /// `true` when this chunk is part of the initial snapshot delivered in
     /// `send_snapshot` mode; `false` for incremental delta updates.
     pub snapshot: bool,
+
+    /// The number of steps whose output precedes this chunk, this step
+    /// included.  `Some` only on the empty chunk that follows a step's output,
+    /// so a chunk with `processed_steps` carries no `bin_data`, `text_data`
+    /// or `json_data`.  The output of a record that the pipeline ingested in
+    /// step `n` has been delivered once `processed_steps > n`.  The
+    /// `/completion_status` endpoint reports the `step` that a completion
+    /// token waits for in the same unit, so a client that has received a
+    /// chunk with `processed_steps` at or above that `step` is guaranteed to
+    /// have received every update for the token.
+    #[schema(value_type = Option<u64>)]
+    pub processed_steps: Option<Step>,
 
     // Exactly one of the following fields must be set.
     // This should be an enum inlined with `#[serde(flatten)]`, but `utoipa`

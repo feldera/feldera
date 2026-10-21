@@ -716,6 +716,9 @@ pub trait OutputConsumer: Send {
     );
     fn batch_end(&mut self);
 
+    /// See OutputEndpoint::steps_processed.
+    fn steps_processed(&mut self, _count: Step) {}
+
     /// Returns the approximate amount of memory used by the connector's
     /// underlying implementation.  For the Kafka connectors, for example, this
     /// is the amount of memory used by librdkafka.  Not all connectors use a
@@ -796,6 +799,10 @@ impl OutputConsumer for PostprocessedConsumer {
     fn batch_end(&mut self) {
         self.postprocessor.batch_end();
         self.inner.batch_end();
+    }
+
+    fn steps_processed(&mut self, count: Step) {
+        self.inner.steps_processed(count);
     }
 
     fn memory(&self) -> usize {

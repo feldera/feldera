@@ -4660,6 +4660,43 @@ mod test_http_helpers {
         (chunks, records)
     }
 
+    /// Reads chunks up to and including the first one whose `processed_steps`
+    /// reaches `steps`, and returns them with the records they carry.
+    pub(super) async fn collect_output_chunks_through_step<S>(
+        response: &mut S,
+        steps: u64,
+    ) -> (Vec<crate::transport::http::Chunk>, Vec<TestStruct>)
+    where
+        S: Stream<Item = Result<web::Bytes, PayloadError>> + Unpin,
+    {
+        let mut chunks = Vec::new();
+        let mut records = Vec::new();
+        let mut data = Vec::new();
+
+        loop {
+            let bytes = response.next().await.unwrap().unwrap();
+            data.extend_from_slice(&bytes);
+
+            if data.last() != Some(&b'\n') {
+                continue;
+            }
+
+            for chunk in serde_json::Deserializer::from_slice(&data)
+                .into_iter::<crate::transport::http::Chunk>()
+            {
+                let chunk = chunk.unwrap();
+                records.extend(decode_chunk_records(&chunk));
+                let done = chunk.processed_steps.is_some_and(|count| count >= steps);
+                chunks.push(chunk);
+                if done {
+                    return (chunks, records);
+                }
+            }
+
+            data.clear();
+        }
+    }
+
     pub(super) async fn wait_for_completion(server: &TestServer, token: &str) {
         let completed = async_wait(
             || async {
@@ -4951,8 +4988,8 @@ mod test_http_helpers {
 #[cfg(test)]
 mod test_http {
     use super::test_http_helpers::{
-        collect_output_chunks, flatten_and_sort_batches, get_completion_status, get_stats,
-        print_stats, start_test_server, wait_for_completion,
+        collect_output_chunks, collect_output_chunks_through_step, flatten_and_sort_batches,
+        get_completion_status, get_stats, print_stats, start_test_server, wait_for_completion,
     };
     use crate::{
         ensure_default_crypto_provider,
@@ -6548,6 +6585,91 @@ mod test_http {
         // Receive output first, otherwise the token never gets marked as complete.
         TestHttpReceiver::wait_for_output_unordered(&mut egress_resp, &data).await;
         wait_for_completion(&server, &token).await;
+    }
+
+    /// A step that changes nothing in the view still ends with its chunk, so
+    /// a client can wait for a token whose input changed nothing.
+    #[actix_web::test]
+    async fn test_egress_step_chunk_without_output() {
+        ensure_default_crypto_provider();
+
+        let config_json = json!({"name": "test", "inputs": {}, "outputs": {}});
+        let server = start_test_server(&config_json, Uuid::default()).await;
+        start_pipeline(&server).await;
+
+        let mut egress = server
+            .post("/egress/test_output1?format=csv")
+            .send()
+            .await
+            .unwrap();
+        assert!(egress.status().is_success());
+
+        // An insert and a delete of the same record in one transaction leave
+        // `test_output1`, the identity of `test_input1`, as it was.
+        start_transaction(&server).await;
+        let record = r#"{"id": 1, "b": true, "i": 5, "s": "x"}"#;
+        let mut response = server
+            .post("/ingress/test_input1?format=json&update_format=insert_delete")
+            .send_body(format!(
+                "{{\"insert\": {record}}}\n{{\"delete\": {record}}}"
+            ))
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = response.body().await.unwrap();
+        assert!(status.is_success(), "{}", String::from_utf8_lossy(&body));
+        let CompletionTokenResponse { token } = serde_json::from_slice(&body).unwrap();
+        commit_transaction(&server).await;
+        wait_for_completion(&server, &token).await;
+
+        let step = get_completion_status(&server, &token).await.step.unwrap();
+        let (chunks, records) = timeout(
+            Duration::from_secs(10),
+            collect_output_chunks_through_step(&mut egress, step),
+        )
+        .await
+        .expect("the chunk that ends the step arrives although the step changed nothing");
+        assert!(records.is_empty(), "{records:?}");
+        assert!(chunks.iter().all(|chunk| chunk.text_data.is_none()));
+    }
+
+    /// An `/egress` stream marks the end of each step's output with an empty chunk whose
+    /// `processed_steps` is in the unit of the `step` that
+    /// `/completion_status` reports, after the step's output; the steps of a
+    /// transaction close only with the commit, after its output.
+    #[actix_web::test]
+    async fn test_egress_step_chunks() {
+        ensure_default_crypto_provider();
+
+        let config_json = json!({"name": "test", "inputs": {}, "outputs": {}});
+        let server = start_test_server(&config_json, Uuid::default()).await;
+        start_pipeline(&server).await;
+
+        let mut egress = server
+            .post("/egress/test_output1?format=csv")
+            .send()
+            .await
+            .unwrap();
+        assert!(egress.status().is_success());
+
+        let data = test_batches(0, 10);
+        let token = send_input_no_wait(&server, &data).await;
+        wait_for_completion(&server, &token).await;
+        let step = get_completion_status(&server, &token).await.step.unwrap();
+        let (chunks, mut records) = collect_output_chunks_through_step(&mut egress, step).await;
+        records.sort();
+        assert_eq!(records, flatten_and_sort_batches(&data));
+        assert!(chunks.last().unwrap().text_data.is_none());
+
+        start_transaction(&server).await;
+        let data = test_batches(10, 10);
+        let token = send_input_no_wait(&server, &data).await;
+        commit_transaction(&server).await;
+        wait_for_completion(&server, &token).await;
+        let step = get_completion_status(&server, &token).await.step.unwrap();
+        let (_chunks, mut records) = collect_output_chunks_through_step(&mut egress, step).await;
+        records.sort();
+        assert_eq!(records, flatten_and_sort_batches(&data));
     }
 
     /// Regression test for issue #6231.

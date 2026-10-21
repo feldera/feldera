@@ -9142,6 +9142,12 @@ impl ControllerInner {
                     &controller,
                 );
 
+                // After the output and before the count that completes tokens moves.
+                encoder.consumer().steps_processed(
+                    output_buffer
+                        .buffered_processed_records
+                        .total_processed_steps,
+                );
                 controller
                     .status
                     .output_buffered_batches(endpoint_id, output_buffer.buffered_processed_records);
@@ -9175,6 +9181,11 @@ impl ControllerInner {
                     // If the buffer is empty, report it as flushed to update processed record count
                     // on the endpoint without actually flushing it.
                     if output_buffer.is_empty() {
+                        encoder.consumer().steps_processed(
+                            output_buffer
+                                .buffered_processed_records
+                                .total_processed_steps,
+                        );
                         controller.status.output_buffered_batches(
                             endpoint_id,
                             output_buffer.buffered_processed_records,
@@ -9197,6 +9208,14 @@ impl ControllerInner {
                             transaction,
                             &controller,
                         );
+                    }
+
+                    // The steps of an open transaction carry no count; they
+                    // are reported with the commit, after its output.
+                    if let Some(processed) = &processed_records {
+                        encoder
+                            .consumer()
+                            .steps_processed(processed.total_processed_steps);
                     }
 
                     // `num_records` output records have been transmitted --
@@ -10339,6 +10358,10 @@ impl OutputConsumer for OutputProbe {
                     Some("outprobe_batch_start"),
                 );
             })
+    }
+
+    fn steps_processed(&mut self, count: Step) {
+        self.endpoint.steps_processed(count);
     }
 
     fn push_buffer(&mut self, buffer: &[u8], num_records: usize) {

@@ -8918,7 +8918,7 @@
       },
       "Chunk": {
         "type": "object",
-        "description": "A set of updates to a SQL table or view.\n\nThe `sequence_number` field stores the offset of the chunk relative to the\nstart of the stream and can be used to implement reliable delivery.\nThe payload is stored in the `bin_data`, `text_data`, or `json_data` field\ndepending on the data format used.",
+        "description": "A set of updates to a SQL table or view.\n\nThe `sequence_number` field stores the offset of the chunk relative to the\nstart of the stream and can be used to implement reliable delivery.\nThe payload is stored in the `bin_data`, `text_data`, or `json_data` field\ndepending on the data format used.  A chunk without a payload marks the\nend of a step's output, when it carries `processed_steps`, or is a\nkeep-alive.",
         "required": [
           "sequence_number",
           "snapshot"
@@ -8934,6 +8934,13 @@
             "type": "object",
             "description": "JSON payload.",
             "nullable": true
+          },
+          "processed_steps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The number of steps whose output precedes this chunk, this step\nincluded.  `Some` only on the empty chunk that follows a step's output,\nso a chunk with `processed_steps` carries no `bin_data`, `text_data`\nor `json_data`.  The output of a record that the pipeline ingested in\nstep `n` has been delivered once `processed_steps > n`.  The\n`/completion_status` endpoint reports the `step` that a completion\ntoken waits for in the same unit, so a client that has received a\nchunk with `processed_steps` at or above that `step` is guaranteed to\nhave received every update for the token.",
+            "nullable": true,
+            "minimum": 0
           },
           "sequence_number": {
             "type": "integer",

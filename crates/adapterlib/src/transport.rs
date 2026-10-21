@@ -1469,6 +1469,11 @@ pub trait OutputEndpoint: Send {
         Ok(())
     }
 
+    /// Notifies the output endpoint that it has received the output of the
+    /// first `count` steps of the pipeline, which the output thread reports
+    /// before it counts those steps as processed.
+    fn steps_processed(&mut self, _count: Step) {}
+
     /// Whether this endpoint is [fault tolerant](crate#fault-tolerance).
     fn is_fault_tolerant(&self) -> bool;
 
