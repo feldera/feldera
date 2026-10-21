@@ -667,6 +667,92 @@ two orders without a transaction cause three changes.
 Before the commit, `query()` shows the contents of the views from
 *before* the start of the transaction.
 
+### Pausing a pipeline
+
+`pipeline.pause()` pauses all the input connectors of a running
+pipeline: the connectors that the program declares, the HTTP input
+connectors, and the clock connector that supplies the
+value of `NOW()`.  `pipeline.resume()` starts them again.  A paused
+pipeline continues to run:
+
+| While paused, the pipeline | Notes |
+|----------------------------|-------|
+| Processes the input that its connectors have already buffered | The pipeline continues to empty the buffers, in steps, until it has processed all this input. |
+| Answers ad-hoc queries | `pipeline.query()` works as usual. |
+| Accepts input from the SDK only when the input is forced | `pipeline.input_json()` raises a `RuntimeError` unless the call passes `force=True`. |
+| Does not advance the clock | While the pipeline is paused, the clock connector does not initiate new steps, as it does normally. The value returned by `NOW()` changes in steps initiated by another reason, for example to process buffered or forced input.  Such a step *may* advance the clock: either reading the system clock, or, (when `now_http_driven` is configured) to the value supplied by the last `advance_clock()` call executed. |
+
+`pause()` returns when the pipeline reports the `PAUSED` status, but the
+pipeline is not necessarily inactive:
+
+* The pipeline may still be processing the input in the buffers, so the
+  views can change after `pause()` returns.
+* A connector may process the stop request *after* the `pause()` call returns,
+  so it can even buffer more records after the `pause()` call has completed.
+  There currently is no way to check that all the connectors
+  are truly stopped; see [issue 7568](https://github.com/feldera/feldera/issues/7568).
+
+When the test program is the only source of input, no connector delivers input
+after `pause()`.  The test can wait until the pipeline has processed
+all the input that it received, by comparing the following counters:
+
+```python
+def queues_empty(pipeline: Pipeline) -> bool:
+    """True when the pipeline has processed all the input that it received."""
+    # Read "completed" before "received" using two stats() calls.
+    # This ensures each record counted at the output
+    # was also counted at the input.
+    #
+    # Count input records whose changes reached all the outputs, including the
+    # listeners: a slow listener delays the completion.
+    completed = pipeline.stats().global_metrics.total_completed_records
+    # Count input records received by connectors.
+    received = pipeline.stats().global_metrics.total_input_records
+    # When the two are equal, the pipeline has processed all inputs received.
+    return completed == received
+
+
+def check_paused_pipeline_processes_queued_input(pipeline: Pipeline) -> None:
+    pipeline.start()
+    # Do not wait: the pipeline queues the rows, and processes them later.
+    pipeline.input_json(
+        "orders",
+        [{"id": i, "customer": "alice", "amount": 1} for i in range(1000)],
+        wait=False,
+    )
+    pipeline.pause()
+    wait_for_condition("all input is processed", lambda: queues_empty(pipeline))
+    queued = list(pipeline.query("SELECT * FROM customer_totals"))
+
+    # A paused pipeline accepts input from the SDK only when it is forced.
+    pipeline.input_json("orders", [{"id": 1000, "customer": "bob", "amount": 5}], force=True)
+    forced = list(pipeline.query("SELECT * FROM customer_totals ORDER BY customer"))
+
+    # A running pipeline accepts input without force.
+    pipeline.resume()
+    pipeline.input_json("orders", [{"id": 1001, "customer": "bob", "amount": 7}])
+    resumed = list(pipeline.query("SELECT * FROM customer_totals ORDER BY customer"))
+    pipeline.stop(force=True)
+    pipeline.clear_storage()
+
+    assert queued == [{"customer": "alice", "total": 1000, "num_orders": 1000}]
+    assert forced == [
+        {"customer": "alice", "total": 1000, "num_orders": 1000},
+        {"customer": "bob", "total": 5, "num_orders": 1},
+    ]
+    assert resumed == [
+        {"customer": "alice", "total": 1000, "num_orders": 1000},
+        {"customer": "bob", "total": 12, "num_orders": 2},
+    ]
+```
+
+`total_completed_records` counts the input records that the pipeline
+has processed and whose changes it has sent to all its outputs.
+`total_input_records` counts the input records that the connectors
+have received.  Within one `stats()` call, the pipeline reads the
+received input first, so a single call can show two equal counts while
+some input is still in a queue.
+
 ### Testing programs that use the real-time clock `NOW()`
 
 The `NOW()` function returns the current time of the system clock, in
@@ -936,6 +1022,7 @@ in a single test: the pipeline will stop at the first error.
 | A comparison fails, but the rows or changes are correct. | Their order is not defined. | Use `ORDER BY` in the query, or `sorted_dicts()`. |
 | A view with `LIMIT` and an ad-hoc query with the same `LIMIT` may return different rows. | When rows are tied on the `ORDER BY` columns, or there is no `ORDER BY`, `LIMIT` can keep any of the tied rows.  The pipeline and [ad-hoc queries](/sql/ad-hoc) use different SQL engines, which choose different rows. | Add columns to `ORDER BY`, for example the primary key. |
 | `pipeline.input_json()` does not return during a transaction. | The pipeline processes the input only at commit. | Invoke with `wait=False`. |
+| `pipeline.input_json()` raises `RuntimeError: Pipeline is paused, set force=True to push data`. | The pipeline is paused. | Resume the pipeline, or pass `force=True`.  See [Pausing a pipeline](#pausing-a-pipeline). |
 | A floating-point value does not compare equal. | `pipeline.query()` returns floating-point values as Python `Decimal` values, and rounding differs between engines. | Round the value, or `CAST` it to `VARCHAR` in the SQL view. |
 | A value has an unexpected type. | Listeners return pandas values, for example `pandas.Timestamp` for `TIMESTAMP`.  `pipeline.query()` returns JSON values, for example strings for `TIMESTAMP`. | Compare with values of the same type. |
 | Column names do not match. | Feldera converts names that are not quoted to lowercase. | Use lowercase names in the expected rows. |
@@ -953,7 +1040,7 @@ of hanging.  Most blocking SDK calls accept a time limit:
 | Call | Time limit | Error when the time is up |
 |------|------------|---------------------------|
 | `pipeline.input_json()` | `wait_timeout_s=...` | `FelderaTimeoutError` |
-| `pipeline.start()`, `pipeline.start_paused()`, `pipeline.resume()` | `timeout_s=...` | `TimeoutError` |
+| `pipeline.start()`, `pipeline.start_paused()`, `pipeline.pause()`, `pipeline.resume()` | `timeout_s=...` | `TimeoutError` |
 | `pipeline.commit_transaction()` | `timeout_s=...` | `TimeoutError` |
 | `pipeline.wait_for_completion()` | `timeout_s=...` | `TimeoutError` |
 | `pipeline.stop()`, `pipeline.clear_storage()` | `timeout_s=...` | `FelderaTimeoutError` |
