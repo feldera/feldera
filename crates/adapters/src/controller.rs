@@ -9657,11 +9657,17 @@ impl ControllerInner {
         self.transaction_info.lock().unwrap().transaction_state
     }
 
-    /// Returns true if there is a transaction in progress (transaction_state != None)
-    /// and the client requested to commit the transaction (transaction_requested = None).
+    /// Returns true if a transaction is committing, or if a transaction is in
+    /// progress and every initiator has requested to commit it.
     ///
     /// Used to decide whether the circuit needs to perform a step in order to advance
     /// commit processing.
+    ///
+    /// A commit that has started always needs more steps, whatever the
+    /// initiators say: they were cleared when the commit started, so an
+    /// initiator now belongs to a later transaction.  A later API transaction
+    /// may start during the commit, and if it stays idle, the commit must still
+    /// finish.
     pub fn transaction_commit_requested(&self) -> bool {
         let TransactionInfo {
             is_multihost,
@@ -9670,8 +9676,11 @@ impl ControllerInner {
             ..
         } = &*self.transaction_info.lock().unwrap();
 
-        *transaction_state != TransactionState::None
-            && !transaction_requested.is_ongoing(*is_multihost)
+        match transaction_state {
+            TransactionState::None => false,
+            TransactionState::Started { .. } => !transaction_requested.is_ongoing(*is_multihost),
+            TransactionState::Committing { .. } => true,
+        }
     }
 
     /// Returns true if (transaction_state == Committing).

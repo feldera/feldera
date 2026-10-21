@@ -9373,3 +9373,96 @@ fn paused_connector_holds_transaction() {
     assert!(paused().is_empty());
     controller.stop().unwrap();
 }
+
+/// A commit that takes several steps finishes even if a later API transaction
+/// starts during the commit and stays idle.  Before, the step trigger stopped
+/// forcing steps once the later transaction started, so the commit waited for
+/// new input or for the later commit (D55).
+#[test]
+fn commit_not_blocked_by_later_idle_transaction() {
+    init_test_logger();
+
+    let records = 10_000;
+    let mut file = NamedTempFile::new().unwrap();
+    {
+        let mut out = std::io::BufWriter::new(file.as_file_mut());
+        for id in 0..records {
+            writeln!(
+                out,
+                r#"{{"id": {id}, "b": true, "i": {id}, "s": "record-{id}"}}"#
+            )
+            .unwrap();
+        }
+        out.flush().unwrap();
+    }
+
+    // One-record chunks stretch the commit of the aggregate over many steps.
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+        "dev_tweaks": { "splitter_chunk_size_records": 1 },
+        "inputs": {
+            "test_input1.file": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": file.path() }
+                },
+                "format": {
+                    "name": "json",
+                    "config": { "array": false, "update_format": "raw" }
+                }
+            }
+        },
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        move |circuit_config| Ok(test_circuit_with_aggregate(circuit_config, records)),
+        &config,
+        Box::new(|e, _| panic!("controller error: {e}")),
+    )
+    .unwrap();
+
+    // All of the input goes into the first transaction.
+    controller.start_transaction().unwrap();
+    controller.start();
+    wait(
+        || {
+            controller
+                .status()
+                .input_status()
+                .values()
+                .all(|status| status.metrics.end_of_input.load(Ordering::Acquire))
+                && controller.status().num_buffered_input_records() == 0
+        },
+        DEFAULT_TIMEOUT_MS,
+    )
+    .expect("timed out waiting for the input");
+
+    // Start the later transaction once the first one is committing.  Before
+    // the commit step, a second start would be rejected.
+    controller.start_commit_transaction().unwrap();
+    let committing = || {
+        matches!(
+            controller.inner.get_transaction_state(),
+            TransactionState::Committing { .. }
+        )
+    };
+    wait(committing, DEFAULT_TIMEOUT_MS).expect("the commit never started");
+    controller.start_transaction().unwrap();
+    assert!(
+        committing(),
+        "the commit finished before the later transaction started, so this \
+         test checks nothing; make the commit longer"
+    );
+
+    // With no more input, the commit must still finish.  Without the fix it
+    // never does, so the deadline can be generous enough for a loaded runner.
+    assert!(
+        wait(|| !committing(), 120_000).is_ok(),
+        "the commit waited for the later, idle transaction"
+    );
+    controller.start_commit_transaction().unwrap();
+    controller.stop().unwrap();
+}
