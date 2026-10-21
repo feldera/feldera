@@ -399,15 +399,37 @@ CREATE MATERIALIZED VIEW counts AS
         try:
 
             def counts():
-                return list(pipeline.query("SELECT n, n_distinct FROM counts"))
+                rows = list(pipeline.query("SELECT n, n_distinct FROM counts"))
+                # A query that fails after its response starts returns a row
+                # like {"error": ...} with HTTP 200, so check the columns.
+                for row in rows:
+                    if set(row) != {"n", "n_distinct"}:
+                        raise AssertionError(f"unexpected row from query: {row}")
+                return rows
+
+            last_counts = None
+
+            def ingested():
+                nonlocal last_counts
+                last_counts = counts()
+                return last_counts == [{"n": n_records, "n_distinct": n_records}]
 
             # Kafka input never ends, so wait for the records to arrive.
-            wait_for_condition(
-                f"{n_records} records ingested",
-                lambda: counts() == [{"n": n_records, "n_distinct": n_records}],
-                timeout_s=120.0,
-                poll_interval_s=1.0,
-            )
+            try:
+                wait_for_condition(
+                    f"{n_records} records ingested",
+                    ingested,
+                    timeout_s=120.0,
+                    poll_interval_s=1.0,
+                )
+            except TimeoutError as e:
+                totals = {
+                    status.endpoint_name: status.metrics.total_records
+                    for status in pipeline.stats().inputs
+                }
+                raise TimeoutError(
+                    f"{e}: last counts {last_counts}, input records {totals}"
+                ) from e
 
             # The statistics list the connector once, with the records of all
             # of its hosts.
