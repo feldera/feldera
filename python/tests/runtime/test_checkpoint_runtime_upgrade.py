@@ -578,9 +578,9 @@ def test_runtime_upgrade_round_trip(pipeline_name: str) -> None:
             legacy_pipeline.start(timeout_s=600)
 
             # Wait until every record from the Delta snapshot has been
-            # ingested and processed end-to-end.
-            token = legacy_pipeline.generate_completion_token("input_table", "delta_in")
-            legacy_pipeline.wait_for_token(token)
+            # ingested and processed end-to-end.  A completion token only
+            # covers the records received so far, so wait for end-of-input.
+            legacy_pipeline.wait_for_completion(timeout_s=600)
 
             legacy_pipeline.checkpoint(wait=True)
             synced_uuid = legacy_pipeline.sync_checkpoint(wait=True)
@@ -625,6 +625,10 @@ def test_runtime_upgrade_round_trip(pipeline_name: str) -> None:
         # the bootstrap diff (the DBSP IR shifts even with the same
         # SQL); allow the diff to apply.
         current_pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW, timeout_s=600)
+
+        # A modified table loses its state and the connector reads the Delta
+        # snapshot again after `start` returns, so wait for end-of-input.
+        current_pipeline.wait_for_completion(timeout_s=600)
 
         # Phase 1 runs the previous release, which can hash rows differently.
         _assert_view_hashes(current_pipeline)
