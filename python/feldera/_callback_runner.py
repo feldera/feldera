@@ -19,6 +19,8 @@ class CallbackRunner(Thread):
         callback: Callable[[pd.DataFrame, int], None],
         exception_callback: Callable[[BaseException], None],
         event: Event,
+        progress_callback: Optional[Callable[[int], None]] = None,
+        end_callback: Optional[Callable[[], None]] = None,
     ):
         """
         :param client: The :class:`.FelderaClient` to use.
@@ -27,6 +29,10 @@ class CallbackRunner(Thread):
         :param callback: The callback function to call on the data we receive.
         :param exception_callback: The callback function to call when an exception occurs.
         :param event: The event to wait for before starting the callback runner.
+        :param progress_callback: Called with the `processed_steps` of every
+            chunk that marks the end of a step's output, after that output
+            went to `callback`.
+        :param end_callback: Called when the stream ends without an exception.
         """
 
         super().__init__()
@@ -37,6 +43,8 @@ class CallbackRunner(Thread):
         self.callback: Callable[[pd.DataFrame, int], None] = callback
         self.exception_callback: Callable[[BaseException], None] = exception_callback
         self.event: Event = event
+        self.progress_callback: Optional[Callable[[int], None]] = progress_callback
+        self.end_callback: Optional[Callable[[], None]] = end_callback
 
         self.pipeline: Pipeline = self.client.get_pipeline(
             self.pipeline_name, PipelineFieldSelector.ALL
@@ -62,6 +70,10 @@ class CallbackRunner(Thread):
         seq_no: Optional[int] = chunk.get("sequence_number")
         if data is not None and seq_no is not None:
             self.callback(dataframe_from_response([data], self.schema.fields), seq_no)
+        # After `callback`, so that whoever the count wakes finds the data.
+        processed_steps: Optional[int] = chunk.get("processed_steps")
+        if processed_steps is not None and self.progress_callback is not None:
+            self.progress_callback(processed_steps)
 
     def run(self):
         """
@@ -90,6 +102,9 @@ class CallbackRunner(Thread):
 
             for chunk in iterator:
                 self.to_callback(chunk)
+
+            if self.end_callback is not None:
+                self.end_callback()
 
         except BaseException as e:
             self.exception_callback(e)

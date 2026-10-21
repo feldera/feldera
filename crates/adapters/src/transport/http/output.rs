@@ -142,13 +142,20 @@ impl HttpOutputEndpointInner {
         });
     }
 
-    fn push_buffer(&self, buffer: Option<&[u8]>, blocking: bool) -> AnyResult<()> {
+    /// Pushes one chunk: a payload, a step count that closes a step, or a keep-alive.
+    fn push_buffer(
+        &self,
+        buffer: Option<&[u8]>,
+        processed_steps: Option<Step>,
+        blocking: bool,
+    ) -> AnyResult<()> {
         let seq_number = self.total_buffers.fetch_add(1, Ordering::AcqRel);
 
         let json_buf = Vec::with_capacity(buffer.map(|b| b.len()).unwrap_or(0) + 1024);
         let mut serializer = serde_json::Serializer::new(json_buf);
+        let num_fields = 2 + usize::from(buffer.is_some()) + usize::from(processed_steps.is_some());
         let mut struct_serializer = serializer
-            .serialize_struct("Chunk", if buffer.is_some() { 3 } else { 2 })
+            .serialize_struct("Chunk", num_fields)
             .map_err(|e| anyhow!("error serializing 'Chunk' struct: '{e}'"))?;
         struct_serializer
             .serialize_field("sequence_number", &seq_number)
@@ -156,6 +163,11 @@ impl HttpOutputEndpointInner {
         struct_serializer
             .serialize_field("snapshot", &self.snapshot.load(Ordering::Acquire))
             .map_err(|e| anyhow!("error serializing 'snapshot' field: '{e}'"))?;
+        if let Some(processed_steps) = processed_steps {
+            struct_serializer
+                .serialize_field("processed_steps", &processed_steps)
+                .map_err(|e| anyhow!("error serializing 'processed_steps' field: '{e}'"))?;
+        }
 
         if let Some(buffer) = buffer {
             match self.format {
@@ -305,7 +317,7 @@ impl HttpOutputEndpoint {
                         Err(_) => {
                             // Send the empty chunk via the `push_buffer` method to
                             // make sure it gets assigned correct sequence number.
-                            let _ = inner.push_buffer(None, false);
+                            let _ = inner.push_buffer(None, None, false);
                         }
                         Ok(None) => break,
                         Ok(Some((buffer, ack_sender))) => {
@@ -350,7 +362,23 @@ impl OutputEndpoint for HttpOutputEndpoint {
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
         let _guard = info_span!("http_output").entered();
         self.inner
-            .push_buffer(Some(buffer), self.inner.backpressure)
+            .push_buffer(Some(buffer), None, self.inner.backpressure)
+    }
+
+    /// Marks the end of the step's output with an empty chunk that carries
+    /// `count`, so that a client that has received the chunk is guaranteed
+    /// to have received the output of every step below `count`.  Under
+    /// backpressure the chunk waits for the client like a standard payload.
+    fn steps_processed(&mut self, count: Step) {
+        if let Err(e) = self
+            .inner
+            .push_buffer(None, Some(count), self.inner.backpressure)
+        {
+            error!(
+                "HTTP output endpoint '{}': failed to send the chunk that ends step {count}: {e}",
+                self.inner.name
+            );
+        }
     }
 
     fn push_key(

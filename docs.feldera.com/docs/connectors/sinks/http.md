@@ -16,6 +16,22 @@ Feldera supports receiving a stream of changes to a SQL table or view over HTTP.
 The HTTP output connector does not yet support [fault
 tolerance](/pipelines/fault-tolerance).
 
+## Query parameters
+
+| Parameter | Values | Default | Effect |
+|-----------|--------|---------|--------|
+| `format` | `csv`, `json` | `csv` | The data format of the chunks. |
+| `backpressure` | `true`, `false` | `false` | With `true`, the connector waits for the client to receive each chunk, so a client that cannot keep up fills the connector's queue and pauses the pipeline, as [`max_queued_records`](/connectors#max_queued_records) describes (100,000 records here, unless a request body sets it), but receives every chunk.  With `false`, the connector drops the chunks that it cannot deliver while the client falls behind, and the pipeline never waits. |
+| `send_snapshot` | `true`, `false` | `false` | Send a snapshot of the view before the updates.  See [Output modes](#output-modes). |
+| `update_format` (JSON only) | `insert_delete`, `snowflake`, `debezium`, `redis` | `insert_delete` | The encoding of each update.  See [the JSON format](/formats/json). |
+| `delimiter` (CSV only) | one ASCII character | `,` | The field delimiter. |
+
+Each JSON chunk holds its updates in a JSON array, so the `array` parameter of
+the JSON format is always `true` for this connector.  Instead of query
+parameters, the request body may hold a connector configuration in JSON, with
+the same `transport` and `format` objects as a connector declared in SQL; the
+two cannot be mixed.
+
 ## Output modes
 
 The `send_snapshot` query parameter controls how the connector starts:
@@ -30,6 +46,17 @@ The `send_snapshot` query parameter controls how the connector starts:
 when the client connects, the snapshot is delivered from the most recent
 cached view state, even if the pipeline is paused and no new input is
 flowing.
+
+## Response chunks
+
+The response body is a stream of JSON objects, one per line.  Each object
+has a `sequence_number`, counted from 0 for the stream, and a `snapshot`
+flag, and carries its updates in `text_data` for CSV or `json_data` for JSON.
+A chunk without data either carries `processed_steps`, which says that the
+output of every step below that count has been sent, or is a keep-alive that
+the connector sends after three seconds without updates.  See
+[Waiting for output on an HTTP stream](/connectors/completion-tokens#waiting-for-output-on-an-http-stream)
+and the [`Chunk` type](/api/subscribe-to-view).
 
 ## Example usage
 

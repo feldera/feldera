@@ -331,8 +331,8 @@ Kubernetes does not allocate enough resources for the pipeline to start):
 | To read | Method | Example |
 |------|--------|---------|
 | A snapshot | Call a method that waits until the pipeline has processed the input, and query when it returns.  See the table below. | [A first test](#a-first-test) |
-| Change stream | Connect the listeners before the first step of the pipeline, then wait for a known number of changes. | [Check the contents of a view as a change stream](#check-the-contents-of-a-view-as-a-change-stream) |
-| Absence of a change | Push a second input with a known effect, and wait for its change. | [Check that a change does not occur](#check-that-a-change-does-not-occur) |
+| Change stream | Connect the listeners before the first step of the pipeline, then wait for the token of the input with `listener.wait_for_token(token)`. | [Check the contents of a view as a change stream](#check-the-contents-of-a-view-as-a-change-stream) |
+| Absence of a change | Wait for the token of the input with `listener.wait_for_token(token)`, then check that the listener holds no change. | [Check that a change does not occur](#check-that-a-change-does-not-occur) |
 | Result of `NOW()` | Wait until a view that shows `NOW()` has the new value. | [Testing programs that use the real-time clock `NOW()`](#testing-programs-that-use-the-real-time-clock-now) |
 
 The following calls return only after the pipeline has processed the input:
@@ -354,7 +354,13 @@ If you want to test programs without materialized views:
   listener over the network, and a background thread of the test
   receives it.  Thus the pipeline can send a change, and
   `input_json()` can return, before the corresponding output change reaches the listener.
-  `to_dict()` returns only the changes already in the queue.  The `read_changes()` function in
+  `to_dict()` returns only the changes already in the queue.
+  `input_json()` returns a completion token, and
+  `listener.wait_for_token(token)` returns once every change that the
+  input caused in the listener's view is in the queue, or once the
+  pipeline has confirmed that the input caused none.  For input that
+  arrives without a token, for example from a connector declared in
+  SQL, the `read_changes()` function in
   [Helper functions](#helper-functions) waits until a specified number of
   changes arrive.
 
@@ -515,7 +521,7 @@ changes that it produces.
 
 Start the pipeline paused, connect the listener, and then resume the
 pipeline, so that the listener connects before the first step.  Then
-wait for the changes with `read_changes()`.
+wait for the changes with `wait_for_token()`.
 
 ```python
 def check_second_order_updates_total(pipeline: Pipeline) -> None:
@@ -525,8 +531,9 @@ def check_second_order_updates_total(pipeline: Pipeline) -> None:
     pipeline.resume()
 
     pipeline.input_json("orders", [{"id": 1, "customer": "alice", "amount": 10}])
-    pipeline.input_json("orders", [{"id": 2, "customer": "alice", "amount": 7}])
-    changes = read_changes(totals, 3)
+    token = pipeline.input_json("orders", [{"id": 2, "customer": "alice", "amount": 7}])
+    totals.wait_for_token(token)
+    changes = totals.to_dict()
     pipeline.stop(force=True)
     pipeline.clear_storage()
 
@@ -544,8 +551,9 @@ of its own; the next call starts only after the pipeline has processed
 the previous one.  The first call inserts the row for `alice`.  The second call
 updates the row: it deletes the old row and inserts the new row.
 
-`read_changes()` returns all changes that the listener received, which
-can be more than `count`.
+`wait_for_token()` returns once the listener has received every change
+that the second call caused.  The pipeline processes inputs in order, so
+the change of the first call has arrived as well.
 
 ### Updates and deletes
 
@@ -592,20 +600,16 @@ table produces unpredictable results, and the pipeline may crash.
 
 ### Check that a change does *not* occur
 
-While Feldera has a reliable mechanism to track the completion of steps,
-called a completion token, unfortunately the HTTP connector (which is the basis
-for the listener) does not expose this information.  We hope to improve this
-API: see [issue 7360](https://github.com/feldera/feldera/issues/7360).
-
 Some input changes produce no output changes (e.g., updating a record will
 not change a row `COUNT`).  To check that an input produces no output
-changes, a test has to use a different approach:
+changes:
 
 * For materialized views, use an ad-hoc query executed after `input_json()` returns.
   The snapshot will include all effects of the input.
-* For a non-materialized view, push a subsequent input which produces an
-  expected output change.  Since inputs are processed in order, receiving the change
-  produced by the second input guarantees that the first one has been processed.
+* For any view, wait for the token of the input on the listener.
+  `wait_for_token()` returns once the listener has received every
+  change that the input caused, so a listener that holds no change
+  afterwards shows that the input caused none.
 
 ```python
 def check_identical_row_causes_no_change(pipeline: Pipeline) -> None:
@@ -614,23 +618,21 @@ def check_identical_row_causes_no_change(pipeline: Pipeline) -> None:
     totals = pipeline.listen("customer_totals")
     pipeline.resume()
 
-    pipeline.input_json("orders", [{"id": 1, "customer": "alice", "amount": 10}])
+    token = pipeline.input_json("orders", [{"id": 1, "customer": "alice", "amount": 10}])
+    totals.wait_for_token(token)
+    first_changes = totals.to_dict()
     # The input under test: replace order 1 with an identical row.
-    pipeline.input_json("orders", [{"id": 1, "customer": "alice", "amount": 10}])
-    # The second input: its effect is known.
-    pipeline.input_json("orders", [{"id": 2, "customer": "bob", "amount": 5}])
-    changes = read_changes(totals, 2)
+    token = pipeline.input_json("orders", [{"id": 1, "customer": "alice", "amount": 10}])
+    totals.wait_for_token(token)
+    changes = totals.to_dict()
     pipeline.stop(force=True)
     pipeline.clear_storage()
 
-    assert changes == [
+    assert first_changes == [
         {"customer": "alice", "total": 10, "num_orders": 1, "insert_delete": 1},
-        {"customer": "bob", "total": 5, "num_orders": 1, "insert_delete": 1},
     ]
+    assert changes == []
 ```
-
-`read_changes(totals, 2)` returns when the `totals` listener has
-received at least two changes.
 
 ### Tests with transactions
 
@@ -647,10 +649,12 @@ def check_transaction_changes_view_once(pipeline: Pipeline) -> None:
     pipeline.start_transaction()
     # The pipeline processes the input only at commit, so do not wait for it.
     pipeline.input_json("orders", [{"id": 1, "customer": "alice", "amount": 10}], wait=False)
-    pipeline.input_json("orders", [{"id": 2, "customer": "alice", "amount": 7}], wait=False)
+    token = pipeline.input_json("orders", [{"id": 2, "customer": "alice", "amount": 7}], wait=False)
     before_commit = list(pipeline.query("SELECT * FROM customer_totals"))
     pipeline.commit_transaction()
-    changes = read_changes(totals, 1)
+    # The token completes with the commit.
+    totals.wait_for_token(token)
+    changes = totals.to_dict()
     pipeline.stop(force=True)
     pipeline.clear_storage()
 
@@ -1016,7 +1020,7 @@ in a single test: the pipeline will stop at the first error.
 |---------|-------|-----|
 | `pipeline.query()` fails for a view. | The view is not materialized. | Declare it `CREATE MATERIALIZED VIEW`, or read its change stream instead of using `query`. |
 | The listener misses changes, or receives changes from before it connected. | The test connected the listener to a running pipeline. | Connect the listeners while the pipeline is paused: `pipeline.start_paused()`, `pipeline.listen()`, `pipeline.resume()`. |
-| The listener has fewer changes than expected. | The test read the listener before all changes arrived. | Wait with `read_changes()`. |
+| The listener has fewer changes than expected. | The test read the listener before all changes arrived. | Wait with `listener.wait_for_token(token)`, or with `read_changes()` for input without a token. |
 | A test fails at random. | The test sleeps for a fixed time. | Synchronize as shown in [Synchronization](#synchronization). |
 | Tests fail at random when several tests run concurrently. | Pipeline names are unique within one account of a Feldera API.  `create_or_replace()` stops a running pipeline with the same name and replaces it, so one run destroys the pipeline of another. | Give the pipelines of each run different names, for example by adding a suffix that is unique to the run. |
 | A comparison fails, but the rows or changes are correct. | Their order is not defined. | Use `ORDER BY` in the query, or `sorted_dicts()`. |
@@ -1040,6 +1044,7 @@ of hanging.  Most blocking SDK calls accept a time limit:
 | Call | Time limit | Error when the time is up |
 |------|------------|---------------------------|
 | `pipeline.input_json()` | `wait_timeout_s=...` | `FelderaTimeoutError` |
+| `listener.wait_for_token()` | `timeout_s=...` | `FelderaTimeoutError` |
 | `pipeline.start()`, `pipeline.start_paused()`, `pipeline.pause()`, `pipeline.resume()` | `timeout_s=...` | `TimeoutError` |
 | `pipeline.commit_transaction()` | `timeout_s=...` | `TimeoutError` |
 | `pipeline.wait_for_completion()` | `timeout_s=...` | `TimeoutError` |

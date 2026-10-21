@@ -244,6 +244,22 @@ To check the status of this completion token use :meth:`.Pipeline.completion_tok
     # wait until the pipeline processes this completion token
     pipeline.wait_for_token(token)
 
+:meth:`.Pipeline.wait_for_token` returns once the pipeline has handed the
+resulting changes to its output connectors.  A listener from
+:meth:`.Pipeline.listen` receives its changes over an HTTP stream, so they can
+still be on their way.  :meth:`.OutputHandler.wait_for_token` returns once the
+listener has received every change for the token, and once the pipeline has
+confirmed that the token changed nothing in the view:
+
+.. code-block:: python
+
+    totals = pipeline.listen("customer_totals")
+    token = pipeline.input_json("orders", [{"customer": "alice", "amount": 10}])
+
+    # every change that the input caused in "customer_totals" is in the listener
+    totals.wait_for_token(token)
+    print(totals.to_dict())
+
 Executing ad-hoc SQL Queries
 ============================
 

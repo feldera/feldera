@@ -417,6 +417,9 @@ class Pipeline:
         In order to receive all changes since the pipeline started, you can create the pipeline in the `PAUSED` state
         using :meth:`start_paused`, attach listeners and unpause the pipeline using :meth:`resume`.
 
+        To read the changes that one input caused, pass the input's completion
+        token to :meth:`.OutputHandler.wait_for_token` before reading the handle.
+
         :param view_name: The name of the view to listen to.
         """
 
@@ -2180,6 +2183,10 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
     def wait_for_token(self, token: str):
         """
         Blocks until the pipeline processes all inputs represented by the completion token.
+
+        The pipeline has then handed the resulting changes to every output
+        connector.  A handle from :meth:`listen` may still be receiving them;
+        :meth:`.OutputHandler.wait_for_token` waits until it has.
         """
 
         self.client.wait_for_token(self.name, token)
