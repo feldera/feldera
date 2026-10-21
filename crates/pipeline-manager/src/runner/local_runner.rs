@@ -6,6 +6,7 @@ use crate::config::{CommonConfig, LocalRunnerConfig};
 use crate::db::types::pipeline::{
     PipelineId, bootstrap_policy_to_string, runtime_desired_status_to_string,
 };
+use crate::db::types::program::RuntimeSelector;
 use crate::db::types::version::Version;
 use crate::error::{ManagerError, source_error};
 use crate::pipeline_env::validate_pipeline_env;
@@ -1165,9 +1166,11 @@ impl PipelineExecutor for LocalRunner {
         program_binary_url: &str,
         program_info_url: &str,
         program_version: Version,
-        is_gen2: bool,
+        runtime_selector: &RuntimeSelector,
         legacy_spelling: LegacySpelling,
     ) -> Result<(), ManagerError> {
+        // The local runner runs `GEN2_BINARY` whichever engine build `gen2:<sha>` selects.
+        let is_gen2 = runtime_selector.is_gen2();
         if let Err(e) = validate_pipeline_env(&deployment_config.global.env) {
             return Err(RunnerError::RunnerProvisionError { error: e }.into());
         }

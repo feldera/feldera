@@ -842,7 +842,6 @@ pub async fn compiler_precompile(
         program_version,
         &program_config,
         program_code,
-        udf_rust,
         SqlCompilationOutput::Full,
     )
     .await
@@ -1186,6 +1185,7 @@ mod test {
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
             gen2_udf_sdk_path: None,
+            gen2_udf_sdk_version: None,
             precompile: false,
         })
         .await
@@ -1207,6 +1207,7 @@ mod test {
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
             gen2_udf_sdk_path: None,
+            gen2_udf_sdk_version: None,
             precompile: false,
         })
         .await
@@ -1616,6 +1617,7 @@ mod test {
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
             gen2_udf_sdk_path: None,
+            gen2_udf_sdk_version: None,
             precompile: false,
         };
 

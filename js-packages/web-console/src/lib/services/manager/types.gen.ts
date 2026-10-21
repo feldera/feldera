@@ -5118,7 +5118,8 @@ export type ProgramConfig = {
    *
    * The value `gen2` names an engine rather than a runtime commit: the SQL
    * compiler captures the circuit IR and the runner launches the Gen-2
-   * engine, so no pipeline binary is compiled.
+   * engine, so no pipeline binary is compiled. `gen2:<sha>` selects the
+   * engine build of that commit, where the runner supports it.
    *
    * A platform of version `0.x.y` may be capable of running future and past
    * runtimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,
