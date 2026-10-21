@@ -388,7 +388,6 @@ Source edition can be found on github.
   `OnDelete` update strategy.  To apply StatefulSet changes (e.g.,
   `kubectl rollout restart`, `kubectl edit`, etc.), delete the pod.
 
-||||||| parent of 898e97f2 ([fxp] Use the shortest float digits for DynamicDecimal too.)
 ## v0.362.0
 
 - Incompatible change (SQL): the `emit_final` property of a view must
