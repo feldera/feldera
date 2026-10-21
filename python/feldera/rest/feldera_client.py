@@ -1381,14 +1381,15 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         return token
 
-    def completion_token_processed(self, pipeline_name: str, token: str) -> bool:
+    def completion_status(self, pipeline_name: str, token: str) -> Mapping[str, Any]:
         """
-        Check whether the pipeline has finished processing all inputs received from the connector before
-        the token was generated.
+        Returns the status of a completion token as the pipeline reports it:
+        a mapping with `status`, either `complete` or `inprogress`, and
+        `step`, the number of steps the pipeline completes before the token
+        is complete, or `None` while the token's records wait to be ingested.
 
         :param pipeline_name: The name of the pipeline
         :param token: The token to check for completion
-        :return: True if the pipeline has finished processing all inputs represented by the token, False otherwise
         """
 
         params = {
@@ -1400,14 +1401,25 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             params=params,
         )
 
-        status: Optional[str] = resp.get("status")
-
-        if status is None:
+        if resp.get("status") is None:
             raise FelderaAPIError(
                 f"got empty status when checking for completion status for token: {token}",
                 resp,
             )
 
+        return resp
+
+    def completion_token_processed(self, pipeline_name: str, token: str) -> bool:
+        """
+        Check whether the pipeline has finished processing all inputs received from the connector before
+        the token was generated.
+
+        :param pipeline_name: The name of the pipeline
+        :param token: The token to check for completion
+        :return: True if the pipeline has finished processing all inputs represented by the token, False otherwise
+        """
+
+        status: str = self.completion_status(pipeline_name, token)["status"]
         return status.lower() == "complete"
 
     def wait_for_token(
