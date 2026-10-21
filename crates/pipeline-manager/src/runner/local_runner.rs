@@ -116,6 +116,19 @@ fn resolve_gen2_binary() -> Result<PathBuf, ManagerError> {
     gen2_binary_from(std::env::var_os("GEN2_BINARY"), std::env::var_os("PATH")).map_err(Into::into)
 }
 
+/// Refuses a program pinned to a Gen2 engine build (`gen2:<sha>`): the local runner cannot
+/// select one, since it always runs `GEN2_BINARY`.
+fn check_gen2_engine_build_selectable(
+    runtime_selector: &RuntimeSelector,
+) -> Result<(), RunnerError> {
+    if runtime_selector.gen2_engine_sha().is_some() {
+        return Err(RunnerError::Gen2EngineBuildNotSelectable {
+            runtime_version: runtime_selector.to_string(),
+        });
+    }
+    Ok(())
+}
+
 /// The executable `configured` (`GEN2_BINARY`) names, searched on `path_env` when it is
 /// a bare name. An unset or empty variable is a configuration error, and a name that
 /// resolves to nothing is reported with the value that failed, so neither surfaces as an
@@ -1169,7 +1182,7 @@ impl PipelineExecutor for LocalRunner {
         runtime_selector: &RuntimeSelector,
         legacy_spelling: LegacySpelling,
     ) -> Result<(), ManagerError> {
-        // The local runner runs `GEN2_BINARY` whichever engine build `gen2:<sha>` selects.
+        check_gen2_engine_build_selectable(runtime_selector)?;
         let is_gen2 = runtime_selector.is_gen2();
         if let Err(e) = validate_pipeline_env(&deployment_config.global.env) {
             return Err(RunnerError::RunnerProvisionError { error: e }.into());
@@ -1664,9 +1677,26 @@ mod multihost_tests {
 
 #[cfg(test)]
 mod gen2_binary_tests {
-    use super::{gen2_binary_from, resolve_executable};
+    use super::{check_gen2_engine_build_selectable, gen2_binary_from, resolve_executable};
+    use crate::db::types::program::RuntimeSelector;
     use crate::runner::error::RunnerError;
     use std::path::Path;
+
+    /// A pinned engine build is refused; `gen2` and other runtimes pass.
+    #[test]
+    fn pinned_gen2_engine_build_is_refused() {
+        let pinned =
+            RuntimeSelector::try_from("gen2:d0b45d8f87056c9d2c89c6f63b2531b0c5905f9b".to_string())
+                .unwrap();
+        assert!(matches!(
+            check_gen2_engine_build_selectable(&pinned),
+            Err(RunnerError::Gen2EngineBuildNotSelectable { runtime_version })
+                if runtime_version == "gen2:d0b45d8f87056c9d2c89c6f63b2531b0c5905f9b"
+        ));
+        let unpinned = RuntimeSelector::try_from("gen2".to_string()).unwrap();
+        assert!(check_gen2_engine_build_selectable(&unpinned).is_ok());
+        assert!(check_gen2_engine_build_selectable(&RuntimeSelector::default()).is_ok());
+    }
 
     /// Writes an executable file at `path`.
     fn write_executable(path: &Path) {
