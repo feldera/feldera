@@ -316,7 +316,7 @@ impl CacheStats {
                     cache_hit_rate_metric(thread_type),
                     Vec::new(),
                     MetaItem::Percent {
-                        numerator: hits,
+                        numerator: hits as i64,
                         denominator: hits + misses,
                     },
                 )]);

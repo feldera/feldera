@@ -929,9 +929,9 @@ pub enum MetaItem {
     Count(usize),
 
     /// A percentage in terms of a numerator and denominator. Separating these
-    /// makes it possible to aggregate them.
+    /// makes it possible to aggregate them. The numerator can be negative.
     Percent {
-        numerator: u64,
+        numerator: i64,
         denominator: u64,
     },
 
@@ -947,7 +947,7 @@ pub enum MetaItem {
 
 #[derive(Serialize)]
 struct PercentValue {
-    numerator: u64,
+    numerator: i64,
     denominator: u64,
 }
 

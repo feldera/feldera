@@ -418,7 +418,7 @@ impl Profiler {
                         RUNTIME_NONBLOCKING_PERCENT,
                         Vec::new(),
                         MetaItem::Percent {
-                            numerator: profile.cpu_time().as_micros() as u64,
+                            numerator: profile.cpu_time().as_micros() as i64,
                             denominator: profile.real_time().as_micros() as u64,
                         },
                     ),
@@ -426,7 +426,7 @@ impl Profiler {
                         RUNTIME_PERCENT,
                         Vec::new(),
                         MetaItem::Percent {
-                            numerator: profile.real_time().as_micros() as u64,
+                            numerator: profile.real_time().as_micros() as i64,
                             denominator: total_time.as_micros() as u64,
                         },
                     ),
@@ -443,7 +443,7 @@ impl Profiler {
                     CIRCUIT_RUNTIME_SECONDS => profile.step_profile.real_time(),
                     CIRCUIT_CPU_TIME_SECONDS => profile.step_profile.cpu_time(),
                     CIRCUIT_NONBLOCKING_PERCENT => MetaItem::Percent {
-                        numerator: profile.step_profile.cpu_time().as_micros() as u64,
+                        numerator: profile.step_profile.cpu_time().as_micros() as i64,
                         denominator: profile.step_profile.real_time().as_micros() as u64,
                     },
                     CIRCUIT_IDLE_TIME_SECONDS => profile.idle_profile.real_time(),
