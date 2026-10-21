@@ -1029,6 +1029,24 @@ def test_connector_stats_errors_count(pipeline_name):
         == HTTPStatus.BAD_REQUEST
     )
     assert _ingress(pipeline_name, "t1", "4\n5\n6\n").status_code == HTTPStatus.OK
+
+    # The pipeline itself must count the errors right away.
+    start_s = time.monotonic()
+    while True:
+        num_errors = sum(
+            endpoint.metrics.num_parse_errors for endpoint in pipeline.stats().inputs
+        )
+        if num_errors == 4:
+            break
+        elif time.monotonic() - start_s >= 30.0 or num_errors > 4:
+            raise ValueError(
+                f"Pipeline /stats: number of parse errors is not 4 but {num_errors}"
+            )
+        time.sleep(0.5)
+
+    # The manager copy lags: the runner polls every 2.5s and writes details at
+    # most every 10s (`DETAILS_UPDATE_MIN_INTERVAL`), so about 12.5s at most.
+    # The deadline allows for a busy CI instance.
     start_s = time.monotonic()
     while True:
         num_errors = pipeline.deployment_runtime_status_details()["connector_stats"][
@@ -1036,8 +1054,11 @@ def test_connector_stats_errors_count(pipeline_name):
         ]
         if num_errors == 4:
             break
-        elif time.monotonic() - start_s >= 30.0 or num_errors > 4:
-            raise ValueError(f"Number of errors is not 4 but {num_errors}")
+        elif time.monotonic() - start_s >= 90.0 or num_errors > 4:
+            raise ValueError(
+                f"Manager connector_stats: number of errors is not 4 but"
+                f" {num_errors} after {time.monotonic() - start_s:.1f}s"
+            )
         time.sleep(0.5)
     assert pipeline.stats().global_metrics.total_completed_records == 6
     assert (
