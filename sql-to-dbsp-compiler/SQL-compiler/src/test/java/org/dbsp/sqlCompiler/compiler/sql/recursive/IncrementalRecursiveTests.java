@@ -18,6 +18,20 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue7495() {
+        // A recursive view that reads only itself starts empty and stays empty
+        var ccs = this.getCCS("""
+                DECLARE RECURSIVE VIEW A(x INT);
+                CREATE VIEW A AS SELECT x FROM A WHERE x > 0;""");
+        ccs.stepWeightOne("", """
+                 x
+                ---""");
+        ccs.stepWeightOne("", """
+                 x
+                ---""");
+    }
+
+    @Test
     public void testRecursive() {
         String sql = """
                 DECLARE RECURSIVE VIEW V(v INT);
