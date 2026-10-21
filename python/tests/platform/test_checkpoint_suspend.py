@@ -43,9 +43,10 @@ def _max_rss_bytes_metric(pipeline_name: str) -> int | None:
     assert r.status_code == HTTPStatus.OK, r.text
     for metric in json.loads(r.text):
         if metric.get("key") == "max_rss_bytes":
-            values = metric.get("values", [])
+            # A multihost pipeline reports one value per host.
+            values = {v.get("value") for v in metric.get("values", [])}
             assert len(values) == 1, metric
-            return values[0].get("value")
+            return values.pop()
     return None
 
 
