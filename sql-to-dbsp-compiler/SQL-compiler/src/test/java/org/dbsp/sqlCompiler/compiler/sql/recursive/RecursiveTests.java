@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.recursive;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -604,6 +605,20 @@ public class RecursiveTests extends BaseSQLTests {
                 DECLARE RECURSIVE VIEW V(v INT NOT NULL);
                 CREATE VIEW V AS SELECT 1 AS v;""";
         this.shouldWarn(sql, "is declared recursive, but is not used in any recursive computation");
+    }
+
+    @Test
+    public void recursiveViewReadDirectly() {
+        // B reads A after the definition of A, so B reads the view and not its declaration.
+        // A is still recursive and its declaration is required, so there are no warnings.
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation("""
+                DECLARE RECURSIVE VIEW A(x BIGINT NOT NULL);
+                DECLARE RECURSIVE VIEW B(y BIGINT NOT NULL);
+                CREATE VIEW A AS SELECT COUNT(*) AS x FROM B;
+                CREATE VIEW B AS SELECT x + 1 AS y FROM A WHERE x < 5;""");
+        getCircuit(compiler);
+        Assert.assertFalse(compiler.messages.toString(), compiler.hasWarnings());
     }
 
     @Test

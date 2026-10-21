@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -142,7 +143,9 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     @Override
     public void endVisit() {
         for (IInputOperator source: this.getCircuit().sourceOperators.values()) {
-            if (!this.reachable.contains(source.asOperator()) && !this.keepAllSources)
+            // The compiler reports unused view declarations elsewhere
+            boolean declaration = source.asOperator().is(DBSPViewDeclarationOperator.class);
+            if (!this.reachable.contains(source.asOperator()) && !this.keepAllSources && !declaration)
                 this.compiler.reportWarning(source.getSourcePosition(),
                         "Unused", "Table " + source.getTableName().singleQuote() +
                                 " is not used");
