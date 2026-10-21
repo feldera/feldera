@@ -273,9 +273,10 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
         if (this.visited.contains(operator))
             return VisitDecision.STOP;
         super.preorder(operator);
-        // Check if all inputs are integrators
+        // Check if all inputs are integrators; an operator without inputs has none to move
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
-        boolean allIntegrators = Linq.all(sources, s -> s.node().is(DBSPIntegrateOperator.class));
+        boolean allIntegrators = !sources.isEmpty() &&
+                Linq.all(sources, s -> s.node().is(DBSPIntegrateOperator.class));
         if (allIntegrators) {
             this.pushIntegrators.add(operator);
         }

@@ -878,4 +878,47 @@ public class NonLinearRecursionTests extends BaseSQLTests {
                   16 |   8 |    true |   false |     -1
                   17 |   8 |    true |   false |     -1""");
     }
+
+    @Test
+    public void issue7495Count() {
+        // A recursive view without inputs.  COUNT(*) of an empty view is a row, so the
+        // fixpoint is not empty: {} -> {0} -> {1} -> {1}
+        var ccs = this.getCCS("""
+                DECLARE RECURSIVE VIEW A(x BIGINT NOT NULL);
+                CREATE VIEW A AS SELECT COUNT(*) AS x FROM A;""");
+        ccs.stepWeightOne("", """
+                 x
+                ---
+                 1""");
+        ccs.stepWeightOne("", """
+                 x
+                ---""");
+    }
+
+    @Test
+    public void issue7495Mutual() {
+        // Two mutually recursive views without inputs.  A holds COUNT(B), and B holds A + 1
+        // while A < 5, so the only fixpoint is A = {1}, B = {2}
+        var ccs = this.getCCS("""
+                DECLARE RECURSIVE VIEW A(x BIGINT NOT NULL);
+                DECLARE RECURSIVE VIEW B(y BIGINT NOT NULL);
+                CREATE VIEW A AS SELECT COUNT(*) AS x FROM B;
+                CREATE VIEW B AS SELECT x + 1 AS y FROM A WHERE x < 5;""");
+        ccs.stepMultiView("", Map.of(
+                "a", """
+                 x | weight
+                ---+--------
+                 1 |      1""",
+                "b", """
+                 y | weight
+                ---+--------
+                 2 |      1"""));
+        ccs.stepMultiView("", Map.of(
+                "a", """
+                 x | weight
+                ---+--------""",
+                "b", """
+                 y | weight
+                ---+--------"""));
+    }
 }
