@@ -46,7 +46,7 @@ Completion tokens have several important properties:
 This enables efficient, overlapping execution: clients can push additional inputs while
 waiting for earlier inputs to be processed.
 
-## Hot to generate a completion token
+## How to generate a completion token
 
 There are two ways to generate a completion token, depending on the type of the input connector:
 
