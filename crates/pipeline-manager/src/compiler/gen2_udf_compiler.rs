@@ -80,13 +80,20 @@ pub(super) async fn perform_gen2_udf_compilation(
         ));
     }
     let sdk_path = config.gen2_udf_sdk_path.as_deref();
-    let sdk_version = match sdk_path {
-        Some(sdk_path) => gen2_udf_sdk_version(config, sdk_path).await?,
-        None => config.gen2_udf_sdk_release().to_string(),
+    let (sdk_source, sdk_version) = match sdk_path {
+        Some(sdk_path) => (
+            format!("path:{sdk_path}"),
+            gen2_udf_sdk_version(config, sdk_path).await?,
+        ),
+        None => (
+            "crates.io".to_string(),
+            config.gen2_udf_sdk_release().to_string(),
+        ),
     };
     let source_checksum = calculate_gen2_udf_source_checksum(
         &common_config.platform_version,
         profile,
+        &sdk_source,
         &sdk_version,
         udf_rust,
         udf_toml,
@@ -142,6 +149,7 @@ pub(super) async fn perform_gen2_udf_compilation(
 fn calculate_gen2_udf_source_checksum(
     platform_version: &str,
     profile: &CompilationProfile,
+    sdk_source: &str,
     sdk_version: &str,
     udf_rust: &str,
     udf_toml: &str,
@@ -151,6 +159,7 @@ fn calculate_gen2_udf_source_checksum(
         ("platform_version", platform_version.as_bytes()),
         ("runtime_version", RuntimeSelector::Gen2(None).as_bytes()),
         ("profile", profile.as_bytes()),
+        ("gen2_udf_sdk_source", sdk_source.as_bytes()),
         ("gen2_udf_sdk_version", sdk_version.as_bytes()),
         ("udf_rust", udf_rust.as_bytes()),
         ("udf_toml", udf_toml.as_bytes()),
@@ -668,17 +677,37 @@ mod test {
     fn udf_source_checksum_tracks_every_input() {
         let checksum = calculate_gen2_udf_source_checksum;
         let optimized = &CompilationProfile::Optimized;
-        let base = checksum("v0", optimized, "0.1.0", "fn f() {}", "");
-        assert_eq!(base, checksum("v0", optimized, "0.1.0", "fn f() {}", ""));
+        let registry = "crates.io";
+        let base = checksum("v0", optimized, registry, "0.1.0", "fn f() {}", "");
+        assert_eq!(
+            base,
+            checksum("v0", optimized, registry, "0.1.0", "fn f() {}", "")
+        );
         let variants = [
             base.clone(),
-            checksum("v1", optimized, "0.1.0", "fn f() {}", ""),
-            checksum("v0", &CompilationProfile::Dev, "0.1.0", "fn f() {}", ""),
-            checksum("v0", optimized, "0.2.0", "fn f() {}", ""),
-            checksum("v0", optimized, "0.1.0", "fn g() {}", ""),
-            checksum("v0", optimized, "0.1.0", "fn f() {}", "chrono = \"0.4\""),
+            checksum("v1", optimized, registry, "0.1.0", "fn f() {}", ""),
+            checksum(
+                "v0",
+                &CompilationProfile::Dev,
+                registry,
+                "0.1.0",
+                "fn f() {}",
+                "",
+            ),
+            // A local SDK at the same version as the release.
+            checksum("v0", optimized, "path:/opt/sdk", "0.1.0", "fn f() {}", ""),
+            checksum("v0", optimized, registry, "0.2.0", "fn f() {}", ""),
+            checksum("v0", optimized, registry, "0.1.0", "fn g() {}", ""),
+            checksum(
+                "v0",
+                optimized,
+                registry,
+                "0.1.0",
+                "fn f() {}",
+                "chrono = \"0.4\"",
+            ),
             // The same bytes split differently between neighboring fields.
-            checksum("v0", optimized, "0.1.0fn", " f() {}", ""),
+            checksum("v0", optimized, registry, "0.1.0fn", " f() {}", ""),
         ];
         assert_eq!(
             variants.iter().collect::<HashSet<_>>().len(),
