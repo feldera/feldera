@@ -116,6 +116,10 @@ commit the transaction using the [`commit_transaction`](/api/commit-transaction)
 * The `commit_transaction` REST API initiates the commit. The commit can take some time and complete later.
   Use the [`/stats` endpoint](#monitoring-transaction-status) to monitor transaction status.
 
+* Before the commit starts, the pipeline ingests the input that its input connectors received
+  before `commit_transaction`. Thus, the transaction can also include some input that arrives
+  after `commit_transaction`, until the commit starts.
+
 * The Python SDK and `fda` CLI provide both blocking and non-blocking variants of the commit operation.
   The blocking variant waits until the commit is complete before returning control to the caller.
 
