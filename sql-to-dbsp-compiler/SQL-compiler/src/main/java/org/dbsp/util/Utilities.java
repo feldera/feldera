@@ -475,7 +475,7 @@ public class Utilities {
     }
 
     /** Number of cargo jobs to use when testing locally */
-    static final int LOCAL_CARGO_JOBS = 6;
+    static final int LOCAL_CARGO_JOBS = 8;
 
     static final HashMap<String, String> STACK = new HashMap<>() {{ put("RUST_MIN_STACK", "8388608"); }};
 
