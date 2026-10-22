@@ -47,6 +47,7 @@ use feldera_types::{
         DynamicConfig, DynamicResources, FormatConfig, FtModel, InputEndpointConfig,
         OutputEndpointConfig, PipelineConfig,
     },
+    coordination::StepAction,
     error::DetailedError,
     postprocess::PostprocessorConfig,
     preprocess::PreprocessorConfig,
@@ -1097,6 +1098,43 @@ fn check_concurrent_init(engine: &dyn PipelineTestEngine, max_parallel_connector
 +----------+"#;
 
     assert_eq!(&result, expected);
+    controller.stop().unwrap();
+}
+
+/// The step status reports how many input records the host has committed, so
+/// that a multihost coordinator can add up the hosts' counts.
+#[engine_test]
+pub fn step_status_reports_committed_records(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let (_temp_input_files, inputs) = multiple_input_files(5);
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": inputs,
+    }))
+    .unwrap();
+
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    let step_watcher = controller.step_watcher();
+    assert_eq!(step_watcher.borrow().total_committed_records, Some(0));
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), default_timeout_ms()).unwrap();
+    wait(
+        || {
+            let status = *step_watcher.borrow();
+            status.action == StepAction::Idle && status.total_committed_records == Some(5)
+        },
+        10_000,
+    )
+    .unwrap_or_else(|_| panic!("last step status: {:?}", *step_watcher.borrow()));
     controller.stop().unwrap();
 }
 

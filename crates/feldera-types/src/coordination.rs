@@ -396,6 +396,16 @@ pub struct StepStatus {
     ///   execute at least one more step to commit it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transaction_status: Option<bool>,
+    /// Number of input records that this host has committed.  The input of a
+    /// step commits when the step ends, except that the input of a transaction
+    /// commits only when the transaction commits, so the input of an open
+    /// transaction does not count yet.  Reported while `Idle`, when it is the
+    /// count as of `step`.
+    ///
+    /// The coordinator adds up the hosts' counts for a step to get the number
+    /// for the whole pipeline.  `None` if the host does not report it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_committed_records: Option<u64>,
 }
 
 impl StepStatus {
@@ -404,8 +414,17 @@ impl StepStatus {
             step,
             action,
             transaction_status,
+            total_committed_records: None,
         }
     }
+
+    pub fn with_total_committed_records(self, total_committed_records: u64) -> Self {
+        Self {
+            total_committed_records: Some(total_committed_records),
+            ..self
+        }
+    }
+
     pub fn is_triggered(&self, step: Step) -> bool {
         (self.step == step && self.action == StepAction::Step) || self.is_idle(step + 1)
     }

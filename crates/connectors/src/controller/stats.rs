@@ -2778,16 +2778,16 @@ pub struct OutputEndpointMetrics {
     /// the batch, or discarding it while silent bootstrapping suppresses the
     /// endpoint's output.
     ///
-    /// In a multihost pipeline, this count reflects only the input records
-    /// processed on the same host as the output endpoint, which is not usually
-    /// meaningful.
+    /// In a multihost pipeline, this counts only the input records of this
+    /// host.  The coordinator replaces it, in what it reports, with the input
+    /// records of all of the hosts as of `total_processed_steps`.
     pub total_processed_input_records: AtomicU64,
 
     /// The number of steps whose input records have been processed by the
     /// endpoint.
     ///
-    /// This is meaningful in a multihost pipeline because steps are
-    /// synchronized across all of the hosts.
+    /// In a multihost pipeline, the hosts run the same steps together, so this
+    /// count means the same on every host.
     ///
     /// # Interpretation
     ///

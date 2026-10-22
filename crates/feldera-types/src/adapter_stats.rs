@@ -476,15 +476,18 @@ pub struct ExternalOutputEndpointMetrics {
     /// the batch, or discarding it while silent bootstrapping suppresses the
     /// endpoint's output.
     ///
-    /// In a multihost pipeline, this count reflects only the input records
-    /// processed on the same host as the output endpoint, which is not usually
-    /// meaningful.
+    /// In a multihost pipeline, each host counts only its own input, but the
+    /// coordinator replaces this with the input records of all of the hosts as
+    /// of `total_processed_steps`, so the count means the same as with one
+    /// host.  (If a host does not report its count to the coordinator, as an
+    /// older version does not, this counts only the input of the endpoint's own
+    /// host.)
     pub total_processed_input_records: u64,
     /// The number of steps whose input records have been processed by the
     /// endpoint.
     ///
-    /// This is meaningful in a multihost pipeline because steps are
-    /// synchronized across all of the hosts.
+    /// In a multihost pipeline, the hosts run the same steps together, so this
+    /// count means the same as with one host.
     ///
     /// # Interpretation
     ///
@@ -623,6 +626,10 @@ pub struct ExternalGlobalControllerMetrics {
     /// Total bytes of input records processed by the DBSP engine.
     pub total_processed_bytes: u64,
     /// Total number of input records processed to completion.
+    ///
+    /// In a multihost pipeline, this counts the input records of all of the
+    /// hosts, as an output endpoint's `total_processed_input_records` does, and
+    /// has the same limit with a host that does not report its count.
     pub total_completed_records: u64,
     /// If the pipeline is stalled because one or more output connectors' output
     /// buffers are full, this is the number of milliseconds that the current
