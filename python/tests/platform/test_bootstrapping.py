@@ -17,6 +17,40 @@ from feldera.testutils import (
 )
 
 
+def wait_for_output_progress(
+    pipeline, min_processed_records: int, expected_transmitted_records: int
+):
+    """Wait for output connector `v1.out` to process the first
+    `min_processed_records` input records, then check that it transmitted
+    exactly `expected_transmitted_records` records."""
+
+    def output_metrics():
+        return pipeline.output_connector_stats("v1", "out").metrics
+
+    # Don't wait for the connector's `total_processed_input_records`: with
+    # more than one host, it counts only the input of the connector's own
+    # host, and HTTP input for `t1` can go to another host.  Instead, wait for
+    # the pipeline to process the records, and then for the connector to
+    # process every step that the pipeline started by then.
+    wait_for_condition(
+        f"pipeline reaches {min_processed_records} processed records",
+        lambda: (
+            (pipeline.stats().global_metrics.total_processed_records or 0)
+            >= min_processed_records
+        ),
+        timeout_s=120.0,
+        poll_interval_s=1.0,
+    )
+    initiated_steps = pipeline.stats().global_metrics.total_initiated_steps or 0
+    wait_for_condition(
+        f"output connector processes {initiated_steps} steps",
+        lambda: (output_metrics().total_processed_steps or 0) >= initiated_steps,
+        timeout_s=120.0,
+        poll_interval_s=1.0,
+    )
+    assert (output_metrics().transmitted_records or 0) == expected_transmitted_records
+
+
 @enterprise_only
 @gen_pipeline_name
 def test_bootstrap_enterprise(pipeline_name):
@@ -340,26 +374,6 @@ WITH ('connectors' = '{connectors}')
 AS SELECT {view_expr} AS x FROM t1;
 """
 
-    def output_metrics():
-        return pipeline.output_connector_stats("v1", "out").metrics
-
-    def processed_records() -> int:
-        return output_metrics().total_processed_input_records or 0
-
-    def transmitted_records() -> int:
-        return output_metrics().transmitted_records or 0
-
-    def wait_for_output_progress(
-        min_processed_records: int, expected_transmitted_records: int
-    ):
-        wait_for_condition(
-            f"output connector reaches {min_processed_records} processed records",
-            lambda: processed_records() >= min_processed_records,
-            timeout_s=120.0,
-            poll_interval_s=1.0,
-        )
-        assert transmitted_records() == expected_transmitted_records
-
     pipeline = PipelineBuilder(
         TEST_CLIENT,
         pipeline_name,
@@ -374,7 +388,9 @@ AS SELECT {view_expr} AS x FROM t1;
     pipeline.start()
     pipeline.input_json("t1", [{"x": 1}, {"x": 2}, {"x": 3}])
     # Three records ingested, three records sent.
-    wait_for_output_progress(min_processed_records=3, expected_transmitted_records=3)
+    wait_for_output_progress(
+        pipeline, min_processed_records=3, expected_transmitted_records=3
+    )
     expected_processed_records = 3
     pipeline.checkpoint(True)
     pipeline.stop(force=True)
@@ -388,6 +404,7 @@ AS SELECT {view_expr} AS x FROM t1;
     # Modified connector keeps its transmitted record count and doesn't send any new records
     # in silent mode.
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_processed_records,
     )
@@ -396,6 +413,7 @@ AS SELECT {view_expr} AS x FROM t1;
     # One more record ingested, and one more record sent.
     expected_processed_records += 1
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_processed_records,
     )
@@ -411,6 +429,7 @@ AS SELECT {view_expr} AS x FROM t1;
     )
     # Modified connector keeps its transmitted record count and doesn't send any new records
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_processed_records,
     )
@@ -418,6 +437,7 @@ AS SELECT {view_expr} AS x FROM t1;
     expected_processed_records += 1
     # One more record ingested, and one more record sent.
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_processed_records,
     )
@@ -436,6 +456,7 @@ AS SELECT {view_expr} AS x FROM t1;
     # Non-silent bootstrap should send all accumulated records again.
     expected_transmitted_records = 2 * expected_processed_records
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_transmitted_records,
     )
@@ -445,6 +466,7 @@ AS SELECT {view_expr} AS x FROM t1;
     expected_transmitted_records += 1
     # One more record ingested, and one more record sent.
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_transmitted_records,
     )
@@ -491,26 +513,6 @@ WITH ('connectors' = '{connectors}')
 AS SELECT {view_expr} AS x FROM t1;
 """
 
-    def output_metrics():
-        return pipeline.output_connector_stats("v1", "out").metrics
-
-    def processed_records() -> int:
-        return output_metrics().total_processed_input_records or 0
-
-    def transmitted_records() -> int:
-        return output_metrics().transmitted_records or 0
-
-    def wait_for_output_progress(
-        min_processed_records: int, expected_transmitted_records: int
-    ):
-        wait_for_condition(
-            f"output connector reaches {min_processed_records} processed records",
-            lambda: processed_records() >= min_processed_records,
-            timeout_s=120.0,
-            poll_interval_s=1.0,
-        )
-        assert transmitted_records() == expected_transmitted_records
-
     pipeline = PipelineBuilder(
         TEST_CLIENT,
         pipeline_name,
@@ -525,7 +527,9 @@ AS SELECT {view_expr} AS x FROM t1;
     pipeline.start()
     pipeline.input_json("t1", [{"x": 1}, {"x": 2}, {"x": 3}])
     # Three records ingested, three records sent.
-    wait_for_output_progress(min_processed_records=3, expected_transmitted_records=3)
+    wait_for_output_progress(
+        pipeline, min_processed_records=3, expected_transmitted_records=3
+    )
     expected_processed_records = 3
     # The view holds the full backfilled contents (three rows so far).
     backfilled_records = 3
@@ -545,6 +549,7 @@ AS SELECT {view_expr} AS x FROM t1;
     # rows), unlike silent bootstrap which suppresses them.
     expected_transmitted_records += backfilled_records
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_transmitted_records,
     )
@@ -558,6 +563,7 @@ AS SELECT {view_expr} AS x FROM t1;
     expected_transmitted_records += 1
     backfilled_records += 1
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_transmitted_records,
     )
@@ -577,6 +583,7 @@ AS SELECT {view_expr} AS x FROM t1;
     )
     expected_transmitted_records += backfilled_records
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_transmitted_records,
     )
@@ -589,6 +596,7 @@ AS SELECT {view_expr} AS x FROM t1;
     expected_transmitted_records += 1
     backfilled_records += 1
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_transmitted_records,
     )
