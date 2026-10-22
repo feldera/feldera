@@ -14,6 +14,7 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 
 /** MergeGC shares one integral among the consumers of a stream and merges their retention policies. */
 public class MergeGCIncrementalTests extends StreamingTestBase {
@@ -61,6 +62,39 @@ public class MergeGCIncrementalTests extends StreamingTestBase {
         CountGCOperators operators = new CountGCOperators(cc.compiler);
         cc.visit(operators);
         Assert.assertEquals("K", operators.kinds());
+    }
+
+    @Test
+    public void issue7584() {
+        CompilerCircuit cc = this.getCC("""
+                CREATE TABLE T (ts INT NOT NULL, v INT);
+                CREATE TABLE S (ts INT LATENESS 0, x INT);
+                CREATE VIEW V1 AS SELECT T.ts, T.v, S.x FROM T JOIN S ON T.ts = S.ts;
+                CREATE VIEW V2 AS SELECT T.ts, T.v FROM T JOIN (SELECT ts FROM S) S ON T.ts = S.ts;""");
+        CountGCOperators operators = new CountGCOperators(cc.compiler);
+        cc.visit(operators);
+        Assert.assertEquals("K", operators.kinds());
+    }
+
+    @Test
+    public void issue7584Original() {
+        this.getCCS("""
+                CREATE TABLE L (k INT NOT NULL, t INT LATENESS 10, v INT NOT NULL);
+                CREATE TABLE R (k INT NOT NULL, t INT, v INT NOT NULL);
+                CREATE VIEW V1 AS SELECT l.k, l.t, r.v FROM L l JOIN R r ON l.t = r.t;
+                CREATE VIEW V2 AS SELECT l.t, r.v FROM (SELECT t FROM L) l JOIN R r ON l.t = r.t;""");
+    }
+
+    @Test
+    public void issue7584ThreeTypes() {
+        this.getCCS("""
+                CREATE TABLE T (ts INT NOT NULL, v INT);
+                CREATE TABLE S (ts INT LATENESS 0, x INT);
+                CREATE TABLE Q (ts INT NOT NULL LATENESS 0, y VARCHAR, z INT);
+                CREATE VIEW V1 AS SELECT T.ts, T.v, S.x FROM T JOIN S ON T.ts = S.ts;
+                CREATE VIEW V2 AS SELECT T.ts, T.v FROM T JOIN (SELECT ts FROM S) S ON T.ts = S.ts;
+                CREATE VIEW V3 AS SELECT T.ts, T.v, Q.y FROM T JOIN Q ON T.ts = Q.ts;
+                CREATE VIEW V4 AS SELECT T.ts, T.v FROM T JOIN (SELECT ts, z FROM Q) Q ON T.ts = Q.ts;""");
     }
 
     /** Both views compute MAX(x) grouped by ts, so the two retain operators of x keep the same
@@ -141,6 +175,8 @@ public class MergeGCIncrementalTests extends StreamingTestBase {
     record S1Row(int ts, int x) {}
     /** A row of S2: time ts, with a larger LATENESS, and a value x. */
     record S2Row(int ts, int x) {}
+    /** A row of N: time ts, with LATENESS, that can be NULL, and a value x. */
+    record NRow(Integer ts, int x) {}
     /** A row of U: a group key g, a value x with LATENESS, and a value y. */
     record URow(int g, int x, int y) {}
     /** A row of W: a group key k and a time ts with LATENESS. */
@@ -205,8 +241,9 @@ public class MergeGCIncrementalTests extends StreamingTestBase {
     }
 
     /** The program: the tables of {@code pairs}, the views over the LATE_ tables and over the
-     * PLAIN_ tables as LATE_ALL and PLAIN_ALL, and view D. */
-    static String program(List<TablePair<?>> pairs) {
+     * PLAIN_ tables as LATE_ALL and PLAIN_ALL, and view D.
+     * @param views  The views over the tables with a given prefix. */
+    static String program(List<TablePair<?>> pairs, Function<String, List<String>> views) {
         StringBuilder sql = new StringBuilder();
         for (TablePair<?> pair : pairs) {
             sql.append(pair.create("LATE_", true));
@@ -214,7 +251,7 @@ public class MergeGCIncrementalTests extends StreamingTestBase {
         }
         for (String prefix : TablePair.PREFIXES)
             sql.append("CREATE LOCAL VIEW ").append(prefix).append("ALL AS ")
-                    .append(String.join("\nUNION ALL ", views(prefix))).append(";\n");
+                    .append(String.join("\nUNION ALL ", views.apply(prefix))).append(";\n");
         sql.append(DifferentialTester.differenceView(COLUMNS));
         return sql.toString();
     }
@@ -223,7 +260,7 @@ public class MergeGCIncrementalTests extends StreamingTestBase {
      * X; one RetainNValues for U; none for W. */
     @Test
     public void gcOperators() {
-        CompilerCircuit cc = this.getCC(program(createTablePairs()));
+        CompilerCircuit cc = this.getCC(program(createTablePairs(), MergeGCIncrementalTests::views));
         CountGCOperators operators = new CountGCOperators(cc.compiler);
         cc.visit(operators);
         Assert.assertEquals("KKKKN", operators.kinds());
@@ -233,7 +270,7 @@ public class MergeGCIncrementalTests extends StreamingTestBase {
     @Test
     public void sameOutputWithoutLateness() {
         List<TablePair<?>> pairs = createTablePairs();
-        var tester = new DifferentialTester(this.getCCS(program(pairs)), pairs, COLUMNS);
+        var tester = new DifferentialTester(this.getCCS(program(pairs, MergeGCIncrementalTests::views)), pairs, COLUMNS);
         tester.insert(new TRow(100, 1), new TRow(103, 2), new TRow(107, 3), new TRow(150, 4),
                 new S1Row(100, 10), new S1Row(103, 11), new S2Row(100, 20), new S2Row(107, 21),
                 new URow(1, 5, 1), new URow(1, 6, 1), new URow(2, 100, 1),
@@ -273,5 +310,40 @@ public class MergeGCIncrementalTests extends StreamingTestBase {
         tester.insert(Set.of("T"), new TRow(295, 8));
         tester.insert(Set.of("S2"), new S2Row(295, 27));
         tester.delete(Set.of("U"), new URow(3, 200, 1));
+    }
+
+    /** T joins N, the projection of N to ts, and S1 on ts.  The bounds of the two joins with N,
+     * whose ts can be NULL, have different types, so the merged RetainKeys of T combines its
+     * three bounds with a chain of Apply2 operators. */
+    static List<String> boundTypesViews(String p) {
+        return List.of(
+                "SELECT 'join_n' AS j, CAST(t.ts AS VARCHAR) AS a, CAST(t.v AS VARCHAR) AS b, " +
+                        "CAST(n.x AS VARCHAR) AS c FROM " + p + "T t JOIN " + p + "N n ON t.ts = n.ts",
+                "SELECT 'join_n_ts' AS j, CAST(t.ts AS VARCHAR) AS a, CAST(t.v AS VARCHAR) AS b, " +
+                        "CAST(NULL AS VARCHAR) AS c FROM " + p + "T t JOIN (SELECT ts FROM " + p + "N) n ON t.ts = n.ts",
+                "SELECT 'join_s1' AS j, CAST(t.ts AS VARCHAR) AS a, CAST(t.v AS VARCHAR) AS b, " +
+                        "CAST(s.x AS VARCHAR) AS c FROM " + p + "T t JOIN " + p + "S1 s ON t.ts = s.ts");
+    }
+
+    /** The joins of {@link #boundTypesViews} give the same output with and without LATENESS. */
+    @Test
+    public void differentBoundTypesSameOutputWithoutLateness() {
+        List<TablePair<?>> pairs = List.of(
+                new TablePair<>("T", false, TRow.class, Set.of("ts"), LATENESS),
+                new TablePair<>("N", true, NRow.class, Set.of("ts"), LATENESS),
+                new TablePair<>("S1", false, S1Row.class, Set.of("ts"), LATENESS));
+        String sql = program(pairs, MergeGCIncrementalTests::boundTypesViews);
+        var tester = new DifferentialTester(this.getCCS(sql), pairs, COLUMNS);
+        tester.insert(new TRow(100, 1), new TRow(103, 2), new TRow(150, 3),
+                new NRow(100, 10), new NRow(103, 11), new NRow(null, 12), new S1Row(100, 20));
+        // The waterline of N moves to 190; the waterline of S1 stays at 90
+        tester.insert(Set.of("N"), new NRow(200, 13));
+        // Batches of N that change no output, so that compaction applies the bounds to T
+        for (int i = 0; i < 6; i++)
+            tester.insert(Set.of("N"), new NRow(300 + i, 0));
+        // Rows of S1 above its waterline join rows of T below the waterline of N, which only the
+        // bound from S1 keeps
+        tester.insert(Set.of("S1"), new S1Row(103, 21), new S1Row(150, 22));
+        tester.insert(Set.of("N"), new NRow(null, 14));
     }
 }
