@@ -147,7 +147,7 @@ def _read_json_events(resp, expected_count: int, timeout_s: float = 10.0):
         if not line:
             continue
         try:
-            for data in json.loads(line.decode("utf-8")).get("json_data"):
+            for data in json.loads(line.decode("utf-8")).get("json_data") or []:
                 events.append(data)
         except Exception as e:  # noqa: BLE001
             raise AssertionError(f"Invalid JSON line: {line!r} ({e})")
