@@ -9,6 +9,7 @@
   import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
+  import { editSettingsDisabledReason } from '$lib/functions/pipelines/status'
   import { deletePipeline as _deletePipeline, type Pipeline } from '$lib/services/pipelineManager'
 
   const {
@@ -29,7 +30,9 @@
   // Apply shows disabled with the stop-the-pipeline hint.
   const canEditConfig = usePermission('write:pipeline_config')
   const configDisabledMessage = $derived(
-    canEditConfig.allowed ? 'Stop the pipeline to edit settings' : 'You have read-only access'
+    canEditConfig.allowed
+      ? editSettingsDisabledReason(pipeline.current.status)
+      : 'You have read-only access'
   )
 
   const isStorageNotClearedError = (e: unknown): boolean =>

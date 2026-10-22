@@ -3,8 +3,9 @@ use crate::{
     algebra::{IndexedZSet, ZBatch},
     circuit::{
         GlobalNodeId, NodeId, OwnershipPreference, WithClock,
+        bootstrap::register_accumulated_replay_stream,
         checkpointer::EmptyCheckpoint,
-        circuit_builder::{MetadataExchange, StreamId, register_replay_stream},
+        circuit_builder::{MetadataExchange, StreamId},
         metadata::{
             ACCUMULATOR_RECORDS_TO_REPARTITION_COUNT, BALANCER_POLICY, BatchSizeStats,
             INPROGRESS_REBALANCING_TIME_SECONDS, INPUT_BATCHES_STATS,
@@ -190,9 +191,14 @@ where
                         ),
                     );
 
+                    // The integral replays straight into the accumulator's output,
+                    // bypassing the exchange and the accumulator.  The replay stays
+                    // local to each worker, which keeps the integral partitioned as
+                    // its checkpointed policy requires (under `Broadcast`, every
+                    // worker replays its own full copy).
                     let replay_stream = z1feedback
                         .operator_mut()
-                        .prepare_replay_stream(&sharded_stream);
+                        .prepare_accumulated_replay_stream(&accumulator_stream);
 
                     let trace = circuit.add_binary_operator_with_preference(
                         <AccumulateTraceAppend<TimedSpine<B, C>, B, C>>::new(
@@ -208,9 +214,9 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    register_replay_stream(
+                    register_accumulated_replay_stream(
                         circuit,
-                        &sharded_stream,
+                        &accumulator_stream,
                         &replay_stream,
                         batch_factories,
                     );
@@ -901,8 +907,8 @@ where
             // `Builder` API (instead of `Batcher`) to construct output batches.
             builders.push(B::Builder::with_capacity(
                 &self.batch_factories,
-                batch.key_count() / shards,
-                batch.len() / shards,
+                batch.key_count_upper_bound() / shards,
+                batch.len_upper_bound() / shards,
             ));
         }
 
@@ -959,8 +965,8 @@ where
                 &self.batch_factories,
                 B::Builder::with_capacity(
                     &self.batch_factories,
-                    batch.key_count() / shards,
-                    batch.len() / shards,
+                    batch.key_count_upper_bound() / shards,
+                    batch.len_upper_bound() / shards,
                 ),
             ));
         }
@@ -1065,8 +1071,8 @@ where
             .into_iter()
             .map(|builder| builder.done())
             .inspect(|batch| {
-                if batch.key_count() > *capacity {
-                    *capacity = batch.key_count();
+                if batch.key_count_upper_bound() > *capacity {
+                    *capacity = batch.key_count_upper_bound();
                 }
             });
 
@@ -1405,9 +1411,9 @@ where
                 rebalance_trace,
             } = self.rebalance_state.borrow_mut().take().unwrap();
 
-            self.rebalance_accumulator_size.set(accumulator.len());
+            self.rebalance_accumulator_size.set(accumulator.len_upper_bound());
             self.rebalance_integral_size.set(if rebalance_trace {
-                delayed_trace.len()
+                delayed_trace.len_upper_bound()
             } else {
                 0
             });

@@ -30,7 +30,7 @@ CREATE TABLE vendor (
 CREATE VIEW vendor_view
 WITH (
     'connectors' = '[{
-        "max_queued_bytes": 1000000,
+        "max_queued_size": "1M",
         "format": {
             "name": "json",
             "config": {
@@ -111,26 +111,28 @@ The following attributes are common to all connectors:
   to implement [automatic connector orchestration](/connectors/orchestration#automatic-connector-orchestration).
 
 * <a name="max_queued_records">`max_queued_records`</a> and <a
-  name="max_queued_bytes">`max_queued_bytes`</a> - The approximate
-  maximum number of records or bytes to keep in memory.
+  name="max_queued_bytes">`max_queued_size`</a> - The approximate
+  maximum number of records, or amount of data such as `"100Mi"`, to
+  keep in memory.
 
   For an input connector, these are maximum amounts that the endpoint
   will read into memory, before the endpoint pauses further reading
   until the pipeline has consumed some of the backlog.  We recommend
-  setting `max_queued_bytes` rather than `max_queued_records` to limit
+  setting `max_queued_size` rather than `max_queued_records` to limit
   memory consumption, since records can be any size.
 
   For an output connector, `max_queued_records` is the maximum number
   that the endpoint will hold in memory waiting for the output
   endpoint to send them, before the circuit pauses execution until the
-  backlog subsides.  Output connectors do not yet honor `max_queued_bytes`.
+  backlog subsides.  Output connectors do not yet honor `max_queued_size`.
 
   These values are approximate: the pipeline pauses input or execution
   soon after they are exceeded, but not always instantly.
 
   By default, `max_queued_records` is 1,000,000.  If
-  `max_queued_bytes` is unspecified, then it defaults to `1000 *
-  max_queued_records`.
+  `max_queued_size` is unspecified, then it defaults to `1000 *
+  max_queued_records` bytes.  `max_queued_bytes`, a number of bytes, is a
+  deprecated alias of `max_queued_size`.
 
 * <a name="max_batch_size">`max_batch_size`</a> - Maximum number of records from this connector to process in a single batch.
 
@@ -177,6 +179,18 @@ The following attributes are common to all connectors:
   ingests deletions as insertions and reports the original polarity of each
   record in the `is_delete` metadata attribute. The default is `false`.
   See [Soft deletes](#soft-deletes).
+
+* <a name="distributed">`distributed`</a> – *(Input connectors only)* When
+  `true`, in a multihost pipeline, the connector runs on every host and each
+  host reads a different part of its input.  When `false` (the default), the
+  connector runs on one host, which reads all of its input.  In a single-host
+  pipeline, this setting has no effect.
+
+  Only the [Kafka](/connectors/sources/kafka#distributed-connectors),
+  [Delta Lake](/connectors/sources/delta#distributed-connectors), and
+  [Iceberg](/connectors/sources/iceberg#distributed-connectors) input
+  connectors support this setting.  For other connectors, a pipeline with
+  `distributed` set to `true` fails to start.
 
 ### Soft deletes
 
@@ -318,13 +332,13 @@ output buffer:
 
 * `enable_output_buffer` - Enable output buffer.
 
-* `max_output_buffer_time_millis` - Maximum time in milliseconds data is kept
-   in the output buffer.
+* `max_output_buffer_time` - Maximum time data is kept in the output
+   buffer, for example `"500ms"` or `"10s"`. Replaces the deprecated
+   `max_output_buffer_time_millis` (integer milliseconds).
 
    When not specified, data is kept in the buffer indefinitely until one of
    the other trigger conditions is satisfied.  When this option is
-   set the buffer will be flushed at most every
-   `max_output_buffer_time_millis` milliseconds.
+   set the buffer will be flushed at least that often.
 
    This configuration option requires the `enable_output_buffer` flag
    to be set.

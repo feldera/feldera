@@ -6,6 +6,9 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceLazyMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -18,10 +21,12 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.TestSerialize;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.HashString;
 import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -40,8 +45,14 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /** Tests about table and view metadata */
@@ -252,7 +263,7 @@ public class MetadataTests extends BaseSQLTests {
         TestUtil.assertMessagesContain(compiler, """
                 Format argument does not look like a format string.
                     1|CREATE VIEW V AS SELECT PARSE_TIMESTAMP(10, '%s');
-                                                              ^^""");
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^""");
 
         compiler = this.chattyCompiler();
         compiler.submitStatementsForCompilation("CREATE VIEW V AS SELECT PARSE_TIMESTAMP('10', '%s');");
@@ -556,6 +567,117 @@ public class MetadataTests extends BaseSQLTests {
                 "Expected a boolean value for property 'skip_unused_columns'");
     }
 
+    /** For each table of a compiled circuit that an input map feeds, whether the map is lazy. */
+    static Map<String, Boolean> lazyInputMaps(DBSPCircuit circuit) {
+        Map<String, Boolean> result = new HashMap<>();
+        for (IInputOperator input : circuit.sourceOperators.values()) {
+            if (input.asOperator().is(IInputMapOperator.class))
+                result.put(input.getTableName().name(), input.asOperator().is(DBSPSourceLazyMapOperator.class));
+        }
+        return result;
+    }
+
+    @Test
+    public void lazyInputMapSurvivesMetadataRebuilds() {
+        DBSPCompiler compiler = this.testCompiler();
+        // The cast in each DEFAULT makes the compiler rebuild the input map with new metadata
+        compiler.submitStatementsForCompilation("""
+                SET FELDERA_LAZY_UPSERT = ON;
+                CREATE TABLE lazy_t(id INT NOT NULL PRIMARY KEY, d DATE DEFAULT '2024-01-01');
+                CREATE TABLE late_t(id INT NOT NULL PRIMARY KEY, d DATE DEFAULT '2024-01-01',
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE);""");
+        DBSPCircuit circuit = getCircuit(compiler);
+        Map<String, Boolean> expected = Map.of("lazy_t", true, "late_t", false);
+        Assert.assertEquals(expected, lazyInputMaps(circuit));
+        DBSPCircuit decoded = new TestSerialize(compiler).apply(circuit);
+        Assert.assertEquals(expected, lazyInputMaps(decoded));
+    }
+
+    /** Inserts and deletes do the same to a table with a primary key whether the program
+     * turns lazy upserts on or off, although the table takes the lazy input map in one
+     * program and the eager map in the other: an insert replaces the row with the same
+     * key, and a delete removes it. */
+    @Test
+    public void lazyUpsertKeepsInsertsAndDeletes() {
+        for (String value : List.of("ON", "OFF")) {
+            var ccs = this.getCCS("SET FELDERA_LAZY_UPSERT = " + value + ";" + """
+                    CREATE TABLE t(id INT NOT NULL PRIMARY KEY, v INT);
+                    CREATE VIEW v AS SELECT id, v FROM t;""");
+            ccs.step("INSERT INTO t VALUES (1, 10), (2, 20);", """
+                     id | v  | weight
+                    ------------------
+                     1  | 10 | 1
+                     2  | 20 | 1""");
+            ccs.step("""
+                    INSERT INTO t VALUES (1, 11);
+                    REMOVE FROM t VALUES (2, 20);""", """
+                     id | v  | weight
+                    ------------------
+                     1  | 10 | -1
+                     1  | 11 | 1
+                     2  | 20 | -1""");
+        }
+    }
+
+    /** The persistent id of the input operator of each table of {@code sql}, by table name. */
+    Map<String, HashString> tablePersistentIds(String sql) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        Map<String, HashString> result = new HashMap<>();
+        for (IInputOperator input : circuit.sourceOperators.values())
+            result.put(input.getTableName().name(), OperatorHash.getHash(input.asOperator(), true));
+        return result;
+    }
+
+    /** Lazy upserts change the persistent id of the tables that take the lazy input map,
+     * and of no other table. */
+    @Test
+    public void lazyUpsertChangesTheIdOnlyWithTheMap() {
+        String tables = """
+                CREATE TABLE keyed_t(id INT NOT NULL PRIMARY KEY, s VARCHAR);
+                CREATE TABLE late_t(id INT NOT NULL PRIMARY KEY,
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE);
+                CREATE TABLE keyless_t(id INT, s VARCHAR);""";
+        Map<String, HashString> byDefault = this.tablePersistentIds(tables);
+        Map<String, HashString> off = this.tablePersistentIds("SET FELDERA_LAZY_UPSERT = OFF;" + tables);
+        Map<String, HashString> on = this.tablePersistentIds("SET FELDERA_LAZY_UPSERT = ON;" + tables);
+        Assert.assertEquals(byDefault, off);
+        Assert.assertEquals(Set.of("keyed_t", "late_t", "keyless_t"), on.keySet());
+        Assert.assertNotEquals(off.get("keyed_t"), on.get("keyed_t"));
+        for (String table : List.of("late_t", "keyless_t"))
+            Assert.assertEquals(table, off.get(table), on.get(table));
+    }
+
+    /** A program that turns lazy upserts on feeds every table with a primary key and no
+     * LATENESS through the lazy input map; off, the default, keeps every table on the
+     * eager map.  The SET statement applies wherever it appears, here after the tables,
+     * and is a known setting. */
+    @Test
+    public void lazyUpsertDecidesForEveryKeyedTable() {
+        String tables = """
+                CREATE TABLE t1(id INT NOT NULL PRIMARY KEY, s VARCHAR);
+                CREATE TABLE t2(id INT NOT NULL PRIMARY KEY, s VARCHAR);
+                CREATE TABLE late_t(id INT NOT NULL PRIMARY KEY,
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE);
+                CREATE TABLE keyless_t(id INT, s VARCHAR);
+                """;
+        Map<String, Boolean> lazy = Map.of("t1", true, "t2", true, "late_t", false);
+        Map<String, Boolean> eager = Map.of("t1", false, "t2", false, "late_t", false);
+        for (String value : List.of("ON", "true", "OFF", "false", "")) {
+            DBSPCompiler compiler = this.testCompiler();
+            // An empty value leaves the setting out.
+            compiler.submitStatementsForCompilation(
+                    value.isEmpty() ? tables : tables + "SET FELDERA_LAZY_UPSERT = " + value + ";");
+            DBSPCircuit circuit = getCircuit(compiler);
+            boolean on = value.equals("ON") || value.equals("true");
+            Assert.assertEquals(value, on ? lazy : eager, lazyInputMaps(circuit));
+            // Test compilers are quiet, which keeps warnings out of messages.toString().
+            for (var message : compiler.messages.messages)
+                Assert.assertFalse(message.toString(), message.toString().contains("Unknown setting"));
+        }
+    }
+
     @Test
     public void issue5436() {
         DBSPCompiler compiler = this.chattyCompiler();
@@ -658,6 +780,20 @@ public class MetadataTests extends BaseSQLTests {
                 Note that UNION never reorders fields.
                 First type: (x INTEGER, y INTEGER)
                 Mismatched type: (y INTEGER, x INTEGER)""");
+    }
+
+    /** Two views with the same definition always have the same contents. */
+    @Test
+    public void identicalViews() {
+        DBSPCompiler compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE T(x INT, y INT);
+                CREATE VIEW V1 AS SELECT x FROM T WHERE y > 0;
+                CREATE VIEW V2 AS SELECT x FROM T WHERE y > 0;""");
+        DBSPCircuit circuit = compiler.getFinalCircuit(false);
+        Assert.assertNotNull(circuit);
+        TestUtil.assertMessagesContain(compiler.messages,
+                "warning: Identical views: View 'v2' always has the same contents as view 'v1'");
     }
 
     @Test
@@ -2412,5 +2548,102 @@ public class MetadataTests extends BaseSQLTests {
                 "LATENESS on views inside recursive components is not supported: view 'a'");
         this.statementsFailingInCompilation(program + "LATENESS b.x 2;",
                 "LATENESS on views inside recursive components is not supported: view 'b'");
+    }
+
+    /** The Rust type of a VARIANT column, from the generated code. */
+    private String variantColumnType(String setStatement) throws IOException, SQLException {
+        File file = createInputScript(setStatement + """
+                CREATE TABLE T(V VARIANT);
+                CREATE VIEW P AS SELECT V FROM T;""");
+        CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        // Every generated file names the enum in deserialize_table_record!,
+        // which passes connector metadata; only the column type varies.
+        String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
+        return rust.contains("SqlVariant") ? "SqlVariant" : "Variant";
+    }
+
+
+
+    /** Maps each persistent id in the generated Rust to the operator declaration
+     * that follows it. */
+    private Map<String, String> persistentIds(String setStatement)
+            throws IOException, SQLException {
+        File file = createInputScript(setStatement + """
+                CREATE TABLE T(V VARIANT, K INT);
+                CREATE TABLE U(W VARIANT, K INT);
+                CREATE MATERIALIZED VIEW J AS
+                    SELECT T.V AS A, U.W AS B FROM T JOIN U ON T.K = U.K;
+                CREATE MATERIALIZED VIEW G AS
+                    SELECT V, COUNT(*) AS N FROM T GROUP BY V;
+                CREATE MATERIALIZED VIEW D AS SELECT DISTINCT V FROM T;""");
+        CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
+        Map<String, String> result = new HashMap<>();
+        Matcher m = Pattern.compile(
+                "let hash = Some\\((?:concat!\\()?\"([0-9a-f]+)\"[^;]*;\\s*\\n(.*)")
+                .matcher(rust);
+        while (m.find())
+            result.put(m.group(1), m.group(2));
+        return result;
+    }
+
+    /** Every operator that holds VARIANT-typed state gets a different persistent
+     * id under the two representations.  Persistent ids are hashes of the
+     * generated Rust, and the representation appears in the type of any operator
+     * that stores VARIANT values, so a pipeline resumed after the switch does not
+     * find, and therefore cannot misread, state written in the other format. */
+    @Test
+    public void variantStateIsNotSharedAcrossRepresentations()
+            throws IOException, SQLException {
+        Map<String, String> flat = this.persistentIds("");
+        Map<String, String> legacy = this.persistentIds("SET FELDERA_FLAT_VARIANT = 'off';\n");
+        // Without VARIANT-typed operators the loop below would prove nothing.
+        long variantOperators = flat.values().stream()
+                .filter(declaration -> declaration.contains("SqlVariant")).count();
+        Assert.assertTrue("no VARIANT operators in the program", variantOperators > 0);
+
+        Set<String> shared = new HashSet<>(flat.keySet());
+        shared.retainAll(legacy.keySet());
+        for (String id : shared)
+            Assert.assertFalse(
+                    "operator holding VARIANT state kept its persistent id: " + flat.get(id),
+                    flat.get(id).contains("SqlVariant"));
+
+        // Some ids must move, or the check above proves nothing.
+        Assert.assertNotEquals(flat.keySet(), legacy.keySet());
+    }
+
+    @Test
+    public void flatVariantIsTheDefault() throws IOException, SQLException {
+        Assert.assertEquals("SqlVariant", this.variantColumnType(""));
+    }
+
+    /** FELDERA_FLAT_VARIANT = 'off' still selects the enum representation. */
+    @Test
+    public void flatVariantCanBeTurnedOff() throws IOException, SQLException {
+        Assert.assertEquals("Variant",
+                this.variantColumnType("SET FELDERA_FLAT_VARIANT = 'off';\n"));
+        // The setting must not leak into the next compilation.
+        Assert.assertEquals("SqlVariant", this.variantColumnType(""));
+    }
+
+    /** A VARIANT column defaulted from connector metadata uses the
+     * legacy representation. */
+    @Test
+    public void variantColumnFromConnectorMetadata()
+            throws IOException, InterruptedException, SQLException {
+        File file = createInputScript("""
+                CREATE TABLE T(
+                    V VARIANT DEFAULT CONNECTOR_METADATA()['headers'],
+                    S VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['topic'] AS VARCHAR)
+                );
+                CREATE VIEW P AS SELECT * FROM T;""");
+        CompilerMessages messages = CompilerMain.execute(
+                "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        if (messages.errorCount() > 0)
+            throw new RuntimeException(messages.toString());
+        String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
+        Assert.assertTrue(rust.contains("variant_to_fvN("));
+        BaseSQLTests.compileAndTestRust(false);
     }
 }

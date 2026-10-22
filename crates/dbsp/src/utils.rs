@@ -118,6 +118,19 @@ pub fn process_rss_bytes() -> Option<u64> {
     memory_stats().map(|usage| usage.physical_mem as u64)
 }
 
+/// Returns how much memory this process can use, in bytes. This is the host's
+/// memory, or the container's cgroup limit if that is lower.
+pub fn available_memory_bytes() -> Option<u64> {
+    // Tests read a mocked value so they don't depend on the machine running them.
+    #[cfg(test)]
+    return std::env::var("MOCK_AVAILABLE_MEMORY_BYTES")
+        .ok()
+        .and_then(|bytes| bytes.parse::<u64>().ok());
+
+    #[cfg(not(test))]
+    feldera_observability::system::total_memory_bytes()
+}
+
 /// Results of capturing [tracing] output.
 #[cfg(test)]
 pub(crate) struct LogCapture<T> {
@@ -144,7 +157,7 @@ impl<T> LogCapture<T> {
 
         #[derive(Debug, Default)]
         struct CaptureBuf(Mutex<Vec<u8>>);
-        impl<'a> Write for &'a CaptureBuf {
+        impl Write for &CaptureBuf {
             fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
                 self.0.lock().unwrap().extend_from_slice(buf);
                 Ok(buf.len())

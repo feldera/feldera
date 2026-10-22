@@ -1,7 +1,7 @@
-use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
 use crate::circuit::metadata::{INPUT_RECORDS_COUNT, MEMORY_ALLOCATIONS_COUNT, RETAINMENT_BOUNDS};
 use crate::circuit::operator_traits::{OperatorCheckpoint, OperatorName};
 use crate::circuit::{NodeId, splitter_output_chunk_size};
+use crate::circuit::{bootstrap::register_replay_stream, circuit_builder::StreamId};
 use crate::dynamic::Factory;
 use crate::operator::dynamic::replay::ReplayState;
 use crate::operator::require_persistent_id;
@@ -818,7 +818,7 @@ where
     }
 
     async fn eval_owned_and_ref(&mut self, mut trace: T, batch: &T::Batch) -> T {
-        self.num_inputs += batch.len();
+        self.num_inputs += batch.len_upper_bound();
         trace.insert(batch.clone()).await;
         trace
     }
@@ -830,7 +830,7 @@ where
     }
 
     async fn eval_owned(&mut self, mut trace: T, batch: T::Batch) -> T {
-        self.num_inputs += batch.len();
+        self.num_inputs += batch.len_upper_bound();
 
         trace.insert(batch).await;
         trace
@@ -900,7 +900,7 @@ where
     async fn eval_owned_and_ref(&mut self, mut trace: T, batch: &B) -> T {
         // TODO: extend `trace` type to feed untimed batches directly
         // (adding fixed timestamp on the fly).
-        self.num_inputs += batch.len();
+        self.num_inputs += batch.len_upper_bound();
         trace
             .insert(T::Batch::from_batch(
                 batch,
@@ -918,7 +918,7 @@ where
     }
 
     async fn eval_owned(&mut self, mut trace: T, batch: B) -> T {
-        self.num_inputs += batch.len();
+        self.num_inputs += batch.len_upper_bound();
 
         if TypeId::of::<B>() == TypeId::of::<T::Batch>() {
             let mut batch = Some(batch);
@@ -1516,10 +1516,7 @@ mod test {
             ) -> BTreeSet<(i32, i32, ZWeight)> {
                 let mut all_tuples = BTreeMap::new();
                 typed_batch::IndexedZSetReader::iter(trace).for_each(|(k, v, w)| {
-                    all_tuples
-                        .entry(k)
-                        .or_insert_with(|| Vec::new())
-                        .push((v, w))
+                    all_tuples.entry(k).or_insert_with(Vec::new).push((v, w))
                 });
                 let mut expected = BTreeSet::new();
                 for (k, mut tuples) in all_tuples.into_iter() {
@@ -1543,10 +1540,7 @@ mod test {
             ) -> BTreeSet<(i32, i32, ZWeight)> {
                 let mut all_tuples = BTreeMap::new();
                 typed_batch::IndexedZSetReader::iter(trace).for_each(|(k, v, w)| {
-                    all_tuples
-                        .entry(k)
-                        .or_insert_with(|| Vec::new())
-                        .push((v, w))
+                    all_tuples.entry(k).or_insert_with(Vec::new).push((v, w))
                 });
 
                 let mut expected = BTreeSet::new();
@@ -1563,10 +1557,7 @@ mod test {
             trace.apply3(&trace3, &watermark, move |trace, trace3, ts| {
                 let mut all_tuples = BTreeMap::new();
                 typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| {
-                    all_tuples
-                        .entry(k)
-                        .or_insert_with(|| Vec::new())
-                        .push((v, w))
+                    all_tuples.entry(k).or_insert_with(Vec::new).push((v, w))
                 });
 
                 let expected =
@@ -1586,10 +1577,7 @@ mod test {
             trace.apply3(&trace4, &watermark, move |trace, trace4, ts| {
                 let mut all_tuples = BTreeMap::new();
                 typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| {
-                    all_tuples
-                        .entry(k)
-                        .or_insert_with(|| Vec::new())
-                        .push((v, w))
+                    all_tuples.entry(k).or_insert_with(Vec::new).push((v, w))
                 });
 
                 let expected =
@@ -1609,10 +1597,7 @@ mod test {
             trace.apply3(&trace5, &watermark, move |trace, trace5, ts| {
                 let mut all_tuples = BTreeMap::new();
                 typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| {
-                    all_tuples
-                        .entry(k)
-                        .or_insert_with(|| Vec::new())
-                        .push((v, w))
+                    all_tuples.entry(k).or_insert_with(Vec::new).push((v, w))
                 });
 
                 let expected =
@@ -1632,10 +1617,7 @@ mod test {
             trace.apply3(&trace6, &watermark, move |trace, trace6, ts| {
                 let mut all_tuples = BTreeMap::new();
                 typed_batch::IndexedZSetReader::iter(trace.as_ref()).for_each(|(k, v, w)| {
-                    all_tuples
-                        .entry(k)
-                        .or_insert_with(|| Vec::new())
-                        .push((v, w))
+                    all_tuples.entry(k).or_insert_with(Vec::new).push((v, w))
                 });
 
                 let expected =

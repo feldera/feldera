@@ -127,21 +127,6 @@ impl Display for SqlCompilerMessage {
 }
 
 impl SqlCompilerMessage {
-    /// An error no span in the SQL explains: an unsupported combination of the program and
-    /// its configuration. Positions are zero, as they are for a connector-generation error.
-    pub(crate) fn without_position(error_type: &str, message: String) -> Self {
-        SqlCompilerMessage {
-            start_line_number: 0,
-            start_column: 0,
-            end_line_number: 0,
-            end_column: 0,
-            warning: false,
-            error_type: error_type.to_string(),
-            message,
-            snippet: None,
-        }
-    }
-
     pub(crate) fn new_from_connector_generation_error(error: ConnectorGenerationError) -> Self {
         let position = match error {
             ConnectorGenerationError::PropertyDoesNotExist { position, .. } => position,
@@ -247,16 +232,6 @@ impl SqlCompilationInfo {
         Self {
             exit_code: 0,
             messages: vec![],
-        }
-    }
-
-    /// A single error, shaped as the compiler would have reported it. For a refusal the
-    /// manager makes instead of invoking the compiler, so the user sees a program error
-    /// rather than a system error.
-    pub(crate) fn from_error(error_type: &str, message: String) -> Self {
-        Self {
-            exit_code: 1,
-            messages: vec![SqlCompilerMessage::without_position(error_type, message)],
         }
     }
 }
@@ -398,15 +373,17 @@ pub struct PipelineProgramArtifacts {
     /// artifact yet, or to a previous version, so cleanup must not name a file from them.
     pub program_status: ProgramStatus,
     /// Checksum of the sources the binary was built from. `None` while `CompilingRust`, and
-    /// for a Gen-2 program, which builds no binary.
+    /// for a Gen-2 program without Rust UDFs, which builds nothing. For a Gen-2 program with
+    /// Rust UDFs, it describes the UDF library.
     pub program_binary_source_checksum: Option<String>,
-    /// Checksum of the binary itself. `None` while `CompilingRust`, and for a Gen-2 program.
+    /// Checksum of the binary itself. `None` while `CompilingRust`, and for a Gen-2 program
+    /// without Rust UDFs.
     pub program_binary_integrity_checksum: Option<String>,
     /// Checksum of the delivered program info.
     pub program_info_integrity_checksum: Option<String>,
-    /// Whether the Gen-2 engine runs this program. A Gen-2 program delivers program info and
-    /// no binary, so its artifact is named by the program-info checksum on both halves; the
-    /// flag is what lets cleanup rebuild that name rather than fall back to a prefix.
+    /// Whether the Gen-2 engine runs this program. A Gen-2 program's program info is named by
+    /// the program-info checksum on both halves; the flag is what lets cleanup rebuild that
+    /// name rather than fall back to a prefix.
     pub is_gen2: bool,
 }
 
@@ -427,9 +404,11 @@ pub enum RuntimeSelector {
     /// The string corresponds to the git SHA of feldera/feldera at the time of the build.
     Platform(String),
     /// The Gen-2 engine runs the pipeline. The SQL compiler captures the JIT
-    /// circuit IR into the program info; the Rust half compiles against the
-    /// platform sources, so no runtime commit is selected.
-    Gen2,
+    /// circuit IR into the program info, and the Rust half compiles only the
+    /// Rust UDFs, into a shared library, so no runtime commit is selected.
+    ///
+    /// The optional git SHA (`gen2:<sha>`) selects the engine build of that commit.
+    Gen2(Option<String>),
 }
 
 impl From<RuntimeSelector> for Option<String> {
@@ -438,7 +417,8 @@ impl From<RuntimeSelector> for Option<String> {
             RuntimeSelector::Sha(sha) => Some(sha),
             RuntimeSelector::Version(version) => Some(version),
             RuntimeSelector::Platform(_platform_sha) => None,
-            RuntimeSelector::Gen2 => Some("gen2".to_string()),
+            RuntimeSelector::Gen2(None) => Some("gen2".to_string()),
+            RuntimeSelector::Gen2(Some(sha)) => Some(format!("gen2:{sha}")),
         }
     }
 }
@@ -463,7 +443,15 @@ impl RuntimeSelector {
 
     /// Is the Gen-2 engine selected?
     pub fn is_gen2(&self) -> bool {
-        matches!(self, RuntimeSelector::Gen2)
+        matches!(self, RuntimeSelector::Gen2(_))
+    }
+
+    /// The git SHA of the Gen2 engine build that `gen2:<sha>` selects.
+    pub fn gen2_engine_sha(&self) -> Option<&str> {
+        match self {
+            RuntimeSelector::Gen2(sha) => sha.as_deref(),
+            _ => None,
+        }
     }
 
     /// Bytes representation of the runtime selector (for hashing).
@@ -472,7 +460,8 @@ impl RuntimeSelector {
             RuntimeSelector::Sha(sha) => sha.as_bytes(),
             RuntimeSelector::Version(version) => version.as_bytes(),
             RuntimeSelector::Platform(platform_sha) => platform_sha.as_bytes(),
-            RuntimeSelector::Gen2 => b"gen2",
+            // Compilation does not depend on the engine build.
+            RuntimeSelector::Gen2(_) => b"gen2",
         }
     }
 
@@ -482,7 +471,7 @@ impl RuntimeSelector {
             RuntimeSelector::Sha(sha) => sha,
             RuntimeSelector::Version(version) => version,
             RuntimeSelector::Platform(platform_sha) => platform_sha,
-            RuntimeSelector::Gen2 => {
+            RuntimeSelector::Gen2(_) => {
                 unreachable!("the Gen-2 engine selects no runtime commit; no git operation applies")
             }
         }
@@ -495,7 +484,8 @@ impl Display for RuntimeSelector {
             RuntimeSelector::Sha(sha) => write!(f, "{sha}"),
             RuntimeSelector::Version(version) => write!(f, "{version}"),
             RuntimeSelector::Platform(platform_sha) => write!(f, "{platform_sha}"),
-            RuntimeSelector::Gen2 => write!(f, "gen2"),
+            RuntimeSelector::Gen2(None) => write!(f, "gen2"),
+            RuntimeSelector::Gen2(Some(sha)) => write!(f, "gen2:{sha}"),
         }
     }
 }
@@ -521,7 +511,15 @@ impl TryFrom<String> for RuntimeSelector {
         }
 
         if value == "gen2" {
-            Ok(RuntimeSelector::Gen2)
+            Ok(RuntimeSelector::Gen2(None))
+        } else if let Some(sha) = value.strip_prefix("gen2:") {
+            if is_valid_git_sha(sha) {
+                Ok(RuntimeSelector::Gen2(Some(sha.to_string())))
+            } else {
+                Err(format!(
+                    "The requested runtime version '{value}' does not name a valid git hash after 'gen2:'.",
+                ))
+            }
         } else if is_valid_git_sha(&value) {
             Ok(RuntimeSelector::Sha(value))
         } else if is_version_tag(&value) {
@@ -562,7 +560,8 @@ pub struct ProgramConfig {
     ///
     /// The value `gen2` names an engine rather than a runtime commit: the SQL
     /// compiler captures the circuit IR and the runner launches the Gen-2
-    /// engine, so no pipeline binary is compiled.
+    /// engine, so no pipeline binary is compiled. `gen2:<sha>` selects the
+    /// engine build of that commit, where the runner supports it.
     ///
     /// A platform of version `0.x.y` may be capable of running future and past
     /// runtimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,
@@ -816,6 +815,7 @@ impl ProgramInfo {
                     .unwrap_or_default(),
                 program_schema: self.schema.clone(),
                 circuit_ir: self.circuit_ir.clone(),
+                udf_library: None,
             });
 
         PipelineConfigProgramInfo {
@@ -911,6 +911,7 @@ pub fn generate_program_info(
                 | TransportConfig::KafkaOutput(_)
                 | TransportConfig::DeltaTableOutput(_)
                 | TransportConfig::DynamoDBOutput(_)
+                | TransportConfig::NatsOutput(_)
                 | TransportConfig::RedisOutput(_)
                 | TransportConfig::S2Output(_)
                 | TransportConfig::NullOutput => {}
@@ -1026,11 +1027,39 @@ mod tests {
         );
     }
 
+    /// `gen2` and `gen2:<sha>` both select the Gen2 engine, and both round-trip as strings.
+    #[test]
+    fn gen2_runtime_version_selects_an_engine_build() {
+        let sha = "d0b45d8f87056c9d2c89c6f63b2531b0c5905f9b";
+        for (value, engine_sha) in [
+            ("gen2".to_string(), None),
+            (format!("gen2:{sha}"), Some(sha)),
+        ] {
+            let selector = RuntimeSelector::try_from(value.clone()).unwrap();
+            assert!(selector.is_gen2());
+            assert_eq!(selector.gen2_engine_sha(), engine_sha);
+            assert_eq!(selector.to_string(), value);
+            assert_eq!(Option::<String>::from(selector), Some(value));
+        }
+        for invalid in ["gen2:", "gen2:main", "gen2:d0b45d8", "gen2:v0.1.0"] {
+            assert!(
+                RuntimeSelector::try_from(invalid.to_string()).is_err(),
+                "{invalid}"
+            );
+        }
+        assert_eq!(
+            RuntimeSelector::try_from(sha.to_string())
+                .unwrap()
+                .gen2_engine_sha(),
+            None
+        );
+    }
+
     #[test]
     fn gen2_sql_stage_reaches_success_directly() {
         use super::{ProgramStatus, validate_program_status_transition};
-        // The Gen-2 engine skips Rust compilation: the SQL compiler moves the program from
-        // CompilingSql straight to Success.
+        // A Gen-2 program without Rust UDFs skips Rust compilation: the SQL compiler moves
+        // the program from CompilingSql straight to Success.
         assert!(
             validate_program_status_transition(ProgramStatus::CompilingSql, ProgramStatus::Success)
                 .is_ok()
@@ -1059,10 +1088,11 @@ mod tests {
             max_batch_size: Some(0),
             max_worker_batch_size: None,
             max_queued_records: 0,
-            max_queued_bytes: None,
+            max_queued_size: None,
             paused: false,
             labels: vec![],
             start_after: None,
+            distributed: false,
         };
 
         // Reuse property value as it is only used in the errors

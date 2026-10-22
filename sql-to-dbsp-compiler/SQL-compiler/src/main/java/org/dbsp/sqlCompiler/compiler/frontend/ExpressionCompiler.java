@@ -43,7 +43,6 @@ import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
 import org.apache.calcite.util.TimestampWithTimeZoneString;
-import org.dbsp.sqlCompiler.compiler.VariantMode;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
@@ -53,7 +52,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ExternalFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.ExternalFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.WarnFloatingPointEquality;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -960,7 +959,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         this.checkRegexLiteral(call, arg);
         DBSPType argType = arg.getType();
         if (!argType.is(DBSPTypeString.class)) {
-            this.compiler.reportWarning(arg.getSourcePosition(),
+            this.compiler.reportWarning(argumentPosition(call, arg),
                     "Suspicious argument",
                     "Regular expression argument expression should have type CHAR, but it has type " + argType.asSqlString());
             arg = arg.cast(arg.getNode(), DBSPTypeString.varchar(arg.getType().mayBeNull),
@@ -973,10 +972,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     }
 
     @Nullable
-    DBSPExpression makeTimezone(DBSPExpression arg) {
+    DBSPExpression makeTimezone(CalciteObject call, DBSPExpression arg) {
         DBSPType argType = arg.getType();
         if (!argType.is(DBSPTypeString.class)) {
-            this.compiler.reportWarning(arg.getSourcePosition(),
+            this.compiler.reportWarning(argumentPosition(call, arg),
                     "Suspicious argument",
                     "Timezone expression should have type CHAR, but it has type " + argType.asSqlString());
             arg = arg.cast(arg.getNode(), DBSPTypeString.varchar(arg.getType().mayBeNull),
@@ -1044,14 +1043,24 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         return false;
     }
 
+    /** The position of an argument of a call, or the position of the whole call
+     * when the argument has none, e.g., a folded constant. */
+    static SourcePositionRange argumentPosition(CalciteObject call, DBSPExpression argument) {
+        SourcePositionRange position = argument.getSourcePosition();
+        if (position.isValid())
+            return position;
+        return call.getPositionRange();
+    }
+
     @SuppressWarnings("SameParameterValue")
-    void checkFormatArg(List<DBSPExpression> args, int formatPosition) {
+    void checkFormatArg(CalciteObject call, List<DBSPExpression> args, int formatPosition) {
         if (formatPosition >= args.size())
             return;
         DBSPExpression formatArg = args.get(formatPosition);
+        SourcePositionRange formatArgPosition = argumentPosition(call, formatArg);
         DBSPType formatArgType = formatArg.getType();
         if (!formatArgType.is(DBSPTypeString.class)) {
-            this.compiler.reportWarning(formatArg.getSourcePosition(),
+            this.compiler.reportWarning(formatArgPosition,
                     "Suspicious argument",
                     "Format argument is expected to be a string, but the type is " + formatArgType.asSqlString());
             return;
@@ -1059,13 +1068,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (formatArg.is(DBSPStringLiteral.class)) {
             String str = formatArg.to(DBSPStringLiteral.class).value;
             if (str == null) {
-                this.compiler.reportWarning(formatArg.getSourcePosition(),
+                this.compiler.reportWarning(formatArgPosition,
                         "Suspicious argument",
                         "Format argument is NULL.");
                 return;
             }
             if (!str.contains("%")) {
-                this.compiler.reportWarning(formatArg.getSourcePosition(),
+                this.compiler.reportWarning(formatArgPosition,
                         "Suspicious argument",
                         "Format argument does not look like a format string.");
                 return;
@@ -1074,7 +1083,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             // This may be a sign that the format string is
             DBSPCastExpression cast = formatArg.to(DBSPCastExpression.class);
             if (!cast.source.getType().is(DBSPTypeString.class)) {
-                this.compiler.reportWarning(formatArg.getSourcePosition(),
+                this.compiler.reportWarning(formatArgPosition,
                         "Suspicious argument",
                         "Format argument does not look like a format string.");
                 return;
@@ -1085,7 +1094,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             if (otherArg.is(DBSPStringLiteral.class)) {
                 String strData = otherArg.to(DBSPStringLiteral.class).value;
                 if (strData != null && strData.contains("%")) {
-                    this.compiler.reportWarning(otherArg.getSourcePosition(),
+                    this.compiler.reportWarning(argumentPosition(call, otherArg),
                             "Suspicious argument",
                             "Are the two arguments swapped?");
                 }
@@ -1543,8 +1552,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             name += "N";
                         return new DBSPApplyExpression(node, name, type, op0);
                     }
-                    case "writelog":
-                        return new DBSPApplyExpression(node, opName, type, ops.get(0), ops.get(1));
                     case "repeat": {
                         validateArgCount(node, opName, ops.size(), 2);
                         if (ops.get(0).getType().code == BYTES) {
@@ -1561,7 +1568,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "format_date":
                     case "format_timestamp":
                     case "format_time": {
-                        this.checkFormatArg(ops, 0);
+                        this.checkFormatArg(node, ops, 0);
                         return compileFunction(call, node, type, ops, 2);
                     }
                     case "bround": {
@@ -1632,7 +1639,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "variantnull":
                         return compileFunction(
-                                VariantMode.isEnabled() ? "variantnull_fv" : "variantnull",
+                                DBSPTypeVariant.legacyRepresentation() ? "variantnull" : "variantnull_fv",
                                 node, type, ops, 0);
                     case "now":
                     case "connector_metadata":
@@ -1645,7 +1652,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "typeof":
                         return compileFunction(
-                                VariantMode.isEnabled() ? "typeof_fv" : "typeof",
+                                DBSPTypeVariant.legacyRepresentation() ? "typeof" : "typeof_fv",
                                 node, type, ops, 1);
                     case "to_int":
                         return compileFunction(call, node, type, ops, 1);
@@ -1656,7 +1663,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             return expr;
                         // The argument is a string, so the polymorphic suffix
                         // cannot distinguish the variant representation.
-                        String baseName = VariantMode.isEnabled() ? opName + "_fv" : opName;
+                        String baseName = DBSPTypeVariant.legacyRepresentation() ? opName : opName + "_fv";
                         return compilePolymorphicFunction(false, baseName, node, type, ops, 1);
                     }
                     case "to_json":
@@ -1704,7 +1711,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "parse_time":
                     case "parse_timestamp": {
                         validateArgCount(node, operationName, ops.size(), 2);
-                        this.checkFormatArg(ops, 0);
+                        this.checkFormatArg(node, ops, 0);
                         ensureString(ops, 0);
                         ensureString(ops, 1);
                         // Returns NULL for a non-NULL string that does not match the format
@@ -1852,7 +1859,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         // The base name switches with the variant representation,
                         // like typeof.  The result is nullable regardless of the
                         // argument: a dropped non-map variant produces NULL
-                        String method = (VariantMode.isEnabled() ? opName + "_fv" : opName) +
+                        String method = (DBSPTypeVariant.legacyRepresentation() ? opName : opName + "_fv") +
                                 ops.get(0).getType().nullableUnderlineSuffix();
                         return new DBSPApplyExpression(node, method, type, ops.get(0), ops.get(1));
                     }
@@ -1868,14 +1875,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             converted = mapper.body
                                     .cast(node, variant, DBSPCastExpression.CastType.SqlUnsafe)
                                     .closure(mapper.parameters);
-                        String method = (VariantMode.isEnabled() ? opName + "_fv" : opName) +
+                        String method = (DBSPTypeVariant.legacyRepresentation() ? opName : opName + "_fv") +
                                 ops.get(0).getType().nullableUnderlineSuffix();
                         return new DBSPApplyExpression(node, method, type, ops.get(0), converted);
                     }
                     case "convert_timezone": {
                         validateArgCount(node, operationName, ops.size(), 3);
-                        ops.set(0, this.makeTimezone(ops.get(0)));
-                        ops.set(1, this.makeTimezone(ops.get(1)));
+                        ops.set(0, this.makeTimezone(node, ops.get(0)));
+                        ops.set(1, this.makeTimezone(node, ops.get(1)));
                         // Returns NULL for a non-NULL timestamp that is out of range
                         return compileStrictFunction(false, call, node, type, ops, 3);
                     }
@@ -2042,7 +2049,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             String key = "";
                             if (ki.is(DBSPLiteral.class))
                                 key = ": " + ki.to(DBSPLiteral.class).toSqlString();
-                            this.compiler.reportWarning(ki.getSourcePosition(), "Duplicate MAP key",
+                            this.compiler.reportWarning(argumentPosition(node, ki), "Duplicate MAP key",
                                     "MAP constructor contains two identical keys" + key);
                         }
                     }

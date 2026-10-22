@@ -418,7 +418,7 @@ impl Profiler {
                         RUNTIME_NONBLOCKING_PERCENT,
                         Vec::new(),
                         MetaItem::Percent {
-                            numerator: profile.cpu_time().as_micros() as u64,
+                            numerator: profile.cpu_time().as_micros() as i64,
                             denominator: profile.real_time().as_micros() as u64,
                         },
                     ),
@@ -426,7 +426,7 @@ impl Profiler {
                         RUNTIME_PERCENT,
                         Vec::new(),
                         MetaItem::Percent {
-                            numerator: profile.real_time().as_micros() as u64,
+                            numerator: profile.real_time().as_micros() as i64,
                             denominator: total_time.as_micros() as u64,
                         },
                     ),
@@ -443,7 +443,7 @@ impl Profiler {
                     CIRCUIT_RUNTIME_SECONDS => profile.step_profile.real_time(),
                     CIRCUIT_CPU_TIME_SECONDS => profile.step_profile.cpu_time(),
                     CIRCUIT_NONBLOCKING_PERCENT => MetaItem::Percent {
-                        numerator: profile.step_profile.cpu_time().as_micros() as u64,
+                        numerator: profile.step_profile.cpu_time().as_micros() as i64,
                         denominator: profile.step_profile.real_time().as_micros() as u64,
                     },
                     CIRCUIT_IDLE_TIME_SECONDS => profile.idle_profile.real_time(),
@@ -554,6 +554,7 @@ mod tests {
         operator::Generator,
         utils::Tup2,
     };
+    use feldera_types::size::ConfigSize;
     use std::io::Read;
 
     /// Runs a circuit that keeps an integral spine busy and returns its profile.
@@ -568,7 +569,7 @@ mod tests {
             CircuitConfig::with_workers(workers).with_temporary_storage(storage.path());
         // Spill every batch, so the mergers fall behind the ingest and the spine
         // reaches the batch count at which it applies backpressure.
-        config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+        config.storage.as_mut().unwrap().options.min_spill_size = Some(ConfigSize::ZERO);
 
         let (mut dbsp, input) = Runtime::init_circuit(config, move |circuit| {
             let (stream, input) = circuit.add_input_indexed_zset::<i32, i32>();
@@ -824,7 +825,7 @@ mod tests {
         let streamed = profile.write_zip(Vec::new()).unwrap();
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(streamed)).unwrap();
         let names: Vec<String> = (0..archive.len())
-            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .map(|i| archive.by_index(i).unwrap().name().unwrap().to_string())
             .collect();
         assert_eq!(names, ["4.dot", "4.txt", "5.dot", "5.txt", "Makefile"]);
         let mut makefile = String::new();

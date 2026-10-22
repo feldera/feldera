@@ -15,6 +15,8 @@
 --    INSERT INTO purchase VALUES(1, '2020-01-02 00:00:00', 10);
 --    INSERT INTO purchase VALUES(1, '2020-01-02 01:00:00', 10);
 
+-- Aggregating purchases and returns leads to unbounded state
+SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = 1;
 
 -- This table uses two time-series-related annotations:
 -- `LATENESS` - updates to this table can arrive no more than 1 hour out of order.
@@ -27,6 +29,9 @@ CREATE TABLE purchase (
     'materialized' = 'true',
     'append_only' = 'true'
 );
+
+-- The customer_id column is not used in any view
+SET FELDERA_IGNORE_WARNING_UNUSED_COLUMN = 1;
 
 CREATE TABLE returns (
     customer_id INT,
@@ -91,7 +96,8 @@ GROUP BY
     window_start;
 
 -- Daily MAX purchase amount computed as a rolling aggregate.
-CREATE MATERIALIZED VIEW daily_max_rolling AS
+--CREATE MATERIALIZED VIEW daily_max_rolling AS
+CREATE VIEW daily_max_rolling AS
 SELECT
     ts,
     amount,
@@ -101,7 +107,8 @@ WINDOW window_1_day AS (ORDER BY ts RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND C
 
 -- Use an OUTER JOIN to compute a daily transaction summary, including daily totals
 -- from `purchase` and `returns` tables.
-CREATE MATERIALIZED VIEW daily_totals AS
+--CREATE MATERIALIZED VIEW daily_totals AS
+CREATE VIEW daily_totals AS
 WITH
     purchase_totals AS (
         SELECT

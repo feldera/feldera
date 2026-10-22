@@ -358,7 +358,7 @@ where
                 return;
             };
 
-            self.input_batch_stats.borrow_mut().add_batch(delta.len());
+            self.input_batch_stats.borrow_mut().add_batch(delta.len_upper_bound());
 
             //           ┌────────────────────────────────────────┐
             //           │       previous window                  │
@@ -404,7 +404,7 @@ where
 
                         if tuples.len() >= chunk_size {
                             let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-                            self.output_batch_stats.borrow_mut().add_batch(result.len());
+                            self.output_batch_stats.borrow_mut().add_batch(result.len_upper_bound());
                             yield (result, false, None);
                             tuples = self.factories.weighted_items_factory().default_box();
                             tuples.reserve(chunk_size);
@@ -435,7 +435,7 @@ where
 
                             if tuples.len() >= chunk_size {
                                 let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-                                self.output_batch_stats.borrow_mut().add_batch(result.len());
+                                self.output_batch_stats.borrow_mut().add_batch(result.len_upper_bound());
                                 yield (result, false, None);
                                 tuples = self.factories.weighted_items_factory().default_box();
                                 tuples.reserve(chunk_size);
@@ -467,7 +467,7 @@ where
 
                         if tuples.len() >= chunk_size {
                             let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-                            self.output_batch_stats.borrow_mut().add_batch(result.len());
+                            self.output_batch_stats.borrow_mut().add_batch(result.len_upper_bound());
                             yield (result, false, None);
                             tuples = self.factories.weighted_items_factory().default_box();
                             tuples.reserve(chunk_size);
@@ -495,7 +495,7 @@ where
 
                     if tuples.len() >= chunk_size {
                         let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-                        self.output_batch_stats.borrow_mut().add_batch(result.len());
+                        self.output_batch_stats.borrow_mut().add_batch(result.len_upper_bound());
                         yield (result, false, None);
                         tuples = self.factories.weighted_items_factory().default_box();
                         tuples.reserve(chunk_size);
@@ -509,7 +509,7 @@ where
             *self.window.borrow_mut() = Some((start1, end1));
 
             let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.len_upper_bound());
             yield (result, true, None);
         }
     }
@@ -701,7 +701,7 @@ mod test {
             .into_iter();
 
         let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
-            Runtime::init_circuit(1, move |circuit| window_test_circuit(circuit)).unwrap();
+            Runtime::init_circuit(1, window_test_circuit).unwrap();
 
         for clock in 1000..1006 {
             bounds_handle.set_for_all(((clock - 100), clock));
@@ -769,7 +769,7 @@ mod test {
         const WINDOW_SIZE: Time = 5;
 
         let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
-            Runtime::init_circuit(1, move |circuit| window_test_circuit(circuit)).unwrap();
+            Runtime::init_circuit(1, window_test_circuit).unwrap();
 
         for clock in 1000..1011 {
             bounds_handle.set_for_all((
@@ -855,7 +855,7 @@ mod test {
         .into_iter();
 
         let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
-            Runtime::init_circuit(1, move |circuit| window_test_circuit(circuit)).unwrap();
+            Runtime::init_circuit(1, window_test_circuit).unwrap();
 
         for _ in 1000..1006 {
             bounds_handle.set_for_all(windows.next().unwrap());

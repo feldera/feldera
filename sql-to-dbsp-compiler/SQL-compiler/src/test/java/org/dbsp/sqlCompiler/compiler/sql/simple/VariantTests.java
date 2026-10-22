@@ -1105,6 +1105,40 @@ public class VariantTests extends SqlIoTest {
     }
 
     @Test
+    public void issue7531() {
+        // An object whose key is serde_json's number token is a MAP, not a number
+        this.qst("""
+                SELECT TYPEOF(PARSE_JSON('{"$serde_json::private::Number":"1"}'));
+                 r
+                ---
+                 MAP
+                (1 row)
+
+                SELECT TO_JSON(PARSE_JSON('{"$serde_json::private::Number":"1","x":2}'));
+                 r
+                ---
+                 {"$serde_json::private::Number":"1","x":2}
+                (1 row)""");
+    }
+
+    @Test
+    public void issue7527() {
+        // An out-of-range field after the leading field is a cast error, so the cast returns NULL
+        this.qst("""
+                SELECT CAST(PARSE_JSON('"10:99"') AS INTERVAL HOUR TO MINUTE);
+                 r
+                ---
+                NULL
+                (1 row)
+
+                SELECT CAST(PARSE_JSON('"1 25:00"') AS INTERVAL DAY TO MINUTE);
+                 r
+                ---
+                NULL
+                (1 row)""");
+    }
+
+    @Test
     public void issue5938a() {
         // String -> Variant -> type
         this.qst("""
@@ -1160,6 +1194,78 @@ public class VariantTests extends SqlIoTest {
                  r
                 ---
                  2024-02-02
+                (1 row)""");
+    }
+
+    @Test
+    public void issue7528() {
+        // A cast of a VARIANT holding a DECIMAL, alone or in a collection, keeps the fraction
+        this.qst("""
+                SELECT CAST(PARSE_JSON('1.5') AS DOUBLE) = 1.5e0;
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(PARSE_JSON('1.5') AS REAL) = CAST(1.5 AS REAL);
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(PARSE_JSON('[1.5, -2.75]') AS DOUBLE ARRAY) = ARRAY[1.5e0, -2.75e0];
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(PARSE_JSON('[1.5, -2.75]') AS REAL ARRAY) =
+                       ARRAY[CAST(1.5 AS REAL), CAST(-2.75 AS REAL)];
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(PARSE_JSON('{"a": 1.5, "b": -2.75}') AS MAP<VARCHAR, DOUBLE>) =
+                       MAP['a', 1.5e0, 'b', -2.75e0];
+                 r
+                ---
+                 true
+                (1 row)""");
+    }
+
+    /** GeoPoint converted to VARIANT. */
+    @Test
+    public void testVariantGeoPoint() {
+        this.qst("""
+                SELECT TYPEOF(CAST(ST_POINT(1, 2) AS VARIANT));
+                 r
+                ---
+                 GEOPOINT
+                (1 row)
+
+                SELECT CAST(ST_POINT(1, 2) AS VARIANT) = CAST(ST_POINT(1, 2) AS VARIANT);
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(ST_POINT(1, 2) AS VARIANT) = CAST(ST_POINT(2, 1) AS VARIANT);
+                 r
+                ---
+                 false
+                (1 row)
+
+                SELECT CAST(CAST(ST_POINT(1, 2) AS VARIANT) AS GEOMETRY) = ST_POINT(1, 2);
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(PARSE_JSON('5') AS GEOMETRY) IS NULL;
+                 r
+                ---
+                 true
                 (1 row)""");
     }
 }

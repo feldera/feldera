@@ -547,9 +547,9 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE VIEW V AS SELECT CAST(x AS TIMESTAMP), CAST(10.20 AS TIMESTAMP),
                 CAST(10 AS TIMESTAMP), cast(y AS TIMESTAMP) FROM T;""");
         ccs.stepWeightOne("INSERT INTO T VALUES(10.20, 10)", """
-                 x                   | decimal             | int                 | y
-                -------------------------------------------------------------------
-                 1970-01-01 00:00:00 | 1970-01-01 00:00:00 | 1970-01-01 00:00:00 | 1970-01-01 00:00:00""");
+                 x                        | decimal                  | int                     | y
+                -------------------------------------------------------------------------------------------------
+                 1970-01-01 00:00:00.0102 | 1970-01-01 00:00:00.0102 | 1970-01-01 00:00:00.010 | 1970-01-01 00:00:00.010""");
     }
 
     @Test

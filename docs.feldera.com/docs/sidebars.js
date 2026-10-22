@@ -146,6 +146,7 @@ const guides = {
             ]
         },
         'tutorials/time-series',
+        'tutorials/testing',
         {
             type: 'category',
             label: 'Fine-Grained Authorization',
@@ -382,6 +383,11 @@ const connectors = {
                     type: 'doc',
                     id: 'connectors/sinks/redis',
                     label: 'Redis'
+                },
+                {
+                    type: 'doc',
+                    id: 'connectors/sinks/nats',
+                    label: 'NATS'
                 },
                 {
                     type: 'doc',

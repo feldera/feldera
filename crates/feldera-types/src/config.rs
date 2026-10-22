@@ -5,9 +5,11 @@
 //! endpoint configs.  We represent these configs as opaque JSON values, so
 //! that the entire configuration tree can be deserialized from a JSON file.
 
+use crate::duration::ConfigDuration;
 use crate::postprocess::PostprocessorConfig;
 use crate::preprocess::PreprocessorConfig;
 use crate::secret_resolver::default_secrets_directory;
+use crate::size::{ConfigSize, LegacySizeUnit};
 use crate::transport::adhoc::AdHocInputConfig;
 use crate::transport::clock::{ClockConfig, ClockTimezoneOffset};
 use crate::transport::datagen::DatagenInputConfig;
@@ -17,7 +19,7 @@ use crate::transport::file::{FileInputConfig, FileOutputConfig};
 use crate::transport::http::{HttpInputConfig, HttpOutputConfig};
 use crate::transport::iceberg::IcebergReaderConfig;
 use crate::transport::kafka::{KafkaInputConfig, KafkaOutputConfig};
-use crate::transport::nats::NatsInputConfig;
+use crate::transport::nats::{NatsInputConfig, NatsOutputConfig};
 use crate::transport::nexmark::NexmarkInputConfig;
 use crate::transport::postgres::{
     PostgresCdcReaderConfig, PostgresReaderConfig, PostgresWriterConfig,
@@ -27,6 +29,7 @@ use crate::transport::redis::RedisOutputConfig;
 use crate::transport::s2::{S2InputConfig, S2OutputConfig};
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
+use crate::{duration::LegacyUnit, duration_setting, nullable_duration_setting, size_setting};
 use core::fmt;
 use feldera_ir::{MirNode, MirNodeId};
 use serde::de::{self, MapAccess, Visitor};
@@ -56,7 +59,97 @@ pub const fn default_max_queued_records() -> u64 {
 
 pub const DEFAULT_MAX_WORKER_BATCH_SIZE: u64 = 10_000;
 
-pub const DEFAULT_CLOCK_RESOLUTION_USECS: u64 = 1_000_000;
+/// Default resolution of the real-time clock that drives SQL `NOW()`.
+pub const DEFAULT_CLOCK_RESOLUTION: ConfigDuration = ConfigDuration::from_secs(1);
+
+/// Default interval between automatic checkpoints.
+pub const DEFAULT_CHECKPOINT_INTERVAL: ConfigDuration = ConfigDuration::from_secs(60);
+
+/// Default interval between standby checkpoint fetches.
+pub const DEFAULT_PULL_INTERVAL: ConfigDuration = ConfigDuration::from_secs(10);
+
+/// Default minimum age a checkpoint reaches before it may be deleted.
+pub const DEFAULT_RETENTION_MIN_AGE: ConfigDuration = ConfigDuration::from_days(30);
+
+// The defaults as the OpenAPI schema shows them, one function per
+// `#[schema(default = ...)]`.
+fn default_clock_resolution() -> String {
+    DEFAULT_CLOCK_RESOLUTION.to_string()
+}
+fn default_checkpoint_interval() -> String {
+    DEFAULT_CHECKPOINT_INTERVAL.to_string()
+}
+fn default_pull_interval() -> String {
+    DEFAULT_PULL_INTERVAL.to_string()
+}
+fn default_retention_min_age() -> String {
+    DEFAULT_RETENTION_MIN_AGE.to_string()
+}
+
+duration_setting!(
+    duration_standby_pull_interval,
+    "standby_pull_interval",
+    LegacyUnit::Secs
+);
+duration_setting!(
+    duration_checkpoint_push_interval,
+    "checkpoint_push_interval",
+    LegacyUnit::Secs
+);
+duration_setting!(duration_min_retention, "min_retention", LegacyUnit::Days);
+duration_setting!(duration_ioop_latency, "ioop_latency", LegacyUnit::Millis);
+duration_setting!(
+    duration_max_buffering_delay,
+    "max_buffering_delay",
+    LegacyUnit::Micros
+);
+duration_setting!(
+    duration_clock_resolution,
+    "clock_resolution",
+    LegacyUnit::Micros
+);
+duration_setting!(
+    duration_provisioning_timeout,
+    "provisioning_timeout",
+    LegacyUnit::Secs
+);
+nullable_duration_setting!(
+    duration_checkpoint_interval,
+    "checkpoint_interval",
+    LegacyUnit::Secs
+);
+duration_setting!(
+    duration_max_output_buffer_time,
+    "max_output_buffer_time",
+    LegacyUnit::Millis
+);
+size_setting!(size_max_rss, "max_rss", LegacySizeUnit::Megabytes);
+size_setting!(
+    size_datafusion_memory,
+    "datafusion_memory",
+    LegacySizeUnit::Megabytes
+);
+size_setting!(size_cache_size, "cache_size", LegacySizeUnit::Mebibytes);
+size_setting!(size_min_spill_size, "min_spill_size", LegacySizeUnit::Bytes);
+size_setting!(
+    size_min_step_spill_size,
+    "min_step_spill_size",
+    LegacySizeUnit::Bytes
+);
+size_setting!(size_memory_min, "memory_min", LegacySizeUnit::Megabytes);
+size_setting!(size_memory_max, "memory_max", LegacySizeUnit::Megabytes);
+size_setting!(size_storage_min, "storage_min", LegacySizeUnit::Megabytes);
+size_setting!(size_storage_max, "storage_max", LegacySizeUnit::Megabytes);
+size_setting!(
+    size_scale_threshold_available,
+    "scale_threshold_available",
+    LegacySizeUnit::Megabytes
+);
+size_setting!(
+    size_max_queued_size,
+    "max_queued_size",
+    LegacySizeUnit::Bytes
+);
 
 /// Program information included in the pipeline configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
@@ -70,6 +163,20 @@ pub struct ProgramIr {
     /// Rust-compiled pipelines, whose circuit is statically linked into the binary.
     #[serde(default)]
     pub circuit_ir: Option<serde_json::Value>,
+    /// The program's Rust UDFs compiled to a native shared library (a Linux `cdylib`), which
+    /// the Gen-2 engine loads into its process. `None` when the program has no Rust UDFs, and
+    /// for Rust-compiled pipelines, which link their UDFs into the binary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub udf_library: Option<UdfLibrary>,
+}
+
+/// A program's UDF library, named by the same checksums as a pipeline binary.
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+pub struct UdfLibrary {
+    /// Checksum of the sources the library was built from.
+    pub source_checksum: String,
+    /// sha256 checksum of the library file.
+    pub integrity_checksum: String,
 }
 
 /// Identity of a pipeline, used to record and check ownership of an S3
@@ -330,28 +437,46 @@ pub struct StorageOptions {
     pub backend: StorageBackendConfig,
 
     /// For a batch of data maintained as part of a persistent index during a
-    /// pipeline run, the minimum estimated number of bytes to write it to
-    /// storage.
+    /// pipeline run, the minimum estimated size to write it to storage, such
+    /// as `"10Mi"`.
     ///
     /// This is provided for debugging and fine-tuning and should ordinarily be
     /// left unset.
     ///
     /// A value of 0 will write even empty batches to storage, and nonzero
-    /// values provide a threshold.  `usize::MAX` would effectively disable
-    /// storage for such batches.  The default is 10,048,576 (10 MiB).
-    pub min_storage_bytes: Option<usize>,
+    /// values provide a threshold.  A very large value effectively disables
+    /// storage for such batches.  The default is `"10Mi"`.
+    ///
+    /// Before release 0.367.0 this setting was `min_storage_bytes`, a number
+    /// of bytes. That name is deprecated but still read.
+    #[serde(
+        alias = "min_storage_bytes",
+        deserialize_with = "size_min_spill_size",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub min_spill_size: Option<ConfigSize>,
 
     /// For a batch of data passed through the pipeline during a single step,
-    /// the minimum estimated number of bytes to write it to storage.
+    /// the minimum estimated size to write it to storage, such as `"64Mi"`.
     ///
     /// This is provided for debugging and fine-tuning and should ordinarily be
     /// left unset.  A value of 0 writes every batch that holds anything to
     /// storage; an empty batch stays in memory, since it has nothing to spill
     /// and a layer file is not free.  Nonzero values provide a threshold.
-    /// `usize::MAX`, the default, effectively disables storage for such
-    /// batches.  If it is set to another value, it should ordinarily be
-    /// greater than or equal to `min_storage_bytes`.
-    pub min_step_storage_bytes: Option<usize>,
+    /// Unset, the default, effectively disables storage for such batches.
+    /// If it is set, it should ordinarily be greater than or equal to
+    /// `min_spill_size`.
+    ///
+    /// Before release 0.367.0 this setting was `min_step_storage_bytes`, a
+    /// number of bytes. That name is deprecated but still read.
+    #[serde(
+        alias = "min_step_storage_bytes",
+        deserialize_with = "size_min_step_spill_size",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub min_step_spill_size: Option<ConfigSize>,
 
     /// The form of compression to use in data batches.
     ///
@@ -372,12 +497,21 @@ pub struct StorageOptions {
     /// which selects the algorithm's own default.
     pub compression_level: Option<i32>,
 
-    /// The maximum size of the in-memory storage cache, in MiB.
+    /// The maximum size of the in-memory storage cache, such as `"4Gi"`.
     ///
     /// If set, the specified cache size is spread across all the foreground and
     /// background threads. If unset, each foreground or background thread cache
     /// is limited to 256 MiB.
-    pub cache_mib: Option<usize>,
+    ///
+    /// Before release 0.367.0 this setting was `cache_mib`, a number of
+    /// mebibytes. That name is deprecated but still read.
+    #[serde(
+        alias = "cache_mib",
+        deserialize_with = "size_cache_size",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub cache_size: Option<ConfigSize>,
 
     /// False-positive rate for Bloom filters on batches on storage, as a
     /// fraction f, where 0 < f < 1.
@@ -654,21 +788,33 @@ pub struct SyncConfig {
     #[serde(default)]
     pub standby: bool,
 
-    /// The interval (in seconds) between each attempt to fetch the latest
-    /// checkpoint from object store while in standby mode.
+    /// The interval between each attempt to fetch the latest checkpoint from
+    /// object store while in standby mode, for example `10s`.
     ///
-    /// Applies only when `start_from_checkpoint` is set to `latest`.
-    ///
-    /// Default: 10 seconds
-    #[schema(default = default_pull_interval)]
-    #[serde(default = "default_pull_interval")]
-    pub pull_interval: u64,
+    /// Applies only when `start_from_checkpoint` is set to `latest`. Unset
+    /// selects the default, `DEFAULT_PULL_INTERVAL`.
+    #[serde(
+        default,
+        alias = "pull_interval",
+        deserialize_with = "duration_standby_pull_interval",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>, default = default_pull_interval)]
+    pub standby_pull_interval: Option<ConfigDuration>,
 
-    /// The interval (in seconds) between each push of checkpoints to object store.
+    /// The interval between each push of checkpoints to object store, for
+    /// example `1h`.
     ///
-    /// Default: disabled (no periodic push).
-    #[serde(default)]
-    pub push_interval: Option<u64>,
+    /// The default is no periodic push; `null` disables periodic pushes
+    /// explicitly.
+    #[serde(
+        default,
+        alias = "push_interval",
+        deserialize_with = "duration_checkpoint_push_interval",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub checkpoint_push_interval: Option<ConfigDuration>,
 
     /// Extra flags to pass to `rclone`.
     ///
@@ -688,13 +834,17 @@ pub struct SyncConfig {
     #[serde(default = "default_retention_min_count")]
     pub retention_min_count: u32,
 
-    /// The minimum age (in days) a checkpoint must reach before it becomes
-    /// eligible for deletion. All younger checkpoints will be preserved.
-    ///
-    /// Default: 30
-    #[schema(default = default_retention_min_age)]
-    #[serde(default = "default_retention_min_age")]
-    pub retention_min_age: u32,
+    /// The minimum age a checkpoint must reach before it becomes eligible for
+    /// deletion, for example `30d`. All younger checkpoints will be preserved.
+    /// Unset selects the default, `DEFAULT_RETENTION_MIN_AGE`.
+    #[serde(
+        default,
+        alias = "retention_min_age",
+        deserialize_with = "duration_min_retention",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>, default = default_retention_min_age)]
+    pub min_retention: Option<ConfigDuration>,
 
     /// A read-only bucket used as a fallback checkpoint source.
     ///
@@ -741,16 +891,8 @@ pub struct SyncConfig {
     pub take_bucket_ownership: bool,
 }
 
-fn default_pull_interval() -> u64 {
-    10
-}
-
 fn default_retention_min_count() -> u32 {
     10
-}
-
-fn default_retention_min_age() -> u32 {
-    30
 }
 
 fn default_optimize_download_resources() -> bool {
@@ -758,6 +900,27 @@ fn default_optimize_download_resources() -> bool {
 }
 
 impl SyncConfig {
+    /// The standby pull interval in effect, or [`DEFAULT_PULL_INTERVAL`].
+    ///
+    /// The enterprise crates read the sync durations through these accessors
+    /// rather than the fields, so that one version of them compiles against
+    /// every `feldera-types` a pinned runtime may bring: the accessors exist
+    /// with these names on both sides of the rename.
+    pub fn standby_pull_interval(&self) -> ConfigDuration {
+        self.standby_pull_interval.unwrap_or(DEFAULT_PULL_INTERVAL)
+    }
+
+    /// The interval between checkpoint pushes, or `None` for no periodic push.
+    pub fn checkpoint_push_interval(&self) -> Option<ConfigDuration> {
+        self.checkpoint_push_interval
+    }
+
+    /// The checkpoint retention age in effect, or
+    /// [`DEFAULT_RETENTION_MIN_AGE`].
+    pub fn min_retention(&self) -> ConfigDuration {
+        self.min_retention.unwrap_or(DEFAULT_RETENTION_MIN_AGE)
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         #[allow(deprecated)]
         if self.standby {
@@ -913,11 +1076,18 @@ pub struct FileBackendConfig {
     /// debugging and fine-tuning and should ordinarily be left unset.
     pub async_threads: Option<bool>,
 
-    /// Per-I/O operation sleep duration, in milliseconds.
+    /// Per-I/O operation sleep duration, for example `5ms`.
     ///
     /// This is for simulating slow storage devices.  Do not use this in
     /// production.
-    pub ioop_delay: Option<u64>,
+    #[serde(
+        default,
+        alias = "ioop_delay",
+        deserialize_with = "duration_ioop_latency",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub ioop_latency: Option<ConfigDuration>,
 
     /// Configuration to synchronize checkpoints to object store.
     pub sync: Option<SyncConfig>,
@@ -976,8 +1146,8 @@ pub struct RuntimeConfig {
     /// used during a step.
     pub workers: u16,
 
-    /// The maximum amount of memory, in Megabytes, that the pipeline is allowed to use
-    /// on each host.
+    /// The maximum amount of memory that the pipeline is allowed to use on
+    /// each host, such as `"16G"` or `"16Gi"`.
     ///
     /// Setting this property activates memory pressure monitoring and backpressure
     /// mechanisms. The pipeline will track the amount of remaining memory and
@@ -991,19 +1161,32 @@ pub struct RuntimeConfig {
     /// running out of memory. The setting should not exceed the memory limit of the pipeline
     /// instance.
     ///
-    /// When `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the
+    /// When `max_rss` is not specified but `resources.memory_max` is set, the
     /// latter is used as the effective memory cap for the pipeline.
+    ///
+    /// The pipeline caps this limit at the memory available to it, which is the
+    /// host's memory or the container's memory limit, whichever is smaller. It
+    /// rechecks the available memory every second.
+    ///
+    /// Before release 0.367.0 this setting was `max_rss_mb`, a number of
+    /// megabytes. That name is deprecated but still read.
     ///
     /// See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
     /// for more details.
-    pub max_rss_mb: Option<u64>,
+    #[serde(
+        default,
+        alias = "max_rss_mb",
+        deserialize_with = "size_max_rss",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub max_rss: Option<ConfigSize>,
 
-    /// DataFusion memory pool size, in MB, shared by the ad-hoc query
-    /// engine and the Delta Lake / Iceberg connectors.
+    /// DataFusion memory pool size, such as `"1Gi"`, shared by the ad-hoc
+    /// query engine and the Delta Lake / Iceberg connectors.
     ///
-    /// Carved out of `max_rss_mb` (falling back to
-    /// `resources.memory_mb_max`); the remainder goes to the DBSP circuit,
-    /// so the two do not double-book RAM.
+    /// Carved out of `max_rss` (falling back to `resources.memory_max`); the
+    /// remainder goes to the DBSP circuit, so the two do not double-book RAM.
     ///
     /// Unset: defaults to 5% of the effective budget, capped at 2 GB.
     /// Pipelines that don't run heavy ad-hoc / Delta / Iceberg workloads
@@ -1016,9 +1199,19 @@ pub struct RuntimeConfig {
     ///
     /// No pool limit applied if no overall budget is configured.
     ///
+    /// Before release 0.367.0 this setting was `datafusion_memory_mb`, a
+    /// number of megabytes. That name is deprecated but still read.
+    ///
     /// See [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)
     /// for more details.
-    pub datafusion_memory_mb: Option<u64>,
+    #[serde(
+        default,
+        alias = "datafusion_memory_mb",
+        deserialize_with = "size_datafusion_memory",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub datafusion_memory: Option<ConfigSize>,
 
     /// Number of DBSP hosts.
     ///
@@ -1061,29 +1254,43 @@ pub struct RuntimeConfig {
     ///
     /// The controller delays pushing input records to the circuit until at
     /// least `min_batch_size_records` records have been received (total
-    /// across all endpoints) or `max_buffering_delay_usecs` microseconds
-    /// have passed since at least one input records has been buffered.
+    /// across all endpoints) or `max_buffering_delay` has passed
+    /// since the first input record was buffered.
     /// Defaults to 0.
     pub min_batch_size_records: u64,
 
-    /// Maximal delay in microseconds to wait for `min_batch_size_records` to
-    /// get buffered by the controller, defaults to 0.
-    pub max_buffering_delay_usecs: u64,
+    /// Maximal delay to wait for `min_batch_size_records` to get buffered by
+    /// the controller, for example `10ms`. Defaults to no delay.
+    #[serde(
+        default,
+        alias = "max_buffering_delay_usecs",
+        deserialize_with = "duration_max_buffering_delay",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub max_buffering_delay: Option<ConfigDuration>,
 
     /// Resource reservations and limits. This is enforced
     /// only in Feldera Cloud.
     pub resources: ResourceConfig,
 
-    /// Real-time clock resolution in microseconds.
+    /// Real-time clock resolution, for example `1s`.
     ///
     /// This parameter controls the execution of queries that use the `NOW()` function.  The output of such
     /// queries depends on the real-time clock and can change over time without any external
     /// inputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental
-    /// recomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use
+    /// recomputation at most once per `clock_resolution`.  If the query does not use
     /// `NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.
     ///
-    /// It is set to 1 second (1,000,000 microseconds) by default.
-    pub clock_resolution_usecs: Option<u64>,
+    /// Unset or `null` selects the default, `DEFAULT_CLOCK_RESOLUTION`.
+    #[serde(
+        default,
+        alias = "clock_resolution_usecs",
+        deserialize_with = "duration_clock_resolution",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>, default = default_clock_resolution)]
+    pub clock_resolution: Option<ConfigDuration>,
 
     /// Fixed timezone offset for the SQL `NOW()` clock.
     ///
@@ -1108,9 +1315,16 @@ pub struct RuntimeConfig {
     /// different CPUs.
     pub pin_cpus: Vec<usize>,
 
-    /// Timeout in seconds for the `Provisioning` phase of the pipeline.
+    /// Timeout for the `Provisioning` phase of the pipeline, for example `5m`.
     /// Setting this value will override the default of the runner.
-    pub provisioning_timeout_secs: Option<u64>,
+    #[serde(
+        default,
+        alias = "provisioning_timeout_secs",
+        deserialize_with = "duration_provisioning_timeout",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub provisioning_timeout: Option<ConfigDuration>,
 
     /// The maximum number of connectors initialized in parallel during pipeline
     /// startup.
@@ -1294,8 +1508,8 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             workers: 8,
-            max_rss_mb: None,
-            datafusion_memory_mb: None,
+            max_rss: None,
+            datafusion_memory: None,
             hosts: 1,
             storage: Some(StorageOptions::default()),
             fault_tolerance: FtConfig::default(),
@@ -1307,12 +1521,12 @@ impl Default for RuntimeConfig {
             },
             tracing_endpoint_jaeger: "127.0.0.1:6831".to_string(),
             min_batch_size_records: 0,
-            max_buffering_delay_usecs: 0,
+            max_buffering_delay: None,
             resources: ResourceConfig::default(),
-            clock_resolution_usecs: { Some(DEFAULT_CLOCK_RESOLUTION_USECS) },
+            clock_resolution: None,
             clock_timezone_offset: None,
             pin_cpus: Vec::new(),
-            provisioning_timeout_secs: None,
+            provisioning_timeout: None,
             max_parallel_connector_init: None,
             init_containers: None,
             checkpoint_during_suspend: true,
@@ -1326,33 +1540,45 @@ impl Default for RuntimeConfig {
     }
 }
 
-/// Upper bound on the default DataFusion pool size, in MB.
+/// Upper bound on the default DataFusion pool size.
 ///
 /// Spill-to-disk handles overflow; reserving more starves the circuit.
-pub const DEFAULT_DATAFUSION_MEMORY_MB_CEILING: u64 = 2048;
+pub const DEFAULT_DATAFUSION_MEMORY_CEILING: ConfigSize = ConfigSize::from_mb(2048);
 
 /// Default DataFusion pool size as a percentage of the pipeline's
 /// effective memory budget. The remainder is left for the DBSP circuit.
 pub const DEFAULT_DATAFUSION_MEMORY_PERCENT: u64 = 5;
 
 impl RuntimeConfig {
-    /// Pipeline's effective memory budget in MB: `max_rss_mb`, falling back
-    /// to `resources.memory_mb_max` (the k8s pod limit).
-    pub fn effective_memory_mb(&self) -> Option<u64> {
-        self.max_rss_mb.or(self.resources.memory_mb_max)
+    /// The input buffering delay in effect, or no delay.
+    pub fn max_buffering_delay(&self) -> ConfigDuration {
+        self.max_buffering_delay.unwrap_or(ConfigDuration::ZERO)
     }
 
-    /// Resolved DataFusion pool size in MB: explicit `datafusion_memory_mb`
-    /// if set, else 5% of the effective budget capped at
-    /// `DEFAULT_DATAFUSION_MEMORY_MB_CEILING`. `None` if no budget is
+    /// The clock resolution in effect, or [`DEFAULT_CLOCK_RESOLUTION`].
+    pub fn clock_resolution(&self) -> ConfigDuration {
+        self.clock_resolution.unwrap_or(DEFAULT_CLOCK_RESOLUTION)
+    }
+
+    /// Pipeline's effective memory budget: `max_rss`, falling back to
+    /// `resources.memory_max` (the k8s pod limit).
+    pub fn effective_memory(&self) -> Option<ConfigSize> {
+        self.max_rss.or(self.resources.memory_max)
+    }
+
+    /// Resolved DataFusion pool size: explicit `datafusion_memory` if set,
+    /// else 5% of the effective budget capped at
+    /// `DEFAULT_DATAFUSION_MEMORY_CEILING`. `None` if no budget is
     /// configured.
-    pub fn resolved_datafusion_memory_mb(&self) -> Option<u64> {
-        if let Some(explicit) = self.datafusion_memory_mb {
+    pub fn resolved_datafusion_memory(&self) -> Option<ConfigSize> {
+        if let Some(explicit) = self.datafusion_memory {
             return Some(explicit);
         }
-        let effective = self.effective_memory_mb()?;
-        let fraction = effective * DEFAULT_DATAFUSION_MEMORY_PERCENT / 100;
-        Some(fraction.min(DEFAULT_DATAFUSION_MEMORY_MB_CEILING))
+        let effective = self.effective_memory()?.as_bytes();
+        // In `u128`: a budget near `u64::MAX` times the percentage overflows.
+        let fraction = u128::from(effective) * u128::from(DEFAULT_DATAFUSION_MEMORY_PERCENT) / 100;
+        let fraction = u64::try_from(fraction).unwrap_or(u64::MAX);
+        Some(ConfigSize::from_bytes(fraction).min(DEFAULT_DATAFUSION_MEMORY_CEILING))
     }
 }
 
@@ -1366,7 +1592,7 @@ impl RuntimeConfig {
 /// `Some(FtModel::default())`.  This is the configuration that one gets if
 /// [RuntimeConfig] includes a fault tolerance configuration but does not
 /// specify a particular model.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub struct FtConfig {
     /// Fault tolerance model to use.
@@ -1377,27 +1603,524 @@ pub struct FtConfig {
     )]
     pub model: Option<FtModel>,
 
-    /// Interval between automatic checkpoints, in seconds.
+    /// Interval between automatic checkpoints, for example `60s`.
     ///
-    /// The default is 60 seconds.  Values less than 1 or greater than 3600 will
-    /// be forced into that range.
-    #[serde(default = "default_checkpoint_interval_secs")]
-    pub checkpoint_interval_secs: Option<u64>,
+    /// Unset selects the default, `DEFAULT_CHECKPOINT_INTERVAL`; `null`
+    /// disables periodic checkpointing.
+    /// Values less than 1 second or greater than 1 hour will be forced into
+    /// that range.
+    #[serde(
+        default,
+        alias = "checkpoint_interval_secs",
+        deserialize_with = "duration_checkpoint_interval",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>, default = default_checkpoint_interval)]
+    pub checkpoint_interval: Option<Option<ConfigDuration>>,
 }
 
 fn default_model() -> Option<FtModel> {
     Some(FtModel::default())
 }
 
-pub fn default_checkpoint_interval_secs() -> Option<u64> {
-    Some(60)
+/// Rewrites the duration settings of a serialized pipeline configuration in the
+/// spelling that Feldera releases before the duration rename read: under the
+/// older key, as a whole number of the unit that key named.
+///
+/// `config` is a serialized [`RuntimeConfig`], or a serialized
+/// [`PipelineConfig`], which flattens one and carries the connectors in
+/// `inputs` and `outputs`; both levels are rewritten. The pipeline manager
+/// applies this to the configuration it hands a pipeline pinned to another
+/// runtime version, or compiled by a platform before the rename and not yet
+/// updated: such a runtime may predate the rename, and a runtime that does
+/// ignores the current names and silently runs on its defaults, or, for a
+/// Kafka connector, rejects them. Every Feldera release so far accepts the
+/// older spelling, so writing it is safe whichever runtime runs.
+///
+/// A duration that is not a whole number of the older unit rounds up to the
+/// next one, so a positive duration never becomes a `0` the older runtime
+/// reads as "no timeout" or "pull without pause", and is capped at the largest
+/// value the older field holds; a value that does not parse is left as it is,
+/// for the runtime to reject.
+pub fn to_legacy_duration_spelling(config: &mut serde_json::Value) {
+    use crate::duration::LegacyUnit;
+    use serde_json::{Map, Value};
+
+    /// How one setting is spelled before the rename.
+    struct Rule {
+        new: &'static str,
+        old: &'static str,
+        unit: LegacyUnit,
+        /// The largest number the older field holds.
+        max: u64,
+        /// Whether the older field took a `null`; where it did not, a `null`
+        /// meant "unset" and the key is dropped.
+        null_allowed: bool,
+    }
+    const fn rule(
+        new: &'static str,
+        old: &'static str,
+        unit: LegacyUnit,
+        max: u64,
+        null_allowed: bool,
+    ) -> Rule {
+        Rule {
+            new,
+            old,
+            unit,
+            max,
+            null_allowed,
+        }
+    }
+    const U32: u64 = u32::MAX as u64;
+    const U64: u64 = u64::MAX;
+    use LegacyUnit::{Days, Micros, Millis, Secs};
+
+    fn apply(object: &mut Map<String, Value>, rules: &[Rule]) {
+        for rule in rules {
+            let Some(value) = object.remove(rule.new) else {
+                continue;
+            };
+            let legacy = match &value {
+                Value::String(text) => match text.parse::<ConfigDuration>() {
+                    Ok(duration) => {
+                        let nanos = std::time::Duration::from(duration).as_nanos();
+                        let unit_nanos = u128::from(rule.unit.nanos());
+                        let whole = nanos.div_ceil(unit_nanos);
+                        Value::from(u64::try_from(whole).unwrap_or(U64).min(rule.max))
+                    }
+                    Err(_) => {
+                        object.insert(rule.new.to_string(), value);
+                        continue;
+                    }
+                },
+                Value::Null if !rule.null_allowed => continue,
+                // A bare number or a null already has the older meaning.
+                other => other.clone(),
+            };
+            object.insert(rule.old.to_string(), legacy);
+        }
+    }
+    fn child<'a>(
+        object: &'a mut Map<String, Value>,
+        key: &str,
+    ) -> Option<&'a mut Map<String, Value>> {
+        object.get_mut(key).and_then(Value::as_object_mut)
+    }
+    /// The NATS consumer's expiry was a `std::time::Duration`, which serde
+    /// writes as `{secs, nanos}`, rather than a number.
+    fn max_expiry(consumer: &mut Map<String, Value>) {
+        let Some(Value::String(text)) = consumer.get("max_expiry") else {
+            return;
+        };
+        let Ok(duration) = text.parse::<ConfigDuration>() else {
+            return;
+        };
+        let duration = std::time::Duration::from(duration);
+        consumer.remove("max_expiry");
+        consumer.insert(
+            "max_expires".to_string(),
+            serde_json::json!({"secs": duration.as_secs(), "nanos": duration.subsec_nanos()}),
+        );
+    }
+    /// The connection options both NATS transports share.
+    fn nats_connection(transport: &mut Map<String, Value>) {
+        if let Some(connection) = child(transport, "connection_config") {
+            apply(
+                connection,
+                &[
+                    rule(
+                        "connection_timeout",
+                        "connection_timeout_secs",
+                        Secs,
+                        U64,
+                        false,
+                    ),
+                    rule("request_timeout", "request_timeout_secs", Secs, U64, false),
+                ],
+            );
+        }
+    }
+    /// One connector of `inputs` or `outputs`.
+    fn connector(endpoint: &mut Map<String, Value>) {
+        apply(
+            endpoint,
+            &[rule(
+                "max_output_buffer_time",
+                "max_output_buffer_time_millis",
+                Millis,
+                U64,
+                false,
+            )],
+        );
+        let name = endpoint
+            .get("transport")
+            .and_then(|transport| transport.get("name"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        if let Some(transport) = child(endpoint, "transport").and_then(|t| child(t, "config")) {
+            match name.as_deref() {
+                Some("url_input") => apply(
+                    transport,
+                    &[rule("pause_linger", "pause_timeout", Secs, U32, false)],
+                ),
+                Some("kafka_input") => apply(
+                    transport,
+                    &[rule(
+                        "group_join_timeout",
+                        "group_join_timeout_secs",
+                        Secs,
+                        U32,
+                        false,
+                    )],
+                ),
+                Some("kafka_output") => apply(
+                    transport,
+                    &[rule(
+                        "initialization_timeout",
+                        "initialization_timeout_secs",
+                        Secs,
+                        U32,
+                        false,
+                    )],
+                ),
+                Some("clock_input") => apply(
+                    transport,
+                    &[rule(
+                        "clock_resolution",
+                        "clock_resolution_usecs",
+                        Micros,
+                        U64,
+                        false,
+                    )],
+                ),
+                Some("pub_sub_input") => apply(
+                    transport,
+                    &[
+                        rule("timeout", "timeout_seconds", Secs, U32, true),
+                        rule(
+                            "connect_timeout",
+                            "connect_timeout_seconds",
+                            Secs,
+                            U32,
+                            true,
+                        ),
+                    ],
+                ),
+                Some("nats_input") => {
+                    apply(
+                        transport,
+                        &[
+                            rule(
+                                "inactivity_timeout",
+                                "inactivity_timeout_secs",
+                                Secs,
+                                U64,
+                                false,
+                            ),
+                            rule("retry_interval", "retry_interval_secs", Secs, U64, false),
+                        ],
+                    );
+                    nats_connection(transport);
+                    if let Some(consumer) = child(transport, "consumer_config") {
+                        max_expiry(consumer);
+                    }
+                }
+                Some("nats_output") => {
+                    apply(
+                        transport,
+                        &[rule(
+                            "publish_timeout",
+                            "publish_timeout_secs",
+                            Secs,
+                            U64,
+                            false,
+                        )],
+                    );
+                    nats_connection(transport);
+                }
+                _ => {}
+            }
+        }
+        let is_avro = endpoint
+            .get("format")
+            .and_then(|format| format.get("name"))
+            .and_then(Value::as_str)
+            == Some("avro");
+        if is_avro && let Some(format) = child(endpoint, "format").and_then(|f| child(f, "config"))
+        {
+            apply(
+                format,
+                &[rule(
+                    "registry_timeout",
+                    "registry_timeout_secs",
+                    Secs,
+                    U64,
+                    true,
+                )],
+            );
+        }
+    }
+
+    let Some(global) = config.as_object_mut() else {
+        return;
+    };
+    apply(
+        global,
+        &[
+            rule(
+                "clock_resolution",
+                "clock_resolution_usecs",
+                Micros,
+                U64,
+                true,
+            ),
+            rule(
+                "max_buffering_delay",
+                "max_buffering_delay_usecs",
+                Micros,
+                U64,
+                false,
+            ),
+            rule(
+                "provisioning_timeout",
+                "provisioning_timeout_secs",
+                Secs,
+                U64,
+                true,
+            ),
+        ],
+    );
+    if let Some(ft) = child(global, "fault_tolerance") {
+        // An explicit null disables periodic checkpoints under either key.
+        apply(
+            ft,
+            &[rule(
+                "checkpoint_interval",
+                "checkpoint_interval_secs",
+                Secs,
+                U64,
+                true,
+            )],
+        );
+    }
+    let backend = child(global, "storage")
+        .and_then(|storage| child(storage, "backend"))
+        .filter(|backend| backend.get("name").and_then(Value::as_str) == Some("file"))
+        .and_then(|backend| child(backend, "config"));
+    if let Some(file) = backend {
+        apply(
+            file,
+            &[rule("ioop_latency", "ioop_delay", Millis, U64, true)],
+        );
+        if let Some(sync) = child(file, "sync") {
+            apply(
+                sync,
+                &[
+                    rule("standby_pull_interval", "pull_interval", Secs, U64, false),
+                    rule("checkpoint_push_interval", "push_interval", Secs, U64, true),
+                    rule("min_retention", "retention_min_age", Days, U32, false),
+                ],
+            );
+        }
+    }
+    for endpoints in ["inputs", "outputs"] {
+        if let Some(endpoints) = child(global, endpoints) {
+            for endpoint in endpoints.values_mut().filter_map(Value::as_object_mut) {
+                connector(endpoint);
+            }
+        }
+    }
 }
 
-impl Default for FtConfig {
-    fn default() -> Self {
-        Self {
-            model: None,
-            checkpoint_interval_secs: default_checkpoint_interval_secs(),
+/// Which settings a runtime reads only in their older spelling, because it
+/// predates the release that renamed them.
+///
+/// The pipeline manager computes this for the runtime a pipeline runs, and the
+/// executors apply it to the configuration they hand the pipeline process.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LegacySpelling {
+    /// The runtime predates the duration rename (release 0.366.0).
+    pub durations: bool,
+    /// The runtime predates the size rename (release 0.367.0).
+    pub sizes: bool,
+}
+
+impl LegacySpelling {
+    /// A runtime that reads every current spelling.
+    pub const NONE: LegacySpelling = LegacySpelling {
+        durations: false,
+        sizes: false,
+    };
+
+    /// Whether any setting must be rewritten.
+    pub fn any(self) -> bool {
+        self.durations || self.sizes
+    }
+
+    /// Rewrites `config`, a serialized [`RuntimeConfig`] or
+    /// [`PipelineConfig`], in the spellings the runtime reads.
+    pub fn apply(self, config: &mut serde_json::Value) {
+        if self.durations {
+            to_legacy_duration_spelling(config);
+        }
+        if self.sizes {
+            to_legacy_size_spelling(config);
+        }
+    }
+}
+
+/// Rewrites the size settings of a serialized pipeline configuration in the
+/// spelling that Feldera releases before the size rename read: under the older
+/// key, as a whole number of the unit that key named.
+///
+/// `config` is a serialized [`RuntimeConfig`] or [`PipelineConfig`], as for
+/// [`to_legacy_duration_spelling`], and the pipeline manager applies it in the
+/// same cases, to a runtime that may predate the rename. A size that is not a
+/// whole number of the older unit rounds up to the next one, so a positive
+/// limit never becomes a `0`; a value that does not parse is left as it is,
+/// for the runtime to reject.
+pub fn to_legacy_size_spelling(config: &mut serde_json::Value) {
+    use crate::size::LegacySizeUnit::{self, Bytes, Mebibytes, Megabytes};
+    use serde_json::{Map, Value};
+
+    /// How one setting is spelled before the rename.
+    struct Rule {
+        new: &'static str,
+        old: &'static str,
+        unit: LegacySizeUnit,
+    }
+    const fn rule(new: &'static str, old: &'static str, unit: LegacySizeUnit) -> Rule {
+        Rule { new, old, unit }
+    }
+
+    fn apply(object: &mut Map<String, Value>, rules: &[Rule]) {
+        for rule in rules {
+            let Some(value) = object.remove(rule.new) else {
+                continue;
+            };
+            let legacy = match &value {
+                Value::String(text) => match text.parse::<ConfigSize>() {
+                    Ok(size) => Value::from(size.as_bytes().div_ceil(rule.unit.bytes())),
+                    Err(_) => {
+                        object.insert(rule.new.to_string(), value);
+                        continue;
+                    }
+                },
+                // The older keys took no `null`: it meant "unset".
+                Value::Null => continue,
+                // A bare number already has the older meaning.
+                other => other.clone(),
+            };
+            object.insert(rule.old.to_string(), legacy);
+        }
+    }
+    fn child<'a>(
+        object: &'a mut Map<String, Value>,
+        key: &str,
+    ) -> Option<&'a mut Map<String, Value>> {
+        object.get_mut(key).and_then(Value::as_object_mut)
+    }
+    /// One connector of `inputs` or `outputs`.
+    fn connector(endpoint: &mut Map<String, Value>) {
+        apply(
+            endpoint,
+            &[rule("max_queued_size", "max_queued_bytes", Bytes)],
+        );
+        let name = endpoint
+            .get("transport")
+            .and_then(|transport| transport.get("name"))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        if let Some(transport) = child(endpoint, "transport").and_then(|t| child(t, "config")) {
+            match name.as_deref() {
+                Some("file_input") => apply(
+                    transport,
+                    &[rule("buffer_size", "buffer_size_bytes", Bytes)],
+                ),
+                Some("dynamodb_output" | "postgres_output") => apply(
+                    transport,
+                    &[rule("max_buffer_size", "max_buffer_size_bytes", Bytes)],
+                ),
+                Some("postgres_cdc_input") => {
+                    if let Some(batch) = child(transport, "batch") {
+                        apply(batch, &[rule("max_size", "max_bytes", Bytes)]);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let Some(global) = config.as_object_mut() else {
+        return;
+    };
+    apply(
+        global,
+        &[
+            rule("max_rss", "max_rss_mb", Megabytes),
+            rule("datafusion_memory", "datafusion_memory_mb", Megabytes),
+        ],
+    );
+    if let Some(storage) = child(global, "storage") {
+        apply(
+            storage,
+            &[
+                rule("cache_size", "cache_mib", Mebibytes),
+                rule("min_spill_size", "min_storage_bytes", Bytes),
+                rule("min_step_spill_size", "min_step_storage_bytes", Bytes),
+            ],
+        );
+    }
+    if let Some(resources) = child(global, "resources") {
+        apply(
+            resources,
+            &[
+                rule("memory_min", "memory_mb_min", Megabytes),
+                rule("memory_max", "memory_mb_max", Megabytes),
+                rule("storage_min", "storage_mb_min", Megabytes),
+                rule("storage_max", "storage_mb_max", Megabytes),
+            ],
+        );
+        if let Some(storage) = child(resources, "autoscaling").and_then(|a| child(a, "storage")) {
+            apply(
+                storage,
+                &[rule(
+                    "scale_threshold_available",
+                    "scale_threshold_available_mb",
+                    Megabytes,
+                )],
+            );
+        }
+    }
+    if let Some(tweaks) = child(global, "dev_tweaks") {
+        apply(
+            tweaks,
+            &[
+                rule("storage_max", "storage_mb_max", Mebibytes),
+                rule(
+                    "fbuf_slab_size_per_class",
+                    "fbuf_slab_bytes_per_class",
+                    Bytes,
+                ),
+                rule(
+                    "lazy_input_map_key_block_size",
+                    "lazy_input_map_key_block_bytes",
+                    Bytes,
+                ),
+                rule(
+                    "exchange_channel_capacity",
+                    "exchange_channel_capacity_bytes",
+                    Bytes,
+                ),
+            ],
+        );
+    }
+    for endpoints in ["inputs", "outputs"] {
+        if let Some(endpoints) = child(global, endpoints) {
+            for endpoint in endpoints.values_mut().filter_map(Value::as_object_mut) {
+                connector(endpoint);
+            }
         }
     }
 }
@@ -1406,11 +2129,98 @@ impl Default for FtConfig {
 mod test {
     use super::deserialize_fault_tolerance;
     use crate::config::{
-        ConnectorConfig, DEFAULT_DATAFUSION_MEMORY_MB_CEILING, FtConfig, FtModel, PipelineConfig,
-        ResourceConfig, RuntimeConfig, StorageOptions, TransportConfig,
+        ConnectorConfig, DEFAULT_CLOCK_RESOLUTION, DEFAULT_DATAFUSION_MEMORY_CEILING,
+        DEFAULT_PULL_INTERVAL, DEFAULT_RETENTION_MIN_AGE, FileBackendConfig, FtConfig, FtModel,
+        OutputBufferConfig, PipelineConfig, ResourceConfig, RuntimeConfig, StorageBackendConfig,
+        StorageOptions, SyncConfig, TransportConfig,
     };
+    use crate::duration::ConfigDuration;
+    use crate::size::ConfigSize;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
+    use std::time::Duration;
+
+    /// Reads `value` as a `T`, writes it back, and reads that again: the
+    /// configuration Feldera stores must load the way the one it was given did.
+    fn assert_reloads<T>(value: serde_json::Value)
+    where
+        T: Serialize + for<'de> Deserialize<'de>,
+    {
+        let first: T = serde_json::from_value(value.clone())
+            .unwrap_or_else(|e| panic!("{value} does not load: {e}"));
+        let written = serde_json::to_value(&first).unwrap();
+        let second: T = serde_json::from_value(written.clone()).unwrap_or_else(|e| {
+            panic!("{value} is written as {written}, which does not load: {e}")
+        });
+        assert_eq!(serde_json::to_value(&second).unwrap(), written, "{value}");
+    }
+
+    /// Every size setting reloads from what Feldera writes back, whatever the
+    /// size. Zero, and a size no named unit divides, are written in bytes,
+    /// and a setting that once counted megabytes refuses a string without a
+    /// unit, so that form must carry one.
+    #[test]
+    fn size_settings_reload_from_what_is_written() {
+        use crate::transport::dynamodb::DynamoDBWriterConfig;
+        use crate::transport::file::FileInputConfig;
+        use crate::transport::postgres::{PostgresCdcBatchConfig, PostgresWriterConfig};
+
+        // Under the earlier names, a bare number in the earlier unit, as
+        // `datafusion_memory_mb: 0` or `cache_mib: 0`.
+        for number in [0u64, 1, 1_100, u64::MAX] {
+            assert_reloads::<RuntimeConfig>(json!({
+                "max_rss_mb": number,
+                "datafusion_memory_mb": number,
+                "storage": {"cache_mib": number, "min_storage_bytes": number},
+                "resources": {"memory_mb_min": number, "storage_mb_max": number},
+                "dev_tweaks": {"storage_mb_max": number},
+            }));
+        }
+
+        let max = format!("{}B", u64::MAX);
+        for size in ["0B", "1B", "999B", "1.1Gi", "1.1G", "16G", "8Gi", &max] {
+            assert_reloads::<RuntimeConfig>(json!({
+                "max_rss": size,
+                "datafusion_memory": size,
+                "storage": {
+                    "cache_size": size,
+                    "min_spill_size": size,
+                    "min_step_spill_size": size,
+                },
+                "resources": {
+                    "memory_min": size,
+                    "memory_max": size,
+                    "storage_min": size,
+                    "storage_max": size,
+                    "autoscaling": {"storage": {"scale_threshold_available": size}},
+                },
+                "dev_tweaks": {
+                    "storage_max": size,
+                    "fbuf_slab_size_per_class": size,
+                    "exchange_channel_capacity": size,
+                },
+            }));
+            assert_reloads::<ConnectorConfig>(json!({
+                "transport": {
+                    "name": "file_input",
+                    "config": {"path": "input.csv", "buffer_size": size},
+                },
+                "max_queued_size": size,
+            }));
+            assert_reloads::<FileInputConfig>(json!({"path": "input.csv", "buffer_size": size}));
+            assert_reloads::<PostgresCdcBatchConfig>(json!({"max_size": size}));
+            assert_reloads::<PostgresWriterConfig>(json!({
+                "uri": "postgres://localhost/db",
+                "table": "t",
+                "max_buffer_size": size,
+            }));
+            assert_reloads::<DynamoDBWriterConfig>(json!({
+                "table": "t",
+                "region": "us-east-1",
+                "max_buffer_size": size,
+            }));
+        }
+    }
 
     /// A configuration written by an older version of Feldera carries no
     /// `soft_delete` field, and a connector that does not use soft deletes
@@ -1486,47 +2296,56 @@ mod test {
     #[test]
     fn resolved_datafusion_memory_explicit_passes_through() {
         let config = RuntimeConfig {
-            max_rss_mb: Some(8_000),
-            datafusion_memory_mb: Some(1_500),
+            max_rss: Some(ConfigSize::from_mb(8_000)),
+            datafusion_memory: Some(ConfigSize::from_mb(1_500)),
             ..Default::default()
         };
-        assert_eq!(config.resolved_datafusion_memory_mb(), Some(1_500));
+        assert_eq!(
+            config.resolved_datafusion_memory(),
+            Some(ConfigSize::from_mb(1_500))
+        );
     }
 
     #[test]
     fn resolved_datafusion_memory_unconfigured_returns_none() {
         let config = RuntimeConfig::default();
-        assert!(config.max_rss_mb.is_none());
-        assert!(config.resources.memory_mb_max.is_none());
-        assert_eq!(config.resolved_datafusion_memory_mb(), None);
+        assert!(config.max_rss.is_none());
+        assert!(config.resources.memory_max.is_none());
+        assert_eq!(config.resolved_datafusion_memory(), None);
     }
 
     #[test]
     fn resolved_datafusion_memory_small_budget_scales_down() {
         // Small pipelines must provision cleanly; the default just shrinks.
         let config = RuntimeConfig {
-            max_rss_mb: Some(256),
+            max_rss: Some(ConfigSize::from_mb(256)),
             ..Default::default()
         };
-        assert_eq!(config.resolved_datafusion_memory_mb(), Some(12));
+        assert_eq!(
+            config.resolved_datafusion_memory(),
+            Some(ConfigSize::from_bytes(12_800_000))
+        );
 
         let config = RuntimeConfig {
-            max_rss_mb: Some(512),
+            max_rss: Some(ConfigSize::from_mb(512)),
             ..Default::default()
         };
-        assert_eq!(config.resolved_datafusion_memory_mb(), Some(25));
+        assert_eq!(
+            config.resolved_datafusion_memory(),
+            Some(ConfigSize::from_bytes(25_600_000))
+        );
     }
 
     #[test]
     fn resolved_datafusion_memory_clamps_to_ceiling_for_large_budgets() {
         // 5% of 64 GB = 3.2 GB, above the 2 GB ceiling.
         let config = RuntimeConfig {
-            max_rss_mb: Some(64_000),
+            max_rss: Some(ConfigSize::from_mb(64_000)),
             ..Default::default()
         };
         assert_eq!(
-            config.resolved_datafusion_memory_mb(),
-            Some(DEFAULT_DATAFUSION_MEMORY_MB_CEILING),
+            config.resolved_datafusion_memory(),
+            Some(DEFAULT_DATAFUSION_MEMORY_CEILING),
         );
     }
 
@@ -1534,24 +2353,30 @@ mod test {
     fn resolved_datafusion_memory_midrange_uses_five_percent() {
         // 5% of 16 GB = 800 MB, inside the clamp range.
         let config = RuntimeConfig {
-            max_rss_mb: Some(16_000),
+            max_rss: Some(ConfigSize::from_mb(16_000)),
             ..Default::default()
         };
-        assert_eq!(config.resolved_datafusion_memory_mb(), Some(800));
+        assert_eq!(
+            config.resolved_datafusion_memory(),
+            Some(ConfigSize::from_mb(800))
+        );
     }
 
     #[test]
     fn resolved_datafusion_memory_falls_back_to_resources() {
-        // No max_rss_mb, but resources.memory_mb_max is set.
+        // No max_rss, but resources.memory_max is set.
         let config = RuntimeConfig {
-            max_rss_mb: None,
+            max_rss: None,
             resources: ResourceConfig {
-                memory_mb_max: Some(16_000),
+                memory_max: Some(ConfigSize::from_mb(16_000)),
                 ..Default::default()
             },
             ..Default::default()
         };
-        assert_eq!(config.resolved_datafusion_memory_mb(), Some(800));
+        assert_eq!(
+            config.resolved_datafusion_memory(),
+            Some(ConfigSize::from_mb(800))
+        );
     }
 
     #[test]
@@ -1563,22 +2388,16 @@ mod test {
             config: FtConfig,
         }
 
-        // Omitting FtConfig, or specifying null, or specifying model "none", disables fault tolerance.
+        // Omitting FtConfig, or specifying null, or specifying model "none",
+        // disables fault tolerance.
         for s in [
             "{}",
             r#"{"config": null}"#,
             r#"{"config": {"model": "none"}}"#,
         ] {
             let config: Wrapper = serde_json::from_str(s).unwrap();
-            assert_eq!(
-                config,
-                Wrapper {
-                    config: FtConfig {
-                        model: None,
-                        checkpoint_interval_secs: Some(60)
-                    }
-                }
-            );
+            assert_eq!(config.config.model, None);
+            assert_eq!(config.config.checkpoint_interval(), None);
         }
 
         // Serializing disabled FT produces explicit "none" form.
@@ -1588,26 +2407,783 @@ mod test {
         .unwrap();
         assert!(s.contains("\"none\""));
 
-        // `{}` for FtConfig, or `{...}` with `model` omitted, enables fault
-        // tolerance.
-        for s in [r#"{"config": {}}"#, r#"{"checkpoint_interval_secs": 60}"#] {
+        // `{}` for FtConfig, or `{...}` with an interval but no `model`,
+        // enables fault tolerance with a 60 second interval.
+        for s in [
+            r#"{}"#,
+            r#"{"checkpoint_interval": "60s"}"#,
+            r#"{"checkpoint_interval_secs": 60}"#,
+        ] {
+            let config = serde_json::from_str::<FtConfig>(s).unwrap();
+            assert_eq!(config.model, Some(FtModel::default()), "parsing {s}");
             assert_eq!(
-                serde_json::from_str::<FtConfig>(s).unwrap(),
-                FtConfig {
-                    model: Some(FtModel::default()),
-                    checkpoint_interval_secs: Some(60)
-                }
+                config.checkpoint_interval(),
+                Some(Duration::from_secs(60)),
+                "parsing {s}"
             );
         }
 
-        // `"checkpoint_interval_secs": null` disables periodic checkpointing.
+        // An explicit `null` interval disables periodic checkpointing, under
+        // the current name and under the deprecated one.
+        for s in [
+            r#"{"checkpoint_interval": null}"#,
+            r#"{"checkpoint_interval_secs": null}"#,
+        ] {
+            let config = serde_json::from_str::<FtConfig>(s).unwrap();
+            assert_eq!(config.model, Some(FtModel::default()), "parsing {s}");
+            assert_eq!(config.checkpoint_interval(), None, "parsing {s}");
+        }
+
+        // Both spellings reach one field, so writing both is a duplicate, not
+        // a contest one of them wins.
+        let error = serde_json::from_str::<FtConfig>(
+            r#"{"checkpoint_interval": "5m", "checkpoint_interval_secs": 10}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("duplicate field"), "{error}");
+
+        // The interval is clamped to between one second and one hour.
+        for (json, expected_secs) in [
+            (r#"{"checkpoint_interval": "1ms"}"#, 1),
+            (r#"{"checkpoint_interval": "10h"}"#, 3600),
+        ] {
+            assert_eq!(
+                serde_json::from_str::<FtConfig>(json)
+                    .unwrap()
+                    .checkpoint_interval(),
+                Some(Duration::from_secs(expected_secs)),
+                "parsing {json}"
+            );
+        }
+    }
+
+    /// The configuration handed to a pinned runtime carries every duration
+    /// setting under its older key, in the older unit, and nothing under the
+    /// current names, which a runtime older than the rename ignores.
+    #[test]
+    fn legacy_duration_spelling_uses_the_older_keys() {
+        let mut config = serde_json::json!({
+            "workers": 2,
+            "clock_resolution": "250ms",
+            "max_buffering_delay": "3ms",
+            "provisioning_timeout": "15m",
+            "fault_tolerance": {"model": "at_least_once", "checkpoint_interval": "20s"},
+            "storage": {"backend": {"name": "file", "config": {
+                "ioop_latency": "5ms",
+                "sync": {"bucket": "b", "standby_pull_interval": "10s",
+                         "checkpoint_push_interval": "1h", "min_retention": "30d"}}}},
+        });
+        super::to_legacy_duration_spelling(&mut config);
         assert_eq!(
-            serde_json::from_str::<FtConfig>(r#"{"checkpoint_interval_secs": null}"#).unwrap(),
-            FtConfig {
-                model: Some(FtModel::default()),
-                checkpoint_interval_secs: None
-            }
+            config,
+            serde_json::json!({
+                "workers": 2,
+                "clock_resolution_usecs": 250_000,
+                "max_buffering_delay_usecs": 3_000,
+                "provisioning_timeout_secs": 900,
+                "fault_tolerance": {"model": "at_least_once", "checkpoint_interval_secs": 20},
+                "storage": {"backend": {"name": "file", "config": {
+                    "ioop_delay": 5,
+                    "sync": {"bucket": "b", "pull_interval": 10,
+                             "push_interval": 3_600, "retention_min_age": 30}}}},
+            })
         );
+    }
+
+    /// Every connector that has a duration setting, in the current spelling.
+    fn pipeline_with_every_duration_connector() -> serde_json::Value {
+        serde_json::json!({
+            "name": "p",
+            "clock_resolution": "250ms",
+            "inputs": {
+                "t.kafka": {"stream": "t", "transport": {"name": "kafka_input", "config": {
+                    "topic": "t", "group_join_timeout": "30s"}}},
+                "t.url": {"stream": "t", "transport": {"name": "url_input", "config": {
+                    "path": "http://x", "pause_linger": "7s"}}},
+                "t.nats": {"stream": "t", "transport": {"name": "nats_input", "config": {
+                    "connection_config": {"server_url": "nats://x",
+                        "connection_timeout": "5s", "request_timeout": "6s"},
+                    "stream_name": "s",
+                    "consumer_config": {"deliver_policy": "All", "max_expiry": "45.5s"},
+                    "inactivity_timeout": "90s", "retry_interval": "3s"}}},
+                "t.pubsub": {"stream": "t", "transport": {"name": "pub_sub_input", "config": {
+                    "subscription": "s", "timeout": "20s", "connect_timeout": "4s"}}},
+            },
+            "outputs": {
+                "v.kafka": {"stream": "v",
+                    "transport": {"name": "kafka_output", "config": {
+                        "topic": "v", "initialization_timeout": "40s"}},
+                    "format": {"name": "avro", "config": {"registry_urls": ["http://r"],
+                        "registry_timeout": "8s"}},
+                    "enable_output_buffer": true,
+                    "max_output_buffer_time": "500ms"},
+                "v.nats": {"stream": "v", "transport": {"name": "nats_output", "config": {
+                    "connection_config": {"server_url": "nats://x",
+                        "connection_timeout": "5s", "request_timeout": "6s"},
+                    "subject": "s", "publish_timeout": "9s"}}},
+            },
+        })
+    }
+
+    /// Connectors are rewritten too, each under the key and in the unit its
+    /// transport used before the rename; the NATS expiry becomes the
+    /// `{secs, nanos}` object it was.
+    #[test]
+    fn legacy_duration_spelling_rewrites_every_connector() {
+        let mut config = pipeline_with_every_duration_connector();
+        super::to_legacy_duration_spelling(&mut config);
+        let i = &config["inputs"];
+        assert_eq!(
+            i["t.kafka"]["transport"]["config"]["group_join_timeout_secs"],
+            30
+        );
+        assert_eq!(i["t.url"]["transport"]["config"]["pause_timeout"], 7);
+        let nats = &i["t.nats"]["transport"]["config"];
+        assert_eq!(nats["connection_config"]["connection_timeout_secs"], 5);
+        assert_eq!(nats["connection_config"]["request_timeout_secs"], 6);
+        assert_eq!(nats["inactivity_timeout_secs"], 90);
+        assert_eq!(nats["retry_interval_secs"], 3);
+        assert_eq!(
+            nats["consumer_config"]["max_expires"],
+            serde_json::json!({"secs": 45, "nanos": 500_000_000})
+        );
+        let pubsub = &i["t.pubsub"]["transport"]["config"];
+        assert_eq!(pubsub["timeout_seconds"], 20);
+        assert_eq!(pubsub["connect_timeout_seconds"], 4);
+        let out = &config["outputs"]["v.kafka"];
+        assert_eq!(
+            out["transport"]["config"]["initialization_timeout_secs"],
+            40
+        );
+        assert_eq!(out["format"]["config"]["registry_timeout_secs"], 8);
+        assert_eq!(out["max_output_buffer_time_millis"], 500);
+        let nats = &config["outputs"]["v.nats"]["transport"]["config"];
+        assert_eq!(nats["connection_config"]["connection_timeout_secs"], 5);
+        assert_eq!(nats["connection_config"]["request_timeout_secs"], 6);
+        assert_eq!(nats["publish_timeout_secs"], 9);
+
+        // No current name survives anywhere in the file.
+        let text = config.to_string();
+        for new in [
+            "\"group_join_timeout\"",
+            "\"pause_linger\"",
+            "\"connection_timeout\"",
+            "\"request_timeout\"",
+            "\"inactivity_timeout\"",
+            "\"retry_interval\"",
+            "\"max_expiry\"",
+            "\"timeout\"",
+            "\"connect_timeout\"",
+            "\"initialization_timeout\"",
+            "\"registry_timeout\"",
+            "\"max_output_buffer_time\"",
+            "\"publish_timeout\"",
+            "\"clock_resolution\"",
+        ] {
+            assert!(!text.contains(new), "{new} survived in {text}");
+        }
+    }
+
+    /// The rewritten connectors mean the same to this release as the originals.
+    #[test]
+    fn legacy_duration_spelling_round_trips_connectors() {
+        let original: PipelineConfig =
+            serde_json::from_value(pipeline_with_every_duration_connector()).unwrap();
+        let mut value = serde_json::to_value(&original).unwrap();
+        super::to_legacy_duration_spelling(&mut value);
+        let mut reread: PipelineConfig = serde_json::from_value(value).unwrap();
+
+        // The format config stays raw JSON until the encoder parses it, so
+        // compare it the way the encoder reads it.
+        let registry = |config: &PipelineConfig| {
+            let format = config.outputs["v.kafka"]
+                .connector_config
+                .format
+                .clone()
+                .unwrap();
+            serde_json::from_value::<crate::format::avro::AvroEncoderConfig>(format.config)
+                .unwrap()
+                .registry_config
+                .registry_timeout
+        };
+        assert_eq!(registry(&reread), registry(&original));
+        let mut original = original;
+        for config in [&mut reread, &mut original] {
+            config
+                .outputs
+                .get_mut("v.kafka")
+                .unwrap()
+                .connector_config
+                .format = None;
+        }
+        assert_eq!(reread, original);
+    }
+
+    /// A duration too long for the older field is capped at the largest value
+    /// it holds, rather than wrapping; a bare number already under the current
+    /// key keeps its value, since it already counts the older unit.
+    #[test]
+    fn legacy_duration_spelling_caps_and_keeps_bare_numbers() {
+        let mut config = serde_json::json!({
+            "inputs": {
+                "t.kafka": {"transport": {"name": "kafka_input", "config": {
+                    "group_join_timeout": "100000000000s"}}},
+                "t.url": {"transport": {"name": "url_input", "config": {"pause_linger": 9}}},
+            },
+            "storage": {"backend": {"name": "file", "config": {
+                "sync": {"min_retention": "100000000000d"}}}},
+        });
+        super::to_legacy_duration_spelling(&mut config);
+        let i = &config["inputs"];
+        assert_eq!(
+            i["t.kafka"]["transport"]["config"]["group_join_timeout_secs"],
+            u64::from(u32::MAX)
+        );
+        assert_eq!(i["t.url"]["transport"]["config"]["pause_timeout"], 9);
+        assert_eq!(
+            config["storage"]["backend"]["config"]["sync"]["retention_min_age"],
+            u64::from(u32::MAX)
+        );
+    }
+
+    /// The older spelling means the same settings to this release, so the
+    /// rewrite changes what an older runtime reads without changing what a
+    /// newer one does.
+    #[test]
+    fn legacy_duration_spelling_round_trips() {
+        let original: RuntimeConfig = serde_json::from_value(serde_json::json!({
+            "clock_resolution": "250ms",
+            "max_buffering_delay": "3ms",
+            "provisioning_timeout": "15m",
+            "fault_tolerance": {"model": "at_least_once", "checkpoint_interval": "20s"},
+        }))
+        .unwrap();
+        let mut value = serde_json::to_value(&original).unwrap();
+        super::to_legacy_duration_spelling(&mut value);
+        let reread: RuntimeConfig = serde_json::from_value(value).unwrap();
+        assert_eq!(reread.clock_resolution(), original.clock_resolution());
+        assert_eq!(reread.max_buffering_delay(), original.max_buffering_delay());
+        assert_eq!(reread.provisioning_timeout, original.provisioning_timeout);
+        assert_eq!(
+            reread.fault_tolerance.checkpoint_interval(),
+            original.fault_tolerance.checkpoint_interval()
+        );
+    }
+
+    /// Durations that are not a whole number of the older unit round up, so a
+    /// short timeout never becomes a zero one; a disabled checkpoint stays
+    /// disabled; an unset required field is dropped rather than written as
+    /// `null`; a value that does not parse is left for the runtime to reject.
+    #[test]
+    fn legacy_duration_spelling_edge_cases() {
+        let mut config = serde_json::json!({
+            "max_buffering_delay": null,
+            "provisioning_timeout": "1.5s",
+            "fault_tolerance": {"checkpoint_interval": null},
+            "clock_resolution": "10sec",
+            "storage": {"backend": {"name": "file", "config": {
+                "ioop_latency": "400us",
+                "sync": {"bucket": "b", "min_retention": "11h", "standby_pull_interval": "400ms"}}}},
+        });
+        super::to_legacy_duration_spelling(&mut config);
+        assert_eq!(
+            config,
+            serde_json::json!({
+                "provisioning_timeout_secs": 2,
+                "fault_tolerance": {"checkpoint_interval_secs": null},
+                "clock_resolution": "10sec",
+                "storage": {"backend": {"name": "file", "config": {
+                    "ioop_delay": 1,
+                    "sync": {"bucket": "b", "retention_min_age": 1, "pull_interval": 1}}}},
+            })
+        );
+
+        // A zero stays a zero: only a positive duration is pushed up to one unit.
+        let mut zero = serde_json::json!({"provisioning_timeout": "0"});
+        super::to_legacy_duration_spelling(&mut zero);
+        assert_eq!(zero, serde_json::json!({"provisioning_timeout_secs": 0}));
+
+        // Already in the older spelling: nothing to do.
+        let legacy = serde_json::json!({"clock_resolution_usecs": 5, "workers": 1});
+        let mut again = legacy.clone();
+        super::to_legacy_duration_spelling(&mut again);
+        assert_eq!(again, legacy);
+    }
+
+    /// The configuration handed to a runtime from before the size rename
+    /// carries every size setting under its older key, as a whole number of
+    /// the older unit rounded up, and nothing under the current names.
+    #[test]
+    fn legacy_size_spelling_uses_the_older_keys() {
+        let mut config = serde_json::json!({
+            "workers": 2,
+            "max_rss": "16G",
+            "datafusion_memory": "1.5G",
+            "storage": {"cache_size": "4Gi", "min_spill_size": "10Mi", "min_step_spill_size": "0"},
+            "resources": {
+                "memory_min": "4G", "memory_max": "16Gi",
+                "storage_min": "100G", "storage_max": "400Gi",
+                "autoscaling": {"storage": {"scale_threshold_available": "10G", "scale_factor": 2.0}}
+            },
+            "dev_tweaks": {
+                "storage_max": "1Gi", "fbuf_slab_size_per_class": "16Mi",
+                "lazy_input_map_key_block_size": "32Ki", "exchange_channel_capacity": "10M"
+            },
+            "inputs": {
+                "t.file": {"stream": "t", "max_queued_size": "1Mi",
+                    "transport": {"name": "file_input", "config": {"path": "x", "buffer_size": "64Ki"}}},
+                "t.cdc": {"stream": "t",
+                    "transport": {"name": "postgres_cdc_input", "config": {"batch": {"max_size": "32Mi"}}}},
+            },
+            "outputs": {
+                "v.ddb": {"stream": "v",
+                    "transport": {"name": "dynamodb_output", "config": {"max_buffer_size": "1Mi"}}},
+                "v.pg": {"stream": "v",
+                    "transport": {"name": "postgres_output", "config": {"max_buffer_size": "2Mi"}}},
+            },
+        });
+        super::to_legacy_size_spelling(&mut config);
+        assert_eq!(
+            config,
+            serde_json::json!({
+                "workers": 2,
+                "max_rss_mb": 16_000,
+                "datafusion_memory_mb": 1_500,
+                "storage": {"cache_mib": 4096, "min_storage_bytes": 10 * 1024 * 1024, "min_step_storage_bytes": 0},
+                "resources": {
+                    // 16Gi and 400Gi are not whole megabytes: they round up.
+                    "memory_mb_min": 4_000, "memory_mb_max": 17_180,
+                    "storage_mb_min": 100_000, "storage_mb_max": 429_497,
+                    "autoscaling": {"storage": {"scale_threshold_available_mb": 10_000, "scale_factor": 2.0}}
+                },
+                "dev_tweaks": {
+                    "storage_mb_max": 1024, "fbuf_slab_bytes_per_class": 16 * 1024 * 1024,
+                    "lazy_input_map_key_block_bytes": 32 * 1024, "exchange_channel_capacity_bytes": 10_000_000
+                },
+                "inputs": {
+                    "t.file": {"stream": "t", "max_queued_bytes": 1024 * 1024,
+                        "transport": {"name": "file_input", "config": {"path": "x", "buffer_size_bytes": 64 * 1024}}},
+                    "t.cdc": {"stream": "t",
+                        "transport": {"name": "postgres_cdc_input", "config": {"batch": {"max_bytes": 32 * 1024 * 1024}}}},
+                },
+                "outputs": {
+                    "v.ddb": {"stream": "v",
+                        "transport": {"name": "dynamodb_output", "config": {"max_buffer_size_bytes": 1024 * 1024}}},
+                    "v.pg": {"stream": "v",
+                        "transport": {"name": "postgres_output", "config": {"max_buffer_size_bytes": 2 * 1024 * 1024}}},
+                },
+            })
+        );
+    }
+
+    /// The older size spelling means the same settings to this release, so a
+    /// configuration survives the trip out to a pinned runtime and back.
+    #[test]
+    fn legacy_size_spelling_round_trips() {
+        let config: PipelineConfig = serde_json::from_value(serde_json::json!({
+            "name": "p",
+            "max_rss": "16G",
+            // Whole megabytes, mebibytes and bytes: a size the older unit
+            // cannot express rounds up and does not come back the same.
+            "datafusion_memory": "1G",
+            "storage": {"cache_size": "4Gi", "min_spill_size": "10Mi"},
+            "resources": {"memory_max": "16G", "storage_max": "400G"},
+            "dev_tweaks": {"lazy_input_map_key_block_size": "32Ki"},
+            "inputs": {"t.file": {"stream": "t", "max_queued_size": "1Mi",
+                "transport": {"name": "file_input", "config": {"path": "x", "buffer_size": "64Ki"}}}},
+            "outputs": {},
+        }))
+        .unwrap();
+        let mut value = serde_json::to_value(&config).unwrap();
+        super::to_legacy_size_spelling(&mut value);
+        assert_eq!(value["max_rss_mb"], serde_json::json!(16_000));
+        assert_eq!(
+            value["inputs"]["t.file"]["max_queued_bytes"],
+            serde_json::json!(1024 * 1024)
+        );
+        let reread: PipelineConfig = serde_json::from_value(value).unwrap();
+        assert_eq!(reread, config);
+    }
+
+    /// The executors rewrite only what the runtime needs: a runtime from
+    /// between the two renames gets the current durations and the older sizes.
+    #[test]
+    fn legacy_spelling_applies_each_rename_separately() {
+        let current = serde_json::json!({"clock_resolution": "1s", "max_rss": "16G"});
+        let mut both = current.clone();
+        super::LegacySpelling {
+            durations: true,
+            sizes: true,
+        }
+        .apply(&mut both);
+        assert_eq!(
+            both,
+            serde_json::json!({"clock_resolution_usecs": 1_000_000, "max_rss_mb": 16_000})
+        );
+        let mut sizes_only = current.clone();
+        super::LegacySpelling {
+            durations: false,
+            sizes: true,
+        }
+        .apply(&mut sizes_only);
+        assert_eq!(
+            sizes_only,
+            serde_json::json!({"clock_resolution": "1s", "max_rss_mb": 16_000})
+        );
+        let mut none = current.clone();
+        super::LegacySpelling::NONE.apply(&mut none);
+        assert_eq!(none, current);
+        assert!(!super::LegacySpelling::NONE.any());
+    }
+
+    #[test]
+    fn legacy_size_spelling_edge_cases() {
+        // A value that does not parse stays under the current key, for the
+        // runtime to reject, and a `null` meant "unset" under either key.
+        let mut config = serde_json::json!({
+            "max_rss": "lots",
+            "resources": {"memory_max": null, "memory_min": 4000}
+        });
+        super::to_legacy_size_spelling(&mut config);
+        assert_eq!(
+            config,
+            serde_json::json!({"max_rss": "lots", "resources": {"memory_mb_min": 4000}})
+        );
+
+        // A fraction of the older unit rounds up, so a small cap never
+        // becomes a `0` the older runtime reads as no cap.
+        let mut small = serde_json::json!({"max_rss": "1"});
+        super::to_legacy_size_spelling(&mut small);
+        assert_eq!(small, serde_json::json!({"max_rss_mb": 1}));
+
+        // Already in the older spelling: nothing to do.
+        let legacy = serde_json::json!({"max_rss_mb": 5, "workers": 1});
+        let mut again = legacy.clone();
+        super::to_legacy_size_spelling(&mut again);
+        assert_eq!(again, legacy);
+    }
+
+    /// A connector nobody touched compares equal across the rename.
+    ///
+    /// A configuration stored by an older release carries each duration at its
+    /// default, because the fields it used could not be absent. A freshly
+    /// parsed one leaves them out. Both mean the same thing, and the diff that
+    /// decides whether to keep a connector's checkpointed position has to agree
+    /// with that: otherwise the connector reads as modified and the controller
+    /// restarts its ingestion from the beginning.
+    #[test]
+    fn a_stored_default_matches_an_omitted_one() {
+        let stored: ConnectorConfig = serde_json::from_value(serde_json::json!({
+            "transport": {
+                "name": "url_input",
+                "config": {"path": "http://example.com/x", "pause_timeout": 60},
+            }
+        }))
+        .unwrap();
+        let fresh: ConnectorConfig = serde_json::from_value(serde_json::json!({
+            "transport": {
+                "name": "url_input",
+                "config": {"path": "http://example.com/x"},
+            }
+        }))
+        .unwrap();
+
+        // The two differ field by field, which is what the derived `PartialEq`
+        // sees, yet they configure the same connector.
+        assert_ne!(stored, fresh);
+        assert!(stored.equal_for_input_checkpoint_replay(&fresh));
+
+        // A real difference still reads as one.
+        let changed: ConnectorConfig = serde_json::from_value(serde_json::json!({
+            "transport": {
+                "name": "url_input",
+                "config": {"path": "http://example.com/x", "pause_linger": "90s"},
+            }
+        }))
+        .unwrap();
+        assert!(!stored.equal_for_input_checkpoint_replay(&changed));
+    }
+
+    /// An Avro schema registry timeout compares equal across the rename.
+    ///
+    /// The format configuration stays raw JSON until the format parses it, so
+    /// the connector comparison has to read the timeout the way the format
+    /// does: otherwise following the deprecation warning, from
+    /// `registry_timeout_secs: 10` to `registry_timeout: "10s"`, reads as a
+    /// modified connector and an Avro input is read again from the beginning.
+    #[test]
+    fn an_avro_registry_timeout_compares_equal_across_the_rename() {
+        let connector = |registry: serde_json::Value| -> ConnectorConfig {
+            let mut format = serde_json::json!({"registry_urls": ["http://registry:8081"]});
+            format
+                .as_object_mut()
+                .unwrap()
+                .extend(registry.as_object().unwrap().clone());
+            serde_json::from_value(serde_json::json!({
+                "transport": {
+                    "name": "url_input",
+                    "config": {"path": "http://example.com/x"},
+                },
+                "format": {"name": "avro", "config": format},
+            }))
+            .unwrap()
+        };
+        let stored = connector(serde_json::json!({"registry_timeout_secs": 10}));
+        let current = connector(serde_json::json!({"registry_timeout": "10s"}));
+        let spelled_out = connector(serde_json::json!({"registry_timeout": "10000ms"}));
+        let changed = connector(serde_json::json!({"registry_timeout": "11s"}));
+        let unset = connector(serde_json::json!({}));
+
+        assert!(stored.equal_modulo_paused(&current));
+        assert!(stored.equal_for_input_checkpoint_replay(&current));
+        assert!(current.equal_modulo_paused(&spelled_out));
+        assert!(!stored.equal_modulo_paused(&changed));
+        assert!(!stored.equal_modulo_paused(&unset));
+        // The other formats carry no duration and are left alone.
+        let json: ConnectorConfig = serde_json::from_value(serde_json::json!({
+            "transport": {"name": "url_input", "config": {"path": "http://example.com/x"}},
+            "format": {"name": "json", "config": {"registry_timeout_secs": 10}},
+        }))
+        .unwrap();
+        assert!(!json.equal_modulo_paused(&stored));
+    }
+
+    /// The defaults an older release wrote out still load.
+    ///
+    /// `max_output_buffer_time_millis` defaulted to `usize::MAX` and was
+    /// serialized into every output connector, so scaling it into nanoseconds
+    /// has to survive rather than reject the configuration.
+    #[test]
+    fn the_largest_legacy_defaults_still_load() {
+        let buffer: OutputBufferConfig = serde_json::from_value(serde_json::json!({
+            "enable_output_buffer": false,
+            "max_output_buffer_time_millis": u64::MAX,
+            "max_output_buffer_size_records": 10_000_000u64,
+        }))
+        .unwrap();
+        assert_eq!(
+            buffer.max_output_buffer_time,
+            Some(ConfigDuration::from_millis(u64::MAX))
+        );
+
+        // The widest legacy unit, days, also survives.
+        let sync: SyncConfig =
+            serde_json::from_str(r#"{"bucket": "b", "retention_min_age": 4000000000}"#).unwrap();
+        assert_eq!(
+            sync.min_retention(),
+            ConfigDuration::from_days(4_000_000_000)
+        );
+    }
+
+    /// A legacy number too large for a `u64` of seconds saturates at the
+    /// longest duration there is rather than failing to load: an older
+    /// release accepted it.
+    #[test]
+    fn a_legacy_number_past_u64_seconds_saturates() {
+        let sync: SyncConfig =
+            serde_json::from_str(r#"{"bucket": "b", "retention_min_age": 18446744073709551615}"#)
+                .unwrap();
+        assert_eq!(
+            sync.min_retention(),
+            ConfigDuration::from(std::time::Duration::MAX)
+        );
+    }
+
+    /// Kafka input and NATS connectors stored by an older release carry their
+    /// duration defaults spelled out; a fresh configuration leaves them out.
+    /// The checkpoint replay comparison must see the two as the same connector.
+    #[test]
+    fn spelled_out_defaults_match_for_kafka_input_and_nats() {
+        fn connector(value: serde_json::Value) -> ConnectorConfig {
+            serde_json::from_value(value).unwrap()
+        }
+        fn secs(duration: ConfigDuration) -> u64 {
+            std::time::Duration::from(duration).as_secs()
+        }
+        let fresh_kafka = connector(serde_json::json!({
+            "transport": {"name": "kafka_input", "config": {"topic": "t"}}}));
+        let TransportConfig::KafkaInput(kafka) = &fresh_kafka.transport else {
+            unreachable!()
+        };
+        let stored_kafka = connector(serde_json::json!({
+            "transport": {"name": "kafka_input", "config": {
+                "topic": "t",
+                "group_join_timeout_secs": secs(kafka.group_join_timeout())}}}));
+        assert_ne!(stored_kafka, fresh_kafka);
+        assert!(stored_kafka.equal_for_input_checkpoint_replay(&fresh_kafka));
+
+        let base = serde_json::json!({
+            "connection_config": {"server_url": "nats://x"},
+            "stream_name": "s",
+            "consumer_config": {"deliver_policy": "All"}});
+        let fresh_nats = connector(serde_json::json!({
+            "transport": {"name": "nats_input", "config": base.clone()}}));
+        let TransportConfig::NatsInput(nats) = &fresh_nats.transport else {
+            unreachable!()
+        };
+        let mut spelled_out = base;
+        spelled_out["inactivity_timeout_secs"] = secs(nats.inactivity_timeout()).into();
+        spelled_out["retry_interval_secs"] = secs(nats.retry_interval()).into();
+        spelled_out["connection_config"]["connection_timeout_secs"] =
+            secs(nats.connection_config.connection_timeout()).into();
+        spelled_out["connection_config"]["request_timeout_secs"] =
+            secs(nats.connection_config.request_timeout()).into();
+        let stored_nats = connector(serde_json::json!({
+            "transport": {"name": "nats_input", "config": spelled_out}}));
+        assert_ne!(stored_nats, fresh_nats);
+        assert!(stored_nats.equal_for_input_checkpoint_replay(&fresh_nats));
+    }
+
+    /// A configuration written before the rename converts itself: the manager
+    /// deserializes it and writes it back (`validate_runtime_config`, then
+    /// `serde_json::to_value`), so the superseded keys disappear and the
+    /// current ones take their place with the same lengths of time. Only then
+    /// does the pipeline stop warning about a configuration nobody has edited.
+    #[test]
+    fn superseded_keys_are_normalised_by_a_round_trip() {
+        let stored = serde_json::json!({
+            "workers": 4,
+            "clock_resolution_usecs": 100_000,
+            "max_buffering_delay_usecs": 0,
+            "provisioning_timeout_secs": 300,
+        });
+
+        let config: RuntimeConfig = serde_json::from_value(stored).unwrap();
+        let written = serde_json::to_value(&config).unwrap();
+
+        assert_eq!(written["clock_resolution"], "100ms");
+        assert_eq!(written["max_buffering_delay"], "0s");
+        assert_eq!(written["provisioning_timeout"], "5m");
+        for superseded in [
+            "clock_resolution_usecs",
+            "max_buffering_delay_usecs",
+            "provisioning_timeout_secs",
+        ] {
+            assert!(
+                written.get(superseded).is_none(),
+                "`{superseded}` survived the round trip: {written}"
+            );
+        }
+
+        // The round trip is a fixed point: reading what was written back gives
+        // the same document, so a configuration converts once and then settles.
+        let reparsed: RuntimeConfig = serde_json::from_value(written.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&reparsed).unwrap(), written);
+    }
+
+    /// The simulated per-I/O delay reads back from both spellings. Its
+    /// superseded name counted milliseconds, one of only two settings that
+    /// did, so the unit is worth pinning: `ioop_delay: 5` is five
+    /// milliseconds, not five seconds.
+    #[test]
+    fn ioop_latency_accepts_both_spellings() {
+        for (json, expected) in [
+            (r#"{"name": "file", "config": {}}"#, None),
+            (
+                r#"{"name": "file", "config": {"ioop_latency": "5ms"}}"#,
+                Some(ConfigDuration::from_millis(5)),
+            ),
+            (
+                r#"{"name": "file", "config": {"ioop_delay": 5}}"#,
+                Some(ConfigDuration::from_millis(5)),
+            ),
+            (
+                r#"{"name": "file", "config": {"ioop_latency": "1s"}}"#,
+                Some(ConfigDuration::from_secs(1)),
+            ),
+        ] {
+            let backend: StorageBackendConfig = serde_json::from_str(json).unwrap();
+            let StorageBackendConfig::File(file) = backend else {
+                panic!("expected the file backend, parsing {json}");
+            };
+            assert_eq!(file.ioop_latency, expected, "parsing {json}");
+        }
+    }
+
+    /// The clock resolution reads back from both the current field and the one
+    /// it deprecates. An explicit `null` selects the default, which is what the
+    /// deprecated field did before it gained a replacement.
+    #[test]
+    fn clock_resolution_falls_back_to_the_deprecated_field() {
+        for (json, expected) in [
+            (r#"{}"#, DEFAULT_CLOCK_RESOLUTION),
+            (
+                r#"{"clock_resolution": "100ms"}"#,
+                ConfigDuration::from_millis(100),
+            ),
+            (
+                r#"{"clock_resolution_usecs": 100000}"#,
+                ConfigDuration::from_millis(100),
+            ),
+            (r#"{"clock_resolution": null}"#, DEFAULT_CLOCK_RESOLUTION),
+            (
+                r#"{"clock_resolution_usecs": null}"#,
+                DEFAULT_CLOCK_RESOLUTION,
+            ),
+        ] {
+            assert_eq!(
+                serde_json::from_str::<RuntimeConfig>(json)
+                    .unwrap()
+                    .clock_resolution(),
+                expected,
+                "parsing {json}"
+            );
+        }
+    }
+
+    /// Every duration field reads back from the field it deprecates, in the
+    /// unit that field used.
+    #[test]
+    fn deprecated_duration_fields_still_work() {
+        let runtime: RuntimeConfig = serde_json::from_str(
+            r#"{"max_buffering_delay_usecs": 5000, "provisioning_timeout_secs": 1200}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            runtime.max_buffering_delay(),
+            ConfigDuration::from_millis(5)
+        );
+        assert_eq!(
+            runtime.provisioning_timeout,
+            Some(ConfigDuration::from_secs(1200))
+        );
+
+        let sync: SyncConfig = serde_json::from_str(
+            r#"{"bucket": "b", "pull_interval": 30, "push_interval": 300, "retention_min_age": 7}"#,
+        )
+        .unwrap();
+        assert_eq!(sync.standby_pull_interval(), ConfigDuration::from_secs(30));
+        assert_eq!(
+            sync.checkpoint_push_interval(),
+            Some(ConfigDuration::from_secs(300))
+        );
+        assert_eq!(sync.min_retention(), ConfigDuration::from_days(7));
+
+        let storage: FileBackendConfig = serde_json::from_str(r#"{"ioop_delay": 5}"#).unwrap();
+        assert_eq!(storage.ioop_latency, Some(ConfigDuration::from_millis(5)));
+
+        let buffer: OutputBufferConfig =
+            serde_json::from_str(r#"{"max_output_buffer_time_millis": 250}"#).unwrap();
+        assert_eq!(
+            buffer.max_output_buffer_time(),
+            ConfigDuration::from_millis(250)
+        );
+    }
+
+    /// Defaults apply when neither the current field nor the deprecated one is
+    /// set.
+    #[test]
+    fn duration_fields_default_when_unset() {
+        let sync: SyncConfig = serde_json::from_str(r#"{"bucket": "b"}"#).unwrap();
+        assert_eq!(sync.standby_pull_interval(), DEFAULT_PULL_INTERVAL);
+        assert_eq!(sync.checkpoint_push_interval(), None);
+        assert_eq!(sync.min_retention(), DEFAULT_RETENTION_MIN_AGE);
+
+        let runtime = RuntimeConfig::default();
+        assert_eq!(runtime.max_buffering_delay(), ConfigDuration::ZERO);
+        assert_eq!(runtime.clock_resolution(), DEFAULT_CLOCK_RESOLUTION);
+        assert_eq!(runtime.provisioning_timeout, None);
     }
 
     /// Regression test: `Option<f64>` fields inside `StorageOptions` must
@@ -1661,13 +3237,20 @@ impl FtConfig {
 
     /// Returns the checkpoint interval, if fault tolerance is enabled, and
     /// otherwise `None`.
+    ///
+    /// Falls back to the deprecated `checkpoint_interval_secs` and then to
+    /// [`DEFAULT_CHECKPOINT_INTERVAL`]. The interval is clamped to between one
+    /// second and one hour.
     pub fn checkpoint_interval(&self) -> Option<Duration> {
-        if self.is_enabled() {
-            self.checkpoint_interval_secs
-                .map(|interval| Duration::from_secs(interval.clamp(1, 3600)))
-        } else {
-            None
+        if !self.is_enabled() {
+            return None;
         }
+
+        let interval = self
+            .checkpoint_interval
+            .unwrap_or(Some(DEFAULT_CHECKPOINT_INTERVAL))?;
+
+        Some(Duration::from(interval).clamp(Duration::from_secs(1), Duration::from_secs(3600)))
     }
 }
 
@@ -1787,7 +3370,17 @@ impl FtModel {
     }
 }
 
+/// The string does not name a fault tolerance model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FtModelUnknown;
+
+impl std::fmt::Display for FtModelUnknown {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("expected `exactly_once` or `at_least_once`")
+    }
+}
+
+impl std::error::Error for FtModelUnknown {}
 
 impl FromStr for FtModel {
     type Err = FtModelUnknown;
@@ -1987,9 +3580,19 @@ pub struct ConnectorConfig {
     /// the backpressure mechanism is triggered and the endpoint is paused, during
     /// which more data may be queued.
     ///
-    /// When this is unspecified, it defaults to `1000 * max_queued_records`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_queued_bytes: Option<u64>,
+    /// When this is unspecified, it defaults to `1000 * max_queued_records`
+    /// bytes.
+    ///
+    /// Before release 0.367.0 this setting was `max_queued_bytes`, a number
+    /// of bytes. That name is deprecated but still read.
+    #[serde(
+        default,
+        alias = "max_queued_bytes",
+        deserialize_with = "size_max_queued_size",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub max_queued_size: Option<ConfigSize>,
 
     /// Create connector in paused state.
     ///
@@ -2019,6 +3622,20 @@ pub struct ConnectorConfig {
     #[serde(deserialize_with = "deserialize_start_after")]
     #[serde(default)]
     pub start_after: Option<Vec<String>>,
+
+    /// Divide the input of this connector among the hosts of a multihost
+    /// pipeline. Valid for input connectors only.
+    ///
+    /// When `false` (the default), the connector runs on one host, which
+    /// reads all of its input. When `true`, the connector runs on every host,
+    /// and each host reads a different part of the input. Only the Kafka,
+    /// Delta Lake, and Iceberg input transports support this setting.
+    ///
+    /// In a single-host pipeline, this setting has no effect.
+    ///
+    /// Versions of Feldera that predate this option ignore it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub distributed: bool,
 }
 
 impl ConnectorConfig {
@@ -2035,10 +3652,11 @@ impl ConnectorConfig {
             max_batch_size: None,
             max_worker_batch_size: None,
             max_queued_records: default_max_queued_records(),
-            max_queued_bytes: None,
+            max_queued_size: None,
             paused: false,
             labels: Vec::new(),
             start_after: None,
+            distributed: false,
         }
     }
 
@@ -2052,7 +3670,8 @@ impl ConnectorConfig {
         self
     }
 
-    /// Compare two configs modulo the `paused` field.
+    /// Compare two configs modulo the `paused` field and how their duration
+    /// settings are spelled.
     ///
     /// Used to compare checkpointed and current connector configs.
     pub fn equal_modulo_paused(&self, other: &Self) -> bool {
@@ -2060,7 +3679,28 @@ impl ConnectorConfig {
         let mut b = other.clone();
         a.paused = false;
         b.paused = false;
+        a.normalize_durations();
+        b.normalize_durations();
         a == b
+    }
+
+    /// Writes each duration setting out as the value in effect.
+    ///
+    /// A setting left out and the same setting written explicitly at its
+    /// default mean the same thing, but the derived `PartialEq` sees `None`
+    /// against `Some(default)` and calls them different. Configurations stored
+    /// before the rename carry the defaults explicitly, because the fields they
+    /// used had no way to be absent: every output connector, for instance,
+    /// carries `max_output_buffer_time_millis` at `u64::MAX`. Without this a
+    /// connector nobody touched compares as modified, and the pipeline diff that
+    /// follows an upgrade is never empty.
+    fn normalize_durations(&mut self) {
+        self.transport.normalize_durations();
+        self.output_buffer_config.max_output_buffer_time =
+            Some(self.output_buffer_config.max_output_buffer_time());
+        if let Some(format) = &mut self.format {
+            format.normalize_durations();
+        }
     }
 
     /// Compare two input connector configs modulo fields that only affect
@@ -2078,7 +3718,8 @@ impl ConnectorConfig {
         self.max_batch_size = None;
         self.max_worker_batch_size = None;
         self.max_queued_records = default_max_queued_records();
-        self.max_queued_bytes = None;
+        self.max_queued_size = None;
+        self.normalize_durations();
     }
 
     /// Adopt input connector settings that are safe to change while replaying
@@ -2087,7 +3728,7 @@ impl ConnectorConfig {
         self.max_batch_size = other.max_batch_size;
         self.max_worker_batch_size = other.max_worker_batch_size;
         self.max_queued_records = other.max_queued_records;
-        self.max_queued_bytes = other.max_queued_bytes;
+        self.max_queued_size = other.max_queued_size;
     }
 
     /// Returns `max_queued_records` or, if it is not set, the default.
@@ -2095,10 +3736,11 @@ impl ConnectorConfig {
         self.max_queued_records
     }
 
-    /// Returns `max_queued_bytes` or, if it is not set, the default based on
-    /// `max_queued_records`.
+    /// Returns `max_queued_size` in bytes or, if it is not set, the default
+    /// based on `max_queued_records`.
     pub fn max_queued_bytes(&self) -> u64 {
-        self.max_queued_bytes
+        self.max_queued_size
+            .map(ConfigSize::as_bytes)
             .unwrap_or_else(|| self.max_queued_records().saturating_mul(1000))
     }
 }
@@ -2122,24 +3764,30 @@ pub struct OutputBufferConfig {
     /// updates produced by the pipeline are consolidated in an internal buffer and are
     /// pushed to the output transport when one of several conditions is satisfied:
     ///
-    /// * data has been accumulated in the buffer for more than `max_output_buffer_time_millis`
-    ///   milliseconds.
+    /// * data has been accumulated in the buffer for longer than
+    ///   `max_output_buffer_time`.
     /// * buffer size exceeds `max_output_buffer_size_records` records.
     ///
     /// This flag is `false` by default.
     // TODO: on-demand output triggered via the API.
     pub enable_output_buffer: bool,
 
-    /// Maximum time in milliseconds data is kept in the output buffer.
+    /// Maximum time data is kept in the output buffer, for example `500ms`.
     ///
     /// By default, data is kept in the buffer indefinitely until one of
     /// the other output conditions is satisfied.  When this option is
-    /// set the buffer will be flushed at most every
-    /// `max_output_buffer_time_millis` milliseconds.
+    /// set the buffer will be flushed at least that often.
     ///
     /// NOTE: this configuration option requires the `enable_output_buffer` flag
     /// to be set.
-    pub max_output_buffer_time_millis: usize,
+    #[serde(
+        default,
+        alias = "max_output_buffer_time_millis",
+        deserialize_with = "duration_max_output_buffer_time",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub max_output_buffer_time: Option<ConfigDuration>,
 
     /// Maximum number of updates to be kept in the output buffer.
     ///
@@ -2155,12 +3803,20 @@ pub struct OutputBufferConfig {
     pub max_output_buffer_size_records: usize,
 }
 
+impl OutputBufferConfig {
+    /// The output buffering time limit in effect, or no limit.
+    pub fn max_output_buffer_time(&self) -> ConfigDuration {
+        self.max_output_buffer_time
+            .unwrap_or(ConfigDuration::from_millis(u64::MAX))
+    }
+}
+
 impl Default for OutputBufferConfig {
     fn default() -> Self {
         Self {
             enable_output_buffer: false,
             max_output_buffer_size_records: DEFAULT_MAX_OUTPUT_BUFFER_SIZE_RECORDS,
-            max_output_buffer_time_millis: usize::MAX,
+            max_output_buffer_time: None,
         }
     }
 }
@@ -2194,7 +3850,10 @@ impl OutputEndpointConfig {
 pub enum TransportConfig {
     FileInput(FileInputConfig),
     FileOutput(FileOutputConfig),
-    NatsInput(NatsInputConfig),
+    // Boxed: `NatsInputConfig` is far larger than any other variant, and an
+    // unboxed copy would set the size of every `TransportConfig`.
+    NatsInput(Box<NatsInputConfig>),
+    NatsOutput(NatsOutputConfig),
     KafkaInput(KafkaInputConfig),
     KafkaOutput(KafkaOutputConfig),
     PubSubInput(PubSubInputConfig),
@@ -2230,11 +3889,44 @@ pub enum TransportConfig {
 }
 
 impl TransportConfig {
+    /// Writes each of the transport's duration settings out as the value in
+    /// effect; see `ConnectorConfig::normalize_durations`.
+    pub fn normalize_durations(&mut self) {
+        match self {
+            TransportConfig::UrlInput(config) => {
+                config.pause_linger = Some(config.pause_linger());
+            }
+            TransportConfig::KafkaInput(config) => {
+                config.group_join_timeout = Some(config.group_join_timeout());
+            }
+            TransportConfig::KafkaOutput(config) => {
+                config.initialization_timeout = Some(config.initialization_timeout());
+            }
+            TransportConfig::NatsInput(config) => {
+                config.connection_config.connection_timeout =
+                    Some(config.connection_config.connection_timeout());
+                config.connection_config.request_timeout =
+                    Some(config.connection_config.request_timeout());
+                config.inactivity_timeout = Some(config.inactivity_timeout());
+                config.retry_interval = Some(config.retry_interval());
+            }
+            TransportConfig::NatsOutput(config) => {
+                config.connection_config.connection_timeout =
+                    Some(config.connection_config.connection_timeout());
+                config.connection_config.request_timeout =
+                    Some(config.connection_config.request_timeout());
+                config.publish_timeout = Some(config.publish_timeout());
+            }
+            _ => {}
+        }
+    }
+
     pub fn name(&self) -> String {
         match self {
             TransportConfig::FileInput(_) => "file_input".to_string(),
             TransportConfig::FileOutput(_) => "file_output".to_string(),
             TransportConfig::NatsInput(_) => "nats_input".to_string(),
+            TransportConfig::NatsOutput(_) => "nats_output".to_string(),
             TransportConfig::KafkaInput(_) => "kafka_input".to_string(),
             TransportConfig::KafkaOutput(_) => "kafka_output".to_string(),
             TransportConfig::PubSubInput(_) => "pub_sub_input".to_string(),
@@ -2261,6 +3953,17 @@ impl TransportConfig {
         }
     }
 
+    /// Returns a mutable reference to the transport's metadata map, if the
+    /// transport supports arbitrary key-value metadata (e.g., NATS consumer
+    /// metadata). The controller uses this to inject pipeline identity into
+    /// transport-level metadata without transport-specific knowledge.
+    pub fn transport_metadata_mut(&mut self) -> Option<&mut HashMap<String, String>> {
+        match self {
+            TransportConfig::NatsInput(cfg) => Some(&mut cfg.consumer_config.metadata),
+            _ => None,
+        }
+    }
+
     /// Returns true if the connector is transient, i.e., is created and destroyed
     /// at runtime on demand, rather than being configured as part of the pipeline.
     pub fn is_transient(&self) -> bool {
@@ -2275,6 +3978,49 @@ impl TransportConfig {
 
     pub fn is_http_input(&self) -> bool {
         matches!(self, TransportConfig::HttpInput(_))
+    }
+
+    /// Returns true if an input connector with this transport can divide its
+    /// input among the hosts of a multihost pipeline (see
+    /// [`ConnectorConfig::distributed`]).
+    pub fn supports_distribution(&self) -> bool {
+        matches!(
+            self,
+            TransportConfig::KafkaInput(_)
+                | TransportConfig::DeltaTableInput(_)
+                | TransportConfig::IcebergInput(_)
+        )
+    }
+
+    /// Returns true if host 0 of a distributed input connector with this
+    /// transport must choose a value for all of the hosts before they read any
+    /// input.
+    ///
+    /// For example, the hosts of a Delta Lake connector must read the snapshot
+    /// at the same table version, and the hosts of an Iceberg connector at the
+    /// same snapshot ID, or they could lose or duplicate records.
+    /// Host 0 chooses the value, and the coordinator passes it to the other
+    /// hosts in [CoordinationActivate::input_choices].
+    ///
+    /// [CoordinationActivate::input_choices]: crate::coordination::CoordinationActivate::input_choices
+    pub fn needs_input_choice(&self) -> bool {
+        matches!(
+            self,
+            TransportConfig::DeltaTableInput(_) | TransportConfig::IcebergInput(_)
+        )
+    }
+
+    /// Returns how to combine the completed frontiers' metadata that the hosts
+    /// of a distributed input connector with this transport report.
+    pub fn frontier_merge(&self) -> crate::adapter_stats::FrontierMerge {
+        use crate::adapter_stats::FrontierMerge;
+        match self {
+            TransportConfig::KafkaInput(_) => FrontierMerge::Partitioned,
+            TransportConfig::DeltaTableInput(_) | TransportConfig::IcebergInput(_) => {
+                FrontierMerge::Shared
+            }
+            _ => FrontierMerge::Opaque,
+        }
     }
 }
 
@@ -2291,6 +4037,40 @@ pub struct FormatConfig {
     pub config: JsonValue,
 }
 
+impl FormatConfig {
+    /// Writes the Avro schema registry timeout, the one duration a format
+    /// carries, in one spelling; see `ConnectorConfig::normalize_durations`.
+    ///
+    /// The format configuration stays raw JSON until the format parses it, so
+    /// the timeout is read the way the format reads it and written back under
+    /// the current key. A configuration the format would reject is left alone.
+    pub fn normalize_durations(&mut self) {
+        if self.name != "avro" {
+            return;
+        }
+        let has_timeout = self.config.as_object().is_some_and(|object| {
+            object.contains_key("registry_timeout") || object.contains_key("registry_timeout_secs")
+        });
+        if !has_timeout {
+            return;
+        }
+        let Ok(registry) = serde_json::from_value::<crate::format::avro::AvroSchemaRegistryConfig>(
+            self.config.clone(),
+        ) else {
+            return;
+        };
+        let object = self.config.as_object_mut().unwrap();
+        object.remove("registry_timeout_secs");
+        match registry.registry_timeout {
+            Some(timeout) => object.insert(
+                "registry_timeout".to_string(),
+                JsonValue::String(timeout.to_string()),
+            ),
+            None => object.remove("registry_timeout"),
+        };
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct ResourceConfig {
@@ -2304,27 +4084,63 @@ pub struct ResourceConfig {
     #[serde(deserialize_with = "crate::serde_via_value::deserialize")]
     pub cpu_cores_max: Option<f64>,
 
-    /// The minimum memory in Megabytes to reserve
-    /// for an instance of this pipeline
-    pub memory_mb_min: Option<u64>,
+    /// The minimum memory to reserve for an instance of this pipeline, such
+    /// as `"4Gi"`.
+    ///
+    /// Before release 0.367.0 this setting was `memory_mb_min`, a number of
+    /// megabytes. That name is deprecated but still read.
+    #[serde(
+        alias = "memory_mb_min",
+        deserialize_with = "size_memory_min",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub memory_min: Option<ConfigSize>,
 
-    /// The maximum memory in Megabytes to reserve
-    /// for an instance of this pipeline
-    pub memory_mb_max: Option<u64>,
+    /// The maximum memory to reserve for an instance of this pipeline, such
+    /// as `"16Gi"`.
+    ///
+    /// Before release 0.367.0 this setting was `memory_mb_max`, a number of
+    /// megabytes. That name is deprecated but still read.
+    #[serde(
+        alias = "memory_mb_max",
+        deserialize_with = "size_memory_max",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub memory_max: Option<ConfigSize>,
 
-    /// The initial storage in Megabytes to reserve for an instance of this
-    /// pipeline. Set together with `storage_mb_max` to enable storage
+    /// The initial storage to reserve for an instance of this pipeline, such
+    /// as `"100Gi"`. Set together with `storage_max` to enable storage
     /// autoscaling.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub storage_mb_min: Option<u64>,
+    ///
+    /// Before release 0.367.0 this setting was `storage_mb_min`, a number of
+    /// megabytes. That name is deprecated but still read.
+    #[serde(
+        alias = "storage_mb_min",
+        deserialize_with = "size_storage_min",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub storage_min: Option<ConfigSize>,
 
-    /// The maximum storage in Megabytes for an instance of this pipeline.
+    /// The maximum storage for an instance of this pipeline, such as
+    /// `"400Gi"`.
     ///
-    /// Without `storage_mb_min`, this much storage is reserved up front.
+    /// Without `storage_min`, this much storage is reserved up front.
     ///
-    /// With `storage_mb_min`, storage starts there and autoscaling expands it
-    /// up to this limit.
-    pub storage_mb_max: Option<u64>,
+    /// With `storage_min`, storage starts there and autoscaling expands it up
+    /// to this limit.
+    ///
+    /// Before release 0.367.0 this setting was `storage_mb_max`, a number of
+    /// megabytes. That name is deprecated but still read.
+    #[serde(
+        alias = "storage_mb_max",
+        deserialize_with = "size_storage_max",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub storage_max: Option<ConfigSize>,
 
     /// Autoscaling policy for an instance of this pipeline.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2333,6 +4149,14 @@ pub struct ResourceConfig {
     /// Storage class to use for an instance of this pipeline.
     /// The class determines storage performance such as IOPS and throughput.
     pub storage_class: Option<String>,
+
+    /// Kubernetes volume attributes class to use for the storage of an
+    /// instance of this pipeline. The class sets mutable storage parameters
+    /// such as IOPS and throughput. Requires Kubernetes 1.34 or later (or
+    /// the `VolumeAttributesClass` feature gate) and CSI driver support.
+    /// A change takes effect on the next start, also for existing storage.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_attributes_class: Option<String>,
 
     /// Kubernetes service account name to use for an instance of this pipeline.
     /// The account determines permissions and access controls.
@@ -2357,8 +4181,8 @@ pub struct AutoscalingConfig {
     pub storage: Option<StorageAutoscalingConfig>,
 }
 
-/// Storage autoscaling policy: expand storage from `storage_mb_min` toward
-/// `storage_mb_max` as it fills up.
+/// Storage autoscaling policy: expand storage from `storage_min` toward
+/// `storage_max` as it fills up.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct StorageAutoscalingConfig {
@@ -2369,14 +4193,19 @@ pub struct StorageAutoscalingConfig {
     )]
     pub scale_threshold: Option<f64>,
 
-    /// Expand storage when available space falls below this many MB, even if
-    /// usage is still under `scale_threshold`. Either condition triggers
-    /// expansion. Unset by default.
+    /// Expand storage when available space falls below this size, such as
+    /// `"10Gi"`, even if usage is still under `scale_threshold`. Either
+    /// condition triggers expansion. Unset by default.
+    ///
+    /// Before release 0.367.0 this setting was `scale_threshold_available_mb`,
+    /// a number of megabytes. That name is deprecated but still read.
     #[serde(
-        deserialize_with = "crate::serde_via_value::deserialize",
+        alias = "scale_threshold_available_mb",
+        deserialize_with = "size_scale_threshold_available",
         skip_serializing_if = "Option::is_none"
     )]
-    pub scale_threshold_available_mb: Option<u64>,
+    #[schema(value_type = Option<String>)]
+    pub scale_threshold_available: Option<ConfigSize>,
 
     /// Expansion multiplier. Defaults to 2.0.
     #[serde(
@@ -2389,43 +4218,44 @@ pub struct StorageAutoscalingConfig {
 #[cfg(test)]
 mod resource_config_tests {
     use super::{AutoscalingConfig, ResourceConfig, StorageAutoscalingConfig};
+    use crate::size::ConfigSize;
     use serde_json::json;
 
     #[test]
     fn storage_autoscaling_round_trips_through_json() {
         let input = json!({
-            "storage_mb_min": 1000,
-            "storage_mb_max": 8000,
+            "storage_min": "1G",
+            "storage_max": "8G",
             "autoscaling": {
                 "storage": {
                     "scale_threshold": 0.8,
-                    "scale_threshold_available_mb": 10000,
+                    "scale_threshold_available": "10G",
                     "scale_factor": 2.0
                 }
             }
         });
         let config: ResourceConfig = serde_json::from_value(input).unwrap();
-        assert_eq!(config.storage_mb_min, Some(1000));
-        assert_eq!(config.storage_mb_max, Some(8000));
+        assert_eq!(config.storage_min, Some(ConfigSize::from_mb(1000)));
+        assert_eq!(config.storage_max, Some(ConfigSize::from_mb(8000)));
         assert_eq!(
             config.autoscaling,
             Some(AutoscalingConfig {
                 storage: Some(StorageAutoscalingConfig {
                     scale_threshold: Some(0.8),
-                    scale_threshold_available_mb: Some(10000),
+                    scale_threshold_available: Some(ConfigSize::from_mb(10000)),
                     scale_factor: Some(2.0),
                 }),
             })
         );
         let output = serde_json::to_value(&config).unwrap();
-        assert_eq!(output["storage_mb_min"], json!(1000));
+        assert_eq!(output["storage_min"], json!("1G"));
         assert_eq!(
             output["autoscaling"]["storage"]["scale_threshold"],
             json!(0.8)
         );
         assert_eq!(
-            output["autoscaling"]["storage"]["scale_threshold_available_mb"],
-            json!(10000)
+            output["autoscaling"]["storage"]["scale_threshold_available"],
+            json!("10G")
         );
         assert_eq!(output["autoscaling"]["storage"]["scale_factor"], json!(2.0));
     }
@@ -2433,15 +4263,15 @@ mod resource_config_tests {
     #[test]
     fn autoscaling_fields_default_to_none() {
         let config: ResourceConfig = serde_json::from_value(json!({})).unwrap();
-        assert_eq!(config.storage_mb_min, None);
+        assert_eq!(config.storage_min, None);
         assert_eq!(config.autoscaling, None);
 
         // Unset autoscaling fields stay out of the serialized config so they
         // do not clutter configs of users who never touch them.
         let output = serde_json::to_value(&config).unwrap();
-        assert!(output.get("storage_mb_min").is_none());
+        assert!(output.get("storage_min").is_none());
         assert!(output.get("autoscaling").is_none());
-        assert!(output.get("storage_mb_max").is_some());
+        assert!(output.get("storage_max").is_none());
 
         // A partially set policy serializes only the fields the user set.
         let input = json!({ "autoscaling": { "storage": { "scale_threshold": 0.9 } } });
@@ -2513,5 +4343,54 @@ mod sync_config_tests {
             serde_json::from_str(r#"{"bucket": "ckpts/a", "take_bucket_ownership": true}"#)
                 .unwrap();
         assert!(sync.take_bucket_ownership);
+    }
+}
+
+#[cfg(test)]
+mod transport_metadata_tests {
+    use super::TransportConfig;
+    use serde_json::json;
+
+    fn nats_input(metadata: serde_json::Value) -> TransportConfig {
+        serde_json::from_value(json!({
+            "name": "nats_input",
+            "config": {
+                "connection_config": { "server_url": "nats://127.0.0.1:4222" },
+                "stream_name": "orders",
+                "consumer_config": { "deliver_policy": "All", "metadata": metadata },
+            },
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn nats_input_exposes_consumer_metadata() {
+        let mut transport = nats_input(json!({ "team": "ingest" }));
+        let metadata = transport.transport_metadata_mut().unwrap();
+        assert_eq!(metadata.get("team").map(String::as_str), Some("ingest"));
+
+        metadata.insert("pipeline".to_string(), "orders_pipeline".to_string());
+        let TransportConfig::NatsInput(config) = &transport else {
+            unreachable!()
+        };
+        assert_eq!(
+            config
+                .consumer_config
+                .metadata
+                .get("pipeline")
+                .map(String::as_str),
+            Some("orders_pipeline"),
+            "writes through the returned map must reach the consumer config"
+        );
+    }
+
+    #[test]
+    fn transports_without_metadata_return_none() {
+        let mut transport: TransportConfig = serde_json::from_value(json!({
+            "name": "file_input",
+            "config": { "path": "/tmp/input.csv" },
+        }))
+        .unwrap();
+        assert!(transport.transport_metadata_mut().is_none());
     }
 }

@@ -380,7 +380,8 @@ pub fn relation_to_arrow_fields(fields: &[Field], options: ArrowSchemaOptions) -
                             Arc::new(ArrowField::new(
                                 "key",
                                 columntype_to_datatype(key_type, options),
-                                key_type.nullable,
+                                // Arrow 59 rejects a nullable map key, which SQL allows in a view.
+                                false,
                             )),
                             Arc::new(ArrowField::new(
                                 "value",

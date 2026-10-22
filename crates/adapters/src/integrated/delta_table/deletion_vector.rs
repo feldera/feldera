@@ -19,6 +19,7 @@ use arrow::compute::cast;
 use arrow::datatypes::{DataType, Field, FieldRef, Fields, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use async_stream::try_stream;
+use bytes::Bytes;
 use datafusion::catalog::TableProvider;
 use datafusion::catalog::streaming::StreamingTable;
 use datafusion::common::DataFusionError;
@@ -29,19 +30,129 @@ use datafusion::physical_plan::streaming::PartitionStream;
 use delta_kernel::actions::deletion_vector::{
     DeletionVectorDescriptor as KernelDvDescriptor, DeletionVectorStorageType,
 };
+use delta_kernel::object_store::{GetOptions, GetRange, ObjectStoreExt};
+use delta_kernel::{
+    DeltaResult as DeltaKernelResult, Error as DeltaKernelError, FileMeta, FileSlice,
+    StorageHandler,
+};
 use deltalake::kernel::{DeletionVectorDescriptor, StorageType};
 use deltalake::logstore::LogStore;
 use deltalake::{DeltaTable, ObjectStore, Path};
 use futures_util::StreamExt;
+use futures_util::future::BoxFuture;
+use futures_util::{FutureExt, TryFutureExt};
 use parquet::arrow::ProjectionMask;
 use parquet::arrow::arrow_reader::{
     ArrowReaderMetadata, ArrowReaderOptions, RowSelection, RowSelector,
 };
-use parquet::arrow::async_reader::{ParquetObjectReader, ParquetRecordBatchStreamBuilder};
+use parquet::arrow::async_reader::{
+    AsyncFileReader, MetadataSuffixFetch, ParquetRecordBatchStreamBuilder,
+};
+use parquet::errors::{ParquetError, Result as ParquetResult};
+use parquet::file::metadata::{ParquetMetaData, ParquetMetaDataReader};
 use roaring::RoaringTreemap;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::ops::Range;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use url::Url;
+
+/// Reads a Parquet file out of an object store for [`ParquetRecordBatchStreamBuilder`].
+/// parquet 59 deprecates `ParquetObjectReader` and says to implement this trait (arrow-rs #10308).
+#[derive(Clone)]
+pub(super) struct ObjectStoreReader {
+    store: Arc<dyn ObjectStore>,
+    path: Path,
+    file_size: Option<u64>,
+    footer_size_hint: Option<usize>,
+}
+
+impl ObjectStoreReader {
+    pub(super) fn new(store: Arc<dyn ObjectStore>, path: Path) -> Self {
+        Self {
+            store,
+            path,
+            file_size: None,
+            footer_size_hint: None,
+        }
+    }
+
+    /// Read the footer at a known offset rather than with a suffix request.
+    pub(super) fn with_file_size(mut self, size: u64) -> Self {
+        self.file_size = Some(size);
+        self
+    }
+
+    /// Fetch this many trailing bytes at once, so one request can cover the whole footer.
+    pub(super) fn with_footer_size_hint(mut self, hint: usize) -> Self {
+        self.footer_size_hint = Some(hint);
+        self
+    }
+}
+
+fn to_parquet_err(e: delta_kernel::object_store::Error) -> ParquetError {
+    ParquetError::External(Box::new(e))
+}
+
+impl AsyncFileReader for ObjectStoreReader {
+    fn get_bytes(&mut self, range: Range<u64>) -> BoxFuture<'_, ParquetResult<Bytes>> {
+        self.store
+            .get_range(&self.path, range)
+            .map_err(to_parquet_err)
+            .boxed()
+    }
+
+    fn get_byte_ranges(
+        &mut self,
+        ranges: Vec<Range<u64>>,
+    ) -> BoxFuture<'_, ParquetResult<Vec<Bytes>>> {
+        async move {
+            self.store
+                .get_ranges(&self.path, &ranges)
+                .await
+                .map_err(to_parquet_err)
+        }
+        .boxed()
+    }
+
+    fn get_metadata<'a>(
+        &'a mut self,
+        options: Option<&'a ArrowReaderOptions>,
+    ) -> BoxFuture<'a, ParquetResult<Arc<ParquetMetaData>>> {
+        async move {
+            let reader = ParquetMetaDataReader::new()
+                .with_arrow_reader_options(options)
+                .with_prefetch_hint(self.footer_size_hint);
+            let metadata = match self.file_size {
+                Some(size) => reader.load_and_finish(self, size).await?,
+                None => reader.load_via_suffix_and_finish(self).await?,
+            };
+            Ok(Arc::new(metadata))
+        }
+        .boxed()
+    }
+}
+
+/// Fetch the footer without knowing the file size, via a suffix range request.
+impl MetadataSuffixFetch for &mut ObjectStoreReader {
+    fn fetch_suffix(&mut self, suffix: usize) -> BoxFuture<'_, ParquetResult<Bytes>> {
+        let options = GetOptions {
+            range: Some(GetRange::Suffix(suffix as u64)),
+            ..Default::default()
+        };
+        async move {
+            let resp = self
+                .store
+                .get_opts(&self.path, options)
+                .await
+                .map_err(to_parquet_err)?;
+            resp.bytes().await.map_err(to_parquet_err)
+        }
+        .boxed()
+    }
+}
 
 /// Convert the delta-rs descriptor into its `delta_kernel` equivalent, which
 /// owns the decoding logic. The fields are identical; only the storage-type
@@ -60,17 +171,137 @@ fn to_kernel_descriptor(dv: &DeletionVectorDescriptor) -> KernelDvDescriptor {
     }
 }
 
+/// A [`StorageHandler`] that answers a repeated read from memory.
+///
+/// `delta_kernel` reads a whole sidecar object to decode one vector out of it, and a flush
+/// packs every vector it writes into one object.  The next flush therefore fetched that one
+/// object once per file it touched: O(files) requests and O(files^2) bytes for the same
+/// content.  Sharing one of these across a flush's reads makes it one request.
+///
+/// Reads are cached, so an instance must not outlive the snapshot it reads.  Every other
+/// operation passes straight through.
+/// What one `read_files` request names: the object, and the byte range if any.
+type ReadKey = (Url, Option<(u64, u64)>);
+
+pub(crate) struct CachedReads {
+    inner: Arc<dyn StorageHandler>,
+    /// Keyed by what `read_files` is asked for, which is the whole object here.
+    cache: Mutex<HashMap<ReadKey, Bytes>>,
+    /// Bytes held, against [`Self::MAX_CACHED_BYTES`].
+    held: AtomicU64,
+}
+
+impl CachedReads {
+    /// Ceiling on what one instance holds.  A packed object grows with the table's file
+    /// count, and caching is an optimization: past this the reads pass through rather than
+    /// let a large table turn a flush into a memory spike.
+    const MAX_CACHED_BYTES: u64 = 256 * 1024 * 1024;
+
+    pub(crate) fn new(inner: Arc<dyn StorageHandler>) -> Arc<Self> {
+        Arc::new(Self {
+            inner,
+            cache: Mutex::new(HashMap::new()),
+            held: AtomicU64::new(0),
+        })
+    }
+
+    fn key(slice: &FileSlice) -> ReadKey {
+        (slice.0.clone(), slice.1.as_ref().map(|r| (r.start, r.end)))
+    }
+}
+
+impl StorageHandler for CachedReads {
+    /// Serves what it has and asks `inner` only for the rest, preserving the requested order.
+    fn read_files(
+        &self,
+        files: Vec<FileSlice>,
+    ) -> DeltaKernelResult<Box<dyn Iterator<Item = DeltaKernelResult<Bytes>>>> {
+        let mut answers: Vec<Option<Bytes>> = Vec::with_capacity(files.len());
+        let mut missing = Vec::new();
+        {
+            let cache = self.cache.lock().unwrap();
+            for slice in &files {
+                let hit = cache.get(&Self::key(slice)).cloned();
+                if hit.is_none() {
+                    missing.push(slice.clone());
+                }
+                answers.push(hit);
+            }
+        }
+
+        if !missing.is_empty() {
+            let fetched: Vec<Bytes> = self
+                .inner
+                .read_files(missing.clone())?
+                .collect::<DeltaKernelResult<Vec<_>>>()?;
+            {
+                let mut cache = self.cache.lock().unwrap();
+                for (slice, bytes) in missing.iter().zip(&fetched) {
+                    // Checked per entry, so one oversized object does not evict what fits.
+                    let held = self.held.load(Ordering::Relaxed);
+                    if held + bytes.len() as u64 <= Self::MAX_CACHED_BYTES {
+                        self.held
+                            .store(held + bytes.len() as u64, Ordering::Relaxed);
+                        cache.insert(Self::key(slice), bytes.clone());
+                    }
+                }
+            }
+
+            // Back in the order asked for: a miss takes the next fetched answer, and the
+            // fetches were made in the order the misses were found.
+            let mut fetched = fetched.into_iter();
+            for answer in answers.iter_mut() {
+                if answer.is_none() {
+                    *answer = fetched.next();
+                }
+            }
+        }
+
+        Ok(Box::new(answers.into_iter().map(|bytes| {
+            bytes.ok_or_else(|| {
+                DeltaKernelError::generic("storage returned fewer files than were requested")
+            })
+        })))
+    }
+
+    fn list_from(
+        &self,
+        path: &Url,
+    ) -> DeltaKernelResult<Box<dyn Iterator<Item = DeltaKernelResult<FileMeta>>>> {
+        self.inner.list_from(path)
+    }
+
+    fn copy_atomic(&self, src: &Url, dest: &Url) -> DeltaKernelResult<()> {
+        self.inner.copy_atomic(src, dest)
+    }
+
+    fn put(&self, path: &Url, data: Bytes, overwrite: bool) -> DeltaKernelResult<()> {
+        self.inner.put(path, data, overwrite)
+    }
+
+    fn head(&self, path: &Url) -> DeltaKernelResult<FileMeta> {
+        self.inner.head(path)
+    }
+
+    fn delete(&self, path: &Url) -> DeltaKernelResult<()> {
+        self.inner.delete(path)
+    }
+}
+
 /// Decode a deletion vector into the bitmap of deleted row positions.
 ///
 /// `delta_kernel`'s `read` handles all three storage types ("i" inline,
 /// "u" relative sidecar, "p" absolute sidecar). It may block on I/O to fetch
 /// a sidecar file, so it runs on the blocking pool.
-pub(crate) async fn read_deletion_vector(
+///
+/// `storage` reads the sidecar. A caller decoding several vectors should hand the same
+/// [`CachedReads`] to each, or they will each fetch the object all of them share.
+pub(crate) async fn read_deletion_vector_with(
     dv: &DeletionVectorDescriptor,
     table: &DeltaTable,
+    storage: Arc<dyn StorageHandler>,
 ) -> AnyResult<RoaringTreemap> {
     let log_store = table.log_store();
-    let storage = log_store.engine(None).storage_handler();
 
     // Sidecar paths resolve via `Url::join`, which drops the last path
     // segment unless the base URL ends with '/'.
@@ -98,6 +329,15 @@ pub(crate) async fn read_deletion_vector(
                  pathOrInlineDv='{path_or_inline}'): {e}"
             )
         })
+}
+
+/// Decode one vector, fetching its sidecar afresh.
+pub(crate) async fn read_deletion_vector(
+    dv: &DeletionVectorDescriptor,
+    table: &DeltaTable,
+) -> AnyResult<RoaringTreemap> {
+    let storage = table.log_store().engine().storage_handler();
+    read_deletion_vector_with(dv, table, storage).await
 }
 
 /// Shorten `value` to at most 64 characters for use in error messages.
@@ -512,7 +752,7 @@ fn project_to_logical(
 /// Build the [`ProjectionMask`] selecting the root file columns `logical_schema`
 /// wants, matched by field id (falling back to name); the rest are never decoded.
 fn logical_projection_mask(
-    builder: &ParquetRecordBatchStreamBuilder<ParquetObjectReader>,
+    builder: &ParquetRecordBatchStreamBuilder<ObjectStoreReader>,
     logical_schema: &SchemaRef,
 ) -> ProjectionMask {
     let want_ids: HashSet<&str> = logical_schema
@@ -592,7 +832,7 @@ impl PartitionStream for MaskedParquetPartition {
             for file in files.iter() {
                 let path = &file.path;
                 let probe = ParquetRecordBatchStreamBuilder::new(
-                        ParquetObjectReader::new(Arc::clone(&store), path.clone()))
+                        ObjectStoreReader::new(Arc::clone(&store), path.clone()))
                     .await
                     .map_err(|e| DataFusionError::External(
                         format!("failed to open Parquet file '{path}': {e}").into()))?;
@@ -612,7 +852,7 @@ impl PartitionStream for MaskedParquetPartition {
                 // (which it did, just above).
                 let total_rows = metadata.metadata().file_metadata().num_rows() as u64;
                 let builder = ParquetRecordBatchStreamBuilder::new_with_metadata(
-                    ParquetObjectReader::new(Arc::clone(&store), path.clone()),
+                    ObjectStoreReader::new(Arc::clone(&store), path.clone()),
                     metadata,
                 );
                 // Decode only the columns the logical schema names.
@@ -1340,7 +1580,7 @@ mod tests {
             ArrowDataType::Int64,
             false,
         )]));
-        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let store = unloaded_table(dir.path()).log_store().object_store();
         let provider = filtered_parquet_table(
             store,
             files,
@@ -1435,7 +1675,7 @@ mod tests {
             ArrowField::new("_change_type", ArrowDataType::Utf8, true),
         ]));
 
-        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let store = unloaded_table(dir.path()).log_store().object_store();
         let provider = filtered_parquet_table(
             store,
             vec![MaskedFile {
@@ -1523,7 +1763,7 @@ mod tests {
         ]));
         let deleted = RoaringTreemap::from_iter((0..TOTAL_ROWS as u64).filter(|i| i % 2 == 0));
 
-        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let store = unloaded_table(dir.path()).log_store().object_store();
         let provider = filtered_parquet_table(
             store,
             vec![MaskedFile {
@@ -1614,7 +1854,7 @@ mod tests {
             ),
         ]));
 
-        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let store = unloaded_table(dir.path()).log_store().object_store();
         let provider = filtered_parquet_table(
             store,
             vec![MaskedFile {
@@ -1690,7 +1930,7 @@ mod tests {
         let wanted: Vec<u64> = [0u64, 1, 2, 50, 51, 199].into_iter().collect();
         let selected = RoaringTreemap::from_iter(wanted.iter().copied());
 
-        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let store = unloaded_table(dir.path()).log_store().object_store();
         let provider = filtered_parquet_table(
             store,
             vec![MaskedFile {
@@ -1728,5 +1968,133 @@ mod tests {
         got.sort();
         let expected: Vec<i64> = wanted.iter().map(|&r| r as i64).collect();
         assert_eq!(got, expected, "must read exactly the bitmap rows");
+    }
+}
+
+#[cfg(test)]
+mod cached_reads_test {
+    use super::*;
+
+    /// Answers each url with its own path as bytes, and records what it was asked for.
+    #[derive(Debug)]
+    struct Spy {
+        asked: Mutex<Vec<String>>,
+        /// Bytes to answer with, per url.
+        size: usize,
+    }
+
+    impl Spy {
+        fn new(size: usize) -> Arc<Self> {
+            Arc::new(Self {
+                asked: Mutex::new(Vec::new()),
+                size,
+            })
+        }
+
+        fn asked(&self) -> Vec<String> {
+            self.asked.lock().unwrap().clone()
+        }
+    }
+
+    impl StorageHandler for Spy {
+        fn read_files(
+            &self,
+            files: Vec<FileSlice>,
+        ) -> DeltaKernelResult<Box<dyn Iterator<Item = DeltaKernelResult<Bytes>>>> {
+            let mut asked = self.asked.lock().unwrap();
+            let answers: Vec<Bytes> = files
+                .iter()
+                .map(|(url, _)| {
+                    asked.push(url.path().to_string());
+                    // Identifiable and of the requested size, so a mix-up is visible.
+                    let tag = url.path().bytes().last().unwrap_or(b'?');
+                    Bytes::from(vec![tag; self.size])
+                })
+                .collect();
+            Ok(Box::new(answers.into_iter().map(Ok)))
+        }
+
+        fn list_from(
+            &self,
+            _path: &Url,
+        ) -> DeltaKernelResult<Box<dyn Iterator<Item = DeltaKernelResult<FileMeta>>>> {
+            unimplemented!("not used by these tests")
+        }
+        fn copy_atomic(&self, _src: &Url, _dest: &Url) -> DeltaKernelResult<()> {
+            unimplemented!("not used by these tests")
+        }
+        fn put(&self, _path: &Url, _data: Bytes, _overwrite: bool) -> DeltaKernelResult<()> {
+            unimplemented!("not used by these tests")
+        }
+        fn head(&self, _path: &Url) -> DeltaKernelResult<FileMeta> {
+            unimplemented!("not used by these tests")
+        }
+        fn delete(&self, _path: &Url) -> DeltaKernelResult<()> {
+            unimplemented!("not used by these tests")
+        }
+    }
+
+    fn slice(name: &str) -> FileSlice {
+        (Url::parse(&format!("memory:///{name}")).unwrap(), None)
+    }
+
+    fn read(cache: &CachedReads, names: &[&str]) -> Vec<u8> {
+        cache
+            .read_files(names.iter().map(|n| slice(n)).collect())
+            .unwrap()
+            .map(|b| b.unwrap()[0])
+            .collect()
+    }
+
+    #[test]
+    fn a_repeated_read_is_answered_from_memory() {
+        let spy = Spy::new(8);
+        let cache = CachedReads::new(spy.clone());
+
+        assert_eq!(read(&cache, &["a"]), vec![b'a']);
+        assert_eq!(read(&cache, &["a"]), vec![b'a']);
+        assert_eq!(
+            spy.asked(),
+            vec!["/a"],
+            "the second read must not reach storage"
+        );
+    }
+
+    /// A batch of hits and misses must come back in the order it was asked for.
+    ///
+    /// Getting this wrong hands one file's bitmap to another file, which supersedes live rows
+    /// and resurrects dead ones -- silently, since the row count stays right.
+    #[test]
+    fn a_mixed_batch_keeps_its_order() {
+        let spy = Spy::new(8);
+        let cache = CachedReads::new(spy.clone());
+
+        // Warm 'b' and 'd' only.
+        read(&cache, &["b", "d"]);
+        spy.asked.lock().unwrap().clear();
+
+        assert_eq!(
+            read(&cache, &["a", "b", "c", "d", "e"]),
+            vec![b'a', b'b', b'c', b'd', b'e']
+        );
+        assert_eq!(
+            spy.asked(),
+            vec!["/a", "/c", "/e"],
+            "only the misses go to storage"
+        );
+    }
+
+    #[test]
+    fn an_oversized_object_is_not_held() {
+        let spy = Spy::new(CachedReads::MAX_CACHED_BYTES as usize + 1);
+        let cache = CachedReads::new(spy.clone());
+
+        read(&cache, &["a"]);
+        read(&cache, &["a"]);
+        assert_eq!(
+            spy.asked(),
+            vec!["/a", "/a"],
+            "an object past the cap must pass through rather than be held"
+        );
     }
 }

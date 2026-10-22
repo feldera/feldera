@@ -1,5 +1,6 @@
 use super::mock_framework::*;
 use anyhow::Result as AnyResult;
+use serde_json::json;
 use std::time::Duration;
 
 // ---------------------------------------------------------------------------
@@ -48,9 +49,11 @@ fn test_nats_retry_loop_when_server_unavailable() -> AnyResult<()> {
             WaitForRecords(1),
             AssertRecordCount(1),
             KillServer,
+            // Stall detection and the health check take a few seconds, then
+            // the first retry waits the default 5s plus up to 25% jitter.
             WaitForErrorCountAtLeast {
                 count: 2,
-                timeout: Duration::from_secs(12),
+                timeout: Duration::from_secs(15),
             },
             DisconnectAllowNonFatal,
         ],
@@ -255,26 +258,30 @@ fn test_nats_connection_refused_enters_retry_loop() -> AnyResult<()> {
     let nonexistent_url = "nats://127.0.0.1:59999";
     run_nats_mock_test(
         |_: &str| {
-            format!(
-                r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {nonexistent_url}
-            request_timeout_secs: 1
-        stream_name: {STREAM_NAME}
-        inactivity_timeout_secs: 1
-        consumer_config:
-            deliver_policy: All
-            subjects: [{SUBJECT_NAME}]
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            )
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": nonexistent_url,
+                            "request_timeout_secs": 1,
+                        },
+                        "stream_name": STREAM_NAME,
+                        "inactivity_timeout_secs": 1,
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                            "subjects": [SUBJECT_NAME],
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
@@ -298,27 +305,31 @@ fn test_nats_startup_connection_refused_retries_repeatedly() -> AnyResult<()> {
     let nonexistent_url = "nats://127.0.0.1:59999";
     run_nats_mock_test(
         |_: &str| {
-            format!(
-                r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {nonexistent_url}
-            request_timeout_secs: 1
-        stream_name: {STREAM_NAME}
-        inactivity_timeout_secs: 1
-        retry_interval_secs: 1
-        consumer_config:
-            deliver_policy: All
-            subjects: [{SUBJECT_NAME}]
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            )
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": nonexistent_url,
+                            "request_timeout_secs": 1,
+                        },
+                        "stream_name": STREAM_NAME,
+                        "inactivity_timeout_secs": 1,
+                        "retry_interval_secs": 1,
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                            "subjects": [SUBJECT_NAME],
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
@@ -340,26 +351,30 @@ fn test_nats_stream_not_found_enters_retry_loop() -> AnyResult<()> {
     use NatsMockAction::*;
     run_nats_mock_test(
         |nats_url| {
-            format!(
-                r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {nats_url}
-            request_timeout_secs: 1
-        stream_name: this_stream_does_not_exist
-        inactivity_timeout_secs: 1
-        consumer_config:
-            deliver_policy: All
-            subjects: [{SUBJECT_NAME}]
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            )
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": nats_url,
+                            "request_timeout_secs": 1,
+                        },
+                        "stream_name": "this_stream_does_not_exist",
+                        "inactivity_timeout_secs": 1,
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                            "subjects": [SUBJECT_NAME],
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
@@ -384,26 +399,30 @@ fn test_nats_connection_timeout() -> AnyResult<()> {
     let non_routable_url = "nats://10.255.255.1:4222";
     run_nats_mock_test(
         |_: &str| {
-            format!(
-                r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {non_routable_url}
-            connection_timeout_secs: 1
-            request_timeout_secs: 1
-        stream_name: some_stream
-        inactivity_timeout_secs: 1
-        consumer_config:
-            deliver_policy: All
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            )
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": non_routable_url,
+                            "connection_timeout_secs": 1,
+                            "request_timeout_secs": 1,
+                        },
+                        "stream_name": "some_stream",
+                        "inactivity_timeout_secs": 1,
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
@@ -428,27 +447,31 @@ fn test_nats_pause_interrupts_inflight_retry_attempt() -> AnyResult<()> {
     let non_routable_url = "nats://10.255.255.1:4222";
     run_nats_mock_test(
         |_: &str| {
-            format!(
-                r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {non_routable_url}
-            connection_timeout_secs: 8
-            request_timeout_secs: 8
-        stream_name: some_stream
-        inactivity_timeout_secs: 1
-        retry_interval_secs: 1
-        consumer_config:
-            deliver_policy: All
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            )
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": non_routable_url,
+                            "connection_timeout_secs": 8,
+                            "request_timeout_secs": 8,
+                        },
+                        "stream_name": "some_stream",
+                        "inactivity_timeout_secs": 1,
+                        "retry_interval_secs": 1,
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
@@ -464,33 +487,41 @@ format:
     )
 }
 
-/// Test that retry_interval_secs controls retry cadence in ERROR state.
+/// Test that retry_interval controls retry cadence in ERROR state.
+///
+/// Pinning `retry_max_interval` to `retry_interval` disables the
+/// exponential growth, so retries run at a fixed (jittered) interval.
 #[test]
 fn test_nats_retry_interval_config_is_honored() -> AnyResult<()> {
     use NatsMockAction::*;
     run_nats_mock_test(
         |nats_url| {
-            format!(
-                r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {nats_url}
-            request_timeout_secs: 1
-        stream_name: missing_stream
-        inactivity_timeout_secs: 1
-        retry_interval_secs: 1
-        consumer_config:
-            deliver_policy: All
-            subjects: [{SUBJECT_NAME}]
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            )
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": nats_url,
+                            "request_timeout_secs": 1,
+                        },
+                        "stream_name": "missing_stream",
+                        "inactivity_timeout_secs": 1,
+                        "retry_interval": "1s",
+                        "retry_max_interval": "1s",
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                            "subjects": [SUBJECT_NAME],
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
@@ -512,35 +543,314 @@ fn test_nats_retry_interval_zero_rejected() {
     use NatsMockAction::*;
     run_nats_mock_test(
         |_nats_url| {
-            r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: nats://127.0.0.1:4222
-        stream_name: some_stream
-        inactivity_timeout_secs: 1
-        retry_interval_secs: 0
-        consumer_config:
-            deliver_policy: All
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-            .to_string()
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": "nats://127.0.0.1:4222",
+                        },
+                        "stream_name": "some_stream",
+                        "inactivity_timeout_secs": 1,
+                        "retry_interval_secs": 0,
+                        "consumer_config": {
+                            "deliver_policy": "All",
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
         },
         &[
             StartNats,
             CreatePipeline,
             ExpectFatalErrorContains {
                 timeout: Duration::from_secs(1),
-                needle: "retry_interval_secs",
+                needle: "`retry_interval`",
             },
         ],
     )
     .unwrap();
+}
+
+/// Config for a connector that retries against a stream that does not exist,
+/// so every attempt fails fast and deterministically.
+fn missing_stream_retry_config(
+    nats_url: &str,
+    retry_interval_secs: u64,
+    retry_max_interval_secs: u64,
+    retry_max_attempts: Option<u32>,
+) -> serde_json::Value {
+    let mut config = json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "nats_input",
+            "config": {
+                "connection_config": {
+                    "server_url": nats_url,
+                    "request_timeout_secs": 1,
+                },
+                "stream_name": "missing_stream",
+                "inactivity_timeout_secs": 1,
+                "retry_interval": format!("{retry_interval_secs}s"),
+                "retry_max_interval": format!("{retry_max_interval_secs}s"),
+                "consumer_config": {
+                    "deliver_policy": "All",
+                    "subjects": [SUBJECT_NAME],
+                },
+            },
+        },
+        "format": {
+            "name": "json",
+            "config": {
+                "update_format": "raw",
+            },
+        },
+    });
+    if let Some(n) = retry_max_attempts {
+        config["transport"]["config"]["retry_max_attempts"] = json!(n);
+    }
+    config
+}
+
+/// The delay between retries doubles on each consecutive failure.
+///
+/// With `retry_interval: 1s`, the third error (initial failure plus two
+/// failed retries) arrives within about three seconds. The next retry is
+/// then at least `nominal(3) / 2 = 2s` away, so no error may appear in the
+/// following 1.5s. A fixed 1s interval would fail this check.
+#[test]
+fn test_nats_retry_backs_off_exponentially() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |nats_url| missing_stream_retry_config(nats_url, 1, 60, None),
+        &[
+            StartNats,
+            CreatePipeline,
+            Extend,
+            WaitForErrorCountAtLeast {
+                count: 3,
+                timeout: Duration::from_secs(6),
+            },
+            AssertNoErrorCountIncrease {
+                duration: Duration::from_millis(1500),
+            },
+            Pause,
+            DisconnectAllowNonFatal,
+        ],
+    )
+}
+
+/// With `retry_max_attempts` set, the connector gives up with a fatal error
+/// after that many consecutive failed retries instead of retrying forever.
+#[test]
+fn test_nats_retry_max_attempts_ends_in_fatal_error() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |nats_url| missing_stream_retry_config(nats_url, 1, 1, Some(2)),
+        &[
+            StartNats,
+            CreatePipeline,
+            Extend,
+            ExpectFatalErrorContains {
+                timeout: Duration::from_secs(10),
+                needle: "gave up after 2 consecutive failed attempts (retry_max_attempts=2)",
+            },
+            DisconnectAllowNonFatal,
+        ],
+    )
+}
+
+/// The circuit breaker applies to replay retries too.
+#[test]
+fn test_nats_replay_retry_max_attempts_ends_in_fatal_error() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |nats_url| missing_stream_retry_config(nats_url, 1, 1, Some(1)),
+        &[
+            StartNats,
+            CreatePipeline,
+            Replay { start: 1, end: 2 },
+            ExpectFatalErrorContains {
+                timeout: Duration::from_secs(10),
+                needle: "NATS replay gave up after",
+            },
+        ],
+    )
+}
+
+/// `retry_max_interval` below `retry_interval` is rejected when the
+/// connector is created.
+#[test]
+fn test_nats_retry_max_interval_below_interval_rejected() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |_| missing_stream_retry_config("nats://127.0.0.1:4222", 10, 5, None),
+        &[
+            StartNats,
+            CreatePipeline,
+            ExpectFatalErrorContains {
+                timeout: Duration::from_secs(1),
+                needle: "`retry_max_interval` is 5s, but it must be at least `retry_interval` (10s)",
+            },
+        ],
+    )
+}
+
+/// `retry_max_attempts: 0` is rejected when the connector is created.
+#[test]
+fn test_nats_retry_max_attempts_zero_rejected() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |_| missing_stream_retry_config("nats://127.0.0.1:4222", 1, 1, Some(0)),
+        &[
+            StartNats,
+            CreatePipeline,
+            ExpectFatalErrorContains {
+                timeout: Duration::from_secs(1),
+                needle: "retry_max_attempts must be at least 1",
+            },
+        ],
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Consumer Lifecycle
+// ---------------------------------------------------------------------------
+
+/// Timeout for the server to reflect a consumer being created or deleted.
+///
+/// Well below the 30s `inactive_threshold` of the ordered consumer, so a
+/// passing test proves explicit deletion rather than server-side expiry.
+const CONSUMER_COUNT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Pausing and disconnecting delete the connector's consumer on the server.
+#[test]
+fn test_nats_pause_and_disconnect_delete_consumer() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        basic_nats_config,
+        &[
+            StartNats,
+            CreateStream,
+            Publish(2),
+            CreatePipeline,
+            Extend,
+            WaitForRecords(2),
+            WaitForConsumerCount {
+                count: 1,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+            Pause,
+            WaitForConsumerCount {
+                count: 0,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+            Extend,
+            Publish(1),
+            WaitForRecords(3),
+            WaitForConsumerCount {
+                count: 1,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+            Disconnect,
+            WaitForConsumerCount {
+                count: 0,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+        ],
+    )
+}
+
+/// A replay consumer is deleted as soon as the replay completes.
+#[test]
+fn test_nats_replay_deletes_consumer() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        basic_nats_config,
+        &[
+            StartNats,
+            CreateStream,
+            Publish(3),
+            CreatePipeline,
+            Replay { start: 1, end: 4 },
+            WaitForReplayedRecords(3),
+            WaitForConsumerCount {
+                count: 0,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+            Disconnect,
+        ],
+    )
+}
+
+/// Without a configured name, consumers are named after the table. The mock
+/// pipeline's table has an empty name, which falls back to `feldera`.
+#[test]
+fn test_nats_consumer_name_defaults_to_table_prefix() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        basic_nats_config,
+        &[
+            StartNats,
+            CreateStream,
+            Publish(1),
+            CreatePipeline,
+            Extend,
+            WaitForRecords(1),
+            AssertConsumerNamesStartWith("feldera"),
+            Disconnect,
+        ],
+    )
+}
+
+/// A configured consumer name is sanitized and used as the prefix.
+#[test]
+fn test_nats_consumer_name_uses_sanitized_configured_prefix() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |nats_url| {
+            json!({
+                "stream": "test_input",
+                "transport": {
+                    "name": "nats_input",
+                    "config": {
+                        "connection_config": {
+                            "server_url": nats_url,
+                        },
+                        "stream_name": STREAM_NAME,
+                        "consumer_config": {
+                            "name": "orders.v1 reader",
+                            "deliver_policy": "All",
+                            "filter_subjects": [SUBJECT_NAME],
+                        },
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                    },
+                },
+            })
+        },
+        &[
+            StartNats,
+            CreateStream,
+            Publish(1),
+            CreatePipeline,
+            Extend,
+            WaitForRecords(1),
+            AssertConsumerNamesStartWith("orders_v1_reader"),
+            Disconnect,
+        ],
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -746,6 +1056,7 @@ fn test_nats_replay_stream_deleted_retries_and_recovers() -> AnyResult<()> {
             StartNats,
             CreateStream,
             Publish(5_000),
+            StartProxy(Default::default()),
             CreatePipeline,
             // Delete before starting the replay: fast machines finish a
             // started replay before a disruption can land, so disrupting
@@ -755,17 +1066,17 @@ fn test_nats_replay_stream_deleted_retries_and_recovers() -> AnyResult<()> {
                 start: 1,
                 end: 5_001,
             },
-            // Let the first replay attempt fail before pumping the command
-            // queue: a pending Queue command makes the reader abandon the
-            // replay retry loop instead of retrying.
-            Sleep(Duration::from_secs(3)),
-            CreateStream,
-            Publish(5_000),
-            WaitForErrorCountAtLeast {
+            WaitForReplayErrorCountAtLeast {
                 count: 1,
                 timeout: stall_timeout(),
             },
-            WaitForReplayedRecordsNoFatal(200),
+            // Replays validate the stream tail before reading. Do not expose
+            // an incomplete replacement stream while publication is running.
+            HoldStreamInfo,
+            CreateStream,
+            Publish(5_000),
+            ReleaseStreamInfo,
+            WaitForReplayedRecordsNoFatal(5_000),
             DisconnectAllowNonFatal,
         ],
     )
@@ -782,6 +1093,7 @@ fn test_nats_replay_server_killed_retries_non_fatal() -> AnyResult<()> {
             StartNats,
             CreateStream,
             Publish(5_000),
+            StartProxy(Default::default()),
             CreatePipeline,
             // Kill before starting the replay: fast machines finish a
             // started replay before a disruption can land, so disrupting
@@ -791,18 +1103,16 @@ fn test_nats_replay_server_killed_retries_non_fatal() -> AnyResult<()> {
                 start: 1,
                 end: 5_001,
             },
-            // Let the first replay attempt fail before pumping the command
-            // queue: a pending Queue command makes the reader abandon the
-            // replay retry loop instead of retrying.
-            Sleep(Duration::from_secs(3)),
-            RestartNatsSamePort,
-            CreateStream,
-            Publish(5_000),
-            WaitForErrorCountAtLeast {
+            WaitForReplayErrorCountAtLeast {
                 count: 1,
                 timeout: stall_timeout(),
             },
-            WaitForReplayedRecordsNoFatal(200),
+            HoldStreamInfo,
+            RestartNatsSamePort,
+            CreateStream,
+            Publish(5_000),
+            ReleaseStreamInfo,
+            WaitForReplayedRecordsNoFatal(5_000),
             DisconnectAllowNonFatal,
         ],
     )

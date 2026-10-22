@@ -1,12 +1,14 @@
+use super::jetstream_proxy::{JetStreamProxy, ProxyFaults};
 use super::mock_framework::{STREAM_NAME, SUBJECT_NAME};
 use super::util;
-use crate::controller::{ControllerStatusContext, TransactionInfo};
+use crate::controller::{ControllerBuilder, ControllerStatusContext, TransactionInfo};
 use crate::test::{TestStruct, init_test_logger, test_circuit, wait};
 use crate::{Controller, PipelineConfig};
 use anyhow::Result as AnyResult;
 use csv::ReaderBuilder as CsvReaderBuilder;
 use feldera_types::memory_pressure::MemoryPressure;
-use serde_json;
+use serde_json::json;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{fs::create_dir, thread::sleep, time::Duration};
@@ -31,6 +33,14 @@ pub(super) enum NatsControllerAction {
     PurgeStream,
     /// Delete the JetStream stream entirely.
     DeleteStream,
+    /// Put a fault-injecting proxy in front of subsequently started pipelines.
+    StartProxy(ProxyFaults),
+    /// Start with input, optionally pause the connector, and verify that
+    /// Controller::stop waits for consumer cleanup held at the proxy.
+    StopWaitsForHeldDelete {
+        pause_first: bool,
+        disconnect_first: bool,
+    },
 
     /// Publish `n` records, start a Controller pipeline, wait for all
     /// outstanding records (including replayed from previous uncommitted
@@ -44,13 +54,53 @@ pub(super) enum NatsControllerAction {
 
     /// Start the pipeline and assert startup fails fatally within timeout.
     ExpectStartupFatal,
+
+    /// Like [`NatsControllerAction::RunFtCycle`] without a checkpoint, but
+    /// while the pipeline runs, assert that every consumer on the stream is
+    /// named `<name_prefix>_<suffix>` and carries `metadata[key] == value`
+    /// for each entry of `metadata`. After the pipeline stops, assert that
+    /// its consumers have been deleted.
+    RunAndInspectConsumers {
+        publish: usize,
+        name_prefix: &'static str,
+        metadata: &'static [(&'static str, &'static str)],
+    },
+
+    /// Publish `publish` records, start the pipeline, wait for them and
+    /// checkpoint. Then freeze the server until the connector's retry
+    /// breaker gives up with a fatal error, thaw it, and let the pipeline
+    /// run a few more steps. Needs a runner configured with
+    /// `retry_max_attempts`.
+    RunUntilConnectorFatal { publish: usize },
+
+    /// Assert that the input endpoint is still listed in the pipeline status
+    /// and reports its fatal error.
+    AssertInputKeepsFatalError,
+
+    /// Checkpoint the running pipeline and stop it.
+    CheckpointAndStop,
+
+    /// Assert that restarting from the latest checkpoint with the unchanged
+    /// pipeline configuration reports no change to the input connector.
+    AssertRestartSeesNoConnectorChanges,
+
+    /// Restart from the latest checkpoint and assert that the pipeline does
+    /// not ingest again any record it already checkpointed.
+    AssertRestartIngestsNothingNew,
 }
+
+/// Timeout for the server to reflect consumers deleted by a stopped pipeline.
+///
+/// Well below the 30s `inactive_threshold` of the ordered consumer, so a
+/// passing check proves explicit deletion rather than server-side expiry.
+const CONSUMER_DELETE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Internal state held by the Controller FT test runner.
 pub(super) struct NatsControllerRunner {
     // NATS process / runtime
     nats_guard: Option<util::ProcessKillGuard>,
     nats_url: Option<String>,
+    proxy: Option<JetStreamProxy>,
     rt: tokio::runtime::Runtime,
 
     // Temp FS state kept alive for duration of test
@@ -60,7 +110,10 @@ pub(super) struct NatsControllerRunner {
 
     // Config knobs
     consumer_name: Option<String>,
+    consumer_metadata: Vec<(String, String)>,
+    given_name: Option<String>,
     inactivity_timeout_secs: Option<u64>,
+    connector_options: Vec<(String, serde_json::Value)>,
 
     // Parsed pipeline config (built lazily after NATS URL is known)
     pipeline_config: Option<PipelineConfig>,
@@ -82,12 +135,16 @@ impl NatsControllerRunner {
         Ok(Self {
             nats_guard: None,
             nats_url: None,
+            proxy: None,
             rt: tokio::runtime::Runtime::new()?,
             _tempdir: tempdir,
             storage_dir,
             output_path,
             consumer_name: None,
+            consumer_metadata: Vec::new(),
+            given_name: None,
             inactivity_timeout_secs: None,
+            connector_options: Vec::new(),
             pipeline_config: None,
             controller: None,
             total_published: 0,
@@ -100,8 +157,32 @@ impl NatsControllerRunner {
         self
     }
 
+    /// Adds a user-supplied entry to the consumer's `metadata`.
+    pub(super) fn with_consumer_metadata(mut self, key: &str, value: &str) -> Self {
+        self.consumer_metadata
+            .push((key.to_string(), value.to_string()));
+        self
+    }
+
+    /// Sets the pipeline's `given_name`, which the controller injects into
+    /// the consumer's metadata under the `pipeline` key.
+    pub(super) fn with_given_name(mut self, name: &str) -> Self {
+        self.given_name = Some(name.to_string());
+        self
+    }
+
     pub(super) fn with_inactivity_timeout_secs(mut self, secs: u64) -> Self {
         self.inactivity_timeout_secs = Some(secs);
+        self
+    }
+
+    /// Adds `key: value` to the NATS connector configuration.
+    pub(super) fn with_connector_option(
+        mut self,
+        key: &str,
+        value: impl Into<serde_json::Value>,
+    ) -> Self {
+        self.connector_options.push((key.to_string(), value.into()));
         self
     }
 
@@ -120,61 +201,86 @@ impl NatsControllerRunner {
     /// Build (or return cached) the pipeline config from current runner state.
     fn pipeline_config(&mut self) -> &PipelineConfig {
         if self.pipeline_config.is_none() {
-            let nats_url = self.nats_url();
+            let nats_url = self
+                .proxy
+                .as_ref()
+                .map(|proxy| proxy.url())
+                .unwrap_or_else(|| self.nats_url());
             let storage_dir = &self.storage_dir;
             let output_path = &self.output_path;
 
-            let consumer_name_line = self
-                .consumer_name
-                .as_deref()
-                .map(|n| format!("name: {n}"))
-                .unwrap_or_default();
+            let mut config = json!({
+                "name": "test",
+                "workers": 4,
+                "storage_config": {
+                    "path": storage_dir,
+                },
+                "storage": true,
+                "fault_tolerance": {},
+                "clock_resolution_usecs": null,
+                "inputs": {
+                    "test_input1": {
+                        "stream": "test_input1",
+                        "transport": {
+                            "name": "nats_input",
+                            "config": {
+                                "connection_config": {
+                                    "server_url": nats_url,
+                                },
+                                "stream_name": STREAM_NAME,
+                                "consumer_config": {
+                                    "deliver_policy": "All",
+                                    "filter_subjects": [SUBJECT_NAME],
+                                },
+                            },
+                        },
+                        "format": {
+                            "name": "json",
+                            "config": {
+                                "update_format": "raw",
+                            },
+                        },
+                    },
+                },
+                "outputs": {
+                    "test_output1": {
+                        "stream": "test_output1",
+                        "transport": {
+                            "name": "file_output",
+                            "config": {
+                                "path": output_path,
+                            },
+                        },
+                        "format": {
+                            "name": "csv",
+                        },
+                    },
+                },
+            });
+            let transport_config = &mut config["inputs"]["test_input1"]["transport"]["config"];
+            if let Some(secs) = self.inactivity_timeout_secs {
+                transport_config["inactivity_timeout_secs"] = json!(secs);
+            }
+            if let Some(name) = &self.consumer_name {
+                transport_config["consumer_config"]["name"] = json!(name);
+            }
 
-            let inactivity_timeout_line = self
-                .inactivity_timeout_secs
-                .map(|s| format!("inactivity_timeout_secs: {s}"))
-                .unwrap_or_default();
+            if !self.consumer_metadata.is_empty() {
+                transport_config["consumer_config"]["metadata"] = json!(
+                    self.consumer_metadata
+                        .iter()
+                        .cloned()
+                        .collect::<BTreeMap<_, _>>()
+                );
+            }
+            for (key, value) in &self.connector_options {
+                transport_config[key] = value.clone();
+            }
+            if let Some(given_name) = &self.given_name {
+                config["given_name"] = json!(given_name);
+            }
 
-            let config_str = format!(
-                r#"
-name: test
-workers: 4
-storage_config:
-    path: {storage_dir:?}
-storage: true
-fault_tolerance: {{}}
-clock_resolution_usecs: null
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: nats_input
-            config:
-                connection_config:
-                    server_url: {nats_url}
-                stream_name: {STREAM_NAME}
-                {inactivity_timeout_line}
-                consumer_config:
-                    {consumer_name_line}
-                    deliver_policy: All
-                    filter_subjects: [{SUBJECT_NAME}]
-        format:
-            name: json
-            config:
-                update_format: raw
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: {output_path:?}
-        format:
-            name: csv
-"#
-            );
-
-            self.pipeline_config = Some(serde_yaml::from_str(&config_str).unwrap());
+            self.pipeline_config = Some(serde_json::from_value(config).unwrap());
         }
         self.pipeline_config.as_ref().unwrap()
     }
@@ -349,6 +455,57 @@ outputs:
         self.checkpointed = self.total_published;
     }
 
+    /// Asserts that the stream has at least one consumer and that each is
+    /// named `<name_prefix>_<suffix>` and carries every `metadata` entry.
+    fn verify_consumers(&self, name_prefix: &str, metadata: &[(&str, &str)]) -> AnyResult<()> {
+        let consumers = self
+            .rt
+            .block_on(util::list_consumers(self.nats_url(), STREAM_NAME))?;
+        assert!(
+            !consumers.is_empty(),
+            "expected at least one consumer on stream '{STREAM_NAME}'"
+        );
+        let expected_prefix = format!("{name_prefix}_");
+        for info in &consumers {
+            assert!(
+                info.name.starts_with(&expected_prefix),
+                "consumer '{}' is not named '{expected_prefix}<suffix>'",
+                info.name
+            );
+            for (key, value) in metadata {
+                assert_eq!(
+                    info.config.metadata.get(*key).map(String::as_str),
+                    Some(*value),
+                    "consumer '{}' metadata[{key:?}]; full metadata: {:?}",
+                    info.name,
+                    info.config.metadata
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Waits until the stream has no consumers left.
+    fn wait_for_no_consumers(&self) -> AnyResult<()> {
+        let deadline = std::time::Instant::now() + CONSUMER_DELETE_TIMEOUT;
+        loop {
+            let consumers = self
+                .rt
+                .block_on(util::list_consumers(self.nats_url(), STREAM_NAME))?;
+            if consumers.is_empty() {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                let names: Vec<&str> = consumers.iter().map(|info| info.name.as_str()).collect();
+                anyhow::bail!(
+                    "{} consumers still exist {CONSUMER_DELETE_TIMEOUT:?} after the pipeline stopped: {names:?}",
+                    consumers.len()
+                );
+            }
+            sleep(Duration::from_millis(100));
+        }
+    }
+
     fn exec(&mut self, action: &NatsControllerAction) -> AnyResult<()> {
         match action {
             NatsControllerAction::StartNats => {
@@ -380,6 +537,70 @@ outputs:
                 println!("Stream deleted");
             }
 
+            NatsControllerAction::StartProxy(faults) => {
+                assert!(self.controller.is_none());
+                self.proxy = Some(JetStreamProxy::start(
+                    &self.rt,
+                    self.nats_url(),
+                    faults.clone(),
+                )?);
+                self.pipeline_config = None;
+            }
+
+            NatsControllerAction::StopWaitsForHeldDelete {
+                pause_first,
+                disconnect_first,
+            } => {
+                self.publish_records(2)?;
+                self.start_pipeline();
+                self.wait_for_transmitted();
+                let proxy = self
+                    .proxy
+                    .as_ref()
+                    .expect("StartProxy must be called first");
+                if *pause_first {
+                    self.controller().pause_input_endpoint("test_input1")?;
+                    proxy.wait_for_delete_requests(1, Duration::from_secs(5))?;
+                }
+
+                if *disconnect_first {
+                    let endpoint_id = self.controller().input_endpoint_id_by_name("test_input1")?;
+                    self.controller().disconnect_input(&endpoint_id);
+                    proxy.wait_for_delete_requests(1, Duration::from_secs(5))?;
+                }
+
+                let controller = self.controller.take().unwrap();
+                let (sender, receiver) = std::sync::mpsc::channel();
+                let stopper = std::thread::spawn(move || {
+                    sender.send(controller.stop()).unwrap();
+                });
+                let delete_seen = proxy.wait_for_delete_requests(1, Duration::from_secs(5));
+                let early_result = receiver.recv_timeout(Duration::from_millis(200));
+                proxy.release_deletes();
+                let stopped_while_held = early_result.is_ok();
+                let result = match early_result {
+                    Ok(result) => result,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => receiver
+                        .recv_timeout(Duration::from_secs(10))
+                        .expect("Controller::stop did not finish after releasing cleanup"),
+                    Err(error) => panic!("stop thread disconnected: {error}"),
+                };
+                stopper.join().unwrap();
+                delete_seen?;
+                result?;
+                assert!(
+                    !stopped_while_held,
+                    "Controller::stop returned while consumer cleanup was still held (pause_first={pause_first}, disconnect_first={disconnect_first})"
+                );
+                let consumers = self
+                    .rt
+                    .block_on(util::list_consumers(self.nats_url(), STREAM_NAME))?;
+                assert!(
+                    consumers.is_empty(),
+                    "consumer still exists after Controller::stop"
+                );
+            }
+
             NatsControllerAction::RunFtCycle {
                 publish,
                 checkpoint,
@@ -401,6 +622,20 @@ outputs:
                 if checkpoint {
                     self.mark_checkpointed();
                 }
+            }
+
+            NatsControllerAction::RunAndInspectConsumers {
+                publish,
+                name_prefix,
+                metadata,
+            } => {
+                self.publish_records(*publish)?;
+                self.start_pipeline();
+                self.wait_for_transmitted();
+                self.verify_consumers(name_prefix, metadata)?;
+                self.stop_pipeline();
+                self.verify_output_since_checkpoint();
+                self.wait_for_no_consumers()?;
             }
 
             NatsControllerAction::ExpectStartupRetrying => {
@@ -468,6 +703,8 @@ outputs:
 
                 let got_fatal = Arc::new(AtomicBool::new(false));
                 let got_fatal_clone = got_fatal.clone();
+                let panicked = Arc::new(AtomicBool::new(false));
+                let panicked_clone = panicked.clone();
                 let config = self.pipeline_config().clone();
                 let controller = Controller::with_test_config(
                     |circuit_config| {
@@ -481,6 +718,9 @@ outputs:
                     Box::new(move |e, _tag| {
                         println!("Controller error: {e}");
                         got_fatal_clone.store(true, Ordering::Release);
+                        if matches!(e.as_ref(), crate::ControllerError::ControllerPanic) {
+                            panicked_clone.store(true, Ordering::Release);
+                        }
                     }),
                 )
                 .unwrap();
@@ -501,6 +741,100 @@ outputs:
                 }
 
                 controller.stop().unwrap();
+                assert!(
+                    !panicked.load(Ordering::Acquire),
+                    "startup failure panicked the circuit"
+                );
+            }
+
+            NatsControllerAction::RunUntilConnectorFatal { publish } => {
+                self.publish_records(*publish)?;
+                let config = self.pipeline_config().clone();
+                let controller = Controller::with_test_config(
+                    |circuit_config| {
+                        Ok(test_circuit::<TestStruct>(
+                            circuit_config,
+                            &[],
+                            &[Some("output")],
+                        ))
+                    },
+                    &config,
+                    Box::new(|e, _tag| println!("Controller error: {e}")),
+                )
+                .unwrap();
+                controller.start();
+                self.controller = Some(controller);
+                self.wait_for_transmitted();
+                self.checkpoint();
+                self.mark_checkpointed();
+
+                let guard = self.nats_guard.as_ref().expect("StartNats first");
+                guard.freeze()?;
+                let controller = self.controller();
+                let failed = wait(
+                    || match controller.status().input_status().get(&0) {
+                        Some(status) => status.fatal_error.lock().unwrap().is_some(),
+                        // Removed after the fatal error.
+                        None => true,
+                    },
+                    120_000,
+                );
+                guard.thaw()?;
+                assert!(
+                    failed.is_ok(),
+                    "connector did not fail within 120s of the server freezing"
+                );
+
+                // A real pipeline keeps stepping (at least once per clock
+                // tick); the test config has no clock, so request steps.
+                for _ in 0..10 {
+                    controller.request_step();
+                    sleep(Duration::from_millis(200));
+                }
+            }
+
+            NatsControllerAction::AssertInputKeepsFatalError => {
+                let status = self.controller().status();
+                let inputs = status.input_status();
+                let input = inputs
+                    .get(&0)
+                    .expect("the failed input endpoint vanished from the pipeline status");
+                assert!(
+                    input.fatal_error.lock().unwrap().is_some(),
+                    "the input endpoint no longer reports its fatal error"
+                );
+            }
+
+            NatsControllerAction::CheckpointAndStop => {
+                self.checkpoint();
+                self.stop_pipeline();
+            }
+
+            NatsControllerAction::AssertRestartSeesNoConnectorChanges => {
+                let config = self.pipeline_config().clone();
+                let init = ControllerBuilder::new(&config)?.open_latest_checkpoint()?;
+                if let Some(diff) = init.pipeline_diff.as_ref() {
+                    assert!(
+                        !diff.is_affected_connector("test_input1"),
+                        "restart with an unchanged configuration reports connector changes: {diff}"
+                    );
+                }
+            }
+
+            NatsControllerAction::AssertRestartIngestsNothingNew => {
+                self.start_pipeline();
+                sleep(Duration::from_secs(3));
+                self.stop_pipeline();
+                // The output file holds what this run produced.
+                let rows = CsvReaderBuilder::new()
+                    .has_headers(false)
+                    .from_path(&self.output_path)?
+                    .records()
+                    .count();
+                assert_eq!(
+                    rows, 0,
+                    "the restarted pipeline output {rows} records it had already checkpointed"
+                );
             }
         }
         Ok(())

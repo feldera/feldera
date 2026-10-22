@@ -99,7 +99,7 @@ Creating a Pipeline with Fault Tolerance Enabled
     client = FelderaClient.localhost()
     runtime_config = RuntimeConfig(
         fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
-        checkpoint_interval_secs=60
+        checkpoint_interval="60s"
     )
 
     pipeline = PipelineBuilder(client, name, sql, runtime_config=runtime_config).create()
@@ -118,31 +118,30 @@ Runtime configuration of a Pipeline
             "backend": {
                 "name": "default"
             },
-            "min_storage_bytes": None,
-            "min_step_storage_bytes": None,
+            "min_spill_size": "10Mi",
             "compression": "default",
-            "cache_mib": None
+            "cache_size": "4Gi"
         },
         "fault_tolerance": {
             "model": "at_least_once",
-            "checkpoint_interval_secs": 60
+            "checkpoint_interval": "60s"
         },
         "cpu_profiler": True,
         "tracing": False,
         "tracing_endpoint_jaeger": "",
         "min_batch_size_records": 0,
-        "max_buffering_delay_usecs": 0,
+        "max_buffering_delay": "0us",
         "resources": {
             "cpu_cores_min": None,
             "cpu_cores_max": None,
-            "memory_mb_min": None,
-            "memory_mb_max": None,
-            "storage_mb_max": None,
+            "memory_min": None,
+            "memory_max": "16Gi",
+            "storage_max": "400Gi",
             "storage_class": None
         },
-        "clock_resolution_usecs": 1_000_000,
+        "clock_resolution": "1s",
         "pin_cpus": [],
-        "provisioning_timeout_secs": None,
+        "provisioning_timeout": None,
         "max_parallel_connector_init": None,
         "init_containers": None,
         "checkpoint_during_suspend": True,
@@ -160,6 +159,56 @@ Starting a Pipeline
 .. code-block:: python
 
     pipeline.start()
+
+Approving Reloads of Selected Tables when Bootstrapping
+=======================================================
+
+When a modified pipeline restarts from a checkpoint, if a table is modified,
+bootstrapping will reload the table: it truncates the table and resets its input
+connectors. With ``bootstrap_policy=BootstrapPolicy.ALLOW``, and ``wait=True``,
+``reloadable_tables``  lists the tables that bootstrapping may reload.
+If a modified table is not in the list, ``start()`` raises ``TableReloadNotAllowedError``
+and the pipeline stays in the ``AWAITINGAPPROVAL`` state.
+Bootstrapping is an Enterprise feature.
+
+.. code-block:: python
+
+    from feldera.enums import BootstrapPolicy
+    from feldera.rest.errors import TableReloadNotAllowedError
+
+    try:
+        pipeline.start(
+            bootstrap_policy=BootstrapPolicy.ALLOW,
+            reloadable_tables=["dim_customers", "dim_products"],
+        )
+    except TableReloadNotAllowedError as e:
+        print(f"Bootstrapping would reload: {e.blocked_tables}")
+        print(e.approval_diff)
+
+        # Reject: stop the pipeline. A force stop makes no checkpoint.
+        pipeline.stop(force=True)
+
+        # Or approve: bootstrap with the changes as they are.
+        # pipeline.approve()
+
+Write each name exactly as the pipeline reports it in the approval diff: an
+unquoted SQL name in lowercase, a quoted name without its quotes. For example,
+write ``dim_customers`` for ``CREATE TABLE DIM_CUSTOMERS`` and ``DimCustomers``
+for ``CREATE TABLE "DimCustomers"``. The names in ``e.blocked_tables`` use the
+same spelling, so you can pass them back:
+
+.. code-block:: python
+
+    pipeline.restart(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        reloadable_tables=["dim_customers", "dim_products", *e.blocked_tables],
+    )
+
+Use ``reloadable_tables=[]`` to allow no table reloads. Changes to views only
+are still approved.
+
+For more information, refer to the docs at:
+https://docs.feldera.com/pipelines/modifying#approving-reloads-of-selected-tables-python-sdk
 
 Analyzing Existing Feldera Pipeline for Errors
 ==============================================
@@ -244,6 +293,22 @@ To check the status of this completion token use :meth:`.Pipeline.completion_tok
 
     # wait until the pipeline processes this completion token
     pipeline.wait_for_token(token)
+
+:meth:`.Pipeline.wait_for_token` returns once the pipeline has handed the
+resulting changes to its output connectors.  A listener from
+:meth:`.Pipeline.listen` receives its changes over an HTTP stream, so they can
+still be on their way.  :meth:`.OutputHandler.wait_for_token` returns once the
+listener has received every change for the token, and once the pipeline has
+confirmed that the token changed nothing in the view:
+
+.. code-block:: python
+
+    totals = pipeline.listen("customer_totals")
+    token = pipeline.input_json("orders", [{"customer": "alice", "amount": 10}])
+
+    # every change that the input caused in "customer_totals" is in the listener
+    totals.wait_for_token(token)
+    print(totals.to_dict())
 
 Executing ad-hoc SQL Queries
 ============================

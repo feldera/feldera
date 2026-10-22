@@ -53,3 +53,9 @@ export const fromAxaUserInfo = (userInfo: OidcUserInfo): UserProfile => ({
   email: userInfo.email,
   picture: userInfo.picture
 })
+
+/** The `auth_time` claim of a parsed token payload, in seconds. */
+export const authTimeOf = (payload: unknown): number | undefined => {
+  const authTime = (payload as { auth_time?: unknown } | null | undefined)?.auth_time
+  return typeof authTime === 'number' ? authTime : undefined
+}

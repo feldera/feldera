@@ -49,6 +49,11 @@ where
     T: Timestamp,
     C: Cursor<K, V, T, R>,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // A group presents one key's values from the cursor it borrows.
+        self.base.value_count_upper_bound()
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.base.weight_factory()
     }

@@ -386,6 +386,10 @@ public abstract class CircuitVisitor
         return this.preorder((DBSPSourceTableOperator) node);
     }
 
+    public VisitDecision preorder(DBSPSourceLazyMapOperator node) {
+        return this.preorder((DBSPSourceMapOperator) node);
+    }
+
     public VisitDecision preorder(DBSPJoinOperator node) {
         return this.preorder((DBSPJoinBaseOperator) node);
     }
@@ -767,6 +771,10 @@ public abstract class CircuitVisitor
 
     public void postorder(DBSPSourceMapOperator node) {
         this.postorder((DBSPSourceTableOperator) node);
+    }
+
+    public void postorder(DBSPSourceLazyMapOperator node) {
+        this.postorder((DBSPSourceMapOperator) node);
     }
 
     public void postorder(DBSPPrimitiveAggregateOperator node) {

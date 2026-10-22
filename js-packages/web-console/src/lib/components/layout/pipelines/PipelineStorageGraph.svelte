@@ -15,7 +15,7 @@
   import { getThemeColor } from '$lib/functions/common/color'
   import { humanSize } from '$lib/functions/common/string'
   import { tuple } from '$lib/functions/common/tuple'
-  import { timeSeriesAxisMax } from '$lib/functions/pipelineMetrics'
+  import { resourceSizeBytes, timeSeriesAxisMax } from '$lib/functions/pipelineMetrics'
   import type { Pipeline } from '$lib/services/pipelineManager'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
   import type { Snippet } from '$lib/types/svelte'
@@ -52,8 +52,8 @@
   const yMaxStep = $derived(2 ** Math.ceil(Math.log2(valueMax * 1.25)))
   const yMax = $derived(valueMax !== 0 ? yMaxStep : 1024 * 2048)
   const yMin = 0
-  const maxStorageMb = $derived(
-    pipeline.current.runtimeConfig?.resources?.storage_mb_max ?? undefined
+  const maxStorageBytes = $derived(
+    resourceSizeBytes(pipeline.current.runtimeConfig?.resources, 'storage_max', 'storage_mb_max')
   )
 
   const primaryColor = getThemeColor('--color-primary-500').format('hex')
@@ -94,9 +94,9 @@
       series: [
         {
           markline: {
-            data: maxStorageMb
+            data: maxStorageBytes
               ? [
-                  { yAxis: maxStorageMb * 1000 * 1000, lineStyle: { color: 'red', cap: 'square' } } // example 1
+                  { yAxis: maxStorageBytes, lineStyle: { color: 'red', cap: 'square' } } // example 1
                 ]
               : []
           }
@@ -183,9 +183,9 @@
           emphasis: { disabled: true },
           symbol: ['none', 'none'],
           // svelte-ignore state_referenced_locally
-          data: maxStorageMb
+          data: maxStorageBytes
             ? [
-                { yAxis: maxStorageMb * 1000 * 1000, lineStyle: { color: 'red', cap: 'square' } } // example 1
+                { yAxis: maxStorageBytes, lineStyle: { color: 'red', cap: 'square' } } // example 1
               ]
             : []
         },

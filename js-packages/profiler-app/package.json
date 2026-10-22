@@ -4,12 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --host",
-    "prebuild": "bun --cwd=../.. run build:deps:profiler-app",
-    "build": "bun run build:self",
+    "deps": "bun ../../scripts/check-bun-version.ts && bun run --filter triage-types --filter profiler-lib --filter common-ui --filter profiler-layout --filter @feldera/vite-plugin-monaco-editor build:self",
+    "dev": "bun run deps && vite --host",
+    "build": "bun run deps && bun run build:self",
     "build:self": "vite build",
     "preview": "vite preview --host",
-    "check": "svelte-check --threshold error --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "check": "bun run deps && bun run check:self",
+    "check:self": "svelte-check --threshold error --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "format": "biome check --write ."
   },
   "dependencies": {
@@ -41,7 +42,7 @@
     "svelte-check": "^4.3.5",
     "tailwindcss": "^4.1.17",
     "typescript": "~5.9.3",
-    "vite": "8.2.0",
+    "vite": "8.2.4",
     "vite-plugin-singlefile": "2.3.3"
   },
   "overrides": {

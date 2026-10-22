@@ -72,7 +72,8 @@ use feldera_types::completion_token::{
 use feldera_types::config::{PipelineIdentity, SyncConfig};
 use feldera_types::constants::STATUS_FILE;
 use feldera_types::coordination::{
-    AdHocScan, CoordinationActivate, CoordinationStatus, Labels, RestartArgs, Step, StepRequest,
+    AdHocScan, CoordinationActivate, CoordinationCapabilities, CoordinationStatus, InputChoices,
+    Labels, RestartArgs, Step, StepRequest,
 };
 use feldera_types::format::json::JsonEncoderConfig;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -85,6 +86,7 @@ use feldera_types::runtime_status::{
     ExtendedRuntimeStatusError, RuntimeDesiredStatus, RuntimeStatus, RuntimeStatusDetails,
     StorageStatusDetails,
 };
+use feldera_types::size::ConfigSize;
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
 use feldera_types::transaction::ConcurrentBootstrapPhase;
@@ -103,9 +105,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::convert::Infallible;
-use std::ffi::OsStr;
 use std::hash::{BuildHasherDefault, DefaultHasher, Hash, Hasher};
 use std::io::ErrorKind;
 use std::mem::take;
@@ -313,6 +314,14 @@ pub(crate) struct ServerState {
 
     coordination_activate: Mutex<Option<CoordinationActivate>>,
 
+    /// Leaf lock.
+    ///
+    /// The values that this host's distributed input connectors chose for all
+    /// the hosts to use, once the connectors have initialized.  This is set
+    /// before initialization completes, because completing it needs the other
+    /// hosts, which the coordinator activates only after it reads this.
+    input_choices: Mutex<Option<BTreeMap<String, serde_json::Value>>>,
+
     /// Current collection of leases.
     leases: Mutex<HashMap<Step, Lease>>,
 }
@@ -399,6 +408,7 @@ impl ServerState {
             rate_limiter,
             samply_state: Default::default(),
             coordination_activate: Default::default(),
+            input_choices: Default::default(),
             leases: Default::default(),
             incarnation_uuid: Uuid::now_v7(),
         }
@@ -558,6 +568,12 @@ impl ServerState {
         self.lifecycle.lock().unwrap().phase.clone()
     }
 
+    /// Publishes the values that this host's distributed input connectors
+    /// chose for all the hosts to use (see `/coordination/input/choices`).
+    pub fn set_input_choices(&self, choices: BTreeMap<String, serde_json::Value>) {
+        *self.input_choices.lock().unwrap() = Some(choices);
+    }
+
     /// Records `phase` and leaves the controller as it is.
     ///
     /// Use this for the phases that report progress through initialization, and
@@ -586,11 +602,7 @@ impl ServerState {
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct ServerArgs {
-    /// Pipeline configuration YAML or JSON file.
-    ///
-    /// We are transitioning from YAML to JSON for configuration.  If
-    /// `config_file` ends in `.yaml` then the server will first try to read the
-    /// same file with a `.json` extension.
+    /// Pipeline configuration JSON file.
     #[arg(short, long)]
     config_file: String,
 
@@ -976,6 +988,9 @@ pub fn run_server(
         config.global.workers as usize
     };
 
+    #[cfg(unix)]
+    let sigterm_state = state.clone();
+
     let server = HttpServer::new({
         move || {
             let state = state.clone();
@@ -1033,6 +1048,10 @@ pub fn run_server(
     // The default in actix is 30s. We may consider making this configurable.
     .shutdown_timeout(10);
 
+    // Otherwise actix stops the server on SIGTERM before the checkpoint.
+    #[cfg(unix)]
+    let server = server.disable_signals();
+
     let server = if args.enable_https
         || args.https_tls_cert_path.is_some()
         || args.https_tls_key_path.is_some()
@@ -1084,6 +1103,14 @@ pub fn run_server(
             if args.enable_https { "HTTPS" } else { "HTTP" }
         );
 
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{SignalKind, signal};
+            let sigterm = signal(SignalKind::terminate())
+                .map_err(|e| ControllerError::io_error("listening for SIGTERM", e))?;
+            spawn(checkpoint_on_sigterm(sigterm, sigterm_state));
+        }
+
         // We don't want outside observers (e.g., the local runner) to observe a partially
         // written port file, so we write it to a temporary file first, and then rename the
         // temporary.
@@ -1100,6 +1127,44 @@ pub fn run_server(
     })?;
 
     Ok(())
+}
+
+/// Writes a checkpoint on SIGTERM, then exits by raising SIGTERM again.
+#[cfg(unix)]
+async fn checkpoint_on_sigterm(
+    mut sigterm: tokio::signal::unix::Signal,
+    state: WebData<ServerState>,
+) {
+    use signal_hook::{consts::SIGTERM, low_level::emulate_default_handler};
+
+    sigterm.recv().await;
+    info!("received SIGTERM");
+    match checkpoint_before_exit(&state).await {
+        Ok(true) => info!("checkpoint written, exiting"),
+        Ok(false) => info!(
+            "pipeline has no circuit, no fault tolerance, or more than one host, exiting without a checkpoint"
+        ),
+        Err(error) => error!("checkpoint failed ({error}), exiting"),
+    }
+    // Does not return: if raising SIGTERM fails, it aborts.
+    let _ = emulate_default_handler(SIGTERM);
+}
+
+/// Writes a checkpoint.
+///
+/// # Returns
+/// `false` if there is no circuit, if fault tolerance is disabled (Force Stop
+/// also sends SIGTERM), or if the pipeline is multihost (only the coordinator
+/// can checkpoint all hosts at once).
+async fn checkpoint_before_exit(state: &ServerState) -> Result<bool, Arc<ControllerError>> {
+    let Ok(controller) = state.controller() else {
+        return Ok(false);
+    };
+    let ft = &controller.status().pipeline_config.global.fault_tolerance;
+    if !ft.is_enabled() || controller.layout().is_multihost() {
+        return Ok(false);
+    }
+    controller.async_checkpoint().await.map(|_| true)
 }
 
 fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, ControllerError> {
@@ -1124,39 +1189,27 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
         Ok(string)
     }
 
-    fn parse_yaml_config(config_file: &Path) -> Result<PipelineConfig, ControllerError> {
-        serde_yaml::from_str(&read_config_file_as_string(config_file)?)
-            .map_err(|e| ControllerError::pipeline_config_parse_error(&e))
-    }
-
-    fn parse_json_config(config_file: &Path) -> Result<PipelineConfig, ControllerError> {
-        serde_json::from_str(&read_config_file_as_string(config_file)?)
-            .map_err(|e| ControllerError::pipeline_config_parse_error(&e))
-    }
-
     let path = config_file.as_ref();
-    let mut config = if path.extension() == Some(OsStr::new("json")) {
-        parse_json_config(path)
-    } else {
-        let json_path = path.with_extension("json");
-        if json_path.exists() {
-            parse_json_config(&json_path)
-        } else {
-            parse_yaml_config(path)
-        }
-    }?;
+    let mut config: PipelineConfig = serde_json::from_str(&read_config_file_as_string(path)?)
+        .map_err(|e| {
+            ControllerError::pipeline_config_parse_error(&format!(
+                "configuration file '{}' must be JSON (YAML is no longer read): {e}",
+                path.display()
+            ))
+        })?;
 
     // This is run in the pipeline process itself, so on a multihost deployment every
     // host derives the limit from its own machine.
-    if config.global.effective_memory_mb().is_none()
+    if config.global.effective_memory().is_none()
         && let Some(available_mb) = observability::system::total_memory_megabyte()
     {
+        let available = ConfigSize::from_mb(available_mb);
         // The logger is not running yet.
         eprintln!(
-            "No memory limit configured ('max_rss_mb' or 'resources.memory_mb_max'); \
-using this host's available memory: 'max_rss_mb' = {available_mb} MB."
+            "No memory limit configured ('max_rss' or 'resources.memory_max'); \
+using this host's available memory: 'max_rss' = {available}."
         );
-        config.global.max_rss_mb = Some(available_mb);
+        config.global.max_rss = Some(available);
     }
 
     eprintln!(
@@ -1312,6 +1365,10 @@ fn do_bootstrap(
                     }
                     builder.config.inputs = std::mem::take(&mut ca.inputs);
                     builder.config.outputs = std::mem::take(&mut ca.outputs);
+                    builder = builder.with_input_distribution(
+                        take(&mut ca.input_distribution),
+                        take(&mut ca.input_choices),
+                    );
                     *state.desired_status.lock().unwrap() = ca.desired_status;
                     match ca.checkpoint {
                         Some(checkpoint_uuid) => {
@@ -1473,6 +1530,7 @@ where
         .service(coordination_adhoc_lease)
         .service(coordination_adhoc_scan)
         .service(coordination_labels_incomplete)
+        .service(coordination_input_choices)
         .service(coordination_restart)
         .service(clock_advance)
 }
@@ -2826,12 +2884,23 @@ fn field_names<T: for<'de> Deserialize<'de>>() -> &'static [&'static str] {
 }
 
 /// Lookup or create an HTTP input endpoint.
-async fn get_or_create_http_input_endpoint(
+fn get_or_create_http_input_endpoint(
     state: &WebData<ServerState>,
     format: FormatConfig,
     table_name: String,
     endpoint_name: String,
 ) -> Result<HttpInputEndpoint, PipelineError> {
+    // Serialize lookup-or-create.
+    //
+    // Adding an input endpoint is almost atomic.  However, there's a gap in
+    // [ControllerStatus::insert_input_endpoint] when the new endpoint is
+    // visible but its reader is still `None`.  Until we plug that gap, it's
+    // easiest to just serialize creating HTTP input endpoints.
+    static SERIALIZE: Mutex<()> = Mutex::new(());
+    let _guard = SERIALIZE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
     let controller = state.controller()?;
 
     // We rely on the name to uniquely encode connector configuration.
@@ -2916,8 +2985,7 @@ async fn input_endpoint(
                 format.clone(),
                 table_name.clone(),
                 endpoint_name.clone(),
-            )
-            .await?;
+            )?;
             TABLE_ENDPOINTS
                 .with_borrow_mut(|endpoints| endpoints.insert(endpoint_name, endpoint.clone()));
             endpoint
@@ -3307,6 +3375,7 @@ async fn coordination_status(state: WebData<ServerState>) -> Result<HttpResponse
             CoordinationStatus {
                 incarnation_uuid: state.incarnation_uuid,
                 status: status.clone(),
+                capabilities: CoordinationCapabilities::current(),
             },
             (state, Some(status)),
         ))
@@ -3703,6 +3772,25 @@ async fn coordination_adhoc_scan(
     Ok(HttpResponseBuilder::new(StatusCode::OK).streaming::<_, PipelineError>(response_stream))
 }
 
+/// Reports the values that this host's distributed input connectors chose for
+/// all the hosts to use.  The coordinator reads this from host 0 before it
+/// activates the other hosts (see `CoordinationActivate::input_choices`).
+///
+/// This is available while the pipeline is still initializing, as soon as the
+/// connectors have initialized.  Before that, it fails like other endpoints
+/// that need a controller.
+#[get("/coordination/input/choices")]
+async fn coordination_input_choices(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    let choices = state.input_choices.lock().unwrap().clone();
+    let choices = match choices {
+        Some(choices) => choices,
+        None => state.controller()?.input_choices(),
+    };
+    Ok(HttpResponse::Ok().json(InputChoices { choices }))
+}
+
 /// Stream the set of incomplete labels.
 #[get("/coordination/labels/incomplete")]
 async fn coordination_labels_incomplete(
@@ -3841,6 +3929,7 @@ mod test_http_helpers {
         transaction::ConcurrentBootstrapPhase,
     };
     use futures::{Stream, StreamExt};
+    use serde_json::json;
     use std::{
         fs::File,
         io::Write,
@@ -3852,6 +3941,35 @@ mod test_http_helpers {
     };
     use tempfile::{NamedTempFile, TempDir};
     use uuid::Uuid;
+
+    /// Writes `config` to a temporary file, as a launcher writes `config.json`.
+    fn json_config_file(config: &serde_json::Value) -> NamedTempFile {
+        let mut config_file = NamedTempFile::new().unwrap();
+        config_file
+            .write_all(config.to_string().as_bytes())
+            .unwrap();
+        config_file
+    }
+
+    /// The configuration file is read as JSON whatever its name: the YAML
+    /// fallback for older launchers is gone, and the error says so and
+    /// names the file.
+    #[test]
+    fn parse_config_reads_json_only() {
+        let mut yaml_file = tempfile::Builder::new().suffix(".yaml").tempfile().unwrap();
+        yaml_file
+            .write_all(b"name: test\ninputs:\noutputs:\n")
+            .unwrap();
+        let error = parse_config(yaml_file.path()).unwrap_err().to_string();
+        assert!(
+            error.contains(&yaml_file.path().display().to_string()),
+            "{error}"
+        );
+        assert!(error.contains("must be JSON"), "{error}");
+        let json_file = json_config_file(&json!({"name": "test"}));
+        let config = parse_config(json_file.path()).unwrap();
+        assert_eq!(config.name.as_deref(), Some("test"));
+    }
 
     /// A successful suspend terminates the circuit before the server reports
     /// `PipelinePhase::Suspended`, so `terminated_status` must report a clean
@@ -3885,21 +4003,19 @@ mod test_http_helpers {
         let tempdir = TempDir::new().unwrap();
         let storage_dir = tempdir.path().join("storage");
         std::fs::create_dir(&storage_dir).unwrap();
-        let config_str = format!(
-            r#"
-name: test
-workers: 2
-storage_config:
-    path: "{}"
-storage: true
-clock_resolution_usecs:
-inputs:
-outputs:
-"#,
-            storage_dir.display()
-        );
+        let config_json = json!({
+            "name": "test",
+            "workers": 2,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "storage": true,
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {},
+        });
         let (_server, state) = start_test_server_with_state(
-            &config_str,
+            &config_json,
             Uuid::now_v7(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
@@ -3966,21 +4082,18 @@ outputs:
         let tempdir = TempDir::new().unwrap();
         let storage_dir = tempdir.path().join("storage");
         std::fs::create_dir(&storage_dir).unwrap();
-        let config_str = format!(
-            r#"
-name: test
-workers: 2
-storage_config:
-    path: "{}"
-storage: true
-clock_resolution_usecs:
-inputs:
-outputs:
-"#,
-            storage_dir.display()
-        );
-        let mut config_file = NamedTempFile::new().unwrap();
-        config_file.write_all(config_str.as_bytes()).unwrap();
+        let config_json = json!({
+            "name": "test",
+            "workers": 2,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "storage": true,
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {},
+        });
+        let config_file = json_config_file(&config_json);
         let config = parse_config(config_file.path().display().to_string()).unwrap();
         let builder = ControllerBuilder::new(&config).unwrap();
 
@@ -4057,21 +4170,18 @@ outputs:
         let tempdir = TempDir::new().unwrap();
         let storage_dir = tempdir.path().join("storage");
         std::fs::create_dir(&storage_dir).unwrap();
-        let config_str = format!(
-            r#"
-name: test
-workers: 2
-storage_config:
-    path: "{}"
-storage: true
-clock_resolution_usecs:
-inputs:
-outputs:
-"#,
-            storage_dir.display()
-        );
-        let mut config_file = NamedTempFile::new().unwrap();
-        config_file.write_all(config_str.as_bytes()).unwrap();
+        let config_json = json!({
+            "name": "test",
+            "workers": 2,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "storage": true,
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {},
+        });
+        let config_file = json_config_file(&config_json);
         let config = parse_config(config_file.path().display().to_string()).unwrap();
         let builder = ControllerBuilder::new(&config).unwrap();
 
@@ -4239,9 +4349,12 @@ outputs:
         println!("{stats}")
     }
 
-    pub(super) async fn start_test_server(config_str: &str, deployment_id: Uuid) -> TestServer {
+    pub(super) async fn start_test_server(
+        config_json: &serde_json::Value,
+        deployment_id: Uuid,
+    ) -> TestServer {
         start_test_server_with_options(
-            config_str,
+            config_json,
             deployment_id,
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[None],
@@ -4250,13 +4363,13 @@ outputs:
     }
 
     pub(super) async fn start_test_server_with_options(
-        config_str: &str,
+        config_json: &serde_json::Value,
         deployment_id: Uuid,
         bootstrap_config: BootstrapConfig,
         persistent_output_ids: &'static [Option<&'static str>],
     ) -> TestServer {
         start_test_server_with_state(
-            config_str,
+            config_json,
             deployment_id,
             bootstrap_config,
             persistent_output_ids,
@@ -4288,6 +4401,7 @@ outputs:
             .unwrap(),
             program_schema: serde_json::json!({ "inputs": [], "outputs": [] }),
             circuit_ir: None,
+            udf_library: None,
         }
     }
 
@@ -4304,14 +4418,14 @@ outputs:
     /// path in-process. Injecting IRs that differ makes the diff report the
     /// change, as it does for a recompiled program.
     pub(super) async fn start_test_server_with_state(
-        config_str: &str,
+        config_json: &serde_json::Value,
         deployment_id: Uuid,
         bootstrap_config: BootstrapConfig,
         persistent_output_ids: &'static [Option<&'static str>],
         program_ir: Option<ProgramIr>,
     ) -> (TestServer, WebData<ServerState>) {
         start_test_server_for::<TestStruct>(
-            config_str,
+            config_json,
             deployment_id,
             bootstrap_config,
             persistent_output_ids,
@@ -4324,7 +4438,7 @@ outputs:
     /// Like [`start_test_server_with_state`], but the tables and views of the
     /// circuit hold records of type `T`, described by `schema`.
     pub(super) async fn start_test_server_for<T>(
-        config_str: &str,
+        config_json: &serde_json::Value,
         deployment_id: Uuid,
         bootstrap_config: BootstrapConfig,
         persistent_output_ids: &'static [Option<&'static str>],
@@ -4337,8 +4451,7 @@ outputs:
             + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
             + Sync,
     {
-        let mut config_file = NamedTempFile::new().unwrap();
-        config_file.write_all(config_str.as_bytes()).unwrap();
+        let config_file = json_config_file(config_json);
 
         println!("Creating HTTP server");
 
@@ -4408,11 +4521,7 @@ outputs:
         crate::ensure_default_crypto_provider();
 
         let server = start_test_server(
-            r#"
-name: test
-inputs:
-outputs:
-"#,
+            &json!({"name": "test", "inputs": {}, "outputs": {}}),
             Uuid::new_v4(),
         )
         .await;
@@ -4549,6 +4658,43 @@ outputs:
         }
 
         (chunks, records)
+    }
+
+    /// Reads chunks up to and including the first one whose `processed_steps`
+    /// reaches `steps`, and returns them with the records they carry.
+    pub(super) async fn collect_output_chunks_through_step<S>(
+        response: &mut S,
+        steps: u64,
+    ) -> (Vec<crate::transport::http::Chunk>, Vec<TestStruct>)
+    where
+        S: Stream<Item = Result<web::Bytes, PayloadError>> + Unpin,
+    {
+        let mut chunks = Vec::new();
+        let mut records = Vec::new();
+        let mut data = Vec::new();
+
+        loop {
+            let bytes = response.next().await.unwrap().unwrap();
+            data.extend_from_slice(&bytes);
+
+            if data.last() != Some(&b'\n') {
+                continue;
+            }
+
+            for chunk in serde_json::Deserializer::from_slice(&data)
+                .into_iter::<crate::transport::http::Chunk>()
+            {
+                let chunk = chunk.unwrap();
+                records.extend(decode_chunk_records(&chunk));
+                let done = chunk.processed_steps.is_some_and(|count| count >= steps);
+                chunks.push(chunk);
+                if done {
+                    return (chunks, records);
+                }
+            }
+
+            data.clear();
+        }
     }
 
     pub(super) async fn wait_for_completion(server: &TestServer, token: &str) {
@@ -4842,8 +4988,8 @@ outputs:
 #[cfg(test)]
 mod test_http {
     use super::test_http_helpers::{
-        collect_output_chunks, flatten_and_sort_batches, get_completion_status, get_stats,
-        print_stats, start_test_server, wait_for_completion,
+        collect_output_chunks, collect_output_chunks_through_step, flatten_and_sort_batches,
+        get_completion_status, get_stats, print_stats, start_test_server, wait_for_completion,
     };
     use crate::{
         ensure_default_crypto_provider,
@@ -4873,6 +5019,7 @@ mod test_http {
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
     };
+    use serde_json::json;
     use std::{
         thread::sleep,
         time::{Duration, Instant},
@@ -5002,7 +5149,7 @@ mod test_http {
         ensure_default_crypto_provider();
 
         let (server, _state) = start_test_server_for::<TestStructMetadata>(
-            "name: test\ninputs:\noutputs:\n",
+            &json!({"name": "test", "inputs": {}, "outputs": {}}),
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[None],
@@ -5031,6 +5178,57 @@ mod test_http {
         );
     }
 
+    /// `/ingress` rejects JSON update formats that input does not support.
+    /// It used to accept `redis` and `weighted` and panic in the parser while
+    /// holding the endpoint's lock, after which no step could complete.
+    /// `weighted` is no longer a format at all.
+    #[actix_web::test]
+    async fn test_ingress_rejects_unsupported_update_formats() {
+        ensure_default_crypto_provider();
+        let server = start_test_server(
+            &json!({"name": "test", "inputs": {}, "outputs": {}}),
+            Uuid::new_v4(),
+        )
+        .await;
+        start_pipeline(&server).await;
+
+        for update_format in ["redis", "weighted"] {
+            let mut response = timeout(
+                Duration::from_secs(20),
+                server
+                    .post(format!(
+                        "/ingress/test_input1?format=json&update_format={update_format}"
+                    ))
+                    .send_body(r#"{"weight": 1, "data": {}}"#),
+            )
+            .await
+            .unwrap_or_else(|_| {
+                panic!("/ingress with update_format={update_format} did not return")
+            })
+            .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::BAD_REQUEST,
+                "{update_format}"
+            );
+            let body = response.body().await.unwrap();
+            let body = String::from_utf8_lossy(&body);
+            let expected = match update_format {
+                "redis" => "not supported for JSON input",
+                _ => "unknown variant `weighted`",
+            };
+            assert!(body.contains(expected), "{update_format}: {body}");
+        }
+
+        let token = timeout(
+            Duration::from_secs(20),
+            send_input_no_wait(&server, &test_batches(0, 10)),
+        )
+        .await
+        .expect("a later /ingress did not return");
+        wait_for_completion(&server, &token).await;
+    }
+
     /// A client that hangs up in the middle of an `/ingress` upload fails
     /// only its own request. The table's ingress endpoint is shared by every
     /// later request, so it keeps accepting data and `/stats` must not report
@@ -5041,7 +5239,11 @@ mod test_http {
 
         ensure_default_crypto_provider();
 
-        let server = start_test_server("name: test\ninputs:\noutputs:\n", Uuid::new_v4()).await;
+        let server = start_test_server(
+            &json!({"name": "test", "inputs": {}, "outputs": {}}),
+            Uuid::new_v4(),
+        )
+        .await;
         start_pipeline(&server).await;
 
         // Announce a larger body than is sent, then close the connection.
@@ -5099,23 +5301,21 @@ mod test_http {
         let tempdir = TempDir::new().unwrap();
         let storage_dir = tempdir.path().join("storage");
         std::fs::create_dir(&storage_dir).unwrap();
-        let config_str = format!(
-            r#"
-name: test
-workers: 1
-storage_config:
-    path: "{}"
-storage: true
-fault_tolerance: latest_checkpoint
-clock_resolution_usecs:
-inputs:
-outputs:
-"#,
-            storage_dir.display()
-        );
+        let config_json = json!({
+            "name": "test",
+            "workers": 1,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "storage": true,
+            "fault_tolerance": "latest_checkpoint",
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {},
+        });
 
         let (server, state) = start_test_server_for::<TestStructMetadata>(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
@@ -5136,7 +5336,7 @@ outputs:
         drop(server);
 
         let (server, _state) = start_test_server_for::<TestStructMetadata>(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
@@ -5169,11 +5369,7 @@ outputs:
             .finish();
 
         let server = start_test_server(
-            r#"
-name: test
-inputs:
-outputs:
-"#,
+            &json!({"name": "test", "inputs": {}, "outputs": {}}),
             Uuid::new_v4(),
         )
         .await;
@@ -5258,11 +5454,7 @@ outputs:
         let follow_data = vec![vec![TestStruct::for_id(10), TestStruct::for_id(11)]];
 
         let server = start_test_server(
-            r#"
-name: test
-inputs:
-outputs:
-"#,
+            &json!({"name": "test", "inputs": {}, "outputs": {}}),
             Uuid::new_v4(),
         )
         .await;
@@ -5367,11 +5559,7 @@ outputs:
         ];
 
         let server = start_test_server(
-            r#"
-name: test
-inputs:
-outputs:
-"#,
+            &json!({"name": "test", "inputs": {}, "outputs": {}}),
             Uuid::new_v4(),
         )
         .await;
@@ -5440,36 +5628,38 @@ outputs:
         let output_path = tempdir.path().join("output.csv");
         std::fs::create_dir(&storage_dir).unwrap();
 
-        let config_str = format!(
-            r#"
-name: test
-workers: 4
-storage_config:
-    path: "{}"
-storage: true
-clock_resolution_usecs:
-inputs:
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: "{}"
-        format:
-            name: csv
-            config: {{}}
-"#,
-            storage_dir.display(),
-            output_path.display()
-        );
+        let config_json = json!({
+            "name": "test",
+            "workers": 4,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "storage": true,
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {
+                "test_output1": {
+                    "stream": "test_output1",
+                    "transport": {
+                        "name": "file_output",
+                        "config": {
+                            "path": output_path,
+                        },
+                    },
+                    "format": {
+                        "name": "csv",
+                        "config": {},
+                    },
+                },
+            },
+        });
 
         let first_batch = test_batches(0, 10);
         let second_batch = test_batches(10, 10);
         let third_batch = test_batches(20, 10);
 
         let server = start_test_server_with_options(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
@@ -5486,7 +5676,7 @@ outputs:
         drop(server);
 
         let server = start_test_server_with_options(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow).with_silent_bootstrap(true),
             &[Some("v1")],
@@ -5506,7 +5696,7 @@ outputs:
         drop(server);
 
         let server = start_test_server_with_options(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow).with_silent_bootstrap(true),
             &[Some("v2")],
@@ -5541,36 +5731,38 @@ outputs:
         let output_path = tempdir.path().join("output.csv");
         std::fs::create_dir(&storage_dir).unwrap();
 
-        let config_str = format!(
-            r#"
-name: test
-workers: 4
-storage_config:
-    path: "{}"
-storage: true
-clock_resolution_usecs:
-inputs:
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: "{}"
-        format:
-            name: csv
-            config: {{}}
-"#,
-            storage_dir.display(),
-            output_path.display()
-        );
+        let config_json = json!({
+            "name": "test",
+            "workers": 4,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "storage": true,
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {
+                "test_output1": {
+                    "stream": "test_output1",
+                    "transport": {
+                        "name": "file_output",
+                        "config": {
+                            "path": output_path,
+                        },
+                    },
+                    "format": {
+                        "name": "csv",
+                        "config": {},
+                    },
+                },
+            },
+        });
 
         let first_batch = test_batches(0, 10);
         let second_batch = test_batches(10, 10);
 
         // Initial deployment (view `v0`): ingest `first_batch`, then checkpoint.
         let server = start_test_server_with_options(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
@@ -5586,7 +5778,7 @@ outputs:
         // view backfills from the materialized input; its output is emitted at
         // cutover (not suppressed) and equals the full input state.
         let server = start_test_server_with_options(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow).with_concurrent_bootstrap(true),
             &[Some("v1")],
@@ -5628,39 +5820,41 @@ outputs:
         // A one-record replay chunk stretches the background backfill over many
         // pumps, so the pre-cutover window spans several samples of the
         // endpoint's counters.
-        let config_str = format!(
-            r#"
-name: test
-workers: 4
-storage_config:
-    path: "{}"
-storage: true
-clock_resolution_usecs:
-dev_tweaks:
-    splitter_chunk_size_records: 1
-inputs:
-outputs:
-    test_output1:
-        stream: test_output1
-        send_snapshot: {}
-        transport:
-            name: file_output
-            config:
-                path: "{}"
-        format:
-            name: csv
-            config: {{}}
-"#,
-            storage_dir.display(),
-            send_snapshot,
-            output_path.display()
-        );
+        let config_json = json!({
+            "name": "test",
+            "workers": 4,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "storage": true,
+            "clock_resolution_usecs": null,
+            "dev_tweaks": {
+                "splitter_chunk_size_records": 1,
+            },
+            "inputs": {},
+            "outputs": {
+                "test_output1": {
+                    "stream": "test_output1",
+                    "send_snapshot": send_snapshot,
+                    "transport": {
+                        "name": "file_output",
+                        "config": {
+                            "path": output_path,
+                        },
+                    },
+                    "format": {
+                        "name": "csv",
+                        "config": {},
+                    },
+                },
+            },
+        });
 
         let first_batch = test_batches(0, 2_000);
         let ingested = batch_num_records(&first_batch);
 
         let (server, _) = start_test_server_with_state(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
@@ -5679,7 +5873,7 @@ outputs:
         // input: every record the endpoint still owes is derived from the
         // `ingested` records the pipeline processed before the restart.
         let (server, _) = start_test_server_with_state(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow).with_concurrent_bootstrap(true),
             &[Some("v1")],
@@ -5752,35 +5946,37 @@ outputs:
         let output_path = tempdir.path().join("output.csv");
         std::fs::create_dir(&storage_dir).unwrap();
 
-        let config_str = format!(
-            r#"
-name: test
-workers: 4
-storage_config:
-    path: "{}"
-storage: true
-clock_resolution_usecs:
-inputs:
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: "{}"
-        format:
-            name: csv
-            config: {{}}
-"#,
-            storage_dir.display(),
-            output_path.display()
-        );
+        let config_json = json!({
+            "name": "test",
+            "workers": 4,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "storage": true,
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {
+                "test_output1": {
+                    "stream": "test_output1",
+                    "transport": {
+                        "name": "file_output",
+                        "config": {
+                            "path": output_path,
+                        },
+                    },
+                    "format": {
+                        "name": "csv",
+                        "config": {},
+                    },
+                },
+            },
+        });
 
         let first_batch = test_batches(0, 10);
 
         // Initial deployment (view `v0`): ingest 10 rows, then checkpoint.
         let server = start_test_server_with_options(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
@@ -5796,7 +5992,7 @@ outputs:
         // view backfills the 10 pre-existing rows. `start_pipeline` waits for
         // `Running`, which is reached only after cutover.
         let server = start_test_server_with_options(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow).with_concurrent_bootstrap(true),
             &[Some("v1")],
@@ -5842,37 +6038,39 @@ outputs:
         let output_path = tempdir.path().join("output.csv");
         std::fs::create_dir(&storage_dir).unwrap();
 
-        let config_str = format!(
-            r#"
-name: test
-workers: 1
-storage_config:
-    path: "{}"
-storage: true
-fault_tolerance: latest_checkpoint
-clock_resolution_usecs:
-inputs:
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: "{}"
-        format:
-            name: csv
-            config: {{}}
-"#,
-            storage_dir.display(),
-            output_path.display()
-        );
+        let config_json = json!({
+            "name": "test",
+            "workers": 1,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "storage": true,
+            "fault_tolerance": "latest_checkpoint",
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {
+                "test_output1": {
+                    "stream": "test_output1",
+                    "transport": {
+                        "name": "file_output",
+                        "config": {
+                            "path": output_path,
+                        },
+                    },
+                    "format": {
+                        "name": "csv",
+                        "config": {},
+                    },
+                },
+            },
+        });
 
         let batch = test_batches(0, 10);
 
         // Start the fault-tolerant pipeline and ingest 10 rows. The input step is
         // journaled; `send_input` waits for it to complete.
         let (server, state) = start_test_server_with_state(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
@@ -5893,7 +6091,7 @@ outputs:
         // clears. Once `Running`, the ad-hoc snapshot must already hold the 10
         // replayed rows -- queried once, with no polling and no new input.
         let (server, _state) = start_test_server_with_state(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
@@ -5924,23 +6122,21 @@ outputs:
         let storage_dir = tempdir.path().join("storage");
         std::fs::create_dir(&storage_dir).unwrap();
 
-        let config_str = format!(
-            r#"
-name: test
-workers: 1
-storage_config:
-    path: "{}"
-storage: true
-fault_tolerance: latest_checkpoint
-clock_resolution_usecs:
-inputs:
-outputs:
-"#,
-            storage_dir.display()
-        );
+        let config_json = json!({
+            "name": "test",
+            "workers": 1,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "storage": true,
+            "fault_tolerance": "latest_checkpoint",
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {},
+        });
 
         let (server, state) = start_test_server_with_state(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
@@ -5988,7 +6184,7 @@ outputs:
         drop(server);
 
         let (server, _state) = start_test_server_with_state(
-            &config_str,
+            &config_json,
             Uuid::new_v4(),
             BootstrapConfig::from(BootstrapPolicy::Allow),
             &[Some("v0")],
@@ -6024,6 +6220,335 @@ outputs:
         suspend_pipeline(&server, Some(&storage_dir)).await;
     }
 
+    /// A failed SIGTERM checkpoint must not hang or lose the previous checkpoint.
+    #[cfg(unix)]
+    #[actix_web::test]
+    async fn test_checkpoint_before_exit() {
+        use super::{Checkpointer, ControllerError, ServerState, checkpoint_before_exit};
+        use dbsp::{circuit::StorageCacheConfig, storage::backend::posixio_impl::PosixBackend};
+        use feldera_types::config::FileBackendConfig;
+        use std::{os::unix::fs::PermissionsExt, sync::Arc};
+
+        async fn checkpoint(state: &ServerState) -> Result<bool, Arc<ControllerError>> {
+            timeout(Duration::from_secs(20), checkpoint_before_exit(state))
+                .await
+                .expect("the SIGTERM checkpoint must not hang")
+        }
+
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        std::fs::create_dir(&storage_dir).unwrap();
+        let checkpoints = || {
+            let backend = PosixBackend::new(
+                &storage_dir,
+                StorageCacheConfig::default(),
+                &FileBackendConfig::default(),
+            );
+            Checkpointer::read_checkpoints(&backend).unwrap()
+        };
+
+        let config_json = json!({
+            "name": "test",
+            "workers": 1,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "storage": true,
+            "fault_tolerance": {"model": "exactly_once"},
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {},
+        });
+        let start = || {
+            start_test_server_with_state(
+                &config_json,
+                Uuid::new_v4(),
+                BootstrapConfig::from(BootstrapPolicy::Allow),
+                &[Some("v0")],
+                Some(test_program_ir("v0")),
+            )
+        };
+
+        let (server, state) = start().await;
+        start_pipeline(&server).await;
+        send_input(&server, &test_batches(0, 10)).await;
+        let before = checkpoints();
+        assert!(checkpoint(&state).await.unwrap());
+        let saved = checkpoints();
+        assert_eq!(saved.len(), before.len() + 1, "no checkpoint written");
+
+        // Root can write to read-only storage, so skip the failure case.
+        start_pipeline(&server).await;
+        send_input(&server, &test_batches(10, 10)).await;
+        let mode = std::fs::Permissions::from_mode;
+        std::fs::set_permissions(&storage_dir, mode(0o555)).unwrap();
+        if std::fs::write(storage_dir.join("probe"), b"").is_err() {
+            let result = checkpoint(&state).await;
+            assert!(
+                result.is_err(),
+                "checkpoint into read-only storage succeeded"
+            );
+        }
+        std::fs::set_permissions(&storage_dir, mode(0o755)).unwrap();
+
+        crash_pipeline(&state, &storage_dir).await;
+        drop(server);
+
+        // The journal replays rows 10..20, so only the list shows the checkpoint.
+        let (server, _state) = start().await;
+        start_pipeline(&server).await;
+        assert_eq!(checkpoints(), saved);
+        let count = adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await;
+        assert_eq!(count, 20);
+
+        suspend_pipeline(&server, Some(&storage_dir)).await;
+    }
+
+    /// Without fault tolerance, SIGTERM must not write a checkpoint: on
+    /// Kubernetes, Force Stop also sends SIGTERM.
+    #[actix_web::test]
+    async fn test_checkpoint_before_exit_without_ft() {
+        use super::checkpoint_before_exit;
+
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        std::fs::create_dir(&storage_dir).unwrap();
+        let config_json = json!({
+            "name": "test",
+            "workers": 1,
+            "storage_config": {"path": storage_dir},
+            "storage": true,
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {},
+        });
+        let start = || {
+            start_test_server_with_state(
+                &config_json,
+                Uuid::new_v4(),
+                BootstrapConfig::from(BootstrapPolicy::Allow),
+                &[Some("v0")],
+                Some(test_program_ir("v0")),
+            )
+        };
+
+        let (server, state) = start().await;
+        start_pipeline(&server).await;
+        send_input(&server, &test_batches(0, 10)).await;
+        assert!(!checkpoint_before_exit(&state).await.unwrap());
+        crash_pipeline(&state, &storage_dir).await;
+        drop(server);
+
+        let (server, _state) = start().await;
+        start_pipeline(&server).await;
+        let count = adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await;
+        assert_eq!(
+            count, 0,
+            "SIGTERM wrote a checkpoint without fault tolerance"
+        );
+
+        suspend_pipeline(&server, Some(&storage_dir)).await;
+    }
+
+    /// SIGTERM must not wait without storage or a circuit.
+    #[actix_web::test]
+    async fn test_checkpoint_before_exit_without_storage() {
+        use super::{ControllerError, ServerState, checkpoint_before_exit};
+
+        ensure_default_crypto_provider();
+
+        let (server, state) = start_test_server_with_state(
+            &json!({"name": "test", "inputs": {}, "outputs": {}}),
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[None],
+            None,
+        )
+        .await;
+        start_pipeline(&server).await;
+        let result = timeout(Duration::from_secs(20), checkpoint_before_exit(&state))
+            .await
+            .expect("the SIGTERM checkpoint must not hang");
+        assert!(!result.unwrap());
+
+        let error = ControllerError::io_error("test", std::io::Error::other("test"));
+        let state = ServerState::for_error(error, Uuid::new_v4());
+        assert!(!checkpoint_before_exit(&state).await.unwrap());
+    }
+
+    /// A real SIGTERM, sent to a pipeline without fault tolerance in a child
+    /// process, must stop the process with SIGTERM and write no checkpoint.
+    #[cfg(unix)]
+    #[test]
+    fn test_sigterm_process_without_ft() {
+        use super::{SERVER_PORT_FILE, ServerArgs, run_server};
+        use crate::test::test_circuit;
+        use feldera_types::{config::PipelineConfig, runtime_status::RuntimeDesiredStatus};
+        use nix::{sys::signal, unistd::Pid};
+        use std::{
+            os::unix::process::ExitStatusExt,
+            path::Path,
+            process::{Child, Command},
+        };
+
+        const DIR: &str = "FELDERA_SIGTERM_TEST_DIR";
+
+        // The child process runs the pipeline.
+        if let Ok(dir) = std::env::var(DIR) {
+            let args = ServerArgs {
+                config_file: Path::new(&dir).join("config.json").display().to_string(),
+                metadata_file: None,
+                bind_address: "127.0.0.1".to_string(),
+                default_port: None,
+                storage_location: None,
+                enable_https: false,
+                https_tls_cert_path: None,
+                https_tls_key_path: None,
+                initial: RuntimeDesiredStatus::Running,
+                bootstrap_policy: BootstrapPolicy::Allow,
+                silent_bootstrap: false,
+                concurrent_bootstrap: false,
+                deployment_id: Uuid::new_v4(),
+                host_id: None,
+            };
+            run_server(
+                args,
+                Box::new(|config| {
+                    Ok(test_circuit::<TestStruct>(
+                        config,
+                        &TestStruct::schema(),
+                        &[Some("v0")],
+                    ))
+                }),
+            )
+            .unwrap();
+            return;
+        }
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        std::fs::create_dir(&storage_dir).unwrap();
+        let mut config: PipelineConfig = serde_json::from_value(json!({
+            "name": "test",
+            "workers": 1,
+            "storage_config": {"path": storage_dir},
+            "storage": true,
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {},
+        }))
+        .unwrap();
+        config.program_ir = Some(test_program_ir("v0"));
+        std::fs::write(
+            tempdir.path().join("config.json"),
+            serde_json::to_vec(&config).unwrap(),
+        )
+        .unwrap();
+
+        let test_name = format!(
+            "{}::test_sigterm_process_without_ft",
+            module_path!().split_once("::").unwrap().1
+        );
+        // Kills the child process if the test fails.
+        struct KillOnDrop(Child);
+        impl Drop for KillOnDrop {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+
+        let port_file = tempdir.path().join(SERVER_PORT_FILE);
+        let start = || -> (KillOnDrop, String) {
+            let _ = std::fs::remove_file(&port_file);
+            let child = KillOnDrop(
+                Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", &test_name, "--nocapture"])
+                    .env(DIR, tempdir.path())
+                    .current_dir(tempdir.path())
+                    .spawn()
+                    .unwrap(),
+            );
+            let start = Instant::now();
+            let port = loop {
+                if let Ok(port) = std::fs::read_to_string(&port_file) {
+                    break port.trim().to_string();
+                }
+                assert!(start.elapsed() < Duration::from_secs(60), "no port file");
+                sleep(Duration::from_millis(100));
+            };
+            (child, format!("http://127.0.0.1:{port}"))
+        };
+        let client = reqwest::blocking::Client::new();
+        let count = |url: &str| -> Option<i64> {
+            let qs = form_urlencoded::Serializer::new(String::new())
+                .append_pair("sql", "SELECT COUNT(*) AS c FROM test_output1")
+                .append_pair("format", "json")
+                .finish();
+            let response = client.get(format!("{url}/query?{qs}")).send().ok()?;
+            let text = response.error_for_status().ok()?.text().ok()?;
+            let row: serde_json::Value = serde_json::from_str(text.lines().next()?).ok()?;
+            row["c"].as_i64()
+        };
+        let wait_for = |what: &str, mut done: Box<dyn FnMut() -> bool + '_>| {
+            let start = Instant::now();
+            while !done() {
+                assert!(start.elapsed() < Duration::from_secs(60), "{what}");
+                sleep(Duration::from_millis(100));
+            }
+        };
+        let sigterm = |mut child: KillOnDrop| {
+            signal::kill(Pid::from_raw(child.0.id() as i32), signal::SIGTERM).unwrap();
+            let start = Instant::now();
+            let status = loop {
+                if let Some(status) = child.0.try_wait().unwrap() {
+                    break status;
+                }
+                assert!(
+                    start.elapsed() < Duration::from_secs(60),
+                    "the pipeline did not exit on SIGTERM"
+                );
+                sleep(Duration::from_millis(100));
+            };
+            assert_eq!(status.signal(), Some(signal::SIGTERM as i32), "{status}");
+        };
+
+        let (child, url) = start();
+        wait_for(
+            "the pipeline did not take the input",
+            Box::new(|| {
+                let rows: String = (0..10).map(|id| format!("{id},false,,\n")).collect();
+                client
+                    .post(format!("{url}/ingress/test_input1"))
+                    .body(rows)
+                    .send()
+                    .is_ok_and(|r| r.status().is_success())
+            }),
+        );
+        wait_for(
+            "the input did not reach the view",
+            Box::new(|| count(&url) == Some(10)),
+        );
+        sigterm(child);
+
+        // No checkpoint holds the rows.
+        let (child, url) = start();
+        let mut restored = None;
+        wait_for(
+            "the restarted pipeline did not answer",
+            Box::new(|| {
+                restored = count(&url);
+                restored.is_some()
+            }),
+        );
+        sigterm(child);
+        assert_eq!(restored, Some(0));
+    }
+
     #[actix_web::test]
     async fn test_transactions() {
         ensure_default_crypto_provider();
@@ -6037,12 +6562,8 @@ outputs:
             .current();
 
         // Config string
-        let config_str = r#"
-name: test
-inputs:
-outputs:
-"#;
-        let server = start_test_server(config_str, Uuid::default()).await;
+        let config_json = json!({"name": "test", "inputs": {}, "outputs": {}});
+        let server = start_test_server(&config_json, Uuid::default()).await;
 
         // Start pipeline.
         start_pipeline(&server).await;
@@ -6066,6 +6587,91 @@ outputs:
         wait_for_completion(&server, &token).await;
     }
 
+    /// A step that changes nothing in the view still ends with its chunk, so
+    /// a client can wait for a token whose input changed nothing.
+    #[actix_web::test]
+    async fn test_egress_step_chunk_without_output() {
+        ensure_default_crypto_provider();
+
+        let config_json = json!({"name": "test", "inputs": {}, "outputs": {}});
+        let server = start_test_server(&config_json, Uuid::default()).await;
+        start_pipeline(&server).await;
+
+        let mut egress = server
+            .post("/egress/test_output1?format=csv")
+            .send()
+            .await
+            .unwrap();
+        assert!(egress.status().is_success());
+
+        // An insert and a delete of the same record in one transaction leave
+        // `test_output1`, the identity of `test_input1`, as it was.
+        start_transaction(&server).await;
+        let record = r#"{"id": 1, "b": true, "i": 5, "s": "x"}"#;
+        let mut response = server
+            .post("/ingress/test_input1?format=json&update_format=insert_delete")
+            .send_body(format!(
+                "{{\"insert\": {record}}}\n{{\"delete\": {record}}}"
+            ))
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = response.body().await.unwrap();
+        assert!(status.is_success(), "{}", String::from_utf8_lossy(&body));
+        let CompletionTokenResponse { token } = serde_json::from_slice(&body).unwrap();
+        commit_transaction(&server).await;
+        wait_for_completion(&server, &token).await;
+
+        let step = get_completion_status(&server, &token).await.step.unwrap();
+        let (chunks, records) = timeout(
+            Duration::from_secs(10),
+            collect_output_chunks_through_step(&mut egress, step),
+        )
+        .await
+        .expect("the chunk that ends the step arrives although the step changed nothing");
+        assert!(records.is_empty(), "{records:?}");
+        assert!(chunks.iter().all(|chunk| chunk.text_data.is_none()));
+    }
+
+    /// An `/egress` stream marks the end of each step's output with an empty chunk whose
+    /// `processed_steps` is in the unit of the `step` that
+    /// `/completion_status` reports, after the step's output; the steps of a
+    /// transaction close only with the commit, after its output.
+    #[actix_web::test]
+    async fn test_egress_step_chunks() {
+        ensure_default_crypto_provider();
+
+        let config_json = json!({"name": "test", "inputs": {}, "outputs": {}});
+        let server = start_test_server(&config_json, Uuid::default()).await;
+        start_pipeline(&server).await;
+
+        let mut egress = server
+            .post("/egress/test_output1?format=csv")
+            .send()
+            .await
+            .unwrap();
+        assert!(egress.status().is_success());
+
+        let data = test_batches(0, 10);
+        let token = send_input_no_wait(&server, &data).await;
+        wait_for_completion(&server, &token).await;
+        let step = get_completion_status(&server, &token).await.step.unwrap();
+        let (chunks, mut records) = collect_output_chunks_through_step(&mut egress, step).await;
+        records.sort();
+        assert_eq!(records, flatten_and_sort_batches(&data));
+        assert!(chunks.last().unwrap().text_data.is_none());
+
+        start_transaction(&server).await;
+        let data = test_batches(10, 10);
+        let token = send_input_no_wait(&server, &data).await;
+        commit_transaction(&server).await;
+        wait_for_completion(&server, &token).await;
+        let step = get_completion_status(&server, &token).await.step.unwrap();
+        let (_chunks, mut records) = collect_output_chunks_through_step(&mut egress, step).await;
+        records.sort();
+        assert_eq!(records, flatten_and_sort_batches(&data));
+    }
+
     /// Regression test for issue #6231.
     /// In a pipeline without output connectors, the number of completed records,
     /// completed steps, and the `pipeline_complete` flag are updated before the current transaction
@@ -6084,12 +6690,8 @@ outputs:
         // Keep the controller free of configured output connectors.  This
         // exercises the no-output path in completion accounting instead of
         // waiting for any egress connector to report progress.
-        let config_str = r#"
-name: test
-inputs:
-outputs:
-"#;
-        let server = start_test_server(config_str, Uuid::default()).await;
+        let config_json = json!({"name": "test", "inputs": {}, "outputs": {}});
+        let server = start_test_server(&config_json, Uuid::default()).await;
 
         start_pipeline(&server).await;
 
@@ -6198,31 +6800,35 @@ mod test_with_kafka {
             BufferConsumer::new("test_server_output_topic", "csv", json!({}), None);
 
         // Config string
-        let config_str = r#"
-name: test
-inputs:
-    test_input1:
-        stream: test_input1
-        paused: true
-        transport:
-            name: kafka_input
-            config:
-                auto.offset.reset: "earliest"
-                topics: [test_server_input_topic]
-                log_level: debug
-        format:
-            name: csv
-outputs:
-    test_output2:
-        stream: test_output1
-        transport:
-            name: kafka_output
-            config:
-                topic: test_server_output_topic
-        format:
-            name: csv
-"#;
-        let server = start_test_server(config_str, Uuid::new_v4()).await;
+        let config_json = json!({
+            "name": "test",
+            "inputs": {
+                "test_input1": {
+                    "stream": "test_input1",
+                    "paused": true,
+                    "transport": {
+                        "name": "kafka_input",
+                        "config": {
+                            "auto.offset.reset": "earliest",
+                            "topics": ["test_server_input_topic"],
+                            "log_level": "debug",
+                        },
+                    },
+                    "format": {"name": "csv"},
+                },
+            },
+            "outputs": {
+                "test_output2": {
+                    "stream": "test_output1",
+                    "transport": {
+                        "name": "kafka_output",
+                        "config": {"topic": "test_server_output_topic"},
+                    },
+                    "format": {"name": "csv"},
+                },
+            },
+        });
+        let server = start_test_server(&config_json, Uuid::new_v4()).await;
 
         // Write data to Kafka.
         println!("Send test data");

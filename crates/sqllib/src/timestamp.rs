@@ -27,7 +27,7 @@ use size_of::SizeOf;
 use std::{
     borrow::Cow,
     fmt::{self, Debug},
-    ops::{Add, Deref, Sub},
+    ops::{Add, Deref, RangeInclusive, Sub},
 };
 
 use crate::{
@@ -122,13 +122,13 @@ impl fmt::Display for Timestamp {
         if micro == 0 {
             write!(
                 f,
-                "{}-{:02}-{:02} {:02}:{:02}:{:02}",
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
                 year, month, day, hr, min, sec
             )
         } else {
             write!(
                 f,
-                "{}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}",
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06}",
                 year, month, day, hr, min, sec, micro
             )
         }
@@ -271,9 +271,9 @@ impl Timestamp {
     }
 
     /// Return the number of millliseconds elapsed since the Unix
-    /// epoch (January 1st, 1970)
+    /// epoch (January 1st, 1970), rounded down
     pub fn milliseconds(&self) -> i64 {
-        self.microseconds / 1000
+        self.microseconds.div_euclid(1000)
     }
 
     /// Return the number of microseconds elapsed since the Unix
@@ -341,14 +341,30 @@ impl Timestamp {
         Date::from_date(dt.date_naive())
     }
 
-    /// Check if the timestamp is legal; panic if it isn't
-    pub fn check_legal(&self) {
-        let date = self.to_naiveDateTime();
-        if date.year() < 1 || date.year() > 9999 {
-            panic!("Timestamp out of range {}", self);
-        }
+    /// The [Timestamp] `microseconds` after the Unix epoch, or `None` if it
+    /// is outside the range 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999.
+    pub fn legal_from_microseconds(microseconds: i64) -> Option<Self> {
+        let dt = DateTime::from_timestamp_micros(microseconds)?;
+        (1..=9999)
+            .contains(&dt.year())
+            .then_some(Self { microseconds })
+    }
+
+    /// The [Timestamp] `milliseconds` after the Unix epoch, or `None` if it
+    /// is outside the legal range.
+    pub fn legal_from_milliseconds(milliseconds: i64) -> Option<Self> {
+        Self::legal_from_microseconds(milliseconds.checked_mul(1000)?)
+    }
+
+    /// The [Timestamp] for `dt`, or `None` if it is outside the legal range.
+    /// The range check follows the rounding of `dt` to microseconds.
+    pub fn legal_from_naiveDateTime(dt: NaiveDateTime) -> Option<Self> {
+        Self::legal_from_microseconds(Self::from_naiveDateTime(dt).microseconds)
     }
 }
+
+/// The text of an error for a TIMESTAMP outside the legal range.
+const TIMESTAMP_RANGE: &str = "outside the range 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999";
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -439,13 +455,13 @@ impl fmt::Display for TimestampTz {
         if micro == 0 {
             write!(
                 f,
-                "{}-{:02}-{:02} {:02}:{:02}:{:02} +00:00",
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02} +00:00",
                 year, month, day, hr, min, sec
             )
         } else {
             write!(
                 f,
-                "{}-{:02}-{:02} {:02}:{:02}:{:02}.{:06} +00:00",
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:06} +00:00",
                 year, month, day, hr, min, sec, micro
             )
         }
@@ -563,9 +579,9 @@ impl TimestampTz {
     }
 
     /// Return the number of millliseconds elapsed since the Unix
-    /// epoch (January 1st, 1970)
+    /// epoch (January 1st, 1970), rounded down
     pub fn milliseconds(&self) -> i64 {
-        self.microseconds / 1000
+        self.microseconds.div_euclid(1000)
     }
 
     /// Return the number of microseconds elapsed since the Unix
@@ -609,12 +625,10 @@ impl TimestampTz {
             .naive_utc()
     }
 
-    /// Check if the timestamp is legal; panic if it isn't
-    pub fn check_legal(&self) {
-        let date = self.to_naiveDateTime();
-        if date.year() < 1 || date.year() > 9999 {
-            panic!("TIMESTAMP WITH TIME ZONE out of range {}", self);
-        }
+    /// The [TimestampTz] `microseconds` after the Unix epoch, or `None` if
+    /// it is outside the range 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999 UTC.
+    pub fn legal_from_microseconds(microseconds: i64) -> Option<Self> {
+        Timestamp::legal_from_microseconds(microseconds).map(|_| Self { microseconds })
     }
 }
 
@@ -654,7 +668,11 @@ pub fn parse_timestamp_tz(st: &str) -> SqlResult<TimestampTz> {
     })?;
 
     let result = zone.local_to_utc(dt)?;
-    Ok(TimestampTz::from_dateTime(result))
+    TimestampTz::legal_from_microseconds(result.timestamp_micros()).ok_or_else(|| {
+        SqlRuntimeError::from_string(format!(
+            "Failed to parse '{st}' as a TIMESTAMP WITH TIME ZONE: the result is {TIMESTAMP_RANGE}"
+        ))
+    })
 }
 
 #[doc(hidden)]
@@ -888,7 +906,7 @@ pub fn convert_timezone___(src_tz: Zone, dst_tz: Zone, ts: Timestamp) -> Option<
     let naive = ts.to_naiveDateTime();
     let utc = src_tz.local_to_utc(naive).ok()?;
     let result = dst_tz.to_local(utc).ok()?;
-    Some(Timestamp::from_naiveDateTime(result))
+    Timestamp::legal_from_naiveDateTime(result)
 }
 
 some_nullable_function3!(convert_timezone, Zone, Zone, Timestamp, Timestamp);
@@ -912,9 +930,10 @@ pub fn plus_Timestamp_Timestamp_ShortInterval__(
     left: Timestamp,
     right: ShortInterval,
 ) -> Timestamp {
-    Timestamp {
-        microseconds: left.microseconds + right.microseconds(),
-    }
+    left.microseconds
+        .checked_add(right.microseconds())
+        .and_then(Timestamp::legal_from_microseconds)
+        .unwrap_or_else(|| panic!("Cannot add interval '{right:?}' to timestamp '{left}'"))
 }
 
 some_function2!(
@@ -929,9 +948,10 @@ pub fn plus_TimestampTz_TimestampTz_ShortInterval__(
     left: TimestampTz,
     right: ShortInterval,
 ) -> TimestampTz {
-    TimestampTz {
-        microseconds: left.microseconds + right.microseconds(),
-    }
+    left.microseconds
+        .checked_add(right.microseconds())
+        .and_then(TimestampTz::legal_from_microseconds)
+        .unwrap_or_else(|| panic!("Cannot add interval '{right:?}' to timestamp '{left}'"))
 }
 
 some_function2!(
@@ -944,13 +964,14 @@ some_function2!(
 #[doc(hidden)]
 pub fn plus_Timestamp_Timestamp_LongInterval__(left: Timestamp, right: LongInterval) -> Timestamp {
     let dt = left.to_naiveDateTime();
-    let months = right.months();
-    let ndt = if months < 0 {
-        dt.checked_sub_months(Months::new(-months as u32))
+    let months = Months::new(right.months().unsigned_abs());
+    let ndt = if right.months() < 0 {
+        dt.checked_sub_months(months)
     } else {
-        dt.checked_add_months(Months::new(months as u32))
+        dt.checked_add_months(months)
     };
-    Timestamp::from_naiveDateTime(ndt.unwrap())
+    ndt.and_then(Timestamp::legal_from_naiveDateTime)
+        .unwrap_or_else(|| panic!("Cannot add interval '{right:?}' to timestamp '{left}'"))
 }
 
 some_function2!(
@@ -979,13 +1000,14 @@ some_function2!(
 #[doc(hidden)]
 pub fn minus_Timestamp_Timestamp_LongInterval__(left: Timestamp, right: LongInterval) -> Timestamp {
     let dt = left.to_naiveDateTime();
-    let months = right.months();
-    let ndt = if months < 0 {
-        dt.checked_add_months(Months::new(-months as u32))
+    let months = Months::new(right.months().unsigned_abs());
+    let ndt = if right.months() < 0 {
+        dt.checked_add_months(months)
     } else {
-        dt.checked_sub_months(Months::new(months as u32))
+        dt.checked_sub_months(months)
     };
-    Timestamp::from_naiveDateTime(ndt.unwrap())
+    ndt.and_then(Timestamp::legal_from_naiveDateTime)
+        .unwrap_or_else(|| panic!("Cannot subtract interval '{right:?}' from timestamp '{left}'"))
 }
 
 some_function2!(
@@ -1067,7 +1089,10 @@ pub fn minus_Timestamp_Timestamp_ShortInterval__(
     left: Timestamp,
     right: ShortInterval,
 ) -> Timestamp {
-    Timestamp::from_microseconds(left.microseconds() - right.microseconds())
+    left.microseconds()
+        .checked_sub(right.microseconds())
+        .and_then(Timestamp::legal_from_microseconds)
+        .unwrap_or_else(|| panic!("Cannot subtract interval '{right:?}' from timestamp '{left}'"))
 }
 
 some_function2!(
@@ -1082,7 +1107,10 @@ pub fn minus_TimestampTz_TimestampTz_ShortInterval__(
     left: TimestampTz,
     right: ShortInterval,
 ) -> TimestampTz {
-    TimestampTz::from_microseconds(left.microseconds() - right.microseconds())
+    left.microseconds()
+        .checked_sub(right.microseconds())
+        .and_then(TimestampTz::legal_from_microseconds)
+        .unwrap_or_else(|| panic!("Cannot subtract interval '{right:?}' from timestamp '{left}'"))
 }
 
 some_function2!(
@@ -1106,18 +1134,28 @@ some_function2!(
 
 #[doc(hidden)]
 pub fn plus_Date_Date_ShortInterval__(left: Date, right: ShortInterval) -> Date {
-    let days = (right.microseconds() / (86400i64 * 1000 * 1000)) as i32;
-    let diff = left.days() + days;
-    Date::from_days(diff)
+    let days = right.microseconds() / (86400i64 * 1000 * 1000);
+    Date::legal_from_days(left.days() as i64 + days).unwrap_or_else(|| {
+        panic!(
+            "Cannot add interval '{:?}' to date '{:?}'",
+            right,
+            left.to_date()
+        )
+    })
 }
 
 some_function2!(plus_Date_Date_ShortInterval, Date, ShortInterval, Date);
 
 #[doc(hidden)]
 pub fn minus_Date_Date_ShortInterval__(left: Date, right: ShortInterval) -> Date {
-    let days = (right.microseconds() / (86400i64 * 1000 * 1000)) as i32;
-    let diff = left.days() - days;
-    Date::from_days(diff)
+    let days = right.microseconds() / (86400i64 * 1000 * 1000);
+    Date::legal_from_days(left.days() as i64 - days).unwrap_or_else(|| {
+        panic!(
+            "Cannot subtract interval '{:?}' from date '{:?}'",
+            right,
+            left.to_date()
+        )
+    })
 }
 
 some_function2!(minus_Date_Date_ShortInterval, Date, ShortInterval, Date);
@@ -1125,17 +1163,15 @@ some_function2!(minus_Date_Date_ShortInterval, Date, ShortInterval, Date);
 #[doc(hidden)]
 pub fn plus_Date_Date_LongInterval__(left: Date, right: LongInterval) -> Date {
     let date = left.to_date();
-    if right.months() < 0 {
-        let result = date
-            .checked_sub_months(Months::new(-right.months() as u32))
-            .unwrap_or_else(|| panic!("Cannot add interval '{:?}' to date '{:?}'", right, date));
-        Date::from_date(result)
+    let months = Months::new(right.months().unsigned_abs());
+    let result = if right.months() < 0 {
+        date.checked_sub_months(months)
     } else {
-        let result = date
-            .checked_add_months(Months::new(right.months() as u32))
-            .unwrap_or_else(|| panic!("Cannot add interval '{:?}' to date '{:?}'", right, date));
-        Date::from_date(result)
-    }
+        date.checked_add_months(months)
+    };
+    result
+        .and_then(Date::legal_from_date)
+        .unwrap_or_else(|| panic!("Cannot add interval '{:?}' to date '{:?}'", right, date))
 }
 
 some_function2!(plus_Date_Date_LongInterval, Date, LongInterval, Date);
@@ -1143,27 +1179,18 @@ some_function2!(plus_Date_Date_LongInterval, Date, LongInterval, Date);
 #[doc(hidden)]
 pub fn minus_Date_Date_LongInterval__(left: Date, right: LongInterval) -> Date {
     let date = left.to_date();
-    if right.months() < 0 {
-        let result = date
-            .checked_add_months(Months::new(-right.months() as u32))
-            .unwrap_or_else(|| {
-                panic!(
-                    "Cannot subtract interval '{:?}' from date '{:?}'",
-                    right, date
-                )
-            });
-        Date::from_date(result)
+    let months = Months::new(right.months().unsigned_abs());
+    let result = if right.months() < 0 {
+        date.checked_add_months(months)
     } else {
-        let result = date
-            .checked_sub_months(Months::new(right.months() as u32))
-            .unwrap_or_else(|| {
-                panic!(
-                    "Cannot subtract interval '{:?}' from date '{:?}'",
-                    right, date
-                )
-            });
-        Date::from_date(result)
-    }
+        date.checked_sub_months(months)
+    };
+    result.and_then(Date::legal_from_date).unwrap_or_else(|| {
+        panic!(
+            "Cannot subtract interval '{:?}' from date '{:?}'",
+            right, date
+        )
+    })
 }
 
 some_function2!(minus_Date_Date_LongInterval, Date, LongInterval, Date);
@@ -1481,11 +1508,19 @@ some_operator!(neq, TimestampTz, TimestampTz, bool);
 some_operator!(gte, TimestampTz, TimestampTz, bool);
 some_operator!(lte, TimestampTz, TimestampTz, bool);
 
+/// The timestamp `rounded`, the result of rounding `value` to a `unit`;
+/// panics if the result is outside the legal range.
+fn legal_timestamp_rounding(value: Timestamp, unit: &str, rounded: Timestamp) -> Timestamp {
+    Timestamp::legal_from_microseconds(rounded.microseconds()).unwrap_or_else(|| {
+        panic!("Rounding timestamp '{value}' to a {unit} produces a timestamp {TIMESTAMP_RANGE}")
+    })
+}
+
 #[doc(hidden)]
 pub fn floor_millennium_Timestamp(value: Timestamp) -> Timestamp {
     let ts = value.to_dateTime();
     let naive = NaiveDate::from_ymd_opt((ts.year() / 1000) * 1000, 1, 1).unwrap();
-    Timestamp::from_naiveDate(naive)
+    legal_timestamp_rounding(value, "millennium", Timestamp::from_naiveDate(naive))
 }
 
 some_polymorphic_function1!(floor_millennium, Timestamp, Timestamp, Timestamp);
@@ -1501,7 +1536,7 @@ some_polymorphic_function1!(floor_millennium, TimestampTz, TimestampTz, Timestam
 pub fn floor_century_Timestamp(value: Timestamp) -> Timestamp {
     let ts = value.to_dateTime();
     let naive = NaiveDate::from_ymd_opt((ts.year() / 100) * 100, 1, 1).unwrap();
-    Timestamp::from_naiveDate(naive)
+    legal_timestamp_rounding(value, "century", Timestamp::from_naiveDate(naive))
 }
 
 some_polymorphic_function1!(floor_century, Timestamp, Timestamp, Timestamp);
@@ -1517,7 +1552,7 @@ some_polymorphic_function1!(floor_century, TimestampTz, TimestampTz, TimestampTz
 pub fn floor_decade_Timestamp(value: Timestamp) -> Timestamp {
     let ts = value.to_dateTime();
     let naive = NaiveDate::from_ymd_opt((ts.year() / 10) * 10, 1, 1).unwrap();
-    Timestamp::from_naiveDate(naive)
+    legal_timestamp_rounding(value, "decade", Timestamp::from_naiveDate(naive))
 }
 
 some_polymorphic_function1!(floor_decade, Timestamp, Timestamp, Timestamp);
@@ -1582,7 +1617,8 @@ pub fn floor_week_Timestamp(value: Timestamp) -> Timestamp {
     let wd = extract_dow_Timestamp(value) - Date::first_day_of_week();
     let notimeTs = floor_day_Timestamp(value);
     let interval = ShortInterval::from_seconds(wd * 86400);
-    minus_Timestamp_Timestamp_ShortInterval__(notimeTs, interval)
+    let rounded = Timestamp::from_microseconds(notimeTs.microseconds() - interval.microseconds());
+    legal_timestamp_rounding(value, "week", rounded)
 }
 
 some_polymorphic_function1!(floor_week, Timestamp, Timestamp, Timestamp);
@@ -1733,7 +1769,7 @@ pub fn ceil_millennium_Timestamp(value: Timestamp) -> Timestamp {
         return value;
     }
     let naive = NaiveDate::from_ymd_opt((ts.year() / 1000 + 1) * 1000, 1, 1).unwrap();
-    Timestamp::from_naiveDate(naive)
+    legal_timestamp_rounding(value, "millennium", Timestamp::from_naiveDate(naive))
 }
 
 some_polymorphic_function1!(ceil_millennium, Timestamp, Timestamp, Timestamp);
@@ -1752,7 +1788,7 @@ pub fn ceil_century_Timestamp(value: Timestamp) -> Timestamp {
         return value;
     }
     let naive = NaiveDate::from_ymd_opt((ts.year() / 100 + 1) * 100, 1, 1).unwrap();
-    Timestamp::from_naiveDate(naive)
+    legal_timestamp_rounding(value, "century", Timestamp::from_naiveDate(naive))
 }
 
 some_polymorphic_function1!(ceil_century, Timestamp, Timestamp, Timestamp);
@@ -1771,7 +1807,7 @@ pub fn ceil_decade_Timestamp(value: Timestamp) -> Timestamp {
         return value;
     }
     let naive = NaiveDate::from_ymd_opt((ts.year() / 10 + 1) * 10, 1, 1).unwrap();
-    Timestamp::from_naiveDate(naive)
+    legal_timestamp_rounding(value, "decade", Timestamp::from_naiveDate(naive))
 }
 
 some_polymorphic_function1!(ceil_decade, Timestamp, Timestamp, Timestamp);
@@ -1790,7 +1826,7 @@ pub fn ceil_year_Timestamp(value: Timestamp) -> Timestamp {
         return value;
     }
     let naive = NaiveDate::from_ymd_opt(ts.year() + 1, 1, 1).unwrap();
-    Timestamp::from_naiveDate(naive)
+    legal_timestamp_rounding(value, "year", Timestamp::from_naiveDate(naive))
 }
 
 some_polymorphic_function1!(ceil_year, Timestamp, Timestamp, Timestamp);
@@ -1821,7 +1857,7 @@ pub fn ceil_quarter_Timestamp(value: Timestamp) -> Timestamp {
         ts.year()
     };
     let naive = NaiveDate::from_ymd_opt(year, next_quarter_month, 1).unwrap();
-    Timestamp::from_naiveDate(naive)
+    legal_timestamp_rounding(value, "quarter", Timestamp::from_naiveDate(naive))
 }
 
 some_polymorphic_function1!(ceil_quarter, Timestamp, Timestamp, Timestamp);
@@ -1842,7 +1878,7 @@ pub fn ceil_month_Timestamp(value: Timestamp) -> Timestamp {
     let month = if ts.month() == 12 { 1 } else { ts.month() + 1 };
     let year = if month == 1 { ts.year() + 1 } else { ts.year() };
     let naive = NaiveDate::from_ymd_opt(year, month, 1).unwrap();
-    Timestamp::from_naiveDate(naive)
+    legal_timestamp_rounding(value, "month", Timestamp::from_naiveDate(naive))
 }
 
 some_polymorphic_function1!(ceil_month, Timestamp, Timestamp, Timestamp);
@@ -1863,7 +1899,8 @@ pub fn ceil_week_Timestamp(value: Timestamp) -> Timestamp {
     }
     let notimeTs = floor_day_Timestamp(value);
     let interval = ShortInterval::from_seconds((7 - wd) * 86400);
-    plus_Timestamp_Timestamp_ShortInterval__(notimeTs, interval)
+    let rounded = Timestamp::from_microseconds(notimeTs.microseconds() + interval.microseconds());
+    legal_timestamp_rounding(value, "week", rounded)
 }
 
 some_polymorphic_function1!(ceil_week, Timestamp, Timestamp, Timestamp);
@@ -1883,7 +1920,8 @@ pub fn ceil_day_Timestamp(value: Timestamp) -> Timestamp {
     }
     let notimeTs = floor_day_Timestamp(value);
     let day = ShortInterval::from_seconds(86400);
-    plus_Timestamp_Timestamp_ShortInterval__(notimeTs, day)
+    let rounded = Timestamp::from_microseconds(notimeTs.microseconds() + day.microseconds());
+    legal_timestamp_rounding(value, "day", rounded)
 }
 
 some_polymorphic_function1!(ceil_day, Timestamp, Timestamp, Timestamp);
@@ -1903,7 +1941,8 @@ pub fn ceil_hour_Timestamp(value: Timestamp) -> Timestamp {
     }
     let floored = floor_hour_Timestamp(value);
     let hour = ShortInterval::from_seconds(3600);
-    plus_Timestamp_Timestamp_ShortInterval__(floored, hour)
+    let rounded = Timestamp::from_microseconds(floored.microseconds() + hour.microseconds());
+    legal_timestamp_rounding(value, "hour", rounded)
 }
 
 some_polymorphic_function1!(ceil_hour, Timestamp, Timestamp, Timestamp);
@@ -1923,7 +1962,8 @@ pub fn ceil_minute_Timestamp(value: Timestamp) -> Timestamp {
     }
     let floored = floor_minute_Timestamp(value);
     let minute = ShortInterval::from_seconds(60);
-    plus_Timestamp_Timestamp_ShortInterval__(floored, minute)
+    let rounded = Timestamp::from_microseconds(floored.microseconds() + minute.microseconds());
+    legal_timestamp_rounding(value, "minute", rounded)
 }
 
 some_polymorphic_function1!(ceil_minute, Timestamp, Timestamp, Timestamp);
@@ -1943,7 +1983,8 @@ pub fn ceil_second_Timestamp(value: Timestamp) -> Timestamp {
     }
     let floored = floor_second_Timestamp(value);
     let second = ShortInterval::from_seconds(1);
-    plus_Timestamp_Timestamp_ShortInterval__(floored, second)
+    let rounded = Timestamp::from_microseconds(floored.microseconds() + second.microseconds());
+    legal_timestamp_rounding(value, "second", rounded)
 }
 
 some_polymorphic_function1!(ceil_second, Timestamp, Timestamp, Timestamp);
@@ -1957,7 +1998,10 @@ some_polymorphic_function1!(ceil_second, TimestampTz, TimestampTz, TimestampTz);
 
 #[doc(hidden)]
 pub fn ceil_millisecond_Timestamp(value: Timestamp) -> Timestamp {
-    Timestamp::from_milliseconds((value.microseconds + 999) / 1000)
+    // Euclidean division also rounds up timestamps before 1970
+    let partial = value.microseconds.rem_euclid(1000) != 0;
+    let millis = value.microseconds.div_euclid(1000) + i64::from(partial);
+    legal_timestamp_rounding(value, "millisecond", Timestamp::from_milliseconds(millis))
 }
 
 some_polymorphic_function1!(ceil_millisecond, Timestamp, Timestamp, Timestamp);
@@ -2004,7 +2048,7 @@ pub fn tumble_Timestamp_ShortInterval(ts: Timestamp, i: ShortInterval) -> Timest
     let ts_us = ts.microseconds();
     let i_us = i.microseconds();
     let round = ts_us - ts_us.rem_euclid(i_us);
-    Timestamp::from_microseconds(round)
+    legal_timestamp_rounding(ts, "TUMBLE window", Timestamp::from_microseconds(round))
 }
 
 some_polymorphic_function2!(
@@ -2036,7 +2080,11 @@ pub fn tumble_Timestamp_ShortInterval_Time(ts: Timestamp, i: ShortInterval, t: T
     let ts_us = ts.microseconds() - t_us;
     let i_us = i.microseconds();
     let round = ts_us - ts_us.rem_euclid(i_us);
-    Timestamp::from_microseconds(round + t_us)
+    legal_timestamp_rounding(
+        ts,
+        "TUMBLE window",
+        Timestamp::from_microseconds(round + t_us),
+    )
 }
 
 some_polymorphic_function3!(
@@ -2080,7 +2128,11 @@ pub fn tumble_Timestamp_ShortInterval_ShortInterval(
     let ts_us = ts.microseconds() - t_us;
     let i_us = i.microseconds();
     let round = ts_us - ts_us.rem_euclid(i_us);
-    Timestamp::from_microseconds(round + t_us)
+    legal_timestamp_rounding(
+        ts,
+        "TUMBLE window",
+        Timestamp::from_microseconds(round + t_us),
+    )
 }
 
 some_polymorphic_function3!(
@@ -2129,7 +2181,9 @@ pub fn hop_start(
     ts_us - (ts_us - start_us).rem_euclid(period_us) + period_us - size_us
 }
 
-// Helper function used by the monotonicity analysis for hop table functions
+// Helper function used by the monotonicity analysis for hop table functions.
+// The result is a lower bound for garbage collection, which may be below the
+// legal range of Timestamps, so it is not checked.
 #[doc(hidden)]
 pub fn hop_start_timestamp(
     ts: Timestamp,
@@ -2151,7 +2205,8 @@ pub fn hop_Timestamp_ShortInterval_ShortInterval_ShortInterval(
     let round = hop_start(ts, period, size, start);
     let mut add = 0;
     while add < size.microseconds() {
-        result.push(Timestamp::from_microseconds(round + add));
+        let window = Timestamp::from_microseconds(round + add);
+        result.push(legal_timestamp_rounding(ts, "HOP window", window));
         add += period.microseconds();
     }
     result.into()
@@ -2206,7 +2261,7 @@ pub fn hop_TimestampTzN_ShortInterval_ShortInterval_ShortInterval(
 pub fn parse_timestamp__(format: SqlString, st: SqlString) -> Option<Timestamp> {
     let nt = NaiveDateTime::parse_from_str(st.str(), format.str());
     match nt {
-        Ok(nt) => Some(Timestamp::from_naiveDateTime(nt)),
+        Ok(nt) => Timestamp::legal_from_naiveDateTime(nt),
         Err(e) => match e.kind() {
             ParseErrorKind::BadFormat | ParseErrorKind::NotEnough | ParseErrorKind::Impossible => {
                 panic!(
@@ -2226,7 +2281,7 @@ some_nullable_function2!(parse_timestamp, SqlString, SqlString, Timestamp);
 // Date
 
 /// A representation of a Date in the Gregorian calendar.
-/// The range of legal dates is 0001-01-01 to 9999-12-12.
+/// The range of legal dates is 0001-01-01 to 9999-12-31.
 #[derive(
     Default,
     Clone,
@@ -2252,11 +2307,37 @@ pub struct Date {
     days: i32,
 }
 
+/// The number of days from the Unix epoch to `date`.
+const fn days_since_epoch(date: NaiveDate) -> i64 {
+    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
+    date.signed_duration_since(epoch).num_days()
+}
+
+/// The day numbers of the legal dates, 0001-01-01 to 9999-12-31.
+static LEGAL_DAYS: RangeInclusive<i64> = days_since_epoch(NaiveDate::from_ymd_opt(1, 1, 1).unwrap())
+    ..=days_since_epoch(NaiveDate::from_ymd_opt(9999, 12, 31).unwrap());
+
 impl Date {
     /// Create a [Date] from a number of days since the Unix epoch
     /// (January 1st, 1970).
     pub const fn from_days(days: i32) -> Self {
         Self { days }
+    }
+
+    /// Create a [Date] from a number of days since the Unix epoch, or
+    /// `None` if the date is outside the legal range.
+    pub fn legal_from_days(days: i64) -> Option<Self> {
+        LEGAL_DAYS
+            .contains(&days)
+            .then(|| Self::from_days(days as i32))
+    }
+
+    /// Create a [Date] from a chrono [NaiveDate], or `None` if the date
+    /// is outside the years 1 to 9999.
+    pub fn legal_from_date(date: NaiveDate) -> Option<Self> {
+        (1..=9999)
+            .contains(&date.year())
+            .then(|| Self::from_date(date))
     }
 
     /// Create a [Date] from a chrono [NaiveDate]
@@ -2322,7 +2403,7 @@ impl fmt::Display for Date {
         let month = dt.month();
         let day = dt.day();
         let year = dt.year();
-        write!(f, "{}-{:02}-{:02}", year, month, day)
+        write!(f, "{:04}-{:02}-{:02}", year, month, day)
     }
 }
 
@@ -2418,11 +2499,21 @@ some_operator!(neq, Date, Date, bool);
 some_operator!(gte, Date, Date, bool);
 some_operator!(lte, Date, Date, bool);
 
+/// The date `rounded`, the result of rounding `date` to a `unit`; panics
+/// if the result is outside the legal range.
+fn legal_rounding(date: NaiveDate, unit: &str, rounded: NaiveDate) -> Date {
+    Date::legal_from_date(rounded).unwrap_or_else(|| {
+        panic!(
+            "Rounding date '{date}' to a {unit} produces a date outside the range 0001-01-01 to 9999-12-31"
+        )
+    })
+}
+
 #[doc(hidden)]
 pub fn floor_millennium_Date(value: Date) -> Date {
     let d = value.to_date();
     let naive = NaiveDate::from_ymd_opt((d.year() / 1000) * 1000, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "millennium", naive)
 }
 
 some_polymorphic_function1!(floor_millennium, Date, Date, Date);
@@ -2445,7 +2536,7 @@ some_nullable_function3!(make_date, i32, i32, i32, Date);
 pub fn floor_century_Date(value: Date) -> Date {
     let d = value.to_date();
     let naive = NaiveDate::from_ymd_opt((d.year() / 100) * 100, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "century", naive)
 }
 
 some_polymorphic_function1!(floor_century, Date, Date, Date);
@@ -2454,7 +2545,7 @@ some_polymorphic_function1!(floor_century, Date, Date, Date);
 pub fn floor_decade_Date(value: Date) -> Date {
     let d = value.to_date();
     let naive = NaiveDate::from_ymd_opt((d.year() / 10) * 10, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "decade", naive)
 }
 
 some_polymorphic_function1!(floor_decade, Date, Date, Date);
@@ -2551,7 +2642,7 @@ pub fn ceil_millennium_Date(value: Date) -> Date {
         return value;
     }
     let naive = NaiveDate::from_ymd_opt((d.year() / 1000 + 1) * 1000, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "millennium", naive)
 }
 
 some_polymorphic_function1!(ceil_millennium, Date, Date, Date);
@@ -2563,7 +2654,7 @@ pub fn ceil_century_Date(value: Date) -> Date {
         return value;
     }
     let naive = NaiveDate::from_ymd_opt((d.year() / 100 + 1) * 100, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "century", naive)
 }
 
 some_polymorphic_function1!(ceil_century, Date, Date, Date);
@@ -2575,7 +2666,7 @@ pub fn ceil_decade_Date(value: Date) -> Date {
         return value;
     }
     let naive = NaiveDate::from_ymd_opt((d.year() / 10 + 1) * 10, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "decade", naive)
 }
 
 some_polymorphic_function1!(ceil_decade, Date, Date, Date);
@@ -2587,7 +2678,7 @@ pub fn ceil_year_Date(value: Date) -> Date {
         return value;
     }
     let naive = NaiveDate::from_ymd_opt(d.year() + 1, 1, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "year", naive)
 }
 
 some_polymorphic_function1!(ceil_year, Date, Date, Date);
@@ -2611,7 +2702,7 @@ pub fn ceil_quarter_Date(value: Date) -> Date {
         d.year()
     };
     let naive = NaiveDate::from_ymd_opt(year, next_quarter_month, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "quarter", naive)
 }
 
 some_polymorphic_function1!(ceil_quarter, Date, Date, Date);
@@ -2629,7 +2720,7 @@ pub fn ceil_month_Date(value: Date) -> Date {
         d.year()
     };
     let naive = NaiveDate::from_ymd_opt(next_year, next_month, 1).unwrap();
-    Date::from_date(naive)
+    legal_rounding(d, "month", naive)
 }
 
 some_polymorphic_function1!(ceil_month, Date, Date, Date);
@@ -2939,7 +3030,7 @@ some_function2!(format_timestamp, SqlString, Timestamp, SqlString);
 pub fn parse_date__(format: SqlString, st: SqlString) -> Option<Date> {
     let nd = NaiveDate::parse_from_str(st.str(), format.str());
     match nd {
-        Ok(nd) => Some(Date::from_date(nd)),
+        Ok(nd) => Date::legal_from_date(nd),
         Err(e) => match e.kind() {
             ParseErrorKind::BadFormat | ParseErrorKind::NotEnough | ParseErrorKind::Impossible => {
                 panic!("Invalid format in PARSE_DATE: {}\n{}", format.str(), e)
@@ -3269,7 +3360,7 @@ pub fn date_trunc_century_Date(date: Date) -> Date {
 pub fn date_trunc_decade_Date(date: Date) -> Date {
     let date = date.to_dateTime();
     let rounded = NaiveDate::from_ymd_opt((date.year() / 10) * 10, 1, 1).unwrap();
-    Date::from_date(rounded)
+    legal_rounding(date.date_naive(), "decade", rounded)
 }
 
 #[doc(hidden)]
@@ -3305,7 +3396,7 @@ pub fn date_trunc_week_Date(date: Date) -> Date {
     let naive = date.to_date();
     let weekday = naive.weekday().num_days_from_sunday();
     let rounded = naive - Duration::days(weekday.into());
-    Date::from_date(rounded)
+    legal_rounding(naive, "week", rounded)
 }
 
 #[doc(hidden)]
@@ -3965,6 +4056,7 @@ mod test {
     use std::sync::LazyLock;
 
     use super::{Date, Time, Timestamp, TimestampTz};
+    use crate::{LongInterval, ShortInterval, SqlString};
     use feldera_types::format::json::JsonFlavor;
     use feldera_types::serde_with_context::{
         DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -4116,6 +4208,256 @@ mod test {
             .unwrap(),
             r#"{"date":"2023-09-28","time":"23:21:15.123","timestamp":"2018-06-20 13:37:03","timestampTz":"2018-06-20 13:37:03+00:00"}"#
         );
+    }
+
+    #[test]
+    fn legal_dates() {
+        use chrono::NaiveDate;
+
+        let first = NaiveDate::from_ymd_opt(1, 1, 1).unwrap();
+        let last = NaiveDate::from_ymd_opt(9999, 12, 31).unwrap();
+        let first_days = Date::from_date(first).days() as i64;
+        let last_days = Date::from_date(last).days() as i64;
+        assert_eq!(Date::legal_from_days(first_days).unwrap().to_date(), first);
+        assert_eq!(Date::legal_from_days(last_days).unwrap().to_date(), last);
+        assert!(Date::legal_from_days(first_days - 1).is_none());
+        assert!(Date::legal_from_days(last_days + 1).is_none());
+        assert!(Date::legal_from_days(i64::MAX).is_none());
+        assert!(Date::legal_from_date(last.succ_opt().unwrap()).is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot add interval")]
+    fn date_plus_days_out_of_range() {
+        use super::{ShortInterval, plus_Date_Date_ShortInterval__};
+
+        let last = Date::from_date(chrono::NaiveDate::from_ymd_opt(9999, 12, 31).unwrap());
+        plus_Date_Date_ShortInterval__(last, ShortInterval::from_seconds(86400));
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot subtract interval")]
+    fn date_minus_months_out_of_range() {
+        use super::{LongInterval, minus_Date_Date_LongInterval__};
+
+        let first = Date::from_date(chrono::NaiveDate::from_ymd_opt(1, 1, 1).unwrap());
+        minus_Date_Date_LongInterval__(first, LongInterval::from_months(1));
+    }
+
+    fn date(year: i32, month: u32, day: u32) -> Date {
+        Date::from_date(chrono::NaiveDate::from_ymd_opt(year, month, day).unwrap())
+    }
+
+    #[test]
+    fn rounding_to_legal_dates() {
+        use super::{ceil_month_Date, floor_decade_Date};
+
+        assert_eq!(ceil_month_Date(date(9999, 11, 2)), date(9999, 12, 1));
+        assert_eq!(floor_decade_Date(date(10, 5, 5)), date(10, 1, 1));
+    }
+
+    #[test]
+    #[should_panic(expected = "Rounding date '9999-12-02' to a month")]
+    fn ceil_out_of_range() {
+        super::ceil_month_Date(date(9999, 12, 2));
+    }
+
+    #[test]
+    #[should_panic(expected = "Rounding date '0005-05-05' to a decade")]
+    fn floor_out_of_range() {
+        super::floor_decade_Date(date(5, 5, 5));
+    }
+
+    /// Whether `f` panics.
+    fn panics(f: impl FnOnce() + std::panic::UnwindSafe) -> bool {
+        std::panic::catch_unwind(f).is_err()
+    }
+
+    #[test]
+    fn date_rounding_at_the_edges() {
+        use super::*;
+
+        // 0001-01-01 is a Monday, and weeks start on Sunday
+        assert!(panics(|| _ = date_trunc_week_Date(date(1, 1, 1))));
+        assert!(panics(|| _ = date_trunc_decade_Date(date(5, 1, 1))));
+        assert!(panics(|| _ = floor_millennium_Date(date(500, 6, 1))));
+        assert!(panics(|| _ = floor_century_Date(date(50, 6, 1))));
+        assert!(panics(|| _ = ceil_quarter_Date(date(9999, 11, 2))));
+        assert!(panics(|| _ = ceil_year_Date(date(9999, 6, 1))));
+        assert!(panics(|| _ = ceil_millennium_Date(date(9999, 6, 1))));
+        assert_eq!(date_trunc_week_Date(date(1, 1, 7)), date(1, 1, 7));
+        assert_eq!(floor_millennium_Date(date(1500, 6, 1)), date(1000, 1, 1));
+        assert_eq!(ceil_quarter_Date(date(9999, 8, 2)), date(9999, 10, 1));
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot add interval")]
+    fn date_plus_most_negative_months() {
+        super::plus_Date_Date_LongInterval__(date(2000, 1, 1), LongInterval::from_months(i32::MIN));
+    }
+
+    fn timestamp(text: &str) -> Timestamp {
+        let dt = chrono::NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S%.f").unwrap();
+        Timestamp::from_naiveDateTime(dt)
+    }
+
+    #[test]
+    fn legal_timestamps() {
+        let first = timestamp("0001-01-01 00:00:00");
+        let last = timestamp("9999-12-31 23:59:59.999999");
+        assert_eq!(
+            Timestamp::legal_from_microseconds(first.microseconds()),
+            Some(first)
+        );
+        assert_eq!(
+            Timestamp::legal_from_microseconds(last.microseconds()),
+            Some(last)
+        );
+        assert!(Timestamp::legal_from_microseconds(first.microseconds() - 1).is_none());
+        assert!(Timestamp::legal_from_microseconds(last.microseconds() + 1).is_none());
+        assert!(Timestamp::legal_from_microseconds(i64::MIN).is_none());
+        assert!(Timestamp::legal_from_milliseconds(i64::MAX).is_none());
+        // Rounding to microseconds carries this value into the year 10000
+        let carried = chrono::NaiveDateTime::parse_from_str(
+            "9999-12-31 23:59:59.9999995",
+            "%Y-%m-%d %H:%M:%S%.f",
+        )
+        .unwrap();
+        assert!(Timestamp::legal_from_naiveDateTime(carried).is_none());
+        assert!(TimestampTz::legal_from_microseconds(last.microseconds() + 1).is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot add interval")]
+    fn timestamp_plus_seconds_out_of_range() {
+        let last = timestamp("9999-12-31 23:59:59");
+        super::plus_Timestamp_Timestamp_ShortInterval__(last, ShortInterval::from_seconds(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot subtract interval")]
+    fn timestamp_minus_months_out_of_range() {
+        let first = timestamp("0001-01-15 00:00:00");
+        super::minus_Timestamp_Timestamp_LongInterval__(first, LongInterval::from_months(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "Cannot add interval")]
+    fn timestamp_plus_most_negative_months() {
+        let ts = timestamp("2000-01-01 00:00:00");
+        super::plus_Timestamp_Timestamp_LongInterval__(ts, LongInterval::from_months(i32::MIN));
+    }
+
+    #[test]
+    #[should_panic(expected = "Rounding timestamp '9999-12-31 23:59:59.500000' to a second")]
+    fn timestamp_ceil_out_of_range() {
+        super::ceil_second_Timestamp(timestamp("9999-12-31 23:59:59.5"));
+    }
+
+    #[test]
+    fn millisecond_rounding_before_1970() {
+        use super::{ceil_millisecond_Timestamp, floor_millisecond_Timestamp};
+
+        let exact = Timestamp::from_microseconds(-2000);
+        let partial = Timestamp::from_microseconds(-1500);
+        assert_eq!(ceil_millisecond_Timestamp(exact), exact);
+        assert_eq!(
+            ceil_millisecond_Timestamp(partial),
+            Timestamp::from_microseconds(-1000)
+        );
+        assert_eq!(floor_millisecond_Timestamp(partial), exact);
+        assert_eq!(partial.milliseconds(), -2);
+        assert_eq!(TimestampTz::from_microseconds(-1500).milliseconds(), -2);
+    }
+
+    #[test]
+    fn window_starts_at_the_edges() {
+        use super::{
+            hop_Timestamp_ShortInterval_ShortInterval_ShortInterval as hop,
+            tumble_Timestamp_ShortInterval as tumble,
+        };
+
+        // Windows are aligned to 1970-01-01, a Thursday; 0001-01-01 is a Monday
+        let week = ShortInterval::from_seconds(7 * 86400);
+        assert!(panics(|| _ = tumble(timestamp("0001-01-01 12:00:00"), week)));
+        assert_eq!(
+            tumble(timestamp("0001-01-05 12:00:00"), week),
+            timestamp("0001-01-04 00:00:00")
+        );
+        let hour = ShortInterval::from_seconds(3600);
+        let two_days = ShortInterval::from_seconds(2 * 86400);
+        let zero = ShortInterval::from_seconds(0);
+        assert!(panics(
+            || _ = hop(timestamp("0001-01-01 12:00:00"), hour, two_days, zero)
+        ));
+        assert_eq!(
+            hop(timestamp("0001-01-10 12:00:00"), hour, two_days, zero).len(),
+            48
+        );
+    }
+
+    #[test]
+    fn timestamp_rounding_at_the_edges() {
+        use super::*;
+
+        assert!(panics(
+            || _ = floor_millennium_Timestamp(timestamp("0500-06-01 00:00:00"))
+        ));
+        assert!(panics(
+            || _ = floor_century_Timestamp(timestamp("0050-06-01 00:00:00"))
+        ));
+        assert!(panics(
+            || _ = floor_decade_Timestamp(timestamp("0005-06-01 00:00:00"))
+        ));
+        // 0001-01-01 is a Monday, and weeks start on Sunday
+        assert!(panics(
+            || _ = floor_week_Timestamp(timestamp("0001-01-01 12:00:00"))
+        ));
+        let late = timestamp("9999-12-15 12:00:00");
+        assert!(panics(|| _ = ceil_millennium_Timestamp(late)));
+        assert!(panics(|| _ = ceil_century_Timestamp(late)));
+        assert!(panics(|| _ = ceil_decade_Timestamp(late)));
+        assert!(panics(|| _ = ceil_year_Timestamp(late)));
+        assert!(panics(|| _ = ceil_quarter_Timestamp(late)));
+        assert!(panics(|| _ = ceil_month_Timestamp(late)));
+        assert!(panics(
+            || _ = ceil_week_Timestamp(timestamp("9999-12-31 12:00:00"))
+        ));
+        assert!(panics(
+            || _ = ceil_day_Timestamp(timestamp("9999-12-31 12:00:00"))
+        ));
+        assert!(panics(
+            || _ = ceil_hour_Timestamp(timestamp("9999-12-31 23:30:00"))
+        ));
+        assert!(panics(
+            || _ = ceil_minute_Timestamp(timestamp("9999-12-31 23:59:30"))
+        ));
+        assert!(panics(|| _ = ceil_millisecond_Timestamp(timestamp(
+            "9999-12-31 23:59:59.9995"
+        ))));
+        assert!(panics(|| _ = ceil_year_TimestampTz(late.into())));
+        assert_eq!(
+            floor_millennium_Timestamp(timestamp("1500-06-01 00:00:00")),
+            timestamp("1000-01-01 00:00:00")
+        );
+        assert_eq!(
+            ceil_hour_Timestamp(timestamp("9999-12-31 22:30:00")),
+            timestamp("9999-12-31 23:00:00")
+        );
+    }
+
+    #[test]
+    fn parse_date_out_of_range() {
+        let format = SqlString::from_ref("%Y-%m-%d");
+        assert!(super::parse_date__(format.clone(), SqlString::from_ref("0000-01-01")).is_none());
+        assert!(super::parse_date__(format, SqlString::from_ref("0001-01-01")).is_some());
+    }
+
+    #[test]
+    fn parse_timestamp_out_of_range() {
+        let format = SqlString::from_ref("%Y-%m-%d %H:%M:%S");
+        let parsed = super::parse_timestamp__(format, SqlString::from_ref("0000-12-31 23:59:59"));
+        assert!(parsed.is_none());
     }
 }
 

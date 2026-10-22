@@ -39,13 +39,40 @@ from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 from tests import TEST_CLIENT
 from tests.platform.fixtures import unity_api, unity_deletion_vectors as fixture
 
-REQUIRED_ENV = [
-    "DELTA_TABLE_TEST_UNITY_DV_TABLE",
-    "DELTA_TABLE_TEST_UNITY_HOST",
-    "DELTA_TABLE_TEST_UNITY_CLIENT_ID",
-    "DELTA_TABLE_TEST_UNITY_CLIENT_SECRET",
-]
+REQUIRED_ENV = ["DELTA_TABLE_TEST_UNITY_DV_TABLE", "DELTA_TABLE_TEST_UNITY_HOST"]
 MISSING_ENV = [name for name in REQUIRED_ENV if not os.environ.get(name)]
+# Mirrors unity_api.token_from_env's precedence: a token already minted, a
+# live GitHub-OIDC exchange (what feldera-ci actually uses, via
+# UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID + ACTIONS_ID_TOKEN_REQUEST_URL),
+# or a client_secret for a by-hand run.
+_authenticated = bool(
+    os.environ.get("DELTA_TABLE_TEST_UNITY_TOKEN")
+    or (
+        os.environ.get("UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID")
+        and os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
+    )
+    or (
+        os.environ.get("DELTA_TABLE_TEST_UNITY_CLIENT_ID")
+        and os.environ.get("DELTA_TABLE_TEST_UNITY_CLIENT_SECRET")
+    )
+)
+if not _authenticated:
+    MISSING_ENV.append(
+        "DELTA_TABLE_TEST_UNITY_TOKEN (or UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID "
+        "+ ACTIONS_ID_TOKEN_REQUEST_URL, or DELTA_TABLE_TEST_UNITY_CLIENT_ID + "
+        "DELTA_TABLE_TEST_UNITY_CLIENT_SECRET)"
+    )
+
+# A silent skip in CI is exactly how this test went dormant the first time:
+# IN_CI is set on every CI run, so a skip there is always a bug (a missing
+# repo variable or federation policy), never an expected local-dev state,
+# and must fail loudly instead of leaving CI green.
+if MISSING_ENV and os.environ.get("IN_CI"):
+    pytest.fail(
+        f"CI must have {', '.join(MISSING_ENV)} set; a skip here would silently "
+        "stop running this test instead of failing the build",
+        pytrace=False,
+    )
 
 pytestmark = pytest.mark.skipif(
     bool(MISSING_ENV),

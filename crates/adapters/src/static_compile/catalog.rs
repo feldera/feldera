@@ -1,4 +1,4 @@
-use super::{DeMapHandle, DeZSetHandle, SerCollectionHandleImpl};
+use super::{DeLazyMapHandle, DeMapHandle, DeZSetHandle, SerCollectionHandleImpl};
 use crate::catalog::{InputCollectionHandle, SerBatchReaderHandle};
 use crate::{Catalog, ControllerError, catalog::OutputCollectionHandles};
 use dbsp::circuit::Layout;
@@ -11,7 +11,7 @@ use dbsp::utils::Tup1;
 use dbsp::{Batch, Circuit as _, OrdZSet, Runtime};
 use dbsp::{
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
-    operator::{MapHandle, ZSetHandle},
+    operator::{LazyMapHandle, MapHandle, ZSetHandle},
     typed_batch::BatchReader,
 };
 use feldera_adapterlib::catalog::CircuitCatalog;
@@ -308,6 +308,7 @@ impl Catalog {
                         None,
                         &relation_schema,
                         &key_schema_name,
+                        true,
                         false,
                         false,
                         primary_key.as_slice(),
@@ -391,11 +392,94 @@ impl Catalog {
                         &relation_schema,
                         &key_schema_name,
                         true,
+                        true,
                         false,
                         primary_key.as_slice(),
                     )
                     .unwrap();
 
+                self.register_output_batch_handles(&relation_schema.name, handles)
+                    .unwrap();
+            },
+        );
+    }
+
+    /// Like `register_materialized_input_map`, for a table fed through a lazy
+    /// input map ([`RootCircuit::add_lazy_input_map`]).
+    ///
+    /// The map keeps its own integral built via an accumulator.
+    ///
+    /// # Arguments
+    ///
+    /// * `stream` - the table's delta stream, which downstream views read.
+    /// * `handle` - the lazy input map's write handle, which the adapters feed.
+    /// * `value_key_func` - extracts a record's primary key, which is how a delete
+    ///   names the record it removes.
+    /// * `schema` - the table's schema, as the SQL compiler emits it.
+    pub fn register_lazy_materialized_input_map<K, KD, V, VD, VF>(
+        &mut self,
+        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        handle: LazyMapHandle<K, V>,
+        value_key_func: VF,
+        schema: &str,
+    ) where
+        VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<K>
+            + Send
+            + Sync
+            + Debug
+            + 'static,
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<V>
+            + Clone
+            + Debug
+            + Default
+            + Send
+            + Sync
+            + 'static,
+        K: DBData + Sync + From<KD>,
+        V: DBData + Sync + From<VD>,
+    {
+        let relation_schema: Relation = Self::parse_relation_schema(schema).unwrap();
+        let Some(primary_key) = relation_schema.primary_key.clone() else {
+            panic!(
+                "Primary key not found for relation {}",
+                relation_schema.name
+            );
+        };
+
+        self.register_input_collection_handle(InputCollectionHandle::new(
+            relation_schema.clone(),
+            DeLazyMapHandle::new(handle, value_key_func.clone()),
+            stream.local_node_id(),
+        ))
+        .unwrap();
+
+        let key_schema_name =
+            SqlIdentifier::new(format!("{}.key", relation_schema.name.name()), false);
+
+        let circuit = stream.circuit().clone();
+        circuit.region(
+            &format!("create materialized table {}", relation_schema.name.name()),
+            move || {
+                // Inputs are also outputs.
+                let handles = self
+                    .register_output_map_persistent_inner(
+                        Self::output_persistent_id(&stream).as_deref(),
+                        stream,
+                        None,
+                        None,
+                        &relation_schema,
+                        &key_schema_name,
+                        true,
+                        true,
+                        true,
+                        primary_key.as_slice(),
+                    )
+                    .unwrap();
                 self.register_output_batch_handles(&relation_schema.name, handles)
                     .unwrap();
             },
@@ -724,6 +808,7 @@ impl Catalog {
                         alias_as_index,
                         &schema,
                         &SqlIdentifier::new(format!("{}.key", schema.name.name()), false),
+                        false,
                         true,
                         true,
                         key_fields,
@@ -757,6 +842,7 @@ impl Catalog {
         alias_as_index: Option<SqlIdentifier>,
         schema: &Relation,
         key_schema_name: &SqlIdentifier,
+        is_input: bool,
         materialized: bool,
         accumulate: bool,
         key_fields: &[String],
@@ -790,7 +876,7 @@ impl Catalog {
             &name,
             &stream,
             materialized && accumulate,
-            materialized && accumulate,
+            materialized && !is_input,
         );
 
         let (delta_handle, delta_gid) = circuit
@@ -805,6 +891,8 @@ impl Catalog {
             let (integrate_handle, integral_gid) =
                 if let Some(gathered_integral_stream) = gathered_integral_stream {
                     gathered_integral_stream
+                } else if accumulate {
+                    stream.shard_accumulate_integrate_trace()
                 } else {
                     // This is an integral of an input table with a primary key. We don't support sending a snapshot
                     // of table to a connector, so we don't need to use the gathered stream.
@@ -918,6 +1006,7 @@ impl Catalog {
                 index_name,
                 false,
                 false,
+                false,
                 key_fields,
             )?;
 
@@ -1008,6 +1097,7 @@ impl Catalog {
                     None,
                     &value_schema,
                     index_name,
+                    false,
                     true,
                     true,
                     key_fields,

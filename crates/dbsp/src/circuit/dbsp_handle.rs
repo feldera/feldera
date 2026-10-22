@@ -1,9 +1,9 @@
 use crate::circuit::GlobalNodeId;
 use crate::circuit::checkpointer::Checkpointer;
-use crate::circuit::circuit_builder::{CircuitHandle, ConcurrentRestoreOutcome};
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::operator_traits::OperatorCheckpoint;
 use crate::circuit::schedule::CommitProgress;
+use crate::circuit::{bootstrap::ConcurrentRestoreOutcome, circuit_builder::CircuitHandle};
 use crate::monitor::visual_graph::Graph;
 use crate::operator::dynamic::balance::{BalancerHint, PartitioningPolicy};
 use crate::storage::backend::StorageError;
@@ -50,7 +50,7 @@ use crate::circuit::circuit_builder::Stream;
 use crate::profile::{DbspProfile, GraphProfile, WorkerProfile};
 
 use super::SchedulerError;
-use super::circuit_builder::BootstrapInfo;
+use super::bootstrap::BootstrapInfo;
 use super::runtime::WorkerPanicInfo;
 
 /// Default ratio of merger threads to worker threads.
@@ -346,6 +346,12 @@ pub struct CircuitConfig {
     /// Used to calculate the memory pressure level.
     pub max_rss_bytes: Option<u64>,
 
+    /// Part of the process memory, in bytes, that other parts of the process
+    /// (such as DataFusion) use outside the circuit. The circuit's memory
+    /// limit is `max_rss_bytes`, or the memory available to the process if
+    /// lower, minus this amount.
+    pub reserved_memory_bytes: u64,
+
     /// Optionally, CPU numbers for pinning the worker threads.
     pub pin_cpus: Vec<usize>,
 
@@ -384,6 +390,29 @@ pub struct CircuitConfig {
 /// chunk size.
 pub fn splitter_output_chunk_size() -> usize {
     Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records() as usize)
+}
+
+/// Returns how many keys a lazy input map resolves before it yields.
+///
+/// The `LazyUpsert` operator yields after scanning
+/// `lazy_input_map_keys_per_step` keys, regardless of the number of output
+/// updates it has produced.
+///
+/// # Returns
+///
+/// Keys, or the default when no runtime or no tweak sets it.
+pub fn lazy_input_map_keys_per_step() -> usize {
+    Runtime::with_dev_tweaks(|d| d.lazy_input_map_keys_per_step() as usize)
+}
+
+/// Returns the minimum size of the key blocks in the accumulator used by the lazy
+/// upsert operator.
+///
+/// # Returns
+///
+/// Bytes, or the default when no runtime or no tweak sets it.
+pub fn lazy_input_map_key_block_bytes() -> usize {
+    Runtime::with_dev_tweaks(|d| d.lazy_input_map_key_block_bytes() as usize)
 }
 
 /// Returns the number of records to preallocate in the first iteration of loops
@@ -590,6 +619,7 @@ impl CircuitConfig {
         Self {
             layout: Layout::new_solo(n),
             max_rss_bytes: None,
+            reserved_memory_bytes: 0,
             pin_cpus: Vec::new(),
             mode: Mode::Ephemeral,
             step_size: StepSize::default(),
@@ -602,6 +632,11 @@ impl CircuitConfig {
 
     pub fn with_max_rss_bytes(mut self, max_rss: Option<u64>) -> Self {
         self.max_rss_bytes = max_rss;
+        self
+    }
+
+    pub fn with_reserved_memory_bytes(mut self, reserved: u64) -> Self {
+        self.reserved_memory_bytes = reserved;
         self
     }
 
@@ -645,6 +680,11 @@ impl CircuitConfig {
         self
     }
 
+    pub fn with_lazy_input_map_keys_per_step(mut self, keys: u64) -> Self {
+        self.dev_tweaks.lazy_input_map_keys_per_step = Some(keys);
+        self
+    }
+
     pub fn with_buffer_cache_strategy(mut self, strategy: BufferCacheStrategy) -> Self {
         self.dev_tweaks.buffer_cache_strategy = Some(strategy);
         self
@@ -665,7 +705,9 @@ impl CircuitConfig {
 
     #[cfg(test)]
     pub fn with_fbuf_slab_bytes_per_class(mut self, bytes_per_class: usize) -> Self {
-        self.dev_tweaks.fbuf_slab_bytes_per_class = Some(bytes_per_class);
+        self.dev_tweaks.fbuf_slab_size_per_class = Some(
+            feldera_types::size::ConfigSize::from_bytes(bytes_per_class as u64),
+        );
         self
     }
 
@@ -2926,6 +2968,7 @@ impl CheckpointPublisher {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use feldera_types::size::ConfigSize;
     use std::fs::{File, create_dir_all};
     use std::io;
     use std::path::Path;
@@ -3515,8 +3558,8 @@ pub(crate) mod tests {
     }
 
     /// Like [mkconfig], with `workers` workers, keeping batches smaller than
-    /// `min_storage_bytes` in memory.  A step's output batches stay in memory
-    /// unless `min_storage_bytes` is 0.
+    /// `min_spill_size` in memory.  A step's output batches stay in memory
+    /// unless `min_spill_size` is 0.
     fn mkconfig_with(path: &Path, workers: usize, min_storage_bytes: usize) -> CircuitConfig {
         CircuitConfig::with_workers(workers).with_storage(Some(
             CircuitStorageConfig::for_config(
@@ -3525,8 +3568,8 @@ pub(crate) mod tests {
                     cache: StorageCacheConfig::default(),
                 },
                 StorageOptions {
-                    min_storage_bytes: Some(min_storage_bytes),
-                    min_step_storage_bytes: (min_storage_bytes == 0).then_some(0),
+                    min_spill_size: Some(ConfigSize::from_bytes(min_storage_bytes as u64)),
+                    min_step_spill_size: (min_storage_bytes == 0).then_some(ConfigSize::ZERO),
                     ..StorageOptions::default()
                 },
             )

@@ -68,6 +68,13 @@ pub enum PermanentSuspendError {
 
     #[error("Input endpoint {0:?} does not support suspend")]
     UnsupportedInputEndpoint(String),
+
+    /// The input endpoint failed with a fatal error while it held a barrier.
+    /// It never reports another step, so the barrier never clears.
+    #[error(
+        "Input endpoint {0:?} failed with a fatal error at a position that cannot be checkpointed; fix the cause of the error, then stop the pipeline and start it again to resume from the last checkpoint"
+    )]
+    FailedInputEndpointBarrier(String),
 }
 
 /// Reasons why a pipeline cannot be suspended at this time.

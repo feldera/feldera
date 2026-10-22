@@ -30,6 +30,7 @@ use dbsp::{
 };
 use feldera_macros::{IsNone, OrdRepr};
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
+use feldera_types::size::ConfigSize;
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
 use rkyv::{Archive, Deserialize, Serialize};
@@ -228,7 +229,7 @@ fn bench<K: BenchKey>(args: &Args, storage: Storage, seek: Seek) {
             },
             StorageOptions {
                 // Every batch with content goes to storage.
-                min_step_storage_bytes: Some(0),
+                min_step_spill_size: Some(ConfigSize::ZERO),
                 ..StorageOptions::default()
             },
         )
@@ -251,7 +252,7 @@ fn bench<K: BenchKey>(args: &Args, storage: Storage, seek: Seek) {
                 .collect();
             let zset = OrdZSet::<K>::from_tuples((), tuples);
             let (elapsed_ns, hits) = time_lookups(&zset, &lookups, seek);
-            *result.lock().unwrap() = Some((elapsed_ns, hits, zset.key_count()));
+            *result.lock().unwrap() = Some((elapsed_ns, hits, zset.key_count_upper_bound()));
         })
         .expect("failed to start DBSP runtime")
     };

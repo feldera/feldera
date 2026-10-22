@@ -3,6 +3,9 @@
 -- A copy of the billion-cell spreadsheet demo from https://github.com/feldera/techdemo-spreadsheet.
 --
 
+-- spreadsheet_data is unbounded
+SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = 1;
+
 -- Given a cell value as a formula (e.g., =A0+B0), and a context with cell values
 -- referenced in the formula, returns the computed value of the cell
 CREATE FUNCTION cell_value(cell VARCHAR(64), mentions_ids BIGINT ARRAY, mentions_values VARCHAR(64) ARRAY) RETURNS VARCHAR(64);

@@ -1,3 +1,5 @@
+pub(crate) mod multihost;
+
 use crate::storage::init;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 

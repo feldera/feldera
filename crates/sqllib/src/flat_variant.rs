@@ -8,13 +8,7 @@
 //! dealloc, and, because the encoding is canonical (map keys are stored
 //! sorted), equality is a memcmp except through float payloads.
 //!
-//! Programs opt in with `SET feldera_flat_variant = 'on'` (or globally with the
-//! `FELDERA_FLAT_VARIANT` environment variable), which makes the SQL compiler
-//! emit `FlatVariant` for VARIANT columns and the `FV` function-name grid
-//! (`cast_to_FV_*`, `indexFV*`, `parse_json_fv`, `to_json_FV`, `typeof_fv`,
-//! `variantnull_fv`, and the JSON_*/VARIANT_* transformation functions; see
-//! `flat_variant::casts` and `flat_variant::functions`). Connector metadata
-//! keeps the enum `Variant`.
+//! This is the default representation of the SQL VARIANT type.
 //!
 //! # Encoding
 //!
@@ -63,13 +57,14 @@ use feldera_types::serde_with_context::{
 };
 use rkyv::ser::{ScratchSpace, Serializer as RkyvSerializer};
 use rkyv::vec::{ArchivedVec, VecResolver};
-use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use serde::de::{DeserializeSeed, IntoDeserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use size_of::SizeOf;
 use std::borrow::Cow;
 
-use crate::variant::Variant;
+#[allow(deprecated)]
+use crate::variant::{NumberTokenValue, TokenValue, Variant};
 use crate::{
     ByteArray, Date, LongInterval, ShortInterval, SqlString, Time, Timestamp, TimestampTz, Uuid,
 };
@@ -99,13 +94,16 @@ pub(crate) const TAG_TIMESTAMP: u8 = 17;
 pub(crate) const TAG_SHORT_INTERVAL: u8 = 18;
 pub(crate) const TAG_LONG_INTERVAL: u8 = 19;
 pub(crate) const TAG_BINARY: u8 = 20;
-pub(crate) const TAG_GEOMETRY: u8 = 21;
+pub(crate) const TAG_GEO_POINT: u8 = 21;
 pub(crate) const TAG_UUID: u8 = 22;
 pub(crate) const TAG_ARRAY: u8 = 23;
 pub(crate) const TAG_MAP: u8 = 24;
 pub(crate) const TAG_TIMESTAMP_TZ: u8 = 25;
 
 // The type
+
+/// The Rust type of a SQL `VARIANT` value.
+pub type SqlVariant = FlatVariant;
 
 /// A SQL VARIANT value stored as one flat, canonically encoded byte buffer.
 ///
@@ -351,7 +349,70 @@ impl Hash for FlatVariant {
 
 impl fmt::Debug for FlatVariant {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "FlatVariant({:?})", Variant::from(self))
+        f.debug_tuple("FlatVariant").field(&Decoded(self)).finish()
+    }
+}
+
+/// One encoded value, rendered as its tag and payload.
+///
+/// A wrapper rather than a plain function so that containers nest through
+/// `debug_list`/`debug_map`, which is what gives `{:#?}` its indentation.
+struct Decoded<'a>(&'a FlatVariant);
+
+impl fmt::Debug for Decoded<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use crate::flat_variant::casts::FVRef;
+
+        let value = self.0;
+        let bytes = value.as_bytes();
+        match crate::flat_variant::casts::view(bytes) {
+            FVRef::SqlNull => f.write_str("SqlNull"),
+            FVRef::VariantNull => f.write_str("VariantNull"),
+            FVRef::Boolean(x) => f.debug_tuple("Boolean").field(&x).finish(),
+            FVRef::TinyInt(x) => f.debug_tuple("TinyInt").field(&x).finish(),
+            FVRef::SmallInt(x) => f.debug_tuple("SmallInt").field(&x).finish(),
+            FVRef::Int(x) => f.debug_tuple("Int").field(&x).finish(),
+            FVRef::BigInt(x) => f.debug_tuple("BigInt").field(&x).finish(),
+            FVRef::UTinyInt(x) => f.debug_tuple("UTinyInt").field(&x).finish(),
+            FVRef::USmallInt(x) => f.debug_tuple("USmallInt").field(&x).finish(),
+            FVRef::UInt(x) => f.debug_tuple("UInt").field(&x).finish(),
+            FVRef::UBigInt(x) => f.debug_tuple("UBigInt").field(&x).finish(),
+            FVRef::Real(x) => f.debug_tuple("Real").field(&x).finish(),
+            FVRef::Double(x) => f.debug_tuple("Double").field(&x).finish(),
+            FVRef::Decimal(significand, scale) => f
+                .debug_tuple("Decimal")
+                .field(&DynamicDecimal::new(significand, scale))
+                .finish(),
+            FVRef::String(x) => f.debug_tuple("String").field(&x).finish(),
+            FVRef::Date(x) => f.debug_tuple("Date").field(&x).finish(),
+            FVRef::Time(x) => f.debug_tuple("Time").field(&x).finish(),
+            FVRef::Timestamp(x) => f.debug_tuple("Timestamp").field(&x).finish(),
+            FVRef::TimestampTz(x) => f.debug_tuple("TimestampTz").field(&x).finish(),
+            FVRef::ShortInterval(x) => f.debug_tuple("ShortInterval").field(&x).finish(),
+            FVRef::LongInterval(x) => f.debug_tuple("LongInterval").field(&x).finish(),
+            FVRef::Binary(x) => f.debug_tuple("Binary").field(&x).finish(),
+            FVRef::GeoPoint(x) => f.debug_tuple("GeoPoint").field(&x).finish(),
+            FVRef::Uuid(x) => f.debug_tuple("Uuid").field(&x).finish(),
+            FVRef::Array => {
+                let c = Container::new(bytes);
+                let mut list = f.debug_list();
+                for i in 0..c.count {
+                    list.entry(&Decoded(&value.subvalue(c.element(i))));
+                }
+                list.finish()
+            }
+            FVRef::Map => {
+                let c = Container::new(bytes);
+                let mut map = f.debug_map();
+                for i in 0..c.count {
+                    map.entry(
+                        &Decoded(&value.subvalue(c.element(i))),
+                        &Decoded(&value.subvalue(c.map_value(i))),
+                    );
+                }
+                map.finish()
+            }
+        }
     }
 }
 
@@ -487,7 +548,7 @@ pub(crate) fn cmp_values(a: &[u8], b: &[u8]) -> Ordering {
         }
         TAG_REAL => f32_at(pa, 0).cmp(&f32_at(pb, 0)),
         TAG_DOUBLE => f64_at(pa, 0).cmp(&f64_at(pb, 0)),
-        TAG_GEOMETRY => (f64_at(pa, 0), f64_at(pa, 8)).cmp(&(f64_at(pb, 0), f64_at(pb, 8))),
+        TAG_GEO_POINT => (f64_at(pa, 0), f64_at(pa, 8)).cmp(&(f64_at(pb, 0), f64_at(pb, 8))),
         TAG_DECIMAL => {
             let da = i128::from_le_bytes(payload_array(&pa[..16]));
             let db = i128::from_le_bytes(payload_array(&pb[..16]));
@@ -545,7 +606,7 @@ fn hash_value<H: Hasher>(value: &[u8], state: &mut H) {
     match tag {
         TAG_REAL => f32_at(payload, 0).hash(state),
         TAG_DOUBLE => f64_at(payload, 0).hash(state),
-        TAG_GEOMETRY => {
+        TAG_GEO_POINT => {
             f64_at(payload, 0).hash(state);
             f64_at(payload, 8).hash(state);
         }
@@ -1044,6 +1105,7 @@ pub(crate) fn flat_variant_from_parquet(
 // Conversion from/to the enum Variant
 
 /// Encode one `Variant` into the writer; returns the value's range.
+#[allow(deprecated)]
 fn encode_variant(w: &mut Writer, v: &Variant) -> Range<usize> {
     match v {
         Variant::SqlNull => w.scalar(TAG_SQL_NULL, &[]),
@@ -1074,7 +1136,7 @@ fn encode_variant(w: &mut Writer, v: &Variant) -> Range<usize> {
             let mut payload = [0u8; 16];
             payload[..8].copy_from_slice(&g.left().into_inner().to_le_bytes());
             payload[8..].copy_from_slice(&g.right().into_inner().to_le_bytes());
-            w.scalar(TAG_GEOMETRY, &payload)
+            w.scalar(TAG_GEO_POINT, &payload)
         }
         Variant::Uuid(u) => w.scalar(TAG_UUID, &u.to_bytes()[..]),
         Variant::Array(items) => w.array_in_place(items.len(), |w, i| {
@@ -1140,6 +1202,7 @@ pub(crate) fn build_document_infallible(
 /// The connector-metadata boundary: the adapters always build metadata as
 /// the enum `Variant`, and a metadata DEFAULT expression for a FlatVariant
 /// column converts it once here. Goes away with the enum.
+#[allow(deprecated)]
 impl From<&Variant> for FlatVariant {
     fn from(v: &Variant) -> Self {
         build_document_infallible(|w| encode_variant(w, v))
@@ -1147,6 +1210,7 @@ impl From<&Variant> for FlatVariant {
 }
 
 /// Decode one complete encoded value back into a `Variant`.
+#[allow(deprecated)]
 fn decode_variant(bytes: &[u8]) -> Variant {
     let payload = &bytes[1..];
     match bytes[0] {
@@ -1187,7 +1251,7 @@ fn decode_variant(bytes: &[u8]) -> Variant {
             payload_array(payload),
         ))),
         TAG_BINARY => Variant::Binary(ByteArray::new(payload)),
-        TAG_GEOMETRY => Variant::Geometry(crate::GeoPoint::new(
+        TAG_GEO_POINT => Variant::Geometry(crate::GeoPoint::new(
             f64::from_le_bytes(payload_array(&payload[..8])),
             f64::from_le_bytes(payload_array(&payload[8..])),
         )),
@@ -1215,6 +1279,7 @@ fn decode_variant(bytes: &[u8]) -> Variant {
     }
 }
 
+#[allow(deprecated)]
 impl From<&FlatVariant> for Variant {
     fn from(v: &FlatVariant) -> Self {
         decode_variant(v.as_bytes())
@@ -1222,6 +1287,7 @@ impl From<&FlatVariant> for Variant {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 impl From<FlatVariant> for Variant {
     fn from(v: FlatVariant) -> Self {
         Variant::from(&v)
@@ -1232,6 +1298,7 @@ impl From<FlatVariant> for Variant {
 // as the enum Variant, and a metadata DEFAULT expression for a FlatVariant
 // VARIANT column converts once here. The only sanctioned production use of
 // an enum-to-flat conversion.
+#[allow(deprecated)]
 impl From<Variant> for FlatVariant {
     fn from(v: Variant) -> Self {
         FlatVariant::from(&v)
@@ -1241,12 +1308,14 @@ impl From<Variant> for FlatVariant {
 /// See [`From<Variant>`]: the connector-metadata boundary conversion for a
 /// nullable VARIANT column with a metadata DEFAULT.
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn variant_to_fvN(v: Option<Variant>) -> Option<FlatVariant> {
     v.map(|v| FlatVariant::from(&v))
 }
 
 /// See [`From<Variant>`]: the non-null variant of the boundary conversion.
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn variant_to_fv(v: Variant) -> FlatVariant {
     FlatVariant::from(&v)
 }
@@ -1259,6 +1328,7 @@ pub fn variant_to_fv(v: Variant) -> FlatVariant {
 // on this); it does not become a Rust `None`. Test-only, like the other
 // bridges.
 #[cfg(test)]
+#[allow(deprecated)]
 impl TryFrom<Variant> for Option<FlatVariant> {
     type Error = Box<dyn std::error::Error>;
 
@@ -1526,29 +1596,40 @@ impl<'de> Visitor<'de> for BuildValue<'_> {
     where
         V: MapAccess<'de>,
     {
-        match map.next_key_seed(KeyClassifier)? {
-            Some(KeyClass::Number) => {
-                let number: DynamicDecimal = map.next_value()?;
-                Ok(self.w.scalar(
-                    TAG_DECIMAL,
-                    &casts::decimal_payload(number.significand(), number.exponent()),
-                ))
-            }
+        let first_entry = match map.next_key_seed(KeyClassifier)? {
+            None => return Ok(self.w.map(&[])),
             Some(KeyClass::Map(first_key)) => {
-                let mut entries = Vec::new();
                 let key_range = self.w.scalar(TAG_STRING, first_key.as_bytes());
                 let val_range = map.next_value_seed(BuildValue { w: self.w })?;
-                entries.push((key_range, val_range));
-                while let Some(key) = map.next_key::<String>()? {
-                    let key_range = self.w.scalar(TAG_STRING, key.as_bytes());
-                    let val_range = map.next_value_seed(BuildValue { w: self.w })?;
-                    entries.push((key_range, val_range));
-                }
-                sort_map_entries(&self.w.out, &mut entries);
-                Ok(self.w.map(&entries))
+                (key_range, val_range)
             }
-            None => Ok(self.w.map(&[])),
+            Some(KeyClass::Number) => {
+                match map.next_value_seed(NumberTokenValue(BuildValue { w: self.w }))? {
+                    TokenValue::Number(text) => {
+                        let number = DynamicDecimal::deserialize(
+                            IntoDeserializer::<V::Error>::into_deserializer(text),
+                        )?;
+                        return Ok(self.w.scalar(
+                            TAG_DECIMAL,
+                            &casts::decimal_payload(number.significand(), number.exponent()),
+                        ));
+                    }
+                    TokenValue::Entry(val_range) => {
+                        let key_range = self.w.scalar(TAG_STRING, DECIMAL_KEY_TOKEN.as_bytes());
+                        (key_range, val_range)
+                    }
+                }
+            }
+        };
+
+        let mut entries = vec![first_entry];
+        while let Some(key) = map.next_key::<String>()? {
+            let key_range = self.w.scalar(TAG_STRING, key.as_bytes());
+            let val_range = map.next_value_seed(BuildValue { w: self.w })?;
+            entries.push((key_range, val_range));
         }
+        sort_map_entries(&self.w.out, &mut entries);
+        Ok(self.w.map(&entries))
     }
 }
 
@@ -1686,7 +1767,7 @@ impl Serialize for Enc<'_> {
                 .serialize_with_context(serializer, self.config),
             // ByteArray honors the config's binary format.
             TAG_BINARY => ByteArray::new(p).serialize_with_context(serializer, self.config),
-            TAG_GEOMETRY => crate::GeoPoint::new(
+            TAG_GEO_POINT => crate::GeoPoint::new(
                 f64::from_le_bytes(payload_array(&p[..8])),
                 f64::from_le_bytes(payload_array(&p[8..])),
             )
@@ -1784,8 +1865,83 @@ impl crate::__HashRepr for ArchivedFlatVariant {
 
 #[cfg(test)]
 mod tests {
+    #![allow(deprecated)]
+
     use super::*;
+    use crate::Map;
     use proptest::prelude::*;
+
+    /// Every tag renders under its own name, and containers render their
+    /// elements rather than their raw bytes.
+    #[test]
+    fn debug_renders_every_tag() {
+        let scalars: Vec<FlatVariant> = vec![
+            FlatVariant::sql_null(),
+            FlatVariant::variant_null(),
+            FlatVariant::from(true),
+            FlatVariant::from(1i8),
+            FlatVariant::from(2i16),
+            FlatVariant::from(3i32),
+            FlatVariant::from(4i64),
+            FlatVariant::from(5u8),
+            FlatVariant::from(6u16),
+            FlatVariant::from(7u32),
+            FlatVariant::from(8u64),
+            FlatVariant::from(F32::new(1.5)),
+            FlatVariant::from(F64::new(2.5)),
+            FlatVariant::from(
+                crate::SqlDecimal::<10, 2>::try_from(DynamicDecimal::new(1234, 2)).unwrap(),
+            ),
+            FlatVariant::from(SqlString::from_ref("s")),
+            FlatVariant::from(Date::from_days(3)),
+            FlatVariant::from(Time::from_nanoseconds(4)),
+            FlatVariant::from(Timestamp::from_microseconds(5)),
+            FlatVariant::from(TimestampTz::from_microseconds(6)),
+            FlatVariant::from(ShortInterval::from_microseconds(7)),
+            FlatVariant::from(LongInterval::from_months(8)),
+            FlatVariant::from(ByteArray::new(&[0xab])),
+            FlatVariant::from(crate::GeoPoint::new(1.0, 2.0)),
+            FlatVariant::from(Uuid::from_bytes([0; 16])),
+        ];
+        let rendered = format!("{:?}", FlatVariant::from(Arc::new(scalars)));
+        for name in [
+            "SqlNull",
+            "VariantNull",
+            "Boolean(true)",
+            "TinyInt(1)",
+            "SmallInt(2)",
+            "Int(3)",
+            "BigInt(4)",
+            "UTinyInt(5)",
+            "USmallInt(6)",
+            "UInt(7)",
+            "UBigInt(8)",
+            "Real(1.5)",
+            "Double(2.5)",
+            "Decimal(12.34)",
+            "String(\"s\")",
+            "Date(",
+            "Time(",
+            "Timestamp(",
+            "TimestampTz(",
+            "ShortInterval(",
+            "LongInterval(",
+            "Binary([171])",
+            "GeoPoint(",
+            "Uuid(",
+        ] {
+            assert!(rendered.contains(name), "{name} missing from {rendered}");
+        }
+
+        let map: Map<FlatVariant, FlatVariant> = Arc::new(BTreeMap::from([(
+            FlatVariant::from(SqlString::from_ref("k")),
+            FlatVariant::from(Arc::new(vec![FlatVariant::from(9i32)])),
+        )]));
+        assert_eq!(
+            format!("{:?}", FlatVariant::from(map)),
+            "FlatVariant({String(\"k\"): [Int(9)]})"
+        );
+    }
 
     fn scalar() -> impl Strategy<Value = Variant> {
         prop_oneof![
@@ -2046,8 +2202,8 @@ mod tests {
             check_from(
                 &a,
                 &a2,
-                c1::cast_to_GeoPointN_V,
-                c2::cast_to_GeoPointN_FV,
+                c1::cast_to_geopointN_V,
+                c2::cast_to_geopointN_FV,
                 "geopoint",
             );
             check_interval_units!(
@@ -2260,7 +2416,7 @@ mod tests {
             TimestampTz::from_microseconds(1_700_000_000_000_000)
         );
         check_to_variant!(Uuid, Uuid::from_bytes([9; 16]));
-        check_to_variant!(GeoPoint, crate::GeoPoint::new(1.0, -2.0));
+        check_to_variant!(geopoint, crate::GeoPoint::new(1.0, -2.0));
         let short = ShortInterval::from_microseconds(90_061_000_000);
         check_to_variant!(ShortInterval_DAYS, short);
         check_to_variant!(ShortInterval_HOURS, short);
@@ -2401,7 +2557,7 @@ mod tests {
                 Timestamp,
                 TimestampTz,
                 Uuid,
-                GeoPoint,
+                geopoint,
                 ShortInterval_DAYS,
                 ShortInterval_HOURS,
                 ShortInterval_DAYS_TO_HOURS,
@@ -2686,6 +2842,9 @@ mod tests {
             r#""hello""#,
             r#"[1, "two", null, {"a": false}]"#,
             r#"{"b": 1, "a": [2.5]}"#,
+            r#"{"$serde_json::private::Number": "1"}"#,
+            r#"{"$serde_json::private::Number": "1", "x": 2}"#,
+            r#"{"$serde_json::private::Number": {"a": 184467440737095516150}}"#,
         ];
         for case in valid {
             let v1 = crate::string::parse_json_s(SqlString::from_ref(case));
@@ -2985,5 +3144,66 @@ mod tests {
         let b = Variant::Map(map.into());
         let b2 = FlatVariant::from(&b);
         assert_eq!(v::json_each_bigint_V(b), functions::json_each_bigint_FV(b2));
+    }
+
+    #[test]
+    fn decimal_to_number_keeps_fraction() {
+        use crate::flat_variant::casts::{DecodeFV, cast_to_dN_FV, cast_to_fN_FV};
+        use crate::{
+            F32, F64, SqlDecimal, cast_to_d_SqlDecimal, cast_to_dN_V, cast_to_f_SqlDecimal,
+            cast_to_fN_V, cast_to_i8_SqlDecimal, cast_to_u8_SqlDecimal,
+        };
+
+        // Conversions to integers round toward zero
+        for (significand, scale, real, integer) in [(15, 1, 1.5, 1), (-275, 2, -2.75, -2)] {
+            let v = Variant::SqlDecimal((significand, scale));
+            let fv = FlatVariant::from(&v);
+            assert_eq!(F64::try_from(v.clone()).unwrap(), F64::from(real));
+            assert_eq!(F64::decode(fv.as_bytes()).unwrap(), F64::from(real));
+            assert_eq!(F32::try_from(v.clone()).unwrap(), F32::from(real as f32));
+            assert_eq!(F32::decode(fv.as_bytes()).unwrap(), F32::from(real as f32));
+            assert_eq!(i32::try_from(v.clone()).unwrap(), integer);
+            assert_eq!(i32::decode(fv.as_bytes()).unwrap(), integer);
+        }
+
+        // The REAL and DOUBLE values of a DECIMAL with the given scale
+        fn typed<const S: usize>(significand: i128) -> (F32, F64) {
+            let decimal = SqlDecimal::<38, S>::new(significand, S as i32).unwrap();
+            let real = cast_to_f_SqlDecimal(decimal).unwrap();
+            let double = cast_to_d_SqlDecimal(decimal).unwrap();
+            (real, double)
+        }
+
+        // A VARIANT holding a DECIMAL converts to the same value as the DECIMAL itself
+        for (significand, scale, (real, double)) in [
+            (79450944636602, 17, typed::<17>(79450944636602)),
+            (1, 38, typed::<38>(1)),
+        ] {
+            let v = Variant::SqlDecimal((significand, scale));
+            let fv = FlatVariant::from(&v);
+            assert_eq!(cast_to_fN_V(v.clone()).unwrap(), Some(real));
+            assert_eq!(F32::try_from(v.clone()).unwrap(), real);
+            assert_eq!(cast_to_fN_FV(fv.clone()).unwrap(), Some(real));
+            assert_eq!(F32::decode(fv.as_bytes()).unwrap(), real);
+            assert_eq!(cast_to_dN_V(v.clone()).unwrap(), Some(double));
+            assert_eq!(F64::try_from(v).unwrap(), double);
+            assert_eq!(cast_to_dN_FV(fv.clone()).unwrap(), Some(double));
+            assert_eq!(F64::decode(fv.as_bytes()).unwrap(), double);
+        }
+
+        let too_large = Variant::SqlDecimal((3005, 1));
+        let too_large_decimal = SqlDecimal::<38, 1>::new(3005, 1).unwrap();
+        assert!(cast_to_i8_SqlDecimal(too_large_decimal).is_err());
+        assert!(i8::try_from(too_large.clone()).is_err());
+        assert!(i8::decode(FlatVariant::from(&too_large).as_bytes()).is_err());
+
+        let negative = Variant::SqlDecimal((-5, 1));
+        let negative_decimal = SqlDecimal::<38, 1>::new(-5, 1).unwrap();
+        assert_eq!(cast_to_u8_SqlDecimal(negative_decimal).unwrap(), 0);
+        assert_eq!(u8::try_from(negative.clone()).unwrap(), 0);
+        assert_eq!(
+            u8::decode(FlatVariant::from(&negative).as_bytes()).unwrap(),
+            0
+        );
     }
 }

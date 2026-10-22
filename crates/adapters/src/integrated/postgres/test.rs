@@ -1089,7 +1089,7 @@ fn payload_bytes_in_error(message: &str) -> Option<usize> {
 /// A statement Postgres rejects must not carry the whole batch into the error
 /// message.
 ///
-/// The payload of one statement is as large as `max_buffer_size_bytes` (1 MiB by
+/// The payload of one statement is as large as `max_buffer_size` (1 MiB by
 /// default) and an endpoint retains up to `MAX_CONNECTOR_ERRORS` messages per
 /// tag, so quoting the payload in full grew `/stats` and
 /// `/output_endpoints/{name}/stats` past the size limit the pipeline manager
@@ -3480,7 +3480,7 @@ fn test_pg_non_unique_keys_skipped() {
     // filters out conflicting keys before they reach postgres.
     let mut table = PostgresTestStruct::create_table(&table_name, url, true, &None);
 
-    let errors: Arc<Mutex<Vec<(String, Option<String>)>>> = Arc::new(Mutex::new(Vec::new()));
+    let errors = Arc::new(Mutex::new(Vec::<(String, Option<String>)>::new()));
     let errors_clone = errors.clone();
 
     let controller = Controller::with_test_config(

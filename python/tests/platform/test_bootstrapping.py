@@ -2,7 +2,10 @@ import json
 import os
 import uuid
 
+import pytest
+
 from feldera.enums import BootstrapPolicy, PipelineStatus
+from feldera.rest.errors import TableReloadNotAllowedError
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT, enterprise_only
@@ -15,6 +18,40 @@ from feldera.testutils import (
     FELDERA_TEST_NUM_HOSTS,
     single_host_only,
 )
+
+
+def wait_for_output_progress(
+    pipeline, min_processed_records: int, expected_transmitted_records: int
+):
+    """Wait for output connector `v1.out` to process the first
+    `min_processed_records` input records, then check that it transmitted
+    exactly `expected_transmitted_records` records."""
+
+    def output_metrics():
+        return pipeline.output_connector_stats("v1", "out").metrics
+
+    # Don't wait for the connector's `total_processed_input_records`: with
+    # more than one host, it counts only the input of the connector's own
+    # host, and HTTP input for `t1` can go to another host.  Instead, wait for
+    # the pipeline to process the records, and then for the connector to
+    # process every step that the pipeline started by then.
+    wait_for_condition(
+        f"pipeline reaches {min_processed_records} processed records",
+        lambda: (
+            (pipeline.stats().global_metrics.total_processed_records or 0)
+            >= min_processed_records
+        ),
+        timeout_s=120.0,
+        poll_interval_s=1.0,
+    )
+    initiated_steps = pipeline.stats().global_metrics.total_initiated_steps or 0
+    wait_for_condition(
+        f"output connector processes {initiated_steps} steps",
+        lambda: (output_metrics().total_processed_steps or 0) >= initiated_steps,
+        timeout_s=120.0,
+        poll_interval_s=1.0,
+    )
+    assert (output_metrics().transmitted_records or 0) == expected_transmitted_records
 
 
 @enterprise_only
@@ -340,26 +377,6 @@ WITH ('connectors' = '{connectors}')
 AS SELECT {view_expr} AS x FROM t1;
 """
 
-    def output_metrics():
-        return pipeline.output_connector_stats("v1", "out").metrics
-
-    def processed_records() -> int:
-        return output_metrics().total_processed_input_records or 0
-
-    def transmitted_records() -> int:
-        return output_metrics().transmitted_records or 0
-
-    def wait_for_output_progress(
-        min_processed_records: int, expected_transmitted_records: int
-    ):
-        wait_for_condition(
-            f"output connector reaches {min_processed_records} processed records",
-            lambda: processed_records() >= min_processed_records,
-            timeout_s=120.0,
-            poll_interval_s=1.0,
-        )
-        assert transmitted_records() == expected_transmitted_records
-
     pipeline = PipelineBuilder(
         TEST_CLIENT,
         pipeline_name,
@@ -374,7 +391,9 @@ AS SELECT {view_expr} AS x FROM t1;
     pipeline.start()
     pipeline.input_json("t1", [{"x": 1}, {"x": 2}, {"x": 3}])
     # Three records ingested, three records sent.
-    wait_for_output_progress(min_processed_records=3, expected_transmitted_records=3)
+    wait_for_output_progress(
+        pipeline, min_processed_records=3, expected_transmitted_records=3
+    )
     expected_processed_records = 3
     pipeline.checkpoint(True)
     pipeline.stop(force=True)
@@ -388,6 +407,7 @@ AS SELECT {view_expr} AS x FROM t1;
     # Modified connector keeps its transmitted record count and doesn't send any new records
     # in silent mode.
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_processed_records,
     )
@@ -396,6 +416,7 @@ AS SELECT {view_expr} AS x FROM t1;
     # One more record ingested, and one more record sent.
     expected_processed_records += 1
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_processed_records,
     )
@@ -411,6 +432,7 @@ AS SELECT {view_expr} AS x FROM t1;
     )
     # Modified connector keeps its transmitted record count and doesn't send any new records
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_processed_records,
     )
@@ -418,6 +440,7 @@ AS SELECT {view_expr} AS x FROM t1;
     expected_processed_records += 1
     # One more record ingested, and one more record sent.
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_processed_records,
     )
@@ -436,6 +459,7 @@ AS SELECT {view_expr} AS x FROM t1;
     # Non-silent bootstrap should send all accumulated records again.
     expected_transmitted_records = 2 * expected_processed_records
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_transmitted_records,
     )
@@ -445,6 +469,7 @@ AS SELECT {view_expr} AS x FROM t1;
     expected_transmitted_records += 1
     # One more record ingested, and one more record sent.
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_transmitted_records,
     )
@@ -491,26 +516,6 @@ WITH ('connectors' = '{connectors}')
 AS SELECT {view_expr} AS x FROM t1;
 """
 
-    def output_metrics():
-        return pipeline.output_connector_stats("v1", "out").metrics
-
-    def processed_records() -> int:
-        return output_metrics().total_processed_input_records or 0
-
-    def transmitted_records() -> int:
-        return output_metrics().transmitted_records or 0
-
-    def wait_for_output_progress(
-        min_processed_records: int, expected_transmitted_records: int
-    ):
-        wait_for_condition(
-            f"output connector reaches {min_processed_records} processed records",
-            lambda: processed_records() >= min_processed_records,
-            timeout_s=120.0,
-            poll_interval_s=1.0,
-        )
-        assert transmitted_records() == expected_transmitted_records
-
     pipeline = PipelineBuilder(
         TEST_CLIENT,
         pipeline_name,
@@ -525,7 +530,9 @@ AS SELECT {view_expr} AS x FROM t1;
     pipeline.start()
     pipeline.input_json("t1", [{"x": 1}, {"x": 2}, {"x": 3}])
     # Three records ingested, three records sent.
-    wait_for_output_progress(min_processed_records=3, expected_transmitted_records=3)
+    wait_for_output_progress(
+        pipeline, min_processed_records=3, expected_transmitted_records=3
+    )
     expected_processed_records = 3
     # The view holds the full backfilled contents (three rows so far).
     backfilled_records = 3
@@ -545,6 +552,7 @@ AS SELECT {view_expr} AS x FROM t1;
     # rows), unlike silent bootstrap which suppresses them.
     expected_transmitted_records += backfilled_records
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_transmitted_records,
     )
@@ -558,6 +566,7 @@ AS SELECT {view_expr} AS x FROM t1;
     expected_transmitted_records += 1
     backfilled_records += 1
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_transmitted_records,
     )
@@ -577,6 +586,7 @@ AS SELECT {view_expr} AS x FROM t1;
     )
     expected_transmitted_records += backfilled_records
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_transmitted_records,
     )
@@ -589,6 +599,7 @@ AS SELECT {view_expr} AS x FROM t1;
     expected_transmitted_records += 1
     backfilled_records += 1
     wait_for_output_progress(
+        pipeline,
         min_processed_records=expected_processed_records,
         expected_transmitted_records=expected_transmitted_records,
     )
@@ -940,5 +951,145 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
 
     result = list(pipeline.query("SELECT * FROM v1;"))
     assert result == [{"c": 10}]
+
+    pipeline.stop(force=True)
+
+
+@enterprise_only
+@gen_pipeline_name
+def test_bootstrap_reloadable_tables(pipeline_name):
+    """
+    Enterprise: with `BootstrapPolicy.ALLOW`, `reloadable_tables` lets the SDK
+    approve a bootstrap only if every modified table is in the list.
+    """
+
+    def gen_sql(t2_columns: str) -> str:
+        return f"""CREATE TABLE t1(x int) WITH ('materialized'='true');
+CREATE TABLE t2({t2_columns}) WITH ('materialized'='true');
+CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
+CREATE MATERIALIZED VIEW v2 AS SELECT COUNT(*) AS c FROM t2;
+"""
+
+    pipeline = PipelineBuilder(
+        TEST_CLIENT,
+        pipeline_name,
+        sql=gen_sql("y int"),
+        runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
+            fault_tolerance_model=None,  # We will make manual checkpoints in this test.
+        ),
+    ).create_or_replace()
+
+    pipeline.start()
+    pipeline.execute("INSERT INTO t1 VALUES (1), (2), (3);")
+    pipeline.execute("INSERT INTO t2 VALUES (10), (20);")
+    pipeline.checkpoint(True)
+    pipeline.stop(force=True)
+
+    # Modify t2, so bootstrapping must reload it.
+    pipeline.modify(sql=gen_sql("y int, s string"))
+
+    # t2 is not in the list: the pipeline must wait for approval, even with ALLOW.
+    with pytest.raises(TableReloadNotAllowedError) as e:
+        pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW, reloadable_tables=["t1"])
+    assert e.value.blocked_tables == ["t2"]
+    assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
+
+    # Reject. A force stop makes no checkpoint, so the next start sees the same diff.
+    pipeline.stop(force=True)
+
+    pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW, reloadable_tables=["t2"])
+    assert pipeline.status() == PipelineStatus.RUNNING
+
+    # t2 was reloaded: bootstrapping truncated it. t1 kept its state.
+    assert list(pipeline.query("SELECT * FROM v1;")) == [{"c": 3}]
+    assert list(pipeline.query("SELECT * FROM v2;")) == [{"c": 0}]
+
+    pipeline.stop(force=True)
+
+
+@enterprise_only
+@gen_pipeline_name
+def test_bootstrap_reloadable_tables_names(pipeline_name):
+    """
+    Enterprise: `reloadable_tables` matches table names exactly as the
+    bootstrap diff reports them: an unquoted name in lowercase, a quoted name
+    without its quotes, and `""` in a quoted name as one `"`.
+    """
+
+    # Name in SQL, name in the bootstrap diff, view that counts its rows.
+    tables = [
+        ("lower_t", "lower_t", "v_lower"),
+        ("UPPER_T", "upper_t", "v_upper"),
+        ('"MixedCase"', "MixedCase", "v_mixed"),
+        ('"esc""aped"', 'esc"aped', "v_escaped"),
+    ]
+
+    def gen_sql(extra_column: str) -> str:
+        sql = ""
+        for sql_name, _, view in tables:
+            sql += f"CREATE TABLE {sql_name}(x int{extra_column}) WITH ('materialized'='true');\n"
+            sql += f"CREATE MATERIALIZED VIEW {view} AS SELECT COUNT(*) AS c FROM {sql_name};\n"
+        # A table that does not change, so bootstrapping must not reload it.
+        sql += "CREATE TABLE kept_t(x int) WITH ('materialized'='true');\n"
+        sql += "CREATE MATERIALIZED VIEW v_kept AS SELECT COUNT(*) AS c FROM kept_t;\n"
+        return sql
+
+    pipeline = PipelineBuilder(
+        TEST_CLIENT,
+        pipeline_name,
+        sql=gen_sql(""),
+        runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
+            fault_tolerance_model=None,  # We will make manual checkpoints in this test.
+        ),
+    ).create_or_replace()
+
+    pipeline.start()
+    for _, diff_name, _ in tables + [("kept_t", "kept_t", "v_kept")]:
+        # Ad-hoc queries cannot find a table with `"` in its name; use ingress.
+        # Ingress strips the outer quotes and does not unescape `""`.
+        pipeline.input_json(f'"{diff_name}"', [{"x": 1}, {"x": 2}])
+    pipeline.checkpoint(True)
+    pipeline.stop(force=True)
+
+    # Modify the four tables, so bootstrapping must reload them.
+    pipeline.modify(sql=gen_sql(", s string"))
+
+    # The escaped table is not in the list.
+    with pytest.raises(TableReloadNotAllowedError) as e:
+        pipeline.start(
+            bootstrap_policy=BootstrapPolicy.ALLOW,
+            reloadable_tables=["lower_t", "upper_t", "MixedCase"],
+        )
+    assert e.value.blocked_tables == ['esc"aped']
+    assert e.value.approval_diff["program_diff"]["modified_tables"] == sorted(
+        diff_name for _, diff_name, _ in tables
+    )
+    assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
+
+    # Names as written in SQL do not match, except where they equal the diff name.
+    # restart() force-stops without a checkpoint, so the same diff comes back.
+    with pytest.raises(TableReloadNotAllowedError) as e:
+        pipeline.restart(
+            bootstrap_policy=BootstrapPolicy.ALLOW,
+            reloadable_tables=[sql_name for sql_name, _, _ in tables],
+        )
+    assert e.value.blocked_tables == ["MixedCase", 'esc"aped', "upper_t"]
+    assert pipeline.status() == PipelineStatus.AWAITINGAPPROVAL
+
+    # The names in blocked_tables can be passed back.
+    pipeline.restart(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        reloadable_tables=["lower_t", *e.value.blocked_tables],
+    )
+    assert pipeline.status() == PipelineStatus.RUNNING
+
+    # The modified tables were reloaded: bootstrapping truncated them.
+    for _, _, view in tables:
+        assert list(pipeline.query(f"SELECT * FROM {view};")) == [{"c": 0}], view
+    assert list(pipeline.query("SELECT * FROM v_kept;")) == [{"c": 2}]
 
     pipeline.stop(force=True)

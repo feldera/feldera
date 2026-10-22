@@ -727,6 +727,18 @@ describe('Measurement.parseValues tags the new-format metrics', () => {
         expect(elapsed('circuit_runtime_seconds')).toBe(AggregationMode.Sum)
     })
 
+    it('does not add up the step counts that every worker repeats', () => {
+        // Every worker takes the same steps. Adding them up reported each count multiplied by
+        // the worker count.
+        const mode = (id: string, type: string) => parse({
+            metric_id: id, value: { type, value: 927 }
+        }).get(id)!.aggregation
+        expect(mode('steps_count', 'int')).toBe(AggregationMode.Max)
+        expect(mode('invocations_count', 'count')).toBe(AggregationMode.Max)
+        // A count of records is each worker's own, and adds up.
+        expect(mode('state_records_count', 'count')).toBe(AggregationMode.Sum)
+    })
+
     it('takes the largest cache occupancy rather than adding the readings up', () => {
         const parsed = parse({
             metric_id: 'foreground_cache_occupancy',
@@ -779,6 +791,8 @@ describe('Measurement.parseLegacyValues tags the legacy metrics', () => {
         [['Bloom filter hit rate', [1, 2]], 'PercentValue', AggregationMode.WeightedRatio],
         [['batches', 5], 'CountValue', AggregationMode.Sum],
         [['storage size', 5], 'CountValue', AggregationMode.Sum],
+        [['steps', 5], 'CountValue', AggregationMode.Max],
+        [['invocations', 5], 'CountValue', AggregationMode.Max],
         [['time', { secs: 1, nanos: 0 }], 'TimeValue', AggregationMode.Sum],
         [['runtime_elapsed', { secs: 1, nanos: 0 }], 'TimeValue', AggregationMode.Max],
         [['balancer policy', 'round-robin'], 'StringValue', AggregationMode.CommonValue],

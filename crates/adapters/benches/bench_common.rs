@@ -17,9 +17,11 @@ use std::sync::{Arc, Mutex};
 // ---------------------------------------------------------------------------
 
 /// Worker-thread counts used by all output-connector encode benchmarks.
+#[allow(dead_code)] // Only some of the benches that include this module use it
 pub const BENCH_WORKER_COUNTS: [usize; 4] = [1, 2, 4, 8];
 
 /// Record counts used by the scaling benchmarks.
+#[allow(dead_code)] // Only some of the benches that include this module use it
 pub const BENCH_RECORD_COUNTS: [usize; 3] = [100_000, 1_000_000, 2_000_000];
 
 /// Runs `iters` Criterion timing iterations.
@@ -27,6 +29,7 @@ pub const BENCH_RECORD_COUNTS: [usize; 3] = [100_000, 1_000_000, 2_000_000];
 /// `timed` is called inside the stopwatch; `after` is called outside it and
 /// can be used for correctness checks or inter-iteration cleanup (e.g. table
 /// truncation). Returns the total elapsed time of the `timed` calls only.
+#[allow(dead_code)] // Only some of the benches that include this module use it
 pub fn bench_iter(
     iters: u64,
     mut timed: impl FnMut(),
@@ -225,6 +228,26 @@ pub fn generate_test_data(num_records: usize) -> Vec<BenchTestStruct> {
             s: format!("record_{i}_{}", rng.gen_range(0u32..100_000)),
         })
         .collect()
+}
+
+/// A batch that replaces each row in `old` with the row at the same index in `new`, as an
+/// indexed view emits an update: the old value at weight -1 and the new one at +1.
+#[allow(dead_code)]
+pub fn build_update_batch(old: &[BenchTestStruct], new: &[BenchTestStruct]) -> Arc<dyn SerBatch> {
+    assert_eq!(old.len(), new.len());
+    let mut tuples = Vec::with_capacity(old.len() * 2);
+    for (old, new) in old.iter().zip(new) {
+        assert_eq!(old.id, new.id, "an update keeps the key");
+        tuples.push(Tup2(
+            Tup2(BenchKeyStruct { id: old.id }, old.clone()),
+            -1i64,
+        ));
+        tuples.push(Tup2(Tup2(BenchKeyStruct { id: new.id }, new.clone()), 1i64));
+    }
+    let zset = OrdIndexedZSet::from_tuples((), tuples);
+    Arc::new(<SerBatchImpl<_, BenchKeyStruct, BenchTestStruct>>::new(
+        zset,
+    ))
 }
 
 pub fn build_indexed_batch(data: &[BenchTestStruct]) -> Arc<dyn SerBatch> {

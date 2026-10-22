@@ -78,6 +78,9 @@ pub enum RunnerError {
     Gen2BinaryNotFound {
         path: String,
     },
+    Gen2EngineBuildNotSelectable {
+        runtime_version: String,
+    },
 
     // Interaction with the pipeline runner
     RunnerInteractionUnreachable {
@@ -178,6 +181,9 @@ impl DetailedError for RunnerError {
             RunnerError::RunnerConfigError { .. } => Cow::from("RunnerConfigError"),
             RunnerError::Gen2BinaryNotConfigured => Cow::from("Gen2BinaryNotConfigured"),
             RunnerError::Gen2BinaryNotFound { .. } => Cow::from("Gen2BinaryNotFound"),
+            RunnerError::Gen2EngineBuildNotSelectable { .. } => {
+                Cow::from("Gen2EngineBuildNotSelectable")
+            }
             RunnerError::RunnerInteractionUnreachable { .. } => {
                 Cow::from("RunnerInteractionUnreachable")
             }
@@ -294,7 +300,7 @@ impl Display for RunnerError {
                     Pipeline could not be provisioned within the timeout of {}s. Possible reasons:
 
                     1) It takes too long to bring up the pipeline (e.g., cloud resources) compared to the timeout.
-                       If so, try increasing `provisioning_timeout_secs` in the Pipeline settings.
+                       If so, try increasing `provisioning_timeout` (for example `20m`) in the Pipeline settings.
 
                     2) Your cloud environment could not provision some required resources like volumes or containers.
                        The pipeline logs might provide more insight if this is the case.
@@ -367,6 +373,14 @@ impl Display for RunnerError {
                     f,
                     "Gen-2 engine executable '{path}' not found. Point the GEN2_BINARY \
                     environment variable at the executable, or place it on PATH under that name."
+                )
+            }
+            Self::Gen2EngineBuildNotSelectable { runtime_version } => {
+                write!(
+                    f,
+                    "The runtime version '{runtime_version}' pins a Gen2 engine build, which this \
+                    runner cannot select: it runs the engine at GEN2_BINARY. Set \
+                    'program_config.runtime_version' to 'gen2' to start this pipeline."
                 )
             }
             Self::RunnerInteractionUnreachable { error } => {
@@ -497,6 +511,7 @@ impl ResponseError for RunnerError {
             Self::RunnerConfigError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Gen2BinaryNotConfigured => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Gen2BinaryNotFound { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Gen2EngineBuildNotSelectable { .. } => StatusCode::BAD_REQUEST,
             Self::RunnerInteractionUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::RunnerInteractionLogFollowRequestChannelFull { .. } => {
                 StatusCode::SERVICE_UNAVAILABLE
@@ -558,6 +573,22 @@ mod test {
             message.contains("GEN2_BINARY"),
             "should point at the env var that names it: {message}"
         );
+    }
+
+    /// The pinned-build refusal is customer-facing; pin its wording and the setting it names.
+    #[test]
+    fn gen2_engine_build_not_selectable_wording() {
+        let message = RunnerError::Gen2EngineBuildNotSelectable {
+            runtime_version: "gen2:d0b45d8f87056c9d2c89c6f63b2531b0c5905f9b".to_string(),
+        }
+        .to_string();
+        for named in [
+            "'gen2:d0b45d8f87056c9d2c89c6f63b2531b0c5905f9b'",
+            "GEN2_BINARY",
+            "'program_config.runtime_version'",
+        ] {
+            assert!(message.contains(named), "names {named}: {message}");
+        }
     }
 
     /// The unconfigured-engine error is customer-facing; pin its wording. It must name

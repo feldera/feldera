@@ -72,7 +72,12 @@ class BuildNestedOperators extends CircuitCloneWithGraphsVisitor {
                 // If the corresponding view is materialized we don't produce a warning, since
                 // the declaration is necessary.
                 DBSPViewOperator view = this.getCircuit().getView(decl.originalViewName());
-                if (view == null || view.metadata.viewKind != SqlCreateView.ViewKind.MATERIALIZED) {
+                // A view that the recursion reads after its definition is read directly, so its
+                // declaration is unused although the view is recursive.
+                boolean viewIsRecursive = view != null &&
+                        this.scc.component.get(Utilities.getExists(this.scc.componentId, view)).size() > 1;
+                if (!viewIsRecursive &&
+                        (view == null || view.metadata.viewKind != SqlCreateView.ViewKind.MATERIALIZED)) {
                     this.compiler.reportWarning(operator.getSourcePosition(), "View is not recursive",
                             "View " + decl.originalViewName().singleQuote() + " is declared" +
                                     " recursive, but is not used in any recursive computation");

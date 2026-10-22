@@ -49,11 +49,12 @@ public class PostgresCdcReaderConfig implements IValidateConfig {
                     "\"batch.memory_budget_ratio\" must be in the (0.0, 1.0] interval, got " + batch.memoryBudgetRatio);
             ok = false;
         }
-        if (batch.maxBytes <= 0) {
-            reporter.warnPath("batch/max_bytes", "Invalid configuration",
-                    "\"batch.max_bytes\" must be greater than 0, got " + batch.maxBytes);
+        ConfigQuantity.Setting batchSize = ConfigSize.resolveRequired(reporter,
+                "batch/max_size", batch.maxSize,
+                "batch/max_bytes", batch.maxBytes);
+        if (!ConfigQuantity.checkMinimum(reporter, batchSize, 1,
+                "greater than 0, for example \"32Mi\""))
             ok = false;
-        }
 
         if (memoryBackpressure.activateThreshold <= 0.0 || memoryBackpressure.activateThreshold > 1.0) {
             reporter.warnPath("memory_backpressure/activate_threshold", "Invalid configuration",

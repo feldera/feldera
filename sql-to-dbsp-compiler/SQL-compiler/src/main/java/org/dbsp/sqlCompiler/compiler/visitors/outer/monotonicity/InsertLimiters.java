@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinDeltaExpansion
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinFilterMapExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinIndexDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.LeftJoinDeltaExpansion;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.LeftJoinFilterMapExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.StarJoinDeltaExpansion;
@@ -983,7 +984,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * changes, and, to add or retract the (l, NULL) rows, with the keys of the antijoin changes;
      * so a right key may be GCed only when it is below WL(antijoin[key]).
      * @param antiJoinBound  Bound of the antijoin of the expansion. */
-    void retainLeftJoinRight(DBSPLeftJoinOperator join, LeftJoinDeltaExpansion expansion,
+    void retainLeftJoinRight(DBSPJoinBaseOperator join, LeftJoinDeltaExpansion expansion,
                              OutputPort antiJoinBound) {
         DBSPAntiJoinOperator antiJoin = expansion.antiJoin;
         IMaybeMonotoneType antiJoinProjection = Monotonicity.getBodyType(
@@ -1010,7 +1011,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPJoinBaseOperator result = join.withInputs(Linq.list(left, right), false)
                 .to(DBSPJoinBaseOperator.class);
         // A left join retains its right input with the bound of its antijoin
-        if (leftLimiter != null && !join.is(DBSPLeftJoinOperator.class)) {
+        if (leftLimiter != null && !(expansion instanceof LeftJoinDeltaExpansion)) {
             MonotoneExpression leftMonotone = this.expansionMonotoneValues.get(
                     expansion.getLeftIntegrator().input());
             // Yes, the limit of the left input is applied to the right one.
@@ -1036,9 +1037,25 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPLeftJoinOperator join) {
+        this.limitLeftJoin(join);
+    }
+
+    @Override
+    public void postorder(DBSPLeftJoinIndexOperator join) {
+        this.limitLeftJoin(join);
+    }
+
+    @Override
+    public void postorder(DBSPLeftJoinFilterMapOperator join) {
+        this.limitLeftJoin(join);
+    }
+
+    /** Retain the inputs of a left join, plain, indexing its output, or fused with a filter,
+     * and bound its output. */
+    void limitLeftJoin(DBSPJoinBaseOperator join) {
         OperatorDeltaExpansion expanded = this.expandedInto.get(join);
         if (expanded == null) {
-            super.postorder(join);
+            this.replace(join);
             this.nonMonotone(join);
             return;
         }
@@ -1046,7 +1063,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         LeftJoinDeltaExpansion expansion = expanded.to(LeftJoinDeltaExpansion.class);
         DBSPSimpleOperator result = this.gcJoin(join, expansion);
         if (result == null) {
-            super.postorder(join);
+            this.replace(join);
             this.nonMonotone(join);
             return;
         }
@@ -1060,6 +1077,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
         if (antiJoinBound != null)
             this.retainLeftJoinRight(join, expansion, antiJoinBound);
         this.addBounds(null, expansion.map, 0);
+        if (expansion instanceof LeftJoinFilterMapExpansion filterMap) {
+            this.processFilter(filterMap.leftFilter);
+            this.processFilter(filterMap.rightFilter);
+            this.processFilter(filterMap.filter);
+            this.processFilter(filterMap.mapFilter);
+        }
         OutputPort limiter = this.processSumOrDiff(expansion.sum);
         if (limiter != null)
             this.markBound(join.outputPort(), limiter);
@@ -1414,7 +1437,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        DBSPSimpleOperator resultJoin = result;
         this.processIntegral(expansion.leftIntegrator);
         this.processIntegral(expansion.rightIntegrator);
         this.processJoin(expansion.leftDelta);
@@ -1489,31 +1511,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 if (retention != null && INSERT_RETAIN_VALUES) {
                     final OutputPort extractRight = this.createApply(
                             leftDeltaLimiter, retention.extract());
-                    // If the two join inputs are the same operator and the left one already got a
-                    // retain, separate them with a noop so the two retains apply to different traces.
-                    // TODO: it may be possible to actually combine the two retain values operators instead,
-                    // see issue 7130
-                    OutputPort left = this.mapped(join.left());
                     OutputPort right = this.mapped(join.right());
-                    if (retainedLeftInput && left.equals(right)) {
-                        var noop = new DBSPNoopOperator(right.operator.getRelNode(), right);
-                        this.addOperator(noop);
-                        right = noop.getOutput(0);
-                    }
-
+                    // SeparateIntegrators gives each input of a self-join its own noop
+                    Utilities.enforce(!retainedLeftInput || !this.mapped(join.left()).equals(right),
+                            () -> "Both inputs of the self-join " + join + " read " + right);
                     DBSPSimpleOperator r = DBSPIntegrateTraceRetainValuesOperator.create(
                             join.getRelNode(), right, retention.projection(),
                             this.createDelay(extractRight));
                     this.addOperator(r);
-
-                    resultJoin = resultJoin.withInputs(Linq.list(resultJoin.inputs.get(0), right), true)
-                            .copyAnnotations(resultJoin)
-                            .to(DBSPSimpleOperator.class);
                 }
             }
         }
 
-        this.map(join, resultJoin, true);
+        this.map(join, result, true);
     }
 
     /** Given two expressions with the same type, compute the MAX expression pointwise,
@@ -1630,23 +1640,23 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             leftMono.getFieldType(0),
                             rightMono.getFieldType(0));
                 } else {
-                    fields[0] = l.deref().field(0);
+                    fields[0] = l.deref().field(0).applyCloneIfNeeded();
                 }
             } else {
                 if (rightMono.getFieldType(0).mayBeMonotone()) {
                     rightIndex++;
-                    fields[0] = r.deref().field(0);
+                    fields[0] = r.deref().field(0).applyCloneIfNeeded();
                 } else {
                     fields[0] = new DBSPTupleExpression();
                 }
             }
 
             if (leftMono.getFieldType(1).mayBeMonotone())
-                fields[1] = l.deref().field(leftIndex);
+                fields[1] = l.deref().field(leftIndex).applyCloneIfNeeded();
             else
                 fields[1] = new DBSPTupleExpression();
             if (rightMono.getFieldType(1).mayBeMonotone())
-                fields[2] = r.deref().field(rightIndex);
+                fields[2] = r.deref().field(rightIndex).applyCloneIfNeeded();
             else
                 fields[2] = new DBSPTupleExpression(rightMayBeNull);
 
@@ -1661,11 +1671,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPExpression k = new DBSPTupleExpression();
             int currentField = 0;
             if (leftMono.getFieldType(0).mayBeMonotone()) {
-                k = var.deref().field(currentField++);
+                k = var.deref().field(currentField++).applyCloneIfNeeded();
             }
             DBSPExpression l = new DBSPTupleExpression();
             if (leftMono.getFieldType(1).mayBeMonotone())
-                l = var.deref().field(currentField);
+                l = var.deref().field(currentField).applyCloneIfNeeded();
             DBSPClosureExpression closure =
                     new DBSPRawTupleExpression(
                             k,
@@ -1681,10 +1691,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPExpression r = new DBSPTupleExpression(rightMayBeNull);
             int currentField = 0;
             if (rightMono.getFieldType(0).mayBeMonotone()) {
-                k = var.deref().field(currentField++);
+                k = var.deref().field(currentField++).applyCloneIfNeeded();
             }
             if (rightMono.getFieldType(1).mayBeMonotone())
-                r = var.deref().field(currentField);
+                r = var.deref().field(currentField).applyCloneIfNeeded();
             DBSPClosureExpression closure =
                     new DBSPRawTupleExpression(
                             k,
@@ -1767,9 +1777,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPExpression lateness = column.getLateness();
             if (lateness != null) {
                 DBSPExpression field = t.deref().field(index);
-                field = ExpressionCompiler.makeBinaryExpression(operator.getRelNode(), columnType,
-                        DBSPOpcode.SUB, field, lateness);
-                timestamps.add(field);
+                DBSPExpression waterline = ExpressionCompiler.makeBinaryExpression(operator.getRelNode(),
+                        columnType, DBSPOpcode.SUB, field, lateness);
+                if (columnType.is(IsBoundedType.class)) {
+                    // The waterline of a value within the lateness of the minimum is the minimum;
+                    // the subtraction would produce a value outside the range of the type
+                    DBSPExpression lowest = ExpressionCompiler.makeBinaryExpression(operator.getRelNode(),
+                            columnType, DBSPOpcode.ADD, columnType.minimumValue(), lateness.deepCopy());
+                    DBSPExpression below = ExpressionCompiler.makeBinaryExpression(operator.getRelNode(),
+                            DBSPTypeBool.create(columnType.mayBeNull), DBSPOpcode.LT,
+                            t.deref().field(index), lowest).wrapBoolIfNeeded();
+                    waterline = new DBSPIfExpression(operator.getNode(), below,
+                            columnType.minimumValue(), waterline);
+                }
+                timestamps.add(waterline);
                 declaredFields.add(new MonotoneType(columnType));
             } else {
                 declaredFields.add(NonMonotoneType.nonMonotone(columnType));

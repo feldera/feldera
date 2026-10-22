@@ -5,7 +5,7 @@
   const styles = {
     warning: {
       iconClass: 'fd fd-triangle-alert',
-      colorClass: 'preset-tonal-warning'
+      colorClass: 'bg-status-warning-subtle text-status-warning'
     },
     info: {
       iconClass: 'fd fd-info',

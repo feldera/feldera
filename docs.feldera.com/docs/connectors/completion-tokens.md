@@ -46,7 +46,7 @@ Completion tokens have several important properties:
 This enables efficient, overlapping execution: clients can push additional inputs while
 waiting for earlier inputs to be processed.
 
-## Hot to generate a completion token
+## How to generate a completion token
 
 There are two ways to generate a completion token, depending on the type of the input connector:
 
@@ -66,6 +66,39 @@ To check the processing status of a token, call the
 endpoint with the token.  The endpoint returns
 `"complete"` if the data associated with the token has been fully processed and all outputs derived from
 it have been written to all connected data sinks.  It returns `"inprogress"` otherwise.
+The response also carries `step`: the number of steps the pipeline completes
+before the token is complete.
+
+## Waiting for output on an HTTP stream
+
+For an [HTTP output connector](/connectors/sinks/http), "written to the
+sink" means that the pipeline has queued the output for the stream that an
+[`/egress`](/api/subscribe-to-view) request opened.  The data can still be in
+transit when the token completes, so a client that reads the stream cannot
+conclude from `"complete"` alone that it has received the output.
+
+After the output of each step, the pipeline sends an empty chunk whose
+`processed_steps` field counts the steps whose output the stream has
+delivered, in the same unit as the `step` of `/completion_status`:
+
+```json
+{"sequence_number": 12, "snapshot": false, "processed_steps": 7}
+```
+
+A client that has received a chunk with `processed_steps` at or above the
+token's `step` is guaranteed to have received every update for the token.
+The chunk comes with the commit of the step's transaction (in continuous
+mode, each step runs in a transaction of its own; see
+[Transactions](/pipelines/transactions)), so the steps of an explicit
+transaction are reported by one chunk after the commit's output.
+Without [`backpressure`](/connectors/sinks/http#query-parameters), the
+connector drops chunks when the client falls behind, step chunks included, so
+a client that waits this way should open the stream with `backpressure=true`.
+A stream reports only the steps that end after it was opened, so a token that
+completed before that is covered by the first chunk of the next step.
+
+In the Python SDK, `OutputHandler.wait_for_token(token)` blocks until a
+listener from `Pipeline.listen()` has buffered every change for the token.
 
 ## Example
 

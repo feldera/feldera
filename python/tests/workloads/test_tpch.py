@@ -21,6 +21,10 @@ from feldera.testutils import (
     wait_end_of_input,
 )
 from feldera.runtime_config import Resources
+
+# The connector settings below keep the older `max_output_buffer_time_millis`
+# spelling: the runtime integration platform may predate the rename, and a
+# manager from before it drops the current name.
 import tempfile
 import os
 import argparse

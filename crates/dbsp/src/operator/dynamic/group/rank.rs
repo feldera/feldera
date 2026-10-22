@@ -3,7 +3,7 @@ use crate::{
     algebra::{OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
         OwnershipPreference,
-        circuit_builder::register_replay_stream,
+        bootstrap::register_replay_stream,
         metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
         operator_traits::Operator,
         splitter_output_chunk_size, splitter_output_first_chunk_size,
@@ -511,8 +511,8 @@ where
 {
     fn eval(
         self: std::rc::Rc<Self>,
-        delta: &Option<Spine<OrdIndexedZSet<K, V>>>,
-        delayed_trace: &Spine<RankedBatch<K, V>>,
+        delta: Cow<'_, Option<Spine<OrdIndexedZSet<K, V>>>>,
+        delayed_trace: Cow<'_, Spine<RankedBatch<K, V>>>,
     ) -> impl AsyncStream<Item = (RankedBatch<K, V>, bool, Option<Position>)> + 'static {
         let chunk_size = splitter_output_chunk_size();
 
@@ -520,7 +520,7 @@ where
         //     "{}: AggregateIncremental::eval({delta:?})",
         //     Runtime::worker_index()
         // );
-        let delta = delta.as_ref().map(|b| b.ro_snapshot());
+        let delta = (*delta).as_ref().map(|b| b.ro_snapshot());
 
         // We assume that delta.is_some() implies that the operator is being flushed,
         // since the integral is always flushed in the same step as delta.
@@ -537,7 +537,7 @@ where
                 return;
             };
 
-            self.input_batch_stats.borrow_mut().add_batch(delta.len());
+            self.input_batch_stats.borrow_mut().add_batch(delta.len_upper_bound());
 
             // println!("delta");
             // for (k, v, w) in delta.iter() {
@@ -724,7 +724,7 @@ where
                                 has_values = false;
                             }
                             let result = builder.done();
-                            self.output_batch_stats.borrow_mut().add_batch(result.len());
+                            self.output_batch_stats.borrow_mut().add_batch(result.len_upper_bound());
                             yield (result, false, joint_cursor.position());
                             builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, chunk_size + 1, chunk_size + 1);
                         }
@@ -757,7 +757,7 @@ where
                                 builder.push_key(delta_cursor.key());
                                 has_values = false;
                                 let result = builder.done();
-                                self.output_batch_stats.borrow_mut().add_batch(result.len());
+                                self.output_batch_stats.borrow_mut().add_batch(result.len_upper_bound());
                                 yield (result, false, delta_cursor.position());
                                 builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, chunk_size + 1, chunk_size + 1);
                             }
@@ -784,7 +784,7 @@ where
             }
 
             let result = builder.done();
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.len_upper_bound());
 
             yield (result, true, None);
         }
@@ -1084,7 +1084,7 @@ mod test {
 
         // Expected integral after each transaction; steps below push a batch of `(key, val, w)`
         // tuples per transaction (first batch inserts five rows at once).
-        let forward_expected_rank = vec![
+        let forward_expected_rank = [
             indexed_zset! {
                 P => {
                     Tup3(110u64, 1u64, 1) => 1,
@@ -1187,7 +1187,7 @@ mod test {
             },
         ];
 
-        let forward_expected_dense = vec![
+        let forward_expected_dense = [
             indexed_zset! {
                 P => {
                     Tup3(110u64, 1u64, 1) => 1,
@@ -1290,7 +1290,7 @@ mod test {
             },
         ];
 
-        let forward_expected_row_number = vec![
+        let forward_expected_row_number = [
             indexed_zset! {
                 P => {
                     Tup3(110u64, 1u64, 1) => 1,

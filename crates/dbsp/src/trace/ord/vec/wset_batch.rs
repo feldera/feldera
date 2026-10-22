@@ -310,13 +310,21 @@ where
         Self {
             layer: self.layer.neg_by_ref(),
             factories: self.factories.clone(),
-            negative_weight_count: self.negative_weight_count,
+            // Negation flips the sign of every weight, and a batch holds no zero
+            // weights, so exactly the records that were positive become negative.
+            negative_weight_count: (self.len_upper_bound() as u64)
+                .saturating_sub(self.negative_weight_count),
             touched_window_count: self.touched_window_count,
         }
     }
 }
 
 impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, R> {
+    fn is_empty(&self) -> bool {
+        // `len_upper_bound` is exact for this batch type, which stores only the
+        // (key, value) pairs that its cursor yields.
+        self.len_upper_bound() == 0
+    }
     type Key = K;
     type Val = DynUnit;
     type Time = ();
@@ -360,12 +368,12 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
     }*/
 
     #[inline]
-    fn key_count(&self) -> usize {
+    fn key_count_upper_bound(&self) -> usize {
         Trie::keys(&self.layer)
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    fn len_upper_bound(&self) -> usize {
         self.layer.tuples()
     }
 
@@ -431,6 +439,11 @@ where
 impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<K, DynUnit, (), R>
     for VecWSetCursor<'_, K, R>
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // A w-set has no values of its own: a key is one tuple.
+        self.key_valid() as usize
+    }
+
     // fn key_factory(&self) -> &'static Factory<K> {
     //     self.cursor.storage.vtables.key
     // }

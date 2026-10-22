@@ -1,0 +1,43 @@
+name: Validate pipeline-manager Demos
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      run-id:
+        description: "Run ID to download the SQL compiler JAR from (default: current run ID)"
+        required: false
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  validate-demos:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'validate-demos') }}
+    name: Validate pipeline-manager Demos
+    runs-on: [gke-runners-amd64]
+
+    container:
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-a112fd877176bba0f4e5f3475853f918b276d1ef
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Download Compiler Binaries
+        uses: ./.github/actions/download-artifact-retry
+        with:
+          name: feldera-sql-compiler
+          path: sql-build
+          run-id: ${{ inputs.run-id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # validate-demos.sh runs the JAR from the Maven target directory
+      - name: Copy feldera-sql-compiler JAR
+        run: |
+          mkdir -p sql-to-dbsp-compiler/SQL-compiler/target
+          cp sql-build/sql2dbsp-jar-with-dependencies.jar sql-to-dbsp-compiler/SQL-compiler/target
+
+      - name: Validate pipeline-manager Demos
+        run: scripts/validate-demos.sh

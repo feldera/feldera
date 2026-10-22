@@ -1,4 +1,7 @@
 use super::rustc_diagnostics::parse_cargo_json_messages;
+use crate::compiler::gen2_udf_compiler::{
+    cleanup_gen2_udf_compilation, perform_gen2_udf_compilation,
+};
 use crate::compiler::util::{
     CleanupDecision, DirectoryContent, DiskSpace, ProcessGroupTerminator, UtilError,
     checksum_buffer, checksum_file, cleanup_specific_directories, cleanup_specific_files,
@@ -191,7 +194,7 @@ pub async fn rust_compiler_task(
 /// 2. Queries the database for a pipeline which has `program_status` of `SqlCompiled` the longest
 /// 3. Updates pipeline database `program_status` to `CompilingRust`
 /// 4. Performs Rust compilation on `program_info.main`, `udf_rust` and `udf_toml`, configured
-///    with `program_config`
+///    with `program_config`; a Gen-2 program compiles only `udf_rust` and `udf_toml`
 /// 5. Upon completion, the compilation status is set to `Success`
 ///
 /// Note that this function assumes it runs in isolation, and as such at the beginning resets
@@ -451,9 +454,8 @@ fn calculate_source_checksum(
     udf_rust: &str,
     udf_toml: &str,
 ) -> String {
-    let mut hasher = digest::Context::new(&digest::SHA256);
     let profile = profile.to_string();
-    let to_hash = vec![
+    checksum_fields(&[
         ("platform_version", platform_version.as_bytes()),
         ("runtime_version", runtime_version.as_bytes()),
         ("profile", profile.as_bytes()),
@@ -461,9 +463,15 @@ fn calculate_source_checksum(
         ("program_info.udf_stubs", udf_stubs.as_bytes()),
         ("udf_rust", udf_rust.as_bytes()),
         ("udf_toml", udf_toml.as_bytes()),
-    ];
+    ])
+}
 
-    for (name, data) in to_hash {
+/// Hex-encoded `H(H(field1) || H(field2) || ...)` over the named fields in the given order,
+/// with `H` sha256. Hashing each field first keeps two field lists from colliding by
+/// shifting bytes from one field into its neighbor.
+pub(super) fn checksum_fields(fields: &[(&str, &[u8])]) -> String {
+    let mut hasher = digest::Context::new(&digest::SHA256);
+    for (name, data) in fields {
         let checksum = sha256(data);
         hasher.update(&checksum);
         trace!(
@@ -577,7 +585,7 @@ impl From<UtilError> for RustCompilationError {
 /// For HTTP upload mode, the binary is uploaded to the configured endpoint as multipart/form-data.
 ///
 /// Returns the final binary location/identifier.
-async fn deliver_binary(
+pub(super) async fn deliver_binary(
     common_config: &CommonConfig,
     delivery_mode: &FileDeliveryMode,
     source_file_path: &Path,
@@ -1004,7 +1012,8 @@ pub(super) struct RustCompilationResult {
 /// Performs the Rust compilation.
 ///
 /// Returns the program binary URL, source checksum, integrity checksum,
-/// duration, and compilation information.
+/// duration, and compilation information. For a Gen-2 program, the binary checksums
+/// describe its UDF library.
 #[allow(clippy::too_many_arguments)]
 pub async fn perform_rust_compilation(
     common_config: &CommonConfig,
@@ -1045,15 +1054,6 @@ pub async fn perform_rust_compilation(
     })?;
     let runtime_selector = program_config.runtime_version();
     assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
-    // The Gen-2 engine needs no Rust compilation: the SQL compiler completes it, so it never
-    // enters the Rust compilation queue. Reaching here means the claim predicate is
-    // wrong; fail loudly rather than build a binary the Gen-2 engine does not use.
-    if runtime_selector.is_gen2() {
-        return Err(RustCompilationError::SystemError(
-            "Gen-2 programs are completed by the SQL compiler and must not reach Rust compilation"
-                .to_string(),
-        ));
-    }
     let pipeline_name_for_log = pipeline_name.clone().unwrap_or_else(|| "N/A".to_string());
     info!(
         pipeline_id = %pipeline_id,
@@ -1087,8 +1087,6 @@ pub async fn perform_rust_compilation(
                 Recompile the pipeline to resolve this.
             "})
     })?;
-    let main_rust = program_info.main_rust.clone();
-    let udf_stubs = program_info.udf_stubs.clone();
 
     // Compilation profile is the one specified by the program configuration,
     // and if it is not, defaults to the one provided in the compiler arguments.
@@ -1096,6 +1094,26 @@ pub async fn perform_rust_compilation(
         .profile
         .clone()
         .unwrap_or(config.compilation_profile.clone());
+
+    // The Gen-2 engine runs SQL directly, only the program's UDFs are compiled.
+    if runtime_selector.is_gen2() {
+        return perform_gen2_udf_compilation(
+            common_config,
+            config,
+            db,
+            tenant_id,
+            pipeline_id,
+            &pipeline_name_for_log,
+            program_version,
+            &program_info,
+            &profile,
+            udf_rust,
+            udf_toml,
+        )
+        .await;
+    }
+    let main_rust = program_info.main_rust.clone();
+    let udf_stubs = program_info.udf_stubs.clone();
 
     // Calculate source checksum across fields
     let source_checksum = calculate_source_checksum(
@@ -1347,8 +1365,8 @@ pub async fn resolve_runtime_sha(
     match runtime_version {
         RuntimeSelector::Sha(sha) => Ok(sha.clone()),
         RuntimeSelector::Platform(platform_sha) => Ok(platform_sha.clone()),
-        RuntimeSelector::Gen2 => unreachable!(
-            "the Gen-2 engine compiles against the platform sources; no runtime SHA is resolved"
+        RuntimeSelector::Gen2(_) => unreachable!(
+            "a Gen2 program builds its UDF library against the UDF SDK; no runtime SHA is resolved"
         ),
         RuntimeSelector::Version(version) => {
             let repo_location = runtime_version.runtime_sources(config);
@@ -1641,42 +1659,8 @@ async fn call_compiler(
 
     let pipeline_name_for_log = pipeline_name.unwrap_or_else(|| "N/A".to_string());
 
-    // Create file where stdout will be written to
-    let stdout_file_path = pipeline_main_crate_dir.join("stdout.log");
-    let stdout_file = create_new_file(&stdout_file_path).await?;
-
-    // Create file where stderr will be written to
-    let stderr_file_path = pipeline_main_crate_dir.join("stderr.log");
-    let stderr_file = create_new_file(&stderr_file_path).await?;
-
-    // By default, the command inherits all environment variables
-    // from the originating process. This is fine when the compiler
-    // server is run directly using its executable, but in the case
-    // of being run from source using `cargo run`, this will result
-    // in all kinds of cargo-related environment variables being set
-    // such as `CARGO_PKG_VERSION`. This can cause unnecessary
-    // recompilation for some dependency crates if they use
-    // for example `cargo::rerun-if-env-changed=CARGO_PKG_VERSION`
-    // in their build.rs, even if the actual `CARGO_PKG_VERSION`
-    // they read does not change (as it is overwritten by cargo).
-    //
-    // Only a select number of environment variables are inherited
-    // explicitly. All other inherited environment variables are cleared.
-    let env_path = std::env::var_os("PATH").ok_or(RustCompilationError::SystemError(
-        "The PATH environment variable is not set, which is needed to locate `cargo`".to_string(),
-    ))?;
-    let optional_env_rustflags = std::env::var_os("RUSTFLAGS");
-
     // Formulate command
-    let mut command = Command::new("cargo");
-
-    // get env vars that start with SCCACHE
-    let preserved_env_vars: Vec<(String, String)> = std::env::vars()
-        .filter(|(key, _)| key.starts_with("SCCACHE"))
-        .collect();
-
-    command.env_clear();
-    command.env("PATH", env_path);
+    let mut command = cargo_command_with_minimal_env()?;
     command.env("FELDERA_PLATFORM_VERSION", &common_config.platform_version);
     // The platform's own runtime has the platform version; an override is a tag or SHA
     let runtime_version = if runtime_selector.is_platform() {
@@ -1691,9 +1675,127 @@ async fn call_compiler(
             resolve_runtime_sha(runtime_selector, config).await?,
         );
     }
-    if let Some(env_rustflags) = optional_env_rustflags {
+    if let Some(env_rustflags) = std::env::var_os("RUSTFLAGS") {
         command.env("RUSTFLAGS", env_rustflags);
     }
+    command
+        .current_dir(&workspace_dir)
+        .arg("build")
+        .arg("--workspace")
+        .arg("--profile")
+        .arg(profile.to_string())
+        // rustc diagnostics as JSON on stdout; `human` cannot be combined with `json`.
+        .arg("--message-format=json");
+
+    let compilation_info = run_cargo_build(
+        command,
+        &pipeline_main_crate_dir.join("stdout.log"),
+        &pipeline_main_crate_dir.join("stderr.log"),
+        db,
+        tenant_id,
+        pipeline_id,
+        &pipeline_name_for_log,
+        program_version,
+    )
+    .await?;
+
+    // Source file
+    let source_file_path = workspace_dir
+        .join("target")
+        .join(profile.to_target_folder())
+        .join(crate_name_pipeline_main(pipeline_id));
+    if !source_file_path.is_file() {
+        return Err(RustCompilationError::SystemError(format!(
+            "Rust compilation was successful but no binary was generated at '{}'",
+            source_file_path.display()
+        )));
+    }
+
+    // Integrity checksum of the source file
+    let (file_size, binary_integrity_checksum) = checksum_file(&source_file_path).await?;
+
+    // Create binary metadata
+    let binary_metadata = FileUploadMetadata {
+        pipeline_id,
+        program_version,
+        source_checksum: source_checksum.to_string(),
+        integrity_checksum: binary_integrity_checksum.clone(),
+    };
+
+    // Determine binary delivery mode from configuration
+    let delivery_mode = FileDeliveryMode::from_config(config);
+
+    // Deliver binary according to the configured mode
+    let _binary_location = deliver_binary(
+        common_config,
+        &delivery_mode,
+        &source_file_path,
+        &binary_metadata,
+        &pipeline_binaries_dir,
+    )
+    .await?;
+
+    let program_info_str = serde_json::to_string(&program_info).map_err(|e| {
+        RustCompilationError::SystemError(format!("failed to serialize program info: {e}"))
+    })?;
+    // Integrity checksum of the source file
+    let program_info_integrity_checksum = checksum_buffer(program_info_str.as_bytes()).await?;
+
+    // Create binary metadata
+    let program_info_metadata = FileUploadMetadata {
+        pipeline_id,
+        program_version,
+        source_checksum: source_checksum.to_string(),
+        integrity_checksum: program_info_integrity_checksum.clone(),
+    };
+
+    deliver_program_info(
+        common_config,
+        &delivery_mode,
+        &program_info_str,
+        &program_info_metadata,
+        &pipeline_binaries_dir,
+    )
+    .await?;
+
+    // Success
+    Ok((
+        compilation_info,
+        binary_integrity_checksum,
+        file_size,
+        program_info_integrity_checksum,
+    ))
+}
+
+/// A `cargo` command whose environment holds only what a build needs.
+///
+/// By default, the command inherits all environment variables
+/// from the originating process. This is fine when the compiler
+/// server is run directly using its executable, but in the case
+/// of being run from source using `cargo run`, this will result
+/// in all kinds of cargo-related environment variables being set
+/// such as `CARGO_PKG_VERSION`. This can cause unnecessary
+/// recompilation for some dependency crates if they use
+/// for example `cargo::rerun-if-env-changed=CARGO_PKG_VERSION`
+/// in their build.rs, even if the actual `CARGO_PKG_VERSION`
+/// they read does not change (as it is overwritten by cargo).
+///
+/// Only a select number of environment variables are inherited
+/// explicitly. All other inherited environment variables are cleared.
+pub(super) fn cargo_command_with_minimal_env() -> Result<Command, RustCompilationError> {
+    let env_path = std::env::var_os("PATH").ok_or(RustCompilationError::SystemError(
+        "The PATH environment variable is not set, which is needed to locate `cargo`".to_string(),
+    ))?;
+
+    let mut command = Command::new("cargo");
+
+    // get env vars that start with SCCACHE
+    let preserved_env_vars: Vec<(String, String)> = std::env::vars()
+        .filter(|(key, _)| key.starts_with("SCCACHE"))
+        .collect();
+
+    command.env_clear();
+    command.env("PATH", env_path);
 
     if let Some(rustc_wrapper) = std::env::var_os("RUSTC_WRAPPER") {
         command.env("RUSTC_WRAPPER", rustc_wrapper);
@@ -1716,17 +1818,32 @@ async fn call_compiler(
         command.env(key, value);
     }
 
+    // Set compiler stack size to 20MB (10x the default) to prevent
+    // SIGSEGV when the compiler runs out of stack on large programs.
+    command.env("RUST_MIN_STACK", "20971520");
+    Ok(command)
+}
+
+/// Runs a `cargo build` with `--message-format=json` to completion with its stdout and
+/// stderr captured in `stdout_file_path` and `stderr_file_path`, which must not exist yet.
+/// While it runs, the pipeline is checked regularly, so that the build is canceled once the
+/// pipeline no longer exists or its program is updated.
+///
+/// Returns the captured output when cargo succeeds, and a `RustError` carrying it when not.
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn run_cargo_build(
+    mut command: Command,
+    stdout_file_path: &Path,
+    stderr_file_path: &Path,
+    db: Option<Arc<Mutex<StoragePostgres>>>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    pipeline_name_for_log: &str,
+    program_version: Version,
+) -> Result<RustCompilationInfo, RustCompilationError> {
+    let stdout_file = create_new_file(stdout_file_path).await?;
+    let stderr_file = create_new_file(stderr_file_path).await?;
     command
-        // Set compiler stack size to 20MB (10x the default) to prevent
-        // SIGSEGV when the compiler runs out of stack on large programs.
-        .env("RUST_MIN_STACK", "20971520")
-        .current_dir(&workspace_dir)
-        .arg("build")
-        .arg("--workspace")
-        .arg("--profile")
-        .arg(profile.to_string())
-        // rustc diagnostics as JSON on stdout; `human` cannot be combined with `json`.
-        .arg("--message-format=json")
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_file.into_std().await))
         .stderr(Stdio::from(stderr_file.into_std().await))
@@ -1774,7 +1891,7 @@ async fn call_compiler(
                             Err(e) => {
                                 error!(
                                     pipeline_id = %pipeline_id,
-                                    pipeline = pipeline_name_for_log.as_str(),
+                                    pipeline = pipeline_name_for_log,
                                     "Rust compilation outdated check failed due to database error: {e}"
                                 )
                                 // As preemption check failing is not fatal, compilation will continue
@@ -1803,8 +1920,8 @@ async fn call_compiler(
     };
 
     // Parse JSON stdout into `messages`; leave `stdout` empty so FDA/Python do not print NDJSON.
-    let stdout_json = read_file_content(&stdout_file_path).await?;
-    let stderr = read_file_content(&stderr_file_path).await?;
+    let stdout_json = read_file_content(stdout_file_path).await?;
+    let stderr = read_file_content(stderr_file_path).await?;
     let compilation_info = RustCompilationInfo {
         exit_code,
         stdout: String::new(),
@@ -1814,77 +1931,11 @@ async fn call_compiler(
 
     // Compilation is successful if the return exit code is present and zero
     if exit_status.success() {
-        // Source file
-        let source_file_path = workspace_dir
-            .join("target")
-            .join(profile.to_target_folder())
-            .join(crate_name_pipeline_main(pipeline_id));
-        if !source_file_path.is_file() {
-            return Err(RustCompilationError::SystemError(format!(
-                "Rust compilation was successful but no binary was generated at '{}'",
-                source_file_path.display()
-            )));
-        }
-
-        // Integrity checksum of the source file
-        let (file_size, binary_integrity_checksum) = checksum_file(&source_file_path).await?;
-
-        // Create binary metadata
-        let binary_metadata = FileUploadMetadata {
-            pipeline_id,
-            program_version,
-            source_checksum: source_checksum.to_string(),
-            integrity_checksum: binary_integrity_checksum.clone(),
-        };
-
-        // Determine binary delivery mode from configuration
-        let delivery_mode = FileDeliveryMode::from_config(config);
-
-        // Deliver binary according to the configured mode
-        let _binary_location = deliver_binary(
-            common_config,
-            &delivery_mode,
-            &source_file_path,
-            &binary_metadata,
-            &pipeline_binaries_dir,
-        )
-        .await?;
-
-        let program_info_str = serde_json::to_string(&program_info).map_err(|e| {
-            RustCompilationError::SystemError(format!("failed to serialize program info: {e}"))
-        })?;
-        // Integrity checksum of the source file
-        let program_info_integrity_checksum = checksum_buffer(program_info_str.as_bytes()).await?;
-
-        // Create binary metadata
-        let program_info_metadata = FileUploadMetadata {
-            pipeline_id,
-            program_version,
-            source_checksum: source_checksum.to_string(),
-            integrity_checksum: program_info_integrity_checksum.clone(),
-        };
-
-        deliver_program_info(
-            common_config,
-            &delivery_mode,
-            &program_info_str,
-            &program_info_metadata,
-            &pipeline_binaries_dir,
-        )
-        .await?;
-
-        // Success
-        Ok((
-            compilation_info,
-            binary_integrity_checksum,
-            file_size,
-            program_info_integrity_checksum,
-        ))
+        Ok(compilation_info)
     } else {
         Err(RustCompilationError::RustError(compilation_info))
     }
 }
-
 /// Rust compilation cleanup possible error outcomes.
 pub(crate) enum RustCompilationCleanupError {
     /// Database error occurred (e.g., lost connectivity).
@@ -1918,6 +1969,94 @@ impl std::fmt::Display for RustCompilationCleanupError {
                 write!(f, "target directory was cleared")
             }
         }
+    }
+}
+
+/// Removes `target_dir` if the disk it resides on is used beyond
+/// `THRESHOLD_COMPILATION_TARGET_CLEAR`. There is no cleaner way currently to more
+/// fine-grained clean up old dependencies. Returns whether it was removed.
+pub(super) async fn clear_target_dir_if_disk_full(target_dir: &Path) -> bool {
+    if !target_dir.is_dir() {
+        return false;
+    }
+    let Some(disk_space) = DiskSpace::new_from_path(target_dir) else {
+        warn!(
+            "Unable to determine disk space remaining: unable to find disk corresponding to '{}'",
+            target_dir.display()
+        );
+        return false;
+    };
+    if disk_space.used_fraction >= THRESHOLD_COMPILATION_TARGET_CLEAR {
+        error!(
+            "Disk space status: {} / {} used ({:.1}%) exceeds clear threshold of {:.0}%",
+            disk_space.used_byte,
+            disk_space.total_byte,
+            disk_space.used_fraction * 100.0,
+            THRESHOLD_COMPILATION_TARGET_CLEAR * 100.0,
+        );
+        let target_dir_clone = target_dir.to_path_buf();
+        let target_size_byte =
+            tokio::task::spawn_blocking(move || fs_extra::dir::get_size(&target_dir_clone)).await;
+        match target_size_byte {
+            Ok(Ok(target_size_byte)) => {
+                if target_size_byte < disk_space.total_byte / 20 {
+                    error!(
+                        "Not clearing `target` directory because its size ({target_size_byte} byte) is less than 5%. Please reduce disk usage in another way."
+                    );
+                    false
+                } else {
+                    error!(
+                        "Removing `target` directory to make space (should clear up {target_size_byte} byte)..."
+                    );
+                    if let Err(e) = fs::remove_dir_all(target_dir).await {
+                        error!("Unable to remove `target` directory to make space due to: {e}");
+                        false
+                    } else {
+                        let new_disk_space = DiskSpace::new_from_path(target_dir);
+                        if let Some(new_disk_space) = new_disk_space {
+                            info!(
+                                "New disk space status: {} / {} used ({:.1}%)",
+                                new_disk_space.used_byte,
+                                new_disk_space.total_byte,
+                                new_disk_space.used_fraction * 100.0
+                            );
+                        } else {
+                            error!("Unable to determine new disk space status");
+                        }
+                        true
+                    }
+                }
+            }
+            Ok(Err(e)) => {
+                error!(
+                    "Not clearing `target` directory because its size cannot be determined. Reduce disk usage in another way. Due to error: {e}"
+                );
+                false
+            }
+            Err(e) => {
+                error!(
+                    "Not clearing `target` directory because its size cannot be determined due to a thread join error: {e}"
+                );
+                false
+            }
+        }
+    } else if disk_space.used_fraction >= THRESHOLD_COMPILATION_TARGET_WARNING {
+        warn!(
+            "Disk space status: {} / {} used ({:.1}%) exceeds warning threshold of {:.0}%",
+            disk_space.used_byte,
+            disk_space.total_byte,
+            disk_space.used_fraction * 100.0,
+            THRESHOLD_COMPILATION_TARGET_WARNING * 100.0,
+        );
+        false
+    } else {
+        info!(
+            "Disk space status: {} / {} used ({:.1}%)",
+            disk_space.used_byte,
+            disk_space.total_byte,
+            disk_space.used_fraction * 100.0
+        );
+        false
     }
 }
 
@@ -2010,10 +2149,8 @@ fn valid_program_info_filenames(programs: &[PipelineProgramArtifacts]) -> Vec<St
                 &program.program_binary_source_checksum,
                 &program.program_info_integrity_checksum,
             ) {
-                // A Gen-2 program builds no binary, so it has no binary source checksum;
-                // its artifact is named by the program-info checksum on both halves (see
-                // `deliver_gen2_program_info`). Naming it exactly is what keeps a running
-                // Gen-2 pipeline's only artifact off the checksum-less fallback below.
+                // A Gen-2 program names its program info by the program-info checksum on
+                // both halves.
                 (ProgramStatus::Success, true, _, Some(program_info_integrity_checksum)) => {
                     program_info_filename(
                         pipeline_id,
@@ -2149,6 +2286,10 @@ async fn cleanup_rust_compilation(
     db: Arc<Mutex<StoragePostgres>>,
 ) -> Result<(), RustCompilationCleanupError> {
     trace!("Performing Rust cleanup...");
+
+    // The Gen-2 UDF workspace lies outside the Rust compilation directory, which may not
+    // exist yet when it does.
+    cleanup_gen2_udf_compilation(config, db.clone()).await?;
 
     // Rust compilation directory
     let rust_compilation_dir = config.working_dir().join("rust-compilation");
@@ -2299,102 +2440,9 @@ async fn cleanup_rust_compilation(
     }
 
     // (2) If the disk that the target directory resides on has reached a certain threshold
-    //     the entire target directory will get removed. There is no cleaner way currently to
-    //     more fine-grained clean up old dependencies.
-    let removed_target_dir = if has_unstable_feature("rust_compiler_full_cleanup") {
-        let target_dir = rust_compilation_dir.join("target");
-        if target_dir.is_dir() {
-            let disk_space = DiskSpace::new_from_path(&target_dir);
-            if let Some(disk_space) = disk_space {
-                if disk_space.used_fraction >= THRESHOLD_COMPILATION_TARGET_CLEAR {
-                    error!(
-                        "Disk space status: {} / {} used ({:.1}%) exceeds clear threshold of {:.0}%",
-                        disk_space.used_byte,
-                        disk_space.total_byte,
-                        disk_space.used_fraction * 100.0,
-                        THRESHOLD_COMPILATION_TARGET_CLEAR * 100.0,
-                    );
-                    let target_dir_clone = target_dir.clone();
-                    let target_size_byte = tokio::task::spawn_blocking(move || {
-                        fs_extra::dir::get_size(&target_dir_clone)
-                    })
-                    .await;
-                    match target_size_byte {
-                        Ok(Ok(target_size_byte)) => {
-                            if target_size_byte < disk_space.total_byte / 20 {
-                                error!(
-                                    "Not clearing `target` directory because its size ({target_size_byte} byte) is less than 5%. Please reduce disk usage in another way."
-                                );
-                                false
-                            } else {
-                                error!(
-                                    "Removing `target` directory to make space (should clear up {target_size_byte} byte)..."
-                                );
-                                if let Err(e) = fs::remove_dir_all(&target_dir).await {
-                                    error!(
-                                        "Unable to remove `target` directory to make space due to: {e}"
-                                    );
-                                    false
-                                } else {
-                                    let new_disk_space = DiskSpace::new_from_path(&target_dir);
-                                    if let Some(new_disk_space) = new_disk_space {
-                                        info!(
-                                            "New disk space status: {} / {} used ({:.1}%)",
-                                            new_disk_space.used_byte,
-                                            new_disk_space.total_byte,
-                                            new_disk_space.used_fraction * 100.0
-                                        );
-                                    } else {
-                                        error!("Unable to determine new disk space status");
-                                    }
-                                    true
-                                }
-                            }
-                        }
-                        Ok(Err(e)) => {
-                            error!(
-                                "Not clearing `target` directory because its size cannot be determined. Reduce disk usage in another way. Due to error: {e}"
-                            );
-                            false
-                        }
-                        Err(e) => {
-                            error!(
-                                "Not clearing `target` directory because its size cannot be determined due to a thread join error: {e}"
-                            );
-                            false
-                        }
-                    }
-                } else if disk_space.used_fraction >= THRESHOLD_COMPILATION_TARGET_WARNING {
-                    warn!(
-                        "Disk space status: {} / {} used ({:.1}%) exceeds warning threshold of {:.0}%",
-                        disk_space.used_byte,
-                        disk_space.total_byte,
-                        disk_space.used_fraction * 100.0,
-                        THRESHOLD_COMPILATION_TARGET_WARNING * 100.0,
-                    );
-                    false
-                } else {
-                    info!(
-                        "Disk space status: {} / {} used ({:.1}%)",
-                        disk_space.used_byte,
-                        disk_space.total_byte,
-                        disk_space.used_fraction * 100.0
-                    );
-                    false
-                }
-            } else {
-                warn!(
-                    "Unable to determine disk space remaining: unable to find disk corresponding to '{}'",
-                    target_dir.display()
-                );
-                false
-            }
-        } else {
-            false
-        }
-    } else {
-        false
-    };
+    //     the entire target directory will get removed.
+    let removed_target_dir = has_unstable_feature("rust_compiler_full_cleanup")
+        && clear_target_dir_if_disk_full(&rust_compilation_dir.join("target")).await;
 
     // (3) For each possible compilation profile, clean up their target artifacts
     for profile in [
@@ -2535,8 +2583,9 @@ mod test {
     use crate::compiler::rust_compiler::prepare_workspace;
     use crate::compiler::rust_compiler::{
         STALE_TEMP_UPLOAD_MAX_AGE, calculate_source_checksum, decide_cleanup,
-        decide_pipeline_binary_cleanup, is_permanent_upload_rejection, program_info_filename,
-        sccache_message, valid_pipeline_binary_filenames, valid_program_info_filenames,
+        decide_pipeline_binary_cleanup, is_permanent_upload_rejection, pipeline_binary_filename,
+        program_info_filename, sccache_message, valid_pipeline_binary_filenames,
+        valid_program_info_filenames,
     };
     use crate::compiler::test::{CompilerTest, list_content_as_sorted_names};
     use crate::compiler::util::{
@@ -2855,6 +2904,8 @@ mod test {
             binary_upload_timeout_secs: 300,
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
+            gen2_udf_sdk_path: None,
+            gen2_udf_sdk_version: None,
             precompile: false,
         };
 
@@ -2997,6 +3048,47 @@ mod test {
         assert_eq!(
             valid_program_info_filenames(std::slice::from_ref(&compiling)),
             vec![format!("program_info_{pipeline_id}_v3_")]
+        );
+    }
+
+    /// A Gen-2 program with Rust UDFs keeps its UDF library and its program info.
+    #[test]
+    fn gen2_program_with_a_udf_library_keeps_its_artifacts() {
+        let pipeline_id = PipelineId(uuid::Uuid::nil());
+        let checksum = "c0ffee";
+        let program_info = program_info_filename(&pipeline_id, Version(3), checksum, checksum);
+        let udf_library = pipeline_binary_filename(&pipeline_id, Version(3), "50a1ce", "ab0d1e");
+        let with_library = PipelineProgramArtifacts {
+            pipeline_id,
+            program_version: Version(3),
+            program_status: ProgramStatus::Success,
+            program_binary_source_checksum: Some("50a1ce".to_string()),
+            program_binary_integrity_checksum: Some("ab0d1e".to_string()),
+            program_info_integrity_checksum: Some(checksum.to_string()),
+            is_gen2: true,
+        };
+        let programs = std::slice::from_ref(&with_library);
+        let valid_binaries = valid_pipeline_binary_filenames(programs);
+        let valid_program_infos = valid_program_info_filenames(programs);
+        assert_eq!(valid_program_infos, vec![program_info.clone()]);
+        for kept in [&program_info, &udf_library] {
+            assert_eq!(
+                decide_pipeline_binary_cleanup(kept, None, &valid_binaries, &valid_program_infos),
+                CleanupDecision::Keep {
+                    motivation: kept.clone()
+                }
+            );
+        }
+        let previous_library =
+            pipeline_binary_filename(&pipeline_id, Version(2), "50a1ce", "ab0d1e");
+        assert_eq!(
+            decide_pipeline_binary_cleanup(
+                &previous_library,
+                None,
+                &valid_binaries,
+                &valid_program_infos
+            ),
+            CleanupDecision::Remove
         );
     }
 

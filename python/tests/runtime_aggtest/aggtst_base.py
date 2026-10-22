@@ -3,6 +3,7 @@
 import hashlib
 import re
 import unittest
+import warnings
 from typing import Dict, TypeAlias
 
 from feldera import Pipeline, PipelineBuilder
@@ -271,12 +272,12 @@ class TstAccumulator:
             # Pipelines that fail to compile will remain None
             # as `PipelineBuilder` will raise an exception and not
             # return a `Pipeline` object.
-            pipeline = PipelineBuilder(
-                TEST_CLIENT,
-                pipeline_name,
-                sql=sql,
-                compilation_profile=CompilationProfile.UNOPTIMIZED,
-                runtime_config=RuntimeConfig(
+            with warnings.catch_warnings():
+                # The older spelling of the timeout, so that a deployment from
+                # before the current names reads it too; it warns, and the
+                # warning is noise here.
+                warnings.simplefilter("ignore", DeprecationWarning)
+                runtime_config = RuntimeConfig(
                     workers=FELDERA_TEST_NUM_WORKERS,
                     hosts=FELDERA_TEST_NUM_HOSTS,
                     # CI's ci-pipeline nodes come from GKE node auto-provisioning
@@ -292,7 +293,13 @@ class TstAccumulator:
                     # Honest request so k8s does not pack aggtest pipelines
                     # onto nodes without headroom and evict them mid-test.
                     resources=Resources(memory_mb_min=3072),
-                ),
+                )
+            pipeline = PipelineBuilder(
+                TEST_CLIENT,
+                pipeline_name,
+                sql=sql,
+                compilation_profile=CompilationProfile.UNOPTIMIZED,
+                runtime_config=runtime_config,
             ).create_or_replace()
 
             pipeline.start()

@@ -1,9 +1,11 @@
 use crate::config::CommonConfig;
 use crate::db::types::pipeline::PipelineId;
+use crate::db::types::program::RuntimeSelector;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::runner::pipeline_logs::LogsSender;
 use async_trait::async_trait;
+use feldera_types::config::LegacySpelling;
 use feldera_types::config::{PipelineConfig, StorageConfig};
 use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus};
 use std::time::Duration;
@@ -64,9 +66,18 @@ pub trait PipelineExecutor: Sync + Send {
     ///
     /// Note: `program_info` is used to discover the set of secrets to mount into the pipeline.
     ///
-    /// When `is_gen2` is true the pipeline is configured with the Gen-2
-    /// engine, so no pipeline binary was compiled: the executor launches the
-    /// Gen-2 engine and ignores `program_binary_url`.
+    /// When `runtime_selector` selects the Gen2 engine, no pipeline binary was
+    /// compiled: the executor launches the Gen2 engine and ignores
+    /// `program_binary_url`. An executor runs the engine build `gen2:<sha>` names,
+    /// or refuses the pipeline if it cannot select builds. A Gen2 program with Rust UDFs references its UDF
+    /// library in the program info; the executor fetches it from the compiler
+    /// server and passes it to the engine (`--udf-library`).
+    ///
+    /// `legacy_spelling` says which settings the pipeline's runtime reads only
+    /// in their older spelling, because it is pinned to a runtime other than
+    /// the platform's or was compiled by an earlier platform that predates a
+    /// rename: the executor writes the configuration the pipeline reads through
+    /// [`LegacySpelling::apply`].
     #[allow(clippy::too_many_arguments)]
     async fn provision(
         &mut self,
@@ -78,7 +89,8 @@ pub trait PipelineExecutor: Sync + Send {
         program_binary_url: &str,
         program_info_url: &str,
         program_version: Version,
-        is_gen2: bool,
+        runtime_selector: &RuntimeSelector,
+        legacy_spelling: LegacySpelling,
     ) -> Result<(), ManagerError>;
 
     // `is_provisioned()`, `check()`, `stop()` and `clear()` receive the stored deployment config

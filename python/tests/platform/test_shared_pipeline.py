@@ -163,7 +163,7 @@ class TestPipeline(SharedTestPipeline):
             self.pipeline.name, "SELECT * FROM tbl ORDER BY id"
         )
         assert (
-            resp == "CCACBC763D343FB9855F285385B5A8A04FB5DAC4926DA3802F071B0C05BDF852"
+            resp == "EAA17D83271D48F5B0A2871210F102DAF5A0FC6F3CB8367FB757BBA6B0378086"
         )
 
     def test_adhoc_query_parquet(self):
@@ -817,7 +817,17 @@ class TestPipeline(SharedTestPipeline):
         got = TEST_CLIENT.get_pipeline(
             self.pipeline.name, PipelineFieldSelector.ALL
         ).runtime_config["resources"]
-        assert got == config
+        # The sizes were given under their deprecated names; the manager stores
+        # them under the current ones, as sizes, and leaves out an unset size.
+        assert got == {
+            "cpu_cores_max": 3,
+            "cpu_cores_min": 2,
+            "memory_max": "500M",
+            "memory_min": "300M",
+            "storage_class": None,
+            "namespace": None,
+            "service_account_name": None,
+        }
 
     def test_support_bundle(self):
         self.pipeline.start()

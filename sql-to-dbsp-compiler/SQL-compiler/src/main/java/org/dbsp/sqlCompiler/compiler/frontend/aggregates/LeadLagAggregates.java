@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.aggregates;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.Window;
 import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexWindowExclusion;
 import org.apache.calcite.sql.SqlKind;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
@@ -120,12 +121,16 @@ public class LeadLagAggregates extends WindowAggregates {
             Utilities.enforce(lagTuple.fields != null);
             DBSPType resultType = lagTuple.fields[i].getType();
             if (args.size() > 2) {
-                int defaultIndex = args.get(2);
-                RexInputRef ri = new RexInputRef(defaultIndex,
-                        // Same type as field i
-                        window.getRowType().getFieldList().get(i).getType());
-                // a default argument is present
-                defaultValues[i] = eComp.compile(ri).cast(this.node, resultType, DBSPCastExpression.CastType.SqlUnsafe);
+                // The window numbers its constants after the input fields
+                int constantIndex = args.get(2) - this.window.getInput().getRowType().getFieldCount();
+                if (constantIndex < 0) {
+                    String agg = Utilities.singleQuote(call.getAggregation().getKind().toString());
+                    throw new UnimplementedException(
+                            agg + " with a default value that is not a constant", 7392, this.node);
+                }
+                RexLiteral defaultValue = this.window.constants.get(constantIndex);
+                defaultValues[i] = eComp.compile(defaultValue)
+                        .cast(this.node, resultType, DBSPCastExpression.CastType.SqlUnsafe);
             } else {
                 defaultValues[i] = resultType.none();
             }

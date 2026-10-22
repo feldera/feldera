@@ -16,9 +16,11 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.util.HashString;
 import org.dbsp.util.Utilities;
+
+import java.util.HashSet;
+import java.util.Set;
 
 /** Writes the implementation of a {@link DBSPNestedOperator} as a function that instantiates
  * the operator in circuit. */
@@ -26,12 +28,15 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
     final DBSPNestedOperator operator;
     final DBSPCircuit circuit;
     final CircuitPostfix materializations;
+    /** Names of the region variables that the generated function declares */
+    final Set<String> regionsDeclared;
 
     public NestedOperatorWriter(DBSPNestedOperator operator, DBSPCircuit circuit,
                                 CircuitPostfix materializations) {
         this.circuit = circuit;
         this.operator = operator;
         this.materializations = materializations;
+        this.regionsDeclared = new HashSet<>();
     }
 
     private void processChild(DBSPOperator node) {
@@ -41,8 +46,8 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         HashString merkle = OperatorHash.getHash(node, true);
         RegionAnnotation region = node.annotations.first(RegionAnnotation.class);
         if (region != null) {
-            boolean exists = this.materializations.recordRegion(region);
-            if (!exists) {
+            // The generated function is in a crate of its own, so it declares each region it uses
+            if (this.regionsDeclared.add(region.asVarName())) {
                 this.builder().append("let ")
                         .append(region.asVarName())
                         .append(": Option<RegionName> = Some(circuit.create_region_name(")
@@ -158,6 +163,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         boolean useHandles = compiler.options.ioOptions.emitHandles;
         this.builder()
                 .append(RustWriter.COMMON_PREAMBLE)
+                .append(RustWriter.ALLOW_DEPRECATED_PREAMBLE)
                 .append(RustWriter.STANDARD_PREAMBLE);
         if (!useHandles)
             this.builder().append(RustWriter.CATALOG_PREAMBLE);

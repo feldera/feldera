@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IHasId;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Shuffle;
+import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -70,6 +71,19 @@ public class Change implements IHasId {
 
     public TableData getSet(int index) {
         return this.sets[index];
+    }
+
+    /** This change minus {@code other}, set by set.  When either change has no sets, the
+     * result is this change. */
+    public Change minus(Change other) {
+        if (this.getSetCount() == 0 || other.getSetCount() == 0)
+            return this;
+        Utilities.enforce(this.getSetCount() == other.getSetCount(), () -> "Changes have "
+                + this.getSetCount() + " and " + other.getSetCount() + " sets");
+        TableData[] sets = new TableData[this.getSetCount()];
+        for (int index = 0; index < sets.length; index++)
+            sets[index] = this.getSet(index).minus(other.getSet(index).data());
+        return new Change(sets);
     }
 
     @Override

@@ -485,9 +485,9 @@ public class IncrementalRegression2Tests extends SqlIoTest {
 
             @Override
             public void endVisit() {
-                // If sharing of map-index operators works, there are 3,
-                // otherwise there are 4.  LATENESS prevents sharing
-                Assert.assertEquals(4, this.mapIndexCount);
+                // Both joins read one index of customers: the join with orders1 keeps every
+                // customer, so the shared integral is not garbage collected
+                Assert.assertEquals(3, this.mapIndexCount);
             }
         });
     }
@@ -738,7 +738,6 @@ public class IncrementalRegression2Tests extends SqlIoTest {
                   ON prev.id = me.id
                  AND prev.ts BETWEEN me.ts - INTERVAL '3' HOURS AND me.ts
                 GROUP BY me.id, me.ts;""");
-        // There should be two retain_values operators
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             int retains = 0;
 
@@ -749,7 +748,8 @@ public class IncrementalRegression2Tests extends SqlIoTest {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(2, this.retains);
+                // The two sides of the self-join share one trace, with one merged retain_values operator
+                Assert.assertEquals(1, this.retains);
             }
         });
     }
@@ -776,7 +776,6 @@ public class IncrementalRegression2Tests extends SqlIoTest {
                   ON prev.id = me.id
                  AND prev.ts BETWEEN me.ts - INTERVAL '3' HOURS AND me.ts
                 GROUP BY me.id, me.ts;""");
-        // There should be two retain_values operators
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             int retains = 0;
 
@@ -787,7 +786,8 @@ public class IncrementalRegression2Tests extends SqlIoTest {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(2, this.retains);
+                // The two sides of the self-join share one trace, with one merged retain_values operator
+                Assert.assertEquals(1, this.retains);
             }
         });
     }

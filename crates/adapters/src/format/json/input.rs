@@ -1,6 +1,6 @@
 //! JSON format parser.
 
-use super::{DebeziumUpdate, InsDelUpdate, WeightedUpdate};
+use super::{DebeziumUpdate, InsDelUpdate};
 use crate::catalog::InputCollectionHandle;
 use crate::format::{InputBuffer, LineSplitter};
 use crate::{
@@ -140,34 +140,6 @@ impl UpdateFormat for DebeziumUpdate<&'_ RawValue> {
     }
 }
 
-impl UpdateFormat for WeightedUpdate<&'_ RawValue> {
-    fn error() -> &'static str {
-        "error deserializing JSON string as a weighted record"
-    }
-
-    fn array_error() -> &'static str {
-        "error deserializing string as a JSON array of weighted records"
-    }
-
-    fn example() -> Option<&'static str> {
-        Some("Example valid JSON: '{{\"weight\": 1, \"data\": {{...}} }}'")
-    }
-
-    fn array_example() -> Option<&'static str> {
-        Some(
-            "Example valid JSON: '[{{\"weight\": 1, \"data\": {{...}} }}, {{\"weight\": -1, \"data\": {{...}} }}]'",
-        )
-    }
-
-    fn apply(
-        self,
-        _parser: &mut JsonParser,
-        _metadata: &Option<Variant>,
-    ) -> Result<usize, ParseError> {
-        todo!()
-    }
-}
-
 impl UpdateFormat for &'_ RawValue {
     fn error() -> &'static str {
         "failed to parse JSON string"
@@ -235,17 +207,30 @@ fn validate_parser_config(
     config: &JsonParserConfig,
     endpoint_name: &str,
 ) -> Result<(), ControllerError> {
-    if config.update_format == JsonUpdateFormat::Snowflake {
-        return Err(ControllerError::input_format_not_supported(
-            endpoint_name,
-            &format!(
-                "{:?} is not supported for JSON input streams",
-                config.update_format
-            ),
-        ));
+    // No wildcard: a new update format must be classified here, because the
+    // parser panics on a format it does not support.
+    match config.update_format {
+        JsonUpdateFormat::InsertDelete | JsonUpdateFormat::Debezium | JsonUpdateFormat::Raw => {
+            Ok(())
+        }
+        JsonUpdateFormat::Snowflake | JsonUpdateFormat::Redis => {
+            Err(ControllerError::input_format_not_supported(
+                endpoint_name,
+                &unsupported_update_format(&config.update_format),
+            ))
+        }
     }
+}
 
-    Ok(())
+/// Error message for an update format that JSON input does not support.
+///
+/// The list of formats here must match the ones that `validate_parser_config`
+/// accepts.
+fn unsupported_update_format(update_format: &JsonUpdateFormat) -> String {
+    format!(
+        "update format '{update_format}' is not supported for JSON input streams; use one of \
+         'insert_delete', 'debezium', or 'raw'"
+    )
 }
 
 fn looks_like_insert_delete_envelope_object(value: &JsonValue) -> bool {
@@ -437,9 +422,6 @@ impl Parser for JsonParser {
                 JsonUpdateFormat::Debezium => {
                     self.apply_update::<DebeziumUpdate<_>>(update, &metadata, &mut errors)
                 }
-                JsonUpdateFormat::Weighted => {
-                    self.apply_update::<WeightedUpdate<_>>(update, &metadata, &mut errors)
-                }
                 JsonUpdateFormat::Raw => {
                     let errors_before = errors.len();
                     self.apply_update::<&RawValue>(update, &metadata, &mut errors);
@@ -453,7 +435,15 @@ impl Parser for JsonParser {
                     }
                 }
                 JsonUpdateFormat::Redis | JsonUpdateFormat::Snowflake => {
-                    panic!("Unexpected update format: {:?}", self.config.update_format)
+                    // `validate_parser_config` rejects these formats, so this
+                    // is unreachable.  Report an error instead of panicking:
+                    // a panic here would happen while a transport holds locks.
+                    errors.push(ParseError::text_envelope_error(
+                        unsupported_update_format(&self.config.update_format),
+                        update.get(),
+                        None,
+                    ));
+                    break;
                 }
             }
         }
@@ -1312,6 +1302,25 @@ mod test {
         ];
 
         run_test_cases(test_cases);
+    }
+
+    /// Update formats that JSON input does not support must be rejected when
+    /// the parser is created.  Otherwise, the parser panics on the first
+    /// record.
+    #[test]
+    fn unsupported_update_formats_are_rejected() {
+        for update_format in [JsonUpdateFormat::Snowflake, JsonUpdateFormat::Redis] {
+            let config = JsonParserConfig {
+                update_format: update_format.clone(),
+                ..JsonParserConfig::default()
+            };
+            let error = super::validate_parser_config(&config, "endpoint")
+                .expect_err(&format!("{update_format:?} was accepted for input"));
+            assert!(
+                error.to_string().contains("not supported for JSON input"),
+                "{error}"
+            );
+        }
     }
 
     #[test]

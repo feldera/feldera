@@ -72,7 +72,7 @@
     <div class=" flex w-full flex-col">
       <div class="flex justify-between pb-2 font-semibold">
         <span class={textClass}>{header}</span>
-        <div class="flex flex-nowrap gap-4">
+        <div class="flex flex-nowrap gap-2.5">
           {#if message}
             <ClipboardCopyButton value={message} class="-m-2"></ClipboardCopyButton>
           {/if}

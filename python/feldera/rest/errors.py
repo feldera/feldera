@@ -1,7 +1,7 @@
 from requests import Response
 import json
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, List, Mapping, Optional
 from urllib.parse import urlparse
 
 
@@ -111,3 +111,39 @@ class FelderaCommunicationError(FelderaError):
 
     def __init__(self, err: str) -> None:
         super().__init__(f"Cannot connect to Feldera API: {err}")
+
+
+class TableReloadNotAllowedError(RuntimeError):
+    """
+    Raised when bootstrapping would reload a table that is not in
+    `reloadable_tables`, or when the SDK cannot tell which tables it reloads.
+    The pipeline stays in the AWAITINGAPPROVAL state: call `approve()` to
+    bootstrap or `stop(force=True)` to reject.
+    """
+
+    def __init__(
+        self,
+        pipeline_name: str,
+        reason: str,
+        approval_diff: Optional[Mapping[str, Any]],
+        blocked_tables: Optional[List[str]] = None,
+    ) -> None:
+        """
+        :param pipeline_name: The name of the pipeline. Stored as
+            `pipeline_name`.
+        :param reason: Why the SDK did not approve the bootstrap. Part of the
+            error message.
+        :param approval_diff: The diff awaiting approval, as the pipeline
+            reported it. Stored as `approval_diff`.
+        :param blocked_tables: Modified tables that are not in
+            `reloadable_tables`. Stored as `blocked_tables`. Empty if the diff
+            is unknown.
+        """
+        self.pipeline_name = pipeline_name
+        self.approval_diff = approval_diff
+        self.blocked_tables = blocked_tables or []
+        super().__init__(
+            f"Table reload not allowed in pipeline '{pipeline_name}': {reason}. "
+            "The pipeline is AWAITINGAPPROVAL: call approve() to bootstrap or "
+            "stop(force=True) to reject."
+        )

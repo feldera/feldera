@@ -3,6 +3,7 @@ use crate::{Controller, PipelineError};
 use actix_web::{HttpRequest, HttpResponse, http::header, web::Payload};
 use actix_ws::{AggregatedMessage, CloseCode, CloseReason, Closed, Session as WsSession};
 use datafusion::common::metadata::ScalarAndMetadata;
+use datafusion::common::tree_node::TreeNode;
 use datafusion::common::{DFSchema, ParamValues};
 use datafusion::execution::SessionState;
 use datafusion::logical_expr::{EmptyRelation, Execute, LogicalPlan, Prepare, Statement};
@@ -287,13 +288,14 @@ async fn execute_sql_with_state(
     // clients submit them over a single HTTP or WebSocket call.
     let mut prepared: HashMap<String, LogicalPlan> = HashMap::new();
     let sql_options = SQLOptions::new().with_allow_ddl(false);
+    let validate_plan = |plan: &LogicalPlan| validate_plan(&sql_options, plan);
 
     while statements.len() > 1 {
         let stmt = statements.pop_front().unwrap();
         let plan = state.statement_to_plan(stmt).await?;
         match plan {
             LogicalPlan::Statement(Statement::Prepare(Prepare { name, input, .. })) => {
-                sql_options.verify_plan(&input)?;
+                validate_plan(&input)?;
                 prepared.insert(name, (*input).clone());
             }
             LogicalPlan::Statement(Statement::Execute(Execute { name, parameters })) => {
@@ -310,10 +312,11 @@ async fn execute_sql_with_state(
                         })?;
                 let values = execute_parameters_to_scalars(&parameters)?;
                 let bound = prepared_plan.replace_params_with_values(&ParamValues::List(values))?;
-                sql_options.verify_plan(&bound)?;
+                validate_plan(&bound)?;
                 drain_intermediate_plan(&state, bound).await?;
             }
             other if is_result_producing_plan(&other) => {
+                validate_plan(&other)?;
                 return Err(PipelineError::AdHocQueryError {
                     error: "only the final statement in a multi-statement \
                             ad-hoc query may return a result set; \
@@ -327,7 +330,7 @@ async fn execute_sql_with_state(
                 // Non-result-producing intermediate statement (INSERT,
                 // UPDATE, DELETE, EXPLAIN, ...). Execute it for its side
                 // effects and discard the per-statement count row.
-                sql_options.verify_plan(&other)?;
+                validate_plan(&other)?;
                 drain_intermediate_plan(&state, other).await?;
             }
         }
@@ -357,7 +360,7 @@ async fn execute_sql_with_state(
             warn!(
                 "PREPARE with no matching EXECUTE in the same request has no persistent effect, returning an empty set"
             );
-            sql_options.verify_plan(&input)?;
+            validate_plan(&input)?;
             LogicalPlan::EmptyRelation(EmptyRelation {
                 produce_one_row: false,
                 schema: Arc::new(DFSchema::empty()),
@@ -366,8 +369,22 @@ async fn execute_sql_with_state(
         other => other,
     };
 
-    sql_options.verify_plan(&final_plan)?;
+    validate_plan(&final_plan)?;
     Ok(DataFrame::new(state, final_plan))
+}
+
+/// Rejects plans that ad-hoc queries may not run: DDL, and `COPY ... TO`,
+/// which writes files on the pipeline host.  `COPY` can also hide inside
+/// `EXPLAIN ANALYZE`, so the whole plan tree is searched.
+fn validate_plan(sql_options: &SQLOptions, plan: &LogicalPlan) -> Result<(), PipelineError> {
+    sql_options.verify_plan(plan)?;
+    if plan.exists(|node| Ok(matches!(node, LogicalPlan::Copy(_))))? {
+        return Err(PipelineError::AdHocQueryError {
+            error: "COPY is not supported in ad-hoc queries".to_string(),
+            df: None,
+        });
+    }
+    Ok(())
 }
 
 /// True if executing this plan would surface rows to the caller. Used to
@@ -422,7 +439,7 @@ fn parse_sql_statements(
     })?;
     let statements = DFParserBuilder::new(sql)
         .with_dialect(dialect.as_ref())
-        .with_recursion_limit(recursion_limit)
+        .with_recursion_limit(recursion_limit.get())
         .build()?
         .parse_statements()
         .map_err(format_parser_error)?;
@@ -635,6 +652,32 @@ mod tests {
         let batches = collect_rows(state, "PREPARE p AS SELECT 1").await;
         let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
         assert_eq!(total_rows, 0);
+    }
+
+    /// `COPY ... TO` writes a file on the pipeline host, so it is rejected
+    /// in every position, including inside `EXPLAIN ANALYZE`, and the file
+    /// is never written.
+    #[tokio::test]
+    async fn copy_to_is_rejected() {
+        let tempdir = tempfile::TempDir::new().unwrap();
+        let path = tempdir.path().join("out.csv");
+        let copy = format!("COPY (SELECT 1 AS c) TO '{}' STORED AS CSV", path.display());
+        for sql in [
+            copy.clone(),
+            format!("{copy}; SELECT 1"),
+            format!("EXPLAIN ANALYZE {copy}"),
+        ] {
+            let result = match execute_sql_with_state(test_state(), &sql).await {
+                Ok(df) => df.collect().await.map(|_| ()).map_err(PipelineError::from),
+                Err(error) => Err(error),
+            };
+            let error = result.expect_err(&format!("{sql} was accepted"));
+            assert!(
+                error.to_string().contains("COPY is not supported"),
+                "{sql}: {error}"
+            );
+            assert!(!path.exists(), "{sql} wrote {}", path.display());
+        }
     }
 
     /// An intermediate `SELECT` (or any other result-producing statement)

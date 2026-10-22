@@ -207,7 +207,7 @@ async fn unbundle_support_bundle(
 
     for i in 0..archive.len() {
         let file = archive.by_index(i)?;
-        let filename = file.name().to_string();
+        let filename = file.name()?.to_string();
         drop(file); // Drop the file reference before getting it again
 
         if let Some((_, base)) = filename.rsplit_once('/')
@@ -400,6 +400,7 @@ async fn unbundle_support_bundle(
                     udf_toml,
                     program_config,
                     runtime_config,
+                    deployment_config: None,
                 })
                 .send()
                 .await

@@ -40,6 +40,11 @@ public final class DBSPIntegrateTraceRetainValuesOperator
         return this;
     }
 
+    @Override
+    public OutputPort data() {
+        return this.left();
+    }
+
     public static DBSPIntegrateTraceRetainValuesOperator create(
             CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
         DBSPType controlType = control.outputType();

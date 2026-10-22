@@ -527,16 +527,18 @@ impl Checkpointer {
             .and_then(|reader| reader.commit())?)
     }
 
-    /// Removes `file` and logs any error.
-    fn remove_batch_file(&self, file: &StoragePath) {
+    /// Removes `file` and logs any error.  Returns true if `file` is gone.
+    fn remove_batch_file(&self, file: &StoragePath) -> bool {
         match self.backend.delete_if_exists(file) {
             Ok(_) => {
                 debug!("Removed file {file}");
+                true
             }
             Err(e) => {
                 warn!(
                     "Unable to remove old-checkpoint file {file}: {e} (the pipeline will try to delete the file again on a restart)"
                 );
+                false
             }
         }
     }
@@ -596,32 +598,33 @@ impl Checkpointer {
         // to remove the checkpoint files again (see also [`Self::gc_startup`]).
         self.update_checkpoint_file()?;
 
-        // Also keep batches of the newest retained checkpoint not in `except`
-        // (its merger may still depend on them). Errors must propagate so we
-        // never delete a batch we couldn't prove safe.
-        if let Some(retained) = self
-            .checkpoint_list
-            .iter()
-            .find(|c| !except.contains(&c.uuid))
-        {
+        // Also keep the batches of every retained checkpoint.  Retained
+        // checkpoints need not descend from one another: a pipeline that
+        // resumed from an older checkpoint than the newest one in the catalog
+        // took its next checkpoint as a child of the older one.  Errors must
+        // propagate so we never delete a batch we couldn't prove safe.
+        for retained in &self.checkpoint_list {
             let batches = self.backend.gather_batches_for_checkpoint(retained)?;
             batch_files_to_keep.extend(batches);
         }
 
+        let mut removed_batch_files = 0;
         for cpm in &to_remove {
             for batch_file in self
                 .backend
                 .gather_batches_for_checkpoint_uuid(*cpm)?
                 .difference(&batch_files_to_keep)
             {
-                self.remove_batch_file(batch_file);
+                if self.remove_batch_file(batch_file) {
+                    removed_batch_files += 1;
+                }
             }
 
             self.remove_checkpoint_dir(*cpm)?;
         }
 
         info!(
-            "cleaned up {} checkpoints; exception list: {except:?}, retaining checkpoints: {:?}",
+            "cleaned up {} checkpoints and {removed_batch_files} batch files; exception list: {except:?}, retaining checkpoints: {:?}",
             to_remove.len(),
             self.checkpoint_list
                 .iter()
@@ -1072,8 +1075,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         std::fs::remove_file(tempdir.path().join(CHECKPOINT_FILE_NAME)).unwrap();
 
         let err = Checkpointer::new(make_backend())
-            .err()
-            .expect("missing catalog with orphan UUID dirs must error");
+            .expect_err("missing catalog with orphan UUID dirs must error");
         assert!(
             format!("{err}").contains("checkpoint catalog (checkpoints.feldera) missing"),
             "expected catalog-missing error, got: {err}",
@@ -1124,6 +1126,56 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         assert!(
             result.is_err(),
             "gc_checkpoint should not return Ok with corrupt metadata on protected checkpoint {protected}",
+        );
+    }
+
+    /// When a restart resumes from an older checkpoint than the newest one in
+    /// the catalog, GC must keep the batches of every retained checkpoint.
+    #[test]
+    fn gc_checkpoint_keeps_batches_of_forked_checkpoints() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let make_backend = || -> Arc<dyn StorageBackend> {
+            Arc::new(PosixBackend::new(
+                tempdir.path(),
+                StorageCacheConfig::default(),
+                &FileBackendConfig::default(),
+            ))
+        };
+        let commit = |checkpointer: &mut Checkpointer, steps: u64, batches: &[&str]| {
+            let uuid = uuid::Uuid::now_v7();
+            let cp_dir = tempdir.path().join(uuid.to_string());
+            std::fs::create_dir_all(&cp_dir).unwrap();
+            for batch in batches {
+                std::fs::write(tempdir.path().join(batch), b"batch payload").unwrap();
+            }
+            std::fs::write(
+                cp_dir.join("pspine-batches-trace.dat"),
+                serde_json::to_vec(&serde_json::json!({ "files": batches })).unwrap(),
+            )
+            .unwrap();
+            checkpointer
+                .commit_and_publish(uuid, 0, None, Some(steps), Some(0))
+                .unwrap();
+            uuid
+        };
+
+        // B no longer references A's batch: its process merged it away.
+        let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
+        commit(&mut checkpointer, 330, &["w0-a.feldera"]);
+        commit(&mut checkpointer, 335, &["w0-b.feldera"]);
+        drop(checkpointer);
+
+        // The process that wrote B died before the root state file pointed at
+        // it, so its successor resumes from A and checkpoints C from A's batches.
+        let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
+        let c = commit(&mut checkpointer, 335, &["w0-a.feldera", "w0-c.feldera"]);
+        checkpointer.gc_checkpoint(HashSet::new()).unwrap();
+        drop(checkpointer);
+
+        let log = LogCapture::new(|| drop(Checkpointer::new(make_backend()).unwrap())).log;
+        assert!(
+            tempdir.path().join("w0-a.feldera").exists(),
+            "GC deleted w0-a.feldera, which retained checkpoint {c} references:\n{log}",
         );
     }
 

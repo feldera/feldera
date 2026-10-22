@@ -899,7 +899,7 @@ async fn bearer_auth(
             let memberships = {
                 let db = state.db.lock().await;
                 match db.list_user_memberships(&provider, &subject).await {
-                    Ok(memberships) => memberships,
+                    Ok((memberships, _)) => memberships,
                     Err(e) => {
                         return Err((crate::error::ManagerError::from(e).into(), req));
                     }
@@ -1960,6 +1960,7 @@ mod test {
             first_user_role: Role::Admin,
             provision_on_login: true,
             http_base_path: String::new(),
+            enable_pipeline_resize: false,
         }
     }
 

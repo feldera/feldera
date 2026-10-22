@@ -141,18 +141,18 @@ where
 
 impl<Z, OZ> StreamingBinaryOperator<Option<Z>, Spine<OZ>, OZ> for ChainAggregate<Z, OZ>
 where
-    Z: ZBatchReader<Time = ()> + WithSnapshot,
+    Z: ZBatchReader<Time = ()> + WithSnapshot + Clone,
     <Z as WithSnapshot>::Batch: ZBatchReader<Key = Z::Key, Val = Z::Val, Time = ()>,
     OZ: IndexedZSet<Key = Z::Key>,
 {
     fn eval(
         self: Rc<Self>,
-        delta: &Option<Z>,
-        output_trace: &Spine<OZ>,
+        delta: Cow<'_, Option<Z>>,
+        output_trace: Cow<'_, Spine<OZ>>,
     ) -> impl futures::Stream<Item = (OZ, bool, Option<Position>)> + 'static {
         let chunk_size = splitter_output_chunk_size();
 
-        let delta = delta.as_ref().map(|b| b.ro_snapshot());
+        let delta = (*delta).as_ref().map(|b| b.ro_snapshot());
 
         let output_trace = if delta.is_some() {
             Some(output_trace.ro_snapshot())

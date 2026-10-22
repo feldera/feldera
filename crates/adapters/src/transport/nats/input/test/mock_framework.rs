@@ -1,4 +1,5 @@
 use super::NatsTestRecord;
+use super::jetstream_proxy::{JetStreamProxy, ProxyFaults};
 use super::util;
 use crate::test::{
     DEFAULT_TIMEOUT_MS, MockDeZSet, MockInputConsumer, init_test_logger, mock_input_pipeline, wait,
@@ -49,7 +50,10 @@ pub(super) enum NatsMockAction {
     /// JetStream sequences are **1-based** (first message = sequence 1), and
     /// the runner's `published` vec uses the same numbering, so sequence `s`
     /// is simply `published[s]`.
-    Replay { start: u64, end: u64 },
+    Replay {
+        start: u64,
+        end: u64,
+    },
     /// Call `endpoint.disconnect()`.
     Disconnect,
     /// Disconnect without asserting absence of non-fatal endpoint errors.
@@ -76,21 +80,32 @@ pub(super) enum NatsMockAction {
     PurgeStream,
 
     /// Assert that a fatal error appears within [min, max] time window.
-    ExpectFatalErrorWithin { min: Duration, max: Duration },
+    ExpectFatalErrorWithin {
+        min: Duration,
+        max: Duration,
+    },
     /// Assert that a fatal error appears within `timeout` and includes `needle`.
     ExpectFatalErrorContains {
         timeout: Duration,
         needle: &'static str,
     },
     /// Wait until `error_count` reaches at least `count`.
-    WaitForErrorCountAtLeast { count: usize, timeout: Duration },
+    WaitForErrorCountAtLeast {
+        count: usize,
+        timeout: Duration,
+    },
     /// Assert that no additional endpoint errors are reported for `duration`.
-    AssertNoErrorCountIncrease { duration: Duration },
+    AssertNoErrorCountIncrease {
+        duration: Duration,
+    },
 
     /// Verify that `count` output records starting at `output_index` match
     /// the corresponding published records. The NATS sequence is derived
     /// automatically (`output_index + 1`), since `published` is 1-based.
-    VerifyRecords { output_index: usize, count: usize },
+    VerifyRecords {
+        output_index: usize,
+        count: usize,
+    },
     /// Verify that the output records starting at `output_index` match
     /// the published records starting at JetStream sequence `nats_seq`.
     ///
@@ -104,6 +119,65 @@ pub(super) enum NatsMockAction {
     },
     /// Assert that the zset contains exactly `n` flushed records (no waiting).
     AssertRecordCount(usize),
+
+    /// Wait until the server reports exactly `count` consumers on the stream.
+    ///
+    /// Verifies that the connector deletes the consumers it abandons instead
+    /// of leaving them for the server's `inactive_threshold` to reap.
+    WaitForConsumerCount {
+        count: usize,
+        timeout: Duration,
+    },
+    /// Assert that every consumer on the stream is named `<prefix>_<suffix>`.
+    AssertConsumerNamesStartWith(&'static str),
+
+    /// Put a fault-injecting proxy in front of the server. Pipelines created
+    /// afterwards connect through it; the runner's own requests do not.
+    StartProxy(ProxyFaults),
+    /// Gate replay's stream validation while direct-server publication runs.
+    HoldStreamInfo,
+    ReleaseStreamInfo,
+    /// Observe retry errors without sending Queue (which interrupts replay).
+    WaitForReplayErrorCountAtLeast {
+        count: usize,
+        timeout: Duration,
+    },
+    /// Suspend the server (SIGSTOP), so requests time out.
+    FreezeServer,
+    /// Resume a frozen server (SIGCONT).
+    ThawServer,
+    /// Delete every consumer on the stream through the JetStream API.
+    DeleteConsumers,
+    /// Call `endpoint.queue()` repeatedly for the given duration.
+    QueueFor(Duration),
+    /// Call `endpoint.queue()` once and assert that the endpoint reports the
+    /// step (`extended`) within the given duration.
+    QueueCompletesWithin(Duration),
+    /// Call `endpoint.disconnect()` and assert that the worker exits within
+    /// the given duration.
+    DisconnectWithin(Duration),
+    /// Wait until a delete reaches the proxy's gate.
+    WaitForDeleteRequests {
+        count: usize,
+        timeout: Duration,
+    },
+    /// Disconnect with cleanup held at the proxy. The worker must stay alive
+    /// until the test releases the delete, then exit with no consumer left.
+    DisconnectWaitsForHeldDelete,
+    /// Dropping the command sender must still join earlier cleanup.
+    DropWaitsForHeldDelete,
+    /// Assert that the consumer counters agree with the server: the
+    /// connector cannot have deleted more consumers than it created, and
+    /// `created - deleted` equals the consumers left on the stream.
+    AssertConsumerCountersMatchServer,
+    /// Assert that the server has exactly `n` consumers on the stream now,
+    /// without waiting.
+    AssertServerConsumerCount(usize),
+    /// Make the proxy drop the replies to the next `n` stream info
+    /// requests, so they time out.
+    DropStreamInfoReplies(usize),
+    /// Assert that the endpoint has not reported a fatal error.
+    AssertNoFatalError,
 }
 
 /// Internal state held by the test runner.
@@ -120,6 +194,7 @@ struct NatsMockRunner {
     pipeline_create_error: Option<AnyError>,
     got_fatal: Arc<AtomicBool>,
     error_count: Arc<AtomicUsize>,
+    proxy: Option<JetStreamProxy>,
     rt: tokio::runtime::Runtime,
 }
 
@@ -140,6 +215,7 @@ impl NatsMockRunner {
             pipeline_create_error: None,
             got_fatal: Arc::new(AtomicBool::new(false)),
             error_count: Arc::new(AtomicUsize::new(0)),
+            proxy: None,
             rt: tokio::runtime::Runtime::new()?,
         })
     }
@@ -147,6 +223,20 @@ impl NatsMockRunner {
     fn nats_url(&self) -> &str {
         self.nats_url
             .as_deref()
+            .expect("StartNats must be called before this action")
+    }
+
+    /// The URL pipelines connect to: the proxy when one is running.
+    fn pipeline_url(&self) -> &str {
+        self.proxy
+            .as_ref()
+            .map(|proxy| proxy.url())
+            .unwrap_or_else(|| self.nats_url())
+    }
+
+    fn nats_guard(&self) -> &util::ProcessKillGuard {
+        self.nats_guard
+            .as_ref()
             .expect("StartNats must be called before this action")
     }
 
@@ -200,7 +290,7 @@ impl NatsMockRunner {
     fn exec(
         &mut self,
         action: &NatsMockAction,
-        pipeline_config: &dyn Fn(&str) -> String,
+        pipeline_config: &dyn Fn(&str) -> serde_json::Value,
     ) -> AnyResult<()> {
         match action {
             NatsMockAction::StartNats => {
@@ -216,11 +306,11 @@ impl NatsMockRunner {
             }
 
             NatsMockAction::CreatePipeline => {
-                let config_str = pipeline_config(self.nats_url());
-                println!("Config:\n{config_str}");
+                let config = pipeline_config(self.pipeline_url());
+                println!("Config:\n{config:#}");
 
                 match mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
-                    serde_yaml::from_str(&config_str).unwrap(),
+                    serde_json::from_value(config).unwrap(),
                     Relation::empty(),
                 ) {
                     Ok((endpoint, mock_input_consumer, _parser, zset)) => {
@@ -501,10 +591,13 @@ impl NatsMockRunner {
                 let timeout_ms = timeout.as_millis();
                 let endpoint = self.endpoint();
                 let mock_input_consumer = self.mock_input_consumer();
+                let got_fatal = self.got_fatal.clone();
+                // Wait for the fatal error specifically: retry-mode tests
+                // report retryable errors before the fatal one.
                 wait(
                     || {
                         endpoint.queue(false);
-                        mock_input_consumer.state().endpoint_error.is_some()
+                        got_fatal.load(Ordering::Acquire)
                     },
                     timeout_ms,
                 )
@@ -621,13 +714,293 @@ impl NatsMockRunner {
                     "AssertRecordCount: expected exactly {n} records, got {actual}"
                 );
             }
+
+            NatsMockAction::WaitForConsumerCount { count, timeout } => {
+                // The connector's own `created - deleted` counter is updated
+                // the instant its create/delete call returns, in process,
+                // with no network round trip. NATS acks a create or delete
+                // only after applying it server-side (confirmed with
+                // Synadia), so this counter is never ahead of the server's
+                // real state. Polling it instead of the server itself turns
+                // a test that raced a live network round trip under
+                // whatever load the CI host was under into one bounded only
+                // by how long our own code takes, which is normally
+                // microseconds. `timeout` is a backstop against a genuinely
+                // stuck connector, not a budget this loop is expected to
+                // spend.
+                //
+                // A fully event-driven wait (e.g. a `Notify` the connector
+                // signals on every create/delete) would remove the poll
+                // loop entirely; tracked as a possible follow-up. The other
+                // alternative, `tokio::time::pause`, doesn't apply here:
+                // that would make our own `sleep`/`sleep_until` calls
+                // deterministic, but this wait is bounded by the
+                // connector's real work finishing, not by one of its
+                // timers.
+                let mock_input_consumer = self.mock_input_consumer().clone();
+                let net_consumers = |consumer: &MockInputConsumer| -> Option<i64> {
+                    let created =
+                        consumer.custom_metric("input_connector_nats_consumers_created_total")?;
+                    let deleted =
+                        consumer.custom_metric("input_connector_nats_consumers_deleted_total")?;
+                    Some((created - deleted).round() as i64)
+                };
+                let deadline = Instant::now() + *timeout;
+                loop {
+                    if net_consumers(&mock_input_consumer) == Some(*count as i64) {
+                        break;
+                    }
+                    if Instant::now() >= deadline {
+                        anyhow::bail!(
+                            "Timed out after {timeout:?} waiting for the connector's own count to \
+                             reach {count} consumers on stream '{STREAM_NAME}', last seen: {:?}",
+                            net_consumers(&mock_input_consumer)
+                        );
+                    }
+                    sleep(Duration::from_millis(1));
+                }
+
+                // One real check, not a retry loop: the in-process count
+                // above is already known to match the server (see above),
+                // so this exists only to catch a bug in that reasoning, not
+                // to wait out a race.
+                let nats_url = self.nats_url().to_string();
+                let consumers = self
+                    .rt
+                    .block_on(util::list_consumers(&nats_url, STREAM_NAME))?;
+                anyhow::ensure!(
+                    consumers.len() == *count,
+                    "Connector's own count reached {count}, but the server disagrees: found {} \
+                     consumers on stream '{STREAM_NAME}': {:?}",
+                    consumers.len(),
+                    consumers
+                        .iter()
+                        .map(|info| info.name.as_str())
+                        .collect::<Vec<_>>()
+                );
+            }
+
+            NatsMockAction::AssertConsumerNamesStartWith(prefix) => {
+                let nats_url = self.nats_url().to_string();
+                let consumers = self
+                    .rt
+                    .block_on(util::list_consumers(&nats_url, STREAM_NAME))?;
+                assert!(
+                    !consumers.is_empty(),
+                    "AssertConsumerNamesStartWith: no consumers on stream '{STREAM_NAME}'"
+                );
+                let expected = format!("{prefix}_");
+                for info in &consumers {
+                    assert!(
+                        info.name.starts_with(&expected),
+                        "Consumer '{}' is not named '{expected}<suffix>'",
+                        info.name
+                    );
+                }
+            }
+
+            NatsMockAction::StartProxy(faults) => {
+                let proxy = JetStreamProxy::start(&self.rt, self.nats_url(), faults.clone())?;
+                self.proxy = Some(proxy);
+            }
+
+            NatsMockAction::HoldStreamInfo => {
+                self.proxy
+                    .as_ref()
+                    .expect("StartProxy must be called first")
+                    .hold_stream_info();
+            }
+            NatsMockAction::ReleaseStreamInfo => {
+                self.proxy
+                    .as_ref()
+                    .expect("StartProxy must be called first")
+                    .release_stream_info();
+            }
+            NatsMockAction::WaitForReplayErrorCountAtLeast { count, timeout } => {
+                wait(
+                    || self.error_count.load(Ordering::Acquire) >= *count,
+                    timeout.as_millis(),
+                )
+                .map_err(|()| anyhow::anyhow!("no replay retry error within {timeout:?}"))?;
+            }
+
+            NatsMockAction::FreezeServer => self.nats_guard().freeze()?,
+
+            NatsMockAction::ThawServer => self.nats_guard().thaw()?,
+
+            NatsMockAction::DeleteConsumers => {
+                let nats_url = self.nats_url().to_string();
+                let deleted = self
+                    .rt
+                    .block_on(util::delete_consumers(&nats_url, STREAM_NAME))?;
+                println!("Deleted {deleted} consumers");
+            }
+
+            NatsMockAction::QueueFor(duration) => {
+                let deadline = Instant::now() + *duration;
+                while Instant::now() < deadline {
+                    self.endpoint().queue(false);
+                    sleep(Duration::from_millis(50));
+                }
+            }
+
+            NatsMockAction::QueueCompletesWithin(duration) => {
+                let before = self.mock_input_consumer().state().n_extended;
+                let start = Instant::now();
+                self.endpoint().queue(false);
+                let completed = wait(
+                    || self.mock_input_consumer().state().n_extended > before,
+                    DEFAULT_TIMEOUT_MS,
+                );
+                let elapsed = start.elapsed();
+                assert!(completed.is_ok(), "queue() never completed");
+                assert!(
+                    elapsed <= *duration,
+                    "queue() took {elapsed:?}, more than {duration:?}"
+                );
+            }
+
+            NatsMockAction::DisconnectWithin(duration) => {
+                let endpoint = self.endpoint();
+                endpoint.disconnect();
+                assert!(
+                    wait(|| endpoint.is_closed(), duration.as_millis()).is_ok(),
+                    "disconnect took more than {duration:?}"
+                );
+            }
+
+            NatsMockAction::DropWaitsForHeldDelete => {
+                let endpoint = self
+                    .endpoint
+                    .take()
+                    .expect("CreatePipeline must be called first");
+                let completion = endpoint
+                    .take_completion()
+                    .expect("reader has no completion future");
+                let proxy = self
+                    .proxy
+                    .as_ref()
+                    .expect("StartProxy must be called first");
+                let task = self.rt.spawn(completion);
+                drop(endpoint);
+                let exited_while_held = wait(|| task.is_finished(), 200).is_ok();
+                proxy.release_deletes();
+                let joined = self
+                    .rt
+                    .block_on(async { tokio::time::timeout(Duration::from_secs(10), task).await });
+                joined
+                    .expect("worker did not exit after releasing delete")
+                    .unwrap();
+                assert!(
+                    !exited_while_held,
+                    "dropping the reader skipped pending cleanup"
+                );
+                assert!(
+                    self.rt
+                        .block_on(util::list_consumers(self.nats_url(), STREAM_NAME))?
+                        .is_empty()
+                );
+            }
+
+            NatsMockAction::WaitForDeleteRequests { count, timeout } => {
+                self.proxy
+                    .as_ref()
+                    .expect("StartProxy must be called before this action")
+                    .wait_for_delete_requests(*count, *timeout)?;
+            }
+
+            NatsMockAction::DisconnectWaitsForHeldDelete => {
+                let proxy = self
+                    .proxy
+                    .as_ref()
+                    .expect("StartProxy must be called first");
+                self.endpoint().disconnect();
+                let exited_while_held = wait(
+                    || self.endpoint().is_closed(),
+                    Duration::from_millis(200).as_millis(),
+                )
+                .is_ok();
+                // Release before any assertion, even on the buggy connector,
+                // so failure does not leave cleanup blocked in the proxy.
+                proxy.release_deletes();
+                assert!(
+                    wait(|| self.endpoint().is_closed(), 10_000).is_ok(),
+                    "worker did not exit after releasing the consumer delete"
+                );
+                assert!(
+                    !exited_while_held,
+                    "worker exited while the consumer delete from Pause was still held"
+                );
+                let consumers = self
+                    .rt
+                    .block_on(util::list_consumers(self.nats_url(), STREAM_NAME))?;
+                assert!(
+                    consumers.is_empty(),
+                    "consumer still exists after worker exit"
+                );
+            }
+
+            NatsMockAction::AssertServerConsumerCount(n) => {
+                let nats_url = self.nats_url().to_string();
+                let consumers = self
+                    .rt
+                    .block_on(util::list_consumers(&nats_url, STREAM_NAME))?;
+                assert_eq!(
+                    consumers.len(),
+                    *n,
+                    "expected {n} consumers on stream '{STREAM_NAME}', found {:?}",
+                    consumers
+                        .iter()
+                        .map(|info| info.name.as_str())
+                        .collect::<Vec<_>>()
+                );
+            }
+
+            NatsMockAction::DropStreamInfoReplies(n) => {
+                self.proxy
+                    .as_ref()
+                    .expect("StartProxy must be called before this action")
+                    .drop_stream_info_replies(*n);
+            }
+
+            NatsMockAction::AssertNoFatalError => {
+                assert!(
+                    !self.got_fatal.load(Ordering::Acquire),
+                    "unexpected fatal endpoint error: {:?}",
+                    self.mock_input_consumer().state().endpoint_error
+                );
+            }
+
+            NatsMockAction::AssertConsumerCountersMatchServer => {
+                let consumer = self.mock_input_consumer();
+                let created = consumer
+                    .custom_metric("input_connector_nats_consumers_created_total")
+                    .expect("connector should register its metrics");
+                let deleted = consumer
+                    .custom_metric("input_connector_nats_consumers_deleted_total")
+                    .expect("connector should register its metrics");
+                let nats_url = self.nats_url().to_string();
+                let live = self
+                    .rt
+                    .block_on(util::list_consumers(&nats_url, STREAM_NAME))?
+                    .len() as f64;
+                assert!(
+                    deleted <= created,
+                    "consumers_deleted_total ({deleted}) exceeds consumers_created_total ({created})"
+                );
+                assert_eq!(
+                    created - deleted,
+                    live,
+                    "created ({created}) - deleted ({deleted}) should equal the {live} consumers on the server"
+                );
+            }
         }
         Ok(())
     }
 }
 
 pub(super) fn run_nats_mock_test(
-    pipeline_config: impl Fn(&str) -> String,
+    pipeline_config: impl Fn(&str) -> serde_json::Value,
     actions: &[NatsMockAction],
 ) -> AnyResult<()> {
     init_test_logger();
@@ -640,32 +1013,36 @@ pub(super) fn run_nats_mock_test(
     Ok(())
 }
 
-pub(super) fn basic_nats_config(nats_url: &str) -> String {
-    format!(
-        r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {nats_url}
-        stream_name: {STREAM_NAME}
-        consumer_config:
-            deliver_policy: All
-            filter_subjects: [{SUBJECT_NAME}]
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-    )
+pub(super) fn basic_nats_config(nats_url: &str) -> serde_json::Value {
+    json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "nats_input",
+            "config": {
+                "connection_config": {
+                    "server_url": nats_url,
+                },
+                "stream_name": STREAM_NAME,
+                "consumer_config": {
+                    "deliver_policy": "All",
+                    "filter_subjects": [SUBJECT_NAME],
+                },
+            },
+        },
+        "format": {
+            "name": "json",
+            "config": {
+                "update_format": "raw",
+            },
+        },
+    })
 }
 
 /// Inactivity timeout used by [`nats_stall_config`] (seconds).
 const STALL_INACTIVITY_TIMEOUT_SECS: u64 = 2;
 
 /// Config helper: NATS config with inactivity timeout and request_timeout_secs=2.
-pub(super) fn nats_stall_config(nats_url: &str) -> String {
+pub(super) fn nats_stall_config(nats_url: &str) -> serde_json::Value {
     nats_stall_config_with_timeout(nats_url, STALL_INACTIVITY_TIMEOUT_SECS, 2)
 }
 
@@ -673,27 +1050,31 @@ pub(super) fn nats_stall_config_with_timeout(
     nats_url: &str,
     inactivity_timeout_secs: u64,
     request_timeout_secs: u64,
-) -> String {
-    format!(
-        r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: {nats_url}
-            request_timeout_secs: {request_timeout_secs}
-        stream_name: {STREAM_NAME}
-        inactivity_timeout_secs: {inactivity_timeout_secs}
-        consumer_config:
-            deliver_policy: All
-            filter_subjects: [{SUBJECT_NAME}]
-format:
-    name: json
-    config:
-        update_format: raw
-"#
-    )
+) -> serde_json::Value {
+    json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "nats_input",
+            "config": {
+                "connection_config": {
+                    "server_url": nats_url,
+                    "request_timeout_secs": request_timeout_secs,
+                },
+                "stream_name": STREAM_NAME,
+                "inactivity_timeout_secs": inactivity_timeout_secs,
+                "consumer_config": {
+                    "deliver_policy": "All",
+                    "filter_subjects": [SUBJECT_NAME],
+                },
+            },
+        },
+        "format": {
+            "name": "json",
+            "config": {
+                "update_format": "raw",
+            },
+        },
+    })
 }
 
 /// Stall detection budget: inactivity_timeout + request_timeout(2) + slack(8).

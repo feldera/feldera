@@ -9,7 +9,7 @@ use crate::test::{
     DeltaTestStruct, TestStruct, file_to_zset, list_files_recursive, test_circuit,
     test_circuit_with_index, wait,
 };
-use crate::{Catalog, CircuitCatalog};
+use crate::{Catalog, CircuitCatalog, PipelineState};
 use arrow::datatypes::{DataType as ArrowDataType, FieldRef, Schema as ArrowSchema};
 use chrono::{DateTime, NaiveDate};
 use dbsp::circuit::CircuitConfig;
@@ -332,6 +332,11 @@ struct CatchupLagExperimentOptions<'a> {
     clear_read_failure_after_unhealthy: bool,
     /// When true, ingestion must not reach the round's target version; skips output validation.
     expect_ingest_failure: bool,
+    /// In this round, append the first version while the endpoint runs, with listing of the
+    /// input table's `_delta_log` blocked (Unix only), so that the connector reads the version but
+    /// keeps retrying the catchup target listing. Pause during those retries, unblock the listing,
+    /// and write the round's other versions while paused.
+    pause_during_listing_round: Option<usize>,
 }
 
 fn catchup_lag_options<'a>(
@@ -349,6 +354,7 @@ fn catchup_lag_options<'a>(
         inject_read_failure_before_resume_round: None,
         clear_read_failure_after_unhealthy: false,
         expect_ingest_failure: false,
+        pause_during_listing_round: None,
     }
 }
 
@@ -410,6 +416,7 @@ async fn run_catchup_lag_experiment(
         inject_read_failure_before_resume_round,
         clear_read_failure_after_unhealthy,
         expect_ingest_failure,
+        pause_during_listing_round,
     } = opts;
 
     let relation_schema = DeltaTestStruct::schema();
@@ -535,6 +542,38 @@ async fn run_catchup_lag_experiment(
     let mut ingest_failed_as_expected = false;
 
     'rounds: for (round, &num_versions) in versions_per_round.iter().enumerate() {
+        let metric_at_round_start = delta_follow_transaction_starts(&pipeline);
+        let version_before_burst = table.version().unwrap() as i64;
+        let pause_during_listing = pause_during_listing_round == Some(round);
+        #[cfg(unix)]
+        let mut listing_restore = Vec::new();
+        let mut written_while_running = 0;
+        if pause_during_listing {
+            assert!(
+                snapshot_and_follow || round > 0,
+                "the endpoint must be running at the start of round {round}"
+            );
+            #[cfg(not(unix))]
+            panic!("blocking the catchup target listing requires a Unix platform");
+            let record = delta_test_record(record_index * 2);
+            record_index += 1;
+            // Reading a commit by name still works, but listing the log fails and is retried.
+            #[cfg(unix)]
+            append_table_version_with_listing_blocked(
+                &table,
+                &input_table_root,
+                &arrow_schema,
+                &record,
+                &mut listing_restore,
+            )
+            .await;
+            let mut record = record;
+            record.unused = None;
+            expected_output.push(record);
+            written_while_running = 1;
+            // The connector read the new version and failed to list the log.
+            wait_input_endpoint_unhealthy(&pipeline, 60_000);
+        }
         if snapshot_and_follow || round > 0 {
             pipeline
                 .pause_input_endpoint(DELTA_TEST_INPUT_ENDPOINT)
@@ -549,11 +588,25 @@ async fn run_catchup_lag_experiment(
             )
             .expect("timeout waiting for input endpoint to pause");
         }
+        #[cfg(unix)]
+        if pause_during_listing {
+            // The pause reaches the connector asynchronously. Wait for it, then let the listing
+            // succeed while paused.
+            let reader = pipeline
+                .get_input_endpoint(DELTA_TEST_INPUT_ENDPOINT)
+                .unwrap()
+                .as_any()
+                .downcast::<super::input::DeltaTableInputReader>()
+                .unwrap();
+            wait(|| reader.state() == PipelineState::Paused, 60_000)
+                .expect("timeout waiting for the pause to reach the connector");
+            restore_delta_input_table_read_permission(std::mem::take(&mut listing_restore))
+                .unwrap_or_else(|e| panic!("round {round}: unblock listing of the delta log: {e}"));
+            wait_input_endpoint_healthy(&pipeline, 60_000);
+            table.update_incremental(None).await.unwrap();
+        }
 
-        let metric_at_round_start = delta_follow_transaction_starts(&pipeline);
-        let version_before_burst = table.version().unwrap() as i64;
-
-        for _ in 0..num_versions {
+        for _ in written_while_running..num_versions {
             let record = delta_test_record(record_index * 2);
             record_index += 1;
             table = append_table_version(table, &arrow_schema, &record).await;
@@ -735,7 +788,7 @@ async fn wait_for_output_records<T>(
     let log_store = table.log_store();
     datafusion
         .runtime_env()
-        .register_object_store(log_store.root_url(), log_store.root_object_store(None));
+        .register_object_store(log_store.root_url(), log_store.root_object_store());
     loop {
         // select count() output_table == len().
         Arc::get_mut(table)
@@ -903,6 +956,32 @@ where
         + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
+    try_delta_table_input_pipeline::<T>(
+        table_uri,
+        schema,
+        config,
+        output_file_path,
+        Box::new(move |e, _| {
+            panic!("delta_table_input_test: error: {e}");
+        }),
+    )
+    .unwrap()
+}
+
+/// [`delta_table_input_pipeline`], returning a start-up error and passing later errors to `error_cb`.
+fn try_delta_table_input_pipeline<T>(
+    table_uri: &str,
+    schema: &[Field],
+    config: &HashMap<String, Value>,
+    output_file_path: &str,
+    error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
+) -> Result<Controller, ControllerError>
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
     init_logging();
 
     let mut storage_options = config.clone();
@@ -944,11 +1023,8 @@ where
     Controller::with_test_config(
         move |workers| Ok(test_circuit::<T>(workers, &schema, &[None])),
         &config,
-        Box::new(move |e, _| {
-            panic!("delta_table_input_test: error: {e}");
-        }),
+        error_cb,
     )
-    .unwrap()
 }
 
 /// Build a pipeline that reads from a delta table and writes to a delta table.
@@ -1375,7 +1451,7 @@ fn delta_table_output_non_unique_keys_skipped_test() {
 
     // Capture every error the controller reports instead of panicking, so we
     // can assert on the uniqueness violations.
-    let errors: Arc<Mutex<Vec<(String, Option<String>)>>> = Arc::new(Mutex::new(Vec::new()));
+    let errors = Arc::new(Mutex::new(Vec::<(String, Option<String>)>::new()));
     let errors_clone = errors.clone();
 
     let controller = Controller::with_test_config(
@@ -1451,7 +1527,7 @@ fn delta_table_output_non_unique_keys_skipped_test() {
 /// * `verify` - verify the final contents of the delta table is equivalent to
 ///   `data`.  Currently only works for tables in the local FS.
 /// * `index_is_alias` - if true, uses catalog.register_materialized_output_map_persistent with
-///    index_is_alias=true to register index; otherwise, uses catalog.register_index_persistent.
+///   index_is_alias=true to register index; otherwise, uses catalog.register_index_persistent.
 ///
 /// TODO: implement verification using the delta table API rather than
 /// by reading parquet files directly.  I guess the best way to do this is
@@ -2307,6 +2383,14 @@ fn delta_data(max_records: usize) -> impl Strategy<Value = Vec<DeltaTestStruct>>
     })
 }
 
+/// Whether the tests run as root, which ignores the directory permissions that the read failure
+/// tests remove.
+#[cfg(unix)]
+fn running_as_root() -> bool {
+    // SAFETY: `geteuid` cannot fail and has no side effects.
+    unsafe { libc::geteuid() == 0 }
+}
+
 /// Remove owner read and execute on the delta table **root directory only**, and push that path
 /// and its original mode onto `saved` for [`restore_delta_input_table_read_permission`].
 ///
@@ -2335,6 +2419,80 @@ fn strip_delta_input_table_read_permission(
     let mut perms = meta.permissions();
     perms.set_mode(new_mode);
     fs::set_permissions(table_root, perms)?;
+    Ok(())
+}
+
+/// Append `record` as one new version of the table at `table_root`, with read permission on its
+/// `_delta_log` directory removed first, and push the directory's original mode onto `saved` for
+/// [`restore_delta_input_table_read_permission`]. Commits can still be read by name, but listing
+/// the log fails. `table` is not updated.
+///
+/// The delta-rs writer lists the log, so the commit is written in a copy of the table and then
+/// moved into place.
+#[cfg(unix)]
+async fn append_table_version_with_listing_blocked(
+    table: &DeltaTable,
+    table_root: &Path,
+    arrow_schema: &ArrowSchema,
+    record: &DeltaTestStruct,
+    saved: &mut Vec<(PathBuf, u32)>,
+) {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    // Write the new version in a copy of the table.
+    let copy_dir = TempDir::new().unwrap();
+    copy_dir_recursive(table_root, copy_dir.path()).unwrap();
+    let copy =
+        DeltaTableBuilder::from_url(ensure_table_uri(copy_dir.path().to_str().unwrap()).unwrap())
+            .unwrap()
+            .load()
+            .await
+            .unwrap();
+    let copy = append_table_version(copy, arrow_schema, record).await;
+    let version = copy.version().unwrap();
+    assert_eq!(version, table.version().unwrap() + 1);
+
+    // Copy the new data files, then block listing and move the commit into place.
+    copy_new_files(copy_dir.path(), table_root).unwrap();
+    let log_dir = table_root.join("_delta_log");
+    let mode = fs::metadata(&log_dir).unwrap().permissions().mode();
+    saved.push((log_dir.clone(), mode));
+    fs::set_permissions(&log_dir, fs::Permissions::from_mode(mode & !0o444)).unwrap();
+    let commit = format!("{version:020}.json");
+    let staged = table_root.join(format!("{commit}.tmp"));
+    fs::copy(copy_dir.path().join("_delta_log").join(&commit), &staged).unwrap();
+    fs::rename(&staged, log_dir.join(&commit)).unwrap();
+}
+
+fn copy_dir_recursive(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Copy the files under `from`, outside `_delta_log`, that do not exist under `to`.
+fn copy_new_files(from: &Path, to: &Path) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            if entry.file_name() != "_delta_log" {
+                std::fs::create_dir_all(&target)?;
+                copy_new_files(&entry.path(), &target)?;
+            }
+        } else if !target.exists() {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
     Ok(())
 }
 
@@ -3437,111 +3595,141 @@ async fn parse_cdc_order_by_defaults() {
     }
 }
 
-/// Pin the exact set of arrow types that the `EXCEPT ALL` cancellation
-/// step in `build_cdc_dataframe` cannot handle.
-///
-/// `EXCEPT ALL` is planned via `RowConverter`, so any column type for
-/// which `RowConverter::supports_fields` returns `false` will make the
-/// CDC rewrite path fail at runtime once the transaction contains
-/// Removes. Locking that list down here means a future arrow upgrade
-/// that widens (or narrows) support is caught by this test instead of
-/// silently changing user-visible behavior, and gives us a concrete
-/// reference for the caveat documented at the call site.
-#[test]
-fn except_all_unsupported_types_are_only_map() {
-    use arrow::datatypes::{DataType, Field, TimeUnit};
-    use arrow::row::{RowConverter, SortField};
-    use std::sync::Arc;
+/// Runs the real CDC `EXCEPT ALL` over a `Map` column; the rewritten row must cancel.
+#[tokio::test]
+async fn except_all_cancels_a_rewrite_on_a_map_column() {
+    use crate::integrated::delta_table::input::build_cdc_dataframe;
+    use arrow::array::{Array, ArrayRef, Int64Array, MapBuilder, RecordBatch, StringBuilder};
+    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField};
+    use datafusion::datasource::MemTable;
 
-    let supports = |dt: DataType| -> bool { RowConverter::supports_fields(&[SortField::new(dt)]) };
+    // The schema must repeat the builder's entry field names exactly.
+    let map_column = |keys: &[&str]| -> ArrayRef {
+        let mut builder = MapBuilder::new(None, StringBuilder::new(), StringBuilder::new());
+        for key in keys {
+            builder.keys().append_value(*key);
+            builder.values().append_value(format!("v-{key}"));
+            builder.append(true).unwrap();
+        }
+        Arc::new(builder.finish())
+    };
 
-    // Every Delta-mappable scalar / nested type that previous review
-    // comments and code comments listed as "unsupported" is in fact
-    // supported by `arrow-row` 57.x.
-    assert!(supports(DataType::Binary), "Binary must be supported");
-    assert!(
-        supports(DataType::LargeBinary),
-        "LargeBinary must be supported",
-    );
-    assert!(
-        supports(DataType::FixedSizeBinary(16)),
-        "FixedSizeBinary must be supported",
-    );
-    assert!(
-        supports(DataType::List(Arc::new(Field::new(
-            "item",
-            DataType::Utf8,
-            true,
-        )))),
-        "List<Utf8> must be supported",
-    );
-    assert!(
-        supports(DataType::LargeList(Arc::new(Field::new(
-            "item",
-            DataType::Utf8,
-            true,
-        )))),
-        "LargeList<Utf8> must be supported",
-    );
-    assert!(
-        supports(DataType::FixedSizeList(
-            Arc::new(Field::new("item", DataType::Int32, true)),
-            4,
-        )),
-        "FixedSizeList<Int32> must be supported",
-    );
-    assert!(
-        supports(DataType::Struct(
-            vec![
-                Field::new("a", DataType::Int64, true),
-                Field::new("b", DataType::Utf8, true),
-            ]
-            .into(),
-        )),
-        "Struct must be supported",
-    );
+    let probe = map_column(&["a"]);
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new("m", probe.data_type().clone(), false),
+    ]));
 
-    // Spot-check that the broader scalar surface area used by
-    // `DeltaTestStruct` is supported too — these are the types a CDC
-    // rewrite is most likely to encounter in practice.
-    for dt in [
-        DataType::Int8,
-        DataType::Int16,
-        DataType::Int32,
-        DataType::Int64,
-        DataType::UInt8,
-        DataType::UInt16,
-        DataType::UInt32,
-        DataType::UInt64,
-        DataType::Float32,
-        DataType::Float64,
-        DataType::Boolean,
-        DataType::Utf8,
-        DataType::LargeUtf8,
-        DataType::Date32,
-        DataType::Date64,
-        DataType::Time64(TimeUnit::Microsecond),
-        DataType::Timestamp(TimeUnit::Microsecond, None),
-        DataType::Decimal128(10, 3),
-    ] {
-        assert!(supports(dt.clone()), "{dt:?} must be supported");
-    }
+    let batch = |ids: &[i64], keys: &[&str]| {
+        vec![vec![
+            RecordBatch::try_new(
+                arrow_schema.clone(),
+                vec![
+                    Arc::new(Int64Array::from(ids.to_vec())) as ArrayRef,
+                    map_column(keys),
+                ],
+            )
+            .unwrap(),
+        ]]
+    };
 
-    // `Map` is the one Delta-mappable type that is genuinely unsupported.
-    let map_type = Field::new_map(
-        "map",
-        "entries",
-        Field::new("key", DataType::Utf8, false),
-        Field::new("value", DataType::Utf8, true),
-        false,
-        true,
+    let ctx = SessionContext::new();
+    // Row 1 is rewritten unchanged, so its Add and Remove must cancel.
+    ctx.register_table(
+        "cdc_adds",
+        Arc::new(MemTable::try_new(arrow_schema.clone(), batch(&[1, 2], &["a", "b"])).unwrap()),
     )
-    .data_type()
-    .clone();
-    assert!(
-        !supports(map_type),
-        "Map is expected to be unsupported by RowConverter; if this \
-         changes, update the caveat in `build_cdc_dataframe`",
+    .unwrap();
+    ctx.register_table(
+        "cdc_removes",
+        Arc::new(MemTable::try_new(arrow_schema.clone(), batch(&[1], &["a"])).unwrap()),
+    )
+    .unwrap();
+
+    let rows = build_cdc_dataframe(
+        ctx.table("cdc_adds").await.unwrap(),
+        Some(ctx.table("cdc_removes").await.unwrap()),
+        None,
+        "id",
+        "unit-test",
+    )
+    .unwrap()
+    .collect()
+    .await
+    .unwrap();
+
+    let ids: Vec<i64> = rows
+        .iter()
+        .flat_map(|batch| {
+            batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap()
+                .values()
+                .to_vec()
+        })
+        .collect();
+    assert_eq!(
+        ids,
+        vec![2],
+        "the unchanged row must cancel against its Remove"
+    );
+}
+
+/// CDC `EXCEPT ALL` is an anti join on every column, so a rewritten row must cancel
+/// whatever its column types.
+#[tokio::test]
+async fn except_all_cancels_a_rewrite_across_all_types() {
+    use crate::integrated::delta_table::input::build_cdc_dataframe;
+    use datafusion::datasource::MemTable;
+
+    let fields = relation_to_arrow_fields(&DeltaTestStruct::schema(), delta_schema_options());
+    let schema = Arc::new(ArrowSchema::new(fields));
+    let table = |rows: Vec<DeltaTestStruct>| {
+        let batch = serde_arrow::to_record_batch(
+            schema.fields(),
+            &SerializeWithContextWrapper::new(&rows, &delta_test_write_serde_config()),
+        )
+        .unwrap();
+        Arc::new(MemTable::try_new(schema.clone(), vec![vec![batch]]).unwrap())
+    };
+
+    let rows: Vec<DeltaTestStruct> = (0..3).map(delta_test_record).collect();
+    let ctx = SessionContext::new();
+    ctx.register_table("cdc_adds", table(rows.clone())).unwrap();
+    ctx.register_table("cdc_removes", table(rows[..2].to_vec()))
+        .unwrap();
+
+    let out = build_cdc_dataframe(
+        ctx.table("cdc_adds").await.unwrap(),
+        Some(ctx.table("cdc_removes").await.unwrap()),
+        None,
+        "bigint",
+        "unit-test",
+    )
+    .unwrap()
+    .collect()
+    .await
+    .unwrap();
+
+    let bigints: Vec<i64> = out
+        .iter()
+        .flat_map(|batch| {
+            batch
+                .column_by_name("bigint")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<arrow::array::Int64Array>()
+                .unwrap()
+                .values()
+                .to_vec()
+        })
+        .collect();
+    assert_eq!(
+        bigints,
+        vec![2],
+        "rows 0 and 1 must cancel against their Removes"
     );
 }
 
@@ -3661,6 +3849,27 @@ async fn delta_table_catchup_batches_multiple_versions_test() {
     );
 }
 
+/// A pause that lands while the connector lists the table to choose a catchup target must not
+/// latch a target from before the pause: the commits written during the pause belong to the
+/// same window as the one that started the listing.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_catchup_pause_during_target_listing_test() {
+    if running_as_root() {
+        eprintln!("skipping: root ignores directory permissions");
+        return;
+    }
+    let mut options =
+        catchup_lag_options(DeltaTableTransactionMode::Catchup, &[2, 3], None, Some(4));
+    options.pause_during_listing_round = Some(1);
+    let result = run_catchup_lag_experiment(options).await;
+    assert_eq!(
+        result.follow_transactions_per_round,
+        vec![1, 1],
+        "a pause during the catchup target listing must not split the round into two windows"
+    );
+}
+
 /// Control for [`delta_table_catchup_batches_multiple_versions_test`]: `always` mode commits once
 /// per Delta log version in each round.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3720,6 +3929,10 @@ async fn delta_table_catchup_rapid_versions_test() {
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_catchup_transient_read_failure_test() {
+    if running_as_root() {
+        eprintln!("skipping: root ignores directory permissions");
+        return;
+    }
     let result = run_catchup_lag_experiment(CatchupLagExperimentOptions {
         transaction_mode: DeltaTableTransactionMode::Catchup,
         versions_per_round: &[2, 2],
@@ -3729,6 +3942,7 @@ async fn delta_table_catchup_transient_read_failure_test() {
         inject_read_failure_before_resume_round: Some(0),
         clear_read_failure_after_unhealthy: true,
         expect_ingest_failure: false,
+        pause_during_listing_round: None,
     })
     .await;
     assert_eq!(
@@ -3751,6 +3965,10 @@ async fn delta_table_catchup_transient_read_failure_test() {
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_catchup_max_retries_fatal_test() {
+    if running_as_root() {
+        eprintln!("skipping: root ignores directory permissions");
+        return;
+    }
     let result = run_catchup_lag_experiment(CatchupLagExperimentOptions {
         transaction_mode: DeltaTableTransactionMode::Catchup,
         versions_per_round: &[1],
@@ -3760,6 +3978,7 @@ async fn delta_table_catchup_max_retries_fatal_test() {
         inject_read_failure_before_resume_round: Some(0),
         clear_read_failure_after_unhealthy: false,
         expect_ingest_failure: true,
+        pause_during_listing_round: None,
     })
     .await;
     assert!(
@@ -4493,7 +4712,7 @@ fn delta_table_s3_people_2m() {
     println!("reading output file");
     let zset = file_to_zset::<DatabricksPeople>(json_file.as_file_mut());
 
-    assert_eq!(zset.len(), 2_000_000);
+    assert_eq!(zset.len_upper_bound(), 2_000_000);
 
     forget(json_file);
 }
@@ -4654,7 +4873,7 @@ fn delta_table_unity_people_2m() {
     println!("reading output file");
     let zset = file_to_zset::<DatabricksPeople>(json_file.as_file_mut());
 
-    assert_eq!(zset.len(), 2_000_000);
+    assert_eq!(zset.len_upper_bound(), 2_000_000);
 
     forget(json_file);
 }
@@ -8911,9 +9130,7 @@ async fn delta_table_snapshot_id_mapped_reordered_nested_fields_test() {
 /// The kernel parses `maxValues` when it opens the table, so one row Spark
 /// wrote with a long year makes the whole table unreadable.
 ///
-/// arrow-json 58 rejects a 7-digit year; 59 accepts it. The arrow bump fixes
-/// this.
-#[ignore = "#5717, #5722: needs arrow-json 59, which the dep bump brings"]
+/// arrow-json 58 rejects a 7-digit year; 59 accepts it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_snapshot_out_of_range_date_stats_test() {
     init_logging();
@@ -9152,7 +9369,7 @@ fn delta_table_deletion_vector_scan_without_blocking_pool_test() {
             let ctx = SessionContext::new();
             let log_store = table.log_store();
             ctx.runtime_env()
-                .register_object_store(log_store.root_url(), log_store.root_object_store(None));
+                .register_object_store(log_store.root_url(), log_store.root_object_store());
             ctx.register_table("snapshot", table.table_provider().await.unwrap())
                 .unwrap();
             ctx.sql("select \"id\" from snapshot")
@@ -9217,31 +9434,7 @@ async fn delta_table_snapshot_unlisted_reader_feature_test() {
 
     // Stamped last: delta-rs refuses to write through a protocol it cannot
     // read.
-    let log_dir = table_dir.path().join("_delta_log");
-    let next_version = std::fs::read_dir(&log_dir)
-        .unwrap()
-        .filter_map(|entry| {
-            let path = entry.unwrap().path();
-            (path.extension()? == "json")
-                .then(|| path.file_stem()?.to_str()?.parse::<u64>().ok())
-                .flatten()
-        })
-        .max()
-        .unwrap()
-        + 1;
-    let mut commit = File::create(log_dir.join(format!("{next_version:020}.json"))).unwrap();
-    writeln!(
-        commit,
-        "{}",
-        json!({"protocol": {
-            "minReaderVersion": 3,
-            "minWriterVersion": 7,
-            "readerFeatures": ["vacuumProtocolCheck"],
-            "writerFeatures": ["vacuumProtocolCheck"],
-        }})
-    )
-    .unwrap();
-    drop(commit);
+    stamp_protocol_features(table_dir.path(), &["vacuumProtocolCheck"]);
 
     let output_file = NamedTempFile::new().unwrap();
     let output_path = output_file.path().display().to_string();
@@ -9277,6 +9470,152 @@ async fn delta_table_snapshot_unlisted_reader_feature_test() {
     );
 }
 
+/// Commits a protocol action that declares `features` as reader and writer features.
+fn stamp_protocol_features(table_dir: &Path, features: &[&str]) {
+    let log_dir = table_dir.join("_delta_log");
+    let next_version = std::fs::read_dir(&log_dir)
+        .unwrap()
+        .filter_map(|entry| {
+            let path = entry.unwrap().path();
+            (path.extension()? == "json")
+                .then(|| path.file_stem()?.to_str()?.parse::<u64>().ok())
+                .flatten()
+        })
+        .max()
+        .unwrap()
+        + 1;
+    // Renamed into place, as a real commit is atomic: a follower must never read a half-written file.
+    let tmp = log_dir.join(format!(".{next_version:020}.json.tmp"));
+    let mut commit = File::create(&tmp).unwrap();
+    writeln!(
+        commit,
+        "{}",
+        json!({"protocol": {
+            "minReaderVersion": 3,
+            "minWriterVersion": 7,
+            "readerFeatures": features,
+            "writerFeatures": features,
+        }})
+    )
+    .unwrap();
+    drop(commit);
+    std::fs::rename(&tmp, log_dir.join(format!("{next_version:020}.json"))).unwrap();
+}
+
+/// A table that enables VARIANT shredding is refused: delta-rs would read only the unshredded
+/// part of each value and drop the shredded fields without an error.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_variant_shredding_is_refused_test() {
+    let relation_schema = DeltaTestStruct::schema();
+    let arrow_schema = ArrowSchema::new(relation_to_arrow_fields(
+        &relation_schema,
+        delta_schema_options(),
+    ));
+    let struct_fields: Vec<StructField> = arrow_schema
+        .fields
+        .iter()
+        .map(|f| {
+            StructField::new(
+                f.name(),
+                DataType::try_from_arrow(f.data_type()).unwrap(),
+                f.is_nullable(),
+            )
+        })
+        .collect();
+
+    for feature in ["variantShredding-preview", "variantShredding"] {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+        let table = create_table(&table_uri, &HashMap::new(), &struct_fields).await;
+        write_data_to_table(table, &arrow_schema, &[delta_test_record(0)]).await;
+        stamp_protocol_features(table_dir.path(), &["variantType", feature]);
+
+        let output_file = NamedTempFile::new().unwrap();
+        let output_path = output_file.path().display().to_string();
+        let schema = relation_schema.clone();
+        let error = tokio::task::spawn_blocking(move || {
+            try_delta_table_input_pipeline::<DeltaTestStruct>(
+                &table_uri,
+                &schema,
+                &HashMap::from([("mode".to_string(), json!("snapshot"))]),
+                &output_path,
+                Box::new(|e, _| panic!("unexpected error: {e}")),
+            )
+            .err()
+            .expect("a table with VARIANT shredding must be refused")
+            .to_string()
+        })
+        .await
+        .unwrap();
+        assert!(error.contains(feature), "{error}");
+    }
+}
+
+/// A commit that turns VARIANT shredding on while the connector follows the table stops it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_variant_shredding_turned_on_while_following_test() {
+    let relation_schema = DeltaTestStruct::schema();
+    let arrow_schema = ArrowSchema::new(relation_to_arrow_fields(
+        &relation_schema,
+        delta_schema_options(),
+    ));
+    let struct_fields: Vec<StructField> = arrow_schema
+        .fields
+        .iter()
+        .map(|f| {
+            StructField::new(
+                f.name(),
+                DataType::try_from_arrow(f.data_type()).unwrap(),
+                f.is_nullable(),
+            )
+        })
+        .collect();
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let table = create_table(&table_uri, &HashMap::new(), &struct_fields).await;
+    write_data_to_table(table, &arrow_schema, &[delta_test_record(0)]).await;
+
+    let output_file = NamedTempFile::new().unwrap();
+    let output_path = output_file.path().display().to_string();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let errors_clone = errors.clone();
+    let table_path = table_dir.path().to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        // Start-up opens the table, so the feature below arrives through the follow path.
+        let pipeline = try_delta_table_input_pipeline::<DeltaTestStruct>(
+            &table_uri,
+            &relation_schema,
+            &HashMap::from([("mode".to_string(), json!("follow"))]),
+            &output_path,
+            Box::new(move |e, _| errors_clone.lock().unwrap().push(e.to_string())),
+        )
+        .unwrap();
+        pipeline.start();
+
+        stamp_protocol_features(&table_path, &["variantType", "variantShredding"]);
+        wait(
+            || {
+                errors
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|e| e.contains("variantShredding"))
+            },
+            60_000,
+        )
+        .unwrap_or_else(|_| {
+            panic!(
+                "expected a VARIANT shredding error, got {:?}",
+                errors.lock().unwrap()
+            )
+        });
+        pipeline.stop().unwrap();
+    })
+    .await
+    .unwrap();
+}
+
 /// The two readers a `snapshot_and_follow` read uses must agree.
 ///
 /// The snapshot half goes through delta-rs and the follow half through
@@ -9287,6 +9626,9 @@ async fn delta_table_snapshot_unlisted_reader_feature_test() {
 /// [`UniformTestStruct`] rather than [`DeltaTestStruct`] because delta-rs cannot
 /// read a `VARIANT` column of a column-mapped table at all: it reads the binary
 /// fields a variant is stored in as `BinaryView`, which its own schema rejects.
+///
+/// The follow half also pins `collect_statistics = false`: with statistics on,
+/// DataFusion pairs them to the wrong field and the follow reads all NULL.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_snapshot_and_follow_id_mapped_test() {
     let table_dir = TempDir::new().unwrap();

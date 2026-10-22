@@ -1,13 +1,30 @@
 from datetime import date, datetime, time
 from decimal import Decimal
 import json
+import re
 import unittest
 
 from feldera import PipelineBuilder
-from tests import TEST_CLIENT
+from tests import TEST_CLIENT, runs_on_gen2
 from tests.platform.helper import PipelineTestCase
 from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
+
+
+def gen2_identity_udfs(sql: str) -> str:
+    """The Gen-2 form of the identity UDFs: every function `sql` declares returns
+    its argument column unchanged."""
+    names = re.findall(r"CREATE FUNCTION (\w+)\(", sql)
+    functions = "".join(
+        f"""
+#[feldera_udf]
+pub fn {name}(i: &ArrayRef) -> ArrayRef {{
+    i.clone()
+}}
+"""
+        for name in names
+    )
+    return "use feldera_udf::prelude::*;\n" + functions
 
 
 class TestUDF(PipelineTestCase):
@@ -209,10 +226,10 @@ pub fn map2map(i: Option<Map<SqlString, Option<SqlString>>>) -> Result<Option<Ma
 pub fn nmap2nmap(i: Map<SqlString, Option<SqlString>>) -> Result<Map<SqlString, Option<SqlString>>, Box<dyn std::error::Error>> {
     Ok(i)
 }
-pub fn var2var(i: Option<Variant>) -> Result<Option<Variant>, Box<dyn std::error::Error>> {
+pub fn var2var(i: Option<SqlVariant>) -> Result<Option<SqlVariant>, Box<dyn std::error::Error>> {
     Ok(i)
 }
-pub fn nvar2nvar(i: Variant) -> Result<Variant, Box<dyn std::error::Error>> {
+pub fn nvar2nvar(i: SqlVariant) -> Result<SqlVariant, Box<dyn std::error::Error>> {
     Ok(i)
 }
 pub fn dec2dec(i: Option<SqlDecimal<7, 2>>) -> Result<Option<SqlDecimal<7, 2>>, Box<dyn std::error::Error>> {
@@ -235,14 +252,8 @@ pub fn nstruct2nstruct(i: Tup2<Option<i32>, Option<SqlString>>) -> Result<Tup2<O
 }
         """
 
-        # Under the FlatVariant representation (FELDERA_FLAT_VARIANT), UDFs receive
-        # and return FlatVariant; the identity UDF bodies only need the type
-        # name swapped.
-        import os
-        import re
-
-        if os.environ.get("FELDERA_FLAT_VARIANT", "").lower() in ("1", "on", "true"):
-            udfs = re.sub(r"\bVariant\b", "FlatVariant", udfs)
+        if runs_on_gen2():
+            udfs = gen2_identity_udfs(sql)
 
         pipeline = PipelineBuilder(
             TEST_CLIENT,
@@ -347,6 +358,73 @@ pub fn nstruct2nstruct(i: Tup2<Option<i32>, Option<SqlString>>) -> Result<Tup2<O
                 "EXPR$30": "foobar",
                 "EXPR$31": "foobar",
             }
+        ]
+
+        pipeline.stop(force=True)
+
+    @unittest.skipIf(
+        runs_on_gen2(), "Gen-2 UDFs use the feldera-udf SDK, which has no Variant enum"
+    )
+    def test_legacy_variant_udf(self):
+        """A UDF written against the enum `Variant` still compiles and runs
+        when the program opts out of the flat representation."""
+        sql = """
+SET FELDERA_FLAT_VARIANT = 'off';
+
+CREATE FUNCTION variant_kind(v VARIANT) RETURNS VARCHAR;
+
+CREATE TABLE t (v VARIANT);
+
+CREATE MATERIALIZED VIEW v AS SELECT variant_kind(v) AS d FROM t;
+"""
+
+        # Written the way it would have been before the switch: the enum, its
+        # arms, and no mention of SqlVariant.
+        udfs = """
+use feldera_sqllib::*;
+
+pub fn variant_kind(v: Option<Variant>) -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
+    Ok(v.map(|v| SqlString::from(match v {
+        Variant::String(s) => format!("string:{}", s.str()),
+        Variant::Map(m) => format!("map:{}", m.len()),
+        other => format!("other:{}", typeof_(other).str()),
+    })))
+}
+"""
+
+        pipeline = PipelineBuilder(
+            TEST_CLIENT,
+            name=self.register_for_cleanup("test_legacy_variant_udf"),
+            sql=sql,
+            udf_rust=udfs,
+            runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+            ),
+        ).create_or_replace()
+
+        pipeline.start()
+        pipeline.input_json(
+            "t",
+            [
+                {"v": {"a": 1, "b": 2}},
+                {"v": '{"foo": "bar"}'},
+                {"v": 5},
+                {"v": None},
+            ],
+            wait=True,
+        )
+
+        # A JSON null in a nullable VARIANT column arrives as Rust `None`, so
+        # the function is never called for it and the result is SQL NULL.
+        rows = sorted(
+            (row["d"] or "<null>") for row in pipeline.query("SELECT d FROM v")
+        )
+        assert rows == [
+            "<null>",
+            "map:2",
+            "other:BIGINT UNSIGNED",
+            'string:{"foo": "bar"}',
         ]
 
         pipeline.stop(force=True)

@@ -15,7 +15,7 @@ repos:
       - id: cargo-clippy-check
         name: Clippy Check
         description: Run the Clippy linter on the package.
-        entry: cargo clippy --locked --no-deps -- -D warnings
+        entry: cargo clippy --locked --no-deps --all-targets -- -D warnings
         language: rust
         files: \.rs$
         pass_filenames: false

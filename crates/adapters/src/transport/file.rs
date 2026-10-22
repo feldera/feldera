@@ -11,6 +11,7 @@ use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark, parse_resume_info};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
+use feldera_types::size::ConfigSize;
 use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -29,7 +30,10 @@ use xxhash_rust::xxh3::Xxh3Default;
 const SLEEP: Duration = Duration::from_millis(200);
 
 #[cfg(test)]
-use std::{collections::BTreeMap, sync::Mutex};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Mutex,
+};
 
 #[cfg(test)]
 static BARRIERS: Mutex<BTreeMap<String, usize>> = Mutex::new(BTreeMap::new());
@@ -45,6 +49,23 @@ fn get_barrier(_name: &str) -> Option<usize> {
 #[cfg(test)]
 pub fn set_barrier(name: &str, value: usize) {
     BARRIERS.lock().unwrap().insert(name.into(), value);
+}
+
+#[cfg(test)]
+static FAILURES: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+fn injected_failure(_name: &str) -> bool {
+    #[cfg(test)]
+    return FAILURES.lock().unwrap().contains(_name);
+
+    #[cfg(not(test))]
+    return false;
+}
+
+/// Makes the reader of file `name` fail with a fatal error.
+#[cfg(test)]
+pub fn set_failure(name: &str) {
+    FAILURES.lock().unwrap().insert(name.into());
 }
 
 pub(crate) struct FileInputEndpoint {
@@ -127,7 +148,7 @@ impl FileInputReader {
             .spawn({
                 let follow = config.follow;
                 let path = config.path.clone();
-                let buffer_size = match config.buffer_size_bytes {
+                let buffer_size = match config.buffer_size.map(ConfigSize::as_usize) {
                     Some(size) if size > 0 => size,
                     _ => 8192,
                 };
@@ -184,6 +205,9 @@ impl FileInputReader {
         let mut timestamp = None;
 
         loop {
+            if injected_failure(&path) {
+                bail!("injected failure reading {path}");
+            }
             loop {
                 let msg = receiver.try_recv();
                 match msg {

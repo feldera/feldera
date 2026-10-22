@@ -100,15 +100,16 @@
   padding-block: 0;
   padding-inline: calc(var(--spacing) * 3) /* 12px */;
   gap: var(--btn-gap);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
 }
 
 /* A leading icon keeps to the left edge, and the label centres in the space after it.
    This shows only when the button is wider than its content. The auto margins of the
    icon and of a zero-width ::after share the spare width. The ::after's negative end
    margin cancels the flex gap before it, so a button that fits its content keeps its
-   size. */
-.btn:has(> .fd:first-child) {
+   size. A button that is also `.btn-icon` (a labelled button shrunk to its icon on small
+   screens) keeps the icon centred instead. */
+.btn:not(.btn-icon):has(> .fd:first-child) {
   & > .fd:first-child {
     margin-inline-end: auto;
   }
@@ -133,7 +134,7 @@
   height: 32px;
   flex-shrink: 0;
   padding: 0;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
 }
 
 /* The Figma components' 24px and 40px sizes, under Skeleton's size class names. Each
@@ -142,7 +143,7 @@
   height: 24px;
   padding-inline: calc(var(--spacing) * 2) /* 8px */;
   --btn-gap: calc(var(--spacing) * 1) /* 4px */;
-  border-radius: var(--radius-control-sm);
+  border-radius: var(--radius-sm);
   font-size: 12px;
   line-height: 16px;
 }
@@ -151,7 +152,7 @@
   height: 40px;
   padding-inline: calc(var(--spacing) * 4) /* 16px */;
   --btn-gap: calc(var(--spacing) * 3) /* 12px */;
-  border-radius: var(--radius-control-lg);
+  border-radius: var(--radius-lg);
   font-size: 16px;
   line-height: 24px;
 }
@@ -163,13 +164,13 @@
 .btn-icon-sm {
   width: 24px;
   height: 24px;
-  border-radius: var(--radius-control-sm);
+  border-radius: var(--radius-sm);
 }
 
 .btn-icon-lg {
   width: 40px;
   height: 40px;
-  border-radius: var(--radius-control-lg);
+  border-radius: var(--radius-lg);
   font-size: 18px;
 }
 
@@ -204,8 +205,10 @@
   color: var(--color-surface-950-50);
 }
 
+/* Selects share the buttons' hover, so a select next to a button reacts the same way. */
 .btn,
-.btn-icon {
+.btn-icon,
+.select {
   &:not(:disabled, .disabled) {
     &:hover {
       filter: brightness(93%);
@@ -238,7 +241,6 @@
   --tw-brightness: brightness(1.3);
 } */
 
-.checkbox,
 .radio {
   @apply border-none bg-white dark:bg-dark;
 }
@@ -277,7 +279,7 @@ input:focus {
      The right padding leaves room for the 16px chevron and an 8px gap before it. */
   height: 32px;
   padding: 0 calc(var(--spacing) * 9) /* 36px */ 0 calc(var(--spacing) * 3) /* 12px */;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
   font-size: var(--text-base) /* 14px */;
   line-height: var(--text-base--line-height) /* 20px */;
   background-size: 16px 16px;
@@ -289,22 +291,63 @@ input:focus {
 .input[type="search"] {
   height: 32px;
   padding-block: 0;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-md);
 }
 
 /* The Figma "Select Trigger" at its 24px size, like `.btn-sm`. */
 .select-sm {
   height: 24px;
   padding: 0 calc(var(--spacing) * 7) /* 28px */ 0 calc(var(--spacing) * 2) /* 8px */;
-  border-radius: var(--radius-control-sm);
+  border-radius: var(--radius-sm);
   font-size: 12px;
   line-height: 16px;
   background-position: right calc(var(--spacing) * 2) /* 8px */ center;
 }
 
+/* Checkboxes follow the Figma "Checkbox" component at its 16px size: an outlined box when
+   unchecked, and the primary fill with a white check mark when checked. */
 .checkbox {
+  @apply border border-surface-950-50/20 bg-white dark:bg-dark;
+  appearance: none;
+  flex-shrink: 0;
   width: 16px;
   height: 16px;
+  border-radius: var(--radius-sm);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 16px 16px;
+  print-color-adjust: exact;
+
+  &:checked {
+    border-color: transparent;
+    background-color: var(--color-primary-500);
+    background-image: url("../assets/icons/generic/checkbox-check.svg");
+  }
+}
+
+/* The home page's welcome banner: one continuous background instead of two gradient
+   halves, which met in a visible seam. A soft primary glow fans out from the top-left
+   corner and a faint warm yellow glow rises from the bottom, over a smooth base. */
+.welcome-banner-bg {
+  background:
+    radial-gradient(
+      55% 140% at 0% 0%,
+      color-mix(in oklab, var(--color-primary-300) 60%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(45% 120% at 55% 130%, oklch(92.4% 0.12 95.75 / 0.6), transparent 70%),
+    linear-gradient(100deg, oklch(98.7% 0.022 95.28), oklch(98% 0.016 73.68));
+
+  &:where(.dark, .dark *) {
+    background:
+      radial-gradient(
+        55% 140% at 0% 0%,
+        color-mix(in oklab, var(--color-primary-500) 50%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(45% 120% at 55% 130%, oklch(82.8% 0.189 84.43 / 0.22), transparent 70%),
+      linear-gradient(100deg, oklch(24% 0.02 70), oklch(22% 0.01 80) 60%, oklch(21% 0.005 90));
+  }
 }
 
 /* The end of Skeleton UI overrides */

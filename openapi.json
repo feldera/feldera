@@ -10,7 +10,7 @@
     "license": {
       "name": "MIT OR Apache-2.0"
     },
-    "version": "0.363.0"
+    "version": "0.369.0"
   },
   "paths": {
     "/config/authentication": {
@@ -886,42 +886,30 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 16,
-                      "max_rss_mb": null,
-                      "datafusion_memory_mb": null,
                       "hosts": 1,
                       "storage": {
                         "backend": {
                           "name": "default"
                         },
-                        "min_storage_bytes": null,
-                        "min_step_storage_bytes": null,
                         "compression": "default",
-                        "compression_level": null,
-                        "cache_mib": null
+                        "compression_level": null
                       },
                       "fault_tolerance": {
-                        "model": "none",
-                        "checkpoint_interval_secs": 60
+                        "model": "none"
                       },
                       "cpu_profiler": true,
                       "tracing": false,
                       "tracing_endpoint_jaeger": "",
                       "min_batch_size_records": 0,
-                      "max_buffering_delay_usecs": 0,
                       "resources": {
                         "cpu_cores_min": null,
                         "cpu_cores_max": null,
-                        "memory_mb_min": null,
-                        "memory_mb_max": null,
-                        "storage_mb_max": null,
                         "storage_class": null,
                         "service_account_name": null,
                         "namespace": null
                       },
-                      "clock_resolution_usecs": 1000000,
                       "clock_timezone_offset": null,
                       "pin_cpus": [],
-                      "provisioning_timeout_secs": null,
                       "max_parallel_connector_init": null,
                       "init_containers": null,
                       "checkpoint_during_suspend": true,
@@ -932,6 +920,7 @@
                       "logging": null,
                       "pipeline_template_configmap": null
                     },
+                    "deployment_config": null,
                     "program_code": "CREATE TABLE table1 ( col1 INT );",
                     "udf_rust": "",
                     "udf_toml": "",
@@ -981,42 +970,34 @@
                     "platform_version": "v0",
                     "runtime_config": {
                       "workers": 10,
-                      "max_rss_mb": null,
-                      "datafusion_memory_mb": null,
                       "hosts": 1,
                       "storage": {
                         "backend": {
                           "name": "default"
                         },
-                        "min_storage_bytes": null,
-                        "min_step_storage_bytes": null,
                         "compression": "default",
-                        "compression_level": null,
-                        "cache_mib": null
+                        "compression_level": null
                       },
                       "fault_tolerance": {
-                        "model": "none",
-                        "checkpoint_interval_secs": 60
+                        "model": "none"
                       },
                       "cpu_profiler": false,
                       "tracing": false,
                       "tracing_endpoint_jaeger": "",
                       "min_batch_size_records": 100000,
-                      "max_buffering_delay_usecs": 0,
                       "resources": {
                         "cpu_cores_min": null,
                         "cpu_cores_max": null,
-                        "memory_mb_min": 1000,
-                        "memory_mb_max": null,
-                        "storage_mb_max": 10000,
+                        "memory_min": "1G",
+                        "storage_max": "10G",
                         "storage_class": null,
                         "service_account_name": null,
                         "namespace": null
                       },
-                      "clock_resolution_usecs": 100000,
+                      "clock_resolution": "100ms",
                       "clock_timezone_offset": null,
                       "pin_cpus": [],
-                      "provisioning_timeout_secs": 1200,
+                      "provisioning_timeout": "20m",
                       "max_parallel_connector_init": 10,
                       "init_containers": null,
                       "checkpoint_during_suspend": false,
@@ -1027,6 +1008,7 @@
                       "logging": null,
                       "pipeline_template_configmap": null
                     },
+                    "deployment_config": null,
                     "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
                     "udf_rust": "",
                     "udf_toml": "",
@@ -1106,42 +1088,30 @@
                 "tags": [],
                 "runtime_config": {
                   "workers": 16,
-                  "max_rss_mb": null,
-                  "datafusion_memory_mb": null,
                   "hosts": 1,
                   "storage": {
                     "backend": {
                       "name": "default"
                     },
-                    "min_storage_bytes": null,
-                    "min_step_storage_bytes": null,
                     "compression": "default",
-                    "compression_level": null,
-                    "cache_mib": null
+                    "compression_level": null
                   },
                   "fault_tolerance": {
-                    "model": "none",
-                    "checkpoint_interval_secs": 60
+                    "model": "none"
                   },
                   "cpu_profiler": true,
                   "tracing": false,
                   "tracing_endpoint_jaeger": "",
                   "min_batch_size_records": 0,
-                  "max_buffering_delay_usecs": 0,
                   "resources": {
                     "cpu_cores_min": null,
                     "cpu_cores_max": null,
-                    "memory_mb_min": null,
-                    "memory_mb_max": null,
-                    "storage_mb_max": null,
                     "storage_class": null,
                     "service_account_name": null,
                     "namespace": null
                   },
-                  "clock_resolution_usecs": 1000000,
                   "clock_timezone_offset": null,
                   "pin_cpus": [],
-                  "provisioning_timeout_secs": null,
                   "max_parallel_connector_init": null,
                   "init_containers": null,
                   "checkpoint_during_suspend": true,
@@ -1152,6 +1122,7 @@
                   "logging": null,
                   "pipeline_template_configmap": null
                 },
+                "deployment_config": null,
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
                 "udf_toml": null,
@@ -1184,42 +1155,30 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "max_rss_mb": null,
-                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
                       },
-                      "min_storage_bytes": null,
-                      "min_step_storage_bytes": null,
                       "compression": "default",
-                      "compression_level": null,
-                      "cache_mib": null
+                      "compression_level": null
                     },
                     "fault_tolerance": {
-                      "model": "none",
-                      "checkpoint_interval_secs": 60
+                      "model": "none"
                     },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
                     "min_batch_size_records": 0,
-                    "max_buffering_delay_usecs": 0,
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
-                      "memory_mb_min": null,
-                      "memory_mb_max": null,
-                      "storage_mb_max": null,
                       "storage_class": null,
                       "service_account_name": null,
                       "namespace": null
                     },
-                    "clock_resolution_usecs": 1000000,
                     "clock_timezone_offset": null,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
@@ -1230,6 +1189,7 @@
                     "logging": null,
                     "pipeline_template_configmap": null
                   },
+                  "deployment_config": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
@@ -1374,42 +1334,30 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "max_rss_mb": null,
-                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
                       },
-                      "min_storage_bytes": null,
-                      "min_step_storage_bytes": null,
                       "compression": "default",
-                      "compression_level": null,
-                      "cache_mib": null
+                      "compression_level": null
                     },
                     "fault_tolerance": {
-                      "model": "none",
-                      "checkpoint_interval_secs": 60
+                      "model": "none"
                     },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
                     "min_batch_size_records": 0,
-                    "max_buffering_delay_usecs": 0,
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
-                      "memory_mb_min": null,
-                      "memory_mb_max": null,
-                      "storage_mb_max": null,
                       "storage_class": null,
                       "service_account_name": null,
                       "namespace": null
                     },
-                    "clock_resolution_usecs": 1000000,
                     "clock_timezone_offset": null,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
@@ -1420,6 +1368,7 @@
                     "logging": null,
                     "pipeline_template_configmap": null
                   },
+                  "deployment_config": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
@@ -1526,42 +1475,30 @@
                 "tags": [],
                 "runtime_config": {
                   "workers": 16,
-                  "max_rss_mb": null,
-                  "datafusion_memory_mb": null,
                   "hosts": 1,
                   "storage": {
                     "backend": {
                       "name": "default"
                     },
-                    "min_storage_bytes": null,
-                    "min_step_storage_bytes": null,
                     "compression": "default",
-                    "compression_level": null,
-                    "cache_mib": null
+                    "compression_level": null
                   },
                   "fault_tolerance": {
-                    "model": "none",
-                    "checkpoint_interval_secs": 60
+                    "model": "none"
                   },
                   "cpu_profiler": true,
                   "tracing": false,
                   "tracing_endpoint_jaeger": "",
                   "min_batch_size_records": 0,
-                  "max_buffering_delay_usecs": 0,
                   "resources": {
                     "cpu_cores_min": null,
                     "cpu_cores_max": null,
-                    "memory_mb_min": null,
-                    "memory_mb_max": null,
-                    "storage_mb_max": null,
                     "storage_class": null,
                     "service_account_name": null,
                     "namespace": null
                   },
-                  "clock_resolution_usecs": 1000000,
                   "clock_timezone_offset": null,
                   "pin_cpus": [],
-                  "provisioning_timeout_secs": null,
                   "max_parallel_connector_init": null,
                   "init_containers": null,
                   "checkpoint_during_suspend": true,
@@ -1572,6 +1509,7 @@
                   "logging": null,
                   "pipeline_template_configmap": null
                 },
+                "deployment_config": null,
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
                 "udf_toml": null,
@@ -1604,42 +1542,30 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "max_rss_mb": null,
-                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
                       },
-                      "min_storage_bytes": null,
-                      "min_step_storage_bytes": null,
                       "compression": "default",
-                      "compression_level": null,
-                      "cache_mib": null
+                      "compression_level": null
                     },
                     "fault_tolerance": {
-                      "model": "none",
-                      "checkpoint_interval_secs": 60
+                      "model": "none"
                     },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
                     "min_batch_size_records": 0,
-                    "max_buffering_delay_usecs": 0,
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
-                      "memory_mb_min": null,
-                      "memory_mb_max": null,
-                      "storage_mb_max": null,
                       "storage_class": null,
                       "service_account_name": null,
                       "namespace": null
                     },
-                    "clock_resolution_usecs": 1000000,
                     "clock_timezone_offset": null,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
@@ -1650,6 +1576,7 @@
                     "logging": null,
                     "pipeline_template_configmap": null
                   },
+                  "deployment_config": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
@@ -1709,42 +1636,30 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "max_rss_mb": null,
-                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
                       },
-                      "min_storage_bytes": null,
-                      "min_step_storage_bytes": null,
                       "compression": "default",
-                      "compression_level": null,
-                      "cache_mib": null
+                      "compression_level": null
                     },
                     "fault_tolerance": {
-                      "model": "none",
-                      "checkpoint_interval_secs": 60
+                      "model": "none"
                     },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
                     "min_batch_size_records": 0,
-                    "max_buffering_delay_usecs": 0,
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
-                      "memory_mb_min": null,
-                      "memory_mb_max": null,
-                      "storage_mb_max": null,
                       "storage_class": null,
                       "service_account_name": null,
                       "namespace": null
                     },
-                    "clock_resolution_usecs": 1000000,
                     "clock_timezone_offset": null,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
@@ -1755,6 +1670,7 @@
                     "logging": null,
                     "pipeline_template_configmap": null
                   },
+                  "deployment_config": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
@@ -1810,6 +1726,15 @@
                       "message": "Pipeline can only be updated while stopped. Stop it first by invoking '/stop'.",
                       "error_code": "UpdateRestrictedToStopped",
                       "details": null
+                    }
+                  },
+                  "Changed deployment config": {
+                    "value": {
+                      "message": "Invalid deployment patch: cpu_cores_min (9) exceeds cpu_cores_max (8)",
+                      "error_code": "InvalidDeploymentPatch",
+                      "details": {
+                        "reason": "cpu_cores_min (9) exceeds cpu_cores_max (8)"
+                      }
                     }
                   },
                   "Name does not match pattern": {
@@ -1935,7 +1860,7 @@
           "Pipeline CRUD"
         ],
         "summary": "Patch Pipeline",
-        "description": "Required role: `write` or higher.\n\nPartially update a pipeline.",
+        "description": "Required role: `write` or higher.\n\nPartially update a pipeline.\n\nA `deployment_config` resizes the CPU and memory of a running pipeline in place (experimental,\nenabled by `--enable-pipeline-resize`). It cannot be combined with other fields.",
         "operationId": "patch_pipeline",
         "parameters": [
           {
@@ -1958,6 +1883,7 @@
                 "name": null,
                 "description": "This is a new description",
                 "runtime_config": null,
+                "deployment_config": null,
                 "program_code": "CREATE TABLE table3 ( col3 INT );",
                 "udf_rust": null,
                 "udf_toml": null,
@@ -1985,42 +1911,30 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "max_rss_mb": null,
-                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
                       },
-                      "min_storage_bytes": null,
-                      "min_step_storage_bytes": null,
                       "compression": "default",
-                      "compression_level": null,
-                      "cache_mib": null
+                      "compression_level": null
                     },
                     "fault_tolerance": {
-                      "model": "none",
-                      "checkpoint_interval_secs": 60
+                      "model": "none"
                     },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
                     "min_batch_size_records": 0,
-                    "max_buffering_delay_usecs": 0,
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
-                      "memory_mb_min": null,
-                      "memory_mb_max": null,
-                      "storage_mb_max": null,
                       "storage_class": null,
                       "service_account_name": null,
                       "namespace": null
                     },
-                    "clock_resolution_usecs": 1000000,
                     "clock_timezone_offset": null,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
@@ -2031,6 +1945,7 @@
                     "logging": null,
                     "pipeline_template_configmap": null
                   },
+                  "deployment_config": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
@@ -2081,11 +1996,27 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Cannot resize non-running pipeline": {
+                    "value": {
+                      "message": "Pipeline 'deployment_config' can only be changed while it is running. Start it with '/start', or change 'runtime_config.resources' while it is stopped.",
+                      "error_code": "DeploymentRestrictedToRunning",
+                      "details": null
+                    }
+                  },
                   "Cannot update non-stopped pipeline": {
                     "value": {
                       "message": "Pipeline can only be updated while stopped. Stop it first by invoking '/stop'.",
                       "error_code": "UpdateRestrictedToStopped",
                       "details": null
+                    }
+                  },
+                  "Invalid deployment config patch": {
+                    "value": {
+                      "message": "Invalid deployment patch: cpu_cores_min (9) exceeds cpu_cores_max (8)",
+                      "error_code": "InvalidDeploymentPatch",
+                      "details": {
+                        "reason": "cpu_cores_min (9) exceeds cpu_cores_max (8)"
+                      }
                     }
                   },
                   "Name does not match pattern": {
@@ -2115,6 +2046,24 @@
                   "error_code": "UnknownPipelineName",
                   "details": {
                     "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "The runner of this installation cannot resize a running pipeline in place",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unsupported pipeline action 'suspend': this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured",
+                  "error_code": "UnsupportedPipelineAction",
+                  "details": {
+                    "action": "suspend",
+                    "reason": "this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured"
                   }
                 }
               }
@@ -7129,42 +7078,30 @@
                   "platform_version": "v0",
                   "runtime_config": {
                     "workers": 16,
-                    "max_rss_mb": null,
-                    "datafusion_memory_mb": null,
                     "hosts": 1,
                     "storage": {
                       "backend": {
                         "name": "default"
                       },
-                      "min_storage_bytes": null,
-                      "min_step_storage_bytes": null,
                       "compression": "default",
-                      "compression_level": null,
-                      "cache_mib": null
+                      "compression_level": null
                     },
                     "fault_tolerance": {
-                      "model": "none",
-                      "checkpoint_interval_secs": 60
+                      "model": "none"
                     },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
                     "min_batch_size_records": 0,
-                    "max_buffering_delay_usecs": 0,
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
-                      "memory_mb_min": null,
-                      "memory_mb_max": null,
-                      "storage_mb_max": null,
                       "storage_class": null,
                       "service_account_name": null,
                       "namespace": null
                     },
-                    "clock_resolution_usecs": 1000000,
                     "clock_timezone_offset": null,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
@@ -7175,6 +7112,7 @@
                     "logging": null,
                     "pipeline_template_configmap": null
                   },
+                  "deployment_config": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
@@ -8980,7 +8918,7 @@
       },
       "Chunk": {
         "type": "object",
-        "description": "A set of updates to a SQL table or view.\n\nThe `sequence_number` field stores the offset of the chunk relative to the\nstart of the stream and can be used to implement reliable delivery.\nThe payload is stored in the `bin_data`, `text_data`, or `json_data` field\ndepending on the data format used.",
+        "description": "A set of updates to a SQL table or view.\n\nThe `sequence_number` field stores the offset of the chunk relative to the\nstart of the stream and can be used to implement reliable delivery.\nThe payload is stored in the `bin_data`, `text_data`, or `json_data` field\ndepending on the data format used.  A chunk without a payload marks the\nend of a step's output, when it carries `processed_steps`, or is a\nkeep-alive.",
         "required": [
           "sequence_number",
           "snapshot"
@@ -8996,6 +8934,13 @@
             "type": "object",
             "description": "JSON payload.",
             "nullable": true
+          },
+          "processed_steps": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The number of steps whose output precedes this chunk, this step\nincluded.  `Some` only on the empty chunk that follows a step's output,\nso a chunk with `processed_steps` carries no `bin_data`, `text_data`\nor `json_data`.  The output of a record that the pipeline ingested in\nstep `n` has been delivered once `processed_steps > n`.  The\n`/completion_status` endpoint reports the `step` that a completion\ntoken waits for in the same unit, so a client that has received a\nchunk with `processed_steps` at or above that `step` is guaranteed to\nhave received every update for the token.",
+            "nullable": true,
+            "minimum": 0
           },
           "sequence_number": {
             "type": "integer",
@@ -9061,14 +9006,12 @@
       },
       "ClockConfig": {
         "type": "object",
-        "required": [
-          "clock_resolution_usecs"
-        ],
         "properties": {
-          "clock_resolution_usecs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
+          "clock_resolution": {
+            "type": "string",
+            "description": "How often the clock ticks, for example `1s`. Unset selects the\ndefault, `DEFAULT_CLOCK_RESOLUTION`.",
+            "default": "1s",
+            "nullable": true
           },
           "http_driven": {
             "type": "boolean",
@@ -9584,17 +9527,17 @@
           "auth": {
             "$ref": "#/components/schemas/Auth"
           },
-          "connection_timeout_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Connection timeout\n\nHow long to wait when establishing the initial connection to the\nNATS server.",
-            "minimum": 0
+          "connection_timeout": {
+            "type": "string",
+            "description": "Connection timeout, for example `10s`.\n\nHow long to wait when establishing the initial connection to the\nNATS server. Unset selects the default, `DEFAULT_CONNECTION_TIMEOUT`.",
+            "default": "10s",
+            "nullable": true
           },
-          "request_timeout_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Request timeout in seconds.\n\nHow long to wait for responses to requests.",
-            "minimum": 0
+          "request_timeout": {
+            "type": "string",
+            "description": "Request timeout, for example `10s`.\n\nHow long to wait for responses to requests. Unset selects\nthe default, `DEFAULT_REQUEST_TIMEOUT`.",
+            "default": "10s",
+            "nullable": true
           },
           "server_url": {
             "type": "string",
@@ -9616,6 +9559,10 @@
               "transport"
             ],
             "properties": {
+              "distributed": {
+                "type": "boolean",
+                "description": "Divide the input of this connector among the hosts of a multihost\npipeline. Valid for input connectors only.\n\nWhen `false` (the default), the connector runs on one host, which\nreads all of its input. When `true`, the connector runs on every host,\nand each host reads a different part of the input. Only the Kafka,\nDelta Lake, and Iceberg input transports support this setting.\n\nIn a single-host pipeline, this setting has no effect.\n\nVersions of Feldera that predate this option ignore it."
+              },
               "format": {
                 "allOf": [
                   {
@@ -9643,18 +9590,16 @@
                 "nullable": true,
                 "minimum": 0
               },
-              "max_queued_bytes": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Backpressure threshold, in bytes.\n\nMaximal number of bytes queued by the endpoint before the endpoint\nis paused by the backpressure mechanism.\n\nFor input endpoints, this setting bounds the number of bytes that have\nbeen received from the input transport but haven't yet been consumed by\nthe circuit since the circuit, since the circuit is still busy processing\nprevious inputs.\n\nThis setting is not yet implemented for output endpoints.\n\nNote that this is not a hard bound: there can be a small delay between\nthe backpressure mechanism is triggered and the endpoint is paused, during\nwhich more data may be queued.\n\nWhen this is unspecified, it defaults to `1000 * max_queued_records`.",
-                "nullable": true,
-                "minimum": 0
-              },
               "max_queued_records": {
                 "type": "integer",
                 "format": "int64",
                 "description": "Backpressure threshold, in records.\n\nMaximal number of records queued by the endpoint before the endpoint\nis paused by the backpressure mechanism.\n\nFor input endpoints, this setting bounds the number of records that have\nbeen received from the input transport but haven't yet been consumed by\nthe circuit, since the circuit is still busy processing previous inputs.\n\nFor output endpoints, this setting bounds the number of records that have\nbeen produced by the circuit but not yet sent via the output transport endpoint\nnor stored in the output buffer (see `enable_output_buffer`).\n\nNote that this is not a hard bound: there can be a small delay between\nthe backpressure mechanism is triggered and the endpoint is paused, during\nwhich more data may be queued.\n\nThe default is 1 million.",
                 "minimum": 0
+              },
+              "max_queued_size": {
+                "type": "string",
+                "description": "Backpressure threshold, in bytes.\n\nMaximal number of bytes queued by the endpoint before the endpoint\nis paused by the backpressure mechanism.\n\nFor input endpoints, this setting bounds the number of bytes that have\nbeen received from the input transport but haven't yet been consumed by\nthe circuit since the circuit, since the circuit is still busy processing\nprevious inputs.\n\nThis setting is not yet implemented for output endpoints.\n\nNote that this is not a hard bound: there can be a small delay between\nthe backpressure mechanism is triggered and the endpoint is paused, during\nwhich more data may be queued.\n\nWhen this is unspecified, it defaults to `1000 * max_queued_records`\nbytes.\n\nBefore release 0.367.0 this setting was `max_queued_bytes`, a number\nof bytes. That name is deprecated but still read.",
+                "nullable": true
               },
               "max_worker_batch_size": {
                 "type": "integer",
@@ -9819,8 +9764,9 @@
             "format": "int64",
             "nullable": true
           },
-          "max_expires": {
+          "max_expiry": {
             "type": "string",
+            "description": "How long a pull request may stay parked on the server before it\nexpires, for example `30s`.\n\nUnset leaves the NATS server's own default in place.",
             "nullable": true
           },
           "max_waiting": {
@@ -10293,6 +10239,14 @@
           "catchup"
         ]
       },
+      "DeltaTableUpdateMode": {
+        "type": "string",
+        "description": "How the Delta table connector applies pipeline updates to the target table.\n\nThis is orthogonal to `mode`, which governs what happens to an existing table\nwhen the connector starts.",
+        "enum": [
+          "cdc",
+          "merge"
+        ]
+      },
       "DeltaTableWriteMode": {
         "type": "string",
         "description": "Delta table write mode.\n\nDetermines how the Delta table connector handles an existing table at the target location.",
@@ -10309,6 +10263,10 @@
           "uri"
         ],
         "properties": {
+          "auto_compact": {
+            "type": "boolean",
+            "description": "Compact the target table from the connector, between flushes.\n\nOnly used when `update_mode` is `merge`. Merge mode marks an old row version deleted\nbut leaves it in place, so without compaction the table keeps growing and reads slow\ndown, however few live rows it holds.\n\nOff by default, because maintenance is normally the table administrator's job. Set it\nfor tables where Feldera is the only writer and nothing else compacts the table. See\n\"Compaction is required\" in the Delta output connector documentation.\n\nDefault: `false`."
+          },
           "checkpoint_interval": {
             "type": "integer",
             "format": "int32",
@@ -10326,6 +10284,16 @@
             "description": "Log retention duration for newly created Delta tables.\n\nConfigures the `delta.logRetentionDuration` table property, which controls how long the\ntransaction log history of the table is kept.  Each time a checkpoint is written, Delta Lake\nautomatically cleans up log entries older than this interval (subject to\n`enable_expired_log_cleanup`).\n\nThe option is only available when creating the Delta table (`mode = append` and there is\nno existing table at the target location, or `mode = truncate`).\n\nThe value follows the Delta Lake interval syntax: `\"interval <N> <unit>\"`, where `<unit>`\nis one of `nanosecond[s]`, `microsecond[s]`, `millisecond[s]`, `second[s]`, `minute[s]`,\n`hour[s]`, `day[s]`, or `week[s]`.  Examples: `\"interval 30 days\"`, `\"interval 6 hours\"`.\n\nDefault: `\"interval 30 days\"` (Delta Lake default).",
             "nullable": true
           },
+          "lookup_chunk_size": {
+            "type": "string",
+            "description": "Ceiling on the encoded keys the connector holds while locating the rows to\nsupersede, such as `\"256Mi\"`.\n\nOnly used when `update_mode` is `merge`. A flush whose key set exceeds this budget\nis split into successive lookup passes, which bounds memory at the cost of\nre-scanning candidate files. Default: `\"256Mi\"`. Maximum: `\"2147483647\"`, one byte\nless than 2 GiB.",
+            "default": "256Mi"
+          },
+          "max_concurrent_probes": {
+            "type": "integer",
+            "description": "Number of data files read concurrently while locating the rows to supersede.\n\nOnly used when `update_mode` is `merge`. Each concurrent read holds one file's\nprojected key column, so this bounds memory as well as request concurrency.\nDefault: 16.",
+            "minimum": 1
+          },
           "max_retries": {
             "type": "integer",
             "format": "int32",
@@ -10338,9 +10306,12 @@
           },
           "threads": {
             "type": "integer",
-            "description": "Number of parallel threads used by the connector.\n\nIncreasing this value can improve Delta Lake write throughput\nby enabling concurrent writes. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.\nValues above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly.\nDefine the key with `CREATE INDEX` and set the connector's `index` property to that index;\nsee [views with unique keys](https://docs.feldera.com/connectors/sinks/delta/#views-with-unique-keys) and\n[writing in parallel](https://docs.feldera.com/connectors/sinks/delta/#writing-in-parallel).\n\nDefault: 1.",
+            "description": "Number of parallel threads used by the connector.\n\nIncreasing this value can improve Delta Lake write throughput by enabling concurrent writes.\nValues above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly.\nWith `update_mode: merge` the connector splits a batch only when each thread would get a\nsubstantial share of it, so a small change still writes one file rather than one small file per thread.\nDefine the key with `CREATE INDEX` and set the connector's `index` property to that index;\nsee [views with unique keys](https://docs.feldera.com/connectors/sinks/delta/#views-with-unique-keys) and\n[writing in parallel](https://docs.feldera.com/connectors/sinks/delta/#writing-in-parallel).\n\nDefault: 1.",
             "nullable": true,
             "minimum": 1
+          },
+          "update_mode": {
+            "$ref": "#/components/schemas/DeltaTableUpdateMode"
           },
           "uri": {
             "type": "string",
@@ -10399,6 +10370,33 @@
             "description": "User defined function (UDF) TOML dependencies."
           }
         }
+      },
+      "DeploymentResources": {
+        "type": "object",
+        "description": "CPU and memory, the only fields that can change while the pipeline runs.",
+        "properties": {
+          "cpu_cores_max": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "cpu_cores_min": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "memory_max": {
+            "type": "string",
+            "description": "The maximum memory, such as `\"16Gi\"`. `memory_mb_max`, a number of\nmegabytes, is a deprecated alias.",
+            "nullable": true
+          },
+          "memory_min": {
+            "type": "string",
+            "description": "The minimum memory, such as `\"4Gi\"`. `memory_mb_min`, a number of\nmegabytes, is a deprecated alias.",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
       },
       "DevTweaks": {
         "type": "object",
@@ -10497,19 +10495,17 @@
             "default": null,
             "nullable": true
           },
-          "exchange_channel_capacity_bytes": {
-            "type": "integer",
-            "description": "Maximum number of bytes of queued but unacknowledged exchange messages\nper pair of remote host and message type.\n\nA sender that pushes past this budget waits for the receiver to\nacknowledge earlier messages before it queues more.  There are three\nmessage types, so a host buffers up to three times this many bytes for\neach of the other hosts, plus any single message that exceeds the\nbudget on its own.\n\nThe default is 10,000,000 bytes.",
+          "exchange_channel_capacity": {
+            "type": "string",
+            "description": "Maximum size of the queued but unacknowledged exchange messages per\npair of remote host and message type.\n\nA sender that pushes past this budget waits for the receiver to\nacknowledge earlier messages before it queues more.  There are three\nmessage types, so a host buffers up to three times this many bytes for\neach of the other hosts, plus any single message that exceeds the\nbudget on its own.\n\nThe default is `\"10M\"`. Before release 0.367.0 this setting was\n`exchange_channel_capacity_bytes`, a number of bytes.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
-          "fbuf_slab_bytes_per_class": {
-            "type": "integer",
-            "description": "Target number of cached bytes retained in each `FBuf` slab size class.\n\nThe default is 16 MiB.",
+          "fbuf_slab_size_per_class": {
+            "type": "string",
+            "description": "Target size of the cache retained in each `FBuf` slab size class.\n\nThe default is `\"16Mi\"`. Before release 0.367.0 this setting was\n`fbuf_slab_bytes_per_class`, a number of bytes.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "fetch_distinct": {
             "type": "boolean",
@@ -10527,6 +10523,28 @@
             "type": "integer",
             "format": "int32",
             "description": "Merge threshold of an integral's spine: how many batches each level\nabove level 1 waits for before it merges them.\n\nThe default is ten.  Zero restores the built-in minimum.  A spine\nthat garbage-collects old records always uses the built-in minimum.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "layer_file_read_ahead_blocks": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many data blocks a layer-file cursor that declared a sequential\nwalk reads ahead of its position.\n\nEach block a cursor steps into that the buffer cache does not hold is a\ndevice round trip the worker waits out, and a key column is a strided\nsubset of its file that the kernel's readahead never serves.  Reading\nahead this many blocks keeps that many round trips in flight.  Zero\ndisables it.  The default is 8.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "lazy_input_map_key_block_size": {
+            "type": "string",
+            "description": "Minimum size of the key blocks in the batches a lazy input map's\naccumulator writes for itself.  A power of two, at least 4096 bytes.\n\nThe map resolves a transaction by walking the accumulated updates in\nkey order without reading values, one storage request per key block,\nso larger blocks mean fewer requests.  Only the accumulator's own\nbatches (merge outputs and spills) take this size; the batches that\nreach the integral keep it until its merger rewrites them at the\ndefault size.  The default is `\"32Ki\"`; `\"8Ki\"` is the file writer's\ndefault. Before release 0.367.0 this setting was\n`lazy_input_map_key_block_bytes`, a number of bytes.",
+            "default": null,
+            "nullable": true
+          },
+          "lazy_input_map_keys_per_step": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many keys a lazy input map resolves against its integral in one step.\n\nThe lazy upsert operator may scan a large number of keys without\nproducing any output. Therefore bounding its step by the number of\noutputs is not sufficient. This setting additionally bounds it by its\ninput.\n\nThe default is 100,000.",
             "default": null,
             "nullable": true,
             "minimum": 0
@@ -10597,13 +10615,11 @@
             "default": null,
             "nullable": true
           },
-          "storage_mb_max": {
-            "type": "integer",
-            "format": "int64",
-            "description": "If set, the maximum amount of storage, in MiB, for the POSIX backend to\nallow to be in use before failing all writes with `StorageFull`.  This\nis useful for testing on top of storage that does not implement its own\nquota mechanism.",
+          "storage_max": {
+            "type": "string",
+            "description": "If set, the maximum amount of storage for the POSIX backend to allow to\nbe in use before failing all writes with `StorageFull`.  This is useful\nfor testing on top of storage that does not implement its own quota\nmechanism.\n\nBefore release 0.367.0 this setting was `storage_mb_max`, a number of\nmebibytes.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "streaming_exchange": {
             "type": "boolean",
@@ -10713,11 +10729,10 @@
             "description": "Optional endpoint URL, for example when using a local\nDynamoDB-compatible service.",
             "nullable": true
           },
-          "max_buffer_size_bytes": {
-            "type": "integer",
-            "description": "Maximum number of bytes buffered by each worker before flushing writes.\n\nThis is an approximate size based on encoded DynamoDB attributes.",
-            "default": 1048576,
-            "minimum": 0
+          "max_buffer_size": {
+            "type": "string",
+            "description": "Maximum size of the data buffered by each worker before flushing\nwrites, such as `\"1Mi\"`.\n\nThis is an approximate size based on encoded DynamoDB attributes.\n\nBefore release 0.367.0 this setting was `max_buffer_size_bytes`, a\nnumber of bytes. That name is deprecated but still read.",
+            "default": "1Mi"
           },
           "max_concurrent_requests": {
             "type": "integer",
@@ -10887,13 +10902,11 @@
             "default": null,
             "nullable": true
           },
-          "ioop_delay": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Per-I/O operation sleep duration, in milliseconds.\n\nThis is for simulating slow storage devices.  Do not use this in\nproduction.",
+          "ioop_latency": {
+            "type": "string",
+            "description": "Per-I/O operation sleep duration, for example `5ms`.\n\nThis is for simulating slow storage devices.  Do not use this in\nproduction.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "sync": {
             "allOf": [
@@ -10922,11 +10935,10 @@
           "path"
         ],
         "properties": {
-          "buffer_size_bytes": {
-            "type": "integer",
-            "description": "Read buffer size.\n\nDefault: when this parameter is not specified, a platform-specific\ndefault is used.",
-            "nullable": true,
-            "minimum": 0
+          "buffer_size": {
+            "type": "string",
+            "description": "Read buffer size, such as `\"64Ki\"`.\n\nDefault: when this parameter is not specified, a platform-specific\ndefault is used.\n\nBefore release 0.367.0 this setting was `buffer_size_bytes`, a number\nof bytes. That name is deprecated but still read.",
+            "nullable": true
           },
           "follow": {
             "type": "boolean",
@@ -10972,12 +10984,11 @@
         "type": "object",
         "description": "Fault-tolerance configuration.\n\nThe default [FtConfig] (via [FtConfig::default]) disables fault tolerance,\nwhich is the configuration that one gets if [RuntimeConfig] omits fault\ntolerance configuration.\n\nThe default value for [FtConfig::model] enables fault tolerance, as\n`Some(FtModel::default())`.  This is the configuration that one gets if\n[RuntimeConfig] includes a fault tolerance configuration but does not\nspecify a particular model.",
         "properties": {
-          "checkpoint_interval_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Interval between automatic checkpoints, in seconds.\n\nThe default is 60 seconds.  Values less than 1 or greater than 3600 will\nbe forced into that range.",
-            "nullable": true,
-            "minimum": 0
+          "checkpoint_interval": {
+            "type": "string",
+            "description": "Interval between automatic checkpoints, for example `60s`.\n\nUnset selects the default, `DEFAULT_CHECKPOINT_INTERVAL`; `null`\ndisables periodic checkpointing.\nValues less than 1 second or greater than 1 hour will be forced into\nthat range.",
+            "default": "1m",
+            "nullable": true
           },
           "model": {
             "oneOf": [
@@ -11760,7 +11771,7 @@
           },
           "paused": {
             "type": "boolean",
-            "description": "Endpoint has been paused by the user."
+            "description": "Endpoint has been paused by the user.  A distributed connector in a\nmultihost pipeline is paused only if it is paused on every host."
           },
           "transport_errors": {
             "type": "array",
@@ -11801,10 +11812,9 @@
       },
       "JsonUpdateFormat": {
         "type": "string",
-        "description": "Supported JSON data change event formats.\n\nEach element in a JSON-formatted input stream specifies\nan update to one or more records in an input table.  We support\nseveral different ways to represent such updates.\n\n### `InsertDelete`\n\nEach element in the input stream consists of an \"insert\" or \"delete\"\ncommand and a record to be inserted to or deleted from the input table.\n\n```json\n{\"insert\": {\"column1\": \"hello, world!\", \"column2\": 100}}\n```\n\n### `Weighted`\n\nEach element in the input stream consists of a record and a weight\nwhich indicates how many times the row appears.\n\n```json\n{\"weight\": 2, \"data\": {\"column1\": \"hello, world!\", \"column2\": 100}}\n```\n\nNote that the line above would be equivalent to the following input in the `InsertDelete` format:\n\n```json\n{\"insert\": {\"column1\": \"hello, world!\", \"column2\": 100}}\n{\"insert\": {\"column1\": \"hello, world!\", \"column2\": 100}}\n```\n\nSimilarly, negative weights are equivalent to deletions:\n\n```json\n{\"weight\": -1, \"data\": {\"column1\": \"hello, world!\", \"column2\": 100}}\n```\n\nis equivalent to in the `InsertDelete` format:\n\n```json\n{\"delete\": {\"column1\": \"hello, world!\", \"column2\": 100}}\n```\n\n### `Debezium`\n\nDebezium CDC format.  Refer to [Debezium input connector documentation](https://docs.feldera.com/connectors/sources/debezium) for details.\n\n### `Snowflake`\n\nUses flat structure so that fields can get parsed directly into SQL\ncolumns.  Defines three metadata fields:\n\n* `__action` - \"insert\" or \"delete\"\n* `__stream_id` - unique 64-bit ID of the output stream (records within\na stream are totally ordered)\n* `__seq_number` - monotonically increasing sequence number relative to\nthe start of the stream.\n\n```json\n{\"PART\":1,\"VENDOR\":2,\"EFFECTIVE_SINCE\":\"2019-05-21\",\"PRICE\":\"10000\",\"__action\":\"insert\",\"__stream_id\":4523666124030717756,\"__seq_number\":1}\n```\n\n### `Raw`\n\nThis format is suitable for insert-only streams (no deletions).\nEach element in the input stream contains a record without any\nadditional envelope that gets inserted in the input table.",
+        "description": "Supported JSON data change event formats.\n\nEach element in a JSON-formatted input stream specifies\nan update to one or more records in an input table.  We support\nseveral different ways to represent such updates.\n\n### `InsertDelete`\n\nEach element in the input stream consists of an \"insert\" or \"delete\"\ncommand and a record to be inserted to or deleted from the input table.\n\n```json\n{\"insert\": {\"column1\": \"hello, world!\", \"column2\": 100}}\n```\n\n### `Debezium`\n\nDebezium CDC format.  Refer to [Debezium input connector documentation](https://docs.feldera.com/connectors/sources/debezium) for details.\n\n### `Snowflake`\n\nUses flat structure so that fields can get parsed directly into SQL\ncolumns.  Defines three metadata fields:\n\n* `__action` - \"insert\" or \"delete\"\n* `__stream_id` - unique 64-bit ID of the output stream (records within\na stream are totally ordered)\n* `__seq_number` - monotonically increasing sequence number relative to\nthe start of the stream.\n\n```json\n{\"PART\":1,\"VENDOR\":2,\"EFFECTIVE_SINCE\":\"2019-05-21\",\"PRICE\":\"10000\",\"__action\":\"insert\",\"__stream_id\":4523666124030717756,\"__seq_number\":1}\n```\n\n### `Raw`\n\nThis format is suitable for insert-only streams (no deletions).\nEach element in the input stream contains a record without any\nadditional envelope that gets inserted in the input table.",
         "enum": [
           "insert_delete",
-          "weighted",
           "debezium",
           "snowflake",
           "raw",
@@ -11844,11 +11854,11 @@
           "resume_earliest_if_data_expires"
         ],
         "properties": {
-          "group_join_timeout_secs": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Maximum timeout in seconds to wait for the endpoint to join the Kafka\nconsumer group during initialization.",
-            "minimum": 0
+          "group_join_timeout": {
+            "type": "string",
+            "description": "Maximum time to wait for the endpoint to join the Kafka consumer group\nduring initialization, for example `10s`. Unset selects\nthe default, `DEFAULT_GROUP_JOIN_TIMEOUT`.",
+            "default": "10s",
+            "nullable": true
           },
           "header_filter": {
             "allOf": [
@@ -11984,11 +11994,11 @@
             },
             "description": "Kafka headers to be added to each message produced by this connector."
           },
-          "initialization_timeout_secs": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Maximum timeout in seconds to wait for the endpoint to connect to\na Kafka broker.\n\nDefaults to 60.",
-            "minimum": 0
+          "initialization_timeout": {
+            "type": "string",
+            "description": "Maximum time to wait for the endpoint to connect to a Kafka broker, for\nexample `60s`. Unset selects the default, `DEFAULT_INITIALIZATION_TIMEOUT`.",
+            "default": "1m",
+            "nullable": true
           },
           "kafka_service": {
             "type": "string",
@@ -12327,6 +12337,22 @@
           }
         }
       },
+      "NatsHeader": {
+        "type": "object",
+        "description": "A header attached to every message published by `nats_output`.",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
       "NatsInputConfig": {
         "type": "object",
         "required": [
@@ -12341,20 +12367,80 @@
           "consumer_config": {
             "$ref": "#/components/schemas/ConsumerConfig"
           },
-          "inactivity_timeout_secs": {
+          "inactivity_timeout": {
+            "type": "string",
+            "description": "Maximum time to wait for the next message before running a\nstream/server health check, for example `60s`. Must be at least one\nsecond. Unset selects the default, `DEFAULT_INACTIVITY_TIMEOUT`.",
+            "default": "1m",
+            "nullable": true
+          },
+          "retry_interval": {
+            "type": "string",
+            "description": "Delay before the first automatic reconnect attempt after a failure,\nfor example `5s`. The delay doubles on every consecutive failure, up\nto `retry_max_interval`, and is jittered to avoid synchronized retries\nacross connectors. Must be at least one second. Unset selects the\ndefault, `DEFAULT_RETRY_INTERVAL`.",
+            "default": "5s",
+            "nullable": true
+          },
+          "retry_max_attempts": {
             "type": "integer",
-            "format": "int64",
-            "description": "Maximum time in seconds to wait for the next message before running\na stream/server health check. Must be at least 1.",
+            "format": "int32",
+            "description": "Maximum number of consecutive failed reconnect attempts before the\nconnector gives up and reports a fatal error. When unset, the connector\nretries indefinitely. Must be at least 1 when set.",
+            "nullable": true,
             "minimum": 0
           },
-          "retry_interval_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Delay between automatic reconnect attempts while in retry mode.\nMust be at least 1.",
-            "minimum": 0
+          "retry_max_interval": {
+            "type": "string",
+            "description": "Upper bound on the delay between consecutive reconnect attempts, for\nexample `5m`. Must be at least `retry_interval`. Unset selects the\ndefault, `DEFAULT_RETRY_MAX_INTERVAL`.",
+            "default": "5m",
+            "nullable": true
           },
           "stream_name": {
             "type": "string"
+          }
+        }
+      },
+      "NatsMessageId": {
+        "type": "string",
+        "description": "How `nats_output` chooses the `Nats-Msg-Id` header of each message.",
+        "enum": [
+          "content_hash",
+          "none"
+        ]
+      },
+      "NatsOutputConfig": {
+        "type": "object",
+        "description": "Configuration for writing data to a NATS subject with `nats_output`.\n\nThe connector publishes to JetStream: each message is published with an\nacknowledgment request and the publish is retried until the server\nacknowledges it or the pipeline shuts down, so data is not lost to a\nserver that is momentarily unavailable. The subject must be bound to a\nJetStream stream; publishing to a subject with no stream raises\n\"no responders\" and the publish fails.",
+        "required": [
+          "connection_config",
+          "subject"
+        ],
+        "properties": {
+          "connection_config": {
+            "$ref": "#/components/schemas/ConnectOptions"
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NatsHeader"
+            },
+            "description": "Headers to add to every message published by this connector, as\nkey/value pairs. Values are UTF-8 strings."
+          },
+          "max_message_size": {
+            "type": "integer",
+            "description": "Override for the maximum message size in bytes the connector offers to\nthe encoder. When unset, the connector discovers the limit at connect\ntime: the bound stream's `max_message_size` when the stream sets one,\nelse the server's max payload. The encoder splits output records across\nmessages by this limit; a record larger than the limit fails the\npipeline with an error naming the record rather than reaching the\nserver.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "message_id": {
+            "$ref": "#/components/schemas/NatsMessageId"
+          },
+          "publish_timeout": {
+            "type": "string",
+            "description": "How long to wait for the server's publish acknowledgment before\nretrying the publish, for example `5s`. Must be at least one second.\nUnset selects the default, `DEFAULT_PUBLISH_TIMEOUT`.",
+            "default": "5s",
+            "nullable": true
+          },
+          "subject": {
+            "type": "string",
+            "description": "NATS subject to publish to (e.g., \"orders.created\"). The subject\nmust be bound to a JetStream stream on the target server."
           }
         }
       },
@@ -12638,7 +12724,7 @@
         "properties": {
           "enable_output_buffer": {
             "type": "boolean",
-            "description": "Enable output buffering.\n\nThe output buffering mechanism allows decoupling the rate at which the pipeline\npushes changes to the output transport from the rate of input changes.\n\nBy default, output updates produced by the pipeline are pushed directly to\nthe output transport. Some destinations may prefer to receive updates in fewer\nbigger batches. For instance, when writing Parquet files, producing\none bigger file every few minutes is usually better than creating\nsmall files every few milliseconds.\n\nTo achieve such input/output decoupling, users can enable output buffering by\nsetting the `enable_output_buffer` flag to `true`.  When buffering is enabled, output\nupdates produced by the pipeline are consolidated in an internal buffer and are\npushed to the output transport when one of several conditions is satisfied:\n\n* data has been accumulated in the buffer for more than `max_output_buffer_time_millis`\nmilliseconds.\n* buffer size exceeds `max_output_buffer_size_records` records.\n\nThis flag is `false` by default.",
+            "description": "Enable output buffering.\n\nThe output buffering mechanism allows decoupling the rate at which the pipeline\npushes changes to the output transport from the rate of input changes.\n\nBy default, output updates produced by the pipeline are pushed directly to\nthe output transport. Some destinations may prefer to receive updates in fewer\nbigger batches. For instance, when writing Parquet files, producing\none bigger file every few minutes is usually better than creating\nsmall files every few milliseconds.\n\nTo achieve such input/output decoupling, users can enable output buffering by\nsetting the `enable_output_buffer` flag to `true`.  When buffering is enabled, output\nupdates produced by the pipeline are consolidated in an internal buffer and are\npushed to the output transport when one of several conditions is satisfied:\n\n* data has been accumulated in the buffer for longer than\n`max_output_buffer_time`.\n* buffer size exceeds `max_output_buffer_size_records` records.\n\nThis flag is `false` by default.",
             "default": false
           },
           "max_output_buffer_size_records": {
@@ -12647,11 +12733,11 @@
             "default": 10000000,
             "minimum": 0
           },
-          "max_output_buffer_time_millis": {
-            "type": "integer",
-            "description": "Maximum time in milliseconds data is kept in the output buffer.\n\nBy default, data is kept in the buffer indefinitely until one of\nthe other output conditions is satisfied.  When this option is\nset the buffer will be flushed at most every\n`max_output_buffer_time_millis` milliseconds.\n\nNOTE: this configuration option requires the `enable_output_buffer` flag\nto be set.",
-            "default": 18446744073709551615,
-            "minimum": 0
+          "max_output_buffer_time": {
+            "type": "string",
+            "description": "Maximum time data is kept in the output buffer, for example `500ms`.\n\nBy default, data is kept in the buffer indefinitely until one of\nthe other output conditions is satisfied.  When this option is\nset the buffer will be flushed at least that often.\n\nNOTE: this configuration option requires the `enable_output_buffer` flag\nto be set.",
+            "default": null,
+            "nullable": true
           }
         }
       },
@@ -12881,6 +12967,14 @@
           {
             "type": "object",
             "properties": {
+              "deployment_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PipelineDeploymentConfig"
+                  }
+                ],
+                "nullable": true
+              },
               "name": {
                 "type": "string",
                 "nullable": true
@@ -12942,6 +13036,18 @@
                 "type": "string"
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "FailedInputEndpointBarrier"
+            ],
+            "properties": {
+              "FailedInputEndpointBarrier": {
+                "type": "string",
+                "description": "The input endpoint failed with a fatal error while it held a barrier.\nIt never reports another step, so the barrier never clears."
+              }
+            }
           }
         ],
         "description": "Reasons why a pipeline does not support suspend and resume operations."
@@ -12957,13 +13063,11 @@
                 "description": "Deprecated: setting this true or false does not have an effect anymore.",
                 "default": true
               },
-              "clock_resolution_usecs": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Real-time clock resolution in microseconds.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nIt is set to 1 second (1,000,000 microseconds) by default.",
-                "default": 1000000,
-                "nullable": true,
-                "minimum": 0
+              "clock_resolution": {
+                "type": "string",
+                "description": "Real-time clock resolution, for example `1s`.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most once per `clock_resolution`.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nUnset or `null` selects the default, `DEFAULT_CLOCK_RESOLUTION`.",
+                "default": "1s",
+                "nullable": true
               },
               "clock_timezone_offset": {
                 "type": "string",
@@ -12977,13 +13081,11 @@
                 "description": "Enable CPU profiler.\n\nThe default value is `true`.",
                 "default": true
               },
-              "datafusion_memory_mb": {
-                "type": "integer",
-                "format": "int64",
-                "description": "DataFusion memory pool size, in MB, shared by the ad-hoc query\nengine and the Delta Lake / Iceberg connectors.\n\nCarved out of `max_rss_mb` (falling back to\n`resources.memory_mb_max`); the remainder goes to the DBSP circuit,\nso the two do not double-book RAM.\n\nUnset: defaults to 5% of the effective budget, capped at 2 GB.\nPipelines that don't run heavy ad-hoc / Delta / Iceberg workloads\ncan leave this unset.\n\nSet this explicitly for ad-hoc queries, or Delta / Iceberg scans,\nover data too large for the default share. A pool that cannot hold\nthe query surfaces as `ResourcesExhausted` on that query alone; the\npipeline keeps running.\n\nNo pool limit applied if no overall budget is configured.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
+              "datafusion_memory": {
+                "type": "string",
+                "description": "DataFusion memory pool size, such as `\"1Gi\"`, shared by the ad-hoc\nquery engine and the Delta Lake / Iceberg connectors.\n\nCarved out of `max_rss` (falling back to `resources.memory_max`); the\nremainder goes to the DBSP circuit, so the two do not double-book RAM.\n\nUnset: defaults to 5% of the effective budget, capped at 2 GB.\nPipelines that don't run heavy ad-hoc / Delta / Iceberg workloads\ncan leave this unset.\n\nSet this explicitly for ad-hoc queries, or Delta / Iceberg scans,\nover data too large for the default share. A pool that cannot hold\nthe query surfaces as `ResourcesExhausted` on that query alone; the\npipeline keeps running.\n\nNo pool limit applied if no overall budget is configured.\n\nBefore release 0.367.0 this setting was `datafusion_memory_mb`, a\nnumber of megabytes. That name is deprecated but still read.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
                 "default": null,
-                "nullable": true,
-                "minimum": 0
+                "nullable": true
               },
               "dev_tweaks": {
                 "allOf": [
@@ -13008,8 +13110,7 @@
                   }
                 ],
                 "default": {
-                  "model": "none",
-                  "checkpoint_interval_secs": 60
+                  "model": "none"
                 }
               },
               "hosts": {
@@ -13044,12 +13145,11 @@
                 "default": null,
                 "nullable": true
               },
-              "max_buffering_delay_usecs": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Maximal delay in microseconds to wait for `min_batch_size_records` to\nget buffered by the controller, defaults to 0.",
-                "default": 0,
-                "minimum": 0
+              "max_buffering_delay": {
+                "type": "string",
+                "description": "Maximal delay to wait for `min_batch_size_records` to get buffered by\nthe controller, for example `10ms`. Defaults to no delay.",
+                "default": null,
+                "nullable": true
               },
               "max_parallel_connector_init": {
                 "type": "integer",
@@ -13059,18 +13159,16 @@
                 "nullable": true,
                 "minimum": 0
               },
-              "max_rss_mb": {
-                "type": "integer",
-                "format": "int64",
-                "description": "The maximum amount of memory, in Megabytes, that the pipeline is allowed to use\non each host.\n\nSetting this property activates memory pressure monitoring and backpressure\nmechanisms. The pipeline will track the amount of remaining memory and\nreport the memory pressure level via the `memory_pressure` metric.\n\nAs the memory pressure increases, the system will apply increasing backpressure\nto push state cached in memory to storage, preventing the pipeline from running\nout of memory at the cost of some performance degradation.\n\nIt is strongly recommended to set this property to prevent the pipeline from\nrunning out of memory. The setting should not exceed the memory limit of the pipeline\ninstance.\n\nWhen `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the\nlatter is used as the effective memory cap for the pipeline.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
+              "max_rss": {
+                "type": "string",
+                "description": "The maximum amount of memory that the pipeline is allowed to use on\neach host, such as `\"16G\"` or `\"16Gi\"`.\n\nSetting this property activates memory pressure monitoring and backpressure\nmechanisms. The pipeline will track the amount of remaining memory and\nreport the memory pressure level via the `memory_pressure` metric.\n\nAs the memory pressure increases, the system will apply increasing backpressure\nto push state cached in memory to storage, preventing the pipeline from running\nout of memory at the cost of some performance degradation.\n\nIt is strongly recommended to set this property to prevent the pipeline from\nrunning out of memory. The setting should not exceed the memory limit of the pipeline\ninstance.\n\nWhen `max_rss` is not specified but `resources.memory_max` is set, the\nlatter is used as the effective memory cap for the pipeline.\n\nThe pipeline caps this limit at the memory available to it, which is the\nhost's memory or the container's memory limit, whichever is smaller. It\nrechecks the available memory every second.\n\nBefore release 0.367.0 this setting was `max_rss_mb`, a number of\nmegabytes. That name is deprecated but still read.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
                 "default": null,
-                "nullable": true,
-                "minimum": 0
+                "nullable": true
               },
               "min_batch_size_records": {
                 "type": "integer",
                 "format": "int64",
-                "description": "Minimal input batch size.\n\nThe controller delays pushing input records to the circuit until at\nleast `min_batch_size_records` records have been received (total\nacross all endpoints) or `max_buffering_delay_usecs` microseconds\nhave passed since at least one input records has been buffered.\nDefaults to 0.",
+                "description": "Minimal input batch size.\n\nThe controller delays pushing input records to the circuit until at\nleast `min_batch_size_records` records have been received (total\nacross all endpoints) or `max_buffering_delay` has passed\nsince the first input record was buffered.\nDefaults to 0.",
                 "default": 0,
                 "minimum": 0
               },
@@ -13092,13 +13190,11 @@
                 "default": null,
                 "nullable": true
               },
-              "provisioning_timeout_secs": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Timeout in seconds for the `Provisioning` phase of the pipeline.\nSetting this value will override the default of the runner.",
+              "provisioning_timeout": {
+                "type": "string",
+                "description": "Timeout for the `Provisioning` phase of the pipeline, for example `5m`.\nSetting this value will override the default of the runner.",
                 "default": null,
-                "nullable": true,
-                "minimum": 0
+                "nullable": true
               },
               "resources": {
                 "allOf": [
@@ -13109,9 +13205,6 @@
                 "default": {
                   "cpu_cores_min": null,
                   "cpu_cores_max": null,
-                  "memory_mb_min": null,
-                  "memory_mb_max": null,
-                  "storage_mb_max": null,
                   "storage_class": null,
                   "service_account_name": null,
                   "namespace": null
@@ -13127,11 +13220,8 @@
                   "backend": {
                     "name": "default"
                   },
-                  "min_storage_bytes": null,
-                  "min_step_storage_bytes": null,
                   "compression": "default",
-                  "compression_level": null,
-                  "cache_mib": null
+                  "compression_level": null
                 },
                 "nullable": true
               },
@@ -13214,6 +13304,16 @@
           }
         ],
         "description": "Pipeline deployment configuration.\nIt represents configuration entries directly provided by the user\n(e.g., runtime configuration) and entries derived from the schema\nof the compiled program (e.g., connectors). Storage configuration,\nif applicable, is set by the runner."
+      },
+      "PipelineDeploymentConfig": {
+        "type": "object",
+        "description": "The part of a deployment config that can change while the pipeline runs.",
+        "properties": {
+          "resources": {
+            "$ref": "#/components/schemas/DeploymentResources"
+          }
+        },
+        "additionalProperties": false
       },
       "PipelineDiff": {
         "type": "object",
@@ -13343,6 +13443,14 @@
               "created_at": {
                 "type": "string",
                 "format": "date-time"
+              },
+              "deployment_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PipelineDeploymentConfig"
+                  }
+                ],
+                "nullable": true
               },
               "deployment_desired_status": {
                 "$ref": "#/components/schemas/CombinedDesiredStatus"
@@ -13619,6 +13727,14 @@
                 "type": "string",
                 "format": "date-time"
               },
+              "deployment_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PipelineDeploymentConfig"
+                  }
+                ],
+                "nullable": true
+              },
               "deployment_desired_status": {
                 "$ref": "#/components/schemas/CombinedDesiredStatus"
               },
@@ -13829,6 +13945,14 @@
               "program_code"
             ],
             "properties": {
+              "deployment_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PipelineDeploymentConfig"
+                  }
+                ],
+                "nullable": true
+              },
               "name": {
                 "type": "string"
               },
@@ -13878,18 +14002,17 @@
         "type": "object",
         "description": "Batch processing configuration for the Postgres CDC connector.\n\nControls how replication events are buffered into a batch before being\nflushed to Feldera. Mirrors the batch configuration of the underlying\n`etl` replication library; fields omitted from the configuration fall\nback to `etl`'s own defaults.",
         "properties": {
-          "max_bytes": {
-            "type": "integer",
-            "description": "Maximum preferred byte size for one batch per active stream. This is\na ceiling, not a target: the runtime still chooses the smaller value\nbetween this limit and the memory-ratio budget computed from\n`memory_budget_ratio`.\n\nDefault: 33554432 (32 MiB), the same as etl.",
-            "default": 33554432,
-            "minimum": 0
-          },
           "max_fill_ms": {
             "type": "integer",
             "format": "int64",
-            "description": "Maximum time, in milliseconds, to wait before flushing a partially\nfilled batch. This is the latency bound for batching: once the first\nevent enters a batch, the batch is flushed when this timer elapses,\neven if `max_bytes` was not reached.\n\nDefault: 10000 (10 seconds).",
+            "description": "Maximum time, in milliseconds, to wait before flushing a partially\nfilled batch. This is the latency bound for batching: once the first\nevent enters a batch, the batch is flushed when this timer elapses,\neven if `max_size` was not reached.\n\nDefault: 10000 (10 seconds).",
             "default": 10000,
             "minimum": 0
+          },
+          "max_size": {
+            "type": "string",
+            "description": "Maximum preferred size for one batch per active stream, such as\n`\"32Mi\"`. This is a ceiling, not a target: the runtime still chooses\nthe smaller value between this limit and the memory-ratio budget\ncomputed from `memory_budget_ratio`.\n\nDefault: `\"32Mi\"`, the same as etl.\n\nBefore release 0.367.0 this setting was `max_bytes`, a number of\nbytes. That name is deprecated but still read.",
+            "default": "32Mi"
           },
           "memory_budget_ratio": {
             "type": "number",
@@ -14195,11 +14318,10 @@
                 },
                 "description": "The names of the extra columns in the Postgres table that are not part of the view schema.\n\nThese connector can write user-defined values, configured using the `set_extra_columns` connector command,\nto these columns."
               },
-              "max_buffer_size_bytes": {
-                "type": "integer",
-                "description": "The maximum buffer size in for a single operation.\nNote that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are\nseparate.\nDefault: 1 MiB",
-                "default": 1048576,
-                "minimum": 0
+              "max_buffer_size": {
+                "type": "string",
+                "description": "The maximum buffer size for a single operation, such as `\"1Mi\"`.\nNote that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are\nseparate.\nDefault: `\"1Mi\"`.\n\nBefore release 0.367.0 this setting was `max_buffer_size_bytes`, a\nnumber of bytes. That name is deprecated but still read.",
+                "default": "1Mi"
               },
               "max_records_in_buffer": {
                 "type": "integer",
@@ -14297,7 +14419,7 @@
           },
           "runtime_version": {
             "type": "string",
-            "description": "Override runtime version of the pipeline being executed.\n\nWarning: This setting is experimental and may change in the future.\nRequires the platform to run with the unstable feature `runtime_version`\nenabled. Should only be used for testing purposes, and requires\nnetwork access.\n\nA runtime version can be specified in the form of a version\nor SHA taken from the `feldera/feldera` repository main branch.\n\nExamples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`\n\nThe value `gen2` names an engine rather than a runtime commit: the SQL\ncompiler captures the circuit IR and the runner launches the Gen-2\nengine, so no pipeline binary is compiled.\n\nA platform of version `0.x.y` may be capable of running future and past\nruntimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,\nthe exact bounds for each platform version are unspecified until we reach a\nstable version. Compatibility is only guaranteed if platform and runtime version\nare exact matches.\n\nNote that any enterprise features are currently considered to be part of\nthe platform.\n\nIf not set (null), the runtime version will be the same as the platform version.",
+            "description": "Override runtime version of the pipeline being executed.\n\nWarning: This setting is experimental and may change in the future.\nRequires the platform to run with the unstable feature `runtime_version`\nenabled. Should only be used for testing purposes, and requires\nnetwork access.\n\nA runtime version can be specified in the form of a version\nor SHA taken from the `feldera/feldera` repository main branch.\n\nExamples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`\n\nThe value `gen2` names an engine rather than a runtime commit: the SQL\ncompiler captures the circuit IR and the runner launches the Gen-2\nengine, so no pipeline binary is compiled. `gen2:<sha>` selects the\nengine build of that commit, where the runner supports it.\n\nA platform of version `0.x.y` may be capable of running future and past\nruntimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,\nthe exact bounds for each platform version are unspecified until we reach a\nstable version. Compatibility is only guaranteed if platform and runtime version\nare exact matches.\n\nNote that any enterprise features are currently considered to be part of\nthe platform.\n\nIf not set (null), the runtime version will be the same as the platform version.",
             "default": null,
             "nullable": true
           },
@@ -14454,6 +14576,14 @@
           },
           "program_schema": {
             "description": "Program schema."
+          },
+          "udf_library": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UdfLibrary"
+              }
+            ],
+            "nullable": true
           }
         }
       },
@@ -14560,12 +14690,10 @@
           "subscription"
         ],
         "properties": {
-          "connect_timeout_seconds": {
-            "type": "integer",
-            "format": "int32",
-            "description": "gRPC connection timeout.",
-            "nullable": true,
-            "minimum": 0
+          "connect_timeout": {
+            "type": "string",
+            "description": "gRPC connection timeout, for example `10s`.",
+            "nullable": true
           },
           "credentials": {
             "type": "string",
@@ -14603,12 +14731,10 @@
             "type": "string",
             "description": "Subscription name."
           },
-          "timeout_seconds": {
-            "type": "integer",
-            "format": "int32",
-            "description": "gRPC request timeout.",
-            "nullable": true,
-            "minimum": 0
+          "timeout": {
+            "type": "string",
+            "description": "gRPC request timeout, for example `30s`.",
+            "nullable": true
           },
           "timestamp": {
             "type": "string",
@@ -14826,21 +14952,17 @@
             "default": null,
             "nullable": true
           },
-          "memory_mb_max": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The maximum memory in Megabytes to reserve\nfor an instance of this pipeline",
+          "memory_max": {
+            "type": "string",
+            "description": "The maximum memory to reserve for an instance of this pipeline, such\nas `\"16Gi\"`.\n\nBefore release 0.367.0 this setting was `memory_mb_max`, a number of\nmegabytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
-          "memory_mb_min": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The minimum memory in Megabytes to reserve\nfor an instance of this pipeline",
+          "memory_min": {
+            "type": "string",
+            "description": "The minimum memory to reserve for an instance of this pipeline, such\nas `\"4Gi\"`.\n\nBefore release 0.367.0 this setting was `memory_mb_min`, a number of\nmegabytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "namespace": {
             "type": "string",
@@ -14860,21 +14982,23 @@
             "default": null,
             "nullable": true
           },
-          "storage_mb_max": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The maximum storage in Megabytes for an instance of this pipeline.\n\nWithout `storage_mb_min`, this much storage is reserved up front.\n\nWith `storage_mb_min`, storage starts there and autoscaling expands it\nup to this limit.",
+          "storage_max": {
+            "type": "string",
+            "description": "The maximum storage for an instance of this pipeline, such as\n`\"400Gi\"`.\n\nWithout `storage_min`, this much storage is reserved up front.\n\nWith `storage_min`, storage starts there and autoscaling expands it up\nto this limit.\n\nBefore release 0.367.0 this setting was `storage_mb_max`, a number of\nmegabytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
-          "storage_mb_min": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The initial storage in Megabytes to reserve for an instance of this\npipeline. Set together with `storage_mb_max` to enable storage\nautoscaling.",
+          "storage_min": {
+            "type": "string",
+            "description": "The initial storage to reserve for an instance of this pipeline, such\nas `\"100Gi\"`. Set together with `storage_max` to enable storage\nautoscaling.\n\nBefore release 0.367.0 this setting was `storage_mb_min`, a number of\nmegabytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
+          },
+          "volume_attributes_class": {
+            "type": "string",
+            "description": "Kubernetes volume attributes class to use for the storage of an\ninstance of this pipeline. The class sets mutable storage parameters\nsuch as IOPS and throughput. Requires Kubernetes 1.34 or later (or\nthe `VolumeAttributesClass` feature gate) and CSI driver support.\nA change takes effect on the next start, also for existing storage.",
+            "default": null,
+            "nullable": true
           }
         }
       },
@@ -15056,13 +15180,11 @@
             "description": "Deprecated: setting this true or false does not have an effect anymore.",
             "default": true
           },
-          "clock_resolution_usecs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Real-time clock resolution in microseconds.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nIt is set to 1 second (1,000,000 microseconds) by default.",
-            "default": 1000000,
-            "nullable": true,
-            "minimum": 0
+          "clock_resolution": {
+            "type": "string",
+            "description": "Real-time clock resolution, for example `1s`.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most once per `clock_resolution`.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nUnset or `null` selects the default, `DEFAULT_CLOCK_RESOLUTION`.",
+            "default": "1s",
+            "nullable": true
           },
           "clock_timezone_offset": {
             "type": "string",
@@ -15076,13 +15198,11 @@
             "description": "Enable CPU profiler.\n\nThe default value is `true`.",
             "default": true
           },
-          "datafusion_memory_mb": {
-            "type": "integer",
-            "format": "int64",
-            "description": "DataFusion memory pool size, in MB, shared by the ad-hoc query\nengine and the Delta Lake / Iceberg connectors.\n\nCarved out of `max_rss_mb` (falling back to\n`resources.memory_mb_max`); the remainder goes to the DBSP circuit,\nso the two do not double-book RAM.\n\nUnset: defaults to 5% of the effective budget, capped at 2 GB.\nPipelines that don't run heavy ad-hoc / Delta / Iceberg workloads\ncan leave this unset.\n\nSet this explicitly for ad-hoc queries, or Delta / Iceberg scans,\nover data too large for the default share. A pool that cannot hold\nthe query surfaces as `ResourcesExhausted` on that query alone; the\npipeline keeps running.\n\nNo pool limit applied if no overall budget is configured.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
+          "datafusion_memory": {
+            "type": "string",
+            "description": "DataFusion memory pool size, such as `\"1Gi\"`, shared by the ad-hoc\nquery engine and the Delta Lake / Iceberg connectors.\n\nCarved out of `max_rss` (falling back to `resources.memory_max`); the\nremainder goes to the DBSP circuit, so the two do not double-book RAM.\n\nUnset: defaults to 5% of the effective budget, capped at 2 GB.\nPipelines that don't run heavy ad-hoc / Delta / Iceberg workloads\ncan leave this unset.\n\nSet this explicitly for ad-hoc queries, or Delta / Iceberg scans,\nover data too large for the default share. A pool that cannot hold\nthe query surfaces as `ResourcesExhausted` on that query alone; the\npipeline keeps running.\n\nNo pool limit applied if no overall budget is configured.\n\nBefore release 0.367.0 this setting was `datafusion_memory_mb`, a\nnumber of megabytes. That name is deprecated but still read.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "dev_tweaks": {
             "allOf": [
@@ -15107,8 +15227,7 @@
               }
             ],
             "default": {
-              "model": "none",
-              "checkpoint_interval_secs": 60
+              "model": "none"
             }
           },
           "hosts": {
@@ -15143,12 +15262,11 @@
             "default": null,
             "nullable": true
           },
-          "max_buffering_delay_usecs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Maximal delay in microseconds to wait for `min_batch_size_records` to\nget buffered by the controller, defaults to 0.",
-            "default": 0,
-            "minimum": 0
+          "max_buffering_delay": {
+            "type": "string",
+            "description": "Maximal delay to wait for `min_batch_size_records` to get buffered by\nthe controller, for example `10ms`. Defaults to no delay.",
+            "default": null,
+            "nullable": true
           },
           "max_parallel_connector_init": {
             "type": "integer",
@@ -15158,18 +15276,16 @@
             "nullable": true,
             "minimum": 0
           },
-          "max_rss_mb": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The maximum amount of memory, in Megabytes, that the pipeline is allowed to use\non each host.\n\nSetting this property activates memory pressure monitoring and backpressure\nmechanisms. The pipeline will track the amount of remaining memory and\nreport the memory pressure level via the `memory_pressure` metric.\n\nAs the memory pressure increases, the system will apply increasing backpressure\nto push state cached in memory to storage, preventing the pipeline from running\nout of memory at the cost of some performance degradation.\n\nIt is strongly recommended to set this property to prevent the pipeline from\nrunning out of memory. The setting should not exceed the memory limit of the pipeline\ninstance.\n\nWhen `max_rss_mb` is not specified but `resources.memory_mb_max` is set, the\nlatter is used as the effective memory cap for the pipeline.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
+          "max_rss": {
+            "type": "string",
+            "description": "The maximum amount of memory that the pipeline is allowed to use on\neach host, such as `\"16G\"` or `\"16Gi\"`.\n\nSetting this property activates memory pressure monitoring and backpressure\nmechanisms. The pipeline will track the amount of remaining memory and\nreport the memory pressure level via the `memory_pressure` metric.\n\nAs the memory pressure increases, the system will apply increasing backpressure\nto push state cached in memory to storage, preventing the pipeline from running\nout of memory at the cost of some performance degradation.\n\nIt is strongly recommended to set this property to prevent the pipeline from\nrunning out of memory. The setting should not exceed the memory limit of the pipeline\ninstance.\n\nWhen `max_rss` is not specified but `resources.memory_max` is set, the\nlatter is used as the effective memory cap for the pipeline.\n\nThe pipeline caps this limit at the memory available to it, which is the\nhost's memory or the container's memory limit, whichever is smaller. It\nrechecks the available memory every second.\n\nBefore release 0.367.0 this setting was `max_rss_mb`, a number of\nmegabytes. That name is deprecated but still read.\n\nSee [documentation on the pipeline's memory usage](https://docs.feldera.com/operations/memory)\nfor more details.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "min_batch_size_records": {
             "type": "integer",
             "format": "int64",
-            "description": "Minimal input batch size.\n\nThe controller delays pushing input records to the circuit until at\nleast `min_batch_size_records` records have been received (total\nacross all endpoints) or `max_buffering_delay_usecs` microseconds\nhave passed since at least one input records has been buffered.\nDefaults to 0.",
+            "description": "Minimal input batch size.\n\nThe controller delays pushing input records to the circuit until at\nleast `min_batch_size_records` records have been received (total\nacross all endpoints) or `max_buffering_delay` has passed\nsince the first input record was buffered.\nDefaults to 0.",
             "default": 0,
             "minimum": 0
           },
@@ -15191,13 +15307,11 @@
             "default": null,
             "nullable": true
           },
-          "provisioning_timeout_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Timeout in seconds for the `Provisioning` phase of the pipeline.\nSetting this value will override the default of the runner.",
+          "provisioning_timeout": {
+            "type": "string",
+            "description": "Timeout for the `Provisioning` phase of the pipeline, for example `5m`.\nSetting this value will override the default of the runner.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "resources": {
             "allOf": [
@@ -15208,9 +15322,6 @@
             "default": {
               "cpu_cores_min": null,
               "cpu_cores_max": null,
-              "memory_mb_min": null,
-              "memory_mb_max": null,
-              "storage_mb_max": null,
               "storage_class": null,
               "service_account_name": null,
               "namespace": null
@@ -15226,11 +15337,8 @@
               "backend": {
                 "name": "default"
               },
-              "min_storage_bytes": null,
-              "min_step_storage_bytes": null,
               "compression": "default",
-              "compression_level": null,
-              "cache_mib": null
+              "compression_level": null
             },
             "nullable": true
           },
@@ -15702,6 +15810,12 @@
             "type": "string",
             "description": "Acting tenant name; `null` exactly when `tenant_id` is.",
             "nullable": true
+          },
+          "user_created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the user got the first tenant membership, usually at the first\nlogin. The web console uses it to report a signup. Is `null` for\nprincipals that are not human logins, for users without memberships, and\nfor users with a membership from before the manager recorded this time.",
+            "nullable": true
           }
         }
       },
@@ -15914,7 +16028,7 @@
       },
       "StorageAutoscalingConfig": {
         "type": "object",
-        "description": "Storage autoscaling policy: expand storage from `storage_mb_min` toward\n`storage_mb_max` as it fills up.",
+        "description": "Storage autoscaling policy: expand storage from `storage_min` toward\n`storage_max` as it fills up.",
         "properties": {
           "scale_factor": {
             "type": "number",
@@ -15930,13 +16044,11 @@
             "default": null,
             "nullable": true
           },
-          "scale_threshold_available_mb": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Expand storage when available space falls below this many MB, even if\nusage is still under `scale_threshold`. Either condition triggers\nexpansion. Unset by default.",
+          "scale_threshold_available": {
+            "type": "string",
+            "description": "Expand storage when available space falls below this size, such as\n`\"10Gi\"`, even if usage is still under `scale_threshold`. Either\ncondition triggers expansion. Unset by default.\n\nBefore release 0.367.0 this setting was `scale_threshold_available_mb`,\na number of megabytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           }
         }
       },
@@ -16054,12 +16166,11 @@
             "default": null,
             "nullable": true
           },
-          "cache_mib": {
-            "type": "integer",
-            "description": "The maximum size of the in-memory storage cache, in MiB.\n\nIf set, the specified cache size is spread across all the foreground and\nbackground threads. If unset, each foreground or background thread cache\nis limited to 256 MiB.",
+          "cache_size": {
+            "type": "string",
+            "description": "The maximum size of the in-memory storage cache, such as `\"4Gi\"`.\n\nIf set, the specified cache size is spread across all the foreground and\nbackground threads. If unset, each foreground or background thread cache\nis limited to 256 MiB.\n\nBefore release 0.367.0 this setting was `cache_mib`, a number of\nmebibytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "compression": {
             "allOf": [
@@ -16076,19 +16187,17 @@
             "default": null,
             "nullable": true
           },
-          "min_step_storage_bytes": {
-            "type": "integer",
-            "description": "For a batch of data passed through the pipeline during a single step,\nthe minimum estimated number of bytes to write it to storage.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.  A value of 0 writes every batch that holds anything to\nstorage; an empty batch stays in memory, since it has nothing to spill\nand a layer file is not free.  Nonzero values provide a threshold.\n`usize::MAX`, the default, effectively disables storage for such\nbatches.  If it is set to another value, it should ordinarily be\ngreater than or equal to `min_storage_bytes`.",
+          "min_spill_size": {
+            "type": "string",
+            "description": "For a batch of data maintained as part of a persistent index during a\npipeline run, the minimum estimated size to write it to storage, such\nas `\"10Mi\"`.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  A very large value effectively disables\nstorage for such batches.  The default is `\"10Mi\"`.\n\nBefore release 0.367.0 this setting was `min_storage_bytes`, a number\nof bytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
-          "min_storage_bytes": {
-            "type": "integer",
-            "description": "For a batch of data maintained as part of a persistent index during a\npipeline run, the minimum estimated number of bytes to write it to\nstorage.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage for such batches.  The default is 10,048,576 (10 MiB).",
+          "min_step_spill_size": {
+            "type": "string",
+            "description": "For a batch of data passed through the pipeline during a single step,\nthe minimum estimated size to write it to storage, such as `\"64Mi\"`.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.  A value of 0 writes every batch that holds anything to\nstorage; an empty batch stays in memory, since it has nothing to spill\nand a layer file is not free.  Nonzero values provide a threshold.\nUnset, the default, effectively disables storage for such batches.\nIf it is set, it should ordinarily be greater than or equal to\n`min_spill_size`.\n\nBefore release 0.367.0 this setting was `min_step_storage_bytes`, a\nnumber of bytes. That name is deprecated but still read.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           }
         }
       },
@@ -16183,6 +16292,11 @@
             "nullable": true,
             "minimum": 0
           },
+          "checkpoint_push_interval": {
+            "type": "string",
+            "description": "The interval between each push of checkpoints to object store, for\nexample `1h`.\n\nThe default is no periodic push; `null` disables periodic pushes\nexplicitly.",
+            "nullable": true
+          },
           "endpoint": {
             "type": "string",
             "description": "The endpoint URL for the storage service.\n\nThis is typically required for custom or local S3-compatible storage providers like MinIO.\nExample: `http://localhost:9000`\n\nFor a `gs://` bucket this is the Google Cloud Storage JSON API base URL;\na bare host gets `/storage/v1/` appended. Leave empty for the public service.\n\nRelevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)",
@@ -16204,6 +16318,12 @@
           "ignore_checksum": {
             "type": "boolean",
             "description": "Set to skip post copy check of checksums, and only check the file sizes.\nThis can significantly improve the throughput.\nDefualt: false",
+            "nullable": true
+          },
+          "min_retention": {
+            "type": "string",
+            "description": "The minimum age a checkpoint must reach before it becomes eligible for\ndeletion, for example `30d`. All younger checkpoints will be preserved.\nUnset selects the default, `DEFAULT_RETENTION_MIN_AGE`.",
+            "default": "30d",
             "nullable": true
           },
           "multi_thread_cutoff": {
@@ -16228,20 +16348,6 @@
             "description": "The name of the cloud storage provider (e.g., `\"AWS\"`, `\"Minio\"`).\n\nUsed for provider-specific behavior in rclone.\nIf omitted, defaults to `\"Other\"`.\n\nSee [rclone S3 provider documentation](https://rclone.org/s3/#s3-provider)",
             "nullable": true
           },
-          "pull_interval": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The interval (in seconds) between each attempt to fetch the latest\ncheckpoint from object store while in standby mode.\n\nApplies only when `start_from_checkpoint` is set to `latest`.\n\nDefault: 10 seconds",
-            "default": 10,
-            "minimum": 0
-          },
-          "push_interval": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The interval (in seconds) between each push of checkpoints to object store.\n\nDefault: disabled (no periodic push).",
-            "nullable": true,
-            "minimum": 0
-          },
           "read_bucket": {
             "type": "string",
             "description": "A read-only bucket used as a fallback checkpoint source.\n\nWhen the pipeline has no local checkpoint and `bucket` contains no\ncheckpoint either, it will attempt to fetch the checkpoint from this\nlocation instead.  All connection settings (`endpoint`, `region`,\n`provider`, `access_key`, `secret_key`) are shared with `bucket`. The\nscheme is not: a `gs://` `bucket` needs a `gs://` `read_bucket` too,\nbecause the prefix alone selects the object store.\n\nThe pipeline **never writes** to `read_bucket`.\n\nMust point to a different location than `bucket`.",
@@ -16251,13 +16357,6 @@
             "type": "string",
             "description": "The region that this bucket is in.\n\nLeave empty for Minio or the default region (`us-east-1` for AWS).",
             "nullable": true
-          },
-          "retention_min_age": {
-            "type": "integer",
-            "format": "int32",
-            "description": "The minimum age (in days) a checkpoint must reach before it becomes\neligible for deletion. All younger checkpoints will be preserved.\n\nDefault: 30",
-            "default": 30,
-            "minimum": 0
           },
           "retention_min_count": {
             "type": "integer",
@@ -16276,6 +16375,12 @@
             "description": "**Deprecated.** Use `initial=standby` when starting the pipeline instead.",
             "default": false,
             "deprecated": true
+          },
+          "standby_pull_interval": {
+            "type": "string",
+            "description": "The interval between each attempt to fetch the latest checkpoint from\nobject store while in standby mode, for example `10s`.\n\nApplies only when `start_from_checkpoint` is set to `latest`. Unset\nselects the default, `DEFAULT_PULL_INTERVAL`.",
+            "default": "10s",
+            "nullable": true
           },
           "start_from_checkpoint": {
             "allOf": [
@@ -16555,6 +16660,24 @@
                 "type": "string",
                 "enum": [
                   "nats_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/NatsOutputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "nats_output"
                 ]
               }
             }
@@ -16971,6 +17094,24 @@
           "propertyName": "name"
         }
       },
+      "UdfLibrary": {
+        "type": "object",
+        "description": "A program's UDF library, named by the same checksums as a pipeline binary.",
+        "required": [
+          "source_checksum",
+          "integrity_checksum"
+        ],
+        "properties": {
+          "integrity_checksum": {
+            "type": "string",
+            "description": "sha256 checksum of the library file."
+          },
+          "source_checksum": {
+            "type": "string",
+            "description": "Checksum of the sources the library was built from."
+          }
+        }
+      },
       "UpdateInformation": {
         "type": "object",
         "required": [
@@ -17008,11 +17149,11 @@
             "type": "string",
             "description": "URL."
           },
-          "pause_timeout": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Timeout before disconnection when paused, in seconds.\n\nIf the pipeline is paused, or if the input adapter reads data faster\nthan the pipeline can process it, then the controller will pause the\ninput adapter. If the input adapter stays paused longer than this\ntimeout, it will drop the network connection to the server. It will\nautomatically reconnect when the input adapter starts running again.",
-            "minimum": 0
+          "pause_linger": {
+            "type": "string",
+            "description": "Timeout before disconnection when paused, for example `60s`.\n\nIf the pipeline is paused, or if the input adapter reads data faster\nthan the pipeline can process it, then the controller will pause the\ninput adapter. If the input adapter stays paused longer than this\ntimeout, it will drop the network connection to the server. It will\nautomatically reconnect when the input adapter starts running again.\n\nUnset selects the default, `DEFAULT_PAUSE_TIMEOUT`.",
+            "default": "1m",
+            "nullable": true
           }
         }
       },

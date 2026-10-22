@@ -1,7 +1,10 @@
-use super::{OutputEndpointControl, OutputEndpointDescr};
+use super::{
+    FtState, OutputEndpointControl, OutputEndpointDescr, journal::StepMetadata,
+    stats::CompletionToken,
+};
 use crate::{
-    Controller, InputConsumer, InputEndpoint, OutputEndpoint, PipelineConfig,
-    TransportInputEndpoint,
+    ConfigError, Controller, ControllerError, InputConsumer, InputEndpoint, OutputEndpoint,
+    PipelineConfig, TransportInputEndpoint,
     controller::{ControllerStatusContext, TransactionInfo, TransactionState},
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
     test::{
@@ -11,7 +14,8 @@ use crate::{
     },
     transport::{
         InputQueue, InputQueueEntry, InputReader, InputReaderCommand,
-        input_transport_config_to_endpoint, set_barrier,
+        http::{HttpInputEndpoint, REPLAY_GATES},
+        input_transport_config_to_endpoint, set_barrier, set_failure,
     },
 };
 use anyhow::anyhow;
@@ -23,16 +27,17 @@ use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::{
     adapter_stats::ExternalOutputEndpointMetrics,
     checkpoint::CheckpointMetadata,
-    config::{FtModel, InputEndpointConfig, OutputEndpointConfig},
+    config::{FormatConfig, FtModel, InputEndpointConfig, OutputEndpointConfig},
     constants::{CHECKPOINT_FILE_NAME, STATE_FILE},
     memory_pressure::MemoryPressure,
     program_schema::Relation,
+    transport::http::HttpInputConfig,
 };
 use serde_json::json;
 use std::{
     borrow::Cow,
     cmp::min,
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     fs::{File, create_dir, remove_file},
     io::{ErrorKind, Write},
     iter::repeat_n,
@@ -1118,24 +1123,63 @@ fn test_connector_init_error() {
 
 /// A connector rejected by the fault-tolerance check must leave nothing behind.
 ///
-/// `add_input_endpoint` registers and opens the endpoint before it compares the
-/// endpoint's fault tolerance with the pipeline's, so the rejection path has to
-/// undo both.  It used to return the error while leaving the endpoint in the
-/// status map, where the endpoint could never run yet still reserved its own
-/// name against a retry.
+/// `add_input_endpoint` used to return the error while leaving the endpoint in
+/// the status map, where the endpoint could never run yet still reserved its
+/// own name against a retry.
 #[test]
 fn fault_tolerance_mismatch_unregisters_the_endpoint() {
     init_test_logger();
 
     let tempdir = TempDir::new().unwrap();
-    let storage_dir = tempdir.path().join("storage");
-    create_dir(&storage_dir).unwrap();
+    let controller = start_exactly_once_controller(&tempdir);
     let input_file = tempdir.path().join("input.csv");
     File::create(&input_file).unwrap();
 
     // `file_input` reports at-least-once for a path with a barrier, weaker than
     // this pipeline's exactly-once requirement.
     set_barrier(input_file.to_str().unwrap(), 0);
+
+    let connector = json!({
+        "name": "file_input",
+        "config": {
+            "path": input_file,
+            "follow": true
+        }
+    });
+    let endpoint = input_transport_config_to_endpoint(
+        &serde_json::from_value(connector.clone()).unwrap(),
+        "weak_ft",
+        tempdir.path(),
+        None,
+    )
+    .unwrap()
+    .unwrap();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": connector,
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+
+    let error = controller
+        .add_input_endpoint("weak_ft", endpoint_config, endpoint, None)
+        .expect_err("an at-least-once connector must be rejected by an exactly-once pipeline");
+    assert!(error.to_string().contains("fault tolerance"), "{error}");
+
+    assert!(
+        controller.input_endpoint_id_by_name("weak_ft").is_err(),
+        "the rejected endpoint stayed registered"
+    );
+    assert!(controller.status().input_status().is_empty());
+
+    controller.stop().unwrap();
+}
+
+/// Starts an exactly-once pipeline with storage in `tempdir` and waits until it
+/// accepts new input endpoints.
+fn start_exactly_once_controller(tempdir: &TempDir) -> Controller {
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
 
     let config: PipelineConfig = serde_json::from_value(json!({
         "name": "test",
@@ -1166,39 +1210,1087 @@ fn fault_tolerance_mismatch_unregisters_the_endpoint() {
     // which on a fault-tolerant pipeline is the state it starts in.
     controller.start();
     wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+    controller
+}
 
-    let connector = json!({
-        "name": "file_input",
-        "config": {
-            "path": input_file,
-            "follow": true
-        }
-    });
+/// A failed reader's last seek cursor belongs in checkpoints, not in a new
+/// step's input log: it did not consume any input in that step.
+#[test]
+fn closed_reader_seek_cursor_is_not_journaled() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    create_dir(tempdir.path().join("storage")).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test", "workers": 4,
+        "storage_config": {"path": tempdir.path().join("storage")},
+        "storage": true, "fault_tolerance": {}, "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |config| {
+            Ok(test_circuit::<TestStruct>(
+                config,
+                &TestStruct::schema(),
+                &[Some("output")],
+            ))
+        },
+        &config,
+        Box::new(|e, _| tprintln!("controller error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), 10_000).unwrap();
+    let input_file = tempdir.path().join("input.csv");
+    File::create(&input_file).unwrap();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": {"name": "file_input", "config": {"path": input_file, "follow": true}},
+        "format": {"name": "csv"}
+    }))
+    .unwrap();
+    let cursor = json!({"offset": 0});
     let endpoint = input_transport_config_to_endpoint(
-        &serde_json::from_value(connector.clone()).unwrap(),
-        "weak_ft",
+        &endpoint_config.connector_config.transport,
+        "closed",
         tempdir.path(),
+        None,
     )
     .unwrap()
     .unwrap();
+    let id = controller
+        .inner
+        .add_input_endpoint("closed", endpoint_config, Some(endpoint), None)
+        .unwrap();
+    let closed = ManualInputEndpoint::new();
+    closed.closed.store(true, Ordering::Release);
+    {
+        let mut statuses = controller.status().inputs.write();
+        let status = statuses.get_mut(&id).unwrap();
+        status.reader.as_ref().unwrap().disconnect();
+        status.reader = Some(Arc::new(closed));
+        *status.fatal_error.lock().unwrap() = Some("injected fatal reader failure".into());
+    }
+    controller.pause();
+    let saved_cursor = cursor.clone();
+    *controller.inner.input_step_hook.lock().unwrap() = Some(Box::new(move |metadata| {
+        metadata.insert(
+            "closed".into(),
+            Some(super::Resume::Seek { seek: saved_cursor }),
+        );
+    }));
+    let before = controller.status().global_metrics.total_initiated_steps();
+    controller.request_step();
+    let stepped = wait(
+        || controller.status().global_metrics.total_committed_steps() > before,
+        10_000,
+    )
+    .is_ok();
+    let checkpoint = controller.checkpoint();
+    controller.stop().unwrap();
+    assert!(stepped, "closed reader prevented an otherwise empty step");
+    assert_eq!(checkpoint.unwrap().input_metadata.0["closed"], cursor);
+}
+
+/// A non-fault-tolerant input endpoint that records whether it was opened.
+struct OpenRecordingEndpoint {
+    opened: Arc<AtomicBool>,
+}
+
+impl InputEndpoint for OpenRecordingEndpoint {
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        None
+    }
+}
+
+impl TransportInputEndpoint for OpenRecordingEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        schema: Relation,
+        resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn InputReader>> {
+        self.opened.store(true, Ordering::Release);
+        TransactionalInputEndpoint::new().open(consumer, parser, schema, resume_info)
+    }
+}
+
+/// A connector rejected by the fault-tolerance check must never be opened.
+///
+/// Opening a connector can connect to external systems, start threads, and
+/// report end of input, so the check must come before `open`, not after it.
+#[test]
+fn fault_tolerance_mismatch_does_not_open_the_endpoint() {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let controller = start_exactly_once_controller(&tempdir);
+
+    let opened = Arc::new(AtomicBool::new(false));
     let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
         "stream": "test_input1",
-        "transport": connector,
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
         "format": { "name": "csv" }
     }))
     .unwrap();
 
     let error = controller
-        .add_input_endpoint("weak_ft", endpoint_config, endpoint, None)
-        .expect_err("an at-least-once connector must be rejected by an exactly-once pipeline");
+        .add_input_endpoint(
+            "weak_ft",
+            endpoint_config,
+            Box::new(OpenRecordingEndpoint {
+                opened: opened.clone(),
+            }),
+            None,
+        )
+        .expect_err(
+            "a connector without fault tolerance must be rejected by an exactly-once pipeline",
+        );
     assert!(error.to_string().contains("fault tolerance"), "{error}");
-
     assert!(
-        controller.input_endpoint_id_by_name("weak_ft").is_err(),
-        "the rejected endpoint stayed registered"
+        !opened.load(Ordering::Acquire),
+        "the rejected endpoint was opened"
     );
     assert!(controller.status().input_status().is_empty());
 
+    controller.stop().unwrap();
+}
+
+/// An input endpoint whose `open()` blocks until the test releases it.
+struct GatedOpenEndpoint {
+    entered: mpsc::Sender<()>,
+    release: Mutex<mpsc::Receiver<()>>,
+    inner: TransactionalInputEndpoint,
+}
+
+impl InputEndpoint for GatedOpenEndpoint {
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        None
+    }
+}
+
+impl TransportInputEndpoint for GatedOpenEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        schema: Relation,
+        resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn InputReader>> {
+        self.entered.send(()).unwrap();
+        self.release.lock().unwrap().recv().unwrap();
+        self.inner.open(consumer, parser, schema, resume_info)
+    }
+}
+
+/// A step that starts while a new endpoint is still in `open()` must not wait
+/// for that endpoint.
+///
+/// The endpoint is visible to the circuit thread before it has a reader, and an
+/// endpoint without a reader never gets `queue()`, so it can never report
+/// progress.  Waiting for it stalls the pipeline forever.  Once `open()`
+/// returns, later steps must consume the endpoint's input.
+#[test]
+fn step_does_not_wait_for_endpoint_without_reader() {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+    let endpoint = TransactionalInputEndpoint::new();
+    let adder = {
+        let controller = controller.clone();
+        let endpoint = endpoint.clone();
+        thread::spawn(move || {
+            controller.add_input_endpoint(
+                "gated",
+                endpoint_config,
+                Box::new(GatedOpenEndpoint {
+                    entered: entered_tx,
+                    release: Mutex::new(release_rx),
+                    inner: endpoint,
+                }),
+                None,
+            )
+        })
+    };
+
+    // The endpoint is now visible, without a reader.
+    entered_rx.recv().unwrap();
+    let steps = controller.status().global_metrics.total_completed_steps();
+    controller.request_step();
+    let progressed = wait(
+        || controller.status().global_metrics.total_completed_steps() > steps,
+        10_000,
+    )
+    .is_ok();
+
+    release_tx.send(()).unwrap();
+    adder.join().unwrap().unwrap();
+    endpoint.push("1,true,,foo\n");
+    let consumed = wait(
+        || controller.status().num_total_processed_records() == 1,
+        10_000,
+    )
+    .is_ok();
+    controller.stop().unwrap();
+    assert!(progressed, "step waited for an endpoint that had no reader");
+    assert!(
+        consumed,
+        "input pushed after open() returned was never processed"
+    );
+}
+
+/// A commit that takes several steps must finish even if a client starts a
+/// new API transaction while it runs.
+///
+/// The API accepts `start_transaction` during a commit.  The commit only
+/// advances when the circuit thread steps, and nothing else asks it to step
+/// while no input is buffered, so the commit must keep asking for steps of
+/// its own whether or not a new transaction is open.
+#[test]
+fn api_transaction_started_during_commit_does_not_stall_it() {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "min_batch_size_records": 0,
+        "max_buffering_delay_usecs": 0,
+        "clock_resolution_usecs": null,
+        // A commit processes one chunk of this many records per step.
+        "dev_tweaks": { "splitter_chunk_size_records": 1 },
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| Ok(test_circuit_with_aggregate(circuit_config, 16)),
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    let feeder = TransactionalInputEndpoint::new();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+    controller
+        .add_input_endpoint("feeder", endpoint_config, Box::new(feeder.clone()), None)
+        .unwrap();
+
+    // Each wait below is for a few steps of a small circuit.
+    const TIMEOUT_MS: u128 = 20_000;
+
+    // Transaction X ingests more records than fit in one chunk, so its commit
+    // takes more than one step.
+    const RECORDS: usize = 100;
+    controller.start_transaction().unwrap();
+    feeder.push(
+        &(0..RECORDS)
+            .map(|id| format!("{id},true,{id},record-{id}\n"))
+            .collect::<String>(),
+    );
+    wait(
+        || controller.status().num_total_circuit_input_records() >= RECORDS as u64,
+        TIMEOUT_MS,
+    )
+    .expect("transaction X never ingested its records");
+
+    // Client Y starts transaction Y right after the first step of X's commit.
+    let (sender, receiver) = std::sync::mpsc::channel();
+    *controller.inner.commit_step_hook.lock().unwrap() = Some(Box::new(move |inner| {
+        sender
+            .send(
+                inner
+                    .start_transaction_from_api()
+                    .map_err(|e| e.to_string()),
+            )
+            .unwrap();
+    }));
+    controller.start_commit_transaction().unwrap();
+    receiver
+        .recv_timeout(Duration::from_millis(TIMEOUT_MS as u64))
+        .expect("X's commit finished in one step, so the test cannot start Y during it")
+        .expect("the API refused to start Y during X's commit");
+
+    // Y sends no input, so only X's commit can make the circuit thread step.
+    let x_committed = wait(
+        || !controller.inner.get_transaction_state().is_committing(),
+        TIMEOUT_MS,
+    );
+
+    // Commit Y, so that the pipeline stops cleanly whatever happened to X.
+    controller.start_commit_transaction().unwrap();
+    wait(
+        || controller.inner.get_transaction_state() == TransactionState::None,
+        TIMEOUT_MS,
+    )
+    .expect("transaction Y never committed");
+    controller.stop().unwrap();
+
+    x_committed.expect("X's commit stalled after Y started");
+}
+
+/// A step must replay even if an ad hoc INSERT whose input it consumed removed
+/// its endpoint before the step was journaled.
+///
+/// The journal records, for each step, the input endpoints added and removed
+/// since the previous step and the input each endpoint supplied.  Replay adds
+/// and removes endpoints first, then feeds each endpoint its input, so a
+/// record that removes an endpoint, or never adds it, cannot also feed it.
+#[test]
+fn adhoc_insert_removed_before_journaling_replays() {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let circuit = |circuit_config| {
+        Ok(test_circuit::<TestStruct>(
+            circuit_config,
+            &TestStruct::schema(),
+            &[None],
+        ))
+    };
+    let is_adhoc = |name: &str| name.starts_with("adhoc-ingress-");
+
+    let controller =
+        Controller::with_test_config(circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+            .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), 10_000).unwrap();
+
+    // Hold the journal write of the step that consumes the INSERT until the
+    // INSERT has removed its endpoint.
+    let held = Arc::new(AtomicBool::new(false));
+    *controller.inner.journal_step_hook.lock().unwrap() = Some(Box::new({
+        let held = held.clone();
+        move |inner, names| {
+            if !names.iter().any(|name| is_adhoc(name)) {
+                return false;
+            }
+            let removed = wait(
+                || {
+                    !inner
+                        .status
+                        .input_status()
+                        .values()
+                        .any(|status| is_adhoc(&status.endpoint_name))
+                },
+                10_000,
+            );
+            held.store(removed.is_ok(), Ordering::Release);
+            true
+        }
+    }));
+    TOKIO.block_on(async {
+        crate::adhoc::execute_sql(
+            &controller,
+            "INSERT INTO test_input1 VALUES (1, true, 1, 'one')",
+        )
+        .await
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    });
+    // The INSERT returns once its step has taken its input, which is before
+    // the step is journaled.
+    wait(|| held.load(Ordering::Acquire), 10_000)
+        .expect("the INSERT did not remove its endpoint before its step was journaled");
+    controller.stop().unwrap();
+
+    // Restart from the journal.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = Controller::with_test_config(
+        circuit,
+        &config,
+        Box::new({
+            let errors = errors.clone();
+            move |e, _| errors.lock().unwrap().push(e.to_string())
+        }),
+    )
+    .unwrap_or_else(|e| panic!("replay failed: {e}"));
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        10_000,
+    );
+    let errors = errors.lock().unwrap().clone();
+    replayed.expect("replay never finished");
+    assert!(errors.is_empty(), "replay failed: {errors:?}");
+
+    // No step ran after the INSERT's step, so the journal never recorded
+    // removing its endpoint.  Replay must remove it anyway, once it has fed
+    // the endpoint its input.
+    assert_eq!(adhoc_input_endpoints(&controller), Vec::<String>::new());
+    assert_eq!(count_rows(&controller, "test_input1"), 1);
+    controller.stop().unwrap();
+}
+
+/// Makes one `/ingress` request for rows with `ids` to `test_input1` through a
+/// new HTTP input endpoint named `name`, the way the server does.  Returns the
+/// request's completion token.
+fn ingress_rows(controller: &Controller, name: &str, ids: Range<u32>) -> CompletionToken {
+    let endpoint = HttpInputEndpoint::new(HttpInputConfig { name: name.into() });
+    controller
+        .add_input_endpoint(
+            name,
+            http_input_config(name),
+            Box::new(endpoint.clone()),
+            None,
+        )
+        .unwrap();
+    TOKIO.block_on(async {
+        let (request, mut payload) = actix_web::test::TestRequest::default()
+            .set_payload(
+                ids.map(|id| format!(r#"{{"id": {id}, "b": true, "i": {id}, "s": "row-{id}"}}"#))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+            .to_http_parts();
+        let payload = <actix_web::web::Payload as actix_web::FromRequest>::from_request(
+            &request,
+            &mut payload,
+        )
+        .await
+        .unwrap();
+        endpoint
+            .complete_request(payload, false, None)
+            .await
+            .unwrap();
+    });
+    controller.completion_token(name).unwrap()
+}
+
+/// Waits until the input that `token` identifies completes.
+fn wait_for_completion(controller: &Controller, token: &CompletionToken) {
+    wait(
+        || matches!(controller.completion_status(token), Ok(Some(_))),
+        DEFAULT_TIMEOUT_MS,
+    )
+    .expect("the /ingress input never completed");
+}
+
+/// Replay must not feed a journaled step's input to the circuit while it
+/// commits the previous replayed transaction.
+///
+/// The HTTP endpoint parses and flushes replayed input from its own task.  If
+/// replay hands a step's input to the endpoint before the controller has
+/// committed the previous replayed transaction, the input can reach the
+/// circuit during that commit, and a worker panics with "cannot process input
+/// received during commit".
+///
+/// The journal holds an empty step, an API transaction with 100 records from
+/// one request, and one more request in its own transaction.  Both requests
+/// are at a transaction boundary.  With one record per commit chunk, a commit
+/// takes many steps.  The second endpoint's replay waits for the first
+/// transaction to commit, so that a replay that hands it the input too early
+/// flushes during the commit.
+#[test]
+fn replay_does_not_feed_http_input_during_commit() {
+    init_test_logger();
+    const FIRST: &str = "test_input1.api-ingress-first";
+    const SECOND: &str = "test_input1.api-ingress-second";
+
+    const RECORDS: u32 = 100;
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+        // A commit processes one chunk of this many records per step.
+        "dev_tweaks": { "splitter_chunk_size_records": 1 },
+    }))
+    .unwrap();
+    let circuit = |circuit_config| Ok(test_circuit_with_aggregate(circuit_config, 16));
+
+    let controller =
+        Controller::with_test_config(circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+            .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+    let first_tid = controller.start_transaction().unwrap().transaction_id;
+    let token = ingress_rows(&controller, FIRST, 0..RECORDS);
+    controller.start_commit_transaction().unwrap();
+    wait_for_completion(&controller, &token);
+    let token = ingress_rows(&controller, SECOND, RECORDS..RECORDS + 1);
+    wait_for_completion(&controller, &token);
+    controller.stop().unwrap();
+
+    // Hold the second endpoint's replay until the first transaction commits or
+    // is already done, and note whether its commit was in progress.
+    let restarted = Arc::new(std::sync::OnceLock::<Controller>::new());
+    let flushed_in_commit = Arc::new(AtomicBool::new(false));
+    REPLAY_GATES.lock().unwrap().insert(
+        SECOND.into(),
+        Box::new({
+            let restarted = restarted.clone();
+            let flushed_in_commit = flushed_in_commit.clone();
+            move || {
+                let state = || restarted.get().map(|c| c.inner.get_transaction_state());
+                let first_pending =
+                    |state: &TransactionState| state.tid().is_some_and(|tid| tid <= first_tid);
+                let _ = wait(
+                    || state().is_some_and(|state| state.is_committing() || !first_pending(&state)),
+                    DEFAULT_TIMEOUT_MS,
+                );
+                flushed_in_commit.store(
+                    state().is_some_and(|state| state.is_committing() && first_pending(&state)),
+                    Ordering::Release,
+                );
+            }
+        }),
+    );
+
+    // Restart from the journal.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = Controller::with_test_config(
+        circuit,
+        &config,
+        Box::new({
+            let errors = errors.clone();
+            move |e, _| errors.lock().unwrap().push(e.to_string())
+        }),
+    )
+    .unwrap_or_else(|e| panic!("replay failed: {e}"));
+    let _ = restarted.set(controller.clone());
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        DEFAULT_TIMEOUT_MS,
+    );
+    let errors = errors.lock().unwrap().clone();
+    assert!(errors.is_empty(), "replay failed: {errors:?}");
+    replayed.expect("replay never finished");
+    assert!(
+        !flushed_in_commit.load(Ordering::Acquire),
+        "replay handed the second request's input to its endpoint during a commit"
+    );
+    // Replay can finish before the ad hoc snapshot includes its last step.
+    let _ = wait(
+        || count_rows(&controller, "test_input1") > RECORDS as i64,
+        DEFAULT_TIMEOUT_MS,
+    );
+    assert_eq!(count_rows(&controller, "test_input1"), RECORDS as i64 + 1);
+    controller.stop().unwrap();
+}
+
+/// An HTTP input endpoint whose `open` waits for a message on `gate`.
+struct GatedHttpEndpoint {
+    inner: HttpInputEndpoint,
+    gate: Mutex<std::sync::mpsc::Receiver<()>>,
+}
+
+impl InputEndpoint for GatedHttpEndpoint {
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        self.inner.fault_tolerance()
+    }
+}
+
+impl TransportInputEndpoint for GatedHttpEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        schema: Relation,
+        resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn InputReader>> {
+        let _ = self.gate.lock().unwrap().recv();
+        self.inner.open(consumer, parser, schema, resume_info)
+    }
+}
+
+/// Replay must not wait for input from an endpoint that the replayed step
+/// did not record.
+///
+/// `add_input_endpoint` registers an endpoint before `open` returns its
+/// reader.  A checkpoint in that window records the endpoint, but the next
+/// step skips it, because it has no reader yet, so the journal holds no
+/// input for it.  On restart, the checkpoint restores the endpoint and replay
+/// of that step must not wait for it.
+#[test]
+fn replay_does_not_wait_for_endpoint_without_journaled_input() {
+    init_test_logger();
+    const OPENED: &str = "test_input1.api-ingress-opened";
+    const BLOCKED: &str = "test_input1.api-ingress-blocked";
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let circuit = |circuit_config| {
+        Ok(test_circuit::<TestStruct>(
+            circuit_config,
+            &TestStruct::schema(),
+            &[Some("output")],
+        ))
+    };
+    let controller =
+        Controller::with_test_config(circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+            .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    // Register BLOCKED.  Its `open` blocks until the test sends on `open_gate`.
+    let (open_gate, gate) = std::sync::mpsc::channel();
+    let adding = thread::spawn({
+        let controller = controller.clone();
+        move || {
+            let endpoint = GatedHttpEndpoint {
+                inner: HttpInputEndpoint::new(HttpInputConfig {
+                    name: BLOCKED.into(),
+                }),
+                gate: Mutex::new(gate),
+            };
+            controller.add_input_endpoint(
+                BLOCKED,
+                http_input_config(BLOCKED),
+                Box::new(endpoint),
+                None,
+            )
+        }
+    });
+    wait(
+        || {
+            controller
+                .status()
+                .input_status()
+                .values()
+                .any(|status| status.endpoint_name == BLOCKED)
+        },
+        DEFAULT_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    // The checkpoint records BLOCKED, and the step that takes OPENED's row
+    // skips BLOCKED.
+    controller.checkpoint().unwrap();
+    let token = ingress_rows(&controller, OPENED, 0..1);
+    wait_for_completion(&controller, &token);
+    open_gate.send(()).unwrap();
+    adding.join().unwrap().unwrap();
+    controller.stop().unwrap();
+
+    // Restart from the checkpoint and the journal.  The restart replays the
+    // journal, so a replay that waits forever blocks it: give it a deadline.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let (sender, receiver) = std::sync::mpsc::channel();
+    thread::spawn({
+        let errors = errors.clone();
+        move || {
+            let _ = sender.send(Controller::with_test_config(
+                circuit,
+                &config,
+                Box::new(move |e, _| errors.lock().unwrap().push(e.to_string())),
+            ));
+        }
+    });
+    let controller = receiver
+        .recv_timeout(Duration::from_secs(30))
+        .expect("restart never finished")
+        .unwrap_or_else(|e| panic!("restart failed: {e}"));
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        DEFAULT_TIMEOUT_MS,
+    );
+    let errors = errors.lock().unwrap().clone();
+    assert!(errors.is_empty(), "replay failed: {errors:?}");
+    replayed.expect("replay never finished");
+    assert_eq!(count_rows(&controller, "test_input1"), 1);
+    controller.stop().unwrap();
+}
+
+/// Returns the names of the ad hoc INSERT input endpoints of `controller`.
+fn adhoc_input_endpoints(controller: &Controller) -> Vec<String> {
+    controller
+        .status()
+        .input_status()
+        .values()
+        .map(|status| status.endpoint_name.clone())
+        .filter(|name| name.starts_with("adhoc-ingress-"))
+        .collect()
+}
+
+/// Returns the number of rows in `table`, by ad hoc query.
+fn count_rows(controller: &Controller, table: &str) -> i64 {
+    TOKIO.block_on(async {
+        let batches =
+            crate::adhoc::execute_sql(controller, &format!("SELECT COUNT(*) FROM {table}"))
+                .await
+                .unwrap()
+                .collect()
+                .await
+                .unwrap();
+        batches
+            .iter()
+            .find(|batch| batch.num_rows() > 0)
+            .unwrap()
+            .column(0)
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .unwrap()
+            .value(0)
+    })
+}
+
+/// Runs an ad hoc INSERT of one row into `test_input1` with the given `id`.
+fn insert_row(controller: &Controller, id: u32) -> Result<(), String> {
+    TOKIO.block_on(async {
+        crate::adhoc::execute_sql(
+            controller,
+            &format!("INSERT INTO test_input1 VALUES ({id}, true, {id}, 'row-{id}')"),
+        )
+        .await
+        .map_err(|e| e.to_string())?
+        .collect()
+        .await
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+    })
+}
+
+/// An ad hoc INSERT in progress at a checkpoint must not leave its endpoint
+/// behind after a restart from that checkpoint.
+///
+/// A checkpoint records the configuration of every input endpoint, and a
+/// restart with the same program reconnects them all.  An ad hoc INSERT's
+/// endpoint belongs to one request, so after the restart, and after replay
+/// feeds it any journaled input, nothing can use it.  Left in place, it would
+/// keep the pipeline from completing.
+///
+/// With `resume`, the pipeline runs the INSERT to completion after the
+/// checkpoint, so that the journal records its input, before it stops.
+fn restored_adhoc_insert(fault_tolerance: bool, resume: bool) {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let mut config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    if fault_tolerance {
+        config.global.fault_tolerance = serde_json::from_value(json!({})).unwrap();
+    }
+
+    // The same program information in both runs tells the restart that the
+    // program is unchanged, which is the case that restores the checkpoint's
+    // input endpoints.
+    config.program_ir = Some(feldera_types::config::ProgramIr {
+        mir: serde_json::from_value(json!({
+            "0": { "operation": "source", "table": "test_input1", "persistent_id": "test_input1" },
+            "1": { "operation": "sink", "view": "test_output1", "persistent_id": "output" },
+        }))
+        .unwrap(),
+        program_schema: json!({ "inputs": [], "outputs": [] }),
+        circuit_ir: None,
+        udf_library: None,
+    });
+    let circuit = |circuit_config| {
+        Ok(test_circuit::<TestStruct>(
+            circuit_config,
+            &TestStruct::schema(),
+            &[Some("output")],
+        ))
+    };
+
+    let controller =
+        Controller::with_test_config(circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+            .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), 10_000).unwrap();
+    wait(|| controller.pipeline_complete(), 10_000).expect("the new pipeline never completed");
+
+    // While the pipeline is paused, an INSERT adds its endpoint and then
+    // waits for the pipeline to run.  Take a checkpoint in that window.
+    controller.pause();
+    let insert = std::thread::spawn({
+        let controller = controller.clone();
+        move || insert_row(&controller, 1)
+    });
+    wait(|| !adhoc_input_endpoints(&controller).is_empty(), 10_000)
+        .expect("the INSERT never added its endpoint");
+    controller.checkpoint().unwrap();
+    if resume {
+        controller.start();
+        insert.join().unwrap().expect("the INSERT failed");
+        controller.stop().unwrap();
+    } else {
+        controller.stop().unwrap();
+        let _ = insert.join().unwrap();
+    }
+
+    // Restart from the checkpoint.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = Controller::with_test_config(
+        circuit,
+        &config,
+        Box::new({
+            let errors = errors.clone();
+            move |e, _| errors.lock().unwrap().push(e.to_string())
+        }),
+    )
+    .unwrap_or_else(|e| panic!("restart failed: {e}"));
+    controller.start();
+    let started = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        10_000,
+    );
+    assert!(
+        errors.lock().unwrap().is_empty(),
+        "restart failed: {:?}",
+        errors.lock().unwrap()
+    );
+    started.expect("replay never finished");
+
+    assert_eq!(adhoc_input_endpoints(&controller), Vec::<String>::new());
+    wait(|| controller.pipeline_complete(), 10_000)
+        .expect("the pipeline never completed after the restart");
+
+    // Ad hoc INSERTs still work, and only an INSERT that completed and was
+    // journaled before the stop survives it.
+    insert_row(&controller, 2).expect("an INSERT after the restart failed");
+    let expected = if resume && fault_tolerance { 2 } else { 1 };
+    // An INSERT returns once its step has taken its input, before the ad hoc
+    // snapshot includes it.
+    let _ = wait(
+        || count_rows(&controller, "test_input1") >= expected,
+        DEFAULT_TIMEOUT_MS,
+    );
+    assert_eq!(count_rows(&controller, "test_input1"), expected);
+    controller.stop().unwrap();
+}
+
+#[test]
+fn restored_adhoc_insert_without_fault_tolerance() {
+    restored_adhoc_insert(false, false);
+}
+
+#[test]
+fn restored_adhoc_insert_with_nothing_to_replay() {
+    restored_adhoc_insert(true, false);
+}
+
+#[test]
+fn restored_adhoc_insert_after_replay() {
+    restored_adhoc_insert(true, true);
+}
+
+/// The configuration of an `/ingress` endpoint named `name` for `test_input1`.
+fn http_input_config(name: &str) -> InputEndpointConfig {
+    serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "http_input", "config": { "name": name } },
+        "format": { "name": "json", "config": { "update_format": "raw" } },
+    }))
+    .unwrap()
+}
+
+/// Replay of a journal entry that adds an input endpoint must skip an endpoint
+/// that a checkpoint already restored with the same configuration, but must
+/// still reject a different endpoint with the same name.
+#[test]
+fn replay_add_input_that_already_exists() {
+    init_test_logger();
+    const NAME: &str = "test_input1.api-ingress-existing";
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    let endpoint = HttpInputEndpoint::new(HttpInputConfig { name: NAME.into() });
+    let endpoint_id = controller
+        .add_input_endpoint(NAME, http_input_config(NAME), Box::new(endpoint), None)
+        .unwrap();
+
+    let step = |config: InputEndpointConfig| StepMetadata {
+        step: 0,
+        transaction_id: 0,
+        remove_inputs: HashSet::new(),
+        add_inputs: HashMap::from([(NAME.to_string(), config)]),
+        changed_inputs: HashMap::new(),
+        input_logs: HashMap::new(),
+        changed_outputs: HashMap::new(),
+    };
+
+    // The same configuration is the endpoint that the checkpoint restored.
+    FtState::replay_step(0, &step(http_input_config(NAME)), &controller.inner)
+        .expect("replay did not accept the restored endpoint");
+    assert_eq!(
+        controller.inner.input_endpoint_id_by_name(NAME).unwrap(),
+        endpoint_id
+    );
+
+    // A different configuration is a different endpoint.
+    let mut other = http_input_config(NAME);
+    other.connector_config.format = Some(FormatConfig {
+        name: "csv".into(),
+        config: json!({}),
+    });
+    let error = FtState::replay_step(0, &step(other), &controller.inner)
+        .expect_err("replay replaced an endpoint with a different one of the same name");
+    assert!(
+        matches!(
+            &error,
+            ControllerError::Config { config_error }
+                if matches!(**config_error, ConfigError::DuplicateInputEndpoint { .. })
+        ),
+        "unexpected error: {error}"
+    );
+    controller.stop().unwrap();
+}
+
+/// Replay must not fail on removing an endpoint that the checkpoint it starts
+/// from no longer has.
+///
+/// An ad hoc INSERT removes its endpoint once its step has taken its input,
+/// and the journal records the removal only in the next entry.  A checkpoint
+/// taken in between does not include the endpoint, but the next entry, which
+/// replay of that checkpoint starts with, removes it.
+#[test]
+fn replay_removes_endpoint_missing_from_checkpoint() {
+    init_test_logger();
+    const HTTP: &str = "test_input1.api-ingress-after-checkpoint";
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let circuit = |circuit_config| {
+        Ok(test_circuit::<TestStruct>(
+            circuit_config,
+            &TestStruct::schema(),
+            &[Some("output")],
+        ))
+    };
+
+    let controller =
+        Controller::with_test_config(circuit, &config, Box::new(|e, _| panic!("error: {e}")))
+            .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    // Insert a row and wait for the INSERT's endpoint to go away.
+    insert_row(&controller, 1).unwrap();
+    wait(
+        || adhoc_input_endpoints(&controller).is_empty(),
+        DEFAULT_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    // No step has journaled the removal yet, so the checkpoint omits the
+    // endpoint and the next step removes it.
+    controller.checkpoint().unwrap();
+
+    // The next step journals the removal.
+    let token = ingress_rows(&controller, HTTP, 2..3);
+    wait_for_completion(&controller, &token);
+    controller.stop().unwrap();
+
+    // Restart from the checkpoint and the journal.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = Controller::with_test_config(
+        circuit,
+        &config,
+        Box::new({
+            let errors = errors.clone();
+            move |e, _| errors.lock().unwrap().push(e.to_string())
+        }),
+    )
+    .unwrap_or_else(|e| panic!("restart failed: {e}"));
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        DEFAULT_TIMEOUT_MS,
+    );
+    let errors = errors.lock().unwrap().clone();
+    assert!(errors.is_empty(), "replay failed: {errors:?}");
+    replayed.expect("replay never finished");
+    let _ = wait(
+        || count_rows(&controller, "test_input1") >= 2,
+        DEFAULT_TIMEOUT_MS,
+    );
+    assert_eq!(count_rows(&controller, "test_input1"), 2);
     controller.stop().unwrap();
 }
 
@@ -1211,6 +2303,7 @@ fn fault_tolerance_mismatch_unregisters_the_endpoint() {
 #[derive(Clone)]
 struct TransactionalInputEndpoint {
     details: Arc<Mutex<Option<TransactionalInputEndpointDetails>>>,
+    closed: Arc<AtomicBool>,
 }
 
 struct TransactionalInputEndpointDetails {
@@ -1222,7 +2315,31 @@ impl TransactionalInputEndpoint {
     fn new() -> Self {
         Self {
             details: Arc::new(Mutex::new(None)),
+            closed: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Close with an unflushed batch after reporting a fatal error. The lock
+    /// keeps a concurrent `Queue` from flushing the batch before closing.
+    fn fail_with_buffered_input(&self, data: &str) {
+        let consumer = self
+            .details
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .queue
+            .consumer
+            .clone();
+        // Report before closing, outside the details lock: the controller
+        // invokes its error callback here, which may itself inspect the reader.
+        consumer.error(true, anyhow!("injected fatal reader failure"), None);
+        let mut guard = self.details.lock().unwrap();
+        let details = guard.as_mut().unwrap();
+        let parsed = details.parser.parse(data.as_bytes(), None);
+        details.queue.push(parsed, Utc::now());
+        self.closed.store(true, Ordering::Release);
+        guard.take();
     }
 
     /// Opens the transaction labeled `label`, or joins it if another connector
@@ -1290,10 +2407,12 @@ impl InputReader for TransactionalInputEndpoint {
     }
 
     fn request(&self, command: InputReaderCommand) {
+        let guard = self.details.lock().unwrap();
+        if self.closed.load(Ordering::Acquire) {
+            return;
+        }
         match command {
-            InputReaderCommand::Queue { .. } => {
-                self.details.lock().unwrap().as_ref().unwrap().queue.queue()
-            }
+            InputReaderCommand::Queue { .. } => guard.as_ref().unwrap().queue.queue(),
             InputReaderCommand::Extend
             | InputReaderCommand::Pause
             | InputReaderCommand::Disconnect => (),
@@ -1304,8 +2423,104 @@ impl InputReader for TransactionalInputEndpoint {
     }
 
     fn is_closed(&self) -> bool {
-        false
+        self.closed.load(Ordering::Acquire)
     }
+}
+
+/// A fatally failed reader stays visible, but its unflushed input cannot be
+/// consumed. Counting that input in the step trigger spins on empty steps.
+#[test]
+fn failed_connector_with_buffered_input_does_not_spin_the_circuit() {
+    init_test_logger();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "min_batch_size_records": 0,
+        "max_buffering_delay_usecs": 0,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None, None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| tprintln!("controller error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    let add_endpoint = |name: &str, stream: &str| {
+        let endpoint = TransactionalInputEndpoint::new();
+        let config = serde_json::from_value(json!({
+            "stream": stream,
+            "transport": {"name": "file_input", "config": {"path": "unused"}},
+            "format": {"name": "csv"},
+        }))
+        .unwrap();
+        let id = controller
+            .add_input_endpoint(name, config, Box::new(endpoint.clone()), None)
+            .unwrap();
+        (id, endpoint)
+    };
+    let (failed_id, failed) = add_endpoint("failed", "test_input1");
+    let (_, healthy) = add_endpoint("healthy", "test_input2");
+
+    failed.fail_with_buffered_input(&"1,true,,foo\n".repeat(100));
+    assert!(failed.is_closed());
+    assert_eq!(controller.status().num_buffered_input_records(), 100);
+
+    // Match the existing committed-connector spin test: no input, clock or
+    // checkpoint timer can legitimately keep taking steps during this window.
+    let before = controller.status().global_metrics.total_initiated_steps();
+    sleep(Duration::from_secs(1));
+    let steps = controller.status().global_metrics.total_initiated_steps() - before;
+    let retained_fatal = controller
+        .status()
+        .input_status()
+        .get(&failed_id)
+        .is_some_and(|status| status.fatal_error.lock().unwrap().is_some());
+    let polls_failed = controller
+        .status()
+        .input_status()
+        .get(&failed_id)
+        .is_some_and(|status| {
+            super::StepSelection {
+                inputs: super::StepInputs::All,
+                committed: Default::default(),
+            }
+            .polls(status)
+        });
+
+    // Parking must not become a hang: the other reader can still advance.
+    healthy.push("2,true,,bar\n");
+    let progressed = wait(
+        || controller.status().num_total_processed_records() == 1,
+        10_000,
+    )
+    .is_ok();
+    controller.stop().unwrap();
+
+    assert!(
+        retained_fatal,
+        "the failed connector lost its status or error"
+    );
+    assert!(
+        steps < 10,
+        "the circuit took {steps} empty steps in a second after its reader failed"
+    );
+    assert!(
+        !polls_failed,
+        "step selection still polls the closed reader"
+    );
+    assert!(
+        progressed,
+        "input on the healthy reader was never processed"
+    );
 }
 
 /// Input buffered by a connector that has committed the in-progress
@@ -1461,6 +2676,7 @@ fn committed_connector_input_does_not_spin_the_circuit() {
 #[derive(Clone)]
 struct ManualInputEndpoint {
     details: Arc<Mutex<Option<ManualInputEndpointDetails>>>,
+    closed: Arc<AtomicBool>,
 }
 
 struct ManualInputEndpointDetails {
@@ -1472,6 +2688,7 @@ impl ManualInputEndpoint {
     fn new() -> Self {
         Self {
             details: Arc::new(Mutex::new(None)),
+            closed: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -1518,6 +2735,9 @@ impl InputReader for ManualInputEndpoint {
     }
 
     fn request(&self, command: InputReaderCommand) {
+        if self.is_closed() {
+            return;
+        }
         match command {
             // Report no input: the test releases it with
             // `ManualInputEndpoint::release`.
@@ -1540,8 +2760,77 @@ impl InputReader for ManualInputEndpoint {
     }
 
     fn is_closed(&self) -> bool {
-        false
+        self.closed.load(Ordering::Acquire)
     }
+}
+
+/// A final batch reported before closure must still be collected and counted.
+#[test]
+fn closed_reader_final_progress_is_collected() {
+    init_test_logger();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "min_batch_size_records": 1_000_000,
+        "max_buffering_delay_usecs": 1_000_000_000,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |config| {
+            Ok(test_circuit::<TestStruct>(
+                config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+    let endpoint = ManualInputEndpoint::new();
+    let endpoint_config = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": {"name": "file_input", "config": {"path": "unused"}},
+        "format": {"name": "csv"}
+    }))
+    .unwrap();
+    let id = controller
+        .add_input_endpoint("manual", endpoint_config, Box::new(endpoint.clone()), None)
+        .unwrap();
+    endpoint.push("1,true,,foo\n2,true,,foo\n3,true,,foo\n");
+    endpoint.release();
+    endpoint.closed.store(true, Ordering::Release);
+    assert_eq!(controller.status().num_total_processed_records(), 0);
+    assert!(
+        controller
+            .status()
+            .input_status()
+            .get(&id)
+            .unwrap()
+            .progress
+            .lock()
+            .unwrap()
+            .is_some()
+    );
+    controller.request_step();
+    let collected = wait(
+        || controller.status().num_total_processed_records() == 3,
+        10_000,
+    )
+    .is_ok();
+    let pending = controller
+        .status()
+        .input_status()
+        .get(&id)
+        .is_some_and(|s| s.progress.lock().unwrap().is_some());
+    controller.stop().unwrap();
+    assert!(
+        collected,
+        "closed reader's final records were never counted"
+    );
+    assert!(!pending, "closed reader's final progress was not collected");
 }
 
 /// Removing an input endpoint must not take the count of the input it already
@@ -3149,6 +4438,133 @@ fn checkpoint_state_file_names_its_own_circuit() {
     controller.stop().unwrap();
 }
 
+/// A restart resumes from the newest published checkpoint, even when the root
+/// `state.json` still names the one before it, as a crash between publishing a
+/// checkpoint and rewriting the root file leaves it.
+#[test]
+fn restart_resumes_from_newest_published_checkpoint() {
+    test_restart_from_newest_published_checkpoint(false);
+}
+
+/// Exactly-once variant: journal replay starts at the newest checkpoint and
+/// counts no record twice.
+#[test]
+fn ft_restart_resumes_from_newest_published_checkpoint() {
+    test_restart_from_newest_published_checkpoint(true);
+}
+
+fn test_restart_from_newest_published_checkpoint(fault_tolerant: bool) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let tempdir_path = tempdir.path();
+    let storage_dir = tempdir_path.join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_path = tempdir_path.join("input.csv");
+    File::create_new(&input_path).unwrap();
+
+    const RECORDS: usize = 100;
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": if fault_tolerant { json!({}) } else { json!(null) },
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_path.display().to_string(), "follow": true },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+        "outputs": {},
+    }))
+    .unwrap();
+    let start_controller = || {
+        Controller::with_test_config(
+            |circuit_config| {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &[],
+                    &[Some("output")],
+                ))
+            },
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap()
+    };
+    let processed_records = |controller: &Controller| {
+        controller
+            .status()
+            .global_metrics
+            .num_total_processed_records()
+    };
+    let wait_processed = |controller: &Controller, records: usize| {
+        wait(
+            || processed_records(controller) >= records as u64,
+            DEFAULT_TIMEOUT_MS,
+        )
+        .unwrap();
+    };
+    let checkpoint_after = |controller: &Controller, records: usize| {
+        wait_processed(controller, records);
+        controller.checkpoint().unwrap()
+    };
+
+    let controller = start_controller();
+    controller.start();
+    append_input(&input_path, 0..RECORDS);
+    let older = checkpoint_after(&controller, RECORDS);
+    append_input(&input_path, RECORDS..2 * RECORDS);
+    let newest = checkpoint_after(&controller, 2 * RECORDS);
+    // Steps after the newest checkpoint, which the restart reads again from
+    // the input or replays from the journal.
+    append_input(&input_path, 2 * RECORDS..3 * RECORDS);
+    wait_processed(&controller, 3 * RECORDS);
+    controller.stop().unwrap();
+
+    let older_uuid = older.circuit.unwrap().uuid;
+    std::fs::copy(
+        storage_dir.join(older_uuid.to_string()).join(STATE_FILE),
+        storage_dir.join(STATE_FILE),
+    )
+    .unwrap();
+
+    let controller = start_controller();
+    if fault_tolerant {
+        // Replay runs before `start`, so check the count after it ends.
+        wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+        assert_eq!(
+            processed_records(&controller),
+            3 * RECORDS as u64,
+            "replay did not start at checkpoint {}",
+            newest.circuit.unwrap().uuid
+        );
+    } else {
+        assert_eq!(
+            processed_records(&controller),
+            newest.processed_records,
+            "the restart resumed from checkpoint {older_uuid}, which the root state.json names"
+        );
+    }
+
+    // Later checkpoints, and the cleanup after each, leave a checkpoint that
+    // the next restart can open.
+    controller.start();
+    checkpoint_after(&controller, 3 * RECORDS);
+    append_input(&input_path, 3 * RECORDS..4 * RECORDS);
+    checkpoint_after(&controller, 4 * RECORDS);
+    controller.stop().unwrap();
+    let controller = start_controller();
+    assert_eq!(processed_records(&controller), 4 * RECORDS as u64);
+    controller.stop().unwrap();
+}
+
 /// A connector that starts paused with `send_snapshot` keeps owing its
 /// snapshot rather than dropping it, and receives it when it is started --
 /// reflecting the state of the view at that moment, not at startup.
@@ -4130,6 +5546,16 @@ fn input_batch_wakes_the_circuit_thread() {
 }
 
 fn start_controller(storage_dir: &Path, barriers: &[usize]) -> Controller {
+    start_controller_with_error_cb(storage_dir, barriers, Box::new(|e, _| panic!("error: {e}")))
+}
+
+/// Like [`start_controller`], with `error_cb` as the controller's error
+/// callback.
+fn start_controller_with_error_cb(
+    storage_dir: &Path,
+    barriers: &[usize],
+    error_cb: Box<dyn Fn(Arc<crate::controller::ControllerError>, Option<String>) + Send + Sync>,
+) -> Controller {
     let n = barriers.len();
     for (i, barrier) in barriers.iter().copied().enumerate() {
         set_barrier(input_path(storage_dir, i).to_str().unwrap(), barrier);
@@ -4201,12 +5627,171 @@ fn start_controller(storage_dir: &Path, barriers: &[usize]) -> Controller {
             ))
         },
         &config,
-        Box::new(|e, _| panic!("error: {e}")),
+        error_cb,
     )
     .unwrap();
 
     controller.start();
     controller
+}
+
+/// Suspend fails with an actionable error, instead of waiting forever, when an
+/// input endpoint failed while it held a barrier.
+///
+/// The controller keeps a failed endpoint in the pipeline status. Its barrier
+/// flag is set by the last step it reported, and a failed endpoint never
+/// reports a step again, so the flag never clears.
+#[test]
+fn failed_input_at_barrier_fails_suspend() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input = input_path(&storage_dir, 0);
+    let input_file = File::create(&input).unwrap();
+    let mut writer = CsvWriterBuilder::new()
+        .has_headers(false)
+        .from_writer(&input_file);
+    for id in 0..1000 {
+        writer.serialize(TestStruct::for_id(id)).unwrap();
+    }
+    writer.flush().unwrap();
+
+    // The barrier lies past the end of the file, so the endpoint holds it.
+    let controller = start_controller_with_error_cb(
+        &storage_dir,
+        &[2000],
+        Box::new(|e, _| tprintln!("controller error: {e}")),
+    );
+    wait_for_records(&controller, &[1000]);
+    assert!(
+        controller
+            .status()
+            .input_status()
+            .get(&0)
+            .unwrap()
+            .is_barrier()
+    );
+
+    set_failure(input.to_str().unwrap());
+    wait(
+        || {
+            controller
+                .status()
+                .input_status()
+                .get(&0)
+                .is_none_or(|status| status.fatal_error.lock().unwrap().is_some())
+        },
+        DEFAULT_TIMEOUT_MS,
+    )
+    .expect("the input endpoint did not fail");
+
+    // The controller sees that the endpoint stopped during a step. This
+    // pipeline has no clock and no new input, so request steps.
+    for _ in 0..10 {
+        controller.request_step();
+        sleep(Duration::from_millis(200));
+    }
+
+    let (sender, receiver) = mpsc::channel();
+    controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
+    let result = receiver
+        .recv_timeout(Duration::from_secs(30))
+        .expect("suspend did not complete within 30s of the input endpoint failing at a barrier");
+    let error = result
+        .expect_err("suspend succeeded although the failed input endpoint holds a barrier")
+        .to_string();
+    assert!(
+        error.contains("failed with a fatal error at a position that cannot be checkpointed"),
+        "unexpected suspend error: {error}"
+    );
+    let endpoint_name = controller.status().input_status()[&0].endpoint_name.clone();
+    assert_eq!(
+        controller.permanent_checkpoint_errors(),
+        Some(vec![
+            feldera_types::suspend::PermanentSuspendError::FailedInputEndpointBarrier(
+                endpoint_name
+            )
+        ])
+    );
+
+    controller.stop().unwrap();
+}
+
+/// A checkpoint taken after an input endpoint was removed while it held a
+/// barrier must not crash the pipeline.
+///
+/// Pruning resume entries during an input step is not enough: an immediate
+/// checkpoint can run without another step. A removed barrier entry has no
+/// seek position, and must not be serialized into that checkpoint.
+#[test]
+fn checkpoint_after_removing_input_at_barrier() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_file = File::create(input_path(&storage_dir, 0)).unwrap();
+    let mut writer = CsvWriterBuilder::new()
+        .has_headers(false)
+        .from_writer(&input_file);
+    for id in 0..1000 {
+        writer.serialize(TestStruct::for_id(id)).unwrap();
+    }
+    writer.flush().unwrap();
+
+    // The barrier lies past the end of the file, so the endpoint holds it.
+    let controller = start_controller(&storage_dir, &[2000]);
+    wait_for_records(&controller, &[1000]);
+    assert!(
+        controller
+            .status()
+            .input_status()
+            .get(&0)
+            .unwrap()
+            .is_barrier()
+    );
+
+    controller.disconnect_input(&0);
+    // Do not request intervening steps: they would prune the stale entry and
+    // hide the immediate-checkpoint failure.
+    let checkpoint = controller
+        .checkpoint()
+        .expect("checkpoint immediately after removing the input endpoint failed");
+    assert!(checkpoint.config.inputs.is_empty());
+    assert!(checkpoint.input_metadata.0.is_empty());
+    assert!(checkpoint.input_statistics.is_empty());
+    controller.stop().unwrap();
+}
+
+/// Removal after capturing configuration must not discard that input's cursor
+/// or statistics from the same checkpoint.
+#[test]
+fn checkpoint_removal_between_snapshots_keeps_cursor() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_file = File::create(input_path(&storage_dir, 0)).unwrap();
+    let mut writer = CsvWriterBuilder::new()
+        .has_headers(false)
+        .from_writer(&input_file);
+    for id in 0..1000 {
+        writer.serialize(TestStruct::for_id(id)).unwrap();
+    }
+    writer.flush().unwrap();
+    let controller = start_controller(&storage_dir, &[0]);
+    wait_for_records(&controller, &[1000]);
+    let inner = controller.inner.clone();
+    *controller.inner.checkpoint_snapshot_hook.lock().unwrap() =
+        Some(Box::new(move || inner.disconnect_input(&0)));
+    let checkpoint = controller.checkpoint().unwrap();
+    controller.stop().unwrap();
+    assert!(checkpoint.config.inputs.contains_key("test_input1"));
+    assert!(
+        checkpoint.input_metadata.0.contains_key("test_input1"),
+        "checkpoint restores the input, but omits its seek cursor"
+    );
+    assert!(checkpoint.input_statistics.contains_key("test_input1"));
 }
 
 /// Test suspend when barriers are involved, with one input
@@ -6409,14 +7994,14 @@ mod queue_limit_tests {
 
     // --- ConnectorConfig::max_queued_bytes() ---
 
-    /// When `max_queued_bytes` is unset, it defaults to `max_queued_records * 1000`.
+    /// When `max_queued_size` is unset, it defaults to `max_queued_records * 1000`.
     #[test]
     fn max_queued_bytes_defaults_to_1000x_records() {
         let endpoint = make_endpoint(100, None);
         assert_eq!(endpoint.config.connector_config.max_queued_bytes(), 100_000);
     }
 
-    /// When `max_queued_bytes` is explicitly set, that value is used directly.
+    /// When `max_queued_size` is explicitly set, that value is used directly.
     #[test]
     fn max_queued_bytes_explicit_value() {
         let endpoint = make_endpoint(100, Some(50_000));
@@ -6510,7 +8095,7 @@ mod queue_limit_tests {
         assert!(endpoint.is_full());
     }
 
-    /// With no explicit `max_queued_bytes`, the default byte threshold
+    /// With no explicit `max_queued_size`, the default byte threshold
     /// (`max_queued_records * 1000`) is used for the `is_full` check.
     #[test]
     fn is_full_uses_default_bytes_threshold() {
@@ -6568,7 +8153,7 @@ mod queue_limit_tests {
     }
 
     /// The backpressure thread is unparked when a batch causes the buffered
-    /// byte count to cross `max_queued_bytes`, even when the records count
+    /// byte count to cross `max_queued_size`, even when the records count
     /// remains well below `max_queued_records`.
     #[test]
     fn backpressure_unparked_when_bytes_threshold_crossed() {
@@ -7926,11 +9511,11 @@ fn transaction_rounds(
                     let mut samples = Vec::new();
                     let mut last = None;
                     while !done.load(Ordering::Acquire) {
-                        if let Some(sample) = sample_views(&controller) {
-                            if Some(sample) != last {
-                                samples.push(sample);
-                                last = Some(sample);
-                            }
+                        if let Some(sample) = sample_views(&controller)
+                            && Some(sample) != last
+                        {
+                            samples.push(sample);
+                            last = Some(sample);
                         }
                     }
                     samples
@@ -8089,11 +9674,11 @@ fn transaction_view_consistency(
             let mut samples = Vec::new();
             let mut last = None;
             while !done.load(Ordering::Acquire) {
-                if let Some(sample) = sample_views(&controller) {
-                    if Some(sample) != last {
-                        samples.push(sample);
-                        last = Some(sample);
-                    }
+                if let Some(sample) = sample_views(&controller)
+                    && Some(sample) != last
+                {
+                    samples.push(sample);
+                    last = Some(sample);
                 }
             }
             samples
@@ -8493,5 +10078,131 @@ fn a_reader_is_told_the_step_being_fed_not_the_one_the_outputs_finished() {
          and an answer stamped with their count would go out too early"
     );
 
+    controller.stop().unwrap();
+}
+
+/// Returns a controller for `config` and a probe for input connector
+/// `test_input` with endpoint id 0, which has a status entry but no reader.
+fn controller_with_probe(config: serde_json::Value) -> (Controller, super::InputProbe) {
+    init_test_logger();
+    let controller = Controller::with_test_config(
+        |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], &[None])),
+        &serde_json::from_value(config).unwrap(),
+        Box::new(|_e, _| ()),
+    )
+    .unwrap();
+    let input_config = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": {"name": "datagen", "config": {}},
+    }))
+    .unwrap();
+    controller.inner.status.inputs.write().insert(
+        0,
+        super::stats::InputEndpointStatus::new("test_input", input_config, None, None),
+    );
+    let probe = super::InputProbe {
+        endpoint_id: 0,
+        endpoint_name: "test_input".to_string(),
+        controller: controller.inner.clone(),
+        max_batch_size: 1024,
+        transaction_in_progress: AtomicBool::new(false),
+    };
+    (controller, probe)
+}
+
+/// True if `controller`'s open transaction waits for a connector to commit.
+fn waits_for_connector(controller: &Controller) -> bool {
+    let transaction_info = controller.inner.transaction_info.lock().unwrap();
+    transaction_info
+        .initiators
+        .is_ongoing(transaction_info.is_multihost)
+}
+
+/// A connector that fails, or is disconnected, in the middle of a
+/// transaction can never commit it, so its part ends.  Otherwise the
+/// transaction would stay open forever.  A connector that recovers from an
+/// error keeps its part.
+#[test]
+fn stopped_connector_ends_its_transaction() {
+    let config = json!({"name": "test", "workers": 1, "inputs": {}, "outputs": {}});
+    for stop in ["nonfatal", "fatal", "disconnect"] {
+        let (controller, probe) = controller_with_probe(config.clone());
+        probe.start_transaction(Some("t"));
+        assert!(waits_for_connector(&controller));
+        match stop {
+            "nonfatal" => probe.error(false, anyhow!("retrying"), None),
+            "fatal" => probe.error(true, anyhow!("failed"), None),
+            _ => controller.disconnect_input(&0),
+        }
+        assert_eq!(
+            waits_for_connector(&controller),
+            stop == "nonfatal",
+            "{stop}"
+        );
+        controller.stop().unwrap();
+    }
+}
+
+/// In a multihost pipeline, a host whose part of a transaction that needs
+/// every host fails reports the connector as done, so that the coordinator
+/// does not wait for it forever.
+#[test]
+fn stopped_connector_finishes_all_hosts_transaction() {
+    let (controller, probe) = controller_with_probe(json!({
+        "name": "test",
+        "workers": 1,
+        "inputs": {},
+        "outputs": {},
+        "multihost": {"hosts": 1},
+    }));
+    probe.start_transaction_on_all_hosts(Some("snapshot-0"));
+    let all_hosts_done = || {
+        controller
+            .inner
+            .transaction_info
+            .lock()
+            .unwrap()
+            .sender
+            .borrow()
+            .all_hosts_done
+            .clone()
+    };
+    assert!(all_hosts_done().is_empty());
+    probe.error(true, anyhow!("failed"), None);
+    assert_eq!(
+        all_hosts_done(),
+        std::collections::HashMap::from([("test_input".to_string(), None)])
+    );
+    controller.stop().unwrap();
+}
+
+/// The controller reports a paused input connector that the open transaction
+/// waits for, because the transaction cannot commit until it is started.
+#[test]
+fn paused_connector_holds_transaction() {
+    let (controller, probe) = controller_with_probe(json!({
+        "name": "test",
+        "workers": 1,
+        "inputs": {},
+        "outputs": {},
+    }));
+    let paused = || controller.inner.paused_transaction_connectors();
+    let test_input = std::collections::BTreeSet::from(["test_input".to_string()]);
+
+    // A paused connector outside a transaction holds nothing.
+    controller.inner.status.pause_input_endpoint(&0);
+    assert!(paused().is_empty());
+
+    // A connector in the transaction holds it only while it is paused.
+    probe.start_transaction(Some("t"));
+    assert_eq!(paused(), test_input);
+    controller.inner.status.start_input_endpoint(&0);
+    assert!(paused().is_empty());
+    controller.inner.status.pause_input_endpoint(&0);
+    assert_eq!(paused(), test_input);
+
+    // Once it commits its part, it holds the transaction no longer.
+    probe.commit_transaction();
+    assert!(paused().is_empty());
     controller.stop().unwrap();
 }

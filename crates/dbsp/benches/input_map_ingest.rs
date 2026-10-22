@@ -38,8 +38,8 @@ fn main() -> Result<()> {
                 cache: StorageCacheConfig::default(),
             },
             StorageOptions {
-                min_storage_bytes: None,
-                min_step_storage_bytes: None,
+                min_spill_size: None,
+                min_step_spill_size: None,
                 ..StorageOptions::default()
             },
         )

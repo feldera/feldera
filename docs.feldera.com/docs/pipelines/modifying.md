@@ -95,8 +95,9 @@ and performs the following actions:
    will be populated with data received from input connectors.
 
    * A table is considered modified if types, names or the order of its columns have changed in any way,
-     its primary key constraint has changed, or its `materialized` or `append_only` properties were added
-     or removed.
+     its primary key constraint has changed, its `materialized` or `append_only` properties were added
+     or removed, or, for a table with a primary key and no `LATENESS` column, the program turned
+     `FELDERA_LAZY_UPSERT` on or off.
 
    * A table is NOT considered modified if only its connector definitions have changed.
 
@@ -176,10 +177,10 @@ Concurrent bootstrapping proceeds in two phases:
 
 * **Synchronization**. The pipeline pauses input ingestion just long enough to bring
   the new views up to date with the most recent changes, switches them in, emits the
-  full contents of new and modified views to input connectors, and returns to the
+  full contents of new and modified views to output connectors, and returns to the
   `Running` state. During this phase the pipeline reports `Synchronizing` runtime status.
 
-Concurrent bootstrapping is *mutually exclusive with `silent_bootstrap`**. Starting a
+Concurrent bootstrapping is mutually exclusive with `silent_bootstrap`. Starting a
 pipeline with both `concurrent_bootstrap=true` and `silent_bootstrap=true` is rejected.
 
 Both phases report progress: the `concurrent_bootstrap_phase` and
@@ -309,6 +310,53 @@ All of this functionality is also available via the Python SDK and the `fda` CLI
   Invoking this endpoint transitions the pipeline from the `AwaitingApproval` to `Bootstrapping` state.
   Use `/approve?silent_bootstrap=true` to approve the changes while suppressing
   output connector records produced during bootstrapping.
+
+### Approving reloads of selected tables (Python SDK)
+
+Bootstrapping will reload tables if the tables are modified: it truncates the table and resets its
+input connectors (see [Bootstrapping](#bootstrapping)). In the Python SDK, the
+`reloadable_tables` argument of `Pipeline.start()`, `start_paused()`,
+`start_standby()`, and `restart()` contains a list of tables that bootstrapping may reload.
+The `reloadable_tables` argument requires `bootstrap_policy=BootstrapPolicy.ALLOW` and `wait=True`.
+
+The SDK starts the pipeline with `await_approval`. When the pipeline is in
+the `AwaitingApproval` state, the SDK reads `modified_tables` from the approval
+diff:
+
+| Approval diff | Result |
+|---|---|
+| Each modified table is in `reloadable_tables`, or no table is modified | The SDK approves the bootstrap |
+| A modified table is not in `reloadable_tables` | `TableReloadNotAllowedError` |
+| `program_diff` is `null` (the diff cannot be computed) | `TableReloadNotAllowedError` |
+
+`TableReloadNotAllowedError` is a `RuntimeError`. Its `blocked_tables` attribute
+lists the modified tables that are not in `reloadable_tables`, and its
+`approval_diff` attribute holds the full diff. The pipeline stays in
+`AwaitingApproval`: call `pipeline.approve()` to bootstrap, or
+`pipeline.stop(force=True)` to reject.
+
+```python
+from feldera.rest.errors import TableReloadNotAllowedError
+
+try:
+    pipeline.start(
+        bootstrap_policy=BootstrapPolicy.ALLOW,
+        reloadable_tables=["dim_customers", "dim_products"],
+    )
+except TableReloadNotAllowedError as e:
+    print(f"Bootstrapping would reload: {e.blocked_tables}")
+    pipeline.stop(force=True)
+```
+
+Table names must be supplied exactly as the pipeline reports it in the approval diff.
+The SDK does not apply SQL case rules:
+
+| Table in SQL | Name in `reloadable_tables` |
+|---|---|
+| `CREATE TABLE dim_customers` | `"dim_customers"` |
+| `CREATE TABLE DIM_CUSTOMERS` | `"dim_customers"` (unquoted names are lowercase) |
+| `CREATE TABLE "DimCustomers"` | `"DimCustomers"` (no quotes) |
+| `CREATE TABLE "dim""q"` | `'dim"q'` (`""` is one `"`) |
 
 ### Previewing changes without restarting
 

@@ -29,9 +29,11 @@
 //!
 //! See `config_utils::translate_connect_options` for implementation details.
 
-mod config_utils;
+pub(crate) mod config_utils;
+mod metrics;
+mod retry;
 #[cfg(test)]
-mod test;
+pub(crate) mod test;
 
 use crate::{
     InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint,
@@ -40,13 +42,14 @@ use crate::{
 use anyhow::{Context, Error as AnyError, Result as AnyResult, anyhow};
 use async_nats::{
     self,
-    jetstream::{self, consumer as nats_consumer},
+    jetstream::{self, consumer as nats_consumer, stream::ConsumerCreateStrictErrorKind},
 };
 
 use chrono::Utc;
 use config_utils::{translate_connect_options, translate_consumer_options};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::BufferSize;
+use feldera_adapterlib::metrics::ConnectorMetrics;
 use feldera_adapterlib::transport::{InputCommandReceiver, Resume, Watermark};
 use feldera_types::{
     config::FtModel,
@@ -54,12 +57,14 @@ use feldera_types::{
     transport::nats::{self as cfg, NatsInputConfig},
 };
 use futures::StreamExt;
+use metrics::{NatsInputMetrics, RetryState};
+use retry::RetryPolicy;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::cmp;
 use std::hash::Hasher;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::{
     select,
@@ -67,7 +72,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, debug, info, info_span, trace};
+use tracing::{Instrument, debug, info, info_span, trace, warn};
 use xxhash_rust::xxh3::Xxh3Default;
 
 type NatsConsumerConfig = nats_consumer::pull::OrderedConfig;
@@ -79,13 +84,24 @@ struct StreamContext {
     connection_config: cfg::ConnectOptions,
     stream_name: String,
     inactivity_timeout: Duration,
+    /// Prefix for the names of consumers this connector creates.
+    /// See [`consumer_name_prefix`].
+    consumer_name_prefix: String,
+    metrics: Arc<NatsInputMetrics>,
 }
+
+/// Upper bound on how long teardown waits for the server to acknowledge a
+/// consumer delete before giving up and leaving it to `inactive_threshold`.
+const CONSUMER_DELETE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Shared mutable state for the reader task.
 #[derive(Clone)]
 struct ReaderState {
     next_sequence: Arc<AtomicU64>,
     queue: Arc<InputQueue<u64>>,
+    /// Set when a reader passes a health check, so that its later failure
+    /// counts as a new outage.
+    healthy: Arc<AtomicBool>,
 }
 
 /// Consumer and parser pair for message processing.
@@ -158,14 +174,28 @@ pub struct NatsInputEndpoint {
 
 impl NatsInputEndpoint {
     pub fn new(config: NatsInputConfig) -> Result<Self, AnyError> {
-        if config.inactivity_timeout_secs == 0 {
+        if config.inactivity_timeout() < Duration::from_secs(1) {
             return Err(anyhow!(
-                "Invalid NATS input configuration: inactivity_timeout_secs must be at least 1 second"
+                "Invalid NATS input configuration: `inactivity_timeout` is {}, but it must be at least 1 second; raise it, for example to `30s`",
+                config.inactivity_timeout()
             ));
         }
-        if config.retry_interval_secs == 0 {
+        if config.retry_interval() < Duration::from_secs(1) {
             return Err(anyhow!(
-                "Invalid NATS input configuration: retry_interval_secs must be at least 1 second"
+                "Invalid NATS input configuration: `retry_interval` is {}, but it must be at least 1 second; raise it, for example to `1s`",
+                config.retry_interval()
+            ));
+        }
+        if config.retry_max_interval() < config.retry_interval() {
+            return Err(anyhow!(
+                "Invalid NATS input configuration: `retry_max_interval` is {}, but it must be at least `retry_interval` ({}); raise `retry_max_interval` or lower `retry_interval`",
+                config.retry_max_interval(),
+                config.retry_interval()
+            ));
+        }
+        if config.retry_max_attempts == Some(0) {
+            return Err(anyhow!(
+                "Invalid NATS input configuration: retry_max_attempts must be at least 1 when set"
             ));
         }
         Ok(Self {
@@ -191,18 +221,23 @@ impl TransportInputEndpoint for NatsInputEndpoint {
         let resume_info = Metadata::from_resume_info(resume_info)?;
         info!("Resume info: {:?}", resume_info);
 
+        let metrics = Arc::new(NatsInputMetrics::default());
+        consumer.set_custom_metrics(Arc::clone(&metrics) as Arc<dyn ConnectorMetrics>);
+
         Ok(Box::new(NatsReader::new(
             self.config.clone(),
             resume_info,
             consumer,
             parser,
             &schema.name.name(),
+            metrics,
         )?))
     }
 }
 
 struct NatsReader {
     command_sender: UnboundedSender<InputReaderCommand>,
+    worker: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl NatsReader {
@@ -212,6 +247,7 @@ impl NatsReader {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         table_name: &str,
+        metrics: Arc<NatsInputMetrics>,
     ) -> AnyResult<Self> {
         let span = info_span!(
             "nats_input",
@@ -221,25 +257,32 @@ impl NatsReader {
             // Note: this is consumer_name from config, not the created name with unique suffix.
             consumer_name = config.consumer_config.name.as_deref().unwrap_or(""),
             consumer_description = config.consumer_config.description.as_deref().unwrap_or(""),
+            pipeline = config.consumer_config.metadata.get("pipeline").map(|s| s.as_str()).unwrap_or(""),
             filter_subjects = ?config.consumer_config.filter_subjects,
         );
         let (command_sender, command_receiver) = unbounded_channel();
+        let consumer_name_prefix = consumer_name_prefix(&config.consumer_config, table_name);
 
         let consumer_clone = consumer.clone();
-        TOKIO.spawn(async move {
+        let worker = TOKIO.spawn(async move {
             Self::worker_task(
                 config,
                 resume_info,
                 consumer_clone,
                 parser,
                 command_receiver,
+                consumer_name_prefix,
+                metrics,
             )
             .instrument(span)
             .await
             .unwrap_or_else(|e| consumer.error(true, e, Some("nats-input")));
         });
 
-        Ok(Self { command_sender })
+        Ok(Self {
+            command_sender,
+            worker: Mutex::new(Some(worker)),
+        })
     }
 
     async fn connect_nats(
@@ -287,9 +330,8 @@ impl NatsReader {
         connection_config: &cfg::ConnectOptions,
         stream_name: &str,
     ) -> AnyResult<jetstream::Context> {
-        let init_deadline = Duration::from_secs(
-            connection_config.connection_timeout_secs + connection_config.request_timeout_secs,
-        );
+        let init_deadline = Duration::from(connection_config.connection_timeout())
+            .saturating_add(connection_config.request_timeout().into());
         tokio::time::timeout(init_deadline, async {
             let client = Self::connect_nats(connection_config).await?;
             let js = jetstream::new(client);
@@ -313,11 +355,11 @@ impl NatsReader {
                 .with_context(|| {
                     format!(
                         "NATS initialization failed for stream '{}' at server '{}' \
-                    (connection_timeout={}s, request_timeout={}s)",
+                    (connection_timeout={}, request_timeout={})",
                         stream_ctx.stream_name,
                         stream_ctx.connection_config.server_url,
-                        stream_ctx.connection_config.connection_timeout_secs,
-                        stream_ctx.connection_config.request_timeout_secs,
+                        stream_ctx.connection_config.connection_timeout(),
+                        stream_ctx.connection_config.request_timeout(),
                     )
                 })
                 .map_err(ConnectorError::Retryable)?;
@@ -332,14 +374,15 @@ impl NatsReader {
         let nats_consumer = create_nats_consumer(
             &jetstream,
             nats_consumer_config,
-            &stream_ctx.stream_name,
+            stream_ctx,
             state.next_sequence.load(Ordering::Acquire),
         )
         .await
         .map_err(ConnectorError::Retryable)?;
 
-        spawn_nats_reader(
-            jetstream,
+        let consumer_name = nats_consumer.cached_info().name.clone();
+        match spawn_nats_reader(
+            jetstream.clone(),
             nats_consumer,
             state.clone(),
             stream_ctx.clone(),
@@ -347,7 +390,15 @@ impl NatsReader {
             reader_error_sender,
         )
         .await
-        .map_err(ConnectorError::Retryable)
+        {
+            Ok(canceller) => Ok(canceller),
+            Err(error) => {
+                // The consumer exists on the server but nothing will ever read
+                // from it; remove it now rather than leaving it to expire.
+                delete_nats_consumer(&jetstream, stream_ctx, &consumer_name).await;
+                Err(ConnectorError::Retryable(error))
+            }
+        }
     }
 
     async fn worker_task(
@@ -356,9 +407,16 @@ impl NatsReader {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         command_receiver: UnboundedReceiver<InputReaderCommand>,
+        consumer_name_prefix: String,
+        metrics: Arc<NatsInputMetrics>,
     ) -> Result<(), AnyError> {
         let mut state = ReaderLifecycleState::Paused;
         let mut canceller: Option<Canceller> = None;
+        // Deletes detached by `cancel_and_join` (e.g. on `Pause`): the worker
+        // must join these before it exits, or a consumer delete already
+        // queued at the server can still be in flight after the process
+        // that owns it is gone.
+        let mut pending_deletes: Vec<JoinHandle<()>> = Vec::new();
         let mut next_retry_at: Option<tokio::time::Instant> = None;
         let mut retry_count: u32 = 0;
         let (mut reader_error_sender, mut reader_error_receiver) =
@@ -366,16 +424,23 @@ impl NatsReader {
         let queue = Arc::new(InputQueue::<u64>::new(consumer.clone()));
         let next_sequence = Arc::new(AtomicU64::new(resume_info.sequence_numbers.end));
         let nats_consumer_config = translate_consumer_options(&config.consumer_config);
-        let inactivity_timeout = Duration::from_secs(config.inactivity_timeout_secs);
-        let retry_interval = Duration::from_secs(config.retry_interval_secs);
+        let inactivity_timeout = config.inactivity_timeout().into();
+        let retry_policy = RetryPolicy::new(
+            config.retry_interval().into(),
+            config.retry_max_interval().into(),
+            config.retry_max_attempts,
+        );
         let stream_ctx = StreamContext {
             connection_config: config.connection_config.clone(),
             stream_name: config.stream_name.clone(),
             inactivity_timeout,
+            consumer_name_prefix,
+            metrics: metrics.clone(),
         };
         let live_state = ReaderState {
             next_sequence: next_sequence.clone(),
             queue: queue.clone(),
+            healthy: Arc::new(AtomicBool::new(false)),
         };
 
         let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
@@ -391,6 +456,7 @@ impl NatsReader {
             let first_message_sequence = metadata.sequence_numbers.start;
             // Since range is exclusive, last message to replay is (end - 1).
             let last_message_sequence = metadata.sequence_numbers.end - 1;
+            let mut replay_failures: u32 = 0;
 
             loop {
                 let replay_result: Result<(Xxh3Default, BufferSize), ConnectorError> = async {
@@ -411,13 +477,14 @@ impl NatsReader {
                     let nats_consumer = create_nats_consumer(
                         &jetstream,
                         &nats_consumer_config,
-                        &stream_ctx.stream_name,
+                        &stream_ctx,
                         first_message_sequence,
                     )
                     .await
                     .map_err(ConnectorError::Retryable)?;
+                    let consumer_name = nats_consumer.cached_info().name.clone();
 
-                    consume_nats_messages_until(
+                    let result = consume_nats_messages_until(
                         &jetstream,
                         nats_consumer,
                         last_message_sequence,
@@ -427,8 +494,13 @@ impl NatsReader {
                             parser: parser.fork(),
                         },
                     )
-                    .await
-                    .map_err(|error| {
+                    .await;
+
+                    // A replay consumer is single-use: whether the replay
+                    // succeeded or not, the next attempt creates a fresh one.
+                    delete_nats_consumer(&jetstream, &stream_ctx, &consumer_name).await;
+
+                    result.map_err(|error| {
                         error.with_context(format!(
                             "While attempting to replay sequences {first_message_sequence}..{last_message_sequence}"
                         ))
@@ -440,35 +512,67 @@ impl NatsReader {
                     Ok((hasher, buffer_size)) => {
                         consumer.replayed(buffer_size, hasher.finish());
                         next_sequence.store(last_message_sequence + 1, Ordering::Release);
+                        metrics.set_retry_state(RetryState::Healthy);
                         break;
                     }
                     Err(ConnectorError::Retryable(error)) => {
+                        replay_failures += 1;
+                        if retry_policy.exhausted(replay_failures) {
+                            metrics.set_retry_state(RetryState::Stopped);
+                            consumer.error(
+                                true,
+                                retry_exhausted_error(
+                                    &retry_policy,
+                                    replay_failures,
+                                    "replay",
+                                    error,
+                                ),
+                                Some("nats-input"),
+                            );
+                            return Ok(());
+                        }
+                        let retry_delay = retry_policy.delay(replay_failures);
+                        metrics.set_retry_state(RetryState::Retrying);
+                        metrics.retry_attempt(replay_failures);
                         consumer.error(
                             false,
                             anyhow!(
-                                "NATS replay entered ERROR state, retrying in {:?}: {error:#}",
-                                retry_interval
+                                "NATS replay entered ERROR state (failure #{replay_failures}), retrying in {retry_delay:?}: {error:#}"
                             ),
                             Some("nats-input"),
                         );
-                        if let Some(command) = command_receiver.try_recv()? {
-                            match command {
-                                InputReaderCommand::Disconnect => return Ok(()),
-                                other => {
-                                    // Buffer the command (Replay or control) and
-                                    // keep retrying the current replay range. An
-                                    // acknowledged replay step must run to
-                                    // completion — honoring a control command here
-                                    // would abandon the step before `replayed()`,
-                                    // leaving replay/checkpoint state divergent.
-                                    command_receiver.put_back(other);
+                        // Wait out the backoff, but notice a Disconnect
+                        // during it instead of only checking once up front:
+                        // the wait can now reach retry_max_interval
+                        // (300s by default), long enough that waiting it out
+                        // unconditionally would make the connector
+                        // unresponsive to a stop request for most of that
+                        // time. Any other command is buffered and still
+                        // waits out the full delay: an acknowledged replay
+                        // step must run to completion, and honoring a
+                        // control command here would abandon the step before
+                        // `replayed()`, leaving replay/checkpoint state
+                        // divergent. Keep reading past buffered commands, so
+                        // that a Disconnect behind them is still seen.
+                        let deadline = tokio::time::Instant::now() + retry_delay;
+                        let mut pending_commands = Vec::new();
+                        loop {
+                            select! {
+                                _ = tokio::time::sleep_until(deadline) => break,
+                                result = command_receiver.recv() => {
+                                    match result? {
+                                        InputReaderCommand::Disconnect => return Ok(()),
+                                        other => pending_commands.push(other),
+                                    }
                                 }
                             }
                         }
-
-                        tokio::time::sleep(retry_interval).await;
+                        for command in pending_commands.into_iter().rev() {
+                            command_receiver.put_back(command);
+                        }
                     }
                     Err(ConnectorError::Fatal(error)) => {
+                        metrics.set_retry_state(RetryState::Stopped);
                         consumer.error(true, error, Some("nats-input"));
                         return Ok(());
                     }
@@ -476,7 +580,12 @@ impl NatsReader {
             }
         }
 
-        loop {
+        // All command-loop exits must join reader and delete work, including
+        // errors and a dropped command sender, not just explicit Disconnect.
+        let result = loop {
+            // Pause/retry cleanup runs concurrently with command handling. Do
+            // not retain completed tasks for the lifetime of a long-lived input.
+            pending_deletes.retain(|handle| !handle.is_finished());
             let command = match state {
                 ReaderLifecycleState::Running => {
                     select! {
@@ -484,21 +593,48 @@ impl NatsReader {
                             match maybe_error {
                                 Some(error) => {
                                     if let Some(canceller) = canceller.take() {
-                                        canceller.cancel_and_join().await;
+                                        pending_deletes.push(canceller.cancel_and_join().await);
                                     }
                                     // Drain any additional errors queued before cancellation
                                     // to prevent stale errors from affecting the next reader.
                                     while reader_error_receiver.try_recv().is_ok() {}
                                     match error.with_context("NATS reader task failed") {
                                         ConnectorError::Retryable(error) => {
-                                            state = ReaderLifecycleState::ErrorRetrying;
-                                            retry_count = 1;
-                                            next_retry_at = Some(tokio::time::Instant::now() + retry_interval);
-                                            consumer.error(false, anyhow!("NATS input entered ERROR state, will retry in {retry_interval:?}: {error:#}"), Some("nats-input"));
+                                            // A reader that started (its consumer
+                                            // create succeeded) and then failed
+                                            // right away is still a failure to
+                                            // deliver, not a recovery: keep
+                                            // counting consecutive failures across
+                                            // these cycles rather than resetting to
+                                            // 1, and check retry_max_attempts here
+                                            // too, or a cluster that always accepts
+                                            // the create but never lets a reader
+                                            // succeed can retry forever regardless
+                                            // of the configured limit. A
+                                            // reader that passed a health check
+                                            // did recover, so its failure
+                                            // starts a new count.
+                                            if live_state.healthy.swap(false, Ordering::AcqRel) {
+                                                retry_count = 0;
+                                            }
+                                            retry_count += 1;
+                                            if retry_policy.exhausted(retry_count) {
+                                                state = ReaderLifecycleState::Stopped;
+                                                next_retry_at = None;
+                                                metrics.set_retry_state(RetryState::Stopped);
+                                                consumer.error(true, retry_exhausted_error(&retry_policy, retry_count, "input", error), Some("nats-input"));
+                                            } else {
+                                                state = ReaderLifecycleState::ErrorRetrying;
+                                                let retry_delay = retry_policy.delay(retry_count);
+                                                next_retry_at = Some(tokio::time::Instant::now() + retry_delay);
+                                                metrics.set_retry_state(RetryState::Retrying);
+                                                consumer.error(false, anyhow!("NATS input entered ERROR state, will retry in {retry_delay:?}: {error:#}"), Some("nats-input"));
+                                            }
                                         }
                                         ConnectorError::Fatal(error) => {
                                             state = ReaderLifecycleState::Stopped;
                                             next_retry_at = None;
+                                            metrics.set_retry_state(RetryState::Stopped);
                                             consumer.error(true, error, Some("nats-input"));
                                         }
                                     }
@@ -508,17 +644,29 @@ impl NatsReader {
                                     // dropped the sender without sending an error,
                                     // e.g. due to a panic). Treat as retryable.
                                     if let Some(canceller) = canceller.take() {
-                                        canceller.cancel_and_join().await;
+                                        pending_deletes.push(canceller.cancel_and_join().await);
                                     }
-                                    state = ReaderLifecycleState::ErrorRetrying;
-                                    retry_count = 1;
-                                    next_retry_at = Some(tokio::time::Instant::now() + retry_interval);
-                                    consumer.error(false, anyhow!("NATS reader task exited unexpectedly without reporting an error, will retry in {retry_interval:?}"), Some("nats-input"));
+                                    retry_count += 1;
+                                    if retry_policy.exhausted(retry_count) {
+                                        state = ReaderLifecycleState::Stopped;
+                                        next_retry_at = None;
+                                        metrics.set_retry_state(RetryState::Stopped);
+                                        consumer.error(true, retry_exhausted_error(&retry_policy, retry_count, "input", anyhow!("NATS reader task exited unexpectedly without reporting an error")), Some("nats-input"));
+                                    } else {
+                                        state = ReaderLifecycleState::ErrorRetrying;
+                                        let retry_delay = retry_policy.delay(retry_count);
+                                        next_retry_at = Some(tokio::time::Instant::now() + retry_delay);
+                                        metrics.set_retry_state(RetryState::Retrying);
+                                        consumer.error(false, anyhow!("NATS reader task exited unexpectedly without reporting an error, will retry in {retry_delay:?}"), Some("nats-input"));
+                                    }
                                 }
                             }
                             continue;
                         }
-                        command = command_receiver.recv() => command?,
+                        command = command_receiver.recv() => match command {
+                            Ok(command) => command,
+                            Err(error) => break Err(error.into()),
+                        },
                     }
                 }
                 ReaderLifecycleState::ErrorRetrying => {
@@ -526,9 +674,13 @@ impl NatsReader {
                         maybe_error = reader_error_receiver.recv() => {
                             match maybe_error {
                                 Some(ConnectorError::Retryable(_)) => {
-                                    next_retry_at = Some(tokio::time::Instant::now() + retry_interval);
+                                    // A stale error from the reader that was
+                                    // already cancelled; keep the current
+                                    // backoff step instead of shortening it.
+                                    next_retry_at = Some(tokio::time::Instant::now() + retry_policy.delay(retry_count));
                                 }
                                 Some(ConnectorError::Fatal(error)) => {
+                                    metrics.set_retry_state(RetryState::Stopped);
                                     consumer.error(true, error, Some("nats-input"));
                                     state = ReaderLifecycleState::Stopped;
                                     next_retry_at = None;
@@ -546,6 +698,7 @@ impl NatsReader {
                             continue;
                         }
                         _ = tokio::time::sleep_until(next_retry_at.expect("retry deadline should be set")) => {
+                            metrics.retry_attempt(retry_count);
                             match Self::try_start_stream_reader(
                                 &nats_consumer_config,
                                 &stream_ctx,
@@ -563,19 +716,40 @@ impl NatsReader {
                                     while reader_error_receiver.try_recv().is_ok() {}
                                     canceller = Some(new_canceller);
                                     state = ReaderLifecycleState::Running;
-                                    retry_count = 0;
+                                    // retry_count is deliberately not reset here: a
+                                    // successful create is not yet a recovery if
+                                    // the new reader immediately fails again (see
+                                    // the Running-state error handling above).
+                                    // Real forward progress (a non-empty Queue
+                                    // flush or a passed health check) resets
+                                    // it instead.
                                     next_retry_at = None;
+                                    metrics.set_retry_state(RetryState::Healthy);
                                 }
                                 Err(ConnectorError::Retryable(error)) => {
+                                    let failed_attempt = retry_count;
                                     retry_count += 1;
-                                    consumer.error(
-                                        false,
-                                        anyhow!("NATS input retry #{retry_count} failed, next attempt in {retry_interval:?}: {}", error.root_cause()),
-                                        Some("nats-input"),
-                                    );
-                                    next_retry_at = Some(tokio::time::Instant::now() + retry_interval);
+                                    if retry_policy.exhausted(retry_count) {
+                                        state = ReaderLifecycleState::Stopped;
+                                        next_retry_at = None;
+                                        metrics.set_retry_state(RetryState::Stopped);
+                                        consumer.error(
+                                            true,
+                                            retry_exhausted_error(&retry_policy, failed_attempt, "input", error),
+                                            Some("nats-input"),
+                                        );
+                                    } else {
+                                        let retry_delay = retry_policy.delay(retry_count);
+                                        consumer.error(
+                                            false,
+                                            anyhow!("NATS input retry #{failed_attempt} failed, next attempt in {retry_delay:?}: {}", error.root_cause()),
+                                            Some("nats-input"),
+                                        );
+                                        next_retry_at = Some(tokio::time::Instant::now() + retry_delay);
+                                    }
                                 }
                                 Err(ConnectorError::Fatal(error)) => {
+                                    metrics.set_retry_state(RetryState::Stopped);
                                     consumer.error(
                                         true,
                                         anyhow!("NATS input encountered a non-retryable startup error: {error:#}"),
@@ -587,11 +761,17 @@ impl NatsReader {
                             }
                             continue;
                         }
-                        command = command_receiver.recv() => command?,
+                        command = command_receiver.recv() => match command {
+                            Ok(command) => command,
+                            Err(error) => break Err(error.into()),
+                        },
                     }
                 }
-                ReaderLifecycleState::Paused => command_receiver.recv().await?,
-                ReaderLifecycleState::Stopped => break,
+                ReaderLifecycleState::Paused => match command_receiver.recv().await {
+                    Ok(command) => command,
+                    Err(error) => break Err(error.into()),
+                },
+                ReaderLifecycleState::Stopped => break Ok(()),
             };
 
             match command {
@@ -613,12 +793,21 @@ impl NatsReader {
                             "Queued {:?} records ({sequence_number_range:?})",
                             buffer_size
                         );
+                        // Real forward progress: messages actually reached
+                        // the circuit, so whatever got the connector here
+                        // worked. This is what clears the breaker's memory
+                        // of consecutive failures, not merely creating a
+                        // consumer (see the Running-state error handling).
+                        retry_count = 0;
                     } else {
                         trace!("Queued 0 records ({sequence_number_range:?})");
                     }
-                    let metadata_json = serde_json::to_value(&Metadata {
+                    let metadata_json = match serde_json::to_value(&Metadata {
                         sequence_numbers: sequence_number_range,
-                    })?;
+                    }) {
+                        Ok(metadata) => metadata,
+                        Err(error) => break Err(error.into()),
+                    };
                     let timestamp = batches.last().map(|(ts, _)| *ts).unwrap_or_else(Utc::now);
                     let hash = hasher.map(|h| h.finish()).unwrap_or(0);
                     let resume = Resume::Replay {
@@ -635,7 +824,7 @@ impl NatsReader {
                 }
                 InputReaderCommand::Pause => {
                     if let Some(canceller) = canceller.take() {
-                        canceller.cancel_and_join().await;
+                        pending_deletes.push(canceller.cancel_and_join().await);
                     }
                     // Drain errors sent by the reader before/during cancellation
                     // so they don't leak into the next Extend cycle.
@@ -643,6 +832,7 @@ impl NatsReader {
                     state = ReaderLifecycleState::Paused;
                     retry_count = 0;
                     next_retry_at = None;
+                    metrics.set_retry_state(RetryState::Healthy);
                 }
                 InputReaderCommand::Extend => {
                     info!("Extend from {:?}", next_sequence.load(Ordering::Acquire));
@@ -666,17 +856,40 @@ impl NatsReader {
                     {
                         Ok(new_canceller) => {
                             state = ReaderLifecycleState::Running;
-                            retry_count = 0;
+                            // Not reset here, for the same reason as the
+                            // ErrorRetrying case above: a create succeeding is
+                            // not yet a recovery. Pause and real forward
+                            // progress are what clear the breaker's memory.
                             canceller = Some(new_canceller);
                             next_retry_at = None;
+                            metrics.set_retry_state(RetryState::Healthy);
                         }
                         Err(ConnectorError::Retryable(error)) => {
-                            state = ReaderLifecycleState::ErrorRetrying;
-                            retry_count = 1;
-                            next_retry_at = Some(tokio::time::Instant::now() + retry_interval);
-                            consumer.error(false, anyhow!("NATS input entered ERROR state, will retry in {retry_interval:?}: {error:#}"), Some("nats-input"));
+                            retry_count += 1;
+                            if retry_policy.exhausted(retry_count) {
+                                state = ReaderLifecycleState::Stopped;
+                                next_retry_at = None;
+                                metrics.set_retry_state(RetryState::Stopped);
+                                consumer.error(
+                                    true,
+                                    retry_exhausted_error(
+                                        &retry_policy,
+                                        retry_count,
+                                        "input",
+                                        error,
+                                    ),
+                                    Some("nats-input"),
+                                );
+                            } else {
+                                state = ReaderLifecycleState::ErrorRetrying;
+                                let retry_delay = retry_policy.delay(retry_count);
+                                next_retry_at = Some(tokio::time::Instant::now() + retry_delay);
+                                metrics.set_retry_state(RetryState::Retrying);
+                                consumer.error(false, anyhow!("NATS input entered ERROR state, will retry in {retry_delay:?}: {error:#}"), Some("nats-input"));
+                            }
                         }
                         Err(ConnectorError::Fatal(error)) => {
+                            metrics.set_retry_state(RetryState::Stopped);
                             consumer.error(
                                 true,
                                 anyhow!("NATS input encountered a non-retryable startup error: {error:#}"),
@@ -690,23 +903,86 @@ impl NatsReader {
                 InputReaderCommand::Disconnect => {
                     state = ReaderLifecycleState::Stopped;
                     next_retry_at = None;
+                    metrics.set_retry_state(RetryState::Healthy);
                 }
             }
-        }
+        };
         if let Some(canceller) = canceller.take() {
-            canceller.cancel_and_join().await;
+            canceller.cancel_join_and_delete().await;
         }
-        Ok(())
+        // Join deletes detached by an earlier Pause/retry cycle too: the
+        // worker must not exit, and so must not close the reader's command
+        // channel, while one of its own deletes is still in flight.
+        for pending_delete in pending_deletes {
+            let _ = pending_delete.await;
+        }
+        result
     }
+}
+
+/// Builds the prefix for the names of the consumers a connector creates.
+///
+/// Uses the configured consumer name when present, otherwise the table name.
+/// Every consumer gets this prefix plus a unique suffix (see
+/// [`create_nats_consumer`]), so consumers are always named by us rather than
+/// by the server. Server-assigned names are opaque, which makes it impossible
+/// to attribute a consumer to a pipeline from the NATS side and, worse, keeps
+/// the ordered consumer's self-recreation from ever deleting the consumer it
+/// replaces (it deletes by the client-side name, which then never matches).
+fn consumer_name_prefix(consumer_config: &cfg::ConsumerConfig, table_name: &str) -> String {
+    let base = consumer_config
+        .name
+        .as_deref()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(table_name);
+    sanitize_consumer_name(base)
+}
+
+/// Replaces characters that JetStream rejects in consumer names.
+///
+/// JetStream forbids whitespace, `.`, `*`, `>`, `/`, and `\`. Feldera table
+/// names may be quoted identifiers containing any of these, so anything
+/// outside `[A-Za-z0-9_-]` is mapped to `_`. An input with no usable
+/// characters yields `feldera`.
+fn sanitize_consumer_name(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if sanitized.trim_matches('_').is_empty() {
+        "feldera".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn retry_exhausted_error(
+    retry_policy: &RetryPolicy,
+    failures: u32,
+    context: &str,
+    last_error: AnyError,
+) -> AnyError {
+    anyhow!(
+        "NATS {context} gave up after {failures} consecutive failed attempts (retry_max_attempts={}); last error: {:#}",
+        retry_policy.max_attempts().unwrap_or(0),
+        last_error,
+    )
 }
 
 async fn create_nats_consumer(
     jetstream: &jetstream::Context,
     consumer_config: &NatsConsumerConfig,
-    stream_name: &str,
+    stream_ctx: &StreamContext,
     message_start_sequence: u64,
 ) -> AnyResult<NatsConsumer> {
     let mut consumer_config = consumer_config.clone();
+    let stream_name = stream_ctx.stream_name.as_str();
 
     // For 0, use the deliver policy configured by the user.
     // For >0, override with ByStartSequence to resume from a checkpoint position.
@@ -716,27 +992,144 @@ async fn create_nats_consumer(
         };
     }
 
-    // Add a unique suffix to named consumers.
-    // If consumer is unnamed, NATS automatically generates a random name.
-    //
-    // This fixes "consumer already exists" errors that occurred with rapid
-    // pipeline restarts/replays before the previous consumer expires (inactive_threshold).
-    consumer_config.name = consumer_config
-        .name
-        .map(|n| format!("{n}_{}", uuid::Uuid::now_v7()));
+    // Every consumer gets a unique name: the connector's prefix plus a
+    // time-ordered UUID. The unique suffix avoids "consumer already exists"
+    // errors on rapid restarts/replays before the previous consumer expires
+    // (inactive_threshold); the prefix keeps the consumer attributable to its
+    // connector from the NATS side.
+    let consumer_name = format!(
+        "{}_{}",
+        stream_ctx.consumer_name_prefix,
+        uuid::Uuid::now_v7()
+    );
+    consumer_config.name = Some(consumer_name.clone());
 
-    jetstream
+    let create_result = jetstream
         .create_consumer_strict_on_stream(consumer_config.clone(), stream_name)
-        .await
-        .with_context(|| {
-            format!(
-                "Failed to create consumer on stream '{}' (start_sequence={}, deliver_policy={:?}, filter_subjects={:?})",
-                stream_name,
-                message_start_sequence,
-                consumer_config.deliver_policy,
-                consumer_config.filter_subjects,
+        .await;
+    if let Err(error) = &create_result
+        && create_may_have_succeeded(&error.kind())
+    {
+        // On an overloaded cluster, consumer creation can take minutes and
+        // still succeed long after the client gave up, leaving a consumer
+        // that nobody reads but that scans the stream to compute its pending
+        // count. The server may have created it, so count it as created
+        // before cleaning it up, or consumers_deleted_total runs permanently
+        // ahead of consumers_created_total.
+        stream_ctx.metrics.consumer_created();
+        delete_nats_consumer(jetstream, stream_ctx, &consumer_name).await;
+        clean_up_delayed_create(jetstream, stream_ctx, &consumer_name);
+    }
+    let consumer = create_result.with_context(|| {
+        format!(
+            "Failed to create consumer '{consumer_name}' on stream '{stream_name}' \
+             (start_sequence={message_start_sequence}, deliver_policy={:?}, filter_subjects={:?})",
+            consumer_config.deliver_policy, consumer_config.filter_subjects,
+        )
+    })?;
+    stream_ctx.metrics.consumer_created();
+    debug!(
+        "Created consumer '{}' on stream '{stream_name}' (start_sequence={message_start_sequence})",
+        consumer.cached_info().name
+    );
+    Ok(consumer)
+}
+
+/// Whether the server may have created the consumer despite the error.
+///
+/// A timeout or a failed request leaves the outcome unknown. `Other` means
+/// the server accepted the create but the client could not interpret the
+/// reply, so the consumer exists. The remaining kinds are server rejections.
+fn create_may_have_succeeded(kind: &ConsumerCreateStrictErrorKind) -> bool {
+    matches!(
+        kind,
+        ConsumerCreateStrictErrorKind::TimedOut
+            | ConsumerCreateStrictErrorKind::Request
+            | ConsumerCreateStrictErrorKind::Other
+    )
+}
+
+/// Best-effort deletion of a consumer this connector created.
+///
+/// Ephemeral consumers expire on their own after the server's
+/// `inactive_threshold`, but on a struggling cluster that cleanup lags far
+/// behind, and every consumer the connector abandons adds to the load that
+/// made it abandon the consumer in the first place. Deleting explicitly keeps
+/// the server-side consumer count equal to the number of live readers.
+///
+/// Failure is logged at `warn!` and counted in
+/// `input_connector_nats_consumer_delete_failures_total`, not propagated: the
+/// caller is already tearing down or retrying, and the consumer will still
+/// expire eventually. The metric exists so a cluster that is failing deletes
+/// under load is visible without a log search.
+async fn delete_nats_consumer(
+    jetstream: &jetstream::Context,
+    stream_ctx: &StreamContext,
+    consumer_name: &str,
+) {
+    let stream_name = stream_ctx.stream_name.as_str();
+    match tokio::time::timeout(
+        CONSUMER_DELETE_TIMEOUT,
+        jetstream.delete_consumer_from_stream(consumer_name, stream_name),
+    )
+    .await
+    {
+        Ok(Ok(_)) => {
+            stream_ctx.metrics.consumer_deleted();
+            debug!("Deleted consumer '{consumer_name}' on stream '{stream_name}'");
+        }
+        Ok(Err(error)) => {
+            stream_ctx.metrics.consumer_delete_failed();
+            warn!(
+                "Failed to delete consumer '{consumer_name}' on stream '{stream_name}', it will expire on its own: {error}"
+            );
+        }
+        Err(_) => {
+            stream_ctx.metrics.consumer_delete_failed();
+            warn!(
+                "Timed out after {CONSUMER_DELETE_TIMEOUT:?} deleting consumer '{consumer_name}' on stream '{stream_name}', it will expire on its own"
+            );
+        }
+    }
+}
+
+/// Grace period before re-checking whether a consumer we just deleted has
+/// reappeared.
+const DELAYED_CREATE_RECHECK_DELAY: Duration = Duration::from_secs(2);
+
+/// Catches a create that a JetStream meta-leader change applies after a
+/// delete meant to clean it up, undoing that delete.
+///
+/// Deleting after a create assumes the two requests land on the server in
+/// that order. They usually do, but a meta-leader change between them can
+/// apply the create after the delete, leaving an orphan that nobody will
+/// ever read and that scans the stream on the server's behalf. A delete
+/// sent immediately after would race the same reordering, so this instead
+/// waits out a grace period, then deletes the consumer again if it exists.
+///
+/// Spawned rather than awaited: the caller (a create path, or a pause
+/// tearing down a reader) should not block on this best-effort cleanup.
+fn clean_up_delayed_create(
+    jetstream: &jetstream::Context,
+    stream_ctx: &StreamContext,
+    consumer_name: &str,
+) {
+    let jetstream = jetstream.clone();
+    let stream_ctx = stream_ctx.clone();
+    let consumer_name = consumer_name.to_string();
+    tokio::spawn(async move {
+        tokio::time::sleep(DELAYED_CREATE_RECHECK_DELAY).await;
+        let reappeared = jetstream
+            .get_consumer_from_stream::<nats_consumer::Config, _, _>(
+                &consumer_name,
+                &stream_ctx.stream_name,
             )
-        })
+            .await
+            .is_ok();
+        if reappeared {
+            delete_nats_consumer(&jetstream, &stream_ctx, &consumer_name).await;
+        }
+    });
 }
 
 /// Runs a health check after an inactivity timeout fires.
@@ -875,6 +1268,9 @@ async fn spawn_nats_reader(
         consumer,
         mut parser,
     } = io;
+    let consumer_name = nats_consumer.cached_info().name.clone();
+    let teardown_ctx = stream_ctx.clone();
+    let teardown_jetstream = jetstream.clone();
     let mut nats_messages = nats_consumer.messages().await?;
 
     let cancel_token = CancellationToken::new();
@@ -898,6 +1294,7 @@ async fn spawn_nats_reader(
                                     let _ = reader_error_sender.send(ConnectorError::Retryable(error));
                                     return;
                                 }
+                                state.healthy.store(true, Ordering::Release);
                             }
                             Ok(None) => {
                                 let _ = reader_error_sender.send(ConnectorError::Retryable(anyhow!("Unexpected end of NATS stream")));
@@ -915,6 +1312,21 @@ async fn spawn_nats_reader(
                                         continue;
                                     }
                                 };
+                                // The ordered consumer can recreate itself
+                                // with DeliverPolicy::All on a detected gap
+                                // or lost heartbeat if it has not yet
+                                // delivered a message (e.g. its consumer was
+                                // deleted externally before anything arrived
+                                // at a checkpointed, already-positioned
+                                // start). That rescans the whole stream from
+                                // the beginning, redelivering messages we
+                                // have already processed. Skip anything at or
+                                // behind our own tracked position instead of
+                                // re-ingesting it.
+                                if info.stream_sequence < state.next_sequence.load(Ordering::Acquire) {
+                                    trace!("Skipping already-processed message #{} (redelivered)", info.stream_sequence);
+                                    continue;
+                                }
                                 trace!("Got message #{}", info.stream_sequence);
                                 // Store the checkpoint position (the next sequence).
                                 state.next_sequence.store(info.stream_sequence + 1, Ordering::Release);
@@ -931,6 +1343,9 @@ async fn spawn_nats_reader(
     Ok(Canceller {
         cancel_token,
         join_handle,
+        jetstream: teardown_jetstream,
+        stream_ctx: teardown_ctx,
+        consumer_name,
     })
 }
 
@@ -1070,16 +1485,56 @@ async fn validate_sequence_bounds(
     Ok(())
 }
 
-/// Used to instruct a task to shut down, and wait for it to end.
+/// Used to instruct a reader task to shut down, wait for it to end, and
+/// remove the JetStream consumer it was reading from.
 struct Canceller {
     cancel_token: CancellationToken,
     join_handle: JoinHandle<()>,
+    jetstream: jetstream::Context,
+    stream_ctx: StreamContext,
+    consumer_name: String,
 }
 
 impl Canceller {
-    async fn cancel_and_join(self) {
+    /// Cancels the reader task and waits for it to stop. Bounded by actual
+    /// task shutdown, not by anything server-side: the consumer delete runs
+    /// in the background (see below) so a slow server cannot stall whoever
+    /// is awaiting this, such as the worker's command loop after a `Pause`.
+    ///
+    /// The caller must hold onto the returned handle and join it before the
+    /// worker task exits: the delete it spawned still has to reach the
+    /// server, and nothing else is tracking it once it is detached here.
+    async fn cancel_and_join(self) -> JoinHandle<()> {
+        tokio::spawn(self.cancel_and_join_reader().await)
+    }
+
+    /// Like [Self::cancel_and_join], but also waits for the consumer delete,
+    /// which is bounded by `CONSUMER_DELETE_TIMEOUT`. Used when the worker
+    /// exits, so that no consumer stays on the server after a disconnect.
+    async fn cancel_join_and_delete(self) {
+        self.cancel_and_join_reader().await.await;
+    }
+
+    /// Cancels the reader task, waits for it to stop, and returns the cleanup
+    /// of its consumer.
+    async fn cancel_and_join_reader(self) -> impl Future<Output = ()> + Send + 'static {
         self.cancel_token.cancel();
         let _ = self.join_handle.await;
+        // The reader task is gone, but the client library may have already
+        // sent its own recreate of this consumer (on a detected gap or lost
+        // heartbeat) before cancellation reached it. That recreate can still
+        // land after our delete below, the same reordering
+        // `clean_up_delayed_create` exists for, so check for it too.
+        let Canceller {
+            jetstream,
+            stream_ctx,
+            consumer_name,
+            ..
+        } = self;
+        async move {
+            delete_nats_consumer(&jetstream, &stream_ctx, &consumer_name).await;
+            clean_up_delayed_create(&jetstream, &stream_ctx, &consumer_name);
+        }
     }
 }
 
@@ -1094,5 +1549,109 @@ impl InputReader for NatsReader {
 
     fn is_closed(&self) -> bool {
         self.command_sender.is_closed()
+    }
+
+    fn take_completion(&self) -> Option<futures::future::BoxFuture<'static, ()>> {
+        let worker = self.worker.lock().unwrap().take()?;
+        Some(Box::pin(async move {
+            if let Err(error) = worker.await {
+                warn!("NATS input worker failed during shutdown: {error}");
+            }
+        }))
+    }
+}
+
+#[cfg(test)]
+mod naming_tests {
+    use super::{consumer_name_prefix, sanitize_consumer_name};
+    use feldera_types::transport::nats as cfg;
+    use proptest::prelude::*;
+
+    fn consumer_config(name: Option<&str>) -> cfg::ConsumerConfig {
+        serde_json::from_value(serde_json::json!({
+            "name": name,
+            "deliver_policy": "All",
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn sanitize_keeps_valid_names_unchanged() {
+        assert_eq!(sanitize_consumer_name("orders"), "orders");
+        assert_eq!(sanitize_consumer_name("Orders_v1-a"), "Orders_v1-a");
+    }
+
+    #[test]
+    fn sanitize_replaces_characters_jetstream_rejects() {
+        assert_eq!(sanitize_consumer_name("a.b*c>d/e\\f g"), "a_b_c_d_e_f_g");
+        assert_eq!(sanitize_consumer_name("\"Quoted Table\""), "_Quoted_Table_");
+        assert_eq!(sanitize_consumer_name("tåble"), "t_ble");
+    }
+
+    #[test]
+    fn sanitize_falls_back_when_nothing_usable_remains() {
+        assert_eq!(sanitize_consumer_name(""), "feldera");
+        assert_eq!(sanitize_consumer_name("..."), "feldera");
+        assert_eq!(sanitize_consumer_name("___"), "feldera");
+    }
+
+    #[test]
+    fn prefix_prefers_configured_name_over_table_name() {
+        assert_eq!(
+            consumer_name_prefix(&consumer_config(Some("my.consumer")), "orders"),
+            "my_consumer"
+        );
+    }
+
+    #[test]
+    fn prefix_uses_table_name_when_name_is_absent_or_empty() {
+        assert_eq!(
+            consumer_name_prefix(&consumer_config(None), "orders"),
+            "orders"
+        );
+        assert_eq!(
+            consumer_name_prefix(&consumer_config(Some("")), "orders"),
+            "orders"
+        );
+        assert_eq!(consumer_name_prefix(&consumer_config(None), ""), "feldera");
+    }
+
+    proptest! {
+        /// Whatever the input, the result is a non-empty name made only of
+        /// characters JetStream accepts, and valid names pass through as-is.
+        #[test]
+        fn sanitized_names_are_always_valid(name in any::<String>()) {
+            let sanitized = sanitize_consumer_name(&name);
+            prop_assert!(!sanitized.is_empty());
+            prop_assert!(sanitized
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'));
+            prop_assert_eq!(sanitize_consumer_name(&sanitized), sanitized.clone());
+        }
+
+        #[test]
+        fn valid_names_are_unchanged(name in "[A-Za-z0-9-][A-Za-z0-9_-]{0,31}") {
+            prop_assert_eq!(sanitize_consumer_name(&name), name);
+        }
+    }
+}
+
+#[cfg(test)]
+mod create_error_tests {
+    use super::create_may_have_succeeded;
+    use async_nats::jetstream::stream::ConsumerCreateStrictErrorKind as Kind;
+
+    #[test]
+    fn unanswered_or_misread_creates_may_have_succeeded() {
+        assert!(create_may_have_succeeded(&Kind::TimedOut));
+        assert!(create_may_have_succeeded(&Kind::Request));
+        assert!(create_may_have_succeeded(&Kind::Other));
+    }
+
+    #[test]
+    fn server_rejections_did_not_create_a_consumer() {
+        assert!(!create_may_have_succeeded(&Kind::AlreadyExists));
+        assert!(!create_may_have_succeeded(&Kind::InvalidName));
+        assert!(!create_may_have_succeeded(&Kind::InvalidConsumerType));
     }
 }

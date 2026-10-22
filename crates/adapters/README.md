@@ -32,7 +32,7 @@ The test code has the following dependencies:
 
 - `NATS`:
 
-  The tests for the NATS input connector expect the binary `nats-server` to be available.
+  The tests for the NATS input and output connectors expect the binary `nats-server` to be available.
 
   To install on Debian or Ubuntu:
 
@@ -137,6 +137,7 @@ where any string key is valid and should not be reported as an error.
 | `file_output`        | `FileOutputConfig`       |
 | `http_output`        | `HttpOutputConfig`       |
 | `kafka_output`       | `KafkaOutputConfig`      |
+| `nats_output`        | `NatsOutputConfig`       |
 | `postgres_output`    | `PostgresWriterConfig`   |
 | `redis_output`       | `RedisOutputConfig`      |
 | `s2_output`          | `S2OutputConfig`         |

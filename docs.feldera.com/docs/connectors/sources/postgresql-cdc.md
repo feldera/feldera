@@ -55,7 +55,7 @@ flushed to Feldera.
 |-----------------------|---------|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `max_fill_ms`         | integer | 10000   | Maximum time, in milliseconds, to wait before flushing a partially filled batch.                                                                       |
 | `memory_budget_ratio` | float   | 0.2     | Ratio, in `(0.0, 1.0]`, of process memory reserved for incoming replication batch bytes, divided across active streams.                                |
-| `max_bytes`           | integer | 33554432 | Maximum preferred byte size for one batch per active stream (32 MiB). A ceiling, not a target: the smaller of this and the memory-ratio budget applies. |
+| `max_size`            | string  | `"32Mi"` | Maximum preferred size for one batch per active stream. A ceiling, not a target: the smaller of this and the memory-ratio budget applies. `max_bytes`, a number of bytes, is a deprecated alias. |
 
 ### Memory backpressure configuration
 
@@ -381,7 +381,7 @@ CREATE TABLE orders (
                 "batch": {
                     "max_fill_ms": 2000,
                     "memory_budget_ratio": 0.3,
-                    "max_bytes": 16777216
+                    "max_size": "16Mi"
                 },
                 "memory_backpressure": {
                     "activate_threshold": 0.9,
@@ -495,7 +495,7 @@ takes checkpoints (see [fault tolerance](/pipelines/fault-tolerance)). Without
 fault tolerance the pipeline takes a checkpoint only when the user requests one
 or suspends the pipeline. With fault tolerance the pipeline also takes
 checkpoints on its own, by default every 60 seconds; the
-`checkpoint_interval_secs` setting described on the
+`checkpoint_interval` setting described on the
 [fault tolerance](/pipelines/fault-tolerance) page changes the interval, and
 `null` disables automatic checkpoints.
 

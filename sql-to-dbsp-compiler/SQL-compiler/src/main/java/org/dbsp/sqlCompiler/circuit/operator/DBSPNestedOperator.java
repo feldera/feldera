@@ -235,9 +235,13 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     }
 
     /** The outputs of a nested circuit carry the kind of its inputs in the enclosing
-     * circuit; the kinds inside the nested circuit are relative to its own clock. */
+     * circuit; the kinds inside the nested circuit are relative to its own clock.
+     * A nested circuit without inputs computes the same fixpoint in every step,
+     * so its outputs are collections, like the output of a constant. */
     @Override
     public StreamKind outputKind(int outputNo) {
+        if (this.inputs.isEmpty())
+            return StreamKind.COLLECTION;
         return this.commonInputKind();
     }
 }

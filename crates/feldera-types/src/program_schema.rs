@@ -287,6 +287,9 @@ pub struct RelationPropertiesOnly {
     pub name: SqlIdentifier,
     #[serde(default)]
     pub properties: BTreeMap<String, PropertyValue>,
+    /// Whether the relation is declared `MATERIALIZED`.
+    #[serde(default)]
+    pub materialized: bool,
 }
 
 /// A SQL field.
@@ -1335,10 +1338,7 @@ mod tests {
             ] {
                 let value1: SqlType = serde_json::from_str(&format!("\"{}\"", sql_str))
                     .unwrap_or_else(|e| {
-                        panic!(
-                            "\"{sql_str}\" should deserialize into its SQL type: {}",
-                            e.to_string()
-                        )
+                        panic!("\"{sql_str}\" should deserialize into its SQL type: {}", e)
                     });
                 assert_eq!(value1, expected_value);
                 let serialized_str =

@@ -87,7 +87,7 @@ CREATE TABLE part (
 CREATE TABLE price (
     part BIGINT NOT NULL,
     vendor BIGINT NOT NULL,
-    price DECIMAL
+    price DECIMAL(12, 2)
 ) WITH ('connectors' = '[{
     "name": "tutorial-price-s3",
     "transport": {

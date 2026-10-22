@@ -64,7 +64,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CustomFunctions;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateAggregate;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
@@ -177,10 +177,6 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
     public DBSPCompiler(CompilerOptions options) {
         this.options = options;
-        // The variant representation is process-global; start each
-        // compilation from the environment default (see VariantMode).
-        // TODO: remove when FlatVariant becomes the only representation.
-        VariantMode.reset();
         // Setting these first allows errors to be reported
         this.messages = new CompilerMessages(this);
         this.metadata = new ProgramMetadata();

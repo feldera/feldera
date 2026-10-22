@@ -118,7 +118,6 @@ import org.apache.calcite.sql.type.SqlTypeFactoryImpl;
 import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeUtil;
-import org.apache.calcite.sql.util.ListSqlOperatorTable;
 import org.apache.calcite.sql.util.SqlBasicVisitor;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.sql.util.SqlShuttle;
@@ -146,6 +145,13 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExtendedSqlParserPos;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CalciteFunctions;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CaseInsensitiveOperatorTable;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CustomFunctions;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.ExternalFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.SqlArrayAggFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.SqlSafeCastFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.SqlUserDefinedAggregationFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
@@ -366,7 +372,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 // It is really an annotation attached to a rel node remembering the original AS alias
                 .hintStrategy(HINT_ALIAS, HintStrategy.builder(HintPredicates.JOIN).build())
                 .build();
-        this.cluster = RelOptCluster.create(planner, new RexBuilder(this.typeFactory));
+        this.cluster = RelOptCluster.create(planner, new FelderaRexBuilder(this.typeFactory));
         this.cluster.setHintStrategies(hints);
         var metadataProvider = ChainedRelMetadataProvider.of(List.of(RelMdRowCount.SOURCE,
                 DefaultRelMetadataProvider.INSTANCE));
@@ -667,22 +673,6 @@ public class SqlToRelCompiler implements IWritesLogs {
                 }
             }
             return super.visit(type);
-        }
-    }
-
-    /** An operator table which does name matching always in a case-insensitive way.
-     * As a consequence, all function name lookups are case-insensitive in SQL. */
-    static class CaseInsensitiveOperatorTable extends ListSqlOperatorTable {
-        @SuppressWarnings("deprecation")
-        CaseInsensitiveOperatorTable(List<? extends SqlOperator> operators) {
-            //noinspection unchecked
-            super((List<SqlOperator>) operators);
-        }
-
-        @Override
-        protected void lookUpOperators(String name, boolean caseSensitive, Consumer<SqlOperator> consumer) {
-            // always case-insensitive
-            super.lookUpOperators(name, false, consumer);
         }
     }
 

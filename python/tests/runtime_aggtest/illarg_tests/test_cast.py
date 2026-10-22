@@ -31,8 +31,8 @@ class illarg_cast_int(TstView):
                 "to_bool": True,
                 "to_varchar": "-12",
                 "to_binary": bytes.fromhex("f4"),
-                "to_timestamp": ts("1970-01-01T00:00:00.0"),
-                "to_timestamp_tz": ts_tz("1970-01-01T00:00:00.0"),
+                "to_timestamp": ts("1969-12-31T23:59:59.988000"),
+                "to_timestamp_tz": ts_tz("1969-12-31T23:59:59.988000"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_int AS SELECT
@@ -58,8 +58,8 @@ class illarg_cast_decimal_legal(TstView):
                 "to_double": "-1111.52",
                 "to_bool": True,
                 "to_varchar": "-1111.52",
-                "to_timestamp": ts("1969-12-31T23:59:59.0"),
-                "to_timestamp_tz": ts_tz("1969-12-31T23:59:59.0"),
+                "to_timestamp": ts("1969-12-31T23:59:58.888480"),
+                "to_timestamp_tz": ts_tz("1969-12-31T23:59:58.888480"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_decimal_legal AS SELECT
@@ -84,8 +84,8 @@ class illarg_cast_real_legal(TstView):
                 "to_double": "-57681.1796875",
                 "to_bool": True,
                 "to_varchar": "-57681.18",
-                "to_timestamp": ts("1969-12-31T23:59:03.0"),
-                "to_timestamp_tz": ts_tz("1969-12-31T23:59:03.0"),
+                "to_timestamp": ts("1969-12-31T23:59:02.318820"),
+                "to_timestamp_tz": ts_tz("1969-12-31T23:59:02.318820"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_real_legal AS SELECT
@@ -110,8 +110,8 @@ class illarg_cast_double_legal(TstView):
                 "to_real": "-38.271122",
                 "to_bool": True,
                 "to_varchar": "-38.2711234601246",
-                "to_timestamp": ts("1970-01-01T00:00:00.0"),
-                "to_timestamp_tz": ts_tz("1970-01-01T00:00:00.0"),
+                "to_timestamp": ts("1969-12-31T23:59:59.961729"),
+                "to_timestamp_tz": ts_tz("1969-12-31T23:59:59.961729"),
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW cast_double_legal AS SELECT

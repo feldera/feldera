@@ -71,4 +71,17 @@ public class InternalNowTests extends StreamingTestBase {
         };
         cc.visit(visitor);
     }
+
+    @Test
+    public void temporalFilterKeepsLastDates() {
+        // A temporal filter with only a lower bound keeps all later dates
+        String sql = """
+                CREATE TABLE t(d DATE);
+                CREATE VIEW v AS SELECT d FROM t WHERE d >= CAST(NOW() AS DATE);""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO t VALUES ('9999-12-20');", """
+                 d          | weight
+                ---------------------
+                 9999-12-20 | 1""");
+    }
 }

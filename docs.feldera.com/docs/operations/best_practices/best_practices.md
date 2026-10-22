@@ -32,7 +32,7 @@ Enabling it takes three steps, covered in full in [Fault Tolerance]:
 | `at_least_once` | Every input record is processed at least once; some inputs near the failure point may be processed twice. | Lower. Requires [connectors that support fault tolerance](/pipelines/fault-tolerance/#fault-tolerant-connectors)|
 | `exactly_once` | Every input record is processed exactly once. | Higher; requires connectors that support it. |
 
-A shorter `checkpoint_interval_secs` is a bound on the amount of redundant work performed when a pipeline restarts,
+A shorter `checkpoint_interval` is a bound on the amount of redundant work performed when a pipeline restarts,
 at the cost of more checkpoint writes.  Sixty seconds is the default and a
 reasonable starting point.
 
@@ -41,14 +41,14 @@ For cross-region recovery or blue-green deployment strategies, also see [Checkpo
 
 ## Provision 2-4x your input data size for storage
 
-Start with `storage_mb_max` set to **two to four times the size of your input
+Start with `storage_max` set to **two to four times the size of your input
 data**, then measure.  The `resources` section is enforced only in Feldera
 Enterprise.
 
 ```json
 {
   "resources": {
-    "storage_mb_max": 400000,
+    "storage_max": "400G",
     "storage_class": "gp3"
   }
 }
@@ -63,9 +63,21 @@ and some programs need less than 2x while others need more than 4x.
 | `LATENESS` annotations that let Feldera garbage-collect | Materialized views, tables with primary keys |
 | Few or no materialized views | Many large or complex materialized views |
 
-`storage_mb_max` cannot be edited while a stopped pipeline still holds
-storage, so size it generously up front. [Storage can be expanded out of band](/operations/guide/#expand-existing-pipeline-storage) but will result in a mismatch between the volume size and the reported `storage_mb_max`. `storage_class` determines IOPS and throughput; backfill is
+`storage_max` cannot be edited while a stopped pipeline still holds
+storage, so size it generously up front. [Storage can be expanded out of band](/operations/guide/#expand-existing-pipeline-storage) but will result in a mismatch between the volume size and the reported `storage_max`. `storage_class` determines IOPS and throughput; backfill is
 frequently storage-bound. Use a volume with [fast IO and throughput](/get-started/enterprise/helm-guide/#persistent-volume-sizing) when performing a large backfill.
+
+`volume_attributes_class` names a Kubernetes
+[VolumeAttributesClass](https://kubernetes.io/docs/concepts/storage/volume-attributes-classes/)
+that sets IOPS and throughput for the volume. It requires Kubernetes 1.34 or
+later (or the `VolumeAttributesClass` feature gate) and a CSI driver that
+supports it, such as AWS EBS. The class must exist before the pipeline starts,
+otherwise its storage stays pending. Unlike `storage_class`, it can be edited
+while a stopped pipeline holds storage: the next start applies the new class to
+the existing volume. Kubernetes cannot remove a class from a volume, so removing
+the setting keeps the current class. Some CSI drivers limit how often a volume
+can change; on AWS EBS, a class change and a storage expansion share a limit of
+one change every 6 hours.
 
 ## Declare intermediate views `LOCAL`
 
@@ -151,13 +163,13 @@ The flat representation stores variants more compactly.
 
 ## Set a clock resolution when `NOW()` is used outside of a filter
 
-`clock_resolution_usecs` controls how often the pipeline advances its clock and
+`clock_resolution` controls how often the pipeline advances its clock and
 re-evaluates everything that depends on [`NOW()`][NOW()].  The default is one
-second:
+second; this sets it to one minute:
 
 ```json
 {
-  "clock_resolution_usecs": 60000000
+  "clock_resolution": "1m"
 }
 ```
 
@@ -168,7 +180,7 @@ The setting's cost depends on the SQL program structure:
 | A temporal filter, e.g. `WHERE ts > NOW() - INTERVAL 1 HOUR` | Relatively inexpensive.  Feldera uses the filter to garbage-collect expired records. |
 | Outside of a filter: a projection, an aggregate, a join condition, a `CASE` | Every dependent operator recomputes once per tick, whether or not any input arrived. |
 
-If `NOW()` outside of a temporal filter, set `clock_resolution_usecs` to the coarsest resolution
+If `NOW()` outside of a temporal filter, set `clock_resolution` to the coarsest resolution
 your business logic tolerates. The compiler will emit a warning if `NOW()` is used outside of a filter.
 
 If `NOW()` appears only inside temporal filters, lowering the clock resolution can still be helpful for performance.

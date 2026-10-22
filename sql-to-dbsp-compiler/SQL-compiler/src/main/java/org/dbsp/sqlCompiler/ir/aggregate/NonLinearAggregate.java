@@ -278,7 +278,9 @@ public class NonLinearAggregate extends IAggregate {
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        return false;
+        if (this.getClass() != other.getClass())
+            return false;
+        return this.equivalent(context, other.to(NonLinearAggregate.class));
     }
 
     @SuppressWarnings("unused")

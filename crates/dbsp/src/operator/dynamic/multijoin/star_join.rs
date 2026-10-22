@@ -839,7 +839,7 @@ mod tests {
 
                 let inner_join_expected_output = stream1
                     .join(&stream2, |k, v1, v2| Tup2(*k, Tup2(*v1, *v2)))
-                    .map_index(|Tup2(k, v)| (*k, v.clone()))
+                    .map_index(|Tup2(k, v)| (*k, *v))
                     .join(&stream3, |k, Tup2(v1, v2), v3| {
                         Tup2(*k, Tup3(*v1, *v2, v3.clone()))
                     })
@@ -869,7 +869,7 @@ mod tests {
 
                 let inner_join_flatmap_expected_output = stream1
                     .join(&stream2, |k, v1, v2| Tup2(*k, Tup2(*v1, *v2)))
-                    .map_index(|Tup2(k, v)| (*k, v.clone()))
+                    .map_index(|Tup2(k, v)| (*k, *v))
                     .join(&stream3, |k, Tup2(v1, v2), v3| {
                         Tup2(*k, Tup3(*v1, *v2, v3.clone()))
                     })
@@ -946,12 +946,11 @@ mod tests {
             dbsp.start_transaction().unwrap();
         }
 
-        for step in 0..input_data.len() {
-            // println!("step: {}", step);
-            stream1.append(&mut input_data[step].0.clone());
-            stream2.append(&mut input_data[step].1.clone());
-            stream3.append(&mut input_data[step].2.clone());
-            stream4.append(&mut input_data[step].3.clone());
+        for step_data in &input_data {
+            stream1.append(&mut step_data.0.clone());
+            stream2.append(&mut step_data.1.clone());
+            stream3.append(&mut step_data.2.clone());
+            stream4.append(&mut step_data.3.clone());
 
             if !transaction {
                 dbsp.transaction().unwrap();

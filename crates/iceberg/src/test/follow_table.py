@@ -58,16 +58,18 @@ def arrow_chunk(json_file):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--op", choices=["create", "append", "overwrite"], required=True
+        "--op",
+        choices=["create", "create-empty", "append", "overwrite"],
+        required=True,
     )
     parser.add_argument("--table", required=True, help="table as 'namespace.name'")
-    parser.add_argument("--json-file", required=True, help="ndjson chunk to append")
+    parser.add_argument("--json-file", help="ndjson chunk to append")
     args = parser.parse_args()
 
     cat = catalog()
     namespace = args.table.split(".")[0]
 
-    if args.op == "create":
+    if args.op in ("create", "create-empty"):
         try:
             cat.create_namespace(namespace)
         except Exception:
@@ -77,6 +79,9 @@ def main():
         except Exception:
             pass
         table = cat.create_table(args.table, SCHEMA, partition_spec=PARTITION_SPEC)
+        if args.op == "create-empty":
+            # A table that has no snapshot yet.
+            return
     else:
         table = cat.load_table(args.table)
 

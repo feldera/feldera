@@ -165,7 +165,7 @@ class Pipeline:
         df: pandas.DataFrame,
         force: bool = False,
         connector_metadata: Optional[Mapping[str, Any]] = None,
-    ):
+    ) -> Optional[str]:
         """
         Push all rows in a pandas DataFrame to the pipeline.
 
@@ -180,6 +180,9 @@ class Pipeline:
         :param connector_metadata: Connector metadata for every row of the DataFrame,
             as a dict of attribute names to values. ``CONNECTOR_METADATA()`` returns it
             for the rows. None by default.
+
+        :returns: The completion token of the last chunk pushed, which also covers
+            the earlier chunks, or None if the DataFrame is empty and nothing was pushed.
 
         :raises ValueError: If the table does not exist in the pipeline.
         :raises RuntimeError: If the pipeline is not in a valid state to push data.
@@ -210,8 +213,9 @@ class Pipeline:
             )
         else:
             # consider validating the schema here
+            token = None
             for datum in chunk_dataframe(df):
-                self.client.push_to_pipeline(
+                token = self.client.push_to_pipeline(
                     self.name,
                     table_name,
                     "json",
@@ -222,7 +226,7 @@ class Pipeline:
                     force=force,
                     connector_metadata=connector_metadata,
                 )
-            return
+            return token
 
     def input_json(
         self,
@@ -412,6 +416,9 @@ class Pipeline:
         The handle will only receive changes from the point in time when the listener is created.
         In order to receive all changes since the pipeline started, you can create the pipeline in the `PAUSED` state
         using :meth:`start_paused`, attach listeners and unpause the pipeline using :meth:`resume`.
+
+        To read the changes that one input caused, pass the input's completion
+        token to :meth:`.OutputHandler.wait_for_token` before reading the handle.
 
         :param view_name: The name of the view to listen to.
         """
@@ -709,6 +716,7 @@ metrics"""
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
+        reloadable_tables: Optional[List[str]] = None,
     ):
         """
         .. _start:
@@ -730,7 +738,22 @@ metrics"""
         :param wait: Set True to wait for the pipeline to start. True by default
         :param dismiss_error: Set True to dismiss any deployment error before starting;
             set False to make it fail in that case. True by default.
+        :param reloadable_tables: Tables that bootstrapping may reload. Use it
+            with `bootstrap_policy=BootstrapPolicy.ALLOW` and `wait=True`.
+            If a table is modified, bootstrapping will reload the table: it truncates the table and
+            resets its input connectors. Write each name exactly as the pipeline
+            reports it in the approval diff: an unquoted SQL name in lowercase,
+            a quoted name without its quotes. For example, write `t1` for
+            `CREATE TABLE T1` and `MyTable` for `CREATE TABLE "MyTable"`.
+            None by default: ALLOW bootstraps without a check. If no tables are
+            acceptable to reload, set `reloadable_tables=[]`.
         :raises RuntimeError: If the pipeline is not in STOPPED state.
+        :raises TableReloadNotAllowedError: If a modified table is not in
+            `reloadable_tables`, or the pipeline cannot compute the program
+            diff. The pipeline stays in the AWAITINGAPPROVAL state: call
+            `approve()` to bootstrap or `stop(force=True)` to reject.
+        :raises ValueError: If `reloadable_tables` is set with a bootstrap
+            policy other than ALLOW, or with `wait=False`.
         """
 
         self.client.start_pipeline(
@@ -741,6 +764,7 @@ metrics"""
             wait=wait,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
+            reloadable_tables=reloadable_tables,
         )
 
     def start_paused(
@@ -751,6 +775,7 @@ metrics"""
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
+        reloadable_tables: Optional[List[str]] = None,
     ):
         """
         Starts the pipeline in the paused state.
@@ -766,6 +791,8 @@ metrics"""
             pipeline to start (defaults to `None` = no timeout is enforced).
         :param dismiss_error: Set True to dismiss any deployment error before starting;
             set False to make it fail in that case. True by default.
+        :param reloadable_tables: Tables that bootstrapping may reload. See
+            :meth:`start`.
         """
 
         return self.client.start_pipeline_as_paused(
@@ -776,6 +803,7 @@ metrics"""
             wait=wait,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
+            reloadable_tables=reloadable_tables,
         )
 
     def start_standby(
@@ -786,6 +814,7 @@ metrics"""
         wait: bool = True,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
+        reloadable_tables: Optional[List[str]] = None,
     ):
         """
         Starts the pipeline in the standby state.
@@ -801,6 +830,8 @@ metrics"""
             pipeline to start (defaults to `None` = no timeout is enforced).
         :param dismiss_error: Set True to dismiss any deployment error before starting;
             set False to make it fail in that case. True by default.
+        :param reloadable_tables: Tables that bootstrapping may reload. See
+            :meth:`start`.
         """
 
         self.client.start_pipeline_as_standby(
@@ -811,6 +842,7 @@ metrics"""
             wait=wait,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
+            reloadable_tables=reloadable_tables,
         )
 
     def restart(
@@ -820,6 +852,7 @@ metrics"""
         concurrent_bootstrap: bool = False,
         timeout_s: Optional[float] = None,
         dismiss_error: bool = True,
+        reloadable_tables: Optional[List[str]] = None,
     ):
         """
         Restarts the pipeline.
@@ -838,6 +871,8 @@ metrics"""
             pipeline to restart.
         :param dismiss_error: Set True to dismiss any deployment error before starting;
             set False to make it fail in that case. True by default.
+        :param reloadable_tables: Tables that bootstrapping may reload. See
+            :meth:`start`.
         """
 
         self.stop(force=True, timeout_s=timeout_s)
@@ -847,6 +882,7 @@ metrics"""
             concurrent_bootstrap=concurrent_bootstrap,
             timeout_s=timeout_s,
             dismiss_error=dismiss_error,
+            reloadable_tables=reloadable_tables,
         )
 
     def pause(self, wait: bool = True, timeout_s: Optional[float] = None):
@@ -1131,6 +1167,7 @@ metrics"""
         :return: The checkpoint sequence number.
 
         :raises FelderaAPIError: If enterprise features are not enabled.
+        :raises RuntimeError: If `wait` is true and the checkpoint fails.
         """
 
         return int(
@@ -1155,6 +1192,7 @@ metrics"""
             check.
 
         :raises FelderaAPIError: If enterprise features are not enabled.
+        :raises RuntimeError: If `wait` is true and the checkpoint fails.
         """
 
         resp = self.client.checkpoint_pipeline_response(self.name)
@@ -1187,6 +1225,11 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
                     incarnation_uuid = resp.get("incarnation_uuid")
                     continue
                 raise
+            if status == CheckpointStatus.Failure:
+                raise RuntimeError(
+                    f"failed to make checkpoint '{seq}': {status.get_error()}"
+                )
+
             if status == CheckpointStatus.InProgress:
                 time.sleep(0.1)
                 continue
@@ -1299,7 +1342,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
                 raise
             if status == CheckpointStatus.Failure:
                 raise RuntimeError(
-                    f"failed to sync checkpoint '{uuid}': ", status.get_error()
+                    f"failed to sync checkpoint '{uuid}': {status.get_error()}"
                 )
 
             if status in [CheckpointStatus.InProgress, CheckpointStatus.Unknown]:
@@ -1542,6 +1585,12 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             For a stable hash, the query must be deterministic which means
             it should be sorted.
 
+        Note:
+            The hash identifies a result set within one Feldera release. It
+            is built on DataFusion's row hash, so a Feldera upgrade can
+            change it for unchanged data; compare hashes taken from the same
+            release.
+
         :param query: The SQL query to be executed.
 
         :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED
@@ -1564,8 +1613,9 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         an exception will be raised.
 
         Important:
-            If you try to ``INSERT`` or ``DELETE`` data from a table while the
-            pipeline is paused, it will block until the pipeline is resumed.
+            If you try to ``INSERT`` data into a table while the pipeline is
+            paused, it will block until the pipeline is resumed.  Ad-hoc
+            queries cannot delete data.
 
         :param query: The SQL query to be executed.
         :param wait: When ``True``, block until the query's writes have been
@@ -2162,6 +2212,10 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
     def wait_for_token(self, token: str):
         """
         Blocks until the pipeline processes all inputs represented by the completion token.
+
+        The pipeline has then handed the resulting changes to every output
+        connector.  A handle from :meth:`listen` may still be receiving them;
+        :meth:`.OutputHandler.wait_for_token` waits until it has.
         """
 
         self.client.wait_for_token(self.name, token)

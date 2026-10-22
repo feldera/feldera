@@ -45,7 +45,12 @@
 </script>
 
 {#snippet dropdownHeader(full: string, short: string, toggle?: () => void, isOpen?: boolean)}
-  <button onclick={toggle} class="btn px-1! {toggle ? '' : 'cursor-default'} ">
+  <!-- A brightness filter (the shared `.btn` hover) shows nothing on a transparent button,
+       so a dropdown header gets a neutral fill on hover instead. -->
+  <button
+    onclick={toggle}
+    class="btn px-2! {toggle ? 'hover:bg-surface-50-950' : 'cursor-default'}"
+  >
     {#if inline}
       {full}
     {:else}

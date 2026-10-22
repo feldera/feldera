@@ -64,6 +64,7 @@ The Kubernetes runner manages pipeline pod lifecycle.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `kubernetesRunner.enablePerPipelineNamespace` | `false` | When `true`, pipelines can run in their own namespaces (requires `ClusterRole`/`ClusterRoleBinding`). When `false`, pipelines run in the same namespace as Feldera. |
+| `kubernetesRunner.enablePipelineResize` | `false` | **Experimental.** Allow changing the CPU and memory of a running single-host pipeline without a restart. Requires Kubernetes 1.34 or later. See [resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline). |
 | `kubernetesRunner.allowCustomPipelineTemplate` | `false` | **Experimental.** Allow pipelines to reference a ConfigMap containing a custom StatefulSet YAML template. The template format may change incompatibly across Feldera upgrades. |
 | `kubernetesRunner.pipelineStatefulSetLabels` | `[]` | Labels added to pipeline StatefulSet `metadata.labels`. Format: `["key=value"]`. |
 | `kubernetesRunner.pipelineStatefulSetPodLabels` | `[]` | Labels added to pipeline StatefulSet `spec.template.metadata.labels`. Format: `["key=value"]`. |
@@ -88,6 +89,16 @@ These values set cluster-wide bounds for pipeline resource requests. See [pipeli
 | `kubernetesRunner.storageClassName` | `null` | Storage class for pipeline persistent volumes. `null` uses the cluster default. |
 | `kubernetesRunner.enableStorageClassNamesSupported` | `false` | When `true`, only storage classes listed in `storageClassNamesSupported` can be used. |
 | `kubernetesRunner.storageClassNamesSupported` | `[]` | Allowlist of permitted storage class names. Only effective when `enableStorageClassNamesSupported` is `true`. |
+
+### Pipeline Volume Attributes Class
+
+Requires Kubernetes 1.34 or later and a CSI driver that supports [volume attributes classes](https://kubernetes.io/docs/concepts/storage/volume-attributes-classes/).
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `kubernetesRunner.volumeAttributesClassName` | `null` | Volume attributes class for pipeline persistent volumes that do not set `resources.volume_attributes_class`. `null` sets none. |
+| `kubernetesRunner.enableVolumeAttributesClassNamesSupported` | `false` | When `true`, only volume attributes classes listed in `volumeAttributesClassNamesSupported` can be used. |
+| `kubernetesRunner.volumeAttributesClassNamesSupported` | `[]` | Allowlist of permitted volume attributes class names. Only effective when `enableVolumeAttributesClassNamesSupported` is `true`. |
 
 ### Connector Kubernetes Secrets
 
@@ -194,6 +205,7 @@ Default settings applied to all pipeline pods.
 | `pipeline.env` | `null` | List of environment variables injected into all pipeline pods. |
 | `pipeline.allowInitContainers` | `true` | Allow pipelines to specify init containers (e.g., sidecars) via runtime configuration. See [sidecar containers](/pipelines/sidecar). |
 | `pipeline.allowProfiling` | `false` | Grant the `PERFMON` and `IPC_LOCK` capabilities to pipeline containers, enabling performance profiling. Node kernel settings may also be required, see [Visualizing profiles](/operations/visualizing-profiles.md#enterprise-environments). |
+| `pipeline.terminationGracePeriodSeconds` | `60` | Seconds a pipeline has to write a checkpoint when Kubernetes evicts its pod or drains its node. See [Writing checkpoints](/pipelines/fault-tolerance#writing-checkpoints). |
 
 ---
 

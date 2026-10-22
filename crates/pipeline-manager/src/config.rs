@@ -78,6 +78,10 @@ fn default_pg_embed_working_directory() -> String {
         .unwrap()
 }
 
+fn default_pg_embed_port() -> u16 {
+    8082
+}
+
 /// Default compiler working directory: ~/.feldera/compiler
 fn default_compiler_working_directory() -> String {
     default_working_directory()
@@ -190,6 +194,9 @@ fn default_dbsp_override_path() -> String {
 fn default_sql_compiler_path() -> String {
     "sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar".to_string()
 }
+
+/// The `feldera-udf` release that Gen2 UDFs build against by default.
+const DEFAULT_GEN2_UDF_SDK_VERSION: &str = "0.0.1";
 
 /// Default location of the Rust compilation `Cargo.lock`.
 fn default_compilation_cargo_lock_path() -> String {
@@ -322,7 +329,7 @@ pub struct CommonConfig {
     /// - `runtime_version`: Allows to override the runtime version of a pipeline on the platform.
     /// - `testing`
     /// - `rust_compiler_full_cleanup`: the Rust compiler fully cleans up the target directory if the
-    ///   disk space usage is approaching its limit.
+    ///   disk space usage is approaching its limit, and the one of the Gen-2 UDF workspace too.
     #[arg(verbatim_doc_comment, long, env = "FELDERA_UNSTABLE_FEATURES")]
     pub unstable_features: Option<String>,
 
@@ -687,6 +694,11 @@ pub struct PgEmbedConfig {
     #[serde(default = "default_pg_embed_working_directory")]
     #[arg(long, default_value_t = default_pg_embed_working_directory())]
     pub pg_embed_working_directory: String,
+
+    /// Port the embedded Postgres instance listens on.
+    #[serde(default = "default_pg_embed_port")]
+    #[arg(long, default_value_t = default_pg_embed_port(), env = "FELDERA_PG_EMBED_PORT")]
+    pub pg_embed_port: u16,
 }
 
 impl PgEmbedConfig {
@@ -1197,6 +1209,12 @@ pub struct ApiServerConfig {
     #[serde(default)]
     #[arg(long, default_value = "", env = "FELDERA_HTTP_BASE_PATH")]
     pub http_base_path: String,
+
+    /// Allow a `PATCH` of `deployment_config` to resize a running pipeline's CPU and memory in
+    /// place, without a restart. Enable only when the runner supports it.
+    #[serde(default)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = false, env = "FELDERA_ENABLE_PIPELINE_RESIZE")]
+    pub enable_pipeline_resize: bool,
 }
 
 /// A trust relationship granting the platform-wide `owner` role, declared at
@@ -1371,6 +1389,7 @@ impl ApiServerConfig {
             first_user_role: Role::Admin,
             provision_on_login: true,
             http_base_path: String::new(),
+            enable_pipeline_resize: false,
         }
     }
 }
@@ -1506,6 +1525,24 @@ pub struct CompilerConfig {
     #[arg(long, default_value_t = 1000)]
     pub binary_upload_retry_delay_ms: u64,
 
+    /// Directory of a local `feldera-udf` crate, the SDK that the Rust UDFs of Gen2
+    /// programs are written against.
+    ///
+    /// When unset, UDFs build against a crates.io release (`--gen2-udf-sdk-version`).
+    #[serde(default)]
+    #[arg(long, env = "GEN2_UDF_SDK_PATH")]
+    pub gen2_udf_sdk_path: Option<String>,
+
+    /// The crates.io release of `feldera-udf` that the Rust UDFs of Gen2 programs build
+    /// against (default: 0.0.1). Mutually exclusive with `--gen2-udf-sdk-path`.
+    #[serde(default)]
+    #[arg(
+        long,
+        env = "GEN2_UDF_SDK_VERSION",
+        conflicts_with = "gen2_udf_sdk_path"
+    )]
+    pub gen2_udf_sdk_version: Option<String>,
+
     /// Precompile Rust dependencies in the working directory.
     ///
     /// Instructs the manager to download and compile all crates needed by
@@ -1520,6 +1557,13 @@ pub struct CompilerConfig {
 }
 
 impl CompilerConfig {
+    /// The `feldera-udf` release Gen2 UDFs build against when no local SDK is configured.
+    pub(crate) fn gen2_udf_sdk_release(&self) -> &str {
+        self.gen2_udf_sdk_version
+            .as_deref()
+            .unwrap_or(DEFAULT_GEN2_UDF_SDK_VERSION)
+    }
+
     pub(crate) fn working_dir(&self) -> PathBuf {
         Path::new(&self.compiler_working_directory).to_path_buf()
     }
@@ -1532,6 +1576,34 @@ impl CompilerConfig {
         self.compilation_cargo_lock_path =
             help_canonicalize_path(&self.compilation_cargo_lock_path)?;
         self.dbsp_override_path = help_canonicalize_path(&self.dbsp_override_path)?;
+        // Generated UDF crates depend on the SDK by path, which must not be relative to them.
+        self.gen2_udf_sdk_path = self
+            .gen2_udf_sdk_path
+            .as_deref()
+            .map(help_canonicalize_path)
+            .transpose()?;
+        if let Some(sdk_path) = &self.gen2_udf_sdk_path
+            && !Path::new(sdk_path).join("Cargo.toml").is_file()
+        {
+            return Err(AnyError::msg(format!(
+                "the Gen-2 UDF SDK location '{sdk_path}' holds no Cargo.toml: \
+                 '--gen2-udf-sdk-path' must name the directory of the 'feldera-udf' crate"
+            )));
+        }
+        if self.gen2_udf_sdk_path.is_some() && self.gen2_udf_sdk_version.is_some() {
+            return Err(AnyError::msg(
+                "'--gen2-udf-sdk-path' and '--gen2-udf-sdk-version' are mutually exclusive: \
+                 Gen2 UDFs build against either a local SDK or a crates.io release",
+            ));
+        }
+        if let Some(version) = &self.gen2_udf_sdk_version
+            && semver::Version::parse(version).is_err()
+        {
+            return Err(AnyError::msg(format!(
+                "the Gen2 UDF SDK version '{version}' is not a version: \
+                 '--gen2-udf-sdk-version' must name a 'feldera-udf' release, such as '0.0.1'"
+            )));
+        }
         Ok(self)
     }
 }
@@ -1574,6 +1646,16 @@ impl LocalRunnerConfig {
     pub(crate) fn binary_file_path(&self, pipeline_id: PipelineId, version: Version) -> PathBuf {
         self.pipeline_dir(pipeline_id)
             .join(format!("program_{pipeline_id}_v{version}"))
+    }
+
+    /// Location to write the fetched UDF library of a Gen-2 pipeline to.
+    pub(crate) fn udf_library_file_path(
+        &self,
+        pipeline_id: PipelineId,
+        version: Version,
+    ) -> PathBuf {
+        self.pipeline_dir(pipeline_id)
+            .join(format!("udf_library_{pipeline_id}_v{version}.so"))
     }
 
     /// Location to write the fetched pipeline binary to.
@@ -1787,6 +1869,93 @@ mod tests {
             ..CommonConfig::test_config()
         };
         assert!(std::panic::catch_unwind(|| config.https_config()).is_err());
+    }
+
+    /// The Gen-2 UDF SDK location is made absolute, and one that is not a crate stops startup.
+    #[test]
+    fn gen2_udf_sdk_path_must_name_a_crate() {
+        let working_dir = tempfile::tempdir().unwrap();
+        let sdk_dir = tempfile::tempdir().unwrap();
+        let existing_path = working_dir.path().to_string_lossy().to_string();
+        let config = |gen2_udf_sdk_path: Option<String>| CompilerConfig {
+            compiler_working_directory: existing_path.clone(),
+            compilation_profile: CompilationProfile::Optimized,
+            sql_compiler_path: existing_path.clone(),
+            sql_compiler_cache_url: String::new(),
+            compilation_cargo_lock_path: existing_path.clone(),
+            dbsp_override_path: existing_path.clone(),
+            binary_upload_endpoint: None,
+            binary_upload_timeout_secs: 600,
+            binary_upload_max_retries: 3,
+            binary_upload_retry_delay_ms: 1000,
+            gen2_udf_sdk_path,
+            gen2_udf_sdk_version: None,
+            precompile: false,
+        };
+        let sdk_path = format!("{}/.", sdk_dir.path().display());
+
+        assert_eq!(config(None).canonicalize().unwrap().gen2_udf_sdk_path, None);
+        let error = config(Some(sdk_path.clone())).canonicalize().unwrap_err();
+        assert!(error.to_string().contains("--gen2-udf-sdk-path"), "{error}");
+
+        std::fs::write(sdk_dir.path().join("Cargo.toml"), "").unwrap();
+        let canonical_sdk_path = std::fs::canonicalize(sdk_dir.path()).unwrap();
+        assert_eq!(
+            config(Some(sdk_path))
+                .canonicalize()
+                .unwrap()
+                .gen2_udf_sdk_path,
+            Some(canonical_sdk_path.to_string_lossy().to_string())
+        );
+    }
+
+    /// The Gen2 UDF SDK version must be a version, since it pins the crates.io release, and it
+    /// excludes a local SDK path.
+    #[test]
+    fn gen2_udf_sdk_version_must_be_a_version() {
+        let working_dir = tempfile::tempdir().unwrap();
+        let existing_path = working_dir.path().to_string_lossy().to_string();
+        let config =
+            |gen2_udf_sdk_path: Option<String>, gen2_udf_sdk_version: &str| CompilerConfig {
+                compiler_working_directory: existing_path.clone(),
+                compilation_profile: CompilationProfile::Optimized,
+                sql_compiler_path: existing_path.clone(),
+                sql_compiler_cache_url: String::new(),
+                compilation_cargo_lock_path: existing_path.clone(),
+                dbsp_override_path: existing_path.clone(),
+                binary_upload_endpoint: None,
+                binary_upload_timeout_secs: 600,
+                binary_upload_max_retries: 3,
+                binary_upload_retry_delay_ms: 1000,
+                gen2_udf_sdk_path,
+                gen2_udf_sdk_version: Some(gen2_udf_sdk_version.to_string()),
+                precompile: false,
+            };
+
+        for version in ["0.1.0", "1.2.3-rc.1"] {
+            let config = config(None, version).canonicalize().unwrap();
+            assert_eq!(config.gen2_udf_sdk_release(), version);
+        }
+        for not_a_version in ["", "0.1", "latest", "=0.1.0", "0.1.0\"]"] {
+            let error = config(None, not_a_version).canonicalize().unwrap_err();
+            assert!(
+                error.to_string().contains("--gen2-udf-sdk-version"),
+                "{not_a_version}: {error}"
+            );
+        }
+
+        let sdk_dir = tempfile::tempdir().unwrap();
+        std::fs::write(sdk_dir.path().join("Cargo.toml"), "").unwrap();
+        let sdk_path = Some(sdk_dir.path().to_string_lossy().to_string());
+        let error = config(sdk_path, "0.1.0").canonicalize().unwrap_err();
+        assert!(error.to_string().contains("mutually exclusive"), "{error}");
+        let error = CompilerConfig::try_parse_from([
+            "compiler",
+            "--gen2-udf-sdk-path=/opt/sdk",
+            "--gen2-udf-sdk-version=0.1.0",
+        ])
+        .unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     /// Provisioning off without a configured owner is a bricked installation,

@@ -1,3 +1,6 @@
+// The connector layer still builds record metadata as the enum `Variant`.
+#![allow(deprecated)]
+
 use std::any::Any;
 #[cfg(any(feature = "with-avro", feature = "with-dynamodb"))]
 use std::collections::HashMap;

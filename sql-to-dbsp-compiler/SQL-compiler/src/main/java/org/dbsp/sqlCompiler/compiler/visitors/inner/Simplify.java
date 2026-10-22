@@ -285,8 +285,10 @@ public class Simplify extends ExpressionTranslator {
                 // This is mostly useful for testing code, to fold various literals.
                 DBSPStringLiteral str = lit.to(DBSPStringLiteral.class);
                 Objects.requireNonNull(str.value);
+                // The runtime casts to these types remove the characters that Java's trim removes
+                String trimmed = str.value.trim();
                 if (type.is(DBSPTypeBool.class)) {
-                    String normalized = str.value.trim().toLowerCase(Locale.ENGLISH);
+                    String normalized = trimmed.toLowerCase(Locale.ENGLISH);
                     Boolean value = null;
                     if (normalized.equals("false"))
                         value = false;
@@ -305,8 +307,8 @@ public class Simplify extends ExpressionTranslator {
                     DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("uuuu-MM-dd", Locale.US)
                             .withResolverStyle(ResolverStyle.STRICT);
                     try {
-                        LocalDate.parse(str.value, dateFormatter); // executed for exception
-                        result = new DBSPDateLiteral(lit.getNode(), type, new DateString(str.value));
+                        LocalDate.parse(trimmed, dateFormatter); // executed for exception
+                        result = new DBSPDateLiteral(lit.getNode(), type, new DateString(trimmed));
                     } catch (DateTimeParseException ex) {
                         this.compiler.reportWarning(expression.getSourcePosition(), "Suspicious argument",
                                 "String " + Utilities.singleQuote(str.value) +
@@ -314,16 +316,18 @@ public class Simplify extends ExpressionTranslator {
                     }
                 } else if (type.is(DBSPTypeTime.class)) {
                     try {
-                        TimeString ts = new TimeString(str.value);
+                        TimeString ts = new TimeString(trimmed);
                         result = new DBSPTimeLiteral(lit.getNode(), type, ts);
                     } catch (DateTimeParseException | IllegalArgumentException ex) {
                         this.compiler.reportWarning(expression.getSourcePosition(), "Not a TIME",
                                 " String " + Utilities.singleQuote(str.value) +
                                         " cannot be interpreted as a time");
                     }
-                } else if (type.is(DBSPTypeTimestamp.class)) {
+                } else if (type.is(DBSPTypeTimestamp.class)
+                        // The literal would truncate the digits after the 6th, which the runtime rounds
+                        && Utilities.fractionalDigits(trimmed) <= 6) {
                     try {
-                        TimestampString ts = new TimestampString(str.value);
+                        TimestampString ts = new TimestampString(trimmed);
                         result = new DBSPTimestampLiteral(lit.getNode(), type, ts);
                     } catch (DateTimeParseException | IllegalArgumentException ex) {
                         this.compiler.reportWarning(expression.getSourcePosition(), "Not a TIMESTAMP",
@@ -333,8 +337,8 @@ public class Simplify extends ExpressionTranslator {
                 } else if (type.is(DBSPTypeDecimal.class)) {
                     try {
                         DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);
-                        // The runtime trims spaces and rounds excess digits half-to-even
-                        BigDecimal value = new BigDecimal(str.value.trim())
+                        // The runtime rounds excess digits half-to-even
+                        BigDecimal value = new BigDecimal(trimmed)
                                 .setScale(decType.scale, RoundingMode.HALF_EVEN);
                         if (value.precision() > decType.precision) {
                             // The runtime cast fails; keep the cast so the error surfaces at runtime

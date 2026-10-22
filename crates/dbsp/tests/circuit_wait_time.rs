@@ -18,6 +18,7 @@ use dbsp::circuit::{
 use dbsp::typed_batch::OrdZSet;
 use dbsp::utils::Tup2;
 use dbsp::{DBSPHandle, Runtime, operator::Generator};
+use feldera_types::size::ConfigSize;
 use std::thread::sleep;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -37,7 +38,7 @@ fn duration_metric(handle: &mut DBSPHandle, metric: &MetricId) -> f64 {
 }
 
 /// The worst worker's percentage for `metric`, as (numerator, denominator).
-fn percent_metric(handle: &mut DBSPHandle, metric: &MetricId) -> Vec<(u64, u64)> {
+fn percent_metric(handle: &mut DBSPHandle, metric: &MetricId) -> Vec<(i64, u64)> {
     let profile = handle.retrieve_profile().unwrap();
     profile
         .worker_profiles
@@ -96,7 +97,7 @@ fn spilling_circuit(workers: usize, steps: i32) -> (DBSPHandle, TempDir) {
             },
             StorageOptions {
                 // Spill every batch, rather than only those past the default size.
-                min_storage_bytes: Some(0),
+                min_spill_size: Some(ConfigSize::ZERO),
                 ..Default::default()
             },
         )
@@ -207,7 +208,7 @@ fn step_time_decomposes_into_cpu_and_wait() {
     for (numerator, denominator) in percent_metric(&mut handle, &CIRCUIT_NONBLOCKING_PERCENT) {
         assert!(denominator > 0, "nonblocking percent has no denominator");
         assert!(
-            numerator <= denominator,
+            numerator <= denominator as i64,
             "nonblocking percent {numerator}/{denominator} exceeds 100%"
         );
     }

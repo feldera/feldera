@@ -69,6 +69,12 @@ jobs:
     uses: ./.github/workflows/build-docker.yml
     secrets: inherit
 
+  invoke-validate-demos:
+    name: Validate pipeline-manager Demos
+    needs: [invoke-build-java]
+    uses: ./.github/workflows/validate-demos.yml
+    secrets: inherit
+
   invoke-generate-sbom:
     name: Generate SBOMs
     needs: [invoke-build-docker]
@@ -85,6 +91,18 @@ jobs:
     name: Integration Tests
     needs: [invoke-build-docker]
     uses: ./.github/workflows/test-integration-platform.yml
+    # A called workflow gets no more than the calling job grants. This has
+    # two independent reasons: the Unity Catalog deletion-vector test
+    # authenticates to Databricks with an OIDC token the same way the Unity
+    # Catalog adapter tests do, and test-integration-platform.yml's own
+    # cancel-if-*-failed jobs need actions: write to cancel the run on
+    # failure -- granting only actions: read here would silently cap that
+    # down and break cancel-on-failure for the whole workflow.
+    permissions:
+      actions: write
+      contents: read
+      packages: read
+      id-token: write
     secrets: inherit
 
   invoke-tests-integration-runtime:
@@ -277,6 +295,21 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
 
+  cancel-if-validate-demos-failed:
+    name: Cancel if Demo Validation Failed
+    needs: [invoke-validate-demos]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
   cancel-if-publish-crates-dry-run-failed:
     name: Cancel if Publish Crates Dry Run Failed
     needs: [invoke-publish-crates-dry-run]
@@ -312,6 +345,7 @@ jobs:
       - invoke-tests-integration-runtime
       - invoke-tests-java
       - invoke-publish-crates-dry-run
+      - invoke-validate-demos
     steps:
       - name: Finalize Workflow
         run: echo "All tasks completed!"
