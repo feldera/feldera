@@ -275,6 +275,9 @@ where
 
     /// Previously observed storage status details.
     prev_storage_status_details: Option<StorageStatusDetails>,
+
+    /// A cycle that takes at least this long is logged. Tests set it.
+    slow_cycle_threshold: Duration,
 }
 
 impl<T: PipelineExecutor> PipelineAutomaton<T> {
@@ -314,6 +317,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
     /// If nothing changes, this will create the same event.
     const DETAILS_UPDATE_MAX_INTERVAL: Duration = Duration::from_secs(600);
+
+    /// A cycle slower than this is logged, because the automaton cannot act on
+    /// a new desired status, such as a stop, until the cycle finishes. It is
+    /// above [Self::PIPELINE_STATUS_HTTP_REQUEST_TIMEOUT], which an unreachable
+    /// pipeline uses up in every cycle.
+    const SLOW_CYCLE_THRESHOLD: Duration = Duration::from_secs(10);
 
     /// Creates a new automaton for a given pipeline.
     #[allow(clippy::too_many_arguments)]
@@ -362,6 +371,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             prev_resources_status_details: None,
             prev_runtime_status_details: None,
             prev_storage_status_details: None,
+            slow_cycle_threshold: Self::SLOW_CYCLE_THRESHOLD,
         }
     }
 
@@ -379,6 +389,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             // Wait until the timeout expires, or we get notified that the
             // pipeline has been updated
             let _ = timeout(poll_timeout, self.notifier.notified()).await;
+            let cycle_start = Instant::now();
             match self.do_run().await {
                 Ok(new_poll_timeout) => {
                     poll_timeout = new_poll_timeout;
@@ -428,7 +439,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             error!(
                                 pipeline_id = %pipeline_id,
                                 pipeline = self.pipeline_name.as_deref().unwrap_or("N/A"),
-                                "Automaton encountered a database error, retrying in {} seconds (retry no. {})... Error was: {e}",
+                                "Automaton encountered a database error after {:.1}s, retrying in {} seconds (retry no. {})... Error was: {e}",
+                                cycle_start.elapsed().as_secs_f64(),
                                 backoff_timeout.as_secs(),
                                 self.database_error_counter
                             );
@@ -459,6 +471,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         //
         // The complete descriptor can be converted into the monitoring one, which is done to avoid
         // checking which one was returned in the general flow.
+        let cycle_start = Instant::now();
         let pipeline_monitoring_or_complete = &self
             .db
             .lock()
@@ -471,6 +484,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             )
             .await?;
         let pipeline = &pipeline_monitoring_or_complete.only_monitoring();
+        let read_time = cycle_start.elapsed();
 
         // Determine transition
         let transition: Action = match (
@@ -562,6 +576,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 }
             }
         };
+        let decide_time = cycle_start.elapsed() - read_time;
 
         // Store the transition in the database
         let version_guard = pipeline.version;
@@ -887,6 +902,38 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         .await;
                 }
             }
+        }
+
+        let cycle_time = cycle_start.elapsed();
+        if cycle_time >= self.slow_cycle_threshold {
+            let parts = format!(
+                "database read {:.1}s, pipeline operations {:.1}s, database write {:.1}s",
+                read_time.as_secs_f64(),
+                decide_time.as_secs_f64(),
+                (cycle_time - read_time - decide_time).as_secs_f64(),
+            );
+            warn!(
+                pipeline_id = %pipeline.id,
+                pipeline = %pipeline.name,
+                "Runner cycle was slow: {:.1}s in total ({parts}) with resources status {} (desired: {}) and storage status {}",
+                cycle_time.as_secs_f64(),
+                pipeline.deployment_resources_status,
+                pipeline.deployment_resources_desired_status,
+                pipeline.storage_status,
+            );
+            self.logs_sender
+                .send(LogMessage::new_from_control_plane(
+                    module_path!(),
+                    "runner",
+                    pipeline.name.clone(),
+                    pipeline.id.to_string(),
+                    Level::WARN,
+                    &format!(
+                        "The control plane took {:.1}s to update the pipeline status, so a status change such as a stop can be delayed ({parts})",
+                        cycle_time.as_secs_f64(),
+                    ),
+                ))
+                .await;
         }
 
         // Determine the poll timeout based on the pipeline status it has stayed or become.
@@ -2047,7 +2094,9 @@ mod test {
     use crate::runner::main::MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS;
     use crate::runner::pipeline_automata::PipelineAutomaton;
     use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
-    use crate::runner::pipeline_logs::{FollowRequest, LogMessage, LogsSender};
+    use crate::runner::pipeline_logs::{
+        FollowMode, FollowRequest, FollowerMessage, LogMessage, LogsSender,
+    };
     use async_trait::async_trait;
     use feldera_types::config::LegacySpelling;
     use feldera_types::config::{PipelineConfig, StorageConfig};
@@ -2058,7 +2107,7 @@ mod test {
     use std::str::FromStr;
     use std::sync::Arc;
     use std::time::Duration;
-    use tokio::sync::mpsc::{Sender, channel};
+    use tokio::sync::mpsc::{Receiver, Sender, channel};
     use tokio::sync::{Mutex, Notify};
     use uuid::Uuid;
     use wiremock::matchers::{method, path};
@@ -2368,6 +2417,19 @@ mod test {
 
         async fn tick(&mut self) {
             self.automaton.do_run().await.unwrap();
+        }
+
+        /// Follows the pipeline log, starting with the lines it already has.
+        async fn follow_log(&self) -> Receiver<FollowerMessage> {
+            let (sender, receiver) = channel(1000);
+            self._follow_request_sender
+                .send(FollowRequest {
+                    sender,
+                    mode: FollowMode::Full,
+                })
+                .await
+                .unwrap();
+            receiver
         }
 
         async fn pipeline(&self) -> ExtendedPipelineDescr {
@@ -3096,5 +3158,57 @@ mod test {
         // Remains Stopped as program is still Pending
         assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
 
+    }
+
+    /// Returns the lines that arrive on `follower` until it is quiet for 500 ms.
+    async fn read_log_until_quiet(follower: &mut Receiver<FollowerMessage>) -> Vec<String> {
+        let mut lines = Vec::new();
+        while let Ok(Some(message)) =
+            tokio::time::timeout(Duration::from_millis(500), follower.recv()).await
+        {
+            if let FollowerMessage::Line(line) = message {
+                lines.push(line);
+            }
+        }
+        lines
+    }
+
+    /// A cycle that takes at least the threshold tells the pipeline log why a
+    /// status change can be delayed, with the time of each part of the cycle.
+    #[tokio::test]
+    async fn slow_cycle_is_logged() {
+        let (_server, _temp, mut test) = setup_complete().await;
+        test.automaton.slow_cycle_threshold = Duration::ZERO;
+        let mut follower = test.follow_log().await;
+        test.tick().await;
+
+        let lines = read_log_until_quiet(&mut follower).await;
+        let warning = lines
+            .iter()
+            .find(|line| line.contains("The control plane took"))
+            .unwrap_or_else(|| panic!("no slow cycle warning in {lines:?}"));
+        assert!(warning.contains("WARN"), "{warning}");
+        assert!(
+            warning.contains("so a status change such as a stop can be delayed (database read "),
+            "{warning}"
+        );
+        assert!(warning.contains(", pipeline operations "), "{warning}");
+        assert!(warning.contains(", database write "), "{warning}");
+    }
+
+    /// A cycle under the threshold logs nothing about its time.
+    #[tokio::test]
+    async fn fast_cycle_is_not_logged() {
+        let (_server, _temp, mut test) = setup_complete().await;
+        let mut follower = test.follow_log().await;
+        test.tick().await;
+
+        let lines = read_log_until_quiet(&mut follower).await;
+        assert!(
+            !lines
+                .iter()
+                .any(|line| line.contains("The control plane took")),
+            "{lines:?}"
+        );
     }
 }
