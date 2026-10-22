@@ -9874,8 +9874,8 @@ impl ControllerInner {
     /// order:
     ///
     /// - Start: in state None, start a transaction if the API or a connector
-    ///   asked for one, or otherwise an automatic transaction (unless the
-    ///   `disable_auto_transaction` dev tweak is set).
+    ///   asked for one, or otherwise an automatic transaction (if
+    ///   [DevTweaks::enable_auto_transaction]).
     ///
     /// - Commit: in state Started, start to commit once no initiator still
     ///   adds input to the transaction and the input queued at the API's
@@ -9977,12 +9977,12 @@ impl ControllerInner {
             let initiators = &transaction_info.initiators;
             let started = transaction_info.transaction_state == TransactionState::None
                 && (initiators.is_active(is_multihost)
-                    || !self
+                    || self
                         .status
                         .pipeline_config
                         .global
                         .dev_tweaks
-                        .disable_auto_transaction());
+                        .enable_auto_transaction());
             if started {
                 let tid = match transaction_info.initiators.transaction_id {
                     Some(tid) => {
