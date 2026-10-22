@@ -93,6 +93,10 @@ The default connection targets a local setup; override any of the
 * Run the tests in the `static-connectors` crate:
   `cargo test --features="iceberg-tests-follow" --test connector_suites -- test::iceberg::rest_follow`
 
+The deletion-vector tests write their tables with Spark
+(`create_v3_tables.py`), because pyiceberg cannot write V3 tables or delete
+files. They need `uv` and JDK 17 or later on `PATH`.
+
 Overridable settings (defaults in parentheses): `FELDERA_ICEBERG_REST_URI`
 (`http://localhost:8181`), `FELDERA_ICEBERG_WAREHOUSE` (`s3://test/iceberg-follow`),
 `FELDERA_ICEBERG_S3_ENDPOINT` (`http://localhost:9000`), `FELDERA_ICEBERG_S3_KEY`

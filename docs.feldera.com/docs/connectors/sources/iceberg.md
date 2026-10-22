@@ -192,9 +192,18 @@ Requirements and limitations:
 * **A catalog is required.** Set `catalog_type`; follow mode cannot be used with
   `metadata_location`, which points at a fixed snapshot and cannot observe new
   commits.
-* **Copy-on-write only.** Follow mode reads copy-on-write changes. If a followed
-  snapshot adds a merge-on-read delete file (position or equality deletes), the
-  connector stops with an error. Configure the writer to use copy-on-write.
+* **Copy-on-write and deletion vectors.** Follow mode reads copy-on-write
+  changes and V3 deletion vectors (merge-on-read `DELETE`, `UPDATE` and
+  `MERGE`). For a new deletion vector, it reads the whole data file and ingests
+  only the newly deleted rows. It skips compactions (`replace` snapshots). It
+  relies on the writer to remove a file's old deletion vector in the same
+  snapshot that removes the file or replaces the vector, as the spec requires.
+* **No V2 delete files.** Follow mode stops with an error if a snapshot adds or
+  removes a V2 position or equality delete file, or if the table has one when a
+  snapshot removes data files or adds a deletion vector. To follow such a
+  table, configure the writer to use copy-on-write or deletion vectors, rewrite
+  the table to remove its V2 delete files, and restart the connector from a
+  snapshot after the rewrite. Snapshot mode reads all delete files.
 
 ## Transactions
 
