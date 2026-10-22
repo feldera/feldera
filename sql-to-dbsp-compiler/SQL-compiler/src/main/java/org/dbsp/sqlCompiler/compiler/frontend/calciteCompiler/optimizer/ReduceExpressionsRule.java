@@ -131,7 +131,7 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
             final RelMetadataQuery mq = call.getMetadataQuery();
             final RelOptPredicateList predicates =
                     mq.getPulledUpPredicates(filter.getInput());
-            if (reduceExpressions(filter, expList, predicates, true,
+            if (ReduceExpressionsRule.reduceExpressions(filter, expList, predicates, true,
                     config.matchNullability(), config.treatDynamicCallsAsConstant())) {
                 assert expList.size() == 1;
                 newConditionExp = expList.get(0);
@@ -293,7 +293,7 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
             final RelOptPredicateList predicates =
                     leftPredicates.union(rexBuilder,
                             rightPredicates.shift(rexBuilder, fieldCount));
-            if (!reduceExpressions(join, expList, predicates, true,
+            if (!ReduceExpressionsRule.reduceExpressions(join, expList, predicates, true,
                     config.matchNullability(), config.treatDynamicCallsAsConstant())) {
                 return;
             }
@@ -344,7 +344,7 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
                 expandedExprList.add(expr.accept(shuttle));
             }
             final RelOptPredicateList predicates = RelOptPredicateList.EMPTY;
-            if (reduceExpressions(calc, expandedExprList, predicates, false,
+            if (ReduceExpressionsRule.reduceExpressions(calc, expandedExprList, predicates, false,
                     config.matchNullability(), config.treatDynamicCallsAsConstant())) {
                 final RexProgramBuilder builder =
                         new RexProgramBuilder(
@@ -432,7 +432,8 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
                 List<Window.RexWinAggCall> aggCalls = new ArrayList<>();
                 for (Window.RexWinAggCall aggCall : group.aggCalls) {
                     final List<RexNode> expList = new ArrayList<>(aggCall.getOperands());
-                    if (reduceExpressions(window, expList, predicates)) {
+                    if (ReduceExpressionsRule.reduceExpressions(window, expList, predicates,
+                            false, true, false)) {
                         aggCall =
                                 new Window.RexWinAggCall(aggCall.getParserPosition(),
                                         (SqlAggFunction) aggCall.getOperator(),
@@ -489,6 +490,10 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
 
     //~ Methods ----------------------------------------------------------------
 
+    /** An executor that returns each expression unchanged */
+    private static final RexExecutor NO_EVALUATION =
+            (rexBuilder, constExps, reducedValues) -> reducedValues.addAll(constExps);
+
     /**
      * Reduces a list of expressions.
      *
@@ -539,18 +544,28 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
                         expList, predicates, treatDynamicCallsAsConstant);
 
         boolean simplified = false;
-        /*
-        Some Calcite simplifications are wrong, in particular the ones producing TIMESTAMP results.
+        // Some Calcite simplifications are wrong, in particular the ones producing TIMESTAMP results.
+        // for (int i = 0; i < expList.size(); i++) {
+        //     final RexNode expr2 =
+        //             simplify.simplifyPreservingType(expList.get(i), unknownAs,
+        //                     matchNullability);
+        //     if (!expr2.equals(expList.get(i))) {
+        //         expList.set(i, expr2);
+        //         simplified = true;
+        //     }
+        // }
+        // Calcite normalizes expressions, e.g., it flattens ANDs, as the temporal filter
+        // analysis requires; this RexSimplify evaluates no constants
+        final RexSimplify normalize = new RexSimplify(rexBuilder, predicates, NO_EVALUATION);
         for (int i = 0; i < expList.size(); i++) {
             final RexNode expr2 =
-                    simplify.simplifyPreservingType(expList.get(i), unknownAs,
+                    normalize.simplifyPreservingType(expList.get(i), unknownAs,
                             matchNullability);
             if (!expr2.equals(expList.get(i))) {
                 expList.set(i, expr2);
                 simplified = true;
             }
         }
-         */
 
         if (reduced && simplified) {
             return !originExpList.equals(expList);
@@ -1010,7 +1025,13 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
             if (notEvaluated(call.getType().getSqlTypeName()))
                 callConstancy = Constancy.NON_CONSTANT;
             for (RexNode operand : call.getOperands()) {
-                if (notEvaluated(operand.getType().getSqlTypeName()))
+                SqlTypeName operandType = operand.getType().getSqlTypeName();
+                if (notEvaluated(operandType))
+                    callConstancy = Constancy.NON_CONSTANT;
+                // Calcite computes on REAL and DOUBLE operands with the IEEE 754 rules,
+                // and Feldera stores -0 as +0 and treats all NaNs as equal: e.g., Calcite
+                // evaluates 1e0 / -0e0 to -Infinity, and Feldera to Infinity
+                if (SqlTypeName.APPROX_TYPES.contains(operandType))
                     callConstancy = Constancy.NON_CONSTANT;
             }
             if (castNotEvaluated(call))

@@ -861,8 +861,8 @@ fn encode_parquet_variant(
         PqVariant::Int16(x) => w.scalar(TAG_SMALLINT, &x.to_le_bytes()),
         PqVariant::Int32(x) => w.scalar(TAG_INT, &x.to_le_bytes()),
         PqVariant::Int64(x) => w.scalar(TAG_BIGINT, &x.to_le_bytes()),
-        PqVariant::Float(x) => w.scalar(TAG_REAL, &x.to_le_bytes()),
-        PqVariant::Double(x) => w.scalar(TAG_DOUBLE, &x.to_le_bytes()),
+        PqVariant::Float(x) => w.scalar(TAG_REAL, &F32::new(x).into_inner().to_le_bytes()),
+        PqVariant::Double(x) => w.scalar(TAG_DOUBLE, &F64::new(x).into_inner().to_le_bytes()),
         PqVariant::Decimal4(x) => w.scalar(
             TAG_DECIMAL,
             &casts::decimal_payload(x.integer() as i128, x.scale()),
@@ -1550,7 +1550,9 @@ impl<'de> Visitor<'de> for BuildValue<'_> {
 
     #[inline]
     fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E> {
-        Ok(self.w.scalar(TAG_DOUBLE, &value.to_le_bytes()))
+        Ok(self
+            .w
+            .scalar(TAG_DOUBLE, &F64::new(value).into_inner().to_le_bytes()))
     }
 
     #[inline]
@@ -3205,5 +3207,36 @@ mod tests {
             u8::decode(FlatVariant::from(&negative).as_bytes()).unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn float_payloads_are_canonical() {
+        use parquet_variant::Variant as PqVariant;
+        use serde::de::IntoDeserializer;
+
+        // -0.0 and a NaN with the sign bit set are stored as 0.0 and NAN
+        let negative_nan = f64::from_bits(f64::NAN.to_bits() | (1 << 63));
+        let negative_nan32 = f32::from_bits(f32::NAN.to_bits() | (1 << 31));
+        let double = |x: f64| FlatVariant::from(&Variant::Double(F64::new(x)));
+        let real = |x: f32| FlatVariant::from(&Variant::Real(F32::new(x)));
+        let deserialize = |x: f64| {
+            let deserializer = IntoDeserializer::<serde::de::value::Error>::into_deserializer(x);
+            FlatVariant::deserialize(deserializer).unwrap()
+        };
+        let from_parquet = |v: PqVariant<'_, '_>| flat_variant_from_parquet(v).unwrap();
+        for (input, canonical) in [(-0.0, 0.0), (negative_nan, f64::NAN)] {
+            let expected = double(canonical);
+            assert_eq!(deserialize(input).as_bytes(), expected.as_bytes());
+            assert_eq!(
+                from_parquet(PqVariant::Double(input)).as_bytes(),
+                expected.as_bytes()
+            );
+        }
+        for (input, canonical) in [(-0.0, 0.0), (negative_nan32, f32::NAN)] {
+            assert_eq!(
+                from_parquet(PqVariant::Float(input)).as_bytes(),
+                real(canonical).as_bytes()
+            );
+        }
     }
 }
