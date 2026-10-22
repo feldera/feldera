@@ -335,4 +335,30 @@ public class ExpressionGCIncrementalTests extends StreamingTestBase {
                  2.0 | 1  | -1
                  2.0 | 11 | 1""");
     }
+
+    /** Check that an aggregate grouped by a TIME minus an INTERVAL keeps its groups: the
+     * subtraction wraps around midnight, so it is not monotone. */
+    @Test
+    public void timeSubtractionIsNotMonotone() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(t TIME NOT NULL LATENESS INTERVAL 1 HOUR, x INT NOT NULL);
+                CREATE VIEW V AS SELECT t - INTERVAL 2 HOURS AS g, SUM(x) AS s
+                FROM T GROUP BY t - INTERVAL 2 HOURS;""")
+                .compactAfterEachStep();
+        // After the second insert the waterline of t is 01:30; 01:30 - 2 hours is 23:30,
+        // above the new group 00:30
+        ccs.step("INSERT INTO T VALUES ('01:30:00', 1);", """
+                 g        | s | weight
+                -----------------------
+                 23:30:00 | 1 | 1""");
+        ccs.step("INSERT INTO T VALUES ('02:30:00', 1);", """
+                 g        | s | weight
+                -----------------------
+                 00:30:00 | 1 | 1""");
+        ccs.step("INSERT INTO T VALUES ('02:30:00', 10);", """
+                 g        | s  | weight
+                ------------------------
+                 00:30:00 | 1  | -1
+                 00:30:00 | 11 | 1""");
+    }
 }
