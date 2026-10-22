@@ -26,6 +26,8 @@ Source edition can be found on github.
   `1970-01-01 00:00:00.0015`.  Before this change, the result had no
   fractional seconds (`1970-01-01 00:00:01`).
 
+## v0.368.0
+
 - Incompatible change (SQL): a cast from `DOUBLE` or `REAL` to `DECIMAL`
   now gives the same result as Calcite.  It uses the shortest decimal form
   of the value, then truncates it to the scale.  Before, the cast
