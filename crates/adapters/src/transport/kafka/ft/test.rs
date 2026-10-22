@@ -1,3 +1,6 @@
+// `Metadata::offsets` is a list of ranges; these tests often have only one
+#![allow(clippy::single_range_in_vec_init)]
+
 use crate::format::{Splitter, SpongeSplitter};
 use crate::test::data::TestStructMetadata;
 use crate::test::kafka::BufferConsumer;

@@ -71,7 +71,7 @@ fn test_read_async(reader: &dyn FileReader, data: &[u8]) {
     let results = receiver.blocking_recv().unwrap();
 
     assert_eq!(results.len(), blocks.len());
-    for (result, block) in results.into_iter().zip(blocks.into_iter()) {
+    for (result, block) in results.into_iter().zip(blocks) {
         let result = result.unwrap();
         let range = block.offset as usize..block.offset as usize + block.size;
         assert_eq!(result.as_slice(), &data[range]);

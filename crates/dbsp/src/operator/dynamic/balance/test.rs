@@ -147,7 +147,7 @@ fn left_join_with_balancer_test_circuit(
     let (left_input, left_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
     let (right_input, right_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
 
-    let right_input = right_input.map_index(|(k, v)| (k.clone(), Some(v.clone())));
+    let right_input = right_input.map_index(|(k, v)| (*k, Some(*v)));
 
     left_input.set_persistent_id(Some("left_input"));
     let left_input_node_id = "left_input".to_string();
@@ -214,16 +214,16 @@ fn circular_dependency_test_circuit(
     let (right_input, right_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
 
     let s2 = left_input
-        .map_index(|(k, v)| (k.clone(), v.clone()))
+        .map_index(|(k, v)| (*k, *v))
         .set_persistent_id(Some("s2"));
     let s3 = right_input
-        .map_index(|(k, v)| (k.clone(), v.clone()))
+        .map_index(|(k, v)| (*k, *v))
         .set_persistent_id(Some("s3"));
     let s5 = left_input
-        .map_index(|(k, v)| (k.clone(), v.clone()))
+        .map_index(|(k, v)| (*k, *v))
         .set_persistent_id(Some("s5"));
     let s6 = right_input
-        .map_index(|(k, v)| (k.clone(), v.clone()))
+        .map_index(|(k, v)| (*k, *v))
         .set_persistent_id(Some("s6"));
 
     let s1 = s5
@@ -325,15 +325,15 @@ fn diluted_cluster_test_circuit(
     let (filler_input, filler_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
 
     let skewed = skewed_input
-        .map_index(|(k, v)| (k.clone(), v.clone()))
+        .map_index(|(k, v)| (*k, *v))
         .set_persistent_id(Some(SKEWED_STREAM));
     let bcast = filler_input
-        .map_index(|(k, v)| (k.clone(), Some(v.clone())))
+        .map_index(|(k, v)| (*k, Some(*v)))
         .set_persistent_id(Some(BCAST_STREAM));
     let fillers = (0..NUM_FILLERS)
         .map(|index| {
             filler_input
-                .map_index(|(k, v)| (k.clone(), v.clone()))
+                .map_index(|(k, v)| (*k, *v))
                 .set_persistent_id(Some(&filler_stream(index)))
         })
         .collect::<Vec<_>>();
@@ -417,7 +417,7 @@ fn test_accumulate_trace_with_balancer(
 
     let mut previous_policy = PartitioningPolicy::Shard;
 
-    for (_step, (policy, batch)) in batches.iter().enumerate() {
+    for (policy, batch) in batches.iter() {
         //println!("step: {}", step);
 
         circuit
@@ -460,8 +460,8 @@ fn test_accumulate_trace_with_balancer(
 
         let expected_output_delta = retractions
             .into_iter()
-            .zip(insertions.into_iter())
-            .zip(input_deltas.into_iter())
+            .zip(insertions)
+            .zip(input_deltas)
             .map(|((retraction, insertion), input_delta)| {
                 TypedBatch::merge_batches([retraction, insertion, input_delta])
             })
@@ -588,17 +588,14 @@ fn test_join_with_balancer(
         circuit.start_transaction().unwrap();
     }
 
-    for (
-        _step,
-        JoinTestStep {
-            left,
-            right,
-            left_policy_hint,
-            right_policy_hint,
-            expected_left_policy,
-            expected_right_policy,
-        },
-    ) in inputs.iter().enumerate()
+    for JoinTestStep {
+        left,
+        right,
+        left_policy_hint,
+        right_policy_hint,
+        expected_left_policy,
+        expected_right_policy,
+    } in inputs.iter()
     {
         // println!(
         //     "step: {} (left_policy_hint: {:?}, right_policy_hint: {:?})",
@@ -771,7 +768,7 @@ fn test_circular_dependency(
         circuit.start_transaction().unwrap();
     }
 
-    for (_step, (left, right)) in inputs.iter().enumerate() {
+    for (left, right) in inputs.iter() {
         // println!("step: {step}");
 
         // println!("insertions: {:?}", insertions);
@@ -1070,22 +1067,14 @@ fn generate_skewed_batch(num_partitions: usize, size: usize, skew: usize) -> Tes
 
     // Distribute remaining entries across other partitions
     let other_partitions = num_partitions - 1;
-    let base_other_size = if other_partitions > 0 {
-        remaining_size / other_partitions
-    } else {
-        0
-    };
-    let extra_other_size = if other_partitions > 0 {
-        remaining_size % other_partitions
-    } else {
-        0
-    };
+    let base_other_size = remaining_size.checked_div(other_partitions).unwrap_or(0);
+    let extra_other_size = remaining_size.checked_rem(other_partitions).unwrap_or(0);
 
     // Target sizes for each partition: partition 0 gets largest_size, others get base_other_size (+1 for first extra_other_size partitions)
     let mut target_sizes = vec![0; num_partitions];
     target_sizes[0] = largest_size;
-    for i in 1..num_partitions {
-        target_sizes[i] = base_other_size + if i <= extra_other_size { 1 } else { 0 };
+    for (i, target_size) in target_sizes.iter_mut().enumerate().skip(1) {
+        *target_size = base_other_size + if i <= extra_other_size { 1 } else { 0 };
     }
 
     // Generate keys that hash to the appropriate partitions

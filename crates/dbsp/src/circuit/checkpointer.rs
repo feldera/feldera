@@ -1075,8 +1075,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         std::fs::remove_file(tempdir.path().join(CHECKPOINT_FILE_NAME)).unwrap();
 
         let err = Checkpointer::new(make_backend())
-            .err()
-            .expect("missing catalog with orphan UUID dirs must error");
+            .expect_err("missing catalog with orphan UUID dirs must error");
         assert!(
             format!("{err}").contains("checkpoint catalog (checkpoints.feldera) missing"),
             "expected catalog-missing error, got: {err}",

@@ -157,7 +157,7 @@ impl<T> LogCapture<T> {
 
         #[derive(Debug, Default)]
         struct CaptureBuf(Mutex<Vec<u8>>);
-        impl<'a> Write for &'a CaptureBuf {
+        impl Write for &CaptureBuf {
             fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
                 self.0.lock().unwrap().extend_from_slice(buf);
                 Ok(buf.len())

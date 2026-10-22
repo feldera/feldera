@@ -208,7 +208,7 @@ async fn tail_transient_recovers_and_starts_from_resolved_zero() {
     sender.send(InputReaderCommand::Extend).unwrap();
     wait_for(|| consumer.error_count() >= 1).await;
     wait_for(|| stream.read_inputs().len() == 1).await;
-    assert_eq!(consumer.errors()[0].0, false);
+    assert!(!consumer.errors()[0].0);
     assert!(matches!(
         stream.read_inputs()[0].start.from,
         ReadFrom::SeqNum(0)

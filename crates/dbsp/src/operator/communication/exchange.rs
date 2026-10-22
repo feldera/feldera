@@ -2861,7 +2861,7 @@ mod tests {
     // `ExchangeSender` - sends each number to all peers.
     // `ExchangeReceiver` - combines all received numbers in a vector.
     // `Inspect` - validates the output of the receiver.
-    fn test_operators_single_host(circuit: impl FnOnce() + Copy + Clone + Send + Sync + 'static) {
+    fn test_operators_single_host(circuit: impl FnOnce() + Copy + Send + Sync + 'static) {
         for workers in [2, 16, 32] {
             run_on_hosts(workers, 1, circuit);
         }
@@ -2873,7 +2873,7 @@ mod tests {
     // `ExchangeSender` - sends each number to all peers.
     // `ExchangeReceiver` - combines all received numbers in a vector.
     // `Inspect` - validates the output of the receiver.
-    fn test_operators_multihost(circuit: impl FnOnce() + Copy + Clone + Send + Sync + 'static) {
+    fn test_operators_multihost(circuit: impl FnOnce() + Copy + Send + Sync + 'static) {
         for (workers, hosts) in [(2, 2), (4, 2), (8, 2), (3, 3), (4, 4), (16, 4)] {
             run_on_hosts(workers, hosts, circuit);
         }

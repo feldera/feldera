@@ -2159,9 +2159,9 @@ pub mod test {
             )
             .unwrap();
 
-            for i in 0..inputs.len() {
-                // println!("input: {:?}", inputs[i]);
-                input_handle.append(&mut inputs[i].clone());
+            for input in &inputs {
+                // println!("input: {:?}", input);
+                input_handle.append(&mut input.clone());
                 dbsp.transaction().unwrap();
                 assert_eq!(
                     max_handle.concat().consolidate(),

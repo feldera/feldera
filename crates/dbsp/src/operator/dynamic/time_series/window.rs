@@ -701,7 +701,7 @@ mod test {
             .into_iter();
 
         let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
-            Runtime::init_circuit(1, move |circuit| window_test_circuit(circuit)).unwrap();
+            Runtime::init_circuit(1, window_test_circuit).unwrap();
 
         for clock in 1000..1006 {
             bounds_handle.set_for_all(((clock - 100), clock));
@@ -769,7 +769,7 @@ mod test {
         const WINDOW_SIZE: Time = 5;
 
         let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
-            Runtime::init_circuit(1, move |circuit| window_test_circuit(circuit)).unwrap();
+            Runtime::init_circuit(1, window_test_circuit).unwrap();
 
         for clock in 1000..1011 {
             bounds_handle.set_for_all((
@@ -855,7 +855,7 @@ mod test {
         .into_iter();
 
         let (mut circuit, (bounds_handle, index1_handle, output_handle)) =
-            Runtime::init_circuit(1, move |circuit| window_test_circuit(circuit)).unwrap();
+            Runtime::init_circuit(1, window_test_circuit).unwrap();
 
         for _ in 1000..1006 {
             bounds_handle.set_for_all(windows.next().unwrap());

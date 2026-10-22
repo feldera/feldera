@@ -17,9 +17,11 @@ use std::sync::{Arc, Mutex};
 // ---------------------------------------------------------------------------
 
 /// Worker-thread counts used by all output-connector encode benchmarks.
+#[allow(dead_code)] // Only some of the benches that include this module use it
 pub const BENCH_WORKER_COUNTS: [usize; 4] = [1, 2, 4, 8];
 
 /// Record counts used by the scaling benchmarks.
+#[allow(dead_code)] // Only some of the benches that include this module use it
 pub const BENCH_RECORD_COUNTS: [usize; 3] = [100_000, 1_000_000, 2_000_000];
 
 /// Runs `iters` Criterion timing iterations.
@@ -27,6 +29,7 @@ pub const BENCH_RECORD_COUNTS: [usize; 3] = [100_000, 1_000_000, 2_000_000];
 /// `timed` is called inside the stopwatch; `after` is called outside it and
 /// can be used for correctness checks or inter-iteration cleanup (e.g. table
 /// truncation). Returns the total elapsed time of the `timed` calls only.
+#[allow(dead_code)] // Only some of the benches that include this module use it
 pub fn bench_iter(
     iters: u64,
     mut timed: impl FnMut(),

@@ -1653,7 +1653,7 @@ mod test {
             assert_eq!(distinct_output.concat().consolidate(), expected_output);
             assert_eq!(hash_distinct_output.concat().consolidate(), expected_output);
         } else {
-            for (mut i, o) in inputs.into_iter().zip(expected_outputs.into_iter()) {
+            for (mut i, o) in inputs.into_iter().zip(expected_outputs) {
                 input.append(&mut i);
                 circuit.transaction().unwrap();
                 assert_eq!(stream_distinct_output.concat().consolidate(), o);

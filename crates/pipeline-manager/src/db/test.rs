@@ -5660,8 +5660,8 @@ async fn check_rbac_action(
         RbacAction::ListTenants => {
             let mut model_response = model.list_tenants().await.unwrap();
             let mut impl_response = handle.db.list_tenants().await.unwrap();
-            model_response.sort_by(|a, b| a.id.cmp(&b.id));
-            impl_response.sort_by(|a, b| a.id.cmp(&b.id));
+            model_response.sort_by_key(|a| a.id);
+            impl_response.sort_by_key(|a| a.id);
             assert_eq!(model_response, impl_response);
         }
         RbacAction::GetTenantById(tenant_id) => {
@@ -6329,13 +6329,13 @@ fn check_response_pipelines(
     mut result_impl: DBResult<Vec<ExtendedPipelineDescr>>,
 ) {
     result_model = result_model.map(|mut v| {
-        v.sort_by(|p1, p2| p1.id.cmp(&p2.id));
+        v.sort_by_key(|p1| p1.id);
         v.into_iter()
             .map(convert_pipeline_with_constant_timestamps)
             .collect()
     });
     result_impl = result_impl.map(|mut v| {
-        v.sort_by(|p1, p2| p1.id.cmp(&p2.id));
+        v.sort_by_key(|p1| p1.id);
         v.into_iter()
             .map(convert_pipeline_with_constant_timestamps)
             .collect()
@@ -6351,13 +6351,13 @@ fn check_response_pipelines_for_monitoring(
     mut result_impl: DBResult<Vec<ExtendedPipelineDescrMonitoring>>,
 ) {
     result_model = result_model.map(|mut v| {
-        v.sort_by(|p1, p2| p1.id.cmp(&p2.id));
+        v.sort_by_key(|p1| p1.id);
         v.into_iter()
             .map(convert_pipeline_for_monitoring_with_constant_timestamps)
             .collect()
     });
     result_impl = result_impl.map(|mut v| {
-        v.sort_by(|p1, p2| p1.id.cmp(&p2.id));
+        v.sort_by_key(|p1| p1.id);
         v.into_iter()
             .map(convert_pipeline_for_monitoring_with_constant_timestamps)
             .collect()
@@ -6423,13 +6423,13 @@ fn check_responses_cluster_monitor_events(
     mut result_impl: DBResult<Vec<ClusterMonitorEvent>>,
 ) {
     result_model = result_model.map(|mut v| {
-        v.sort_by(|p1, p2| p1.id.cmp(&p2.id));
+        v.sort_by_key(|p1| p1.id);
         v.into_iter()
             .map(convert_cluster_monitor_event_short_with_constant_timestamps)
             .collect()
     });
     result_impl = result_impl.map(|mut v| {
-        v.sort_by(|p1, p2| p1.id.cmp(&p2.id));
+        v.sort_by_key(|p1| p1.id);
         v.into_iter()
             .map(convert_cluster_monitor_event_short_with_constant_timestamps)
             .collect()
@@ -6470,13 +6470,13 @@ fn check_responses_pipeline_monitor_events_short(
     mut result_impl: DBResult<Vec<PipelineMonitorEvent>>,
 ) {
     result_model = result_model.map(|mut v| {
-        v.sort_by(|p1, p2| p1.event_id.cmp(&p2.event_id));
+        v.sort_by_key(|p1| p1.event_id);
         v.into_iter()
             .map(convert_pipeline_monitor_event_short_with_constant_timestamps)
             .collect()
     });
     result_impl = result_impl.map(|mut v| {
-        v.sort_by(|p1, p2| p1.event_id.cmp(&p2.event_id));
+        v.sort_by_key(|p1| p1.event_id);
         v.into_iter()
             .map(convert_pipeline_monitor_event_short_with_constant_timestamps)
             .collect()
@@ -6492,13 +6492,13 @@ fn check_responses_pipeline_monitor_events_extended(
     mut result_impl: DBResult<Vec<ExtendedPipelineMonitorEvent>>,
 ) {
     result_model = result_model.map(|mut v| {
-        v.sort_by(|p1, p2| p1.event_id.cmp(&p2.event_id));
+        v.sort_by_key(|p1| p1.event_id);
         v.into_iter()
             .map(convert_pipeline_monitor_event_extended_with_constant_timestamps)
             .collect()
     });
     result_impl = result_impl.map(|mut v| {
-        v.sort_by(|p1, p2| p1.event_id.cmp(&p2.event_id));
+        v.sort_by_key(|p1| p1.event_id);
         v.into_iter()
             .map(convert_pipeline_monitor_event_extended_with_constant_timestamps)
             .collect()
@@ -9474,7 +9474,7 @@ impl Storage for Mutex<DbModel> {
             .iter()
             .map(|((tid, pid), _)| (*tid, *pid))
             .collect();
-        result.sort_by(|(_, p1), (_, p2)| p1.cmp(p2));
+        result.sort_by_key(|(_, p1)| *p1);
         Ok(result)
     }
 
@@ -9488,7 +9488,7 @@ impl Storage for Mutex<DbModel> {
             .iter()
             .map(|((tid, _), pipeline)| (*tid, convert_descriptor_to_monitoring(pipeline.clone())))
             .collect();
-        result.sort_by(|(_, p1), (_, p2)| p1.id.cmp(&p2.id));
+        result.sort_by_key(|(_, p1)| p1.id);
         Ok(result)
     }
 
@@ -9705,7 +9705,7 @@ impl Storage for Mutex<DbModel> {
                     .unwrap_or(false),
             })
             .collect();
-        artifacts.sort_by(|p1, p2| p1.pipeline_id.cmp(&p2.pipeline_id));
+        artifacts.sort_by_key(|p1| p1.pipeline_id);
         Ok(artifacts)
     }
 
@@ -9732,7 +9732,7 @@ impl Storage for Mutex<DbModel> {
                 runner_status: e.runner_status,
             })
             .collect();
-        events.sort_by(|e1, e2| (e2.recorded_at, e2.id).cmp(&(e1.recorded_at, e1.id))); // Descending
+        events.sort_by_key(|e| std::cmp::Reverse((e.recorded_at, e.id))); // Descending
         Ok(events)
     }
 
@@ -9770,7 +9770,7 @@ impl Storage for Mutex<DbModel> {
     async fn get_latest_cluster_monitor_event_short(&self) -> Result<ClusterMonitorEvent, DBError> {
         let mut events: Vec<ExtendedClusterMonitorEvent> =
             self.lock().await.cluster_events.values().cloned().collect();
-        events.sort_by(|e1, e2| (e2.recorded_at, e2.id).cmp(&(e1.recorded_at, e1.id))); // Descending
+        events.sort_by_key(|e| std::cmp::Reverse((e.recorded_at, e.id))); // Descending
         if events.is_empty() {
             Err(DBError::NoClusterMonitorEventsAvailable)
         } else {
@@ -9789,7 +9789,7 @@ impl Storage for Mutex<DbModel> {
     ) -> Result<ExtendedClusterMonitorEvent, DBError> {
         let mut events: Vec<ExtendedClusterMonitorEvent> =
             self.lock().await.cluster_events.values().cloned().collect();
-        events.sort_by(|e1, e2| (e2.recorded_at, e2.id).cmp(&(e1.recorded_at, e1.id))); // Descending
+        events.sort_by_key(|e| std::cmp::Reverse((e.recorded_at, e.id))); // Descending
         if events.is_empty() {
             Err(DBError::NoClusterMonitorEventsAvailable)
         } else {
@@ -9839,7 +9839,7 @@ impl Storage for Mutex<DbModel> {
         let db_model = mutex.borrow_mut();
         let events = db_model.cluster_events.clone();
         let mut events: Vec<ExtendedClusterMonitorEvent> = events.values().cloned().collect();
-        events.sort_by(|e1, e2| (e2.recorded_at, e2.id).cmp(&(e1.recorded_at, e1.id))); // Descending
+        events.sort_by_key(|e| std::cmp::Reverse((e.recorded_at, e.id))); // Descending
 
         // Exceeding retention period
         let first_event_id = events.first().map(|e| e.id);
@@ -9915,7 +9915,7 @@ impl Storage for Mutex<DbModel> {
                 storage_status: e.storage_status,
             })
             .collect();
-        events.sort_by(|e1, e2| (e2.recorded_at, e2.event_id).cmp(&(e1.recorded_at, e1.event_id))); // Descending
+        events.sort_by_key(|e| std::cmp::Reverse((e.recorded_at, e.event_id))); // Descending
         Ok(events)
     }
 
@@ -9932,7 +9932,7 @@ impl Storage for Mutex<DbModel> {
             .get(&(tenant_id, pipeline_id))
             .expect("pipeline has just been retrieved by name so it exists")
             .clone();
-        events.sort_by(|e1, e2| (e2.recorded_at, e2.event_id).cmp(&(e1.recorded_at, e1.event_id))); // Descending
+        events.sort_by_key(|e| std::cmp::Reverse((e.recorded_at, e.event_id))); // Descending
         Ok(events)
     }
 
@@ -9997,7 +9997,7 @@ impl Storage for Mutex<DbModel> {
             .get(&(tenant_id, pipeline_id))
             .cloned()
             .expect("pipeline has just been retrieved by name so it exists");
-        events.sort_by(|e1, e2| (e2.recorded_at, e2.event_id).cmp(&(e1.recorded_at, e1.event_id))); // Descending
+        events.sort_by_key(|e| std::cmp::Reverse((e.recorded_at, e.event_id))); // Descending
         if events.is_empty() {
             Err(DBError::NoPipelineMonitorEventsAvailable)
         } else {
@@ -10028,7 +10028,7 @@ impl Storage for Mutex<DbModel> {
             .get(&(tenant_id, pipeline_id))
             .cloned()
             .expect("pipeline has just been retrieved by name so it exists");
-        events.sort_by(|e1, e2| (e2.recorded_at, e2.event_id).cmp(&(e1.recorded_at, e1.event_id))); // Descending
+        events.sort_by_key(|e| std::cmp::Reverse((e.recorded_at, e.event_id))); // Descending
         if events.is_empty() {
             Err(DBError::NoPipelineMonitorEventsAvailable)
         } else {
