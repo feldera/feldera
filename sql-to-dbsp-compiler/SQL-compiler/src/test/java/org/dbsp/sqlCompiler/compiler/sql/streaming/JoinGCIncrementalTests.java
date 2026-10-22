@@ -448,11 +448,11 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
             full_t_anti      | -        | -        | -        | -        | -
             full_k_anti      | -        | -        | -        | -        | -
             asof             | -        | V        | NV       | NV       | NV
-            not_exists_t     | -        | KKKN     | KKKKN    | KKKKN    | KKKKN
-            not_exists_k     | -        | N        | N        | N        | N
+            not_exists_t     | -        | KK       | KKK      | KKK      | KKK
+            not_exists_k     | -        | -        | -        | -        | -
             exists_t         | K        | KK       | KKK      | KKK      | KKK
             exists_k         | -        | -        | -        | -        | -
-            not_in_t         | -        | KKKN     | KKKN     | KKKN     | KKKN
+            not_in_t         | -        | KK       | KK       | KK       | KK
             """;
 
     /** The declaration of an input of a join, with LATENESS on t unless {@code lateness} is 0. */

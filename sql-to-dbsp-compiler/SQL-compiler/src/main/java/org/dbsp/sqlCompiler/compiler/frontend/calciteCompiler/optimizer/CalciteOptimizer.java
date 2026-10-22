@@ -90,6 +90,11 @@ public class CalciteOptimizer implements IWritesLogs {
         String getName();
         /** Optimize the program for the specified optimization level */
         RelNode optimize(RelNode rel, int level);
+        /** True if this step must not throw: an exception it throws stops the compilation.
+         * The optimizer skips, with a warning, a step that may throw */
+        default boolean mustNotThrow() {
+            return false;
+        }
     }
 
     /** Base class for optimizations that use a HEP optimizer */
@@ -110,11 +115,23 @@ public class CalciteOptimizer implements IWritesLogs {
         final int level;
         final String name;
         final HepProgramBuilder builder;
+        boolean mustNotThrow = false;
 
         public BaseOptimizerStep(String name, int level) {
             this.level = level;
             this.name = name;
             this.builder = new HepProgramBuilder();
+        }
+
+        /** Make an exception thrown by this step stop the compilation */
+        BaseOptimizerStep setMustNotThrow() {
+            this.mustNotThrow = true;
+            return this;
+        }
+
+        @Override
+        public boolean mustNotThrow() {
+            return this.mustNotThrow;
         }
 
         @Override
@@ -189,6 +206,8 @@ public class CalciteOptimizer implements IWritesLogs {
                     rel = optimized;
                 }
             } catch (Throwable ex) {
+                if (step.mustNotThrow())
+                    throw ex;
                 this.reporter.reportWarning(
                         SourcePositionRange.INVALID, "Calcite optimizer exception caught",
                         "Calcite optimizer failed during '" + step.getName() +
@@ -227,6 +246,37 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.AGGREGATE_MERGE,
                 CoreRules.INTERSECT_MERGE);
 
+        // Must be the first step: with expand=false the converter leaves
+        // RexSubQuery nodes, and every later step expects Correlate/Join nodes.
+        this.addStep(new SimpleOptimizerStep("Remove sub-queries", 0,
+                CoreRules.FILTER_SUB_QUERY_TO_CORRELATE,
+                CoreRules.PROJECT_SUB_QUERY_TO_CORRELATE,
+                CoreRules.JOIN_SUB_QUERY_TO_CORRELATE,
+                CoreRules.AGGREGATE_REMOVE_LITERAL_AGG).setMustNotThrow());
+        // Must run right after "Remove sub-queries": later steps rewrite the constructs
+        // that RejectUnsupportedPlans checks, such as ROWS frames and DISTINCT aggregates.
+        this.addStep(new CalciteOptimizerStep() {
+            @Override
+            public String getName() {
+                return "Reject unsupported plans";
+            }
+
+            @Override
+            public RelNode optimize(RelNode rel, int level) {
+                rel.accept(new RejectUnsupportedPlans(CalciteOptimizer.this.reporter));
+                return rel;
+            }
+
+            @Override
+            public boolean mustNotThrow() {
+                return true;
+            }
+
+            @Override
+            public String toString() {
+                return this.getName();
+            }
+        });
         // Must run before "Expand windows", which converts the RexOver
         // projections this rewrite creates.
         this.addStep(new SimpleOptimizerStep("Rewrite SESSION", 0,
