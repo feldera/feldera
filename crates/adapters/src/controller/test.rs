@@ -29,6 +29,7 @@ use feldera_types::{
     checkpoint::CheckpointMetadata,
     config::{FormatConfig, FtModel, InputEndpointConfig, OutputEndpointConfig},
     constants::{CHECKPOINT_FILE_NAME, STATE_FILE},
+    coordination::StepAction,
     memory_pressure::MemoryPressure,
     program_schema::Relation,
     transport::http::HttpInputConfig,
@@ -1061,6 +1062,48 @@ fn _test_concurrent_init(max_parallel_connector_init: u64) {
 +----------+"#;
 
     assert_eq!(&result, expected);
+    controller.stop().unwrap();
+}
+
+/// The step status reports how many input records the host has committed, so
+/// that a multihost coordinator can add up the hosts' counts.
+#[test]
+fn step_status_reports_committed_records() {
+    init_test_logger();
+
+    let (_temp_input_files, inputs) = multiple_input_files(5);
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": inputs,
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    let step_watcher = controller.step_watcher();
+    assert_eq!(step_watcher.borrow().total_committed_records, Some(0));
+
+    controller.start();
+    wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
+    wait(
+        || {
+            let status = *step_watcher.borrow();
+            status.action == StepAction::Idle && status.total_committed_records == Some(5)
+        },
+        10_000,
+    )
+    .unwrap_or_else(|_| panic!("last step status: {:?}", *step_watcher.borrow()));
     controller.stop().unwrap();
 }
 

@@ -2616,6 +2616,10 @@ export type GlobalControllerMetrics = {
   storage_mb_secs: number
   /**
    * Total number of input records processed to completion.
+   *
+   * In a multihost pipeline, this counts the input records of all of the
+   * hosts, as an output endpoint's `total_processed_input_records` does, and
+   * has the same limit with a host that does not report its count.
    */
   total_completed_records: number
   /**
@@ -4053,17 +4057,20 @@ export type OutputEndpointMetrics = {
    * the batch, or discarding it while silent bootstrapping suppresses the
    * endpoint's output.
    *
-   * In a multihost pipeline, this count reflects only the input records
-   * processed on the same host as the output endpoint, which is not usually
-   * meaningful.
+   * In a multihost pipeline, each host counts only its own input, but the
+   * coordinator replaces this with the input records of all of the hosts as
+   * of `total_processed_steps`, so the count means the same as with one
+   * host.  (If a host does not report its count to the coordinator, as an
+   * older version does not, this counts only the input of the endpoint's own
+   * host.)
    */
   total_processed_input_records: number
   /**
    * The number of steps whose input records have been processed by the
    * endpoint.
    *
-   * This is meaningful in a multihost pipeline because steps are
-   * synchronized across all of the hosts.
+   * In a multihost pipeline, the hosts run the same steps together, so this
+   * count means the same as with one host.
    *
    * # Interpretation
    *

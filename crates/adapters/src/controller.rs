@@ -3296,8 +3296,10 @@ impl CircuitThread {
             HashMap::new()
         };
 
-        let (step_sender, step_receiver) =
-            tokio::sync::watch::channel(StepStatus::new(step, StepAction::Idle, None));
+        let (step_sender, step_receiver) = tokio::sync::watch::channel(
+            StepStatus::new(step, StepAction::Idle, None)
+                .with_total_committed_records(processed_records),
+        );
         let (checkpoint_sender, checkpoint_receiver) = tokio::sync::watch::channel(None);
 
         let bootstrapped_output_endpoints =
@@ -3925,16 +3927,26 @@ impl CircuitThread {
             }
         }
 
-        self.step_sender.send_replace(StepStatus::new(
-            self.step,
-            StepAction::Idle,
-            transaction_state.into_coordination_status(),
-        ));
-
         // Record that we've processed the records, unless there is a transaction in progress,
         // in which case records are ingested by the circuit but are not fully processed.
-        let transaction_state = self.controller.get_transaction_state();
-        let processed_records = self.processed_records(total_consumed, transaction_state);
+        //
+        // Do this before we report `Idle`, so that the report carries this step's count.
+        let committed_transaction_state = self.controller.get_transaction_state();
+        let processed_records = self.processed_records(total_consumed, committed_transaction_state);
+
+        self.step_sender.send_replace(
+            StepStatus::new(
+                self.step,
+                StepAction::Idle,
+                transaction_state.into_coordination_status(),
+            )
+            .with_total_committed_records(
+                self.controller
+                    .status
+                    .committed()
+                    .total_processed_input_records,
+            ),
+        );
 
         if let Some(ft) = self.ft.as_mut() {
             ft.sync_step()?;
