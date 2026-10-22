@@ -3537,7 +3537,8 @@ impl Add<ShortInterval> for Time {
         let nanos_in_day = Time::ONE_DAY.nanoseconds() as i64;
 
         let time = self.nanoseconds() as i64 + nanos_in_day;
-        let int = rhs.nanoseconds() % nanos_in_day;
+        // The interval modulo 24 hours, which fits in an i64 in nanoseconds
+        let int = (rhs.microseconds() % (nanos_in_day / 1_000)) * 1_000;
 
         let rem = (time + int) % nanos_in_day;
 
@@ -3550,7 +3551,9 @@ impl Sub<ShortInterval> for Time {
 
     #[doc(hidden)]
     fn sub(self, rhs: ShortInterval) -> Self::Output {
-        self + (ShortInterval::from_microseconds(-rhs.microseconds()))
+        // The interval modulo 24 hours, which can be negated
+        let micros_in_day = Time::ONE_DAY.nanoseconds() as i64 / 1_000;
+        self + (ShortInterval::from_microseconds(-(rhs.microseconds() % micros_in_day)))
     }
 }
 
@@ -4458,6 +4461,21 @@ mod test {
         let format = SqlString::from_ref("%Y-%m-%d %H:%M:%S");
         let parsed = super::parse_timestamp__(format, SqlString::from_ref("0000-12-31 23:59:59"));
         assert!(parsed.is_none());
+    }
+
+    /// TIME plus or minus an interval whose length in nanoseconds does not fit in an `i64`.
+    #[test]
+    fn time_plus_large_interval() {
+        let ten = Time::from_nanoseconds(36_000_000_000_000);
+        let days = ShortInterval::from_microseconds(200_000 * 86_400_000_000);
+        assert_eq!(ten + days, ten);
+        assert_eq!(ten - days, ten);
+        // i64::MIN microseconds is -106751991 days and 4:00:54.775808
+        let min = ShortInterval::from_microseconds(i64::MIN);
+        assert_eq!(
+            Time::from_nanoseconds(0) - min,
+            Time::from_nanoseconds(14_454_775_808_000)
+        );
     }
 }
 
