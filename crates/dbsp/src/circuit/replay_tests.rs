@@ -21,13 +21,7 @@ use crate::{
     },
     zset,
 };
-use std::{
-    cmp::Ordering,
-    fmt::Debug,
-    marker::PhantomData,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{cmp::Ordering, fmt::Debug, marker::PhantomData, path::Path, sync::Arc};
 
 use super::{CircuitConfig, Layout, dbsp_handle::Mode};
 
@@ -155,7 +149,7 @@ type CircuitFn<I1, I2, O1, O2> = Arc<
         + Sync,
 >;
 
-fn circuit_config(path: &PathBuf) -> CircuitConfig {
+fn circuit_config(path: &Path) -> CircuitConfig {
     CircuitConfig::with_workers(NUM_WORKERS)
         .with_splitter_chunk_size_records(2)
         .with_mode(Mode::Persistent)
@@ -1069,8 +1063,8 @@ fn balancer_circuit2(
 #[test]
 fn test_balancer1() {
     test_replay::<(), TestData4<u64, u64, u64, u64>, (), (), TestData2<u64, u64>, TestData1<u64>>(
-        Arc::new(|circuit| balancer_circuit1(circuit)),
-        Arc::new(|circuit| balancer_circuit2(circuit)),
+        Arc::new(balancer_circuit1),
+        Arc::new(balancer_circuit2),
         vec![(); 100],
         itertools::izip!(
             sequence(0, 100),
@@ -1115,8 +1109,8 @@ fn test_balancer2() {
         .collect::<Vec<_>>();
 
     test_replay::<(), TestData4<u64, u64, u64, u64>, (), (), TestData2<u64, u64>, TestData1<u64>>(
-        Arc::new(|circuit| balancer_circuit1(circuit)),
-        Arc::new(|circuit| balancer_circuit2(circuit)),
+        Arc::new(balancer_circuit1),
+        Arc::new(balancer_circuit2),
         vec![(); skewed_sequence_small1.len()],
         itertools::izip!(
             skewed_sequence_large1.clone(),
@@ -2471,7 +2465,7 @@ type ConcCircuit2Fn<I, OO, ON> = Arc<
         + Sync,
 >;
 
-fn circuit_config_with_workers(path: &PathBuf, workers: usize) -> CircuitConfig {
+fn circuit_config_with_workers(path: &Path, workers: usize) -> CircuitConfig {
     CircuitConfig::with_workers(workers)
         .with_splitter_chunk_size_records(2)
         .with_mode(Mode::Persistent)
@@ -2728,8 +2722,8 @@ fn run_concurrent_bootstrap_test_on_hosts<I, OO, ON>(
     // through and including this transaction.  Every later transaction's
     // new-view output is the per-transaction delta, like the old views'.
     let mut cumulative_new = ON::zero();
-    for j in 0..offset {
-        cumulative_new = ON::add(&cumulative_new, &ref_new[j]);
+    for delta in &ref_new[..offset] {
+        cumulative_new = ON::add(&cumulative_new, delta);
     }
     for (i, chunk) in inputs3.iter().chain(inputs4.iter()).enumerate() {
         push_to_host::<_, I>(&hosts, offset + i, chunk.clone(), |handles| &handles.0);
@@ -6037,7 +6031,7 @@ fn keys_zset(keys: std::ops::Range<u64>) -> OrdZSet<u64> {
 ///
 /// The checkpoint.
 fn checkpoint_broadcast_cluster(
-    path: &PathBuf,
+    path: &Path,
     keys: std::ops::Range<u64>,
 ) -> feldera_types::checkpoint::CheckpointMetadata {
     let (mut circuit, ((h1, h2, h3, h4), (out1, out2))) =

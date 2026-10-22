@@ -975,7 +975,7 @@ impl Arbitrary for IcebergTestStruct {
                 // Generate timestamps within a 1-year range
                 1704070800i64..1735693200,
                 // Generate timestamptz within a 1-year range (microseconds since epoch)
-                1704070800_000_000i64..1735693200_000_000,
+                1_704_070_800_000_000i64..1_735_693_200_000_000,
             ),
             // String in the range "0".."1000"
             (

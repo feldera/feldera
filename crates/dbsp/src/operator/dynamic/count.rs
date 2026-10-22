@@ -322,7 +322,7 @@ mod test {
             })
             .unwrap();
 
-        for (mut input, expected_counts) in input_copy.into_iter().zip(expected.into_iter()) {
+        for (mut input, expected_counts) in input_copy.into_iter().zip(expected) {
             println!("step");
             source_handle.append(&mut input);
             circuit.transaction().unwrap();

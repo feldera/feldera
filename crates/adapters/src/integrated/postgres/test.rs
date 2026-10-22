@@ -3480,7 +3480,7 @@ fn test_pg_non_unique_keys_skipped() {
     // filters out conflicting keys before they reach postgres.
     let mut table = PostgresTestStruct::create_table(&table_name, url, true, &None);
 
-    let errors: Arc<Mutex<Vec<(String, Option<String>)>>> = Arc::new(Mutex::new(Vec::new()));
+    let errors = Arc::new(Mutex::new(Vec::<(String, Option<String>)>::new()));
     let errors_clone = errors.clone();
 
     let controller = Controller::with_test_config(

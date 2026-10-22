@@ -1451,7 +1451,7 @@ fn delta_table_output_non_unique_keys_skipped_test() {
 
     // Capture every error the controller reports instead of panicking, so we
     // can assert on the uniqueness violations.
-    let errors: Arc<Mutex<Vec<(String, Option<String>)>>> = Arc::new(Mutex::new(Vec::new()));
+    let errors = Arc::new(Mutex::new(Vec::<(String, Option<String>)>::new()));
     let errors_clone = errors.clone();
 
     let controller = Controller::with_test_config(
@@ -1527,7 +1527,7 @@ fn delta_table_output_non_unique_keys_skipped_test() {
 /// * `verify` - verify the final contents of the delta table is equivalent to
 ///   `data`.  Currently only works for tables in the local FS.
 /// * `index_is_alias` - if true, uses catalog.register_materialized_output_map_persistent with
-///    index_is_alias=true to register index; otherwise, uses catalog.register_index_persistent.
+///   index_is_alias=true to register index; otherwise, uses catalog.register_index_persistent.
 ///
 /// TODO: implement verification using the delta table API rather than
 /// by reading parquet files directly.  I guess the best way to do this is

@@ -9511,11 +9511,11 @@ fn transaction_rounds(
                     let mut samples = Vec::new();
                     let mut last = None;
                     while !done.load(Ordering::Acquire) {
-                        if let Some(sample) = sample_views(&controller) {
-                            if Some(sample) != last {
-                                samples.push(sample);
-                                last = Some(sample);
-                            }
+                        if let Some(sample) = sample_views(&controller)
+                            && Some(sample) != last
+                        {
+                            samples.push(sample);
+                            last = Some(sample);
                         }
                     }
                     samples
@@ -9674,11 +9674,11 @@ fn transaction_view_consistency(
             let mut samples = Vec::new();
             let mut last = None;
             while !done.load(Ordering::Acquire) {
-                if let Some(sample) = sample_views(&controller) {
-                    if Some(sample) != last {
-                        samples.push(sample);
-                        last = Some(sample);
-                    }
+                if let Some(sample) = sample_views(&controller)
+                    && Some(sample) != last
+                {
+                    samples.push(sample);
+                    last = Some(sample);
                 }
             }
             samples

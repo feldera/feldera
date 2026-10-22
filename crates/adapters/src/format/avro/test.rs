@@ -143,7 +143,8 @@ fn debezium_avro_schema(value_schema: &str, value_type_name: &str) -> AvroSchema
 /// `AvroSchema` drops attributes on primitive types).
 fn debezium_avro_schema_str(value_schema: &str, value_type_name: &str) -> String {
     // Note: placing `after` before `before` to trigger schema reference resolution.
-    let schema_str = r#"{
+
+    r#"{
     "type": "record",
     "name": "Envelope",
     "namespace": "test_namespace",
@@ -220,9 +221,7 @@ fn debezium_avro_schema_str(value_schema: &str, value_type_name: &str) -> String
     ],
     "connect.version": 1,
     "connect.name": "test_namespace.Envelope"
-}"#.replace("VALUE_SCHEMA", value_schema).replace("VALUE_TYPE", value_type_name);
-
-    schema_str
+}"#.replace("VALUE_SCHEMA", value_schema).replace("VALUE_TYPE", value_type_name)
 }
 
 fn serialize_record<T>(x: &T, schema: &AvroSchema) -> Vec<u8>

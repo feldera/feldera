@@ -1082,7 +1082,7 @@ mod test {
         let mut cursor_list = CursorList::new(weight_factory, cursors);
 
         let cursor_output = cursor_to_tuples(&mut cursor_list);
-        let expected = merged_batch_to_tuples(&batches);
+        let expected = merged_batch_to_tuples(batches);
 
         assert_eq!(cursor_output, expected);
     }

@@ -14,7 +14,7 @@ use dbsp::{
     define_inner_star_join,
     utils::{Tup2, Tup3, Tup4, Tup5},
 };
-use feldera_types::config::{FileBackendConfig, StorageBackendConfig};
+use feldera_types::config::StorageBackendConfig;
 use feldera_types::size::ConfigSize;
 use rand::Rng;
 use rand::SeedableRng;
@@ -23,6 +23,8 @@ use size_of::HumanBytes;
 use std::time::Instant;
 
 type Val = Tup5<u64, u64, u64, u64, u64>;
+/// One input batch: weighted values indexed by key.
+type Batch = Vec<Tup2<u64, Tup2<Val, i64>>>;
 
 const SEED: u64 = 0x1234_5678_9abc_def0;
 
@@ -33,7 +35,7 @@ fn generate_batch(
     num_keys: usize,
     key_range: u64,
     vals_per_key: usize,
-) -> Vec<Tup2<u64, Tup2<Val, i64>>> {
+) -> Batch {
     let mut data = Vec::with_capacity(num_keys * vals_per_key);
     for _ in 0..num_keys {
         let key = rng.gen_range(0..key_range);
@@ -56,10 +58,10 @@ fn generate_5_batches(
     num_keys_per_batch: usize,
     key_range: u64,
     vals_per_key: usize,
-) -> [Vec<Tup2<u64, Tup2<Val, i64>>>; 5] {
+) -> [Batch; 5] {
     let mut data = [Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()];
-    for i in 0..5 {
-        data[i] = generate_batch(rng, num_keys_per_batch, key_range, vals_per_key);
+    for batch in &mut data {
+        *batch = generate_batch(rng, num_keys_per_batch, key_range, vals_per_key);
     }
     data
 }
@@ -74,7 +76,7 @@ fn circuit_config_with_posix_storage(
             cache: StorageCacheConfig::default(),
         },
         StorageOptions {
-            backend: StorageBackendConfig::File(Box::new(FileBackendConfig::default())),
+            backend: StorageBackendConfig::File(Box::default()),
             min_spill_size: Some(ConfigSize::ZERO),
             ..StorageOptions::default()
         },
@@ -84,9 +86,7 @@ fn circuit_config_with_posix_storage(
     CircuitConfig::from(workers).with_storage(Some(storage))
 }
 
-fn run_binary_joins(
-    data: Vec<[Vec<Tup2<u64, Tup2<Val, i64>>>; 5]>,
-) -> (std::time::Duration, usize, HumanBytes) {
+fn run_binary_joins(data: Vec<[Batch; 5]>) -> (std::time::Duration, usize, HumanBytes) {
     let mut total_output_len = 0usize;
     let mut total_storage_size = HumanBytes::new(0);
 
@@ -104,27 +104,12 @@ fn run_binary_joins(
 
                 // Chain: join_index 4 times, then join to produce OrdZSet<OutputVal>
                 let out = s1
-                    .join_index(&s2, |k, v1, v2| {
-                        std::iter::once((*k, Tup2(v1.clone(), v2.clone())))
-                    })
-                    .join_index(&s3, |k, t, v3| {
-                        std::iter::once((*k, Tup3(t.0.clone(), t.1.clone(), v3.clone())))
-                    })
+                    .join_index(&s2, |k, v1, v2| std::iter::once((*k, Tup2(*v1, *v2))))
+                    .join_index(&s3, |k, t, v3| std::iter::once((*k, Tup3(t.0, t.1, *v3))))
                     .join_index(&s4, |k, t, v4| {
-                        std::iter::once((
-                            *k,
-                            Tup4(t.0.clone(), t.1.clone(), t.2.clone(), v4.clone()),
-                        ))
+                        std::iter::once((*k, Tup4(t.0, t.1, t.2, *v4)))
                     })
-                    .join(&s5, |_k, t, v5| {
-                        Tup5(
-                            t.0.clone(),
-                            t.1.clone(),
-                            t.2.clone(),
-                            t.3.clone(),
-                            v5.clone(),
-                        )
-                    });
+                    .join(&s5, |_k, t, v5| Tup5(t.0, t.1, t.2, t.3, *v5));
 
                 let output_handle = out.accumulate_output();
 
@@ -156,9 +141,7 @@ fn run_binary_joins(
     (elapsed, total_output_len, total_storage_size)
 }
 
-fn run_star_join(
-    data: Vec<[Vec<Tup2<u64, Tup2<Val, i64>>>; 5]>,
-) -> (std::time::Duration, usize, HumanBytes) {
+fn run_star_join(data: Vec<[Batch; 5]>) -> (std::time::Duration, usize, HumanBytes) {
     let mut total_output_len = 0usize;
     let mut total_storage_size = HumanBytes::new(0);
 
@@ -176,7 +159,7 @@ fn run_star_join(
 
                 // inner_star_join5: join all 5 streams at once
                 let out = inner_star_join5(&s1, &s2, &s3, &s4, &s5, |_k, v1, v2, v3, v4, v5| {
-                    Tup5(v1.clone(), v2.clone(), v3.clone(), v4.clone(), v5.clone())
+                    Tup5(*v1, *v2, *v3, *v4, *v5)
                 });
 
                 let output_handle = out.accumulate_output();
@@ -220,7 +203,7 @@ const DENSE_KEY_RANGE: u64 = NUM_KEYS_PER_BATCH as u64 * 2;
 const NUM_SPARSE_STEPS: usize = 100;
 const SPARSE_KEY_RANGE: u64 = 1000000;
 
-fn run_benchmark(data: Vec<[Vec<Tup2<u64, Tup2<Val, i64>>>; 5]>) {
+fn run_benchmark(data: Vec<[Batch; 5]>) {
     println!("\n--- Binary joins (chain of join_index + join) ---");
     let (binary_elapsed, binary_output_len, binary_storage) = run_binary_joins(data.clone());
     println!(

@@ -4587,6 +4587,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::type_complexity)]
     fn string_to_interval_overflow() {
         use crate::{
             SqlResult, cast_to_LongInterval_YEARS_TO_MONTHS_s,

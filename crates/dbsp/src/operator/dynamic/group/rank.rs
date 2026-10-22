@@ -1084,7 +1084,7 @@ mod test {
 
         // Expected integral after each transaction; steps below push a batch of `(key, val, w)`
         // tuples per transaction (first batch inserts five rows at once).
-        let forward_expected_rank = vec![
+        let forward_expected_rank = [
             indexed_zset! {
                 P => {
                     Tup3(110u64, 1u64, 1) => 1,
@@ -1187,7 +1187,7 @@ mod test {
             },
         ];
 
-        let forward_expected_dense = vec![
+        let forward_expected_dense = [
             indexed_zset! {
                 P => {
                     Tup3(110u64, 1u64, 1) => 1,
@@ -1290,7 +1290,7 @@ mod test {
             },
         ];
 
-        let forward_expected_row_number = vec![
+        let forward_expected_row_number = [
             indexed_zset! {
                 P => {
                     Tup3(110u64, 1u64, 1) => 1,

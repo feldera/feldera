@@ -115,7 +115,7 @@ pub mod tests {
         };
         for (event_num, expected) in zip(
             0..expected_next_event_numbers.len(),
-            expected_next_event_numbers.into_iter(),
+            expected_next_event_numbers,
         ) {
             assert_eq!(config.next_event_number(event_num as u64), expected);
         }
