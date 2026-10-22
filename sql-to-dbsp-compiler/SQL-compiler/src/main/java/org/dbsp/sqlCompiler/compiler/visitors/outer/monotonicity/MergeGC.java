@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
@@ -25,6 +26,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -311,13 +313,7 @@ public class MergeGC extends Passes {
             CalciteRelNode node = first.getRelNode();
             OutputPort data = this.mapped(first.inputs.get(0));
             List<OutputPort> controls = Linq.map(operators, o -> this.mapped(o.asOperator().inputs.get(1)));
-
-            List<DBSPVariablePath> controlVars = Linq.map(controls, c -> c.outputType().ref().var());
-            List<DBSPExpression> controlFields = Linq.map(controlVars, v -> v.deref().applyCloneIfNeeded());
-            DBSPClosureExpression tuple = new DBSPTupleExpression(controlFields.toArray(new DBSPExpression[0]))
-                    .closure(controlVars.toArray(new DBSPVariablePath[0]));
-            DBSPApplyNOperator control = new DBSPApplyNOperator(node, tuple, controls);
-            this.addOperator(control);
+            OutputPort control = this.combineControls(node, controls);
 
             // A key for a retain-keys operator, a value for a retain-values operator
             DBSPVariablePath row = first.getClosureFunction().parameters[0].getType().var();
@@ -334,8 +330,46 @@ public class MergeGC extends Passes {
             DBSPIntegrateTraceRetainKeysOperator keys = first.as(DBSPIntegrateTraceRetainKeysOperator.class);
             if (keys != null)
                 return new DBSPIntegrateTraceRetainKeysOperator(
-                        node, closure, data, control.outputPort(), keys.accumulate);
-            return new DBSPIntegrateTraceRetainValuesOperator(node, closure, data, control.outputPort());
+                        node, closure, data, control, keys.accumulate);
+            return new DBSPIntegrateTraceRetainValuesOperator(node, closure, data, control);
+        }
+
+        /** Combine the bound streams {@code controls} into one stream: in each step its value is a
+         * tuple whose field i is the bound produced by {@code controls.get(i)}. */
+        OutputPort combineControls(CalciteRelNode node, List<OutputPort> controls) {
+            DBSPType firstType = controls.get(0).outputType();
+            if (Linq.all(controls, c -> c.outputType().sameType(firstType))) {
+                // Use ApplyN when inputs have the same type
+                List<DBSPVariablePath> controlVars = Linq.map(controls, c -> c.outputType().ref().var());
+                List<DBSPExpression> controlFields = Linq.map(controlVars, v -> v.deref().applyCloneIfNeeded());
+                DBSPClosureExpression tuple = new DBSPTupleExpression(controlFields.toArray(new DBSPExpression[0]))
+                        .closure(controlVars.toArray(new DBSPVariablePath[0]));
+                DBSPApplyNOperator applyN = new DBSPApplyNOperator(node, tuple, controls);
+                this.addOperator(applyN);
+                return applyN.outputPort();
+            }
+
+            // Use a chain of Apply2 operators.
+            OutputPort current = controls.get(0);
+            for (int i = 1; i < controls.size(); i++) {
+                OutputPort next = controls.get(i);
+                DBSPVariablePath currentVar = current.outputType().ref().var();
+                DBSPVariablePath nextVar = next.outputType().ref().var();
+                List<DBSPExpression> fields = new ArrayList<>();
+                if (i == 1) {
+                    fields.add(currentVar.deref().applyCloneIfNeeded());
+                } else {
+                    for (int j = 0; j < i; j++)
+                        fields.add(currentVar.deref().field(j).applyCloneIfNeeded());
+                }
+                fields.add(nextVar.deref().applyCloneIfNeeded());
+                DBSPClosureExpression tuple = new DBSPTupleExpression(fields.toArray(new DBSPExpression[0]))
+                        .closure(currentVar, nextVar);
+                DBSPApply2Operator apply2 = new DBSPApply2Operator(node, tuple, current, next);
+                this.addOperator(apply2);
+                current = apply2.outputPort();
+            }
+            return current;
         }
 
         /** Drop the operators of {@code operators} whose policy repeats an earlier one.
