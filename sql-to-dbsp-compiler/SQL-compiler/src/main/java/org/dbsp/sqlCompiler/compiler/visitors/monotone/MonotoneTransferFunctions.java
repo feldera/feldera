@@ -589,8 +589,10 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 this.constantExpressions.contains(expression.right))
             this.constantExpressions.add(expression);
 
-        boolean lm = left.mayBeMonotone();
-        boolean rm = right.mayBeMonotone();
+        // TIME plus or minus an INTERVAL wraps around midnight, so it is not monotone
+        boolean wraps = expression.type.is(DBSPTypeTime.class);
+        boolean lm = !wraps && left.mayBeMonotone();
+        boolean rm = !wraps && right.mayBeMonotone();
 
         // Assume type is not monotone
         IMaybeMonotoneType resultType = new NonMonotoneType(expression.type);
@@ -601,7 +603,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     expression.opcode, left.getReducedExpression(), right.getReducedExpression());
         }
         // Some expressions are monotone if some of their operands are constant
-        if (left.mayBeMonotone() && expression.opcode == DBSPOpcode.SUB) {
+        if (lm && expression.opcode == DBSPOpcode.SUB) {
             // Subtracting a constant from a monotone expression produces a monotone result
             if (this.constantExpressions.contains(expression.right)) {
                 resultType = left.copyMonotonicity(expression.type);
