@@ -492,6 +492,39 @@ def test_output_connector_orchestration(pipeline_name):
             timeout_s=30.0,
             poll_interval_s=0.5,
         )
+    else:
+        # Without the wait above, the checks below would run at once, before
+        # the pipeline produces anything for the connector to hold back. So
+        # wait for the pipeline to process more input, and then for the
+        # connector to process a step that started after that.
+        processed_at_pause = pipeline_stats(pipeline_name)["global_metrics"][
+            "total_processed_records"
+        ]
+        wait_for_condition(
+            "pipeline processes input while the connector is paused",
+            lambda: (
+                pipeline_stats(pipeline_name)["global_metrics"][
+                    "total_processed_records"
+                ]
+                > processed_at_pause
+            ),
+            timeout_s=30.0,
+            poll_interval_s=0.5,
+        )
+        steps_after_input = pipeline_stats(pipeline_name)["global_metrics"][
+            "total_initiated_steps"
+        ]
+        wait_for_condition(
+            "paused connector processes the steps with that input",
+            lambda: (
+                output_connector_stats(pipeline_name, "v", "sink")["metrics"][
+                    "total_processed_steps"
+                ]
+                > steps_after_input
+            ),
+            timeout_s=30.0,
+            poll_interval_s=0.5,
+        )
     metrics = output_connector_stats(pipeline_name, "v", "sink")["metrics"]
     assert metrics["transmitted_records"] == paused_at
     assert metrics["queued_records"] == 0
