@@ -478,8 +478,8 @@ mod test {
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
 
-    use dbsp::operator::input::StagedBuffers;
     use feldera_adapterlib::ConnectorMetadata;
+    use feldera_adapterlib::catalog::StagedBuffers;
     use feldera_adapterlib::format::{InputBuffer, ParseError, Parser, Splitter};
     use feldera_types::program_schema::Relation;
     use feldera_types::transport::http::HttpInputConfig;

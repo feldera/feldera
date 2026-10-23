@@ -8,11 +8,10 @@ use arrow::datatypes::{
     TimeUnit,
 };
 use bytes::Bytes;
-use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::ConnectorMetadata;
+use feldera_adapterlib::catalog::StagedBuffers;
 use feldera_adapterlib::catalog::{ArrowStream, SerCursorFlattened};
-use feldera_sqllib::Variant;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::serde_with_context::serde_config::{
     BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
@@ -110,8 +109,6 @@ impl Parser for ParquetParser {
         data: &[u8],
         metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-        let metadata = metadata.map(Variant::from);
-
         let bytes = Bytes::copy_from_slice(data);
 
         let parquet_reader = match ParquetRecordBatchReader::try_new(bytes, 1_000_000) {

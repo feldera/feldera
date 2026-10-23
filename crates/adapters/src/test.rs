@@ -66,7 +66,7 @@ pub use data::{
     TestStructSoftDelete, generate_test_batch, generate_test_batches,
     generate_test_batches_with_weights,
 };
-use dbsp::circuit::{CircuitConfig, NodeId};
+use dbsp::circuit::CircuitConfig;
 use dbsp::utils::Tup2;
 use feldera_adapterlib::soft_delete::SoftDeleteHandle;
 use feldera_types::format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat};
@@ -154,7 +154,7 @@ where
     let input_handle = <MockDeZSet<T, U>>::new();
     let consumer = MockInputConsumer::new();
     let parser = MockInputParser::from_handle(
-        &InputCollectionHandle::new(schema.clone(), input_handle.clone(), NodeId::new(0)),
+        &InputCollectionHandle::new(schema.clone(), input_handle.clone(), None),
         config,
     );
     Ok((consumer, parser, input_handle))
@@ -194,7 +194,7 @@ where
         &InputCollectionHandle::new(
             schema.clone(),
             SoftDeleteHandle::new(Box::new(input_handle.clone())),
-            NodeId::new(0),
+            None,
         ),
         config,
     );
@@ -754,7 +754,7 @@ where
     let mut parser = format
         .new_parser(
             "BaseConsumer",
-            &InputCollectionHandle::new(schema, buffer.clone(), NodeId::new(0)),
+            &InputCollectionHandle::new(schema, buffer.clone(), None),
             &json!({"update_format": "insert_delete"}),
         )
         .unwrap();

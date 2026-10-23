@@ -11,10 +11,9 @@ use apache_avro::{
     schema::{Name as AvroName, ResolvedSchema},
     types::Value as AvroValue,
 };
-use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_adapterlib::catalog::StagedBuffers;
 use feldera_adapterlib::{ConnectorMetadata, catalog::AvroSchemaRefs};
-use feldera_sqllib::Variant;
 use feldera_types::{
     format::avro::{AvroParserConfig, AvroUpdateFormat},
     program_schema::Relation,
@@ -412,11 +411,11 @@ impl AvroParser {
                 "avro_schema_id",
                 VariantValue::Int64(self.schema_id.unwrap_or(0).into()),
             );
-            let metadata = Some(Variant::from(metadata));
+            let metadata = Some(metadata);
 
             (&data[5..], metadata)
         } else {
-            (data, metadata.map(Variant::from))
+            (data, metadata)
         };
 
         // At this point we should either have a statically configured schema or a successfully installed schema from

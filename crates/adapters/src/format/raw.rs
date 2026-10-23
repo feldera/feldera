@@ -4,10 +4,9 @@ use crate::{
     format::{InputFormat, ParseError, Parser},
 };
 use core::str;
-use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::ConnectorMetadata;
-use feldera_sqllib::Variant;
+use feldera_adapterlib::catalog::StagedBuffers;
 use feldera_types::{
     format::raw::{RawParserConfig, RawParserMode},
     serde_with_context::{SqlSerdeConfig, serde_config::BinaryFormat},
@@ -133,7 +132,7 @@ impl RawParser {
     fn parse_record(
         &mut self,
         record: &[u8],
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
         errors: &mut Vec<ParseError>,
     ) {
         if let Err(e) = self.input_stream.insert(record, metadata) {
@@ -165,7 +164,6 @@ impl Parser for RawParser {
         metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let mut errors = Vec::new();
-        let metadata = metadata.map(Variant::from);
 
         match self.config.mode {
             RawParserMode::Blob => {

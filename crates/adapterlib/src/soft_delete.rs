@@ -13,22 +13,18 @@
 //! transport → parser → SoftDeleteStream → table
 //! ```
 
-// The connector layer still builds record metadata as the enum `Variant`.
-#![allow(deprecated)]
-
-use std::collections::BTreeMap;
 use std::hash::Hasher;
-use std::sync::Arc;
 
+use crate::catalog::StagedBuffers;
 use anyhow::{Result as AnyResult, bail};
 #[cfg(feature = "with-avro")]
 use apache_avro::{Schema as AvroSchema, types::Value as AvroValue};
 use arrow::array::{BooleanArray, RecordBatch};
 use arrow::compute::filter_record_batch;
-use dbsp::operator::StagedBuffers;
-use feldera_sqllib::{SqlString, Variant};
 use feldera_types::serde_with_context::SqlSerdeConfig;
+use feldera_types::variant::VariantValue;
 
+use crate::ConnectorMetadata;
 use crate::catalog::{ArrowStream, DeCollectionHandle, DeCollectionStream, RecordFormat};
 #[cfg(feature = "with-avro")]
 use crate::catalog::{AvroSchemaRefs, AvroStream};
@@ -44,11 +40,8 @@ pub const IS_DELETE_ATTRIBUTE: &str = "is_delete";
 /// deleted record: the metadata produced by the connector and the parser plus
 /// `is_delete: true`.
 struct DeleteMetadata {
-    /// The `is_delete` attribute name, built once.
-    key: Variant,
-
     /// Metadata for a connector that reports no attributes of its own.
-    without_attributes: Variant,
+    without_attributes: ConnectorMetadata,
 
     /// The most recent (connector metadata, extended metadata) pair.
     ///
@@ -57,42 +50,32 @@ struct DeleteMetadata {
     /// rather than one per deleted record.  The cache holds on to the connector
     /// metadata it was computed from, which keeps that allocation alive and the
     /// pointer comparison in [`Self::extend`] meaningful.
-    last: Option<(Arc<BTreeMap<Variant, Variant>>, Variant)>,
+    last: Option<(ConnectorMetadata, ConnectorMetadata)>,
 }
 
 impl DeleteMetadata {
     fn new() -> Self {
-        let key = Variant::String(SqlString::from(IS_DELETE_ATTRIBUTE));
+        let mut without_attributes = ConnectorMetadata::new();
+        without_attributes.insert(IS_DELETE_ATTRIBUTE, VariantValue::Boolean(true));
         Self {
-            without_attributes: Variant::Map(Arc::new(BTreeMap::from([(
-                key.clone(),
-                Variant::Boolean(true),
-            )]))),
-            key,
+            without_attributes,
             last: None,
         }
     }
 
     /// Returns `metadata` extended with `is_delete: true`.
-    fn extend(&mut self, metadata: &Option<Variant>) -> Option<Variant> {
-        let Some(Variant::Map(attributes)) = metadata else {
-            // Connectors and parsers report metadata as a map of attributes, so
-            // anything else means there is nothing to preserve.
-            debug_assert!(metadata.is_none(), "record metadata is not a map");
+    fn extend(&mut self, metadata: &Option<ConnectorMetadata>) -> Option<ConnectorMetadata> {
+        let Some(attributes) = metadata else {
             return Some(self.without_attributes.clone());
         };
-
         if let Some((cached, extended)) = &self.last
-            && Arc::ptr_eq(cached, attributes)
+            && cached.ptr_eq(attributes)
         {
             return Some(extended.clone());
         }
-
-        let mut extended = (**attributes).clone();
-        extended.insert(self.key.clone(), Variant::Boolean(true));
-        let extended = Variant::Map(Arc::new(extended));
+        let mut extended = attributes.clone();
+        extended.insert(IS_DELETE_ATTRIBUTE, VariantValue::Boolean(true));
         self.last = Some((attributes.clone(), extended.clone()));
-
         Some(extended)
     }
 }
@@ -156,16 +139,16 @@ impl SoftDeleteStream {
 }
 
 impl DeCollectionStream for SoftDeleteStream {
-    fn insert(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+    fn insert(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()> {
         self.inner.insert(data, metadata)
     }
 
-    fn delete(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+    fn delete(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()> {
         let metadata = self.metadata.extend(metadata);
         self.inner.insert(data, &metadata)
     }
 
-    fn update(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+    fn update(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()> {
         self.inner.update(data, metadata)
     }
 
@@ -220,11 +203,19 @@ impl SoftDeleteArrowStream {
 }
 
 impl ArrowStream for SoftDeleteArrowStream {
-    fn insert(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
+    fn insert(
+        &mut self,
+        data: &RecordBatch,
+        metadata: &Option<ConnectorMetadata>,
+    ) -> AnyResult<()> {
         self.inner.insert(data, metadata)
     }
 
-    fn delete(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
+    fn delete(
+        &mut self,
+        data: &RecordBatch,
+        metadata: &Option<ConnectorMetadata>,
+    ) -> AnyResult<()> {
         let metadata = self.metadata.extend(metadata);
         self.inner.insert(data, &metadata)
     }
@@ -233,7 +224,7 @@ impl ArrowStream for SoftDeleteArrowStream {
         &mut self,
         data: &RecordBatch,
         polarities: &[bool],
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
         if polarities.len() != data.num_rows() {
             bail!(
@@ -325,7 +316,7 @@ impl AvroStream for SoftDeleteAvroStream {
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
         self.inner.insert(data, schema, refs, n_bytes, metadata)
     }
@@ -336,7 +327,7 @@ impl AvroStream for SoftDeleteAvroStream {
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
         let metadata = self.metadata.extend(metadata);
         self.inner.insert(data, schema, refs, n_bytes, &metadata)
@@ -374,11 +365,10 @@ impl InputBuffer for SoftDeleteAvroStream {
 mod test {
     use super::{DeleteMetadata, IS_DELETE_ATTRIBUTE};
     use crate::ConnectorMetadata;
-    use feldera_sqllib::Variant;
     use feldera_types::variant::VariantValue;
 
-    fn is_delete(metadata: &Option<Variant>) -> Variant {
-        metadata.as_ref().unwrap().index_string(IS_DELETE_ATTRIBUTE)
+    fn is_delete(metadata: &Option<ConnectorMetadata>) -> Option<&VariantValue> {
+        metadata.as_ref().unwrap().get_by_name(IS_DELETE_ATTRIBUTE)
     }
 
     /// A connector that reports no metadata of its own still reports the
@@ -388,7 +378,7 @@ mod test {
         let mut delete_metadata = DeleteMetadata::new();
 
         let extended = delete_metadata.extend(&None);
-        assert_eq!(is_delete(&extended), Variant::Boolean(true));
+        assert_eq!(is_delete(&extended), Some(&VariantValue::Boolean(true)));
     }
 
     /// Extending metadata preserves the attributes reported by the connector.
@@ -396,22 +386,22 @@ mod test {
     fn preserves_connector_attributes() {
         let mut connector_metadata = ConnectorMetadata::new();
         connector_metadata.insert("kafka_offset", VariantValue::Int64(17));
-        let metadata = Some(Variant::from(connector_metadata));
+        let metadata = Some(connector_metadata);
 
         let mut delete_metadata = DeleteMetadata::new();
         let extended = delete_metadata.extend(&metadata);
 
-        assert_eq!(is_delete(&extended), Variant::Boolean(true));
+        assert_eq!(is_delete(&extended), Some(&VariantValue::Boolean(true)));
         assert_eq!(
-            extended.as_ref().unwrap().index_string("kafka_offset"),
-            Variant::BigInt(17)
+            extended.as_ref().unwrap().get_by_name("kafka_offset"),
+            Some(&VariantValue::Int64(17))
         );
 
         // The connector metadata itself is unchanged: an inserted record that
         // shares it must not report a polarity.
         assert_eq!(
             is_delete(&metadata),
-            Variant::SqlNull,
+            None,
             "extending metadata must not modify the connector's copy"
         );
     }
@@ -422,28 +412,20 @@ mod test {
     fn caches_the_last_result() {
         let mut connector_metadata = ConnectorMetadata::new();
         connector_metadata.insert("topic", VariantValue::String("events".into()));
-        let metadata = Some(Variant::from(connector_metadata));
+        let metadata = Some(connector_metadata);
 
         let mut delete_metadata = DeleteMetadata::new();
-        let first = delete_metadata.extend(&metadata);
-        let second = delete_metadata.extend(&metadata);
-
-        assert_eq!(first, second);
-        let (Some(Variant::Map(first)), Some(Variant::Map(second))) = (&first, &second) else {
-            panic!("extended metadata is not a map");
-        };
+        let first = delete_metadata.extend(&metadata).unwrap();
+        let second = delete_metadata.extend(&metadata).unwrap();
         assert!(
-            std::sync::Arc::ptr_eq(first, second),
+            first.ptr_eq(&second),
             "repeated calls must reuse one allocation"
         );
 
         // A different metadata object invalidates the cache.
-        let other = Some(Variant::from(ConnectorMetadata::new()));
+        let other = Some(ConnectorMetadata::new());
         let extended = delete_metadata.extend(&other);
-        assert_eq!(is_delete(&extended), Variant::Boolean(true));
-        assert_eq!(
-            extended.as_ref().unwrap().index_string("topic"),
-            Variant::SqlNull
-        );
+        assert_eq!(is_delete(&extended), Some(&VariantValue::Boolean(true)));
+        assert_eq!(extended.as_ref().unwrap().get_by_name("topic"), None);
     }
 }

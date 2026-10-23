@@ -17,8 +17,8 @@ use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use chrono::{DateTime, Utc};
 use crossbeam::queue::ArrayQueue;
 use crossbeam::sync::{Parker, Unparker};
-use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::ConnectorMetadata;
+use feldera_adapterlib::catalog::StagedBuffers;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{
     InputEndpoint, InputReaderCommand, Resume, Watermark, parse_resume_info,

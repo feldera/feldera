@@ -19,7 +19,6 @@ with-dynamodb = ["aws-sdk-dynamodb"]
 
 [dependencies]
 feldera-types = { workspace = true }
-feldera-sqllib = { workspace = true }
 feldera-storage = { workspace = true }
 dbsp = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }

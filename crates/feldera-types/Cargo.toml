@@ -22,12 +22,14 @@ serde_json = { workspace = true, features = ["raw_value"] }
 anyhow = { workspace = true, features = ["backtrace"] }
 libc = { workspace = true }
 log = { workspace = true }
+tracing = { workspace = true }
 utoipa = { workspace = true }
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
 actix-web = { workspace = true }
 enum-map = { workspace = true }
 erased-serde = { workspace = true }
+itertools = { workspace = true }
 uuid = { workspace = true, features = ["v7"] }
 thiserror = { workspace = true }
 regex = { workspace = true }
