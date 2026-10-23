@@ -745,6 +745,9 @@ pub struct PreprocessorConfig {
     pub message_oriented: bool,
     /// Arbitrary additional configuration as a JSON Value.
     pub config: Value,
+    /// Maximum allowed duration of one call to the preprocessor.
+    /// When not set it defaults to 1 second; `null` disables the check.
+    pub max_allowed_call_duration: Option<Option<ConfigDuration>>,
 }
 ```
 
@@ -1013,7 +1016,11 @@ Preprocessors are enabled by adding a `preprocessor` field to the connector conf
 Each entry has
 - a string `name` (matching a registered factory)
 - a boolean `message_oriented` property
-- a `config` object, passed verbatim to `PreprocessorFactory::create`.
+- a `config` object, passed verbatim to `PreprocessorFactory::create`
+- an optional `max_allowed_call_duration` string, such as `"10s"` or `"2m"`:
+  the maximum allowed duration of one call to the preprocessor.
+  The default is `"1s"`, and `null` disables the check.  Values less than
+  1 second are raised to 1 second.
 
 ```json
 {
@@ -1022,10 +1029,23 @@ Each entry has
   "preprocessor": [{
       "name": "logger",
       "message_oriented": true,
-      "config": { <logger-specific configuration> }
+      "config": { <logger-specific configuration> },
+      "max_allowed_call_duration": "10s"
   }]
 }
 ```
+
+While a call to the preprocessor runs longer than `max_allowed_call_duration`,
+the connector status reports the connector as unhealthy, and the pipeline
+log contains a warning with the name of the preprocessor and the number
+of its instances that have a late call.  As soon as the late calls return,
+the connector status again reports the health that the connector itself
+reports, and the pipeline log contains a message that the calls returned.
+The pipeline checks the calls once per second, so it may not report a call
+that runs only a little longer than `max_allowed_call_duration`.
+
+The pipeline does not interrupt an outstanding call: a preprocessor that
+waits for another service must set its own timeouts.
 
 :::note
 

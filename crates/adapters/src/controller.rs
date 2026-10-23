@@ -75,6 +75,7 @@ use dbsp::{Error as DbspError, Runtime, WeakRuntime};
 use distribution::{ActivationInput, input_shard, resume_distribution};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
+use feldera_adapterlib::preprocess::PreprocessorWatchdog;
 use feldera_adapterlib::soft_delete::SoftDeleteHandle;
 use feldera_adapterlib::transport::{
     CommandHandler, InputReader, OutputBatchType, Resume, Watermark,
@@ -114,6 +115,7 @@ use governor::RateLimiter;
 use itertools::Itertools;
 use journal::{InputChecksums, StepMetadata};
 use nonzero_ext::nonzero;
+use preprocessor_stalls::PreprocessorStalls;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
 use size_of::HumanBytes;
@@ -156,6 +158,7 @@ mod checkpoint;
 mod distribution;
 mod error;
 mod journal;
+mod preprocessor_stalls;
 #[cfg(target_os = "macos")]
 mod samply_spawn;
 mod stats;
@@ -6708,9 +6711,11 @@ impl StatisticsThread {
         let mut storage_byte_msecs = 0;
         let mut memory_use_reporter = MemoryUseReporter::new("RSS", 512 * 1024 * 1024);
         let mut paused_transaction_warning = None;
+        let mut preprocessor_stalls = PreprocessorStalls::default();
         while !exit.load(Ordering::Acquire) {
             if let Some(controller) = controller.upgrade() {
                 Self::warn_about_paused_transaction(&controller, &mut paused_transaction_warning);
+                preprocessor_stalls.check(&controller);
             }
 
             let storage_bytes = if let Some(storage_backend) = &storage_backend {
@@ -8320,6 +8325,7 @@ impl ControllerInner {
 
         // Create preprocessor if specified by the configuration
         let mut preprocessor = None;
+        let mut preprocessor_watchdog = None;
         let mut streaming_preprocessor = false;
         if let Some(vec) = &endpoint_config.connector_config.preprocessor {
             if vec.len() != 1 {
@@ -8349,6 +8355,7 @@ impl ControllerInner {
                     }
                     Ok(pre) => {
                         preprocessor = Some(pre);
+                        preprocessor_watchdog = Some(PreprocessorWatchdog::new(config));
                         streaming_preprocessor = !config.message_oriented;
                     }
                 }
@@ -8432,15 +8439,17 @@ impl ControllerInner {
                     format.new_parser(endpoint_name, input_handle, &format_config.config)?;
 
                 // If a preprocessor exists, combine it with the parser
-                if let Some(pre) = preprocessor {
+                if let Some((pre, watchdog)) = preprocessor.zip(preprocessor_watchdog.clone()) {
                     if streaming_preprocessor {
                         warn!(
                             "Preprocessor is not message-oriented; fault tolerance unavailable for {}",
                             endpoint_name
                         );
-                        parser = Box::new(StreamingPreprocessedParser::new(pre, parser));
+                        parser = Box::new(StreamingPreprocessedParser::new(pre, parser, watchdog));
                     } else {
-                        parser = Box::new(MessageOrientedPreprocessedParser::new(pre, parser));
+                        parser = Box::new(MessageOrientedPreprocessedParser::new(
+                            pre, parser, watchdog,
+                        ));
                     }
                 }
 
@@ -8494,6 +8503,7 @@ impl ControllerInner {
                 endpoint_config,
                 fault_tolerance,
                 initial_statistics.as_ref(),
+                preprocessor_watchdog,
             ),
             || {
                 let reader = open()?;

@@ -981,7 +981,7 @@ mod test {
         types::error::builders::{NoSuchBucketBuilder, NoSuchKeyBuilder},
     };
     use feldera_adapterlib::format::{MessageOrientedPreprocessedParser, Parser};
-    use feldera_adapterlib::preprocess::PreprocessorFactory;
+    use feldera_adapterlib::preprocess::{PreprocessorFactory, PreprocessorWatchdog};
     use feldera_types::preprocess::PreprocessorConfig;
     use feldera_types::{
         config::{InputEndpointConfig, TransportConfig},
@@ -1118,16 +1118,19 @@ mod test {
         .unwrap();
         consumer.on_error(Some(on_error));
         let endpoint_parser: Box<dyn Parser> = if preprocess == Preprocess::Passthrough {
+            let preprocessor_config = PreprocessorConfig {
+                name: "passthrough".to_string(),
+                message_oriented: true,
+                config: serde_json::Value::Null,
+                max_allowed_call_duration: None,
+            };
             let preprocessor = PassthroughPreprocessorFactory
-                .create(&PreprocessorConfig {
-                    name: "passthrough".to_string(),
-                    message_oriented: true,
-                    config: serde_json::Value::Null,
-                })
+                .create(&preprocessor_config)
                 .unwrap();
             Box::new(MessageOrientedPreprocessedParser::new(
                 preprocessor,
                 Box::new(parser.clone()),
+                PreprocessorWatchdog::new(&preprocessor_config),
             ))
         } else {
             Box::new(parser.clone())

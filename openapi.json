@@ -14389,6 +14389,12 @@
           "config": {
             "description": "Arbitrary additional configuration."
           },
+          "max_allowed_call_duration": {
+            "type": "string",
+            "description": "Maximum allowed duration of one call to the preprocessor, for example\n`10s`.  While a call runs longer, the connector is unhealthy and the\npipeline logs warnings.\n\nWhen not set it defaults to `1s`; `null` disables the check.  Values\nless than 1 second are raised to 1 second.",
+            "default": "1s",
+            "nullable": true
+          },
           "message_oriented": {
             "type": "boolean",
             "description": "True if the preprocessor is message-oriented: true if each preprocessor\noutput record corresponds to a whole number of of parser records."
