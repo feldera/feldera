@@ -16,10 +16,11 @@ use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
-use feldera_sqllib::Variant;
+use feldera_sqllib::FlatVariant;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::http::HttpInputConfig;
+use feldera_types::variant::VariantValue;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
@@ -75,14 +76,19 @@ pub(crate) struct RequestMetadata {
 impl RequestMetadata {
     /// Decodes the `connector_metadata` query parameter.
     pub(crate) fn parse(json: &str) -> Result<Self, String> {
-        let value: Variant = serde_json::from_str(json)
+        let value: FlatVariant = serde_json::from_str(json)
             .map_err(|e| format!("'connector_metadata' is not valid JSON: {e}"))?;
-        let Variant::Map(attributes) = value else {
+        let value = VariantValue::try_from(&value).map_err(|e| {
+            format!(
+                "'connector_metadata' holds a value that connector metadata cannot represent: {e}"
+            )
+        })?;
+        let VariantValue::Object(attributes) = value else {
             return Err("'connector_metadata' must be a JSON object".to_string());
         };
         Ok(Self {
             json: Arc::from(json),
-            metadata: ConnectorMetadata::from(Arc::unwrap_or_clone(attributes)),
+            metadata: ConnectorMetadata::from(attributes),
         })
     }
 }
@@ -160,11 +166,25 @@ impl HttpInputEndpointInner {
                         // The replay parses
                         // each chunk with the metadata of its request to reproduce the
                         // records and their hash.
-                        let metadata = connector_metadata.next().flatten().map(|json| {
-                            RequestMetadata::parse(&json)
-                                .expect("journaled connector metadata was valid when the request was accepted")
-                                .metadata
-                        });
+                        let metadata = match connector_metadata
+                            .next()
+                            .flatten()
+                            .map(|json| RequestMetadata::parse(&json))
+                            .transpose()
+                        {
+                            Ok(request) => request.map(|request| request.metadata),
+                            // A journal that an older version wrote can hold metadata that
+                            // this version refuses, such as a number with more digits than a
+                            // VARIANT decimal holds.
+                            Err(error) => {
+                                details.consumer.error(
+                                    true,
+                                    anyhow!("Cannot replay a journaled request: {error}"),
+                                    Some("http-input"),
+                                );
+                                return;
+                            }
+                        };
                         let (mut buffer, errors) = details.parser.parse(&chunk, metadata);
                         let len = buffer.len();
                         details.consumer.buffered(len);
@@ -450,5 +470,153 @@ impl From<Vec<JournaledChunk>> for Data {
                 .map(|chunk| ByteBuf::from(chunk.data))
                 .collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::BTreeMap;
+    use std::sync::{Arc, Mutex};
+
+    use dbsp::operator::input::StagedBuffers;
+    use feldera_adapterlib::ConnectorMetadata;
+    use feldera_adapterlib::format::{InputBuffer, ParseError, Parser, Splitter};
+    use feldera_types::program_schema::Relation;
+    use feldera_types::transport::http::HttpInputConfig;
+    use feldera_types::variant::VariantValue;
+    use serde_bytes::ByteBuf;
+
+    use super::{Data, HttpInputEndpoint, RequestMetadata};
+    use crate::TransportInputEndpoint;
+    use crate::test::{MockInputConsumer, wait};
+    use crate::transport::InputReaderCommand;
+
+    /// Each field of the `connector_metadata` object becomes one attribute,
+    /// converted the way any JSON value converts to a VARIANT.
+    #[test]
+    fn request_metadata_holds_one_attribute_per_field() {
+        let metadata = RequestMetadata::parse(
+            r#"{"kafka_topic": "events", "kafka_offset": 42, "kafka_headers": {"h": null}}"#,
+        )
+        .unwrap()
+        .metadata;
+        assert_eq!(
+            metadata.get_by_name("kafka_topic"),
+            Some(&VariantValue::String("events".into()))
+        );
+        // JSON reads a non-negative integer as unsigned, which widens to a BIGINT.
+        assert_eq!(
+            metadata.get_by_name("kafka_offset"),
+            Some(&VariantValue::Int64(42))
+        );
+        assert_eq!(
+            metadata.get_by_name("kafka_headers"),
+            Some(&VariantValue::Object(BTreeMap::from([(
+                "h".to_string(),
+                VariantValue::Null
+            )])))
+        );
+    }
+
+    /// Of two fields with one name, the last one counts, as in a JSON object.
+    #[test]
+    fn request_metadata_keeps_the_last_of_two_fields() {
+        let metadata = RequestMetadata::parse(r#"{"a": 1, "a": "two"}"#)
+            .unwrap()
+            .metadata;
+        assert_eq!(
+            metadata.get_by_name("a"),
+            Some(&VariantValue::String("two".into()))
+        );
+    }
+
+    /// A number with more digits than a VARIANT decimal holds is refused.
+    #[test]
+    fn request_metadata_refuses_a_value_it_cannot_represent() {
+        let error = RequestMetadata::parse(r#"{"x": 123456789012345678901234567890123456789}"#)
+            .unwrap_err();
+        assert!(
+            error.contains("'connector_metadata' holds a value"),
+            "{error}"
+        );
+    }
+
+    /// A parameter that is not a JSON object is refused, and the error names
+    /// the parameter.
+    #[test]
+    fn request_metadata_must_be_a_json_object() {
+        for invalid in ["not json", "[1, 2]", "\"text\"", "7", "null"] {
+            let error = RequestMetadata::parse(invalid).unwrap_err();
+            assert!(error.contains("'connector_metadata'"), "{invalid}: {error}");
+        }
+    }
+
+    /// The parser of a replay that fails before it parses a chunk.
+    struct UnusedParser;
+
+    impl Parser for UnusedParser {
+        fn parse(
+            &mut self,
+            _data: &[u8],
+            _metadata: Option<ConnectorMetadata>,
+        ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+            unreachable!("the replay fails before it parses a chunk")
+        }
+
+        fn stage(&self, _buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+            unreachable!("the replay fails before it stages a chunk")
+        }
+
+        fn splitter(&self) -> Box<dyn Splitter> {
+            unreachable!("a replay needs no splitter")
+        }
+
+        fn fork(&self) -> Box<dyn Parser> {
+            unreachable!("the endpoint parses on one thread")
+        }
+    }
+
+    /// A replay of a journal that holds connector metadata this version refuses, as a journal
+    /// of an older version can, fails the endpoint instead of panicking.
+    #[test]
+    fn replay_of_refused_metadata_fails_the_endpoint() {
+        let consumer = MockInputConsumer::new();
+        let errors = Arc::new(Mutex::new(Vec::new()));
+        consumer.on_error(Some(Box::new({
+            let errors = errors.clone();
+            move |fatal, error| errors.lock().unwrap().push((fatal, error.to_string()))
+        })));
+        let endpoint = HttpInputEndpoint::new(HttpInputConfig {
+            name: "replay".to_string(),
+        });
+        let reader = endpoint
+            .open(
+                Box::new(consumer),
+                Box::new(UnusedParser),
+                Relation::empty(),
+                None,
+            )
+            .unwrap();
+        let data = Data {
+            chunks: vec![ByteBuf::from(b"{}".to_vec())],
+            connector_metadata: vec![Some(
+                r#"{"x": 123456789012345678901234567890123456789}"#.to_string(),
+            )],
+        };
+        reader.request(InputReaderCommand::Replay {
+            metadata: serde_json::Value::Null,
+            data: rmpv::ext::to_value(data).unwrap(),
+        });
+
+        wait(|| !errors.lock().unwrap().is_empty(), 10_000).unwrap();
+        let errors = errors.lock().unwrap();
+        let (fatal, error) = &errors[0];
+        assert!(*fatal, "{error}");
+        assert!(
+            error.starts_with(
+                "Cannot replay a journaled request: 'connector_metadata' holds a value"
+            ),
+            "{error}"
+        );
     }
 }

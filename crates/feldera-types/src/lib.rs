@@ -23,6 +23,7 @@ pub mod suspend;
 pub mod time_series;
 pub mod transaction;
 pub mod transport;
+pub mod variant;
 
 mod serde_via_value {
     use serde::{

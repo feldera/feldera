@@ -58,9 +58,16 @@ pub mod flat_variant;
 
 /// VARIANT in the Parquet variant binary encoding.
 mod variant_binary;
+/// Conversions between `VariantValue` and the `VARIANT` representations of this crate.
+mod variant_value;
 pub use flat_variant::casts::*;
 pub use flat_variant::functions::*;
 pub use flat_variant::{FlatVariant, SqlVariant, variant_to_fv, variant_to_fvN};
+// Re-export the engine-neutral VARIANT value that connector metadata carries, so UDFs and
+// preprocessors can use it without importing the feldera-types crate.
+pub use feldera_types::variant::{
+    VariantDecimal4, VariantDecimal8, VariantDecimal16, VariantDecimalError, VariantValue,
+};
 #[doc(hidden)]
 pub mod rfc3339;
 #[doc(hidden)]
