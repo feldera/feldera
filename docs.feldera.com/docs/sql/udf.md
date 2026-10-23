@@ -839,45 +839,35 @@ a decryption key based on the topic a record arrived on.
 
 ```rust
 /// Connector metadata attached to each input record.
-pub struct ConnectorMetadata(BTreeMap<Variant, Variant>);
+pub struct ConnectorMetadata(BTreeMap<String, VariantValue>);
 ```
 
-Attribute names are `Variant::String` keys; values are
-[`Variant`](/sql/json/#the-variant-type)s.  Connector metadata is the one
-place that still uses the deprecated enum rather than `SqlVariant`.
-For example, the Kafka connector may attach an attribute `kafka_timestamp` with a
-type `feldera_sqllib::Timestamp`.
-
-:::warning
-
-Connector metadata will likely move to `SqlVariant` in a future release, as
-`VARIANT` columns already have.  A preprocessor that matches on
-`Variant::String` or the other arms of the enum will have to be rewritten then.
-
-:::
+Attribute names are strings. Values are `feldera_sqllib::VariantValue`s:
+owned [`VARIANT`](/sql/json/#the-variant-type) values with arms such as
+`VariantValue::String`, `VariantValue::Int64`, `VariantValue::Binary`, and
+`VariantValue::Object`.
+For example, the Kafka connector may attach an attribute `kafka_timestamp`
+that holds a `VariantValue::TimestampNtzMicros`, which wraps a
+`chrono::NaiveDateTime`.
 
 If the connector does not provide metadata, its value is `None`.
 
-A preprocessor reads attributes from the `ConnectorMetadata` through two getters:
+A preprocessor reads an attribute from the `ConnectorMetadata` by its name:
 
 ```rust
 impl ConnectorMetadata {
-    /// Returns the attribute stored under `key`, or `None` if absent.
-    pub fn get(&self, key: &Variant) -> Option<&Variant>;
-
-    /// Returns the attribute stored under the string key `name`, or `None`
-    /// if absent.
-    pub fn get_by_name(&self, name: &str) -> Option<&Variant>;
+    /// Returns the attribute stored under `name`, or `None` if absent.
+    pub fn get_by_name(&self, name: &str) -> Option<&VariantValue>;
 }
 ```
 
-Because connectors key their attributes by string, `get_by_name` is the
-common lookup; `get` accepts an arbitrary `Variant` key.  For example, a
-preprocessor can select its behavior based on the Kafka topic a record
-arrived on:
+For example, a preprocessor can select its behavior based on the Kafka
+topic a record arrived on:
 
 ```rust
-if let Some(Variant::String(topic)) = metadata.get_by_name("kafka_topic") {
+use feldera_sqllib::VariantValue;
+
+if let Some(VariantValue::String(topic)) = metadata.get_by_name("kafka_topic") {
     // Choose a transformation based on the topic name.
 }
 ```
@@ -888,7 +878,7 @@ Here is an example extracting a string value:
 // Retrieve the topic name as a string; use "" when the attribute is
 // absent or is not a string.
 let topic: &str = match metadata.get_by_name("kafka_topic") {
-    Some(Variant::String(topic)) => topic.str(),
+    Some(VariantValue::String(topic)) => topic.as_str(),
     _ => "",
 };
 ```
