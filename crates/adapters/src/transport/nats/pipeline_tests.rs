@@ -5,6 +5,7 @@
 //! `run_nats_controller_test` executes against a private `nats-server`.
 
 use crate::test::engine_test;
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::ops::Range;
 use std::sync::Arc;
@@ -12,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::{fs::create_dir, thread::sleep, time::Duration};
 
 use anyhow::Result as AnyResult;
+use csv::ReaderBuilder as CsvReaderBuilder;
 use feldera_adapterlib::test::{Updates, wait};
 use feldera_types::memory_pressure::MemoryPressure;
 use feldera_types::program_schema::Relation;
@@ -21,7 +23,8 @@ use tempfile::{NamedTempFile, TempDir};
 
 use crate::Controller;
 use crate::PipelineConfig;
-use crate::controller::{ControllerStatusContext, TransactionInfo};
+use crate::controller::{ControllerBuilder, ControllerStatusContext, TransactionInfo};
+use crate::test::nats::jetstream_proxy::{JetStreamProxy, ProxyFaults};
 use crate::test::nats::{self as util, STREAM_NAME, SUBJECT_NAME};
 use crate::test::pipeline::{PipelineTestEngine, TestCircuit};
 use crate::test::{init_test_logger, published_schema, read, relations};
@@ -77,6 +80,14 @@ enum NatsControllerAction {
     PurgeStream,
     /// Delete the JetStream stream entirely.
     DeleteStream,
+    /// Put a fault-injecting proxy in front of subsequently started pipelines.
+    StartProxy(ProxyFaults),
+    /// Start with input, optionally pause the connector, and verify that
+    /// Controller::stop waits for consumer cleanup held at the proxy.
+    StopWaitsForHeldDelete {
+        pause_first: bool,
+        disconnect_first: bool,
+    },
 
     /// Publish `n` records, start a Controller pipeline, wait for all
     /// outstanding records (including replayed from previous uncommitted
@@ -90,7 +101,46 @@ enum NatsControllerAction {
 
     /// Start the pipeline and assert startup fails fatally within timeout.
     ExpectStartupFatal,
+
+    /// Like [`NatsControllerAction::RunFtCycle`] without a checkpoint, but
+    /// while the pipeline runs, assert that every consumer on the stream is
+    /// named `<name_prefix>_<suffix>` and carries `metadata[key] == value`
+    /// for each entry of `metadata`. After the pipeline stops, assert that
+    /// its consumers have been deleted.
+    RunAndInspectConsumers {
+        publish: usize,
+        name_prefix: &'static str,
+        metadata: &'static [(&'static str, &'static str)],
+    },
+
+    /// Publish `publish` records, start the pipeline, wait for them and
+    /// checkpoint. Then freeze the server until the connector's retry
+    /// breaker gives up with a fatal error, thaw it, and let the pipeline
+    /// run a few more steps. Needs a runner configured with
+    /// `retry_max_attempts`.
+    RunUntilConnectorFatal { publish: usize },
+
+    /// Assert that the input endpoint is still listed in the pipeline status
+    /// and reports its fatal error.
+    AssertInputKeepsFatalError,
+
+    /// Checkpoint the running pipeline and stop it.
+    CheckpointAndStop,
+
+    /// Assert that restarting from the latest checkpoint with the unchanged
+    /// pipeline configuration reports no change to the input connector.
+    AssertRestartSeesNoConnectorChanges,
+
+    /// Restart from the latest checkpoint and assert that the pipeline does
+    /// not ingest again any record it already checkpointed.
+    AssertRestartIngestsNothingNew,
 }
+
+/// Timeout for the server to reflect consumers deleted by a stopped pipeline.
+///
+/// Well below the 30s `inactive_threshold` of the ordered consumer, so a
+/// passing check proves explicit deletion rather than server-side expiry.
+const CONSUMER_DELETE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Internal state held by the Controller FT test runner.
 struct NatsControllerRunner<'a> {
@@ -99,6 +149,7 @@ struct NatsControllerRunner<'a> {
     // NATS process / runtime
     nats_guard: Option<util::ProcessKillGuard>,
     nats_url: Option<String>,
+    proxy: Option<JetStreamProxy>,
     rt: tokio::runtime::Runtime,
 
     // Temp FS state kept alive for duration of test
@@ -108,7 +159,10 @@ struct NatsControllerRunner<'a> {
 
     // Config knobs
     consumer_name: Option<String>,
+    consumer_metadata: Vec<(String, String)>,
+    given_name: Option<String>,
     inactivity_timeout_secs: Option<u64>,
+    connector_options: Vec<(String, serde_json::Value)>,
 
     // Parsed pipeline config (built lazily after NATS URL is known)
     pipeline_config: Option<PipelineConfig>,
@@ -131,12 +185,16 @@ impl<'a> NatsControllerRunner<'a> {
             engine,
             nats_guard: None,
             nats_url: None,
+            proxy: None,
             rt: tokio::runtime::Runtime::new()?,
             _tempdir: tempdir,
             storage_dir,
             output_path,
             consumer_name: None,
+            consumer_metadata: Vec::new(),
+            given_name: None,
             inactivity_timeout_secs: None,
+            connector_options: Vec::new(),
             pipeline_config: None,
             controller: None,
             total_published: 0,
@@ -146,6 +204,26 @@ impl<'a> NatsControllerRunner<'a> {
 
     fn with_consumer_name(mut self, name: &str) -> Self {
         self.consumer_name = Some(name.to_string());
+        self
+    }
+
+    /// Adds a user-supplied entry to the consumer's `metadata`.
+    fn with_consumer_metadata(mut self, key: &str, value: &str) -> Self {
+        self.consumer_metadata
+            .push((key.to_string(), value.to_string()));
+        self
+    }
+
+    /// Sets the pipeline's `given_name`, which the controller injects into
+    /// the consumer's metadata under the `pipeline` key.
+    fn with_given_name(mut self, name: &str) -> Self {
+        self.given_name = Some(name.to_string());
+        self
+    }
+
+    /// Adds `key: value` to the NATS connector configuration.
+    fn with_connector_option(mut self, key: &str, value: impl Into<serde_json::Value>) -> Self {
+        self.connector_options.push((key.to_string(), value.into()));
         self
     }
 
@@ -169,7 +247,11 @@ impl<'a> NatsControllerRunner<'a> {
     /// Build (or return cached) the pipeline config from current runner state.
     fn pipeline_config(&mut self) -> &PipelineConfig {
         if self.pipeline_config.is_none() {
-            let nats_url = self.nats_url();
+            let nats_url = self
+                .proxy
+                .as_ref()
+                .map(|proxy| proxy.url())
+                .unwrap_or_else(|| self.nats_url());
             let storage_dir = &self.storage_dir;
             let output_path = &self.output_path;
 
@@ -227,6 +309,21 @@ impl<'a> NatsControllerRunner<'a> {
             }
             if let Some(name) = &self.consumer_name {
                 transport_config["consumer_config"]["name"] = json!(name);
+            }
+
+            if !self.consumer_metadata.is_empty() {
+                transport_config["consumer_config"]["metadata"] = json!(
+                    self.consumer_metadata
+                        .iter()
+                        .cloned()
+                        .collect::<BTreeMap<_, _>>()
+                );
+            }
+            for (key, value) in &self.connector_options {
+                transport_config[key] = value.clone();
+            }
+            if let Some(given_name) = &self.given_name {
+                config["given_name"] = json!(given_name);
             }
 
             self.pipeline_config = Some(serde_json::from_value(config).unwrap());
@@ -375,6 +472,57 @@ impl<'a> NatsControllerRunner<'a> {
         self.checkpointed = self.total_published;
     }
 
+    /// Asserts that the stream has at least one consumer and that each is
+    /// named `<name_prefix>_<suffix>` and carries every `metadata` entry.
+    fn verify_consumers(&self, name_prefix: &str, metadata: &[(&str, &str)]) -> AnyResult<()> {
+        let consumers = self
+            .rt
+            .block_on(util::list_consumers(self.nats_url(), STREAM_NAME))?;
+        assert!(
+            !consumers.is_empty(),
+            "expected at least one consumer on stream '{STREAM_NAME}'"
+        );
+        let expected_prefix = format!("{name_prefix}_");
+        for info in &consumers {
+            assert!(
+                info.name.starts_with(&expected_prefix),
+                "consumer '{}' is not named '{expected_prefix}<suffix>'",
+                info.name
+            );
+            for (key, value) in metadata {
+                assert_eq!(
+                    info.config.metadata.get(*key).map(String::as_str),
+                    Some(*value),
+                    "consumer '{}' metadata[{key:?}]; full metadata: {:?}",
+                    info.name,
+                    info.config.metadata
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Waits until the stream has no consumers left.
+    fn wait_for_no_consumers(&self) -> AnyResult<()> {
+        let deadline = std::time::Instant::now() + CONSUMER_DELETE_TIMEOUT;
+        loop {
+            let consumers = self
+                .rt
+                .block_on(util::list_consumers(self.nats_url(), STREAM_NAME))?;
+            if consumers.is_empty() {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                let names: Vec<&str> = consumers.iter().map(|info| info.name.as_str()).collect();
+                anyhow::bail!(
+                    "{} consumers still exist {CONSUMER_DELETE_TIMEOUT:?} after the pipeline stopped: {names:?}",
+                    consumers.len()
+                );
+            }
+            sleep(Duration::from_millis(100));
+        }
+    }
+
     fn exec(&mut self, action: &NatsControllerAction) -> AnyResult<()> {
         match action {
             NatsControllerAction::StartNats => {
@@ -406,6 +554,70 @@ impl<'a> NatsControllerRunner<'a> {
                 println!("Stream deleted");
             }
 
+            NatsControllerAction::StartProxy(faults) => {
+                assert!(self.controller.is_none());
+                self.proxy = Some(JetStreamProxy::start(
+                    &self.rt,
+                    self.nats_url(),
+                    faults.clone(),
+                )?);
+                self.pipeline_config = None;
+            }
+
+            NatsControllerAction::StopWaitsForHeldDelete {
+                pause_first,
+                disconnect_first,
+            } => {
+                self.publish_records(2)?;
+                self.start_pipeline();
+                self.wait_for_transmitted();
+                let proxy = self
+                    .proxy
+                    .as_ref()
+                    .expect("StartProxy must be called first");
+                if *pause_first {
+                    self.controller().pause_input_endpoint("test_input1")?;
+                    proxy.wait_for_delete_requests(1, Duration::from_secs(5))?;
+                }
+
+                if *disconnect_first {
+                    let endpoint_id = self.controller().input_endpoint_id_by_name("test_input1")?;
+                    self.controller().disconnect_input(&endpoint_id);
+                    proxy.wait_for_delete_requests(1, Duration::from_secs(5))?;
+                }
+
+                let controller = self.controller.take().unwrap();
+                let (sender, receiver) = std::sync::mpsc::channel();
+                let stopper = std::thread::spawn(move || {
+                    sender.send(controller.stop()).unwrap();
+                });
+                let delete_seen = proxy.wait_for_delete_requests(1, Duration::from_secs(5));
+                let early_result = receiver.recv_timeout(Duration::from_millis(200));
+                proxy.release_deletes();
+                let stopped_while_held = early_result.is_ok();
+                let result = match early_result {
+                    Ok(result) => result,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => receiver
+                        .recv_timeout(Duration::from_secs(10))
+                        .expect("Controller::stop did not finish after releasing cleanup"),
+                    Err(error) => panic!("stop thread disconnected: {error}"),
+                };
+                stopper.join().unwrap();
+                delete_seen?;
+                result?;
+                assert!(
+                    !stopped_while_held,
+                    "Controller::stop returned while consumer cleanup was still held (pause_first={pause_first}, disconnect_first={disconnect_first})"
+                );
+                let consumers = self
+                    .rt
+                    .block_on(util::list_consumers(self.nats_url(), STREAM_NAME))?;
+                assert!(
+                    consumers.is_empty(),
+                    "consumer still exists after Controller::stop"
+                );
+            }
+
             NatsControllerAction::RunFtCycle {
                 publish,
                 checkpoint,
@@ -427,6 +639,20 @@ impl<'a> NatsControllerRunner<'a> {
                 if checkpoint {
                     self.mark_checkpointed();
                 }
+            }
+
+            NatsControllerAction::RunAndInspectConsumers {
+                publish,
+                name_prefix,
+                metadata,
+            } => {
+                self.publish_records(*publish)?;
+                self.start_pipeline();
+                self.wait_for_transmitted();
+                self.verify_consumers(name_prefix, metadata)?;
+                self.stop_pipeline();
+                self.verify_output_since_checkpoint();
+                self.wait_for_no_consumers()?;
             }
 
             NatsControllerAction::ExpectStartupRetrying => {
@@ -490,6 +716,8 @@ impl<'a> NatsControllerRunner<'a> {
 
                 let got_fatal = Arc::new(AtomicBool::new(false));
                 let got_fatal_clone = got_fatal.clone();
+                let panicked = Arc::new(AtomicBool::new(false));
+                let panicked_clone = panicked.clone();
                 let config = self.pipeline_config().clone();
                 let controller = self
                     .engine
@@ -499,6 +727,9 @@ impl<'a> NatsControllerRunner<'a> {
                         Box::new(move |e, _tag| {
                             println!("Controller error: {e}");
                             got_fatal_clone.store(true, Ordering::Release);
+                            if matches!(e.as_ref(), crate::ControllerError::ControllerPanic) {
+                                panicked_clone.store(true, Ordering::Release);
+                            }
                         }),
                     )
                     .unwrap();
@@ -519,6 +750,97 @@ impl<'a> NatsControllerRunner<'a> {
                 }
 
                 controller.stop().unwrap();
+                assert!(
+                    !panicked.load(Ordering::Acquire),
+                    "startup failure panicked the circuit"
+                );
+            }
+
+            NatsControllerAction::RunUntilConnectorFatal { publish } => {
+                self.publish_records(*publish)?;
+                let config = self.pipeline_config().clone();
+                let controller = self
+                    .engine
+                    .controller(
+                        &circuit(),
+                        &config,
+                        Box::new(|e, _tag| println!("Controller error: {e}")),
+                    )
+                    .unwrap();
+                controller.start();
+                self.controller = Some(controller);
+                self.wait_for_transmitted();
+                self.checkpoint();
+                self.mark_checkpointed();
+
+                let guard = self.nats_guard.as_ref().expect("StartNats first");
+                guard.freeze()?;
+                let controller = self.controller();
+                let failed = wait(
+                    || match controller.status().input_status().get(&0) {
+                        Some(status) => status.fatal_error.lock().unwrap().is_some(),
+                        // Removed after the fatal error.
+                        None => true,
+                    },
+                    120_000,
+                );
+                guard.thaw()?;
+                assert!(
+                    failed.is_ok(),
+                    "connector did not fail within 120s of the server freezing"
+                );
+
+                // A real pipeline keeps stepping (at least once per clock
+                // tick); the test config has no clock, so request steps.
+                for _ in 0..10 {
+                    controller.request_step();
+                    sleep(Duration::from_millis(200));
+                }
+            }
+
+            NatsControllerAction::AssertInputKeepsFatalError => {
+                let status = self.controller().status();
+                let inputs = status.input_status();
+                let input = inputs
+                    .get(&0)
+                    .expect("the failed input endpoint vanished from the pipeline status");
+                assert!(
+                    input.fatal_error.lock().unwrap().is_some(),
+                    "the input endpoint no longer reports its fatal error"
+                );
+            }
+
+            NatsControllerAction::CheckpointAndStop => {
+                self.checkpoint();
+                self.stop_pipeline();
+            }
+
+            NatsControllerAction::AssertRestartSeesNoConnectorChanges => {
+                let config = self.pipeline_config().clone();
+                let init = ControllerBuilder::new(&config, &self.engine.open_storage())?
+                    .open_latest_checkpoint()?;
+                if let Some(diff) = init.pipeline_diff.as_ref() {
+                    assert!(
+                        !diff.is_affected_connector("test_input1"),
+                        "restart with an unchanged configuration reports connector changes: {diff}"
+                    );
+                }
+            }
+
+            NatsControllerAction::AssertRestartIngestsNothingNew => {
+                self.start_pipeline();
+                sleep(Duration::from_secs(3));
+                self.stop_pipeline();
+                // The output file holds what this run produced.
+                let rows = CsvReaderBuilder::new()
+                    .has_headers(false)
+                    .from_path(&self.output_path)?
+                    .records()
+                    .count();
+                assert_eq!(
+                    rows, 0,
+                    "the restarted pipeline output {rows} records it had already checkpointed"
+                );
             }
         }
         Ok(())
@@ -1070,4 +1392,159 @@ fn check_output_pipeline_end_to_end(engine: &dyn PipelineTestEngine) -> anyhow::
 
     controller.stop()?;
     Ok(())
+}
+
+/// After the breaker gives up, the pipeline must keep showing the failed
+/// connector and its fatal error, so that an operator can find it and decide
+/// when to resume, as the documentation promises.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
+pub fn fatal_connector_stays_in_pipeline_status(engine: &dyn PipelineTestEngine) {
+    use NatsControllerAction::*;
+    run_nats_controller_test(
+        fatal_runner(engine).unwrap(),
+        &[
+            StartNats,
+            CreateStream,
+            RunUntilConnectorFatal { publish: 5 },
+            AssertInputKeepsFatalError,
+        ],
+    )
+    .unwrap();
+}
+
+/// A checkpoint taken after a connector failed must keep that connector,
+/// so that a restart with the same configuration sees no changes (and does
+/// not wait for approval of a connector the user never added).
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
+pub fn fatal_connector_survives_checkpoint(engine: &dyn PipelineTestEngine) {
+    use NatsControllerAction::*;
+    run_nats_controller_test(
+        fatal_runner(engine).unwrap(),
+        &[
+            StartNats,
+            CreateStream,
+            RunUntilConnectorFatal { publish: 5 },
+            CheckpointAndStop,
+            AssertRestartSeesNoConnectorChanges,
+        ],
+    )
+    .unwrap();
+}
+
+/// A connector that failed keeps its position: restarting from a checkpoint
+/// taken after the failure must not ingest the stream again from the start.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
+pub fn fatal_connector_keeps_cursor_across_restart(engine: &dyn PipelineTestEngine) {
+    use NatsControllerAction::*;
+    run_nats_controller_test(
+        fatal_runner(engine).unwrap(),
+        &[
+            StartNats,
+            CreateStream,
+            RunUntilConnectorFatal { publish: 5 },
+            CheckpointAndStop,
+            AssertRestartIngestsNothingNew,
+        ],
+    )
+    .unwrap();
+}
+
+/// A controller runner whose connector gives up after one failed retry.
+fn fatal_runner(engine: &dyn PipelineTestEngine) -> AnyResult<NatsControllerRunner<'_>> {
+    Ok(NatsControllerRunner::new(engine)?
+        .with_inactivity_timeout_secs(1)
+        .with_connector_option("retry_interval", "1s")
+        .with_connector_option("retry_max_interval", "1s")
+        .with_connector_option("retry_max_attempts", 1))
+}
+
+/// A process may exit when Controller::stop returns. Waiting only for the
+/// circuit thread does not guarantee the NATS worker finished its delete.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
+pub fn controller_stop_waits_for_consumer_delete(engine: &dyn PipelineTestEngine) {
+    test_controller_stop_waits_for_delete(engine, false, false).unwrap();
+}
+
+/// Controller shutdown also has to join cleanup detached by an earlier Pause.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
+pub fn controller_stop_after_pause_waits_for_consumer_delete(engine: &dyn PipelineTestEngine) {
+    test_controller_stop_waits_for_delete(engine, true, false).unwrap();
+}
+
+/// A removed reader's cleanup is still part of controller shutdown.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
+pub fn controller_stop_after_disconnect_waits_for_consumer_delete(engine: &dyn PipelineTestEngine) {
+    test_controller_stop_waits_for_delete(engine, false, true).unwrap();
+}
+
+fn test_controller_stop_waits_for_delete(
+    engine: &dyn PipelineTestEngine,
+    pause_first: bool,
+    disconnect_first: bool,
+) -> AnyResult<()> {
+    use NatsControllerAction::*;
+    run_nats_controller_test(
+        NatsControllerRunner::new(engine)?,
+        &[
+            StartNats,
+            CreateStream,
+            StartProxy(ProxyFaults {
+                hold_deletes: true,
+                ..Default::default()
+            }),
+            StopWaitsForHeldDelete {
+                pause_first,
+                disconnect_first,
+            },
+        ],
+    )
+}
+
+/// The controller injects the pipeline's `given_name` into the consumer's
+/// metadata under `pipeline`, so consumers are traceable from the NATS side.
+/// Consumers are named after the input table and are deleted when the
+/// pipeline stops.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
+pub fn pipeline_metadata_on_consumer(engine: &dyn PipelineTestEngine) {
+    use NatsControllerAction::*;
+    run_nats_controller_test(
+        NatsControllerRunner::new(engine)
+            .unwrap()
+            .with_given_name("orders_pipeline"),
+        &[
+            StartNats,
+            CreateStream,
+            RunAndInspectConsumers {
+                publish: 3,
+                name_prefix: "test_input1",
+                metadata: &[("pipeline", "orders_pipeline")],
+            },
+        ],
+    )
+    .unwrap();
+}
+
+/// A user-supplied `pipeline` metadata value takes precedence over the
+/// injected pipeline name, and other user metadata is preserved.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
+pub fn pipeline_metadata_does_not_overwrite_user_value(engine: &dyn PipelineTestEngine) {
+    use NatsControllerAction::*;
+    run_nats_controller_test(
+        NatsControllerRunner::new(engine)
+            .unwrap()
+            .with_given_name("orders_pipeline")
+            .with_consumer_name("orders_reader")
+            .with_consumer_metadata("pipeline", "user_specified")
+            .with_consumer_metadata("team", "ingest"),
+        &[
+            StartNats,
+            CreateStream,
+            RunAndInspectConsumers {
+                publish: 3,
+                name_prefix: "orders_reader",
+                metadata: &[("pipeline", "user_specified"), ("team", "ingest")],
+            },
+        ],
+    )
+    .unwrap();
 }

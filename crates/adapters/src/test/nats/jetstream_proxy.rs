@@ -23,7 +23,7 @@ use tokio::task::JoinHandle;
 /// Faults the proxy injects. Counts are 1-based and global across all client
 /// connections, because the connector opens a new connection on every retry.
 #[derive(Clone, Debug, Default)]
-pub(super) struct ProxyFaults {
+pub struct ProxyFaults {
     /// Answers every pull request with a `400 Bad Request` status, so every
     /// reader fails right after its consumer was created.
     pub fail_pulls: bool,
@@ -60,7 +60,7 @@ struct ProxyState {
     stream_info_replies_to_drop: usize,
 }
 
-pub(super) struct JetStreamProxy {
+pub struct JetStreamProxy {
     url: String,
     state: Arc<Mutex<ProxyState>>,
     accept_task: JoinHandle<()>,
@@ -68,7 +68,7 @@ pub(super) struct JetStreamProxy {
 
 impl JetStreamProxy {
     /// Starts a proxy on a random local port that forwards to `upstream_url`.
-    pub(super) fn start(rt: &Runtime, upstream_url: &str, faults: ProxyFaults) -> AnyResult<Self> {
+    pub fn start(rt: &Runtime, upstream_url: &str, faults: ProxyFaults) -> AnyResult<Self> {
         let upstream = upstream_url
             .strip_prefix("nats://")
             .unwrap_or(upstream_url)
@@ -103,19 +103,19 @@ impl JetStreamProxy {
         })
     }
 
-    pub(super) fn url(&self) -> &str {
+    pub fn url(&self) -> &str {
         &self.url
     }
 
     /// Drops the server's replies to the next `n` stream info requests, so
     /// those requests time out. The server still answers them.
-    pub(super) fn drop_stream_info_replies(&self, n: usize) {
+    pub fn drop_stream_info_replies(&self, n: usize) {
         self.state.lock().unwrap().stream_info_replies_to_drop = n;
     }
 
     /// Waits until cleanup has actually reached the proxy, not merely until
     /// the test sent a Pause or Disconnect command.
-    pub(super) fn wait_for_delete_requests(&self, n: usize, timeout: Duration) -> AnyResult<()> {
+    pub fn wait_for_delete_requests(&self, n: usize, timeout: Duration) -> AnyResult<()> {
         crate::test::wait(
             || self.state.lock().unwrap().deletes >= n,
             timeout.as_millis(),
@@ -125,18 +125,18 @@ impl JetStreamProxy {
     }
 
     /// Keep replay validation from observing a partially repopulated stream.
-    pub(super) fn hold_stream_info(&self) {
+    pub fn hold_stream_info(&self) {
         self.state.lock().unwrap().stream_info_gate =
             Some(Arc::new(tokio::sync::Semaphore::new(0)));
     }
 
-    pub(super) fn release_stream_info(&self) {
+    pub fn release_stream_info(&self) {
         if let Some(gate) = self.state.lock().unwrap().stream_info_gate.take() {
             gate.close();
         }
     }
 
-    pub(super) fn release_deletes(&self) {
+    pub fn release_deletes(&self) {
         if let Some(gate) = &self.state.lock().unwrap().delete_gate {
             gate.close();
         }
