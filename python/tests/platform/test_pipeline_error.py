@@ -84,13 +84,20 @@ def cause_error_and_wait_for_stopped(pipeline):
     # race before using it, rather than failing the test on infra flakiness.
     wait_for_pipeline_reachable(pipeline.name)
 
-    # This data causes the pipeline to panic
-    response = post_json(
-        api_url(
-            f"/pipelines/{pipeline.name}/ingress/t1?format=json&array=true&update_format=raw"
-        ),
-        [{"c1": 1}, {"c1": 2}, {"c1": 3}],
-    )
+    # This data causes the pipeline to panic. A successful `/stats` probe does
+    # not guarantee the next connection to the pod succeeds, so retry while the
+    # API server failed to connect to the pod: the data was never delivered.
+    deadline = time.monotonic() + 30
+    while True:
+        response = post_json(
+            api_url(
+                f"/pipelines/{pipeline.name}/ingress/t1?format=json&array=true&update_format=raw"
+            ),
+            [{"c1": 1}, {"c1": 2}, {"c1": 3}],
+        )
+        if not _never_dispatched(response) or time.monotonic() >= deadline:
+            break
+        time.sleep(0.5)
     if response.status_code != 200:
         raise RuntimeError(
             f"Response should be 200 OK but is: {response.status_code} with body: {response.json()}"
@@ -105,4 +112,18 @@ def cause_error_and_wait_for_stopped(pipeline):
         time.sleep(0.2)
     raise TimeoutError(
         f"Timed out waiting for pipeline '{pipeline.name}' to stop with an error"
+    )
+
+
+def _never_dispatched(response) -> bool:
+    """Whether the API server failed to connect to the pipeline, so the request
+    never reached it. Other `PipelineInteractionUnreachable` failures (e.g. a
+    timeout mid-exchange) may already have delivered the request."""
+    if response.status_code != 503:
+        return False
+    body = response.json()
+    return body.get(
+        "error_code"
+    ) == "PipelineInteractionUnreachable" and "Failed to connect to host" in body.get(
+        "message", ""
     )
