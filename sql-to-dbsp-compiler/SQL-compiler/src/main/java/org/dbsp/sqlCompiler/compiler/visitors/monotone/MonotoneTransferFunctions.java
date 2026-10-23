@@ -828,89 +828,36 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.set(expression, result);
     }
 
-    /** True if every argument of {@code expression} after the first is a constant. */
-    boolean constantAfterFirst(DBSPApplyExpression expression) {
-        for (int i = 1; i < expression.arguments.length; i++)
-            if (!this.constantExpressions.contains(expression.arguments[i]))
-                return false;
-        return true;
-    }
-
-    /** The reduced form of argument {@code index} of {@code expression}: the monotone part of a
-     * monotone argument, or a copy of a constant argument. */
-    DBSPExpression reducedArgument(DBSPApplyExpression expression, MonotoneExpression[] arguments, int index) {
-        if (arguments[index].mayBeMonotone())
-            return arguments[index].getReducedExpression();
-        Utilities.enforce(this.constantExpressions.contains(expression.arguments[index]),
-                () -> "Argument " + expression.arguments[index] + " is neither monotone nor constant");
-        return expression.arguments[index].deepCopy();
+    /** What the analysis knows about argument {@code index} of {@code expression}. */
+    MonotoneFunction.Argument argument(DBSPApplyExpression expression, int index) {
+        DBSPExpression argument = expression.arguments[index];
+        MonotoneExpression monotone = this.get(argument);
+        DBSPExpression waterline = monotone.mayBeMonotone() ? monotone.getReducedExpression() : null;
+        return new MonotoneFunction.Argument(argument, this.constantExpressions.contains(argument), waterline);
     }
 
     @Override
     public void postorder(DBSPApplyExpression expression) {
-        MonotoneExpression[] arguments = Linq.map(expression.arguments, this::get, MonotoneExpression.class);
-        boolean allArgsMonotone = Linq.all(arguments, MonotoneExpression::mayBeMonotone);
         boolean allArgsConstant = Linq.all(expression.arguments, this.constantExpressions::contains);
         DBSPExpression reduced = null;
         IMaybeMonotoneType resultType = NonMonotoneType.nonMonotone(expression.getType());
         String name = expression.getFunctionName();
         boolean isDeterministic = name == null || !name.equals("now");
         if (name != null) {
-            // Monotone in the first argument only; the others, such as the digits of ROUND
-            // or the sizes of a HOP or TUMBLE window, must be constant
-            if ((name.startsWith("round_") ||
-                    name.startsWith("bround_") ||
-                    name.startsWith("truncate_") ||
-                    name.startsWith("trunc_") ||
-                    name.startsWith("tumble_") ||
-                    name.equals("hop_start_timestamp")) &&
-                    arguments.length > 0 && arguments[0].mayBeMonotone() &&
-                    this.constantAfterFirst(expression)) {
-                DBSPExpression[] reducedArgs = new DBSPExpression[arguments.length];
-                for (int i = 0; i < arguments.length; i++)
-                    reducedArgs[i] = this.reducedArgument(expression, arguments, i);
+            if (name.equals("now")) {
+                // Only when called from ImplementNow
                 resultType = new MonotoneType(expression.getType());
-                reduced = expression.replaceArguments(reducedArgs);
-            }
-            if (allArgsMonotone) {
-                DBSPExpression[] reducedArgs = Linq.map(
-                        arguments, MonotoneExpression::getReducedExpression, DBSPExpression.class);
-                // Monotone functions applied to monotone arguments.
-                if (name.startsWith("log10_") ||
-                        name.startsWith("ln_") ||
-                        name.startsWith("ceil_") ||
-                        // Not sqrt_: it returns NaN, the largest value, for a negative argument
-                        // name.startsWith("sqrt_") ||
-                        name.startsWith("cbrt_") ||
-                        name.startsWith("exp_") ||
-                        name.startsWith("atan_") ||
-                        name.startsWith("sinh_") ||
-                        name.startsWith("asinh_") ||
-                        name.startsWith("tanh_") ||
-                        name.startsWith("degrees_") ||
-                        name.startsWith("radians_") ||
-                        name.startsWith("floor_") ||
-                        name.startsWith("sign_") ||
-                        name.startsWith("extract_year_") ||
-                        name.startsWith("extract_millennium_") ||
-                        name.startsWith("extract_century_") ||
-                        name.startsWith("extract_decade_") ||
-                        name.startsWith("extract_isoyear_") ||
-                        name.startsWith("extract_epoch_") ||
-                        name.startsWith("extract_hour_Time_") ||
-                        name.startsWith("to_bound_") ||
-                        name.startsWith("date_trunc_") ||
-                        name.startsWith("time_trunc_") ||
-                        name.startsWith("timestamp_trunc_") ||
-                        name.equals("now") // Only when called from ImplementNow
-                ) {
-                    resultType = new MonotoneType(expression.getType());
-                    reduced = expression.replaceArguments(reducedArgs);
-                }
-                // datediff_(left, right) computes right - left: monotone in right for a constant left
-                if (name.startsWith("datediff_") && this.constantExpressions.contains(expression.arguments[0])) {
-                    resultType = new MonotoneType(expression.getType());
-                    reduced = expression.replaceArguments(reducedArgs);
+                reduced = expression.replaceArguments();
+            } else {
+                MonotoneFunction function = MonotoneFunction.find(name, expression.arguments.length);
+                if (function != null) {
+                    List<MonotoneFunction.Argument> arguments = new ArrayList<>();
+                    for (int i = 0; i < expression.arguments.length; i++)
+                        arguments.add(this.argument(expression, i));
+                    MonotoneFunctionCall call = new MonotoneFunctionCall(function, expression, arguments);
+                    reduced = call.waterline();
+                    if (reduced != null)
+                        resultType = new MonotoneType(expression.getType());
                 }
             }
         }
