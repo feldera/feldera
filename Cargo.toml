@@ -151,8 +151,8 @@ deadpool-postgres = "0.14.1"
 #   - "round-robin pre-split unpartitioned scans": reads a many-file table in
 #     parallel (#2042). `DELTA_SCAN_ROUND_ROBIN=false` turns it off.
 # Upstream now, do not reapply: the delta-io/delta-rs#4692 backport.
-deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0" }
-deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0" }
+deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "9d996253cc60e5a6f35b2be5aef1cce89e08d951" }
+deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "9d996253cc60e5a6f35b2be5aef1cce89e08d951" }
 
 delta_kernel = { package = "buoyant_kernel", version = "0.28" }
 derive_more = { version = "1.0.0" }

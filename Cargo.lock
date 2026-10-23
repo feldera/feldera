@@ -2002,7 +2002,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "regex",
@@ -2020,7 +2020,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2769,7 +2769,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -4610,7 +4610,7 @@ dependencies = [
 [[package]]
 name = "deltalake"
 version = "2.0.0"
-source = "git+https://github.com/feldera/delta-rs.git?rev=c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0#c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0"
+source = "git+https://github.com/feldera/delta-rs.git?rev=9d996253cc60e5a6f35b2be5aef1cce89e08d951#9d996253cc60e5a6f35b2be5aef1cce89e08d951"
 dependencies = [
  "buoyant_kernel",
  "ctor 0.10.1",
@@ -4624,7 +4624,7 @@ dependencies = [
 [[package]]
 name = "deltalake-aws"
 version = "2.0.0"
-source = "git+https://github.com/feldera/delta-rs.git?rev=c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0#c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0"
+source = "git+https://github.com/feldera/delta-rs.git?rev=9d996253cc60e5a6f35b2be5aef1cce89e08d951#9d996253cc60e5a6f35b2be5aef1cce89e08d951"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -4646,7 +4646,7 @@ dependencies = [
 [[package]]
 name = "deltalake-azure"
 version = "2.0.0"
-source = "git+https://github.com/feldera/delta-rs.git?rev=c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0#c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0"
+source = "git+https://github.com/feldera/delta-rs.git?rev=9d996253cc60e5a6f35b2be5aef1cce89e08d951#9d996253cc60e5a6f35b2be5aef1cce89e08d951"
 dependencies = [
  "bytes",
  "deltalake-core",
@@ -4659,7 +4659,7 @@ dependencies = [
 [[package]]
 name = "deltalake-catalog-unity"
 version = "2.0.0"
-source = "git+https://github.com/feldera/delta-rs.git?rev=c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0#c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0"
+source = "git+https://github.com/feldera/delta-rs.git?rev=9d996253cc60e5a6f35b2be5aef1cce89e08d951#9d996253cc60e5a6f35b2be5aef1cce89e08d951"
 dependencies = [
  "async-trait",
  "chrono",
@@ -4686,7 +4686,7 @@ dependencies = [
 [[package]]
 name = "deltalake-core"
 version = "2.0.0"
-source = "git+https://github.com/feldera/delta-rs.git?rev=c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0#c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0"
+source = "git+https://github.com/feldera/delta-rs.git?rev=9d996253cc60e5a6f35b2be5aef1cce89e08d951#9d996253cc60e5a6f35b2be5aef1cce89e08d951"
 dependencies = [
  "alloc-stdlib 0.2.2",
  "arrow",
@@ -4744,7 +4744,7 @@ dependencies = [
 [[package]]
 name = "deltalake-derive"
 version = "1.0.0"
-source = "git+https://github.com/feldera/delta-rs.git?rev=c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0#c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0"
+source = "git+https://github.com/feldera/delta-rs.git?rev=9d996253cc60e5a6f35b2be5aef1cce89e08d951#9d996253cc60e5a6f35b2be5aef1cce89e08d951"
 dependencies = [
  "convert_case 0.9.0",
  "itertools 0.14.0",
@@ -4756,7 +4756,7 @@ dependencies = [
 [[package]]
 name = "deltalake-gcp"
 version = "2.0.0"
-source = "git+https://github.com/feldera/delta-rs.git?rev=c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0#c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0"
+source = "git+https://github.com/feldera/delta-rs.git?rev=9d996253cc60e5a6f35b2be5aef1cce89e08d951#9d996253cc60e5a6f35b2be5aef1cce89e08d951"
 dependencies = [
  "async-trait",
  "bytes",
@@ -6808,7 +6808,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -6828,7 +6828,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.57.0",
 ]
 
 [[package]]
@@ -7595,7 +7595,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -9746,6 +9746,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc-macro-error-attr3"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e564d14133360e1ae169ffde5da25881b5fa47261665b8e5713c212c27799da"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
 name = "proc-macro-error2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9755,6 +9765,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "proc-macro-error3"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f0d4471b3436c22106b21913b1dda531558918ae9b7ec55d58aa84b43552233"
+dependencies = [
+ "proc-macro-error-attr3",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -9934,7 +9956,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -9947,7 +9969,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -10161,7 +10183,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.1",
  "rustls",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -10200,7 +10222,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.5",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.61.2",
 ]
@@ -13914,12 +13936,11 @@ checksum = "4e8257fbc510f0a46eb602c10215901938b5c2a7d5e70fc11483b1d3c9b5b18c"
 
 [[package]]
 name = "validator"
-version = "0.19.0"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0b4a29d8709210980a09379f27ee31549b73292c87ab9899beee1c0d3be6303"
+checksum = "c3d68c6633c483df6780cc5277a417c7c2d1bceee2649d06c8ab6b0fd2dd3c81"
 dependencies = [
  "idna",
- "once_cell",
  "regex",
  "serde",
  "serde_derive",
@@ -13930,13 +13951,12 @@ dependencies = [
 
 [[package]]
 name = "validator_derive"
-version = "0.19.0"
+version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bac855a2ce6f843beb229757e6e570a42e837bcb15e5f449dd48d5747d41bf77"
+checksum = "240e4b81c20a1d6d50d1d7265c658dfbd204e8b9ac4d80f3c931f39462196335"
 dependencies = [
- "darling 0.20.11",
- "once_cell",
- "proc-macro-error2",
+ "darling 0.23.0",
+ "proc-macro-error3",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -14347,7 +14367,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

@@ -826,7 +826,7 @@ draw on the pipeline memory pool. `rewrite.rs` does use one, on the compaction p
 a file's live rows.
 
 External dependencies are pinned in the workspace `Cargo.toml`: delta-rs at rev
-`c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0`, `delta_kernel` (package `buoyant_kernel`) at
+`9d996253cc60e5a6f35b2be5aef1cce89e08d951`, `delta_kernel` (package `buoyant_kernel`) at
 0.28, which supplies the deletion vector file format writer, and `object_store` at 0.14.
 `put` lives on `ObjectStoreExt`, so the `object_store` version has to be the one delta-rs's
 `Arc<dyn ObjectStore>` implements.
