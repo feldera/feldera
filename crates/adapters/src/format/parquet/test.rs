@@ -132,6 +132,29 @@ pub fn input_snappy(engine: &dyn ConnectorTestEngine) {
     check_input(engine, Compression::SNAPPY);
 }
 
+/// A deletion can't be written as Parquet; encoding one fails the batch
+/// instead of panicking the pipeline.
+#[engine_test]
+pub fn output_rejects_deletes(engine: &dyn ConnectorTestEngine) {
+    let relation = relation();
+    let mut encoder = encoder(
+        &FormatConfig {
+            name: Cow::from("parquet"),
+            config: json!({ "buffer_size_records": usize::MAX }),
+        },
+        None,
+        &relation,
+        Box::new(MockOutputConsumer::new()),
+    );
+    let batch = engine
+        .output_batch(&relation, &rows().rows().slice(0, 1), &[-1])
+        .unwrap();
+
+    encoder.consumer().batch_start(0, OutputBatchType::Delta);
+    let error = encoder.encode(batch).unwrap_err().to_string();
+    assert!(error.contains("does not support deletes"), "{error}");
+}
+
 /// The Arrow schema of the files that the encoder writes for [`relation`].
 fn file_schema() -> Schema {
     Schema::new(vec![

@@ -3872,7 +3872,7 @@ impl CircuitThread {
         // transaction id it belonged to.  Needs to be done after
         // `step_circuit`, because the transaction id is only assigned there.
         if let Some(step_metadata) = self.pending_step_metadata.take() {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "testing"))]
             {
                 let names = step_metadata
                     .values()
@@ -4051,7 +4051,7 @@ impl CircuitThread {
                     .num_total_processed_records()
                     - processed_records;
                 if !committed {
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "testing"))]
                     if let Some(hook) = self.controller.commit_step_hook.lock().unwrap().take() {
                         hook(&self.controller);
                     }
@@ -4488,7 +4488,7 @@ impl CircuitThread {
     ///   recovered, so the pipeline process should exit as soon as it can.
     /// - `Err(error)` if there was an error.
     fn input_step(&mut self) -> Result<Option<BufferSize>, ControllerError> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "testing"))]
         if let Some(hook) = self.controller.input_step_hook.lock().unwrap().take() {
             hook(&mut self.input_metadata);
         }
@@ -7794,29 +7794,29 @@ pub struct ControllerInner {
     input_completions: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 
     /// Runs after capturing the checkpoint's input snapshot.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     checkpoint_snapshot_hook: Mutex<Option<Box<dyn FnOnce() + Send>>>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     input_step_hook: Mutex<Option<InputStepHook>>,
 
     /// Runs on the circuit thread after a step that left a commit unfinished.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     commit_step_hook: Mutex<Option<CommitStepHook>>,
 
     /// Runs on the circuit thread just before a step is journaled, with the
     /// names of the input endpoints whose input the step consumed.  Removed
     /// once it returns true.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     journal_step_hook: Mutex<Option<JournalStepHook>>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 type InputStepHook = Box<dyn FnOnce(&mut HashMap<String, Option<Resume>>) + Send>;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 type CommitStepHook = Box<dyn FnOnce(&ControllerInner) + Send>;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 type JournalStepHook = Box<dyn FnMut(&ControllerInner, &[&str]) -> bool + Send>;
 
 /// Returns `lir`, the result of [`CircuitDriver::lir`], as the controller keeps it: an engine
@@ -7917,16 +7917,16 @@ impl ControllerInner {
                 coordination_prepare_checkpoint: AtomicBool::new(false),
                 input_completion_notify,
                 checkpoint_activity: Mutex::new(CheckpointActivity::Idle),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "testing"))]
                 commit_step_hook: Mutex::new(None),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "testing"))]
                 journal_step_hook: Mutex::new(None),
                 modified_output_endpoints,
                 bootstrapped_output_endpoints,
                 input_completions: Mutex::new(Vec::new()),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "testing"))]
                 checkpoint_snapshot_hook: Mutex::new(None),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "testing"))]
                 input_step_hook: Mutex::new(None),
             }
         });
@@ -10450,7 +10450,7 @@ impl RunningCheckpoint {
                 .collect();
             (inputs, statistics)
         };
-        #[cfg(test)]
+        #[cfg(any(test, feature = "testing"))]
         if let Some(hook) = circuit
             .controller
             .checkpoint_snapshot_hook
