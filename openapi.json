@@ -11268,7 +11268,7 @@
           "total_completed_records": {
             "type": "integer",
             "format": "int64",
-            "description": "Total number of input records processed to completion.\n\nIn a multihost pipeline, this counts the input records of all of the\nhosts, as an output endpoint's `total_processed_input_records` does, and\nhas the same limit with a host that does not report its count.",
+            "description": "Total number of input records processed to completion.\n\nIn a multihost pipeline, this counts the input records that all of the\nhosts received.  If a host runs an older version that does not report\nits count to the coordinator, this is instead the sum of the counts\nthat each host reports for its own input, which can include input whose\noutput an output connector on a different host has not yet processed.",
             "minimum": 0
           },
           "total_completed_steps": {
@@ -12855,13 +12855,13 @@
           "total_processed_input_records": {
             "type": "integer",
             "format": "int64",
-            "description": "The number of input records processed by the circuit.\n\nThis metric tracks the end-to-end progress of the pipeline: the output\nof this endpoint is equal to the output of the circuit after\nprocessing `total_processed_input_records` records.\n\nThe counter never runs ahead of the endpoint's output. It advances to a\nvalue `N` only once the endpoint has processed every batch derived from\nthe first `N` records received by the pipeline, which means transmitting\nthe batch, or discarding it while silent bootstrapping suppresses the\nendpoint's output.\n\nIn a multihost pipeline, each host counts only its own input, but the\ncoordinator replaces this with the input records of all of the hosts as\nof `total_processed_steps`, so the count means the same as with one\nhost.  (If a host does not report its count to the coordinator, as an\nolder version does not, this counts only the input of the endpoint's own\nhost.)",
+            "description": "The number of input records processed by the circuit.\n\nThis metric tracks the end-to-end progress of the pipeline: the output\nof this endpoint is equal to the output of the circuit after\nprocessing `total_processed_input_records` records.\n\nThe counter never runs ahead of the endpoint's output. It advances to a\nvalue `N` only once the endpoint has processed every batch derived from\nthe first `N` records received by the pipeline, which means transmitting\nthe batch, or discarding it while silent bootstrapping suppresses the\nendpoint's output.\n\nIn a multihost pipeline, `N` counts the input records that all of the\nhosts received, not only the endpoint's own host.  (Each host counts\nonly its own input, and the coordinator adds up the hosts' counts as of\n`total_processed_steps`.)  If a host runs an older version that does\nnot report its count to the coordinator, `N` counts only the input\nrecords that the endpoint's own host received.",
             "minimum": 0
           },
           "total_processed_steps": {
             "type": "integer",
             "format": "int64",
-            "description": "The number of steps whose input records have been processed by the\nendpoint.\n\nIn a multihost pipeline, the hosts run the same steps together, so this\ncount means the same as with one host.\n\n# Interpretation\n\nThis is a count, not a step number.  If `total_processed_steps` is 0, no\nsteps have been processed to completion.  If `total_processed_steps >\n0`, then the last step whose input records have been processed to\ncompletion is `total_processed_steps - 1`. A record that was ingested in\nstep `n` is fully processed when `total_processed_steps > n`.",
+            "description": "The number of steps whose input records have been processed by the\nendpoint.\n\nIn a multihost pipeline, all of the hosts run the same steps together,\nso a step number refers to the same step on every host.\n\n# Interpretation\n\nThis is a count, not a step number.  If `total_processed_steps` is 0, no\nsteps have been processed to completion.  If `total_processed_steps >\n0`, then the last step whose input records have been processed to\ncompletion is `total_processed_steps - 1`. A record that was ingested in\nstep `n` is fully processed when `total_processed_steps > n`.",
             "minimum": 0
           },
           "transmitted_bytes": {
