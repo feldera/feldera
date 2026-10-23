@@ -8711,13 +8711,17 @@ export type GetPipelineLogsData = {
      * Resume the stream after this position, formatted as `<epoch>:<sequence>` and derived from a previous response's `feldera-logs-epoch` and `feldera-logs-seq` headers. Omit for the whole retained buffer with no position headers. Pass empty to start from the beginning of the buffer and be told the position.
      */
     cursor?: string | null
+    /**
+     * Set to `false` to end the response after the retained buffer instead of streaming new lines. Default: `true`. Cannot be combined with `cursor`.
+     */
+    follow?: boolean | null
   }
   url: '/v0/pipelines/{pipeline_name}/logs'
 }
 
 export type GetPipelineLogsErrors = {
   /**
-   * Cursor is malformed
+   * Cursor is malformed, or is combined with `follow=false`
    */
   400: ErrorResponse
   /**

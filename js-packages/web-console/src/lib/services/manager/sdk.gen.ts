@@ -1397,6 +1397,9 @@ export const httpInput = <ThrowOnError extends boolean = true>(
  * is reached first). After the catch-up, new lines are pushed whenever they become
  * available.
  *
+ * Pass `follow=false` to receive only the retained buffer: the response then ends instead
+ * of waiting for new lines. It cannot be combined with `cursor`.
+ *
  * It is possible for the logs stream to end prematurely due to the API server temporarily losing
  * connection to the runner. In this case, it is needed to issue again a new request to this
  * endpoint.

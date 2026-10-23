@@ -10,6 +10,10 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- `GET /v0/pipelines/{pipeline_name}/logs` accepts `follow=false`, which
+  returns the retained logs and ends the response instead of waiting for
+  new lines. Support bundles use it to collect logs.
+
 - Bug fix (Parquet output): a deletion in the output of a view with a Parquet
   output connector crashed the pipeline.  The connector now reports an
   encoder error for that batch instead; the Parquet format still cannot

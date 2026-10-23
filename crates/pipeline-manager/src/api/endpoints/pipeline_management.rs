@@ -2191,6 +2191,9 @@ pub(crate) async fn post_pipeline_clear(
 /// is reached first). After the catch-up, new lines are pushed whenever they become
 /// available.
 ///
+/// Pass `follow=false` to receive only the retained buffer: the response then ends instead
+/// of waiting for new lines. It cannot be combined with `cursor`.
+///
 /// It is possible for the logs stream to end prematurely due to the API server temporarily losing
 /// connection to the runner. In this case, it is needed to issue again a new request to this
 /// endpoint.
@@ -2248,6 +2251,9 @@ pub(crate) async fn post_pipeline_clear(
             `feldera-logs-epoch` and `feldera-logs-seq` headers. Omit for the whole retained \
             buffer with no position headers. Pass empty to start from the beginning of the \
             buffer and be told the position."),
+        ("follow" = Option<bool>, Query, description = "Set to `false` to end the response \
+            after the retained buffer instead of streaming new lines. Default: `true`. \
+            Cannot be combined with `cursor`."),
     ),
     responses(
         (status = OK
@@ -2255,7 +2261,7 @@ pub(crate) async fn post_pipeline_clear(
             , content_type = "text/plain"
             , body = Vec<u8>),
         (status = BAD_REQUEST
-            , description = "Cursor is malformed"
+            , description = "Cursor is malformed, or is combined with `follow=false`"
             , body = ErrorResponse),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"

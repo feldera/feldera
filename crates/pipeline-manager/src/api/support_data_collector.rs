@@ -152,7 +152,7 @@ async fn fetch_pipeline_data(
         .await
 }
 
-/// Stream logs from the pipeline with timeout-based termination
+/// Reads the pipeline's retained logs.
 async fn collect_pipeline_logs(
     state: &ServerState,
     client: &awc::Client,
@@ -161,16 +161,15 @@ async fn collect_pipeline_logs(
 ) -> Result<String, ManagerError> {
     let response = state
         .runner
-        // The bundle wants the whole retained buffer every time.
-        .get_logs_from_pipeline(client, tenant_id, pipeline_name, FollowMode::Full)
+        // The bundle wants the whole retained buffer every time, and nothing after it.
+        .get_logs_from_pipeline(client, tenant_id, pipeline_name, FollowMode::Snapshot)
         .await?;
 
     Ok(drain_logs(response, Duration::from_millis(500), COLLECTION_TIMEOUT).await)
 }
 
-/// Reads a followed log stream until it pauses for `gap` or `total` has passed.
-/// The cap matters because a pipeline that never pauses its logs would hold the
-/// collector, which serves all pipelines one after another, for hours.
+/// Reads a log stream until it ends, pauses for `gap`, or `total` has passed.
+/// The limits matter for a runner older than `follow=false`, which streams forever.
 async fn drain_logs<S, B, E>(mut stream: S, gap: Duration, total: Duration) -> String
 where
     S: futures_util::Stream<Item = Result<B, E>> + Unpin,
@@ -1628,6 +1627,20 @@ mod tests {
         let ready = futures_util::stream::iter(vec![Ok::<_, String>(b"line\n"); 1000]);
         let logs = drain_logs(ready, Duration::from_millis(200), Duration::ZERO).await;
         assert!(logs.is_empty(), "read {} bytes past the cap", logs.len());
+    }
+
+    /// A `follow=false` stream ends by itself, and the collector returns at once with all of it.
+    #[tokio::test(start_paused = true)]
+    async fn drain_logs_returns_when_the_stream_ends() {
+        let finite = futures_util::stream::iter(vec![Ok::<_, String>(b"line\n"); 3]);
+        let start = Instant::now();
+        let logs = drain_logs(finite, Duration::from_secs(30), Duration::from_secs(60)).await;
+        assert_eq!(logs, "line\nline\nline\n");
+        assert_eq!(
+            start.elapsed(),
+            Duration::ZERO,
+            "waited after the stream ended"
+        );
     }
 
     /// Data collected before version 4 holds the JSON profile inside a zip;
