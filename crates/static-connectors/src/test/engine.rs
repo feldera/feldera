@@ -174,6 +174,10 @@ impl StaticTestEngine {
                 postgres_cdc::cdc_all_types_relation(),
                 BTreeMap::new(),
             );
+            engine.serve::<records::CdcTemporal>(
+                postgres_cdc::cdc_temporal_relation(),
+                BTreeMap::new(),
+            );
         }
         {
             use crate::test::suites::postgres;

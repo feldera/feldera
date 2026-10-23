@@ -58,11 +58,15 @@ pub enum Capability {
     StaticStorageLayout,
     /// The controller's clock fills the table `now`, so that `NOW()` follows the wall clock.
     WallClock,
+    /// A commit feeds the transaction's input to the circuit in chunks of
+    /// `dev_tweaks.splitter_chunk_size_records` records, one chunk per step, so that the commit
+    /// of a larger transaction takes several steps.
+    ChunkedCommit,
 }
 
 impl Capability {
     /// Every capability, in the order of declaration.
-    pub const ALL: [Capability; 16] = [
+    pub const ALL: [Capability; 17] = [
         Capability::Storage,
         Capability::Checkpoints,
         Capability::SuspendResume,
@@ -79,6 +83,7 @@ impl Capability {
         Capability::NegativeZeroKeys,
         Capability::StaticStorageLayout,
         Capability::WallClock,
+        Capability::ChunkedCommit,
     ];
 }
 

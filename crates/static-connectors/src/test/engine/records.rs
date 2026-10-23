@@ -744,6 +744,17 @@ feldera_types::serialize_table_record!(CdcAllTypesStruct[19]{
 });
 
 record! {
+    /// A row of
+    /// [`cdc_temporal_relation`](crate::test::suites::postgres_cdc::cdc_temporal_relation): the
+    /// temporal types that have Postgres values Feldera cannot hold.
+    CdcTemporal["postgres_cdc_temporal"] {
+        id: i32 = "id", |_| None,
+        d: Option<Date> = "d", |_| Some(None),
+        t: Option<Time> = "t", |_| Some(None),
+    }
+}
+
+record! {
     /// A row of [`postgres::relation`](crate::test::suites::postgres::relation).
     PostgresAll["postgres"] {
         boolean_: bool = "boolean_", |_| None,
