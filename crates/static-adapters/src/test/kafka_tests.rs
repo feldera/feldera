@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use feldera_sqllib::{ByteArray, SqlString, Variant};
+use feldera_sqllib::{ByteArray, SqlString, SqlVariant, Variant};
 use feldera_types::config::InputEndpointConfig;
 use feldera_types::program_schema::Relation;
 use serde_json::{Value as JsonValue, json};
@@ -34,7 +34,8 @@ fn send_metadata_messages(topic: &str, first: &[u8], second: &[u8]) {
 }
 
 /// The `kafka_headers` of the messages that [`send_metadata_messages`] sends: a header value
-/// is binary, and a header without a value is the VARIANT null.
+/// is binary, and a header without a value is the VARIANT null. A program that keeps the enum
+/// representation of VARIANT reads these values.
 fn expected_kafka_headers() -> Vec<Variant> {
     vec![
         Variant::Map(Arc::new(BTreeMap::from([
@@ -136,11 +137,15 @@ fn test_kafka_metadata_raw() {
     wait_for_rows(pipeline.collection.as_ref(), 2, || {
         pipeline.reader.queue(false)
     });
-    let headers: Vec<Variant> = zset
+    let headers: Vec<SqlVariant> = zset
         .state()
         .flushed
         .iter()
         .map(|update| update.unwrap_insert().kafka_headers.clone())
         .collect();
-    assert_eq!(headers, expected_kafka_headers());
+    let expected: Vec<SqlVariant> = expected_kafka_headers()
+        .iter()
+        .map(SqlVariant::from)
+        .collect();
+    assert_eq!(headers, expected);
 }

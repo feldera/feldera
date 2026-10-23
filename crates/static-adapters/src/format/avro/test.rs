@@ -20,7 +20,7 @@ use dbsp::{DBData, IndexedZSetReader, OrdIndexedZSet, ZWeight, utils::Tup2};
 use dbsp_adapters::format::avro::output::AvroEncoder;
 use dbsp_adapters::{Encoder, InputBuffer, Parser};
 use feldera_adapterlib::transport::OutputBatchType;
-use feldera_sqllib::{FlatVariant, Variant};
+use feldera_sqllib::{FlatVariant, SqlVariant, Variant};
 use feldera_types::config::FormatConfig;
 use feldera_types::format::avro::{AvroParserConfig, AvroUpdateFormat};
 use feldera_types::size::ConfigSize;
@@ -102,7 +102,7 @@ serialize_table_record!(TestVariant[2]{
     r#v2["v2"]: FlatVariant
 });
 
-deserialize_table_record!(TestVariant["TestVariant", Variant, 2] {
+deserialize_table_record!(TestVariant["TestVariant", SqlVariant, 2] {
     (r#v1, "v1", false, Variant, |_| None),
     (r#v2, "v2", false, FlatVariant, |_| None)
 });

@@ -6,9 +6,9 @@
 #![allow(deprecated)]
 
 use crate::{
-    Date, GeoPoint, LongInterval, ShortInterval, SqlDecimal, SqlString, Time, Timestamp,
-    TimestampTz, Uuid, array::Array, binary::ByteArray, casts::*, error::*, map::Map, tn, to_hex_,
-    ttn,
+    Date, GeoPoint, LongInterval, ShortInterval, SqlDecimal, SqlString, SqlVariant, Time,
+    Timestamp, TimestampTz, Uuid, array::Array, binary::ByteArray, casts::*, error::*, map::Map,
+    tn, to_hex_, ttn,
 };
 use dbsp::algebra::{F32, F64};
 use feldera_fxp::DynamicDecimal;
@@ -1608,9 +1608,13 @@ pub fn variant_merge_V_V(left: Variant, right: Variant) -> Variant {
 
 crate::some_polymorphic_function2!(variant_merge, V, Variant, V, Variant, Variant);
 
+/// Parses `json` as a `T`, or returns `None` if it is not one.
+///
+/// The compiler declares the deserializer of every record with `SqlVariant` connector
+/// metadata, whatever the program's VARIANT representation.
 pub fn from_json_string<T>(json: &str) -> Option<T>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>,
 {
     T::deserialize_with_context(
         &mut serde_json::Deserializer::from_str(json),
@@ -2380,5 +2384,40 @@ mod test {
         assert_eq!(strs(&json_keys_V(v)), vec!["\"a.b\"", "a", "a.b"]);
 
         assert!(json_keys_V(Variant::BigInt(5)).is_empty());
+    }
+
+    /// A record declared as the compiler declares one, with `SqlVariant` connector metadata,
+    /// parses from JSON text.
+    #[test]
+    fn from_json_string_parses_a_compiled_record() {
+        use super::from_json_string;
+        use crate::SqlVariant;
+        use feldera_types::deserialize_table_record;
+
+        #[derive(Debug, PartialEq, Eq)]
+        struct Address {
+            city: Option<SqlString>,
+            number: Option<i32>,
+        }
+        deserialize_table_record!(Address["Address", SqlVariant, 2] {
+            (city, "city", false, Option<SqlString>, |_| Some(None)),
+            (number, "number", false, Option<i32>, |_| Some(None))
+        });
+
+        assert_eq!(
+            from_json_string::<Address>(r#"{"city": "Paris", "number": 7}"#),
+            Some(Address {
+                city: Some(SqlString::from_ref("Paris")),
+                number: Some(7),
+            })
+        );
+        assert_eq!(
+            from_json_string::<Address>(r#"{"city": "Paris"}"#),
+            Some(Address {
+                city: Some(SqlString::from_ref("Paris")),
+                number: None,
+            })
+        );
+        assert_eq!(from_json_string::<Address>(r#"{"city": "Paris""#), None);
     }
 }

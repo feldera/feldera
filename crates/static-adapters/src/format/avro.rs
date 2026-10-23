@@ -4,7 +4,9 @@
 pub mod deserializer;
 pub mod serializer;
 
+// The tests also read `VARIANT` columns of the deprecated enum `Variant`.
 #[cfg(test)]
+#[allow(deprecated)]
 mod test;
 
 pub use deserializer::from_avro_value;

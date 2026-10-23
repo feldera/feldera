@@ -8,7 +8,7 @@ use dbsp_adapters::{
     FormatConfig, ParseError,
     format::{InputBuffer, Parser},
 };
-use feldera_sqllib::Variant;
+use feldera_sqllib::SqlVariant;
 use feldera_types::{
     deserialize_table_record,
     format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat},
@@ -27,7 +27,7 @@ struct TestStruct {
     s: Option<String>,
 }
 
-deserialize_table_record!(TestStruct["TestStruct", Variant, 3] {
+deserialize_table_record!(TestStruct["TestStruct", SqlVariant, 3] {
     (b, "b", false, bool, |_| None),
     (i, "i", false, i32, |_| None),
     (s, "s", false, Option<String>, |_| Some(None))
@@ -54,7 +54,7 @@ struct TestStructUpd {
     s: Option<Option<String>>,
 }
 
-deserialize_table_record!(TestStructUpd["TestStructUpd", Variant, 3] {
+deserialize_table_record!(TestStructUpd["TestStructUpd", SqlVariant, 3] {
     (b, "b", false, Option<bool>, |_| Some(None)),
     (i, "i", false, i32, |_| None),
     (s, "s", false, Option<Option<String>>, |_| Some(None), |x| if x.is_none() { Some(None) } else {x})
@@ -88,7 +88,7 @@ fn run_test_cases<T, U>(test_cases: Vec<TestCase<T, U>>)
 where
     T: Debug
         + Eq
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
         + SerializeWithContext<SqlSerdeConfig>
         + Hash
         + Send
@@ -98,7 +98,7 @@ where
         + 'static,
     U: Debug
         + Eq
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
         + Hash
         + Send
         + Sync

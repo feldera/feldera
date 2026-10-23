@@ -22,7 +22,7 @@ use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_adapterlib::format::{BufferSize, flatten_nested};
 
-use feldera_sqllib::Variant;
+use feldera_sqllib::SqlVariant;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
 use std::{
@@ -129,14 +129,14 @@ impl<T, U> MockDeZSet<T, U> {
 
 impl<T, U> DeCollectionHandle for MockDeZSet<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
         + Hash
         + Send
         + Sync
         + Debug
         + Clone
         + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
         + Hash
         + Send
         + Sync
@@ -340,8 +340,16 @@ where
 
 impl<De, T, U, C> DeCollectionStream for MockDeZSetStream<De, T, U, C>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
+        + Hash
+        + Send
+        + Sync
+        + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
+        + Hash
+        + Send
+        + Sync
+        + 'static,
     De: DeserializerFromBytes<C> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
 {
@@ -401,8 +409,16 @@ where
 
 impl<De, T, U, C> InputBuffer for MockDeZSetStream<De, T, U, C>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
+        + Hash
+        + Send
+        + Sync
+        + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
+        + Hash
+        + Send
+        + Sync
+        + 'static,
     De: DeserializerFromBytes<C> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
 {
@@ -451,8 +467,16 @@ where
 
 impl<T, U, C> InputBuffer for MockZSetArrowStream<T, U, C>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
+        + Hash
+        + Send
+        + Sync
+        + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
+        + Hash
+        + Send
+        + Sync
+        + 'static,
     C: Clone + Send + Sync + 'static,
 {
     fn flush(&mut self) -> AnyResult<()> {
@@ -474,7 +498,7 @@ where
 
 impl<T, U> MockZSetArrowStream<T, U, SqlSerdeConfig>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync,
     U: Send + Sync,
 {
     /// Deserialize the records in `data` and buffer the update that `update`
@@ -506,14 +530,14 @@ where
 
 impl<T, U> ArrowStream for MockZSetArrowStream<T, U, SqlSerdeConfig>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
         + Hash
         + Send
         + Sync
         + Debug
         + Clone
         + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
         + Hash
         + Send
         + Sync
@@ -601,8 +625,16 @@ impl<T, U> MockAvroStream<T, U> {
 #[cfg(feature = "with-avro")]
 impl<T, U> AvroStream for MockAvroStream<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
+        + Hash
+        + Send
+        + Sync
+        + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
+        + Hash
+        + Send
+        + Sync
+        + 'static,
 {
     fn configure_schema(&mut self, schema: &AvroSchema, refs: &AvroSchemaRefs) -> AnyResult<()> {
         self.schema.install(schema, refs);
@@ -653,8 +685,16 @@ where
 #[cfg(feature = "with-avro")]
 impl<T, U> InputBuffer for MockAvroStream<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
+        + Hash
+        + Send
+        + Sync
+        + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
+        + Hash
+        + Send
+        + Sync
+        + 'static,
 {
     fn flush(&mut self) -> AnyResult<()> {
         let mut state = self.handle.0.lock().unwrap();

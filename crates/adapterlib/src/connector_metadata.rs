@@ -1,6 +1,3 @@
-// The record deserializer still reads the metadata as the enum `Variant`.
-#![allow(deprecated)]
-
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
@@ -49,6 +46,11 @@ impl ConnectorMetadata {
     /// Iterates over the attributes in name order.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &VariantValue)> {
         self.0.iter().map(|(name, value)| (name.as_str(), value))
+    }
+
+    /// Returns the attributes by name.
+    pub fn attributes(&self) -> &BTreeMap<String, VariantValue> {
+        &self.0
     }
 
     /// Returns `true` if `self` and `other` are the same value, not only equal

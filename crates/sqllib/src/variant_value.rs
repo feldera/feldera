@@ -16,8 +16,7 @@
 //!   width that holds it, an integer map key becomes the string of its digits, and both SQL
 //!   null and the variant null become [`VariantValue::Null`].
 
-// The conversions to and from the enum `Variant` serve the code that still reads it, such as
-// the record deserializer of connector metadata.
+// The conversions to and from the deprecated enum `Variant` serve the code that still uses it.
 #![allow(deprecated)]
 
 use std::collections::BTreeMap;
@@ -137,6 +136,26 @@ impl From<VariantValue> for FlatVariant {
     }
 }
 
+impl FlatVariant {
+    /// The `VARIANT` object with `fields`, the value that [`FlatVariant::from`] gives for a
+    /// [`VariantValue::Object`] of them, encoded without a copy of the fields.
+    ///
+    /// ```
+    /// use std::collections::BTreeMap;
+    ///
+    /// use feldera_sqllib::{FlatVariant, VariantValue};
+    ///
+    /// let fields = BTreeMap::from([("topic".to_string(), VariantValue::String("events".into()))]);
+    /// assert_eq!(
+    ///     FlatVariant::from_object(&fields).to_json_string().unwrap(),
+    ///     r#"{"topic":"events"}"#
+    /// );
+    /// ```
+    pub fn from_object(fields: &BTreeMap<String, VariantValue>) -> Self {
+        build_document_infallible(|w| encode_flat_object(w, fields))
+    }
+}
+
 impl TryFrom<&FlatVariant> for VariantValue {
     type Error = Box<SqlRuntimeError>;
 
@@ -187,20 +206,23 @@ fn encode_flat_variant(w: &mut Writer, value: &VariantValue) -> Range<usize> {
         VariantValue::List(elements) => w.array_in_place(elements.len(), |w, i| {
             encode_flat_variant(w, &elements[i]);
         }),
-        VariantValue::Object(fields) => {
-            let (start, mut key_ends, mut value_ends) = w.begin_map_in_place(fields.len());
-            for name in fields.keys() {
-                w.scalar(TAG_STRING, name.as_bytes());
-                key_ends.record_end(w);
-            }
-            w.begin_map_values(&mut value_ends);
-            for value in fields.values() {
-                encode_flat_variant(w, value);
-                value_ends.record_end(w);
-            }
-            start..w.out.len()
-        }
+        VariantValue::Object(fields) => encode_flat_object(w, fields),
     }
+}
+
+/// Append the flat encoding of the object with `fields` to `w` and return its range.
+fn encode_flat_object(w: &mut Writer, fields: &BTreeMap<String, VariantValue>) -> Range<usize> {
+    let (start, mut key_ends, mut value_ends) = w.begin_map_in_place(fields.len());
+    for name in fields.keys() {
+        w.scalar(TAG_STRING, name.as_bytes());
+        key_ends.record_end(w);
+    }
+    w.begin_map_values(&mut value_ends);
+    for value in fields.values() {
+        encode_flat_variant(w, value);
+        value_ends.record_end(w);
+    }
+    start..w.out.len()
 }
 
 /// Append the flat encoding of the decimal `integer * 10^-scale`, in canonical form.
@@ -939,6 +961,32 @@ mod tests {
                 "{value:?}"
             );
             assert_eq!(flat, FlatVariant::from(&variant), "{value:?}");
+        }
+    }
+
+    /// Fields encode as the object that holds them: the document reads back as the object,
+    /// and the enum's path encodes the same document. One field of each arm, nested objects,
+    /// and no fields.
+    #[test]
+    fn an_object_encodes_from_its_fields() {
+        let every_arm: BTreeMap<String, VariantValue> = every_arm()
+            .into_iter()
+            .enumerate()
+            .map(|(i, (value, _))| (format!("field{i}"), value))
+            .collect();
+        let nested = BTreeMap::from([
+            ("inner".to_string(), VariantValue::Object(every_arm.clone())),
+            ("empty".to_string(), VariantValue::Object(BTreeMap::new())),
+        ]);
+        for fields in [every_arm, nested, BTreeMap::new()] {
+            let object = VariantValue::Object(fields.clone());
+            let flat = FlatVariant::from_object(&fields);
+            assert_eq!(VariantValue::try_from(&flat).unwrap(), object, "{fields:?}");
+            assert_eq!(
+                flat,
+                FlatVariant::from(&Variant::from(&object)),
+                "{fields:?}"
+            );
         }
     }
 
