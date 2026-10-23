@@ -293,7 +293,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{select_share, IcebergShareScan};
-    use dbsp::circuit::tokio::TOKIO;
+    use feldera_storage::tokio::TOKIO;
     use feldera_types::coordination::{InputDistribution, InputShard};
     use futures_util::TryStreamExt;
     use iceberg::io::FileIOBuilder;

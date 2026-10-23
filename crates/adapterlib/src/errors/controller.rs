@@ -12,20 +12,17 @@ use actix_web::body::BoxBody;
 use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, HttpResponseBuilder, ResponseError};
 use anyhow::Error as AnyError;
-use dbsp::{
-    Error as DbspError,
-    circuit::{LayoutError, bootstrap::BootstrapInfo},
-    storage::backend::StorageError,
-};
+use feldera_storage::error::StorageError;
+use feldera_types::circuit::{BootstrapInfo, LayoutError};
 use feldera_types::{
-    error::{DetailedError, ErrorResponse},
+    error::{DetailedError, EngineError, ErrorResponse},
     runtime_status::RuntimeDesiredStatus,
     suspend::SuspendError,
 };
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 use super::journal::StepError;
-use crate::{DbspDetailedError, format::ParseError, transport::Step};
+use crate::{format::ParseError, transport::Step};
 
 /// Controller configuration error.
 #[derive(Debug, Serialize)]
@@ -192,7 +189,7 @@ pub enum ConfigError {
 
 impl StdError for ConfigError {}
 
-impl DbspDetailedError for ConfigError {
+impl DetailedError for ConfigError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::PipelineConfigParseError { .. } => Cow::from("PipelineConfigParseError"),
@@ -786,9 +783,9 @@ pub enum ControllerError {
         error: String,
     },
 
-    /// Error evaluating the DBSP circuit.
+    /// Error evaluating the DBSP circuit, from the engine that runs it.
     DbspError {
-        error: DbspError,
+        error: Box<dyn EngineError>,
     },
 
     /// Error inside the Prometheus module.
@@ -998,7 +995,7 @@ where
     ser.end()
 }
 
-impl DbspDetailedError for ControllerError {
+impl DetailedError for ControllerError {
     // TODO: attempts to cast `AnyError` to `DetailedError`.
     fn error_code(&self) -> Cow<'static, str> {
         match self {
@@ -1052,13 +1049,6 @@ impl DbspDetailedError for ControllerError {
             Self::UnexpectedBootstrap { .. } => Cow::from("UnexpectedBootstrap"),
             Self::UnexpectedRuntimeVersion { .. } => Cow::from("UnexpectedRuntimeVersion"),
         }
-    }
-}
-
-impl DetailedError for ControllerError {
-    // TODO: attempts to cast `AnyError` to `DetailedError`.
-    fn error_code(&self) -> Cow<'static, str> {
-        DbspDetailedError::error_code(self)
     }
 }
 
@@ -1600,8 +1590,10 @@ impl ControllerError {
         }
     }
 
-    pub fn dbsp_error(error: DbspError) -> Self {
-        Self::DbspError { error }
+    pub fn dbsp_error(error: impl EngineError) -> Self {
+        Self::DbspError {
+            error: Box::new(error),
+        }
     }
 
     pub fn dbsp_panic() -> Self {
@@ -1642,11 +1634,8 @@ impl ControllerError {
             Self::NotSupported { .. } | Self::SuspendError(SuspendError::Permanent(_)) => {
                 ErrorKind::Unsupported
             }
-            Self::DbspError {
-                error: DbspError::IO(error),
-            } => error.kind(),
-            Self::DbspError { .. }
-            | Self::SchemaParseError { .. }
+            Self::DbspError { error } => error.io_error_kind().unwrap_or(ErrorKind::Other),
+            Self::SchemaParseError { .. }
             | Self::SchemaValidationError { .. }
             | Self::CheckpointParseError { .. }
             | Self::CheckpointDoesNotMatchPipeline
@@ -1694,12 +1683,6 @@ impl From<ConfigError> for ControllerError {
     }
 }
 
-impl From<DbspError> for ControllerError {
-    fn from(error: DbspError) -> Self {
-        Self::DbspError { error }
-    }
-}
-
 impl From<SuspendError> for ControllerError {
     fn from(error: SuspendError) -> Self {
         Self::SuspendError(error)
@@ -1713,5 +1696,56 @@ impl From<feldera_types::pipeline_diff::PipelineDiffError> for ControllerError {
                 Self::BootstrapNotAllowed { error }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::borrow::Cow;
+    use std::error::Error as StdError;
+    use std::fmt::{Display, Formatter, Result as FmtResult};
+    use std::io::ErrorKind;
+
+    use feldera_types::error::{DetailedError, EngineError};
+    use serde::Serialize;
+    use serde_json::json;
+
+    use super::ControllerError;
+
+    #[derive(Debug, Serialize)]
+    struct StalledEngine {
+        reason: &'static str,
+    }
+
+    impl Display for StalledEngine {
+        fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+            write!(f, "{}", self.reason)
+        }
+    }
+
+    impl StdError for StalledEngine {}
+
+    impl EngineError for StalledEngine {
+        fn error_code(&self) -> Cow<'static, str> {
+            Cow::from("StalledEngine")
+        }
+
+        fn io_error_kind(&self) -> Option<ErrorKind> {
+            Some(ErrorKind::TimedOut)
+        }
+    }
+
+    /// An engine's error keeps its code, its I/O kind, its message, and its JSON inside a
+    /// controller error.
+    #[test]
+    fn an_engine_error_keeps_what_it_reports() {
+        let error = ControllerError::dbsp_error(StalledEngine { reason: "stalled" });
+        assert_eq!(DetailedError::error_code(&error), "StalledEngine");
+        assert_eq!(error.kind(), ErrorKind::TimedOut);
+        assert_eq!(error.to_string(), "DBSP error: stalled");
+        assert_eq!(
+            serde_json::to_value(&error).unwrap(),
+            json!({"error": {"reason": "stalled"}})
+        );
     }
 }

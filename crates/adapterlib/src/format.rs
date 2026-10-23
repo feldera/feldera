@@ -9,8 +9,8 @@ use std::ops::{Add, AddAssign, Range};
 use std::sync::Arc;
 
 use anyhow::Result as AnyResult;
-use dbsp::operator::input::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_types::circuit::StagedBuffers;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::program_schema::Relation;
 use feldera_types::serde_with_context::FieldParseError;

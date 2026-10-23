@@ -55,7 +55,6 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
-use dbsp::circuit::bootstrap::{BootstrapInfo, ConcurrentRestoreOutcome};
 use dbsp::circuit::checkpointer::Checkpointer;
 use dbsp::circuit::metrics::{
     COMPACTION_STALL_TIME_NANOSECONDS, DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS, DBSP_STEP,
@@ -94,6 +93,7 @@ use feldera_types::adapter_stats::{
     ExternalOutputEndpointStatus,
 };
 use feldera_types::checkpoint::{CheckpointActivity, CheckpointMetadata, HostInfo};
+use feldera_types::circuit::{BootstrapInfo, ConcurrentRestoreOutcome};
 use feldera_types::coordination::{
     self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, InputDistribution,
     StepAction, StepInputs, StepRequest, StepStatus, TransactionCoordination,
@@ -732,7 +732,7 @@ fn soft_delete_input_handle(
     Ok(InputCollectionHandle::new(
         input_handle.schema.clone(),
         SoftDeleteHandle::new(input_handle.handle.fork()),
-        input_handle.node_id,
+        input_handle.persistent_id.clone(),
     ))
 }
 
@@ -3070,7 +3070,7 @@ fn non_materialized_replay_sources(
     let mut need_backfill_persistent_ids = Vec::new();
 
     // If this table is in need_backfill but is not in diff (i.e., its persistent ID hasn't changed), return it.
-    for persistent_id in bootstrap_info.need_backfill.values().flatten() {
+    for persistent_id in &bootstrap_info.backfill_persistent_ids {
         if let Some(table_name) = tables.get(persistent_id)
             && !diff
                 .program_diff()
@@ -3140,7 +3140,7 @@ impl CircuitThread {
 
         let (mut circuit, catalog) = circuit_factory(circuit_config)?;
 
-        let lir = circuit.lir()?;
+        let lir = circuit.lir().map_err(ControllerError::dbsp_error)?;
 
         if let Some(state) = &state
             && let Some(diff) = &pipeline_diff
@@ -3148,9 +3148,11 @@ impl CircuitThread {
             // Check for tables that need to be materialized but they aren't. This check is the reason
             // we have to check if we need to bootstrap (and get user approval) here and not earlier,
             // in open_checkpoint().
-            if let Some(bootstrap_info) = circuit.bootstrap_info() {
+            if let Some(bootstrap_info) =
+                crate::static_compile::bootstrap::bootstrap_info(&circuit, catalog.as_ref())
+            {
                 let non_materialized_tables =
-                    non_materialized_replay_sources(bootstrap_info, &pipeline_config, diff);
+                    non_materialized_replay_sources(&bootstrap_info, &pipeline_config, diff);
                 if !non_materialized_tables.is_empty() {
                     return Err(ControllerError::BootstrapNotAllowed {
                         error: format!(
@@ -3210,7 +3212,13 @@ impl CircuitThread {
         // `concurrent_bootstrap=false` for a stop-the-world bootstrap.
         let mut concurrent_phase = ConcurrentPhase::Inactive;
         if concurrent_bootstrap && let Some(base) = concurrent_base {
-            match circuit.start_concurrent_bootstrap(base.to_string().into())? {
+            let outcome = circuit
+                .start_concurrent_bootstrap(base.to_string().into())
+                .map_err(ControllerError::dbsp_error)?;
+            match crate::static_compile::bootstrap::concurrent_restore_outcome(
+                outcome,
+                catalog.as_ref(),
+            ) {
                 ConcurrentRestoreOutcome::UpToDate => {}
                 ConcurrentRestoreOutcome::FellBack { reason, .. } => {
                     return Err(ControllerError::BootstrapNotAllowed {
@@ -3248,6 +3256,10 @@ impl CircuitThread {
             }
         }
 
+        // What the circuit rebuilds, if it is bootstrapping.
+        let bootstrap_info =
+            crate::static_compile::bootstrap::bootstrap_info(&circuit, catalog.as_ref());
+
         // Seek each input endpoint to its initial offset.
         //
         // If we're not restoring from a checkpoint, `input_metadata` will be empty so
@@ -3261,13 +3273,10 @@ impl CircuitThread {
                     continue;
                 };
 
-                let node_id = catalog
-                    .input_collection_handle(&SqlIdentifier::from(&endpoint_config.stream))
-                    .unwrap()
-                    .node_id;
-
-                if let Some(replay_info) = circuit.bootstrap_info()
-                    && replay_info.need_backfill.contains_key(&node_id)
+                let table = SqlIdentifier::from(&endpoint_config.stream);
+                if bootstrap_info
+                    .as_ref()
+                    .is_some_and(|info| info.backfill_tables.contains(&table))
                 {
                     info!(
                         "Found checkpointed state for input connector '{endpoint_name}', but the table that the connector is attached to has been modified and its state has been cleared; the connector will restart from scratch"
@@ -3353,9 +3362,7 @@ impl CircuitThread {
         // The pipeline hasn't changed based on input and output persistent id values,
         // yet the circuit is bootstrapping. This is a bug.
         if can_replay && bootstrapping {
-            return Err(ControllerError::UnexpectedBootstrap {
-                bootstrap_info: circuit.bootstrap_info().clone(),
-            });
+            return Err(ControllerError::UnexpectedBootstrap { bootstrap_info });
         }
 
         let ft = match ft_model {
@@ -3443,7 +3450,7 @@ impl CircuitThread {
         // want to be stuck in the initialization state, when none of the monitoring
         // features are enabled, for a long time.
         if let Err(error) = self.circuit.set_auto_rebalance(false) {
-            let _ = init_status_sender.send(Err(error.into()));
+            let _ = init_status_sender.send(Err(ControllerError::dbsp_error(error)));
             return Ok(());
         }
 
@@ -3483,7 +3490,7 @@ impl CircuitThread {
 
         // Enable auto-rebalancing after the first step.
         if let Err(error) = self.circuit.set_auto_rebalance(true) {
-            let _ = init_status_sender.send(Err(error.into()));
+            let _ = init_status_sender.send(Err(ControllerError::dbsp_error(error)));
             return Ok(());
         }
 
@@ -3629,7 +3636,11 @@ impl CircuitThread {
                 // (`step_bootstrap_circuit` does not depend on the main
                 // transaction state), so the backfill cannot be starved by a
                 // long-running primary transaction.
-                if self.circuit.step_bootstrap_circuit()? {
+                if self
+                    .circuit
+                    .step_bootstrap_circuit()
+                    .map_err(ControllerError::dbsp_error)?
+                {
                     // Backfill committed. Pause inputs and enter the cutover
                     // window. The synchronization transaction itself
                     // (`sync_concurrent_bootstrap`) requires no open main
@@ -3653,7 +3664,9 @@ impl CircuitThread {
                 // in-flight transaction. Once it is idle, start the
                 // synchronization transaction.
                 if self.controller.get_transaction_state() == TransactionState::None {
-                    self.circuit.sync_concurrent_bootstrap()?;
+                    self.circuit
+                        .sync_concurrent_bootstrap()
+                        .map_err(ControllerError::dbsp_error)?;
                     self.concurrent_phase = ConcurrentPhase::Synchronize;
                     info!(
                         "Concurrent bootstrap: primary circuit idle; synchronizing buffered \
@@ -3669,7 +3682,11 @@ impl CircuitThread {
                 // requests such as profiling. The trigger keeps forcing steps
                 // while the concurrent bootstrap is active, so we are called
                 // again until the synchronization transaction commits.
-                if self.circuit.step_bootstrap_circuit()? {
+                if self
+                    .circuit
+                    .step_bootstrap_circuit()
+                    .map_err(ControllerError::dbsp_error)?
+                {
                     // Synchronization complete: state has been transferred to
                     // the live circuit. Don't report `Running` yet: the new
                     // views were excluded from the live schedule during the
@@ -3678,7 +3695,9 @@ impl CircuitThread {
                     // status non-`Running` and inputs paused
                     // (`concurrent_synchronize_in_progress` stays set) for one
                     // more step that refreshes the snapshot.
-                    self.circuit.complete_concurrent_bootstrap()?;
+                    self.circuit
+                        .complete_concurrent_bootstrap()
+                        .map_err(ControllerError::dbsp_error)?;
                     self.concurrent_phase = ConcurrentPhase::Finalizing;
                     info!(
                         "Concurrent bootstrap: synchronization committed and cut over to the \
@@ -3999,7 +4018,8 @@ impl CircuitThread {
         // its error rather than panicking, so the pipeline fails with the
         // worker's explanation instead of a bare controller panic.
         if let Err(error) = self.advance_transaction() {
-            self.controller.error(Arc::new(error.into()), None);
+            self.controller
+                .error(Arc::new(ControllerError::dbsp_error(error)), None);
             return;
         }
 
@@ -4013,7 +4033,8 @@ impl CircuitThread {
                 .with_tooltip(|| format!("step {}", self.step))
                 .in_scope(|| self.circuit.step())
                 .unwrap_or_else(|e| {
-                    self.controller.error(Arc::new(e.into()), None);
+                    self.controller
+                        .error(Arc::new(ControllerError::dbsp_error(e)), None);
                     false
                 });
 
@@ -4095,7 +4116,10 @@ impl CircuitThread {
                 .with_category("Step")
                 .with_tooltip(|| format!("step {}", self.step))
                 .in_scope(|| self.circuit.transaction())
-                .unwrap_or_else(|e| self.controller.error(Arc::new(e.into()), None));
+                .unwrap_or_else(|e| {
+                    self.controller
+                        .error(Arc::new(ControllerError::dbsp_error(e)), None)
+                });
             debug!("circuit thread: 'circuit.transaction' returned");
         }
     }
@@ -10621,7 +10645,7 @@ impl RunningCheckpoint {
             .with_steps(circuit.step)
             .with_processed_records(processed_records)
             .prepare()
-            .map_err(ControllerError::from)?;
+            .map_err(ControllerError::dbsp_error)?;
         let checkpoint = Checkpoint {
             circuit: None,
             step: circuit.step,
@@ -10730,7 +10754,10 @@ struct CheckpointThread {
 impl CheckpointThread {
     fn run(mut self) -> Result<Checkpoint, ControllerError> {
         // Commit all the operator checkpoints to stable storage.
-        let publisher = self.committer.commit()?;
+        let publisher = self
+            .committer
+            .commit()
+            .map_err(ControllerError::dbsp_error)?;
         let bytes_written = WRITE_BLOCKS_BYTES.sum() - self.written_before;
 
         // Wait to complete outputs for all the records processed at the time
@@ -10839,7 +10866,7 @@ impl CheckpointThread {
             ControllerError::storage_error(format!("{checkpoint_dir}: failed to fsync"), error)
         })?;
 
-        publisher.publish()?;
+        publisher.publish().map_err(ControllerError::dbsp_error)?;
         self.checkpoint
             .write(&*self.storage, &StoragePath::from(STATE_FILE))?;
 

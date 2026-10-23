@@ -10,14 +10,9 @@ use std::{
     fmt::{Display, Error as FmtError, Formatter},
     io::Error as IOError,
 };
-use tracing::Level;
 
-pub trait DetailedError: StdError + Serialize {
-    fn error_code(&self) -> Cow<'static, str>;
-    fn log_level(&self) -> Level {
-        Level::ERROR
-    }
-}
+pub use feldera_types::error::DetailedError;
+use feldera_types::error::EngineError;
 
 #[derive(Debug)]
 pub enum Error {
@@ -38,6 +33,19 @@ impl DetailedError for Error {
             Self::Constructor(_) => Cow::from("CircuitConstructorError"),
             Self::Storage(_) => Cow::from("StorageError"),
             Self::Balancer(_) => Cow::from("BalancerError"),
+        }
+    }
+}
+
+impl EngineError for Error {
+    fn error_code(&self) -> Cow<'static, str> {
+        DetailedError::error_code(self)
+    }
+
+    fn io_error_kind(&self) -> Option<std::io::ErrorKind> {
+        match self {
+            Self::IO(error) => Some(error.kind()),
+            _ => None,
         }
     }
 }
@@ -119,5 +127,30 @@ impl From<StorageError> for Error {
 impl From<BalancerError> for Error {
     fn from(error: BalancerError) -> Self {
         Self::Balancer(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::{Error as IOError, ErrorKind};
+
+    use feldera_types::error::EngineError;
+
+    use super::Error;
+
+    /// An engine error behind a pointer reports and serializes as the error itself.
+    #[test]
+    fn a_boxed_engine_error_reports_like_the_error() {
+        let error = Error::IO(IOError::from(ErrorKind::NotFound));
+        let expected = serde_json::to_value(&error).unwrap();
+        let boxed: Box<dyn EngineError> = Box::new(error);
+        assert_eq!(boxed.error_code(), "IOError");
+        assert_eq!(boxed.io_error_kind(), Some(ErrorKind::NotFound));
+        assert_eq!(serde_json::to_value(&boxed).unwrap(), expected);
+
+        let boxed: Box<dyn EngineError> =
+            Box::new(Error::Constructor(anyhow::anyhow!("no circuit")));
+        assert_eq!(boxed.error_code(), "CircuitConstructorError");
+        assert_eq!(boxed.io_error_kind(), None);
     }
 }

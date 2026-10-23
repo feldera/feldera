@@ -125,7 +125,7 @@ pub(crate) const SERVICE_UNAVAILABLE_RETRY_AFTER_SECONDS: u32 = 5;
 /// resolves within seconds.
 pub(crate) fn json_error_response<E>(error: &E) -> HttpResponse<BoxBody>
 where
-    E: DetailedError,
+    E: DetailedError + ResponseError,
 {
     let status = error.status_code();
     let mut builder = HttpResponseBuilder::new(status);

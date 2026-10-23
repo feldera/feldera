@@ -2,8 +2,8 @@
 #![allow(deprecated)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
-use feldera_sqllib::{SqlString, Variant};
 use feldera_types::variant::VariantValue;
 
 /// Connector metadata attached to each input record.
@@ -13,11 +13,11 @@ use feldera_types::variant::VariantValue;
 /// to the deserializer along with the actual record, which can use them
 /// to populate some of the table columns.
 ///
-/// An attribute is a [`VariantValue`], which any runtime can read. The record
-/// deserializer reads the attributes as a [`Variant`] map, one entry per
-/// attribute name.
+/// An attribute is a [`VariantValue`], which any runtime can read. A clone
+/// shares the attributes until one of the two changes, so a record
+/// deserializer can tell by [`Self::ptr_eq`] that it already converted them.
 #[derive(Default, Clone, Debug, PartialEq)]
-pub struct ConnectorMetadata(BTreeMap<String, VariantValue>);
+pub struct ConnectorMetadata(Arc<BTreeMap<String, VariantValue>>);
 
 impl ConnectorMetadata {
     pub fn new() -> Self {
@@ -27,7 +27,7 @@ impl ConnectorMetadata {
     /// Adds the attribute `name`, replacing any attribute already stored
     /// under that name.
     pub fn insert(&mut self, name: &str, value: VariantValue) {
-        self.0.insert(name.to_string(), value);
+        Arc::make_mut(&mut self.0).insert(name.to_string(), value);
     }
 
     /// Returns the attribute stored under `name`, or `None` if absent.
@@ -39,36 +39,28 @@ impl ConnectorMetadata {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    /// Iterates over the attributes in name order.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &VariantValue)> {
+        self.0.iter().map(|(name, value)| (name.as_str(), value))
+    }
+
+    /// Returns `true` if `self` and `other` are the same value, not only equal
+    /// ones: one is a clone of the other, and neither changed since.
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
 }
 
 impl From<BTreeMap<String, VariantValue>> for ConnectorMetadata {
     fn from(metadata: BTreeMap<String, VariantValue>) -> Self {
-        Self(metadata)
+        Self(Arc::new(metadata))
     }
 }
 
 impl From<ConnectorMetadata> for VariantValue {
     fn from(metadata: ConnectorMetadata) -> Self {
-        VariantValue::Object(metadata.0)
-    }
-}
-
-impl From<ConnectorMetadata> for Variant {
-    fn from(metadata: ConnectorMetadata) -> Self {
-        Variant::from(&metadata)
-    }
-}
-
-impl From<&ConnectorMetadata> for Variant {
-    fn from(metadata: &ConnectorMetadata) -> Self {
-        Variant::Map(
-            metadata
-                .0
-                .iter()
-                .map(|(name, value)| (Variant::String(SqlString::from_ref(name)), value.into()))
-                .collect::<BTreeMap<_, _>>()
-                .into(),
-        )
+        VariantValue::Object(Arc::unwrap_or_clone(metadata.0))
     }
 }
 
@@ -89,60 +81,36 @@ mod tests {
         );
         assert_eq!(metadata.get_by_name("missing"), None);
         assert!(!metadata.is_empty());
+        assert_eq!(
+            VariantValue::from(metadata),
+            VariantValue::Object(BTreeMap::from([(
+                "topic".to_string(),
+                VariantValue::String("events".into())
+            )]))
+        );
     }
 
-    /// The deserializer sees a `Variant` map keyed by attribute name, each
-    /// attribute converted the way any `VariantValue` converts.
+    /// A clone is the same value until one of the two changes, and the change
+    /// leaves the other as it was.
     #[test]
-    fn test_metadata_reads_as_a_variant_map() {
+    fn test_a_clone_is_the_same_value_until_it_changes() {
         let mut metadata = ConnectorMetadata::new();
         metadata.insert("kafka_offset", VariantValue::Int64(17));
-        metadata.insert(
-            "kafka_headers",
-            VariantValue::Object(BTreeMap::from([
-                ("trace".to_string(), VariantValue::Binary(vec![1, 2])),
-                ("empty".to_string(), VariantValue::Null),
-            ])),
-        );
+        let mut clone = metadata.clone();
+        assert!(clone.ptr_eq(&metadata));
 
-        let variant = Variant::from(&metadata);
-        assert_eq!(variant.index_string("kafka_offset"), Variant::BigInt(17));
+        clone.insert("kafka_partition", VariantValue::Int32(3));
+        assert!(!clone.ptr_eq(&metadata));
+        assert_eq!(metadata.get_by_name("kafka_partition"), None);
         assert_eq!(
-            variant.index_string("kafka_headers").index_string("trace"),
-            Variant::from(&VariantValue::Binary(vec![1, 2]))
-        );
-        assert_eq!(
-            variant.index_string("kafka_headers").index_string("empty"),
-            Variant::VariantNull
-        );
-        assert_eq!(Variant::from(metadata.clone()), variant);
-        assert_eq!(Variant::from(&VariantValue::from(metadata)), variant);
-    }
-
-    /// A Kafka header without a value reads as NULL through the cast the Kafka
-    /// connector documentation shows:
-    /// `CAST(CONNECTOR_METADATA()['kafka_headers'] AS MAP<VARCHAR, VARBINARY>)`.
-    #[test]
-    fn test_header_without_a_value_casts_to_null() {
-        use feldera_sqllib::{ByteArray, cast_to_mapN_V};
-
-        let mut metadata = ConnectorMetadata::new();
-        metadata.insert(
-            "kafka_headers",
-            VariantValue::Object(BTreeMap::from([
-                ("trace".to_string(), VariantValue::Binary(vec![1, 2])),
-                ("empty".to_string(), VariantValue::Null),
-            ])),
+            clone.iter().map(|(name, _)| name).collect::<Vec<_>>(),
+            ["kafka_offset", "kafka_partition"]
         );
 
-        let headers = Variant::from(&metadata).index_string("kafka_headers");
-        let headers = cast_to_mapN_V::<SqlString, Option<ByteArray>>(headers)
-            .unwrap()
-            .expect("the headers cast to a map");
-        assert_eq!(headers.get(&SqlString::from_ref("empty")), Some(&None));
-        assert_eq!(
-            headers.get(&SqlString::from_ref("trace")),
-            Some(&Some(ByteArray::new(&[1, 2])))
-        );
+        // Equal attributes built apart are equal, but not the same value.
+        let mut other = ConnectorMetadata::new();
+        other.insert("kafka_offset", VariantValue::Int64(17));
+        assert_eq!(other, metadata);
+        assert!(!other.ptr_eq(&metadata));
     }
 }

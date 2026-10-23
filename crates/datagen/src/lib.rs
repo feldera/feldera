@@ -32,12 +32,12 @@ use serde_json::{Map, Value, to_writer};
 use tokio::sync::mpsc::{UnboundedReceiver, unbounded_channel};
 use tokio::{sync::mpsc::UnboundedSender, time::Instant as TokioInstant};
 
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::{BufferSize, InputBuffer, Parser, StagedInputBuffer};
 use feldera_adapterlib::transport::{
     InputCommandReceiver, InputConsumer, InputEndpoint, InputReader, InputReaderCommand, Resume,
     TransportInputEndpoint, Watermark, parse_resume_info,
 };
+use feldera_storage::tokio::TOKIO;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
 use feldera_types::transport::datagen::{
     DatagenInputConfig, DatagenStrategy, GenerationPlan, RngFieldSettings,

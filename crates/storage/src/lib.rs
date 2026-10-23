@@ -24,6 +24,8 @@ pub use object_store::path::{Path as StoragePath, PathPart as StoragePathPart};
 
 pub mod block;
 pub mod checkpoint_synchronizer;
+mod circuit_storage;
+pub use circuit_storage::CircuitStorageConfig;
 pub mod disk;
 pub mod error;
 pub mod fbuf;

@@ -46,7 +46,7 @@ use actix_web::{
 use anyhow::Error as AnyError;
 use arrow::error::ArrowError;
 use datafusion::error::DataFusionError;
-use dbsp::DetailedError;
+use feldera_types::error::DetailedError;
 use feldera_types::runtime_status::RuntimeDesiredStatus;
 use parquet::errors::ParquetError;
 use serde::{Deserialize, Serialize};

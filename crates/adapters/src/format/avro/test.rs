@@ -19,7 +19,6 @@ use apache_avro::{
     Schema as AvroSchema, from_avro_datum, schema::ResolvedSchema, to_avro_datum, types::Value,
 };
 use chrono::{DateTime, Utc};
-use dbsp::circuit::NodeId;
 use dbsp::trace::BatchReaderFactories;
 use dbsp::typed_batch::{DynSpineSnapshot, SpineSnapshot as TypedSpineSnapshot, TypedBatch};
 use dbsp::{DBData, IndexedZSetReader, OrdIndexedZSet, OrdZSet, ZWeight, utils::Tup2};
@@ -754,7 +753,7 @@ fn test_raw_cdc_field_config_errors() {
         let input_handle = InputCollectionHandle::new(
             CdcFieldRow::relation_schema(),
             MockDeZSet::<CdcFieldRow, ()>::new(),
-            NodeId::new(0),
+            None,
         );
         match get_input_format("avro").unwrap().new_parser(
             "test_endpoint",
