@@ -4,9 +4,11 @@
 //! fault-tolerant replay; checkpoints at exit and on SIGTERM; transactions; profiles; and
 //! the server's own record of initialization and suspend.
 
+use crate::test::engine_test;
+use std::collections::HashMap;
 use std::io::Write;
-use std::path::Path;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, sleep};
 use std::time::{Duration, Instant};
 
@@ -16,8 +18,7 @@ use actix_web::web::{self, Bytes, Data as WebData};
 use actix_web::{App, middleware::Logger};
 use async_stream::stream;
 use awc::ClientRequest;
-use dbsp::storage::dirlock::LockedDirectory;
-use feldera_adapterlib::test::{Updates, ZSet, async_wait};
+use feldera_adapterlib::test::{Capability, Updates, ZSet, async_wait, default_timeout_ms};
 use feldera_types::adapter_stats::{
     ExternalControllerStatus, ExternalOutputEndpointMetrics, TransactionStatus,
 };
@@ -25,7 +26,7 @@ use feldera_types::checkpoint::{CheckpointResponse, CheckpointStatus};
 use feldera_types::completion_token::{
     CompletionStatus, CompletionStatusResponse, CompletionTokenResponse,
 };
-use feldera_types::config::ProgramIr;
+use feldera_types::config::{PipelineConfig, ProgramIr};
 use feldera_types::program_schema::Relation;
 use feldera_types::runtime_status::{
     BootstrapConfig, BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus,
@@ -46,12 +47,13 @@ use super::{
     error_handler, get_status, parse_config,
 };
 use crate::controller::ControllerBuilder;
+use crate::engine::{CircuitFactory, ProgramLoader};
 use crate::test::pipeline::{PipelineTestEngine, TestCircuit};
 use crate::test::suites::controller::{for_ids, identity, relation};
 use crate::test::suites::json_parser;
 use crate::test::{read, render, rows};
 use crate::transport::http::Chunk;
-use crate::{ControllerError, ensure_default_crypto_provider};
+use crate::{Controller, ControllerError, ensure_default_crypto_provider};
 
 /// The Avro schema of the rows of [`relation`].
 #[cfg(feature = "with-avro")]
@@ -143,6 +145,29 @@ pub(super) fn json_config_file(config: &serde_json::Value) -> NamedTempFile {
         .write_all(config.to_string().as_bytes())
         .unwrap();
     config_file
+}
+
+/// Serves `controller`, which has started, on a test server with every route of a running
+/// pipeline's server. An engine tests the programs that it builds itself through it.
+pub fn serve_running_controller(controller: Controller) -> TestServer {
+    // The client that the test server makes needs the crypto provider that the server picks.
+    ensure_default_crypto_provider();
+    let state = WebData::new(ServerState::new(
+        PipelinePhase::Initializing(InitializationState::Starting),
+        String::default(),
+        RuntimeDesiredStatus::Running,
+        BootstrapConfig::from(BootstrapPolicy::Allow),
+        Uuid::new_v4(),
+        None,
+        None,
+        None,
+        None,
+    ));
+    assert!(
+        state.complete_initialization(controller).is_ok(),
+        "a new server state takes the controller"
+    );
+    actix_test::start(move || build_app(App::new(), state.clone()))
 }
 
 async fn get_stats(server: &TestServer) -> ExternalControllerStatus {
@@ -260,12 +285,15 @@ async fn start_test_server_with_state(
         persistent_output_ids,
         program_ir,
         relation(),
+        Vec::new(),
     )
     .await
 }
 
 /// Like [`start_test_server_with_state`], but the tables and views of the
-/// circuit have the columns of `relation`.
+/// circuit have the columns of `relation`, and the tables' columns in
+/// `attribute_defaults` read connector attributes by default.
+#[allow(clippy::too_many_arguments)]
 async fn start_test_server_for(
     engine: &dyn PipelineTestEngine,
     config_json: &serde_json::Value,
@@ -274,23 +302,39 @@ async fn start_test_server_for(
     persistent_output_ids: &[Option<&str>],
     program_ir: Option<ProgramIr>,
     relation: Relation,
+    attribute_defaults: Vec<(String, String)>,
+) -> (TestServer, WebData<ServerState>) {
+    start_test_server_with_loader(
+        engine,
+        config_json,
+        deployment_id,
+        bootstrap_config,
+        persistent_output_ids,
+        program_ir,
+        relation,
+        attribute_defaults,
+        None,
+    )
+    .await
+}
+
+/// Like [`start_test_server_for`], but with `POST /testing/load` served by
+/// `program_loader`, if there is one.
+#[allow(clippy::too_many_arguments)]
+async fn start_test_server_with_loader(
+    engine: &dyn PipelineTestEngine,
+    config_json: &serde_json::Value,
+    deployment_id: Uuid,
+    bootstrap_config: BootstrapConfig,
+    persistent_output_ids: &[Option<&str>],
+    program_ir: Option<ProgramIr>,
+    relation: Relation,
+    attribute_defaults: Vec<(String, String)>,
+    program_loader: Option<Box<dyn ProgramLoader>>,
 ) -> (TestServer, WebData<ServerState>) {
     let config_file = json_config_file(config_json);
 
     println!("Creating HTTP server");
-
-    let state = WebData::new(ServerState::new(
-        PipelinePhase::Initializing(InitializationState::Starting),
-        String::default(),
-        RuntimeDesiredStatus::Paused,
-        bootstrap_config,
-        deployment_id,
-        None,
-        None,
-        None,
-        None,
-    ));
-    let state_clone = state.clone();
 
     let args = ServerArgs {
         config_file: config_file.path().display().to_string(),
@@ -307,13 +351,27 @@ async fn start_test_server_for(
         concurrent_bootstrap: bootstrap_config.concurrent_bootstrap,
         deployment_id,
         host_id: None,
+        enable_program_load: false,
     };
 
     let mut config = parse_config(&args.config_file).unwrap();
     if let Some(program_ir) = program_ir {
         config.program_ir = Some(program_ir);
     }
-    let builder = ControllerBuilder::new(&config).unwrap();
+    let builder = ControllerBuilder::new(&config, &engine.open_storage()).unwrap();
+    // The state reads the storage of the pipeline through the builder, as a server does.
+    let state = WebData::new(ServerState::new(
+        PipelinePhase::Initializing(InitializationState::Starting),
+        String::default(),
+        RuntimeDesiredStatus::Paused,
+        bootstrap_config,
+        deployment_id,
+        None,
+        builder.storage(),
+        None,
+        None,
+    ));
+    let state_clone = state.clone();
     let circuit = TestCircuit::Identity {
         relation,
         persistent_output_ids: persistent_output_ids
@@ -323,9 +381,14 @@ async fn start_test_server_for(
         input_properties: Vec::new(),
         materialized: true,
         persistent_ids: true,
+        table_version: 0,
+        attribute_defaults,
     };
     let factory = engine.circuit_factory(&circuit, None).unwrap();
     thread::spawn(move || bootstrap(builder, factory, state_clone));
+    if let Some(loader) = program_loader {
+        state.enable_program_load(loader, engine.open_storage());
+    }
 
     let state_ret = state.clone();
     let server =
@@ -344,13 +407,17 @@ async fn start_test_server_for(
 /// circuit without writing a checkpoint (unlike `/suspend`), so the journal
 /// tail must be replayed on the next restart, and wait for the storage lock
 /// to be released so a new server can reopen the same storage directory.
-async fn crash_pipeline(state: &WebData<ServerState>, storage_dir: &Path) {
+async fn crash_pipeline(
+    engine: &dyn PipelineTestEngine,
+    state: &WebData<ServerState>,
+    storage_dir: &Path,
+) {
     let controller = state.abandon_controller().expect("controller present");
     tokio::task::spawn_blocking(move || controller.stop())
         .await
         .unwrap()
         .expect("controller stops cleanly");
-    wait_for_storage_unlock(storage_dir).await;
+    wait_for_storage_unlock(engine, storage_dir).await;
 }
 
 /// Returns the rows of `data`, consolidated.
@@ -521,22 +588,11 @@ async fn pause_pipeline(server: &TestServer) {
     wait_for_status(server, RuntimeStatus::Paused).await;
 }
 
-/// Wait until the storage directory lock (`feldera.pidlock`) can be acquired,
-/// indicating that the previous pipeline runtime has released storage.
-async fn wait_for_storage_unlock(storage_dir: &Path) {
-    let storage_dir = storage_dir.to_path_buf();
+/// Wait until the previous pipeline runtime has released the storage in
+/// `storage_dir`.
+async fn wait_for_storage_unlock(engine: &dyn PipelineTestEngine, storage_dir: &Path) {
     async_wait(
-        || {
-            let storage_dir = storage_dir.clone();
-            async move {
-                tokio::task::spawn_blocking(move || {
-                    // Probe whether the lock is free; release immediately if so.
-                    LockedDirectory::new(&storage_dir).is_ok()
-                })
-                .await
-                .unwrap()
-            }
-        },
+        || async move { engine.storage_released(storage_dir) },
         20_000,
     )
     .await
@@ -546,13 +602,17 @@ async fn wait_for_storage_unlock(storage_dir: &Path) {
 /// Suspend the pipeline. When `storage_dir` is set, also wait until the
 /// previous runtime releases the storage lock before returning, so a new
 /// server can safely reopen the same storage directory.
-async fn suspend_pipeline(server: &TestServer, storage_dir: Option<&Path>) {
+async fn suspend_pipeline(
+    engine: &dyn PipelineTestEngine,
+    server: &TestServer,
+    storage_dir: Option<&Path>,
+) {
     println!("/suspend");
     let resp = server.post("/suspend").send().await.unwrap();
     assert!(resp.status().is_success());
     wait_for_status(server, RuntimeStatus::Suspended).await;
     if let Some(storage_dir) = storage_dir {
-        wait_for_storage_unlock(storage_dir).await;
+        wait_for_storage_unlock(engine, storage_dir).await;
     }
 }
 
@@ -724,6 +784,7 @@ async fn assert_no_file_output(
 /// `PipelineTerminated` is what flaked `suspend_and_resume_demos`.
 /// Suspending the controller directly, without going through `/suspend`,
 /// leaves the state in exactly that window.
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn completed_suspend_is_reported_before_the_phase_is_recorded(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -788,6 +849,7 @@ pub fn completed_suspend_is_reported_before_the_phase_is_recorded(engine: &dyn P
 /// reports a controller-less `InitializationComplete` as the fatal
 /// `ControllerMissingAfterInitialization`, which masks the real error and
 /// makes the pipeline manager record that instead.
+#[engine_test(requires(Storage))]
 pub fn fatal_error_during_bootstrap_tail_is_reported(engine: &dyn PipelineTestEngine) {
     ensure_default_crypto_provider();
 
@@ -807,7 +869,7 @@ pub fn fatal_error_during_bootstrap_tail_is_reported(engine: &dyn PipelineTestEn
     });
     let config_file = json_config_file(&config_json);
     let config = parse_config(config_file.path().display().to_string()).unwrap();
-    let builder = ControllerBuilder::new(&config).unwrap();
+    let builder = ControllerBuilder::new(&config, &engine.open_storage()).unwrap();
 
     let state = WebData::new(ServerState::new(
         PipelinePhase::Initializing(InitializationState::Starting),
@@ -838,7 +900,12 @@ pub fn fatal_error_during_bootstrap_tail_is_reported(engine: &dyn PipelineTestEn
     // The circuit thread reports a fatal error, which must be recorded even
     // though there is no controller to deallocate yet.
     let weak = Arc::downgrade(&state.clone().into_inner());
-    error_handler(&weak, Arc::new(ControllerError::DbspPanic), None);
+    error_handler(
+        &weak,
+        state.program_generation(),
+        Arc::new(ControllerError::DbspPanic),
+        None,
+    );
 
     // The bootstrap tail then finishes, and must not claim success.
     assert!(
@@ -864,6 +931,7 @@ pub fn fatal_error_during_bootstrap_tail_is_reported(engine: &dyn PipelineTestEn
 /// holds the only remaining reference to that circuit, so dropping it instead
 /// of stopping it leaves the circuit running with nobody able to reach it,
 /// still holding the storage lock that the next pipeline process needs.
+#[engine_test(requires(Storage))]
 pub fn a_refused_bootstrap_result_stops_the_circuit(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -884,7 +952,7 @@ pub fn a_refused_bootstrap_result_stops_the_circuit(engine: &dyn PipelineTestEng
         });
         let config_file = json_config_file(&config_json);
         let config = parse_config(config_file.path().display().to_string()).unwrap();
-        let builder = ControllerBuilder::new(&config).unwrap();
+        let builder = ControllerBuilder::new(&config, &engine.open_storage()).unwrap();
 
         let state = WebData::new(ServerState::new(
             PipelinePhase::Initializing(InitializationState::Starting),
@@ -901,7 +969,12 @@ pub fn a_refused_bootstrap_result_stops_the_circuit(engine: &dyn PipelineTestEng
         // Record the failure before initialization starts, so the tail is
         // certain to refuse the controller it builds.
         let weak = Arc::downgrade(&state.clone().into_inner());
-        error_handler(&weak, Arc::new(ControllerError::DbspPanic), None);
+        error_handler(
+            &weak,
+            state.program_generation(),
+            Arc::new(ControllerError::DbspPanic),
+            None,
+        );
 
         let bootstrap_state = state.clone();
         let factory = engine.circuit_factory(&identity(&[None]), None).unwrap();
@@ -914,11 +987,12 @@ pub fn a_refused_bootstrap_result_stops_the_circuit(engine: &dyn PipelineTestEng
         assert!(matches!(state.phase(), PipelinePhase::Failed(_)));
 
         // The circuit was stopped, so it has let go of the storage lock.
-        wait_for_storage_unlock(&storage_dir).await;
+        wait_for_storage_unlock(engine, &storage_dir).await;
     })
 }
 
 /// Downloads both circuit profiles from a running pipeline.
+#[engine_test(requires(Profiles))]
 pub fn profiles_stream_from_running_pipeline(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         use std::io::Read;
@@ -988,6 +1062,40 @@ pub fn profiles_stream_from_running_pipeline(engine: &dyn PipelineTestEngine) {
     })
 }
 
+/// `GET /lir` serves the circuit's LIR as a zip. An engine that keeps no LIR answers 501 Not
+/// Implemented, and its pipeline runs all the same.
+#[engine_test]
+pub fn lir_is_served_or_not_implemented(engine: &dyn PipelineTestEngine) {
+    actix_web::rt::System::new().block_on(async {
+        crate::ensure_default_crypto_provider();
+
+        let server = start_test_server(
+            engine,
+            &json!({"name": "test", "inputs": {}, "outputs": {}}),
+            Uuid::new_v4(),
+        )
+        .await;
+        start_pipeline(&server).await;
+
+        let mut response = server.get("/lir").send().await.unwrap();
+        let body = response.body().limit(64 << 20).await.unwrap();
+        if engine.has(Capability::Lir) {
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(
+                response.headers().get("content-type").unwrap(),
+                "application/zip"
+            );
+            assert!(body.starts_with(b"PK\x03\x04"));
+        } else {
+            assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+            let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(error["error_code"], "NotImplemented", "{error}");
+        }
+
+        pause_pipeline(&server).await;
+    })
+}
+
 /// Connector metadata that the `connector_metadata` tests attach to a
 /// request, with one attribute for each metadata column of
 /// [`json_parser::metadata_relation`].
@@ -1049,6 +1157,7 @@ async fn assert_records_carry_connector_metadata(server: &TestServer, ids: &[i64
 /// The `connector_metadata` query parameter of `/ingress` reaches every
 /// record of the request through `CONNECTOR_METADATA()`, and an invalid
 /// parameter is rejected before any record is ingested.
+#[engine_test]
 pub fn ingress_connector_metadata(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -1061,6 +1170,7 @@ pub fn ingress_connector_metadata(engine: &dyn PipelineTestEngine) {
             &[None],
             None,
             json_parser::metadata_relation(),
+            json_parser::metadata_options().attribute_defaults,
         )
         .await;
         start_pipeline(&server).await;
@@ -1089,6 +1199,7 @@ pub fn ingress_connector_metadata(engine: &dyn PipelineTestEngine) {
 /// It used to accept `redis` and `weighted` and panic in the parser while
 /// holding the endpoint's lock, after which no step could complete.
 /// `weighted` is no longer a format at all.
+#[engine_test]
 pub fn ingress_rejects_unsupported_update_formats(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -1138,10 +1249,109 @@ pub fn ingress_rejects_unsupported_update_formats(engine: &dyn PipelineTestEngin
     })
 }
 
+/// An HTTP input endpoint whose `open` returns only after the circuit has completed
+/// `min_steps_while_opening` steps, so that those steps see the endpoint registered without
+/// a reader.
+struct StepsDuringOpenEndpoint {
+    inner: crate::transport::http::HttpInputEndpoint,
+    controller: Controller,
+    min_steps_while_opening: u64,
+    has_stepped_while_opening: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl feldera_adapterlib::transport::InputEndpoint for StepsDuringOpenEndpoint {
+    fn fault_tolerance(&self) -> Option<feldera_types::config::FtModel> {
+        feldera_adapterlib::transport::InputEndpoint::fault_tolerance(&self.inner)
+    }
+}
+
+impl feldera_adapterlib::transport::TransportInputEndpoint for StepsDuringOpenEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn feldera_adapterlib::transport::InputConsumer>,
+        parser: Box<dyn feldera_adapterlib::format::Parser>,
+        schema: Relation,
+        resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn feldera_adapterlib::transport::InputReader>> {
+        let metrics = &self.controller.status().global_metrics;
+        let target_steps = metrics.total_completed_steps() + self.min_steps_while_opening;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if metrics.total_completed_steps() >= target_steps {
+                self.has_stepped_while_opening
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
+                break;
+            }
+            self.controller.request_step();
+            sleep(Duration::from_millis(10));
+        }
+        self.inner.open(consumer, parser, schema, resume_info)
+    }
+}
+
+/// Circuit steps that run while an input endpoint is still opening do not stall the
+/// pipeline: ingress afterwards still completes.
+#[engine_test]
+pub fn steps_while_input_endpoint_opens(engine: &dyn PipelineTestEngine) {
+    actix_web::rt::System::new().block_on(async {
+        ensure_default_crypto_provider();
+        let (server, state) = start_test_server_with_state(
+            engine,
+            &json!({"name": "test", "workers": 4, "inputs": {}, "outputs": {}}),
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[None],
+            None,
+        )
+        .await;
+        start_pipeline(&server).await;
+        let controller = state.controller().unwrap();
+
+        let endpoint_name = "test_input1.opening";
+        let http_config = feldera_types::transport::http::HttpInputConfig {
+            name: endpoint_name.to_string(),
+        };
+        let has_stepped_while_opening = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let endpoint_config = feldera_types::config::InputEndpointConfig::new(
+            "test_input1",
+            feldera_types::config::ConnectorConfig::new(
+                feldera_types::config::TransportConfig::HttpInput(http_config.clone()),
+                Some(feldera_types::config::FormatConfig {
+                    name: "json".into(),
+                    config: json!({ "update_format": "insert_delete" }),
+                }),
+            ),
+        );
+        // A step already in flight when `open` starts never saw the endpoint; the second
+        // step began after the registration.
+        controller
+            .add_input_endpoint(
+                endpoint_name,
+                endpoint_config,
+                Box::new(StepsDuringOpenEndpoint {
+                    inner: crate::transport::http::HttpInputEndpoint::new(http_config),
+                    controller: controller.clone(),
+                    min_steps_while_opening: 2,
+                    has_stepped_while_opening: has_stepped_while_opening.clone(),
+                }),
+                None,
+            )
+            .unwrap();
+        assert!(
+            has_stepped_while_opening.load(std::sync::atomic::Ordering::Relaxed),
+            "the circuit stalled on a step that ran while the endpoint was opening"
+        );
+
+        send_input(&server, &[for_ids([1, 2])]).await;
+        controller.initiate_stop();
+    });
+}
+
 /// A client that hangs up in the middle of an `/ingress` upload fails
 /// only its own request. The table's ingress endpoint is shared by every
 /// later request, so it keeps accepting data and `/stats` must not report
 /// it as failed.
+#[engine_test]
 pub fn ingress_aborted_upload_is_not_fatal(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         use tokio::io::AsyncWriteExt;
@@ -1205,6 +1415,7 @@ pub fn ingress_aborted_upload_is_not_fatal(engine: &dyn PipelineTestEngine) {
 /// A fault-tolerant replay parses the journaled chunks with the
 /// `connector_metadata` of their requests, so the replayed records carry
 /// the same metadata columns as the original ones.
+#[engine_test(requires(Storage, Checkpoints, SuspendResume, FaultTolerance))]
 pub fn ft_replay_connector_metadata(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -1233,6 +1444,7 @@ pub fn ft_replay_connector_metadata(engine: &dyn PipelineTestEngine) {
             &[Some("v0")],
             Some(test_program_ir("v0")),
             json_parser::metadata_relation(),
+            json_parser::metadata_options().attribute_defaults,
         )
         .await;
         start_pipeline(&server).await;
@@ -1244,7 +1456,7 @@ pub fn ft_replay_connector_metadata(engine: &dyn PipelineTestEngine) {
         assert_records_carry_connector_metadata(&server, &[1]).await;
 
         // Crash without a checkpoint, so that the restart replays the journal.
-        crash_pipeline(&state, &storage_dir).await;
+        crash_pipeline(engine, &state, &storage_dir).await;
         drop(server);
 
         let (server, _state) = start_test_server_for(
@@ -1255,18 +1467,20 @@ pub fn ft_replay_connector_metadata(engine: &dyn PipelineTestEngine) {
             &[Some("v0")],
             Some(test_program_ir("v0")),
             json_parser::metadata_relation(),
+            json_parser::metadata_options().attribute_defaults,
         )
         .await;
         start_pipeline(&server).await;
         assert_records_carry_connector_metadata(&server, &[1]).await;
 
-        suspend_pipeline(&server, Some(&storage_dir)).await;
+        suspend_pipeline(engine, &server, Some(&storage_dir)).await;
     })
 }
 
 /// Avro over `/ingress`: the schema travels in the query string, and each
 /// request body is one datum (issue 7397).
 #[cfg(feature = "with-avro")]
+#[engine_test]
 pub fn http_ingress_avro(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         use apache_avro::{Schema as AvroSchema, to_avro_datum, types::Value as AvroValue};
@@ -1356,6 +1570,7 @@ pub fn http_ingress_avro(engine: &dyn PipelineTestEngine) {
 ///    with `snapshot: false`.
 /// 3. Opens a second connection and verifies it receives a full
 ///    snapshot of all data (initial + follow).
+#[engine_test]
 pub fn http_egress_send_snapshot(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -1457,6 +1672,7 @@ pub fn http_egress_send_snapshot(engine: &dyn PipelineTestEngine) {
 /// not `Running`, so no step fires and `push_output` never runs the
 /// `is_snapshot_pending` path. The HTTP client receives only the 3-second
 /// keepalive empties and times out.
+#[engine_test]
 pub fn http_egress_send_snapshot_while_paused(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -1527,6 +1743,7 @@ pub fn http_egress_send_snapshot_while_paused(engine: &dyn PipelineTestEngine) {
 
 /// A step that changes nothing in the view still ends with its chunk, so a client can wait for
 /// a token whose input changed nothing.
+#[engine_test]
 pub fn egress_step_chunk_without_output(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -1575,6 +1792,7 @@ pub fn egress_step_chunk_without_output(engine: &dyn PipelineTestEngine) {
 /// An `/egress` stream marks the end of each step's output with an empty chunk whose
 /// `processed_steps` is in the unit of the `step` that `/completion_status` reports, after the
 /// step's output; the steps of a transaction close only with the commit, after its output.
+#[engine_test]
 pub fn egress_step_chunks(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -1609,6 +1827,7 @@ pub fn egress_step_chunks(engine: &dyn PipelineTestEngine) {
     })
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume, Bootstrap))]
 pub fn silent_bootstrap(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -1663,7 +1882,7 @@ pub fn silent_bootstrap(engine: &dyn PipelineTestEngine) {
         let stats = get_stats(&server).await;
         println!("stats before suspend: {stats:#?}");
 
-        suspend_pipeline(&server, Some(&storage_dir)).await;
+        suspend_pipeline(engine, &server, Some(&storage_dir)).await;
         drop(server);
 
         let server = start_test_server_with_options(
@@ -1684,7 +1903,7 @@ pub fn silent_bootstrap(engine: &dyn PipelineTestEngine) {
         start_pipeline(&server).await;
         send_input(&server, &second_batch).await;
         wait_for_file_output(&output_path, &second_batch).await;
-        suspend_pipeline(&server, Some(&storage_dir)).await;
+        suspend_pipeline(engine, &server, Some(&storage_dir)).await;
         drop(server);
 
         let server = start_test_server_with_options(
@@ -1706,7 +1925,7 @@ pub fn silent_bootstrap(engine: &dyn PipelineTestEngine) {
         start_pipeline(&server).await;
         send_input(&server, &third_batch).await;
         wait_for_file_output(&output_path, &third_batch).await;
-        suspend_pipeline(&server, Some(&storage_dir)).await;
+        suspend_pipeline(engine, &server, Some(&storage_dir)).await;
     })
 }
 
@@ -1716,6 +1935,7 @@ pub fn silent_bootstrap(engine: &dyn PipelineTestEngine) {
 /// IS emitted at cutover, and it reflects the full input state (the
 /// backfilled records plus any live records ingested during the backfill).
 ///
+#[engine_test(requires(Storage, Checkpoints, SuspendResume, Bootstrap))]
 pub fn concurrent_bootstrap(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -1766,7 +1986,7 @@ pub fn concurrent_bootstrap(engine: &dyn PipelineTestEngine) {
         start_pipeline(&server).await;
         send_input(&server, &first_batch).await;
         wait_for_file_output(&output_path, &first_batch).await;
-        suspend_pipeline(&server, Some(&storage_dir)).await;
+        suspend_pipeline(engine, &server, Some(&storage_dir)).await;
         drop(server);
 
         // Restart with a changed view (`v1`) and concurrent bootstrap. The new
@@ -1787,7 +2007,7 @@ pub fn concurrent_bootstrap(engine: &dyn PipelineTestEngine) {
         // `second_batch`.
         let all = [first_batch.clone(), second_batch.clone()].concat();
         wait_for_file_output(&output_path, &all).await;
-        suspend_pipeline(&server, Some(&storage_dir)).await;
+        suspend_pipeline(engine, &server, Some(&storage_dir)).await;
     })
 }
 
@@ -1867,7 +2087,7 @@ async fn concurrent_bootstrap_output_progress_case(
     wait_for_file_output(&output_path, &first_batch).await;
     let (_, transmitted_before, _, _) = output_progress(&server).await;
     assert_eq!(transmitted_before, ingested);
-    suspend_pipeline(&server, Some(&storage_dir)).await;
+    suspend_pipeline(engine, &server, Some(&storage_dir)).await;
     drop(server);
 
     // Restart with a changed view and concurrent bootstrap, feeding no new
@@ -1915,6 +2135,7 @@ async fn concurrent_bootstrap_output_progress_case(
     wait_for_file_output(&output_path, &first_batch).await;
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume, Bootstrap))]
 pub fn concurrent_bootstrap_output_progress_waits_for_cutover(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         concurrent_bootstrap_output_progress_case(engine, false).await;
@@ -1923,6 +2144,7 @@ pub fn concurrent_bootstrap_output_progress_waits_for_cutover(engine: &dyn Pipel
 
 /// The `send_snapshot` variant: `enqueue_latest_snapshot` must not report
 /// progress the endpoint has not earned either.
+#[engine_test(requires(Storage, Checkpoints, SuspendResume, Bootstrap))]
 pub fn concurrent_bootstrap_snapshot_progress_waits_for_cutover(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         concurrent_bootstrap_output_progress_case(engine, true).await;
@@ -1941,6 +2163,7 @@ pub fn concurrent_bootstrap_snapshot_progress_waits_for_cutover(engine: &dyn Pip
 /// query keeps reading the empty pre-cutover snapshot and returns 0. This
 /// exercises the ad-hoc path specifically (no input is fed after cutover:
 /// feeding any would trigger a step and mask the bug).
+#[engine_test(requires(Storage, Checkpoints, SuspendResume, Bootstrap))]
 pub fn concurrent_bootstrap_adhoc_snapshot(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -1990,7 +2213,7 @@ pub fn concurrent_bootstrap_adhoc_snapshot(engine: &dyn PipelineTestEngine) {
         start_pipeline(&server).await;
         send_input(&server, &first_batch).await;
         wait_for_file_output(&output_path, &first_batch).await;
-        suspend_pipeline(&server, Some(&storage_dir)).await;
+        suspend_pipeline(engine, &server, Some(&storage_dir)).await;
         drop(server);
 
         // Restart with a changed view (`v1`) and concurrent bootstrap. The new
@@ -2019,7 +2242,7 @@ pub fn concurrent_bootstrap_adhoc_snapshot(engine: &dyn PipelineTestEngine) {
             "ad-hoc query observed a stale snapshot after the pipeline reported Running"
         );
 
-        suspend_pipeline(&server, Some(&storage_dir)).await;
+        suspend_pipeline(engine, &server, Some(&storage_dir)).await;
     })
 }
 
@@ -2036,6 +2259,7 @@ pub fn concurrent_bootstrap_adhoc_snapshot(engine: &dyn PipelineTestEngine) {
 /// We crash the pipeline without a checkpoint so the restart must replay,
 /// then query once right after `Running`, with no polling and no post-restart
 /// input (feeding any would trigger a step and mask the bug).
+#[engine_test(requires(Storage, Checkpoints, SuspendResume, FaultTolerance))]
 pub fn ft_replay_adhoc_snapshot(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -2091,7 +2315,7 @@ pub fn ft_replay_adhoc_snapshot(engine: &dyn PipelineTestEngine) {
 
         // Crash without a checkpoint: the journaled input survives and must be
         // replayed on restart (the `checkpoint_before = false` case).
-        crash_pipeline(&state, &storage_dir).await;
+        crash_pipeline(engine, &state, &storage_dir).await;
         drop(server);
 
         // Restart: reopen the initial (step 0) checkpoint and REPLAY the journal.
@@ -2114,7 +2338,7 @@ pub fn ft_replay_adhoc_snapshot(engine: &dyn PipelineTestEngine) {
             "ad-hoc query observed a stale snapshot after fault-tolerant replay"
         );
 
-        suspend_pipeline(&server, Some(&storage_dir)).await;
+        suspend_pipeline(engine, &server, Some(&storage_dir)).await;
     })
 }
 
@@ -2124,6 +2348,7 @@ pub fn ft_replay_adhoc_snapshot(engine: &dyn PipelineTestEngine) {
 /// on the checkpoint or has simply never heard of it; `/checkpoint`
 /// hands back an `incarnation_uuid` alongside the sequence number so
 /// `/checkpoint_status` can tell the two apart.
+#[engine_test(requires(Storage, Checkpoints, SuspendResume, FaultTolerance))]
 pub fn checkpoint_status_detects_restart(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -2191,7 +2416,7 @@ pub fn checkpoint_status_detects_restart(engine: &dyn PipelineTestEngine) {
         // Simulate the pipeline process dying and a new one starting in its
         // place, e.g. a pod eviction; the new process gets a fresh
         // incarnation UUID.
-        crash_pipeline(&state, &storage_dir).await;
+        crash_pipeline(engine, &state, &storage_dir).await;
         drop(server);
 
         let (server, _state) = start_test_server_with_state(
@@ -2229,18 +2454,17 @@ pub fn checkpoint_status_detects_restart(engine: &dyn PipelineTestEngine) {
             .unwrap();
         assert_eq!(status.success, None);
 
-        suspend_pipeline(&server, Some(&storage_dir)).await;
+        suspend_pipeline(engine, &server, Some(&storage_dir)).await;
     })
 }
 
 /// A failed SIGTERM checkpoint must not hang or lose the previous checkpoint.
 #[cfg(unix)]
+#[engine_test(requires(Storage, Checkpoints, SuspendResume, FaultTolerance))]
 pub fn checkpoint_before_exit(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
-        use super::{Checkpointer, ControllerError, ServerState, checkpoint_before_exit};
-        use dbsp::{circuit::StorageCacheConfig, storage::backend::posixio_impl::PosixBackend};
-        use feldera_types::config::FileBackendConfig;
-        use std::{os::unix::fs::PermissionsExt, sync::Arc};
+        use super::{ControllerError, ServerState, checkpoint_before_exit};
+        use std::os::unix::fs::PermissionsExt;
 
         async fn checkpoint(state: &ServerState) -> Result<bool, Arc<ControllerError>> {
             timeout(Duration::from_secs(20), checkpoint_before_exit(state))
@@ -2253,15 +2477,6 @@ pub fn checkpoint_before_exit(engine: &dyn PipelineTestEngine) {
         let tempdir = TempDir::new().unwrap();
         let storage_dir = tempdir.path().join("storage");
         std::fs::create_dir(&storage_dir).unwrap();
-        let checkpoints = || {
-            let backend = PosixBackend::new(
-                &storage_dir,
-                StorageCacheConfig::default(),
-                &FileBackendConfig::default(),
-            );
-            Checkpointer::read_checkpoints(&backend).unwrap()
-        };
-
         let config_json = json!({
             "name": "test",
             "workers": 1,
@@ -2274,6 +2489,14 @@ pub fn checkpoint_before_exit(engine: &dyn PipelineTestEngine) {
             "inputs": {},
             "outputs": {},
         });
+        let config: PipelineConfig = serde_json::from_value(config_json.clone()).unwrap();
+        let checkpoints = || {
+            engine.open_storage()(&config)
+                .unwrap()
+                .unwrap()
+                .checkpoints()
+                .unwrap()
+        };
         let start = || {
             start_test_server_with_state(
                 engine,
@@ -2307,7 +2530,7 @@ pub fn checkpoint_before_exit(engine: &dyn PipelineTestEngine) {
         }
         std::fs::set_permissions(&storage_dir, mode(0o755)).unwrap();
 
-        crash_pipeline(&state, &storage_dir).await;
+        crash_pipeline(engine, &state, &storage_dir).await;
         drop(server);
 
         // The journal replays rows 10..20, so only the list shows the checkpoint.
@@ -2317,12 +2540,13 @@ pub fn checkpoint_before_exit(engine: &dyn PipelineTestEngine) {
         let count = adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await;
         assert_eq!(count, 20);
 
-        suspend_pipeline(&server, Some(&storage_dir)).await;
+        suspend_pipeline(engine, &server, Some(&storage_dir)).await;
     })
 }
 
 /// Without fault tolerance, SIGTERM must not write a checkpoint: on
 /// Kubernetes, Force Stop also sends SIGTERM.
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn checkpoint_before_exit_without_ft(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         use super::checkpoint_before_exit;
@@ -2356,7 +2580,7 @@ pub fn checkpoint_before_exit_without_ft(engine: &dyn PipelineTestEngine) {
         start_pipeline(&server).await;
         send_input(&server, &test_batches(0, 10)).await;
         assert!(!checkpoint_before_exit(&state).await.unwrap());
-        crash_pipeline(&state, &storage_dir).await;
+        crash_pipeline(engine, &state, &storage_dir).await;
         drop(server);
 
         let (server, _state) = start().await;
@@ -2367,11 +2591,12 @@ pub fn checkpoint_before_exit_without_ft(engine: &dyn PipelineTestEngine) {
             "SIGTERM wrote a checkpoint without fault tolerance"
         );
 
-        suspend_pipeline(&server, Some(&storage_dir)).await;
+        suspend_pipeline(engine, &server, Some(&storage_dir)).await;
     })
 }
 
 /// SIGTERM must not wait without storage or a circuit.
+#[engine_test]
 pub fn checkpoint_before_exit_without_storage(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         use super::{ControllerError, ServerState, checkpoint_before_exit};
@@ -2402,6 +2627,7 @@ pub fn checkpoint_before_exit_without_storage(engine: &dyn PipelineTestEngine) {
 /// A real SIGTERM, sent to a pipeline without fault tolerance in a child
 /// process, must stop the process with SIGTERM and write no checkpoint.
 #[cfg(unix)]
+#[engine_test(requires(Storage))]
 pub fn sigterm_process_without_ft(engine: &dyn PipelineTestEngine) {
     use super::{SERVER_PORT_FILE, ServerArgs, run_server};
     use feldera_types::{config::PipelineConfig, runtime_status::RuntimeDesiredStatus};
@@ -2431,12 +2657,16 @@ pub fn sigterm_process_without_ft(engine: &dyn PipelineTestEngine) {
             concurrent_bootstrap: false,
             deployment_id: Uuid::new_v4(),
             host_id: None,
+            enable_program_load: false,
         };
+        let factory = engine
+            .circuit_factory(&identity(&[Some("v0")]), None)
+            .unwrap();
         run_server(
             args,
-            engine
-                .circuit_factory(&identity(&[Some("v0")]), None)
-                .unwrap(),
+            Box::new(move |_config| Ok(factory)),
+            engine.open_storage(),
+            None,
         )
         .unwrap();
         return;
@@ -2462,11 +2692,14 @@ pub fn sigterm_process_without_ft(engine: &dyn PipelineTestEngine) {
     )
     .unwrap();
 
-    // The test harness names the thread of each test after the test.
-    let test_name = thread::current()
-        .name()
-        .expect("the test thread has a name")
-        .to_string();
+    // The suites name a case by its module in this crate and its function, as
+    // `EngineCase::test_name` does. Nextest runs the case on a thread without a name.
+    let test_name = format!(
+        "{}::sigterm_process_without_ft",
+        module_path!()
+            .strip_prefix("dbsp_adapters::")
+            .unwrap_or(module_path!())
+    );
     // Kills the child process if the test fails.
     struct KillOnDrop(Child);
     impl Drop for KillOnDrop {
@@ -2563,6 +2796,7 @@ pub fn sigterm_process_without_ft(engine: &dyn PipelineTestEngine) {
     assert_eq!(restored, Some(0));
 }
 
+#[engine_test]
 pub fn transactions(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -2606,6 +2840,7 @@ pub fn transactions(engine: &dyn PipelineTestEngine) {
 /// In a pipeline without output connectors, the number of completed records,
 /// completed steps, and the `pipeline_complete` flag are updated before the current transaction
 /// completes.
+#[engine_test]
 pub fn transaction_completion_without_output_connectors(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         ensure_default_crypto_provider();
@@ -2676,6 +2911,7 @@ pub fn transaction_completion_without_output_connectors(engine: &dyn PipelineTes
 /// started inputs, invalid input, many short-lived egress connections, and input forced
 /// into a paused pipeline.
 #[cfg(feature = "with-kafka")]
+#[engine_test(services(Kafka))]
 pub fn kafka_server(engine: &dyn PipelineTestEngine) {
     actix_web::rt::System::new().block_on(async {
         use crate::controller::MAX_API_CONNECTIONS;
@@ -2904,4 +3140,396 @@ pub fn kafka_server(engine: &dyn PipelineTestEngine) {
         drop(buffer_consumer);
         drop(kafka_resources);
     })
+}
+
+/// Serves `POST /testing/load` from circuit factories that a case builds in advance, by
+/// pipeline name, and records the UDF library that each request names.
+struct TestProgramLoader {
+    factories: Mutex<HashMap<String, CircuitFactory>>,
+    udf_libraries: Arc<Mutex<Vec<Option<PathBuf>>>>,
+}
+
+impl TestProgramLoader {
+    /// Returns a loader of the programs in `programs`, each a pipeline name with the factory
+    /// of its circuit.
+    fn new(programs: impl IntoIterator<Item = (&'static str, CircuitFactory)>) -> Self {
+        Self {
+            factories: Mutex::new(
+                programs
+                    .into_iter()
+                    .map(|(name, factory)| (name.to_string(), factory))
+                    .collect(),
+            ),
+            udf_libraries: Arc::default(),
+        }
+    }
+}
+
+impl ProgramLoader for TestProgramLoader {
+    fn load(
+        &self,
+        config: &PipelineConfig,
+        udf_library: Option<&Path>,
+    ) -> Result<CircuitFactory, ControllerError> {
+        self.udf_libraries
+            .lock()
+            .unwrap()
+            .push(udf_library.map(Path::to_path_buf));
+        let name = config.name.clone().unwrap_or_default();
+        self.factories.lock().unwrap().remove(&name).ok_or_else(|| {
+            ControllerError::not_supported(&format!("no test program is named '{name}'"))
+        })
+    }
+}
+
+/// Posts `body` to `/testing/load`, and returns the status and the body of the answer.
+async fn post_program(
+    server: &TestServer,
+    body: impl Into<Bytes>,
+) -> (StatusCode, serde_json::Value) {
+    let mut response = server
+        .post("/testing/load")
+        .insert_header(("Content-Type", "application/json"))
+        .send_body(body.into())
+        .await
+        .unwrap();
+    let body = response.body().await.unwrap();
+    (response.status(), serde_json::from_slice(&body).unwrap())
+}
+
+/// `POST /testing/load` replaces the running program: the loader builds the new circuit,
+/// with the UDF library that the request names, and the new program starts without the
+/// rows of the old one, behind new ingress endpoints.
+#[engine_test]
+pub fn program_load_replaces_the_running_program(engine: &dyn PipelineTestEngine) {
+    actix_web::rt::System::new().block_on(async {
+        ensure_default_crypto_provider();
+        let loader = TestProgramLoader::new([(
+            "program_b",
+            engine.circuit_factory(&identity(&[None]), None).unwrap(),
+        )]);
+        let udf_libraries = loader.udf_libraries.clone();
+        let (server, _state) = start_test_server_with_loader(
+            engine,
+            &json!({"name": "program_a", "inputs": {}, "outputs": {}}),
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[None],
+            None,
+            relation(),
+            Vec::new(),
+            Some(Box::new(loader)),
+        )
+        .await;
+        start_pipeline(&server).await;
+        let first = test_batches(0, 5);
+        send_input(&server, &first).await;
+        assert_eq!(
+            adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await,
+            batch_num_records(&first) as i64
+        );
+
+        let mut response = server
+            .post("/testing/load?udf_library=/no/such/libudf.so")
+            .send_json(&json!({"name": "program_b", "inputs": {}, "outputs": {}}))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(
+            response.json::<serde_json::Value>().await.unwrap(),
+            json!({"generation": 1})
+        );
+        assert_eq!(
+            *udf_libraries.lock().unwrap(),
+            [Some(PathBuf::from("/no/such/libudf.so"))]
+        );
+
+        wait_for_status(&server, RuntimeStatus::Running).await;
+        let second = test_batches(100, 3);
+        send_input(&server, &second).await;
+        assert_eq!(
+            adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await,
+            batch_num_records(&second) as i64
+        );
+    })
+}
+
+/// `POST /testing/load` refuses a body that is not a pipeline configuration, and pipelines
+/// with storage, fault tolerance, or several hosts, without creating their storage; the
+/// running program goes on.
+#[engine_test]
+pub fn program_load_refuses_what_it_cannot_load(engine: &dyn PipelineTestEngine) {
+    actix_web::rt::System::new().block_on(async {
+        ensure_default_crypto_provider();
+        let (server, state) = start_test_server_with_loader(
+            engine,
+            &json!({"name": "program_a", "inputs": {}, "outputs": {}}),
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[None],
+            None,
+            relation(),
+            Vec::new(),
+            Some(Box::new(TestProgramLoader::new([]))),
+        )
+        .await;
+        start_pipeline(&server).await;
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        let refused = [
+            (
+                json!({"name": "b", "storage_config": {"path": storage_dir}, "storage": true, "inputs": {}, "outputs": {}}),
+                "pipelines with storage",
+            ),
+            (
+                json!({"name": "b", "fault_tolerance": {}, "inputs": {}, "outputs": {}}),
+                "fault-tolerant pipelines",
+            ),
+            (
+                json!({"name": "b", "hosts": 2, "inputs": {}, "outputs": {}}),
+                "multihost pipelines",
+            ),
+        ];
+        for (config, reason) in refused {
+            let (status, body) = post_program(&server, config.to_string()).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+            assert_eq!(
+                body["message"],
+                format!(
+                    "invalid controller configuration: Failed to parse pipeline configuration: \
+                     '/testing/load' does not support {reason}"
+                )
+            );
+        }
+        assert!(
+            !storage_dir.exists(),
+            "a refused load created the storage directory"
+        );
+
+        let (status, body) = post_program(&server, "not json").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert!(
+            body["message"].as_str().unwrap().starts_with(
+                "invalid controller configuration: Failed to parse pipeline configuration: \
+                 invalid pipeline configuration: "
+            ),
+            "{body}"
+        );
+
+        assert_eq!(state.program_generation(), 0);
+        let data = test_batches(0, 4);
+        send_input(&server, &data).await;
+        assert_eq!(
+            adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await,
+            batch_num_records(&data) as i64
+        );
+    })
+}
+
+/// Without a program loader, `POST /testing/load` does not exist.
+#[engine_test]
+pub fn program_load_route_needs_a_loader(engine: &dyn PipelineTestEngine) {
+    actix_web::rt::System::new().block_on(async {
+        ensure_default_crypto_provider();
+        let server = start_test_server(
+            engine,
+            &json!({"name": "program_a", "inputs": {}, "outputs": {}}),
+            Uuid::new_v4(),
+        )
+        .await;
+        let response = server
+            .post("/testing/load")
+            .send_json(&json!({"name": "b", "inputs": {}, "outputs": {}}))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    })
+}
+
+/// A restart whose changed view needs the history of a table that is not materialized is
+/// refused: the table keeps no state for the bootstrap to replay the view from.
+#[engine_test(requires(Storage, Checkpoints, Bootstrap))]
+pub fn bootstrap_refuses_a_table_that_is_not_materialized(engine: &dyn PipelineTestEngine) {
+    ensure_default_crypto_provider();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    std::fs::create_dir(&storage_dir).unwrap();
+    let config_file = json_config_file(&json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "storage": true,
+        "clock_resolution_usecs": null,
+        "inputs": {},
+        "outputs": {},
+    }));
+    // The IR names the table by the persistent id that the test circuit gives its input.
+    let config_for = |view: &str| {
+        let mut config = parse_config(config_file.path().display().to_string()).unwrap();
+        config.program_ir = Some(program_ir_with_table("input", view));
+        config
+    };
+    let circuit = |view: &str| TestCircuit::Identity {
+        relation: relation(),
+        persistent_output_ids: vec![Some(view.to_string())],
+        input_properties: Vec::new(),
+        materialized: false,
+        persistent_ids: true,
+        table_version: 0,
+        attribute_defaults: Vec::new(),
+    };
+
+    let controller = engine
+        .controller(
+            &circuit("v0"),
+            &config_for("v0"),
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.checkpoint().unwrap();
+    controller.stop().unwrap();
+
+    let builder = ControllerBuilder::new(&config_for("v1"), &engine.open_storage()).unwrap();
+    let state = WebData::new(ServerState::new(
+        PipelinePhase::Initializing(InitializationState::Starting),
+        String::default(),
+        RuntimeDesiredStatus::Paused,
+        BootstrapConfig::from(BootstrapPolicy::Allow),
+        Uuid::now_v7(),
+        None,
+        None,
+        None,
+        None,
+    ));
+    {
+        let state = state.clone();
+        let factory = engine.circuit_factory(&circuit("v1"), None).unwrap();
+        thread::spawn(move || bootstrap(builder, factory, state))
+    }
+    .join()
+    .unwrap();
+
+    let PipelinePhase::InitializationError(error) = state.phase() else {
+        panic!("the bootstrap was not refused");
+    };
+    assert!(
+        matches!(*error, ControllerError::BootstrapNotAllowed { .. }),
+        "{error}"
+    );
+    let status = get_status(&state, false).expect_err("the status does not report the refusal");
+    assert_eq!(status.error.error_code.as_ref(), "InitializationError");
+    assert_eq!(
+        status.error.message,
+        "Operation failed because the pipeline failed to initialize. Error details: The \
+         pipeline has been modified since the last checkpoint; however it cannot be \
+         bootstrapped due to the following reasons:\n- The following tables are not \
+         materialized, but some of the views that depend on these tables require \
+         bootstrapping: 'test_input1'. We recommend materializing all tables in the program to \
+         avoid such errors in the future."
+    );
+}
+
+/// A `program_ir` of one input table, whose input operator has the persistent id `table`,
+/// and one view with the persistent id `view`.
+fn program_ir_with_table(table: &str, view: &str) -> ProgramIr {
+    let mut program_ir = test_program_ir(view);
+    for node in program_ir.mir.values_mut() {
+        if node.table.is_some() {
+            node.persistent_id = Some(table.to_string());
+        }
+    }
+    program_ir
+}
+
+/// `GET /checkpoints` lists the published checkpoints oldest first: after two checkpoints,
+/// both, in the order they were taken.
+#[engine_test(requires(Storage, Checkpoints))]
+pub fn checkpoints_lists_the_checkpoints_in_order(engine: &dyn PipelineTestEngine) {
+    actix_web::rt::System::new().block_on(async {
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        std::fs::create_dir(&storage_dir).unwrap();
+        let config_json = json!({
+            "name": "test",
+            "workers": 4,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "storage": true,
+            "clock_resolution_usecs": null,
+            "inputs": {},
+            "outputs": {},
+        });
+        let (server, state) = start_test_server_with_state(
+            engine,
+            &config_json,
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[Some("v0")],
+            None,
+        )
+        .await;
+        start_pipeline(&server).await;
+
+        let first = take_checkpoint(&server, &state).await;
+        let second = take_checkpoint(&server, &state).await;
+        assert_ne!(first, second);
+
+        let listed: Vec<Uuid> = server
+            .get("/checkpoints")
+            .send()
+            .await
+            .unwrap()
+            .json::<Vec<feldera_types::checkpoint::CheckpointMetadata>>()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|checkpoint| checkpoint.uuid)
+            .collect();
+        assert_eq!(listed, [first, second]);
+    });
+}
+
+/// Takes a checkpoint through `POST /checkpoint`, waits for it, and returns its uuid.
+async fn take_checkpoint(server: &TestServer, state: &ServerState) -> Uuid {
+    let sequence_number = server
+        .post("/checkpoint")
+        .send()
+        .await
+        .unwrap()
+        .json::<CheckpointResponse>()
+        .await
+        .unwrap()
+        .checkpoint_sequence_number;
+    let completed = async_wait(
+        || async {
+            let status = server
+                .get("/checkpoint_status")
+                .send()
+                .await
+                .unwrap()
+                .json::<CheckpointStatus>()
+                .await
+                .unwrap();
+            status.success == Some(sequence_number)
+        },
+        default_timeout_ms(),
+    )
+    .await;
+    assert!(
+        completed.is_ok(),
+        "checkpoint {sequence_number} never completed"
+    );
+    state
+        .checkpoint_state
+        .lock()
+        .unwrap()
+        .last_checkpoint
+        .expect("a completed checkpoint has a uuid")
 }

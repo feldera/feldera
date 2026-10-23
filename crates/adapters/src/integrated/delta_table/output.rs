@@ -21,7 +21,6 @@ use arrow::datatypes::{
     SchemaRef as ArrowSchemaRef,
 };
 use chrono::Utc;
-use dbsp::circuit::tokio::TOKIO;
 use delta_kernel::engine::arrow_conversion::TryFromArrow;
 use delta_kernel::table_features::ColumnMappingMode;
 use delta_kernel::table_properties::DataSkippingNumIndexedCols;
@@ -29,6 +28,7 @@ use deltalake::DeltaTable;
 use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, TableReference};
 use deltalake::kernel::{Action, Add, ArrayType, DataType, MapType, StructField, StructType};
 use deltalake::logstore::ObjectStoreRef;
+use feldera_storage::tokio::TOKIO;
 
 use super::bounded_upload::bound_uploads;
 use deltalake::operations::create::CreateBuilder;
@@ -1866,8 +1866,8 @@ mod parallel {
     /// Delta table's metadata when set, and be absent when not set.
     #[test]
     fn test_log_retention_table_properties() {
-        use dbsp::circuit::tokio::TOKIO;
         use deltalake::open_table;
+        use feldera_storage::tokio::TOKIO;
         use std::time::Duration;
 
         // Case 1: neither option set — neither property should appear in the table metadata.

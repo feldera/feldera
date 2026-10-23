@@ -1,9 +1,9 @@
 //! Error type returned by HTTP endpoints of the pipeline runner server.
 //!
 //! [`PipelineError`] is the top-level error type returned by HTTP endpoints of
-//! the pipeline runner server.  Other error types defined in by the controller,
-//! by various transport and format adapters, and in the `dbsp` crate are
-//! returned as variants of this type.
+//! the pipeline runner server.  Other error types, defined by the controller,
+//! by various transport and format adapters, and by the engine, are returned as
+//! variants of this type.
 //!
 //! ## Error hierarchy
 //!
@@ -17,8 +17,9 @@
 //!      from operating a streaming pipeline consisting of input adapters, output adapters,
 //!      and a DBSP circuit, via the controller API.  In some variants, it embeds:
 //!
-//!      * [`dbsp::Error`], which indicates invalid pipeline or endpoint
-//!        configuration.
+//!      * The engine's error, an [`EngineError`](feldera_types::error::EngineError)
+//!        in [`ControllerError::DbspError`], which indicates invalid pipeline or
+//!        endpoint configuration.
 //!      * [`ConfigError`](feldera_adapterlib::errors::controller::ConfigError)
 //!      * [`ControllerError::InputTransportError`]<br>
 //!        [`ControllerError::OutputTransportError`]<br>

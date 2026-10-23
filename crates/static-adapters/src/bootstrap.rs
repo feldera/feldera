@@ -1,8 +1,5 @@
-//! dbsp's bootstrap info in the form that the controller reads.
-//!
-//! dbsp names the operators that a bootstrap rebuilds by node, each with its persistent id.
-//! The controller wants the persistent ids, and the input tables among the rebuilt operators,
-//! which the catalog finds by the persistent ids of their input operators.
+//! Convert `BootstrapInfo` and `ConcurrentRestoreOutcome` structs returned by the DBSP
+//! engine to the engine-independent representation declared in `feldera_types`.
 
 use std::collections::BTreeSet;
 
@@ -12,50 +9,81 @@ use dbsp::circuit::bootstrap::{
 };
 use feldera_adapterlib::catalog::CircuitCatalog;
 use feldera_types::circuit::{BootstrapInfo, ConcurrentRestoreOutcome};
+use feldera_types::program_schema::SqlIdentifier;
 
-/// What `circuit` rebuilds, if it is bootstrapping, with the tables named as in `catalog`.
+/// The input tables of a circuit, each with the persistent id of its input operator.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct InputOperators(Vec<(SqlIdentifier, String)>);
+
+impl InputOperators {
+    /// The input tables of `catalog` whose input operators have persistent ids.
+    pub(crate) fn new(catalog: &dyn CircuitCatalog) -> Self {
+        Self(
+            catalog
+                .input_iter()
+                .filter_map(|(name, input)| {
+                    input
+                        .persistent_id
+                        .as_ref()
+                        .map(|id| (name.clone(), id.clone()))
+                })
+                .collect(),
+        )
+    }
+}
+
+/// Read `circuit`'s bootstrap info and convert it to the engine-independent `BootstrapInfo` format.
+///
+/// # Arguments
+///
+/// * `circuit` - DBSP circuit.
+/// * `inputs` - input table to persistent ID map used for the conversion.
 pub(crate) fn bootstrap_info(
     circuit: &DBSPHandle,
-    catalog: &dyn CircuitCatalog,
+    inputs: &InputOperators,
 ) -> Option<BootstrapInfo> {
     circuit
         .bootstrap_info()
         .as_ref()
-        .map(|info| convert_bootstrap_info(info, catalog))
+        .map(|info| convert_bootstrap_info(info, inputs))
 }
 
-/// The `outcome` of a concurrent bootstrap, with the tables named as in `catalog`.
+/// Convert the `outcome` of a concurrent bootstrap to the engine-independent format.
+///
+/// # Arguments
+///
+/// * `outcome` - outcome returned by the DBSP engine.
+/// * `inputs` - input table to persistent ID map used for the conversion.
 pub(crate) fn concurrent_restore_outcome(
     outcome: DbspConcurrentRestoreOutcome,
-    catalog: &dyn CircuitCatalog,
+    inputs: &InputOperators,
 ) -> ConcurrentRestoreOutcome {
     match outcome {
         DbspConcurrentRestoreOutcome::UpToDate => ConcurrentRestoreOutcome::UpToDate,
         DbspConcurrentRestoreOutcome::Concurrent(info) => {
-            ConcurrentRestoreOutcome::Concurrent(convert_bootstrap_info(&info, catalog))
+            ConcurrentRestoreOutcome::Concurrent(convert_bootstrap_info(&info, inputs))
         }
         DbspConcurrentRestoreOutcome::FellBack { reason, info } => {
             ConcurrentRestoreOutcome::FellBack {
                 reason,
-                info: info.map(|info| convert_bootstrap_info(&info, catalog)),
+                info: info.map(|info| convert_bootstrap_info(&info, inputs)),
             }
         }
     }
 }
 
-/// The persistent ids of the operators that `info` rebuilds, and the input tables of `catalog`
-/// whose input operators are among them.
-fn convert_bootstrap_info(info: &DbspBootstrapInfo, catalog: &dyn CircuitCatalog) -> BootstrapInfo {
+/// Convert bootstrap info in the DBSP format to the engine-independent `BootstrapInfo` format.
+///
+/// # Arguments
+///
+/// * `inputs` - input table to persistent ID map used for the conversion.
+fn convert_bootstrap_info(info: &DbspBootstrapInfo, inputs: &InputOperators) -> BootstrapInfo {
     let backfill_persistent_ids: BTreeSet<String> =
         info.need_backfill.values().flatten().cloned().collect();
-    let backfill_tables = catalog
-        .input_iter()
-        .filter(|(_, input)| {
-            input
-                .persistent_id
-                .as_ref()
-                .is_some_and(|id| backfill_persistent_ids.contains(id))
-        })
+    let backfill_tables = inputs
+        .0
+        .iter()
+        .filter(|(_, id)| backfill_persistent_ids.contains(id))
         .map(|(name, _)| name.clone())
         .collect();
     BootstrapInfo {
@@ -76,8 +104,9 @@ mod test {
     use feldera_types::circuit::{BootstrapInfo, ConcurrentRestoreOutcome};
     use feldera_types::program_schema::SqlIdentifier;
 
-    use super::{concurrent_restore_outcome, convert_bootstrap_info};
-    use crate::test::{TestStruct, test_circuit};
+    use super::{InputOperators, concurrent_restore_outcome, convert_bootstrap_info};
+    use crate::test::pipeline::TestCircuit;
+    use crate::test::{StaticTestEngine, TestStruct};
 
     /// dbsp's info for a bootstrap that rebuilds the operators with `persistent_ids`, and one
     /// operator without a persistent id.
@@ -98,11 +127,20 @@ mod test {
     /// concurrent outcome converts its info the same way.
     #[test]
     fn a_table_is_rebuilt_when_its_input_operator_is() {
-        let (circuit, catalog) = test_circuit::<TestStruct>(
-            CircuitConfig::with_workers(1),
-            &TestStruct::schema(),
-            &[Some("output")],
-        );
+        let (circuit, catalog) = StaticTestEngine::new()
+            .circuit(
+                &TestCircuit::Identity {
+                    relation: TestStruct::relation_schema(),
+                    persistent_output_ids: vec![Some("output".to_string())],
+                    input_properties: Vec::new(),
+                    materialized: true,
+                    persistent_ids: true,
+                    table_version: 0,
+                    attribute_defaults: Vec::new(),
+                },
+                CircuitConfig::with_workers(1),
+            )
+            .unwrap();
         let table = SqlIdentifier::from("test_input1");
         let input_id = catalog
             .input_collection_handle(&table)
@@ -111,14 +149,15 @@ mod test {
             .clone()
             .expect("the test circuit's input operator has a persistent id");
 
-        let info = convert_bootstrap_info(&dbsp_info(&[&input_id, "view"]), catalog.as_ref());
+        let inputs = InputOperators::new(catalog.as_ref());
+        let info = convert_bootstrap_info(&dbsp_info(&[&input_id, "view"]), &inputs);
         assert_eq!(info.backfill_tables, BTreeSet::from([table.clone()]));
         assert_eq!(
             info.backfill_persistent_ids,
             BTreeSet::from([input_id.clone(), "view".to_string()])
         );
 
-        let info = convert_bootstrap_info(&dbsp_info(&["view"]), catalog.as_ref());
+        let info = convert_bootstrap_info(&dbsp_info(&["view"]), &inputs);
         assert!(info.backfill_tables.is_empty());
 
         let outcome = concurrent_restore_outcome(
@@ -126,7 +165,7 @@ mod test {
                 reason: "refused".to_string(),
                 info: Some(dbsp_info(&[&input_id])),
             },
-            catalog.as_ref(),
+            &inputs,
         );
         assert_eq!(
             outcome,
@@ -139,7 +178,7 @@ mod test {
             }
         );
         assert_eq!(
-            concurrent_restore_outcome(DbspConcurrentRestoreOutcome::UpToDate, catalog.as_ref()),
+            concurrent_restore_outcome(DbspConcurrentRestoreOutcome::UpToDate, &inputs),
             ConcurrentRestoreOutcome::UpToDate
         );
 

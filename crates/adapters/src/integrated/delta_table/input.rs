@@ -33,7 +33,6 @@ use datafusion::physical_plan::{
     StatisticsArgs, StatisticsContext, displayable, execute_stream,
 };
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
-use dbsp::circuit::tokio::TOKIO;
 use delta_kernel::schema::{ColumnMetadataKey, MetadataValue};
 use delta_kernel::table_features::ColumnMappingMode;
 use deltalake::datafusion::dataframe::DataFrame;
@@ -62,6 +61,7 @@ use feldera_adapterlib::utils::datafusion::{
     validate_sql_expression, validate_sql_order_by, validate_timestamp_column,
 };
 use feldera_adapterlib::utils::job_queue::JobQueue;
+use feldera_storage::tokio::TOKIO;
 use feldera_storage::tokio::TOKIO_DEDICATED_IO;
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::{FtModel, PipelineConfig};

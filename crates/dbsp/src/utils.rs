@@ -17,7 +17,6 @@ pub(crate) mod test;
 
 mod dot;
 
-use memory_stats::memory_stats;
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::{fmt::Display, hint::unreachable_unchecked};
@@ -115,7 +114,7 @@ pub fn process_rss_bytes() -> Option<u64> {
         return Some(mock_rss_bytes);
     }
 
-    memory_stats().map(|usage| usage.physical_mem as u64)
+    feldera_observability::system::process_rss_bytes()
 }
 
 /// Returns how much memory this process can use, in bytes. This is the host's

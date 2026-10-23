@@ -1,5 +1,8 @@
 use crate::adhoc::set_snapshot;
 use crate::controller::{CompletionToken, ConsistentSnapshot, ControllerBuilder};
+use crate::engine::{
+    CircuitFactory, Engine, JsonProfileChunks, OpenStorageFn, PipelineStorage, ProgramLoader,
+};
 use crate::format::csv::CsvOutputFormat;
 use crate::format::get_input_format;
 use crate::format::json::JsonOutputFormat;
@@ -7,15 +10,13 @@ use crate::panic::enable_counting_panics;
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
 };
-use crate::static_compile::catalog::OUTPUT_MAPPING;
 use crate::transport::http::HttpOutputFormat;
 use crate::util::{
     LongOperationWarning, RateLimitCheckResult, TokenBucketRateLimiter,
     missing_pipeline_identity_message,
 };
-use crate::{Catalog, ControllerStatus, dyn_event};
 use crate::{
-    CircuitCatalog, Controller, ControllerError, FormatConfig, InputEndpointConfig, OutputEndpoint,
+    Controller, ControllerError, FormatConfig, InputEndpointConfig, OutputEndpoint,
     OutputEndpointConfig, PipelineConfig, TransportInputEndpoint,
     adhoc::{adhoc_websocket, stream_adhoc_result},
     controller::ConnectorConfig,
@@ -26,6 +27,7 @@ use crate::{
         RequestMetadata,
     },
 };
+use crate::{ControllerStatus, dyn_event};
 use actix_web::HttpResponseBuilder;
 use actix_web::body::MessageBody;
 use actix_web::dev::Service;
@@ -46,17 +48,10 @@ use bytes::Bytes;
 use chrono::Utc;
 use clap::Parser;
 use colored::Colorize;
-use dbsp::circuit::Layout;
-use dbsp::circuit::checkpointer::Checkpointer;
-use dbsp::profile::{DbspProfile, ProfileJsonWriter};
-use dbsp::{DBSPHandle, circuit::CircuitConfig};
-use dbsp::{RootCircuit, Runtime};
-use dyn_clone::DynClone;
 use feldera_adapterlib::PipelineState;
 use feldera_adapterlib::errors::controller::ConfigError;
 use feldera_observability as observability;
 use feldera_observability::json_logging::init_pipeline_logging_with_id;
-use feldera_storage::{StorageBackend, StoragePath};
 use feldera_types::adapter_stats::{
     EndpointErrorStats, InputEndpointErrorMetrics, OutputEndpointErrorMetrics,
     PipelineStatsErrorsResponse,
@@ -66,11 +61,11 @@ use feldera_types::checkpoint::{
     CheckpointStatusQuery, CheckpointSyncFailure, CheckpointSyncResponse, CheckpointSyncStatus,
     HostInfo,
 };
+use feldera_types::circuit::Layout;
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
 use feldera_types::config::{PipelineIdentity, SyncConfig};
-use feldera_types::constants::STATUS_FILE;
 use feldera_types::coordination::{
     AdHocScan, CoordinationActivate, CoordinationCapabilities, CoordinationStatus, InputChoices,
     Labels, RestartArgs, Step, StepRequest,
@@ -108,11 +103,10 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::convert::Infallible;
 use std::hash::{BuildHasherDefault, DefaultHasher, Hash, Hasher};
-use std::io::ErrorKind;
 use std::mem::take;
 use std::path::{Path, PathBuf};
-use std::sync::MutexGuard;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{MutexGuard, OnceLock};
 use std::time::Duration;
 use std::{
     borrow::Cow,
@@ -291,7 +285,8 @@ pub(crate) struct ServerState {
 
     metadata: String,
 
-    storage: Option<Arc<dyn StorageBackend>>,
+    /// The pipeline's storage, if it has any.
+    storage: Option<Arc<dyn PipelineStorage>>,
 
     /// Sync configuration, extracted from the storage backend at startup.
     ///
@@ -324,6 +319,26 @@ pub(crate) struct ServerState {
 
     /// Current collection of leases.
     leases: Mutex<HashMap<Step, Lease>>,
+
+    /// What `POST /testing/load` needs to replace the program; set from
+    /// `--enable-program-load`.
+    program_load: OnceLock<ProgramLoad>,
+
+    /// Counts the programs loaded into this process.  Per-program caches and the
+    /// controller's error callback compare against it, so nothing from a
+    /// replaced program reaches the current one.  Changes only while `lifecycle`
+    /// is locked, together with the phase; readers that need the two to agree
+    /// read it under that lock.
+    program_generation: AtomicU64,
+}
+
+/// What `POST /testing/load` needs to replace the running program.
+struct ProgramLoad {
+    /// Builds the circuit of a program that a request sends.
+    loader: Box<dyn ProgramLoader>,
+
+    /// Opens the storage of a loaded program's controller.
+    open_storage: OpenStorageFn,
 }
 
 /// Pipeline phase + controller.
@@ -382,7 +397,7 @@ impl ServerState {
         bootstrap_config: BootstrapConfig,
         deployment_id: Uuid,
         pipeline_identity: Option<PipelineIdentity>,
-        storage: Option<Arc<dyn StorageBackend>>,
+        storage: Option<Arc<dyn PipelineStorage>>,
         sync_config: Option<SyncConfig>,
         host_info: Option<HostInfo>,
     ) -> Self {
@@ -411,6 +426,8 @@ impl ServerState {
             input_choices: Default::default(),
             leases: Default::default(),
             incarnation_uuid: Uuid::now_v7(),
+            program_load: OnceLock::new(),
+            program_generation: AtomicU64::new(0),
         }
     }
 
@@ -499,16 +516,24 @@ impl ServerState {
         published
     }
 
-    /// Records that the pipeline failed with `error`, and returns the controller
-    /// to stop if one was still allocated.
+    /// Records that the pipeline running program `generation` failed with
+    /// `error`, and returns the controller to stop if one was still allocated.
     ///
     /// Recording the failure and deallocating the controller in one step keeps
     /// `/status` from ever seeing a failed pipeline that still advertises a
     /// controller, or a controller-less pipeline that still advertises
     /// [`PipelinePhase::InitializationComplete`].
-    fn fail(&self, error: Arc<ControllerError>) -> Option<Controller> {
+    ///
+    /// An error from a program that `/testing/load` has replaced changes
+    /// nothing.  The generation is checked under the `lifecycle` lock, which
+    /// [`ServerState::reset_for_program_load`] also holds while it moves to the
+    /// next program, so a late error cannot fail its replacement.
+    fn fail(&self, generation: u64, error: Arc<ControllerError>) -> Option<Controller> {
         let (recorded, controller) = {
             let mut lifecycle = self.lifecycle.lock().unwrap();
+            if self.program_generation() != generation {
+                return None;
+            }
             let recorded = lifecycle.set_phase(PipelinePhase::Failed(error));
             (recorded, lifecycle.controller.take())
         };
@@ -550,6 +575,52 @@ impl ServerState {
     #[cfg(any(test, feature = "testing"))]
     fn abandon_controller(&self) -> Option<Controller> {
         self.lifecycle.lock().unwrap().controller.take()
+    }
+
+    /// Lets `POST /testing/load` replace the program, with programs that `loader`
+    /// builds and controllers that open their storage with `open_storage`.
+    /// Only the first call has an effect.
+    fn enable_program_load(&self, loader: Box<dyn ProgramLoader>, open_storage: OpenStorageFn) {
+        let _ = self.program_load.set(ProgramLoad {
+            loader,
+            open_storage,
+        });
+    }
+
+    /// Discards the current program so that `/testing/load` can bootstrap
+    /// another one, and returns the controller to stop if one was allocated.
+    ///
+    /// This is the only transition that leaves a terminal phase: loading a new
+    /// program starts a new pipeline in the same process.  It refuses while an
+    /// initialization is in flight, because that bootstrap thread would publish
+    /// its controller over the new program.
+    fn reset_for_program_load(&self) -> Result<Option<Controller>, PipelineError> {
+        let mut desired_status = self.desired_status.lock().unwrap();
+        match *desired_status {
+            RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => (),
+            other => return Err(PipelineError::InvalidTransition("load a program", other)),
+        }
+        let controller = {
+            let mut lifecycle = self.lifecycle.lock().unwrap();
+            if matches!(lifecycle.phase, PipelinePhase::Initializing(_)) {
+                return Err(PipelineError::Initializing);
+            }
+            lifecycle.phase = PipelinePhase::Initializing(InitializationState::Starting);
+            // Under the same lock as the phase change: `fail` checks the
+            // generation while holding it.
+            self.program_generation.fetch_add(1, Ordering::AcqRel);
+            lifecycle.controller.take()
+        };
+        *desired_status = RuntimeDesiredStatus::Running;
+        drop(desired_status);
+        self.desired_status_change.notify_waiters();
+        Ok(controller)
+    }
+
+    /// The program that this process runs: 0 for the first, one more for each
+    /// program that `/testing/load` loads.
+    fn program_generation(&self) -> u64 {
+        self.program_generation.load(Ordering::Acquire)
     }
 
     fn desired_status(&self) -> RuntimeDesiredStatus {
@@ -668,74 +739,71 @@ pub struct ServerArgs {
     /// Helps distinguish logs originating from different hosts.
     #[arg(long)]
     pub host_id: Option<usize>,
+
+    /// Serve `POST /testing/load`, which replaces the running program without
+    /// restarting the process, so a test harness can run many programs in one
+    /// process.  Only pipelines without storage, fault tolerance, or multihost
+    /// can be loaded this way.
+    #[arg(long, action = clap::ArgAction::SetTrue)]
+    pub enable_program_load: bool,
 }
 
-pub trait CircuitBuilderFunc:
-    FnOnce(&mut RootCircuit) -> Result<Catalog, anyhow::Error> + DynClone + Send + 'static
-{
+/// Returns the circuit factory of the pipeline that a configuration describes.
+pub type MakeCircuitFactory =
+    Box<dyn FnOnce(&PipelineConfig) -> Result<CircuitFactory, ControllerError> + Send + 'static>;
+
+/// The server's command line: its own arguments and the engine's.
+#[derive(Parser, Debug, Clone)]
+#[command(author, version, about, long_about = None)]
+struct EngineServerArgs<A: clap::Args> {
+    #[command(flatten)]
+    server: ServerArgs,
+
+    #[command(flatten)]
+    engine: A,
 }
 
-impl<F> CircuitBuilderFunc for F where
-    F: FnOnce(&mut RootCircuit) -> Result<Catalog, anyhow::Error> + Clone + Send + 'static
-{
-}
-
-dyn_clone::clone_trait_object! {CircuitBuilderFunc}
-
-/// A version of Runtime::init_circuit optimized for use in compiler-generated code.
+/// Server main function of a pipeline that `engine` runs.
 ///
-/// This function does not have any generic arguments, and so will be precompiled as part
-/// of the adapters crate, pulling all scheduler code with it.  It reduces the size
-/// of LLVM code for the main generated crate from 126K to 35K lines.
-pub fn init_circuit(
-    config: CircuitConfig,
-    constructor: Box<dyn CircuitBuilderFunc>,
-) -> Result<(DBSPHandle, Catalog), dbsp::Error> {
-    Runtime::init_circuit(config, constructor)
-}
-
-pub type CircuitFactoryFunc = Box<
-    dyn FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
-        + Send
-        + 'static,
->;
-
-/// Server main function.
-///
-/// This function is intended to be invoked from the code generated by,
-/// e.g., the SQL compiler.  It performs the following steps needed to start
-/// a circuit server:
-///
-/// * Setup logging.
-/// * Parse command line arguments.
-/// * Start the server.
+/// Parses the command line, with the engine's arguments, and runs the server.
 ///
 /// # Arguments
 ///
-/// * `circuit_factory` - a function that creates a circuit and builds an
-///   input/output stream catalog.
-pub fn server_main<F>(circuit_factory: F) -> Result<(), ControllerError>
-where
-    F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
-        + Send
-        + 'static,
-{
-    let args = ServerArgs::try_parse().map_err(|e| ControllerError::cli_args_error(&e))?;
+/// * `engine` - the engine that runs the pipeline's circuit.
+///
+/// # Returns
+///
+/// The error that stopped the server, if any, which this function also logs.
+pub fn server_main<E: Engine>(engine: E) -> Result<(), ControllerError> {
+    let args = EngineServerArgs::<E::Args>::try_parse()
+        .map_err(|e| ControllerError::cli_args_error(&e))?;
+    let engine = Arc::new(engine);
+    let open_storage: OpenStorageFn = {
+        let engine = engine.clone();
+        Arc::new(move |config| engine.open_storage(config))
+    };
+    let engine_args = args.engine;
+    let program_loader = engine.program_loader(&engine_args);
+    let make_factory: MakeCircuitFactory =
+        Box::new(move |config| engine.circuit_factory(config, &engine_args));
 
-    run_server(args, Box::new(circuit_factory)).map_err(|e| {
+    run_server(args.server, make_factory, open_storage, program_loader).map_err(|e| {
         error!("{e}");
         e
     })
 }
 
-// We pass circuit_factory as a trait object to make sure that this function
+// We pass the engine as trait objects to make sure that this function
 // doesn't have any generics and gets generated, along with the entire web server
 // as part of the adapters crate. This reduces the size of the generated code for
 // the main crate by ~300L lines of LLVM code.
 pub fn run_server(
     args: ServerArgs,
-    circuit_factory: CircuitFactoryFunc,
+    make_factory: MakeCircuitFactory,
+    open_storage: OpenStorageFn,
+    program_loader: Option<Box<dyn ProgramLoader>>,
 ) -> Result<(), ControllerError> {
+    check_program_load_flag(&args, program_loader.is_some())?;
     ensure_default_crypto_provider();
     enable_counting_panics();
 
@@ -807,7 +875,8 @@ pub fn run_server(
     fn start_controller(
         args: &ServerArgs,
         config: &PipelineConfig,
-        circuit_factory: CircuitFactoryFunc,
+        make_factory: MakeCircuitFactory,
+        open_storage: OpenStorageFn,
         runtime: &actix_web::rt::Runtime,
     ) -> Result<WebData<ServerState>, ControllerError> {
         #[cfg(not(feature = "feldera-enterprise"))]
@@ -815,9 +884,11 @@ pub fn run_server(
             return Err(ControllerError::EnterpriseFeature("fault tolerance"));
         }
 
+        let circuit_factory = make_factory(config)?;
+
         // Initiate creating the controller so that we can get access to storage,
         // which is needed to determine the initial state.
-        let builder = ControllerBuilder::new(config)?;
+        let builder = ControllerBuilder::new(config, &open_storage)?;
         info!(
             "Pipeline deployment identifier from arguments: {}",
             args.deployment_id
@@ -825,7 +896,7 @@ pub fn run_server(
         info!("Desired status from arguments: {:?}", args.initial);
         let (initial_status, bootstrap_config) = match builder
             .storage()
-            .and_then(|storage| StoredStatus::read(&*storage))
+            .and_then(|storage| storage.read_status())
             .inspect(|stored| {
                 info!(
                     "Pipeline deployment identifier from storage: {}",
@@ -929,14 +1000,14 @@ pub fn run_server(
             bootstrap_config,
             args.deployment_id,
             config.pipeline_identity(),
-            builder.storage().clone(),
+            builder.storage(),
             builder.sync_config(),
             host_info,
         ));
 
         // Initialize the pipeline in a separate thread.  On success, this thread
         // will create a `Controller` instance and store it in `state.controller`.
-        let storage = builder.storage().clone();
+        let storage = builder.storage();
         thread::Builder::new()
             .name("pipeline-init".to_string())
             .spawn({
@@ -963,7 +1034,7 @@ pub fn run_server(
                     };
                     if Some(stored_status) != prev_stored_status {
                         let storage = storage.clone();
-                        let _ = spawn_blocking(move || stored_status.write(&*storage)).await;
+                        let _ = spawn_blocking(move || storage.write_status(&stored_status)).await;
                     }
                     prev_stored_status = Some(stored_status);
                     notify.await;
@@ -976,11 +1047,23 @@ pub fn run_server(
 
     let system_runner = rt::System::new();
 
-    let state = start_controller(&args, &config, circuit_factory, system_runner.runtime())
-        .unwrap_or_else(|error| {
-            error!("Initialization failed: {error}");
-            WebData::new(ServerState::for_error(error, args.deployment_id))
-        });
+    let state = start_controller(
+        &args,
+        &config,
+        make_factory,
+        open_storage.clone(),
+        system_runner.runtime(),
+    )
+    .unwrap_or_else(|error| {
+        error!("Initialization failed: {error}");
+        WebData::new(ServerState::for_error(error, args.deployment_id))
+    });
+    // Also on a failed start, so a harness can load the next program.
+    if let Some(loader) = program_loader
+        && args.enable_program_load
+    {
+        state.enable_program_load(loader, open_storage);
+    }
 
     let workers = if let Some(http_workers) = config.global.http_workers {
         http_workers as usize
@@ -1167,6 +1250,23 @@ async fn checkpoint_before_exit(state: &ServerState) -> Result<bool, Arc<Control
     controller.async_checkpoint().await.map(|_| true)
 }
 
+/// Refuses `--enable-program-load` for an engine that cannot load a program at
+/// run time.
+///
+/// # Arguments
+///
+/// * `args` - the server's command line.
+/// * `can_load` - whether the engine has a program loader.
+fn check_program_load_flag(args: &ServerArgs, can_load: bool) -> Result<(), ControllerError> {
+    if args.enable_program_load && !can_load {
+        return Err(ControllerError::cli_args_error(
+            &"This pipeline's engine cannot load a program at run time, so it does not accept \
+              '--enable-program-load'.",
+        ));
+    }
+    Ok(())
+}
+
 fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, ControllerError> {
     fn read_config_file_as_string(path: &Path) -> Result<String, ControllerError> {
         let string = std::fs::read(path).map_err(|e| {
@@ -1223,7 +1323,7 @@ using this host's available memory: 'max_rss' = {available}."
 // Initialization thread function.
 fn bootstrap(
     builder: ControllerBuilder,
-    circuit_factory: CircuitFactoryFunc,
+    circuit_factory: CircuitFactory,
     state: WebData<ServerState>,
 ) {
     do_bootstrap(builder, circuit_factory, &state).unwrap_or_else(|e| {
@@ -1245,7 +1345,15 @@ fn is_fatal_controller_error(error: &ControllerError) -> bool {
 }
 
 /// Handle errors from the controller.
-fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>, tag: Option<String>) {
+///
+/// `generation` is the program the reporting controller runs; an error from a
+/// program that `/testing/load` has replaced must not fail the current one.
+fn error_handler(
+    state: &Weak<ServerState>,
+    generation: u64,
+    error: Arc<ControllerError>,
+    tag: Option<String>,
+) {
     let state = match state.upgrade() {
         None => {
             // if we fail to upgrade state,
@@ -1255,6 +1363,12 @@ fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>, tag: Op
         }
         Some(state) => state,
     };
+    // Keeps a replaced program's errors out of the log; `fail` makes the
+    // decision that counts, under the lock a program load also holds.
+    if state.program_generation() != generation {
+        info!("Ignoring an error from a replaced program: {error}");
+        return;
+    }
 
     // do not rate limit errors without tag
     let should_log = tag.is_none_or(|k| match state.rate_limiter.check(k.clone()) {
@@ -1279,7 +1393,7 @@ fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>, tag: Op
     }
 
     if is_fatal_controller_error(&error)
-        && let Some(controller) = state.fail(error)
+        && let Some(controller) = state.fail(generation, error)
     {
         controller.initiate_stop();
     }
@@ -1310,7 +1424,7 @@ fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
 
 fn do_bootstrap(
     mut builder: ControllerBuilder,
-    circuit_factory: CircuitFactoryFunc,
+    circuit_factory: CircuitFactory,
     state: &WebData<ServerState>,
 ) -> Result<(), ControllerError> {
     if let Some(runtime_override) = option_env!("FELDERA_RUNTIME_OVERRIDE") {
@@ -1343,7 +1457,7 @@ fn do_bootstrap(
             RuntimeDesiredStatus::Unavailable => unreachable!(),
             RuntimeDesiredStatus::Coordination => {
                 if let Some(mut ca) = state.coordination_activate.lock().unwrap().take() {
-                    *OUTPUT_MAPPING.lock().unwrap() = take(&mut ca.output_assignment);
+                    builder = builder.with_output_assignment(take(&mut ca.output_assignment));
 
                     builder = builder.with_layout(
                         Layout::new_multihost(&ca.exchanges, ca.local_address).map_err(|e| {
@@ -1419,7 +1533,8 @@ fn do_bootstrap(
         circuit_factory,
         Box::new({
             let weak_state_ref = Arc::downgrade(state);
-            move |e, t| error_handler(&weak_state_ref, e, t)
+            let generation = state.program_generation();
+            move |e, t| error_handler(&weak_state_ref, generation, e, t)
         }) as Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     )?;
 
@@ -1458,7 +1573,9 @@ fn build_app<T>(app: App<T>, state: WebData<ServerState>) -> App<T>
 where
     T: ServiceFactory<ServiceRequest, Config = (), Error = ActixError, InitError = ()>,
 {
-    app.app_data(state)
+    let program_load_enabled = state.program_load.get().is_some();
+    let app = app
+        .app_data(state)
         .route(
             "/",
             web::get().to(move || async {
@@ -1532,7 +1649,12 @@ where
         .service(coordination_labels_incomplete)
         .service(coordination_input_choices)
         .service(coordination_restart)
-        .service(clock_advance)
+        .service(clock_advance);
+    if program_load_enabled {
+        app.service(load_program)
+    } else {
+        app
+    }
 }
 
 /// Implements `/start`, `/pause`, `/activate`:
@@ -1703,9 +1825,9 @@ fn get_status(
 
     // Storage status details
     let storage_status_details = if with_storage_status_details
-        && let Some(backend) = &state.storage
+        && let Some(storage) = &state.storage
     {
-        Checkpointer::read_checkpoints(&**backend).inspect_err(|e| error!(
+        storage.checkpoints().inspect_err(|e| error!(
                     "Unable to read checkpoints; storage status details are not provided. Error: {e}"
                 )).ok().map(|list_checkpoints| StorageStatusDetails {
                 checkpoints: list_checkpoints.into(),
@@ -2147,13 +2269,14 @@ async fn heap_profile() -> impl Responder {
 //
 // [2] Circuit thread (`controller.rs`, `run_commands`)
 //     - runs on: the controller's circuit thread, between circuit steps
-//     - what it does: `DBSPHandle::retrieve_profile` assembles worker replies
-//     - produces: a `DbspProfile` (every worker's `WorkerProfile` plus the
-//       circuit `Graph`)
+//     - what it does: `CircuitDriver::json_profile` assembles worker replies
+//     - produces: the engine's chunks of the document (for the static engine, a
+//       `DbspProfile`, with every worker's `WorkerProfile` plus the circuit
+//       `Graph`, which `ProfileJsonWriter` writes one worker per chunk)
 //
 // [3] Serializer (`json_profile_body`, this file)
-//     - runs on: a Tokio blocking-pool thread, one `spawn_blocking` call per worker
-//     - what it does: `ProfileJsonWriter` serializes one worker's profile into a `Vec<u8>`
+//     - runs on: a Tokio blocking-pool thread, one `spawn_blocking` call per chunk
+//     - what it does: makes the next chunk
 //     - produces: one JSON chunk per worker
 //
 // [4] HTTP handler (`dump_json_profile`, this file)
@@ -2203,32 +2326,28 @@ async fn heap_profile() -> impl Responder {
 //   the serializer, not the circuit; a disconnected client drops the stream,
 //   and no further worker is serialized.
 
-/// The JSON profile as a stream of one chunk per worker.
+/// The JSON profile as a stream of the engine's chunks.
 ///
-/// Each worker is serialized on the blocking pool, in order, and its chunk is
-/// yielded before the next worker is started, so at most one worker's JSON
-/// exists at a time. An error aborts the body, which the client sees as a
+/// Each chunk is made on the blocking pool, in order, and yielded before the
+/// next one is started. An error aborts the body, which the client sees as a
 /// truncated transfer.
 fn json_profile_body(
-    profile: DbspProfile,
+    mut chunks: JsonProfileChunks,
 ) -> impl futures::Stream<Item = Result<Bytes, std::io::Error>> {
-    let DbspProfile {
-        metrics,
-        worker_profiles,
-        graph,
-    } = profile;
     async_stream::try_stream! {
-        let mut json = ProfileJsonWriter::begin(Vec::new(), Some(metrics))?;
-        for worker in worker_profiles {
-            json = spawn_blocking(move || -> std::io::Result<_> {
-                json.worker(&worker)?;
-                Ok(json)
+        loop {
+            let (chunk, rest) = spawn_blocking(move || {
+                let chunk = chunks.next();
+                (chunk, chunks)
             })
             .await
-            .map_err(std::io::Error::other)??;
-            yield Bytes::from(std::mem::take(json.writer_mut()));
+            .map_err(std::io::Error::other)?;
+            chunks = rest;
+            match chunk {
+                Some(chunk) => yield Bytes::from(chunk?),
+                None => break,
+            }
         }
-        yield Bytes::from(json.finish(&graph)?);
     }
 }
 
@@ -2238,21 +2357,28 @@ pub mod tests;
 #[cfg(test)]
 mod json_profile_body_tests {
     use super::*;
-    use dbsp::profile::WorkerProfile;
     use futures::TryStreamExt;
 
-    /// The chunks concatenate to exactly `DbspProfile::as_json`, one chunk per
-    /// worker plus the closing one.
+    /// The body yields the engine's chunks in order, and an error ends it after the chunks
+    /// before it.
     #[tokio::test]
-    async fn chunks_concatenate_to_as_json() {
-        for workers in [0, 1, 3] {
-            let profile = DbspProfile::new(vec![WorkerProfile::default(); workers], None);
-            let expected = profile.as_json();
-            let chunks: Vec<Bytes> = json_profile_body(profile).try_collect().await.unwrap();
-            let expected_chunks = if workers == 0 { 1 } else { workers + 1 };
-            assert_eq!(chunks.len(), expected_chunks);
-            assert_eq!(chunks.concat(), expected.as_bytes());
-        }
+    async fn the_body_yields_the_chunks_until_an_error() {
+        let chunks: JsonProfileChunks =
+            Box::new(vec![Ok(b"{".to_vec()), Ok(b"}".to_vec())].into_iter());
+        let body: Vec<Bytes> = json_profile_body(chunks).try_collect().await.unwrap();
+        assert_eq!(body, vec![Bytes::from("{"), Bytes::from("}")]);
+
+        let chunks: JsonProfileChunks = Box::new(
+            vec![
+                Ok(b"{".to_vec()),
+                Err(std::io::Error::other("no profile")),
+                Ok(b"}".to_vec()),
+            ]
+            .into_iter(),
+        );
+        let mut body = std::pin::pin!(json_profile_body(chunks));
+        assert_eq!(body.try_next().await.unwrap(), Some(Bytes::from("{")));
+        assert_eq!(body.try_next().await.unwrap_err().to_string(), "no profile");
     }
 }
 
@@ -2264,9 +2390,8 @@ async fn dump_profile(state: WebData<ServerState>) -> Result<HttpResponse, Pipel
     // memory consumption stays bounded.
     let body = async_stream::try_stream! {
         let file = spawn_blocking(move || -> std::io::Result<std::fs::File> {
-            let mut file = profile
-                .write_zip(tempfile::tempfile()?)
-                .map_err(std::io::Error::other)?;
+            let mut file = tempfile::tempfile()?;
+            profile.write_zip(&mut file)?;
             std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(0))?;
             Ok(file)
         })
@@ -2294,13 +2419,14 @@ async fn dump_json_profile(state: WebData<ServerState>) -> Result<HttpResponse, 
         .streaming::<_, std::io::Error>(json_profile_body(profile)))
 }
 
-/// Dump the low-level IR of the circuit.
+/// Dump the low-level IR of the circuit, or answer 501 Not Implemented if the engine keeps
+/// none.
 #[get("/lir")]
 async fn lir(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponse::Ok()
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("lir.zip"))
-        .body(state.controller()?.lir().as_zip()))
+        .body(state.controller()?.lir()?.as_zip()))
 }
 
 #[post("/samply_profile")]
@@ -2427,9 +2553,7 @@ fn samply_profile_response(last_profile: &SamplyProfile) -> HttpResponse {
 
 fn get_checkpoints(state: &ServerState) -> Result<VecDeque<CheckpointMetadata>, PipelineError> {
     Ok(match &state.storage {
-        Some(backend) => {
-            Checkpointer::read_checkpoints(&**backend).map_err(ControllerError::dbsp_error)?
-        }
+        Some(storage) => storage.checkpoints()?,
         None => Default::default(),
     })
 }
@@ -2640,21 +2764,22 @@ async fn checkpoints(state: WebData<ServerState>) -> Result<HttpResponse, Pipeli
 /// List checkpoints available in the configured remote object storage.
 #[get("/checkpoints/remote")]
 async fn remote_checkpoints(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let sync = state
-        .sync_config
-        .clone()
-        .ok_or_else(|| PipelineError::ControllerError {
+    // Sync is configured only with storage.
+    let (Some(storage), Some(sync)) = (state.storage.clone(), state.sync_config.clone()) else {
+        return Err(PipelineError::ControllerError {
             error: Arc::new(ControllerError::checkpoint_fetch_error(
                 "listing remote checkpoints requires sync to be configured".to_string(),
             )),
-        })?;
+        });
+    };
 
-    let result = spawn_blocking(move || crate::controller::sync::list_remote_checkpoints(&sync))
-        .await
-        .map_err(|e| PipelineError::ControllerError {
-            error: Arc::new(ControllerError::checkpoint_fetch_error(format!("{e}"))),
-        })?
-        .map_err(|e| PipelineError::ControllerError { error: Arc::new(e) })?;
+    let result =
+        spawn_blocking(move || crate::controller::sync::list_remote_checkpoints(&*storage, &sync))
+            .await
+            .map_err(|e| PipelineError::ControllerError {
+                error: Arc::new(ControllerError::checkpoint_fetch_error(format!("{e}"))),
+            })?
+            .map_err(|e| PipelineError::ControllerError { error: Arc::new(e) })?;
 
     Ok(HttpResponse::Ok().json(result))
 }
@@ -2736,6 +2861,88 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
         RuntimeDesiredStatus::Suspended => (),
     };
     Ok(HttpResponse::Accepted().json("Pipeline is suspending"))
+}
+
+/// Rejects a configuration that `/testing/load` cannot swap in: anything that
+/// keeps state outside the process (storage, fault tolerance) or spans hosts.
+fn check_program_loadable(
+    state: &ServerState,
+    config: &PipelineConfig,
+) -> Result<(), ControllerError> {
+    let reason = if state.storage.is_some() || config.storage().is_some() {
+        Some("pipelines with storage")
+    } else if config.global.fault_tolerance.is_enabled() {
+        Some("fault-tolerant pipelines")
+    } else if config.multihost.is_some() || config.global.hosts > 1 {
+        Some("multihost pipelines")
+    } else {
+        None
+    };
+    match reason {
+        Some(reason) => Err(ControllerError::pipeline_config_parse_error(&format!(
+            "'/testing/load' does not support {reason}"
+        ))),
+        None => Ok(()),
+    }
+}
+
+/// The query parameters of `POST /testing/load`.
+#[derive(Debug, Deserialize)]
+struct LoadProgramArgs {
+    /// The shared library with the program's Rust UDFs, a path on the pipeline's
+    /// host, as `--udf-library` names it at startup.
+    #[serde(default)]
+    udf_library: Option<PathBuf>,
+}
+
+/// Replaces the running program with the one in the request's pipeline
+/// configuration, without restarting the process.  Served only with
+/// `--enable-program-load`.
+///
+/// The body is the pipeline configuration, the same document as
+/// `--config-file`; the query parameter `udf_library` names the program's UDF
+/// library.  A configuration that does not load leaves the current program
+/// running.  Otherwise the current controller stops and the new program
+/// bootstraps in the background; poll `/status` for `Running` as after a
+/// process start.
+#[post("/testing/load")]
+async fn load_program(
+    state: WebData<ServerState>,
+    args: Query<LoadProgramArgs>,
+    body: web::Bytes,
+) -> Result<HttpResponse, PipelineError> {
+    let program_load = state.program_load.get().ok_or_else(|| {
+        ControllerError::not_supported("this pipeline does not load programs at run time")
+    })?;
+    let config: PipelineConfig = serde_json::from_slice(&body).map_err(|e| {
+        ControllerError::pipeline_config_parse_error(&format!(
+            "invalid pipeline configuration: {e}"
+        ))
+    })?;
+    check_program_loadable(&state, &config)?;
+    let circuit_factory = program_load
+        .loader
+        .load(&config, args.udf_library.as_deref())?;
+    let builder = ControllerBuilder::new(&config, &program_load.open_storage)?;
+
+    if let Some(controller) = state.reset_for_program_load()?
+        && let Err(error) = controller.async_stop().await
+    {
+        warn!("Stopping the replaced program failed ({error})");
+    }
+    let generation = state.program_generation();
+    info!(
+        "Loading program '{}' (generation {generation})",
+        config.name.as_deref().unwrap_or_default()
+    );
+    thread::Builder::new()
+        .name("pipeline-init".to_string())
+        .spawn({
+            let state = state.clone();
+            move || bootstrap(builder, circuit_factory, state)
+        })
+        .map_err(|e| ControllerError::io_error("spawning the pipeline initialization thread", e))?;
+    Ok(HttpResponse::Accepted().json(json!({ "generation": generation })))
 }
 
 #[post("/start_transaction")]
@@ -2940,6 +3147,38 @@ fn get_or_create_http_input_endpoint(
     Ok(endpoint)
 }
 
+/// The HTTP input endpoints one actix worker has created, keyed by endpoint name.
+/// They feed the controller of one program generation, which `/testing/load`
+/// replaces, so a newer generation empties the cache.
+struct IngressEndpointCache {
+    generation: u64,
+    endpoints: HashMap<String, HttpInputEndpoint, BuildHasherDefault<DefaultHasher>>,
+}
+
+impl IngressEndpointCache {
+    const fn new() -> Self {
+        Self {
+            generation: 0,
+            endpoints: HashMap::with_hasher(BuildHasherDefault::new()),
+        }
+    }
+
+    fn get(&mut self, generation: u64, name: &str) -> Option<HttpInputEndpoint> {
+        if self.generation != generation {
+            self.endpoints.clear();
+            self.generation = generation;
+        }
+        self.endpoints.get(name).cloned()
+    }
+
+    /// Keeps `endpoint` unless another program was loaded while it was created.
+    fn insert(&mut self, generation: u64, name: String, endpoint: HttpInputEndpoint) {
+        if self.generation == generation {
+            self.endpoints.insert(name, endpoint);
+        }
+    }
+}
+
 #[post("/ingress/{table_name}")]
 async fn input_endpoint(
     state: WebData<ServerState>,
@@ -2952,8 +3191,8 @@ async fn input_endpoint(
     // in the controller. Caching them in a thread-local variable avoids acquiring the global controller
     // lock on every HTTP request.
     thread_local! {
-        static TABLE_ENDPOINTS: RefCell<HashMap<String, HttpInputEndpoint, BuildHasherDefault<DefaultHasher>>> = const {
-            RefCell::new(HashMap::with_hasher(BuildHasherDefault::new()))
+        static TABLE_ENDPOINTS: RefCell<IngressEndpointCache> = const {
+            RefCell::new(IngressEndpointCache::new())
         };
     }
     debug!("{req:?}");
@@ -2978,8 +3217,9 @@ async fn input_endpoint(
 
     let endpoint_name = format!("{table_name}.api-ingress-{endpoint_hash:016x}");
 
+    let generation = state.program_generation();
     let cached_endpoint =
-        TABLE_ENDPOINTS.with(|endpoints| endpoints.borrow().get(&endpoint_name).cloned());
+        TABLE_ENDPOINTS.with_borrow_mut(|cache| cache.get(generation, &endpoint_name));
     let endpoint = match cached_endpoint {
         Some(endpoint) => endpoint,
         None => {
@@ -2990,7 +3230,7 @@ async fn input_endpoint(
                 endpoint_name.clone(),
             )?;
             TABLE_ENDPOINTS
-                .with_borrow_mut(|endpoints| endpoints.insert(endpoint_name, endpoint.clone()));
+                .with_borrow_mut(|cache| cache.insert(generation, endpoint_name, endpoint.clone()));
             endpoint
         }
     };
@@ -3466,14 +3706,13 @@ async fn coordination_checkpoint_pull(
         });
     }
 
-    let storage = state
-        .storage
-        .clone()
-        .ok_or_else(|| PipelineError::ControllerError {
+    let Some(storage) = state.storage.clone() else {
+        return Err(PipelineError::ControllerError {
             error: Arc::new(ControllerError::checkpoint_fetch_error(
                 "checkpoint pull requires storage to be configured".to_string(),
             )),
-        })?;
+        });
+    };
     let sync = state
         .sync_config
         .clone()
@@ -3507,9 +3746,7 @@ async fn coordination_checkpoint_pull(
 
     spawn(async move {
         let result = spawn_blocking(move || {
-            crate::controller::sync::pull_once_with_backend(
-                storage, &sync, host_info, standby, &pipeline,
-            )
+            crate::controller::sync::pull_once(&*storage, &sync, host_info, standby, &pipeline)
         })
         .await
         .unwrap();
@@ -3844,8 +4081,9 @@ async fn coordination_restart(
     Ok(HttpResponse::Accepted().json("Pipeline is restarting"))
 }
 
+/// The status that the server stores, so that a restarted server resumes it.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-struct StoredStatus {
+pub struct StoredStatus {
     /// Desired status.
     desired_status: RuntimeDesiredStatus,
 
@@ -3866,28 +4104,6 @@ struct StoredStatus {
 
 fn is_false(value: &bool) -> bool {
     !value
-}
-
-impl StoredStatus {
-    fn read(storage: &dyn StorageBackend) -> Option<Self> {
-        match storage.read_json::<StoredStatus>(&StoragePath::from(STATUS_FILE)) {
-            Ok(s) => Some(s),
-            Err(e) if e.kind() == ErrorKind::NotFound => None,
-            Err(e) => {
-                warn!("{STATUS_FILE}: failed to read from storage ({e})");
-                None
-            }
-        }
-    }
-
-    fn write(&self, storage: &dyn StorageBackend) {
-        if let Err(e) = storage
-            .write_json(&StoragePath::from(STATUS_FILE), self)
-            .and_then(|reader| reader.commit())
-        {
-            warn!("{STATUS_FILE}: failed to write to storage ({e})");
-        }
-    }
 }
 
 /// Helpers shared between the HTTP-only and Kafka-using server tests. Lives
@@ -3984,7 +4200,12 @@ mod test_status {
         ));
 
         let weak = Arc::downgrade(&state.clone().into_inner());
-        error_handler(&weak, Arc::new(ControllerError::DbspPanic), None);
+        error_handler(
+            &weak,
+            state.program_generation(),
+            Arc::new(ControllerError::DbspPanic),
+            None,
+        );
 
         let error = get_status(&state, false)
             .expect_err("a pipeline that hit a fatal error must report an error");
@@ -4011,7 +4232,12 @@ mod test_status {
         ));
 
         let weak = Arc::downgrade(&state.clone().into_inner());
-        error_handler(&weak, Arc::new(ControllerError::ControllerPanic), None);
+        error_handler(
+            &weak,
+            state.program_generation(),
+            Arc::new(ControllerError::ControllerPanic),
+            None,
+        );
 
         assert!(matches!(state.phase(), PipelinePhase::Failed(_)));
         let error = get_status(&state, false)
@@ -4043,7 +4269,12 @@ mod test_status {
         ));
 
         let weak = Arc::downgrade(&state.clone().into_inner());
-        error_handler(&weak, Arc::new(ControllerError::DbspPanic), None);
+        error_handler(
+            &weak,
+            state.program_generation(),
+            Arc::new(ControllerError::DbspPanic),
+            None,
+        );
         // What the `/suspend` task records once it stops waiting for a controller,
         // having no suspend error of its own to report.
         assert!(state.suspended(None).is_none());
@@ -4051,6 +4282,153 @@ mod test_status {
         let error = get_status(&state, false)
             .expect_err("a pipeline that hit a fatal error must report an error");
         assert_eq!(error.error.error_code.as_ref(), "DbspPanic");
+    }
+}
+
+/// The server's side of `POST /testing/load`: program generations, the flag, and the
+/// ingress cache.
+#[cfg(test)]
+mod test_program_load {
+    use super::{
+        IngressEndpointCache, InitializationState, PipelineError, PipelinePhase, ServerArgs,
+        ServerState, run_server,
+    };
+    use crate::ControllerError;
+    use crate::engine::{CircuitFactory, OpenStorageFn};
+    use crate::transport::http::HttpInputEndpoint;
+    use feldera_types::config::PipelineConfig;
+    use feldera_types::runtime_status::{BootstrapConfig, BootstrapPolicy, RuntimeDesiredStatus};
+    use feldera_types::transport::http::HttpInputConfig;
+    use std::sync::Arc;
+    use uuid::Uuid;
+
+    fn state(phase: PipelinePhase, desired_status: RuntimeDesiredStatus) -> ServerState {
+        ServerState::new(
+            phase,
+            String::default(),
+            desired_status,
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            Uuid::new_v4(),
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    /// A fatal error from a program that `/testing/load` replaced leaves the new
+    /// program alone, while an error from the current program still fails it.
+    #[test]
+    fn late_error_from_a_replaced_program_does_not_fail_its_replacement() {
+        let state = state(
+            PipelinePhase::InitializationComplete,
+            RuntimeDesiredStatus::Running,
+        );
+        let replaced_generation = state.program_generation();
+        assert!(state.reset_for_program_load().unwrap().is_none());
+
+        assert!(
+            state
+                .fail(replaced_generation, Arc::new(ControllerError::DbspPanic))
+                .is_none()
+        );
+        assert!(matches!(state.phase(), PipelinePhase::Initializing(_)));
+
+        state.fail(
+            state.program_generation(),
+            Arc::new(ControllerError::DbspPanic),
+        );
+        assert!(matches!(state.phase(), PipelinePhase::Failed(_)));
+    }
+
+    /// A load waits for an initialization in flight, and needs a running or paused
+    /// pipeline.
+    #[test]
+    fn program_load_needs_an_initialized_running_or_paused_pipeline() {
+        let initializing = state(
+            PipelinePhase::Initializing(InitializationState::Starting),
+            RuntimeDesiredStatus::Running,
+        );
+        assert!(matches!(
+            initializing.reset_for_program_load(),
+            Err(PipelineError::Initializing)
+        ));
+        assert_eq!(initializing.program_generation(), 0);
+
+        let suspended = state(
+            PipelinePhase::InitializationComplete,
+            RuntimeDesiredStatus::Suspended,
+        );
+        assert!(matches!(
+            suspended.reset_for_program_load(),
+            Err(PipelineError::InvalidTransition(
+                "load a program",
+                RuntimeDesiredStatus::Suspended
+            ))
+        ));
+        assert_eq!(suspended.program_generation(), 0);
+    }
+
+    /// An engine without a program loader refuses `--enable-program-load` before the
+    /// server reads its configuration.
+    #[test]
+    fn an_engine_without_a_loader_refuses_enable_program_load() {
+        let args = ServerArgs {
+            config_file: "/no/such/config.json".to_string(),
+            metadata_file: None,
+            bind_address: "127.0.0.1".to_string(),
+            default_port: None,
+            storage_location: None,
+            enable_https: false,
+            https_tls_cert_path: None,
+            https_tls_key_path: None,
+            initial: RuntimeDesiredStatus::Running,
+            bootstrap_policy: BootstrapPolicy::Allow,
+            silent_bootstrap: false,
+            concurrent_bootstrap: false,
+            deployment_id: Uuid::new_v4(),
+            host_id: None,
+            enable_program_load: true,
+        };
+        let open_storage: OpenStorageFn =
+            Arc::new(|_| Err(ControllerError::not_supported("no storage")));
+        let error = run_server(
+            args,
+            Box::new(
+                |_: &PipelineConfig| -> Result<CircuitFactory, ControllerError> {
+                    unreachable!("the server refuses the flag first")
+                },
+            ),
+            open_storage,
+            None,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Error parsing command line arguments: This pipeline's engine cannot load a \
+             program at run time, so it does not accept '--enable-program-load'."
+        );
+    }
+
+    /// A newer program generation empties the ingress endpoint cache, and an endpoint
+    /// created while another program loaded is not kept.
+    #[test]
+    fn ingress_endpoint_cache_follows_the_program_generation() {
+        let endpoint = || {
+            HttpInputEndpoint::new(HttpInputConfig {
+                name: "t".to_string(),
+            })
+        };
+        let mut cache = IngressEndpointCache::new();
+        assert!(cache.get(0, "t").is_none());
+        cache.insert(0, "t".to_string(), endpoint());
+        assert!(cache.get(0, "t").is_some());
+
+        assert!(cache.get(1, "t").is_none());
+        cache.insert(0, "t".to_string(), endpoint());
+        assert!(cache.get(1, "t").is_none());
+        cache.insert(1, "t".to_string(), endpoint());
+        assert!(cache.get(1, "t").is_some());
     }
 }
 

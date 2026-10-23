@@ -9,6 +9,7 @@
 //! queue the reader flushes, and cross the two through the same functions the reader's Queue
 //! handler uses.
 
+use crate::test::engine_test;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -124,6 +125,7 @@ fn event_buffer(
     (stream.take_all(), Vec::new())
 }
 
+#[engine_test]
 pub fn a_queued_snapshot_buffer_holds_the_terminal_barrier_until_the_reader_flushes_it(
     engine: &dyn ConnectorTestEngine,
 ) {
@@ -167,6 +169,7 @@ pub fn a_queued_snapshot_buffer_holds_the_terminal_barrier_until_the_reader_flus
 // whose rows are still queued, the second because the answer of a write
 // that arrived mid-handler goes out with the flush that preceded it.
 
+#[engine_test]
 pub fn a_streamed_write_is_answered_only_when_its_last_buffer_reaches_the_circuit(
     engine: &dyn ConnectorTestEngine,
 ) {
@@ -209,6 +212,7 @@ pub fn a_streamed_write_is_answered_only_when_its_last_buffer_reaches_the_circui
     assert!(answered(&flag), "every row of the write is in the circuit");
 }
 
+#[engine_test]
 pub fn a_write_that_arrives_while_the_handler_runs_is_not_answered_by_it(
     engine: &dyn ConnectorTestEngine,
 ) {
@@ -243,6 +247,7 @@ pub fn a_write_that_arrives_while_the_handler_runs_is_not_answered_by_it(
     assert!(answered(&flag));
 }
 
+#[engine_test]
 pub fn a_write_queued_while_the_connector_stops_keeps_nothing_waiting(
     engine: &dyn ConnectorTestEngine,
 ) {
@@ -275,6 +280,7 @@ pub fn a_write_queued_while_the_connector_stops_keeps_nothing_waiting(
     );
 }
 
+#[engine_test]
 pub fn a_write_that_starts_once_the_connector_stops_is_refused(engine: &dyn ConnectorTestEngine) {
     let copy = Arc::new(CopyBarrier::new());
     let stopping = Arc::new(AtomicBool::new(false));
@@ -299,6 +305,7 @@ pub fn a_write_that_starts_once_the_connector_stops_is_refused(engine: &dyn Conn
     assert_eq!(size.records, 0, "nothing reached the queue");
 }
 
+#[engine_test]
 pub fn a_stop_leaves_no_snapshot_buffer_charged_to_the_copy_barrier(
     engine: &dyn ConnectorTestEngine,
 ) {

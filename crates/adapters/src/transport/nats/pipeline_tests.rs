@@ -4,6 +4,7 @@
 //! Each fault tolerance case is a sequence of `NatsControllerAction`s that
 //! `run_nats_controller_test` executes against a private `nats-server`.
 
+use crate::test::engine_test;
 use std::io::Write;
 use std::ops::Range;
 use std::sync::Arc;
@@ -40,6 +41,8 @@ fn circuit() -> TestCircuit {
         input_properties: Vec::new(),
         materialized: true,
         persistent_ids: true,
+        table_version: 0,
+        attribute_defaults: Vec::new(),
     }
 }
 
@@ -547,6 +550,7 @@ fn run_nats_ft_default(engine: &dyn PipelineTestEngine, actions: &[NatsControlle
 // ---------------------------------------------------------------------------
 
 /// One round delivers its records and checkpoints.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
 pub fn ft_simple(engine: &dyn PipelineTestEngine) {
     use NatsControllerAction::*;
     run_nats_ft_default(
@@ -563,6 +567,7 @@ pub fn ft_simple(engine: &dyn PipelineTestEngine) {
 }
 
 /// Restarts after checkpoints deliver each record once.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
 pub fn ft_with_checkpoints(engine: &dyn PipelineTestEngine) {
     use NatsControllerAction::*;
     run_nats_ft_default(
@@ -587,6 +592,7 @@ pub fn ft_with_checkpoints(engine: &dyn PipelineTestEngine) {
 }
 
 /// Restarts without checkpoints replay every record.
+#[engine_test(requires(Storage, FaultTolerance), services(Nats))]
 pub fn ft_without_checkpoints(engine: &dyn PipelineTestEngine) {
     use NatsControllerAction::*;
     run_nats_ft_default(
@@ -611,6 +617,7 @@ pub fn ft_without_checkpoints(engine: &dyn PipelineTestEngine) {
 }
 
 /// Rounds with and without checkpoints alternate, starting with a checkpoint.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
 pub fn ft_alternating(engine: &dyn PipelineTestEngine) {
     use NatsControllerAction::*;
     run_nats_ft_default(
@@ -643,6 +650,7 @@ pub fn ft_alternating(engine: &dyn PipelineTestEngine) {
 }
 
 /// The first round has no records and no checkpoint.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
 pub fn ft_initially_zero_without_checkpoint(engine: &dyn PipelineTestEngine) {
     use NatsControllerAction::*;
     run_nats_ft_default(
@@ -679,6 +687,7 @@ pub fn ft_initially_zero_without_checkpoint(engine: &dyn PipelineTestEngine) {
 }
 
 /// The first round has no records and a checkpoint.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
 pub fn ft_initially_zero_with_checkpoint(engine: &dyn PipelineTestEngine) {
     use NatsControllerAction::*;
     run_nats_ft_default(
@@ -715,6 +724,7 @@ pub fn ft_initially_zero_with_checkpoint(engine: &dyn PipelineTestEngine) {
 }
 
 /// Rounds without records checkpoint between rounds with records.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
 pub fn ft_empty_step_checkpoint(engine: &dyn PipelineTestEngine) {
     use NatsControllerAction::*;
     run_nats_ft_default(
@@ -763,6 +773,7 @@ pub fn ft_empty_step_checkpoint(engine: &dyn PipelineTestEngine) {
 /// 3. Purge the stream (all messages deleted)
 /// 4. Start pipeline: the FT framework sends a Replay for the uncommitted
 ///    sequences, but those messages are gone -> expect fatal error
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
 pub fn ft_replay_after_stream_purge(engine: &dyn PipelineTestEngine) {
     use NatsControllerAction::*;
     run_nats_controller_test(
@@ -792,6 +803,7 @@ pub fn ft_replay_after_stream_purge(engine: &dyn PipelineTestEngine) {
 /// This reproduces a bug where the previous ordered consumer hadn't expired yet,
 /// causing "consumer already exists" errors. The fix generates unique consumer names
 /// by appending a UUID suffix when a name is explicitly configured.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
 pub fn ft_with_named_consumer(engine: &dyn PipelineTestEngine) {
     use NatsControllerAction::*;
     run_nats_controller_test(
@@ -820,6 +832,7 @@ pub fn ft_with_named_consumer(engine: &dyn PipelineTestEngine) {
 
 /// Checkpoint, delete+recreate stream, then restart. Replay should fail
 /// because the committed sequence numbers no longer exist in the new stream.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
 pub fn ft_stream_deletion_and_recreation(engine: &dyn PipelineTestEngine) {
     use NatsControllerAction::*;
     run_nats_controller_test(
@@ -853,6 +866,7 @@ pub fn ft_stream_deletion_and_recreation(engine: &dyn PipelineTestEngine) {
 /// Checkpoint, delete+recreate stream, publish new data, and restart.
 /// Even with a fully checkpointed round, the checkpoint resume sequence no
 /// longer matches the recreated stream and startup should fail fast.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Nats))]
 pub fn ft_stream_deletion_after_full_checkpoint(engine: &dyn PipelineTestEngine) {
     use NatsControllerAction::*;
     run_nats_controller_test(
@@ -882,6 +896,7 @@ pub fn ft_stream_deletion_after_full_checkpoint(engine: &dyn PipelineTestEngine)
 
 /// Startup should enter retrying error mode when the server is up but the
 /// configured stream has not been created yet.
+#[engine_test(requires(Storage, FaultTolerance), services(Nats))]
 pub fn ft_startup_retries_when_stream_missing(engine: &dyn PipelineTestEngine) {
     use NatsControllerAction::*;
     run_nats_controller_test(
@@ -905,6 +920,7 @@ pub fn ft_startup_retries_when_stream_missing(engine: &dyn PipelineTestEngine) {
 /// records flow through the encoder and the endpoint to the stream bound to
 /// the subject, and every message carries a `Nats-Msg-Id` header the
 /// connector derived from the payload without knowing its format.
+#[engine_test(services(Nats))]
 pub fn output_pipeline_end_to_end(engine: &dyn PipelineTestEngine) {
     check_output_pipeline_end_to_end(engine).unwrap();
 }

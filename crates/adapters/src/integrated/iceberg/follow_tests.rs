@@ -7,6 +7,7 @@
 //! setup in crates/iceberg/src/test/README.md; override via FELDERA_ICEBERG_*.
 //! The cases run with the `iceberg-tests-follow` feature.
 
+use crate::test::engine_test;
 use std::path::Path;
 
 use feldera_adapterlib::test::{ZSet, wait};
@@ -190,6 +191,7 @@ fn follow_expected_zset(data: &[Value]) -> ZSet {
 
 /// `snapshot_and_follow`: the initial snapshot is read, then a second snapshot
 /// committed before startup is caught up via follow. Every row lands once.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
 pub fn rest_follow_snapshot_and_follow(engine: &dyn PipelineTestEngine) {
     let all = data(10);
     let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
@@ -219,6 +221,11 @@ pub fn rest_follow_snapshot_and_follow(engine: &dyn PipelineTestEngine) {
 /// `snapshot_and_follow`: a connector that resumes from a checkpoint taken
 /// while it followed the table continues to follow it, without reading the
 /// snapshot again.
+#[engine_test(
+    cfg(feature = "iceberg-tests-follow"),
+    requires(Storage, Checkpoints, SuspendResume),
+    services(S3)
+)]
 pub fn rest_follow_resume_does_not_reread_snapshot(engine: &dyn PipelineTestEngine) {
     let all = data(10);
     let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
@@ -271,6 +278,11 @@ pub fn rest_follow_resume_does_not_reread_snapshot(engine: &dyn PipelineTestEngi
 /// connector in a transaction: the empty snapshot's transaction commits, so it
 /// does not hold back the pipeline until the table gets a snapshot.  A
 /// connector that resumes then follows the table from its first snapshot.
+#[engine_test(
+    cfg(feature = "iceberg-tests-follow"),
+    requires(Storage, Checkpoints, SuspendResume),
+    services(S3)
+)]
 pub fn rest_follow_empty_table(engine: &dyn PipelineTestEngine) {
     let all = data(5);
     let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
@@ -338,6 +350,7 @@ pub fn rest_follow_empty_table(engine: &dyn PipelineTestEngine) {
 
 /// `follow`: no initial snapshot; a snapshot committed after startup is tailed.
 /// Rows present before the start snapshot are not ingested.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
 pub fn rest_follow_live_append(engine: &dyn PipelineTestEngine) {
     let all = data(10);
     let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
@@ -364,6 +377,7 @@ pub fn rest_follow_live_append(engine: &dyn PipelineTestEngine) {
 /// `follow` with an explicit `snapshot_id` start point. Three snapshots (A, B,
 /// C) exist before the connector starts; following from B must ingest only C's
 /// rows, never A's or B's, since `snapshots_after` walks the ancestry back to B.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
 pub fn rest_follow_start_from_snapshot_id(engine: &dyn PipelineTestEngine) {
     let all = data(15);
     let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
@@ -390,6 +404,7 @@ pub fn rest_follow_start_from_snapshot_id(engine: &dyn PipelineTestEngine) {
 /// from A with `end_snapshot_id = B` must ingest only B's rows, reach the
 /// completed phase, and never ingest C, even though C is in the same catch-up
 /// batch as B.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
 pub fn rest_follow_end_snapshot_id(engine: &dyn PipelineTestEngine) {
     let all = data(15);
     let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
@@ -430,6 +445,7 @@ pub fn rest_follow_end_snapshot_id(engine: &dyn PipelineTestEngine) {
 /// `transaction_mode = always`: each followed snapshot forms its own Feldera
 /// transaction. Following from A over two pre-committed snapshots (B, C) starts
 /// two follow transactions.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
 pub fn rest_follow_transaction_always(engine: &dyn PipelineTestEngine) {
     let all = data(15);
     let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
@@ -467,6 +483,7 @@ pub fn rest_follow_transaction_always(engine: &dyn PipelineTestEngine) {
 /// `transaction_mode = catchup`: all snapshots caught up in one poll form a
 /// single Feldera transaction. Following from A over two pre-committed snapshots
 /// (B, C), both seen in the first poll, starts exactly one follow transaction.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
 pub fn rest_follow_transaction_catchup(engine: &dyn PipelineTestEngine) {
     let all = data(15);
     let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
@@ -509,6 +526,7 @@ pub fn rest_follow_transaction_catchup(engine: &dyn PipelineTestEngine) {
 /// must be committed at the end bound, C must never be read, and the target
 /// gauge must reset. This is the one interaction the plain `end_snapshot_id`
 /// test (transaction_mode `none`) does not exercise.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
 pub fn rest_follow_transaction_catchup_end_snapshot_id(engine: &dyn PipelineTestEngine) {
     let all = data(15);
     let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
@@ -559,6 +577,7 @@ pub fn rest_follow_transaction_catchup_end_snapshot_id(engine: &dyn PipelineTest
 /// Covers the follow delete path (removed files), which the append-only follow
 /// tests miss. A copy-on-write overwrite removes the old files and adds new
 /// ones; drop one row and edit another, then expect the four survivors.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
 pub fn rest_follow_copy_on_write_delete(engine: &dyn PipelineTestEngine) {
     let all = data(5);
     let ns = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");

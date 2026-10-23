@@ -1,9 +1,13 @@
 //! An input adapter that generates Nexmark event input data.
+//!
+//! The adapter needs the static engine's crates, so it registers an
+//! [`InputTransportFactory`](dbsp_adapters::transport::InputTransportFactory), through which
+//! the shared transport factory builds its endpoints.
 
 use chrono::{DateTime, Utc};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{InputReaderCommand, Resume, Watermark, parse_resume_info};
-use feldera_types::config::FtModel;
+use feldera_types::config::{FtModel, TransportConfig};
 use std::cmp::min;
 use std::collections::VecDeque;
 use std::hash::Hasher;
@@ -17,10 +21,11 @@ use tokio::sync::broadcast::{Receiver as BroadcastReceiver, channel as broadcast
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use xxhash_rust::xxh3::Xxh3Default;
 
-use crate::format::InputBuffer;
-use crate::{InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint};
 use anyhow::{Result as AnyResult, anyhow};
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
+use dbsp_adapters::format::InputBuffer;
+use dbsp_adapters::transport::InputTransportFactory;
+use dbsp_adapters::{InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint};
 use dbsp_nexmark::generator::RandomGenerator;
 use dbsp_nexmark::model::Event;
 use dbsp_nexmark::{config::GeneratorOptions, generator::config::Config as GeneratorConfig};
@@ -30,7 +35,7 @@ use feldera_types::transport::nexmark::{NexmarkInputConfig, NexmarkInputOptions,
 use rand::rngs::SmallRng;
 use serde::{Deserialize, Serialize};
 
-use super::InputCommandReceiver;
+use feldera_adapterlib::transport::InputCommandReceiver;
 
 pub(crate) struct NexmarkEndpoint {
     config: NexmarkInputConfig,
@@ -477,5 +482,47 @@ fn generate_thread(
                 .map(|buffer| (events.clone(), buffer, timestamp)),
         );
         barrier.wait();
+    }
+}
+
+/// Builds the endpoints of the Nexmark generator.
+struct NexmarkFactory;
+
+impl InputTransportFactory for NexmarkFactory {
+    fn endpoint(
+        &self,
+        config: &TransportConfig,
+    ) -> Option<AnyResult<Box<dyn TransportInputEndpoint>>> {
+        match config {
+            TransportConfig::Nexmark(config) => {
+                Some(Ok(Box::new(NexmarkEndpoint::new(config.clone()))))
+            }
+            _ => None,
+        }
+    }
+}
+
+inventory::submit! {
+    &NexmarkFactory as &dyn InputTransportFactory
+}
+
+#[cfg(test)]
+mod tests {
+    use dbsp_adapters::transport::input_transport_config_to_endpoint;
+    use feldera_types::config::TransportConfig;
+    use feldera_types::secret_resolver::default_secrets_directory;
+    use serde_json::json;
+
+    /// The shared transport factory builds a Nexmark endpoint through the factory that this
+    /// crate registers.
+    #[test]
+    fn the_shared_factory_builds_a_nexmark_endpoint() {
+        let config: TransportConfig =
+            serde_json::from_value(json!({ "name": "nexmark", "config": { "table": "bid" } }))
+                .unwrap();
+        let endpoint =
+            input_transport_config_to_endpoint(&config, "test", default_secrets_directory(), None)
+                .unwrap();
+        assert!(endpoint.is_some());
     }
 }

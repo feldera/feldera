@@ -3,8 +3,8 @@ use actix_web::{HttpResponse, http::header::ContentType, web::Bytes};
 use anyhow::{Result as AnyResult, anyhow, bail};
 use async_stream::stream;
 use crossbeam::sync::ShardedLock;
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::transport::{OutputBatchType, Step};
+use feldera_storage::tokio::TOKIO;
 use serde::{Deserialize, Serializer, ser::SerializeStruct};
 use serde_json::value::RawValue;
 use std::{

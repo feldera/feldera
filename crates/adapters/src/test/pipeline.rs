@@ -1,5 +1,6 @@
 //! The pipeline fixture: what the suites that run whole pipelines need from an engine.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result as AnyResult;
@@ -8,8 +9,9 @@ use feldera_adapterlib::catalog::CircuitCatalog;
 use feldera_adapterlib::test::ConnectorTestEngine;
 use feldera_storage::tokio::TOKIO;
 use feldera_types::program_schema::{ColumnType, Field, Relation};
+use uuid::Uuid;
 
-use crate::server::CircuitFactoryFunc;
+use crate::engine::{CircuitFactory, OpenStorageFn};
 use crate::{Controller, ControllerError, PipelineConfig};
 
 /// The callback that a test controller reports errors to: the error, and the tag of the
@@ -44,7 +46,20 @@ pub trait PipelineTestEngine: ConnectorTestEngine {
         &self,
         circuit: &TestCircuit,
         setup: Option<CatalogSetup>,
-    ) -> Result<CircuitFactoryFunc, ControllerError>;
+    ) -> Result<CircuitFactory, ControllerError>;
+
+    /// Returns the function that opens the storage that a pipeline's configuration names, as
+    /// the engine's [`Engine::open_storage`](crate::engine::Engine::open_storage) does.
+    fn open_storage(&self) -> OpenStorageFn;
+
+    /// Leaves the storage in the directory `path` as a crash after publishing a checkpoint,
+    /// but before recording it as the one to resume from, leaves it: with the state of the
+    /// older checkpoint `checkpoint` as the state to resume from.
+    fn rewind_resume_state(&self, path: &Path, checkpoint: Uuid);
+
+    /// Returns whether no pipeline of the engine holds the storage in the directory `path`
+    /// any more, so that a new pipeline can open it.
+    fn storage_released(&self, path: &Path) -> bool;
 
     /// Returns a controller that runs `circuit` with `config`, and reports errors to
     /// `error_callback`.
@@ -74,10 +89,16 @@ pub trait PipelineTestEngine: ConnectorTestEngine {
         error_callback: ControllerErrorCallback,
     ) -> Result<Controller, ControllerError> {
         let factory = self.circuit_factory(circuit, options.setup)?;
+        let open_storage = self.open_storage();
         if options.keep_program_diff {
-            Controller::with_test_config_keep_program_diff(factory, config, error_callback)
+            Controller::with_test_config_keep_program_diff(
+                factory,
+                &open_storage,
+                config,
+                error_callback,
+            )
         } else {
-            Controller::with_test_config(factory, config, error_callback)
+            Controller::with_test_config(factory, &open_storage, config, error_callback)
         }
     }
 }
@@ -101,8 +122,19 @@ pub enum TestCircuit {
         /// The tables and views are materialized.
         materialized: bool,
 
-        /// The tables have persistent ids, which a checkpoint needs.
+        /// The tables have persistent ids, which a checkpoint needs: `input` for a single
+        /// table, `input1` to `input{n}` for several, each with the suffix `_v{table_version}`
+        /// if `table_version` is not 0.
         persistent_ids: bool,
+
+        /// The version of the tables' definitions. A later version gives the tables new
+        /// persistent ids, as a changed `CREATE TABLE` does, so that a restart rebuilds them.
+        table_version: u32,
+
+        /// The columns whose DEFAULT reads a connector attribute, the same in each table:
+        /// (column, attribute) pairs, as in
+        /// [`InputOptions::attribute_defaults`](feldera_adapterlib::test::InputOptions::attribute_defaults).
+        attribute_defaults: Vec<(String, String)>,
     },
 
     /// Tables `test_input1` to `test_input{n}`, each with the columns of `relation` and a
@@ -199,6 +231,35 @@ impl TestCircuit {
         }
     }
 
+    /// Returns the columns of the circuit's tables whose DEFAULT reads a connector attribute:
+    /// (column, attribute) pairs.
+    pub fn attribute_defaults(&self) -> &[(String, String)] {
+        match self {
+            Self::Identity {
+                attribute_defaults, ..
+            } => attribute_defaults,
+            Self::Keyed { .. }
+            | Self::IndexedView { .. }
+            | Self::AliasedIndex { .. }
+            | Self::Aggregate { .. }
+            | Self::Clock => &[],
+        }
+    }
+
+    /// Returns the circuit with `defaults` as the attribute defaults of its tables.
+    ///
+    /// Panics unless the circuit is [`TestCircuit::Identity`], the only one whose tables take
+    /// attribute defaults.
+    pub fn with_attribute_defaults(mut self, defaults: Vec<(String, String)>) -> Self {
+        match &mut self {
+            Self::Identity {
+                attribute_defaults, ..
+            } => *attribute_defaults = defaults,
+            other => panic!("only an identity circuit takes attribute defaults, not {other:?}"),
+        }
+        self
+    }
+
     /// Returns one materialized table `test_input1` that feeds one materialized view
     /// `test_output1`, both with the columns of `relation`.
     pub fn identity(relation: Relation) -> Self {
@@ -208,6 +269,8 @@ impl TestCircuit {
             input_properties: Vec::new(),
             materialized: true,
             persistent_ids: true,
+            table_version: 0,
+            attribute_defaults: Vec::new(),
         }
     }
 }
@@ -250,4 +313,32 @@ pub fn query(controller: &Controller, query: &str) -> AnyResult<Vec<RecordBatch>
             .collect()
             .await?)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TestCircuit;
+    use crate::test::relations;
+
+    /// An identity circuit has no attribute defaults until it is given some, and a circuit
+    /// that takes none has none.
+    #[test]
+    fn an_identity_circuit_takes_attribute_defaults() {
+        let circuit = TestCircuit::identity(relations::basic("defaults"));
+        assert!(circuit.attribute_defaults().is_empty());
+        let defaults = vec![("s".to_string(), "kafka_topic".to_string())];
+        assert_eq!(
+            circuit
+                .with_attribute_defaults(defaults.clone())
+                .attribute_defaults(),
+            defaults
+        );
+        assert!(TestCircuit::Clock.attribute_defaults().is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "only an identity circuit takes attribute defaults")]
+    fn only_an_identity_circuit_takes_attribute_defaults() {
+        let _ = TestCircuit::Clock.with_attribute_defaults(Vec::new());
+    }
 }

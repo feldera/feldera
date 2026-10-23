@@ -2,6 +2,7 @@
 //! bootstrap of a changed circuit on resume, and barriers that hold a suspend back until the
 //! inputs that set them pass them.
 
+use crate::test::engine_test;
 use std::cmp::min;
 use std::fs::{File, create_dir};
 use std::iter::repeat_n;
@@ -362,10 +363,12 @@ fn wait_for_output(
     check_file_ids(csv_file_path, expected_ids);
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn suspend(engine: &dyn PipelineTestEngine) {
     test_suspend(engine, &[2500, 2500, 2500, 2500, 2500]);
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn suspend_empty(engine: &dyn PipelineTestEngine) {
     test_suspend(engine, &[0, 2500, 0, 2500, 0, 0, 0, 2500, 2500, 2500, 0]);
 }
@@ -472,7 +475,11 @@ fn start_controller(
 ///
 /// - A barrier on one input that is released after multiple steps.
 ///
-/// `connector_suites!` ignores this case on aarch64.
+/// Ignored on aarch64.
+#[engine_test(
+    ignore_if(target_arch = "aarch64"),
+    requires(Storage, Checkpoints, SuspendResume)
+)]
 pub fn suspend_barrier(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -733,22 +740,27 @@ fn suspend_multiple_barriers(engine: &dyn PipelineTestEngine, n_inputs: usize) {
     }
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn suspend_barrier2(engine: &dyn PipelineTestEngine) {
     suspend_multiple_barriers(engine, 2);
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn suspend_barrier3(engine: &dyn PipelineTestEngine) {
     suspend_multiple_barriers(engine, 3);
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn suspend_barrier4(engine: &dyn PipelineTestEngine) {
     suspend_multiple_barriers(engine, 4);
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn suspend_barrier5(engine: &dyn PipelineTestEngine) {
     suspend_multiple_barriers(engine, 5);
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume, Bootstrap))]
 pub fn bootstrap(engine: &dyn PipelineTestEngine) {
     test_bootstrap(engine, &[2500, 2500, 2500, 2500, 2500]);
 }

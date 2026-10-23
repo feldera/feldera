@@ -408,13 +408,13 @@ impl BufferConsumer {
 
 /// Returns each batch of `data` as one message of CSV records.
 #[cfg(test)]
-pub fn csv_messages(data: &[Vec<crate::test::TestStruct>]) -> Vec<Vec<u8>> {
+pub fn csv_messages<T: serde::Serialize>(data: &[Vec<T>]) -> Vec<Vec<u8>> {
     data.iter()
         .map(|batch| {
             let mut writer = csv::WriterBuilder::new()
                 .has_headers(false)
                 .from_writer(Vec::with_capacity(batch.len() * 32));
-            for val in batch.iter().cloned() {
+            for val in batch {
                 writer.serialize(val).unwrap();
             }
             writer.flush().unwrap();

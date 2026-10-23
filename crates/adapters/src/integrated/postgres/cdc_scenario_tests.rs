@@ -27,6 +27,7 @@
 //! cdc_scenarios -- --ignored --test-threads=1 --nocapture
 //! ```
 
+use crate::test::engine_test;
 use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -397,6 +398,7 @@ fn insert_range(table: &mut CdcTestTable, from: i64, to: i64) {
 /// earlier delivery a row could legitimately repeat. The probe row 4 is
 /// written only once run 2 is past its copy, so it cannot sit on the
 /// copy/stream boundary either.
+#[engine_test(serial, requires(Storage, FaultTolerance), services(Postgres))]
 pub fn snapshot_replayed_when_stopped_before_checkpoint(engine: &dyn PipelineTestEngine) {
     let mut table = scenario_table("cdc_sc_snap_replay");
     insert_range(&mut table, 1, 3);
@@ -460,12 +462,22 @@ pub fn snapshot_replayed_when_stopped_before_checkpoint(engine: &dyn PipelineTes
 /// etl reports the copy finished while its last buffers are still queued for
 /// the circuit. Nothing in this black-box path holds the pipeline inside that
 /// window; the unit tests of the copy state cover it.
+#[engine_test(
+    serial,
+    requires(Storage, Checkpoints, FaultTolerance),
+    services(Postgres)
+)]
 pub fn checkpoint_mid_snapshot_waits_for_the_whole_copy(engine: &dyn PipelineTestEngine) {
     check_checkpoint_mid_snapshot_waits_for_the_whole_copy(engine, 1);
 }
 
 /// Scenario 2 on a four-worker circuit, where the copy is partitioned across
 /// workers.
+#[engine_test(
+    serial,
+    requires(Storage, Checkpoints, FaultTolerance),
+    services(Postgres)
+)]
 pub fn checkpoint_mid_snapshot_waits_for_the_whole_copy_multiworker(
     engine: &dyn PipelineTestEngine,
 ) {
@@ -643,6 +655,7 @@ fn check_checkpoint_mid_snapshot_waits_for_the_whole_copy(
 /// The test pauses only once it has measured a non-empty, strictly partial
 /// copy in the circuit, so a connector that has fatally errored and is copying
 /// nothing cannot pass by reporting a barrier of its own.
+#[engine_test(serial, requires(Storage, FaultTolerance), services(Postgres))]
 pub fn suspend_mid_copy_is_refused(engine: &dyn PipelineTestEngine) {
     // etl hands the connector 16 ctid partitions of n / 16 rows, each one
     // snapshot buffer; the reader flushes whole buffers per step until it
@@ -716,12 +729,24 @@ pub fn suspend_mid_copy_is_refused(engine: &dyn PipelineTestEngine) {
 /// without another checkpoint. Run 2 resumes from the checkpoint, which does
 /// not contain 2 and 3, so the slot must not have moved past them: both must
 /// be redelivered. Row 1 is in the checkpoint and must not come back.
+#[engine_test(
+    serial,
+    ignore,
+    requires(Storage, Checkpoints, FaultTolerance),
+    services(Postgres)
+)]
 pub fn streamed_rows_after_checkpoint_are_redelivered(engine: &dyn PipelineTestEngine) {
     check_streamed_rows_after_checkpoint_are_redelivered(engine, 1);
 }
 
 /// Scenario 3 on a four-worker circuit: redelivered rows go through the
 /// input partitioning path, which a single worker never exercises.
+#[engine_test(
+    serial,
+    ignore,
+    requires(Storage, Checkpoints, FaultTolerance),
+    services(Postgres)
+)]
 pub fn streamed_rows_after_checkpoint_are_redelivered_multiworker(engine: &dyn PipelineTestEngine) {
     check_streamed_rows_after_checkpoint_are_redelivered(engine, 4);
 }
@@ -786,6 +811,12 @@ fn checkpoint_after_snapshot(run: &Run, table: &mut CdcTestTable) {
 /// the interrupted batch as a table error, and a connector that does not
 /// clear it never streams again. Run 2 must start, deliver a fresh row, leave
 /// no table errored, and deliver every burst row at least once.
+#[engine_test(
+    serial,
+    ignore,
+    requires(Storage, Checkpoints, FaultTolerance),
+    services(Postgres)
+)]
 pub fn restart_after_stop_with_inflight_acks(engine: &dyn PipelineTestEngine) {
     const BURST: i64 = 2_000;
     let mut table = scenario_table("cdc_sc_inflight");
@@ -850,6 +881,7 @@ pub fn restart_after_stop_with_inflight_acks(engine: &dyn PipelineTestEngine) {
 /// schema in the source database and stores replication state there. This
 /// needs DDL privileges on the source and rules out read replicas. When the
 /// state moves elsewhere, update this test.
+#[engine_test(serial, ignore, requires(Storage, FaultTolerance), services(Postgres))]
 pub fn etl_state_lives_in_source_database(engine: &dyn PipelineTestEngine) {
     let mut table = scenario_table("cdc_sc_etl_schema");
     insert_range(&mut table, 1, 1);
@@ -876,12 +908,24 @@ pub fn etl_state_lives_in_source_database(engine: &dyn PipelineTestEngine) {
 /// stops without a checkpoint. Run 2 must redeliver both changes, and the net
 /// state after both runs must show row 1 unchanged, row 2 present with its new
 /// value, and row 3 gone.
+#[engine_test(
+    serial,
+    ignore,
+    requires(Storage, Checkpoints, FaultTolerance),
+    services(Postgres)
+)]
 pub fn update_delete_after_checkpoint_are_redelivered(engine: &dyn PipelineTestEngine) {
     check_update_delete_after_checkpoint_are_redelivered(engine, 1);
 }
 
 /// Scenario 6 on a four-worker circuit, where the redelivered retraction and
 /// insertion of the updated row may land on different workers.
+#[engine_test(
+    serial,
+    ignore,
+    requires(Storage, Checkpoints, FaultTolerance),
+    services(Postgres)
+)]
 pub fn update_delete_after_checkpoint_are_redelivered_multiworker(engine: &dyn PipelineTestEngine) {
     check_update_delete_after_checkpoint_are_redelivered(engine, 4);
 }
@@ -945,6 +989,12 @@ fn check_update_delete_after_checkpoint_are_redelivered(
 /// a checkpoint. Run 2 must redeliver both with every value intact: the
 /// replayed rows come from WAL decoding, a different code path from the
 /// initial `COPY`, and NULL has its own encoding in WAL tuple data.
+#[engine_test(
+    serial,
+    ignore,
+    requires(Storage, Checkpoints, FaultTolerance),
+    services(Postgres)
+)]
 pub fn all_types_replayed_after_restart(engine: &dyn PipelineTestEngine) {
     let url = postgres_url();
     let mut table = CdcTestTable::new_all_types(
@@ -1059,6 +1109,12 @@ pub fn all_types_replayed_after_restart(engine: &dyn PipelineTestEngine) {
 /// slot in place, inactive, and a restart must reattach to the same slot
 /// rather than create another one. etl may add a table-sync slot while it
 /// copies a table, so only the apply slot is pinned.
+#[engine_test(
+    serial,
+    ignore,
+    requires(Storage, Checkpoints, FaultTolerance),
+    services(Postgres)
+)]
 pub fn replication_slots_survive_restart(engine: &dyn PipelineTestEngine) {
     let mut table = scenario_table("cdc_sc_slots");
     insert_range(&mut table, 1, 1);
@@ -1102,6 +1158,7 @@ pub fn replication_slots_survive_restart(engine: &dyn PipelineTestEngine) {
 /// reads `a` from a publication holding `a` and `b`; connector B reads `b`
 /// from its own publication, at the same time. Each must see only its own
 /// table's rows.
+#[engine_test(serial, ignore, requires(Storage, FaultTolerance), services(Postgres))]
 pub fn other_tables_in_publication_are_filtered(engine: &dyn PipelineTestEngine) {
     let mut table_a = scenario_table("cdc_sc_pub_a");
     let mut table_b = scenario_table("cdc_sc_pub_b");
@@ -1167,6 +1224,12 @@ pub fn other_tables_in_publication_are_filtered(engine: &dyn PipelineTestEngine)
 /// that is open while the connector stops and commits after the restart must
 /// arrive exactly once in run 2. A transaction rolled back before the restart
 /// must never arrive at all.
+#[engine_test(
+    serial,
+    ignore,
+    requires(Storage, Checkpoints, FaultTolerance),
+    services(Postgres)
+)]
 pub fn transactions_across_restart(engine: &dyn PipelineTestEngine) {
     let mut table = scenario_table("cdc_sc_tx");
     insert_range(&mut table, 1, 1);
@@ -1297,6 +1360,11 @@ fn etl_schema_objects(table: &mut CdcTestTable) -> Vec<String> {
 /// after the checkpoint, so the rows came back from the replication slot
 /// regardless. The unit tests of the acknowledgment path are what pin the fix
 /// itself.
+#[engine_test(
+    serial,
+    requires(Storage, Checkpoints, FaultTolerance),
+    services(Postgres)
+)]
 pub fn a_checkpoint_inside_one_write_does_not_acknowledge_it(engine: &dyn PipelineTestEngine) {
     // Rows are padded so that a few of them carry megabytes: `write_events`
     // cuts a buffer every 2 MiB of serialized JSON, so 160 rows of 128 KiB are

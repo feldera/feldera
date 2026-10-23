@@ -12,7 +12,8 @@ mod wait;
 mod zset;
 
 pub use engine::{
-    ConnectorTestEngine, InputOptions, TestCollection, wait_for_rows, wait_for_rows_within,
+    Capability, ConnectorTestEngine, InputOptions, TestCollection, wait_for_rows,
+    wait_for_rows_within,
 };
 pub use mock_input_consumer::{
     ErrorCallback, MockInputConsumer, MockInputConsumerState, MockInputParser, MockInputParserState,

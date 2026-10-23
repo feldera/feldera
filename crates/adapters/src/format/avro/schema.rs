@@ -1,6 +1,6 @@
 //! Helpers for working with Avro schemas.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use apache_avro::{
     Schema as AvroSchema,
@@ -464,6 +464,21 @@ pub fn is_valid_avro_fullname(fullname: &str) -> bool {
     fullname.split('.').all(is_valid_avro_identifier)
 }
 
+/// Returns `name`, or `name` with the first numeric suffix that `names` does not hold, and
+/// records the result in `names`.
+fn unique_name(name: String, names: &mut BTreeSet<String>) -> String {
+    let unique = if names.contains(&name) {
+        (2..)
+            .map(|suffix| format!("{name}_{suffix}"))
+            .find(|candidate| !names.contains(candidate))
+            .expect("some suffix is free")
+    } else {
+        name
+    };
+    names.insert(unique.clone());
+    unique
+}
+
 #[derive(Default)]
 pub struct AvroSchemaBuilder {
     namespace: Option<String>,
@@ -490,20 +505,26 @@ impl AvroSchemaBuilder {
         relation_schema: &Relation,
     ) -> Result<AvroSchema, String> {
         Ok(AvroSchema::Record(self.struct_to_avro_schema(
-            &relation_schema.name,
+            &relation_schema.name.name(),
             &relation_schema.fields,
             true,
+            &mut BTreeSet::new(),
         )?))
     }
 
+    /// Returns the record schema of `struct_fields`, named `name`.
+    ///
+    /// A ROW column becomes a nested record named by its path, so `names` holds the record
+    /// names that the schema uses so far: Avro requires them to be unique, and a name that
+    /// is taken gets the first free numeric suffix.
     fn struct_to_avro_schema(
         &self,
-        name: &SqlIdentifier,
+        name: &str,
         struct_fields: &[Field],
         top_level: bool,
+        names: &mut BTreeSet<String>,
     ) -> Result<RecordSchema, String> {
-        let name = name.name();
-        if !is_valid_avro_fullname(&name) {
+        if !is_valid_avro_fullname(name) {
             return Err(format!(
                 "'{name}' is not a valid Avro name: each dot-separated segment must start with a letter or underscore and contain only letters, digits, and underscores"
             ));
@@ -520,8 +541,11 @@ impl AvroSchemaBuilder {
                 }),
                 base.to_string(),
             ),
-            None => (self.namespace.clone(), name),
+            None => (self.namespace.clone(), name.to_string()),
         };
+        // The records of one schema share the namespace of its top level, so their names
+        // differ when their base names do.
+        let name = unique_name(name, names);
 
         let mut fields = Vec::with_capacity(struct_fields.len());
         let mut lookup = BTreeMap::new();
@@ -529,7 +553,7 @@ impl AvroSchemaBuilder {
         for (i, field) in struct_fields.iter().enumerate() {
             let key_field = self.key_fields.is_none()
                 || self.key_fields.as_ref().unwrap().contains(&field.name);
-            let f = self.field_to_avro_schema(field, i, top_level && !key_field)?;
+            let f = self.field_to_avro_schema(&name, field, i, top_level && !key_field, names)?;
             lookup.insert(f.name.clone(), i);
             fields.push(f);
         }
@@ -546,9 +570,11 @@ impl AvroSchemaBuilder {
 
     fn field_to_avro_schema(
         &self,
+        record_name: &str,
         field: &Field,
         position: usize,
         force_optional: bool,
+        names: &mut BTreeSet<String>,
     ) -> Result<RecordField, String> {
         let name = field.name.name();
         if !is_valid_avro_identifier(&name) {
@@ -561,7 +587,12 @@ impl AvroSchemaBuilder {
             aliases: None,
             default: None,
             schema: self
-                .column_type_to_avro_schema(&field.columntype, force_optional)
+                .column_type_to_avro_schema(
+                    &format!("{record_name}_{name}"),
+                    &field.columntype,
+                    force_optional,
+                    names,
+                )
                 .map_err(|e| format!("error generating Avro schema for field '{}': {e}", name))?,
             order: RecordFieldOrder::Ascending,
             position,
@@ -569,12 +600,16 @@ impl AvroSchemaBuilder {
         })
     }
 
+    /// `name_hint` names the record that a ROW column becomes: the enclosing record's name
+    /// joined to the field's.
     fn column_type_to_avro_schema(
         &self,
+        name_hint: &str,
         column_type: &ColumnType,
         force_optional: bool,
+        names: &mut BTreeSet<String>,
     ) -> Result<AvroSchema, String> {
-        let inner = self.column_type_to_avro_schema_inner(column_type)?;
+        let inner = self.column_type_to_avro_schema_inner(name_hint, column_type, names)?;
 
         if column_type.nullable || force_optional {
             Ok(AvroSchema::Union(
@@ -588,7 +623,9 @@ impl AvroSchemaBuilder {
 
     fn column_type_to_avro_schema_inner(
         &self,
+        name_hint: &str,
         column_type: &ColumnType,
+        names: &mut BTreeSet<String>,
     ) -> Result<AvroSchema, String> {
         Ok(match column_type.typ {
             SqlType::Boolean => AvroSchema::Boolean,
@@ -638,13 +675,21 @@ impl AvroSchemaBuilder {
                     .as_ref()
                     .ok_or("internal error: array type is missing array element type")?;
                 AvroSchema::Array(ArraySchema {
-                    items: Box::new(self.column_type_to_avro_schema(component, false)?),
+                    items: Box::new(self.column_type_to_avro_schema(
+                        &format!("{name_hint}_item"),
+                        component,
+                        false,
+                        names,
+                    )?),
                     attributes: BTreeMap::new(),
                 })
             }
-            SqlType::Struct => {
-                return Err("not implemented: Avro encoding for user-defined SQL types".to_string());
-            }
+            SqlType::Struct => AvroSchema::Record(self.struct_to_avro_schema(
+                name_hint,
+                column_type.fields.as_ref().unwrap_or(&vec![]),
+                false,
+                names,
+            )?),
             SqlType::Map => {
                 let key_type = column_type.key.as_ref().ok_or(
                     "internal error: relation schema contains a map field, with a missing key type",
@@ -657,7 +702,12 @@ impl AvroSchemaBuilder {
                 }
                 let value_type = column_type.value.as_ref().ok_or("internal error: relation schema contains a map field, with a missing value type")?;
                 AvroSchema::Map(MapSchema {
-                    types: Box::new(self.column_type_to_avro_schema(value_type, false)?),
+                    types: Box::new(self.column_type_to_avro_schema(
+                        &format!("{name_hint}_value"),
+                        value_type,
+                        false,
+                        names,
+                    )?),
                     attributes: BTreeMap::new(),
                 })
             }
@@ -758,13 +808,125 @@ mod test {
     fn map_schema_uses_key_type() {
         let builder = AvroSchemaBuilder::new();
         let valid = ColumnType::map(false, ColumnType::varchar(false), ColumnType::bigint(false));
-        builder.column_type_to_avro_schema_inner(&valid).unwrap();
+        builder
+            .column_type_to_avro_schema_inner("m", &valid, &mut Default::default())
+            .unwrap();
 
         let invalid = ColumnType::map(false, ColumnType::int(false), ColumnType::varchar(false));
         let error = builder
-            .column_type_to_avro_schema_inner(&invalid)
+            .column_type_to_avro_schema_inner("m", &invalid, &mut Default::default())
             .unwrap_err();
         assert!(error.contains("Avro only allows string keys"));
+    }
+
+    /// Returns the schema that the builder generates for a view `v` of `fields`, which the
+    /// Avro parser must accept.
+    fn generate(fields: Vec<Field>) -> AvroSchema {
+        let schema = AvroSchemaBuilder::new()
+            .relation_to_avro_schema(&Relation::new(
+                SqlIdentifier::new("v", false),
+                fields,
+                false,
+                BTreeMap::new(),
+            ))
+            .unwrap();
+        AvroSchema::parse_str(&schema_json(&schema)).unwrap();
+        schema
+    }
+
+    /// Returns the schema of the field `name` of the record `schema`.
+    fn field<'a>(schema: &'a AvroSchema, name: &str) -> &'a AvroSchema {
+        let AvroSchema::Record(record) = schema else {
+            panic!("expected a record schema, got {schema:?}");
+        };
+        &record.fields[record.lookup[name]].schema
+    }
+
+    /// A ROW of one INT column `x`.
+    fn point() -> ColumnType {
+        ColumnType::structure(false, &[Field::new("x".into(), ColumnType::int(false))])
+    }
+
+    /// A ROW column, a ROW inside it, an ARRAY of ROW, and a MAP of ROW become nested
+    /// records named by their paths.
+    #[test]
+    fn row_columns_become_records_named_by_path() {
+        let schema = generate(vec![
+            Field::new(
+                "c".into(),
+                ColumnType::structure(false, &[Field::new("d".into(), point())]),
+            ),
+            Field::new("a".into(), ColumnType::array(false, point())),
+            Field::new(
+                "m".into(),
+                ColumnType::map(false, ColumnType::varchar(false), point()),
+            ),
+        ]);
+        let c = field(&schema, "c");
+        assert_eq!(record_name(c).name, "v_c");
+        assert_eq!(record_name(field(c, "d")).name, "v_c_d");
+        assert_eq!(*field(field(c, "d"), "x"), AvroSchema::Int);
+        let AvroSchema::Array(array) = field(&schema, "a") else {
+            panic!("expected an array schema");
+        };
+        assert_eq!(record_name(&array.items).name, "v_a_item");
+        let AvroSchema::Map(map) = field(&schema, "m") else {
+            panic!("expected a map schema");
+        };
+        assert_eq!(record_name(&map.types).name, "v_m_value");
+    }
+
+    /// A nullable ROW column is a union of null and its record.
+    #[test]
+    fn a_nullable_row_is_a_union_with_null() {
+        let nullable =
+            ColumnType::structure(true, &[Field::new("x".into(), ColumnType::int(false))]);
+        let schema = generate(vec![Field::new("c".into(), nullable)]);
+        let AvroSchema::Union(union) = field(&schema, "c") else {
+            panic!("expected a union schema");
+        };
+        assert_eq!(union.variants()[0], AvroSchema::Null);
+        assert_eq!(record_name(&union.variants()[1]).name, "v_c");
+    }
+
+    /// A record name that two paths produce goes to the first path; the next path gets the
+    /// first free numeric suffix.
+    #[test]
+    fn a_record_name_that_two_paths_produce_gets_a_suffix() {
+        let schema = generate(vec![
+            Field::new("a_b".into(), point()),
+            Field::new(
+                "a".into(),
+                ColumnType::structure(false, &[Field::new("b".into(), point())]),
+            ),
+            Field::new("a_b_2".into(), point()),
+        ]);
+        assert_eq!(record_name(field(&schema, "a_b")).name, "v_a_b");
+        let a = field(&schema, "a");
+        assert_eq!(record_name(a).name, "v_a");
+        assert_eq!(record_name(field(a, "b")).name, "v_a_b_2");
+        assert_eq!(record_name(field(&schema, "a_b_2")).name, "v_a_b_2_2");
+    }
+
+    /// INTERVAL columns stay refused.
+    #[test]
+    fn an_interval_column_is_refused() {
+        let interval: ColumnType =
+            serde_json::from_value(serde_json::json!({"type": "INTERVAL_DAY", "nullable": false}))
+                .unwrap();
+        let error = AvroSchemaBuilder::new()
+            .relation_to_avro_schema(&Relation::new(
+                SqlIdentifier::new("v", false),
+                vec![Field::new("i".into(), interval)],
+                false,
+                BTreeMap::new(),
+            ))
+            .unwrap_err();
+        assert_eq!(
+            error,
+            "error generating Avro schema for field 'i': not implemented: Avro encoding for the \
+             SQL interval type"
+        );
     }
 
     #[test]

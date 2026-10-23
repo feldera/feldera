@@ -1,6 +1,7 @@
 //! The CSV parser's options: quoting, escaping, trimming, comments, field counts, and a
 //! header row.
 
+use crate::test::engine_test;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
@@ -63,6 +64,7 @@ fn inserts(like: &Updates, rows: &[&str]) -> Updates {
 }
 
 /// A quote character other than `"` wraps a field that holds the delimiter.
+#[engine_test]
 pub fn quote(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -79,6 +81,7 @@ pub fn quote(engine: &dyn ConnectorTestEngine) {
 }
 
 /// With double quoting off, the escape character escapes a quote.
+#[engine_test]
 pub fn escape(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -93,6 +96,7 @@ pub fn escape(engine: &dyn ConnectorTestEngine) {
 }
 
 /// By default, `""` inside a quoted field is one quote.
+#[engine_test]
 pub fn double_quote(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -104,6 +108,7 @@ pub fn double_quote(engine: &dyn ConnectorTestEngine) {
 
 /// With double quoting off, the first quote of `""` ends the quoted field, and the rest of
 /// the field is kept as it is.
+#[engine_test]
 pub fn double_quote_disabled(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -117,6 +122,7 @@ pub fn double_quote_disabled(engine: &dyn ConnectorTestEngine) {
 }
 
 /// By default, whitespace around a field is part of it.
+#[engine_test]
 pub fn trim_none(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -127,6 +133,7 @@ pub fn trim_none(engine: &dyn ConnectorTestEngine) {
 }
 
 /// With `trim = fields`, whitespace around a field is dropped.
+#[engine_test]
 pub fn trim_fields(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -140,6 +147,7 @@ pub fn trim_fields(engine: &dyn ConnectorTestEngine) {
 }
 
 /// With quoting off, a quote is an ordinary character.
+#[engine_test]
 pub fn quoting_disabled(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -153,6 +161,7 @@ pub fn quoting_disabled(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A line that starts with the comment character holds no record.
+#[engine_test]
 pub fn comment(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -169,6 +178,7 @@ pub fn comment(engine: &dyn ConnectorTestEngine) {
 }
 
 /// By default, a record may have more fields than the table; the parser ignores the rest.
+#[engine_test]
 pub fn flexible(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -182,6 +192,7 @@ pub fn flexible(engine: &dyn ConnectorTestEngine) {
 }
 
 /// When the field count must not change, a record with another count is an error.
+#[engine_test]
 pub fn inflexible(engine: &dyn ConnectorTestEngine) {
     let (errors, updates) = parse(
         engine,
@@ -200,6 +211,7 @@ pub fn inflexible(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A header row names the columns and holds no record.
+#[engine_test]
 pub fn headers(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -218,6 +230,7 @@ pub fn basic_relation() -> Relation {
 }
 
 /// Random rows, written as CSV records, read back unchanged and in order.
+#[engine_test]
 pub fn random_rows(engine: &dyn ConnectorTestEngine) {
     let relation = basic_relation();
     proptest!(ProptestConfig::with_cases(32), |(batches in rows::batches(&relation, "id", 1..=1, 20))| {

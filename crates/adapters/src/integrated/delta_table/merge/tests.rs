@@ -13,7 +13,12 @@
 //!
 //! This module also holds the fixtures that the merge module's own tests share with it: the
 //! table's columns, its index, and a flaky object store.
+//!
+//! The cases run the writer on a multi-threaded runtime, as the output connector does: the
+//! writer reads its batch through the engine's cursor, which may block on the engine's
+//! storage, and a thread that drives a current-thread runtime must not block.
 
+use crate::test::engine_test;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -40,7 +45,7 @@ use super::flush::{FlushMetrics, MergeWriter};
 use super::startup::{Regime, prepare};
 use crate::catalog::{RecordFormat, SerBatchReader};
 use crate::integrated::delta_table::output::delta_output_serde_config;
-use crate::test::{published_schema, run_async, run_async_on};
+use crate::test::{published_schema, run_async_on};
 
 /// Arrow schema of the fixture table: an `id` key and a `payload` value.
 pub(super) fn arrow_schema() -> ArrowSchema {
@@ -551,8 +556,9 @@ impl Model {
 ///
 /// Several short seeds rather than one long sequence: a short failing sequence is easier to
 /// read, and independent seeds explore more shapes than one long walk.
+#[engine_test]
 pub fn the_table_tracks_the_view_across_random_sequences(engine: &dyn ConnectorTestEngine) {
-    run_async(async {
+    run_async_on(4, async {
         for seed in 0..6u64 {
             let dir = TempDir::new().unwrap();
             let mut table = create_table(&dir).await;
@@ -588,8 +594,9 @@ pub fn the_table_tracks_the_view_across_random_sequences(engine: &dyn ConnectorT
 /// The restart must be modelled as one. A writer built against an empty table runs in
 /// `Regime::Owned` and skips the lookup for inserts, so replaying through that writer would
 /// append a second live row. Convergence rests on the regime being re-derived at startup.
+#[engine_test]
 pub fn replaying_a_batch_converges_across_a_restart(engine: &dyn ConnectorTestEngine) {
-    run_async(async {
+    run_async_on(4, async {
         let dir = TempDir::new().unwrap();
         let mut table = create_table(&dir).await;
         let mut rng = SmallRng::seed_from_u64(99);
@@ -634,8 +641,9 @@ pub fn replaying_a_batch_converges_across_a_restart(engine: &dyn ConnectorTestEn
 /// the two apart, so the retry must look up the row an insert supersedes even though the
 /// table was empty when the writer opened it. Skipping it leaves two live rows for one key,
 /// which `live_rows` panics on.
+#[engine_test]
 pub fn retrying_a_landed_batch_converges_in_the_owned_regime(engine: &dyn ConnectorTestEngine) {
-    run_async(async {
+    run_async_on(4, async {
         let dir = TempDir::new().unwrap();
         let mut table = create_table(&dir).await;
         let (writer, regime) = writer_for(&table);
@@ -674,8 +682,9 @@ pub fn retrying_a_landed_batch_converges_in_the_owned_regime(engine: &dyn Connec
 /// reach the chunk in batches of `KEY_BATCH_ROWS`: below that threshold the whole set is
 /// encoded once, in `finish`, and the budget is never consulted. So the multi-pass path went
 /// unexecuted. This crosses the batch threshold, which is what makes the budget bite.
+#[engine_test]
 pub fn a_key_set_past_the_budget_is_looked_up_in_several_passes(engine: &dyn ConnectorTestEngine) {
-    run_async(async {
+    run_async_on(4, async {
         const KEYS: i64 = 9_000;
 
         let dir = TempDir::new().unwrap();
@@ -705,6 +714,7 @@ pub fn a_key_set_past_the_budget_is_looked_up_in_several_passes(engine: &dyn Con
 }
 
 /// Auto compaction keeps a partitioned table equal to the view over many flushes.
+#[engine_test]
 pub fn auto_compaction_keeps_a_partitioned_table_equal_to_the_view(
     engine: &dyn ConnectorTestEngine,
 ) {
@@ -812,8 +822,9 @@ fn partition_dirs(dir: &TempDir) -> Vec<String> {
 /// and the log-sourced partition values the lookup reads were each covered alone, never
 /// together. Changing the partition column is the case that needs both at once, because the
 /// new row version and the row it supersedes are then in different directories.
+#[engine_test]
 pub fn an_update_across_partitions_supersedes_the_old_row(engine: &dyn ConnectorTestEngine) {
-    run_async(async {
+    run_async_on(4, async {
         let dir = TempDir::new().unwrap();
         let mut table = create_partitioned_table(&dir).await;
         let (writer, _) = writer_for(&table);
@@ -865,8 +876,9 @@ pub fn an_update_across_partitions_supersedes_the_old_row(engine: &dyn Connector
 /// The timings drive the connector's phase metrics, which is how an operator tells a slow
 /// probe from a slow commit. A timer left unwired reports that phase as free, and no other
 /// test would notice: `other()` would silently absorb it.
+#[engine_test]
 pub fn a_flush_times_every_phase_it_runs(engine: &dyn ConnectorTestEngine) {
-    run_async(async {
+    run_async_on(4, async {
         let dir = TempDir::new().unwrap();
         let mut table = create_table(&dir).await;
         let (writer, _) = writer_for(&table);
@@ -924,10 +936,11 @@ pub fn a_flush_times_every_phase_it_runs(engine: &dyn ConnectorTestEngine) {
 ///
 /// The sequence is recorded rather than regenerated per run: `Model::next_batch` draws
 /// from a `HashMap`, so two models walk different keys from the same seed.
+#[engine_test]
 pub fn a_parallel_flush_leaves_the_table_where_a_sequential_one_does(
     engine: &dyn ConnectorTestEngine,
 ) {
-    run_async(async {
+    run_async_on(4, async {
         for seed in 0..4u64 {
             let rounds = {
                 let mut rng = SmallRng::seed_from_u64(seed);
@@ -978,8 +991,9 @@ pub fn a_parallel_flush_leaves_the_table_where_a_sequential_one_does(
 ///
 /// Every range needs its own `DeltaWriter`, so splitting a small flush would swap one
 /// reasonable file for several too small to want.
+#[engine_test]
 pub fn a_small_batch_is_not_split_across_ranges(engine: &dyn ConnectorTestEngine) {
-    run_async(async {
+    run_async_on(4, async {
         let dir = TempDir::new().unwrap();
         let mut table = create_table(&dir).await;
         let (writer, _) = writer_for_split(&table, 1_000);
@@ -1008,8 +1022,9 @@ pub fn a_small_batch_is_not_split_across_ranges(engine: &dyn ConnectorTestEngine
 /// The backfill writes one file, so updates from all four ranges land on it. Union the
 /// bitmaps wrongly (keep one range's and drop the rest) and the table keeps two live
 /// rows for most keys.
+#[engine_test]
 pub fn tombstones_from_every_range_survive_the_join(engine: &dyn ConnectorTestEngine) {
-    run_async(async {
+    run_async_on(4, async {
         const KEYS: i64 = 400;
 
         let dir = TempDir::new().unwrap();
@@ -1046,6 +1061,7 @@ pub fn tombstones_from_every_range_survive_the_join(engine: &dyn ConnectorTestEn
 /// parallel flush leaves a different shape for them to work on than a sequential one (a
 /// file per range rather than one, and tombstones spread across every file the ranges
 /// touched), so the table each path leaves behind is worth pinning.
+#[engine_test]
 pub fn compaction_and_reclaim_preserve_a_table_written_in_parallel(
     engine: &dyn ConnectorTestEngine,
 ) {
@@ -1053,7 +1069,7 @@ pub fn compaction_and_reclaim_preserve_a_table_written_in_parallel(
     use super::rewrite::reclaim_superseded_rows;
     use deltalake::{ensure_table_uri, open_table_with_storage_options};
 
-    run_async(async {
+    run_async_on(4, async {
         const KEYS: i64 = 300;
 
         let dir = TempDir::new().unwrap();
@@ -1115,6 +1131,7 @@ pub fn compaction_and_reclaim_preserve_a_table_written_in_parallel(
 /// So this interleaves flushes, compaction and reclaim at random and compares the table
 /// against the oracle after every step, maintenance included. Thread counts vary too, since
 /// a parallel flush leaves a different shape for maintenance to work on.
+#[engine_test]
 pub fn maintenance_interleaved_with_flushes_preserves_the_view(engine: &dyn ConnectorTestEngine) {
     use super::compact::pack_small_files;
     use super::rewrite::reclaim_superseded_rows;
@@ -1220,8 +1237,9 @@ pub fn maintenance_interleaved_with_flushes_preserves_the_view(engine: &dyn Conn
 /// A commit error can mean the commit landed, so a retry walks the same batch against a
 /// table that may already hold its rows. Every range must then look its inserts up rather
 /// than trust the owned-table shortcut, or the retry appends a second live row per key.
+#[engine_test]
 pub fn a_parallel_retry_converges_like_a_sequential_one(engine: &dyn ConnectorTestEngine) {
-    run_async(async {
+    run_async_on(4, async {
         for threads in [1usize, 4] {
             let dir = TempDir::new().unwrap();
             let mut table = create_table(&dir).await;
@@ -1255,8 +1273,9 @@ pub fn a_parallel_retry_converges_like_a_sequential_one(engine: &dyn ConnectorTe
 /// A range prunes the lookup to the partitions its own keys fall in. Splitting an update
 /// that moves rows between partitions must still supersede the row in the partition it came
 /// from, not the one it is going to.
+#[engine_test]
 pub fn a_parallel_flush_moves_rows_between_partitions(engine: &dyn ConnectorTestEngine) {
-    run_async(async {
+    run_async_on(4, async {
         let dir = TempDir::new().unwrap();
         let mut table = create_partitioned_table(&dir).await;
         let (writer, _) = writer_for_split(&table, 1);
@@ -1293,8 +1312,9 @@ pub fn a_parallel_flush_moves_rows_between_partitions(engine: &dyn ConnectorTest
 /// A range cannot call the controller itself, so it collects its violations and the flush
 /// reports them after the join. Keeping only one range's would hide the rest, and the keys
 /// they name would be silently absent from the table.
+#[engine_test]
 pub fn violations_from_every_range_are_reported(engine: &dyn ConnectorTestEngine) {
-    run_async(async {
+    run_async_on(4, async {
         let dir = TempDir::new().unwrap();
         let mut table = create_table(&dir).await;
         let (writer, _) = writer_for_split(&table, 1);
@@ -1328,6 +1348,7 @@ pub fn violations_from_every_range_are_reported(engine: &dyn ConnectorTestEngine
 /// unwinding the flush. Reported as transient it would be retried, and under the documented
 /// default `max_retries: None` that loop is unbounded: it rewrites the whole batch and
 /// orphans its parquet on every attempt, for a flush that panics again each time.
+#[engine_test]
 pub fn a_panicked_range_is_reported_as_deterministic(engine: &dyn ConnectorTestEngine) {
     run_async_on(4, async {
         let dir = TempDir::new().unwrap();
@@ -1374,8 +1395,9 @@ pub fn a_panicked_range_is_reported_as_deterministic(engine: &dyn ConnectorTestE
 ///
 /// Keys reach the chunk in batches of `KEY_BATCH_ROWS`, so a range needs more than one such
 /// batch of its own before its budget can split its lookup.
+#[engine_test]
 pub fn a_parallel_lookup_past_the_budget_runs_several_passes(engine: &dyn ConnectorTestEngine) {
-    run_async(async {
+    run_async_on(4, async {
         const KEYS: i64 = 40_000;
 
         let dir = TempDir::new().unwrap();
@@ -1412,10 +1434,11 @@ pub fn a_parallel_lookup_past_the_budget_runs_several_passes(engine: &dyn Connec
 /// A range writes its own files, so splitting a batch that is only a couple of files' worth
 /// turns each into a file well under the size the writer aims for. The first flush has no
 /// rate to judge that by; the second does, and must leave such a batch whole.
+#[engine_test]
 pub fn a_batch_worth_too_few_files_is_left_whole_once_the_rate_is_known(
     engine: &dyn ConnectorTestEngine,
 ) {
-    run_async(async {
+    run_async_on(4, async {
         let dir = TempDir::new().unwrap();
         let mut table = create_table(&dir).await;
         // No override: the writer judges a range by what a file costs, as in production.
@@ -1455,8 +1478,9 @@ pub fn a_batch_worth_too_few_files_is_left_whole_once_the_rate_is_known(
 /// others' files in the object store. The flush must still report the failure and leave the
 /// table at the version it read: a partial commit would publish some ranges' rows and drop
 /// the rest, which is worse than the retry those orphans cost.
+#[engine_test]
 pub fn a_failing_range_fails_the_flush_without_committing(engine: &dyn ConnectorTestEngine) {
-    run_async(async {
+    run_async_on(4, async {
         let dir = TempDir::new().unwrap();
         let mut table = create_table(&dir).await;
         let (writer, _) = writer_for_split(&table, 1);

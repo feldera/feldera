@@ -15,7 +15,7 @@ pub mod test;
 pub mod transport;
 pub mod utils;
 
-pub use connector_metadata::ConnectorMetadata;
+pub use connector_metadata::{ConnectorMetadata, JsonMetadataError};
 
 #[doc(hidden)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, FromPrimitive, Serialize, NoUninit)]

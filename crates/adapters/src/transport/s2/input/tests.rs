@@ -1,9 +1,9 @@
 use super::*;
 use crate::format::{InputBuffer, Splitter};
-use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::ParseError;
 use feldera_types::adapter_stats::ConnectorHealth;
+use feldera_types::circuit::StagedBuffers;
 use feldera_types::config::FtModel;
 use futures::stream;
 use rmpv::Value as RmpValue;

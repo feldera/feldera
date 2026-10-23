@@ -1,8 +1,7 @@
 //! Tests of the fault-tolerant Kafka transport that reach no engine: the readers, with
-//! dummy parsers and consumers, and the writers, against the broker; unit tests of
-//! partition selection; and typed checks of the Kafka metadata on the static engine's record
-//! layer. The connector tests in `transport::kafka::tests` cover the transport with an
-//! engine.
+//! dummy parsers and consumers, and the writers, against the broker; and unit tests of
+//! partition selection. The connector tests in `transport::kafka::tests` cover the transport
+//! with an engine.
 
 // A reader's offsets are ranges, so one range is one partition's offsets, not a mistake.
 #![allow(clippy::single_range_in_vec_init)]
@@ -14,23 +13,17 @@ use crate::transport::{input_transport_config_to_endpoint, output_transport_conf
 use crate::{InputBuffer, InputReader, Parser, TransportInputEndpoint};
 use crate::{
     InputConsumer, ParseError,
-    test::{
-        KafkaRawMetadata, TestStruct,
-        data::TestStructMetadata,
-        kafka::{KafkaResources, TestProducer, csv_messages},
-        mock_input_pipeline, suites, wait_for_output_count,
-    },
+    test::kafka::{KafkaResources, TestProducer, csv_messages},
 };
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
 use csv::WriterBuilder as CsvWriterBuilder;
-use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::{BufferSize, flatten_nested};
 use feldera_adapterlib::transport::{OutputBatchType, Resume, Watermark};
-use feldera_sqllib::{ByteArray, SqlString, Variant};
 use feldera_types::adapter_stats::ConnectorHealth;
-use feldera_types::config::{FtModel, InputEndpointConfig};
+use feldera_types::circuit::StagedBuffers;
+use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::secret_resolver::default_secrets_directory;
 use feldera_types::transport::kafka::{
@@ -64,6 +57,25 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+
+/// A record of the CSV messages that these tests send.
+#[derive(Debug, Default, Clone, serde::Serialize)]
+struct CsvRecord {
+    id: u32,
+    b: bool,
+    i: Option<i64>,
+    s: String,
+}
+
+impl CsvRecord {
+    /// Returns the record with `id` and default values in the other columns.
+    fn for_id(id: u32) -> Self {
+        Self {
+            id,
+            ..Default::default()
+        }
+    }
+}
 
 fn init_test_logger() {
     let _ = tracing_subscriber::registry()
@@ -222,7 +234,7 @@ fn test_synchronization() {
         let mut writer = CsvWriterBuilder::new()
             .has_headers(false)
             .from_writer(Vec::new());
-        writer.serialize(TestStruct::for_id(id as u32)).unwrap();
+        writer.serialize(CsvRecord::for_id(id as u32)).unwrap();
         writer.flush().unwrap();
         let bytes = writer.into_inner().unwrap();
 
@@ -264,7 +276,7 @@ fn test_synchronization_backpressure() {
         let mut writer = CsvWriterBuilder::new()
             .has_headers(false)
             .from_writer(Vec::new());
-        writer.serialize(TestStruct::for_id(id)).unwrap();
+        writer.serialize(CsvRecord::for_id(id)).unwrap();
         writer.flush().unwrap();
         let bytes = writer.into_inner().unwrap();
 
@@ -397,7 +409,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
         println!("producing {batch_size} messages {batch:?} to {topic}");
         let input_batch = batch
             .clone()
-            .map(|id| vec![TestStruct::for_id(id)])
+            .map(|id| vec![CsvRecord::for_id(id)])
             .collect::<Vec<_>>();
         producer.send_to_topic(&csv_messages(&input_batch), topic);
 
@@ -972,7 +984,7 @@ fn kafka_output_test(
     _format: &str,
     _format_config: &str,
     _message_max_bytes: usize,
-    _data: Vec<Vec<TestStruct>>,
+    _data: Vec<Vec<CsvRecord>>,
 ) {
     init_test_logger();
     let output_topic = format!("ft_{test_name}_output_topic");
@@ -1186,114 +1198,6 @@ fn _test() {
     }
 }
 
-// Typed VARIANT checks stay with the static engine: the shared suites see a VARIANT as JSON text.
-
-/// Sends the two messages of the metadata tests to `topic`: `first` with a header that holds a
-/// value and a header without one, then `second` without headers.
-fn send_metadata_messages(topic: &str, first: &[u8], second: &[u8]) {
-    let producer = TestProducer::new();
-    producer.send_message(
-        first,
-        topic,
-        Some(BTreeMap::from([
-            ("header1".to_string(), Some(b"foobar".to_vec())),
-            ("header2".to_string(), None),
-        ])),
-    );
-    producer.send_message(second, topic, None);
-}
-
-/// The `kafka_headers` of the messages that [`send_metadata_messages`] sends: a header value
-/// is binary, and a header without a value is the VARIANT null.
-fn expected_kafka_headers() -> Vec<Variant> {
-    vec![
-        Variant::Map(Arc::new(BTreeMap::from([
-            (
-                Variant::String(SqlString::from("header1")),
-                Variant::Binary(ByteArray::new(b"foobar")),
-            ),
-            (
-                Variant::String(SqlString::from("header2")),
-                Variant::VariantNull,
-            ),
-        ]))),
-        Variant::Map(Arc::new(BTreeMap::new())),
-    ]
-}
-
-/// Returns the configuration of a Kafka input endpoint that reads `topic` with every Kafka
-/// attribute, in `format`.
-fn metadata_input_config(topic: &str, format: JsonValue) -> InputEndpointConfig {
-    serde_json::from_value(json!({
-        "stream": "test_input",
-        "transport": {
-            "name": "kafka_input",
-            "config": {
-                "topic": topic,
-                "log_level": "debug",
-                "auto.offset.reset": "earliest",
-                "include_headers": true,
-                "include_topic": true,
-                "include_timestamp": true,
-                "include_partition": true,
-                "include_offset": true
-            }
-        },
-        "format": format
-    }))
-    .unwrap()
-}
-
-#[test]
-fn test_kafka_metadata_json() {
-    init_test_logger();
-
-    let topic = "kafka_metadata_json_typed_test_topic";
-    let _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
-    let config = metadata_input_config(
-        topic,
-        json!({ "name": "json", "config": { "update_format": "raw" } }),
-    );
-    let (endpoint, _, _, zset) =
-        mock_input_pipeline::<TestStructMetadata, TestStructMetadata>(config, Relation::empty())
-            .unwrap();
-    endpoint.extend();
-
-    send_metadata_messages(topic, b"{\"i\": 0}", b"{\"i\": 1}");
-    let received = wait_for_output_count(&zset, 2, || endpoint.queue(false));
-    let headers: Vec<Variant> = received
-        .into_iter()
-        .map(|record| record.kafka_headers)
-        .collect();
-    assert_eq!(headers, expected_kafka_headers());
-}
-
-#[test]
-fn test_kafka_metadata_raw() {
-    init_test_logger();
-
-    let topic = "kafka_metadata_raw_typed_test_topic";
-    let _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
-    let config = metadata_input_config(
-        topic,
-        json!({ "name": "raw", "config": { "mode": "blob", "column_name": "data" } }),
-    );
-    let (endpoint, _, _, zset) = mock_input_pipeline::<KafkaRawMetadata, KafkaRawMetadata>(
-        config,
-        suites::kafka::raw_metadata_relation(),
-    )
-    .unwrap();
-    endpoint.extend();
-
-    send_metadata_messages(topic, b"foo", b"bar");
-    let received = wait_for_output_count(&zset, 2, || endpoint.queue(false));
-    let headers: Vec<Variant> = received
-        .into_iter()
-        .map(|record| record.kafka_headers)
-        .collect();
-    assert_eq!(headers, expected_kafka_headers());
-}
-
 /// Tests for distributed connectors, which divide a topic's partitions among
 /// the hosts of a multihost pipeline.
 mod distributed {
@@ -1455,7 +1359,7 @@ mod distributed {
             let mut writer = CsvWriterBuilder::new()
                 .has_headers(false)
                 .from_writer(Vec::new());
-            writer.serialize(TestStruct::for_id(id)).unwrap();
+            writer.serialize(CsvRecord::for_id(id)).unwrap();
             let bytes = writer.into_inner().unwrap();
             let record = <BaseRecord<(), [u8], ()>>::to(topic)
                 .payload(&bytes)
@@ -1626,7 +1530,7 @@ mod end_of_input {
             let mut writer = CsvWriterBuilder::new()
                 .has_headers(false)
                 .from_writer(Vec::new());
-            writer.serialize(TestStruct::for_id(id)).unwrap();
+            writer.serialize(CsvRecord::for_id(id)).unwrap();
             let bytes = writer.into_inner().unwrap();
             let record = <BaseRecord<(), [u8], ()>>::to(topic)
                 .payload(&bytes)
@@ -1797,7 +1701,7 @@ mod unsorted_partitions {
             let mut writer = CsvWriterBuilder::new()
                 .has_headers(false)
                 .from_writer(Vec::new());
-            writer.serialize(TestStruct::for_id(id)).unwrap();
+            writer.serialize(CsvRecord::for_id(id)).unwrap();
             let bytes = writer.into_inner().unwrap();
             let record = <BaseRecord<(), [u8], ()>>::to(topic)
                 .payload(&bytes)

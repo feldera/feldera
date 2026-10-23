@@ -1,6 +1,7 @@
 //! The Delta Lake connectors on tables in the CI object store: the cases of `tests` that need
 //! its credentials, behind the `delta-s3-test` feature.
 
+use crate::test::engine_test;
 use std::collections::HashMap;
 use std::mem::forget;
 
@@ -60,6 +61,7 @@ fn ci_scratch_table_uri(uuid: uuid::Uuid) -> String {
     format!("{}/rust-delta-tests/{uuid}/", ci_store_uri())
 }
 
+#[engine_test(parallel(delta_s3), requires(Storage))]
 pub fn cdc_s3_test_suspend(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         crate::integrated::delta_table::register_storage_handlers();
@@ -134,23 +136,27 @@ async fn follow_s3_test_common(engine: &dyn PipelineTestEngine, snapshot: bool, 
     .await;
 }
 
+#[engine_test(parallel(delta_s3), requires(Storage))]
 pub fn follow_s3_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         follow_s3_test_common(engine, false, false).await
     })
 }
 
+#[engine_test(parallel(delta_s3), requires(Storage))]
 pub fn snapshot_and_follow_s3_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         follow_s3_test_common(engine, true, false).await
     })
 }
 
+#[engine_test(parallel(delta_s3), requires(Storage, Checkpoints, SuspendResume))]
 pub fn snapshot_and_follow_s3_test_suspend(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async { follow_s3_test_common(engine, true, true).await })
 }
 
 /// Write to a Delta table in S3.
+#[engine_test(parallel(delta_s3))]
 pub fn s3_output_proptest(engine: &dyn PipelineTestEngine) {
     proptest!(ProptestConfig::with_cases(1), |(data in delta_data(20_000))| {
     let uuid = uuid::Uuid::new_v4();
@@ -197,6 +203,7 @@ pub fn s3_output_proptest(engine: &dyn PipelineTestEngine) {
 /// table_location = spark.sql("DESCRIBE DETAIL people_2m").collect()[0]['location']
 /// print(table_location)
 /// ```
+#[engine_test(parallel(delta_s3))]
 pub fn s3_people_2m(engine: &dyn PipelineTestEngine) {
     let object_store_config = ci_object_store_config()
         .into_iter()

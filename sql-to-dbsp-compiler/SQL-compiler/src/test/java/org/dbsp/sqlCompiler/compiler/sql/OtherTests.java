@@ -438,7 +438,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String rustCatalogTest = """
                 #[test]
                 pub fn test() {
-                    use dbsp_adapters::{CircuitCatalog, RecordFormat};
+                    use static_adapters::{CircuitCatalog, RecordFormat};
                     use feldera_types::format::csv::CsvFormatConfig;
 
                     let (mut circuit, catalog) = circuit(CircuitConfig::with_workers(3))
@@ -471,14 +471,14 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                         .delta_handle;
 
                     // Read the produced output
-                    let reader = adult.concat();
+                    let reader = adult.take_readers().whole;
                     let mut cursor = reader
                         .cursor(RecordFormat::Csv(CsvFormatConfig::default()))
                         .unwrap();
                     while cursor.key_valid() {
                         let mut w = cursor.weight();
                         println!("{}: {}", cursor.key_to_json().unwrap(), w);
-                        cursor.step_key();
+                        cursor.step_key().unwrap();
                     }
                 }""";
         File file = createInputScript(sql);
@@ -517,7 +517,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         String rustCatalogTest = """
                 #[test]
                 pub fn test0() {
-                    use dbsp_adapters::{CircuitCatalog, RecordFormat};
+                    use static_adapters::{CircuitCatalog, RecordFormat};
                     use feldera_types::format::json::JsonFlavor;
                 
                     let mut circuitAndStreams = circuit(CircuitConfig::with_workers(3usize)).unwrap();
@@ -547,7 +547,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                         .clone()
                         .unwrap()
                         .clone();
-                    let reader = output.concat();
+                    let reader = output.take_readers().whole;
                     let mut cursor = reader
                         .cursor(RecordFormat::Json(JsonFlavor::default()))
                         .unwrap();
@@ -556,7 +556,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                         let mut w = cursor.weight();
                         // println!("{}: {}", cursor.key_to_json().unwrap(), w);
                         rows = rows + 1;
-                        cursor.step_key();
+                        cursor.step_key().unwrap();
                     }
                     // There should be only 3 rows; the last inserted one should be missing
                     assert!(3 == rows, "Expected 3 rows, got {}", rows);

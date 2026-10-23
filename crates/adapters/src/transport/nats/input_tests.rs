@@ -5,6 +5,7 @@
 //! Each case is a sequence of `NatsMockAction`s that `run_nats_mock_test` executes against a
 //! private `nats-server`.
 
+use crate::test::engine_test;
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::Arc;
@@ -749,6 +750,7 @@ fn stall_timeout() -> Duration {
 // ---------------------------------------------------------------------------
 
 /// Records published before the endpoint starts arrive in order.
+#[engine_test(services(Nats))]
 pub fn basic_input_consumption(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -778,6 +780,7 @@ pub fn basic_input_consumption(engine: &dyn ConnectorTestEngine) {
 
 /// Retry loop should report non-fatal errors every retry interval while
 /// NATS is down and continue attempting reconnects.
+#[engine_test(services(Nats))]
 pub fn retry_loop_when_server_unavailable(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -804,6 +807,7 @@ pub fn retry_loop_when_server_unavailable(engine: &dyn ConnectorTestEngine) {
 
 /// Connector should enter retrying ERROR state, then recover automatically
 /// once the server and stream become available again.
+#[engine_test(services(Nats))]
 pub fn resume_after_server_becomes_available(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -837,6 +841,7 @@ pub fn resume_after_server_becomes_available(engine: &dyn ConnectorTestEngine) {
 
 /// PAUSE should stop the retry loop while in ERROR state; RESUME should restart
 /// retries and eventually ingest when availability is restored.
+#[engine_test(services(Nats))]
 pub fn pause_during_retry_loop(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -883,6 +888,7 @@ pub fn pause_during_retry_loop(engine: &dyn ConnectorTestEngine) {
 /// Sequence: consume 1 record → kill server → pause immediately (reader error
 /// may already be in-flight) → restart server + recreate stream → extend →
 /// new records should arrive without spurious error-retry transitions.
+#[engine_test(services(Nats))]
 pub fn no_stale_error_after_pause_extend(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -919,6 +925,7 @@ pub fn no_stale_error_after_pause_extend(engine: &dyn ConnectorTestEngine) {
 /// the inactivity timeout fires, the health check succeeds (consumer recreation
 /// works), and the connector does NOT produce a fatal error. After the quiet
 /// period, new messages published to the stream are still received correctly.
+#[engine_test(services(Nats))]
 pub fn quiet_but_healthy_no_false_alarm(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -950,6 +957,7 @@ pub fn quiet_but_healthy_no_false_alarm(engine: &dyn ConnectorTestEngine) {
 
 /// Tests that a short server outage does not cause a false fatal error if NATS
 /// comes back on the same address before inactivity timeout expires.
+#[engine_test(services(Nats))]
 pub fn mid_run_server_restart_recovers_no_fatal(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -975,6 +983,7 @@ pub fn mid_run_server_restart_recovers_no_fatal(engine: &dyn ConnectorTestEngine
 }
 
 /// Tests that inactivity timeout still drives first transport error emission.
+#[engine_test(services(Nats))]
 pub fn inactivity_timeout_config_is_honored(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1000,6 +1009,7 @@ pub fn inactivity_timeout_config_is_honored(engine: &dyn ConnectorTestEngine) {
 
 /// Test that startup no longer fails fast: unavailable server should trigger
 /// retrying non-fatal errors after `Extend`.
+#[engine_test(services(Nats))]
 pub fn connection_refused_enters_retry_loop(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     let nonexistent_url = "nats://127.0.0.1:59999";
@@ -1048,6 +1058,7 @@ pub fn connection_refused_enters_retry_loop(engine: &dyn ConnectorTestEngine) {
 
 /// Startup retry loop should continue emitting non-fatal transport errors at
 /// retry cadence while the server remains unreachable.
+#[engine_test(services(Nats))]
 pub fn startup_connection_refused_retries_repeatedly(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     let nonexistent_url = "nats://127.0.0.1:59999";
@@ -1096,6 +1107,7 @@ pub fn startup_connection_refused_retries_repeatedly(engine: &dyn ConnectorTestE
 }
 
 /// Test that missing stream enters retry loop instead of failing pipeline open.
+#[engine_test(services(Nats))]
 pub fn stream_not_found_enters_retry_loop(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1142,6 +1154,7 @@ pub fn stream_not_found_enters_retry_loop(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Test that connection timeout contributes to retry cadence instead of blocking open.
+#[engine_test(services(Nats))]
 pub fn connection_timeout(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     // Use a non-routable IP address that will cause a connection timeout
@@ -1192,6 +1205,7 @@ pub fn connection_timeout(engine: &dyn ConnectorTestEngine) {
 
 /// Test that pausing while a startup retry attempt is in-flight interrupts the
 /// attempt instead of waiting for connect/request timeouts to elapse.
+#[engine_test(services(Nats))]
 pub fn pause_interrupts_inflight_retry_attempt(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     // Use a non-routable IP address that causes a long connect timeout.
@@ -1241,6 +1255,7 @@ pub fn pause_interrupts_inflight_retry_attempt(engine: &dyn ConnectorTestEngine)
 }
 
 /// Test that retry_interval_secs controls retry cadence in ERROR state.
+#[engine_test(services(Nats))]
 pub fn retry_interval_config_is_honored(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1288,6 +1303,7 @@ pub fn retry_interval_config_is_honored(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Test that retry_interval_secs=0 is rejected early by configuration validation.
+#[engine_test(services(Nats))]
 pub fn retry_interval_zero_rejected(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1334,6 +1350,7 @@ pub fn retry_interval_zero_rejected(engine: &dyn ConnectorTestEngine) {
 // ---------------------------------------------------------------------------
 
 /// Replay all published records from a fresh pipeline and verify correctness.
+#[engine_test(services(Nats))]
 pub fn replay_basic(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1370,6 +1387,7 @@ pub fn replay_basic(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Replay a subset of published records (partial range).
+#[engine_test(services(Nats))]
 pub fn replay_partial_range(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1403,6 +1421,7 @@ pub fn replay_partial_range(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Replay records then extend to consume new records published after the replay range.
+#[engine_test(services(Nats))]
 pub fn replay_then_extend(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1444,6 +1463,7 @@ pub fn replay_then_extend(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Replay with an empty range should succeed immediately without errors.
+#[engine_test(services(Nats))]
 pub fn replay_empty_range(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1475,6 +1495,7 @@ pub fn replay_empty_range(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Multiple sequential replays before extending.
+#[engine_test(services(Nats))]
 pub fn replay_multiple_ranges(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1528,6 +1549,7 @@ pub fn replay_multiple_ranges(engine: &dyn ConnectorTestEngine) {
 
 /// Replay should treat transient stream unavailability as retryable (non-fatal)
 /// and keep retrying until the stream is recreated with replayable data.
+#[engine_test(services(Nats))]
 pub fn replay_stream_deleted_retries_and_recovers(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1565,6 +1587,7 @@ pub fn replay_stream_deleted_retries_and_recovers(engine: &dyn ConnectorTestEngi
 
 /// Replay should keep retrying with non-fatal errors while the server is
 /// down and complete once the server and stream come back.
+#[engine_test(services(Nats))]
 pub fn replay_server_killed_retries_non_fatal(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1603,6 +1626,7 @@ pub fn replay_server_killed_retries_non_fatal(engine: &dyn ConnectorTestEngine) 
 
 /// Replay fails with a fatal error when the stream has been purged and the
 /// requested sequence numbers no longer exist.
+#[engine_test(services(Nats))]
 pub fn replay_after_purge_errors(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1634,6 +1658,7 @@ pub fn replay_after_purge_errors(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Replay fails fast when the requested end sequence is above the stream tail.
+#[engine_test(services(Nats))]
 pub fn replay_end_after_last_sequence_fails_fast(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1658,6 +1683,7 @@ pub fn replay_end_after_last_sequence_fails_fast(engine: &dyn ConnectorTestEngin
 
 /// Replay fails fast when the requested start sequence is older than the
 /// stream head (messages have been purged and replaced with newer ones).
+#[engine_test(services(Nats))]
 pub fn replay_start_before_first_sequence_fails_fast(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1689,6 +1715,7 @@ pub fn replay_start_before_first_sequence_fails_fast(engine: &dyn ConnectorTestE
 }
 
 /// Replay fails fast when requesting a non-empty range from an empty stream.
+#[engine_test(services(Nats))]
 pub fn replay_empty_stream_fails_fast(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(
@@ -1715,6 +1742,7 @@ pub fn replay_empty_stream_fails_fast(engine: &dyn ConnectorTestEngine) {
 
 /// Verifies that after calling `Disconnect`, records published to the stream
 /// are NOT delivered to the pipeline.
+#[engine_test(services(Nats))]
 pub fn disconnect_stops_delivery(engine: &dyn ConnectorTestEngine) {
     use NatsMockAction::*;
     run_nats_mock_test(

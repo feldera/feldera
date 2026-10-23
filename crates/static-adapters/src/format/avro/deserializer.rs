@@ -45,10 +45,9 @@ use std::{
     slice::Iter,
 };
 
-use crate::format::avro::resolve_ref;
-
-use super::coercion::{Coerced, Coercion, field_coercion};
-use super::input::avro_de_config;
+use dbsp_adapters::format::avro::coercion::{Coerced, Coercion, field_coercion};
+use dbsp_adapters::format::avro::input::avro_de_config;
+use dbsp_adapters::format::avro::resolve_ref;
 
 fn deserialize_decimal<E: serde::de::Error>(d: &Decimal, schema: &Schema) -> Result<String, E> {
     let Schema::Decimal(schema) = schema else {
@@ -612,7 +611,7 @@ impl<'de> de::Deserializer<'de> for StrDeserializer<'de> {
 }
 
 // This one-liner function is needed to force the erased deserializer implementation
-// for the Avro deserializer to get monomorphized in the adapters crate rather than
+// for the Avro deserializer to get monomorphized in this crate rather than
 // every crate that uses it.
 #[inline(never)]
 pub fn avro_deserializer<'a, 'de>(
@@ -641,7 +640,7 @@ pub fn from_avro_value<'de, D: DeserializeWithContext<'de, SqlSerdeConfig, AUX>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::format::avro::{coercion::Coercion, debezium::DebeziumTimeType};
+    use dbsp_adapters::format::avro::{coercion::Coercion, debezium::DebeziumTimeType};
 
     #[test]
     fn ignore_nullable_coerced_null() {

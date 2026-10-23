@@ -1,6 +1,7 @@
 //! The Delta Lake input connector on Unity Catalog tables: the cases of `tests` that need a
 //! Databricks workspace, behind the `delta-unity-test` feature.
 
+use crate::test::engine_test;
 use std::collections::HashMap;
 use std::mem::forget;
 use std::sync::{Arc, Mutex};
@@ -28,6 +29,7 @@ use crate::test::pipeline::PipelineTestEngine;
 ///
 /// `python/tests/platform/fixtures/unity_change_feed.py` builds the table; the
 /// test is inert until `DELTA_TABLE_TEST_UNITY_CDF_TABLE` names it.
+#[engine_test(serial(delta_s3), requires(Storage))]
 pub fn unity_change_feed(engine: &dyn PipelineTestEngine) {
     let Ok(table_uri) = std::env::var("DELTA_TABLE_TEST_UNITY_CDF_TABLE") else {
         println!("DELTA_TABLE_TEST_UNITY_CDF_TABLE is unset; skipping");
@@ -128,6 +130,7 @@ pub fn unity_change_feed(engine: &dyn PipelineTestEngine) {
 ///
 /// Behind `delta-unity-test`, not `delta-s3-test`: this one needs a Databricks
 /// workspace, so it stays out of CI while the rest of the S3 tests run there.
+#[engine_test(serial(delta_s3))]
 pub fn unity_people_2m(engine: &dyn PipelineTestEngine) {
     let object_store_config = [
         // feldera-ci has no OAuth secret; CI mints this token per run via

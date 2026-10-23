@@ -1,6 +1,7 @@
 //! The URL input connector: a document read over HTTP, a failed request, and a stream that
 //! pauses and resumes, with and without reconnecting.
 
+use crate::test::engine_test;
 use std::collections::BTreeMap;
 use std::io::Error as IoError;
 use std::sync::mpsc::channel;
@@ -78,6 +79,7 @@ where
 }
 
 /// A document arrives in order once the endpoint starts.
+#[engine_test]
 pub fn success(engine: &dyn ConnectorTestEngine) {
     let pipeline = setup(
         engine,
@@ -109,6 +111,7 @@ pub fn success(engine: &dyn ConnectorTestEngine) {
 
 /// A request for a path that the server does not have is an endpoint error, once the endpoint
 /// starts.
+#[engine_test]
 pub fn failure(engine: &dyn ConnectorTestEngine) {
     let pipeline = setup(engine, || async { "" }, "nonexistent", 60);
     pipeline.consumer.on_error(Some(Box::new(|_, _| ())));
@@ -238,11 +241,13 @@ fn check_pause(engine: &dyn ConnectorTestEngine, with_reconnect: bool) {
 }
 
 /// With a `pause_timeout` of 0, a pause drops the connection, and a resume reconnects.
+#[engine_test(ignore = "depends on timing")]
 pub fn pause_with_reconnect(engine: &dyn ConnectorTestEngine) {
     check_pause(engine, true);
 }
 
 /// With a long `pause_timeout`, the connection stays up across a pause.
+#[engine_test(ignore = "depends on timing")]
 pub fn pause_without_reconnect(engine: &dyn ConnectorTestEngine) {
     check_pause(engine, false);
 }

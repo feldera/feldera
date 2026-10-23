@@ -8,6 +8,7 @@
 //! cases, which run with the `iceberg-tests-fs` feature, and `follow_tests`, `glue_tests`,
 //! `rest_tests`, and `s3tables_tests`, which share the fixtures of this module.
 
+use crate::test::engine_test;
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 use std::path::Path;
@@ -274,6 +275,8 @@ pub(super) fn iceberg_input_pipeline_with_storage(
             .collect(),
         materialized: true,
         persistent_ids: true,
+        table_version: 0,
+        attribute_defaults: Vec::new(),
     };
     let controller = engine
         .controller(
@@ -363,10 +366,12 @@ pub(super) fn output_zset(relation: &Relation, path: &Path) -> ZSet {
         .unwrap()
 }
 
+#[engine_test(cfg(feature = "iceberg-tests-fs"))]
 pub fn localfs_input_test_unordered(engine: &dyn PipelineTestEngine) {
     iceberg_localfs_input_test(engine, 200_000, json!({}), &|_| true);
 }
 
+#[engine_test(cfg(feature = "iceberg-tests-fs"))]
 pub fn localfs_input_test_ordered(engine: &dyn PipelineTestEngine) {
     iceberg_localfs_input_test(
         engine,
@@ -376,6 +381,7 @@ pub fn localfs_input_test_ordered(engine: &dyn PipelineTestEngine) {
     );
 }
 
+#[engine_test(cfg(feature = "iceberg-tests-fs"))]
 pub fn localfs_input_test_ordered_with_filter(engine: &dyn PipelineTestEngine) {
     iceberg_localfs_input_test(
         engine,
@@ -387,6 +393,7 @@ pub fn localfs_input_test_ordered_with_filter(engine: &dyn PipelineTestEngine) {
 
 /// A filter that keeps rows throughout the table's time range: an ordered read must apply it
 /// to the rows of each range, not only to the bounds of the ranges.
+#[engine_test(cfg(feature = "iceberg-tests-fs"))]
 pub fn localfs_input_test_ordered_with_row_filter(engine: &dyn PipelineTestEngine) {
     iceberg_localfs_input_test(
         engine,
@@ -398,6 +405,7 @@ pub fn localfs_input_test_ordered_with_row_filter(engine: &dyn PipelineTestEngin
 
 /// A single parser task must ingest the whole snapshot correctly (the parallel
 /// path defaults to 4 parsers and is covered by the tests above).
+#[engine_test(cfg(feature = "iceberg-tests-fs"))]
 pub fn localfs_input_test_single_parser(engine: &dyn PipelineTestEngine) {
     iceberg_localfs_input_test(engine, 100_000, json!({ "num_parsers": 1 }), &|_| true);
 }
@@ -405,6 +413,7 @@ pub fn localfs_input_test_single_parser(engine: &dyn PipelineTestEngine) {
 /// `transaction_mode = snapshot` on an unordered read ingests the whole snapshot
 /// in exactly one Feldera transaction; the ingested data must be identical to a
 /// non-transactional read.
+#[engine_test(cfg(feature = "iceberg-tests-fs"))]
 pub fn localfs_input_test_transactional(engine: &dyn PipelineTestEngine) {
     let metrics = iceberg_localfs_input_test(
         engine,
@@ -424,6 +433,7 @@ pub fn localfs_input_test_transactional(engine: &dyn PipelineTestEngine) {
 
 /// `transaction_mode = snapshot` on an ordered read ingests one Feldera
 /// transaction per lateness range; the ingested data must still be complete.
+#[engine_test(cfg(feature = "iceberg-tests-fs"))]
 pub fn localfs_input_test_ordered_transactional(engine: &dyn PipelineTestEngine) {
     let metrics = iceberg_localfs_input_test(
         engine,
@@ -468,6 +478,7 @@ fn create_localfs_table(data: &[Value], extra_columns: bool) -> String {
 /// The connector picks the last snapshot whose `timestamp-ms` is at or before
 /// the requested time, so the test reads the two timestamps back rather than
 /// assuming what the writer stamped.
+#[engine_test(cfg(feature = "iceberg-tests-fs"))]
 pub fn localfs_input_test_datetime(engine: &dyn PipelineTestEngine) {
     let before = data(200);
     let after = data(400)[200..].to_vec();
@@ -645,12 +656,14 @@ fn iceberg_localfs_input_subset_test(engine: &dyn PipelineTestEngine, skip_unuse
 }
 
 /// The connector reads only the columns the SQL table declares.
+#[engine_test(cfg(feature = "iceberg-tests-fs"))]
 pub fn localfs_input_test_subset_schema(engine: &dyn PipelineTestEngine) {
     iceberg_localfs_input_subset_test(engine, false);
 }
 
 /// The `skip_unused_columns` table property also drops declared-but-unused
 /// columns from the read.
+#[engine_test(cfg(feature = "iceberg-tests-fs"))]
 pub fn localfs_input_test_skip_unused_columns(engine: &dyn PipelineTestEngine) {
     iceberg_localfs_input_subset_test(engine, true);
 }
@@ -698,6 +711,8 @@ fn iceberg_ft_pipeline(
         input_properties: Vec::new(),
         materialized: true,
         persistent_ids: true,
+        table_version: 0,
+        attribute_defaults: Vec::new(),
     };
     engine
         .controller(
@@ -729,6 +744,10 @@ fn suspend_and_stop(pipeline: Controller) {
 /// To confirm the assertion catches a regression, drop the terminal eoi
 /// boundary (or the `resume_info.eoi` short-circuit) in `input.rs`: the resumed
 /// run then re-reads the whole snapshot and `snapshot_records_total` is nonzero.
+#[engine_test(
+    cfg(feature = "iceberg-tests-fs"),
+    requires(Storage, Checkpoints, SuspendResume, FaultTolerance)
+)]
 pub fn localfs_input_test_resume_completed_snapshot(engine: &dyn PipelineTestEngine) {
     let data = data(100_000);
     let metadata_path = create_localfs_table(&data, false);

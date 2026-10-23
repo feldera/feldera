@@ -171,7 +171,9 @@ use `with ('materialized' = 'true')` for tables, or `create materialized view` f
             self.indexed,
             self.schema.clone(),
             projected_schema,
-            snapshot.get(&self.name).cloned(),
+            snapshot
+                .get(&self.name)
+                .map(|readers| readers.partitions.clone()),
             projection,
         )))
     }
@@ -448,6 +450,7 @@ impl ExecutionPlan for AdHocQueryExecution {
             let projection = self.projection.clone();
 
             let indexed = self.indexed;
+            let max_batch_size = batch_reader.adhoc_batch_rows();
 
             builder.spawn(async move {
                 let mut cursor = batch_reader
@@ -485,8 +488,7 @@ impl ExecutionPlan for AdHocQueryExecution {
                             cur_batch_size += 1;
                             w -= 1;
 
-                            const MAX_BATCH_SIZE: usize = 256;
-                            if cur_batch_size >= MAX_BATCH_SIZE {
+                            if cur_batch_size >= max_batch_size {
                                 let batch = rows.finish().map_err(|e| {
                                     DataFusionError::Execution(format!(
                                         "Unable to collect rows into a RecordBatch: {}",

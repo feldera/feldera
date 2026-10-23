@@ -5,6 +5,7 @@
 //! `gcloud beta emulators pubsub start --project=feldera-test --host-port=127.0.0.1:8685`.
 //! `gcp_tests` runs the same checks against a Google Cloud project.
 
+use crate::test::engine_test;
 use std::collections::HashMap;
 use std::io;
 use std::net::{TcpStream, ToSocketAddrs};
@@ -12,10 +13,10 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use arrow::array::AsArray;
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::test::{
     ConnectorTestEngine, InputOptions, TestCollection, Updates, wait_for_rows,
 };
+use feldera_storage::tokio::TOKIO;
 use feldera_types::program_schema::Relation;
 use google_cloud_gax::conn::Environment;
 use google_cloud_googleapis::pubsub::v1::PubsubMessage;
@@ -306,6 +307,7 @@ pub(super) fn check_input(
 
 /// An endpoint does not open with an emulator address that does not resolve, or with a
 /// subscription that does not exist.
+#[engine_test(cfg(feature = "pubsub-emulator-test"), services(PubSubEmulator))]
 pub fn input_errors(engine: &dyn ConnectorTestEngine) {
     let emulator = emulator();
 
@@ -368,6 +370,7 @@ pub fn input_errors(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Random batches arrive through a subscription of the emulator.
+#[engine_test(cfg(feature = "pubsub-emulator-test"), services(PubSubEmulator))]
 pub fn random_input_with_emulator(engine: &dyn ConnectorTestEngine) {
     proptest!(ProptestConfig::with_cases(2), |(data in rows::batches(&relation(), "id", 0..=10, 100))| {
         let emulator = emulator();

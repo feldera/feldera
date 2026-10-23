@@ -1,6 +1,8 @@
+// Each benchmark compiles this module on its own and uses only part of it.
+#![allow(dead_code)]
+
 use dbsp::OrdIndexedZSet;
 use dbsp::utils::Tup2;
-use dbsp_adapters::static_compile::seroutput::SerBatchImpl;
 use dbsp_adapters::{OutputConsumer, SerBatch};
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_macros::{IsNone, OrdRepr};
@@ -9,6 +11,7 @@ use feldera_types::{deserialize_without_context, serialize_struct};
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use size_of::SizeOf;
+use static_adapters::seroutput::SerBatchImpl;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 

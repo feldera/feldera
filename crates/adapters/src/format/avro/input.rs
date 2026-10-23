@@ -9,9 +9,9 @@ use crate::{
 use apache_avro::{
     Schema as AvroSchema, from_avro_datum, schema::ResolvedSchema, types::Value as AvroValue,
 };
-use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::{ConnectorMetadata, catalog::AvroSchemaRefs};
+use feldera_types::circuit::StagedBuffers;
 use feldera_types::{
     format::avro::{AvroParserConfig, AvroUpdateFormat},
     program_schema::Relation,

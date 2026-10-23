@@ -5,9 +5,9 @@ use crate::{
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow};
 use async_trait::async_trait;
 use chrono::Utc;
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{InputCommandReceiver, Resume, Watermark};
+use feldera_storage::tokio::TOKIO;
 use feldera_types::{
     config::FtModel,
     program_schema::Relation,

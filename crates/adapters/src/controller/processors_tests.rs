@@ -2,6 +2,7 @@
 //! reads pass through preprocessors before the parser, and the bytes that an encoder writes
 //! pass through postprocessors before the output connector.
 
+use crate::test::engine_test;
 use std::io::Write;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -24,6 +25,7 @@ use crate::test::init_test_logger;
 use crate::test::pipeline::{ControllerOptions, PipelineTestEngine};
 use crate::test::suites::controller::identity;
 
+#[engine_test]
 pub fn preprocessor(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -109,6 +111,7 @@ pub fn preprocessor(engine: &dyn PipelineTestEngine) {
     controller.stop().unwrap();
 }
 
+#[engine_test]
 pub fn decryption_preprocessor(engine: &dyn PipelineTestEngine) {
     use crate::preprocess::aes256gcm_encrypt;
 
@@ -261,6 +264,7 @@ impl PreprocessorFactory for Base64LinePreprocessorFactory {
 /// `b"1,true,,one\n"`), the result is appended to the internal
 /// `StreamSplitter`, which uses the CSV parser's own splitter to find the
 /// CSV record boundary before forwarding the complete row to `CsvParser`.
+#[engine_test]
 pub fn base64_csv_preprocessor(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -385,6 +389,7 @@ impl PreprocessorFactory for Base64SpongePreprocessorFactory {
 
 /// Like the previous test, but use a SpongeSplitter in the preprocessor and
 /// uudecode everything, not at line boundaries.
+#[engine_test]
 pub fn base64_sponge_csv_preprocessor(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -468,6 +473,7 @@ pub fn base64_sponge_csv_preprocessor(engine: &dyn PipelineTestEngine) {
 /// The output JSON produced by the encoder passes through the postprocessor
 /// unchanged and lands in the output file as valid JSON that the query engine
 /// can read back.
+#[engine_test]
 pub fn postprocessor(engine: &dyn PipelineTestEngine) {
     use crate::postprocess::PassthroughPostprocessorFactory;
 
@@ -570,6 +576,7 @@ pub fn postprocessor(engine: &dyn PipelineTestEngine) {
 /// Verify that the encryption postprocessor encrypts output and the file
 /// cannot be parsed as plain JSON.  Decrypt the raw file bytes and confirm
 /// that the decrypted payload matches what the pipeline produced.
+#[engine_test]
 pub fn encryption_postprocessor(engine: &dyn PipelineTestEngine) {
     use crate::postprocess::EncryptionPostprocessorFactory;
     use crate::preprocess::aes256gcm_decrypt;
@@ -721,6 +728,7 @@ impl PostprocessorFactory for Base64EncodePostprocessorFactory {
 
 /// Verify that a custom postprocessor can transform output bytes and that
 /// decoding the result yields the original JSON payload.
+#[engine_test]
 pub fn base64_postprocessor(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -852,6 +860,7 @@ impl PostprocessorFactory for AlwaysErrorPostprocessorFactory {
 /// and the error is delivered to the controller's error callback as a non-fatal
 /// `ControllerError::OutputTransportError`.  The pipeline must continue
 /// running without panicking or hanging.
+#[engine_test]
 pub fn postprocessor_error_reported(engine: &dyn PipelineTestEngine) {
     use crate::controller::ControllerError;
     use std::sync::{Arc, Mutex};
@@ -955,6 +964,7 @@ pub fn postprocessor_error_reported(engine: &dyn PipelineTestEngine) {
 /// postprocessor layer, so a postprocessor cannot be wired into them.  The
 /// controller should return a `ControllerError::PostprocessorCreateError`
 /// before the circuit starts running.
+#[engine_test]
 pub fn postprocessor_on_delta_output_fails(engine: &dyn PipelineTestEngine) {
     use crate::controller::ControllerError;
 

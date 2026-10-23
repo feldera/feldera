@@ -1,5 +1,6 @@
 //! The file input connector: a file read once, and a file followed as it grows.
 
+use crate::test::engine_test;
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::thread::sleep;
@@ -42,6 +43,7 @@ fn rows() -> Updates {
 
 /// A CSV file with a header row and `|` delimiters, read through a 5-byte buffer, arrives in
 /// order once the endpoint starts.
+#[engine_test]
 pub fn csv_file_nofollow(engine: &dyn ConnectorTestEngine) {
     let file = NamedTempFile::new().unwrap();
     file.as_file()
@@ -70,6 +72,7 @@ pub fn csv_file_nofollow(engine: &dyn ConnectorTestEngine) {
 
 /// A followed file, named by a `file://` URL, delivers each append in order, and a record
 /// that does not parse is an error that inserts nothing.
+#[engine_test]
 pub fn csv_file_follow(engine: &dyn ConnectorTestEngine) {
     let file = NamedTempFile::new().unwrap();
     let config = serde_json::from_value(json!({

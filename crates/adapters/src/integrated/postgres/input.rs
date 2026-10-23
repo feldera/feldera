@@ -3,9 +3,9 @@ use crate::transport::{
 };
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState, RecordFormat};
 use anyhow::{Result as AnyResult, anyhow};
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::catalog::{DeCollectionStream, InputCollectionHandle};
 use feldera_adapterlib::format::ParseError;
+use feldera_storage::tokio::TOKIO;
 use feldera_types::config::FtModel;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::Relation;

@@ -1,6 +1,7 @@
-use super::{DeLazyMapHandle, DeMapHandle, DeZSetHandle, SerCollectionHandleImpl};
-use crate::catalog::{InputCollectionHandle, SerBatchReaderHandle};
-use crate::{Catalog, ControllerError, catalog::OutputCollectionHandles};
+//! The catalog of a circuit that the SQL compiler generates: its input and output streams, by
+//! name, which the generated code registers through the record types of each stream.
+
+use crate::{DeLazyMapHandle, DeMapHandle, DeZSetHandle, SerCollectionHandleImpl};
 use dbsp::circuit::Layout;
 use dbsp::circuit::circuit_builder::CircuitBase;
 use dbsp::dynamic::DynData;
@@ -14,7 +15,10 @@ use dbsp::{
     operator::{LazyMapHandle, MapHandle, ZSetHandle},
     typed_batch::BatchReader,
 };
-use feldera_adapterlib::catalog::CircuitCatalog;
+use feldera_adapterlib::{
+    errors::controller::ControllerError, postprocess::PostprocessorRegistry,
+    preprocess::PreprocessorRegistry,
+};
 use feldera_sqllib::{SqlString, Variant, build_string_interner};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::{
@@ -25,6 +29,134 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::mem::transmute;
 use std::sync::{Arc, Mutex};
+
+pub use feldera_adapterlib::catalog::*;
+
+/// Circuit catalog implementation.
+pub struct Catalog {
+    input_collection_handles: BTreeMap<SqlIdentifier, InputCollectionHandle>,
+    output_batch_handles: BTreeMap<SqlIdentifier, OutputCollectionHandles>,
+    preprocessor_registry: Arc<Mutex<PreprocessorRegistry>>,
+    postprocessor_registry: Arc<Mutex<PostprocessorRegistry>>,
+}
+
+impl Default for Catalog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Catalog {
+    pub fn new() -> Self {
+        Self {
+            input_collection_handles: BTreeMap::new(),
+            output_batch_handles: BTreeMap::new(),
+            preprocessor_registry: Arc::new(Mutex::new(PreprocessorRegistry::new())),
+            postprocessor_registry: Arc::new(Mutex::new(PostprocessorRegistry::new())),
+        }
+    }
+
+    pub fn register_input_collection_handle(
+        &mut self,
+        handle: InputCollectionHandle,
+    ) -> Result<(), ControllerError> {
+        let name = &handle.schema.name;
+        if self.input_collection_handles.contains_key(name) {
+            return Err(ControllerError::duplicate_input_stream(&name.sql_name()));
+        }
+        self.input_collection_handles.insert(name.clone(), handle);
+
+        Ok(())
+    }
+
+    pub fn register_output_batch_handles(
+        &mut self,
+        name: &SqlIdentifier,
+        handles: OutputCollectionHandles,
+    ) -> Result<(), ControllerError> {
+        if self.output_batch_handles.contains_key(name) {
+            return Err(ControllerError::duplicate_output_stream(&name.sql_name()));
+        }
+        self.output_batch_handles.insert(name.clone(), handles);
+
+        Ok(())
+    }
+}
+
+impl CircuitCatalog for Catalog {
+    /// Look up an input stream handle by name.
+    fn input_collection_handle(&self, name: &SqlIdentifier) -> Option<&InputCollectionHandle> {
+        self.input_collection_handles.get(name)
+    }
+
+    fn input_iter(
+        &self,
+    ) -> Box<dyn Iterator<Item = (&SqlIdentifier, &InputCollectionHandle)> + '_> {
+        Box::new(self.input_collection_handles.iter())
+    }
+
+    /// Look up output stream handles by name.
+    fn output_handles(&self, name: &SqlIdentifier) -> Option<&OutputCollectionHandles> {
+        self.output_batch_handles.get(name)
+    }
+
+    fn index_handles(
+        &self,
+        endpoint_name: &str,
+        stream: &SqlIdentifier,
+        index: &SqlIdentifier,
+    ) -> Result<&OutputCollectionHandles, ControllerError> {
+        let Some(stream_handles) = self.output_handles(stream) else {
+            return Err(ControllerError::unknown_output_stream(
+                endpoint_name,
+                &stream.sql_name(),
+            ));
+        };
+
+        // The index is the same as the stream.
+        if stream_handles.alias_as_index == Some(index.clone()) {
+            return Ok(stream_handles);
+        }
+
+        let handle = self
+            .output_handles(index)
+            .ok_or_else(|| ControllerError::unknown_index(endpoint_name, &index.sql_name()))?;
+
+        if handle.index_of.is_none() {
+            return Err(ControllerError::not_an_index(
+                endpoint_name,
+                &index.sql_name(),
+            ));
+        }
+
+        if handle.index_of.as_ref() != Some(stream) {
+            return Err(ControllerError::unknown_output_stream(
+                endpoint_name,
+                &stream.sql_name(),
+            ));
+        }
+
+        Ok(handle)
+    }
+
+    fn output_handles_mut(&mut self, name: &SqlIdentifier) -> Option<&mut OutputCollectionHandles> {
+        self.output_batch_handles.get_mut(name)
+    }
+
+    fn output_iter(
+        &self,
+    ) -> Box<dyn Iterator<Item = (&SqlIdentifier, &OutputCollectionHandles)> + '_> {
+        Box::new(self.output_batch_handles.iter())
+    }
+
+    fn preprocessor_registry(&self) -> Arc<Mutex<PreprocessorRegistry>> {
+        self.preprocessor_registry.clone()
+    }
+
+    fn postprocessor_registry(&self) -> Arc<Mutex<PostprocessorRegistry>> {
+        self.postprocessor_registry.clone()
+    }
+}
 
 const INTERNED_STRING_RELATION_NAME: &str = "feldera_interned_strings";
 
@@ -1134,7 +1266,7 @@ fn index_schema(
 
 #[cfg(test)]
 mod test {
-    use std::{io::Write, ops::Deref};
+    use std::{io::Write, ops::Deref, sync::Arc};
 
     use crate::{Catalog, CircuitCatalog, catalog::RecordFormat, test::TestStruct};
     use dbsp::Runtime;
@@ -1210,7 +1342,13 @@ mod test {
 
         circuit.transaction().unwrap();
 
-        let delta = batch_to_json(output_stream_handles.delta_handle.concat().deref());
+        let delta = batch_to_json(
+            output_stream_handles
+                .delta_handle
+                .take_readers()
+                .whole
+                .deref(),
+        );
         assert_eq!(
             delta,
             r#"1: {"id":1,"b":true,"i":null,"s":"1"}
@@ -1227,7 +1365,13 @@ mod test {
 
         circuit.transaction().unwrap();
 
-        let delta = batch_to_json(output_stream_handles.delta_handle.concat().deref());
+        let delta = batch_to_json(
+            output_stream_handles
+                .delta_handle
+                .take_readers()
+                .whole
+                .deref(),
+        );
         assert_eq!(
             delta,
             r#"-1: {"id":1,"b":true,"i":null,"s":"1"}
@@ -1242,7 +1386,13 @@ mod test {
 
         circuit.transaction().unwrap();
 
-        let delta = batch_to_json(output_stream_handles.delta_handle.concat().deref());
+        let delta = batch_to_json(
+            output_stream_handles
+                .delta_handle
+                .take_readers()
+                .whole
+                .deref(),
+        );
         assert_eq!(
             delta,
             r#"-1: {"id":2,"b":true,"i":null,"s":"2"}
@@ -1318,6 +1468,30 @@ mod test {
         assert!(
             readers.partitions.len() > 1,
             "the workers hold the rows in parts"
+        );
+
+        // The whole reads the very batches of the parts: a copy would cost a step the size of
+        // the output, which for a table's integral is the whole table.
+        let addresses = |reader: &dyn SerBatchReader| {
+            let mut addresses = reader
+                .batches()
+                .iter()
+                .map(|batch| Arc::as_ptr(batch) as *const ())
+                .collect::<Vec<_>>();
+            addresses.sort();
+            addresses
+        };
+        let mut part_addresses = readers
+            .partitions
+            .iter()
+            .flat_map(|reader| addresses(reader.deref()))
+            .collect::<Vec<_>>();
+        part_addresses.sort();
+        assert_eq!(addresses(readers.whole.deref()), part_addresses);
+        assert_eq!(
+            addresses(readers.partitions[0].deref()),
+            addresses(readers.partitions[0].deref()),
+            "a part reads the same batches each time"
         );
 
         let readers = output_stream_handles.delta_handle.take_readers();

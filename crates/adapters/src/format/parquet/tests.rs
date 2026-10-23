@@ -1,6 +1,7 @@
 //! The Parquet format: files read through the file transport, with or without compression and
 //! with Parquet variants, and the files that the encoder writes.
 
+use crate::test::engine_test;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -11,7 +12,7 @@ use arrow::array::{ArrayRef, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field as ArrowField, Fields, Schema, TimeUnit};
 use bytes::Bytes;
 use feldera_adapterlib::test::{
-    ConnectorTestEngine, InputOptions, MockOutputConsumer, Updates, ZSet, wait_for_rows,
+    Capability, ConnectorTestEngine, InputOptions, MockOutputConsumer, Updates, ZSet, wait_for_rows,
 };
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::config::{FormatConfig, InputEndpointConfig};
@@ -102,11 +103,13 @@ fn check_input(engine: &dyn ConnectorTestEngine, compression: Compression) {
 }
 
 /// An uncompressed file reads back unchanged.
+#[engine_test]
 pub fn input_uncompressed(engine: &dyn ConnectorTestEngine) {
     check_input(engine, Compression::UNCOMPRESSED);
 }
 
 /// A file compressed with Snappy reads back unchanged.
+#[engine_test]
 pub fn input_snappy(engine: &dyn ConnectorTestEngine) {
     check_input(engine, Compression::SNAPPY);
 }
@@ -146,6 +149,7 @@ fn file_schema() -> Schema {
 
 /// The encoder writes one Parquet row per unit of weight, in the order of the batch's cursor,
 /// in a file with the column names, types, and nullability of the relation.
+#[engine_test]
 pub fn output(engine: &dyn ConnectorTestEngine) {
     let relation = relation();
     let rows = rows();
@@ -190,8 +194,37 @@ pub fn output(engine: &dyn ConnectorTestEngine) {
     );
 }
 
+/// A Parquet file cannot say "remove this row", so the encoder refuses a delete with an error
+/// rather than a panic, and writes nothing.
+#[engine_test]
+pub fn a_delete_is_refused(engine: &dyn ConnectorTestEngine) {
+    let relation = relation();
+    let rows = rows();
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let mut encoder = encoder(
+        &FormatConfig {
+            name: Cow::from("parquet"),
+            config: json!({ "buffer_size_records": usize::MAX }),
+        },
+        None,
+        &relation,
+        Box::new(MockOutputConsumer::with_buffer(buffer.clone())),
+    );
+    let batch = engine
+        .output_batch(&relation, rows.rows(), &[1, -1])
+        .unwrap();
+    encoder.consumer().batch_start(0, OutputBatchType::Delta);
+    let error = encoder.encode(batch).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Deletes for the parquet format are not yet supported."
+    );
+    assert!(buffer.lock().unwrap().is_empty());
+}
+
 /// An encoder whose buffer holds two records writes a batch of three as two files: one when
 /// the buffer fills, and one with the rest.
+#[engine_test]
 pub fn output_in_buffers(engine: &dyn ConnectorTestEngine) {
     let relation = relation();
     let rows = rows();
@@ -238,7 +271,9 @@ pub fn output_in_buffers(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A VARIANT column stored as a Parquet variant, and one stored as JSON text, read into
-/// VARIANTs; NULLs of both read as NULL.
+/// VARIANTs; NULLs of both read as NULL. The binary value reads back as an array of bytes on an
+/// engine with [`Capability::VariantBinaryAsArray`], and as base64 text on any other.
+#[engine_test]
 pub fn input_variant(engine: &dyn ConnectorTestEngine) {
     use chrono::NaiveDate;
     use parquet_variant::{Variant as ParquetVariant, VariantBuilderExt, VariantDecimal4};
@@ -318,12 +353,17 @@ pub fn input_variant(engine: &dyn ConnectorTestEngine) {
             .unwrap_or_default();
         assert!(errors.is_empty(), "parse errors: {errors:?}");
     });
+    let bin = if engine.has(Capability::VariantBinaryAsArray) {
+        "[1,2,3]"
+    } else {
+        r#"\"AQID\""#
+    };
+    let row = format!(
+        r#"{{"id": 1, "v": "{{\"bin\":{bin},\"bool\":true,\"date\":\"2026-09-01\",\"dec\":123.45,\"int\":42,\"list\":[1,\"two\"],\"nul\":null,\"str\":\"hello\"}}", "json_v": "{{\"legacy\":true}}"}}"#
+    );
     let expected = Updates::from_json(
         published_schema(&relation),
-        &[
-            (1, r#"{"id": 1, "v": "{\"bin\":[1,2,3],\"bool\":true,\"date\":\"2026-09-01\",\"dec\":123.45,\"int\":42,\"list\":[1,\"two\"],\"nul\":null,\"str\":\"hello\"}", "json_v": "{\"legacy\":true}"}"#),
-            (1, r#"{"id": 2, "v": null, "json_v": null}"#),
-        ],
+        &[(1, &row), (1, r#"{"id": 2, "v": null, "json_v": null}"#)],
     )
     .unwrap();
     assert_eq!(updates, expected);

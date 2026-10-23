@@ -1,16 +1,18 @@
+//! `DeCollectionHandle`, `DeCollectionStream`, `InputBuffer`, and related trait
+//! implementations backed by serde-based deserializers that convert input records into a
+//! strongly typed representation.
+
 #[cfg(feature = "with-avro")]
 use crate::catalog::AvroStream;
 #[cfg(feature = "with-avro")]
 use crate::format::avro::from_avro_value;
-use crate::format::csv::{csv_reader_builder, deserializer::ByteRecordDeserializer};
+use crate::format::csv::{byte_record_deserializer, deserializer::ByteRecordDeserializer};
 use crate::format::raw::{RawDeserializer, raw_serde_config};
-use crate::static_compile::metadata::MetadataVariant;
+use crate::metadata::MetadataVariant;
 use crate::{
-    ControllerError, DeCollectionHandle,
-    catalog::{DeCollectionStream, RecordFormat},
-    format::byte_record_deserializer,
+    ControllerError,
+    catalog::{ArrowStream, DeCollectionHandle, DeCollectionStream, RecordFormat},
 };
-use crate::{catalog::ArrowStream, format::InputBuffer};
 use anyhow::{Result as AnyResult, anyhow, bail};
 #[cfg(feature = "with-avro")]
 use apache_avro::{Schema as AvroSchema, types::Value as AvroValue};
@@ -21,6 +23,7 @@ use dbsp::{
     DBData, InputHandle, LazyMapHandle, MapHandle, ZSetHandle, ZWeight, algebra::HasOne,
     operator::Update, utils::Tup2,
 };
+use dbsp_adapters::format::{InputBuffer, csv_reader_builder};
 use erased_serde::Deserializer as ErasedDeserializer;
 use feldera_adapterlib::ConnectorMetadata;
 #[cfg(feature = "with-avro")]
@@ -36,7 +39,7 @@ use std::iter::zip;
 use std::{collections::VecDeque, marker::PhantomData, ops::Neg};
 
 // The following functions are needed to force the erased deserializer implementation
-// for the Arrow, CSV, JSON, and raw formats to get monomorphized in the adapters crate
+// for the Arrow, CSV, JSON, and raw formats to get monomorphized in this crate
 // rather than in every crate that uses it.
 
 #[inline(never)]
@@ -1927,11 +1930,9 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        DeCollectionHandle,
-        static_compile::{
-            DeLazyMapHandle, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeZSetHandle,
-            deinput::{RecordFormat, fraction},
-        },
+        DeLazyMapHandle, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeZSetHandle,
+        catalog::DeCollectionHandle,
+        deinput::{RecordFormat, fraction},
     };
     use csv::WriterBuilder as CsvWriterBuilder;
     use csv_core::{ReadRecordResult, Reader as CsvReader};

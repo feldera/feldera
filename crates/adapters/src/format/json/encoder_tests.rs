@@ -1,6 +1,7 @@
 //! The JSON encoder: the insert/delete, Snowflake, and Debezium envelopes as lines or arrays,
 //! Debezium and Redis keys, and records too long for the transport.
 
+use crate::test::engine_test;
 use std::sync::{Arc, Mutex};
 
 use arrow::datatypes::SchemaRef;
@@ -222,26 +223,31 @@ fn unwrap_envelope(
 }
 
 /// Insert/delete envelopes, one per line.
+#[engine_test]
 pub fn insert_delete_lines(engine: &dyn ConnectorTestEngine) {
     check(engine, InsertDelete, false, &fixed_batches());
 }
 
 /// Insert/delete envelopes in JSON arrays.
+#[engine_test]
 pub fn insert_delete_arrays(engine: &dyn ConnectorTestEngine) {
     check(engine, InsertDelete, true, &fixed_batches());
 }
 
 /// Snowflake records, one per line, numbered in order.
+#[engine_test]
 pub fn snowflake_lines(engine: &dyn ConnectorTestEngine) {
     check(engine, Snowflake, false, &fixed_batches());
 }
 
 /// Snowflake records in JSON arrays, numbered in order.
+#[engine_test]
 pub fn snowflake_arrays(engine: &dyn ConnectorTestEngine) {
     check(engine, Snowflake, true, &fixed_batches());
 }
 
 /// Debezium change events, one per line.
+#[engine_test]
 pub fn debezium_lines(engine: &dyn ConnectorTestEngine) {
     check(engine, Debezium, false, &fixed_batches());
 }
@@ -255,31 +261,37 @@ fn check_random(engine: &dyn ConnectorTestEngine, update_format: JsonUpdateForma
 }
 
 /// Random insert/delete envelopes, one per line.
+#[engine_test]
 pub fn random_insert_delete_lines(engine: &dyn ConnectorTestEngine) {
     check_random(engine, InsertDelete, false);
 }
 
 /// Random insert/delete envelopes in JSON arrays.
+#[engine_test]
 pub fn random_insert_delete_arrays(engine: &dyn ConnectorTestEngine) {
     check_random(engine, InsertDelete, true);
 }
 
 /// Random Snowflake records, one per line.
+#[engine_test]
 pub fn random_snowflake_lines(engine: &dyn ConnectorTestEngine) {
     check_random(engine, Snowflake, false);
 }
 
 /// Random Snowflake records in JSON arrays.
+#[engine_test]
 pub fn random_snowflake_arrays(engine: &dyn ConnectorTestEngine) {
     check_random(engine, Snowflake, true);
 }
 
 /// Random Debezium change events, one per line.
+#[engine_test]
 pub fn random_debezium_lines(engine: &dyn ConnectorTestEngine) {
     check_random(engine, Debezium, false);
 }
 
 /// A record longer than the transport's largest buffer is an error that shows the record.
+#[engine_test]
 pub fn record_longer_than_buffer(engine: &dyn ConnectorTestEngine) {
     let config = JsonEncoderConfig {
         update_format: InsertDelete,
@@ -299,6 +311,7 @@ pub fn record_longer_than_buffer(engine: &dyn ConnectorTestEngine) {
 
 /// With `key_fields`, a Debezium record carries a key of those fields, both with their
 /// schemas.
+#[engine_test]
 pub fn debezium_key_fields(engine: &dyn ConnectorTestEngine) {
     let config = JsonEncoderConfig {
         update_format: Debezium,
@@ -340,6 +353,7 @@ pub fn debezium_key_fields(engine: &dyn ConnectorTestEngine) {
 
 /// Redis output keys a record by its key fields: a delete has no value, and an insert's
 /// value is the whole record.
+#[engine_test]
 pub fn redis(engine: &dyn ConnectorTestEngine) {
     let config = JsonEncoderConfig {
         update_format: Redis,

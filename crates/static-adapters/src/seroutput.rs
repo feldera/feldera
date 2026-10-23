@@ -1,3 +1,6 @@
+//! `SerBatchReaderHandle` and related trait implementations backed by serde-based
+//! serializers that convert strongly typed output records into byte streams.
+
 use crate::catalog::{
     ArrowRowSink, SerBatchReader, SerBatchReaderHandle, SerTrace, SnapshotReaders,
 };
@@ -310,42 +313,26 @@ where
     KD: From<K> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
     VD: From<V> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
 {
-    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatchReader>> {
-        self.handle.take_from_worker(worker).map(|batch| {
-            Box::new(<SerBatchImpl<TypedBatch<K, V, R, B>, KD, VD>>::new(batch))
-                as Box<dyn SerBatchReader>
-        })
-    }
-
-    fn num_nonempty_mailboxes(&self) -> usize {
-        self.handle.num_nonempty_mailboxes()
-    }
-
-    fn take_from_all(&self) -> Vec<Arc<dyn SerBatchReader>> {
-        self.handle
+    /// Each worker's batch moves into a snapshot of its own, and the whole shares the
+    /// snapshots' batches, so no batch is copied. A snapshot of a batch taken by
+    /// reference would clone it, on every step.
+    fn take_readers(&self) -> SnapshotReaders {
+        let snapshots = self
+            .handle
             .take_from_all()
             .into_iter()
-            .map(|batch| {
-                Arc::new(<SerBatchImpl<TypedBatch<K, V, R, B>, KD, VD>>::new(batch))
-                    as Arc<dyn SerBatchReader>
-            })
-            .collect()
-    }
-
-    fn concat(&self) -> Arc<dyn SerBatchReader> {
-        Arc::new(<SerBatchImpl<TypedBatch<K, V, R, _>, KD, VD>>::new(
-            self.handle.concat(),
-        )) as Arc<dyn SerBatchReader>
-    }
-
-    fn take_readers(&self) -> SnapshotReaders {
-        let partitions = self.take_from_all();
-        let mut batches = partitions.iter().flat_map(|reader| reader.batches());
-        let whole = match batches.next() {
-            Some(first) => first.concat(batches.collect()),
-            // The mailboxes are empty now, so this concatenates no batches.
-            None => self.concat(),
+            .map(|batch| batch.into_dyn_snapshot())
+            .collect::<Vec<_>>();
+        let reader = |snapshot| {
+            Arc::new(SerBatchImpl::<_, KD, VD>::new(SpineSnapshot::<
+                TypedBatch<K, V, R, <TypedBatch<K, V, R, B> as BatchReader>::IntoBatch>,
+            >::new(snapshot))) as Arc<dyn SerBatchReader>
         };
+        let whole = reader(DynSpineSnapshot::concat(
+            <TypedBatch<K, V, R, B> as BatchReader>::into_batch_factories(),
+            &snapshots,
+        ));
+        let partitions = snapshots.into_iter().map(reader).collect();
         SnapshotReaders { whole, partitions }
     }
 }
