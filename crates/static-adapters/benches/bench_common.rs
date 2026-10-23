@@ -1,0 +1,265 @@
+// Each benchmark compiles this module on its own and uses only part of it.
+#![allow(dead_code)]
+
+use dbsp::OrdIndexedZSet;
+use dbsp::utils::Tup2;
+use dbsp_adapters::{OutputConsumer, SerBatch};
+use feldera_adapterlib::transport::OutputBatchType;
+use feldera_macros::{IsNone, OrdRepr};
+use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
+use feldera_types::{deserialize_without_context, serialize_struct};
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
+use size_of::SizeOf;
+use static_adapters::seroutput::SerBatchImpl;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
+
+// ---------------------------------------------------------------------------
+// Shared benchmark configuration
+// ---------------------------------------------------------------------------
+
+/// Worker-thread counts used by all output-connector encode benchmarks.
+#[allow(dead_code)] // Only some of the benches that include this module use it
+pub const BENCH_WORKER_COUNTS: [usize; 4] = [1, 2, 4, 8];
+
+/// Record counts used by the scaling benchmarks.
+#[allow(dead_code)] // Only some of the benches that include this module use it
+pub const BENCH_RECORD_COUNTS: [usize; 3] = [100_000, 1_000_000, 2_000_000];
+
+/// Runs `iters` Criterion timing iterations.
+///
+/// `timed` is called inside the stopwatch; `after` is called outside it and
+/// can be used for correctness checks or inter-iteration cleanup (e.g. table
+/// truncation). Returns the total elapsed time of the `timed` calls only.
+#[allow(dead_code)] // Only some of the benches that include this module use it
+pub fn bench_iter(
+    iters: u64,
+    mut timed: impl FnMut(),
+    mut after: impl FnMut(),
+) -> std::time::Duration {
+    let mut total = std::time::Duration::ZERO;
+    for _ in 0..iters {
+        let start = std::time::Instant::now();
+        timed();
+        total += start.elapsed();
+        after();
+    }
+    total
+}
+
+// ---------------------------------------------------------------------------
+// Common type definitions for benchmarks
+// ---------------------------------------------------------------------------
+
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+    OrdRepr,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+pub struct BenchTestStruct {
+    pub id: u32,
+    pub b: bool,
+    pub i: Option<i64>,
+    pub s: String,
+}
+
+deserialize_without_context!(BenchTestStruct);
+
+serialize_struct!(BenchTestStruct()[4]{
+    id["id"]: u32,
+    b["b"]: bool,
+    i["i"]: Option<i64>,
+    s["s"]: String
+});
+
+impl BenchTestStruct {
+    pub fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("BenchTestStruct", false),
+            fields: vec![
+                Field::new("id".into(), ColumnType::bigint(false)),
+                Field::new("b".into(), ColumnType::boolean(false)),
+                Field::new("i".into(), ColumnType::bigint(true)),
+                Field::new("s".into(), ColumnType::varchar(false)),
+            ],
+            materialized: false,
+            properties: BTreeMap::new(),
+            primary_key: None,
+        }
+    }
+}
+
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+    OrdRepr,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+pub struct BenchKeyStruct {
+    pub id: u32,
+}
+
+deserialize_without_context!(BenchKeyStruct);
+
+serialize_struct!(BenchKeyStruct()[1]{
+    id["id"]: u32
+});
+
+impl BenchKeyStruct {
+    pub fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("BenchKeyStruct", false),
+            fields: vec![Field::new("id".into(), ColumnType::bigint(false))],
+            materialized: false,
+            properties: BTreeMap::new(),
+            primary_key: None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mock output consumer (used by Avro benchmark)
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::type_complexity, dead_code)]
+pub struct BenchOutputConsumer {
+    data: Arc<
+        Mutex<
+            Vec<(
+                Option<Vec<u8>>,
+                Option<Vec<u8>>,
+                Vec<(String, Option<Vec<u8>>)>,
+            )>,
+        >,
+    >,
+}
+
+impl BenchOutputConsumer {
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        Self {
+            data: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+impl Default for BenchOutputConsumer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl OutputConsumer for BenchOutputConsumer {
+    fn max_buffer_size_bytes(&self) -> usize {
+        usize::MAX
+    }
+
+    fn batch_start(&mut self, _step: u64, _batch_type: OutputBatchType) {}
+
+    fn push_buffer(&mut self, buffer: &[u8], _num_records: usize) {
+        self.data
+            .lock()
+            .unwrap()
+            .push((None, Some(buffer.to_vec()), vec![]));
+    }
+
+    fn push_key(
+        &mut self,
+        key: Option<&[u8]>,
+        val: Option<&[u8]>,
+        headers: &[(&str, Option<&[u8]>)],
+        _num_records: usize,
+    ) {
+        self.data.lock().unwrap().push((
+            key.map(|k| k.to_vec()),
+            val.map(|v| v.to_vec()),
+            headers
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.map(|bytes| bytes.to_vec())))
+                .collect(),
+        ));
+    }
+
+    fn batch_end(&mut self) {}
+}
+
+// ---------------------------------------------------------------------------
+// Data generation and batch building
+// ---------------------------------------------------------------------------
+
+const SEED: u64 = 0xdeadbeef;
+
+pub fn generate_test_data(num_records: usize) -> Vec<BenchTestStruct> {
+    let mut rng = SmallRng::seed_from_u64(SEED);
+    (0..num_records)
+        .map(|i| BenchTestStruct {
+            id: i as u32,
+            b: rng.r#gen(),
+            i: if rng.r#gen::<bool>() {
+                Some(rng.gen_range(-1_000_000..1_000_000))
+            } else {
+                None
+            },
+            s: format!("record_{i}_{}", rng.gen_range(0u32..100_000)),
+        })
+        .collect()
+}
+
+/// A batch that replaces each row in `old` with the row at the same index in `new`, as an
+/// indexed view emits an update: the old value at weight -1 and the new one at +1.
+#[allow(dead_code)]
+pub fn build_update_batch(old: &[BenchTestStruct], new: &[BenchTestStruct]) -> Arc<dyn SerBatch> {
+    assert_eq!(old.len(), new.len());
+    let mut tuples = Vec::with_capacity(old.len() * 2);
+    for (old, new) in old.iter().zip(new) {
+        assert_eq!(old.id, new.id, "an update keeps the key");
+        tuples.push(Tup2(
+            Tup2(BenchKeyStruct { id: old.id }, old.clone()),
+            -1i64,
+        ));
+        tuples.push(Tup2(Tup2(BenchKeyStruct { id: new.id }, new.clone()), 1i64));
+    }
+    let zset = OrdIndexedZSet::from_tuples((), tuples);
+    Arc::new(<SerBatchImpl<_, BenchKeyStruct, BenchTestStruct>>::new(
+        zset,
+    ))
+}
+
+pub fn build_indexed_batch(data: &[BenchTestStruct]) -> Arc<dyn SerBatch> {
+    let tuples: Vec<_> = data
+        .iter()
+        .map(|v| Tup2(Tup2(BenchKeyStruct { id: v.id }, v.clone()), 1i64))
+        .collect();
+    let zset = OrdIndexedZSet::from_tuples((), tuples);
+    Arc::new(<SerBatchImpl<_, BenchKeyStruct, BenchTestStruct>>::new(
+        zset,
+    ))
+}

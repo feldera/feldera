@@ -1,6 +1,3 @@
-// The connector layer still builds record metadata as the enum `Variant`.
-#![allow(deprecated)]
-
 use std::any::Any;
 #[cfg(any(feature = "with-avro", feature = "with-dynamodb"))]
 use std::collections::HashMap;
@@ -15,21 +12,18 @@ use apache_avro::{
     schema::{Name as AvroName, NamesRef},
     types::Value as AvroValue,
 };
+use arrow::datatypes::SchemaRef;
 use arrow::record_batch::RecordBatch;
 #[cfg(feature = "with-dynamodb")]
 use aws_sdk_dynamodb::types::AttributeValue;
-use dbsp::circuit::NodeId;
-use dbsp::dynamic::{ClonableTrait, DynData, DynVec, Erase, Factory};
-use dbsp::operator::StagedBuffers;
-use dbsp::operator::dynamic::accumulator::EnableCount;
 use dyn_clone::DynClone;
-use feldera_sqllib::Variant;
+use feldera_types::circuit::{EnableCount, StagedBuffers};
 use feldera_types::format::csv::CsvFormatConfig;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::SqlSerdeConfig;
-use serde_arrow::ArrayBuilder;
 
+use crate::ConnectorMetadata;
 use crate::errors::controller::ControllerError;
 use crate::format::InputBuffer;
 use crate::postprocess::PostprocessorRegistry;
@@ -58,9 +52,9 @@ pub enum RecordFormat {
 
 /// An input handle that deserializes and buffers records.
 ///
-/// A trait for a type that wraps a [`ZSetHandle`](`dbsp::ZSetHandle`) or an
-/// [`MapHandle`](`dbsp::MapHandle`) and collects serialized relational data for
-/// the associated input stream.  The client passes a byte array with a
+/// A trait for a type that wraps an input stream of the engine's circuit, a Z-set
+/// of records or a map from keys to records, and collects serialized relational
+/// data for it.  The client passes a byte array with a
 /// serialized data record (e.g., in JSON or CSV format) to
 /// [`insert`](`Self::insert`), [`delete`](`Self::delete`), and
 /// [`update`](`Self::update`) methods. The record gets deserialized into the
@@ -74,53 +68,48 @@ pub enum RecordFormat {
 /// The input handle internally buffers the deserialized records. Use the
 /// `InputBuffer` supertrait to push them to the circuit or extract them for
 /// later use.
-pub trait DeCollectionStream: Send + Sync + InputBuffer {
+pub trait DeCollectionStream: Send + InputBuffer {
     /// Buffer a new insert update.
     ///
-    /// `metadata` contains optional metadata attached by the transport adapter or parser,
-    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
-    /// `DeserializeWithContext::deserialize_with_context_aux`.
+    /// `metadata` holds the attributes that the transport and the parser attached to the
+    /// record, such as the Kafka topic and headers. Column DEFAULT expressions read them
+    /// through `CONNECTOR_METADATA()`.
     ///
     /// Returns an error if deserialization fails, i.e., the serialized
     /// representation is corrupted or does not match the value type of
     /// the underlying input stream.
-    fn insert(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()>;
+    fn insert(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()>;
 
     /// Buffer a new delete update.
     ///
     /// The `data` argument contains a serialized record whose
-    /// type depends on the underlying input stream: streams created by the
-    /// [`RootCircuit::add_input_zset`](`dbsp::RootCircuit::add_input_zset`)
-    /// method support deletion by value, hence the serialized record must
-    /// match the value type of the stream.  Streams created with
-    /// [`RootCircuit::add_input_map`](`dbsp::RootCircuit::add_input_map`)
-    /// support deletion by key, so the serialized record must match the key
-    /// type of the stream.
+    /// type depends on the underlying input stream: a Z-set stream deletes by
+    /// value, hence the serialized record must match the value type of the
+    /// stream.  A map stream deletes by key, so the serialized record must
+    /// match the key type of the stream.
     ///
     /// The record gets deserialized and pushed to the underlying input stream
     /// handle as a delete update.
     ///
-    /// `metadata` contains optional metadata attached by the transport adapter or parser,
-    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
-    /// `DeserializeWithContext::deserialize_with_context_aux`.
+    /// `metadata` holds the attributes that the transport and the parser attached to the
+    /// record, such as the Kafka topic and headers. Column DEFAULT expressions read them
+    /// through `CONNECTOR_METADATA()`.
     ///
     /// Returns an error if deserialization fails, i.e., the serialized
     /// representation is corrupted or does not match the value or key
     /// type of the underlying input stream.
-    fn delete(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()>;
+    fn delete(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()>;
 
     /// Buffer a new update that will modify an existing record.
     ///
-    /// `metadata` contains optional metadata attached by the transport adapter or parser,
-    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
-    /// `DeserializeWithContext::deserialize_with_context_aux`.
+    /// `metadata` holds the attributes that the transport and the parser attached to the
+    /// record, such as the Kafka topic and headers. Column DEFAULT expressions read them
+    /// through `CONNECTOR_METADATA()`.
     ///
-    /// This method can only be called on streams created with
-    /// [`RootCircuit::add_input_map`](`dbsp::RootCircuit::add_input_map`)
-    /// and will fail on other streams.  The serialized record must match
-    /// the update type of this stream, specified as a type argument to
-    /// `Catalog::register_input_map`.
-    fn update(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()>;
+    /// This method can only be called on map streams and fails on other
+    /// streams.  The serialized record must match the update type of the
+    /// stream.
+    fn update(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()>;
 
     /// Reserve space for at least `reservation` more updates in the
     /// internal input buffer.
@@ -151,17 +140,19 @@ pub trait DeCollectionStream: Send + Sync + InputBuffer {
 pub trait ArrowStream: InputBuffer + Send + Sync {
     /// Buffer a new batch of insert updates.
     ///
-    /// `metadata` contains optional metadata attached by the transport adapter or parser,
-    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
-    /// `DeserializeWithContext::deserialize_with_context_aux` for each deserialized record.
-    fn insert(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()>;
+    /// `metadata` holds the attributes that the transport and the parser attached to the
+    /// records of `data`, such as the Kafka topic and headers. Column DEFAULT expressions read
+    /// them through `CONNECTOR_METADATA()`.
+    fn insert(&mut self, data: &RecordBatch, metadata: &Option<ConnectorMetadata>)
+    -> AnyResult<()>;
 
     /// Buffer a new batch of delete updates.
     ///
-    /// `metadata` contains optional metadata attached by the transport adapter or parser,
-    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
-    /// `DeserializeWithContext::deserialize_with_context_aux` for each deserialized record.
-    fn delete(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()>;
+    /// `metadata` holds the attributes that the transport and the parser attached to the
+    /// records of `data`, such as the Kafka topic and headers. Column DEFAULT expressions read
+    /// them through `CONNECTOR_METADATA()`.
+    fn delete(&mut self, data: &RecordBatch, metadata: &Option<ConnectorMetadata>)
+    -> AnyResult<()>;
 
     /// Insert records in `data` with polarities from the `polarities` array.
     ///
@@ -170,7 +161,7 @@ pub trait ArrowStream: InputBuffer + Send + Sync {
         &mut self,
         data: &RecordBatch,
         polarities: &[bool],
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()>;
 
     /// Create a new deserializer with the same configuration connected to
@@ -192,32 +183,42 @@ pub type AvroSchemaRefs = HashMap<AvroName, AvroSchema>;
 /// Like `DeCollectionStream`, but deserializes Avro-encoded records before pushing them to a
 /// stream.
 #[cfg(feature = "with-avro")]
-pub trait AvroStream: InputBuffer + Send + Sync {
-    /// Buffer a new insert update.
+pub trait AvroStream: InputBuffer + Send {
+    /// Installs the schema of the records that later calls push.
+    ///
+    /// The parser calls this before it pushes the first record, and again whenever the
+    /// schema changes. A fork keeps the installed schema.
     ///
     /// # Arguments
     ///
-    /// * `schema` - The Avro schema to use for deserialization.
-    /// * `refs` - A map of named schema references that may be used to resolve references within `schema`.
-    /// * `metadata` - Optional metadata attached by the transport adapter or parser,
-    ///   such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
-    ///   `DeserializeWithContext::deserialize_with_context_aux`.
+    /// * `schema` - The schema of a record.
+    /// * `refs` - The named schemas that `schema` references.
+    fn configure_schema(&mut self, schema: &AvroSchema, refs: &AvroSchemaRefs) -> AnyResult<()>;
+
+    /// Buffer a new insert update.
+    ///
+    /// Fails if no schema is installed or if `data` does not match it.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The record, in the installed schema.
+    /// * `n_bytes` - The size of the record in its message, for accounting.
+    /// * `metadata` - The attributes that the transport and the parser attached to the
+    ///   record, such as the Kafka topic and headers. Column DEFAULT expressions read them
+    ///   through `CONNECTOR_METADATA()`.
     fn insert(
         &mut self,
         data: &AvroValue,
-        schema: &AvroSchema,
-        refs: &AvroSchemaRefs,
         n_bytes: usize,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()>;
 
+    /// Buffer a new delete update, with the arguments of [`Self::insert`].
     fn delete(
         &mut self,
         data: &AvroValue,
-        schema: &AvroSchema,
-        refs: &AvroSchemaRefs,
         n_bytes: usize,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()>;
 
     /// Create a new deserializer with the same configuration connected to
@@ -258,9 +259,9 @@ pub trait DeCollectionHandle: Send + Sync {
 
 /// A type-erased batch whose contents can be serialized.
 ///
-/// This is a wrapper around the DBSP `BatchReader` trait that returns a cursor that
-/// yields `erased_serde::Serialize` trait objects that can be used to serialize
-/// the contents of the batch without knowing its key and value types.
+/// The batch hands out cursors that render its rows in a record format, so that the
+/// output connectors can serialize its contents without knowing its key and value
+/// types.
 // The reason we need the `Sync` trait below is so that we can wrap batches
 // in `Arc` and send the same batch to multiple output endpoint threads.
 pub trait SerBatchReader: 'static + Send + Sync {
@@ -289,13 +290,32 @@ pub trait SerBatchReader: 'static + Send + Sync {
 
     fn snapshot(&self) -> Arc<dyn SerBatchReader>;
 
-    fn keys_factory(&self) -> &'static dyn Factory<DynVec<DynData>>;
+    /// Cuts the batch into at most `num_ranges` contiguous key ranges of about the same
+    /// number of rows, whose cursors yield records in `record_format`, so that threads can
+    /// encode the batch in parallel.
+    ///
+    /// Together the ranges hold every row of the batch once. Each range holds at least one
+    /// key, so an empty batch has no ranges, and a batch with fewer keys than `num_ranges`
+    /// has fewer ranges.
+    fn split(
+        self: Arc<Self>,
+        num_ranges: usize,
+        record_format: RecordFormat,
+    ) -> AnyResult<Vec<Box<dyn SerKeyRange>>>;
 
-    fn key_factory(&self) -> &'static dyn Factory<DynData>;
+    /// The number of rows that an ad-hoc query's scan of the batch puts in one Arrow batch.
+    /// An engine whose rows convert to Arrow a column at a time takes larger batches.
+    fn adhoc_batch_rows(&self) -> usize {
+        256
+    }
+}
 
-    fn sample_keys(&self, sample_size: usize, sample: &mut DynVec<DynData>);
-
-    fn partition_keys(&self, num_partitions: usize, bounds: &mut DynVec<DynData>);
+/// A contiguous range of the keys of a batch, which one thread reads on its own.
+///
+/// [`SerBatchReader::split`] cuts a batch into ranges.
+pub trait SerKeyRange: Send + Sync {
+    /// Creates a cursor over the rows of the range, in key order.
+    fn cursor(&self) -> AnyResult<Box<dyn SerCursor + Send + '_>>;
 }
 
 impl Debug for dyn SerBatchReader {
@@ -328,7 +348,7 @@ impl Debug for dyn SerBatchReader {
 
             write!(f, "}}, ")?;
             key.clear();
-            cursor.step_key();
+            cursor.step_key().map_err(|_| std::fmt::Error)?;
         }
 
         Ok(())
@@ -374,266 +394,11 @@ pub trait SerTrace: SerBatchReader {
     fn as_batch_reader(&self) -> &dyn SerBatchReader;
 }
 
-#[doc(hidden)]
-pub struct SplitCursorBuilder {
-    batch: Arc<dyn SerBatchReader>,
-    start_key: Box<DynData>,
-    end_key: Option<Box<DynData>>,
-    format: RecordFormat,
-}
-
-impl SplitCursorBuilder {
-    /// Create a [`SplitCursorBuilder`] for partition `index` given a batch,
-    /// pre-computed partition `bounds` (as returned by
-    /// [`SerBatchReader::partition_keys`]), and a record `format`.
-    ///
-    /// `bounds` contains `N-1` boundary keys for `N` partitions.
-    /// Partition 0 spans from the start of the batch to `bounds[0]`,
-    /// partition `i` spans from `bounds[i-1]` to `bounds[i]`, and the last
-    /// partition spans from `bounds[N-2]` to the end of the batch.
-    ///
-    /// Returns `None` if the partition is empty (the cursor has no key at the
-    /// start position).
-    pub fn from_bounds(
-        batch: Arc<dyn SerBatchReader>,
-        bounds: &DynVec<DynData>,
-        index: usize,
-        format: RecordFormat,
-    ) -> Option<Self> {
-        let start_bound = if index == 0 {
-            None
-        } else if index <= bounds.len() {
-            Some(bounds.index(index - 1).as_data())
-        } else {
-            None
-        };
-
-        let end_bound = if index < bounds.len() {
-            Some(bounds.index(index).as_data())
-        } else {
-            None
-        };
-
-        let start_key = {
-            let mut cursor = batch.cursor(format.clone()).unwrap();
-
-            // Seek to start. If None, the cursor starts at the beginning.
-            if let Some(start_bound) = start_bound {
-                cursor.seek_key_exact(start_bound);
-            }
-
-            // Clone the actual key the cursor landed on.
-            cursor.get_key().map(|s| {
-                let mut key = batch.key_factory().default_box();
-                s.clone_to(key.as_mut());
-                key
-            })
-        }?;
-
-        let end_key = end_bound.map(|e| {
-            let mut key = batch.key_factory().default_box();
-            e.clone_to(key.as_mut());
-            key
-        });
-
-        Some(SplitCursorBuilder {
-            batch,
-            start_key,
-            end_key,
-            format,
-        })
-    }
-
-    pub fn build<'a>(&'a self) -> SplitCursor<'a> {
-        let mut cursor = self.batch.cursor(self.format.clone()).unwrap();
-
-        // Cannot use `seek_key_exact` here, so we can single-step the cursor afterward.
-        cursor.seek_key(self.start_key.as_data());
-
-        SplitCursor {
-            cursor,
-            start_key: self.start_key.clone(),
-            end_key: self.end_key.clone(),
-        }
-    }
-}
-
-#[doc(hidden)]
-pub struct SplitCursor<'a> {
-    cursor: Box<dyn SerCursor + 'a>,
-    start_key: Box<DynData>,
-    end_key: Option<Box<DynData>>,
-}
-
-impl SplitCursor<'_> {
-    fn finished(&self) -> bool {
-        if let Some(ref end_key) = self.end_key
-            && let Some(current_key) = self.cursor.get_key()
-        {
-            return current_key >= end_key.as_data();
-        }
-
-        false
-    }
-}
-
-impl SerCursor for SplitCursor<'_> {
-    fn key_valid(&self) -> bool {
-        self.cursor.key_valid() && !self.finished()
-    }
-
-    fn val_valid(&self) -> bool {
-        self.cursor.val_valid()
-    }
-
-    fn key(&self) -> &DynData {
-        self.cursor.key()
-    }
-
-    fn val(&self) -> &DynData {
-        self.cursor.val()
-    }
-
-    fn get_key(&self) -> Option<&DynData> {
-        if !self.key_valid() {
-            return None;
-        }
-
-        self.cursor.get_key()
-    }
-
-    fn get_val(&self) -> Option<&DynData> {
-        self.cursor.get_val()
-    }
-
-    fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
-        self.cursor.serialize_key(dst)
-    }
-
-    fn key_to_json(&mut self) -> AnyResult<serde_json::Value> {
-        self.cursor.key_to_json()
-    }
-
-    #[cfg(feature = "with-dynamodb")]
-    fn key_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>> {
-        self.cursor.key_to_dynamodb_item()
-    }
-
-    fn serialize_key_fields(
-        &mut self,
-        fields: &HashSet<String>,
-        dst: &mut Vec<u8>,
-    ) -> AnyResult<()> {
-        self.cursor.serialize_key_fields(fields, dst)
-    }
-
-    fn serialize_val_fields(
-        &mut self,
-        fields: &HashSet<String>,
-        dst: &mut Vec<u8>,
-    ) -> AnyResult<()> {
-        self.cursor.serialize_val_fields(fields, dst)
-    }
-
-    fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
-        self.cursor.serialize_key_to_arrow(dst)
-    }
-
-    fn serialize_key_to_arrow_with_metadata(
-        &mut self,
-        metadata: &dyn erased_serde::Serialize,
-        dst: &mut ArrayBuilder,
-    ) -> AnyResult<()> {
-        self.cursor
-            .serialize_key_to_arrow_with_metadata(metadata, dst)
-    }
-
-    fn serialize_val_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
-        self.cursor.serialize_val_to_arrow(dst)
-    }
-
-    fn serialize_val_to_arrow_with_metadata(
-        &mut self,
-        metadata: &dyn erased_serde::Serialize,
-        dst: &mut ArrayBuilder,
-    ) -> AnyResult<()> {
-        self.cursor
-            .serialize_val_to_arrow_with_metadata(metadata, dst)
-    }
-
-    #[cfg(feature = "with-avro")]
-    fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
-        self.cursor.key_to_avro(schema, refs)
-    }
-
-    fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
-        self.cursor.serialize_key_weight(dst)
-    }
-
-    fn serialize_val_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
-        self.cursor.serialize_val_weight(dst)
-    }
-
-    fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
-        self.cursor.serialize_val(dst)
-    }
-
-    fn val_to_json(&mut self) -> AnyResult<serde_json::Value> {
-        self.cursor.val_to_json()
-    }
-
-    #[cfg(feature = "with-dynamodb")]
-    fn val_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>> {
-        self.cursor.val_to_dynamodb_item()
-    }
-
-    #[cfg(feature = "with-avro")]
-    fn val_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
-        self.cursor.val_to_avro(schema, refs)
-    }
-
-    fn weight(&mut self) -> i64 {
-        self.cursor.weight()
-    }
-
-    fn step_key(&mut self) {
-        self.cursor.step_key();
-    }
-
-    fn step_val(&mut self) {
-        self.cursor.step_val();
-    }
-
-    fn rewind_keys(&mut self) {
-        self.cursor.rewind_keys();
-        self.cursor.seek_key(self.start_key.as_data());
-    }
-
-    fn rewind_vals(&mut self) {
-        self.cursor.rewind_vals();
-    }
-
-    fn seek_key_exact(&mut self, key: &DynData) -> bool {
-        if let Some(ref end_key) = self.end_key
-            && key >= end_key.as_data()
-        {
-            return false;
-        }
-
-        self.cursor.seek_key_exact(key)
-    }
-
-    fn seek_key(&mut self, key: &DynData) {
-        self.cursor.seek_key(key);
-    }
-}
-
 /// A wrapper around a `SerCursor` that makes an `IndexedZSet<K, V>` look like a `ZSet<V>`
 /// by iterating over values only.
 ///
 /// * Doesn't return values in order.
 /// * Panics when any operations over values are attempted.
-/// * Panics on seek_key_exact and seek_key.
 pub struct SerCursorFlattened<'a> {
     val_valid: bool,
     cursor: Box<dyn SerCursor + 'a>,
@@ -655,26 +420,6 @@ impl<'a> SerCursor for SerCursorFlattened<'a> {
 
     fn val_valid(&self) -> bool {
         self.val_valid
-    }
-
-    fn key(&self) -> &DynData {
-        self.cursor.val()
-    }
-
-    fn get_key(&self) -> Option<&DynData> {
-        self.cursor.get_val()
-    }
-
-    fn val(&self) -> &DynData {
-        ().erase()
-    }
-
-    fn get_val(&self) -> Option<&DynData> {
-        if self.val_valid {
-            Some(().erase())
-        } else {
-            None
-        }
     }
 
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
@@ -706,34 +451,26 @@ impl<'a> SerCursor for SerCursorFlattened<'a> {
         panic!("serialize_val_fields is not supported for flattened cursors");
     }
 
-    fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
-        self.cursor.serialize_val_to_arrow(dst)
-    }
-
-    fn serialize_key_to_arrow_with_metadata(
-        &mut self,
-        metadata: &dyn erased_serde::Serialize,
-        dst: &mut ArrayBuilder,
-    ) -> AnyResult<()> {
-        self.cursor
-            .serialize_val_to_arrow_with_metadata(metadata, dst)
-    }
-
-    fn serialize_val_to_arrow(&mut self, _dst: &mut ArrayBuilder) -> AnyResult<()> {
-        panic!("serialize_val_to_arrow is not supported for flattened cursors");
-    }
-
-    fn serialize_val_to_arrow_with_metadata(
-        &mut self,
-        _metadata: &dyn erased_serde::Serialize,
-        _dst: &mut ArrayBuilder,
-    ) -> AnyResult<()> {
-        panic!("serialize_val_to_arrow_with_metadata is not supported for flattened cursors");
-    }
-
     #[cfg(feature = "with-avro")]
-    fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
-        self.cursor.val_to_avro(schema, refs)
+    fn serialize_key_avro(
+        &mut self,
+        schema: &AvroSchema,
+        refs: &NamesRef<'_>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.cursor.serialize_val_avro(schema, refs, dst)
+    }
+
+    fn arrow_sink(&self, schema: SchemaRef) -> AnyResult<Box<dyn ArrowRowSink>> {
+        self.cursor.arrow_sink(schema)
+    }
+
+    fn append_key_to_arrow(&mut self, sink: &mut dyn ArrowRowSink) -> AnyResult<()> {
+        self.cursor.append_val_to_arrow(sink)
+    }
+
+    fn append_val_to_arrow(&mut self, _sink: &mut dyn ArrowRowSink) -> AnyResult<()> {
+        panic!("append_val_to_arrow is not supported for flattened cursors");
     }
 
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
@@ -758,49 +495,62 @@ impl<'a> SerCursor for SerCursorFlattened<'a> {
     }
 
     #[cfg(feature = "with-avro")]
-    fn val_to_avro(&mut self, _schema: &AvroSchema, _refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
-        panic!("val_to_avro is not supported for flattened cursors");
+    fn serialize_val_avro(
+        &mut self,
+        _schema: &AvroSchema,
+        _refs: &NamesRef<'_>,
+        _dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        panic!("serialize_val_avro is not supported for flattened cursors");
     }
 
     fn weight(&mut self) -> i64 {
         self.cursor.weight()
     }
 
-    fn step_key(&mut self) {
+    fn step_key(&mut self) -> AnyResult<()> {
         debug_assert!(self.cursor.key_valid() && self.cursor.val_valid());
         self.cursor.step_val();
         while !self.cursor.val_valid() && self.cursor.key_valid() {
-            self.cursor.step_key();
+            self.cursor.step_key()?;
         }
         self.val_valid = true;
+        Ok(())
     }
 
     fn step_val(&mut self) {
         self.val_valid = false;
     }
 
-    fn rewind_keys(&mut self) {
-        self.cursor.rewind_keys();
+    fn rewind_keys(&mut self) -> AnyResult<()> {
+        self.cursor.rewind_keys()?;
         self.val_valid = true;
+        Ok(())
     }
 
     fn rewind_vals(&mut self) {
         self.val_valid = true;
     }
+}
 
-    fn seek_key_exact(&mut self, _key: &DynData) -> bool {
-        panic!("seek_key_exact is not supported for flattened cursors");
-    }
+/// Rows that cursors append one at a time, which finish into an Arrow batch of the sink's
+/// schema.
+///
+/// [`SerCursor::arrow_sink`] creates a sink; [`SerCursor::append_key_to_arrow`] and
+/// [`SerCursor::append_val_to_arrow`] append the cursor's current row to it.
+pub trait ArrowRowSink: Send {
+    /// Returns the rows appended since the sink was created or last finished, as a batch,
+    /// and leaves the sink empty.
+    fn finish(&mut self) -> AnyResult<RecordBatch>;
 
-    fn seek_key(&mut self, _key: &DynData) {
-        panic!("seek_key is not supported for flattened cursors");
-    }
+    /// Returns the sink as `Any`, so that the engine that created it can reach its type.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 /// Cursor that allows serializing the contents of a type-erased batch.
 ///
-/// This is a wrapper around the DBSP `Cursor` trait that yields keys and values
-/// of the underlying batch as `erased_serde::Serialize` trait objects.
+/// The cursor walks the keys of a batch and the values of each key, and renders the
+/// current key or value in the record format that it was created with.
 pub trait SerCursor: Send {
     /// Indicates if the current key is valid.
     ///
@@ -812,14 +562,6 @@ pub trait SerCursor: Send {
     /// A value of `false` indicates that the cursor has exhausted all values
     /// for this key.
     fn val_valid(&self) -> bool;
-
-    fn key(&self) -> &DynData;
-
-    fn get_key(&self) -> Option<&DynData>;
-
-    fn val(&self) -> &DynData;
-
-    fn get_val(&self) -> Option<&DynData>;
 
     /// Serialize current key. Panics if invalid.
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()>;
@@ -845,31 +587,27 @@ pub trait SerCursor: Send {
         dst: &mut Vec<u8>,
     ) -> AnyResult<()>;
 
-    /// Serialize current key into arrow format. Panics if invalid.
-    fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()>;
-
-    /// Serialize current key into arrow format, adding additional metadata columns.
-    /// `metadata` must be a struct or a map.
-    fn serialize_key_to_arrow_with_metadata(
-        &mut self,
-        metadata: &dyn erased_serde::Serialize,
-        dst: &mut ArrayBuilder,
-    ) -> AnyResult<()>;
-
-    /// Serialize current value into arrow format. Panics if invalid.
-    fn serialize_val_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()>;
-
-    /// Serialize current value into arrow format, adding additional metadata columns.
-    /// `metadata` must be a struct or a map.
-    fn serialize_val_to_arrow_with_metadata(
-        &mut self,
-        metadata: &dyn erased_serde::Serialize,
-        dst: &mut ArrayBuilder,
-    ) -> AnyResult<()>;
-
+    /// Writes the current key to `dst` as a datum of the Avro `schema`. Panics if invalid.
     #[cfg(feature = "with-avro")]
-    /// Convert current key to an Avro value.
-    fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue>;
+    fn serialize_key_avro(
+        &mut self,
+        schema: &AvroSchema,
+        refs: &NamesRef<'_>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()>;
+
+    /// Creates a sink for rows of `schema`, the Arrow form of the key's or the value's
+    /// columns, which [`Self::append_key_to_arrow`] and [`Self::append_val_to_arrow`] append
+    /// to.
+    fn arrow_sink(&self, schema: SchemaRef) -> AnyResult<Box<dyn ArrowRowSink>>;
+
+    /// Appends the current key to `sink`, which a cursor of the same engine created. Panics
+    /// if invalid.
+    fn append_key_to_arrow(&mut self, sink: &mut dyn ArrowRowSink) -> AnyResult<()>;
+
+    /// Appends the current value to `sink`, which a cursor of the same engine created.
+    /// Panics if invalid.
+    fn append_val_to_arrow(&mut self, sink: &mut dyn ArrowRowSink) -> AnyResult<()>;
 
     /// Serialize the `(key, weight)` tuple.
     ///
@@ -890,61 +628,69 @@ pub trait SerCursor: Send {
     #[cfg(feature = "with-dynamodb")]
     fn val_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>>;
 
+    /// Writes the current value to `dst` as a datum of the Avro `schema`. Panics if invalid.
     #[cfg(feature = "with-avro")]
-    /// Convert current value to Avro.
-    fn val_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue>;
+    fn serialize_val_avro(
+        &mut self,
+        schema: &AvroSchema,
+        refs: &NamesRef<'_>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()>;
 
     /// Returns the weight associated with the current key/value pair.
     fn weight(&mut self) -> i64;
 
     /// Advances the cursor to the next key.
-    fn step_key(&mut self);
+    ///
+    /// Fails if the cursor cannot read the next key, as when it reads a batch from storage.
+    fn step_key(&mut self) -> AnyResult<()>;
 
     /// Advances the cursor to the next value.
     fn step_val(&mut self);
 
     /// Rewinds the cursor to the first key.
-    fn rewind_keys(&mut self);
+    ///
+    /// Fails if the cursor cannot read the first key, as when it reads a batch from storage.
+    fn rewind_keys(&mut self) -> AnyResult<()>;
 
     /// Rewinds the cursor to the first value for current key.
     fn rewind_vals(&mut self);
 
-    fn count_keys(&mut self) -> usize {
+    fn count_keys(&mut self) -> AnyResult<usize> {
         let mut count = 0;
 
         while self.key_valid() {
             count += 1;
-            self.step_key()
+            self.step_key()?;
         }
 
-        count
+        Ok(count)
     }
-
-    fn seek_key_exact(&mut self, key: &DynData) -> bool;
-
-    fn seek_key(&mut self, key: &DynData);
 }
 
 /// A handle to an output stream of a circuit that yields type-erased
 /// read-only batches.
 ///
-/// A trait for a type that wraps around an
-/// [`OutputHandle`](`dbsp::OutputHandle`) and yields output batches produced by
-/// the circuit as [`SerBatchReader`]s.
+/// A trait for a type that wraps an output stream of the engine's circuit and
+/// yields the output of each step as [`SerBatchReader`]s.
 pub trait SerBatchReaderHandle: Send + Sync + DynClone {
-    /// See [`OutputHandle::num_nonempty_mailboxes`](`dbsp::OutputHandle::num_nonempty_mailboxes`)
-    fn num_nonempty_mailboxes(&self) -> usize;
+    /// Takes the output of the last step once and returns it both whole and in parts.
+    ///
+    /// Without output in the last step, the whole reader is empty and there are no parts.
+    fn take_readers(&self) -> SnapshotReaders;
+}
 
-    /// Like [`OutputHandle::take_from_worker`](`dbsp::OutputHandle::take_from_worker`),
-    /// but returns output batch as a [`SerBatchReader`] trait object.
-    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatchReader>>;
+/// One step's output of a collection, read two ways from one take.
+#[derive(Clone)]
+pub struct SnapshotReaders {
+    /// Every row once: the reader for a host that reads the output as one batch.
+    pub whole: Arc<dyn SerBatchReader>,
 
-    /// Like [`OutputHandle::take_from_all`](`dbsp::OutputHandle::take_from_all`),
-    /// but returns output batches as [`SerBatchReader`] trait objects.
-    fn take_from_all(&self) -> Vec<Arc<dyn SerBatchReader>>;
-
-    /// Concatenate outputs from all workers into a single batch reader.
-    fn concat(&self) -> Arc<dyn SerBatchReader>;
+    /// Readers that together read every row once: the readers for a host that reads the
+    /// parts in parallel. After a step there is one for each local worker, in worker
+    /// order, so the ad-hoc scan of a multihost pipeline finds the part of a worker by
+    /// the worker's index.
+    pub partitions: Vec<Arc<dyn SerBatchReader>>,
 }
 
 dyn_clone::clone_trait_object!(SerBatchReaderHandle);
@@ -954,7 +700,7 @@ dyn_clone::clone_trait_object!(SerBatchReaderHandle);
 /// Most consumers don't understand Z-sets and expect a stream of upserts
 /// instead, which means that the order of updates matters. For a table
 /// with a primary key or unique constraint we must delete an existing record
-/// before creating a new one with the same key.  DBSP may not know about
+/// before creating a new one with the same key.  The engine may not know about
 /// these constraints, so the safe thing to do is to output deletions before
 /// insertions.  This cursor helps by iterating over all deletions in
 /// the batch before insertions.
@@ -996,22 +742,6 @@ impl SerCursor for CursorWithPolarity<'_> {
         self.cursor.val_valid()
     }
 
-    fn key(&self) -> &DynData {
-        self.cursor.key()
-    }
-
-    fn get_key(&self) -> Option<&DynData> {
-        self.cursor.get_key()
-    }
-
-    fn val(&self) -> &DynData {
-        self.cursor.val()
-    }
-
-    fn get_val(&self) -> Option<&DynData> {
-        self.cursor.get_val()
-    }
-
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         self.cursor.serialize_key(dst)
     }
@@ -1042,8 +772,13 @@ impl SerCursor for CursorWithPolarity<'_> {
     }
 
     #[cfg(feature = "with-avro")]
-    fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
-        self.cursor.key_to_avro(schema, refs)
+    fn serialize_key_avro(
+        &mut self,
+        schema: &AvroSchema,
+        refs: &NamesRef<'_>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.cursor.serialize_key_avro(schema, refs, dst)
     }
 
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
@@ -1054,30 +789,16 @@ impl SerCursor for CursorWithPolarity<'_> {
         self.cursor.serialize_val_weight(dst)
     }
 
-    fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
-        self.cursor.serialize_key_to_arrow(dst)
+    fn arrow_sink(&self, schema: SchemaRef) -> AnyResult<Box<dyn ArrowRowSink>> {
+        self.cursor.arrow_sink(schema)
     }
 
-    fn serialize_key_to_arrow_with_metadata(
-        &mut self,
-        metadata: &dyn erased_serde::Serialize,
-        dst: &mut ArrayBuilder,
-    ) -> AnyResult<()> {
-        self.cursor
-            .serialize_key_to_arrow_with_metadata(metadata, dst)
+    fn append_key_to_arrow(&mut self, sink: &mut dyn ArrowRowSink) -> AnyResult<()> {
+        self.cursor.append_key_to_arrow(sink)
     }
 
-    fn serialize_val_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
-        self.cursor.serialize_val_to_arrow(dst)
-    }
-
-    fn serialize_val_to_arrow_with_metadata(
-        &mut self,
-        metadata: &dyn erased_serde::Serialize,
-        dst: &mut ArrayBuilder,
-    ) -> AnyResult<()> {
-        self.cursor
-            .serialize_val_to_arrow_with_metadata(metadata, dst)
+    fn append_val_to_arrow(&mut self, sink: &mut dyn ArrowRowSink) -> AnyResult<()> {
+        self.cursor.append_val_to_arrow(sink)
     }
 
     fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
@@ -1094,24 +815,30 @@ impl SerCursor for CursorWithPolarity<'_> {
     }
 
     #[cfg(feature = "with-avro")]
-    fn val_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
-        self.cursor.val_to_avro(schema, refs)
+    fn serialize_val_avro(
+        &mut self,
+        schema: &AvroSchema,
+        refs: &NamesRef<'_>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.cursor.serialize_val_avro(schema, refs, dst)
     }
 
     fn weight(&mut self) -> i64 {
         self.cursor.weight()
     }
 
-    fn step_key(&mut self) {
-        self.cursor.step_key();
+    fn step_key(&mut self) -> AnyResult<()> {
+        self.cursor.step_key()?;
         if !self.cursor.key_valid() && !self.second_pass {
-            self.cursor.rewind_keys();
+            self.cursor.rewind_keys()?;
             self.second_pass = true;
         }
 
         if self.cursor.key_valid() {
             self.advance_val();
         }
+        Ok(())
     }
 
     fn step_val(&mut self) {
@@ -1119,25 +846,18 @@ impl SerCursor for CursorWithPolarity<'_> {
         self.advance_val();
     }
 
-    fn rewind_keys(&mut self) {
-        self.cursor.rewind_keys();
+    fn rewind_keys(&mut self) -> AnyResult<()> {
+        self.cursor.rewind_keys()?;
         self.second_pass = false;
         if self.cursor.key_valid() {
             self.advance_val();
         }
+        Ok(())
     }
 
     fn rewind_vals(&mut self) {
         self.cursor.rewind_vals();
         self.advance_val();
-    }
-
-    fn seek_key_exact(&mut self, key: &DynData) -> bool {
-        self.cursor.seek_key_exact(key)
-    }
-
-    fn seek_key(&mut self, key: &DynData) {
-        self.cursor.seek_key(key);
     }
 }
 
@@ -1145,6 +865,10 @@ impl SerCursor for CursorWithPolarity<'_> {
 pub trait CircuitCatalog: Send + Sync {
     /// Look up an input stream handle by name.
     fn input_collection_handle(&self, name: &SqlIdentifier) -> Option<&InputCollectionHandle>;
+
+    /// Iterate over the input stream handles and their names.
+    fn input_iter(&self)
+    -> Box<dyn Iterator<Item = (&SqlIdentifier, &InputCollectionHandle)> + '_>;
 
     fn output_iter(
         &self,
@@ -1175,24 +899,25 @@ pub struct InputCollectionHandle {
     pub schema: Relation,
     pub handle: Box<dyn DeCollectionHandle>,
 
-    /// Node id of the input stream in the circuit.
+    /// The persistent id of the operator that produces the input stream, if it has one.
     ///
-    /// Used to check whether the input stream needs to be backfilled during bootstrapping,
-    /// i.e., whether attached input connectors should be reset to their initial offsets or
-    /// continue from the checkpointed offsets.
-    pub node_id: NodeId,
+    /// A bootstrap names the operators that it rebuilds by persistent id, so this tells
+    /// whether the table's state is rebuilt, and so whether its input connectors start over
+    /// or continue from their checkpointed offsets. An operator that a checkpoint holds has
+    /// a persistent id.
+    pub persistent_id: Option<String>,
 }
 
 impl InputCollectionHandle {
     #[doc(hidden)]
-    pub fn new<H>(schema: Relation, handle: H, node_id: NodeId) -> Self
+    pub fn new<H>(schema: Relation, handle: H, persistent_id: Option<String>) -> Self
     where
         H: DeCollectionHandle + 'static,
     {
         Self {
             schema,
             handle: Box::new(handle),
-            node_id,
+            persistent_id,
         }
     }
 }

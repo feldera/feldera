@@ -35,33 +35,7 @@ pub use crate::operator::dynamic::input_upsert::{PatchFunc, Update};
 pub type IndexedZSetStream<K, V> = Stream<RootCircuit, OrdIndexedZSet<K, V>>;
 pub type ZSetStream<K> = Stream<RootCircuit, OrdZSet<K>>;
 
-/// Input prepared for flushing into an input handle.
-///
-/// [ZSetHandle], [IndexedZSetHandle], and [MapHandle] all support
-/// similar ways to push data into a circuit.  The following discussion just
-/// talks about `ZSetHandle`, for clarity.
-///
-/// There are two ways to push data into a circuit with [ZSetHandle]:
-///
-/// - Immediately, either one data point at a time with
-///   [push](ZSetHandle::push), or a vector at a time with, e.g.,
-///   [append](ZSetHandle::append).
-///
-/// - Preparing data in advance into [StagedBuffers] using
-///   `stage`.  Then, later, calling [StagedBuffers::flush] pushes
-///   the input buffers into the circuit.
-///
-/// Both approaches are equally correct.  They can differ in performance,
-/// because [push](ZSetHandle::push) and [append](ZSetHandle::append) have a
-/// significant cost for a large number of records.  Using [StagedBuffers] has a
-/// similar cost, but it incurs it in the call to `stage` rather
-/// than in [StagedBuffers::flush].  This means that, if the code driving the
-/// circuit can buffer data ahead of the circuit's demand for it, the cost can
-/// be hidden and data processing as a whole runs faster.
-pub trait StagedBuffers: Send + Sync {
-    /// Flushes the data gathered into this buffer to the circuit.
-    fn flush(&mut self);
-}
+pub use feldera_types::circuit::StagedBuffers;
 
 pub struct ZSetStagedBuffers {
     input_handle: InputHandle<Vec<Box<DynPairs<DynPair<DynData, DynUnit>, DynZWeight>>>>,
@@ -69,12 +43,13 @@ pub struct ZSetStagedBuffers {
 }
 
 impl StagedBuffers for ZSetStagedBuffers {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> anyhow::Result<()> {
         for (worker, vals) in self.vals.drain(..).enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
         }
+        Ok(())
     }
 }
 
@@ -157,12 +132,13 @@ pub struct IndexedZSetStagedBuffers {
 }
 
 impl StagedBuffers for IndexedZSetStagedBuffers {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> anyhow::Result<()> {
         for (worker, vals) in self.vals.drain(..).enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
         }
+        Ok(())
     }
 }
 
@@ -201,12 +177,13 @@ pub struct MapStagedBuffers {
 }
 
 impl StagedBuffers for MapStagedBuffers {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> anyhow::Result<()> {
         for (worker, vals) in self.vals.drain(..).enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
         }
+        Ok(())
     }
 }
 
@@ -216,12 +193,13 @@ pub struct LazyMapStagedBuffers {
 }
 
 impl StagedBuffers for LazyMapStagedBuffers {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> anyhow::Result<()> {
         for (worker, vals) in self.vals.drain(..).enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
         }
+        Ok(())
     }
 }
 

@@ -1,5 +1,4 @@
 use bytemuck::NoUninit;
-pub use dbsp::DetailedError as DbspDetailedError;
 use num_derive::FromPrimitive;
 use serde::Serialize;
 
@@ -11,10 +10,12 @@ pub mod metrics;
 pub mod postprocess;
 pub mod preprocess;
 pub mod soft_delete;
+#[cfg(any(test, feature = "testing"))]
+pub mod test;
 pub mod transport;
 pub mod utils;
 
-pub use connector_metadata::ConnectorMetadata;
+pub use connector_metadata::{ConnectorMetadata, JsonMetadataError};
 
 #[doc(hidden)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, FromPrimitive, Serialize, NoUninit)]

@@ -332,6 +332,12 @@ e.g., the Confluent JDBC connector format, or the raw format with `"key_mode": "
 generates both key and value schemas. If the connector configuration specifies a schema registry,
 the encoder publishes both key and value schemas in the registry (see [Configuration](#configuration) below).
 
+A `ROW` column becomes a nested Avro record, named after its path in the view: `v_c` for
+column `c` of view `v`, `v_c_d` for a `ROW` field `d` inside it, `v_a_item` for the elements
+of an array column `a`, and `v_m_value` for the values of a map column `m`. Avro requires the
+names in a schema to be unique, so when two paths produce the same name, the second record
+gets a numeric suffix, such as `v_a_b_2`.
+
 The encoder supports an alternative workflow where users provide the schema as a JSON string
 as part of connector configuration and the encoder produces messages using this schema instead of
 generating it automatically. If the connector configuration specifies a schema registry, the encoder

@@ -9,7 +9,6 @@ use datafusion::catalog::TableProvider;
 use datafusion::common::arrow::array::RecordBatch;
 use datafusion::prelude::{DataFrame, SQLOptions, SessionContext};
 use datafusion_iceberg::IcebergStaticTableProvider;
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
     catalog::{ArrowStream, InputCollectionHandle},
     errors::journal::ControllerError,
@@ -30,6 +29,7 @@ use feldera_adapterlib::{
     utils::job_queue::JobQueue,
     PipelineState,
 };
+use feldera_storage::tokio::TOKIO;
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::{
     config::{FtModel, PipelineConfig},
@@ -3356,15 +3356,14 @@ mod distributed_tests {
     use datafusion::datasource::MemTable;
     use datafusion::execution::runtime_env::RuntimeEnv;
     use datafusion::prelude::SessionContext;
-    use dbsp::operator::input::StagedBuffers;
     use feldera_adapterlib::catalog::ArrowStream;
     use feldera_adapterlib::format::InputBuffer;
     use feldera_adapterlib::format::{BufferSize, ParseError};
     use feldera_adapterlib::transport::InputQueueEntry;
     use feldera_adapterlib::transport::{DistributedInput, InputConsumer, Resume, Watermark};
-    use feldera_adapterlib::PipelineState;
-    use feldera_sqllib::Variant;
+    use feldera_adapterlib::{ConnectorMetadata, PipelineState};
     use feldera_types::adapter_stats::ConnectorHealth;
+    use feldera_types::circuit::StagedBuffers;
     use feldera_types::config::{FtModel, PipelineConfig};
     use feldera_types::coordination::{Completion, InputDistribution, InputShard};
     use serde_json::{json, Value as JsonValue};
@@ -3656,7 +3655,9 @@ mod distributed_tests {
     struct NoRecords;
 
     impl InputBuffer for NoRecords {
-        fn flush(&mut self) {}
+        fn flush(&mut self) -> AnyResult<()> {
+            Ok(())
+        }
         fn len(&self) -> BufferSize {
             BufferSize::empty()
         }
@@ -3667,17 +3668,25 @@ mod distributed_tests {
     }
 
     impl ArrowStream for NoRecords {
-        fn insert(&mut self, _data: &RecordBatch, _metadata: &Option<Variant>) -> AnyResult<()> {
+        fn insert(
+            &mut self,
+            _data: &RecordBatch,
+            _metadata: &Option<ConnectorMetadata>,
+        ) -> AnyResult<()> {
             unreachable!()
         }
-        fn delete(&mut self, _data: &RecordBatch, _metadata: &Option<Variant>) -> AnyResult<()> {
+        fn delete(
+            &mut self,
+            _data: &RecordBatch,
+            _metadata: &Option<ConnectorMetadata>,
+        ) -> AnyResult<()> {
             unreachable!()
         }
         fn insert_with_polarities(
             &mut self,
             _data: &RecordBatch,
             _polarities: &[bool],
-            _metadata: &Option<Variant>,
+            _metadata: &Option<ConnectorMetadata>,
         ) -> AnyResult<()> {
             unreachable!()
         }

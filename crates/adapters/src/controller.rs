@@ -3,7 +3,7 @@
 //!
 //! # Design
 //!
-//! The circuit thread owns the `DBSPHandle` and calls `step()` on it whenever
+//! The circuit thread owns the circuit driver and calls `step()` on it whenever
 //! there is some input data available for the circuit.  It can be configured
 //! to improve batching by slightly delaying the `step()` call if the number of
 //! available input records is below some used-defined threshold.
@@ -19,16 +19,20 @@
 
 use crate::catalog::{InputCollectionHandle, OutputCollectionHandles};
 use crate::controller::checkpoint::{
-    CheckpointInputEndpointMetrics, CheckpointOffsets, CheckpointOutputEndpointMetrics,
+    CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics,
 };
-use crate::controller::journal::Journal;
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, ProcessedRecords};
 use crate::controller::sync::{
     CHECKPOINT_SYNC_PULL_DURATION_SECONDS, CHECKPOINT_SYNC_PULL_FAILURES,
     CHECKPOINT_SYNC_PULL_SUCCESS, CHECKPOINT_SYNC_PULL_TRANSFER_SPEED,
     CHECKPOINT_SYNC_PULL_TRANSFERRED_BYTES, CHECKPOINT_SYNC_PUSH_DURATION_SECONDS,
     CHECKPOINT_SYNC_PUSH_FAILURES, CHECKPOINT_SYNC_PUSH_SUCCESS,
-    CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED, CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES, SYNCHRONIZER,
+    CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED, CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES,
+};
+use crate::engine::{
+    CheckpointCommitter, CircuitDriver, CircuitFactory, CircuitParams, EngineCircuit,
+    EngineGraphProfile, EngineRuntime, JournalMode, JsonProfileChunks, OpenStorageFn,
+    PipelineStorage, StepJournal,
 };
 use crate::panic::N_PANICS;
 use crate::server::metrics::{HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value};
@@ -48,30 +52,12 @@ use anyhow::{Context, Error as AnyError, anyhow};
 use arrow::datatypes::Schema;
 use arrow::util::pretty::pretty_format_batches;
 use atomic::Atomic;
-use checkpoint::Checkpoint;
 use chrono::{DateTime, Utc};
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
-use dbsp::circuit::bootstrap::{BootstrapInfo, ConcurrentRestoreOutcome};
-use dbsp::circuit::checkpointer::Checkpointer;
-use dbsp::circuit::metrics::{
-    COMPACTION_STALL_TIME_NANOSECONDS, DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS, DBSP_STEP,
-    DBSP_STEP_LATENCY_MICROSECONDS, DUPLICATE_EXCHANGE_MESSAGES_RECEIVED,
-    EXCHANGE_MESSAGES_RECEIVED, FILES_CREATED, FILES_DELETED, FILES_SYNCED, TOTAL_LATE_RECORDS,
-};
-use dbsp::circuit::tokio::TOKIO;
-use dbsp::circuit::{CheckpointCommitter, CircuitStorageConfig, Mode};
-use dbsp::storage::backend::{StorageBackend, StoragePath};
-use dbsp::utils::process_rss_bytes;
-use dbsp::{
-    DBSPHandle,
-    circuit::{CircuitConfig, Layout},
-    profile::{DbspProfile, GraphProfile},
-};
-use dbsp::{Error as DbspError, Runtime, WeakRuntime};
 use distribution::{ActivationInput, input_shard, resume_distribution};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
@@ -81,6 +67,7 @@ use feldera_adapterlib::transport::{
 };
 use feldera_adapterlib::utils::datafusion::{create_runtime_env, create_session_context};
 use feldera_ir::LirCircuit;
+use feldera_observability::system::process_rss_bytes;
 use feldera_samply::{AnnotationOptions, CaptureOptions, Span};
 use feldera_storage::disk::DiskUsage;
 use feldera_storage::fbuf::slab::FBufSlabsStats;
@@ -89,11 +76,14 @@ use feldera_storage::metrics::{
     COMMIT_ALL_LATENCY_MICROSECONDS, READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS,
     SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES, WRITE_LATENCY_MICROSECONDS,
 };
+use feldera_storage::tokio::TOKIO;
 use feldera_types::adapter_stats::{
     ConnectorHealth, ExternalControllerStatus, ExternalInputEndpointStatus,
     ExternalOutputEndpointStatus,
 };
-use feldera_types::checkpoint::{CheckpointActivity, CheckpointMetadata, HostInfo};
+use feldera_types::checkpoint::{CheckpointActivity, HostInfo};
+use feldera_types::circuit::Layout;
+use feldera_types::circuit::{BootstrapInfo, ConcurrentRestoreOutcome};
 use feldera_types::coordination::{
     self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, InputDistribution,
     StepAction, StepInputs, StepRequest, StepStatus, TransactionCoordination,
@@ -112,7 +102,7 @@ use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;
 use itertools::Itertools;
-use journal::{InputChecksums, StepMetadata};
+use journal::InputChecksums;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
@@ -122,10 +112,9 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::btree_map::Entry;
-use std::io::ErrorKind;
 use std::mem::replace;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, SendError, Sender, SyncSender, channel, sync_channel};
 use std::sync::{LazyLock, Mutex, Weak};
 use std::thread::{self, sleep};
@@ -165,6 +154,17 @@ mod validate;
 #[cfg(test)]
 mod test;
 
+#[cfg(any(test, feature = "testing"))]
+pub mod ft_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod output_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod processors_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod suspend_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod tests;
+
 /// The step a controller that has initiated `initiated` steps is feeding.
 ///
 /// [`CircuitThread::step`] stores `step + 1` before it collects input, so the
@@ -178,13 +178,14 @@ fn current_step_of(initiated: Step) -> Option<Step> {
 
 use crate::adhoc::execute_sql;
 use crate::adhoc::table::AdHocTable;
-use crate::catalog::{SerBatch, SerBatchReader, SerTrace};
+use crate::catalog::{SerBatchReader, SerTrace, SnapshotReaders};
 use crate::format::parquet::{ArrowSchemaOptions, relation_to_arrow_fields};
 use crate::format::{
     MessageOrientedPreprocessedParser, PostprocessedConsumer, StreamingPreprocessedParser,
 };
 use crate::format::{get_input_format, get_output_format};
 use crate::integrated::{DistributedInput, create_integrated_input_endpoint};
+pub use checkpoint::{Checkpoint, CheckpointOffsets};
 pub use error::{ConfigError, ControllerError};
 pub use feldera_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
@@ -192,12 +193,12 @@ pub use feldera_types::config::{
 };
 use feldera_types::config::{
     DEFAULT_MAX_WORKER_BATCH_SIZE, DevTweaks, FileBackendConfig, FtConfig, FtModel,
-    OutputBufferConfig, PipelineIdentity, StorageBackendConfig, SyncConfig,
+    OutputBufferConfig, PipelineIdentity, StorageBackendConfig, StorageOptions, SyncConfig,
 };
-use feldera_types::constants::{CHECKPOINT_FILE_NAME, STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 pub use feldera_types::pipeline_diff::compute_pipeline_diff;
 use feldera_types::program_schema::{SqlIdentifier, canonical_identifier};
+pub use journal::StepMetadata;
 // Connectors size the payloads they embed in error messages against the bound
 // the endpoint status enforces, and their tests assert they stay under it.
 pub(crate) use stats::MAX_CONNECTOR_ERROR_LEN;
@@ -243,6 +244,10 @@ static COMMIT_UPDATE_INTERVAL: Duration = Duration::from_secs(1);
 /// Interval between logging updates about transaction commit.
 static COMMIT_DISPLAY_INTERVAL: Duration = Duration::from_secs(10);
 
+/// The longest that a step of an open transaction blocks before the circuit thread checks for
+/// commands again. An engine may ignore the bound.
+const STEP_MAX_WAIT: Duration = Duration::from_secs(1);
+
 /// Creates a [Controller].
 pub struct ControllerBuilder {
     pub config: PipelineConfig,
@@ -264,7 +269,12 @@ pub struct ControllerBuilder {
     /// [coordination::CoordinationActivate::input_choices]).
     input_choices: BTreeMap<String, JsonValue>,
 
-    storage: Option<CircuitStorageConfig>,
+    /// The host that writes each output relation of a multihost pipeline, as the coordinator
+    /// assigns them.  This is empty without a coordinator.
+    output_assignment: BTreeMap<String, usize>,
+
+    /// The pipeline's storage, if it has any.
+    storage: Option<Arc<dyn PipelineStorage>>,
 }
 
 /// Controller creation is a three-step process:
@@ -281,22 +291,23 @@ pub struct ControllerBuilder {
 impl ControllerBuilder {
     /// Prepares to create a new [Controller] configured with `config`.
     ///
-    /// If `config` includes storage configuration, this opens the storage
-    /// backend, so that it can be used before building the controller.
+    /// If `config` includes storage configuration, this opens the storage,
+    /// so that it can be used before building the controller.
     ///
     /// Use [build](Self::build) to finish building the controller.
-    pub(crate) fn new(config: &PipelineConfig) -> Result<Self, ControllerError> {
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - the pipeline configuration.
+    ///
+    /// * `open_storage` - opens the engine's storage that `config` names.
+    pub(crate) fn new(
+        config: &PipelineConfig,
+        open_storage: &OpenStorageFn,
+    ) -> Result<Self, ControllerError> {
         validate_config(config)?;
 
-        let storage = config
-            .storage()
-            .map(|(storage_config, storage_options)| {
-                CircuitStorageConfig::for_config(storage_config.clone(), storage_options.clone())
-                    .map_err(|error| {
-                        ControllerError::storage_error("failed to initialize storage", error)
-                    })
-            })
-            .transpose()?;
+        let storage = open_storage(config)?;
         if storage.is_none() {
             if config.global.fault_tolerance.is_enabled() {
                 return Err(ControllerError::Config {
@@ -312,6 +323,7 @@ impl ControllerBuilder {
             layout: None,
             input_distribution: BTreeMap::new(),
             input_choices: BTreeMap::new(),
+            output_assignment: BTreeMap::new(),
             storage,
         })
     }
@@ -321,9 +333,7 @@ impl ControllerBuilder {
     pub(crate) fn is_pull_necessary(&self) -> Option<&SyncConfig> {
         #[cfg(feature = "feldera-enterprise")]
         {
-            self.storage
-                .as_ref()
-                .and_then(|s| sync::is_pull_necessary(s))
+            self.storage_options().and_then(sync::is_pull_necessary)
         }
 
         #[cfg(not(feature = "feldera-enterprise"))]
@@ -339,7 +349,7 @@ impl ControllerBuilder {
                     "cannot pull checkpoint from object store",
                 ))
             })?;
-            return sync::pull_once(storage, _sync, None, &pipeline);
+            return sync::pull_once(&**storage, _sync, None, false, &pipeline);
         };
 
         Ok(())
@@ -351,13 +361,15 @@ impl ControllerBuilder {
         F: Fn() -> bool,
     {
         #[cfg(feature = "feldera-enterprise")]
-        if let Some(storage) = &self.storage {
+        if let Some(storage) = &self.storage
+            && let Some(options) = self.storage_options()
+        {
             let pipeline = self.config.pipeline_identity().ok_or_else(|| {
                 ControllerError::checkpoint_fetch_error(missing_pipeline_identity_message(
                     "cannot pull checkpoint from object store",
                 ))
             })?;
-            sync::continuous_pull(storage, _is_activated, None, &pipeline)
+            sync::continuous_pull(&**storage, options, _is_activated, None, &pipeline)
         } else {
             Err(ControllerError::InvalidStandby(
                 "standby mode requires storage configuration",
@@ -396,7 +408,7 @@ impl ControllerBuilder {
                     "cannot take ownership of object store bucket",
                 ))
             })?;
-            sync::take_bucket_ownership(storage.backend.clone(), &sync, &pipeline)?;
+            sync::take_bucket_ownership(&**storage, &sync, &pipeline)?;
         }
 
         Ok(())
@@ -405,6 +417,14 @@ impl ControllerBuilder {
     pub(crate) fn with_layout(self, layout: Layout) -> Self {
         Self {
             layout: Some(layout),
+            ..self
+        }
+    }
+
+    /// Sets the host that writes each output relation of a multihost pipeline.
+    pub(crate) fn with_output_assignment(self, output_assignment: BTreeMap<String, usize>) -> Self {
+        Self {
+            output_assignment,
             ..self
         }
     }
@@ -434,7 +454,10 @@ impl ControllerBuilder {
             self.storage.clone().unwrap(),
             checkpoint_uuid,
         )
-        .map(|init| init.with_input_distribution(self.input_distribution, self.input_choices))
+        .map(|init| {
+            init.with_input_distribution(self.input_distribution, self.input_choices)
+                .with_output_assignment(self.output_assignment)
+        })
     }
 
     /// Creates a [ControllerInit] that will start fresh without using a
@@ -442,7 +465,10 @@ impl ControllerBuilder {
     pub(crate) fn open_without_checkpoint(self) -> Result<ControllerInit, ControllerError> {
         self.take_bucket_ownership()?;
         ControllerInit::without_checkpoint(self.layout, self.config.clone(), self.storage.clone())
-            .map(|init| init.with_input_distribution(self.input_distribution, self.input_choices))
+            .map(|init| {
+                init.with_input_distribution(self.input_distribution, self.input_choices)
+                    .with_output_assignment(self.output_assignment)
+            })
     }
 
     /// Creates a [ControllerInit] that will start from the latest checkpoint,
@@ -454,17 +480,28 @@ impl ControllerBuilder {
             self.config.clone(),
             self.storage.clone(),
         )
-        .map(|init| init.with_input_distribution(self.input_distribution, self.input_choices))
+        .map(|init| {
+            init.with_input_distribution(self.input_distribution, self.input_choices)
+                .with_output_assignment(self.output_assignment)
+        })
     }
 
-    pub(crate) fn storage(&self) -> Option<Arc<dyn StorageBackend>> {
-        self.storage.as_ref().map(|storage| storage.backend.clone())
+    pub(crate) fn storage(&self) -> Option<Arc<dyn PipelineStorage>> {
+        self.storage.clone()
+    }
+
+    /// The storage options that `config` sets, if the pipeline has storage.
+    fn storage_options(&self) -> Option<&StorageOptions> {
+        self.storage
+            .as_ref()
+            .and(self.config.storage())
+            .map(|(_, options)| options)
     }
 
     /// Returns the sync configuration, if one is present in the storage backend.
     pub(crate) fn sync_config(&self) -> Option<SyncConfig> {
-        self.storage.as_ref().and_then(|s| {
-            if let StorageBackendConfig::File(ref file_cfg) = s.options.backend {
+        self.storage_options().and_then(|options| {
+            if let StorageBackendConfig::File(ref file_cfg) = options.backend {
                 file_cfg.sync.clone()
             } else {
                 None
@@ -573,10 +610,11 @@ pub struct Controller {
 }
 
 /// Type of the callback argument to [`Controller::start_graph_profile`].
-pub type GraphProfileCallbackFn = Box<dyn FnOnce(Result<GraphProfile, ControllerError>) + Send>;
+pub type GraphProfileCallbackFn =
+    Box<dyn FnOnce(Result<Box<dyn EngineGraphProfile>, ControllerError>) + Send>;
 
 /// Type of the callback argument to [`Controller::start_json_profile`].
-pub type JsonProfileCallbackFn = Box<dyn FnOnce(Result<DbspProfile, ControllerError>) + Send>;
+pub type JsonProfileCallbackFn = Box<dyn FnOnce(Result<JsonProfileChunks, ControllerError>) + Send>;
 
 /// Type of the callback argument to [`Controller::start_checkpoint`].
 pub type CheckpointCallbackFn = Box<dyn FnOnce(Result<Checkpoint, Arc<ControllerError>>) + Send>;
@@ -732,7 +770,7 @@ fn soft_delete_input_handle(
     Ok(InputCollectionHandle::new(
         input_handle.schema.clone(),
         SoftDeleteHandle::new(input_handle.handle.fork()),
-        input_handle.node_id,
+        input_handle.persistent_id.clone(),
     ))
 }
 
@@ -782,18 +820,27 @@ where
 }
 
 impl Controller {
-    #[cfg(test)]
-    pub(crate) fn with_test_config<F>(
-        circuit_factory: F,
+    /// Returns a controller that runs the circuit of `circuit_factory` with `config`, and
+    /// reports errors to `error_cb`, as an engine's tests build one.
+    ///
+    /// # Arguments
+    ///
+    /// * `circuit_factory` - builds the circuit and its catalog.
+    /// * `open_storage` - opens the engine's storage that `config` names.
+    /// * `config` - the pipeline's configuration.
+    /// * `error_cb` - receives each error, with the tag of the endpoint that failed.
+    ///
+    /// # Returns
+    ///
+    /// The controller, or the error that kept it from starting.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn with_test_config(
+        circuit_factory: CircuitFactory,
+        open_storage: &OpenStorageFn,
         config: &PipelineConfig,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
-    ) -> Result<Self, ControllerError>
-    where
-        F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
-            + Send
-            + 'static,
-    {
-        let builder = ControllerBuilder::new(config)?;
+    ) -> Result<Self, ControllerError> {
+        let builder = ControllerBuilder::new(config, open_storage)?;
         let mut init = builder.open_latest_checkpoint()?;
         if let Some(diff) = init.pipeline_diff.as_mut() {
             diff.clear_program_diff()
@@ -801,37 +848,30 @@ impl Controller {
         init.init(None, circuit_factory, error_cb)
     }
 
-    #[cfg(test)]
-    pub(crate) fn with_test_config_keep_program_diff<F>(
-        circuit_factory: F,
+    /// Like [`Self::with_test_config`], but keeps the program diff, so that the parts of a
+    /// changed circuit bootstrap.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn with_test_config_keep_program_diff(
+        circuit_factory: CircuitFactory,
+        open_storage: &OpenStorageFn,
         config: &PipelineConfig,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
-    ) -> Result<Self, ControllerError>
-    where
-        F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
-            + Send
-            + 'static,
-    {
-        let builder = ControllerBuilder::new(config)?;
+    ) -> Result<Self, ControllerError> {
+        let builder = ControllerBuilder::new(config, open_storage)?;
         let init = builder.open_latest_checkpoint()?;
         init.init(None, circuit_factory, error_cb)
     }
 
-    fn build<F>(
+    fn build(
         controller_init: ControllerInit,
         state: Option<Arc<ServerState>>,
-        circuit_factory: F,
+        circuit_factory: CircuitFactory,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
-    ) -> Result<Self, ControllerError>
-    where
-        F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
-            + Send
-            + 'static,
-    {
+    ) -> Result<Self, ControllerError> {
         let (circuit_thread_handle, inner) = {
             // A channel to communicate circuit initialization status.
             // The `circuit_factory` closure must be invoked in the context of
-            // the circuit thread, because the circuit handle it returns doesn't
+            // the circuit thread, because the circuit driver it returns doesn't
             // implement `Send`.  So we need this channel to communicate circuit
             // initialization status back to this thread.  On success, the worker
             // thread adds a catalog to `inner`, and returns it wrapped in an `Arc`.
@@ -905,8 +945,12 @@ impl Controller {
         self.inner.last_checkpoint_sync()
     }
 
-    pub fn lir(&self) -> &LirCircuit {
-        &self.inner.lir
+    /// Returns the circuit's low-level IR, or `NotImplemented` if the engine keeps none.
+    pub fn lir(&self) -> Result<&LirCircuit, ControllerError> {
+        self.inner
+            .lir
+            .as_ref()
+            .map_err(|feature| ControllerError::NotImplemented(feature))
     }
 
     /// Connect a new input endpoint with specified name and configuration.
@@ -1159,15 +1203,8 @@ impl Controller {
     /// recent error messages stored on each endpoint. Pollers should pass
     /// `false`; the selector is intended for the support-bundle collector.
     pub fn api_status(&self, include_connector_errors: bool) -> ExternalControllerStatus {
-        let runtime = self.inner.runtime.upgrade();
-        let memory_pressure = runtime
-            .as_ref()
-            .map(|runtime| runtime.current_memory_pressure())
-            .unwrap_or_default();
-        let memory_pressure_epoch = runtime
-            .as_ref()
-            .map(|runtime| runtime.memory_pressure_epoch())
-            .unwrap_or_default();
+        let (memory_pressure, memory_pressure_epoch) =
+            self.inner.runtime.memory_pressure().unwrap_or_default();
 
         let checkpoint_activity = self.checkpoint_activity();
         let permanent_checkpoint_errors = self.permanent_checkpoint_errors();
@@ -1207,7 +1244,7 @@ impl Controller {
         self.start_graph_profile(Box::new(|profile| {
             match profile.map(|profile| {
                 profile
-                    .dump("profile")
+                    .dump(Path::new("profile"))
                     .map_err(|e| ControllerError::io_error("dumping profile", e))
             }) {
                 Ok(Ok(path)) => info!("Dumped DBSP profile to {}", path.display()),
@@ -1317,7 +1354,9 @@ impl Controller {
         reply_or_controller_exit(receiver.await)
     }
 
-    pub async fn async_graph_profile(&self) -> Result<GraphProfile, ControllerError> {
+    pub async fn async_graph_profile(
+        &self,
+    ) -> Result<Box<dyn EngineGraphProfile>, ControllerError> {
         let (sender, receiver) = oneshot::channel();
         self.start_graph_profile(Box::new(move |profile| {
             if sender.send(profile).is_err() {
@@ -1327,7 +1366,7 @@ impl Controller {
         reply_or_controller_exit(receiver.await)
     }
 
-    pub async fn async_json_profile(&self) -> Result<DbspProfile, ControllerError> {
+    pub async fn async_json_profile(&self) -> Result<JsonProfileChunks, ControllerError> {
         let (sender, receiver) = oneshot::channel();
         self.start_json_profile(Box::new(move |profile| {
             if sender.send(profile).is_err() {
@@ -1600,8 +1639,8 @@ impl Controller {
     ///
     /// Hand this to an output endpoint that waits on something outside the
     /// pipeline, so that it can stop waiting when the pipeline goes down.  See
-    /// [ControllerInner::shutdown_token].
-    pub(crate) fn shutdown_token(&self) -> &CancellationToken {
+    /// `ControllerInner::shutdown_token`.
+    pub fn shutdown_token(&self) -> &CancellationToken {
         self.inner.shutdown_token()
     }
 
@@ -1647,6 +1686,7 @@ impl Controller {
     ) where
         F: MetricsFormatter,
     {
+        let engine = self.inner.runtime.metrics();
         metrics.process_metrics(labels);
 
         metrics.counter(
@@ -1701,13 +1741,13 @@ impl Controller {
             "records_late_total",
             "Number of records dropped due to LATENESS annotations.",
             labels,
-            &TOTAL_LATE_RECORDS,
+            engine.late_records,
         );
         metrics.counter(
             "compaction_stall_duration_seconds",
             "Time in seconds a worker was stalled waiting for more merges to complete.",
             labels,
-            COMPACTION_STALL_TIME_NANOSECONDS.load(Ordering::Relaxed) as f64 / 1_000_000_000.0,
+            engine.compaction_stall_nanoseconds as f64 / 1_000_000_000.0,
         );
         metrics.counter(
             "output_stall_seconds_total",
@@ -1723,25 +1763,25 @@ impl Controller {
             "files_created_total",
             "Total number of files created.",
             labels,
-            &FILES_CREATED,
+            engine.files_created,
         );
         metrics.counter(
             "files_deleted_total",
             "Total number of files deleted.",
             labels,
-            &FILES_DELETED,
+            engine.files_deleted,
         );
         metrics.counter(
             "files_synced_total",
             "Total number of files fsynced to stable storage individually.",
             labels,
-            &FILES_SYNCED,
+            engine.files_synced,
         );
         metrics.counter(
             "dbsp_steps_total",
             "Total number of DBSP steps executed.",
             labels,
-            &DBSP_STEP,
+            engine.steps,
         );
         metrics.counter(
             "dbsp_runtime_elapsed_seconds_total",
@@ -1757,12 +1797,12 @@ impl Controller {
             "dbsp_step_latency_seconds",
             "Latency of DBSP steps over the last 60 seconds or 1000 steps, whichever is less, in seconds",
             labels,
-            &HistogramDiv::new(DBSP_STEP_LATENCY_MICROSECONDS.lock().unwrap().snapshot(), 1_000_000.0));
+            &HistogramDiv::new(engine.step_latency_microseconds, 1_000_000.0));
         metrics.histogram(
             "dbsp_operator_checkpoint_latency_seconds",
             "The time that individual operator checkpoint operations delayed the pipeline, in seconds. (Because checkpoints run in parallel across workers, these will add up to more than `feldera_checkpoint_delay_seconds`.)",
             labels,
-            &HistogramDiv::new(DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS.snapshot(), 1_000_000.0),
+            &HistogramDiv::new(engine.operator_checkpoint_latency_microseconds, 1_000_000.0),
         );
 
         metrics.histogram(
@@ -1803,40 +1843,39 @@ impl Controller {
             &status.global_metrics.storage_bytes,
         );
 
-        if let Some(runtime) = self.inner.runtime.upgrade() {
-            let (cache_used, cache_max) = runtime.cache_occupancy();
+        if let Some(runtime) = &engine.runtime {
             metrics.gauge(
                 "storage_cache_usage_bytes",
                 "The number of bytes of memory currently in use for caching data on storage.",
                 labels,
-                cache_used,
+                runtime.cache_used_bytes,
             );
             metrics.counter(
                 "storage_cache_usage_limit_bytes_total",
                 "The limit for the number of bytes of memory for caching data on storage.",
                 labels,
-                cache_max,
+                runtime.cache_limit_bytes,
             );
 
-            write_fbuf_slab_metrics(metrics, labels, &runtime.fbuf_slabs_stats());
+            write_fbuf_slab_metrics(metrics, labels, &runtime.fbuf_slabs);
 
             metrics.gauge(
                 "max_rss_bytes",
                 "Memory limit in bytes: the configured limit or the memory available to the process, whichever is smaller, minus memory reserved for other components. A value of 0 means there is no limit.",
                 labels,
-                runtime.max_rss_bytes().unwrap_or(0),
+                runtime.max_rss_bytes.unwrap_or(0),
             );
             metrics.gauge(
                 "memory_pressure",
                 "Current memory pressure level in [0..3]: low=0, moderate=1, high=2, critical=3.",
                 labels,
-                runtime.current_memory_pressure() as u8,
+                runtime.memory_pressure as u8,
             );
             metrics.gauge(
                 "memory_pressure_epoch",
                 "Monotonic counter incremented whenever memory pressure transitions to high/critical.",
                 labels,
-                runtime.memory_pressure_epoch(),
+                runtime.memory_pressure_epoch,
             );
         }
 
@@ -2295,13 +2334,13 @@ impl Controller {
             "multihost_exchange_messages_received_total",
             "Number of exchange messages received from other hosts.",
             labels,
-            &EXCHANGE_MESSAGES_RECEIVED,
+            engine.exchange_messages_received,
         );
         metrics.counter(
             "multihost_duplicate_exchange_messages_received_total",
             "The subset of `multihost_exchange_messages_received_total` that were duplicates.  Duplicates occur when a connection between hosts drops and is reestablished.  In a healthy pipeline, this value should be zero or a tiny fraction of `multihost_exchange_messages_received_total`.",
             labels,
-            &DUPLICATE_EXCHANGE_MESSAGES_RECEIVED,
+            engine.duplicate_exchange_messages_received,
         );
     }
 
@@ -2652,7 +2691,7 @@ pub(crate) fn write_custom_metrics<F>(
 /// Represents a background thread that pushes checkpoints to object storage.
 struct CheckpointSyncThread {
     uuid: uuid::Uuid,
-    storage: Arc<dyn StorageBackend>,
+    storage: Arc<dyn PipelineStorage>,
     config: SyncConfig,
     host_info: Option<HostInfo>,
     /// Identity of this pipeline, used to enforce S3 bucket ownership on push.
@@ -2661,13 +2700,9 @@ struct CheckpointSyncThread {
 
 impl CheckpointSyncThread {
     fn run(self) -> Result<(), Arc<ControllerError>> {
-        match SYNCHRONIZER.push(
-            self.uuid,
-            self.storage,
-            self.config,
-            self.host_info,
-            self.pipeline,
-        ) {
+        match sync::checkpoint_sync(&*self.storage).and_then(|checkpoint_sync| {
+            checkpoint_sync.push(self.uuid, self.config, self.host_info, self.pipeline)
+        }) {
             Err(err) => {
                 CHECKPOINT_SYNC_PUSH_FAILURES.fetch_add(1, Ordering::Relaxed);
                 Err(Arc::new(ControllerError::checkpoint_push_error(
@@ -2728,7 +2763,7 @@ impl RunningCheckpointSync {
         let Some((_, options)) = circuit.controller.status.pipeline_config.storage() else {
             return Err(Arc::new(ControllerError::storage_error(
                 "cannot sync checkpoints when storage is disabled",
-                dbsp::storage::backend::StorageError::StorageDisabled,
+                feldera_storage::error::StorageError::StorageDisabled,
             )));
         };
 
@@ -2736,7 +2771,7 @@ impl RunningCheckpointSync {
         else {
             return Err(Arc::new(ControllerError::storage_error(
                 "syncing checkpoint is only supported with file backend",
-                dbsp::storage::backend::StorageError::BackendNotSupported(Box::new(
+                feldera_storage::error::StorageError::BackendNotSupported(Box::new(
                     options.backend.clone(),
                 )),
             )));
@@ -2749,7 +2784,7 @@ impl RunningCheckpointSync {
         else {
             return Err(Arc::new(ControllerError::storage_error(
                 "sync config is not set; cannot push checkpoints",
-                dbsp::storage::backend::StorageError::BackendNotSupported(Box::new(
+                feldera_storage::error::StorageError::BackendNotSupported(Box::new(
                     options.backend.clone(),
                 )),
             )));
@@ -2846,7 +2881,7 @@ impl Default for LastCheckpoint {
 
 struct CircuitThread {
     controller: Arc<ControllerInner>,
-    circuit: DBSPHandle,
+    circuit: Box<dyn CircuitDriver>,
     command_receiver: Receiver<Command>,
     backpressure_thread: BackpressureThread,
     _statistics_thread: StatisticsThread,
@@ -2865,8 +2900,8 @@ struct CircuitThread {
     /// Active checkpoint sync.
     running_checkpoint_sync: Option<RunningCheckpointSync>,
 
-    /// Storage backend for writing checkpoints.
-    storage: Option<Arc<dyn StorageBackend>>,
+    /// The pipeline's storage, if it has any.
+    storage: Option<Arc<dyn PipelineStorage>>,
 
     /// The step currently running or replaying.
     step: Step,
@@ -2940,7 +2975,7 @@ struct CircuitThread {
 ///
 /// The engine's own `ConcurrentBootstrapPhase` is private, so the controller
 /// tracks its phase separately and drives the transitions off the boolean
-/// returned by [`DBSPHandle::step_bootstrap_circuit`].
+/// returned by [`CircuitDriver::step_bootstrap_circuit`].
 ///
 /// ```text
 ///               step until bootstrap                         step until sync
@@ -3070,7 +3105,7 @@ fn non_materialized_replay_sources(
     let mut need_backfill_persistent_ids = Vec::new();
 
     // If this table is in need_backfill but is not in diff (i.e., its persistent ID hasn't changed), return it.
-    for persistent_id in bootstrap_info.need_backfill.values().flatten() {
+    for persistent_id in &bootstrap_info.backfill_persistent_ids {
         if let Some(table_name) = tables.get(persistent_id)
             && !diff
                 .program_diff()
@@ -3089,19 +3124,16 @@ impl CircuitThread {
     /// Circuit thread function: holds the handle to the circuit, calls `step`
     /// on it whenever input data is available, pushes output batches
     /// produced by the circuit to output pipelines.
-    fn new<F>(
+    fn new(
         controller_init: ControllerInit,
         state: Option<Arc<ServerState>>,
-        circuit_factory: F,
+        circuit_factory: CircuitFactory,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
-    ) -> Result<Self, ControllerError>
-    where
-        F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>,
-    {
+    ) -> Result<Self, ControllerError> {
         let ft_model = controller_init.pipeline_config.global.fault_tolerance.model;
         let ControllerInit {
             pipeline_config,
-            mut circuit_config,
+            mut circuit_params,
             processed_records,
             transaction_number,
             initial_start_time,
@@ -3117,10 +3149,7 @@ impl CircuitThread {
             input_choices,
         } = controller_init;
 
-        let storage = circuit_config
-            .storage
-            .as_ref()
-            .map(|storage: &CircuitStorageConfig| storage.backend.clone());
+        let storage = circuit_params.storage.clone();
 
         // Concurrent bootstrap is opt-in via the startup `BootstrapConfig`.
         // When requested, suppress the automatic stop-the-world restore so the
@@ -3130,17 +3159,19 @@ impl CircuitThread {
             .as_ref()
             .map(|state| state.bootstrap_config().concurrent_bootstrap)
             .unwrap_or(false);
-        let concurrent_base = circuit_config
-            .storage
-            .as_ref()
-            .and_then(|storage| storage.init_checkpoint);
-        if concurrent_bootstrap && let Some(storage) = circuit_config.storage.as_mut() {
-            storage.defer_restore = true;
+        let concurrent_base = circuit_params.init_checkpoint;
+        if concurrent_bootstrap && circuit_params.storage.is_some() {
+            circuit_params.defer_restore = true;
         }
 
-        let (mut circuit, catalog) = circuit_factory(circuit_config)?;
+        let layout = circuit_params.layout.clone();
+        let EngineCircuit {
+            driver: mut circuit,
+            runtime,
+            catalog,
+        } = circuit_factory(circuit_params)?;
 
-        let lir = circuit.lir()?;
+        let lir = optional_lir(circuit.lir())?;
 
         if let Some(state) = &state
             && let Some(diff) = &pipeline_diff
@@ -3150,7 +3181,7 @@ impl CircuitThread {
             // in open_checkpoint().
             if let Some(bootstrap_info) = circuit.bootstrap_info() {
                 let non_materialized_tables =
-                    non_materialized_replay_sources(bootstrap_info, &pipeline_config, diff);
+                    non_materialized_replay_sources(&bootstrap_info, &pipeline_config, diff);
                 if !non_materialized_tables.is_empty() {
                     return Err(ControllerError::BootstrapNotAllowed {
                         error: format!(
@@ -3210,7 +3241,7 @@ impl CircuitThread {
         // `concurrent_bootstrap=false` for a stop-the-world bootstrap.
         let mut concurrent_phase = ConcurrentPhase::Inactive;
         if concurrent_bootstrap && let Some(base) = concurrent_base {
-            match circuit.start_concurrent_bootstrap(base.to_string().into())? {
+            match circuit.start_concurrent_bootstrap(base)? {
                 ConcurrentRestoreOutcome::UpToDate => {}
                 ConcurrentRestoreOutcome::FellBack { reason, .. } => {
                     return Err(ControllerError::BootstrapNotAllowed {
@@ -3248,6 +3279,9 @@ impl CircuitThread {
             }
         }
 
+        // What the circuit rebuilds, if it is bootstrapping.
+        let bootstrap_info = circuit.bootstrap_info();
+
         // Seek each input endpoint to its initial offset.
         //
         // If we're not restoring from a checkpoint, `input_metadata` will be empty so
@@ -3261,13 +3295,10 @@ impl CircuitThread {
                     continue;
                 };
 
-                let node_id = catalog
-                    .input_collection_handle(&SqlIdentifier::from(&endpoint_config.stream))
-                    .unwrap()
-                    .node_id;
-
-                if let Some(replay_info) = circuit.bootstrap_info()
-                    && replay_info.need_backfill.contains_key(&node_id)
+                let table = SqlIdentifier::from(&endpoint_config.stream);
+                if bootstrap_info
+                    .as_ref()
+                    .is_some_and(|info| info.backfill_tables.contains(&table))
                 {
                     info!(
                         "Found checkpointed state for input connector '{endpoint_name}', but the table that the connector is attached to has been modified and its state has been cleared; the connector will restart from scratch"
@@ -3305,7 +3336,8 @@ impl CircuitThread {
 
         let (parker, backpressure_thread, command_receiver, controller) = ControllerInner::new(
             pipeline_config,
-            circuit.runtime(),
+            runtime,
+            layout,
             catalog,
             lir,
             error_cb,
@@ -3323,7 +3355,7 @@ impl CircuitThread {
             input_choices,
             storage
                 .as_ref()
-                .and_then(|backend| backend.file_system_path())
+                .and_then(|storage| storage.local_path())
                 .map(PathBuf::from),
         )?;
 
@@ -3353,23 +3385,21 @@ impl CircuitThread {
         // The pipeline hasn't changed based on input and output persistent id values,
         // yet the circuit is bootstrapping. This is a bug.
         if can_replay && bootstrapping {
-            return Err(ControllerError::UnexpectedBootstrap {
-                bootstrap_info: circuit.bootstrap_info().clone(),
-            });
+            return Err(ControllerError::UnexpectedBootstrap { bootstrap_info });
         }
 
         let ft = match ft_model {
             Some(FtModel::ExactlyOnce) => {
-                let backend = storage.clone().unwrap();
+                let storage = storage.as_deref().unwrap();
                 let mut ft = if input_metadata.is_some() && can_replay {
-                    FtState::open(backend, step, controller.clone())
+                    FtState::open(storage, step, controller.clone())
                 } else if input_metadata.is_some() {
                     warn!(
                         "Pipeline has been modified since the checkpoint was taken; replay journal will be discarded"
                     );
-                    FtState::open_and_truncate(backend, controller.clone())
+                    FtState::open_and_truncate(storage, controller.clone())
                 } else {
-                    FtState::create(backend, controller.clone())
+                    FtState::create(storage, controller.clone())
                 }?;
 
                 // The above code ensures that replay and bootstrapping cannot happen at the same time.
@@ -3443,7 +3473,7 @@ impl CircuitThread {
         // want to be stuck in the initialization state, when none of the monitoring
         // features are enabled, for a long time.
         if let Err(error) = self.circuit.set_auto_rebalance(false) {
-            let _ = init_status_sender.send(Err(error.into()));
+            let _ = init_status_sender.send(Err(error));
             return Ok(());
         }
 
@@ -3483,7 +3513,7 @@ impl CircuitThread {
 
         // Enable auto-rebalancing after the first step.
         if let Err(error) = self.circuit.set_auto_rebalance(true) {
-            let _ = init_status_sender.send(Err(error.into()));
+            let _ = init_status_sender.send(Err(error));
             return Ok(());
         }
 
@@ -3736,8 +3766,7 @@ impl CircuitThread {
         // The bootstrap circuit is gone once we cut over, so its commit progress
         // is only meaningful before `Finalizing`.
         let commit_progress = match self.circuit.bootstrap_commit_progress() {
-            Ok(progress) => {
-                let summary = progress.summary();
+            Ok(summary) => {
                 // Report a commit summary only while a commit is actually in
                 // progress (the bootstrap transaction is otherwise still
                 // replaying its inputs).
@@ -3780,9 +3809,7 @@ impl CircuitThread {
     fn finish(mut self) -> Result<(), ControllerError> {
         self.controller.set_terminated();
         self.flush_commands_and_requests();
-        self.circuit
-            .kill()
-            .map_err(|_| ControllerError::dbsp_panic())
+        self.circuit.kill()
     }
 
     /// Clears the `restoring` flag (so the pipeline reports `Running` and admits
@@ -3853,7 +3880,7 @@ impl CircuitThread {
         // transaction id it belonged to.  Needs to be done after
         // `step_circuit`, because the transaction id is only assigned there.
         if let Some(step_metadata) = self.pending_step_metadata.take() {
-            #[cfg(test)]
+            #[cfg(any(test, feature = "testing"))]
             {
                 let names = step_metadata
                     .values()
@@ -3970,7 +3997,7 @@ impl CircuitThread {
 
     /// Starts or commits a transaction in the circuit, if the controller's
     /// transaction state calls for it.
-    fn advance_transaction(&mut self) -> Result<(), DbspError> {
+    fn advance_transaction(&mut self) -> Result<(), ControllerError> {
         match self.controller.advance_transaction_state() {
             Some(AdvanceTransaction::Start) => {
                 self.controller.increment_transaction_number();
@@ -3999,7 +4026,7 @@ impl CircuitThread {
         // its error rather than panicking, so the pipeline fails with the
         // worker's explanation instead of a bare controller panic.
         if let Err(error) = self.advance_transaction() {
-            self.controller.error(Arc::new(error.into()), None);
+            self.controller.error(Arc::new(error), None);
             return;
         }
 
@@ -4011,9 +4038,9 @@ impl CircuitThread {
             let committed = Span::new("step")
                 .with_category("Step")
                 .with_tooltip(|| format!("step {}", self.step))
-                .in_scope(|| self.circuit.step())
+                .in_scope(|| self.circuit.step(STEP_MAX_WAIT))
                 .unwrap_or_else(|e| {
-                    self.controller.error(Arc::new(e.into()), None);
+                    self.controller.error(Arc::new(e), None);
                     false
                 });
 
@@ -4032,7 +4059,7 @@ impl CircuitThread {
                     .num_total_processed_records()
                     - processed_records;
                 if !committed {
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "testing"))]
                     if let Some(hook) = self.controller.commit_step_hook.lock().unwrap().take() {
                         hook(&self.controller);
                     }
@@ -4040,8 +4067,7 @@ impl CircuitThread {
                     let commit_updates = self.commit_updates.get_or_insert_default();
                     if commit_updates.should_update_status() {
                         match self.circuit.commit_progress() {
-                            Ok(progress) => {
-                                let summary = progress.summary();
+                            Ok(summary) => {
                                 if commit_updates.should_display_status() {
                                     info!(
                                         "Transaction {tid}: Commit of {n} records in progress ({summary})"
@@ -4095,7 +4121,7 @@ impl CircuitThread {
                 .with_category("Step")
                 .with_tooltip(|| format!("step {}", self.step))
                 .in_scope(|| self.circuit.transaction())
-                .unwrap_or_else(|e| self.controller.error(Arc::new(e.into()), None));
+                .unwrap_or_else(|e| self.controller.error(Arc::new(e), None));
             debug!("circuit thread: 'circuit.transaction' returned");
         }
     }
@@ -4113,7 +4139,7 @@ impl CircuitThread {
         let mut snapshot = BTreeMap::new();
         for (name, clh) in self.controller.catalog.output_iter() {
             if let Some(ih) = &clh.integrate_handle {
-                snapshot.insert(name.clone(), ih.take_from_all());
+                snapshot.insert(name.clone(), ih.take_readers());
             }
         }
 
@@ -4382,16 +4408,10 @@ impl CircuitThread {
     fn run_commands(&mut self) {
         while let Ok(command) = self.command_receiver.try_recv() {
             match command {
-                Command::JsonProfile(reply_callback) => reply_callback(
-                    self.circuit
-                        .retrieve_profile()
-                        .map_err(ControllerError::dbsp_error),
-                ),
-                Command::GraphProfile(reply_callback) => reply_callback(
-                    self.circuit
-                        .graph_profile()
-                        .map_err(ControllerError::dbsp_error),
-                ),
+                Command::JsonProfile(reply_callback) => reply_callback(self.circuit.json_profile()),
+                Command::GraphProfile(reply_callback) => {
+                    reply_callback(self.circuit.graph_profile())
+                }
                 Command::Checkpoint(reply_callback) => {
                     self.checkpoint_requests
                         .push(CheckpointRequest::CheckpointCommand(reply_callback));
@@ -4407,16 +4427,10 @@ impl CircuitThread {
                             cb: reply_callback,
                         });
                 }
-                Command::Rebalance(reply_callback) => reply_callback(
-                    self.circuit
-                        .rebalance()
-                        .map_err(ControllerError::dbsp_error),
-                ),
-                Command::StartCompaction(reply_callback) => reply_callback(
-                    self.circuit
-                        .start_compaction()
-                        .map_err(ControllerError::dbsp_error),
-                ),
+                Command::Rebalance(reply_callback) => reply_callback(self.circuit.rebalance()),
+                Command::StartCompaction(reply_callback) => {
+                    reply_callback(self.circuit.start_compaction())
+                }
             }
         }
     }
@@ -4482,7 +4496,7 @@ impl CircuitThread {
     ///   recovered, so the pipeline process should exit as soon as it can.
     /// - `Err(error)` if there was an error.
     fn input_step(&mut self) -> Result<Option<BufferSize>, ControllerError> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "testing"))]
         if let Some(hook) = self.controller.input_step_hook.lock().unwrap().take() {
             hook(&mut self.input_metadata);
         }
@@ -4876,10 +4890,10 @@ impl CircuitThread {
         let outputs = self.controller.outputs.read().unwrap();
         for (_stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
             let (mut delta_batch, num_delta_records) = if silent_bootstrap {
-                let _ = output_handles.delta_handle.take_from_all();
+                let _ = output_handles.delta_handle.take_readers();
                 (None, 0)
             } else {
-                let delta_batch = output_handles.delta_handle.as_ref().concat();
+                let delta_batch = output_handles.delta_handle.take_readers().whole;
                 let num_delta_records = delta_batch.len();
 
                 (Some(delta_batch), num_delta_records)
@@ -5033,13 +5047,6 @@ impl CircuitThread {
         !self.sync_checkpoint_requests.is_empty()
     }
 
-    #[allow(unused)]
-    pub fn list_checkpoints(&mut self) -> Result<Vec<CheckpointMetadata>, Arc<ControllerError>> {
-        self.circuit
-            .list_checkpoints()
-            .map_err(|e| Arc::new(ControllerError::dbsp_error(e)))
-    }
-
     fn poll_running_checkpoint_sync(&mut self) {
         fn process_sync_requests(
             requests: &mut Vec<SyncCheckpointRequest>,
@@ -5167,7 +5174,7 @@ struct FtState {
     controller: Arc<ControllerInner>,
 
     /// The journal.
-    journal: Journal,
+    journal: Box<dyn StepJournal>,
 
     /// The journal record currently being replayed (fed to the circuit), if
     /// we're replaying.
@@ -5204,12 +5211,11 @@ struct FtState {
 impl FtState {
     /// Initializes fault tolerance state from storage.
     fn open(
-        backend: Arc<dyn StorageBackend>,
+        storage: &dyn PipelineStorage,
         step: Step,
         controller: Arc<ControllerInner>,
     ) -> Result<Self, ControllerError> {
-        info!("{STEPS_FILE}: opening to start replay from step {step}");
-        let journal = Journal::open(backend, &StoragePath::from(STEPS_FILE));
+        let journal = storage.open_journal(JournalMode::Open(step))?;
         let replay_steps = journal.list_steps(step)?;
         let replay_step = match replay_steps.first() {
             Some(&first) => journal.read(first)?,
@@ -5233,12 +5239,10 @@ impl FtState {
     /// Initializes fault tolerance state from storage, truncating any existing
     /// journal instead of replaying recorded steps.
     fn open_and_truncate(
-        backend: Arc<dyn StorageBackend>,
+        storage: &dyn PipelineStorage,
         controller: Arc<ControllerInner>,
     ) -> Result<Self, ControllerError> {
-        info!("{STEPS_FILE}: truncating journal");
-
-        let journal = Journal::create(backend, &StoragePath::from(STEPS_FILE))?;
+        let journal = storage.open_journal(JournalMode::Truncate)?;
         Ok(Self {
             enabled: true,
             input_endpoints: Self::initial_input_endpoints(&controller),
@@ -5255,22 +5259,10 @@ impl FtState {
 
     /// Creates new fault tolerance state on storage.
     fn create(
-        backend: Arc<dyn StorageBackend>,
+        storage: &dyn PipelineStorage,
         controller: Arc<ControllerInner>,
     ) -> Result<Self, ControllerError> {
         let config = controller.status.pipeline_config.clone();
-        for file in [STATE_FILE, STEPS_FILE] {
-            backend
-                .delete_if_exists(&StoragePath::from(file))
-                .map_err(|error| {
-                    ControllerError::storage_error("initializing fault tolerant pipeline", error)
-                })?;
-        }
-
-        info!("{STEPS_FILE}: creating");
-        let journal = Journal::create(backend.clone(), &StoragePath::from(STEPS_FILE))?;
-
-        info!("{STATE_FILE}: creating");
         let checkpoint = Checkpoint {
             circuit: None,
             step: 0,
@@ -5283,7 +5275,7 @@ impl FtState {
             output_statistics: HashMap::new(),
             input_distribution: controller.input_distribution.clone(),
         };
-        checkpoint.write(&*backend, &StoragePath::from(STATE_FILE))?;
+        let journal = storage.open_journal(JournalMode::Create(&checkpoint))?;
 
         Ok(Self {
             enabled: true,
@@ -5724,7 +5716,7 @@ impl FtState {
     /// We don't delete entries for `step` and beyond because further steps
     /// might have carried on while the checkpoint was committing.
     fn checkpointed(&mut self, step: Step) -> Result<(), ControllerError> {
-        self.journal.delete(..step)?;
+        self.journal.delete(0..step)?;
         Ok(())
     }
 
@@ -5985,8 +5977,8 @@ impl StepTrigger {
 ///
 /// This structure handles all these cases.
 pub struct ControllerInit {
-    /// The circuit configuration.
-    circuit_config: CircuitConfig,
+    /// What the controller passes to the circuit factory.
+    circuit_params: CircuitParams,
 
     /// The pipeline configuration.
     ///
@@ -6071,10 +6063,10 @@ impl ControllerInit {
     fn without_checkpoint(
         layout: Option<Layout>,
         config: PipelineConfig,
-        storage: Option<CircuitStorageConfig>,
+        storage: Option<Arc<dyn PipelineStorage>>,
     ) -> Result<Self, ControllerError> {
         Ok(Self {
-            circuit_config: Self::circuit_config(layout, &config, storage)?,
+            circuit_params: Self::circuit_params(layout, &config, storage)?,
             pipeline_config: config,
             processed_records: 0,
             transaction_number: 0,
@@ -6095,13 +6087,10 @@ impl ControllerInit {
     fn with_checkpoint(
         layout: Option<Layout>,
         config: PipelineConfig,
-        storage: CircuitStorageConfig,
+        storage: Arc<dyn PipelineStorage>,
         checkpoint_uuid: Uuid,
     ) -> Result<Self, ControllerError> {
-        let checkpoint = Checkpoint::read(
-            &*storage.backend,
-            &StoragePath::from(checkpoint_uuid.to_string()).join(STATE_FILE),
-        )?;
+        let checkpoint = storage.checkpoint(checkpoint_uuid)?;
         Self::with_checkpoint_inner(layout, config, storage, checkpoint)
     }
 
@@ -6111,13 +6100,13 @@ impl ControllerInit {
     fn with_latest_checkpoint(
         layout: Option<Layout>,
         config: PipelineConfig,
-        storage: Option<CircuitStorageConfig>,
+        storage: Option<Arc<dyn PipelineStorage>>,
     ) -> Result<Self, ControllerError> {
         let Some(storage) = storage else {
             return Self::without_checkpoint(layout, config, None);
         };
 
-        match Self::read_latest_checkpoint(&*storage.backend)? {
+        match storage.latest_checkpoint()? {
             Some(checkpoint) => Self::with_checkpoint_inner(layout, config, storage, checkpoint),
             None => {
                 info!("starting fresh pipeline without resuming from checkpoint");
@@ -6126,55 +6115,10 @@ impl ControllerInit {
         }
     }
 
-    /// Reads the state of the newest checkpoint in the checkpoint catalog.
-    ///
-    /// The root `state.json` can name an older checkpoint: a checkpoint is
-    /// published to the catalog before the root file is rewritten, so a crash
-    /// in between leaves the root one checkpoint behind, and resuming from it
-    /// would fork the checkpoint history.  The root file still decides when the
-    /// catalog is empty, because a fault-tolerant pipeline that has not
-    /// checkpointed yet records its starting point there.
-    fn read_latest_checkpoint(
-        backend: &dyn StorageBackend,
-    ) -> Result<Option<Checkpoint>, ControllerError> {
-        let root = match Checkpoint::read(backend, &StoragePath::from(STATE_FILE)) {
-            Err(error) if error.kind() == ErrorKind::NotFound => None,
-            other => Some(other?),
-        };
-        let catalog =
-            Checkpointer::read_checkpoints(backend).map_err(ControllerError::dbsp_error)?;
-        let Some(newest) = catalog.back() else {
-            return Ok(root);
-        };
-        let root_uuid = root
-            .as_ref()
-            .and_then(|root| root.circuit.as_ref())
-            .map(|circuit| circuit.uuid);
-        if root_uuid == Some(newest.uuid) {
-            return Ok(root);
-        }
-
-        let newest_path = StoragePath::from(newest.uuid.to_string()).join(STATE_FILE);
-        let checkpoint = match Checkpoint::read(backend, &newest_path) {
-            Ok(checkpoint) => checkpoint,
-            // Checkpoints written before July 2025 have no state file of their own.
-            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(root),
-            Err(error) => return Err(error),
-        };
-        warn!(
-            "{STATE_FILE} names checkpoint {} but the newest checkpoint in {CHECKPOINT_FILE_NAME} is {}; resuming from {} and updating {STATE_FILE}",
-            root_uuid.map_or_else(|| String::from("none"), |uuid| uuid.to_string()),
-            newest.uuid,
-            newest.uuid,
-        );
-        checkpoint.write(backend, &StoragePath::from(STATE_FILE))?;
-        Ok(Some(checkpoint))
-    }
-
     fn with_checkpoint_inner(
         layout: Option<Layout>,
         mut config: PipelineConfig,
-        storage: CircuitStorageConfig,
+        storage: Arc<dyn PipelineStorage>,
         checkpoint: Checkpoint,
     ) -> Result<Self, ControllerError> {
         let checkpoint_summary = checkpoint.display_summary();
@@ -6193,7 +6137,7 @@ impl ControllerInit {
         } = checkpoint;
         info!("Resuming from checkpoint:\n{checkpoint_summary}");
 
-        let storage = storage.with_init_checkpoint(circuit.map(|circuit| circuit.uuid));
+        let init_checkpoint = circuit.map(|circuit| circuit.uuid);
 
         let pipeline_diff = compute_pipeline_diff(
             &checkpoint_config.program_info_subset(),
@@ -6355,7 +6299,10 @@ impl ControllerInit {
         };
 
         Ok(Self {
-            circuit_config: Self::circuit_config(layout, &config, Some(storage))?,
+            circuit_params: CircuitParams {
+                init_checkpoint,
+                ..Self::circuit_params(layout, &config, Some(storage))?
+            },
             pipeline_config: config,
             step,
             input_metadata: Some(input_metadata.0),
@@ -6440,11 +6387,11 @@ impl ControllerInit {
         self.incarnation_uuid = incarnation_uuid
     }
 
-    fn circuit_config(
+    fn circuit_params(
         layout: Option<Layout>,
         pipeline_config: &PipelineConfig,
-        storage: Option<CircuitStorageConfig>,
-    ) -> Result<CircuitConfig, ControllerError> {
+        storage: Option<Arc<dyn PipelineStorage>>,
+    ) -> Result<CircuitParams, ControllerError> {
         let dev_tweaks = pipeline_config.global.dev_tweaks.clone();
         if dev_tweaks != DevTweaks::default() {
             info!("using non-default `dev_tweaks`: {dev_tweaks:#?}")
@@ -6511,14 +6458,23 @@ Using the pod limit as the RSS memory limit."
 
         let layout =
             layout.unwrap_or_else(|| Layout::new_solo(pipeline_config.global.workers as usize));
-        Ok(CircuitConfig::from(layout)
-            .with_max_rss_bytes(max_rss.map(ConfigSize::as_bytes))
-            .with_reserved_memory_bytes(datafusion_memory.map_or(0, ConfigSize::as_bytes))
-            .with_pin_cpus(pipeline_config.global.pin_cpus.clone())
-            .with_storage(storage)
-            .with_mode(Mode::Persistent)
-            .with_dev_tweaks(dev_tweaks)
-            .with_allow_input_during_commit(false))
+        Ok(CircuitParams {
+            layout,
+            output_assignment: BTreeMap::new(),
+            storage,
+            init_checkpoint: None,
+            defer_restore: false,
+            max_rss_bytes: max_rss.map(ConfigSize::as_bytes),
+            reserved_memory_bytes: datafusion_memory.map_or(0, ConfigSize::as_bytes),
+            pin_cpus: pipeline_config.global.pin_cpus.clone(),
+            dev_tweaks,
+        })
+    }
+
+    /// Sets the host that writes each output relation of a multihost pipeline.
+    fn with_output_assignment(mut self, output_assignment: BTreeMap<String, usize>) -> Self {
+        self.circuit_params.output_assignment = output_assignment;
+        self
     }
 
     /// Create a new I/O controller using config in `self`.
@@ -6533,7 +6489,7 @@ Using the pod limit as the RSS memory limit."
     ///
     /// * `state` - The server state, used to update pipeline phase.
     ///
-    /// * `circuit_factory` - A function that instantiates a DBSP circuit that this
+    /// * `circuit_factory` - A function that instantiates the circuit that this
     ///   controller will run.
     ///
     /// * `error_cb` - Error callback.  The controller doesn't implement its own
@@ -6548,17 +6504,12 @@ Using the pod limit as the RSS memory limit."
     ///   transport or data format.
     ///
     /// * One or more of the endpoints fails to initialize.
-    pub fn init<F>(
+    pub fn init(
         self,
         state: Option<Arc<ServerState>>,
-        circuit_factory: F,
+        circuit_factory: CircuitFactory,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
-    ) -> Result<Controller, ControllerError>
-    where
-        F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
-            + Send
-            + 'static,
-    {
+    ) -> Result<Controller, ControllerError> {
         Controller::build(self, state, circuit_factory, error_cb)
     }
 }
@@ -6675,10 +6626,7 @@ struct StatisticsThread {
 
 impl StatisticsThread {
     /// Starts a statistics thread.
-    fn new(
-        controller: &Arc<ControllerInner>,
-        storage_backend: Option<Arc<dyn StorageBackend>>,
-    ) -> Self {
+    fn new(controller: &Arc<ControllerInner>, storage: Option<Arc<dyn PipelineStorage>>) -> Self {
         let exit = Arc::new(AtomicBool::new(false));
         let controller_status = controller.status.clone();
         let controller = Arc::downgrade(controller);
@@ -6686,9 +6634,7 @@ impl StatisticsThread {
             .name("dbsp-storage".into())
             .spawn({
                 let exit = exit.clone();
-                move || {
-                    Self::statistics_thread(controller, controller_status, storage_backend, exit)
-                }
+                move || Self::statistics_thread(controller, controller_status, storage, exit)
             })
             .unwrap();
         Self {
@@ -6701,7 +6647,7 @@ impl StatisticsThread {
     fn statistics_thread(
         controller: Weak<ControllerInner>,
         controller_status: Arc<ControllerStatus>,
-        storage_backend: Option<Arc<dyn StorageBackend>>,
+        storage: Option<Arc<dyn PipelineStorage>>,
         exit: Arc<AtomicBool>,
     ) {
         let mut last = Instant::now();
@@ -6713,10 +6659,12 @@ impl StatisticsThread {
                 Self::warn_about_paused_transaction(&controller, &mut paused_transaction_warning);
             }
 
-            let storage_bytes = if let Some(storage_backend) = &storage_backend {
+            let storage_bytes = if let Some(usage_bytes) =
+                storage.as_ref().and_then(|storage| storage.usage_bytes())
+            {
                 // Measure.
                 let elapsed_msecs = last.elapsed().as_millis();
-                let usage_bytes = storage_backend.usage().load(Ordering::Relaxed).max(0) as u128;
+                let usage_bytes = usage_bytes.max(0) as u128;
                 last = Instant::now();
 
                 // Update internal statistic.
@@ -7156,7 +7104,7 @@ impl OutputBuffer {
     }
 }
 
-pub type ConsistentSnapshot = Arc<BTreeMap<SqlIdentifier, Vec<Arc<dyn SerBatchReader>>>>;
+pub type ConsistentSnapshot = Arc<BTreeMap<SqlIdentifier, SnapshotReaders>>;
 
 /// Current state of transaction processing.
 #[derive(Default, Debug, Clone, PartialEq, Eq, Copy)]
@@ -7773,15 +7721,17 @@ pub struct ControllerInner {
     num_api_connections: AtomicU64,
     command_sender: Sender<Command>,
     catalog: Arc<Box<dyn CircuitCatalog>>,
-    lir: LirCircuit,
+    /// The circuit's low-level IR, or the feature that the engine's `NotImplemented` error
+    /// names if the engine keeps none.
+    lir: Result<LirCircuit, &'static str>,
     // Always lock this after the catalog is locked to avoid deadlocks
     trace_snapshots: TokioMutex<BTreeMap<Step, ConsistentSnapshot>>,
     next_input_id: Atomic<EndpointId>,
     outputs: ShardedLock<OutputEndpoints>,
     next_output_id: Atomic<EndpointId>,
-    /// Weak reference to the runtime, so we can deallocate the runtime once all DBSP threads and auxiliary threads are done
-    /// without waiting for the controller to be dropped.
-    runtime: WeakRuntime,
+    /// The engine's services. They do not keep the engine alive, so that it goes away once
+    /// its threads end, without waiting for the controller to be dropped.
+    runtime: Arc<dyn EngineRuntime>,
     /// Canceled when the pipeline starts going down.
     ///
     /// A child of the runtime's kill token, so the runtime cancels it too.
@@ -7806,7 +7756,7 @@ pub struct ControllerInner {
     // from the sync context by the circuit thread.
     transaction_info: Mutex<TransactionInfo>,
 
-    /// Layout of the [Runtime].
+    /// Layout of the circuit's workers.
     layout: Layout,
 
     /// The input distribution that this host used at activation, which each
@@ -7849,30 +7799,43 @@ pub struct ControllerInner {
     input_completions: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 
     /// Runs after capturing the checkpoint's input snapshot.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     checkpoint_snapshot_hook: Mutex<Option<Box<dyn FnOnce() + Send>>>,
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     input_step_hook: Mutex<Option<InputStepHook>>,
 
     /// Runs on the circuit thread after a step that left a commit unfinished.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     commit_step_hook: Mutex<Option<CommitStepHook>>,
 
     /// Runs on the circuit thread just before a step is journaled, with the
     /// names of the input endpoints whose input the step consumed.  Removed
     /// once it returns true.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     journal_step_hook: Mutex<Option<JournalStepHook>>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 type InputStepHook = Box<dyn FnOnce(&mut HashMap<String, Option<Resume>>) + Send>;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 type CommitStepHook = Box<dyn FnOnce(&ControllerInner) + Send>;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 type JournalStepHook = Box<dyn FnMut(&ControllerInner, &[&str]) -> bool + Send>;
+
+/// Returns `lir`, the result of [`CircuitDriver::lir`], as the controller keeps it: an engine
+/// that keeps no LIR returns `NotImplemented`, which leaves the controller without one, so that
+/// `GET /lir` reports the error and the pipeline still starts. Fails on any other error.
+fn optional_lir(
+    lir: Result<LirCircuit, ControllerError>,
+) -> Result<Result<LirCircuit, &'static str>, ControllerError> {
+    match lir {
+        Ok(lir) => Ok(Ok(lir)),
+        Err(ControllerError::NotImplemented(feature)) => Ok(Err(feature)),
+        Err(error) => Err(error),
+    }
+}
 
 impl Drop for ControllerInner {
     fn drop(&mut self) {
@@ -7884,9 +7847,10 @@ impl ControllerInner {
     #[allow(clippy::too_many_arguments)]
     fn new(
         config: PipelineConfig,
-        runtime: &Runtime,
+        runtime: Arc<dyn EngineRuntime>,
+        layout: Layout,
         catalog: Box<dyn CircuitCatalog>,
-        lir: LirCircuit,
+        lir: Result<LirCircuit, &'static str>,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
         processed_records: u64,
         transaction_number: u64,
@@ -7934,10 +7898,10 @@ impl ControllerInner {
                 next_input_id: Atomic::new(0),
                 outputs: ShardedLock::new(outputs),
                 next_output_id: Atomic::new(0),
-                layout: runtime.layout().clone(),
+                layout,
                 input_distribution: input_distribution.clone(),
-                runtime: runtime.downgrade(),
-                shutdown: runtime.cancellation_token().child_token(),
+                shutdown: runtime.shutdown_token().child_token(),
+                runtime,
                 circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
                 backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
                 error_cb,
@@ -7958,16 +7922,16 @@ impl ControllerInner {
                 coordination_prepare_checkpoint: AtomicBool::new(false),
                 input_completion_notify,
                 checkpoint_activity: Mutex::new(CheckpointActivity::Idle),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "testing"))]
                 commit_step_hook: Mutex::new(None),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "testing"))]
                 journal_step_hook: Mutex::new(None),
                 modified_output_endpoints,
                 bootstrapped_output_endpoints,
                 input_completions: Mutex::new(Vec::new()),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "testing"))]
                 checkpoint_snapshot_hook: Mutex::new(None),
-                #[cfg(test)]
+                #[cfg(any(test, feature = "testing"))]
                 input_step_hook: Mutex::new(None),
             }
         });
@@ -8048,7 +8012,7 @@ impl ControllerInner {
             controller.set_terminated();
         })?;
 
-        if controller.layout.local_host_idx() == 0 {
+        if controller.layout.local_host_idx() == 0 && controller.runtime.has_wall_clock() {
             let _ = controller.connect_input("now", &now_endpoint_config(&config), None, None);
         }
 
@@ -8897,27 +8861,24 @@ impl ControllerInner {
             .clone();
         let thread_queue = queue.clone();
 
-        // Thread to run the output pipeline. We run it inside the DBSP runtime as an aux thread, so
-        // that it can use the storage backend to maintain the output buffer.
-        self.runtime
-            .upgrade()
-            .expect("attempt to add an output connector after the runtime has terminated")
-            .spawn_aux_thread(
-                &format!("{endpoint_name_string}-output"),
-                parker,
-                move |parker| {
-                    Self::output_thread_func(
-                        endpoint_id,
-                        endpoint_name_string,
-                        output_buffer_config,
-                        encoder,
-                        parker,
-                        thread_queue,
-                        disconnect_flag,
-                        controller,
-                    )
-                },
-            );
+        // Thread to run the output pipeline. We run it as an aux thread of the engine, so that it
+        // can use the storage backend to maintain the output buffer.
+        self.runtime.spawn_aux_thread(
+            &format!("{endpoint_name_string}-output"),
+            parker,
+            Box::new(move |parker| {
+                Self::output_thread_func(
+                    endpoint_id,
+                    endpoint_name_string,
+                    output_buffer_config,
+                    encoder,
+                    parker,
+                    thread_queue,
+                    disconnect_flag,
+                    controller,
+                )
+            }),
+        );
 
         if endpoint_config.connector_config.send_snapshot && !snapshot_already_sent {
             self.request_snapshot_delivery();
@@ -8950,14 +8911,14 @@ impl ControllerInner {
         // if no snapshot has been produced yet (pipeline hasn't completed a step).
         // This method is only called from the circuit thread (via `push_output`),
         // so blocking_lock is safe.
-        let snapshot_batches = {
+        let snapshot_readers = {
             let snapshots = self.trace_snapshots.blocking_lock();
             snapshots
                 .last_key_value()
                 .and_then(|(_, snapshot)| snapshot.get(&SqlIdentifier::from(stream_name)).cloned())
         };
 
-        let Some(snapshot_batches) = snapshot_batches else {
+        let Some(snapshot_readers) = snapshot_readers else {
             // No cached snapshot yet (pipeline hasn't completed a step or bootstrapping is in progress).
             // Leave the state as `Pending` and let the next step retry.
             return false;
@@ -8975,16 +8936,10 @@ impl ControllerInner {
         // path.
         control.mark_snapshot_delivered();
 
-        // Merge every cached batch into a single snapshot before pushing so
-        // downstream encoders see one self-consistent view of the stream.
-        // Streaming snapshot batches one-by-one would let the encoder emit
-        // mutually cancelling updates between consecutive batches.
-        let mut all_batches: Vec<Arc<dyn SerBatch>> = snapshot_batches
-            .iter()
-            .flat_map(|reader| reader.batches())
-            .collect();
-
-        if all_batches.is_empty() {
+        // Push the snapshot whole so downstream encoders see one self-consistent
+        // view of the stream. Streaming the parts one by one would let the
+        // encoder emit mutually cancelling updates between consecutive parts.
+        if snapshot_readers.partitions.is_empty() {
             self.status.enqueue_batch(endpoint_id, 0);
             queue.push(BatchQueueEntry {
                 step,
@@ -8994,8 +8949,7 @@ impl ControllerInner {
                 processed_records,
             });
         } else {
-            let first = all_batches.remove(0);
-            let merged = first.concat(all_batches);
+            let merged = snapshot_readers.whole;
             self.status.enqueue_batch(endpoint_id, merged.len());
             queue.push(BatchQueueEntry {
                 step,
@@ -9087,24 +9041,17 @@ impl ControllerInner {
         let mut output_buffer = OutputBuffer::new(&endpoint_name);
 
         loop {
-            // This thread is an aux thread of the DBSP runtime, and
-            // `RuntimeHandle::kill` joins its aux threads, so it has to exit on
-            // a kill as well as on `Terminated`.  The token covers both.
+            // This thread is an aux thread of the engine, which joins its aux
+            // threads when the circuit stops, so it has to exit on a stop as
+            // well as on `Terminated`.  The token covers both.  Waiting for
+            // `Terminated` alone would deadlock: a worker error stops the
+            // circuit from the circuit thread, the thread that would otherwise
+            // set `Terminated`.
             if controller.shutdown_token().is_cancelled() {
                 return;
             }
 
             if disconnect_flag.load(Ordering::Acquire) {
-                return;
-            }
-
-            // This thread runs as an aux thread of the DBSP runtime, and
-            // `RuntimeHandle::kill` joins its aux threads. Killing the circuit
-            // therefore requires this thread to exit on the kill signal alone:
-            // a worker error tears the circuit down from the circuit thread,
-            // which is the thread that would otherwise set `Terminated`, so
-            // waiting for that state would deadlock the teardown.
-            if Runtime::kill_in_progress() {
                 return;
             }
 
@@ -9647,7 +9594,7 @@ impl ControllerInner {
         // First, check for reasons we can't checkpoint.
         let mut permanent = Vec::new();
         #[cfg(not(feature = "feldera-enterprise"))]
-        #[cfg(not(test))]
+        #[cfg(not(any(test, feature = "testing")))]
         permanent.push(PermanentSuspendError::EnterpriseFeature);
         if self.status.pipeline_config.global.storage.is_none() {
             permanent.push(PermanentSuspendError::StorageRequired);
@@ -9910,7 +9857,7 @@ impl ControllerInner {
             // next) when they differ or the journal ends.
             //
             // The journal cursor is iterated in recorded order, decoupled from
-            // the physical step counter (see `FtState` / `Journal::list_steps`),
+            // the physical step counter (see `FtState` / `StepJournal::list_steps`),
             // so a commit taking a different number of steps on replay than
             // during recording cannot shift logged input onto the wrong step.
             // Reproducing the boundaries also reproduces the per-transaction
@@ -10504,7 +10451,7 @@ impl RunningCheckpoint {
                 .collect();
             (inputs, statistics)
         };
-        #[cfg(test)]
+        #[cfg(any(test, feature = "testing"))]
         if let Some(hook) = circuit
             .controller
             .checkpoint_snapshot_hook
@@ -10617,11 +10564,7 @@ impl RunningCheckpoint {
         let start_checkpoint = Instant::now();
         let committer = circuit
             .circuit
-            .checkpoint()
-            .with_steps(circuit.step)
-            .with_processed_records(processed_records)
-            .prepare()
-            .map_err(ControllerError::from)?;
+            .prepare_checkpoint(circuit.step, processed_records)?;
         let checkpoint = Checkpoint {
             circuit: None,
             step: circuit.step,
@@ -10651,7 +10594,6 @@ impl RunningCheckpoint {
             written_before,
             start_checkpoint,
             delay,
-            storage: circuit.storage.as_ref().unwrap().clone(),
         };
         let unparker = circuit.parker.unparker().clone();
         let join_handle = std::thread::Builder::new()
@@ -10720,11 +10662,10 @@ impl RunningCheckpoint {
 struct CheckpointThread {
     checkpoint: Checkpoint,
     status: Arc<ControllerStatus>,
-    committer: CheckpointCommitter,
+    committer: Box<dyn CheckpointCommitter>,
     written_before: u64,
     start_checkpoint: Instant,
     delay: Duration,
-    storage: Arc<dyn StorageBackend>,
 }
 
 impl CheckpointThread {
@@ -10798,50 +10739,11 @@ impl CheckpointThread {
             }
         }
 
-        // Finalize the checkpoint on storage.
-        //
-        // The ordering is important:
-        //
-        // 1. Write the checkpoint's `state.json`.
-        //
-        // 2. Publish the checkpoint, which updates the checkpoint catalog,
-        //    which makes the checkpoint visible.
-        //
-        // 3. Write root `state.json`.
-        //
-        // Steps 1 and 2 cannot be reordered because the checkpoint, once
-        // visible, must be complete, and the checkpoint's own `state.json` is
-        // needed for that: checkpoint sync reads it to describe the checkpoint
-        // it uploads, and a multihost host restoring a checkpoint the
-        // coordinator names reads it to find the circuit to open and the input
-        // offsets to resume from.
-        //
-        // Steps 2 and 3 cannot be reordered because gc_startup keeps only files
-        // that the catalog references, so a root pointer to an uncatalogued
-        // checkpoint would get its files deleted.
-        //
-        // [CheckpointPublisher::metadata] reports the circuit's metadata before
-        // publication, so that step 1 can record it.
-        let uuid = publisher.metadata().uuid;
-        let checkpoint_dir = StoragePath::from(uuid.to_string());
+        // Finalize the checkpoint on storage. [CheckpointPublisher::metadata]
+        // reports the circuit's metadata before publication, so that the
+        // state stored with the checkpoint can record it.
         self.checkpoint.circuit = Some(publisher.metadata().clone());
-        self.checkpoint
-            .write(&*self.storage, &checkpoint_dir.clone().join(STATE_FILE))?;
-
-        // Writing the file renames it into the checkpoint's directory, and a
-        // rename is durable only once that directory entry is.  Nothing else
-        // fsyncs the directory this late: `Checkpointer::commit`'s barrier ran
-        // before this write, and publication fsyncs the storage root.  Without
-        // this barrier a crash could keep the catalog entry while losing the
-        // file it vouches for, which is the state this ordering exists to
-        // prevent.
-        self.storage.fsync_dir(&checkpoint_dir).map_err(|error| {
-            ControllerError::storage_error(format!("{checkpoint_dir}: failed to fsync"), error)
-        })?;
-
-        publisher.publish()?;
-        self.checkpoint
-            .write(&*self.storage, &StoragePath::from(STATE_FILE))?;
+        publisher.publish(&self.checkpoint)?;
 
         // Record statistics.
         Span::new("runtime")
@@ -10894,7 +10796,7 @@ mod controller_init_tests {
             datafusion_memory: Some(ConfigSize::from_mb(2_000)),
             ..Default::default()
         });
-        let result = ControllerInit::circuit_config(None, &config, None);
+        let result = ControllerInit::circuit_params(None, &config, None);
         let err = match result {
             Err(e) => e,
             Ok(_) => panic!("config with df==max_rss should fail"),
@@ -10926,7 +10828,7 @@ mod controller_init_tests {
             },
             ..Default::default()
         });
-        let err = match ControllerInit::circuit_config(None, &config, None) {
+        let err = match ControllerInit::circuit_params(None, &config, None) {
             Err(e) => e,
             Ok(_) => panic!("a threshold of 16 must be rejected"),
         };
@@ -10966,7 +10868,7 @@ mod controller_init_tests {
                 datafusion_memory: datafusion_memory_mb.map(ConfigSize::from_mb),
                 ..Default::default()
             });
-            let circuit_config = ControllerInit::circuit_config(None, &config, None).unwrap();
+            let circuit_config = ControllerInit::circuit_params(None, &config, None).unwrap();
             assert_eq!(circuit_config.max_rss_bytes, max_rss_bytes);
             assert_eq!(circuit_config.reserved_memory_bytes, reserved_memory_bytes);
         }
@@ -10982,7 +10884,7 @@ mod controller_init_tests {
             datafusion_memory: Some(ConfigSize::from_mb(4_000)),
             ..Default::default()
         });
-        let result = ControllerInit::circuit_config(None, &config, None);
+        let result = ControllerInit::circuit_params(None, &config, None);
         assert!(matches!(
             result,
             Err(ControllerError::Config { config_error })

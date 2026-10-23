@@ -17,12 +17,12 @@ use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use chrono::{DateTime, Utc};
 use crossbeam::queue::ArrayQueue;
 use crossbeam::sync::{Parker, Unparker};
-use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{
     InputEndpoint, InputReaderCommand, Resume, Watermark, parse_resume_info,
 };
+use feldera_types::circuit::StagedBuffers;
 use feldera_types::config::FtModel;
 use feldera_types::coordination::InputShard;
 use feldera_types::program_schema::Relation;
@@ -44,7 +44,7 @@ use rdkafka::{
 use rdkafka::{Offset, TopicPartitionList};
 use serde::{Deserialize, Serialize};
 use smallvec::{SmallVec, smallvec};
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 use std::collections::BTreeSet;
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::error::Error;
@@ -633,7 +633,7 @@ impl KafkaFtInputReaderInner {
                         total += amt;
                         hasher.add(partition, &msg);
                         consumer.buffered(amt);
-                        msg.flush();
+                        consumer.check_flush(msg.flush());
                         if offset == max {
                             incomplete_partitions.remove(partition);
                         }
@@ -793,7 +793,7 @@ impl KafkaFtInputReaderInner {
                     InputReaderCommand::Pause => running = false,
                     InputReaderCommand::Queue { .. } => {
                         let mut buffer = stager.pop_staged_buffer(&*parser);
-                        buffer.buffers.flush();
+                        consumer.check_flush(buffer.buffers.flush());
                         let metadata = serde_json::to_value(&Metadata {
                             offsets: buffer.offsets,
                             shard,
@@ -1214,10 +1214,10 @@ impl Metadata {
 
 /// For testing purposes, keeps track of partitions that we're not reading from
 /// because there is already too much queued.
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub static BACKPRESSURE: Mutex<BTreeSet<(String, i32)>> = Mutex::new(BTreeSet::new());
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 fn update_backpressure(topic: &str, partition: i32, has_backpressure: bool) {
     let mut backpressure = BACKPRESSURE.lock().unwrap();
     let member = (topic.into(), partition);
@@ -1228,7 +1228,7 @@ fn update_backpressure(topic: &str, partition: i32, has_backpressure: bool) {
     }
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "testing")))]
 fn update_backpressure(_topic: &str, _partition: i32, _has_backpressure: bool) {}
 
 /// Returns true if a partition queue that holds `n_bytes` should pause for
@@ -1516,7 +1516,7 @@ impl PartitionReceiver {
         //
         // [1]: https://github.com/confluentinc/librdkafka/wiki/FAQ#what-are-partition-queues-and-why-are-some-partitions-slower-than-others
         let backpressure = needs_backpressure(self.n_bytes.load(Ordering::Relaxed));
-        #[cfg(test)]
+        #[cfg(any(test, feature = "testing"))]
         let backpressure = backpressure || self.messages.lock().unwrap().len() >= 1000;
         update_backpressure(&self.config.topic, self.partition, backpressure);
         if backpressure {

@@ -7,9 +7,8 @@ use std::time::{Duration, Instant};
 use anyhow::{Result as AnyResult, anyhow, bail};
 use aws_sdk_dynamodb::Client;
 use aws_sdk_dynamodb::types::{AttributeValue, DeleteRequest, PutRequest, WriteRequest};
-use dbsp::circuit::tokio::TOKIO;
-use feldera_adapterlib::catalog::SplitCursorBuilder;
 use feldera_adapterlib::transport::{AsyncErrorCallback, OutputBatchType, Step};
+use feldera_storage::tokio::TOKIO;
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::transport::dynamodb::{DynamoDBWriteMode, DynamoDBWriterConfig};
 use tokio::sync::Semaphore;
@@ -18,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, info_span, warn};
 
 use crate::ControllerError;
-use crate::catalog::{RecordFormat, SerBatchReader, SerCursor};
+use crate::catalog::{RecordFormat, SerBatchReader, SerCursor, SerKeyRange};
 use crate::controller::{ControllerInner, EndpointId};
 use crate::format::{Encoder, OutputConsumer};
 use crate::transport::OutputEndpoint;
@@ -60,7 +59,7 @@ enum BroadcastCommand {
 /// encode and write.
 enum WorkerCommand {
     Broadcast(BroadcastCommand),
-    Encode(SplitCursorBuilder),
+    Encode(Box<dyn SerKeyRange>),
 }
 
 /// A worker's reply to a [`WorkerCommand`]. `num_retries` is propagated so the
@@ -109,7 +108,7 @@ pub(crate) struct DynamoDBWorker {
 }
 
 impl DynamoDBWorker {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     pub(crate) fn with_client(
         client: Client,
         endpoint_name: &str,
@@ -455,7 +454,7 @@ impl DynamoDBWorker {
                 }
             }
 
-            cursor.step_key();
+            cursor.step_key()?;
         }
 
         Ok(())
@@ -484,9 +483,12 @@ impl DynamoDBWorker {
                     self.batch_start_inner();
                     let _ = result_tx.send(WorkerResult::Ok { num_retries: 0 });
                 }
-                WorkerCommand::Encode(cursor_builder) => {
-                    let mut cursor = cursor_builder.build();
-                    match self.encode_cursor(&mut cursor) {
+                WorkerCommand::Encode(range) => {
+                    let result = match range.cursor() {
+                        Ok(mut cursor) => self.encode_cursor(cursor.as_mut()),
+                        Err(e) => Err(e),
+                    };
+                    match result {
                         Ok(()) => {
                             let _ = result_tx.send(WorkerResult::Ok { num_retries: 0 });
                         }
@@ -826,17 +828,8 @@ impl Encoder for DynamoDBOutputEndpoint {
         .entered();
 
         let num_workers = self.handles.len();
-        let mut bounds = batch.keys_factory().default_box();
-        batch.partition_keys(num_workers, &mut *bounds);
-
         let mut workers_dispatched = 0;
-        for i in 0..=bounds.len() {
-            let Some(cursor_builder) =
-                SplitCursorBuilder::from_bounds(batch.clone(), &*bounds, i, RecordFormat::DynamoDB)
-            else {
-                continue;
-            };
-
+        for range in batch.split(num_workers, RecordFormat::DynamoDB)? {
             assert!(
                 workers_dispatched < num_workers,
                 "DynamoDB output connector split batch into more partitions than worker threads"
@@ -844,7 +837,7 @@ impl Encoder for DynamoDBOutputEndpoint {
 
             self.handles[workers_dispatched]
                 .cmd_tx
-                .send(WorkerCommand::Encode(cursor_builder))
+                .send(WorkerCommand::Encode(range))
                 .map_err(|_| anyhow!("worker thread disconnected"))?;
             workers_dispatched += 1;
         }

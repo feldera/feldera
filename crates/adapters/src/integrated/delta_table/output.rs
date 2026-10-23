@@ -1,4 +1,4 @@
-use crate::catalog::{CursorWithPolarity, SerBatchReader, SplitCursorBuilder};
+use crate::catalog::{ArrowRowSink, CursorWithPolarity, SerBatchReader, SerKeyRange};
 use crate::controller::{ControllerInner, EndpointId};
 use crate::format::MAX_DUPLICATES;
 use crate::format::parquet::{ArrowSchemaOptions, relation_to_arrow_fields};
@@ -15,12 +15,12 @@ use crate::{
     SerCursor,
 };
 use anyhow::{Result as AnyResult, anyhow, bail};
+use arrow::array::{Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema,
     SchemaRef as ArrowSchemaRef,
 };
 use chrono::Utc;
-use dbsp::circuit::tokio::TOKIO;
 use delta_kernel::engine::arrow_conversion::TryFromArrow;
 use delta_kernel::table_features::ColumnMappingMode;
 use delta_kernel::table_properties::DataSkippingNumIndexedCols;
@@ -28,6 +28,7 @@ use deltalake::DeltaTable;
 use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, TableReference};
 use deltalake::kernel::{Action, Add, ArrayType, DataType, MapType, StructField, StructType};
 use deltalake::logstore::ObjectStoreRef;
+use feldera_storage::tokio::TOKIO;
 
 use super::bounded_upload::bound_uploads;
 use deltalake::operations::create::CreateBuilder;
@@ -48,9 +49,6 @@ use feldera_types::{
 };
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
-use serde::Serialize;
-use serde_arrow::ArrayBuilder;
-use serde_arrow::schema::SerdeArrowSchema;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::num::NonZeroU64;
@@ -210,7 +208,9 @@ struct DeltaTableWriterInner {
     endpoint_id: EndpointId,
     endpoint_name: String,
     config: DeltaTableWriterConfig,
-    serde_arrow_schema: SerdeArrowSchema,
+    /// The view's columns, which the cursors append rows of.
+    row_schema: Arc<ArrowSchema>,
+    /// The table's columns: the view's, and in cdc mode `__feldera_op` and `__feldera_ts`.
     arrow_schema: Arc<ArrowSchema>,
     struct_fields: Vec<StructField>,
     key_schema: Option<Relation>,
@@ -246,7 +246,7 @@ pub struct DeltaTableWriter {
     compactor: Option<Compactor>,
     /// Uniqueness violations handed to the controller, for the test that pins how often a
     /// retried batch reports them. Tests build the endpoint with no controller to report to.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     merge_violations: u64,
     /// A merge batch failed for good. Its commit may still have landed, so the next flush
     /// must read the table again before it looks anything up.
@@ -343,18 +343,11 @@ impl DeltaTableWriter {
             &value_schema.fields,
             ArrowSchemaOptions::new(true).with_parquet_variant(parquet_variant),
         );
+        let row_schema = Arc::new(ArrowSchema::new(arrow_fields.clone()));
         if !config.is_merge() {
             arrow_fields.push(ArrowField::new("__feldera_op", ArrowDataType::Utf8, true));
             arrow_fields.push(ArrowField::new("__feldera_ts", ArrowDataType::Int64, true));
         }
-
-        // Create serde arrow schema.
-        let serde_arrow_schema =
-            SerdeArrowSchema::try_from(arrow_fields.as_slice()).map_err(|e| {
-                ControllerError::SchemaParseError {
-                    error: format!("Unable to convert schema to parquet/arrow: {e}"),
-                }
-            })?;
 
         let arrow_schema = Arc::new(ArrowSchema::new(arrow_fields));
 
@@ -396,7 +389,7 @@ impl DeltaTableWriter {
             endpoint_id,
             endpoint_name: endpoint_name.to_string(),
             config: config.clone(),
-            serde_arrow_schema,
+            row_schema,
             arrow_schema,
             struct_fields,
             key_schema: key_schema.clone(),
@@ -472,7 +465,7 @@ impl DeltaTableWriter {
             merge: merge.map(Arc::new),
             merge_metrics,
             compactor,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "testing"))]
             merge_violations: 0,
             merge_reload: false,
         })
@@ -507,7 +500,6 @@ fn build_merge_writer(inner: &DeltaTableWriterInner, table: &DeltaTable) -> AnyR
             .key_schema
             .as_ref()
             .expect("startup::prepare rejects a missing key schema"),
-        inner.serde_arrow_schema.clone(),
         inner.arrow_schema.clone(),
         inner.config.lookup_chunk_size.as_usize(),
         inner.config.max_concurrent_probes,
@@ -840,14 +832,14 @@ fn shutdown_aborted(operation: &str, retry_count: u32) -> anyhow::Error {
 
 /// Encode a key range and stream-write it to a `DeltaWriter`, retrying transient failures.
 ///
-/// On retry, a fresh cursor is rebuilt from `cursor_builder` and a new `DeltaWriter`
+/// On retry, a fresh cursor is created from `range` and a new `DeltaWriter`
 /// is created. Any Parquet files written by a failed attempt become orphans that
 /// Delta `VACUUM` will clean up.
 ///
 /// Only transient I/O errors are retried; deterministic errors (e.g., non-unique keys,
 /// serialization failures) are returned immediately.
 async fn encode_and_write_range(
-    cursor_builder: SplitCursorBuilder,
+    range: Box<dyn SerKeyRange>,
     inner: Arc<DeltaTableWriterInner>,
     object_store: ObjectStoreRef,
     micros: i64,
@@ -866,7 +858,7 @@ async fn encode_and_write_range(
             // point, abandoning the Parquet files the attempt had already put in
             // the object store.  A failed attempt leaves the same orphans, and
             // Delta `VACUUM` collects them.
-            match write_once(&cursor_builder, &inner, &object_store, micros).await {
+            match write_once(range.as_ref(), &inner, &object_store, micros).await {
                 Ok((ref actions, rows)) => {
                     if retry_count > 0 {
                         info!(
@@ -928,7 +920,7 @@ async fn encode_and_write_range(
 /// caller cannot do the rollback itself: the count lives in a borrow this
 /// future holds, and the caller only ever sees the future, not inside it.
 async fn write_once(
-    cursor_builder: &SplitCursorBuilder,
+    range: &dyn SerKeyRange,
     inner: &DeltaTableWriterInner,
     object_store: &ObjectStoreRef,
     micros: i64,
@@ -939,7 +931,7 @@ async fn write_once(
         succeeded: false,
     };
     let result = stream_encode_and_write(
-        cursor_builder,
+        range,
         inner,
         object_store.clone(),
         micros,
@@ -1027,21 +1019,25 @@ fn warn_about_table_property_discrepancies(
     }
 }
 
-/// Build a `RecordBatch` from `builder` (deterministic), write it via `writer`
-/// (transient I/O), and report progress.
+/// Build a `RecordBatch` from `rows` and their operations `ops` (deterministic), write it
+/// via `writer` (transient I/O), and report progress.
 ///
 /// `rows_written` accumulates the number of records successfully written to the
 /// object store across all chunks in this attempt. The caller uses it both as
 /// the return value (on success) and for rollback (on failure).
 async fn flush_chunk(
-    builder: &mut ArrayBuilder,
+    rows: &mut dyn ArrowRowSink,
+    ops: &mut Vec<&'static str>,
+    micros: i64,
     writer: &mut DeltaWriter,
     inner: &DeltaTableWriterInner,
     rows_written: &mut u64,
 ) -> Result<(), WriteError> {
-    let batch = builder
-        .to_record_batch()
+    let batch = rows
+        .finish()
+        .and_then(|rows| with_change_columns(rows, ops, micros, &inner.arrow_schema))
         .map_err(|e| WriteError::Deterministic(anyhow!("error generating arrow arrays: {e}")))?;
+    ops.clear();
     let num_rows = batch.num_rows();
     writer
         .write(&batch)
@@ -1051,6 +1047,21 @@ async fn flush_chunk(
     *rows_written += n;
     inner.records_written.fetch_add(n, Ordering::Relaxed);
     Ok(())
+}
+
+/// Returns `rows` with the change log columns of cdc mode: `__feldera_op`, the operation of
+/// each row in `ops`, and `__feldera_ts`, the time of the batch in microseconds since the
+/// UNIX epoch, so that it has the columns of `schema`.
+fn with_change_columns(
+    rows: RecordBatch,
+    ops: &[&str],
+    micros: i64,
+    schema: &ArrowSchemaRef,
+) -> AnyResult<RecordBatch> {
+    let mut columns = rows.columns().to_vec();
+    columns.push(Arc::new(StringArray::from(ops.to_vec())));
+    columns.push(Arc::new(Int64Array::from(vec![micros; ops.len()])));
+    Ok(RecordBatch::try_new(schema.clone(), columns)?)
 }
 
 /// Single-attempt streaming encode + write for one key range.
@@ -1064,7 +1075,7 @@ async fn flush_chunk(
 /// Returns [`WriteError::Deterministic`] for data-dependent failures (serialization,
 /// validation) and [`WriteError::Transient`] for I/O failures (object store writes).
 async fn stream_encode_and_write(
-    cursor_builder: &SplitCursorBuilder,
+    range: &dyn SerKeyRange,
     inner: &DeltaTableWriterInner,
     object_store: ObjectStoreRef,
     micros: i64,
@@ -1079,50 +1090,54 @@ async fn stream_encode_and_write(
         None,
     );
     let mut writer = DeltaWriter::new(object_store, writer_config);
-    let mut insert_builder = ArrayBuilder::new(inner.serde_arrow_schema.clone())
-        .map_err(|e| WriteError::Deterministic(anyhow!("error creating array builder: {e}")))?;
+    let cursor = range.cursor().map_err(WriteError::Transient)?;
+    let mut rows = cursor
+        .arrow_sink(inner.row_schema.clone())
+        .map_err(WriteError::Deterministic)?;
+    let mut ops = Vec::new();
     let mut num_records = 0;
     let index_name = inner.key_schema.as_ref().map(|s| &s.name);
 
     if let Some(index_name) = index_name
         && inner.is_index
     {
-        let mut cursor = cursor_builder.build();
+        let mut cursor = cursor;
 
         while cursor.key_valid() {
-            let op = match indexed_operation_type(&inner.value_schema.name, index_name, &mut cursor)
-            {
-                Ok(op) => op,
-                Err(e) => {
-                    if let Some(controller) = inner.controller.upgrade() {
-                        controller.output_transport_error(
-                            inner.endpoint_id,
-                            &inner.endpoint_name,
-                            false,
-                            e,
-                            Some("delta_uniqueness_violation"),
-                        );
+            let op =
+                match indexed_operation_type(&inner.value_schema.name, index_name, cursor.as_mut())
+                {
+                    Ok(op) => op,
+                    Err(e) => {
+                        if let Some(controller) = inner.controller.upgrade() {
+                            controller.output_transport_error(
+                                inner.endpoint_id,
+                                &inner.endpoint_name,
+                                false,
+                                e,
+                                Some("delta_uniqueness_violation"),
+                            );
+                        }
+                        None
                     }
-                    None
-                }
-            };
+                };
 
             if let Some(op) = op {
                 cursor.rewind_vals();
 
                 match op {
-                    IndexedOperationType::Insert => cursor
-                        .serialize_val_to_arrow_with_metadata(
-                            &Meta::new("i", micros),
-                            &mut insert_builder,
-                        )
-                        .map_err(WriteError::Deterministic)?,
-                    IndexedOperationType::Delete => cursor
-                        .serialize_val_to_arrow_with_metadata(
-                            &Meta::new("d", micros),
-                            &mut insert_builder,
-                        )
-                        .map_err(WriteError::Deterministic)?,
+                    IndexedOperationType::Insert => {
+                        cursor
+                            .append_val_to_arrow(rows.as_mut())
+                            .map_err(WriteError::Deterministic)?;
+                        ops.push("i");
+                    }
+                    IndexedOperationType::Delete => {
+                        cursor
+                            .append_val_to_arrow(rows.as_mut())
+                            .map_err(WriteError::Deterministic)?;
+                        ops.push("d");
+                    }
                     IndexedOperationType::Upsert => {
                         assert!(cursor.val_valid());
 
@@ -1132,36 +1147,40 @@ async fn stream_encode_and_write(
                         assert!(cursor.val_valid());
 
                         cursor
-                            .serialize_val_to_arrow_with_metadata(
-                                &Meta::new("u", micros),
-                                &mut insert_builder,
-                            )
+                            .append_val_to_arrow(rows.as_mut())
                             .map_err(WriteError::Deterministic)?;
+                        ops.push("u");
                     }
                 };
 
                 num_records += 1;
 
                 if num_records >= CHUNK_SIZE {
-                    flush_chunk(&mut insert_builder, &mut writer, inner, rows_written).await?;
+                    flush_chunk(
+                        rows.as_mut(),
+                        &mut ops,
+                        micros,
+                        &mut writer,
+                        inner,
+                        rows_written,
+                    )
+                    .await?;
                     num_records = 0;
                 }
             };
 
-            cursor.step_key();
+            cursor.step_key().map_err(WriteError::Transient)?;
         }
     } else {
-        let cursor = cursor_builder.build();
-
         let mut cursor = if inner.key_schema.is_some() {
-            CursorWithPolarity::new(Box::new(SerCursorFlattened::new(Box::new(cursor))))
+            CursorWithPolarity::new(Box::new(SerCursorFlattened::new(cursor)))
         } else {
-            CursorWithPolarity::new(Box::new(cursor))
+            CursorWithPolarity::new(cursor)
         };
 
         while cursor.key_valid() {
             if !cursor.val_valid() {
-                cursor.step_key();
+                cursor.step_key().map_err(WriteError::Transient)?;
                 continue;
             }
 
@@ -1177,34 +1196,46 @@ async fn stream_encode_and_write(
             while w != 0 {
                 if w > 0 {
                     cursor
-                        .serialize_key_to_arrow_with_metadata(
-                            &Meta::new("i", micros),
-                            &mut insert_builder,
-                        )
+                        .append_key_to_arrow(rows.as_mut())
                         .map_err(WriteError::Deterministic)?;
+                    ops.push("i");
                     w -= 1;
                 } else {
                     cursor
-                        .serialize_key_to_arrow_with_metadata(
-                            &Meta::new("d", micros),
-                            &mut insert_builder,
-                        )
+                        .append_key_to_arrow(rows.as_mut())
                         .map_err(WriteError::Deterministic)?;
+                    ops.push("d");
                     w += 1;
                 }
                 num_records += 1;
 
                 if num_records >= CHUNK_SIZE {
-                    flush_chunk(&mut insert_builder, &mut writer, inner, rows_written).await?;
+                    flush_chunk(
+                        rows.as_mut(),
+                        &mut ops,
+                        micros,
+                        &mut writer,
+                        inner,
+                        rows_written,
+                    )
+                    .await?;
                     num_records = 0;
                 }
             }
-            cursor.step_key();
+            cursor.step_key().map_err(WriteError::Transient)?;
         }
     }
 
     if num_records > 0 {
-        flush_chunk(&mut insert_builder, &mut writer, inner, rows_written).await?;
+        flush_chunk(
+            rows.as_mut(),
+            &mut ops,
+            micros,
+            &mut writer,
+            inner,
+            rows_written,
+        )
+        .await?;
     }
 
     let actions = writer
@@ -1291,26 +1322,6 @@ impl OutputConsumer for DeltaTableWriter {
     }
 }
 
-/// Metadata added to each record, representing the type and order of operations.
-#[derive(Serialize)]
-struct Meta<'a> {
-    /// `i` for insert, `d` for delete, `u` for update.
-    __feldera_op: &'a str,
-
-    /// Timestamp in microseconds since UNIX epoch when the batch of updates
-    /// was output by the pipeline.
-    __feldera_ts: i64,
-}
-
-impl<'a> Meta<'a> {
-    fn new(op: &'a str, ts: i64) -> Self {
-        Meta {
-            __feldera_op: op,
-            __feldera_ts: ts,
-        }
-    }
-}
-
 /// Stop `merge` skipping the lookup for inserts, logging why the first time.
 fn forfeit_ownership(merge: &MergeWriter, endpoint_name: &str, reason: &str) {
     if merge.forfeit_ownership() {
@@ -1349,7 +1360,7 @@ impl DeltaTableWriter {
             merge_metrics,
             compactor,
             threads,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "testing"))]
             merge_violations,
             merge_reload,
             ..
@@ -1390,7 +1401,7 @@ impl DeltaTableWriter {
                 if retrying {
                     return;
                 }
-                #[cfg(test)]
+                #[cfg(any(test, feature = "testing"))]
                 {
                     *merge_violations += 1;
                 }
@@ -1570,25 +1581,13 @@ impl Encoder for DeltaTableWriter {
             return self.encode_merge(batch);
         }
 
-        let threads = self.threads;
-        let mut bounds = batch.keys_factory().default_box();
-        batch.partition_keys(threads, &mut *bounds);
-
-        let mut cursor_builders = Vec::new();
-        for i in 0..=bounds.len() {
-            let Some(cb) = SplitCursorBuilder::from_bounds(
-                batch.clone(),
-                &*bounds,
-                i,
-                RecordFormat::Parquet(delta_output_serde_config(
-                    self.inner.config.variant_encoding,
-                )),
-            ) else {
-                continue;
-            };
-            cursor_builders.push(cb);
-        }
-        if cursor_builders.is_empty() {
+        let ranges = batch.split(
+            self.threads,
+            RecordFormat::Parquet(delta_output_serde_config(
+                self.inner.config.variant_encoding,
+            )),
+        )?;
+        if ranges.is_empty() {
             return Ok(());
         }
 
@@ -1603,12 +1602,12 @@ impl Encoder for DeltaTableWriter {
         // Panic safety: block_on() panics if called from a tokio async context.
         // encode() is called from the dedicated output thread (output_thread_func).
         let results = TOKIO.block_on(async {
-            let mut handles = Vec::with_capacity(cursor_builders.len());
-            for cursor_builder in cursor_builders {
+            let mut handles = Vec::with_capacity(ranges.len());
+            for range in ranges {
                 let inner = self.inner.clone();
                 let object_store = self.object_store.clone();
                 handles.push(tokio::spawn(
-                    encode_and_write_range(cursor_builder, inner, object_store, micros)
+                    encode_and_write_range(range, inner, object_store, micros)
                         .instrument(span.clone()),
                 ));
             }
@@ -1703,292 +1702,27 @@ impl OutputEndpoint for DeltaTableWriter {
     }
 }
 
+#[cfg(any(test, feature = "testing"))]
+pub mod tests;
+
+/// Tests of the writer that reach no engine. The `delta_output` connector suite covers the
+/// writer with an engine.
 #[cfg(test)]
 mod parallel {
-    use std::collections::BTreeMap;
-    use std::ffi::OsStr;
-    use std::os::unix::ffi::OsStrExt;
-    use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
-    use std::sync::{Arc, Weak};
+    use std::sync::Weak;
+    use std::sync::atomic::Ordering;
 
-    use dbsp::utils::Tup2;
-    use dbsp::{OrdIndexedZSet, OrdZSet};
-    use feldera_sqllib::{
-        ByteArray, Date, F32, F64, SqlDecimal, SqlString, Timestamp, TimestampTz, Uuid, Variant,
-    };
-    use feldera_types::deserialize_table_record;
-    use feldera_types::program_schema::{ColumnType, Relation, SqlIdentifier};
-    use feldera_types::transport::delta_table::{
-        DeltaTableUpdateMode, DeltaTableWriteMode, DeltaTableWriterConfig, DeltaVariantEncoding,
-    };
+    use feldera_types::transport::delta_table::{DeltaTableWriteMode, DeltaTableWriterConfig};
     use tempfile::TempDir;
     use tokio_util::sync::CancellationToken;
 
-    use crate::catalog::SerBatch;
-    use crate::controller::EndpointId;
-    use crate::format::Encoder;
-    use crate::format::parquet::test::load_parquet_file;
-    use crate::integrated::delta_table::delta_input_serde_config;
-    use crate::static_compile::seroutput::SerBatchImpl;
-    use dbsp::DBData;
-    use dbsp::dynamic::{DynData, Erase};
-    use feldera_types::serde_with_context::{SerializeWithContext, SqlSerdeConfig};
-
-    use crate::test::data::{
-        DeltaTestKey, DeltaTestKeyBinary, DeltaTestKeyDate, DeltaTestKeyDecimal,
-        DeltaTestKeyDouble, DeltaTestKeyFloat, DeltaTestKeyInt, DeltaTestKeySmallInt,
-        DeltaTestKeyString, DeltaTestKeyStruct, DeltaTestKeyTimestamp, DeltaTestKeyTinyInt,
-        DeltaTestKeyUnused, DeltaTestKeyUuid, DeltaTestStruct, TestStruct,
-    };
-    use crate::test::list_files_recursive;
-    use feldera_adapterlib::transport::OutputBatchType;
-
     use super::DeltaTableWriter;
-    use async_trait::async_trait;
-    use deltalake::logstore::ObjectStoreRef;
-    use deltalake::logstore::object_store::path::Path as ObjectPath;
-    use deltalake::logstore::object_store::{
-        CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
-        PutMultipartOptions, PutOptions, PutPayload, PutResult, Result as ObjectStoreResult,
-        UploadPart,
+    use super::tests::{
+        key_relation, make_endpoint, make_merge_endpoint, records_written, try_make_endpoint,
+        value_relation,
     };
-    use futures::stream::BoxStream;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::{Duration, Instant};
-
-    // ── Output record type (DeltaTestStruct fields + metadata columns) ──
-
-    #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone)]
-    struct OutputRecord {
-        bigint: i64,
-        binary: ByteArray,
-        boolean: bool,
-        date: Date,
-        decimal_10_3: SqlDecimal<10, 3>,
-        double: F64,
-        float: F32,
-        int: i32,
-        smallint: i16,
-        string: String,
-        unused: Option<String>,
-        timestamp_ntz: Timestamp,
-        timestamp_tz: TimestampTz,
-        tinyint: i8,
-        string_array: Vec<String>,
-        struct1: TestStruct,
-        struct_array: Vec<TestStruct>,
-        string_string_map: BTreeMap<String, String>,
-        string_struct_map: BTreeMap<String, TestStruct>,
-        variant: Variant,
-        uuid: Uuid,
-        __feldera_op: String,
-        __feldera_ts: i64,
-    }
-
-    deserialize_table_record!(OutputRecord["OutputRecord", Variant, 23] {
-        (bigint, "bigint", false, i64, |_| None),
-        (binary, "binary", false, ByteArray, |_| None),
-        (boolean, "boolean", false, bool, |_| None),
-        (date, "date", false, Date, |_| None),
-        (decimal_10_3, "decimal_10_3", false, SqlDecimal<10, 3>, |_| None),
-        (double, "double", false, F64, |_| None),
-        (float, "float", false, F32, |_| None),
-        (int, "int", false, i32, |_| None),
-        (smallint, "smallint", false, i16, |_| None),
-        (string, "string", false, String, |_| None),
-        (unused, "unused", false, Option<String>, |_| Some(None)),
-        (timestamp_ntz, "timestamp_ntz", false, Timestamp, |_| None),
-        (timestamp_tz, "timestamp_tz", false, TimestampTz, |_| None),
-        (tinyint, "tinyint", false, i8, |_| None),
-        (string_array, "string_array", false, Vec<String>, |_| None),
-        (struct1, "struct1", false, TestStruct, |_| None),
-        (struct_array, "struct_array", false, Vec<TestStruct>, |_| None),
-        (string_string_map, "string_string_map", false, BTreeMap<String, String>, |_| None),
-        (string_struct_map, "string_struct_map", false, BTreeMap<String, TestStruct>, |_| None),
-        (variant, "variant", false, Variant, |_| None),
-        (uuid, "uuid", false, Uuid, |_| None),
-        (__feldera_op, "__feldera_op", false, String, |_| None),
-        (__feldera_ts, "__feldera_ts", false, i64, |_| None)
-    });
-
-    impl OutputRecord {
-        fn to_data_record(&self) -> DeltaTestStruct {
-            DeltaTestStruct {
-                bigint: self.bigint,
-                binary: self.binary.clone(),
-                boolean: self.boolean,
-                date: self.date,
-                decimal_10_3: self.decimal_10_3,
-                double: self.double,
-                float: self.float,
-                int: self.int,
-                smallint: self.smallint,
-                string: self.string.clone(),
-                unused: self.unused.clone(),
-                timestamp_ntz: self.timestamp_ntz,
-                timestamp_tz: self.timestamp_tz,
-                tinyint: self.tinyint,
-                string_array: self.string_array.clone(),
-                struct1: self.struct1.clone(),
-                struct_array: self.struct_array.clone(),
-                string_string_map: self.string_string_map.clone(),
-                string_struct_map: self.string_struct_map.clone(),
-                variant: self.variant.clone(),
-                uuid: self.uuid.clone(),
-            }
-        }
-    }
-
-    // ── Helpers ────────────────────────────────────────────────────
-
-    fn key_relation() -> Relation {
-        Relation {
-            name: SqlIdentifier::new("test_idx", false),
-            fields: vec![feldera_types::program_schema::Field::new(
-                "bigint".into(),
-                ColumnType::bigint(false),
-            )],
-            materialized: false,
-            properties: BTreeMap::new(),
-            primary_key: None,
-        }
-    }
-
-    fn value_relation() -> Relation {
-        let mut rel = DeltaTestStruct::relation_schema();
-        rel.materialized = true;
-        rel
-    }
-
-    fn make_endpoint(threads: usize, table_uri: &str, indexed: bool) -> DeltaTableWriter {
-        make_endpoint_ex(
-            threads,
-            table_uri,
-            indexed,
-            DeltaTableWriteMode::Truncate,
-            false,
-        )
-    }
-
-    fn make_endpoint_ex(
-        threads: usize,
-        table_uri: &str,
-        indexed: bool,
-        mode: DeltaTableWriteMode,
-        continue_previous_state: bool,
-    ) -> DeltaTableWriter {
-        make_endpoint_with_retries(
-            threads,
-            table_uri,
-            indexed,
-            mode,
-            continue_previous_state,
-            Some(0),
-        )
-    }
-
-    fn make_endpoint_with_retries(
-        threads: usize,
-        table_uri: &str,
-        indexed: bool,
-        mode: DeltaTableWriteMode,
-        continue_previous_state: bool,
-        max_retries: Option<u32>,
-    ) -> DeltaTableWriter {
-        try_make_endpoint(
-            threads,
-            table_uri,
-            indexed,
-            mode,
-            continue_previous_state,
-            max_retries,
-        )
-        .expect("failed to create endpoint")
-    }
-
-    fn try_make_endpoint(
-        threads: usize,
-        table_uri: &str,
-        indexed: bool,
-        mode: DeltaTableWriteMode,
-        continue_previous_state: bool,
-        max_retries: Option<u32>,
-    ) -> Result<DeltaTableWriter, crate::ControllerError> {
-        let key_schema = if indexed { Some(key_relation()) } else { None };
-        DeltaTableWriter::new(
-            EndpointId::default(),
-            "test_endpoint",
-            &DeltaTableWriterConfig {
-                variant_encoding: Default::default(),
-                uri: table_uri.to_string(),
-                mode,
-                max_retries,
-                threads: Some(threads),
-                auto_compact: false,
-
-                object_store_config: Default::default(),
-                checkpoint_interval: None,
-                log_retention_duration: None,
-                update_mode: Default::default(),
-                lookup_chunk_size: feldera_types::size::ConfigSize::from_mib(1),
-                max_concurrent_probes: 4,
-                enable_expired_log_cleanup: None,
-            },
-            &key_schema,
-            &value_relation(),
-            Weak::new(),
-            CancellationToken::new(),
-            continue_previous_state,
-            indexed,
-            true,
-        )
-    }
-
-    // ── merge mode ──
-
-    fn make_merge_endpoint(table_uri: &str, mode: DeltaTableWriteMode) -> DeltaTableWriter {
-        make_merge_endpoint_ex(table_uri, mode, 1 << 20, 0, key_relation())
-    }
-
-    fn make_merge_endpoint_ex(
-        table_uri: &str,
-        mode: DeltaTableWriteMode,
-        lookup_chunk_bytes: usize,
-        max_retries: u32,
-        key_schema: Relation,
-    ) -> DeltaTableWriter {
-        DeltaTableWriter::new(
-            EndpointId::default(),
-            "test_merge_endpoint",
-            &DeltaTableWriterConfig {
-                uri: table_uri.to_string(),
-                mode,
-                variant_encoding: DeltaVariantEncoding::default(),
-                update_mode: DeltaTableUpdateMode::Merge,
-                max_retries: Some(max_retries),
-                threads: Some(1),
-                auto_compact: false,
-
-                object_store_config: Default::default(),
-                checkpoint_interval: None,
-                log_retention_duration: None,
-                lookup_chunk_size: feldera_types::size::ConfigSize::from_bytes(
-                    lookup_chunk_bytes as u64,
-                ),
-                max_concurrent_probes: 4,
-                enable_expired_log_cleanup: None,
-            },
-            &Some(key_schema),
-            &value_relation(),
-            Weak::new(),
-            CancellationToken::new(),
-            false,
-            true,
-            true,
-        )
-        .expect("failed to create merge endpoint")
-    }
+    use crate::controller::EndpointId;
 
     /// Only merge mode caps part uploads. A shared cap halved cdc throughput against a store
     /// with 150 ms part latency, so cdc keeps main's per-file concurrency.
@@ -2002,1390 +1736,6 @@ mod parallel {
         let merge = make_merge_endpoint(dir.path().to_str().unwrap(), DeltaTableWriteMode::Append);
         assert!(merge.object_store.to_string().starts_with("BoundedUpload"));
     }
-
-    /// Rows the table currently holds, as any reader would see them.
-    ///
-    /// Through DataFusion, so deletion vectors are applied. Reading the parquet files directly
-    /// as the cdc tests do would show every superseded row still present.
-    fn read_merge_output(table_uri: &str) -> Vec<DeltaTestStruct> {
-        use crate::integrated::delta_table::delta_input_serde_config;
-        use dbsp::circuit::tokio::TOKIO;
-        use deltalake::datafusion::prelude::SessionContext;
-        use deltalake::open_table;
-        use feldera_types::serde_with_context::DeserializeWithContext;
-
-        let url = url::Url::from_file_path(table_uri).unwrap();
-        TOKIO.block_on(async move {
-            let table = open_table(url).await.unwrap();
-            let ctx = SessionContext::new();
-            let provider = table.table_provider().await.unwrap();
-            let batches = ctx.read_table(provider).unwrap().collect().await.unwrap();
-
-            let mut rows = Vec::new();
-            for batch in batches.iter() {
-                let de = serde_arrow::Deserializer::from_record_batch(batch).unwrap();
-                let mut batch_rows = Vec::<DeltaTestStruct>::deserialize_with_context(
-                    de,
-                    &delta_input_serde_config(),
-                )
-                .unwrap();
-                rows.append(&mut batch_rows);
-            }
-            rows.sort();
-            rows
-        })
-    }
-
-    /// Assert the table holds exactly the model's rows.
-    fn assert_matches_model(table_uri: &str, model: &BTreeMap<i64, DeltaTestStruct>, step: &str) {
-        let actual = read_merge_output(table_uri);
-        let mut expected: Vec<_> = model.values().cloned().collect();
-        expected.sort();
-
-        assert_eq!(
-            actual.len(),
-            expected.len(),
-            "after {step}: table has {} row(s), the view has {}",
-            actual.len(),
-            expected.len()
-        );
-        assert_eq!(
-            actual, expected,
-            "after {step}: table diverged from the view"
-        );
-    }
-
-    /// A merge flush bigger than `TARGET_FILE_SIZE` must land in more than one Parquet file.
-    ///
-    /// Merge mode builds its own writer config, so it needs the target size cdc mode sets:
-    /// without one, a flush writes a single object, which an object store rejects once the
-    /// multipart upload passes 10000 parts.
-    #[test]
-    fn merge_batch_larger_than_target_file_size_rolls_over() {
-        const PAYLOAD_LEN: usize = 8 * 1024;
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap().to_string();
-
-        let target = super::TARGET_FILE_SIZE.get() as usize;
-        let rows = (target * 5 / 4).div_ceil(PAYLOAD_LEN);
-        let records: Vec<DeltaTestStruct> = (0..rows)
-            .map(|i| DeltaTestStruct {
-                string: incompressible_string(i as u64, PAYLOAD_LEN),
-                ..make_record(i)
-            })
-            .collect();
-
-        let mut endpoint = make_merge_endpoint(&uri, DeltaTableWriteMode::Append);
-        encode_batch(&mut endpoint, &build_insert_batch(&records));
-
-        let files = list_files_recursive(Path::new(&uri), OsStr::from_bytes(b"parquet")).unwrap();
-        assert!(
-            files.len() > 1,
-            "{rows} rows of {PAYLOAD_LEN} bytes each exceed the {target} byte target \
-             but landed in {} file(s)",
-            files.len()
-        );
-        assert_eq!(read_merge_output(&uri).len(), rows);
-    }
-
-    /// Merge mode must leave the table equal to the view after every commit.
-    ///
-    /// Walks every transition a key can make -- absent to present, updated, deleted, deleted
-    /// again, reinserted -- then mixes them in one batch, where a per-key branch that works in
-    /// isolation tends to break.
-    #[test]
-    fn merge_tracks_the_view() {
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
-        let mut model: BTreeMap<i64, DeltaTestStruct> = BTreeMap::new();
-
-        let records = make_records(12);
-        let updated: Vec<DeltaTestStruct> = (100..112).map(make_record).collect();
-
-        // An empty batch must not change the table.
-        encode_batch(&mut endpoint, &build_insert_batch(&[]));
-        assert_matches_model(uri, &model, "an empty batch");
-
-        // Inserts.
-        encode_batch(&mut endpoint, &build_insert_batch(&records[0..6]));
-        for r in &records[0..6] {
-            model.insert(r.bigint, r.clone());
-        }
-        assert_matches_model(uri, &model, "six inserts");
-
-        // Updates: the old row is superseded, not duplicated. `updated[i]` carries the same
-        // key as `records[i]` only if the key is the record index, so rebuild it here.
-        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..3)
-            .map(|i| {
-                let mut new = updated[i].clone();
-                new.bigint = records[i].bigint;
-                (records[i].clone(), new)
-            })
-            .collect();
-        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
-        for (_, new) in &updates {
-            model.insert(new.bigint, new.clone());
-        }
-        assert_matches_model(uri, &model, "three updates");
-
-        // Deletes.
-        encode_batch(&mut endpoint, &build_delete_batch(&records[4..6]));
-        for r in &records[4..6] {
-            model.remove(&r.bigint);
-        }
-        assert_matches_model(uri, &model, "two deletes");
-
-        // Deleting a key the table does not hold is a no-op, not an error.
-        encode_batch(&mut endpoint, &build_delete_batch(&records[8..10]));
-        assert_matches_model(uri, &model, "deleting absent keys");
-
-        // Reinserting a deleted key must leave one live row, not two.
-        encode_batch(&mut endpoint, &build_insert_batch(&records[4..5]));
-        model.insert(records[4].bigint, records[4].clone());
-        assert_matches_model(uri, &model, "reinserting a deleted key");
-
-        // One batch mixing all three operations.
-        let mut mixed = Vec::new();
-        let mut new_third = updated[3].clone();
-        new_third.bigint = records[3].bigint;
-        mixed.push((records[3].clone(), new_third.clone()));
-        encode_batch(&mut endpoint, &build_upsert_batch(&mixed));
-        model.insert(new_third.bigint, new_third);
-        encode_batch(&mut endpoint, &build_insert_batch(&records[6..8]));
-        for r in &records[6..8] {
-            model.insert(r.bigint, r.clone());
-        }
-        assert_matches_model(uri, &model, "a mixed batch");
-
-        // Everything deleted: no live rows, and the table should hold no data files either.
-        let live: Vec<DeltaTestStruct> = model.values().cloned().collect();
-        encode_batch(&mut endpoint, &build_delete_batch(&live));
-        model.clear();
-        assert_matches_model(uri, &model, "deleting every row");
-    }
-
-    /// A connector that opens a table it did not fill must still supersede what is in it.
-    ///
-    /// The insert shortcut is only sound when the table started empty. Here a second connector
-    /// opens a populated table and is fed an *insert* for a key already in it; the old row
-    /// must be tombstoned anyway. This is also what a pipeline restart looks like.
-    #[test]
-    fn merge_supersedes_a_row_left_by_an_earlier_run() {
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let records = make_records(4);
-
-        {
-            let mut first = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
-            encode_batch(&mut first, &build_insert_batch(&records));
-        }
-
-        // A second connector on the same table sees data it did not write.
-        let mut second = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
-        let mut replacement = make_record(500);
-        replacement.bigint = records[1].bigint;
-        encode_batch(&mut second, &build_insert_batch(&[replacement.clone()]));
-
-        let mut model: BTreeMap<i64, DeltaTestStruct> =
-            records.iter().map(|r| (r.bigint, r.clone())).collect();
-        model.insert(replacement.bigint, replacement);
-        assert_matches_model(uri, &model, "an insert onto a row from an earlier run");
-    }
-
-    /// A key set larger than `lookup_chunk_size` is split into several lookup passes, and
-    /// the result must not depend on how many.
-    ///
-    /// The budget below is small enough that a few keys cross it, so the flush runs the
-    /// multi-pass path that a default-sized budget never reaches.
-    #[test]
-    fn merge_is_unaffected_by_chunking() {
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let records = make_records(40);
-
-        let mut endpoint =
-            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1, 0, key_relation());
-        encode_batch(&mut endpoint, &build_insert_batch(&records));
-
-        // Update half the rows in one batch, so the removal side spans many chunks.
-        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..20)
-            .map(|i| {
-                let mut new = make_record(1000 + i);
-                new.bigint = records[i].bigint;
-                (records[i].clone(), new)
-            })
-            .collect();
-        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
-
-        let mut model: BTreeMap<i64, DeltaTestStruct> =
-            records.iter().map(|r| (r.bigint, r.clone())).collect();
-        for (_, new) in &updates {
-            model.insert(new.bigint, new.clone());
-        }
-        assert_matches_model(uri, &model, "20 updates across many lookup chunks");
-    }
-
-    /// Deletion vector objects at the table root.
-    fn vector_files(table_uri: &str) -> Vec<String> {
-        std::fs::read_dir(table_uri)
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|name| name.starts_with("deletion_vector_"))
-            .collect()
-    }
-
-    /// Value of one of the connector's exported metrics.
-    fn merge_metric(endpoint: &DeltaTableWriter, name: &str) -> f64 {
-        use feldera_adapterlib::metrics::ConnectorMetrics;
-
-        endpoint
-            .merge_metrics
-            .as_ref()
-            .expect("not a merge-mode endpoint")
-            .metrics()
-            .into_iter()
-            .find(|(n, ..)| *n == name)
-            .unwrap_or_else(|| panic!("no metric named {name}"))
-            .3
-    }
-
-    /// An insert-only flush onto a table that started empty must not read the table at all.
-    /// That shortcut is what makes a bootstrap affordable.
-    #[test]
-    fn merge_skips_the_lookup_for_inserts_into_an_empty_table() {
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
-
-        encode_batch(&mut endpoint, &build_insert_batch(&make_records(50)));
-
-        assert_eq!(
-            merge_metric(
-                &endpoint,
-                "output_connector_delta_merge_rows_appended_total"
-            ),
-            50.0
-        );
-        assert_eq!(
-            merge_metric(&endpoint, "output_connector_delta_merge_keys_probed_total"),
-            0.0,
-            "an insert-only flush onto an empty table looked rows up anyway"
-        );
-        assert_eq!(
-            merge_metric(
-                &endpoint,
-                "output_connector_delta_merge_probe_files_scanned_total"
-            ),
-            0.0
-        );
-    }
-
-    /// The lookup must skip files whose key range cannot hold any changed key, or the cost of
-    /// a flush grows with the table rather than with the change.
-    ///
-    /// Five flushes leave five files with disjoint key ranges; a sixth updating two keys from
-    /// one of them must open that file and skip the other four.
-    #[test]
-    fn merge_prunes_files_outside_the_changed_key_range() {
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
-
-        // Disjoint key ranges, one file each. `make_record(i)` keys on `i`.
-        for range in 0..5 {
-            let batch: Vec<DeltaTestStruct> =
-                (range * 100..range * 100 + 20).map(make_record).collect();
-            encode_batch(&mut endpoint, &build_insert_batch(&batch));
-        }
-        let scanned_before = merge_metric(
-            &endpoint,
-            "output_connector_delta_merge_probe_files_scanned_total",
-        );
-
-        // Update two keys that live in the third file only.
-        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = [205i64, 206]
-            .iter()
-            .map(|key| {
-                let old = make_record(*key as usize);
-                let mut new = make_record(9000 + *key as usize);
-                new.bigint = *key;
-                (old, new)
-            })
-            .collect();
-        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
-
-        let scanned = merge_metric(
-            &endpoint,
-            "output_connector_delta_merge_probe_files_scanned_total",
-        ) - scanned_before;
-        let pruned = merge_metric(
-            &endpoint,
-            "output_connector_delta_merge_probe_files_pruned_total",
-        );
-        assert_eq!(scanned, 1.0, "opened {scanned} files, expected 1");
-        assert_eq!(pruned, 4.0, "pruned {pruned} files, expected 4");
-
-        // And the answer is still right, which is what makes the skipping meaningful.
-        let mut model: BTreeMap<i64, DeltaTestStruct> = BTreeMap::new();
-        for range in 0..5 {
-            for i in range * 100..range * 100 + 20 {
-                let record = make_record(i);
-                model.insert(record.bigint, record);
-            }
-        }
-        for (_, new) in &updates {
-            model.insert(new.bigint, new.clone());
-        }
-        assert_matches_model(uri, &model, "an update confined to one file");
-    }
-
-    /// A flush must converge after a compaction replaced the files it was addressing.
-    ///
-    /// The one concurrency claim merge mode makes to administrators: OPTIMIZE is safe to run
-    /// against a table a pipeline is writing. The commit conflicts and the flush redoes the
-    /// lookup against the new files. Without the reload it would conflict for ever, so this
-    /// fails rather than merely running slow.
-    #[test]
-    fn merge_converges_after_a_concurrent_compaction() {
-        use dbsp::circuit::tokio::TOKIO;
-        use deltalake::open_table;
-
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint =
-            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 2, key_relation());
-
-        let records = make_records(8);
-        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
-        encode_batch(&mut endpoint, &build_insert_batch(&records[4..8]));
-
-        // Compact behind the endpoint's back. Its in-memory snapshot still names the two
-        // files this replaces, which is exactly the state the retry has to recover from.
-        let url = url::Url::from_file_path(uri).unwrap();
-        let compacted = TOKIO.block_on(async move {
-            let table = open_table(url).await.unwrap();
-            table
-                .optimize()
-                .with_target_size(std::num::NonZeroU64::new(64 << 20).unwrap())
-                .await
-                .unwrap()
-                .1
-        });
-        assert!(
-            compacted.num_files_removed >= 2,
-            "the fixture did not compact anything: {compacted:?}"
-        );
-
-        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..2)
-            .map(|i| {
-                let mut new = make_record(500 + i);
-                new.bigint = records[i].bigint;
-                (records[i].clone(), new)
-            })
-            .collect();
-        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
-
-        let mut model: BTreeMap<i64, DeltaTestStruct> =
-            records.iter().map(|r| (r.bigint, r.clone())).collect();
-        for (_, new) in &updates {
-            model.insert(new.bigint, new.clone());
-        }
-        assert_matches_model(uri, &model, "an update after a concurrent compaction");
-    }
-
-    /// Auto compaction must never make a flush lose its batch, here with `max_retries: 0`.
-    #[test]
-    fn auto_compaction_never_races_a_flush() {
-        use crate::integrated::delta_table::merge::compact::Compactor;
-        use dbsp::circuit::tokio::TOKIO;
-        use futures::StreamExt;
-
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint =
-            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 0, key_relation());
-        let records = make_records(20_000);
-        for chunk in records.chunks(5_000) {
-            encode_batch(&mut endpoint, &build_insert_batch(chunk));
-        }
-
-        // The inserts are the large files; each update flush adds a small one.
-        let url = url::Url::from_file_path(uri).unwrap();
-        TOKIO.block_on(async move {
-            let table = deltalake::open_table(url).await.unwrap();
-            let smallest = table
-                .snapshot()
-                .unwrap()
-                .log_data()
-                .into_iter()
-                .map(|f| f.size())
-                .min()
-                .unwrap();
-            table
-                .set_tbl_properties()
-                .with_properties(std::collections::HashMap::from([(
-                    deltalake::TableProperty::TargetFileSize
-                        .as_ref()
-                        .to_string(),
-                    smallest.to_string(),
-                )]))
-                .await
-                .unwrap();
-        });
-        // A property change is a metadata change the next flush must read first.
-        endpoint.merge_reload = true;
-        let mut config = endpoint.inner.config.clone();
-        config.auto_compact = true;
-        endpoint.compactor = Compactor::new(
-            &config,
-            "test_merge_endpoint",
-            endpoint.merge_metrics.clone().unwrap(),
-        );
-
-        let mut model: BTreeMap<i64, DeltaTestStruct> =
-            records.iter().map(|r| (r.bigint, r.clone())).collect();
-        let mut seed: u64 = 42;
-        for round in 0..24 {
-            // Keys from the whole table, a fixed sequence, so a flush changes rows in the small
-            // files compaction packs, as real updates do.
-            let mut keys = std::collections::BTreeSet::new();
-            while keys.len() < 500 {
-                seed = seed
-                    .wrapping_mul(6364136223846793005)
-                    .wrapping_add(1442695040888963407);
-                keys.insert((seed >> 33) as usize % records.len());
-            }
-            let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = keys
-                .into_iter()
-                .enumerate()
-                .map(|(i, k)| {
-                    let old = model[&records[k].bigint].clone();
-                    let mut new = make_record(100_000 + round * 500 + i);
-                    new.bigint = old.bigint;
-                    (old, new)
-                })
-                .collect();
-            // `encode_batch` unwraps: with no retries, a lost race fails here.
-            encode_batch(&mut endpoint, &build_upsert_batch(&updates));
-            for (_, new) in updates {
-                model.insert(new.bigint, new);
-            }
-        }
-        endpoint.compactor.as_mut().unwrap().wait_for_step();
-
-        let url = url::Url::from_file_path(uri).unwrap();
-        let optimizes = TOKIO.block_on(async move {
-            let table = deltalake::open_table(url).await.unwrap();
-            table
-                .history(None)
-                .filter(|c| {
-                    std::future::ready(
-                        c.as_ref()
-                            .is_ok_and(|c| c.operation.as_deref() == Some("OPTIMIZE")),
-                    )
-                })
-                .count()
-                .await
-        });
-        assert!(
-            optimizes > 0,
-            "no compaction committed: it lost to the flushes, or never ran"
-        );
-        assert_matches_model(uri, &model, "flushes with auto compaction");
-    }
-
-    /// A batch is acknowledged before its step ends, and the next flush commits after the step.
-    #[test]
-    fn the_next_flush_waits_for_the_compaction_step() {
-        use crate::integrated::delta_table::merge::compact::Compactor;
-        use crate::integrated::delta_table::merge::test::{FlakyStore, table_over};
-        use dbsp::circuit::tokio::TOKIO;
-        use feldera_adapterlib::metrics::ConnectorMetrics;
-        use futures::StreamExt;
-
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap().to_string();
-        let mut endpoint = make_merge_endpoint_ex(
-            &uri,
-            DeltaTableWriteMode::Append,
-            1 << 20,
-            0,
-            key_relation(),
-        );
-        let records = make_records(40);
-        for chunk in records[..30].chunks(10) {
-            encode_batch(&mut endpoint, &build_insert_batch(chunk));
-        }
-        // Each file is a third of the target, so with the next one they fill it and the next
-        // commit starts a pack.
-        let store = FlakyStore::new(0, 0);
-        endpoint.task.delta_table = TOKIO.block_on(async {
-            let table = table_over(store.clone(), &dir).await;
-            let size: i64 = table
-                .snapshot()
-                .unwrap()
-                .log_data()
-                .into_iter()
-                .map(|f| f.size())
-                .sum();
-            table
-                .set_tbl_properties()
-                .with_properties(std::collections::HashMap::from([(
-                    deltalake::TableProperty::TargetFileSize
-                        .as_ref()
-                        .to_string(),
-                    size.to_string(),
-                )]))
-                .await
-                .unwrap()
-        });
-        let mut config = endpoint.inner.config.clone();
-        config.auto_compact = true;
-        endpoint.compactor = Compactor::new(
-            &config,
-            "test_merge_endpoint",
-            endpoint.merge_metrics.clone().unwrap(),
-        );
-        store.hang_data_reads();
-
-        let (returned, endpoint_back) = std::sync::mpsc::channel();
-        let batch = records[30..35].to_vec();
-        let returned_first = returned.clone();
-        std::thread::spawn(move || {
-            encode_batch(&mut endpoint, &build_insert_batch(&batch));
-            returned_first.send(endpoint).unwrap();
-        });
-        let mut endpoint = endpoint_back
-            .recv_timeout(Duration::from_secs(60))
-            .expect("the compaction step held up the batch that started it");
-        let start = Instant::now();
-        while store.hung_reads() == 0 {
-            assert!(
-                start.elapsed() < Duration::from_secs(60),
-                "no compaction step started"
-            );
-            std::thread::sleep(Duration::from_millis(10));
-        }
-
-        let batch = records[35..].to_vec();
-        std::thread::spawn(move || {
-            encode_batch(&mut endpoint, &build_insert_batch(&batch));
-            returned.send(endpoint).unwrap();
-        });
-        // Time for a flush that does not wait to commit before the step. A flush that waits
-        // passes whatever this is.
-        std::thread::sleep(Duration::from_secs(2));
-        store.release_data_reads();
-        let mut endpoint = endpoint_back
-            .recv_timeout(Duration::from_secs(60))
-            .expect("the flush did not finish once the step could");
-        endpoint.compactor.as_mut().unwrap().wait_for_step();
-
-        let url = url::Url::from_file_path(&uri).unwrap();
-        let operations: Vec<String> = TOKIO.block_on(async move {
-            let table = deltalake::open_table(url).await.unwrap();
-            let mut history: Vec<_> = table.history(None).collect().await;
-            // Oldest first.
-            history.reverse();
-            history
-                .into_iter()
-                .map(|c| c.unwrap().operation.unwrap_or_default())
-                .collect()
-        });
-        let first_pack = operations.iter().position(|op| op == "OPTIMIZE");
-        let last_flush = operations.iter().rposition(|op| op != "OPTIMIZE");
-        assert!(
-            first_pack.is_some_and(|pack| Some(pack) < last_flush),
-            "the flush committed before the step it had to wait for: {operations:?}"
-        );
-        let waited = endpoint
-            .merge_metrics
-            .as_ref()
-            .unwrap()
-            .metrics()
-            .into_iter()
-            .find(|(name, ..)| {
-                *name == "output_connector_delta_merge_compaction_wait_microseconds_total"
-            })
-            .unwrap()
-            .3;
-        assert!(waited > 0.0, "the wait was not recorded");
-        let model: BTreeMap<i64, DeltaTestStruct> =
-            records.iter().map(|r| (r.bigint, r.clone())).collect();
-        assert_matches_model(&uri, &model, "a flush after a compaction step");
-    }
-
-    /// A duplicate key must be reported once per batch, not once per attempt.
-    ///
-    /// The retry walks the same batch, so a conflicting commit would otherwise repeat every
-    /// violation on every attempt -- without a `max_retries` limit, for ever.
-    #[test]
-    fn a_uniqueness_violation_is_reported_once_across_retries() {
-        use dbsp::circuit::tokio::TOKIO;
-        use deltalake::open_table;
-
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        // One retry allowed, so a conflict produces exactly two attempts.
-        let mut endpoint =
-            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 1, key_relation());
-
-        let records = make_records(8);
-        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
-        encode_batch(&mut endpoint, &build_insert_batch(&records[4..8]));
-
-        // Compact behind the endpoint's back so its next commit conflicts and retries.
-        let url = url::Url::from_file_path(uri).unwrap();
-        TOKIO.block_on(async move {
-            let table = open_table(url).await.unwrap();
-            table
-                .optimize()
-                .with_target_size(std::num::NonZeroU64::new(64 << 20).unwrap())
-                .await
-                .unwrap();
-        });
-
-        // One real update (to force the conflicting commit) plus one key inserted twice.
-        let mut new = make_record(500);
-        new.bigint = records[0].bigint;
-        let mut tuples = vec![
-            Tup2(
-                Tup2(
-                    DeltaTestKey {
-                        bigint: records[0].bigint,
-                    },
-                    records[0].clone(),
-                ),
-                -1i64,
-            ),
-            Tup2(Tup2(DeltaTestKey { bigint: new.bigint }, new.clone()), 1i64),
-        ];
-        tuples.push(Tup2(
-            Tup2(
-                DeltaTestKey {
-                    bigint: records[5].bigint,
-                },
-                records[5].clone(),
-            ),
-            2i64,
-        ));
-        let zset = OrdIndexedZSet::from_tuples((), tuples);
-        let batch: Arc<dyn SerBatch> =
-            Arc::new(SerBatchImpl::<_, DeltaTestKey, DeltaTestStruct>::new(zset));
-
-        encode_batch(&mut endpoint, &batch);
-        assert_eq!(
-            endpoint.merge_violations, 1,
-            "the retry reported the same duplicate key again"
-        );
-    }
-
-    /// A failed commit must leave its deletion vector object alone.
-    ///
-    /// An error can also mean the commit landed and only its response was lost, in which case
-    /// the object is one the live version references and deleting it breaks every reader.
-    /// Forced here with a conflict, the one commit failure a test can produce on demand.
-    #[test]
-    fn a_failed_commit_keeps_its_deletion_vector_file() {
-        use dbsp::circuit::tokio::TOKIO;
-        use deltalake::open_table;
-
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        // No retries, so the conflicting attempt is the last one.
-        let mut endpoint =
-            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 0, key_relation());
-
-        let records = make_records(8);
-        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
-        encode_batch(&mut endpoint, &build_insert_batch(&records[4..8]));
-
-        // Compact behind the endpoint's back so its next commit conflicts.
-        let url = url::Url::from_file_path(uri).unwrap();
-        TOKIO.block_on(async move {
-            let table = open_table(url).await.unwrap();
-            table
-                .optimize()
-                .with_target_size(std::num::NonZeroU64::new(64 << 20).unwrap())
-                .await
-                .unwrap();
-        });
-
-        let mut new = make_record(500);
-        new.bigint = records[0].bigint;
-        let batch = build_upsert_batch(&[(records[0].clone(), new)]);
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        assert!(
-            endpoint.encode(batch.arc_as_batch_reader()).is_err(),
-            "the fixture did not produce a conflicting commit"
-        );
-
-        assert_eq!(
-            vector_files(uri).len(),
-            1,
-            "the failed commit deleted its deletion vector file"
-        );
-    }
-
-    /// A retry must not append rows that a failed attempt already committed.
-    ///
-    /// The commit lands, but reading the log afterwards fails, so the attempt reports an error.
-    /// The reload before the retry fails too. A retry on the old snapshot would miss the
-    /// committed rows and append every one of them again.
-    #[test]
-    fn a_retry_after_a_commit_that_landed_does_not_duplicate() {
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint = make_merge_endpoint_ex(
-            uri,
-            DeltaTableWriteMode::Append,
-            1 << 20,
-            10,
-            key_relation(),
-        );
-        let records = make_records(8);
-        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
-
-        let store = Arc::new(LogOutageStore {
-            inner: Arc::new(deltalake::logstore::object_store::local::LocalFileSystem::new()),
-            armed: AtomicUsize::new(1),
-            failures_left: AtomicUsize::new(0),
-            injected: AtomicUsize::new(0),
-        });
-        reopen_over(&mut endpoint, uri, store.clone());
-
-        encode_batch(&mut endpoint, &build_insert_batch(&records[4..8]));
-        assert!(
-            store.injected.load(Ordering::Relaxed) >= OUTAGE_READS,
-            "the store did not fail the reads after the commit"
-        );
-        let model: BTreeMap<i64, DeltaTestStruct> =
-            records.iter().map(|r| (r.bigint, r.clone())).collect();
-        assert_matches_model(uri, &model, "a retry after a commit that landed");
-    }
-
-    /// Endpoint whose table reads and writes its log through `store`.
-    fn reopen_over(endpoint: &mut DeltaTableWriter, uri: &str, store: Arc<LogOutageStore>) {
-        use dbsp::circuit::tokio::TOKIO;
-        let url = deltalake::table::builder::ensure_table_uri(uri).unwrap();
-        endpoint.task.delta_table = TOKIO.block_on(async {
-            deltalake::DeltaTableBuilder::from_url(url.clone())
-                .unwrap()
-                .with_storage_backend(store, url)
-                .load()
-                .await
-                .unwrap()
-        });
-    }
-
-    /// Hand `batch` to the endpoint, expecting the encoder to fail it.
-    fn encode_failing_batch(endpoint: &mut DeltaTableWriter, batch: &Arc<dyn SerBatch>) {
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        assert!(
-            endpoint
-                .encode(batch.clone().arc_as_batch_reader())
-                .is_err(),
-            "the fixture did not fail the batch"
-        );
-        endpoint.consumer().batch_end();
-    }
-
-    /// The batch after a failed one must see what the failed one committed.
-    ///
-    /// The failed batch's commit landed, but reading the log afterwards failed and no retry
-    /// was allowed. An update of a key it inserted must find that row, not add a second one.
-    #[test]
-    fn a_batch_after_a_failed_batch_whose_commit_landed_does_not_duplicate() {
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint =
-            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 0, key_relation());
-        let records = make_records(8);
-        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
-
-        let store = Arc::new(LogOutageStore {
-            inner: Arc::new(deltalake::logstore::object_store::local::LocalFileSystem::new()),
-            armed: AtomicUsize::new(1),
-            failures_left: AtomicUsize::new(0),
-            injected: AtomicUsize::new(0),
-        });
-        reopen_over(&mut endpoint, uri, store.clone());
-        encode_failing_batch(&mut endpoint, &build_insert_batch(&records[4..8]));
-        store.failures_left.store(0, Ordering::Relaxed);
-
-        let mut new = make_record(500);
-        new.bigint = records[5].bigint;
-        encode_batch(
-            &mut endpoint,
-            &build_upsert_batch(&[(records[5].clone(), new.clone())]),
-        );
-
-        let mut model: BTreeMap<i64, DeltaTestStruct> =
-            records.iter().map(|r| (r.bigint, r.clone())).collect();
-        model.insert(new.bigint, new);
-        assert_matches_model(uri, &model, "an update after a failed batch that committed");
-    }
-
-    /// A dropped delete leaves its row live, so a later insert of that key must find it.
-    ///
-    /// The table started empty, so inserts skip the lookup. The delete conflicts with a
-    /// compaction and no retry is allowed, which drops the batch.
-    #[test]
-    fn the_insert_shortcut_does_not_survive_a_dropped_batch() {
-        use dbsp::circuit::tokio::TOKIO;
-        use deltalake::open_table;
-
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint =
-            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 0, key_relation());
-        let records = make_records(8);
-        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
-        encode_batch(&mut endpoint, &build_insert_batch(&records[4..8]));
-
-        let url = url::Url::from_file_path(uri).unwrap();
-        TOKIO.block_on(async move {
-            open_table(url)
-                .await
-                .unwrap()
-                .optimize()
-                .with_target_size(std::num::NonZeroU64::new(64 << 20).unwrap())
-                .await
-                .unwrap();
-        });
-        encode_failing_batch(&mut endpoint, &build_delete_batch(&records[0..1]));
-
-        let mut new = make_record(500);
-        new.bigint = records[0].bigint;
-        encode_batch(
-            &mut endpoint,
-            &build_insert_batch(std::slice::from_ref(&new)),
-        );
-
-        let rows = read_merge_output(uri);
-        assert_eq!(
-            rows.iter().filter(|r| r.bigint == new.bigint).count(),
-            1,
-            "the key has two live rows: {rows:?}"
-        );
-    }
-
-    /// A key skipped for a uniqueness violation keeps its old row, so a later insert of that
-    /// key must find it.
-    #[test]
-    fn the_insert_shortcut_does_not_survive_a_skipped_key() {
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint =
-            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 0, key_relation());
-        let old = make_record(0);
-        encode_batch(
-            &mut endpoint,
-            &build_insert_batch(std::slice::from_ref(&old)),
-        );
-
-        let with_key = |i: usize| {
-            let mut record = make_record(i);
-            record.bigint = old.bigint;
-            record
-        };
-        let batch = |tuples: Vec<(DeltaTestStruct, i64)>| -> Arc<dyn SerBatch> {
-            let tuples = tuples
-                .into_iter()
-                .map(|(r, w)| Tup2(Tup2(DeltaTestKey { bigint: r.bigint }, r), w))
-                .collect();
-            Arc::new(SerBatchImpl::<_, DeltaTestKey, DeltaTestStruct>::new(
-                OrdIndexedZSet::from_tuples((), tuples),
-            ))
-        };
-        // Two new values for one key, then both gone: each step is a violation the connector
-        // skips, so the table keeps `old`.
-        encode_batch(
-            &mut endpoint,
-            &batch(vec![(old.clone(), -1), (with_key(1), 1), (with_key(2), 1)]),
-        );
-        encode_batch(
-            &mut endpoint,
-            &batch(vec![(with_key(1), -1), (with_key(2), -1)]),
-        );
-        assert_eq!(endpoint.merge_violations, 2);
-
-        let new = with_key(3);
-        encode_batch(&mut endpoint, &batch(vec![(new.clone(), 1)]));
-
-        let rows = read_merge_output(uri);
-        assert_eq!(rows, vec![new], "the skipped key's old row is still live");
-    }
-
-    /// Log reads the store fails after the armed commit: the read that follows the commit,
-    /// and the reload before the retry.
-    const OUTAGE_READS: usize = 2;
-
-    /// Fails the next [`OUTAGE_READS`] log reads after one commit lands.
-    #[derive(Debug)]
-    struct LogOutageStore {
-        inner: ObjectStoreRef,
-        armed: AtomicUsize,
-        failures_left: AtomicUsize,
-        injected: AtomicUsize,
-    }
-
-    impl LogOutageStore {
-        fn fail(&self, location: Option<&ObjectPath>) -> bool {
-            let in_log = location.is_some_and(|l| l.as_ref().contains("_delta_log"));
-            let claimed = in_log
-                && self
-                    .failures_left
-                    .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
-                    .is_ok();
-            if claimed {
-                self.injected.fetch_add(1, Ordering::Relaxed);
-            }
-            claimed
-        }
-
-        fn outage() -> deltalake::logstore::object_store::Error {
-            deltalake::logstore::object_store::Error::Generic {
-                store: "outage",
-                source: "injected outage".into(),
-            }
-        }
-    }
-
-    impl std::fmt::Display for LogOutageStore {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "LogOutageStore({})", self.inner)
-        }
-    }
-
-    #[async_trait]
-    impl ObjectStore for LogOutageStore {
-        async fn put_opts(
-            &self,
-            location: &ObjectPath,
-            payload: PutPayload,
-            opts: PutOptions,
-        ) -> ObjectStoreResult<PutResult> {
-            let result = self.inner.put_opts(location, payload, opts).await;
-            let is_commit =
-                location.as_ref().contains("_delta_log/") && location.as_ref().ends_with(".json");
-            if result.is_ok()
-                && is_commit
-                && self
-                    .armed
-                    .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
-                    .is_ok()
-            {
-                self.failures_left.store(OUTAGE_READS, Ordering::Relaxed);
-            }
-            result
-        }
-
-        async fn put_multipart_opts(
-            &self,
-            location: &ObjectPath,
-            opts: PutMultipartOptions,
-        ) -> ObjectStoreResult<Box<dyn MultipartUpload>> {
-            self.inner.put_multipart_opts(location, opts).await
-        }
-
-        async fn get_opts(
-            &self,
-            location: &ObjectPath,
-            options: GetOptions,
-        ) -> ObjectStoreResult<GetResult> {
-            if self.fail(Some(location)) {
-                return Err(Self::outage());
-            }
-            self.inner.get_opts(location, options).await
-        }
-
-        fn delete_stream(
-            &self,
-            locations: BoxStream<'static, ObjectStoreResult<ObjectPath>>,
-        ) -> BoxStream<'static, ObjectStoreResult<ObjectPath>> {
-            self.inner.delete_stream(locations)
-        }
-
-        fn list(
-            &self,
-            prefix: Option<&ObjectPath>,
-        ) -> BoxStream<'static, ObjectStoreResult<ObjectMeta>> {
-            if self.fail(prefix) {
-                return Box::pin(futures::stream::once(async { Err(Self::outage()) }));
-            }
-            self.inner.list(prefix)
-        }
-
-        fn list_with_offset(
-            &self,
-            prefix: Option<&ObjectPath>,
-            offset: &ObjectPath,
-        ) -> BoxStream<'static, ObjectStoreResult<ObjectMeta>> {
-            if self.fail(prefix) {
-                return Box::pin(futures::stream::once(async { Err(Self::outage()) }));
-            }
-            self.inner.list_with_offset(prefix, offset)
-        }
-
-        async fn list_with_delimiter(
-            &self,
-            prefix: Option<&ObjectPath>,
-        ) -> ObjectStoreResult<ListResult> {
-            if self.fail(prefix) {
-                return Err(Self::outage());
-            }
-            self.inner.list_with_delimiter(prefix).await
-        }
-
-        async fn copy_opts(
-            &self,
-            from: &ObjectPath,
-            to: &ObjectPath,
-            options: CopyOptions,
-        ) -> ObjectStoreResult<()> {
-            self.inner.copy_opts(from, to, options).await
-        }
-    }
-
-    /// OPTIMIZE must drop the rows the connector's vectors mark deleted, not resurrect them.
-    ///
-    /// We tell administrators to run OPTIMIZE, and a compaction that rewrote a file while
-    /// ignoring its vector would bring every superseded row back. Nothing in the connector
-    /// could detect that afterwards.
-    #[test]
-    fn compaction_drops_the_rows_a_vector_marks_deleted() {
-        use dbsp::circuit::tokio::TOKIO;
-        use deltalake::open_table;
-
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
-
-        // Five rows in one file, then supersede two of them. Superseding a strict subset is
-        // what leaves a vector behind: superseding all five would drop the file whole.
-        let records = make_records(5);
-        encode_batch(&mut endpoint, &build_insert_batch(&records));
-
-        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..2)
-            .map(|i| {
-                let mut new = make_record(900 + i);
-                new.bigint = records[i].bigint;
-                (records[i].clone(), new)
-            })
-            .collect();
-        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
-
-        let mut model: BTreeMap<i64, DeltaTestStruct> =
-            records.iter().map(|r| (r.bigint, r.clone())).collect();
-        for (_, new) in &updates {
-            model.insert(new.bigint, new.clone());
-        }
-        assert_matches_model(uri, &model, "before compaction");
-
-        // Without this the test would pass on a table that has no vector to respect.
-        assert_eq!(
-            vector_files(uri).len(),
-            1,
-            "the fixture wrote no deletion vector"
-        );
-
-        let url = url::Url::from_file_path(uri).unwrap();
-        let compacted = TOKIO.block_on(async move {
-            let table = open_table(url).await.unwrap();
-            table
-                .optimize()
-                .with_target_size(std::num::NonZeroU64::new(64 << 20).unwrap())
-                .await
-                .unwrap()
-                .1
-        });
-        assert!(
-            compacted.num_files_removed >= 2,
-            "the fixture did not compact anything: {compacted:?}"
-        );
-
-        assert_matches_model(uri, &model, "after compaction");
-    }
-
-    /// Reclaiming storage must rewrite every column type unchanged.
-    ///
-    /// The rewrite reads the live rows back through DataFusion and casts them to the table's
-    /// schema, so a lossy cast would alter values with no row missing for its count check
-    /// to notice. `DeltaTestStruct` holds every type the connector writes.
-    #[test]
-    fn reclaim_rewrites_every_column_type_unchanged() {
-        use crate::integrated::delta_table::merge::rewrite::reclaim_superseded_rows;
-        use dbsp::circuit::tokio::TOKIO;
-        use deltalake::open_table;
-
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
-
-        // Supersede three of five rows: past the half that makes a file worth rewriting.
-        let records = make_records(5);
-        encode_batch(&mut endpoint, &build_insert_batch(&records));
-        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..3)
-            .map(|i| {
-                let mut new = make_record(900 + i);
-                new.bigint = records[i].bigint;
-                (records[i].clone(), new)
-            })
-            .collect();
-        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
-
-        let mut model: BTreeMap<i64, DeltaTestStruct> =
-            records.iter().map(|r| (r.bigint, r.clone())).collect();
-        for (_, new) in &updates {
-            model.insert(new.bigint, new.clone());
-        }
-
-        let url = url::Url::from_file_path(uri).unwrap();
-        let reclaimed = TOKIO.block_on(async move {
-            let mut table = open_table(url).await.unwrap();
-            reclaim_superseded_rows(&mut table, usize::MAX)
-                .await
-                .unwrap()
-        });
-        assert_eq!(
-            reclaimed.files_rewritten, 1,
-            "the fixture left nothing to reclaim"
-        );
-        assert_matches_model(uri, &model, "reclaiming the superseded rows");
-    }
-
-    /// No data file is ever rewritten, which is the point of the design. A file may leave the
-    /// table once every row in it is tombstoned, but no file's contents move to a new path.
-    #[test]
-    fn merge_never_rewrites_a_data_file() {
-        use dbsp::circuit::tokio::TOKIO;
-        use deltalake::open_table;
-
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
-        let records = make_records(8);
-
-        let paths = |uri: &str| -> Vec<String> {
-            let url = url::Url::from_file_path(uri).unwrap();
-            TOKIO.block_on(async move {
-                let table = open_table(url).await.unwrap();
-                let mut paths: Vec<String> = table
-                    .snapshot()
-                    .unwrap()
-                    .log_data()
-                    .into_iter()
-                    .map(|f| f.path().to_string())
-                    .collect();
-                paths.sort();
-                paths
-            })
-        };
-
-        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
-        let after_insert = paths(uri);
-        assert_eq!(after_insert.len(), 1);
-
-        // Update every row in that file. Its path must survive, carrying a vector.
-        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..3)
-            .map(|i| {
-                let mut new = make_record(200 + i);
-                new.bigint = records[i].bigint;
-                (records[i].clone(), new)
-            })
-            .collect();
-        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
-
-        let after_update = paths(uri);
-        assert!(
-            after_update.contains(&after_insert[0]),
-            "the original data file was rewritten: {after_insert:?} -> {after_update:?}"
-        );
-    }
-
-    // ── merge mode: key types ──
-
-    /// A key relation naming one column of the test schema.
-    ///
-    /// The column type comes from the view, so the test cannot drift from what the view
-    /// actually declares.
-    fn key_relation_on(column: &str) -> Relation {
-        let field = value_relation()
-            .fields
-            .into_iter()
-            .find(|f| f.name.name() == column)
-            .unwrap_or_else(|| panic!("no column '{column}' in the test schema"));
-        Relation {
-            name: SqlIdentifier::new("test_idx", false),
-            fields: vec![field],
-            materialized: false,
-            properties: BTreeMap::new(),
-            primary_key: None,
-        }
-    }
-
-    /// One batch of `(key, row, weight)` triples, for any key type.
-    fn keyed_batch<K>(tuples: Vec<Tup2<Tup2<K, DeltaTestStruct>, i64>>) -> Arc<dyn SerBatch>
-    where
-        K: DBData + Erase<DynData> + SerializeWithContext<SqlSerdeConfig> + Send + Sync,
-    {
-        let zset = OrdIndexedZSet::from_tuples((), tuples);
-        Arc::new(SerBatchImpl::<_, K, DeltaTestStruct>::new(zset))
-    }
-
-    /// Assert the table holds exactly `expected`, as a reader applying deletion vectors sees it.
-    fn assert_table_rows(table_uri: &str, expected: &[DeltaTestStruct], step: &str) {
-        let actual = read_merge_output(table_uri);
-        let mut expected = expected.to_vec();
-        expected.sort();
-        assert_eq!(
-            actual.len(),
-            expected.len(),
-            "after {step}: table has {} row(s), the view has {}",
-            actual.len(),
-            expected.len()
-        );
-        assert_eq!(
-            actual, expected,
-            "after {step}: table diverged from the view"
-        );
-    }
-
-    /// Drive one key type through insert, update and delete, and check that the table still
-    /// equals the view.
-    ///
-    /// `key_of` reads the key out of a row. `carry_key` copies the key column from the old
-    /// row to the new one, which is what makes an update an update instead of a second
-    /// insert.
-    fn merge_key_type_case<K>(
-        column: &str,
-        key_of: impl Fn(&DeltaTestStruct) -> K,
-        carry_key: impl Fn(&mut DeltaTestStruct, &DeltaTestStruct),
-    ) where
-        K: DBData + Erase<DynData> + SerializeWithContext<SqlSerdeConfig> + Send + Sync,
-    {
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint = make_merge_endpoint_ex(
-            uri,
-            DeltaTableWriteMode::Append,
-            1 << 20,
-            0,
-            key_relation_on(column),
-        );
-
-        // Small indices keep every column of `make_record` distinct, so whichever column
-        // the test keys on is unique across the batch.
-        let records = make_records(12);
-        encode_batch(
-            &mut endpoint,
-            &keyed_batch(
-                records
-                    .iter()
-                    .map(|r| Tup2(Tup2(key_of(r), r.clone()), 1i64))
-                    .collect(),
-            ),
-        );
-        assert_table_rows(uri, &records, &format!("12 inserts keyed on '{column}'"));
-
-        // Update the first four: same key, every other column different. A connector that
-        // did not find the old rows would leave 16 rows here instead of 12.
-        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..4)
-            .map(|i| {
-                let mut new = make_record(500 + i);
-                carry_key(&mut new, &records[i]);
-                (records[i].clone(), new)
-            })
-            .collect();
-        let mut tuples = Vec::new();
-        for (old, new) in &updates {
-            tuples.push(Tup2(Tup2(key_of(old), old.clone()), -1i64));
-            tuples.push(Tup2(Tup2(key_of(new), new.clone()), 1i64));
-        }
-        encode_batch(&mut endpoint, &keyed_batch(tuples));
-
-        let mut expected: Vec<DeltaTestStruct> =
-            updates.iter().map(|(_, new)| new.clone()).collect();
-        expected.extend_from_slice(&records[4..]);
-        assert_table_rows(uri, &expected, &format!("4 updates keyed on '{column}'"));
-
-        // Delete two rows the table really holds.
-        encode_batch(
-            &mut endpoint,
-            &keyed_batch(
-                records[10..12]
-                    .iter()
-                    .map(|r| Tup2(Tup2(key_of(r), r.clone()), -1i64))
-                    .collect(),
-            ),
-        );
-        expected.retain(|r| r.bigint != records[10].bigint && r.bigint != records[11].bigint);
-        assert_table_rows(uri, &expected, &format!("2 deletes keyed on '{column}'"));
-    }
-
-    /// One test per key type, so a failure names the type that broke.
-    ///
-    /// These types cover the distinct risks in the key path: integer encoding, variable
-    /// length, offset width, timestamp units, decimal precision and scale, pruning turned
-    /// off by a float, and a composite ROW key.
-    macro_rules! merge_key_type_test {
-        ($test:ident, $column:literal, $key:ident, $field:ident) => {
-            #[test]
-            fn $test() {
-                merge_key_type_case(
-                    $column,
-                    |r: &DeltaTestStruct| $key {
-                        $field: r.$field.clone(),
-                    },
-                    |new: &mut DeltaTestStruct, old: &DeltaTestStruct| {
-                        new.$field = old.$field.clone()
-                    },
-                );
-            }
-        };
-    }
-
-    merge_key_type_test!(merge_keyed_on_int, "int", DeltaTestKeyInt, int);
-    merge_key_type_test!(merge_keyed_on_string, "string", DeltaTestKeyString, string);
-    merge_key_type_test!(merge_keyed_on_binary, "binary", DeltaTestKeyBinary, binary);
-    merge_key_type_test!(
-        merge_keyed_on_timestamp,
-        "timestamp_ntz",
-        DeltaTestKeyTimestamp,
-        timestamp_ntz
-    );
-    merge_key_type_test!(
-        merge_keyed_on_decimal,
-        "decimal_10_3",
-        DeltaTestKeyDecimal,
-        decimal_10_3
-    );
-    merge_key_type_test!(merge_keyed_on_uuid, "uuid", DeltaTestKeyUuid, uuid);
-    merge_key_type_test!(merge_keyed_on_date, "date", DeltaTestKeyDate, date);
-    merge_key_type_test!(merge_keyed_on_row, "struct1", DeltaTestKeyStruct, struct1);
-
-    // A DOUBLE key turns range pruning off, because NaN is left out of min/max statistics.
-    // Reading every file is slower but must give the same answer, which is what this checks.
-    merge_key_type_test!(merge_keyed_on_double, "double", DeltaTestKeyDouble, double);
-    merge_key_type_test!(merge_keyed_on_float, "float", DeltaTestKeyFloat, float);
-
-    // Parquet stores these as INT32, so the key comparison depends on the reader restoring
-    // the declared width. The encoder refuses a mismatch, so a regression fails loudly here.
-    merge_key_type_test!(
-        merge_keyed_on_tinyint,
-        "tinyint",
-        DeltaTestKeyTinyInt,
-        tinyint
-    );
-    merge_key_type_test!(
-        merge_keyed_on_smallint,
-        "smallint",
-        DeltaTestKeySmallInt,
-        smallint
-    );
 
     /// Merge mode without output buffering pays a lookup per step of the circuit, so it is
     /// worth a word at startup. Only merge mode, and only when buffering is off.
@@ -3404,519 +1754,6 @@ mod parallel {
             "cdc mode appends without reading the table, so buffering is only a file-size \
              question and the existing documentation covers it"
         );
-    }
-
-    /// `-0.0` and `0.0` are one key to Feldera, so they must locate one row.
-    ///
-    /// The row encoding orders floats by their bits, so without normalizing them the second
-    /// run looks up a key the table does not hold and leaves two live rows for it.
-    ///
-    /// Shaped as a second run over an existing table because that is what reproduces against
-    /// a live pipeline: within one run the view's index keeps whichever sign it saw first, so
-    /// the connector is handed a key that already matches what it wrote.
-    #[test]
-    fn merge_treats_signed_zeroes_as_one_key() {
-        use dbsp::algebra::F64;
-
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-
-        let key_of = |d: f64| DeltaTestKeyDouble {
-            double: F64::new(d),
-        };
-        let row_of = |i: usize, d: f64| {
-            let mut r = make_record(i);
-            r.double = F64::new(d);
-            r
-        };
-
-        let stored = row_of(1, -0.0);
-        let mut first = make_merge_endpoint_ex(
-            uri,
-            DeltaTableWriteMode::Append,
-            1 << 20,
-            0,
-            key_relation_on("double"),
-        );
-        encode_batch(
-            &mut first,
-            &keyed_batch(vec![Tup2(Tup2(key_of(-0.0), stored.clone()), 1i64)]),
-        );
-        assert_table_rows(uri, &[stored], "a first run writing -0.0");
-
-        // A second run adopts the table and knows only +0.0 for that key.
-        let updated = row_of(2, 0.0);
-        let mut second = make_merge_endpoint_ex(
-            uri,
-            DeltaTableWriteMode::Append,
-            1 << 20,
-            0,
-            key_relation_on("double"),
-        );
-        encode_batch(
-            &mut second,
-            &keyed_batch(vec![Tup2(Tup2(key_of(0.0), updated.clone()), 1i64)]),
-        );
-        assert_table_rows(uri, &[updated], "a second run inserting +0.0");
-    }
-
-    /// A null key must still find its row. Statistics leave nulls out, so a chunk holding one
-    /// turns pruning off; a flush that pruned anyway would leave two live rows for that key.
-    #[test]
-    fn merge_supersedes_a_row_whose_key_is_null() {
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint = make_merge_endpoint_ex(
-            uri,
-            DeltaTableWriteMode::Append,
-            1 << 20,
-            0,
-            key_relation_on("unused"),
-        );
-        let key_of = |r: &DeltaTestStruct| DeltaTestKeyUnused {
-            unused: r.unused.clone(),
-        };
-
-        // `make_record` nulls `unused` on every third index, so index 3 is the null key and
-        // the others are distinct. One null key per batch: two would not be a unique key.
-        let records: Vec<DeltaTestStruct> = [1, 2, 3, 4].into_iter().map(make_record).collect();
-        encode_batch(
-            &mut endpoint,
-            &keyed_batch(
-                records
-                    .iter()
-                    .map(|r| Tup2(Tup2(key_of(r), r.clone()), 1i64))
-                    .collect(),
-            ),
-        );
-        assert_table_rows(uri, &records, "4 inserts, one keyed on null");
-
-        // Supersede the null-keyed row, in a later flush so the lookup has to find it on disk.
-        let null_keyed = &records[2];
-        let mut replacement = make_record(500);
-        replacement.unused = None;
-        encode_batch(
-            &mut endpoint,
-            &keyed_batch(vec![
-                Tup2(Tup2(key_of(null_keyed), null_keyed.clone()), -1i64),
-                Tup2(Tup2(key_of(&replacement), replacement.clone()), 1i64),
-            ]),
-        );
-
-        let mut expected = vec![records[0].clone(), records[1].clone(), records[3].clone()];
-        expected.push(replacement);
-        assert_table_rows(uri, &expected, "the null-keyed row superseded");
-    }
-
-    fn build_insert_batch(records: &[DeltaTestStruct]) -> Arc<dyn SerBatch> {
-        let tuples: Vec<_> = records
-            .iter()
-            .map(|r| Tup2(Tup2(DeltaTestKey { bigint: r.bigint }, r.clone()), 1i64))
-            .collect();
-        let zset = OrdIndexedZSet::from_tuples((), tuples);
-        Arc::new(SerBatchImpl::<_, DeltaTestKey, DeltaTestStruct>::new(zset))
-    }
-
-    fn build_delete_batch(records: &[DeltaTestStruct]) -> Arc<dyn SerBatch> {
-        let tuples: Vec<_> = records
-            .iter()
-            .map(|r| Tup2(Tup2(DeltaTestKey { bigint: r.bigint }, r.clone()), -1i64))
-            .collect();
-        let zset = OrdIndexedZSet::from_tuples((), tuples);
-        Arc::new(SerBatchImpl::<_, DeltaTestKey, DeltaTestStruct>::new(zset))
-    }
-
-    fn build_upsert_batch(updates: &[(DeltaTestStruct, DeltaTestStruct)]) -> Arc<dyn SerBatch> {
-        let mut tuples = Vec::new();
-        for (old, new) in updates {
-            assert_eq!(old.bigint, new.bigint);
-            tuples.push(Tup2(
-                Tup2(DeltaTestKey { bigint: old.bigint }, old.clone()),
-                -1i64,
-            ));
-            tuples.push(Tup2(
-                Tup2(DeltaTestKey { bigint: new.bigint }, new.clone()),
-                1i64,
-            ));
-        }
-        let zset = OrdIndexedZSet::from_tuples((), tuples);
-        Arc::new(SerBatchImpl::<_, DeltaTestKey, DeltaTestStruct>::new(zset))
-    }
-
-    fn build_non_indexed_batch(records: &[DeltaTestStruct], weight: i64) -> Arc<dyn SerBatch> {
-        let tuples: Vec<_> = records.iter().map(|r| Tup2(r.clone(), weight)).collect();
-        let zset = OrdZSet::from_keys((), tuples);
-        Arc::new(SerBatchImpl::<_, DeltaTestStruct, ()>::new(zset))
-    }
-
-    fn encode_batch(endpoint: &mut DeltaTableWriter, batch: &Arc<dyn SerBatch>) {
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        endpoint
-            .encode(batch.clone().arc_as_batch_reader())
-            .unwrap();
-        endpoint.consumer().batch_end();
-    }
-
-    fn read_output(table_uri: &str) -> Vec<OutputRecord> {
-        let parquet_files =
-            list_files_recursive(Path::new(table_uri), OsStr::from_bytes(b"parquet")).unwrap();
-        let mut records = Vec::new();
-        for path in parquet_files {
-            let mut batch: Vec<OutputRecord> =
-                load_parquet_file(&path, &delta_input_serde_config());
-            records.append(&mut batch);
-        }
-        records
-    }
-
-    /// Read only the files referenced by the current delta table snapshot,
-    /// ignoring orphaned parquet files left behind by `SaveMode::Overwrite`.
-    fn read_delta_output(table_uri: &str) -> Vec<OutputRecord> {
-        use dbsp::circuit::tokio::TOKIO;
-        use deltalake::open_table;
-
-        let url = url::Url::from_file_path(table_uri).unwrap();
-        let table = TOKIO.block_on(async move { open_table(url).await.unwrap() });
-        let base = Path::new(table_uri);
-        let mut records = Vec::new();
-        for uri in table.get_file_uris().unwrap() {
-            let mut batch: Vec<OutputRecord> =
-                load_parquet_file(&base.join(&*uri), &delta_input_serde_config());
-            records.append(&mut batch);
-        }
-        records
-    }
-
-    fn make_record(i: usize) -> DeltaTestStruct {
-        DeltaTestStruct {
-            bigint: i as i64,
-            binary: ByteArray::from_vec(vec![i as u8, (i >> 8) as u8]),
-            boolean: i.is_multiple_of(2),
-            date: Date::from_days(i as i32 % 100_000),
-            decimal_10_3: SqlDecimal::<10, 3>::new((i as i128 % 1_000_000) * 1000, 3).unwrap(),
-            double: F64::new((i as f64).trunc()),
-            float: F32::new((i as f32).trunc()),
-            int: i as i32,
-            smallint: (i % 32000) as i16,
-            string: format!("record_{i}"),
-            unused: if i.is_multiple_of(3) {
-                None
-            } else {
-                Some(format!("unused_{i}"))
-            },
-            timestamp_ntz: Timestamp::from_milliseconds(1704070800000 + i as i64 * 1000),
-            timestamp_tz: TimestampTz::from(Timestamp::from_milliseconds(
-                1704070800000 + i as i64 * 1000,
-            )),
-            tinyint: (i % 120) as i8,
-            string_array: vec![format!("arr_{i}")],
-            struct1: TestStruct {
-                id: i as u32,
-                b: i.is_multiple_of(2),
-                i: Some(i as i64),
-                s: format!("s_{i}"),
-            },
-            struct_array: vec![TestStruct {
-                id: i as u32,
-                b: false,
-                i: None,
-                s: format!("sa_{i}"),
-            }],
-            string_string_map: BTreeMap::from([(format!("key_{i}"), format!("val_{i}"))]),
-            string_struct_map: BTreeMap::from([(
-                format!("sk_{i}"),
-                TestStruct {
-                    id: i as u32,
-                    b: true,
-                    i: Some(i as i64 * 2),
-                    s: format!("sm_{i}"),
-                },
-            )]),
-            variant: Variant::Map(
-                std::iter::once((
-                    Variant::String(SqlString::from_ref("foo")),
-                    Variant::String(SqlString::from(i.to_string())),
-                ))
-                .collect::<BTreeMap<Variant, Variant>>()
-                .into(),
-            ),
-            uuid: Uuid::from_bytes([i as u8; 16]),
-        }
-    }
-
-    fn make_records(n: usize) -> Vec<DeltaTestStruct> {
-        (0..n).map(make_record).collect()
-    }
-
-    // ── Tests ──────────────────────────────────────────────────────
-
-    fn insert_test(threads: usize) {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let records = make_records(100);
-        let batch = build_insert_batch(&records);
-        let mut endpoint = make_endpoint(threads, &table_uri, true);
-
-        encode_batch(&mut endpoint, &batch);
-
-        let output = read_output(&table_uri);
-        assert_eq!(output.len(), 100);
-        for rec in &output {
-            assert_eq!(rec.__feldera_op, "i");
-        }
-        // Verify data fields match
-        let mut output_data: Vec<DeltaTestStruct> =
-            output.iter().map(|r| r.to_data_record()).collect();
-        output_data.sort();
-        let mut expected = records.clone();
-        expected.sort();
-        assert_eq!(output_data, expected);
-    }
-
-    #[test]
-    fn test_insert_single_thread() {
-        insert_test(1);
-    }
-
-    /// A shutdown aborts the write rather than letting it retry on.
-    ///
-    /// `encode` runs on the controller's output thread, which is a DBSP aux
-    /// thread that `RuntimeHandle::kill` joins, and the retry loop in
-    /// `encode_and_write_range` is unbounded unless `max_retries` says
-    /// otherwise.  A write that outlives the shutdown hangs the teardown.
-    #[test]
-    fn shutdown_aborts_the_write() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let batch = build_insert_batch(&make_records(100));
-        let mut endpoint = make_endpoint(1, &table_uri, true);
-
-        endpoint.inner.shutdown.cancel();
-
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        let error = endpoint
-            .encode(batch.clone().arc_as_batch_reader())
-            .expect_err("a shutdown must abort the write");
-        assert!(
-            error.to_string().contains("shutting down"),
-            "unexpected error: {error}"
-        );
-
-        // Aborting before the first attempt writes nothing at all.  An abort
-        // part-way leaves orphan Parquet files instead, which `VACUUM` takes.
-        assert!(
-            read_output(&table_uri).is_empty(),
-            "the aborted write must not have written any rows"
-        );
-    }
-
-    /// Set table properties from outside the pipeline, as an `ALTER TABLE` would.
-    fn alter_table(uri: &str, property: &str, value: &str) {
-        dbsp::circuit::tokio::TOKIO.block_on(async {
-            deltalake::open_table(url::Url::from_file_path(uri).unwrap())
-                .await
-                .unwrap()
-                .set_tbl_properties()
-                .with_properties(std::collections::HashMap::from([(
-                    property.to_string(),
-                    value.to_string(),
-                )]))
-                .await
-                .unwrap();
-        });
-    }
-
-    /// An `ALTER TABLE` that breaks a startup requirement stops merge mode, rather than its
-    /// retry reloading the table and committing past the change.
-    #[test]
-    fn merge_stops_when_the_table_no_longer_fits() {
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint =
-            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 3, key_relation());
-        encode_batch(&mut endpoint, &build_insert_batch(&make_records(4)));
-
-        alter_table(uri, "delta.enableChangeDataFeed", "true");
-
-        endpoint.consumer().batch_start(1, OutputBatchType::Delta);
-        let error = endpoint
-            .encode(build_insert_batch(&[make_record(10)]).arc_as_batch_reader())
-            .expect_err("a table with a change data feed must stop merge mode");
-        assert!(
-            format!("{error:#}").contains("changed while the pipeline was running"),
-            "unexpected error: {error:#}"
-        );
-    }
-
-    /// A change merge mode does not depend on must not stop it.
-    #[test]
-    fn merge_survives_an_unrelated_table_change() {
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint =
-            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 3, key_relation());
-        encode_batch(&mut endpoint, &build_insert_batch(&make_records(4)));
-
-        alter_table(uri, "delta.logRetentionDuration", "interval 7 days");
-
-        encode_batch(&mut endpoint, &build_insert_batch(&[make_record(10)]));
-        assert_eq!(read_merge_output(uri).len(), 5);
-    }
-
-    /// A shutdown aborts a merge flush, as it does a cdc write, rather than letting it run on.
-    #[test]
-    fn shutdown_aborts_the_merge_flush() {
-        let dir = TempDir::new().unwrap();
-        let uri = dir.path().to_str().unwrap();
-        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
-
-        endpoint.inner.shutdown.cancel();
-
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        let error = endpoint
-            .encode(build_insert_batch(&make_records(10)).arc_as_batch_reader())
-            .expect_err("a shutdown must abort the flush");
-        assert!(
-            error.to_string().contains("shutting down"),
-            "unexpected error: {error}"
-        );
-        assert!(
-            read_merge_output(uri).is_empty(),
-            "the aborted flush must not have committed any rows"
-        );
-    }
-
-    /// A shutdown during the retry backoff ends the write instead of retrying
-    /// for ever.
-    ///
-    /// `max_retries: None` is the documented default and an unbounded loop, so
-    /// `encode` cannot return here on its own: the table directory is
-    /// read-only, every attempt fails, and only the shutdown ends it.
-    #[test]
-    fn a_shutdown_ends_an_unbounded_retry_loop() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let batch = build_insert_batch(&make_records(10));
-        let mut endpoint = make_endpoint_with_retries(
-            1,
-            &table_uri,
-            true,
-            DeltaTableWriteMode::Truncate,
-            false,
-            None,
-        );
-
-        // Read-only from here on, so the first attempt fails and every retry
-        // after it fails the same way.
-        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
-
-        // Encode on a thread of its own, so that a regression fails this test
-        // rather than hanging the whole run.
-        let shutdown = endpoint.inner.shutdown.clone();
-        let (done, encode_returned) = std::sync::mpsc::channel();
-        let encoder = std::thread::spawn(move || {
-            endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-            let result = endpoint.encode(batch.arc_as_batch_reader());
-            let _ = done.send((result.err(), records_written(&endpoint)));
-        });
-
-        // Long enough for the first attempt to fail and the write to reach the
-        // one-second backoff, where a shutdown finds it in production.
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        shutdown.cancel();
-
-        let (error, progress) = encode_returned
-            .recv_timeout(std::time::Duration::from_secs(30))
-            .expect("a shutdown must end the retry loop");
-        encoder.join().unwrap();
-
-        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
-
-        let error = error.expect("an aborted write must report an error");
-        assert!(
-            error.to_string().contains("shutting down"),
-            "unexpected error: {error}"
-        );
-        assert_eq!(
-            progress, 0,
-            "an aborted write must leave no progress behind"
-        );
-    }
-
-    /// A shutdown ends the commit's retry loop too, not just the write's.
-    ///
-    /// `batch_end` drives `commit_with_retry` with `TOKIO.block_on` on the
-    /// controller's output thread, and that loop is unbounded when
-    /// `max_retries` is `None`.  Data that reached the object store but no
-    /// `_delta_log` entry hangs the teardown exactly like a failed write.
-    #[test]
-    fn a_shutdown_ends_an_unbounded_commit_loop() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let batch = build_insert_batch(&make_records(10));
-        let mut endpoint = make_endpoint_with_retries(
-            1,
-            &table_uri,
-            true,
-            DeltaTableWriteMode::Truncate,
-            false,
-            None,
-        );
-
-        // Only the log directory is read-only, so the Parquet files still
-        // land and `encode` succeeds; just the commit cannot record them.
-        let log_dir = table_dir.path().join("_delta_log");
-        let versions_before = count_log_versions(&log_dir);
-        std::fs::set_permissions(&log_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
-
-        // Commit on a thread of its own, so that a regression fails this test
-        // rather than hanging the whole run.
-        let shutdown = endpoint.inner.shutdown.clone();
-        let (done, batch_ended) = std::sync::mpsc::channel();
-        let committer = std::thread::spawn(move || {
-            endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-            endpoint
-                .encode(batch.arc_as_batch_reader())
-                .expect("the write itself must succeed");
-            endpoint.consumer().batch_end();
-            let _ = done.send(());
-        });
-
-        // Long enough for the first commit attempt to fail and the retry to
-        // reach the one-second backoff.
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        shutdown.cancel();
-
-        batch_ended
-            .recv_timeout(std::time::Duration::from_secs(30))
-            .expect("a shutdown must end the commit loop");
-        committer.join().unwrap();
-
-        std::fs::set_permissions(&log_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert_eq!(
-            count_log_versions(&log_dir),
-            versions_before,
-            "an aborted commit must not add a version to the Delta log"
-        );
-    }
-
-    /// How many versions the Delta log records.
-    fn count_log_versions(log_dir: &Path) -> usize {
-        std::fs::read_dir(log_dir)
-            .unwrap()
-            .filter(|entry| {
-                entry
-                    .as_ref()
-                    .unwrap()
-                    .path()
-                    .extension()
-                    .is_some_and(|ext| ext == "json")
-            })
-            .count()
     }
 
     /// [AttemptProgress] takes an attempt's rows back out of the shared
@@ -3959,80 +1796,6 @@ mod parallel {
         assert_eq!(records_written(&endpoint), 7);
     }
 
-    #[test]
-    fn test_insert_multi_thread() {
-        insert_test(4);
-    }
-
-    /// Give `field` and every field nested inside it a physical name, the way
-    /// a writer that turns column mapping on rewrites the schema.
-    fn annotate_column_mapping(field: &mut serde_json::Value, next_id: &mut i64) {
-        *next_id += 1;
-        field["metadata"]["delta.columnMapping.id"] = serde_json::json!(*next_id);
-        field["metadata"]["delta.columnMapping.physicalName"] =
-            serde_json::json!(format!("col-{next_id}"));
-        annotate_nested(&mut field["type"], next_id);
-    }
-
-    /// Walk a Delta type, annotating the fields of every struct under it.
-    fn annotate_nested(data_type: &mut serde_json::Value, next_id: &mut i64) {
-        let Some(kind) = data_type.get("type").and_then(|t| t.as_str()) else {
-            return;
-        };
-        match kind {
-            "struct" => {
-                for field in data_type["fields"].as_array_mut().unwrap() {
-                    annotate_column_mapping(field, next_id);
-                }
-            }
-            "array" => annotate_nested(&mut data_type["elementType"], next_id),
-            "map" => {
-                annotate_nested(&mut data_type["keyType"], next_id);
-                annotate_nested(&mut data_type["valueType"], next_id);
-            }
-            _ => {}
-        }
-    }
-
-    /// Rewrite version 0 of `table_uri` so the table declares
-    /// `delta.columnMapping.mode = 'name'`, giving every column, nested ones
-    /// included, a physical name of its own, the way a table written with
-    /// column mapping on looks.
-    fn enable_column_mapping(table_uri: &str) {
-        let log = Path::new(table_uri)
-            .join("_delta_log")
-            .join("00000000000000000000.json");
-        let mut out = Vec::new();
-        for line in std::fs::read_to_string(&log).unwrap().lines() {
-            let mut action: serde_json::Value = serde_json::from_str(line).unwrap();
-            if let Some(protocol) = action.get_mut("protocol") {
-                // The connector creates a table-features protocol (3/7), so
-                // column mapping is declared as a feature rather than by
-                // raising the version.
-                for features in ["readerFeatures", "writerFeatures"] {
-                    let list = protocol[features]
-                        .as_array_mut()
-                        .expect("the created table declares feature lists");
-                    list.push(serde_json::json!("columnMapping"));
-                }
-            }
-            if let Some(metadata) = action.get_mut("metaData") {
-                metadata["configuration"]["delta.columnMapping.mode"] = serde_json::json!("name");
-                let mut schema: serde_json::Value =
-                    serde_json::from_str(metadata["schemaString"].as_str().unwrap()).unwrap();
-                let mut next_id = 0i64;
-                for field in schema["fields"].as_array_mut().unwrap() {
-                    annotate_column_mapping(field, &mut next_id);
-                }
-                metadata["configuration"]["delta.columnMapping.maxColumnId"] =
-                    serde_json::json!(next_id);
-                metadata["schemaString"] = serde_json::json!(schema.to_string());
-            }
-            out.push(serde_json::to_string(&action).unwrap());
-        }
-        std::fs::write(&log, out.join("\n") + "\n").unwrap();
-    }
-
     /// Appending to a column-mapped table must fail, not write rows that read back as NULL.
     /// delta-rs refused the table before 2.0; `check_column_mapping` does now.
     #[test]
@@ -4059,319 +1822,6 @@ mod parallel {
             error.contains("columnMapping"),
             "the error must name column mapping, got: {error}"
         );
-    }
-
-    /// A batch bigger than `TARGET_FILE_SIZE` must land in more than one Parquet
-    /// file. delta-rs rolls over only when the writer config carries a target
-    /// size; without one it writes a single object per key range, which an object
-    /// store rejects once the multipart upload passes 10000 parts.
-    ///
-    /// It pins `WRITE_BATCH_ROWS` too: at delta-rs's 8192-row default these
-    /// 16000 rows are two slices, and the size first passes the target after
-    /// the last one, so they still land in one file.
-    #[test]
-    fn test_batch_larger_than_target_file_size_rolls_over() {
-        const PAYLOAD_LEN: usize = 8 * 1024;
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let target = super::TARGET_FILE_SIZE.get() as usize;
-        let rows = (target * 5 / 4).div_ceil(PAYLOAD_LEN);
-        let records: Vec<DeltaTestStruct> = (0..rows)
-            .map(|i| DeltaTestStruct {
-                string: incompressible_string(i as u64, PAYLOAD_LEN),
-                ..make_record(i)
-            })
-            .collect();
-
-        let mut endpoint = make_endpoint(1, &table_uri, true);
-        encode_batch(&mut endpoint, &build_insert_batch(&records));
-
-        let files =
-            list_files_recursive(Path::new(&table_uri), OsStr::from_bytes(b"parquet")).unwrap();
-        assert!(
-            files.len() > 1,
-            "{rows} rows of {PAYLOAD_LEN} bytes each exceed the {target} byte target \
-             but landed in {} file(s)",
-            files.len()
-        );
-        // Read through the delta log, so a rolled-over file that never made it
-        // into the commit shows up as missing rows instead of being picked up
-        // off disk.
-        assert_eq!(read_delta_output(&table_uri).len(), rows);
-    }
-
-    /// A slow object store must stall the encoder, not grow memory by the size of the output.
-    #[test]
-    fn a_stalled_object_store_stops_the_encoder() {
-        const PAYLOAD_LEN: usize = 8 * 1024;
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let target = super::TARGET_FILE_SIZE.get() as usize;
-        let rows = (target * 5 / 4).div_ceil(PAYLOAD_LEN);
-        let records: Vec<DeltaTestStruct> = (0..rows)
-            .map(|i| DeltaTestStruct {
-                string: incompressible_string(i as u64, PAYLOAD_LEN),
-                ..make_record(i)
-            })
-            .collect();
-        let batch = build_insert_batch(&records);
-
-        let mut endpoint = make_endpoint(1, &table_uri, true);
-        let (open, gate) = tokio::sync::watch::channel(false);
-        let stalled_parts = Arc::new(AtomicUsize::new(0));
-        endpoint.object_store = Arc::new(GatedStore {
-            inner: endpoint.object_store.clone(),
-            gate,
-            stalled_parts: stalled_parts.clone(),
-        });
-        let inner = endpoint.inner.clone();
-        let encoder = std::thread::spawn(move || encode_batch(&mut endpoint, &batch));
-
-        // delta-rs keeps at most 10 parts of a file in flight.
-        let start = Instant::now();
-        while stalled_parts.load(Ordering::Relaxed) < 10 {
-            assert!(
-                start.elapsed() < Duration::from_secs(60),
-                "no upload started"
-            );
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        // Time for an unbounded encoder to finish the rest of the batch.
-        std::thread::sleep(Duration::from_secs(2));
-        let encoded = inner.records_written.load(Ordering::Relaxed);
-        open.send(true).unwrap();
-        encoder.join().unwrap();
-
-        assert!(
-            encoded < rows as u64,
-            "encoded all {rows} rows while the object store accepted nothing"
-        );
-        assert_eq!(read_delta_output(&table_uri).len(), rows);
-    }
-
-    /// Holds every multipart part until the gate opens.
-    #[derive(Debug)]
-    struct GatedStore {
-        inner: ObjectStoreRef,
-        gate: tokio::sync::watch::Receiver<bool>,
-        stalled_parts: Arc<AtomicUsize>,
-    }
-
-    impl std::fmt::Display for GatedStore {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "GatedStore({})", self.inner)
-        }
-    }
-
-    #[derive(Debug)]
-    struct GatedUpload {
-        inner: Box<dyn MultipartUpload>,
-        gate: tokio::sync::watch::Receiver<bool>,
-        stalled_parts: Arc<AtomicUsize>,
-    }
-
-    #[async_trait]
-    impl MultipartUpload for GatedUpload {
-        fn put_part(&mut self, data: PutPayload) -> UploadPart {
-            self.stalled_parts.fetch_add(1, Ordering::Relaxed);
-            let mut gate = self.gate.clone();
-            let put = self.inner.put_part(data);
-            Box::pin(async move {
-                let _ = gate.wait_for(|open| *open).await;
-                put.await
-            })
-        }
-
-        async fn complete(&mut self) -> ObjectStoreResult<PutResult> {
-            self.inner.complete().await
-        }
-
-        async fn abort(&mut self) -> ObjectStoreResult<()> {
-            self.inner.abort().await
-        }
-    }
-
-    #[async_trait]
-    impl ObjectStore for GatedStore {
-        async fn put_opts(
-            &self,
-            location: &ObjectPath,
-            payload: PutPayload,
-            opts: PutOptions,
-        ) -> ObjectStoreResult<PutResult> {
-            self.inner.put_opts(location, payload, opts).await
-        }
-
-        async fn put_multipart_opts(
-            &self,
-            location: &ObjectPath,
-            opts: PutMultipartOptions,
-        ) -> ObjectStoreResult<Box<dyn MultipartUpload>> {
-            Ok(Box::new(GatedUpload {
-                inner: self.inner.put_multipart_opts(location, opts).await?,
-                gate: self.gate.clone(),
-                stalled_parts: self.stalled_parts.clone(),
-            }))
-        }
-
-        async fn get_opts(
-            &self,
-            location: &ObjectPath,
-            options: GetOptions,
-        ) -> ObjectStoreResult<GetResult> {
-            self.inner.get_opts(location, options).await
-        }
-
-        fn delete_stream(
-            &self,
-            locations: BoxStream<'static, ObjectStoreResult<ObjectPath>>,
-        ) -> BoxStream<'static, ObjectStoreResult<ObjectPath>> {
-            self.inner.delete_stream(locations)
-        }
-
-        fn list(
-            &self,
-            prefix: Option<&ObjectPath>,
-        ) -> BoxStream<'static, ObjectStoreResult<ObjectMeta>> {
-            self.inner.list(prefix)
-        }
-
-        async fn list_with_delimiter(
-            &self,
-            prefix: Option<&ObjectPath>,
-        ) -> ObjectStoreResult<ListResult> {
-            self.inner.list_with_delimiter(prefix).await
-        }
-
-        async fn copy_opts(
-            &self,
-            from: &ObjectPath,
-            to: &ObjectPath,
-            options: CopyOptions,
-        ) -> ObjectStoreResult<()> {
-            self.inner.copy_opts(from, to, options).await
-        }
-    }
-
-    /// Deterministic printable ASCII that Snappy cannot shrink and that Parquet
-    /// cannot dictionary-encode away, so the written file size tracks `len`.
-    fn incompressible_string(seed: u64, len: usize) -> String {
-        let mut state = seed | 1;
-        let mut bytes = Vec::with_capacity(len + 8);
-        while bytes.len() < len {
-            state = state
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
-            bytes.extend((state >> 8).to_le_bytes().map(|b| b' ' + b % 95));
-        }
-        bytes.truncate(len);
-        String::from_utf8(bytes).unwrap()
-    }
-
-    fn upsert_test(threads: usize) {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let records = make_records(50);
-        let insert_batch = build_insert_batch(&records);
-        let mut endpoint = make_endpoint(threads, &table_uri, true);
-
-        encode_batch(&mut endpoint, &insert_batch);
-
-        // Upsert: update records 0..10
-        let updates: Vec<_> = (0..10)
-            .map(|i| {
-                let old = records[i].clone();
-                let new = DeltaTestStruct {
-                    boolean: !old.boolean,
-                    int: old.int + 1000,
-                    string: format!("updated_{}", old.bigint),
-                    ..old.clone()
-                };
-                (old, new)
-            })
-            .collect();
-        let upsert_batch = build_upsert_batch(&updates);
-        encode_batch(&mut endpoint, &upsert_batch);
-
-        let output = read_output(&table_uri);
-        // First batch: 50 inserts, second batch: 10 upserts
-        let inserts: Vec<_> = output.iter().filter(|r| r.__feldera_op == "i").collect();
-        let upserts: Vec<_> = output.iter().filter(|r| r.__feldera_op == "u").collect();
-        assert_eq!(inserts.len(), 50);
-        assert_eq!(upserts.len(), 10);
-    }
-
-    #[test]
-    fn test_upsert_single_thread() {
-        upsert_test(1);
-    }
-
-    #[test]
-    fn test_upsert_multi_thread() {
-        upsert_test(4);
-    }
-
-    fn delete_test(threads: usize) {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let records = make_records(50);
-        let insert_batch = build_insert_batch(&records);
-        let mut endpoint = make_endpoint(threads, &table_uri, true);
-
-        encode_batch(&mut endpoint, &insert_batch);
-
-        // Delete records 0..10
-        let to_delete: Vec<_> = records[0..10].to_vec();
-        let delete_batch = build_delete_batch(&to_delete);
-        encode_batch(&mut endpoint, &delete_batch);
-
-        let output = read_output(&table_uri);
-        let inserts: Vec<_> = output.iter().filter(|r| r.__feldera_op == "i").collect();
-        let deletes: Vec<_> = output.iter().filter(|r| r.__feldera_op == "d").collect();
-        assert_eq!(inserts.len(), 50);
-        assert_eq!(deletes.len(), 10);
-    }
-
-    #[test]
-    fn test_delete_single_thread() {
-        delete_test(1);
-    }
-
-    #[test]
-    fn test_delete_multi_thread() {
-        delete_test(4);
-    }
-
-    fn non_indexed_insert_test(threads: usize) {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let records = make_records(100);
-        let batch = build_non_indexed_batch(&records, 1);
-        let mut endpoint = make_endpoint(threads, &table_uri, false);
-
-        encode_batch(&mut endpoint, &batch);
-
-        let output = read_output(&table_uri);
-        assert_eq!(output.len(), 100);
-        for rec in &output {
-            assert_eq!(rec.__feldera_op, "i");
-        }
-        let mut output_data: Vec<DeltaTestStruct> =
-            output.iter().map(|r| r.to_data_record()).collect();
-        output_data.sort();
-        let mut expected = records;
-        expected.sort();
-        assert_eq!(output_data, expected);
-    }
-
-    #[test]
-    fn test_non_indexed_insert_single_thread() {
-        non_indexed_insert_test(1);
     }
 
     #[test]
@@ -4412,170 +1862,12 @@ mod parallel {
         );
     }
 
-    fn empty_batch_test(threads: usize) {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let batch = build_insert_batch(&[]);
-        let mut endpoint = make_endpoint(threads, &table_uri, true);
-
-        // Should not crash on empty batch.
-        encode_batch(&mut endpoint, &batch);
-
-        let output = read_output(&table_uri);
-        assert_eq!(output.len(), 0);
-    }
-
-    #[test]
-    fn test_empty_batch_single_thread() {
-        empty_batch_test(1);
-    }
-
-    #[test]
-    fn test_empty_batch_multi_thread() {
-        empty_batch_test(4);
-    }
-
-    fn multiple_batches_test(threads: usize) {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let mut endpoint = make_endpoint(threads, &table_uri, true);
-
-        // Batch 1: insert 50 records
-        let records = make_records(50);
-        let insert_batch = build_insert_batch(&records);
-        encode_batch(&mut endpoint, &insert_batch);
-
-        // Batch 2: insert 50 more records (ids 50..100)
-        let more_records: Vec<DeltaTestStruct> = (50..100).map(make_record).collect();
-        let insert_batch2 = build_insert_batch(&more_records);
-        encode_batch(&mut endpoint, &insert_batch2);
-
-        // Batch 3: upsert records 0..5
-        let updates: Vec<_> = (0..5)
-            .map(|i| {
-                let old = records[i].clone();
-                let new = DeltaTestStruct {
-                    boolean: !old.boolean,
-                    int: old.int + 1000,
-                    string: format!("updated_{}", old.bigint),
-                    ..old.clone()
-                };
-                (old, new)
-            })
-            .collect();
-        let upsert_batch = build_upsert_batch(&updates);
-        encode_batch(&mut endpoint, &upsert_batch);
-
-        // Batch 4: delete records 90..100
-        let to_delete: Vec<_> = more_records[40..50].to_vec();
-        let delete_batch = build_delete_batch(&to_delete);
-        encode_batch(&mut endpoint, &delete_batch);
-
-        let output = read_output(&table_uri);
-        let inserts = output.iter().filter(|r| r.__feldera_op == "i").count();
-        let upserts = output.iter().filter(|r| r.__feldera_op == "u").count();
-        let deletes = output.iter().filter(|r| r.__feldera_op == "d").count();
-
-        assert_eq!(inserts, 100); // 50 + 50
-        assert_eq!(upserts, 5);
-        assert_eq!(deletes, 10);
-    }
-
-    #[test]
-    fn test_multiple_batches_single_thread() {
-        multiple_batches_test(1);
-    }
-
-    #[test]
-    fn test_multiple_batches_multi_thread() {
-        multiple_batches_test(4);
-    }
-
-    // ── Failure scenario tests ────────────────────────────────────
-
-    /// Write to a read-only directory should fail with no retries.
-    #[test]
-    fn test_write_failure_readonly_dir() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        // Create the endpoint first (needs writable dir to create the table).
-        let records = make_records(10);
-        let batch = build_insert_batch(&records);
-        let mut endpoint = make_endpoint(1, &table_uri, true);
-
-        // Make directory read-only to trigger write failure.
-        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
-
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        let result = endpoint.encode(batch.arc_as_batch_reader());
-
-        // Restore permissions before asserting (so TempDir cleanup succeeds).
-        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
-
-        assert!(result.is_err(), "write to read-only dir should fail");
-    }
-
-    /// Exhausting max_retries should propagate the error.
-    #[test]
-    fn test_retry_exhaustion() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let records = make_records(10);
-        let batch = build_insert_batch(&records);
-
-        // Create endpoint with max_retries=1.
-        let key_schema = Some(key_relation());
-        let mut endpoint = DeltaTableWriter::new(
-            EndpointId::default(),
-            "test_endpoint",
-            &DeltaTableWriterConfig {
-                variant_encoding: Default::default(),
-                uri: table_uri.clone(),
-                mode: DeltaTableWriteMode::Truncate,
-                max_retries: Some(1),
-                threads: Some(1),
-                auto_compact: false,
-
-                object_store_config: Default::default(),
-                checkpoint_interval: None,
-                log_retention_duration: None,
-                update_mode: Default::default(),
-                lookup_chunk_size: feldera_types::size::ConfigSize::from_mib(1),
-                max_concurrent_probes: 4,
-                enable_expired_log_cleanup: None,
-            },
-            &key_schema,
-            &value_relation(),
-            Weak::new(),
-            CancellationToken::new(),
-            false,
-            true,
-            true,
-        )
-        .expect("failed to create endpoint");
-
-        // Make directory read-only to trigger write failure.
-        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
-
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        let result = endpoint.encode(batch.arc_as_batch_reader());
-
-        // Restore permissions.
-        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
-
-        assert!(result.is_err(), "should fail after exhausting retries");
-    }
-
     /// `log_retention_duration` and `enable_expired_log_cleanup` should land on the created
     /// Delta table's metadata when set, and be absent when not set.
     #[test]
     fn test_log_retention_table_properties() {
-        use dbsp::circuit::tokio::TOKIO;
         use deltalake::open_table;
+        use feldera_storage::tokio::TOKIO;
         use std::time::Duration;
 
         // Case 1: neither option set — neither property should appear in the table metadata.
@@ -4666,343 +1958,72 @@ mod parallel {
         assert!(config.validate().is_err());
     }
 
-    // ── Progress counter tests ────────────────────────────────────
-
-    fn records_written(endpoint: &DeltaTableWriter) -> u64 {
-        endpoint.inner.records_written.load(Ordering::Relaxed)
+    /// Give `field` and every field nested inside it a physical name, the way
+    /// a writer that turns column mapping on rewrites the schema.
+    fn annotate_column_mapping(field: &mut serde_json::Value, next_id: &mut i64) {
+        *next_id += 1;
+        field["metadata"]["delta.columnMapping.id"] = serde_json::json!(*next_id);
+        field["metadata"]["delta.columnMapping.physicalName"] =
+            serde_json::json!(format!("col-{next_id}"));
+        annotate_nested(&mut field["type"], next_id);
     }
 
-    /// Merge mode must report progress the way cdc does, or a long flush looks idle.
-    ///
-    /// Both sides count: a flush that only supersedes rows appends nothing, and reporting
-    /// just the appends would show no progress at all while it works.
-    #[test]
-    fn merge_reports_the_rows_it_writes() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-        let mut endpoint = make_merge_endpoint(&table_uri, DeltaTableWriteMode::Append);
-
-        let records = make_records(10);
-        assert_eq!(records_written(&endpoint), 0);
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        endpoint
-            .encode(build_insert_batch(&records).arc_as_batch_reader())
-            .unwrap();
-        assert_eq!(records_written(&endpoint), 10, "ten rows appended");
-        endpoint.consumer().batch_end();
-        assert_eq!(records_written(&endpoint), 0);
-
-        // Deleting supersedes the row in the table without appending one.
-        endpoint.consumer().batch_start(1, OutputBatchType::Delta);
-        endpoint
-            .encode(build_delete_batch(&records[..4]).arc_as_batch_reader())
-            .unwrap();
-        assert_eq!(
-            records_written(&endpoint),
-            4,
-            "a delete-only flush must report the rows it tombstoned"
-        );
-        endpoint.consumer().batch_end();
-        assert_eq!(records_written(&endpoint), 0);
-    }
-
-    #[test]
-    fn test_progress_counter_single_thread() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let records = make_records(100);
-        let batch = build_insert_batch(&records);
-        let mut endpoint = make_endpoint(1, &table_uri, true);
-
-        assert_eq!(records_written(&endpoint), 0);
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        endpoint
-            .encode(batch.clone().arc_as_batch_reader())
-            .unwrap();
-        assert_eq!(records_written(&endpoint), 100);
-        endpoint.consumer().batch_end();
-        assert_eq!(records_written(&endpoint), 0);
-    }
-
-    #[test]
-    fn test_progress_counter_multi_thread() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let records = make_records(100);
-        let batch = build_insert_batch(&records);
-        let mut endpoint = make_endpoint(4, &table_uri, true);
-
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        endpoint
-            .encode(batch.clone().arc_as_batch_reader())
-            .unwrap();
-        assert_eq!(records_written(&endpoint), 100);
-        endpoint.consumer().batch_end();
-        assert_eq!(records_written(&endpoint), 0);
-    }
-
-    #[test]
-    fn test_progress_counter_empty_batch() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let batch = build_insert_batch(&[]);
-        let mut endpoint = make_endpoint(1, &table_uri, true);
-
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        endpoint
-            .encode(batch.clone().arc_as_batch_reader())
-            .unwrap();
-        assert_eq!(records_written(&endpoint), 0);
-        endpoint.consumer().batch_end();
-        assert_eq!(records_written(&endpoint), 0);
-    }
-
-    #[test]
-    fn test_progress_counter_multiple_batches() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let mut endpoint = make_endpoint(1, &table_uri, true);
-
-        // Batch 1: 50 records.
-        let records1 = make_records(50);
-        let batch1 = build_insert_batch(&records1);
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        endpoint
-            .encode(batch1.clone().arc_as_batch_reader())
-            .unwrap();
-        assert_eq!(records_written(&endpoint), 50);
-        endpoint.consumer().batch_end();
-        assert_eq!(records_written(&endpoint), 0);
-
-        // Batch 2: 30 records (ids 50..80).
-        let records2: Vec<_> = (50..80).map(make_record).collect();
-        let batch2 = build_insert_batch(&records2);
-        endpoint.consumer().batch_start(1, OutputBatchType::Delta);
-        endpoint
-            .encode(batch2.clone().arc_as_batch_reader())
-            .unwrap();
-        assert_eq!(records_written(&endpoint), 30);
-        endpoint.consumer().batch_end();
-        assert_eq!(records_written(&endpoint), 0);
-    }
-
-    #[test]
-    fn test_progress_counter_resets_on_batch_start() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let records = make_records(50);
-        let batch = build_insert_batch(&records);
-        let mut endpoint = make_endpoint(1, &table_uri, true);
-
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        endpoint
-            .encode(batch.clone().arc_as_batch_reader())
-            .unwrap();
-        assert_eq!(records_written(&endpoint), 50);
-
-        // batch_start without batch_end resets the counter.
-        endpoint.consumer().batch_start(1, OutputBatchType::Delta);
-        assert_eq!(records_written(&endpoint), 0);
-    }
-
-    #[test]
-    fn test_progress_counter_resets_on_write_failure() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let records = make_records(10);
-        let batch = build_insert_batch(&records);
-        let mut endpoint = make_endpoint(1, &table_uri, true);
-
-        // Make directory read-only to trigger write failure.
-        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
-
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        let result = endpoint.encode(batch.arc_as_batch_reader());
-
-        // Restore permissions before asserting.
-        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
-
-        assert!(result.is_err());
-        // encode() resets progress to 0 on failure.
-        assert_eq!(records_written(&endpoint), 0);
-    }
-
-    #[test]
-    fn test_progress_counter_resets_after_retries() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        let records = make_records(10);
-        let batch = build_insert_batch(&records);
-
-        let key_schema = Some(key_relation());
-        let mut endpoint = DeltaTableWriter::new(
-            EndpointId::default(),
-            "test_endpoint",
-            &DeltaTableWriterConfig {
-                variant_encoding: Default::default(),
-                uri: table_uri.clone(),
-                mode: DeltaTableWriteMode::Truncate,
-                max_retries: Some(1),
-                threads: Some(1),
-                auto_compact: false,
-
-                object_store_config: Default::default(),
-                checkpoint_interval: None,
-                log_retention_duration: None,
-                update_mode: Default::default(),
-                lookup_chunk_size: feldera_types::size::ConfigSize::from_mib(1),
-                max_concurrent_probes: 4,
-                enable_expired_log_cleanup: None,
-            },
-            &key_schema,
-            &value_relation(),
-            Weak::new(),
-            CancellationToken::new(),
-            false,
-            true,
-            true,
-        )
-        .expect("failed to create endpoint");
-
-        // Make directory read-only to trigger write failure with retries.
-        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
-
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        let result = endpoint.encode(batch.arc_as_batch_reader());
-
-        // Restore permissions.
-        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
-
-        assert!(result.is_err(), "should fail after exhausting retries");
-        // encode() resets progress to 0 after all ranges fail.
-        assert_eq!(records_written(&endpoint), 0);
-    }
-
-    #[test]
-    fn test_progress_large_batch_increments() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        // Use > CHUNK_SIZE records to trigger multiple flush_chunk calls.
-        let num = super::CHUNK_SIZE + 500;
-        let records = make_records(num);
-        let batch = build_insert_batch(&records);
-        let mut endpoint = make_endpoint(1, &table_uri, true);
-
-        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-        endpoint
-            .encode(batch.clone().arc_as_batch_reader())
-            .unwrap();
-        assert_eq!(records_written(&endpoint), num as u64);
-
-        // Verify data was written correctly.
-        endpoint.consumer().batch_end();
-        assert_eq!(records_written(&endpoint), 0);
-        let output = read_output(&table_uri);
-        assert_eq!(output.len(), num);
-    }
-
-    /// Simulate a pipeline restart: drop the first endpoint, create a new one
-    /// on the same table with `continue_previous_state=true`. Data written before the
-    /// restart must survive.
-    #[test]
-    fn test_truncate_preserves_data_across_restart() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        // First start: write 50 records.
-        let records = make_records(50);
-        let batch = build_insert_batch(&records);
-        {
-            let mut endpoint =
-                make_endpoint_ex(1, &table_uri, true, DeltaTableWriteMode::Truncate, false);
-            encode_batch(&mut endpoint, &batch);
+    /// Walk a Delta type, annotating the fields of every struct under it.
+    fn annotate_nested(data_type: &mut serde_json::Value, next_id: &mut i64) {
+        let Some(kind) = data_type.get("type").and_then(|t| t.as_str()) else {
+            return;
+        };
+        match kind {
+            "struct" => {
+                for field in data_type["fields"].as_array_mut().unwrap() {
+                    annotate_column_mapping(field, next_id);
+                }
+            }
+            "array" => annotate_nested(&mut data_type["elementType"], next_id),
+            "map" => {
+                annotate_nested(&mut data_type["keyType"], next_id);
+                annotate_nested(&mut data_type["valueType"], next_id);
+            }
+            _ => {}
         }
-
-        assert_eq!(read_delta_output(&table_uri).len(), 50);
-
-        // Restart: create a new endpoint with continue_previous_state=true.
-        let more_records: Vec<DeltaTestStruct> = (50..80).map(make_record).collect();
-        let batch2 = build_insert_batch(&more_records);
-        {
-            let mut endpoint =
-                make_endpoint_ex(1, &table_uri, true, DeltaTableWriteMode::Truncate, true);
-            encode_batch(&mut endpoint, &batch2);
-        }
-
-        // All 80 records (50 original + 30 new) must be present in the
-        // delta log.  read_delta_output reads through the log, so orphaned
-        // parquet files left by SaveMode::Overwrite are not counted.
-        let output = read_delta_output(&table_uri);
-        assert_eq!(output.len(), 80);
     }
 
-    /// First-start truncation still clears pre-existing data.
-    #[test]
-    fn test_truncate_clears_data_on_first_start() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        // Seed the table via a first endpoint (simulates pre-existing data).
-        let records = make_records(50);
-        let batch = build_insert_batch(&records);
-        {
-            let mut endpoint =
-                make_endpoint_ex(1, &table_uri, true, DeltaTableWriteMode::Truncate, false);
-            encode_batch(&mut endpoint, &batch);
+    /// Rewrite version 0 of `table_uri` so the table declares
+    /// `delta.columnMapping.mode = 'name'`, giving every column, nested ones
+    /// included, a physical name of its own, the way a table written with
+    /// column mapping on looks.
+    fn enable_column_mapping(table_uri: &str) {
+        let log = Path::new(table_uri)
+            .join("_delta_log")
+            .join("00000000000000000000.json");
+        let mut out = Vec::new();
+        for line in std::fs::read_to_string(&log).unwrap().lines() {
+            let mut action: serde_json::Value = serde_json::from_str(line).unwrap();
+            if let Some(protocol) = action.get_mut("protocol") {
+                // The connector creates a table-features protocol (3/7), so
+                // column mapping is declared as a feature rather than by
+                // raising the version.
+                for features in ["readerFeatures", "writerFeatures"] {
+                    let list = protocol[features]
+                        .as_array_mut()
+                        .expect("the created table declares feature lists");
+                    list.push(serde_json::json!("columnMapping"));
+                }
+            }
+            if let Some(metadata) = action.get_mut("metaData") {
+                metadata["configuration"]["delta.columnMapping.mode"] = serde_json::json!("name");
+                let mut schema: serde_json::Value =
+                    serde_json::from_str(metadata["schemaString"].as_str().unwrap()).unwrap();
+                let mut next_id = 0i64;
+                for field in schema["fields"].as_array_mut().unwrap() {
+                    annotate_column_mapping(field, &mut next_id);
+                }
+                metadata["configuration"]["delta.columnMapping.maxColumnId"] =
+                    serde_json::json!(next_id);
+                metadata["schemaString"] = serde_json::json!(schema.to_string());
+            }
+            out.push(serde_json::to_string(&action).unwrap());
         }
-        assert_eq!(read_output(&table_uri).len(), 50);
-
-        // New pipeline start (continue_previous_state=false) with truncate: old data is wiped.
-        let new_records: Vec<DeltaTestStruct> = (100..110).map(make_record).collect();
-        let batch2 = build_insert_batch(&new_records);
-        {
-            let mut endpoint =
-                make_endpoint_ex(1, &table_uri, true, DeltaTableWriteMode::Truncate, false);
-            encode_batch(&mut endpoint, &batch2);
-        }
-
-        // Only the 10 new records should be present in the delta table snapshot.
-        // (Orphaned parquet files from the truncated table may still exist on
-        // disk, so we read through the delta log rather than scanning all files.)
-        let output = read_delta_output(&table_uri);
-        assert_eq!(output.len(), 10);
-    }
-
-    /// `error_if_exists` mode must not fail on restart.
-    #[test]
-    fn test_error_if_exists_succeeds_on_restart() {
-        let table_dir = TempDir::new().unwrap();
-        let table_uri = table_dir.path().display().to_string();
-
-        // First start: create table.
-        {
-            let mut endpoint = make_endpoint_ex(
-                1,
-                &table_uri,
-                true,
-                DeltaTableWriteMode::ErrorIfExists,
-                false,
-            );
-            let batch = build_insert_batch(&make_records(10));
-            encode_batch(&mut endpoint, &batch);
-        }
-
-        // Restart: should open the existing table without error.
-        let endpoint = make_endpoint_ex(
-            1,
-            &table_uri,
-            true,
-            DeltaTableWriteMode::ErrorIfExists,
-            true,
-        );
-        drop(endpoint);
+        std::fs::write(&log, out.join("\n") + "\n").unwrap();
     }
 }

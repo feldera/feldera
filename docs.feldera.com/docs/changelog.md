@@ -18,6 +18,13 @@ Source edition can be found on github.
   `AwaitingApproval`. See
   [Approving reloads of selected tables](/pipelines/modifying#approving-reloads-of-selected-tables-python-sdk).
 
+- Avro output connectors encode views with `ROW` (user-defined type) columns
+  under a generated schema: each `ROW` becomes a nested record, named after its
+  path in the view, such as `v_c` for column `c` of view `v`, `v_a_item` for
+  the elements of an array column `a`, and `v_m_value` for the values of a map
+  column `m`. Before, such a view failed with "not implemented: Avro encoding
+  for user-defined SQL types".
+
 - Incompatible change (SQL): a `DATE` computation whose result is before
   `0001-01-01` or after `9999-12-31` now stops the pipeline with an
   error.  Before this change, such a computation produced an illegal
@@ -56,6 +63,13 @@ Source edition can be found on github.
   - In the `connector_metadata` parameter of the HTTP input connector, a
     non-negative integer is a `BIGINT` instead of a `BIGINT UNSIGNED`, and
     a number with more than 38 digits is rejected.
+
+- Bug fix (SQL): a column `DEFAULT` that applies `TYPEOF` or `TO_JSON` to
+  `CONNECTOR_METADATA()`, and a `VARIANT` column with
+  `DEFAULT VARIANTNULL()`, failed to compile.  A column default now reads
+  connector metadata as a `SqlVariant`, like every other `VARIANT` value,
+  so building a pipeline also no longer reports a deprecation warning for
+  each table and view.
 
 - Bug fix (Delta Lake output connector): with the default
   `"variant_encoding": "variant"`, writing a `VARIANT` that holds some

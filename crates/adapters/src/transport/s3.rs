@@ -8,16 +8,16 @@ use anyhow::{Result as AnyResult, bail};
 use async_channel::{Receiver, SendError, Sender, bounded, unbounded};
 use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
 use chrono::{DateTime, Utc};
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
     PipelineState,
     format::BufferSize,
     transport::{Resume, Watermark, parse_resume_info},
 };
+use feldera_storage::tokio::TOKIO;
 use feldera_types::transport::s3::S3InputConfig;
 use feldera_types::{config::FtModel, program_schema::Relation};
 use futures::future::join_all;
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 use mockall::automock;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -219,7 +219,7 @@ impl PartiallyProcessedKeys {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Metadata {
+pub(crate) struct Metadata {
     partially_processed_keys: BTreeMap<KeyIndex, PartiallyProcessedKey>,
 }
 
@@ -252,11 +252,11 @@ impl TransportInputEndpoint for S3InputEndpoint {
 // See: https://docs.aws.amazon.com/sdk-for-rust/latest/dg/testing.html
 //
 // The automock macro generates a `MockS3Client` that we use during tests.
-struct S3Client {
+pub(crate) struct S3Client {
     inner: aws_sdk_s3::Client,
 }
 
-#[cfg_attr(test, automock)]
+#[cfg_attr(any(test, feature = "testing"), automock)]
 #[async_trait::async_trait]
 impl S3Api for S3Client {
     async fn get_object_keys(
@@ -317,7 +317,7 @@ impl S3Api for S3Client {
 }
 
 #[async_trait::async_trait]
-trait S3Api: Send + Sync {
+pub(crate) trait S3Api: Send + Sync {
     /// Get all object keys inside a bucket
     async fn get_object_keys(
         &self,
@@ -337,7 +337,7 @@ trait S3Api: Send + Sync {
     ) -> anyhow::Result<GetObjectOutput>;
 }
 
-struct S3InputReader {
+pub(crate) struct S3InputReader {
     sender: Sender<InputReaderCommand>,
 }
 
@@ -396,7 +396,7 @@ impl S3InputReader {
         ))
     }
 
-    fn new_inner(
+    pub(crate) fn new_inner(
         config: &Arc<S3InputConfig>,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
@@ -856,7 +856,7 @@ impl S3InputReader {
                         if let Some(hasher) = hasher.as_mut() {
                             prefix.hash(hasher);
                         }
-                        prefix.flush();
+                        consumer.check_flush(prefix.flush());
                         watermarks.push(Watermark::new(timestamp, None));
 
                         if buffer.is_empty() {
@@ -962,465 +962,5 @@ fn to_s3_config(config: &Arc<S3InputConfig>) -> aws_sdk_s3::Config {
     }
 }
 
-#[cfg(test)]
-mod test {
-    use crate::{
-        preprocess::PassthroughPreprocessorFactory,
-        test::{
-            ErrorCallback, MockDeZSet, MockInputConsumer, MockInputParser, mock_parser_pipeline,
-            wait,
-        },
-        transport::s3::{S3InputConfig, S3InputReader},
-    };
-    use aws_sdk_s3::{
-        operation::{
-            get_object::{GetObjectError, GetObjectOutput},
-            list_objects_v2::ListObjectsV2Error,
-        },
-        primitives::{ByteStream, SdkBody},
-        types::error::builders::{NoSuchBucketBuilder, NoSuchKeyBuilder},
-    };
-    use feldera_adapterlib::format::{MessageOrientedPreprocessedParser, Parser};
-    use feldera_adapterlib::preprocess::PreprocessorFactory;
-    use feldera_types::preprocess::PreprocessorConfig;
-    use feldera_types::{
-        config::{InputEndpointConfig, TransportConfig},
-        deserialize_without_context,
-        program_schema::Relation,
-    };
-    use mockall::predicate::eq;
-    use serde::{Deserialize, Serialize};
-    use std::sync::Arc;
-    use std::time::Duration;
-
-    /// How long a test waits for an error the connector is expected to report.
-    /// Generous: it only bounds the wait so a regression fails instead of
-    /// hanging the whole test binary.
-    const ERROR_TIMEOUT: Duration = Duration::from_secs(60);
-
-    #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone, PartialOrd, Ord)]
-    struct TestStruct {
-        i: i64,
-    }
-    deserialize_without_context!(TestStruct);
-
-    const MULTI_KEY_CONFIG_STR: &str = r#"
-{
-  "stream": "test_input",
-  "transport": {
-    "name": "s3_input",
-    "config": {
-      "aws_access_key_id": "FAKE_ACCESS_KEY",
-      "aws_secret_access_key": "FAKE_SECRET",
-      "bucket_name": "test-bucket",
-      "region": "us-west-1",
-      "prefix": ""
-    }
-  },
-  "format": {
-    "name": "csv"
-  }
-}"#;
-
-    const SINGLE_KEY_CONFIG_STR: &str = r#"
-{
-  "stream": "test_input",
-  "transport": {
-    "name": "s3_input",
-    "config": {
-      "aws_access_key_id": "FAKE_ACCESS_KEY",
-      "aws_secret_access_key": "FAKE_SECRET",
-      "bucket_name": "test-bucket",
-      "region": "us-west-1",
-      "key": "obj1"
-    }
-  },
-  "format": {
-    "name": "csv"
-  }
-}"#;
-
-    /// Newline-delimited JSON: `lines: single` picks the greedy line splitter.
-    const NDJSON_SINGLE_KEY_CONFIG_STR: &str = r#"
-{
-  "stream": "test_input",
-  "transport": {
-    "name": "s3_input",
-    "config": {
-      "aws_access_key_id": "FAKE_ACCESS_KEY",
-      "aws_secret_access_key": "FAKE_SECRET",
-      "bucket_name": "test-bucket",
-      "region": "us-west-1",
-      "key": "obj1"
-    }
-  },
-  "format": {
-    "name": "json",
-    "config": {
-      "update_format": "raw",
-      "array": false,
-      "lines": "single"
-    }
-  }
-}"#;
-
-    /// Builds a reader over `mock`, with `on_error` already installed.
-    ///
-    /// The callback has to be passed in rather than registered afterwards:
-    /// [`S3InputReader::new_inner`] starts listing objects as soon as it is
-    /// called, so a caller that registers later can miss an error the listing
-    /// already reported.
-    fn test_setup(
-        config_str: &str,
-        mock: super::MockS3Client,
-        on_error: ErrorCallback,
-    ) -> (
-        Box<dyn crate::InputReader>,
-        MockInputConsumer,
-        MockInputParser,
-        MockDeZSet<TestStruct, TestStruct>,
-    ) {
-        test_setup_with(config_str, mock, on_error, Preprocess::No)
-    }
-
-    /// Whether to wrap the endpoint's parser the way a connector configured with
-    /// a message-oriented preprocessor does, which makes `parse` return a nested
-    /// buffer instead of a flat one.
-    #[derive(Copy, Clone, PartialEq)]
-    enum Preprocess {
-        No,
-        Passthrough,
-    }
-
-    fn test_setup_with(
-        config_str: &str,
-        mock: super::MockS3Client,
-        on_error: ErrorCallback,
-        preprocess: Preprocess,
-    ) -> (
-        Box<dyn crate::InputReader>,
-        MockInputConsumer,
-        MockInputParser,
-        MockDeZSet<TestStruct, TestStruct>,
-    ) {
-        let config: InputEndpointConfig = serde_json::from_str(config_str).unwrap();
-        let transport_config = config.connector_config.transport.clone();
-        let transport_config: Arc<S3InputConfig> = match transport_config {
-            TransportConfig::S3Input(config) => Arc::new(config),
-            _ => {
-                panic!("Expected S3Input transport configuration");
-            }
-        };
-        let (consumer, parser, input_handle) = mock_parser_pipeline::<TestStruct, TestStruct>(
-            &Relation::empty(),
-            &config.connector_config.format.unwrap(),
-        )
-        .unwrap();
-        consumer.on_error(Some(on_error));
-        let endpoint_parser: Box<dyn Parser> = if preprocess == Preprocess::Passthrough {
-            let preprocessor = PassthroughPreprocessorFactory
-                .create(&PreprocessorConfig {
-                    name: "passthrough".to_string(),
-                    message_oriented: true,
-                    config: serde_json::Value::Null,
-                })
-                .unwrap();
-            Box::new(MessageOrientedPreprocessedParser::new(
-                preprocessor,
-                Box::new(parser.clone()),
-            ))
-        } else {
-            Box::new(parser.clone())
-        };
-        let reader = Box::new(S3InputReader::new_inner(
-            &transport_config,
-            Box::new(consumer.clone()),
-            endpoint_parser,
-            Arc::new(mock),
-            None,
-        )) as Box<dyn crate::InputReader>;
-        (reader, consumer, parser, input_handle)
-    }
-
-    fn run_test(config_str: &str, mock: super::MockS3Client, mut test_data: Vec<TestStruct>) {
-        let (reader, consumer, parser, input_handle) =
-            test_setup(config_str, mock, Box::new(|_, _| ()));
-        // No outputs should be produced at this point.
-        assert!(parser.state().data.is_empty());
-        assert!(!consumer.state().eoi);
-
-        // Unpause the endpoint, wait for the data to appear at the output.
-        reader.extend();
-        wait(
-            || {
-                reader.queue(false);
-                println!(
-                    "actual: {}, expected: {}",
-                    input_handle.state().flushed.len(),
-                    test_data.len()
-                );
-                input_handle.state().flushed.len() == test_data.len()
-            },
-            10000,
-        )
-        .unwrap();
-
-        assert_eq!(test_data.len(), input_handle.state().flushed.len());
-
-        let mut outputs = input_handle
-            .state()
-            .flushed
-            .iter()
-            .map(|upd| upd.unwrap_insert())
-            .cloned()
-            .collect::<Vec<_>>();
-
-        // Objects can be ingested in any order.
-        test_data.sort();
-        outputs.sort();
-
-        assert_eq!(outputs, test_data);
-    }
-
-    #[test]
-    fn single_key_read() {
-        let mut mock = super::MockS3Client::default();
-        mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
-            .return_once(|_, _, _, _| Ok((vec!["obj1".to_string()], None)));
-        mock.expect_get_object()
-            .with(eq("test-bucket"), eq("obj1"), eq(0), eq(&None))
-            .return_once(|_, _, __, _| {
-                Ok(GetObjectOutput::builder()
-                    .body(ByteStream::from(SdkBody::from("1\n2\n3\n")))
-                    .build())
-            });
-        let test_data: Vec<TestStruct> = (1..4).map(|i| TestStruct { i }).collect();
-        run_test(SINGLE_KEY_CONFIG_STR, mock, test_data);
-    }
-
-    /// A preprocessor makes `parse` return a nested buffer, and the endpoint
-    /// hands the circuit at most `max_batch_size` records per step, so a single
-    /// parsed buffer has to survive being split across steps. Dropping the
-    /// remainder loses records the endpoint already reported as received, which
-    /// pins `total_input_records` above `total_processed_records` and stops the
-    /// pipeline from ever reporting completion.
-    ///
-    /// The format matters: newline-delimited JSON splits with `LineSplitter`,
-    /// which takes as many records as it can per chunk, so one nested element
-    /// holds many records and a batch boundary lands inside it. A CSV splitter
-    /// yields one record per element and never exercises the split.
-    #[test]
-    fn preprocessed_read_split_across_batches() {
-        const RECORDS: i64 = 100;
-        // Not a divisor of RECORDS, so the last batch is short too.
-        const MAX_BATCH_SIZE: usize = 7;
-
-        let body = (1..=RECORDS)
-            .map(|i| format!("{{\"i\":{i}}}\n"))
-            .collect::<Vec<_>>()
-            .concat();
-
-        let mut mock = super::MockS3Client::default();
-        mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
-            .return_once(|_, _, _, _| Ok((vec!["obj1".to_string()], None)));
-        mock.expect_get_object()
-            .with(eq("test-bucket"), eq("obj1"), eq(0), eq(&None))
-            .return_once(move |_, _, _, _| {
-                Ok(GetObjectOutput::builder()
-                    .body(ByteStream::from(SdkBody::from(body.as_str())))
-                    .build())
-            });
-
-        let (reader, consumer, _parser, input_handle) = test_setup_with(
-            NDJSON_SINGLE_KEY_CONFIG_STR,
-            mock,
-            Box::new(|_, _| ()),
-            Preprocess::Passthrough,
-        );
-        consumer.set_max_batch_size(MAX_BATCH_SIZE);
-
-        reader.extend();
-        wait(
-            || {
-                reader.queue(false);
-                input_handle.state().flushed.len() == RECORDS as usize
-            },
-            10000,
-        )
-        .unwrap_or_else(|_| {
-            panic!(
-                "only {} of {RECORDS} records reached the circuit",
-                input_handle.state().flushed.len()
-            )
-        });
-
-        let mut outputs = input_handle
-            .state()
-            .flushed
-            .iter()
-            .map(|upd| upd.unwrap_insert().clone())
-            .collect::<Vec<_>>();
-        outputs.sort();
-        let expected: Vec<TestStruct> = (1..=RECORDS).map(|i| TestStruct { i }).collect();
-        assert_eq!(outputs, expected);
-    }
-
-    #[test]
-    fn single_object_with_prefix_read() {
-        let mut mock = super::MockS3Client::default();
-        mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
-            .return_once(|_, _, _, _| Ok((vec!["obj1".to_string()], None)));
-        mock.expect_get_object()
-            .with(eq("test-bucket"), eq("obj1"), eq(0), eq(&None))
-            .return_once(|_, _, _, _| {
-                Ok(GetObjectOutput::builder()
-                    .body(ByteStream::from(SdkBody::from("1\n2\n3\n")))
-                    .build())
-            });
-        let test_data: Vec<TestStruct> = (1..4).map(|i| TestStruct { i }).collect();
-        run_test(MULTI_KEY_CONFIG_STR, mock, test_data);
-    }
-
-    #[test]
-    fn multi_object_read_with_continuation() {
-        let mut mock = super::MockS3Client::default();
-        mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
-            .return_once(|_, _, _, _| {
-                Ok((vec!["obj1".to_string()], Some("next_token".to_string())))
-            });
-        mock.expect_get_object_keys()
-            .with(
-                eq("test-bucket"),
-                eq(""),
-                eq(&None),
-                eq(Some("next_token".to_string())),
-            )
-            .return_once(|_, _, _, _| Ok((vec!["obj2".to_string()], None)));
-        mock.expect_get_object()
-            .with(eq("test-bucket"), eq("obj1"), eq(0), eq(&None))
-            .return_once(|_, _, _, _| {
-                Ok(GetObjectOutput::builder()
-                    .body(ByteStream::from(SdkBody::from("1\n2\n3\n")))
-                    .build())
-            });
-        mock.expect_get_object()
-            .with(eq("test-bucket"), eq("obj2"), eq(0), eq(&None))
-            .return_once(|_, _, _, _| {
-                Ok(GetObjectOutput::builder()
-                    .body(ByteStream::from(SdkBody::from("4\n5\n6\n")))
-                    .build())
-            });
-        let test_data: Vec<TestStruct> = (1..7).map(|i| TestStruct { i }).collect();
-        run_test(MULTI_KEY_CONFIG_STR, mock, test_data);
-    }
-
-    #[test]
-    fn multi_object_read_with_pause() {
-        let mut mock = super::MockS3Client::default();
-        // Read 1K objects by prefix, each with 1 row
-        let objs: Vec<String> = (0..1000).map(|i| format!("obj{i}")).collect();
-        for (i, key) in objs.iter().enumerate() {
-            mock.expect_get_object()
-                .with(eq("test-bucket"), eq(key.clone()), eq(0), eq(&None))
-                .return_once(move |_, _, _, _| {
-                    Ok(GetObjectOutput::builder()
-                        .body(ByteStream::from(SdkBody::from(format!("{i}\n"))))
-                        .build())
-                });
-        }
-        mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
-            .return_once(|_, _, _, _| Ok((objs, None)));
-        let test_data: Vec<TestStruct> = (0..1000).map(|i| TestStruct { i }).collect();
-        let (reader, _consumer, _parser, input_handle) =
-            test_setup(MULTI_KEY_CONFIG_STR, mock, Box::new(|_, _| ()));
-        reader.extend();
-        wait(
-            || {
-                reader.queue(false);
-                input_handle.state().flushed.len() == test_data.len()
-            },
-            10000,
-        )
-        .unwrap();
-
-        assert_eq!(test_data.len(), input_handle.state().flushed.len());
-
-        let mut outputs = input_handle
-            .state()
-            .flushed
-            .iter()
-            .map(|upd| upd.unwrap_insert())
-            .cloned()
-            .collect::<Vec<_>>();
-
-        // Objects can be ingested in any order.
-        outputs.sort();
-
-        assert_eq!(outputs, test_data);
-    }
-
-    #[test]
-    fn list_object_read_error() {
-        let mut mock = super::MockS3Client::default();
-        mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
-            .return_once(|_, _, _, _| {
-                Err(ListObjectsV2Error::NoSuchBucket(NoSuchBucketBuilder::default().build()).into())
-            });
-        let (tx, rx) = std::sync::mpsc::channel();
-        let (reader, _consumer, _parser, _) = test_setup(
-            MULTI_KEY_CONFIG_STR,
-            mock,
-            // Ignore a send failure: the receiver is gone once the assertion
-            // below has run, and the reader can still report during teardown.
-            Box::new(move |fatal, err| {
-                let _ = tx.send((fatal, format!("{err}")));
-            }),
-        );
-        reader.extend();
-        assert_eq!(
-            (true, "NoSuchBucket".to_string()),
-            rx.recv_timeout(ERROR_TIMEOUT)
-                .expect("connector reported no error for a missing bucket"),
-        );
-    }
-
-    #[test]
-    fn get_object_read_error() {
-        let mut mock = super::MockS3Client::default();
-        mock.expect_get_object_keys()
-            .with(eq("test-bucket"), eq(""), eq(&None), eq(&None))
-            .return_once(|_, _, _, _| {
-                Ok((vec!["obj1".to_string()], Some("next_token".to_string())))
-            });
-        mock.expect_get_object_keys()
-            .with(
-                eq("test-bucket"),
-                eq(""),
-                eq(&None),
-                eq(Some("next_token".to_string())),
-            )
-            .return_once(|_, _, _, _| Ok((vec!["obj2".to_string()], None)));
-        // Reading obj1 fails but then obj2 succeeds. We should still see
-        // the contents of objects 4, 5 and 6 in there.
-        mock.expect_get_object()
-            .with(eq("test-bucket"), eq("obj1"), eq(0), eq(&None))
-            .return_once(|_, _, _, _| {
-                Err(GetObjectError::NoSuchKey(NoSuchKeyBuilder::default().build()).into())
-            });
-        mock.expect_get_object()
-            .with(eq("test-bucket"), eq("obj2"), eq(0), eq(&None))
-            .return_once(|_, _, _, _| {
-                Ok(GetObjectOutput::builder()
-                    .body(ByteStream::from(SdkBody::from("4\n5\n6\n")))
-                    .build())
-            });
-        let test_data: Vec<TestStruct> = (4..7).map(|i| TestStruct { i }).collect();
-        run_test(MULTI_KEY_CONFIG_STR, mock, test_data);
-    }
-}
+#[cfg(any(test, feature = "testing"))]
+pub mod tests;

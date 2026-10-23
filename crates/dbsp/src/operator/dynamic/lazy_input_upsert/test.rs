@@ -225,7 +225,7 @@ impl Push for LazyMapHandle<i32, i32> {
     fn stage_commands(&self, commands: &[Command]) {
         let pairs: Vec<Tup2<i32, Option<i32>>> =
             commands.iter().map(|&(k, v)| Tup2(k, v)).collect();
-        self.stage([VecDeque::from(pairs)]).flush();
+        self.stage([VecDeque::from(pairs)]).flush().unwrap();
     }
 }
 
@@ -239,7 +239,7 @@ impl Push for MapHandle<i32, i32, i32> {
     fn stage_commands(&self, commands: &[Command]) {
         let pairs: Vec<Tup2<i32, Update<i32, i32>>> =
             commands.iter().map(|&(k, v)| Tup2(k, update(v))).collect();
-        self.stage([VecDeque::from(pairs)]).flush();
+        self.stage([VecDeque::from(pairs)]).flush().unwrap();
     }
 }
 

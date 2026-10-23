@@ -34,7 +34,7 @@ use crate::PipelineError;
 /// parallelize query execution.
 fn execute_stream(df: DataFrame) -> Receiver<DFResult<SendableRecordBatchStream>> {
     let (tx, rx) = oneshot::channel();
-    dbsp::circuit::tokio::TOKIO.spawn(async move {
+    feldera_storage::tokio::TOKIO.spawn(async move {
         let _r = tx.send(df.execute_stream().await);
     });
 

@@ -33,7 +33,7 @@ pub(crate) mod config_utils;
 mod metrics;
 mod retry;
 #[cfg(test)]
-pub(crate) mod test;
+mod test;
 
 use crate::{
     InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint,
@@ -47,10 +47,10 @@ use async_nats::{
 
 use chrono::Utc;
 use config_utils::{translate_connect_options, translate_consumer_options};
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::ConnectorMetrics;
 use feldera_adapterlib::transport::{InputCommandReceiver, Resume, Watermark};
+use feldera_storage::tokio::TOKIO;
 use feldera_types::{
     config::FtModel,
     program_schema::Relation,
@@ -459,6 +459,9 @@ impl NatsReader {
             let mut replay_failures: u32 = 0;
 
             loop {
+                // Forked out here: the `async` block below would otherwise hold a reference to
+                // `parser` across its awaits, which only a `Sync` parser allows.
+                let replay_parser = parser.fork();
                 let replay_result: Result<(Xxh3Default, BufferSize), ConnectorError> = async {
                     let jetstream = Self::initialize_jetstream(&stream_ctx.connection_config, &stream_ctx.stream_name)
                         .await
@@ -491,7 +494,7 @@ impl NatsReader {
                         &stream_ctx,
                         MessagePipeline {
                             consumer: consumer.clone(),
-                            parser: parser.fork(),
+                            parser: replay_parser,
                         },
                     )
                     .await;
@@ -1223,7 +1226,7 @@ async fn consume_nats_messages_until(
                 consumer.parse_errors(errors);
                 if let Some(mut buffer) = buffer {
                     buffer.hash(&mut hasher);
-                    buffer.flush();
+                    consumer.check_flush(buffer.flush());
                 }
                 let amt = BufferSize {
                     records: 1,

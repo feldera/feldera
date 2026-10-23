@@ -2,8 +2,9 @@
 
 mod input;
 
-#[cfg(any(feature = "pubsub-emulator-test", feature = "pubsub-gcp-test"))]
-#[cfg(test)]
-mod test;
+#[cfg(all(any(test, feature = "testing"), feature = "pubsub-gcp-test"))]
+pub mod gcp_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod tests;
 
 pub use input::PubSubInputEndpoint;

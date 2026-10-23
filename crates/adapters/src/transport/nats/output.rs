@@ -27,8 +27,8 @@ use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use async_nats::jetstream::context::PublishErrorKind;
 use async_nats::jetstream::{self, message::PublishMessage};
 use async_nats::{HeaderMap, HeaderName, HeaderValue};
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::transport::{OutputBatchType, Step};
+use feldera_storage::tokio::TOKIO;
 use feldera_types::duration::ConfigDuration;
 use feldera_types::transport::nats as cfg;
 use tokio_util::sync::CancellationToken;
@@ -44,7 +44,7 @@ mod test;
 
 /// Longest `Nats-Msg-Id` value [`MessageIdGenerator`] produces:
 /// `<u64 transaction>-<128-bit hash as 32 hex digits>-<u32 count>`.
-const MAX_MESSAGE_ID_LEN: usize = 20 + 1 + 32 + 1 + 10;
+pub(crate) const MAX_MESSAGE_ID_LEN: usize = 20 + 1 + 32 + 1 + 10;
 
 /// Produces the `Nats-Msg-Id` of each message under `message_id:
 /// content_hash`.

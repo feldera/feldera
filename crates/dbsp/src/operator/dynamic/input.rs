@@ -1709,7 +1709,8 @@ mod test {
         // Use stage instead of append to make sure the updates don't get merged in a single vector.
         input_handle
             .stage(vec![VecDeque::from(initial_batch)])
-            .flush();
+            .flush()
+            .unwrap();
         dbsp.transaction().unwrap();
         assert_eq!(
             output_handle.concat().consolidate(),
@@ -1726,7 +1727,8 @@ mod test {
         ];
         input_handle
             .stage(vec![VecDeque::from(delete_batch_1)])
-            .flush();
+            .flush()
+            .unwrap();
         let reinsert_batch_1 = vec![
             Tup2(1, Update::Insert(10)),
             Tup2(2, Update::Insert(20)),
@@ -1735,7 +1737,8 @@ mod test {
         ];
         input_handle
             .stage(vec![VecDeque::from(reinsert_batch_1)])
-            .flush();
+            .flush()
+            .unwrap();
         dbsp.transaction().unwrap();
         assert_eq!(
             output_handle.concat().consolidate(),
@@ -1751,7 +1754,8 @@ mod test {
         ];
         input_handle
             .stage(vec![VecDeque::from(delete_batch_2)])
-            .flush();
+            .flush()
+            .unwrap();
         let reinsert_batch_2 = vec![
             Tup2(1, Update::Insert(10)),
             Tup2(2, Update::Insert(20)),
@@ -1761,7 +1765,8 @@ mod test {
         ];
         input_handle
             .stage(vec![VecDeque::from(reinsert_batch_2)])
-            .flush();
+            .flush()
+            .unwrap();
         dbsp.transaction().unwrap();
         assert_eq!(
             output_handle.concat().consolidate(),
@@ -1895,7 +1900,10 @@ mod test {
 
             for batch in batches {
                 //println!("batch {:?}", batch);
-                input_handle.stage(once(VecDeque::from(batch))).flush();
+                input_handle
+                    .stage(once(VecDeque::from(batch)))
+                    .flush()
+                    .unwrap();
             }
 
             dbsp.transaction().unwrap();

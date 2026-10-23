@@ -16,12 +16,13 @@ publish = true
 [features]
 with-avro = ["apache-avro"]
 with-dynamodb = ["aws-sdk-dynamodb"]
+# Test fixtures that the connector suites of every engine share.
+testing = ["tokio/time"]
 
 [dependencies]
 feldera-types = { workspace = true }
-feldera-sqllib = { workspace = true }
 feldera-storage = { workspace = true }
-dbsp = { workspace = true }
+feldera-fxp = { workspace = true, features = ["serde"] }
 anyhow = { workspace = true, features = ["backtrace"] }
 aws-sdk-dynamodb = { workspace = true, optional = true }
 actix-web = { workspace = true, features = ["cookies", "macros", "compress-gzip", "compress-brotli"] }
@@ -29,7 +30,6 @@ erased-serde = { workspace = true }
 dyn-clone = { workspace = true }
 arrow = { workspace = true, features = ["chrono-tz"] }
 apache-avro = { workspace = true, optional = true }
-serde_arrow = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["raw_value"] }
 rmp-serde = { workspace = true }
@@ -53,3 +53,4 @@ ignored = ["num-traits"]
 
 [dev-dependencies]
 proptest = { workspace = true }
+tokio = { workspace = true, features = ["time"] }

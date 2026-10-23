@@ -9,8 +9,8 @@ use std::ops::{Add, AddAssign, Range};
 use std::sync::Arc;
 
 use anyhow::Result as AnyResult;
-use dbsp::operator::input::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_types::circuit::StagedBuffers;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::program_schema::Relation;
 use feldera_types::serde_with_context::FieldParseError;
@@ -88,7 +88,10 @@ pub trait InputFormat: Send + Sync {
 pub trait InputBuffer: Any + Send {
     /// Pushes all of the records into the circuit input handle, and discards
     /// those records.
-    fn flush(&mut self);
+    ///
+    /// Fails if the circuit cannot take the records. The caller treats that as
+    /// a fatal error of the input endpoint.
+    fn flush(&mut self) -> AnyResult<()>;
 
     /// Returns the number of buffered records and bytes.
     fn len(&self) -> BufferSize;
@@ -187,9 +190,10 @@ impl InputBuffer for Option<Box<dyn InputBuffer>> {
         }
     }
 
-    fn flush(&mut self) {
-        if let Some(buffer) = self.as_mut() {
-            buffer.flush()
+    fn flush(&mut self) -> AnyResult<()> {
+        match self.as_mut() {
+            Some(buffer) => buffer.flush(),
+            None => Ok(()),
         }
     }
 
@@ -207,7 +211,7 @@ impl InputBuffer for Box<dyn InputBuffer> {
         self.as_ref().hash(hasher)
     }
 
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.as_mut().flush()
     }
 
@@ -217,10 +221,11 @@ impl InputBuffer for Box<dyn InputBuffer> {
 }
 
 impl InputBuffer for Vec<Box<dyn InputBuffer>> {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         for v in self.iter_mut() {
-            v.flush();
+            v.flush()?;
         }
+        Ok(())
     }
 
     fn len(&self) -> BufferSize {
@@ -319,7 +324,7 @@ impl StagedInputBuffer {
 }
 
 impl InputBuffer for StagedInputBuffer {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.buffer.flush()
     }
 
@@ -337,7 +342,12 @@ impl InputBuffer for StagedInputBuffer {
 }
 
 /// Parses raw bytes into database records.
-pub trait Parser: Send + Sync {
+///
+/// `Send` but not `Sync`: a parser owns its input stream, and an engine may
+/// decode records with state that one thread at a time can use. A transport
+/// with several threads gives each one its own parser through
+/// [`Parser::fork`] rather than sharing one.
+pub trait Parser: Send {
     /// Parses `data` into records and returns the records and any parse errors
     /// that occurred.
     ///
@@ -1154,11 +1164,12 @@ mod test {
     }
 
     impl InputBuffer for TestBuffer {
-        fn flush(&mut self) {
+        fn flush(&mut self) -> anyhow::Result<()> {
             self.sink
                 .lock()
                 .unwrap()
                 .extend(std::mem::take(&mut self.records));
+            Ok(())
         }
 
         fn len(&self) -> BufferSize {
@@ -1186,6 +1197,46 @@ mod test {
         }
     }
 
+    /// A buffer that the circuit refuses to take.
+    struct RefusedBuffer;
+
+    impl InputBuffer for RefusedBuffer {
+        fn flush(&mut self) -> anyhow::Result<()> {
+            anyhow::bail!("the circuit refused the records")
+        }
+
+        fn len(&self) -> BufferSize {
+            BufferSize {
+                records: 1,
+                bytes: BYTES_PER_RECORD,
+            }
+        }
+
+        fn hash(&self, _hasher: &mut dyn Hasher) {}
+
+        fn take_some(&mut self, _n: usize) -> Option<Box<dyn InputBuffer>> {
+            None
+        }
+    }
+
+    /// A list of buffers flushes in order and stops at the first failure, which
+    /// it returns.
+    #[test]
+    fn a_failed_flush_stops_a_list_of_buffers() {
+        let sink = Arc::new(Mutex::new(Vec::new()));
+        let mut buffers = vec![
+            TestBuffer::boxed(&[1, 2], &sink),
+            Box::new(RefusedBuffer) as Box<dyn InputBuffer>,
+            TestBuffer::boxed(&[3], &sink),
+        ];
+        let error = buffers.flush().unwrap_err();
+        assert_eq!(error.to_string(), "the circuit refused the records");
+        assert_eq!(*sink.lock().unwrap(), [1, 2]);
+
+        let mut absent: Option<Box<dyn InputBuffer>> = None;
+        assert!(absent.flush().is_ok());
+    }
+
     /// A take that ends inside an inner buffer must leave the remainder behind
     /// rather than dropping it: the connector reports those records as received,
     /// so losing them stalls `pipeline_complete` forever.
@@ -1206,8 +1257,8 @@ mod test {
             "records 6..8 were dropped"
         );
 
-        head.flush();
-        nested.take_all().unwrap().flush();
+        head.flush().unwrap();
+        nested.take_all().unwrap().flush().unwrap();
         assert_eq!(*sink.lock().unwrap(), vec![1, 2, 3, 4, 5, 6, 7, 8]);
     }
 
@@ -1238,7 +1289,7 @@ mod test {
                 TestBuffer::boxed(&[6, 7, 8, 9], &sink),
             ];
             while let Some(mut head) = nested.take_some(batch) {
-                head.flush();
+                head.flush().unwrap();
             }
             assert_eq!(
                 *sink.lock().unwrap(),

@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use dbsp::storage::backend::{StorageBackend, StoragePath};
 use feldera_types::{
     adapter_stats::ConnectorError, checkpoint::CheckpointMetadata, config::PipelineConfig,
     coordination::InputDistribution,
@@ -15,15 +14,14 @@ use std::{
 };
 
 use crate::{
-    ControllerError,
     controller::stats::{InputEndpointMetrics, InputEndpointStatus, OutputEndpointStatus},
     transport::Step,
 };
 
 /// Initial offsets for the input endpoints in a [Checkpoint].
 ///
-/// This is a subset of [StepMetadata] that is useful for seeking input
-/// endpoints to a starting point.
+/// This is a subset of [StepMetadata](crate::controller::StepMetadata) that is
+/// useful for seeking input endpoints to a starting point.
 #[derive(Clone, Serialize, Deserialize, Debug, Default)]
 pub struct CheckpointOffsets(
     /// Maps from an input endpoint name to its metadata.
@@ -274,41 +272,6 @@ impl CheckpointOutputEndpointMetrics {
 /// written.
 fn unix_epoch() -> DateTime<Utc> {
     DateTime::UNIX_EPOCH
-}
-
-impl Checkpoint {
-    /// Reads a checkpoint in JSON format from `path`.
-    pub(super) fn read(
-        storage: &dyn StorageBackend,
-        path: &StoragePath,
-    ) -> Result<Self, ControllerError> {
-        let data = storage.read(path).map_err(|error| {
-            ControllerError::storage_error(format!("{path}: failed to read checkpoint"), error)
-        })?;
-        serde_json_path_to_error::from_slice::<Checkpoint>(&data).map_err(|e| {
-            ControllerError::CheckpointParseError {
-                error: e.to_string(),
-            }
-        })
-    }
-
-    /// Writes this checkpoint in JSON format to `path`, atomically replacing
-    /// any file that was previously at `path`.
-    pub(super) fn write(
-        &self,
-        storage: &dyn StorageBackend,
-        path: &StoragePath,
-    ) -> Result<(), ControllerError> {
-        storage
-            .write_json(path, self)
-            .and_then(|file| file.commit())
-            .map_err(|error| {
-                ControllerError::storage_error(
-                    format!("{path}: failed to write pipeline state"),
-                    error,
-                )
-            })
-    }
 }
 
 #[cfg(test)]

@@ -17,7 +17,7 @@ use crate::{
     util::{IndexedOperationType, truncate_ellipse},
 };
 use anyhow::{Context, Result as AnyResult, anyhow, bail};
-use feldera_adapterlib::catalog::SplitCursorBuilder;
+use feldera_adapterlib::catalog::SerKeyRange;
 use feldera_adapterlib::format::MAX_RECORD_LEN_IN_ERRMSG;
 use feldera_adapterlib::transport::{AsyncErrorCallback, CommandHandler, OutputBatchType, Step};
 use feldera_types::{
@@ -39,7 +39,7 @@ enum BroadcastCommand {
 
 enum WorkerCommand {
     Broadcast(BroadcastCommand),
-    Encode(SplitCursorBuilder),
+    Encode(Box<dyn SerKeyRange>),
 }
 
 enum WorkerResult {
@@ -57,12 +57,12 @@ const MAX_BATCH_WRITE_ATTEMPTS: usize = 10;
 /// The partition of a batch assigned to a worker, retained until the batch
 /// commits so that the worker can write it again.
 ///
-/// [`SplitCursorBuilder`] holds the batch and hands out a fresh cursor per
-/// call, and the controller keeps the batch alive across
+/// A [`SerKeyRange`] holds the batch and hands out a fresh cursor per call,
+/// and the controller keeps the batch alive across
 /// `batch_start`/`encode`/`batch_end` regardless, so retaining this costs a
 /// reference count rather than a copy of the data.
 struct PendingBatch {
-    cursor: SplitCursorBuilder,
+    range: Box<dyn SerKeyRange>,
     /// The extra column values captured when the batch was first encoded.
     /// Writing it again reuses them, so a rewrite produces the same rows even if
     /// the configured values have changed since.
@@ -530,7 +530,7 @@ These statements were successfully prepared before reconnecting. Does the table 
 
     fn batch_start_inner(&mut self) -> Result<(), BackoffError> {
         // Skip the controller check in test/bench mode.
-        #[cfg(not(any(test, feature = "bench-mode")))]
+        #[cfg(not(any(test, feature = "testing", feature = "bench-mode")))]
         if self.controller.upgrade().is_none() {
             tracing::warn!("controller is shutting down: aborting");
             return Ok(());
@@ -693,14 +693,15 @@ These statements were successfully prepared before reconnecting. Does the table 
         let Some(pending) = self.pending_batch.take() else {
             return Ok(());
         };
-        let result = {
-            let mut cursor = pending.cursor.build();
-            self.encode_cursor(&mut cursor, pending.extra_columns.clone())
+        let result = match pending.range.cursor() {
+            Ok(mut cursor) => self.encode_cursor(cursor.as_mut(), pending.extra_columns.clone()),
+            Err(e) => Err(e),
         };
         self.pending_batch = Some(pending);
 
-        // Encoding fails only on serialization, which will fail the same way
-        // however many times the batch is written again.
+        // Encoding fails on serialization, which will fail the same way
+        // however many times the batch is written again, or on reading the
+        // batch, which the worker does not retry either.
         if let Err(e) = result {
             // This ends the batch, and no one downstream commits or rolls back
             // the transaction just opened, so release it here rather than leave
@@ -779,7 +780,7 @@ These statements were successfully prepared before reconnecting. Does the table 
                 self.batch_rows += 1;
             }
 
-            cursor.step_key();
+            cursor.step_key()?;
         }
 
         Ok(())
@@ -891,16 +892,18 @@ impl PostgresWorker {
                         }
                     }
                 },
-                WorkerCommand::Encode(cursor_builder) => {
+                WorkerCommand::Encode(range) => {
                     let extra_columns = self.extra_columns.read().clone();
-                    let result = {
-                        let mut cursor = cursor_builder.build();
-                        self.encode_cursor(&mut cursor, extra_columns.clone())
+                    let result = match range.cursor() {
+                        Ok(mut cursor) => {
+                            self.encode_cursor(cursor.as_mut(), extra_columns.clone())
+                        }
+                        Err(e) => Err(e),
                     };
                     // Hold on to the batch: if the connection drops before the
                     // transaction commits, `write_batch` encodes it again.
                     self.pending_batch = Some(PendingBatch {
-                        cursor: cursor_builder,
+                        range,
                         extra_columns,
                     });
                     let _ = match result {
@@ -1307,22 +1310,10 @@ impl Encoder for PostgresOutputEndpoint {
     fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> anyhow::Result<()> {
         let num_workers = self.handles.len();
 
-        // Split the batch into key-range partitions, one per worker.
-        let mut bounds = batch.keys_factory().default_box();
-        batch.partition_keys(num_workers, &mut *bounds);
-
         let mut workers_dispatched = 0;
 
-        for i in 0..=bounds.len() {
-            let Some(cursor_builder) = SplitCursorBuilder::from_bounds(
-                batch.clone(),
-                &*bounds,
-                i,
-                RecordFormat::Json(JsonFlavor::Postgres),
-            ) else {
-                continue;
-            };
-
+        // Split the batch into key ranges, at most one per worker.
+        for range in batch.split(num_workers, RecordFormat::Json(JsonFlavor::Postgres))? {
             assert!(
                 workers_dispatched <= num_workers,
                 "unreachable: attempting to dispatch more workers than `num_workers` {num_workers}"
@@ -1330,7 +1321,7 @@ impl Encoder for PostgresOutputEndpoint {
 
             self.handles[workers_dispatched]
                 .cmd_tx
-                .send(WorkerCommand::Encode(cursor_builder))
+                .send(WorkerCommand::Encode(range))
                 .map_err(|_| anyhow!("worker thread disconnected"))?;
             workers_dispatched += 1;
         }
@@ -1407,6 +1398,9 @@ impl OutputEndpoint for PostgresOutputEndpoint {
         todo!()
     }
 }
+
+#[cfg(any(test, feature = "testing"))]
+pub mod endpoint_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1624,331 +1618,21 @@ mod tests {
         drop_table(&mut client, table);
     }
 
+    /// Tests of the writer that reach no engine. The `postgres_output` connector suite covers
+    /// the writer with an engine.
     mod parallel {
-        use feldera_types::size::ConfigSize;
-        use std::collections::BTreeMap;
-        use std::sync::{Arc, Weak};
+        use std::sync::Weak;
+        use std::sync::atomic::Ordering;
 
-        use chrono::NaiveDateTime;
-        use dbsp::OrdIndexedZSet;
-        use dbsp::utils::Tup2;
-        use feldera_adapterlib::transport::OutputEndpoint;
-        use feldera_macros::{IsNone, OrdRepr};
-        use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
-        use feldera_types::{deserialize_without_context, serialize_struct};
-        use postgres::NoTls;
-        use size_of::SizeOf;
-
-        use crate::catalog::SerBatch;
-        use crate::controller::EndpointId;
-        use crate::format::Encoder;
-        use crate::static_compile::seroutput::SerBatchImpl;
         use feldera_adapterlib::transport::OutputBatchType;
 
         use super::super::PostgresOutputEndpoint;
-        use feldera_types::transport::postgres::{
-            PostgresTlsConfig, PostgresWriteMode, PostgresWriterConfig,
+        use super::super::endpoint_tests::{
+            key_relation, make_config_with_extra_columns, make_endpoint, pg_client,
+            records_written, setup_table, value_relation,
         };
-
-        // Test record types
-
-        #[derive(
-            Debug,
-            Default,
-            PartialEq,
-            Eq,
-            PartialOrd,
-            Ord,
-            serde::Serialize,
-            serde::Deserialize,
-            Clone,
-            Hash,
-            SizeOf,
-            rkyv::Archive,
-            rkyv::Serialize,
-            rkyv::Deserialize,
-            IsNone,
-            OrdRepr,
-        )]
-        #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-        struct TestRecord {
-            id: i32,
-            b: bool,
-            i: Option<i64>,
-            s: String,
-        }
-
-        deserialize_without_context!(TestRecord);
-
-        serialize_struct!(TestRecord()[4]{
-            id["id"]: i32,
-            b["b"]: bool,
-            i["i"]: Option<i64>,
-            s["s"]: String
-        });
-
-        #[derive(
-            Debug,
-            Default,
-            PartialEq,
-            Eq,
-            PartialOrd,
-            Ord,
-            serde::Serialize,
-            serde::Deserialize,
-            Clone,
-            Hash,
-            SizeOf,
-            rkyv::Archive,
-            rkyv::Serialize,
-            rkyv::Deserialize,
-            IsNone,
-            OrdRepr,
-        )]
-        #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-        struct TestKey {
-            id: i32,
-        }
-
-        deserialize_without_context!(TestKey);
-
-        serialize_struct!(TestKey()[1]{
-            id["id"]: i32
-        });
-
-        #[derive(
-            Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, Clone, Hash, IsNone,
-        )]
-        struct TestRecordWithExtraColumns {
-            id: i32,
-            b: bool,
-            i: Option<i64>,
-            s: String,
-            #[serde(rename = "EXTRA.COLUMN1")]
-            extra_column1: Option<String>,
-            extra_column2: Option<NaiveDateTime>,
-            extra_column3: Option<i64>,
-            extra_column4: Option<serde_json::Value>,
-        }
-
-        deserialize_without_context!(TestRecordWithExtraColumns);
-
-        // Helpers
-
-        fn key_relation() -> Relation {
-            Relation {
-                name: SqlIdentifier::new("test_idx", false),
-                fields: vec![Field::new("id".into(), ColumnType::int(false))],
-                materialized: false,
-                properties: BTreeMap::new(),
-                primary_key: None,
-            }
-        }
-
-        fn value_relation() -> Relation {
-            Relation {
-                name: SqlIdentifier::new("test_view", false),
-                fields: vec![
-                    Field::new("id".into(), ColumnType::int(false)),
-                    Field::new("b".into(), ColumnType::boolean(false)),
-                    Field::new("i".into(), ColumnType::bigint(true)),
-                    Field::new("s".into(), ColumnType::varchar(false)),
-                ],
-                materialized: true,
-                properties: BTreeMap::new(),
-                primary_key: Some(vec!["id".into()]),
-            }
-        }
-
-        fn postgres_url() -> String {
-            std::env::var("POSTGRES_URL")
-                .unwrap_or("postgres://postgres:password@localhost:5432".to_string())
-        }
-
-        fn pg_client() -> postgres::Client {
-            postgres::Client::connect(&postgres_url(), NoTls)
-                .expect("failed to connect to postgres")
-        }
-
-        const TEST_TABLE: &str = "test_parallel_pg_output";
-
-        fn setup_table(client: &mut postgres::Client) {
-            client
-                .execute(
-                    &format!(
-                        r#"CREATE TABLE IF NOT EXISTS "{TEST_TABLE}" (
-                            id int PRIMARY KEY,
-                            b bool NOT NULL,
-                            i int8,
-                            s varchar NOT NULL
-                        )"#
-                    ),
-                    &[],
-                )
-                .expect("failed to create test table");
-            client
-                .execute(&format!(r#"TRUNCATE "{TEST_TABLE}""#), &[])
-                .expect("failed to truncate test table");
-        }
-
-        fn setup_table_with_extra_columns(client: &mut postgres::Client) {
-            client
-                .execute(&format!(r#"DROP TABLE IF EXISTS "{TEST_TABLE}""#), &[])
-                .expect("failed to drop test table");
-
-            client
-                .execute(
-                    &format!(
-                        r#"
-                        CREATE TABLE "{TEST_TABLE}" (
-                            id int PRIMARY KEY,
-                            b bool NOT NULL,
-                            i int8,
-                            s varchar NOT NULL,
-                            "EXTRA.COLUMN1" varchar,
-                            extra_column2 timestamp,
-                            extra_column3 bigint,
-                            extra_column4 json
-                        )"#
-                    ),
-                    &[],
-                )
-                .expect("failed to create test table");
-        }
-
-        fn make_config_with_extra_columns(
-            threads: usize,
-            extra_columns: Vec<String>,
-        ) -> PostgresWriterConfig {
-            PostgresWriterConfig {
-                uri: postgres_url(),
-                table: TEST_TABLE.to_string(),
-                tls: PostgresTlsConfig::default(),
-                max_records_in_buffer: None,
-                max_buffer_size: ConfigSize::from_mib(1),
-                on_conflict_do_nothing: false,
-                mode: PostgresWriteMode::Materialized,
-                cdc_op_column: "__feldera_op".to_owned(),
-                cdc_ts_column: "__feldera_ts".to_owned(),
-                threads,
-                extra_columns,
-            }
-        }
-
-        fn make_endpoint_with_extra_columns(
-            threads: usize,
-            extra_columns: Vec<String>,
-        ) -> PostgresOutputEndpoint {
-            PostgresOutputEndpoint::new(
-                EndpointId::default(),
-                "test_endpoint",
-                &make_config_with_extra_columns(threads, extra_columns),
-                &Some(key_relation()),
-                &value_relation(),
-                Weak::new(),
-                true,
-            )
-            .expect("failed to create endpoint")
-        }
-
-        fn make_endpoint(threads: usize) -> PostgresOutputEndpoint {
-            make_endpoint_with_extra_columns(threads, Vec::new())
-        }
-
-        fn build_insert_batch(records: &[TestRecord]) -> Arc<dyn SerBatch> {
-            let tuples: Vec<_> = records
-                .iter()
-                .map(|r| Tup2(Tup2(TestKey { id: r.id }, r.clone()), 1i64))
-                .collect();
-            let zset = OrdIndexedZSet::from_tuples((), tuples);
-            Arc::new(SerBatchImpl::<_, TestKey, TestRecord>::new(zset))
-        }
-
-        fn build_delete_batch(records: &[TestRecord]) -> Arc<dyn SerBatch> {
-            let tuples: Vec<_> = records
-                .iter()
-                .map(|r| Tup2(Tup2(TestKey { id: r.id }, r.clone()), -1i64))
-                .collect();
-            let zset = OrdIndexedZSet::from_tuples((), tuples);
-            Arc::new(SerBatchImpl::<_, TestKey, TestRecord>::new(zset))
-        }
-
-        /// Build an upsert batch: weight -1 for the old value, +1 for the new.
-        fn build_upsert_batch(updates: &[(TestRecord, TestRecord)]) -> Arc<dyn SerBatch> {
-            let mut tuples = Vec::new();
-            for (old, new) in updates {
-                assert_eq!(old.id, new.id);
-                tuples.push(Tup2(Tup2(TestKey { id: old.id }, old.clone()), -1i64));
-                tuples.push(Tup2(Tup2(TestKey { id: new.id }, new.clone()), 1i64));
-            }
-            let zset = OrdIndexedZSet::from_tuples((), tuples);
-            Arc::new(SerBatchImpl::<_, TestKey, TestRecord>::new(zset))
-        }
-
-        fn encode_batch(endpoint: &mut PostgresOutputEndpoint, batch: &Arc<dyn SerBatch>) {
-            endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-            endpoint
-                .encode(batch.clone().arc_as_batch_reader())
-                .unwrap();
-            endpoint.consumer().batch_end();
-        }
-
-        fn query_all(client: &mut postgres::Client) -> Vec<TestRecord> {
-            let rows = client
-                .query(
-                    &format!(r#"SELECT id, b, i, s FROM "{TEST_TABLE}" ORDER BY id"#),
-                    &[],
-                )
-                .expect("failed to query");
-            rows.into_iter()
-                .map(|row| TestRecord {
-                    id: row.get(0),
-                    b: row.get(1),
-                    i: row.get(2),
-                    s: row.get(3),
-                })
-                .collect()
-        }
-
-        fn query_all_with_extra_columns(
-            client: &mut postgres::Client,
-        ) -> Vec<TestRecordWithExtraColumns> {
-            let rows = client
-                .query(
-                    &format!(r#"SELECT id, b, i, s, "EXTRA.COLUMN1", extra_column2, extra_column3, extra_column4 FROM "{TEST_TABLE}" ORDER BY id"#),
-                    &[],
-                )
-                .expect("failed to query");
-            rows.into_iter()
-                .map(|row| TestRecordWithExtraColumns {
-                    id: row.get(0),
-                    b: row.get(1),
-                    i: row.get(2),
-                    s: row.get(3),
-                    extra_column1: row.get(4),
-                    extra_column2: row.get(5),
-                    extra_column3: row.get(6),
-                    extra_column4: row.get(7),
-                })
-                .collect()
-        }
-
-        fn make_records(n: usize) -> Vec<TestRecord> {
-            (0..n)
-                .map(|i| TestRecord {
-                    id: i as i32,
-                    b: i % 2 == 0,
-                    i: if i % 3 == 0 {
-                        None
-                    } else {
-                        Some(i as i64 * 10)
-                    },
-                    s: format!("record_{i}"),
-                })
-                .collect()
-        }
-
-        // Tests
+        use crate::controller::EndpointId;
+        use crate::format::Encoder;
 
         /// A worker that cannot open a transaction while the pipeline is
         /// stopping must answer the endpoint instead of retrying.
@@ -1999,255 +1683,6 @@ mod tests {
             );
         }
 
-        fn insert_test(threads: usize) {
-            let mut client = pg_client();
-            setup_table(&mut client);
-
-            let records = make_records(100);
-            let batch = build_insert_batch(&records);
-            let mut endpoint = make_endpoint(threads);
-
-            encode_batch(&mut endpoint, &batch);
-
-            let got = query_all(&mut client);
-            assert_eq!(got, records);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_insert_single_thread() {
-            insert_test(1);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_insert_multi_thread() {
-            insert_test(4);
-        }
-
-        fn upsert_test(threads: usize) {
-            let mut client = pg_client();
-            setup_table(&mut client);
-
-            let records = make_records(100);
-            let batch = build_insert_batch(&records);
-            let mut endpoint = make_endpoint(threads);
-
-            encode_batch(&mut endpoint, &batch);
-
-            // Update even-id records
-            let updates: Vec<_> = records
-                .iter()
-                .filter(|r| r.id % 2 == 0)
-                .map(|r| {
-                    let mut new = r.clone();
-                    new.s = format!("updated_{}", r.id);
-                    (r.clone(), new)
-                })
-                .collect();
-            let upsert_batch = build_upsert_batch(&updates);
-
-            encode_batch(&mut endpoint, &upsert_batch);
-
-            let got = query_all(&mut client);
-            let expected: Vec<_> = records
-                .iter()
-                .map(|r| {
-                    if r.id % 2 == 0 {
-                        let mut new = r.clone();
-                        new.s = format!("updated_{}", r.id);
-                        new
-                    } else {
-                        r.clone()
-                    }
-                })
-                .collect();
-            assert_eq!(got, expected);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn extra_columns_test() {
-            let mut client = pg_client();
-            setup_table_with_extra_columns(&mut client);
-
-            let records = make_records(100);
-            let batch1 = build_insert_batch(&records[..25]);
-            let batch2 = build_insert_batch(&records[25..50]);
-            let batch3 = build_insert_batch(&records[50..75]);
-            let batch4 = build_insert_batch(&records[75..100]);
-            let mut endpoint = make_endpoint_with_extra_columns(
-                2,
-                vec![
-                    "EXTRA.COLUMN1".to_string(),
-                    "extra_column2".to_string(),
-                    "extra_column3".to_string(),
-                    "extra_column4".to_string(),
-                ],
-            );
-
-            encode_batch(&mut endpoint, &batch1);
-
-            endpoint
-                .command_handler()
-                .unwrap()
-                .command(serde_json::json!({
-                    "set_extra_columns": {
-                        "EXTRA.COLUMN1": "foo1",
-                        "extra_column2": "2026-04-23 14:30:00.123456",
-                        "extra_column3": 100,
-                        "extra_column4": { "foo": "bar" },
-                    }
-                }))
-                .unwrap();
-
-            encode_batch(&mut endpoint, &batch2);
-
-            endpoint
-                .command_handler()
-                .unwrap()
-                .command(serde_json::json!({
-                    "set_extra_columns": {
-                        "EXTRA.COLUMN1": "foo2",
-                        "extra_column2": "2026-04-23T15:30:00",
-                        "extra_column3": 200,
-                        "extra_column4": ["foo", "bar"],
-                    }
-                }))
-                .unwrap();
-
-            encode_batch(&mut endpoint, &batch3);
-
-            endpoint
-                .command_handler()
-                .unwrap()
-                .command(serde_json::json!({
-                    "set_extra_columns": {
-                        "EXTRA.COLUMN1": null,
-                        "extra_column2": null,
-                        "extra_column3": null,
-                        "extra_column4": null,
-                    }
-                }))
-                .unwrap();
-
-            encode_batch(&mut endpoint, &batch4);
-
-            let got = query_all_with_extra_columns(&mut client);
-            let expected1: Vec<_> = records[..25]
-                .iter()
-                .map(|r| TestRecordWithExtraColumns {
-                    id: r.id,
-                    b: r.b,
-                    i: r.i,
-                    s: r.s.clone(),
-                    extra_column1: None,
-                    extra_column2: None,
-                    extra_column3: None,
-                    extra_column4: None,
-                })
-                .collect();
-            let expected2: Vec<_> = records[25..50]
-                .iter()
-                .map(|r| TestRecordWithExtraColumns {
-                    id: r.id,
-                    b: r.b,
-                    i: r.i,
-                    s: r.s.clone(),
-                    extra_column1: Some("foo1".to_string()),
-                    extra_column2: Some(
-                        NaiveDateTime::parse_from_str(
-                            "2026-04-23 14:30:00.123456",
-                            "%Y-%m-%d %H:%M:%S%.f",
-                        )
-                        .unwrap(),
-                    ),
-                    extra_column3: Some(100),
-                    extra_column4: Some(serde_json::json!({ "foo": "bar" })),
-                })
-                .collect();
-            let expected3: Vec<_> = records[50..75]
-                .iter()
-                .map(|r| TestRecordWithExtraColumns {
-                    id: r.id,
-                    b: r.b,
-                    i: r.i,
-                    s: r.s.clone(),
-                    extra_column1: Some("foo2".to_string()),
-                    extra_column2: Some(
-                        NaiveDateTime::parse_from_str("2026-04-23T15:30:00", "%Y-%m-%dT%H:%M:%S")
-                            .unwrap(),
-                    ),
-                    extra_column3: Some(200),
-                    extra_column4: Some(serde_json::json!(["foo", "bar"])),
-                })
-                .collect();
-            let expected4: Vec<_> = records[75..100]
-                .iter()
-                .map(|r| TestRecordWithExtraColumns {
-                    id: r.id,
-                    b: r.b,
-                    i: r.i,
-                    s: r.s.clone(),
-                    extra_column1: None,
-                    extra_column2: None,
-                    extra_column3: None,
-                    extra_column4: None,
-                })
-                .collect();
-            let expected: Vec<_> = expected1
-                .into_iter()
-                .chain(expected2)
-                .chain(expected3)
-                .chain(expected4)
-                .collect();
-            assert_eq!(got, expected);
-
-            // Update records
-            let updates: Vec<_> = records
-                .iter()
-                .map(|r| {
-                    let mut new = r.clone();
-                    new.s = format!("updated_{}", r.id);
-                    (r.clone(), new)
-                })
-                .collect();
-            let upsert_batch = build_upsert_batch(&updates);
-
-            endpoint
-                .command_handler()
-                .unwrap()
-                .command(serde_json::json!({
-                    "set_extra_columns": {
-                        "EXTRA.COLUMN1": "foo3",
-                        "extra_column2": "2026-04-23T16:30:00",
-                        "extra_column3": 300,
-                        "extra_column4": "foo",
-                    }
-                }))
-                .unwrap();
-
-            encode_batch(&mut endpoint, &upsert_batch);
-
-            let got = query_all_with_extra_columns(&mut client);
-            let expected: Vec<_> = expected
-                .into_iter()
-                .map(|r| {
-                    let mut new = r.clone();
-                    new.s = format!("updated_{}", r.id);
-                    new.extra_column1 = Some("foo3".to_string());
-                    new.extra_column2 = Some(
-                        NaiveDateTime::parse_from_str("2026-04-23T16:30:00", "%Y-%m-%dT%H:%M:%S")
-                            .unwrap(),
-                    );
-                    new.extra_column3 = Some(300);
-                    new.extra_column4 = Some(serde_json::json!("foo"));
-                    new
-                })
-                .collect();
-            assert_eq!(got, expected);
-        }
-
         #[test]
         fn extra_columns_duplicate_names_in_config_rejected() {
             let cfg = make_config_with_extra_columns(1, vec!["a".into(), "a".into()]);
@@ -2293,285 +1728,6 @@ mod tests {
 
         #[test]
         #[serial_test::serial]
-        fn test_upsert_single_thread() {
-            upsert_test(1);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_upsert_multi_thread() {
-            upsert_test(4);
-        }
-
-        fn delete_test(threads: usize) {
-            let mut client = pg_client();
-            setup_table(&mut client);
-
-            let records = make_records(100);
-            let batch = build_insert_batch(&records);
-            let mut endpoint = make_endpoint(threads);
-
-            encode_batch(&mut endpoint, &batch);
-
-            // Delete odd-id records
-            let to_delete: Vec<_> = records.iter().filter(|r| r.id % 2 == 1).cloned().collect();
-            let delete_batch = build_delete_batch(&to_delete);
-
-            encode_batch(&mut endpoint, &delete_batch);
-
-            let got = query_all(&mut client);
-            let expected: Vec<_> = records.into_iter().filter(|r| r.id % 2 == 0).collect();
-            assert_eq!(got, expected);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_delete_single_thread() {
-            delete_test(1);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_delete_multi_thread() {
-            delete_test(4);
-        }
-
-        fn empty_batch_test(threads: usize) {
-            let mut client = pg_client();
-            setup_table(&mut client);
-
-            let batch = build_insert_batch(&[]);
-            let mut endpoint = make_endpoint(threads);
-
-            encode_batch(&mut endpoint, &batch);
-
-            let got = query_all(&mut client);
-            assert!(got.is_empty());
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_empty_batch_single_thread() {
-            empty_batch_test(1);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_empty_batch_multi_thread() {
-            empty_batch_test(4);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_single_record_multi_thread() {
-            let mut client = pg_client();
-            setup_table(&mut client);
-
-            let records = make_records(1);
-            let batch = build_insert_batch(&records);
-            let mut endpoint = make_endpoint(4);
-
-            encode_batch(&mut endpoint, &batch);
-
-            let got = query_all(&mut client);
-            assert_eq!(got, records);
-        }
-
-        fn multiple_batches_test(threads: usize) {
-            let mut client = pg_client();
-            setup_table(&mut client);
-
-            let mut endpoint = make_endpoint(threads);
-
-            // Batch 1: insert 50 records
-            let records1 = make_records(50);
-            let batch1 = build_insert_batch(&records1);
-            encode_batch(&mut endpoint, &batch1);
-
-            let got = query_all(&mut client);
-            assert_eq!(got, records1);
-
-            // Batch 2: insert 50 more records (ids 50..100)
-            let records2: Vec<_> = (50..100)
-                .map(|i| TestRecord {
-                    id: i,
-                    b: i % 2 == 0,
-                    i: if i % 3 == 0 {
-                        None
-                    } else {
-                        Some(i as i64 * 10)
-                    },
-                    s: format!("record_{i}"),
-                })
-                .collect();
-            let batch2 = build_insert_batch(&records2);
-            encode_batch(&mut endpoint, &batch2);
-
-            let got = query_all(&mut client);
-            let mut all_records = records1;
-            all_records.extend(records2);
-            assert_eq!(got, all_records);
-
-            // Batch 3: update records 0..25
-            let updates: Vec<_> = all_records[..25]
-                .iter()
-                .map(|r| {
-                    let mut new = r.clone();
-                    new.s = format!("batch3_{}", r.id);
-                    (r.clone(), new)
-                })
-                .collect();
-            let batch3 = build_upsert_batch(&updates);
-            encode_batch(&mut endpoint, &batch3);
-
-            let got = query_all(&mut client);
-            let expected: Vec<_> = all_records
-                .iter()
-                .map(|r| {
-                    if r.id < 25 {
-                        let mut new = r.clone();
-                        new.s = format!("batch3_{}", r.id);
-                        new
-                    } else {
-                        r.clone()
-                    }
-                })
-                .collect();
-            assert_eq!(got, expected);
-
-            // Batch 4: delete records 75..100
-            let to_delete: Vec<_> = expected[75..].to_vec();
-            let batch4 = build_delete_batch(&to_delete);
-            encode_batch(&mut endpoint, &batch4);
-
-            let got = query_all(&mut client);
-            assert_eq!(got.len(), 75);
-            assert_eq!(got, expected[..75]);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_multiple_batches_single_thread() {
-            multiple_batches_test(1);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_multiple_batches_multi_thread() {
-            multiple_batches_test(4);
-        }
-
-        // ── Progress counter tests ────────────────────────────────────
-
-        use std::sync::atomic::Ordering;
-
-        fn records_written(endpoint: &PostgresOutputEndpoint) -> u64 {
-            endpoint.records_written.load(Ordering::Relaxed)
-        }
-
-        /// Build a config that forces frequent in-batch flushes by capping the
-        /// number of records buffered between `execute()` calls.  This lets
-        /// tests observe the progress counter advance mid-batch instead of
-        /// only at commit time.
-        fn make_endpoint_flush_every(threads: usize, max_records: usize) -> PostgresOutputEndpoint {
-            let mut cfg = make_config_with_extra_columns(threads, Vec::new());
-            cfg.max_records_in_buffer = Some(max_records);
-            PostgresOutputEndpoint::new(
-                EndpointId::default(),
-                "test_endpoint",
-                &cfg,
-                &Some(key_relation()),
-                &value_relation(),
-                Weak::new(),
-                true,
-            )
-            .expect("failed to create endpoint")
-        }
-
-        fn progress_basic(threads: usize) {
-            let mut client = pg_client();
-            setup_table(&mut client);
-
-            let records = make_records(100);
-            let batch = build_insert_batch(&records);
-            let mut endpoint = make_endpoint(threads);
-
-            assert_eq!(records_written(&endpoint), 0);
-            endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-            assert_eq!(records_written(&endpoint), 0);
-            endpoint
-                .encode(batch.clone().arc_as_batch_reader())
-                .unwrap();
-            endpoint.consumer().batch_end();
-            // Counter resets to 0 at the end of every batch.
-            assert_eq!(records_written(&endpoint), 0);
-
-            // Sanity check: data actually landed in postgres.
-            let got = query_all(&mut client);
-            assert_eq!(got, records);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_progress_counter_single_thread() {
-            progress_basic(1);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_progress_counter_multi_thread() {
-            progress_basic(4);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_progress_counter_empty_batch() {
-            let mut client = pg_client();
-            setup_table(&mut client);
-
-            let batch = build_insert_batch(&[]);
-            let mut endpoint = make_endpoint(1);
-
-            endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-            endpoint
-                .encode(batch.clone().arc_as_batch_reader())
-                .unwrap();
-            assert_eq!(records_written(&endpoint), 0);
-            endpoint.consumer().batch_end();
-            assert_eq!(records_written(&endpoint), 0);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_progress_counter_advances_mid_batch_single_thread() {
-            let mut client = pg_client();
-            setup_table(&mut client);
-
-            let records = make_records(50);
-            let batch = build_insert_batch(&records);
-            // Force flushes during encode so the counter advances mid-batch.
-            let mut endpoint = make_endpoint_flush_every(1, 10);
-
-            endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-            endpoint
-                .encode(batch.clone().arc_as_batch_reader())
-                .unwrap();
-            // After encode, completed flushes are visible in the counter.
-            // With max_records_in_buffer=10 and 50 records, at least 4 flushes
-            // (40 records) have run; the trailing partial buffer is flushed
-            // during batch_end.
-            assert!(
-                records_written(&endpoint) >= 40,
-                "expected mid-batch progress, got {}",
-                records_written(&endpoint)
-            );
-
-            endpoint.consumer().batch_end();
-            assert_eq!(records_written(&endpoint), 0);
-        }
-
-        #[test]
-        #[serial_test::serial]
         fn test_progress_counter_batch_start_resets() {
             let mut client = pg_client();
             setup_table(&mut client);
@@ -2586,69 +1742,6 @@ mod tests {
 
             // Close out cleanly so the worker transaction doesn't leak.
             endpoint.consumer().batch_end();
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_progress_counter_multiple_batches() {
-            let mut client = pg_client();
-            setup_table(&mut client);
-
-            let mut endpoint = make_endpoint(1);
-
-            // Batch 1: 50 records.
-            let records1 = make_records(50);
-            let batch1 = build_insert_batch(&records1);
-            encode_batch(&mut endpoint, &batch1);
-            assert_eq!(records_written(&endpoint), 0);
-
-            // Batch 2: 30 more records (ids 50..80).
-            let records2: Vec<_> = (50..80)
-                .map(|i| TestRecord {
-                    id: i,
-                    b: i % 2 == 0,
-                    i: Some(i as i64),
-                    s: format!("record_{i}"),
-                })
-                .collect();
-            let batch2 = build_insert_batch(&records2);
-            encode_batch(&mut endpoint, &batch2);
-            assert_eq!(records_written(&endpoint), 0);
-        }
-
-        #[test]
-        #[serial_test::serial]
-        fn test_progress_counter_advances_mid_batch_multi_thread() {
-            let mut client = pg_client();
-            setup_table(&mut client);
-
-            // 4 workers, force flush every 5 records so each worker flushes
-            // multiple times.  With 100 records spread across 4 workers, every
-            // worker has ~25 records; 5 flushes of 5 records each.
-            let mut endpoint = make_endpoint_flush_every(4, 5);
-
-            let records = make_records(100);
-            let batch = build_insert_batch(&records);
-
-            endpoint.consumer().batch_start(0, OutputBatchType::Delta);
-            endpoint
-                .encode(batch.clone().arc_as_batch_reader())
-                .unwrap();
-
-            // After encode, completed flushes from all 4 workers are visible.
-            // We can't predict the exact number (depends on how the trailing
-            // partial buffer per worker shakes out), but it must be > 0 and
-            // <= 100.
-            let mid = records_written(&endpoint);
-            assert!(mid > 0, "expected mid-batch progress, got 0");
-            assert!(mid <= 100, "counter exceeds total records: {mid}");
-
-            endpoint.consumer().batch_end();
-            assert_eq!(records_written(&endpoint), 0);
-
-            // Final state in postgres matches all input records.
-            let got = query_all(&mut client);
-            assert_eq!(got, records);
         }
     }
 }

@@ -7,6 +7,37 @@ controller that controls the execution of a DBSP circuit along with
 its input and output adapters, and a server that exposes the
 controller API over HTTP and through a web interface.
 
+## Engines
+
+The crate does not depend on an engine. The controller and the server reach
+the engine that runs a pipeline's circuit through the traits in the `engine`
+module. The `static_adapters` crate (`crates/static-adapters`) implements them
+for the DBSP engine, which runs the pipelines that the SQL compiler compiles to
+Rust.
+
+The connector test suites live in this crate, next to the code that they test,
+and every engine runs them against its own test fixture. A suite case is a
+function of the fixture that carries `#[engine_test]`, which registers it; an
+engine's crate runs every registered case, each as one test, with
+`test::run_suites`. The DBSP engine runs them in the `connector_suites` test
+target of `static_adapters`:
+
+```sh
+cargo test -p static_adapters --test connector_suites
+cargo test -p static_adapters --test connector_suites -- transport::kafka::
+```
+
+A test's name is the module path of its case, as the second command shows.
+`cargo test -p dbsp_adapters` runs only the tests that need no engine.
+
+A case that needs more than the fixture's methods says so in the attribute:
+`requires(...)` lists the capabilities that it needs from the engine, such as
+`Storage` or `Checkpoints`, and `services(...)` lists the services outside the
+test binary that it uses, such as `Kafka`. The harness ignores a case that
+requires a capability that the engine does not have and, on an engine that
+asks for it, a case whose service does not answer. Before the tests run, it
+names on stderr what the run lacks for each such case.
+
 ## Dependencies
 
 The test code has the following dependencies:

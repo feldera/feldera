@@ -5,9 +5,9 @@ use crate::{
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow};
 use async_trait::async_trait;
 use chrono::Utc;
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{InputCommandReceiver, Resume, Watermark};
+use feldera_storage::tokio::TOKIO;
 use feldera_types::{
     config::FtModel,
     program_schema::Relation,
@@ -974,7 +974,7 @@ async fn replay_checkpoint(
                         consumer.parse_errors(errors);
                         if let Some(mut buffer) = buffer {
                             buffer.hash(&mut hasher);
-                            buffer.flush();
+                            consumer.check_flush(buffer.flush());
                         }
                         let amt = BufferSize {
                             records: 1,

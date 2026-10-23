@@ -636,50 +636,6 @@ impl<K: Eq + Hash> TokenBucketRateLimiter<K> {
     }
 }
 
-/// Run any function in a single-worker dbsp::Runtime configured with POSIX storage backend.
-///
-/// Used to test code that needs to write to storage without creating a circuit.
-#[cfg(test)]
-pub(crate) fn run_in_posix_runtime<F>(
-    min_spill_size: Option<feldera_types::size::ConfigSize>,
-    min_step_spill_size: Option<feldera_types::size::ConfigSize>,
-    test_fn: F,
-) where
-    F: FnOnce() + Send + 'static,
-{
-    use dbsp::Runtime;
-    use dbsp::circuit::{CircuitConfig, CircuitStorageConfig};
-    use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
-    use std::sync::{Arc, Mutex};
-
-    let temp = tempfile::tempdir().expect("failed to create temp dir for storage");
-    let cconf = CircuitConfig::with_workers(1).with_storage(Some(
-        CircuitStorageConfig::for_config(
-            StorageConfig {
-                path: temp.path().to_string_lossy().into_owned(),
-                cache: StorageCacheConfig::default(),
-            },
-            StorageOptions {
-                min_spill_size,
-                min_step_spill_size,
-                ..StorageOptions::default()
-            },
-        )
-        .expect("failed to configure storage"),
-    ));
-
-    let test_fn: Arc<Mutex<Option<F>>> = Arc::new(Mutex::new(Some(test_fn)));
-    let test_fn_cloned = Arc::clone(&test_fn);
-    let handle = Runtime::run(cconf, move |_parker| {
-        if let Some(test_fn) = test_fn_cloned.lock().unwrap().take() {
-            test_fn();
-        }
-    })
-    .unwrap();
-
-    handle.kill().unwrap();
-}
-
 #[cfg(test)]
 mod test {
     use std::{

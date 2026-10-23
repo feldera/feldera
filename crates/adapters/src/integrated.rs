@@ -12,8 +12,11 @@ use tokio_util::sync::CancellationToken;
 #[cfg(feature = "with-deltalake")]
 pub mod delta_table;
 #[cfg(feature = "with-dynamodb")]
-mod dynamodb;
-mod postgres;
+pub(crate) mod dynamodb;
+pub(crate) mod postgres;
+
+#[cfg(all(any(test, feature = "testing"), feature = "with-iceberg"))]
+pub mod iceberg;
 
 #[cfg(feature = "with-dynamodb")]
 pub use crate::integrated::dynamodb::DynamoDBOutputEndpoint;

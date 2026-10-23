@@ -17,3 +17,4 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 colored = { workspace = true }
 sysinfo = { workspace = true }
+memory-stats = { workspace = true }

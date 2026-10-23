@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result as AnyResult;
-use dbsp::circuit::tokio::TOKIO;
 use deltalake::DeltaTable;
+use feldera_storage::tokio::TOKIO;
 use feldera_types::transport::delta_table::DeltaTableWriterConfig;
 use futures::FutureExt;
 use tokio::task::JoinHandle;
@@ -241,7 +241,7 @@ fn choose(planned: Plan, packed_last: bool) -> Work {
 }
 
 /// What `after_commit` would do with `table`.
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 fn plan(table: &DeltaTable, packed_last: bool) -> AnyResult<Work> {
     Ok(choose(plan_rewrites(table, true)?, packed_last))
 }
@@ -277,7 +277,7 @@ async fn reclaim(mut table: DeltaTable) -> AnyResult<Outcome> {
 }
 
 /// One step on `table`, as `after_commit` starts it, naming what it did.
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub(super) async fn compact_once(table: DeltaTable) -> AnyResult<Option<&'static str>> {
     Ok(match plan(&table, false)? {
         Work::Nothing => None,
@@ -293,7 +293,7 @@ pub(super) async fn compact_once(table: DeltaTable) -> AnyResult<Option<&'static
 }
 
 /// Pack the small files of `table` now, whether or not they fill a target file.
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub(super) async fn pack_small_files(table: DeltaTable) -> AnyResult<Outcome> {
     let files = plan_rewrites(&table, false)?.pack;
     pack(table, files).await

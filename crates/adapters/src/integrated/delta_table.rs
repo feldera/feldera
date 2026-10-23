@@ -1,12 +1,21 @@
 mod bounded_upload;
 mod deletion_vector;
 mod field_id_adapter;
-mod input;
-mod merge;
-mod output;
+pub(crate) mod input;
+pub(crate) mod merge;
+pub(crate) mod output;
+
+pub use output::delta_output_serde_config;
 
 #[cfg(test)]
 mod test;
+
+#[cfg(all(any(test, feature = "testing"), feature = "delta-s3-test"))]
+pub mod s3_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod tests;
+#[cfg(all(any(test, feature = "testing"), feature = "delta-unity-test"))]
+pub mod unity_tests;
 
 use arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, FieldRef, Schema as ArrowSchema, SchemaRef,

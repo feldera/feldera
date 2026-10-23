@@ -7,14 +7,11 @@ use crate::{
     },
 };
 use apache_avro::{
-    Schema as AvroSchema, from_avro_datum,
-    schema::{Name as AvroName, ResolvedSchema},
-    types::Value as AvroValue,
+    Schema as AvroSchema, from_avro_datum, schema::ResolvedSchema, types::Value as AvroValue,
 };
-use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::{ConnectorMetadata, catalog::AvroSchemaRefs};
-use feldera_sqllib::Variant;
+use feldera_types::circuit::StagedBuffers;
 use feldera_types::{
     format::avro::{AvroParserConfig, AvroUpdateFormat},
     program_schema::Relation,
@@ -111,10 +108,6 @@ struct AvroParser {
 
     schema_id: Option<u32>,
     schema: Option<AvroSchema>,
-
-    // Resolved schema references extracted from `schema`.
-    refs: HashMap<AvroName, AvroSchema>,
-    value_schema: Option<AvroSchema>,
     last_event_number: u64,
 
     /// Schema cache shared between all clones of this connector.
@@ -204,15 +197,13 @@ impl AvroParser {
             schema_id: None,
             relation_schema: relation_schema.clone(),
             schema: None,
-            refs: HashMap::new(),
-            value_schema: None,
             last_event_number: 0,
             schema_cache: Arc::new(Mutex::new(HashMap::new())),
         };
 
         if let Some(schema) = &config.schema {
             let (schema, refs, value_schema) = parser.validate_schema(schema)?;
-            parser.set_schema(schema, refs, value_schema)?;
+            parser.set_schema(schema, &refs, &value_schema)?;
         }
 
         Ok(parser)
@@ -259,17 +250,20 @@ impl AvroParser {
         }
     }
 
+    /// Decodes messages with `schema` from now on, and has the stream convert the records in
+    /// them with `value_schema`, whose named references `refs` resolves.
     fn set_schema(
         &mut self,
         schema: AvroSchema,
-        refs: AvroSchemaRefs,
-        value_schema: AvroSchema,
+        refs: &AvroSchemaRefs,
+        value_schema: &AvroSchema,
     ) -> Result<(), ControllerError> {
         debug!("Setting Avro schema: {}", schema_json(&schema));
 
-        self.refs = refs;
+        self.input_stream
+            .configure_schema(value_schema, refs)
+            .map_err(|e| ControllerError::schema_validation_error(&e.to_string()))?;
         self.schema = Some(schema);
-        self.value_schema = Some(value_schema);
 
         Ok(())
     }
@@ -392,7 +386,7 @@ impl AvroParser {
                         ParseError::bin_event_error(e, self.last_event_number, data, None)
                     })?;
                     let value_schema = self.value_schema(&schema).unwrap().clone();
-                    self.set_schema(schema, refs, value_schema).map_err(|e| {
+                    self.set_schema(schema, &refs, &value_schema).map_err(|e| {
                         ParseError::bin_event_error(
                             e.to_string(),
                             self.last_event_number,
@@ -412,18 +406,17 @@ impl AvroParser {
                 "avro_schema_id",
                 VariantValue::Int64(self.schema_id.unwrap_or(0).into()),
             );
-            let metadata = Some(Variant::from(metadata));
+            let metadata = Some(metadata);
 
             (&data[5..], metadata)
         } else {
-            (data, metadata.map(Variant::from))
+            (data, metadata)
         };
 
         // At this point we should either have a statically configured schema or a successfully installed schema from
         // the schema registry.
         assert!(self.schema.is_some());
         let schema = self.schema.as_ref().unwrap();
-        let value_schema = self.value_schema.as_ref().unwrap();
 
         let avro_value = from_avro_datum(schema, &mut record, None).map_err(|e| {
             ParseError::bin_envelope_error(format!("error parsing avro record: {e}"), record, None)
@@ -450,10 +443,10 @@ impl AvroParser {
                 };
                 if insert {
                     self.input_stream
-                        .insert(&avro_value, schema, &self.refs, n_bytes, &metadata)
+                        .insert(&avro_value, n_bytes, &metadata)
                 } else {
                     self.input_stream
-                        .delete(&avro_value, schema, &self.refs, n_bytes, &metadata)
+                        .delete(&avro_value, n_bytes, &metadata)
                 }
                 .map_err(|e| {
                     ParseError::bin_event_error(
@@ -477,7 +470,7 @@ impl AvroParser {
                     (false, true) => (0, n_bytes),
                 };
                 if let Some(before) = before {
-                    self.input_stream.delete(before, value_schema, &self.refs, before_bytes, &metadata).map_err(|e| {
+                    self.input_stream.delete(before, before_bytes, &metadata).map_err(|e| {
                         ParseError::bin_event_error(
                             format!(
                                 "error converting 'before' record to table row (record: {before:?}): {e}"
@@ -489,7 +482,7 @@ impl AvroParser {
                     })?;
                 }
                 if let Some(after) = after {
-                    self.input_stream.insert(after, value_schema, &self.refs, after_bytes, &metadata).map_err(|e| {
+                    self.input_stream.insert(after, after_bytes, &metadata).map_err(|e| {
                             ParseError::bin_event_error(
                                 format!(
                                     "error converting 'after' record to table row (record: {after:?}): {e}"
@@ -645,8 +638,6 @@ impl Parser for AvroParser {
             schema_id: self.schema_id,
             relation_schema: self.relation_schema.clone(),
             schema: self.schema.clone(),
-            refs: self.refs.clone(),
-            value_schema: self.value_schema.clone(),
             last_event_number: 0,
             schema_cache: self.schema_cache.clone(),
         })

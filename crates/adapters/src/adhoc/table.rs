@@ -36,8 +36,6 @@ use feldera_types::serde_with_context::serde_config::{
 };
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use feldera_types::transport::adhoc::AdHocInputConfig;
-use serde_arrow::ArrayBuilder;
-use serde_arrow::schema::SerdeArrowSchema;
 use tokio::sync::mpsc::Sender;
 use tracing::{Instrument, info_span};
 use uuid::Uuid;
@@ -173,7 +171,9 @@ use `with ('materialized' = 'true')` for tables, or `create materialized view` f
             self.indexed,
             self.schema.clone(),
             projected_schema,
-            snapshot.get(&self.name).cloned(),
+            snapshot
+                .get(&self.name)
+                .map(|readers| readers.partitions.clone()),
             projection,
         )))
     }
@@ -449,15 +449,8 @@ impl ExecutionPlan for AdHocQueryExecution {
             let tx = builder.tx();
             let projection = self.projection.clone();
 
-            let sas: SerdeArrowSchema =
-                schema.fields().iter().as_slice().try_into().map_err(|e| {
-                    DataFusionError::Internal(format!(
-                        "Unable to construct SerdeArrowSchema for the provided schema: {}.",
-                        e
-                    ))
-                })?;
-
             let indexed = self.indexed;
+            let max_batch_size = batch_reader.adhoc_batch_rows();
 
             builder.spawn(async move {
                 let mut cursor = batch_reader
@@ -465,7 +458,9 @@ impl ExecutionPlan for AdHocQueryExecution {
                         output_adhoc_arrow_serde_config().clone(),
                     ))
                     .map_err(|e| DataFusionError::External(Box::new(e)))?;
-                let mut insert_builder = SendableArrowBuilder::new(sas)?;
+                let mut rows = cursor
+                    .arrow_sink(schema)
+                    .map_err(|e| DataFusionError::Internal(e.to_string()))?;
 
                 let mut cur_batch_size = 0;
 
@@ -479,11 +474,9 @@ impl ExecutionPlan for AdHocQueryExecution {
 
                         while w != 0 {
                             let result = if indexed {
-                                cursor
-                                    .serialize_val_to_arrow(&mut insert_builder.builder)
+                                cursor.append_val_to_arrow(rows.as_mut())
                             } else {
-                                cursor
-                                    .serialize_key_to_arrow(&mut insert_builder.builder)
+                                cursor.append_key_to_arrow(rows.as_mut())
                             };
 
                             result.map_err(|e| {
@@ -495,11 +488,10 @@ impl ExecutionPlan for AdHocQueryExecution {
                             cur_batch_size += 1;
                             w -= 1;
 
-                            const MAX_BATCH_SIZE: usize = 256;
-                            if cur_batch_size >= MAX_BATCH_SIZE {
-                                let batch = insert_builder.builder.to_record_batch().map_err(|e| {
+                            if cur_batch_size >= max_batch_size {
+                                let batch = rows.finish().map_err(|e| {
                                     DataFusionError::Execution(format!(
-                                        "Unable to convert ArrayBuilder to RecordBatch: {}",
+                                        "Unable to collect rows into a RecordBatch: {}",
                                         e
                                     ))
                                 })?;
@@ -509,12 +501,14 @@ impl ExecutionPlan for AdHocQueryExecution {
                         }
                         cursor.step_val();
                     }
-                    cursor.step_key();
+                    cursor.step_key().map_err(|e| {
+                        DataFusionError::Execution(format!("Unable to read the next row: {e}"))
+                    })?;
                 }
 
-                let batch = insert_builder.builder.to_record_batch().map_err(|e| {
+                let batch = rows.finish().map_err(|e| {
                     DataFusionError::Execution(format!(
-                        "Unable to convert ArrayBuilder to RecordBatch: {}",
+                        "Unable to collect rows into a RecordBatch: {}",
                         e
                     ))
                 })?;
@@ -551,28 +545,3 @@ impl ExecutionPlan for AdHocQueryExecution {
         }
     }
 }
-
-struct SendableArrowBuilder {
-    builder: ArrayBuilder,
-}
-
-impl SendableArrowBuilder {
-    fn new(schema: SerdeArrowSchema) -> datafusion::common::Result<Self> {
-        let builder = ArrayBuilder::new(schema).map_err(|e| {
-            DataFusionError::Internal(format!(
-                "Unable to construct serde_arrow ArrayBuilder for the provided schema: {}.",
-                e
-            ))
-        })?;
-
-        Ok(Self { builder })
-    }
-}
-
-/// This isn't Send because the underlying Arrow builder has a raw pointer which isn't Send:
-/// https://github.com/chmp/serde_arrow/blob/eb8d37a5bdab748251aa983cb1c1517047f28702/serde_arrow/src/internal/serialization/struct_builder.rs#L23C1-L23C55
-///
-/// But it should be safe to declare this as send because it's not used in a way that breaks Send guarantees.
-///
-/// I opened an issue about this here: https://github.com/chmp/serde_arrow/issues/225
-unsafe impl Send for SendableArrowBuilder {}

@@ -27,20 +27,6 @@ public class DBSPTypeVariant extends DBSPTypeBaseType {
         legacyRepresentation = value;
     }
 
-    /** Runs {@code codeGenerator} generating code with the legacy Variant representation.
-     *
-     * <p>Connector-metadata DEFAULT expressions need this: the adapters build
-     * record metadata using the LegacyVariant type. */
-    public static void withLegacyRepresentation(Runnable codeGenerator) {
-        boolean saved = legacyRepresentation;
-        legacyRepresentation = true;
-        try {
-            codeGenerator.run();
-        } finally {
-            legacyRepresentation = saved;
-        }
-    }
-
     DBSPTypeVariant(CalciteObject node, boolean mayBeNull) {
         super(node, DBSPTypeCode.VARIANT, mayBeNull);
     }

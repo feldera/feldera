@@ -1265,7 +1265,7 @@ fn drive<V: Payload, W: Writer<V>>(
             .map_err(|_| anyhow!("the generator stopped early"))?;
         match batch {
             Load::Raw(batch) => writer.write(batch),
-            Load::Staged(mut staged) => staged.flush(),
+            Load::Staged(mut staged) => staged.flush()?,
         }
         dbsp.step().context("a load step failed")?;
 

@@ -5,10 +5,9 @@ use crate::{
     util::truncate_ellipse,
 };
 use anyhow::{Result as AnyResult, bail};
-use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::{ConnectorMetadata, catalog::SerCursorFlattened};
-use feldera_sqllib::Variant;
+use feldera_types::circuit::StagedBuffers;
 use feldera_types::{
     config::ConnectorConfig,
     format::csv::{CsvEncoderConfig, CsvFormatConfig},
@@ -18,10 +17,9 @@ use serde_json::json;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::{borrow::Cow, mem::take, sync::Arc};
 
-pub(crate) mod deserializer;
+#[cfg(any(test, feature = "testing"))]
+pub mod tests;
 use crate::catalog::{InputCollectionHandle, SerBatchReader};
-pub use deserializer::byte_record_deserializer;
-pub use deserializer::string_record_deserializer;
 use feldera_types::program_schema::Relation;
 
 use super::{InputBuffer, Splitter};
@@ -44,7 +42,7 @@ fn csv_trim(t: &feldera_types::format::csv::CsvTrim) -> csv::Trim {
 ///
 /// `has_headers` is always `false` — the adapter layer skips the header row
 /// itself and must not pass it to the underlying CSV reader.
-pub(crate) fn csv_reader_builder(config: &CsvFormatConfig) -> csv::ReaderBuilder {
+pub fn csv_reader_builder(config: &CsvFormatConfig) -> csv::ReaderBuilder {
     let mut b = csv::ReaderBuilder::new();
     b.has_headers(false)
         .delimiter(config.delimiter().0)
@@ -140,7 +138,7 @@ impl CsvParser {
     fn parse_record(
         &mut self,
         record: &[u8],
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
         errors: &mut Vec<ParseError>,
     ) {
         if (!self.headers || self.last_event_number > 0)
@@ -204,8 +202,6 @@ impl Parser for CsvParser {
         mut data: &[u8],
         metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-        let metadata = metadata.map(Variant::from);
-
         let mut errors = Vec::new();
         while let Some((record, rest)) = self.split_record(data) {
             if !self.is_comment(record) {
@@ -411,7 +407,7 @@ impl Encoder for CsvEncoder {
 
         while cursor.key_valid() {
             if !cursor.val_valid() {
-                cursor.step_key();
+                cursor.step_key()?;
                 continue;
             }
             let prev_len = buffer.len();
@@ -452,7 +448,7 @@ impl Encoder for CsvEncoder {
             }
 
             if !overflow {
-                cursor.step_key();
+                cursor.step_key()?;
             }
         }
 
@@ -469,133 +465,8 @@ impl Encoder for CsvEncoder {
 
 #[cfg(test)]
 mod test {
-    use crate::format::string_record_deserializer;
-    use feldera_types::deserialize_table_record;
-    use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
-
     use super::CsvSplitter;
     use crate::format::Splitter;
-    use feldera_sqllib::{SqlString, Variant};
-    use feldera_types::format::csv::{CsvFormatConfig, CsvTrim};
-    use std::collections::BTreeMap;
-
-    #[derive(Debug, Eq, PartialEq)]
-    #[allow(non_snake_case)]
-    struct CaseSensitive {
-        fIeLd1: bool,
-        field2: String,
-        field3: Option<u8>,
-    }
-
-    deserialize_table_record!(CaseSensitive["CaseSensitive", 3] {
-    (fIeLd1, "fIeLd1", true, bool, |_| None),
-    (field2, "field2", true, String, |_| None),
-    (field3, "field3", false, Option<u8>, |_| Some(None))
-    });
-
-    #[test]
-    fn csv() {
-        let data = r#"true,"foo",5
-true,bar,buzz"#;
-        let rdr = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .from_reader(data.as_bytes());
-        let mut records = rdr.into_records();
-        assert_eq!(
-            CaseSensitive::deserialize_with_context(
-                &mut string_record_deserializer(&records.next().unwrap().unwrap(), None),
-                &SqlSerdeConfig::default()
-            )
-            .unwrap(),
-            CaseSensitive {
-                fIeLd1: true,
-                field2: "foo".to_string(),
-                field3: Some(5)
-            }
-        );
-        assert_eq!(
-            CaseSensitive::deserialize_with_context(
-                &mut string_record_deserializer(&records.next().unwrap().unwrap(), None),
-                &SqlSerdeConfig::default()
-            )
-            .map_err(|e| e.to_string()),
-            Err(
-                r#"{"field":"field3","description":"field 2: invalid digit found in string"}"#
-                    .to_string()
-            )
-        );
-    }
-
-    #[derive(Debug, Eq, PartialEq)]
-    struct VariantRow {
-        object: Variant,
-        positive: Variant,
-        negative: Variant,
-        float: Variant,
-        integral_float: Variant,
-        huge: Variant,
-        huge_negative: Variant,
-        boolean: Variant,
-        null: Variant,
-    }
-
-    deserialize_table_record!(VariantRow["VariantRow", Variant, 9] {
-    (object, "object", true, Variant, |_| None),
-    (positive, "positive", true, Variant, |_| None),
-    (negative, "negative", true, Variant, |_| None),
-    (float, "float", true, Variant, |_| None),
-    (integral_float, "integral_float", true, Variant, |_| None),
-    (huge, "huge", true, Variant, |_| None),
-    (huge_negative, "huge_negative", true, Variant, |_| None),
-    (boolean, "boolean", true, Variant, |_| None),
-    (null, "null", true, Variant, |_| None)
-    });
-
-    /// The `csv` crate infers a field's type rather than always reporting text,
-    /// so a bare `123` or `true` reaches the VARIANT deserializer as a number
-    /// or a boolean. Each must land on the value that parsing the same text as
-    /// JSON produces.
-    #[test]
-    fn csv_variant() {
-        let data =
-            r#""{""a"": 1}",123,-4,1.5,1.0,20000000000000000000,-20000000000000000000,true,null"#;
-        let rdr = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .from_reader(data.as_bytes());
-        let mut records = rdr.into_records();
-
-        assert_eq!(
-            VariantRow::deserialize_with_context(
-                &mut string_record_deserializer(&records.next().unwrap().unwrap(), None),
-                &SqlSerdeConfig::default()
-            )
-            .unwrap(),
-            VariantRow {
-                object: Variant::Map(
-                    BTreeMap::from([(
-                        Variant::String(SqlString::from_ref("a")),
-                        Variant::UBigInt(1)
-                    )])
-                    .into()
-                ),
-                positive: Variant::UBigInt(123),
-                negative: Variant::BigInt(-4),
-                // `serde_json` with `arbitrary_precision` reports a fractional
-                // number through its private token, so a CSV float has always
-                // arrived as a decimal. That holds for a float whose value is
-                // integral too, which is only true while the visitor renders
-                // it with `Debug`.
-                float: Variant::SqlDecimal((15, 1)),
-                integral_float: Variant::SqlDecimal((1, 0)),
-                // Outside `u64`/`i64`, which the csv crate reports as a 128-bit
-                // integer rather than as text.
-                huge: Variant::SqlDecimal((20_000_000_000_000_000_000, 0)),
-                huge_negative: Variant::SqlDecimal((-20_000_000_000_000_000_000, 0)),
-                boolean: Variant::Boolean(true),
-                null: Variant::VariantNull,
-            }
-        );
-    }
 
     // ---- CsvSplitter option tests ----
 
@@ -669,237 +540,5 @@ true,bar,buzz"#;
         // After the first record is consumed, the comment is skipped and the
         // second record is returned.
         assert_eq!(s.input(b"# skip\nc,d\n"), Some(11));
-    }
-
-    // ---- End-to-end tests via mock_parser_pipeline ----
-    //
-    // These tests push bytes through a real CsvParser (the same code path that
-    // a live input connector uses) and verify the deserialized records.
-
-    use crate::FormatConfig;
-    use crate::format::InputBuffer;
-    use crate::test::mock_parser_pipeline;
-    use feldera_adapterlib::format::Parser;
-    use feldera_types::deserialize_without_context;
-    use feldera_types::program_schema::Relation;
-    use serde::{Deserialize, Serialize};
-    use std::borrow::Cow;
-
-    /// Two-string record used by the end-to-end tests below.
-    #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone)]
-    struct TwoStrings {
-        first: String,
-        second: String,
-    }
-
-    deserialize_without_context!(TwoStrings);
-
-    /// Push `data` through a fully-configured `CsvParser` and return the
-    /// inserted `TwoStrings` records.
-    fn e2e_parse_csv(config: CsvFormatConfig, data: &[u8]) -> Vec<TwoStrings> {
-        let format_config = FormatConfig {
-            name: Cow::from("csv"),
-            config: serde_json::to_value(config).unwrap(),
-        };
-        let (_, mut parser, input_handle) =
-            mock_parser_pipeline::<TwoStrings, TwoStrings>(&Relation::empty(), &format_config)
-                .unwrap();
-        let (buf, errors) = parser.parse(data, None);
-        assert!(errors.is_empty(), "unexpected parse errors: {errors:?}");
-        if let Some(mut buf) = buf {
-            buf.flush();
-        }
-        input_handle
-            .state()
-            .flushed
-            .iter()
-            .map(|upd| upd.unwrap_insert().clone())
-            .collect()
-    }
-
-    // `quote`: single-quote wraps a field containing a comma.
-    #[test]
-    fn csv_e2e_quote() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                quote: '\'',
-                ..Default::default()
-            },
-            b"foo,'bar,baz'\nqux,'quux,corge'\n",
-        );
-        assert_eq!(rows.len(), 2);
-        assert_eq!(
-            rows[0],
-            TwoStrings {
-                first: "foo".into(),
-                second: "bar,baz".into()
-            }
-        );
-        assert_eq!(
-            rows[1],
-            TwoStrings {
-                first: "qux".into(),
-                second: "quux,corge".into()
-            }
-        );
-    }
-
-    // `escape` + `double_quote = false`: backslash escapes a literal quote.
-    #[test]
-    fn csv_e2e_escape() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                escape: Some('\\'),
-                double_quote: false,
-                ..Default::default()
-            },
-            // "foo\"bar" → foo"bar
-            b"\"foo\\\"bar\",baz\n",
-        );
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first, "foo\"bar");
-        assert_eq!(rows[0].second, "baz");
-    }
-
-    // `double_quote = true` (default): `""` inside a quoted field is one `"`.
-    #[test]
-    fn csv_e2e_double_quote() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig::default(),
-            // "foo""bar" → foo"bar
-            b"\"foo\"\"bar\",baz\n",
-        );
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first, "foo\"bar");
-        assert_eq!(rows[0].second, "baz");
-    }
-
-    // `double_quote = false`: `""` is not collapsed; the first `"` ends the
-    // quoted field, and the remainder of the token is appended unquoted.
-    // (Matches csv-core's `quote_escapes_no_double` test: `"a""b"` → `a"b"`.)
-    #[test]
-    fn csv_e2e_double_quote_disabled() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                double_quote: false,
-                ..Default::default()
-            },
-            b"\"foo\"\"bar\",baz\n",
-        );
-        assert_eq!(rows.len(), 1);
-        assert_ne!(rows[0].first, "foo\"bar"); // not collapsed
-        assert_eq!(rows[0].second, "baz");
-    }
-
-    // `trim = None` (default): leading and trailing whitespace is preserved.
-    #[test]
-    fn csv_e2e_trim_none() {
-        let rows = e2e_parse_csv(CsvFormatConfig::default(), b"  foo  ,  bar  \n");
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first, "  foo  ");
-        assert_eq!(rows[0].second, "  bar  ");
-    }
-
-    // `quoting = false`: quote characters are treated as ordinary bytes.
-    #[test]
-    fn csv_e2e_quoting_disabled() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                quoting: false,
-                ..Default::default()
-            },
-            // The outer " chars are kept verbatim in the field value.
-            b"\"hello\",world\n",
-        );
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first, "\"hello\"");
-        assert_eq!(rows[0].second, "world");
-    }
-
-    // `comment`: lines starting with `#` are skipped.
-    #[test]
-    fn csv_e2e_comment() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                comment: Some('#'),
-                ..Default::default()
-            },
-            b"# opening comment\nfoo,bar\n# mid comment\nbaz,qux\n",
-        );
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].first, "foo");
-        assert_eq!(rows[1].first, "baz");
-    }
-
-    // `flexible = true` (default): a record with extra fields is accepted;
-    // only the first two are used for deserialization.
-    #[test]
-    fn csv_e2e_flexible_true() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig::default(), // flexible=true
-            b"foo,bar\nqux,quux,extra\n",
-        );
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].first, "foo");
-        assert_eq!(rows[1].first, "qux");
-        assert_eq!(rows[1].second, "quux");
-    }
-
-    // `flexible = false`: a record whose field count differs from the first
-    // record's count produces a parse error.
-    #[test]
-    fn csv_e2e_flexible_false() {
-        let format_config = FormatConfig {
-            name: Cow::from("csv"),
-            config: serde_json::to_value(CsvFormatConfig {
-                flexible: false,
-                ..Default::default()
-            })
-            .unwrap(),
-        };
-        let (_, mut parser, _) =
-            mock_parser_pipeline::<TwoStrings, TwoStrings>(&Relation::empty(), &format_config)
-                .unwrap();
-
-        // Suppress the default panic-on-error so we can inspect the error list.
-        parser.on_error(Some(Box::new(|_fatal, _err| {})));
-
-        // Record 1: 2 fields (sets the expected count).
-        // Record 2: 3 fields (different count → error with flexible=false).
-        let (_buf, errors) = parser.parse(b"foo,bar\nqux,quux,extra\n", None);
-        assert!(
-            !errors.is_empty(),
-            "expected a parse error for flexible=false with mismatched field counts"
-        );
-    }
-
-    // `trim = Fields`: leading/trailing whitespace is stripped from field values.
-    #[test]
-    fn csv_e2e_trim_fields() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                trim: CsvTrim::Fields,
-                ..Default::default()
-            },
-            b"  foo  ,  bar  \n",
-        );
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first, "foo");
-        assert_eq!(rows[0].second, "bar");
-    }
-
-    // `headers = true`: the first line is a header row and is skipped.
-    #[test]
-    fn csv_e2e_headers() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                headers: true,
-                ..Default::default()
-            },
-            b"first,second\nfoo,bar\n",
-        );
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first, "foo");
-        assert_eq!(rows[0].second, "bar");
     }
 }

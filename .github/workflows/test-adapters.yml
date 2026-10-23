@@ -179,9 +179,13 @@ jobs:
       # Pubsub tests are only supported on x86_64, see below
       - name: Run adapters tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
+        # The connector suites run from `connector_suites`, a test target of `static_adapters`,
+        # the static engine's crate; the other tests of both crates reach no engine.
         run: |
           source .venv/bin/activate
-          ../../build/dbsp_adapters-* --skip pubsub
+          ../../build/dbsp_adapters-*
+          ../../build/static_adapters-*
+          ../../build/connector_suites-* --skip transport::pubsub::
         working-directory: crates/adapters
         shell: bash
         env:
@@ -268,7 +272,7 @@ jobs:
 
       - name: Run adapters pubsub tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: ../../build/dbsp_adapters-* pubsub
+        run: ../../build/connector_suites-* transport::pubsub::
         working-directory: crates/adapters
         env:
           RUST_BACKTRACE: 1

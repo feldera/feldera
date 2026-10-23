@@ -12,20 +12,17 @@ use actix_web::body::BoxBody;
 use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, HttpResponseBuilder, ResponseError};
 use anyhow::Error as AnyError;
-use dbsp::{
-    Error as DbspError,
-    circuit::{LayoutError, bootstrap::BootstrapInfo},
-    storage::backend::StorageError,
-};
+use feldera_storage::error::StorageError;
+use feldera_types::circuit::{BootstrapInfo, LayoutError};
 use feldera_types::{
-    error::{DetailedError, ErrorResponse},
+    error::{DetailedError, EngineError, ErrorResponse},
     runtime_status::RuntimeDesiredStatus,
     suspend::SuspendError,
 };
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 use super::journal::StepError;
-use crate::{DbspDetailedError, format::ParseError, transport::Step};
+use crate::{format::ParseError, transport::Step};
 
 /// Controller configuration error.
 #[derive(Debug, Serialize)]
@@ -192,7 +189,7 @@ pub enum ConfigError {
 
 impl StdError for ConfigError {}
 
-impl DbspDetailedError for ConfigError {
+impl DetailedError for ConfigError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::PipelineConfigParseError { .. } => Cow::from("PipelineConfigParseError"),
@@ -712,6 +709,11 @@ pub enum ControllerError {
         error: String,
     },
 
+    /// The program's UDF library (its Rust UDFs compiled to a shared library) does not load.
+    UdfLibraryError {
+        error: String,
+    },
+
     /// Error parsing CLI arguments.
     CliArgsError {
         error: String,
@@ -786,9 +788,9 @@ pub enum ControllerError {
         error: String,
     },
 
-    /// Error evaluating the DBSP circuit.
+    /// Error evaluating the DBSP circuit, from the engine that runs it.
     DbspError {
-        error: DbspError,
+        error: Box<dyn EngineError>,
     },
 
     /// Error inside the Prometheus module.
@@ -817,6 +819,10 @@ pub enum ControllerError {
 
     /// Enterprise-only feature.
     EnterpriseFeature(&'static str),
+
+    /// A recognized operation whose subsystem is not implemented in this
+    /// runtime. Maps to HTTP 501 Not Implemented.
+    NotImplemented(&'static str),
 
     /// Cannot checkpoint or suspend.
     SuspendError(SuspendError),
@@ -897,6 +903,7 @@ impl ResponseError for ControllerError {
             Self::ParseError { .. } => StatusCode::BAD_REQUEST,
             Self::NotSupported { .. } => StatusCode::BAD_REQUEST,
             Self::EnterpriseFeature(_) => StatusCode::NOT_IMPLEMENTED,
+            Self::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
             Self::RestoreInProgress => StatusCode::SERVICE_UNAVAILABLE,
             Self::BootstrapInProgress => StatusCode::SERVICE_UNAVAILABLE,
             Self::PipelineRestarted { .. } => StatusCode::GONE,
@@ -998,7 +1005,7 @@ where
     ser.end()
 }
 
-impl DbspDetailedError for ControllerError {
+impl DetailedError for ControllerError {
     // TODO: attempts to cast `AnyError` to `DetailedError`.
     fn error_code(&self) -> Cow<'static, str> {
         match self {
@@ -1016,6 +1023,7 @@ impl DbspDetailedError for ControllerError {
             Self::UnexpectedStep { .. } => Cow::from("UnexpectedStep"),
             Self::ReplayFailure { .. } => Cow::from("ReplayFailure"),
             Self::IrParseError { .. } => Cow::from("IrParseError"),
+            Self::UdfLibraryError { .. } => Cow::from("UdfLibraryError"),
             Self::CliArgsError { .. } => Cow::from("ControllerCliArgsError"),
             Self::Config { config_error } => {
                 Cow::from(format!("ConfigError.{}", config_error.error_code()))
@@ -1033,6 +1041,7 @@ impl DbspDetailedError for ControllerError {
             Self::ControllerPanic => Cow::from("ControllerPanic"),
             Self::ControllerExit => Cow::from("ControllerExit"),
             Self::EnterpriseFeature(_) => Cow::from("EnterpriseFeature"),
+            Self::NotImplemented(_) => Cow::from("NotImplemented"),
             Self::StorageError { .. } => Cow::from("StorageError"),
             Self::SuspendError(_) => Cow::from("SuspendError"),
             Self::UnexpectedJsonStructure { .. } => Cow::from("UnexpectedJsonStructure"),
@@ -1052,13 +1061,6 @@ impl DbspDetailedError for ControllerError {
             Self::UnexpectedBootstrap { .. } => Cow::from("UnexpectedBootstrap"),
             Self::UnexpectedRuntimeVersion { .. } => Cow::from("UnexpectedRuntimeVersion"),
         }
-    }
-}
-
-impl DetailedError for ControllerError {
-    // TODO: attempts to cast `AnyError` to `DetailedError`.
-    fn error_code(&self) -> Cow<'static, str> {
-        DbspDetailedError::error_code(self)
     }
 }
 
@@ -1129,6 +1131,9 @@ impl Display for ControllerError {
             }
             Self::IrParseError { error } => {
                 write!(f, "Error parsing program IR: {error}")
+            }
+            Self::UdfLibraryError { error } => {
+                write!(f, "Error loading the program's UDFs: {error}")
             }
             Self::CliArgsError { error } => {
                 write!(f, "Error parsing command line arguments: {error}")
@@ -1213,6 +1218,9 @@ impl Display for ControllerError {
                     f,
                     "Cannot use enterprise-only feature ({feature}) in Feldera community edition."
                 )
+            }
+            Self::NotImplemented(feature) => {
+                write!(f, "{feature} is not implemented in this runtime.")
             }
             Self::StorageError { context, error, .. } => {
                 write!(f, "I/O error {context}: {error}")
@@ -1329,6 +1337,12 @@ impl ControllerError {
 
     pub fn ir_parse_error(error: &str) -> Self {
         Self::IrParseError {
+            error: error.to_string(),
+        }
+    }
+
+    pub fn udf_library_error(error: &str) -> Self {
+        Self::UdfLibraryError {
             error: error.to_string(),
         }
     }
@@ -1600,8 +1614,10 @@ impl ControllerError {
         }
     }
 
-    pub fn dbsp_error(error: DbspError) -> Self {
-        Self::DbspError { error }
+    pub fn dbsp_error(error: impl EngineError) -> Self {
+        Self::DbspError {
+            error: Box::new(error),
+        }
     }
 
     pub fn dbsp_panic() -> Self {
@@ -1642,17 +1658,15 @@ impl ControllerError {
             Self::NotSupported { .. } | Self::SuspendError(SuspendError::Permanent(_)) => {
                 ErrorKind::Unsupported
             }
-            Self::DbspError {
-                error: DbspError::IO(error),
-            } => error.kind(),
-            Self::DbspError { .. }
-            | Self::SchemaParseError { .. }
+            Self::DbspError { error } => error.io_error_kind().unwrap_or(ErrorKind::Other),
+            Self::SchemaParseError { .. }
             | Self::SchemaValidationError { .. }
             | Self::CheckpointParseError { .. }
             | Self::CheckpointDoesNotMatchPipeline
             | Self::UnexpectedStep { .. }
             | Self::ReplayFailure { .. }
             | Self::IrParseError { .. }
+            | Self::UdfLibraryError { .. }
             | Self::CliArgsError { .. }
             | Self::Config { .. }
             | Self::UnknownInputEndpoint { .. }
@@ -1667,6 +1681,7 @@ impl ControllerError {
             | Self::ControllerPanic
             | Self::ControllerExit
             | Self::EnterpriseFeature(_)
+            | Self::NotImplemented(_)
             | Self::UnexpectedJsonStructure { .. }
             | Self::UnknownEndpointInCompletionToken { .. }
             | Self::CheckpointFetchError { .. }
@@ -1694,12 +1709,6 @@ impl From<ConfigError> for ControllerError {
     }
 }
 
-impl From<DbspError> for ControllerError {
-    fn from(error: DbspError) -> Self {
-        Self::DbspError { error }
-    }
-}
-
 impl From<SuspendError> for ControllerError {
     fn from(error: SuspendError) -> Self {
         Self::SuspendError(error)
@@ -1713,5 +1722,92 @@ impl From<feldera_types::pipeline_diff::PipelineDiffError> for ControllerError {
                 Self::BootstrapNotAllowed { error }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::borrow::Cow;
+    use std::error::Error as StdError;
+    use std::fmt::{Display, Formatter, Result as FmtResult};
+    use std::io::ErrorKind;
+
+    use actix_web::ResponseError;
+    use actix_web::http::StatusCode;
+    use feldera_types::error::{DetailedError, EngineError};
+    use serde::Serialize;
+    use serde_json::json;
+
+    use super::ControllerError;
+
+    #[derive(Debug, Serialize)]
+    struct StalledEngine {
+        reason: &'static str,
+    }
+
+    impl Display for StalledEngine {
+        fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+            write!(f, "{}", self.reason)
+        }
+    }
+
+    impl StdError for StalledEngine {}
+
+    impl EngineError for StalledEngine {
+        fn error_code(&self) -> Cow<'static, str> {
+            Cow::from("StalledEngine")
+        }
+
+        fn io_error_kind(&self) -> Option<ErrorKind> {
+            Some(ErrorKind::TimedOut)
+        }
+    }
+
+    /// An engine that lacks a subsystem reports it with HTTP 501, in the wording and with the
+    /// code that customers see.
+    #[test]
+    fn not_implemented_names_the_feature() {
+        let error = ControllerError::NotImplemented("checkpoints");
+        assert_eq!(
+            error.to_string(),
+            "checkpoints is not implemented in this runtime."
+        );
+        assert_eq!(DetailedError::error_code(&error), "NotImplemented");
+        assert_eq!(
+            ResponseError::status_code(&error),
+            StatusCode::NOT_IMPLEMENTED
+        );
+        assert_eq!(error.kind(), ErrorKind::Other);
+    }
+
+    /// A UDF library that does not load is reported in the wording and with the code that
+    /// customers see.
+    #[test]
+    fn a_udf_library_error_names_the_cause() {
+        let error = ControllerError::udf_library_error("checksum mismatch");
+        assert_eq!(
+            error.to_string(),
+            "Error loading the program's UDFs: checksum mismatch"
+        );
+        assert_eq!(DetailedError::error_code(&error), "UdfLibraryError");
+        assert_eq!(
+            ResponseError::status_code(&error),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(error.kind(), ErrorKind::Other);
+    }
+
+    /// An engine's error keeps its code, its I/O kind, its message, and its JSON inside a
+    /// controller error.
+    #[test]
+    fn an_engine_error_keeps_what_it_reports() {
+        let error = ControllerError::dbsp_error(StalledEngine { reason: "stalled" });
+        assert_eq!(DetailedError::error_code(&error), "StalledEngine");
+        assert_eq!(error.kind(), ErrorKind::TimedOut);
+        assert_eq!(error.to_string(), "DBSP error: stalled");
+        assert_eq!(
+            serde_json::to_value(&error).unwrap(),
+            json!({"error": {"reason": "stalled"}})
+        );
     }
 }

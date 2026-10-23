@@ -103,13 +103,14 @@ smallvec = { workspace = true }
 async-stream = { workspace = true }
 futures-util = { workspace = true }
 feldera-buffer-cache = { workspace = true }
-memory-stats = { workspace = true }
 nix = { workspace = true, features = ["process", "time", "fs", "feature"] }
 pin-project-lite = { workspace = true }
 
 [dev-dependencies]
 # Only the filter_predictor benchmark, which compares against it.
 fastbloom = { workspace = true }
+# Only the lazy_input_map benchmark, which tracks its peak RSS.
+memory-stats = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
 proptest-derive = { workspace = true }
