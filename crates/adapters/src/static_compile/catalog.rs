@@ -287,7 +287,7 @@ impl Catalog {
 
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema.clone(),
-            DeMapHandle::new(handle, value_key_func.clone(), update_key_func.clone()),
+            DeMapHandle::new(handle, value_key_func, update_key_func),
             stream.local_node_id(),
         ))
         .unwrap();
@@ -370,7 +370,7 @@ impl Catalog {
 
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema.clone(),
-            DeMapHandle::new(handle, value_key_func.clone(), update_key_func.clone()),
+            DeMapHandle::new(handle, value_key_func, update_key_func),
             stream.local_node_id(),
         ))
         .unwrap();
@@ -453,7 +453,7 @@ impl Catalog {
 
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema.clone(),
-            DeLazyMapHandle::new(handle, value_key_func.clone()),
+            DeLazyMapHandle::new(handle, value_key_func),
             stream.local_node_id(),
         ))
         .unwrap();

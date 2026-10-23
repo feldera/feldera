@@ -139,7 +139,7 @@ where
     match map {
         // Treat like an error; the result will be unwrapped to None anyway
         None => Err(SqlRuntimeError::from_strng("")),
-        Some(map) => map_map_safe__(map.clone(), f),
+        Some(map) => map_map_safe__(map, f),
     }
 }
 

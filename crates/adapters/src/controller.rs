@@ -6577,7 +6577,7 @@ impl BackpressureThread {
         let exit = Arc::new(AtomicBool::new(false));
         let unparker = parker.unparker().clone();
         Self {
-            exit: exit.clone(),
+            exit,
             controller,
             parker: Some(parker),
             unparker,
@@ -7493,7 +7493,7 @@ impl TransactionInfo {
     /// the open transaction, it counts this host's report in that one, so
     /// this fills in that transaction's id.
     fn set_coordinator_transaction(&mut self, request: &StepRequest) {
-        self.coordinator_members = request.transaction_members.clone();
+        self.coordinator_members.clone_from(&request.transaction_members);
         self.coordinator_transaction_id = request.transaction_id;
         if let (Some(id), Some(members)) = (request.transaction_id, &request.transaction_members) {
             let mut changed = false;
@@ -8874,7 +8874,7 @@ impl ControllerInner {
             command_handler,
             parker.unparker().clone(),
         );
-        let queue = endpoint_descr.queue.clone();
+        let thread_queue = endpoint_descr.queue.clone();
         let disconnect_flag = endpoint_descr.disconnect_flag.clone();
         let controller = self.clone();
 
@@ -8895,7 +8895,6 @@ impl ControllerInner {
             .connector_config
             .output_buffer_config
             .clone();
-        let thread_queue = queue.clone();
 
         // Thread to run the output pipeline. We run it inside the DBSP runtime as an aux thread, so
         // that it can use the storage backend to maintain the output buffer.

@@ -1832,9 +1832,9 @@ fn get_status(
                 storage_status_details,
             }),
         },
-        PipelinePhase::InitializationError(e) => {
-            let e = PipelineError::InitializationError { error: e.clone() };
-            let status_code = e.status_code();
+        PipelinePhase::InitializationError(error) => {
+            let status_code = error.status_code();
+            let e = PipelineError::InitializationError { error };
             let e = ErrorResponse::from_error(&e);
             Err(ExtendedRuntimeStatusError {
                 status_code,
@@ -1855,7 +1855,6 @@ fn get_status(
             },
         }),
         PipelinePhase::Failed(e) => {
-            let e = e.clone();
             if matches!(*e, ControllerError::RestoreInProgress) {
                 Ok(ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Replaying,

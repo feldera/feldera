@@ -121,14 +121,14 @@ pub fn input_transport_config_to_endpoint(
         #[cfg(not(feature = "with-s2"))]
         TransportConfig::S2Input(_) => return Ok(None),
         #[cfg(feature = "with-pubsub")]
-        TransportConfig::PubSubInput(config) => Box::new(PubSubInputEndpoint::new(config.clone())?),
+        TransportConfig::PubSubInput(config) => Box::new(PubSubInputEndpoint::new(config)?),
         #[cfg(not(feature = "with-pubsub"))]
         TransportConfig::PubSubInput(_) => return Ok(None),
         TransportConfig::UrlInput(config) => Box::new(UrlInputEndpoint::new(config)),
         TransportConfig::S3Input(config) => Box::new(S3InputEndpoint::new(config)?),
-        TransportConfig::Datagen(config) => Box::new(GeneratorEndpoint::new(config.clone())),
+        TransportConfig::Datagen(config) => Box::new(GeneratorEndpoint::new(config)),
         #[cfg(feature = "with-nexmark")]
-        TransportConfig::Nexmark(config) => Box::new(NexmarkEndpoint::new(config.clone())),
+        TransportConfig::Nexmark(config) => Box::new(NexmarkEndpoint::new(config)),
         #[cfg(not(feature = "with-nexmark"))]
         TransportConfig::Nexmark(_) => return Ok(None),
         TransportConfig::HttpInput(config) => Box::new(HttpInputEndpoint::new(config)),

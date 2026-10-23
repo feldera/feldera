@@ -1041,7 +1041,6 @@ impl KafkaFtInputReader {
             .name("kafka-input-poller".to_string())
             .spawn({
                 let endpoint = inner.clone();
-                let config = config.clone();
                 let shard = shard.copied();
                 move || {
                     let _guard = span(&config.topic);

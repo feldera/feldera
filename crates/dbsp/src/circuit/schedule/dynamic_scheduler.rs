@@ -518,7 +518,7 @@ impl Inner {
             return Ok(());
         }
 
-        let metadata = circuit.metadata_exchange().local_metadata().clone();
+        let metadata = circuit.metadata_exchange().local_metadata();
         let global_metadata = self.metadata_broadcast.collect(metadata).await?;
         circuit
             .metadata_exchange()

@@ -155,7 +155,7 @@ where
                         Some(location),
                         exchange.clone(),
                         || Vec::new(),
-                        start_wait_usecs.clone(),
+                        start_wait_usecs,
                         move |vec: AlignedVec| {
                             deserialize_indexed_wset(&batch_factories_clone, &vec)
                         },
@@ -245,7 +245,7 @@ where
                     let accumulator_feedback_stream = Stream::with_value(
                         circuit.clone(),
                         accumulator_stream.local_node_id(),
-                        accumulator_snapshot_stream_val.clone(),
+                        accumulator_snapshot_stream_val,
                     );
 
                     acc_feedback.connect(&accumulator_feedback_stream);

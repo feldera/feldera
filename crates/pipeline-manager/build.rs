@@ -100,7 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("Could not run `bun clean-install`. Follow set-up instructions in js-packages/web-console/README.md")
             .run("build")
             .expect("Could not run `bun run build`. Run it manually in js-packages/web-console/ to debug.")
-            .target(asset_path.clone())
+            .target(asset_path)
             .to_resource_dir();
         let _ = resource_dir.with_generated_filename(out_dir.join("generated.rs"));
         resource_dir.build().expect("SvelteKit app failed to build");

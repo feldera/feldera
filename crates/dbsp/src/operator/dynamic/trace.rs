@@ -278,7 +278,7 @@ impl<V: DataTrait + ?Sized> GroupPredicate<V> {
                     .map(|b| MetaItem::String(format!("{b:?}")))
                     .collect(),
             ),
-            Self::Filter(filter) => filter.metadata().clone(),
+            Self::Filter(filter) => filter.metadata(),
         }
     }
 }

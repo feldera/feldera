@@ -93,7 +93,7 @@ where
         &mut self,
         feedback_stream: RefStreamValue<EmptyCheckpoint<Vec<Arc<B>>>>,
     ) {
-        self.feedback_stream = Some(feedback_stream.clone());
+        self.feedback_stream = Some(feedback_stream);
     }
 }
 

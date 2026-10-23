@@ -79,7 +79,6 @@ where
                     bounds,
                 )
             })
-            .clone()
     }
 }
 

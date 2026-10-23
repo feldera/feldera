@@ -808,7 +808,6 @@ impl IcebergInputReader {
         }
 
         let endpoint_clone = endpoint.clone();
-        let receiver_clone = receiver.clone();
 
         // Used to communicate the status of connector initialization.
         let (init_status_sender, mut init_status_receiver) =
@@ -824,7 +823,7 @@ impl IcebergInputReader {
             .spawn(move || {
                 TOKIO.block_on(async {
                     let _ = endpoint_clone
-                        .worker_task(input_stream, schema, receiver_clone, init_status_sender)
+                        .worker_task(input_stream, schema, receiver, init_status_sender)
                         .await;
                 })
             })
@@ -1054,9 +1053,9 @@ impl IcebergInputEndpointInner {
             }
         };
 
-        *self.last_resume_status.lock().unwrap() = resume_status.clone();
+        self.last_resume_status.lock().unwrap().clone_from(&resume_status);
         if let Some(resume_status) = &resume_status {
-            *self.last_checkpointable_status.lock().unwrap() = resume_status.clone();
+            self.last_checkpointable_status.lock().unwrap().clone_from(resume_status);
         }
 
         let resume = match resume_status {

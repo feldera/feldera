@@ -210,10 +210,10 @@ impl ClientMetadata {
         // Destructured so adding a field forces this check to account for it.
         let PatchClientMetadata { description, tags } = patch;
         if let Some(description) = description {
-            self.description = description.clone();
+            self.description.clone_from(description);
         }
         if let Some(tags) = tags {
-            self.tags = tags.clone();
+            self.tags.clone_from(tags);
         }
     }
 

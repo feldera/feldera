@@ -1019,7 +1019,7 @@ impl RootCircuit {
                         &factories.batch_factories,
                         false,
                         self.root_scope(),
-                        bounds.clone(),
+                        bounds,
                     ),
                 );
             delayed_integral.mark_sharded();

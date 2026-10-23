@@ -751,7 +751,7 @@ fn determine_connector_endpoint_names(
         if existing_endpoints.contains(&endpoint_name) {
             return Err(ConnectorGenerationError::RelationConnectorNameCollision {
                 position: origin_value.value_position,
-                relation: stream.clone(),
+                relation: stream,
                 connector_name,
             });
         }

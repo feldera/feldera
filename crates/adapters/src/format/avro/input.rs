@@ -80,7 +80,7 @@ impl InputFormat for AvroInputFormat {
             endpoint_name,
             &input_handle.schema,
             input_handle.handle.fork(),
-            config.clone(),
+            config,
         )?;
 
         Ok(Box::new(parser) as Box<dyn Parser>)

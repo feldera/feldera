@@ -107,7 +107,7 @@ where
     match vec {
         // Treat like an error; the result will be unwrapped to None anyway
         None => Err(SqlRuntimeError::from_strng("")),
-        Some(vec) => array_map_safe__(vec.clone(), f),
+        Some(vec) => array_map_safe__(vec, f),
     }
 }
 

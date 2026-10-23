@@ -92,7 +92,6 @@ where
 
                 output
             })
-            .clone()
     }
 }
 

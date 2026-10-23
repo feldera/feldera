@@ -1315,7 +1315,7 @@ pub(crate) fn aws_auth_config() -> AuthConfiguration {
     let validation = login_validation(&iss, None);
     AuthConfiguration {
         provider: AuthProvider::AwsCognito(ProviderAwsCognito {
-            issuer: iss.clone(),
+            issuer: iss,
             login_url: env::var("AWS_COGNITO_LOGIN_URL")
                 .expect("Missing environment variable AWS_COGNITO_LOGIN_URL"),
             logout_url: env::var("AWS_COGNITO_LOGOUT_URL")
