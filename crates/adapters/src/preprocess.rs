@@ -227,6 +227,7 @@ mod tests {
             name: "decryption".to_string(),
             message_oriented: true,
             config: json!({ "key": BASE64.encode(key_bytes) }),
+            max_allowed_call_duration: None,
         }
     }
 
@@ -345,6 +346,7 @@ mod tests {
             name: "decryption".to_string(),
             message_oriented: true,
             config: json!({ "key": "not-valid-base64!!!" }),
+            max_allowed_call_duration: None,
         };
         let result = DecryptionPreprocessorFactory.create(&config);
         assert!(matches!(
@@ -359,6 +361,7 @@ mod tests {
             name: "decryption".to_string(),
             message_oriented: true,
             config: json!({}),
+            max_allowed_call_duration: None,
         };
         let result = DecryptionPreprocessorFactory.create(&config);
         assert!(matches!(

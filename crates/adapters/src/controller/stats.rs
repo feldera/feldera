@@ -52,6 +52,7 @@ use feldera_adapterlib::{
     errors::journal::ControllerError,
     format::{BufferSize, ParseError},
     metrics::ConnectorMetrics,
+    preprocess::PreprocessorWatchdog,
     transport::{InputReader, Resume, Step, Watermark},
 };
 use feldera_samply::Event;
@@ -59,9 +60,9 @@ use feldera_storage::disk::DiskUsage;
 use feldera_storage::histogram::SlidingHistogram;
 use feldera_types::{
     adapter_stats::{
-        CompletedWatermark, ConnectorError, ConnectorHealth, ExternalInputEndpointMetrics,
-        ExternalInputEndpointStatus, ExternalOutputEndpointMetrics, ExternalOutputEndpointStatus,
-        ShortEndpointConfig,
+        CompletedWatermark, ConnectorError, ConnectorHealth, ConnectorHealthStatus,
+        ExternalInputEndpointMetrics, ExternalInputEndpointStatus, ExternalOutputEndpointMetrics,
+        ExternalOutputEndpointStatus, ShortEndpointConfig,
     },
     checkpoint::CheckpointActivity,
     config::{FtModel, PipelineConfig},
@@ -2362,6 +2363,15 @@ pub struct InputEndpointStatus {
     /// Health status of the connector.
     pub health: Mutex<Option<ConnectorHealth>>,
 
+    /// Watches the calls to the endpoint's preprocessor, if it has one.
+    pub preprocessor_watchdog: Option<PreprocessorWatchdog>,
+
+    /// A description of the preprocessor calls of the endpoint that are in
+    /// progress for more than the maximum allowed call duration, for example
+    /// `preprocessor 'decrypt': 3 of 4 instances have a call in progress for
+    /// more than 10s`.  `None` if no call is late.
+    pub preprocessor_stall: Mutex<Option<String>>,
+
     /// Progress within the latest step.
     pub progress: Mutex<Option<StepResults>>,
 
@@ -2435,11 +2445,31 @@ impl InputEndpointStatus {
             } else {
                 None
             },
-            health: self.health.lock().unwrap().clone(),
+            health: self.health(),
             paused: self.is_paused_by_user(),
             barrier: self.is_barrier(),
             completed_frontier: self.completed_frontier.completed_watermark(),
         }
+    }
+
+    /// Combines the health that the connector reports with the preprocessor
+    /// stall information.
+    pub fn health(&self) -> Option<ConnectorHealth> {
+        // The stall is stored apart from `health`, so a late preprocessor call
+        // does not overwrite the health that the connector reports.
+        let health = self.health.lock().unwrap().clone();
+        let Some(stall) = self.preprocessor_stall.lock().unwrap().clone() else {
+            return health;
+        };
+        // An unhealthy connector keeps its own description, after the stall.
+        let description = match health {
+            Some(ConnectorHealth {
+                status: ConnectorHealthStatus::Unhealthy,
+                description: Some(description),
+            }) => format!("{stall}; {description}"),
+            _ => stall,
+        };
+        Some(ConnectorHealth::unhealthy(&description))
     }
 }
 
@@ -2449,6 +2479,7 @@ impl InputEndpointStatus {
         config: InputEndpointConfig,
         fault_tolerance: Option<FtModel>,
         initial_statistics: Option<&CheckpointInputEndpointMetrics>,
+        preprocessor_watchdog: Option<PreprocessorWatchdog>,
     ) -> Self {
         let paused_by_user =
             config.connector_config.paused || config.connector_config.start_after.is_some();
@@ -2473,6 +2504,8 @@ impl InputEndpointStatus {
             transport_errors: Mutex::new(transport_errors),
             parse_errors: Mutex::new(parse_errors),
             health: Mutex::new(None),
+            preprocessor_watchdog,
+            preprocessor_stall: Mutex::new(None),
             progress: Mutex::new(None),
             paused: AtomicBool::new(paused_by_user),
             barrier: AtomicBool::new(false),
@@ -3337,7 +3370,7 @@ mod test {
             "transport": { "name": "file_input", "config": { "path": "unused" } },
         }))
         .unwrap();
-        let endpoint = InputEndpointStatus::new("test_endpoint", config, None, None);
+        let endpoint = InputEndpointStatus::new("test_endpoint", config, None, None, None);
 
         // The connector buffers a request's 3 records.
         let amt = BufferSize {
@@ -3387,7 +3420,7 @@ mod test {
             status
                 .inputs
                 .write()
-                .insert(id, InputEndpointStatus::new(name, config, None, None));
+                .insert(id, InputEndpointStatus::new(name, config, None, None, None));
         }
         let parker = Parker::new();
         status.eoi(0, parker.unparker(), parker.unparker());
@@ -3422,7 +3455,7 @@ mod test {
             .unwrap();
             status.inputs.write().insert(
                 0,
-                InputEndpointStatus::new("labeled", input_config, None, None),
+                InputEndpointStatus::new("labeled", input_config, None, None, None),
             );
             let parker = Parker::new();
             let unparker = parker.unparker();

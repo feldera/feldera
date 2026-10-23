@@ -21,8 +21,9 @@ use crate::ConnectorMetadata;
 use crate::catalog::{InputCollectionHandle, SerBatchReader};
 use crate::errors::controller::ControllerError;
 use crate::postprocess::Postprocessor;
-use crate::preprocess::Preprocessor;
+use crate::preprocess::{Preprocessor, PreprocessorWatchdog};
 use crate::transport::{OutputBatchType, Step};
+use crate::utils::transition_counter::TransitionCounter;
 
 /// Trait that represents a specific data format.
 ///
@@ -371,14 +372,22 @@ pub struct StreamingPreprocessedParser {
     preprocessor: Box<dyn Preprocessor>,
     stream_splitter: StreamSplitter,
     parser: Box<dyn Parser>,
+    watchdog: PreprocessorWatchdog,
+    transition_counter: TransitionCounter,
 }
 
 impl StreamingPreprocessedParser {
-    pub fn new(preprocessor: Box<dyn Preprocessor>, parser: Box<dyn Parser>) -> Self {
+    pub fn new(
+        preprocessor: Box<dyn Preprocessor>,
+        parser: Box<dyn Parser>,
+        watchdog: PreprocessorWatchdog,
+    ) -> Self {
         Self {
             preprocessor,
             stream_splitter: StreamSplitter::new(parser.splitter()),
             parser,
+            transition_counter: watchdog.new_counter(),
+            watchdog,
         }
     }
 }
@@ -389,9 +398,11 @@ impl Parser for StreamingPreprocessedParser {
         data: &[u8],
         metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-        let (pre_data, mut pre_errors) = self
-            .preprocessor
-            .process_with_metadata(data, metadata.as_ref());
+        let (pre_data, mut pre_errors) = self.transition_counter.count(|| {
+            // Track the progress of the preprocessor call using transition_counter
+            self.preprocessor
+                .process_with_metadata(data, metadata.as_ref())
+        });
         self.stream_splitter.append(&pre_data);
         let mut parsed: Vec<Box<dyn InputBuffer>> = Vec::new();
         while let Some(chunk) = self.stream_splitter.next(true) {
@@ -424,6 +435,7 @@ impl Parser for StreamingPreprocessedParser {
         Box::new(StreamingPreprocessedParser::new(
             self.preprocessor.fork(),
             self.parser.fork(),
+            self.watchdog.clone(),
         ))
     }
 }
@@ -432,13 +444,21 @@ impl Parser for StreamingPreprocessedParser {
 pub struct MessageOrientedPreprocessedParser {
     preprocessor: Box<dyn Preprocessor>,
     parser: Box<dyn Parser>,
+    watchdog: PreprocessorWatchdog,
+    transition_counter: TransitionCounter,
 }
 
 impl MessageOrientedPreprocessedParser {
-    pub fn new(preprocessor: Box<dyn Preprocessor>, parser: Box<dyn Parser>) -> Self {
+    pub fn new(
+        preprocessor: Box<dyn Preprocessor>,
+        parser: Box<dyn Parser>,
+        watchdog: PreprocessorWatchdog,
+    ) -> Self {
         Self {
             preprocessor,
             parser,
+            transition_counter: watchdog.new_counter(),
+            watchdog,
         }
     }
 }
@@ -449,9 +469,11 @@ impl Parser for MessageOrientedPreprocessedParser {
         data: &[u8],
         metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-        let (pre_data, mut pre_errors) = self
-            .preprocessor
-            .process_with_metadata(data, metadata.as_ref());
+        let (pre_data, mut pre_errors) = self.transition_counter.count(|| {
+            // Track the progress of the preprocessor call using transition_counter
+            self.preprocessor
+                .process_with_metadata(data, metadata.as_ref())
+        });
         let mut parser_splitter = self.parser.splitter();
         let mut parsed: Vec<Box<dyn InputBuffer>> = Vec::new();
         let mut remaining = pre_data.as_slice();
@@ -489,6 +511,7 @@ impl Parser for MessageOrientedPreprocessedParser {
         Box::new(MessageOrientedPreprocessedParser::new(
             self.preprocessor.fork(),
             self.parser.fork(),
+            self.watchdog.clone(),
         ))
     }
 }

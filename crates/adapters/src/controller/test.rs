@@ -6422,6 +6422,7 @@ fn test_external_controller_status_serialization() {
             .unwrap(),
             None,
             None,
+            None,
         );
         kafka_endpoint
             .metrics
@@ -6476,6 +6477,7 @@ fn test_external_controller_status_serialization() {
                 }
             }))
             .unwrap(),
+            None,
             None,
             None,
         );
@@ -6860,6 +6862,7 @@ fn test_custom_connector_metrics_prometheus_output() {
         .unwrap(),
         None,
         None,
+        None,
     );
     status.inputs.write().insert(0, endpoint);
 
@@ -7029,6 +7032,7 @@ fn test_custom_connector_metrics_prometheus_grouping() {
                 "format": { "name": "json", "config": {} }
             }))
             .unwrap(),
+            None,
             None,
             None,
         );
@@ -7973,7 +7977,7 @@ mod queue_limit_tests {
             config["max_queued_bytes"] = json!(bytes);
         }
         let config: InputEndpointConfig = serde_json::from_value(config).unwrap();
-        InputEndpointStatus::new("test_endpoint", config, None, None)
+        InputEndpointStatus::new("test_endpoint", config, None, None, None)
     }
 
     fn make_status_with_endpoint(
@@ -10098,7 +10102,7 @@ fn controller_with_probe(config: serde_json::Value) -> (Controller, super::Input
     .unwrap();
     controller.inner.status.inputs.write().insert(
         0,
-        super::stats::InputEndpointStatus::new("test_input", input_config, None, None),
+        super::stats::InputEndpointStatus::new("test_input", input_config, None, None, None),
     );
     let probe = super::InputProbe {
         endpoint_id: 0,

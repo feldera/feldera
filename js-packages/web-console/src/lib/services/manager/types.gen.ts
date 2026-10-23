@@ -5094,6 +5094,15 @@ export type PreprocessorConfig = {
    */
   config: unknown
   /**
+   * Maximum allowed duration of one call to the preprocessor, for example
+   * `10s`.  While a call runs longer, the connector is unhealthy and the
+   * pipeline logs warnings.
+   *
+   * When not set it defaults to `1s`; `null` disables the check.  Values
+   * less than 1 second are raised to 1 second.
+   */
+  max_allowed_call_duration?: string | null
+  /**
    * True if the preprocessor is message-oriented: true if each preprocessor
    * output record corresponds to a whole number of of parser records.
    */
