@@ -103,7 +103,7 @@ rcgen = { version = "0.14.8", default-features = false, features = ["pem", "aws_
 tokio-postgres-rustls = { version = "0.14.0", default-features = false, features = ["aws-lc-rs"] }
 base64 = "0.22.1"
 base58 = "0.2.0"
-binrw = "0.13.3"
+binrw = "0.15.2"
 blake3 = "1.8.2"
 bstr = "0.2.1"
 bytemuck = { version = "1.16.3", features = ["derive"] }
