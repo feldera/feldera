@@ -2953,7 +2953,7 @@ fn test_kafka_metadata_json() {
                 ),
                 (
                     Variant::String(SqlString::from("header2")),
-                    Variant::SqlNull,
+                    Variant::VariantNull,
                 ),
             ]))),
             SqlString::from(topic),
@@ -3134,7 +3134,7 @@ fn test_kafka_metadata_raw() {
                 ),
                 (
                     Variant::String(SqlString::from("header2")),
-                    Variant::SqlNull,
+                    Variant::VariantNull,
                 ),
             ]))),
             SqlString::from(topic),

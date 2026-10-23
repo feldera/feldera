@@ -34,6 +34,35 @@ Source edition can be found on github.
   `1970-01-01 00:00:00.0015`.  Before this change, the result had no
   fractional seconds (`1970-01-01 00:00:01`).
 
+- Incompatible change (user-defined preprocessors): connector metadata
+  attributes are now `VariantValue`s instead of `Variant`s.
+  `ConnectorMetadata::get_by_name` returns `Option<&VariantValue>`, and
+  `ConnectorMetadata::get`, which took a `Variant` key, is removed.
+  Replace a pattern such as `Some(Variant::String(topic))` with
+  `Some(VariantValue::String(topic))`, where `topic` is a Rust `String`.
+  `feldera_sqllib` re-exports `VariantValue`.  See
+  [`ConnectorMetadata`](/sql/udf#connectormetadata).
+
+- Incompatible change (connectors): some connector metadata attributes
+  have new types.  Casts such as
+  `CAST(CONNECTOR_METADATA()['avro_schema_id'] AS INT UNSIGNED)` and
+  `CAST(CONNECTOR_METADATA()['kafka_headers'] AS MAP<STRING, VARBINARY>)`
+  give the same results as before; only a program that reads the raw
+  `VARIANT` value can see the difference.
+  - The Avro format reports `avro_schema_id` as a `BIGINT` instead of an
+    `INT UNSIGNED`.
+  - The Kafka connector reports a header without a value as a `VARIANT`
+    null instead of a SQL `NULL` in `CONNECTOR_METADATA()['kafka_headers']`.
+  - In the `connector_metadata` parameter of the HTTP input connector, a
+    non-negative integer is a `BIGINT` instead of a `BIGINT UNSIGNED`, and
+    a number with more than 38 digits is rejected.
+
+- Bug fix (Delta Lake output connector): with the default
+  `"variant_encoding": "variant"`, writing a `VARIANT` that holds some
+  `DECIMAL` values, such as `1500000000` or `0.0000000001`, failed,
+  although the Parquet variant encoding can hold them.  The connector now
+  writes these values.
+
 ## v0.368.0
 
 - Incompatible change (SQL): a cast from `DOUBLE` or `REAL` to `DECIMAL`

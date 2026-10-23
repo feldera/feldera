@@ -597,6 +597,7 @@ mod test {
         format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat},
         program_schema::Relation,
         serde_with_context::{DeserializeWithContext, SqlSerdeConfig},
+        variant::VariantValue,
     };
     use std::{
         borrow::Cow, collections::BTreeMap, fmt::Debug, hash::Hash, panic::Location, sync::Arc,
@@ -1268,14 +1269,18 @@ mod test {
         init_test_logger();
 
         let mut metadata = ConnectorMetadata::new();
-        metadata.insert("kafka_headers", Variant::Map(Arc::new(BTreeMap::new())));
-        metadata.insert("kafka_topic", Variant::String(SqlString::from("my_topic")));
+        metadata.insert("kafka_headers", VariantValue::Object(BTreeMap::new()));
+        metadata.insert("kafka_topic", VariantValue::String("my_topic".into()));
         metadata.insert(
             "kafka_timestamp",
-            Variant::Timestamp(Timestamp::from_milliseconds(1763626606441)),
+            VariantValue::TimestampNtzMicros(
+                chrono::DateTime::from_timestamp_millis(1763626606441)
+                    .unwrap()
+                    .naive_utc(),
+            ),
         );
-        metadata.insert("kafka_partition", Variant::Int(10));
-        metadata.insert("kafka_offset", Variant::Int(1_000_000));
+        metadata.insert("kafka_partition", VariantValue::Int32(10));
+        metadata.insert("kafka_offset", VariantValue::Int32(1_000_000));
 
         let test_cases: Vec<TestCase<TestStructMetadata, ()>> = vec![
             TestCase::new(

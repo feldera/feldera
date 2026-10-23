@@ -16,10 +16,11 @@ use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
-use feldera_sqllib::Variant;
+use feldera_sqllib::FlatVariant;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::http::HttpInputConfig;
+use feldera_types::variant::VariantValue;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
@@ -75,14 +76,19 @@ pub(crate) struct RequestMetadata {
 impl RequestMetadata {
     /// Decodes the `connector_metadata` query parameter.
     pub(crate) fn parse(json: &str) -> Result<Self, String> {
-        let value: Variant = serde_json::from_str(json)
+        let value: FlatVariant = serde_json::from_str(json)
             .map_err(|e| format!("'connector_metadata' is not valid JSON: {e}"))?;
-        let Variant::Map(attributes) = value else {
+        let value = VariantValue::try_from(&value).map_err(|e| {
+            format!(
+                "'connector_metadata' holds a value that connector metadata cannot represent: {e}"
+            )
+        })?;
+        let VariantValue::Object(attributes) = value else {
             return Err("'connector_metadata' must be a JSON object".to_string());
         };
         Ok(Self {
             json: Arc::from(json),
-            metadata: ConnectorMetadata::from(Arc::unwrap_or_clone(attributes)),
+            metadata: ConnectorMetadata::from(attributes),
         })
     }
 }
@@ -449,6 +455,75 @@ impl From<Vec<JournaledChunk>> for Data {
                 .into_iter()
                 .map(|chunk| ByteBuf::from(chunk.data))
                 .collect(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::BTreeMap;
+
+    use feldera_types::variant::VariantValue;
+
+    use super::RequestMetadata;
+
+    /// Each field of the `connector_metadata` object becomes one attribute,
+    /// converted the way any JSON value converts to a VARIANT.
+    #[test]
+    fn request_metadata_holds_one_attribute_per_field() {
+        let metadata = RequestMetadata::parse(
+            r#"{"kafka_topic": "events", "kafka_offset": 42, "kafka_headers": {"h": null}}"#,
+        )
+        .unwrap()
+        .metadata;
+        assert_eq!(
+            metadata.get_by_name("kafka_topic"),
+            Some(&VariantValue::String("events".into()))
+        );
+        // JSON reads a non-negative integer as unsigned, which widens to a BIGINT.
+        assert_eq!(
+            metadata.get_by_name("kafka_offset"),
+            Some(&VariantValue::Int64(42))
+        );
+        assert_eq!(
+            metadata.get_by_name("kafka_headers"),
+            Some(&VariantValue::Object(BTreeMap::from([(
+                "h".to_string(),
+                VariantValue::Null
+            )])))
+        );
+    }
+
+    /// Of two fields with one name, the last one counts, as in a JSON object.
+    #[test]
+    fn request_metadata_keeps_the_last_of_two_fields() {
+        let metadata = RequestMetadata::parse(r#"{"a": 1, "a": "two"}"#)
+            .unwrap()
+            .metadata;
+        assert_eq!(
+            metadata.get_by_name("a"),
+            Some(&VariantValue::String("two".into()))
+        );
+    }
+
+    /// A number with more digits than a VARIANT decimal holds is refused.
+    #[test]
+    fn request_metadata_refuses_a_value_it_cannot_represent() {
+        let error = RequestMetadata::parse(r#"{"x": 123456789012345678901234567890123456789}"#)
+            .unwrap_err();
+        assert!(
+            error.contains("'connector_metadata' holds a value"),
+            "{error}"
+        );
+    }
+
+    /// A parameter that is not a JSON object is refused, and the error names
+    /// the parameter.
+    #[test]
+    fn request_metadata_must_be_a_json_object() {
+        for invalid in ["not json", "[1, 2]", "\"text\"", "7", "null"] {
+            let error = RequestMetadata::parse(invalid).unwrap_err();
+            assert!(error.contains("'connector_metadata'"), "{invalid}: {error}");
         }
     }
 }

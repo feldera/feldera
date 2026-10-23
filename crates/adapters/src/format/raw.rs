@@ -347,6 +347,7 @@ mod test {
         format::raw::{RawParserConfig, RawParserMode},
         program_schema::{ColumnType, Field, Relation, SqlIdentifier},
         serde_with_context::{DeserializeWithContext, SqlSerdeConfig},
+        variant::VariantValue,
     };
     use std::{borrow::Cow, collections::BTreeMap, fmt::Debug, hash::Hash};
 
@@ -630,8 +631,8 @@ mod test {
             ],
             varchar_with_metadata_schema(),
             Some(ConnectorMetadata::from(BTreeMap::from([(
-                Variant::String(SqlString::from("kafka_topic")),
-                Variant::String(SqlString::from("my_topic")),
+                "kafka_topic".to_string(),
+                VariantValue::String("my_topic".into()),
             )]))),
         );
 
@@ -730,8 +731,8 @@ mod test {
             )],
             opt_binary_with_metadata_schema(),
             Some(ConnectorMetadata::from(BTreeMap::from([(
-                Variant::String(SqlString::from("kafka_topic")),
-                Variant::String(SqlString::from("my_topic")),
+                "kafka_topic".to_string(),
+                VariantValue::String("my_topic".into()),
             )]))),
         );
 

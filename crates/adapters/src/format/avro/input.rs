@@ -22,6 +22,7 @@ use feldera_types::{
         DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat,
         serde_config::{BinaryFormat, DecimalFormat, UuidFormat, VariantFormat},
     },
+    variant::VariantValue,
 };
 use schema_registry_converter::blocking::schema_registry::{SrSettings, get_schema_by_id};
 use serde::Deserialize;
@@ -407,7 +408,10 @@ impl AvroParser {
             }
 
             let mut metadata = metadata.unwrap_or_default();
-            metadata.insert("avro_schema_id", Variant::UInt(self.schema_id.unwrap_or(0)));
+            metadata.insert(
+                "avro_schema_id",
+                VariantValue::Int64(self.schema_id.unwrap_or(0).into()),
+            );
             let metadata = Some(Variant::from(metadata));
 
             (&data[5..], metadata)

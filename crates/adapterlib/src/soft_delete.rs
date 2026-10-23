@@ -374,7 +374,8 @@ impl InputBuffer for SoftDeleteAvroStream {
 mod test {
     use super::{DeleteMetadata, IS_DELETE_ATTRIBUTE};
     use crate::ConnectorMetadata;
-    use feldera_sqllib::{SqlString, Variant};
+    use feldera_sqllib::Variant;
+    use feldera_types::variant::VariantValue;
 
     fn is_delete(metadata: &Option<Variant>) -> Variant {
         metadata.as_ref().unwrap().index_string(IS_DELETE_ATTRIBUTE)
@@ -394,7 +395,7 @@ mod test {
     #[test]
     fn preserves_connector_attributes() {
         let mut connector_metadata = ConnectorMetadata::new();
-        connector_metadata.insert("kafka_offset", Variant::BigInt(17));
+        connector_metadata.insert("kafka_offset", VariantValue::Int64(17));
         let metadata = Some(Variant::from(connector_metadata));
 
         let mut delete_metadata = DeleteMetadata::new();
@@ -420,7 +421,7 @@ mod test {
     #[test]
     fn caches_the_last_result() {
         let mut connector_metadata = ConnectorMetadata::new();
-        connector_metadata.insert("topic", Variant::String(SqlString::from("events")));
+        connector_metadata.insert("topic", VariantValue::String("events".into()));
         let metadata = Some(Variant::from(connector_metadata));
 
         let mut delete_metadata = DeleteMetadata::new();

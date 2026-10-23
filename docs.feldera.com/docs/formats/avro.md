@@ -266,7 +266,7 @@ The Avro connector exposes the following metadata with every ingested record:
 
 | Metadata attribute | SQL type                 | `CONNECTOR_METADATA()` field |
 |--------------------|--------------------------|------------------------------|
-| Avro schema ID     | `INT UNSIGNED`           | `avro_schema_id`             |
+| Avro schema ID     | `BIGINT`                 | `avro_schema_id`             |
 
 This metadata can be stored in table columns using the [`CONNECTOR_METADATA()`](/sql/grammar#connector_metadata)
 SQL function.  In the following example we extract the `avro_schema_id` attribute along with
@@ -275,7 +275,7 @@ SQL function.  In the following example we extract the `avro_schema_id` attribut
 ```sql
 CREATE TABLE my_table(
     x INT,
-    avro_schema_id INT UNSIGNED DEFAULT CAST(CONNECTOR_METADATA()['avro_schema_id'] AS INT UNSIGNED),
+    avro_schema_id BIGINT DEFAULT CAST(CONNECTOR_METADATA()['avro_schema_id'] AS BIGINT),
     kafka_offset BIGINT DEFAULT CAST(CONNECTOR_METADATA()['kafka_offset'] AS BIGINT),
     kafka_partition INT DEFAULT CAST(CONNECTOR_METADATA()['kafka_partition'] AS INT)
 ) WITH (
