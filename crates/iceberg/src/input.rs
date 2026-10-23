@@ -3660,7 +3660,9 @@ mod distributed_tests {
     struct NoRecords;
 
     impl InputBuffer for NoRecords {
-        fn flush(&mut self) {}
+        fn flush(&mut self) -> AnyResult<()> {
+            Ok(())
+        }
         fn len(&self) -> BufferSize {
             BufferSize::empty()
         }

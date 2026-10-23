@@ -1,11 +1,19 @@
-#![allow(clippy::type_complexity)]
+//! Kafka topics, a producer, and a consumer of an output topic, for the Kafka suites and the
+//! Kafka transport's tests.
 
-use crate::InputBuffer;
-use crate::catalog::InputCollectionHandle;
-use crate::format::get_input_format;
-use crate::test::{DEFAULT_TIMEOUT_MS, MockDeZSet, MockUpdate, TestStruct, wait};
+use std::collections::BTreeMap;
+use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle, sleep};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
 use anyhow::{Result as AnyResult, anyhow, bail};
-use csv::WriterBuilder as CsvWriterBuilder;
+use feldera_adapterlib::format::{InputBuffer, Parser};
+use feldera_adapterlib::test::{
+    ConnectorTestEngine, InputOptions, TestCollection, Updates, ZSet, default_timeout_ms, wait,
+};
+use feldera_types::config::FormatConfig;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::default_redpanda_server;
 use futures::executor::block_on;
@@ -20,18 +28,9 @@ use rdkafka::{
     util::Timeout,
 };
 use serde_json::Value;
-use std::collections::BTreeMap;
-use std::sync::LazyLock;
-use std::{
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
-    thread,
-    thread::{JoinHandle, sleep},
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-};
 use tracing::{error, info};
+
+use crate::test::parser;
 
 static MAX_TOPIC_PROBE_TIMEOUT: Duration = Duration::from_millis(20_000);
 
@@ -178,6 +177,10 @@ impl Drop for KafkaResources {
     }
 }
 
+/// A producer of test messages to the local broker.
+///
+/// Dropping it discards the messages it has not delivered yet, so a test that sends without
+/// waiting for delivery keeps it alive until the messages are consumed.
 pub struct TestProducer {
     pub producer: ThreadedProducer<DefaultProducerContext>,
 }
@@ -200,26 +203,27 @@ impl TestProducer {
         Self { producer }
     }
 
-    pub fn send_to_topic(&self, data: &[Vec<TestStruct>], topic: &str) {
-        for batch in data {
-            let mut writer = CsvWriterBuilder::new()
-                .has_headers(false)
-                .from_writer(Vec::with_capacity(batch.len() * 32));
-
-            for val in batch.iter().cloned() {
-                writer.serialize(val).unwrap();
-            }
-            writer.flush().unwrap();
-            let bytes = writer.into_inner().unwrap();
-
-            let record = <BaseRecord<(), [u8], ()>>::to(topic).payload(&bytes);
+    /// Sends each of `messages` to `topic` as one message, without waiting for delivery.
+    pub fn send_to_topic(&self, messages: &[Vec<u8>], topic: &str) {
+        for message in messages {
+            let record = <BaseRecord<(), [u8], ()>>::to(topic).payload(message);
             self.producer.send(record).unwrap();
         }
-        // producer.flush(Timeout::Never).unwrap();
-        // println!("Data written to '{topic}'");
     }
 
-    // Send a serialized message with optional headers.
+    /// Sends each of `messages` to `partition` of `topic` as one message, without waiting for
+    /// delivery.
+    pub fn send_to_topic_partition(&self, messages: &[Vec<u8>], topic: &str, partition: i32) {
+        for message in messages {
+            let record = <BaseRecord<(), [u8], ()>>::to(topic)
+                .partition(partition)
+                .payload(message);
+            self.producer.send(record).unwrap();
+        }
+    }
+
+    /// Sends `data` to `topic` with `headers`, where a header without a value is `None`, and
+    /// waits for delivery.
     pub fn send_message(
         &self,
         data: &[u8],
@@ -241,39 +245,21 @@ impl TestProducer {
         self.producer.flush(Timeout::Never).unwrap();
     }
 
+    /// Sends a message with `key` and no payload to `topic`, and waits for delivery.
     pub fn send_tombstone(&self, key: &[u8], topic: &str) {
         let record = BaseRecord::<[u8], (), ()>::to(topic).key(key);
         self.producer.send(record).unwrap();
         self.producer.flush(Timeout::Never).unwrap();
     }
 
-    pub fn send_to_topic_partition(&self, data: &[Vec<TestStruct>], topic: &str, partition: i32) {
-        for batch in data {
-            let mut writer = CsvWriterBuilder::new()
-                .has_headers(false)
-                .from_writer(Vec::with_capacity(batch.len() * 32));
-
-            for val in batch.iter().cloned() {
-                writer.serialize(val).unwrap();
-            }
-            writer.flush().unwrap();
-            let bytes = writer.into_inner().unwrap();
-
-            let record = <BaseRecord<(), [u8], ()>>::to(topic)
-                .partition(partition)
-                .payload(&bytes);
-            self.producer.send(record).unwrap();
-        }
-        // producer.flush(Timeout::Never).unwrap();
-        // println!("Data written to '{topic}'");
-    }
-
+    /// Sends `string` to `topic`, and waits for delivery.
     pub fn send_string(&self, string: &str, topic: &str) {
         let record = <BaseRecord<(), str, ()>>::to(topic).payload(string);
         self.producer.send(record).unwrap();
         self.producer.flush(Timeout::Never).unwrap();
     }
 
+    /// Sends `string` to `partition` of `topic`, and waits for delivery.
     pub fn send_string_partition(&self, string: &str, topic: &str, partition: i32) {
         let record = <BaseRecord<(), str, ()>>::to(topic)
             .partition(partition)
@@ -283,10 +269,14 @@ impl TestProducer {
     }
 }
 
-/// Consumer thread: read from output topic, deserialize to a shared buffer.
+/// A callback that a [`BufferConsumer`] calls for each message it receives.
+type MessageCallback = Box<dyn Fn(&BorrowedMessage) + Send>;
+
+/// A thread that reads an output topic from the start and parses each message into a
+/// collection of the engine fixture.
 pub struct BufferConsumer {
     thread_handle: Option<JoinHandle<()>>,
-    buffer: MockDeZSet<TestStruct, TestStruct>,
+    collection: Box<dyn TestCollection>,
     shutdown_flag: Arc<AtomicBool>,
 }
 
@@ -298,31 +288,32 @@ impl Drop for BufferConsumer {
 }
 
 impl BufferConsumer {
+    /// Starts reading `topic`, parsing each message in the input format `format` with
+    /// `format_config` into a fresh collection of `relation`, after passing it to
+    /// `message_cb`.
     pub fn new(
+        engine: &dyn ConnectorTestEngine,
+        relation: &Relation,
         topic: &str,
         format: &str,
         format_config: Value,
-        message_cb: Option<Box<dyn Fn(&BorrowedMessage) + Send>>,
+        message_cb: Option<MessageCallback>,
     ) -> Self {
         let shutdown_flag = Arc::new(AtomicBool::new(false));
         let shutdown_flag_clone = shutdown_flag.clone();
 
         let topic = topic.to_string();
-        let format = get_input_format(format).unwrap();
-        let buffer = MockDeZSet::new();
-
-        // Input parsers don't care about schema yet.
-        let schema = Relation::new("mock_schema".into(), vec![], false, BTreeMap::new());
-
-        let mut parser = format
-            .new_parser(
-                "BaseConsumer",
-                &InputCollectionHandle::new(schema, buffer.clone(), None),
-                &format_config,
-            )
+        let collection = engine
+            .input_collection(relation, &InputOptions::default())
             .unwrap();
+        let mut parser = parser(
+            collection.as_ref(),
+            &FormatConfig {
+                name: format.to_string().into(),
+                config: format_config,
+            },
+        );
 
-        // Consumer thread: read from output topic, deserialize to a shared buffer.
         let thread_handle = thread::Builder::new()
             .name("test consumer".to_string())
             .spawn(move || {
@@ -351,21 +342,17 @@ impl BufferConsumer {
                     }
 
                     match kafka_consumer.poll(Duration::from_millis(100)) {
-                        None => {
-                            // println!("poll returned None");
-                        }
+                        None => {}
                         Some(Err(e)) => {
                             panic!("poll returned error: {e}");
                         }
                         Some(Ok(message)) => {
-                            // println!("received {} bytes", message.payload().unwrap().len());
-                            // message.payload().map(|payload| consumer.input(payload));
                             if let Some(cb) = &message_cb {
                                 cb(&message)
                             };
 
                             if let Some(payload) = message.payload() {
-                                parser.parse(payload, None).0.flush();
+                                parser.parse(payload, None).0.flush().unwrap();
                             }
                         }
                     }
@@ -375,60 +362,66 @@ impl BufferConsumer {
 
         Self {
             thread_handle: Some(thread_handle),
-            buffer,
+            collection,
             shutdown_flag,
         }
     }
 
+    /// Returns the number of rows read so far.
+    pub fn len(&self) -> usize {
+        self.collection.len()
+    }
+
+    /// Returns `true` if no rows were read since the last [`Self::clear`].
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
-    pub fn len(&self) -> usize {
-        self.buffer.state().flushed.len()
-    }
-
+    /// Forgets the rows read so far.
     pub fn clear(&self) {
-        self.buffer.state().reset()
+        self.collection.reset()
     }
 
-    pub fn wait_for_output_unordered(&self, data: &[Vec<TestStruct>]) {
-        let num_records: usize = data.iter().map(Vec::len).sum();
-
-        let mut n_received = 0;
+    /// Waits for the rows of `batches` to arrive, then checks that the consumer read exactly
+    /// those rows, in any order, each inserted once per unit of weight.
+    pub fn wait_for_output_unordered(&self, batches: &[Updates]) {
+        let count: usize = batches.iter().map(Updates::len).sum();
+        let mut received = 0;
         wait(
             move || {
                 let n = self.len();
-                if n != n_received {
-                    info!(
-                        "waiting for {num_records} records (received {})",
-                        self.len()
-                    );
-                    n_received = n;
+                if n != received {
+                    info!("waiting for {count} records (received {n})");
+                    received = n;
                 }
-                n == num_records
+                n >= count
             },
-            DEFAULT_TIMEOUT_MS,
+            default_timeout_ms(),
         )
         .unwrap();
-        //println!("{num_records} records received: {:?}",
-        // received_data.lock().unwrap().iter().map(|r| r.id).collect::<Vec<_>>());
-
-        let mut expected = data
-            .iter()
-            .flat_map(|data| data.iter())
-            .cloned()
-            .collect::<Vec<_>>();
-        expected.sort();
-
-        let mut received = self.buffer.state().flushed.clone();
-        received.sort();
-        assert_eq!(
-            expected
-                .into_iter()
-                .map(MockUpdate::Insert)
-                .collect::<Vec<_>>(),
-            received
-        );
+        let mut expected = ZSet::empty(self.collection.schema()).unwrap();
+        for batch in batches {
+            expected.add(&batch.zset().unwrap()).unwrap();
+        }
+        let updates = self.collection.updates().unwrap();
+        assert!(updates.weights().iter().all(|weight| *weight == 1));
+        assert_eq!(updates.zset().unwrap(), expected);
     }
+}
+
+/// Returns each batch of `data` as one message of CSV records.
+#[cfg(test)]
+pub fn csv_messages(data: &[Vec<crate::test::TestStruct>]) -> Vec<Vec<u8>> {
+    data.iter()
+        .map(|batch| {
+            let mut writer = csv::WriterBuilder::new()
+                .has_headers(false)
+                .from_writer(Vec::with_capacity(batch.len() * 32));
+            for val in batch.iter().cloned() {
+                writer.serialize(val).unwrap();
+            }
+            writer.flush().unwrap();
+            writer.into_inner().unwrap()
+        })
+        .collect()
 }

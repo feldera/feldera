@@ -287,7 +287,7 @@ impl InputReader for AdHocInputEndpoint {
                     details.consumer.parse_errors(errors);
                     total += len;
                     buffer.hash(&mut hasher);
-                    buffer.flush();
+                    details.consumer.check_flush(buffer.flush());
                 }
                 details.consumer.replayed(total, hasher.finish());
             }

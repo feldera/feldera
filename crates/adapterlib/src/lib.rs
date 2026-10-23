@@ -11,6 +11,8 @@ pub mod metrics;
 pub mod postprocess;
 pub mod preprocess;
 pub mod soft_delete;
+#[cfg(any(test, feature = "testing"))]
+pub mod test;
 pub mod transport;
 pub mod utils;
 

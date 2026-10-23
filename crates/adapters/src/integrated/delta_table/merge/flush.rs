@@ -37,13 +37,11 @@ use deltalake::kernel::{Action, Add, DataType as DeltaDataType, LogicalFileView,
 use deltalake::logstore::ObjectStoreRef;
 use deltalake::operations::write::writer::DeltaWriter;
 use deltalake::protocol::{DeltaOperation, SaveMode};
-use serde_arrow::ArrayBuilder;
-use serde_arrow::schema::SerdeArrowSchema;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::debug;
 
 use crate::RecordFormat;
-use crate::catalog::{SerBatchReader, SerCursor, SplitCursorBuilder};
+use crate::catalog::{ArrowRowSink, SerBatchReader, SerCursor, SerKeyRange};
 use crate::util::{IndexedOperationType, indexed_operation_type};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 
@@ -224,10 +222,9 @@ struct RangeOutput {
 /// Everything a flush needs that outlives it.
 pub struct MergeWriter {
     key_encoder: Arc<KeyEncoder>,
-    /// Serde schema of the key columns alone, for turning cursor keys into arrow.
-    key_serde_schema: SerdeArrowSchema,
-    /// Serde schema of the full row, for the append side.
-    row_serde_schema: SerdeArrowSchema,
+    /// Arrow schema of the key columns alone, for turning cursor keys into arrow.
+    key_arrow_schema: Arc<ArrowSchema>,
+    /// Arrow schema of the full row, for the append side.
     row_arrow_schema: Arc<ArrowSchema>,
     partition_columns: Vec<String>,
     partition_key_columns: Vec<String>,
@@ -243,10 +240,10 @@ pub struct MergeWriter {
     /// Rows a key range must be worth before a flush splits the batch, whatever the rate
     /// below says. Pinned by a test so the parallel path is reachable without a fixture
     /// large enough to fill a [`TARGET_FILE_SIZE`] file.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     rows_per_range_override: Option<usize>,
     /// Makes every spawned range panic, so a test can pin how a panicked range is reported.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     panic_in_range: bool,
     /// Bytes one appended row took in the last flush that wrote any, or zero before then.
     ///
@@ -275,7 +272,6 @@ impl MergeWriter {
     pub fn new(
         setup: MergeSetup,
         key_schema: &Relation,
-        row_serde_schema: SerdeArrowSchema,
         row_arrow_schema: Arc<ArrowSchema>,
         lookup_chunk_bytes: usize,
         max_concurrent_probes: usize,
@@ -283,13 +279,11 @@ impl MergeWriter {
     ) -> AnyResult<Self> {
         // Keys are built as arrow arrays of the *table's* types, the same types the probe
         // reads out of parquet, so both sides encode to comparable bytes.
-        let key_serde_schema = SerdeArrowSchema::try_from(setup.key_arrow_fields.as_slice())
-            .map_err(|e| anyhow!("unable to build the key encoder schema: {e}"))?;
+        let key_arrow_schema = Arc::new(ArrowSchema::new(setup.key_arrow_fields.clone()));
 
         Ok(Self {
             key_encoder: Arc::new(setup.key_encoder),
-            key_serde_schema,
-            row_serde_schema,
+            key_arrow_schema,
             row_arrow_schema,
             partition_columns: setup.partition_columns,
             partition_key_columns: setup.partition_key_columns,
@@ -300,9 +294,9 @@ impl MergeWriter {
             lookup_chunk_bytes,
             max_concurrent_probes,
             view_name,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "testing"))]
             rows_per_range_override: None,
-            #[cfg(test)]
+            #[cfg(any(test, feature = "testing"))]
             panic_in_range: false,
             bytes_per_row: AtomicU64::new(0),
             index_name: key_schema.name.clone(),
@@ -389,7 +383,7 @@ impl MergeWriter {
     /// backfill needing 21 files, 8 ranges wrote 24 and 16 wrote 32. `threads` bounds that.
     /// The second keeps the update flushes that follow from fragmenting the table for ever.
     fn rows_per_range(&self) -> usize {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "testing"))]
         if let Some(rows) = self.rows_per_range_override {
             return rows.max(1);
         }
@@ -403,13 +397,13 @@ impl MergeWriter {
 
     /// Split every `rows` rows, so a test need not build a fixture large enough to fill a
     /// [`TARGET_FILE_SIZE`] file to reach the parallel path.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     pub(super) fn split_every(&mut self, rows: usize) {
         self.rows_per_range_override = Some(rows);
     }
 
     /// Panic in every spawned range, to reach the join's panic arm.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     pub(super) fn panic_in_range(&mut self) {
         self.panic_in_range = true;
     }
@@ -425,30 +419,14 @@ impl MergeWriter {
         batch: &Arc<dyn SerBatchReader>,
         format: &RecordFormat,
         threads: usize,
-    ) -> Vec<SplitCursorBuilder> {
+    ) -> Result<Vec<Box<dyn SerKeyRange>>, WriteError> {
         let wanted = threads
             .min(batch.key_count() / self.rows_per_range())
             .max(1);
-        // One range is the common case, and it needs no bounds: `partition_keys` samples the
-        // batch to find them, which is work with nothing to split.
-        if wanted <= 1 {
-            return SplitCursorBuilder::from_bounds(
-                batch.clone(),
-                &*batch.keys_factory().default_box(),
-                0,
-                format.clone(),
-            )
-            .into_iter()
-            .collect();
-        }
-
-        let mut bounds = batch.keys_factory().default_box();
-        batch.partition_keys(wanted, &mut *bounds);
-        (0..=bounds.len())
-            .filter_map(|i| {
-                SplitCursorBuilder::from_bounds(batch.clone(), &*bounds, i, format.clone())
-            })
-            .collect()
+        batch
+            .clone()
+            .split(wanted, format.clone())
+            .map_err(WriteError::Transient)
     }
 
     /// The flush itself. Split out so [`Self::flush`] times the whole of it in one place,
@@ -472,7 +450,7 @@ impl MergeWriter {
         let candidates = Arc::new(self.snapshot_files(table)?);
         metrics.timings.log_scan += scan_started.elapsed();
 
-        let ranges = self.ranges(&batch, &format, threads);
+        let ranges = self.ranges(&batch, &format, threads)?;
         metrics.ranges = ranges.len();
         let outputs = self
             .walk_ranges(ranges, object_store, candidates, retrying, progress.clone())
@@ -515,7 +493,7 @@ impl MergeWriter {
     /// another thread for no gain.
     async fn walk_ranges(
         self: &Arc<Self>,
-        ranges: Vec<SplitCursorBuilder>,
+        ranges: Vec<Box<dyn SerKeyRange>>,
         object_store: ObjectStoreRef,
         candidates: Arc<Vec<Candidate>>,
         retrying: bool,
@@ -586,31 +564,35 @@ impl MergeWriter {
     /// Walk one key range: append its new rows, look up the rows they supersede.
     async fn walk_range(
         self: Arc<Self>,
-        range: SplitCursorBuilder,
+        range: Box<dyn SerKeyRange>,
         object_store: ObjectStoreRef,
         candidates: Arc<Vec<Candidate>>,
         retrying: bool,
         progress: Arc<AtomicU64>,
         budget: RangeBudget,
     ) -> Result<RangeOutput, WriteError> {
-        #[cfg(test)]
+        #[cfg(any(test, feature = "testing"))]
         assert!(!self.panic_in_range, "injected range panic");
         let walk_started = Instant::now();
         let mut metrics = FlushMetrics::default();
         let mut violations = Vec::new();
-        let mut split = range.build();
-        let cursor: &mut dyn SerCursor = &mut split;
+        let mut split = range.cursor().map_err(WriteError::Transient)?;
+        let cursor: &mut dyn SerCursor = split.as_mut();
 
         let mut appends = self.append_writer(object_store.clone());
-        let mut rows = ArrayBuilder::new(self.row_serde_schema.clone()).map_err(|e| {
-            WriteError::Deterministic(anyhow!("error creating the row builder: {e}"))
-        })?;
+        let mut rows = cursor
+            .arrow_sink(self.row_arrow_schema.clone())
+            .map_err(WriteError::Deterministic)?;
+        let key_rows = cursor
+            .arrow_sink(self.key_arrow_schema.clone())
+            .map_err(WriteError::Deterministic)?;
         let mut keys = KeyChunk::new(
             self.clone(),
             object_store,
             candidates,
             budget.probes,
             budget.lookup_bytes,
+            key_rows,
         )?;
         let mut buffered_rows = 0;
 
@@ -621,13 +603,13 @@ impl MergeWriter {
                     // A key with two values has no single row to write. Skip it and let the
                     // controller report it, as cdc mode does.
                     violations.push(e);
-                    cursor.step_key();
+                    cursor.step_key().map_err(WriteError::Transient)?;
                     continue;
                 }
             };
 
             let Some(op) = op else {
-                cursor.step_key();
+                cursor.step_key().map_err(WriteError::Transient)?;
                 continue;
             };
 
@@ -643,7 +625,7 @@ impl MergeWriter {
             ) {
                 position_at_new_value(cursor);
                 cursor
-                    .serialize_val_to_arrow(&mut rows)
+                    .append_val_to_arrow(rows.as_mut())
                     .map_err(WriteError::Deterministic)?;
                 buffered_rows += 1;
                 metrics.rows_appended += 1;
@@ -651,7 +633,7 @@ impl MergeWriter {
                 if buffered_rows >= budget.chunk_rows {
                     timed(
                         &mut metrics.timings.append,
-                        write_rows(&mut rows, &mut appends),
+                        write_rows(rows.as_mut(), &mut appends),
                     )
                     .await?;
                     progress.fetch_add(buffered_rows as u64, Ordering::Relaxed);
@@ -659,13 +641,13 @@ impl MergeWriter {
                 }
             }
 
-            cursor.step_key();
+            cursor.step_key().map_err(WriteError::Transient)?;
         }
 
         if buffered_rows > 0 {
             timed(
                 &mut metrics.timings.append,
-                write_rows(&mut rows, &mut appends),
+                write_rows(rows.as_mut(), &mut appends),
             )
             .await?;
             progress.fetch_add(buffered_rows as u64, Ordering::Relaxed);
@@ -852,10 +834,10 @@ fn position_at_new_value(cursor: &mut dyn SerCursor) {
 }
 
 async fn write_rows(
-    builder: &mut ArrayBuilder,
+    rows: &mut dyn ArrowRowSink,
     writer: &mut DeltaWriter,
 ) -> Result<(), WriteError> {
-    let batch = builder.to_record_batch().map_err(|e| {
+    let batch = rows.finish().map_err(|e| {
         WriteError::Deterministic(anyhow!("error building an arrow batch of new rows: {e}"))
     })?;
     writer.write(&batch).await.map_err(|e| {
@@ -876,7 +858,8 @@ struct KeyChunk {
     candidates: Arc<Vec<Candidate>>,
     /// Data files read at once, this range's share of `max_concurrent_probes`.
     probes: usize,
-    builder: ArrayBuilder,
+    /// The keys of the chunk, as the cursor appends them.
+    keys: Box<dyn ArrowRowSink>,
     buffered: usize,
     chunk: Arc<LookupChunk>,
     /// Byte budget of `chunk`, kept so a replacement can be given the same one.
@@ -893,11 +876,10 @@ impl KeyChunk {
         candidates: Arc<Vec<Candidate>>,
         probes: usize,
         lookup_bytes: usize,
+        keys: Box<dyn ArrowRowSink>,
     ) -> Result<Self, WriteError> {
         Ok(Self {
-            builder: ArrayBuilder::new(writer.key_serde_schema.clone()).map_err(|e| {
-                WriteError::Deterministic(anyhow!("error creating the key builder: {e}"))
-            })?,
+            keys,
             buffered: 0,
             chunk: Arc::new(LookupChunk::new(lookup_bytes)),
             lookup_bytes,
@@ -946,7 +928,7 @@ impl KeyChunk {
         metrics: &mut FlushMetrics,
     ) -> Result<(), WriteError> {
         cursor
-            .serialize_key_to_arrow(&mut self.builder)
+            .append_key_to_arrow(self.keys.as_mut())
             .map_err(WriteError::Deterministic)?;
         self.buffered += 1;
         metrics.keys_probed += 1;
@@ -976,7 +958,7 @@ impl KeyChunk {
         if self.buffered == 0 {
             return Ok(());
         }
-        let batch = self.builder.to_record_batch().map_err(|e| {
+        let batch = self.keys.finish().map_err(|e| {
             WriteError::Deterministic(anyhow!("error building an arrow batch of keys: {e}"))
         })?;
         let columns = self
@@ -1075,7 +1057,6 @@ mod test {
         let writer = MergeWriter::new(
             setup,
             &key_relation(),
-            SerdeArrowSchema::try_from(schema.fields().as_ref()).unwrap(),
             schema.clone(),
             1 << 20,
             1,
@@ -1168,7 +1149,6 @@ mod test {
         let writer = MergeWriter::new(
             setup,
             &partitioned_key_relation(),
-            SerdeArrowSchema::try_from(schema.fields().as_ref()).unwrap(),
             schema,
             1 << 20,
             1,

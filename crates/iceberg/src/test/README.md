@@ -1,8 +1,9 @@
 # Iceberg connector test harness
 
-Iceberg connector tests live in `adapters/srs/tests/iceberg.rs`.  Since Iceberg's
-Rust ecosystem is not yet self-contained, tests rely on several external components
-and are feature gated using:
+Iceberg connector tests are the `*tests.rs` files in
+`adapters/src/integrated/iceberg`.  Since Iceberg's Rust ecosystem is not yet
+self-contained, tests rely on several external components and are feature gated
+using:
 
 * `iceberg-tests-fs` - enables tests using local file system
 * `iceberg-tests-glue` - enables tests using S3 and AWS Glue catalog
@@ -26,7 +27,7 @@ Before running the tests, make sure that you have Python dependencies listed
 in `./requirements.txt` installed:
 
 * `pip install -r crates/iceberg/src/test/requirements.txt`
-* Run the following command in the `adapters` crate: `cargo test --features="iceberg-tests-fs" iceberg`
+* Run the following command in the `adapters` crate: `cargo test --features="iceberg-tests-fs" suites::iceberg::`
 
 ## Glue catalog test
 
@@ -35,7 +36,7 @@ in `./requirements.txt` installed:
   `us-west-1`. CI assumes the role in the `ICEBERG_TEST_ROLE`
   repository variable over GitHub OIDC. `ICEBERG_TEST_REGION` overrides the
   region, which defaults to `us-west-1`.
-* Run the following command in the `adapters` crate: `cargo test --features="iceberg-tests-glue" iceberg_glue_s3_input_test`
+* Run the following command in the `adapters` crate: `cargo test --features="iceberg-tests-glue" suites::iceberg_glue::`
 
 ## Rest catalog test
 
@@ -47,7 +48,7 @@ implementation of the REST catalog from Databricks and bind it to the Glue catal
 
 * Create catalog: `docker run -e AWS_REGION=us-west-1 -e AWS_ACCESS_KEY_ID=<aws access key> -e AWS_SECRET_ACCESS_KEY=<aws secret> -e CATALOG_CATALOG__IMPL=org.apache.iceberg.aws.glue.GlueCatalog -p 8181:8181 tabulario/iceberg-rest:0.1.0`
 
-* `cargo test --features="iceberg-tests-rest" iceberg_rest_s3_input_test`
+* `cargo test --features="iceberg-tests-rest" suites::iceberg_rest::`
 
 ## S3 Tables catalog test
 
@@ -63,7 +64,7 @@ table (talk to leonid@feldera.com), for example via an SSO profile or exported a
 
 * `export AWS_PROFILE=<profile>` (after `aws sso login`), or
   `export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_SESSION_TOKEN=...`
-* Run the following command in the `adapters` crate: `cargo test --features="iceberg-tests-s3tables" iceberg_s3tables_input_test`
+* Run the following command in the `adapters` crate: `cargo test --features="iceberg-tests-s3tables" suites::iceberg_s3tables::`
 
 ## Follow-mode tests
 
@@ -90,7 +91,7 @@ The default connection targets a local setup; override any of the
   ```
 
 * Run the tests in the `adapters` crate:
-  `cargo test --features="iceberg-tests-follow" iceberg_rest_follow`
+  `cargo test --features="iceberg-tests-follow" suites::iceberg_follow::`
 
 Overridable settings (defaults in parentheses): `FELDERA_ICEBERG_REST_URI`
 (`http://localhost:8181`), `FELDERA_ICEBERG_WAREHOUSE` (`s3://test/iceberg-follow`),

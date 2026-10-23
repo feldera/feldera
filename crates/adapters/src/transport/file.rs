@@ -29,41 +29,41 @@ use xxhash_rust::xxh3::Xxh3Default;
 
 const SLEEP: Duration = Duration::from_millis(200);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Mutex,
 };
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 static BARRIERS: Mutex<BTreeMap<String, usize>> = Mutex::new(BTreeMap::new());
 
 fn get_barrier(_name: &str) -> Option<usize> {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     return BARRIERS.lock().unwrap().get(_name).copied();
 
-    #[cfg(not(test))]
+    #[cfg(not(any(test, feature = "testing")))]
     return None;
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub fn set_barrier(name: &str, value: usize) {
     BARRIERS.lock().unwrap().insert(name.into(), value);
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 static FAILURES: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 
 fn injected_failure(_name: &str) -> bool {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     return FAILURES.lock().unwrap().contains(_name);
 
-    #[cfg(not(test))]
+    #[cfg(not(any(test, feature = "testing")))]
     return false;
 }
 
 /// Makes the reader of file `name` fail with a fatal error.
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub fn set_failure(name: &str) {
     FAILURES.lock().unwrap().insert(name.into());
 }
@@ -239,7 +239,7 @@ impl FileInputReader {
                         })
                         .unwrap();
 
-                        staged_buffers.flush();
+                        consumer.check_flush(staged_buffers.flush());
                         let resume = match get_barrier(&path) {
                             None => Resume::new_metadata_only(seek, hash),
                             Some(barrier) => {
@@ -273,7 +273,7 @@ impl FileInputReader {
                                 consumer.buffered(buffer.len());
                                 total += buffer.len();
                                 buffer.hash(&mut hasher);
-                                buffer.flush();
+                                consumer.check_flush(buffer.flush());
                             }
                         }
                         consumer.replayed(total, hasher.finish());
@@ -417,183 +417,10 @@ however the File transport does not support this representation."
     }
 }
 
-#[cfg(test)]
-mod test {
-    use crate::test::{DEFAULT_TIMEOUT_MS, mock_input_pipeline, wait};
-    use csv::WriterBuilder as CsvWriterBuilder;
-    use feldera_types::deserialize_without_context;
-    use feldera_types::program_schema::Relation;
-    use serde::{Deserialize, Serialize};
-    use serde_json::json;
-    use std::{io::Write, thread::sleep, time::Duration};
-    use tempfile::NamedTempFile;
-    use url::Url;
-
-    #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone)]
-    pub struct TestStruct {
-        s: String,
-        b: bool,
-        i: i64,
-    }
-
-    deserialize_without_context!(TestStruct);
-
-    impl TestStruct {
-        fn new(s: String, b: bool, i: i64) -> Self {
-            Self { s, b, i }
-        }
-    }
-
-    #[test]
-    fn test_csv_file_nofollow() {
-        let test_data = [
-            TestStruct::new("foo".to_string(), true, 10),
-            TestStruct::new("bar".to_string(), false, -10),
-        ];
-        let temp_file = NamedTempFile::new().unwrap();
-
-        // Create a transport endpoint attached to the file.
-        // Use a very small buffer size for testing.
-        let config = serde_json::from_value(json!({
-            "stream": "test_input",
-            "transport": {
-                "name": "file_input",
-                "config": {
-                    "path": temp_file.path(),
-                    "buffer_size_bytes": 5
-                }
-            },
-            "format": {
-                "name": "csv",
-                "config": {
-                    "delimiter": "|",
-                    "headers": true
-                }
-            }
-        }))
-        .unwrap();
-
-        let mut writer = CsvWriterBuilder::new()
-            .has_headers(true)
-            .delimiter(b'|')
-            .from_writer(temp_file.as_file());
-        for val in test_data.iter().cloned() {
-            writer.serialize(val).unwrap();
-        }
-        writer.flush().unwrap();
-
-        let (endpoint, consumer, _parser, zset) =
-            mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()).unwrap();
-
-        sleep(Duration::from_millis(10));
-
-        // No outputs should be produced at this point.
-        assert!(!consumer.state().eoi);
-
-        // Unpause the endpoint, wait for the data to appear at the output.
-        endpoint.extend();
-        wait(
-            || {
-                endpoint.queue(false);
-                zset.state().flushed.len() == test_data.len()
-            },
-            DEFAULT_TIMEOUT_MS,
-        )
-        .unwrap();
-        for (i, upd) in zset.state().flushed.iter().enumerate() {
-            assert_eq!(upd.unwrap_insert(), &test_data[i]);
-        }
-    }
-
-    #[test]
-    fn test_csv_file_follow() {
-        let test_data = [
-            TestStruct::new("foo".to_string(), true, 10),
-            TestStruct::new("bar".to_string(), false, -10),
-        ];
-        let temp_file = NamedTempFile::new().unwrap();
-        let temp_file_url = Url::from_file_path(temp_file.path()).unwrap();
-
-        // Create a transport endpoint attached to the file.
-        // Use a very small buffer size for testing.
-        let config = serde_json::from_value(json!({
-            "stream": "test_input",
-            "transport": {
-                "name": "file_input",
-                "config": {
-                    "path": temp_file_url,
-                    "buffer_size_bytes": 5,
-                    "follow": true
-                }
-            },
-            "format": {
-                "name": "csv"
-            }
-        }))
-        .unwrap();
-
-        let mut writer = CsvWriterBuilder::new()
-            .has_headers(false)
-            .from_writer(temp_file.as_file());
-
-        let (endpoint, consumer, parser, zset) =
-            mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()).unwrap();
-
-        endpoint.extend();
-
-        for _ in 0..10 {
-            for val in test_data.iter().cloned() {
-                writer.serialize(val).unwrap();
-            }
-            writer.flush().unwrap();
-
-            sleep(Duration::from_millis(10));
-
-            // No outputs should be produced at this point.
-            assert!(!consumer.state().eoi);
-
-            // Unpause the endpoint, wait for the data to appear at the output.
-            wait(
-                || {
-                    endpoint.queue(false);
-                    zset.state().flushed.len() == test_data.len()
-                },
-                DEFAULT_TIMEOUT_MS,
-            )
-            .unwrap();
-            for (i, upd) in zset.state().flushed.iter().enumerate() {
-                assert_eq!(upd.unwrap_insert(), &test_data[i]);
-            }
-
-            consumer.reset();
-            zset.reset();
-        }
-
-        drop(writer);
-
-        consumer.on_error(Some(Box::new(|_, _| {})));
-        parser.on_error(Some(Box::new(|_, _| {})));
-        temp_file.as_file().write_all(b"xxx\n").unwrap();
-        temp_file.as_file().flush().unwrap();
-
-        wait(
-            || {
-                endpoint.queue(false);
-                let state = parser.state();
-                // println!("result: {:?}", state.parser_result);
-                state.parser_result.is_some() && !state.parser_result.as_ref().unwrap().is_empty()
-            },
-            DEFAULT_TIMEOUT_MS,
-        )
-        .unwrap();
-
-        assert!(zset.state().flushed.is_empty());
-
-        endpoint.disconnect();
-    }
-}
-
 #[derive(Serialize, Deserialize)]
 struct Metadata {
     offsets: Range<u64>,
 }
+
+#[cfg(any(test, feature = "testing"))]
+pub mod tests;

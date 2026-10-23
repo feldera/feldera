@@ -54,6 +54,20 @@ with-dynamodb = [
 with-nexmark = ["dbsp_nexmark"]
 with-redis = ["redis", "r2d2"]
 with-nats = []
+# The connector suites, for an engine's crate to run against its fixture.
+testing = [
+    "feldera-adapterlib/testing",
+    "proptest",
+    "dep:parquet-variant",
+    "dep:parquet-variant-compute",
+    "dep:parquet-variant-json",
+    "dep:mockall",
+    "dep:actix-test",
+    "dep:flate2",
+    "dep:postgres-types",
+    "dep:reqwest",
+    "dep:google-cloud-googleapis",
+]
 with-s2 = ["s2-sdk"]
 # Run delta table tests against an S3 bucket.  Requires S3 authentication key
 # to be provided via an environment variable.
@@ -63,10 +77,11 @@ delta-s3-test = []
 # credentials CI does not hold.
 delta-unity-test = []
 # Run Pub/Sub connector tests agains an emulator.
-# The emulator must be running. See `pubsub/test.rs`.
+# The emulator must be running. See `src/transport/pubsub/tests.rs`.
 pubsub-emulator-test = []
 # Run Pub/Sub connector tests agains a GCP account.
-# Google Cloud Application Default Credentials (ADC) must be configured. See `pubsub/test.rs`.
+# Google Cloud Application Default Credentials (ADC) must be configured. See
+# `src/transport/pubsub/gcp_tests.rs`.
 pubsub-gcp-test = []
 feldera-enterprise = []
 iceberg-tests-fs = []
@@ -144,6 +159,15 @@ futures = { workspace = true }
 futures-util = { workspace = true }
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
+parquet-variant = { workspace = true, optional = true }
+parquet-variant-compute = { workspace = true, optional = true }
+parquet-variant-json = { workspace = true, optional = true }
+mockall = { workspace = true, optional = true }
+actix-test = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
+postgres-types = { version = "0.2.9", features = ["derive"], optional = true }
+reqwest = { workspace = true, features = ["blocking"], optional = true }
+google-cloud-googleapis = { workspace = true, optional = true }
 clap = { workspace = true }
 tokio = { workspace = true, features = ["sync", "macros", "fs", "rt", "time", "signal"] }
 utoipa = { workspace = true }
@@ -266,6 +290,7 @@ vergen-gitcl = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+feldera-adapterlib = { workspace = true, features = ["testing"] }
 # Test key generation only; runtime signing goes through aws-lc-rs.
 nkeys = { workspace = true }
 actix-test = { workspace = true }
@@ -294,6 +319,7 @@ criterion = { workspace = true }
 # Builds the Parquet variant fixtures the VARIANT tests read.
 parquet-variant = { workspace = true }
 parquet-variant-compute = { workspace = true }
+parquet-variant-json = { workspace = true }
 
 [[bench]]
 name = "avro_encoder"

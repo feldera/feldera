@@ -168,6 +168,17 @@ mod validate;
 #[cfg(test)]
 mod test;
 
+#[cfg(any(test, feature = "testing"))]
+pub mod ft_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod output_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod processors_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod suspend_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod tests;
+
 /// The step a controller that has initiated `initiated` steps is feeding.
 ///
 /// [`CircuitThread::step`] stores `step + 1` before it collects input, so the
@@ -785,7 +796,7 @@ where
 }
 
 impl Controller {
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     pub(crate) fn with_test_config<F>(
         circuit_factory: F,
         config: &PipelineConfig,
@@ -804,7 +815,7 @@ impl Controller {
         init.init(None, circuit_factory, error_cb)
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "testing"))]
     pub(crate) fn with_test_config_keep_program_diff<F>(
         circuit_factory: F,
         config: &PipelineConfig,

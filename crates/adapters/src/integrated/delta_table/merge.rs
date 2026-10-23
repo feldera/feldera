@@ -203,6 +203,9 @@ mod model;
 #[cfg(test)]
 pub(super) mod test;
 
+#[cfg(any(test, feature = "testing"))]
+pub mod tests;
+
 #[cfg(test)]
 mod retry_test {
     use super::*;

@@ -1,39 +1,21 @@
 use std::collections::BTreeMap;
 use std::fs::File;
-use std::io::Cursor;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
-use std::thread::sleep;
-use std::time::Duration;
+use std::sync::Arc;
 
 use arrow::array::RecordBatch;
 use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
-use dbsp::OrdZSet;
-use dbsp::utils::Tup2;
-use feldera_adapterlib::transport::OutputBatchType;
 use feldera_sqllib::Variant;
 use feldera_types::deserialize_table_record;
-use feldera_types::format::parquet::ParquetEncoderConfig;
 use feldera_types::program_schema::{ColumnType, Field, Relation};
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use parquet::arrow::ArrowWriter;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-use parquet::basic::Compression;
-use parquet::file::properties::WriterProperties;
-use parquet::file::serialized_reader::SerializedFileReader;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::NamedTempFile;
-use tracing_subscriber::EnvFilter;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
 
-use crate::{
-    catalog::SerBatchReader,
-    format::{Encoder, parquet::ParquetEncoder},
-    static_compile::seroutput::SerBatchImpl,
-    test::{DEFAULT_TIMEOUT_MS, MockOutputConsumer, TestStruct2, mock_input_pipeline, wait},
-};
+use crate::test::{TestStruct2, mock_input_pipeline, wait};
 
 /// Parse a Parquet file into an array of `T`, reading it as Arrow.
 ///
@@ -67,203 +49,6 @@ pub fn load_parquet_file<T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig,
 fn rel_to_schema() {
     use super::relation_to_parquet_schema;
     relation_to_parquet_schema(&TestStruct2::schema(), false).expect("Can convert");
-}
-
-fn parquet_input_test(compression: Compression) {
-    // Prepare input data & pipeline
-    let test_data = TestStruct2::data();
-    let temp_file = NamedTempFile::new().unwrap();
-    let config = serde_json::from_value(json!({
-        "stream": "test_input",
-        "transport": {
-            "name": "file_input",
-            "config": {
-                "path": temp_file.path(),
-                "buffer_size_bytes": 5
-            }
-        },
-        "format": {
-            "name": "parquet"
-        }
-    }))
-    .unwrap();
-
-    let batch = RecordBatch::try_new(
-        TestStruct2::arrow_schema(),
-        TestStruct2::make_arrow_array(&test_data),
-    )
-    .expect("RecordBatch creation should succeed");
-    let props = WriterProperties::builder()
-        .set_compression(compression)
-        .build();
-    let mut writer = ArrowWriter::try_new(&temp_file, TestStruct2::arrow_schema(), Some(props))
-        .expect("Writer creation should succeed");
-    writer
-        .write(&batch)
-        .expect("Writing to parquet should succeed");
-    writer.close().expect("Closing the writer should succeed");
-
-    // Send the data through the mock pipeline
-    let (endpoint, consumer, parser, zset) = mock_input_pipeline::<TestStruct2, TestStruct2>(
-        config,
-        Relation::new("test".into(), TestStruct2::schema(), false, BTreeMap::new()),
-    )
-    .unwrap();
-    sleep(Duration::from_millis(10));
-    assert!(parser.state().data.is_empty());
-    assert!(!consumer.state().eoi);
-    endpoint.extend();
-    wait(
-        || {
-            endpoint.queue(false);
-            zset.state().flushed.len() == test_data.len()
-        },
-        DEFAULT_TIMEOUT_MS,
-    )
-    .unwrap();
-
-    // Make sure the input data matches original test structs
-    for (i, upd) in zset.state().flushed.iter().enumerate() {
-        assert_eq!(upd.unwrap_insert(), &test_data[i]);
-    }
-}
-
-#[test]
-fn parquet_input_uncompressed() {
-    parquet_input_test(Compression::UNCOMPRESSED);
-}
-
-#[test]
-fn parquet_input_snappy() {
-    parquet_input_test(Compression::SNAPPY);
-}
-
-/// A deletion can't be written as Parquet; encoding one fails the batch
-/// instead of panicking the pipeline.
-#[test]
-fn parquet_output_rejects_deletes() {
-    let consumer = MockOutputConsumer::new();
-    let config = ParquetEncoderConfig {
-        buffer_size_records: usize::MAX,
-    };
-    let mut encoder = ParquetEncoder::new(
-        Box::new(consumer),
-        config,
-        Relation::new(
-            "TestStruct2".into(),
-            TestStruct2::schema(),
-            false,
-            BTreeMap::new(),
-        ),
-        false,
-    )
-    .expect("Can't create encoder");
-    let test_data = TestStruct2::data();
-    let zset = OrdZSet::from_keys((), vec![Tup2(test_data[0].clone(), -1)]);
-    let zset = Arc::new(SerBatchImpl::<_, TestStruct2, ()>::new(zset)) as Arc<dyn SerBatchReader>;
-
-    encoder.consumer().batch_start(0, OutputBatchType::Delta);
-    let error = encoder.encode(zset).unwrap_err().to_string();
-    assert!(error.contains("does not support deletes"), "{error}");
-}
-
-#[test]
-fn parquet_output() {
-    let buffer = Arc::new(Mutex::new(Vec::with_capacity(4096)));
-    let consumer = MockOutputConsumer::with_buffer(buffer.clone());
-    let _consumer_data = consumer.data.clone();
-
-    let config = ParquetEncoderConfig {
-        buffer_size_records: usize::MAX,
-    };
-
-    let test_data = TestStruct2::data();
-    let mut encoder = ParquetEncoder::new(
-        Box::new(consumer),
-        config,
-        Relation::new(
-            "TestStruct2".into(),
-            TestStruct2::schema(),
-            false,
-            BTreeMap::new(),
-        ),
-        false,
-    )
-    .expect("Can't create encoder");
-    let zset = OrdZSet::from_keys(
-        (),
-        vec![Tup2(test_data[0].clone(), 2), Tup2(test_data[1].clone(), 1)],
-    );
-
-    let zset = Arc::new(SerBatchImpl::<_, TestStruct2, ()>::new(zset)) as Arc<dyn SerBatchReader>;
-    encoder.consumer().batch_start(0, OutputBatchType::Delta);
-    encoder.encode(zset).unwrap();
-    encoder.consumer().batch_end();
-
-    // Verify output buffer...
-    // Construct the expected file manually:
-    let test_denorm = vec![
-        test_data[0].clone(),
-        test_data[0].clone(),
-        test_data[1].clone(),
-    ];
-    let batch = RecordBatch::try_new(
-        TestStruct2::arrow_schema(),
-        TestStruct2::make_arrow_array(&test_denorm),
-    )
-    .expect("RecordBatch creation should succeed");
-    let props = WriterProperties::builder().build();
-
-    let mut expected_buffer: Vec<u8> = vec![];
-    let mut expected_buffer_cursor = Cursor::new(&mut expected_buffer);
-    let mut writer = ArrowWriter::try_new(
-        &mut expected_buffer_cursor,
-        TestStruct2::arrow_schema(),
-        Some(props),
-    )
-    .expect("Writer creation should succeed");
-    writer
-        .write(&batch)
-        .expect("Writing to parquet should succeed");
-    writer.close().expect("Closing the writer should succeed");
-    debug_parquet_buffer(
-        buffer
-            .lock()
-            .unwrap()
-            .iter()
-            .filter_map(|(_k, v, _headers)| v.clone())
-            .flatten()
-            .collect(),
-    );
-
-    let buffer_copy = buffer
-        .lock()
-        .unwrap()
-        .iter()
-        .filter_map(|(_k, v, _headers)| v.clone())
-        .flatten()
-        .collect::<Vec<_>>();
-
-    assert_eq!(expected_buffer, buffer_copy);
-}
-
-fn debug_parquet_buffer(buffer: Vec<u8>) {
-    use bytes::Bytes;
-    use parquet::file::reader::FileReader;
-
-    let _ = tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().with_test_writer())
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::default()))
-        .try_init();
-    let buffer_copy = Bytes::from(buffer);
-    let reader = SerializedFileReader::new(buffer_copy).expect("Reader creation should succeed");
-    let row_iter = reader
-        .get_row_iter(None)
-        .expect("Row iterator creation should succeed");
-    for maybe_record in row_iter {
-        let record = maybe_record.expect("Record should be read successfully");
-        tracing::info!("record = {:?}", record.to_string());
-    }
 }
 
 /// Record with two VARIANT columns: one held as a Parquet variant, one as JSON
@@ -310,9 +95,9 @@ fn variant_arrow_type() -> ArrowDataType {
     )
 }
 
-/// A Parquet file whose VARIANT column holds the binary variant encoding is
-/// read through the same Arrow path every table-format connector uses, with no
-/// Delta or Iceberg table involved.
+/// A Parquet file whose VARIANT column holds the binary variant encoding reads into the
+/// static engine's record layer with every value's type intact, which the published JSON
+/// text that the `parquet` connector suite compares cannot show.
 ///
 /// The second row leaves both VARIANT columns NULL, and `json_v` proves a
 /// column of JSON text still reads the way it always did.

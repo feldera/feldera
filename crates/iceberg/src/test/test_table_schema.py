@@ -1,7 +1,7 @@
 """Schema of the Iceberg test table, shared by the scripts that write it.
 
-The columns match `IcebergTestStruct` in the Rust tests; a column added here
-must be added there too.
+The columns match those of the `iceberg` connector suite in the Rust tests; a
+column added here must be added there too.
 """
 
 from decimal import Decimal
@@ -30,7 +30,7 @@ from pyiceberg.types import (
 
 
 def _test_struct_fields(base):
-    """`TestStruct`'s fields, numbered from `base`.
+    """The fields of the struct columns, numbered from `base`.
 
     Three columns nest this struct, and field ids must be unique across the
     whole schema, so each occurrence gets its own range.
@@ -142,7 +142,7 @@ ARROW_FIELDS = [
 
 
 def test_struct(i):
-    """One `TestStruct` value, as Rust's `TestStruct::for_id` builds it."""
+    """One struct value, as the `basic` helper of the Rust `iceberg` suite builds it."""
     return {"id": i, "b": False, "i": None, "s": ""}
 
 
