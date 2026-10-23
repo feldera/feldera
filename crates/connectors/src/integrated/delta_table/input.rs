@@ -1600,6 +1600,13 @@ struct DeltaTableInputEndpointInner {
     /// Active catchup Feldera transaction, shared between the follow loop and `execute_df`.
     catchup_follow_state: Mutex<CatchupFollowState>,
 
+    /// How big the log says this host's share of a distributed snapshot is,
+    /// set by [Self::snapshot_share].  The share reads through listing tables,
+    /// which state no statistics, so the snapshot read is sized from this
+    /// instead.  `None` for a connector that is not distributed, whose
+    /// snapshot provider states the log's totals itself.
+    snapshot_read_size: Mutex<Option<ReadSize>>,
+
     /// SQL columns the connector actually reads (skippable unused columns
     /// removed when `skip_unused_columns` is set). One input to which Delta
     /// columns are kept; see [`needs_column`](DeltaTableInputEndpointInner::needs_column).
@@ -1696,6 +1703,7 @@ impl DeltaTableInputEndpointInner {
             queue,
             metrics,
             catchup_follow_state: Mutex::new(CatchupFollowState::default()),
+            snapshot_read_size: Mutex::new(None),
             used_sql_columns: OnceLock::new(),
             config_referenced_columns: OnceLock::new(),
             schema_table: Mutex::new(None),
@@ -3240,11 +3248,15 @@ impl DeltaTableInputEndpointInner {
             .collect::<Vec<_>>();
         adds.sort_by(|a, b| a.path.cmp(&b.path));
         let n_files = adds.len();
-        let files = adds
+        let mine = adds
             .iter()
             .enumerate()
             .filter(|(index, _add)| shard.contains(*index as u64))
-            .map(|(_index, add)| CdcFile {
+            .map(|(_index, add)| add)
+            .collect::<Vec<_>>();
+        let files = mine
+            .iter()
+            .map(|add| CdcFile {
                 path: &add.path,
                 partition_values: Some(&add.partition_values),
                 deletion_vector: add.deletion_vector.as_ref(),
@@ -3256,6 +3268,15 @@ impl DeltaTableInputEndpointInner {
             shard.host(),
             files.len(),
         );
+
+        // As for a follow-mode commit, a file whose row count the writer
+        // omitted still contributes its bytes, which skews the ratio towards
+        // smaller batches rather than larger.
+        let mut read_size = ReadSize::default();
+        for add in &mine {
+            read_size.add(add.size.max(0) as u64, add_records(add));
+        }
+        *self.snapshot_read_size.lock().unwrap() = Some(read_size);
 
         let df = match self.files_dataframe(table, &files, "snapshot").await? {
             Some(df) => df,
@@ -3533,6 +3554,11 @@ impl DeltaTableInputEndpointInner {
             }
         }
 
+        // A whole snapshot reads through delta-rs's table provider, which
+        // states the log's totals in the plan, so the batch size is derived
+        // from there.  A distributed connector's share reads through listing
+        // tables that state none, so `snapshot_share` measured it from the log.
+        let read_size = *self.snapshot_read_size.lock().unwrap();
         self.execute_df(
             df,
             Polarity::Fixed(true),
@@ -3542,10 +3568,7 @@ impl DeltaTableInputEndpointInner {
             self.snapshot_transaction_label(),
             num_retries,
             None,
-            // The snapshot reads through delta-rs's table provider, which
-            // states the log's totals in the plan, so the batch size is
-            // derived from there.
-            None,
+            read_size,
         )
         .await
     }
@@ -7075,6 +7098,8 @@ pub mod distributed_snapshot_tests {
     #[cfg(test)]
     use super::validate_distributed;
     use super::{DeltaResumeInfo, DeltaTableInputEndpointInner, Polarity, QueueEntry};
+    #[cfg(test)]
+    use super::{ReadSize, add_records, plan_read_size};
     use crate::{
         PipelineState,
         integrated::DistributedInput,
@@ -7496,6 +7521,50 @@ pub mod distributed_snapshot_tests {
         // The files are read in parallel, so the order varies.
         rows.sort();
         rows
+    }
+
+    /// A host's share of a distributed snapshot reads through listing tables,
+    /// whose plan states no statistics, so the share measures itself from the
+    /// log for the snapshot read to size its batches.  Together, the hosts
+    /// measure every byte and row of the snapshot once.
+    #[tokio::test]
+    async fn a_snapshot_share_measures_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        let (table, uri) = write_table(dir.path(), 60, 4).await;
+        let table = Arc::new(table);
+        #[allow(deprecated)]
+        let whole = table
+            .snapshot()
+            .unwrap()
+            .log_data()
+            .iter()
+            .map(|file| file.add_action())
+            .fold(ReadSize::default(), |mut size, add| {
+                size.add(add.size.max(0) as u64, add_records(&add));
+                size
+            });
+        assert_eq!(whole.records, 60);
+
+        let mut total = ReadSize::default();
+        for host in 0..3 {
+            let endpoint = endpoint(&uri, shard(host));
+            *endpoint.schema_table.lock().unwrap() = Some(table.clone());
+            endpoint.register_snapshot_table(&table).await.unwrap();
+
+            let plan = endpoint
+                .datafusion
+                .sql("select id, part from snapshot")
+                .await
+                .unwrap()
+                .create_physical_plan()
+                .await
+                .unwrap();
+            assert_eq!(plan_read_size(plan.as_ref()), None, "host {host}");
+
+            let size = endpoint.snapshot_read_size.lock().unwrap().unwrap();
+            total.add(size.bytes, size.records);
+        }
+        assert_eq!(total, whole);
     }
 
     /// The hosts together read every row of the snapshot exactly once, with
