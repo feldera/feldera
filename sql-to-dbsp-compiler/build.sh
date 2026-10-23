@@ -23,7 +23,11 @@ usage() {
 
 update_pom() {
     VERSION=$1
-    sed -i -E "s|<calcite.version>(.*)</calcite.version>|<calcite.version>${VERSION}</calcite.version>|" ./SQL-compiler/pom.xml
+    # `-i.bak` works with both GNU and BSD sed.  BSD (macOS) sed takes the `-E`
+    # in `-i -E` as the backup suffix, so the pattern runs as a basic regex,
+    # matches nothing, and the version is silently left unchanged.
+    sed -i.bak -E "s|<calcite.version>(.*)</calcite.version>|<calcite.version>${VERSION}</calcite.version>|" ./SQL-compiler/pom.xml
+    rm ./SQL-compiler/pom.xml.bak
 }
 
 if [ "${CALCITE_BUILD_NEXT}" = "y" ]; then
