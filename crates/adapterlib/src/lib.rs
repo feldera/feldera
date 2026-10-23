@@ -1,8 +1,8 @@
 use bytemuck::NoUninit;
-pub use dbsp::DetailedError as DbspDetailedError;
 use num_derive::FromPrimitive;
 use serde::Serialize;
 
+pub mod bootstrap;
 pub mod catalog;
 mod connector_metadata;
 pub mod errors;

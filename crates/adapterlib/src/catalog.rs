@@ -18,18 +18,15 @@ use apache_avro::{
 use arrow::record_batch::RecordBatch;
 #[cfg(feature = "with-dynamodb")]
 use aws_sdk_dynamodb::types::AttributeValue;
-use dbsp::circuit::NodeId;
 use dbsp::dynamic::{ClonableTrait, DynData, DynVec, Erase, Factory};
-use dbsp::operator::StagedBuffers;
-use dbsp::operator::dynamic::accumulator::EnableCount;
 use dyn_clone::DynClone;
-use feldera_sqllib::Variant;
 use feldera_types::format::csv::CsvFormatConfig;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::SqlSerdeConfig;
 use serde_arrow::ArrayBuilder;
 
+use crate::ConnectorMetadata;
 use crate::errors::controller::ControllerError;
 use crate::format::InputBuffer;
 use crate::postprocess::PostprocessorRegistry;
@@ -56,6 +53,25 @@ pub enum RecordFormat {
     DynamoDB,
 }
 
+/// Input prepared for flushing into a circuit.
+///
+/// An input handle offers two ways to push data into a circuit:
+///
+/// - Immediately, one record or one vector of records at a time.
+///
+/// - Preparing data in advance into [StagedBuffers] with the handle's `stage` method. Then,
+///   later, calling [StagedBuffers::flush] pushes the input buffers into the circuit.
+///
+/// Both approaches are equally correct.  They can differ in performance, because pushing has a
+/// significant cost for a large number of records.  Using [StagedBuffers] has a similar cost,
+/// but it incurs it in the call to `stage` rather than in [StagedBuffers::flush].  This means
+/// that, if the code driving the circuit can buffer data ahead of the circuit's demand for it,
+/// the cost can be hidden and data processing as a whole runs faster.
+pub trait StagedBuffers: Send + Sync {
+    /// Flushes the data gathered into this buffer to the circuit.
+    fn flush(&mut self);
+}
+
 /// An input handle that deserializes and buffers records.
 ///
 /// A trait for a type that wraps a [`ZSetHandle`](`dbsp::ZSetHandle`) or an
@@ -77,14 +93,14 @@ pub enum RecordFormat {
 pub trait DeCollectionStream: Send + Sync + InputBuffer {
     /// Buffer a new insert update.
     ///
-    /// `metadata` contains optional metadata attached by the transport adapter or parser,
-    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
-    /// `DeserializeWithContext::deserialize_with_context_aux`.
+    /// `metadata` holds the attributes that the transport and the parser attached to the
+    /// record, such as the Kafka topic and headers. Column DEFAULT expressions read them
+    /// through `CONNECTOR_METADATA()`.
     ///
     /// Returns an error if deserialization fails, i.e., the serialized
     /// representation is corrupted or does not match the value type of
     /// the underlying input stream.
-    fn insert(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()>;
+    fn insert(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()>;
 
     /// Buffer a new delete update.
     ///
@@ -100,27 +116,27 @@ pub trait DeCollectionStream: Send + Sync + InputBuffer {
     /// The record gets deserialized and pushed to the underlying input stream
     /// handle as a delete update.
     ///
-    /// `metadata` contains optional metadata attached by the transport adapter or parser,
-    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
-    /// `DeserializeWithContext::deserialize_with_context_aux`.
+    /// `metadata` holds the attributes that the transport and the parser attached to the
+    /// record, such as the Kafka topic and headers. Column DEFAULT expressions read them
+    /// through `CONNECTOR_METADATA()`.
     ///
     /// Returns an error if deserialization fails, i.e., the serialized
     /// representation is corrupted or does not match the value or key
     /// type of the underlying input stream.
-    fn delete(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()>;
+    fn delete(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()>;
 
     /// Buffer a new update that will modify an existing record.
     ///
-    /// `metadata` contains optional metadata attached by the transport adapter or parser,
-    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
-    /// `DeserializeWithContext::deserialize_with_context_aux`.
+    /// `metadata` holds the attributes that the transport and the parser attached to the
+    /// record, such as the Kafka topic and headers. Column DEFAULT expressions read them
+    /// through `CONNECTOR_METADATA()`.
     ///
     /// This method can only be called on streams created with
     /// [`RootCircuit::add_input_map`](`dbsp::RootCircuit::add_input_map`)
     /// and will fail on other streams.  The serialized record must match
     /// the update type of this stream, specified as a type argument to
     /// `Catalog::register_input_map`.
-    fn update(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()>;
+    fn update(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()>;
 
     /// Reserve space for at least `reservation` more updates in the
     /// internal input buffer.
@@ -151,17 +167,19 @@ pub trait DeCollectionStream: Send + Sync + InputBuffer {
 pub trait ArrowStream: InputBuffer + Send + Sync {
     /// Buffer a new batch of insert updates.
     ///
-    /// `metadata` contains optional metadata attached by the transport adapter or parser,
-    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
-    /// `DeserializeWithContext::deserialize_with_context_aux` for each deserialized record.
-    fn insert(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()>;
+    /// `metadata` holds the attributes that the transport and the parser attached to the
+    /// records of `data`, such as the Kafka topic and headers. Column DEFAULT expressions read
+    /// them through `CONNECTOR_METADATA()`.
+    fn insert(&mut self, data: &RecordBatch, metadata: &Option<ConnectorMetadata>)
+    -> AnyResult<()>;
 
     /// Buffer a new batch of delete updates.
     ///
-    /// `metadata` contains optional metadata attached by the transport adapter or parser,
-    /// such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
-    /// `DeserializeWithContext::deserialize_with_context_aux` for each deserialized record.
-    fn delete(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()>;
+    /// `metadata` holds the attributes that the transport and the parser attached to the
+    /// records of `data`, such as the Kafka topic and headers. Column DEFAULT expressions read
+    /// them through `CONNECTOR_METADATA()`.
+    fn delete(&mut self, data: &RecordBatch, metadata: &Option<ConnectorMetadata>)
+    -> AnyResult<()>;
 
     /// Insert records in `data` with polarities from the `polarities` array.
     ///
@@ -170,7 +188,7 @@ pub trait ArrowStream: InputBuffer + Send + Sync {
         &mut self,
         data: &RecordBatch,
         polarities: &[bool],
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()>;
 
     /// Create a new deserializer with the same configuration connected to
@@ -199,16 +217,16 @@ pub trait AvroStream: InputBuffer + Send + Sync {
     ///
     /// * `schema` - The Avro schema to use for deserialization.
     /// * `refs` - A map of named schema references that may be used to resolve references within `schema`.
-    /// * `metadata` - Optional metadata attached by the transport adapter or parser,
-    ///   such as Kafka headers, topic name, etc. This metadata is passed as an aux argument to
-    ///   `DeserializeWithContext::deserialize_with_context_aux`.
+    /// * `metadata` - The attributes that the transport and the parser attached to the
+    ///   record, such as the Kafka topic and headers. Column DEFAULT expressions read them
+    ///   through `CONNECTOR_METADATA()`.
     fn insert(
         &mut self,
         data: &AvroValue,
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()>;
 
     fn delete(
@@ -217,7 +235,7 @@ pub trait AvroStream: InputBuffer + Send + Sync {
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()>;
 
     /// Create a new deserializer with the same configuration connected to
@@ -1146,6 +1164,10 @@ pub trait CircuitCatalog: Send + Sync {
     /// Look up an input stream handle by name.
     fn input_collection_handle(&self, name: &SqlIdentifier) -> Option<&InputCollectionHandle>;
 
+    /// Iterate over the input stream handles and their names.
+    fn input_iter(&self)
+    -> Box<dyn Iterator<Item = (&SqlIdentifier, &InputCollectionHandle)> + '_>;
+
     fn output_iter(
         &self,
     ) -> Box<dyn Iterator<Item = (&SqlIdentifier, &OutputCollectionHandles)> + '_>;
@@ -1175,26 +1197,50 @@ pub struct InputCollectionHandle {
     pub schema: Relation,
     pub handle: Box<dyn DeCollectionHandle>,
 
-    /// Node id of the input stream in the circuit.
+    /// The persistent id of the operator that produces the input stream, if it has one.
     ///
-    /// Used to check whether the input stream needs to be backfilled during bootstrapping,
-    /// i.e., whether attached input connectors should be reset to their initial offsets or
-    /// continue from the checkpointed offsets.
-    pub node_id: NodeId,
+    /// A bootstrap names the operators that it rebuilds by persistent id, so this tells
+    /// whether the table's state is rebuilt, and so whether its input connectors start over
+    /// or continue from their checkpointed offsets. An operator that a checkpoint holds has
+    /// a persistent id.
+    pub persistent_id: Option<String>,
 }
 
 impl InputCollectionHandle {
     #[doc(hidden)]
-    pub fn new<H>(schema: Relation, handle: H, node_id: NodeId) -> Self
+    pub fn new<H>(schema: Relation, handle: H, persistent_id: Option<String>) -> Self
     where
         H: DeCollectionHandle + 'static,
     {
         Self {
             schema,
             handle: Box::new(handle),
-            node_id,
+            persistent_id,
         }
     }
+}
+
+/// The number of consumers of the updates to an output stream.
+///
+/// The engine collects the updates to an output stream during a transaction, for the output
+/// connectors to read. While the stream has no consumer, the engine can skip these updates,
+/// which during a backfill can be a complete copy of the table or view. The consumers are the
+/// output connectors attached to the stream, plus any operator of the circuit that reads the
+/// same updates.
+pub trait EnableCount: Send + Sync {
+    /// Returns true if the stream has a consumer.
+    ///
+    /// An implementation must make this and [EnableCount::enable] sequentially consistent
+    /// (`SeqCst`), so that a caller that enables the count and then reads another `SeqCst`
+    /// atomic, such as a transaction number, cannot miss a concurrent update of that atomic
+    /// that precedes a call to this function.
+    fn is_enabled(&self) -> bool;
+
+    /// Adds a consumer. A later call to [EnableCount::disable] can remove it.
+    fn enable(&self);
+
+    /// Removes a consumer that [EnableCount::enable] added.
+    fn disable(&self);
 }
 
 /// A set of stream handles associated with each output collection.
@@ -1226,7 +1272,7 @@ pub struct OutputCollectionHandles {
     /// Reference to the enable count of the accumulator used to collect updates to this stream.
     /// Incremented every time an output connector is attached to this stream; decremented when
     /// the output connector is detached.
-    pub enable_count: EnableCount,
+    pub enable_count: Arc<dyn EnableCount>,
 }
 
 impl OutputCollectionHandles {

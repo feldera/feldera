@@ -67,6 +67,12 @@ impl CircuitCatalog for Catalog {
         self.input_collection_handles.get(name)
     }
 
+    fn input_iter(
+        &self,
+    ) -> Box<dyn Iterator<Item = (&SqlIdentifier, &InputCollectionHandle)> + '_> {
+        Box::new(self.input_collection_handles.iter())
+    }
+
     /// Look up output stream handles by name.
     fn output_handles(&self, name: &SqlIdentifier) -> Option<&OutputCollectionHandles> {
         self.output_batch_handles.get(name)

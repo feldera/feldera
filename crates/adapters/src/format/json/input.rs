@@ -8,11 +8,10 @@ use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     format::{InputFormat, ParseError, Parser},
 };
-use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::ConnectorMetadata;
+use feldera_adapterlib::catalog::StagedBuffers;
 use feldera_adapterlib::format::Splitter;
-use feldera_sqllib::Variant;
 use feldera_types::format::json::{JsonLines, JsonParserConfig, JsonUpdateFormat};
 use serde::Deserialize;
 use serde_json::value::RawValue;
@@ -31,7 +30,7 @@ trait UpdateFormat {
     fn apply(
         self,
         parser: &mut JsonParser,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> Result<usize, ParseError>;
 }
 
@@ -55,7 +54,7 @@ impl UpdateFormat for InsDelUpdate<&'_ RawValue> {
     fn apply(
         self,
         parser: &mut JsonParser,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> Result<usize, ParseError> {
         let mut updates = 0;
 
@@ -102,7 +101,7 @@ impl UpdateFormat for DebeziumUpdate<&'_ RawValue> {
     fn apply(
         self,
         parser: &mut JsonParser,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> Result<usize, ParseError> {
         // TODO: validate table name.
         // We currently allow a JSON connector to feed data to a single table.
@@ -160,7 +159,7 @@ impl UpdateFormat for &'_ RawValue {
     fn apply(
         self,
         parser: &mut JsonParser,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> Result<usize, ParseError> {
         parser.insert(self, metadata)?;
         Ok(1)
@@ -293,7 +292,11 @@ impl JsonParser {
         }
     }
 
-    fn delete(&mut self, val: &RawValue, metadata: &Option<Variant>) -> Result<(), ParseError> {
+    fn delete(
+        &mut self,
+        val: &RawValue,
+        metadata: &Option<ConnectorMetadata>,
+    ) -> Result<(), ParseError> {
         self.input_stream
             .delete(val.get().as_bytes(), metadata)
             .map_err(|e| {
@@ -307,7 +310,11 @@ impl JsonParser {
             })
     }
 
-    fn insert(&mut self, val: &RawValue, metadata: &Option<Variant>) -> Result<(), ParseError> {
+    fn insert(
+        &mut self,
+        val: &RawValue,
+        metadata: &Option<ConnectorMetadata>,
+    ) -> Result<(), ParseError> {
         self.input_stream
             .insert(val.get().as_bytes(), metadata)
             .map_err(|e| {
@@ -321,7 +328,11 @@ impl JsonParser {
             })
     }
 
-    fn update(&mut self, val: &RawValue, metadata: &Option<Variant>) -> Result<(), ParseError> {
+    fn update(
+        &mut self,
+        val: &RawValue,
+        metadata: &Option<ConnectorMetadata>,
+    ) -> Result<(), ParseError> {
         self.input_stream
             .update(val.get().as_bytes(), metadata)
             .map_err(|e| {
@@ -338,7 +349,7 @@ impl JsonParser {
     fn apply_update<'de, F>(
         &mut self,
         update: &'de RawValue,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
         errors: &mut Vec<ParseError>,
     ) where
         F: UpdateFormat + Deserialize<'de>,
@@ -395,8 +406,6 @@ impl Parser for JsonParser {
         data: &[u8],
         metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-        let metadata = metadata.map(Variant::from);
-
         let mut errors = Vec::new();
 
         let mut stream = serde_json::Deserializer::from_slice(data).into_iter::<&RawValue>();

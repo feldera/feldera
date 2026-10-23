@@ -5,10 +5,9 @@ use crate::{
     util::truncate_ellipse,
 };
 use anyhow::{Result as AnyResult, bail};
-use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
+use feldera_adapterlib::catalog::StagedBuffers;
 use feldera_adapterlib::{ConnectorMetadata, catalog::SerCursorFlattened};
-use feldera_sqllib::Variant;
 use feldera_types::{
     config::ConnectorConfig,
     format::csv::{CsvEncoderConfig, CsvFormatConfig},
@@ -140,7 +139,7 @@ impl CsvParser {
     fn parse_record(
         &mut self,
         record: &[u8],
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
         errors: &mut Vec<ParseError>,
     ) {
         if (!self.headers || self.last_event_number > 0)
@@ -203,8 +202,6 @@ impl Parser for CsvParser {
         mut data: &[u8],
         metadata: Option<ConnectorMetadata>,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-        let metadata = metadata.map(Variant::from);
-
         let mut errors = Vec::new();
         while let Some((record, rest)) = self.split_record(data) {
             if !self.is_comment(record) {

@@ -1,5 +1,6 @@
 pub mod adapter_stats;
 pub mod checkpoint;
+pub mod circuit;
 pub mod completion_token;
 pub mod config;
 pub mod constants;

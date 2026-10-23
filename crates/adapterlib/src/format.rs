@@ -8,8 +8,8 @@ use std::io::{Error as IoError, Read};
 use std::ops::{Add, AddAssign, Range};
 use std::sync::Arc;
 
+use crate::catalog::StagedBuffers;
 use anyhow::Result as AnyResult;
-use dbsp::operator::input::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::program_schema::Relation;

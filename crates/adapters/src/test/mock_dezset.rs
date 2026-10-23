@@ -6,6 +6,7 @@ use crate::{
         CsvDeserializerFromBytes, DeserializerFromBytes, JsonDeserializerFromBytes,
         RawDeserializerFromBytes, fraction, fraction_take,
     },
+    static_compile::metadata::MetadataVariant,
 };
 #[cfg(feature = "with-avro")]
 use crate::{catalog::AvroStream, format::avro::from_avro_value};
@@ -13,10 +14,12 @@ use anyhow::{Result as AnyResult, bail};
 #[cfg(feature = "with-avro")]
 use apache_avro::{Schema as AvroSchema, types::Value as AvroValue};
 use arrow::array::RecordBatch;
-use dbsp::{DBData, operator::StagedBuffers};
+use dbsp::DBData;
 use erased_serde::Deserializer as ErasedDeserializer;
+use feldera_adapterlib::ConnectorMetadata;
 #[cfg(feature = "with-avro")]
 use feldera_adapterlib::catalog::AvroSchemaRefs;
+use feldera_adapterlib::catalog::StagedBuffers;
 use feldera_adapterlib::format::{BufferSize, flatten_nested};
 
 use feldera_sqllib::Variant;
@@ -315,6 +318,7 @@ where
     buffer: MockDeZSetStreamBuffer<T, U>,
     deserializer: De,
     config: C,
+    metadata: MetadataVariant,
 }
 
 impl<De, T, U, C> MockDeZSetStream<De, T, U, C>
@@ -329,6 +333,7 @@ where
             buffer: MockDeZSetStreamBuffer::new(handle),
             deserializer: De::create(config.clone()),
             config,
+            metadata: MetadataVariant::default(),
         }
     }
 }
@@ -340,22 +345,34 @@ where
     De: DeserializerFromBytes<C> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
-        let val = DeserializerFromBytes::deserialize::<T>(&mut self.deserializer, data, metadata)?;
+    fn insert(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()> {
+        let val = DeserializerFromBytes::deserialize::<T>(
+            &mut self.deserializer,
+            data,
+            self.metadata.get(metadata),
+        )?;
         self.buffer.updates.push(MockUpdate::Insert(val));
         self.buffer.n_bytes += data.len();
         Ok(())
     }
 
-    fn delete(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
-        let val = DeserializerFromBytes::deserialize::<T>(&mut self.deserializer, data, metadata)?;
+    fn delete(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()> {
+        let val = DeserializerFromBytes::deserialize::<T>(
+            &mut self.deserializer,
+            data,
+            self.metadata.get(metadata),
+        )?;
         self.buffer.updates.push(MockUpdate::Delete(val));
         self.buffer.n_bytes += data.len();
         Ok(())
     }
 
-    fn update(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
-        let val = DeserializerFromBytes::deserialize::<U>(&mut self.deserializer, data, metadata)?;
+    fn update(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()> {
+        let val = DeserializerFromBytes::deserialize::<U>(
+            &mut self.deserializer,
+            data,
+            self.metadata.get(metadata),
+        )?;
         self.buffer.updates.push(MockUpdate::Update(val));
         self.buffer.n_bytes += data.len();
         Ok(())
@@ -414,6 +431,7 @@ where
 {
     buffer: MockDeZSetStreamBuffer<T, U>,
     config: C,
+    metadata: MetadataVariant,
 }
 
 impl<T, U, C> MockZSetArrowStream<T, U, C>
@@ -426,6 +444,7 @@ where
         Self {
             buffer: MockDeZSetStreamBuffer::new(handle),
             config,
+            metadata: MetadataVariant::default(),
         }
     }
 }
@@ -463,7 +482,7 @@ where
     fn buffer_records<F>(
         &mut self,
         data: &RecordBatch,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
         update: F,
     ) -> AnyResult<()>
     where
@@ -473,7 +492,11 @@ where
         let deserializer =
             &mut <dyn ErasedDeserializer>::erase(deserializer) as &mut dyn ErasedDeserializer;
 
-        let records = Vec::<T>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
+        let records = Vec::<T>::deserialize_with_context_aux(
+            deserializer,
+            &self.config,
+            self.metadata.get(metadata),
+        )?;
         self.buffer.updates.extend(records.into_iter().map(update));
         self.buffer.n_bytes += data.get_array_memory_size();
 
@@ -498,13 +521,21 @@ where
         + Clone
         + 'static,
 {
-    fn insert(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
+    fn insert(
+        &mut self,
+        data: &RecordBatch,
+        metadata: &Option<ConnectorMetadata>,
+    ) -> AnyResult<()> {
         self.buffer_records(data, metadata, |record| {
             MockUpdate::<T, U>::with_polarity(record, true)
         })
     }
 
-    fn delete(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
+    fn delete(
+        &mut self,
+        data: &RecordBatch,
+        metadata: &Option<ConnectorMetadata>,
+    ) -> AnyResult<()> {
         self.buffer_records(data, metadata, |record| {
             MockUpdate::<T, U>::with_polarity(record, false)
         })
@@ -514,7 +545,7 @@ where
         &mut self,
         data: &arrow::array::RecordBatch,
         polarities: &[bool],
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
         if polarities.len() != data.num_rows() {
             bail!(
@@ -550,6 +581,7 @@ pub struct MockAvroStream<T, U> {
     updates: Vec<MockUpdate<T, U>>,
     n_bytes: usize,
     handle: MockDeZSet<T, U>,
+    metadata: MetadataVariant,
 }
 
 #[cfg(feature = "with-avro")]
@@ -559,6 +591,7 @@ impl<T, U> MockAvroStream<T, U> {
             updates: Vec::new(),
             n_bytes: 0,
             handle,
+            metadata: MetadataVariant::default(),
         }
     }
 }
@@ -575,9 +608,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
-        let v: T = from_avro_value(data, schema, refs, metadata)
+        let v: T = from_avro_value(data, schema, refs, self.metadata.get(metadata))
             .map_err(|e| anyhow::anyhow!("error deserializing Avro record: {e}"))?;
         self.updates.push(MockUpdate::Insert(v));
         self.n_bytes += n_bytes;
@@ -590,9 +623,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
-        let v: T = from_avro_value(data, schema, refs, metadata)
+        let v: T = from_avro_value(data, schema, refs, self.metadata.get(metadata))
             .map_err(|e| anyhow::anyhow!("error deserializing Avro record: {e}"))?;
 
         self.updates.push(MockUpdate::Delete(v));

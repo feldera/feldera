@@ -161,7 +161,7 @@ impl Catalog {
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema.clone(),
             DeZSetHandle::new(handle),
-            stream.local_node_id(),
+            stream.get_persistent_id(),
         ))
         .unwrap();
 
@@ -204,7 +204,7 @@ impl Catalog {
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema.clone(),
             DeZSetHandle::new(handle),
-            stream.local_node_id(),
+            stream.get_persistent_id(),
         ))
         .unwrap();
 
@@ -288,7 +288,7 @@ impl Catalog {
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema.clone(),
             DeMapHandle::new(handle, value_key_func, update_key_func),
-            stream.local_node_id(),
+            stream.get_persistent_id(),
         ))
         .unwrap();
 
@@ -371,7 +371,7 @@ impl Catalog {
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema.clone(),
             DeMapHandle::new(handle, value_key_func, update_key_func),
-            stream.local_node_id(),
+            stream.get_persistent_id(),
         ))
         .unwrap();
 
@@ -454,7 +454,7 @@ impl Catalog {
         self.register_input_collection_handle(InputCollectionHandle::new(
             relation_schema.clone(),
             DeLazyMapHandle::new(handle, value_key_func),
-            stream.local_node_id(),
+            stream.get_persistent_id(),
         ))
         .unwrap();
 
@@ -592,7 +592,7 @@ impl Catalog {
             alias_as_index: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
-            enable_count,
+            enable_count: Arc::new(StaticEnableCount(enable_count)),
             integrate_handle: None,
         };
 
@@ -724,7 +724,7 @@ impl Catalog {
             )) as Arc<dyn SerBatchReaderHandle>),
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
-            enable_count,
+            enable_count: Arc::new(StaticEnableCount(enable_count)),
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -922,7 +922,7 @@ impl Catalog {
             alias_as_index,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, KD, VD>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
-            enable_count,
+            enable_count: Arc::new(StaticEnableCount(enable_count)),
             integrate_handle,
         })
     }
@@ -1132,6 +1132,25 @@ fn index_schema(
     Relation::new(index_name.clone(), fields, false, BTreeMap::new())
 }
 
+/// dbsp's enable count of an accumulator, as the connectors' [`EnableCount`].
+///
+/// [`EnableCount`]: feldera_adapterlib::catalog::EnableCount
+struct StaticEnableCount(EnableCount);
+
+impl feldera_adapterlib::catalog::EnableCount for StaticEnableCount {
+    fn is_enabled(&self) -> bool {
+        self.0.is_enabled()
+    }
+
+    fn enable(&self) {
+        self.0.enable()
+    }
+
+    fn disable(&self) {
+        self.0.disable()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::{io::Write, ops::Deref};
@@ -1248,5 +1267,21 @@ mod test {
             r#"-1: {"id":2,"b":true,"i":null,"s":"2"}
 "#
         );
+    }
+
+    /// The connectors' enable count of an output is dbsp's enable count of its accumulator.
+    #[test]
+    fn enable_count_is_dbsp_enable_count() {
+        let count = super::EnableCount::new();
+        let shared: Box<dyn feldera_adapterlib::catalog::EnableCount> =
+            Box::new(super::StaticEnableCount(count.clone()));
+        assert!(!shared.is_enabled());
+
+        shared.enable();
+        assert!(count.is_enabled());
+        assert!(shared.is_enabled());
+
+        shared.disable();
+        assert!(!count.is_enabled());
     }
 }
