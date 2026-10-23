@@ -13,19 +13,19 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use csv::WriterBuilder as CsvWriterBuilder;
-use feldera_adapterlib::test::wait;
+use feldera_adapterlib::test::{default_timeout_ms, wait};
 use feldera_types::config::PipelineConfig;
 use serde_json::json;
 use tempfile::TempDir;
 
 use crate::Controller;
 use crate::test::init_test_logger;
-use crate::test::pipeline::{ControllerOptions, PipelineTestEngine};
+use crate::test::pipeline::{ControllerErrorCallback, ControllerOptions, PipelineTestEngine};
 use crate::test::suites::controller::{
     SUSPEND_OUTPUT_TIMEOUT_MS, check_file_contents, check_file_ids, for_id, identity, tprintln,
     wait_for_records, wait_for_records_within,
 };
-use crate::transport::set_barrier;
+use crate::transport::{set_barrier, set_failure};
 
 fn assert_bounded_suspend_steps(controller: &Controller, suspend_request_step: u64) {
     let suspend_complete_step = controller.status().global_metrics.total_initiated_steps();
@@ -388,6 +388,22 @@ fn start_controller(
     storage_dir: &Path,
     barriers: &[usize],
 ) -> Controller {
+    start_controller_with_error_cb(
+        engine,
+        storage_dir,
+        barriers,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+}
+
+/// Like [`start_controller`], with `error_cb` as the controller's error
+/// callback.
+fn start_controller_with_error_cb(
+    engine: &dyn PipelineTestEngine,
+    storage_dir: &Path,
+    barriers: &[usize],
+    error_cb: ControllerErrorCallback,
+) -> Controller {
     let n = barriers.len();
     for (i, barrier) in barriers.iter().copied().enumerate() {
         set_barrier(input_path(storage_dir, i).to_str().unwrap(), barrier);
@@ -450,11 +466,7 @@ fn start_controller(
         .map(|s| Some(s.as_str()))
         .collect::<Vec<_>>();
     let controller = engine
-        .controller(
-            &identity(&persistent_strs),
-            &config,
-            Box::new(|e, _| panic!("error: {e}")),
-        )
+        .controller(&identity(&persistent_strs), &config, error_cb)
         .unwrap();
 
     controller.start();
@@ -763,4 +775,164 @@ pub fn suspend_barrier5(engine: &dyn PipelineTestEngine) {
 #[engine_test(requires(Storage, Checkpoints, SuspendResume, Bootstrap))]
 pub fn bootstrap(engine: &dyn PipelineTestEngine) {
     test_bootstrap(engine, &[2500, 2500, 2500, 2500, 2500]);
+}
+
+/// Suspend fails with an actionable error, instead of waiting forever, when an
+/// input endpoint failed while it held a barrier.
+///
+/// The controller keeps a failed endpoint in the pipeline status. Its barrier
+/// flag is set by the last step it reported, and a failed endpoint never
+/// reports a step again, so the flag never clears.
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
+pub fn failed_input_at_barrier_fails_suspend(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input = input_path(&storage_dir, 0);
+    let input_file = File::create(&input).unwrap();
+    let mut writer = CsvWriterBuilder::new()
+        .has_headers(false)
+        .from_writer(&input_file);
+    for id in 0..1000 {
+        writer.serialize(for_id(id)).unwrap();
+    }
+    writer.flush().unwrap();
+
+    // The barrier lies past the end of the file, so the endpoint holds it.
+    let controller = start_controller_with_error_cb(
+        engine,
+        &storage_dir,
+        &[2000],
+        Box::new(|e, _| tprintln!("controller error: {e}")),
+    );
+    wait_for_records(&controller, &[1000]);
+    assert!(
+        controller
+            .status()
+            .input_status()
+            .get(&0)
+            .unwrap()
+            .is_barrier()
+    );
+
+    set_failure(input.to_str().unwrap());
+    wait(
+        || {
+            controller
+                .status()
+                .input_status()
+                .get(&0)
+                .is_none_or(|status| status.fatal_error.lock().unwrap().is_some())
+        },
+        default_timeout_ms(),
+    )
+    .expect("the input endpoint did not fail");
+
+    // The controller sees that the endpoint stopped during a step. This
+    // pipeline has no clock and no new input, so request steps.
+    for _ in 0..10 {
+        controller.request_step();
+        sleep(Duration::from_millis(200));
+    }
+
+    let (sender, receiver) = mpsc::channel();
+    controller.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
+    let result = receiver
+        .recv_timeout(Duration::from_secs(30))
+        .expect("suspend did not complete within 30s of the input endpoint failing at a barrier");
+    let error = result
+        .expect_err("suspend succeeded although the failed input endpoint holds a barrier")
+        .to_string();
+    assert!(
+        error.contains("failed with a fatal error at a position that cannot be checkpointed"),
+        "unexpected suspend error: {error}"
+    );
+    let endpoint_name = controller.status().input_status()[&0].endpoint_name.clone();
+    assert_eq!(
+        controller.permanent_checkpoint_errors(),
+        Some(vec![
+            feldera_types::suspend::PermanentSuspendError::FailedInputEndpointBarrier(
+                endpoint_name
+            )
+        ])
+    );
+
+    controller.stop().unwrap();
+}
+
+/// A checkpoint taken after an input endpoint was removed while it held a
+/// barrier must not crash the pipeline.
+///
+/// Pruning resume entries during an input step is not enough: an immediate
+/// checkpoint can run without another step. A removed barrier entry has no
+/// seek position, and must not be serialized into that checkpoint.
+#[engine_test(requires(Storage, Checkpoints))]
+pub fn checkpoint_after_removing_input_at_barrier(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_file = File::create(input_path(&storage_dir, 0)).unwrap();
+    let mut writer = CsvWriterBuilder::new()
+        .has_headers(false)
+        .from_writer(&input_file);
+    for id in 0..1000 {
+        writer.serialize(for_id(id)).unwrap();
+    }
+    writer.flush().unwrap();
+
+    // The barrier lies past the end of the file, so the endpoint holds it.
+    let controller = start_controller(engine, &storage_dir, &[2000]);
+    wait_for_records(&controller, &[1000]);
+    assert!(
+        controller
+            .status()
+            .input_status()
+            .get(&0)
+            .unwrap()
+            .is_barrier()
+    );
+
+    controller.disconnect_input(&0);
+    // Do not request intervening steps: they would prune the stale entry and
+    // hide the immediate-checkpoint failure.
+    let checkpoint = controller
+        .checkpoint()
+        .expect("checkpoint immediately after removing the input endpoint failed");
+    assert!(checkpoint.config.inputs.is_empty());
+    assert!(checkpoint.input_metadata.0.is_empty());
+    assert!(checkpoint.input_statistics.is_empty());
+    controller.stop().unwrap();
+}
+
+/// Removal after capturing configuration must not discard that input's cursor
+/// or statistics from the same checkpoint.
+#[engine_test(requires(Storage, Checkpoints))]
+pub fn checkpoint_removal_between_snapshots_keeps_cursor(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_file = File::create(input_path(&storage_dir, 0)).unwrap();
+    let mut writer = CsvWriterBuilder::new()
+        .has_headers(false)
+        .from_writer(&input_file);
+    for id in 0..1000 {
+        writer.serialize(for_id(id)).unwrap();
+    }
+    writer.flush().unwrap();
+    let controller = start_controller(engine, &storage_dir, &[0]);
+    wait_for_records(&controller, &[1000]);
+    let inner = controller.inner.clone();
+    *controller.inner.checkpoint_snapshot_hook.lock().unwrap() =
+        Some(Box::new(move || inner.disconnect_input(&0)));
+    let checkpoint = controller.checkpoint().unwrap();
+    controller.stop().unwrap();
+    assert!(checkpoint.config.inputs.contains_key("test_input1"));
+    assert!(
+        checkpoint.input_metadata.0.contains_key("test_input1"),
+        "checkpoint restores the input, but omits its seek cursor"
+    );
+    assert!(checkpoint.input_statistics.contains_key("test_input1"));
 }
