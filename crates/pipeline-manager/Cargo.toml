@@ -159,7 +159,7 @@ serial_test = { workspace = true }
 wiremock = { workspace = true }
 feldera-types = { workspace = true, features = ["testing"] }
 itertools = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, features = ["sync", "test-util"] }
 libc = { workspace = true }  # For: asserting errno-to-ErrorKind mapping
 
 [package.metadata.cargo-machete]
