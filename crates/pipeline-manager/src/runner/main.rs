@@ -188,10 +188,11 @@ async fn get_logs(
             error: e,
         })
     })?;
+    // A snapshot ends by design, so it gets no "Logs have ended" notice.
     let emit_end_notice = matches!(mode, FollowMode::Full);
     // A resuming follower is answered with its position, which the logs thread sends ahead
     // of every line and which has to be in hand before the response head goes out.
-    let resolves_position = !emit_end_notice;
+    let resolves_position = matches!(mode, FollowMode::Resume(_));
 
     // Take a handle to the logs thread and release the pipelines lock before waiting on it.
     // The reconciliation loop takes the same lock, so holding it across the wait below would
@@ -758,6 +759,49 @@ mod test {
     async fn get_logs_rejects_a_malformed_cursor() {
         let fixture = logs_fixture(&[]).await;
         let uri = format!("/logs/{}?cursor=nonsense", fixture.pipeline_id);
+        let (status, _, _) = response_at(fixture, uri).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    /// `follow=false` ends the body after the buffer, with no closing notice.
+    #[tokio::test]
+    async fn get_logs_without_follow_ends_after_the_buffer() {
+        let fixture = logs_fixture(&["one", "two"]).await;
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::new(fixture.pipelines.clone()))
+                .service(get_logs),
+        )
+        .await;
+        let uri = format!("/logs/{}?follow=false", fixture.pipeline_id);
+        let response =
+            actix_test::call_service(&app, actix_test::TestRequest::get().uri(&uri).to_request())
+                .await;
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // The fixture stays open, so only the snapshot itself can end this body.
+        let body = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            actix_test::read_body(response),
+        )
+        .await
+        .expect("the body did not end after the buffer");
+        let body = std::str::from_utf8(&body).expect("body is not UTF-8");
+        let lines: Vec<&str> = body.lines().collect();
+        assert!(
+            lines[0].contains("Fresh start of pipeline logs"),
+            "unexpected opening line: {}",
+            lines[0]
+        );
+        assert_eq!(&lines[1..], ["one", "two"]);
+        fixture.close();
+    }
+
+    /// A snapshot has no position, so `cursor` with `follow=false` is refused.
+    #[tokio::test]
+    async fn get_logs_rejects_a_cursor_without_follow() {
+        let fixture = logs_fixture(&[]).await;
+        let uri = format!("/logs/{}?cursor=&follow=false", fixture.pipeline_id);
         let (status, _, _) = response_at(fixture, uri).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }

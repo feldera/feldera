@@ -90,6 +90,8 @@ pub enum FollowMode {
     /// naming the epoch, the position the catch-up starts at, and any lines lost along the
     /// way. `None` is a first connection, which has no position yet.
     Resume(Option<LogCursor>),
+    /// Same as `Full`, but the stream ends after the buffer instead of following new lines.
+    Snapshot,
 }
 
 impl FollowMode {
@@ -104,6 +106,7 @@ impl FollowMode {
             FollowMode::Full => String::new(),
             FollowMode::Resume(None) => format!("{LOGS_CURSOR_PARAM}="),
             FollowMode::Resume(Some(cursor)) => format!("{LOGS_CURSOR_PARAM}={cursor}"),
+            FollowMode::Snapshot => "follow=false".to_string(),
         }
     }
 }
@@ -117,6 +120,8 @@ pub struct LogsQuery {
     /// position headers. Present but empty is a cursor-aware follower's first connection,
     /// which has no position yet.
     pub cursor: Option<String>,
+    /// `false` ends the stream after the retained buffer. Absent means `true`.
+    pub follow: Option<bool>,
 }
 
 impl LogsQuery {
@@ -126,10 +131,14 @@ impl LogsQuery {
     /// a broken client, whereas a cursor that is merely stale is resolved by the logs
     /// thread and degrades to a full catch-up.
     pub fn follow_mode(&self) -> Result<FollowMode, String> {
-        match &self.cursor {
-            None => Ok(FollowMode::Full),
-            Some(cursor) if cursor.is_empty() => Ok(FollowMode::Resume(None)),
-            Some(cursor) => Ok(FollowMode::Resume(Some(LogCursor::from_str(cursor)?))),
+        match (&self.cursor, self.follow.unwrap_or(true)) {
+            (None, true) => Ok(FollowMode::Full),
+            (None, false) => Ok(FollowMode::Snapshot),
+            (Some(_), false) => {
+                Err("`follow=false` cannot be combined with `cursor`; omit one of them".to_string())
+            }
+            (Some(cursor), true) if cursor.is_empty() => Ok(FollowMode::Resume(None)),
+            (Some(cursor), true) => Ok(FollowMode::Resume(Some(LogCursor::from_str(cursor)?))),
         }
     }
 }
@@ -350,7 +359,7 @@ async fn catch_up_and_add_follower(
 
     // How much of the buffer the follower still needs, and what to tell it first.
     let (skip, opening_message) = match mode {
-        FollowMode::Full => {
+        FollowMode::Full | FollowMode::Snapshot => {
             // The notice names the number of lines discarded due to the circular buffer.
             // Tag as control-plane metadata so it is formatted (text or JSON) consistently
             // with other runner messages.
@@ -421,7 +430,8 @@ async fn catch_up_and_add_follower(
     // Any failure in sending results in the follower Sender not being added
     // to the list, and thus going out of scope and being dropped.
     // The Receiver in that case will be notified no Sender exists anymore.
-    if !failed {
+    // A snapshot follower is dropped the same way, which ends its stream.
+    if !failed && mode != FollowMode::Snapshot {
         log_followers.push(LineSender(new_follower));
     }
 }
@@ -805,6 +815,7 @@ mod test {
                 FollowMode::Resume(Some(cursor)),
                 "cursor=0199c3f1-2d0a-7e84-b711-6f2c9a1d4e08:41272",
             ),
+            (FollowMode::Snapshot, "follow=false"),
         ] {
             let query = mode.to_query_string();
             assert_eq!(query, expected);
@@ -820,8 +831,33 @@ mod test {
     fn follow_mode_rejects_a_malformed_cursor() {
         let query = LogsQuery {
             cursor: Some("nonsense".to_string()),
+            follow: None,
         };
         assert!(query.follow_mode().is_err());
+    }
+
+    /// A snapshot has no position to resume from, so a cursor with `follow=false` is refused.
+    #[test]
+    fn follow_mode_rejects_a_cursor_without_follow() {
+        let query = LogsQuery {
+            cursor: Some(String::new()),
+            follow: Some(false),
+        };
+        assert!(query.follow_mode().is_err());
+    }
+
+    /// An explicit `follow=true` is the same as leaving `follow` out.
+    #[test]
+    fn follow_mode_explicit_follow_true() {
+        for (query, expected) in [
+            ("follow=true", FollowMode::Full),
+            ("cursor=&follow=true", FollowMode::Resume(None)),
+        ] {
+            let parsed = actix_web::web::Query::<LogsQuery>::from_query(query)
+                .expect("query string does not parse")
+                .into_inner();
+            assert_eq!(parsed.follow_mode(), Ok(expected), "query '{query}'");
+        }
     }
 
     #[test]
@@ -1239,6 +1275,31 @@ mod test {
             "unexpected notice: {notice}"
         );
         assert_no_more_lines(&mut full).await;
+    }
+
+    /// A snapshot follower gets what `Full` sends, then its channel closes.
+    #[tokio::test]
+    async fn snapshot_mode_ends_after_the_buffer() {
+        let (_terminate, follow_sender, _logs_sender, _epoch, _live) =
+            logs_thread_with_lines(3).await;
+
+        let mut snapshot = follow(&follow_sender, FollowMode::Snapshot);
+        assert!(
+            recv_line(&mut snapshot)
+                .await
+                .contains("Fresh start of pipeline logs")
+        );
+        for i in 1..=3 {
+            assert_eq!(recv_line(&mut snapshot).await, format!("line {i}"));
+        }
+        // The thread stays alive, so only dropping the follower can close the channel.
+        let end = tokio::time::timeout(Duration::from_secs(10), snapshot.recv())
+            .await
+            .expect("snapshot follower was kept after its catch-up");
+        assert!(
+            end.is_none(),
+            "snapshot follower received more than the buffer"
+        );
     }
 
     #[test]
