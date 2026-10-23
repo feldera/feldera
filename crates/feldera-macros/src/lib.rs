@@ -7,8 +7,29 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
+mod engine_test;
 mod ord_repr;
 mod tuples;
+
+/// Registers a connector suite case of `dbsp_adapters`, a function of
+/// `&dyn ConnectorTestEngine` or `&dyn PipelineTestEngine`, so that the test harness of
+/// every engine runs it as one test.
+///
+/// The arguments, all optional: `serial` runs the case alone among the serial cases;
+/// `ignore` or `ignore = "reason"` skips it unless ignored tests are asked for;
+/// `ignore_if(predicate)` or `ignore_if(predicate, "reason")` skips it where the `cfg`
+/// predicate holds; `should_panic = "text"` expects a panic whose message contains the
+/// text; `requires(Capability, ...)` ignores it on an engine that lacks one of the
+/// capabilities; `services(Service, ...)` names the services outside the test binary that it
+/// uses, and ignores it when one does not answer, on an engine that asks for that; and
+/// `cfg(predicate)` registers the case only where the predicate holds, while the function
+/// still compiles everywhere.
+#[proc_macro_attribute]
+pub fn engine_test(args: TokenStream, item: TokenStream) -> TokenStream {
+    engine_test::engine_test(args.into(), item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
 
 /// Parses input of the form: `declare_tuple!(Tup1<T0>);`
 /// and generates dbsp tuple structs.

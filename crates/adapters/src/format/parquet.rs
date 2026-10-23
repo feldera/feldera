@@ -37,11 +37,8 @@ use feldera_types::program_schema::{ColumnType, Field, IntervalUnit, Relation, S
 
 use super::{InputBuffer, SpongeSplitter};
 
-#[cfg(test)]
-pub mod test;
-
 #[cfg(any(test, feature = "testing"))]
-pub mod tests;
+pub mod test;
 
 /// Default arrow serder config used to encode data in Parquet.
 pub const fn default_arrow_serde_config() -> &'static SqlSerdeConfig {

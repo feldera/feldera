@@ -32,6 +32,12 @@ pub fn total_memory_bytes() -> Option<u64> {
     if available > 0 { Some(available) } else { None }
 }
 
+/// Returns the resident set size of this process, in bytes, or `None` when the
+/// operating system does not report it.
+pub fn process_rss_bytes() -> Option<u64> {
+    memory_stats::memory_stats().map(|usage| usage.physical_mem as u64)
+}
+
 /// Returns the limits of this process's own cgroup, including limits set on
 /// its parent cgroups. Unlike [`sysinfo::System::cgroup_limits`], this works
 /// without a cgroup namespace, where `/sys/fs/cgroup` is the host's root.
@@ -54,6 +60,17 @@ mod tests {
     fn reports_nonzero_memory() {
         let mb = super::total_memory_megabyte().expect("Linux reports available memory");
         assert!(mb > 0, "available memory must be positive, got {mb} MB");
+    }
+
+    /// A running process always has a resident set.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn reports_the_resident_set_of_this_process() {
+        let bytes = super::process_rss_bytes().expect("Linux and macOS report the resident set");
+        assert!(
+            bytes > 0,
+            "the resident set must be positive, got {bytes} bytes"
+        );
     }
 
     /// Runs the real cgroup lookup, which the DBSP tests mock out.

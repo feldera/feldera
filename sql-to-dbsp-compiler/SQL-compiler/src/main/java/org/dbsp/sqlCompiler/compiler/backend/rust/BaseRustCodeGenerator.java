@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLazyExpression;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
@@ -88,19 +89,20 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
             #![allow(non_upper_case_globals)]
             """;
 
-    /** Emitted only for crates that contain no user-written code.
-     *
-     * <p>Connector metadata is still using the deprecated {@code Variant}, and
-     * every table and view names it in its {@code deserialize_table_record!}
-     * invocation, so without this a pipeline build reports one deprecation
-     * warning per struct even when the program has no VARIANT column.
-     *
-     * <p>Remove this when connector metadata moves to {@code SqlVariant}:
-     * generated code stops naming the enum, so there is nothing left to
-     * silence, and keeping it would hide real deprecations. */
-    public static final String ALLOW_DEPRECATED_PREAMBLE = """
+    private static final String ALLOW_DEPRECATED_PREAMBLE = """
             #![allow(deprecated)]
             """;
+
+    /** The preamble that silences deprecation warnings in a crate that contains
+     * no user-written code.
+     *
+     * <p>A program that sets {@code FELDERA_FLAT_VARIANT=OFF} keeps the legacy
+     * enum {@code Variant} representation, which the generated code names
+     * throughout, and a pipeline build would report each use.  Other programs
+     * never name the enum, so the preamble would only hide real deprecations. */
+    public static String allowDeprecatedPreamble() {
+        return DBSPTypeVariant.legacyRepresentation() ? ALLOW_DEPRECATED_PREAMBLE : "";
+    }
 
     public static final String ALLOC_PREAMBLE = """
             #[cfg(not(target_env = "msvc"))]
@@ -113,9 +115,9 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
 
     /** Emitted only for circuits that register their streams in a Catalog.
      * Handles mode (--handles) needs no Catalog, and omitting the import lets the
-     * generated crates drop dbsp_adapters and its dependencies entirely. */
+     * generated crates drop static-connectors and its dependencies entirely. */
     public static final String CATALOG_PREAMBLE = """
-            use dbsp_adapters::{Catalog, CircuitCatalog};
+            use static_connectors::{Catalog, CircuitCatalog};
             """;
 
     public static final String STANDARD_PREAMBLE = """

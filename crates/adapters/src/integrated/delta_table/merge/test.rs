@@ -10,40 +10,65 @@
 //!    reader then skips exactly the tombstoned rows.
 //! 3. Table maintenance does not delete a vector file that live `add` actions reference.
 
-use std::sync::Arc;
-use std::time::Duration;
-
+#[cfg(test)]
+use super::{
+    chunk::LookupChunk,
+    key::KeyEncoder,
+    probe::{Candidate, Pruning, locate},
+    prune::PartitionFilter,
+    tombstone::{Tombstones, write_deletion_vectors},
+};
+#[cfg(test)]
+pub(super) use crate::integrated::delta_table::merge::model::key_relation;
+#[cfg(test)]
 use arrow::array::{ArrayRef, Int64Array, RecordBatch, StringArray};
-use arrow::datatypes::Field as ArrowField;
-use deltalake::datafusion::prelude::{SessionConfig, SessionContext};
-use deltalake::kernel::Action;
-use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, PROTOCOL, TableReference};
-use deltalake::operations::create::CreateBuilder;
-use deltalake::operations::vacuum::{VacuumMetrics, VacuumMode};
-use deltalake::protocol::{DeltaOperation, SaveMode};
-use deltalake::{DeltaTable, TableProperty};
+use arrow::datatypes::{DataType, Field as ArrowField, Schema as ArrowSchema};
+use deltalake::{
+    DeltaTable,
+    kernel::{DataType as DeltaDataType, PrimitiveType, StructField},
+    logstore::object_store,
+};
+#[cfg(test)]
+use deltalake::{
+    TableProperty,
+    datafusion::prelude::{SessionConfig, SessionContext},
+    kernel::{
+        Action,
+        transaction::{CommitBuilder, CommitProperties, PROTOCOL, TableReference},
+    },
+    operations::{
+        create::CreateBuilder,
+        get_num_idx_cols_and_stats_columns,
+        vacuum::{VacuumMetrics, VacuumMode},
+        write::writer::{DeltaWriter, WriterConfig},
+    },
+    parquet::file::properties::WriterProperties,
+    protocol::{DeltaOperation, SaveMode},
+};
+#[cfg(test)]
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
+#[cfg(test)]
+use std::collections::HashMap;
+use std::{
+    collections::BTreeSet,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 use tempfile::TempDir;
 
-use deltalake::operations::get_num_idx_cols_and_stats_columns;
-use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
-use deltalake::parquet::file::properties::WriterProperties;
-use std::collections::{BTreeSet, HashMap};
-use std::sync::atomic::Ordering;
-
-use deltalake::logstore::object_store;
-
-use super::chunk::LookupChunk;
-use super::key::KeyEncoder;
-use super::probe::{Candidate, Pruning, locate};
-use super::prune::PartitionFilter;
-use super::tombstone::{Tombstones, write_deletion_vectors};
-
-pub(super) use super::tests::{
-    FlakyStore, arrow_schema, fixture_columns, key_relation, table_over,
-};
+/// Arrow schema of the fixture table: an `id` key and a `payload` value.
+pub(super) fn arrow_schema() -> ArrowSchema {
+    ArrowSchema::new(vec![
+        ArrowField::new("id", DataType::Int64, true),
+        ArrowField::new("payload", DataType::Utf8, true),
+    ])
+}
 
 /// Key relation naming both `id` and the partition column `payload`.
+#[cfg(test)]
 pub(super) fn partitioned_key_relation() -> Relation {
     let mut relation = key_relation();
     relation.fields.push(Field::new(
@@ -64,14 +89,28 @@ pub(super) fn partitioned_key_relation() -> Relation {
 
 /// Key relation naming only the partition column `payload`, so no key column is stored in
 /// the data files.
+#[cfg(test)]
 pub(super) fn partition_only_key_relation() -> Relation {
     let mut relation = partitioned_key_relation();
     relation.fields.remove(0);
     relation
 }
 
+/// Delta columns of the fixture table.
+pub(super) fn fixture_columns() -> Vec<StructField> {
+    vec![
+        StructField::new("id", DeltaDataType::Primitive(PrimitiveType::Long), true),
+        StructField::new(
+            "payload",
+            DeltaDataType::Primitive(PrimitiveType::String),
+            true,
+        ),
+    ]
+}
+
 /// A partitioned table whose partition column is also a key column, with each
 /// `(partition, id)` pair in its own partition directory.
+#[cfg(test)]
 pub(super) async fn partitioned_fixture_table(dir: &TempDir, rows: &[(i64, &str)]) -> DeltaTable {
     let table = CreateBuilder::new()
         .with_location(dir.path().to_str().unwrap())
@@ -100,6 +139,7 @@ pub(super) async fn partitioned_fixture_table(dir: &TempDir, rows: &[(i64, &str)
 
 /// Create a table at `dir` and append `ids` as one data file. `deletion_vectors` selects
 /// whether the table advertises the feature, which the negative test needs to omit.
+#[cfg(test)]
 pub(super) async fn fixture_table(
     dir: &TempDir,
     ids: &[i64],
@@ -120,6 +160,7 @@ pub(super) async fn fixture_table(
 }
 
 /// Append `ids` to `table` as one data file.
+#[cfg(test)]
 pub(super) async fn append_ids(table: DeltaTable, ids: &[i64]) -> DeltaTable {
     let batch = RecordBatch::try_new(
         Arc::new(arrow_schema()),
@@ -139,6 +180,7 @@ pub(super) async fn append_ids(table: DeltaTable, ids: &[i64]) -> DeltaTable {
 ///
 /// File size is what decides whether a scan splits a file, and a repetitive payload
 /// compresses away to nothing, so a fixture built from one cannot reach the threshold.
+#[cfg(test)]
 fn incompressible_payload(id: i64, width: usize) -> String {
     let mut out = String::with_capacity(width);
     let mut state = id as u64;
@@ -160,6 +202,7 @@ fn incompressible_payload(id: i64, width: usize) -> String {
 /// A one-row-group file is read as a single scan partition, so a reader can neither split
 /// nor reorder it. Several row groups, in a file large enough for DataFusion to bother
 /// repartitioning, is what lets a scan do either.
+#[cfg(test)]
 pub(super) async fn append_ids_in_row_groups(
     mut table: DeltaTable,
     ids: &[i64],
@@ -212,6 +255,7 @@ pub(super) async fn append_ids_in_row_groups(
 }
 
 /// Every data file in the current snapshot.
+#[cfg(test)]
 pub(super) fn candidates(table: &DeltaTable) -> Arc<Vec<Candidate>> {
     let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
     table
@@ -226,6 +270,7 @@ pub(super) fn candidates(table: &DeltaTable) -> Arc<Vec<Candidate>> {
 
 /// Ids a reader sees, in ascending order. Through DataFusion rather than reading the parquet
 /// files directly, since a test that read them itself would pass no matter what we wrote.
+#[cfg(test)]
 pub(super) async fn live_ids(table: &DeltaTable) -> Vec<i64> {
     let ctx = SessionContext::new();
     ctx.register_table("t", table.table_provider().await.unwrap())
@@ -234,6 +279,7 @@ pub(super) async fn live_ids(table: &DeltaTable) -> Vec<i64> {
 }
 
 /// The `id` column of table `t` registered in `ctx`, ascending.
+#[cfg(test)]
 async fn collect_ids(ctx: &SessionContext) -> Vec<i64> {
     let batches = ctx
         .sql("select id from t order by id")
@@ -259,6 +305,7 @@ async fn collect_ids(ctx: &SessionContext) -> Vec<i64> {
 
 /// Ids a reader sees when the planner is free to split a file across partitions, which is
 /// what it does to any file past `repartition_file_min_size`.
+#[cfg(test)]
 pub(super) async fn split_scan_ids(table: &DeltaTable) -> Vec<i64> {
     let mut config = SessionConfig::new().with_target_partitions(8);
     config.options_mut().optimizer.repartition_file_scans = true;
@@ -269,6 +316,7 @@ pub(super) async fn split_scan_ids(table: &DeltaTable) -> Vec<i64> {
 }
 
 /// Names of the deletion vector files present under the table directory.
+#[cfg(test)]
 pub(super) fn deletion_vector_files(dir: &TempDir) -> Vec<String> {
     let mut found = Vec::new();
     let mut stack = vec![dir.path().to_path_buf()];
@@ -288,6 +336,7 @@ pub(super) fn deletion_vector_files(dir: &TempDir) -> Vec<String> {
 
 /// Tombstone `ids` in `table` and commit: the merge-mode flush minus the append side, so
 /// tests drive the table through the same action sequence the connector produces.
+#[cfg(test)]
 pub(super) async fn tombstone_ids(mut table: DeltaTable, ids: &[i64]) -> DeltaTable {
     let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
     let mut chunk = LookupChunk::new(usize::MAX);
@@ -323,6 +372,7 @@ pub(super) async fn tombstone_ids(mut table: DeltaTable, ids: &[i64]) -> DeltaTa
 }
 
 /// Commit `actions` against the table's current snapshot.
+#[cfg(test)]
 pub(super) async fn commit(table: &mut DeltaTable, actions: Vec<Action>) {
     CommitBuilder::from(CommitProperties::default())
         .with_actions(actions)
@@ -342,6 +392,7 @@ pub(super) async fn commit(table: &mut DeltaTable, actions: Vec<Action>) {
 
 /// Vacuum the table, deleting everything the operation considers unreferenced. Zero retention
 /// with the duration check off is the most aggressive vacuum a user can run.
+#[cfg(test)]
 pub(super) async fn vacuum_everything(
     table: DeltaTable,
     mode: VacuumMode,
@@ -357,6 +408,7 @@ pub(super) async fn vacuum_everything(
 
 /// Candidates carrying each file's `payload` partition value, which the log holds instead of
 /// the data file.
+#[cfg(test)]
 fn partitioned_candidates(table: &DeltaTable, encoder: &KeyEncoder) -> Arc<Vec<Candidate>> {
     table
         .snapshot()
@@ -669,6 +721,7 @@ async fn vectors_land_at_the_table_root() {
 ///
 /// The corruption this guards against keeps the row count right, so a failure needs to name
 /// the rows, and there are too many to print: counts each way plus a few examples.
+#[cfg(test)]
 fn difference(actual: &[i64], expected: &[i64]) -> Option<String> {
     let actual: BTreeSet<i64> = actual.iter().copied().collect();
     let expected: BTreeSet<i64> = expected.iter().copied().collect();
@@ -788,6 +841,182 @@ async fn a_file_maintenance_replaced_is_transient() {
     assert!(error.to_string().contains("must be redone"), "{error}");
 }
 
+/// An object store that fails the first few requests of a kind, then behaves.
+///
+/// The connector's own retries are what keep a flush alive across an object store having a
+/// bad minute, and nothing exercised them end to end: the unit tests drive the retry helper
+/// directly, and the probe test only shows a failure that never recovers.
+#[derive(Debug)]
+pub(in crate::integrated::delta_table) struct FlakyStore {
+    pub(crate) inner: Arc<dyn deltalake::ObjectStore>,
+    /// Remaining reads of a data file to fail.
+    pub(crate) fail_reads: AtomicUsize,
+    /// Remaining writes of a deletion vector object to fail.
+    pub(crate) fail_writes: AtomicUsize,
+    pub(super) injected: AtomicUsize,
+    /// Data-file reads wait while this is set; `hung_reads` counts those waiting now.
+    pub(crate) hang_reads: std::sync::atomic::AtomicBool,
+    pub(crate) hung_reads: AtomicUsize,
+}
+
+impl FlakyStore {
+    /// Wraps the whole local filesystem: `with_storage_backend` wants a store rooted at "/"
+    /// and resolves the table's own location against it.
+    pub(in crate::integrated::delta_table) fn new(
+        fail_reads: usize,
+        fail_writes: usize,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            inner: Arc::new(object_store::local::LocalFileSystem::new()),
+            fail_reads: AtomicUsize::new(fail_reads),
+            fail_writes: AtomicUsize::new(fail_writes),
+            injected: AtomicUsize::new(0),
+            hang_reads: Default::default(),
+            hung_reads: AtomicUsize::new(0),
+        })
+    }
+
+    /// Make data-file reads wait until `release_data_reads`, to hold a reader mid-run.
+    pub(in crate::integrated::delta_table) fn hang_data_reads(&self) {
+        self.hang_reads.store(true, Ordering::Relaxed);
+    }
+
+    pub(in crate::integrated::delta_table) fn release_data_reads(&self) {
+        self.hang_reads.store(false, Ordering::Relaxed);
+    }
+
+    /// Data-file reads waiting now. A reader that gives up, or is dropped, is no longer counted.
+    pub(in crate::integrated::delta_table) fn hung_reads(&self) -> usize {
+        self.hung_reads.load(Ordering::Relaxed)
+    }
+
+    /// Whether this request is one of the remaining ones to fail.
+    pub(crate) fn should_fail(&self, budget: &AtomicUsize) -> bool {
+        let claimed = budget
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
+                left.checked_sub(1)
+            })
+            .is_ok();
+        if claimed {
+            self.injected.fetch_add(1, Ordering::Relaxed);
+        }
+        claimed
+    }
+
+    pub(crate) fn outage() -> object_store::Error {
+        object_store::Error::Generic {
+            store: "flaky",
+            source: "injected outage".into(),
+        }
+    }
+}
+
+impl std::fmt::Display for FlakyStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FlakyStore({})", self.inner)
+    }
+}
+
+#[async_trait::async_trait]
+impl deltalake::ObjectStore for FlakyStore {
+    async fn put_opts(
+        &self,
+        location: &object_store::path::Path,
+        payload: object_store::PutPayload,
+        opts: object_store::PutOptions,
+    ) -> object_store::Result<object_store::PutResult> {
+        // Only the deletion vector object: failing the log write would fail the commit,
+        // which is a different path with its own retry.
+        if location.as_ref().ends_with(".bin") && self.should_fail(&self.fail_writes) {
+            return Err(Self::outage());
+        }
+        self.inner.put_opts(location, payload, opts).await
+    }
+
+    async fn put_multipart_opts(
+        &self,
+        location: &object_store::path::Path,
+        opts: object_store::PutMultipartOptions,
+    ) -> object_store::Result<Box<dyn object_store::MultipartUpload>> {
+        self.inner.put_multipart_opts(location, opts).await
+    }
+
+    async fn get_opts(
+        &self,
+        location: &object_store::path::Path,
+        options: object_store::GetOptions,
+    ) -> object_store::Result<object_store::GetResult> {
+        if location.as_ref().ends_with(".parquet") && self.should_fail(&self.fail_reads) {
+            return Err(Self::outage());
+        }
+        // Data files only: a log checkpoint is Parquet too, and a reload may read it.
+        if location.as_ref().ends_with(".parquet")
+            && !location.as_ref().contains("_delta_log")
+            && self.hang_reads.load(Ordering::Relaxed)
+        {
+            struct Waiting<'a>(&'a AtomicUsize);
+            impl Drop for Waiting<'_> {
+                fn drop(&mut self) {
+                    self.0.fetch_sub(1, Ordering::Relaxed);
+                }
+            }
+            self.hung_reads.fetch_add(1, Ordering::Relaxed);
+            let _waiting = Waiting(&self.hung_reads);
+            while self.hang_reads.load(Ordering::Relaxed) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }
+        self.inner.get_opts(location, options).await
+    }
+
+    fn list(
+        &self,
+        prefix: Option<&object_store::path::Path>,
+    ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::ObjectMeta>> {
+        self.inner.list(prefix)
+    }
+
+    async fn list_with_delimiter(
+        &self,
+        prefix: Option<&object_store::path::Path>,
+    ) -> object_store::Result<object_store::ListResult> {
+        self.inner.list_with_delimiter(prefix).await
+    }
+
+    fn delete_stream(
+        &self,
+        locations: futures::stream::BoxStream<
+            'static,
+            object_store::Result<object_store::path::Path>,
+        >,
+    ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::path::Path>> {
+        self.inner.delete_stream(locations)
+    }
+
+    async fn copy_opts(
+        &self,
+        from: &object_store::path::Path,
+        to: &object_store::path::Path,
+        options: object_store::CopyOptions,
+    ) -> object_store::Result<()> {
+        self.inner.copy_opts(from, to, options).await
+    }
+}
+
+/// Open `dir`'s table through `store`, so the merge paths read and write through it.
+pub(in crate::integrated::delta_table) async fn table_over(
+    store: Arc<FlakyStore>,
+    dir: &TempDir,
+) -> DeltaTable {
+    let url = deltalake::table::builder::ensure_table_uri(dir.path().to_str().unwrap()).unwrap();
+    deltalake::DeltaTableBuilder::from_url(url.clone())
+        .unwrap()
+        .with_storage_backend(store, url)
+        .load()
+        .await
+        .unwrap()
+}
+
 /// A flush survives an object store that drops requests, and lands the same table.
 ///
 /// Both halves are covered: the probe's read of a data file and the write of the packed
@@ -812,6 +1041,7 @@ async fn a_flush_rides_out_a_flaky_object_store() {
 }
 
 /// Counts every object-store GET, so a test can assert what a flush fetches.
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug)]
 struct CountingStore {
     inner: Arc<dyn deltalake::ObjectStore>,
@@ -819,6 +1049,7 @@ struct CountingStore {
 }
 
 impl CountingStore {
+    #[cfg_attr(not(test), allow(dead_code))]
     fn new() -> Arc<Self> {
         Arc::new(Self {
             inner: Arc::new(object_store::local::LocalFileSystem::new()),
@@ -827,6 +1058,7 @@ impl CountingStore {
     }
 
     /// `(number of GETs, number of distinct objects)` for paths ending in `suffix`.
+    #[cfg_attr(not(test), allow(dead_code))]
     fn gets_for(&self, suffix: &str) -> (usize, usize) {
         let gets = self.gets.lock().unwrap();
         let matching: Vec<&String> = gets.iter().filter(|p| p.ends_with(suffix)).collect();
@@ -834,6 +1066,7 @@ impl CountingStore {
         (matching.len(), distinct.len())
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     fn clear(&self) {
         self.gets.lock().unwrap().clear();
     }
@@ -1029,6 +1262,7 @@ async fn a_probe_costs_two_requests_per_file() {
 ///
 /// The failure ends the lookup while the stalled probes are still in flight, which is the
 /// case [`a_failed_lookup_does_not_leave_its_probes_running`] is about.
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Debug)]
 struct StallingStore {
     inner: Arc<dyn deltalake::ObjectStore>,
@@ -1036,6 +1270,7 @@ struct StallingStore {
 }
 
 impl StallingStore {
+    #[cfg_attr(not(test), allow(dead_code))]
     fn new() -> Arc<Self> {
         Arc::new(Self {
             inner: Arc::new(object_store::local::LocalFileSystem::new()),
@@ -1045,6 +1280,7 @@ impl StallingStore {
 
     /// Whether this path is the one to fail: the first data file asked for, and thereafter
     /// that same path, so its retries fail too rather than stalling.
+    #[cfg_attr(not(test), allow(dead_code))]
     fn is_doomed(&self, path: &str) -> bool {
         if !path.ends_with(".parquet") {
             return false;

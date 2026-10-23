@@ -32,8 +32,8 @@
 pub(crate) mod config_utils;
 mod metrics;
 mod retry;
-#[cfg(test)]
-mod test;
+#[cfg(any(test, feature = "testing"))]
+pub mod test;
 
 use crate::{
     InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint,
@@ -47,10 +47,10 @@ use async_nats::{
 
 use chrono::Utc;
 use config_utils::{translate_connect_options, translate_consumer_options};
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::ConnectorMetrics;
 use feldera_adapterlib::transport::{InputCommandReceiver, Resume, Watermark};
+use feldera_storage::tokio::TOKIO;
 use feldera_types::{
     config::FtModel,
     program_schema::Relation,

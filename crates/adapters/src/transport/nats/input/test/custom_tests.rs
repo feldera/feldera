@@ -1,6 +1,6 @@
 use super::super::ConnectorError;
-use crate::test::nats as util;
 use crate::transport::input_transport_config_to_endpoint;
+use crate::transport::nats::input::test::util;
 use async_nats::jetstream;
 use feldera_types::config::InputEndpointConfig;
 use feldera_types::secret_resolver::default_secrets_directory;

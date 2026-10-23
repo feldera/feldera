@@ -1105,6 +1105,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 new DBSPVariablePath(CustomFunctions.ConnectorMetadataFunction.NAME.toLowerCase(Locale.ENGLISH),
                         DBSPTypeVariant.INSTANCE_NULLABLE.ref());
 
+        /** True once a call to connector_metadata() was replaced. */
+        boolean readsMetadata = false;
+
         public static String variableName() {
             return var.variable;
         }
@@ -1132,6 +1135,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         public void postorder(DBSPApplyExpression expression) {
             String function = expression.getFunctionName();
             if (function != null && function.equalsIgnoreCase(CustomFunctions.ConnectorMetadataFunction.NAME)) {
+                this.readsMetadata = true;
                 this.map(expression, var.deref().applyClone());
                 return;
             }
@@ -1149,13 +1153,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
         String typeName = type.name.name();
         if (typeName.isEmpty())
             typeName = type.hashName;
-        // The connector-metadata type, using the deprecated Variant enum.
-        // Change this to SqlVariant when connector metadata is updated, and
-        // drop ALLOW_DEPRECATED_PREAMBLE at the same time.
+        // Connectors deliver record metadata as a SqlVariant.
         this.builder.append(type.hashName)
                 .append("[")
                 .append(Utilities.doubleQuote(typeName, true))
-                .append(", Variant, ")
+                .append(", SqlVariant, ")
                 .append(type.fields.size())
                 .append("] {")
                 .increase();
@@ -1193,23 +1195,26 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     this.builder.append(")");
             } else {
                 RewriteConnectorMetadata rw = new RewriteConnectorMetadata(this.compiler);
-                this.builder.append("|")
-                        .append(RewriteConnectorMetadata.variableName())
-                        .append(": &Option<Variant>| Some(");
                 final IDBSPInnerNode defaultValue = rw.apply(
                         CreateRuntimeErrorWrappers.wrapCasts(this.compiler, meta.defaultValue));
-                // The field's Rust type may wrap the column type in Option
-                // (nullable column of a nullable type).
-                DBSPType columnType = isOption ? user.typeArgs[0] : field.type;
-                // The default expression yields LegacyVariant, so we
-                // need to convert to SqlVariant
-                boolean convert = !DBSPTypeVariant.legacyRepresentation() && columnType.is(DBSPTypeVariant.class);
-                if (convert)
-                    this.builder.append(columnType.mayBeNull ? "variant_to_fvN(" : "variant_to_fv(");
-                DBSPTypeVariant.withLegacyRepresentation(() -> defaultValue.accept(this));
-                if (convert)
-                    this.builder.append(")");
+                String variable = RewriteConnectorMetadata.variableName();
+                this.builder.append("|")
+                        .append(variable)
+                        .append(": &Option<SqlVariant>| ");
+                // A program that sets FELDERA_FLAT_VARIANT=OFF keeps the legacy enum
+                // Variant representation of connector metadata.
+                boolean toEnum = rw.readsMetadata && DBSPTypeVariant.legacyRepresentation();
+                if (toEnum)
+                    this.builder.append("{ let ")
+                            .append(variable)
+                            .append(" = &")
+                            .append(variable)
+                            .append(".as_ref().map(Variant::from); ");
+                this.builder.append("Some(");
+                defaultValue.accept(this);
                 this.builder.append(".into())");
+                if (toEnum)
+                    this.builder.append(" }");
             }
 
             if (isOption && user.typeArgs[0].mayBeNull) {

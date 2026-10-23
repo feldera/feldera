@@ -7,6 +7,7 @@ use arrow::array::{
     Array, ArrayRef, AsArray, Float32Array, Float64Array, LargeListArray, ListArray, MapArray,
     RecordBatch, StructArray, UInt32Array,
 };
+use arrow::buffer::OffsetBuffer;
 use arrow::compute::{sort_to_indices, take};
 use arrow::datatypes::{DataType, Float32Type, Float64Type};
 
@@ -90,9 +91,13 @@ pub(crate) fn canonicalize(column: &ArrayRef) -> AnyResult<ArrayRef> {
                 vec![take(&keys, &order, None)?, take(&values, &order, None)?],
                 None,
             );
+            // The entries hold only the maps' own entries, which a slice of a larger array
+            // finds past the start of its child, so the offsets count from the first one.
+            let first = offsets[0];
+            let offsets = OffsetBuffer::new(offsets.iter().map(|offset| offset - first).collect());
             Arc::new(MapArray::new(
                 field.clone(),
-                offsets.clone(),
+                offsets,
                 entries,
                 maps.nulls().cloned(),
                 *sorted,
@@ -170,5 +175,13 @@ mod tests {
             ]
         );
         assert_eq!(entries(2), [("a".to_string(), 5), ("b".to_string(), 4)]);
+
+        // A slice whose maps start past the first entry of the child.
+        let canonical = canonicalize(&maps.slice(2, 1)).unwrap();
+        let canonical = canonical.as_map();
+        assert_eq!(canonical.len(), 1);
+        let entries = canonical.value(0);
+        let keys = entries.column(0).as_string::<i32>();
+        assert_eq!(keys.iter().flatten().collect::<Vec<_>>(), ["a", "b"]);
     }
 }

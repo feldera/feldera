@@ -117,7 +117,7 @@ public final class CrateGenerator {
                 paste = { workspace = true }
                 derive_more = { workspace = true }
                 dbsp = { workspace = true }
-                dbsp_adapters = { workspace = true }
+                static-connectors = { workspace = true }
                 feldera-macros = { workspace = true }
                 feldera-adapterlib = { workspace = true }
                 feldera-types = { workspace = true }

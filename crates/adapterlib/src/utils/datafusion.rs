@@ -114,7 +114,7 @@ fn sort_partitions(target_partitions: usize, partition_floor: usize) -> usize {
 ///
 /// `AdHocQueryExecution` reports one partition per reader in the snapshot,
 /// and the snapshot holds one batch per *local* DBSP worker
-/// (`OutputHandle::take_from_all` walks the local mailboxes). `workers`
+/// (`SnapshotReaders::partitions` holds one reader per local worker). `workers`
 /// counts the workers on every host, while the memory pool is per host, so
 /// the local share is what a sort here actually runs.
 fn adhoc_partition_floor(pipeline_config: &PipelineConfig) -> usize {

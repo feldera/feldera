@@ -398,7 +398,7 @@ We exercise this circuit by inserting data using a CSV format:
 ```rust
 #[test]
 pub fn test() {
-    use dbsp_adapters::{CircuitCatalog, RecordFormat};
+    use static_connectors::{CircuitCatalog, RecordFormat};
     use feldera_types::format::csv::CsvFormatConfig;
 
     let (mut circuit, catalog) = circuit(2)
@@ -431,14 +431,14 @@ pub fn test() {
         .delta_handle;
 
     // Read the produced output
-    let reader = adult.concat().consolidate();
+    let reader = adult.take_readers().whole;
     let mut cursor = reader
         .cursor(RecordFormat::Csv(CsvFormatConfig::default()))
         .unwrap();
     while cursor.key_valid() {
         let mut w = cursor.weight();
         println!("{}: {}", cursor.key_to_json().unwrap(), w);
-        cursor.step_key();
+        cursor.step_key().unwrap();
     }
 }
 ```

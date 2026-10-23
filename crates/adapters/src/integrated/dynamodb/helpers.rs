@@ -10,7 +10,7 @@ use aws_sdk_dynamodb::types::{
     WriteRequest,
 };
 use aws_types::region::Region;
-use dbsp::circuit::tokio::TOKIO;
+use feldera_storage::tokio::TOKIO;
 use feldera_types::transport::dynamodb::DynamoDBWriterConfig;
 use rand::Rng;
 use tokio_util::sync::CancellationToken;

@@ -3065,24 +3065,45 @@ fn memory_backpressure_config_from(
 }
 
 #[cfg(any(test, feature = "testing"))]
-pub mod destination_tests;
-
-#[cfg(test)]
-mod tests {
-    use super::destination_tests::{answered, sync_done, terminal};
-    use super::*;
-    use crate::test::MockInputConsumer;
+pub mod tests {
+    use super::{
+        Admission, CopyBarrier, FelderaDestination, ParkedResults, count_snapshot_buffers,
+        take_acks, *,
+    };
+    use crate::{
+        PipelineState, RecordFormat,
+        test::{MockInputConsumer, engine_test, relations},
+        transport::InputQueue,
+    };
     use anyhow::Error as AnyError;
-    use chrono::{FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+    use chrono::Utc;
+    #[cfg(test)]
+    use chrono::{FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
+    #[cfg(test)]
     use etl::data::{Date, PgNumeric, PgTime, PgTimeTz, Timestamp};
-    use feldera_adapterlib::format::BufferSize;
+    use etl::{schema::PgLsn, store::TableState};
+    use feldera_adapterlib::{
+        format::{BufferSize, ParseError},
+        test::{ConnectorTestEngine, InputOptions},
+    };
+    #[cfg(test)]
     use feldera_sqllib::Timestamp as SqlTimestamp;
-    use feldera_types::adapter_stats::ConnectorHealth;
-    use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
-    use feldera_types::size::ConfigSize;
+    use feldera_types::{
+        adapter_stats::ConnectorHealth, format::json::JsonFlavor, program_schema::Relation,
+    };
+    #[cfg(test)]
+    use feldera_types::{
+        serde_with_context::{DeserializeWithContext, SqlSerdeConfig},
+        size::ConfigSize,
+    };
     use serde_json::json;
+    #[cfg(test)]
     use std::str::FromStr;
-    use std::sync::atomic::AtomicBool;
+    use std::sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    };
+    use tokio::sync::watch::channel;
 
     #[test]
     fn setup_hint_only_for_permission_or_missing_etl_helper_errors() {
@@ -3224,6 +3245,45 @@ mod tests {
 
     // -----------------------------------------------------------------------
     // cell_to_json unit tests
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // array_cell_to_json unit tests
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // row_to_json unit tests
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // stable_connection_identity unit tests
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // Copy barrier unit tests
+    // -----------------------------------------------------------------------
+    //
+    // These drive the production [`CopyBarrier`] through the calls the
+    // destination and the reader make: `note_copy_batch`, `note_buffer_queued`
+    // and `hold_terminal` for the destination, `note_buffers_flushed` for the
+    // reader. etl keeps the constructor of a `WriteTableRowsResult` private, so
+    // the terminal barrier is answered here by setting a flag, exactly as the
+    // destination answers it by sending `Durable`.
+
+    // -----------------------------------------------------------------------
+    // parse_pg_uri unit tests
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // Target table matching / column resolution tests
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // Acknowledgment against an unnamed step
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // A flush that races the completion watcher's stop
     // -----------------------------------------------------------------------
 
     #[test]
@@ -3408,10 +3468,6 @@ mod tests {
         assert_eq!(v, json!([]));
     }
 
-    // -----------------------------------------------------------------------
-    // array_cell_to_json unit tests
-    // -----------------------------------------------------------------------
-
     #[test]
     fn test_array_bool() {
         let arr = ArrayCell::Bool(vec![Some(true), Some(false), None]);
@@ -3538,10 +3594,6 @@ mod tests {
         assert_eq!(v, json!([[0xca, 0xfe], null, []]));
     }
 
-    // -----------------------------------------------------------------------
-    // row_to_json unit tests
-    // -----------------------------------------------------------------------
-
     #[test]
     fn test_row_to_json_basic() {
         let cells = vec![Cell::I32(1), Cell::String("hello".into()), Cell::Bool(true)];
@@ -3641,10 +3693,6 @@ mod tests {
         assert_eq!(v["arr_col"], json!([1, 2, null]));
     }
 
-    // -----------------------------------------------------------------------
-    // stable_connection_identity unit tests
-    // -----------------------------------------------------------------------
-
     #[test]
     fn test_stable_identity_excludes_password() {
         let id1 = stable_connection_identity(
@@ -3694,24 +3742,31 @@ mod tests {
         assert!(id.contains("not a valid uri"));
     }
 
-    // -----------------------------------------------------------------------
-    // Copy barrier unit tests
-    // -----------------------------------------------------------------------
-    //
-    // These drive the production [`CopyBarrier`] through the calls the
-    // destination and the reader make: `note_copy_batch`, `note_buffer_queued`
-    // and `hold_terminal` for the destination, `note_buffers_flushed` for the
-    // reader. etl keeps the constructor of a `WriteTableRowsResult` private, so
-    // the terminal barrier is answered here by setting a flag, exactly as the
-    // destination answers it by sending `Durable`.
-
     /// Acknowledgments of one write, waiting for `flush_step` to become
     /// durable, answered by raising `answered`.
+    #[cfg(test)]
     fn held(flush_step: Step, answered: &Arc<AtomicBool>) -> HeldAcks {
         HeldAcks {
             flush_step,
             acks: vec![terminal(answered)],
         }
+    }
+
+    /// The table whose input stream the destination writes to, with the columns of
+    /// [`relations::basic`].
+    pub fn relation() -> Relation {
+        relations::basic("postgres_cdc_destination")
+    }
+
+    /// Answer a terminal barrier by raising `answered`.
+    pub(super) fn terminal(answered: &Arc<AtomicBool>) -> Box<dyn FnOnce() + Send> {
+        let answered = Arc::clone(answered);
+        Box::new(move || answered.store(true, Ordering::Release))
+    }
+
+    /// Whether the barrier has been answered.
+    pub(super) fn answered(flag: &Arc<AtomicBool>) -> bool {
+        flag.load(Ordering::Acquire)
     }
 
     #[test]
@@ -3750,6 +3805,14 @@ mod tests {
         assert!(barrier.note_sync_state_observed(&sync_done(500)));
         assert!(!barrier.copy_open());
         assert_eq!(barrier.sync_done_lsn(), Some(500));
+    }
+
+    /// etl's `sync_done` state at `lsn`.
+    pub(super) fn sync_done(lsn: u64) -> TableState {
+        TableState::SyncDone {
+            lsn: PgLsn::from(lsn),
+            table_decoding_state: None,
+        }
     }
 
     #[test]
@@ -3946,10 +4009,7 @@ mod tests {
         ));
     }
 
-    // -----------------------------------------------------------------------
-    // parse_pg_uri unit tests
-    // -----------------------------------------------------------------------
-
+    #[cfg(test)]
     fn parse_uri(uri: &str) -> AnyResult<PgConnectionConfig> {
         parse_pg_uri(uri, &PostgresTlsConfig::default(), "test")
     }
@@ -4000,10 +4060,6 @@ mod tests {
         let result = parse_uri("not_a_uri");
         assert!(result.is_err());
     }
-
-    // -----------------------------------------------------------------------
-    // Target table matching / column resolution tests
-    // -----------------------------------------------------------------------
 
     #[test]
     fn a_source_table_outside_the_publication_is_named_with_the_alternatives() {
@@ -4069,6 +4125,7 @@ mod tests {
 
     /// Mirrors `validate_columns`: every non-nullable Feldera column must exist
     /// (by name) in the Postgres source table.
+    #[cfg(test)]
     fn missing_required<'a>(pg_columns: &[&str], feldera_required: &[&'a str]) -> Vec<&'a str> {
         let pg: BTreeSet<&str> = pg_columns.iter().copied().collect();
         feldera_required
@@ -4095,8 +4152,234 @@ mod tests {
         );
     }
 
+    /// A destination with a live queue and a running pipeline, sharing `copy`.
+    fn destination(
+        engine: &dyn ConnectorTestEngine,
+        copy: &Arc<CopyBarrier>,
+    ) -> FelderaDestination {
+        destination_with(engine, copy, MockInputConsumer::new(), false)
+    }
+
+    /// A destination sharing `consumer` with its queue, so a test can set the
+    /// batch size the reader's flush obeys, and deferring its answers to etl
+    /// when `defer_acks` says so.
+    fn destination_with(
+        engine: &dyn ConnectorTestEngine,
+        copy: &Arc<CopyBarrier>,
+        consumer: MockInputConsumer,
+        defer_acks: bool,
+    ) -> FelderaDestination {
+        destination_stopping(
+            engine,
+            copy,
+            consumer,
+            defer_acks,
+            &Arc::new(AtomicBool::new(false)),
+        )
+    }
+
+    /// A destination that shares `stopping` with a reader shutting etl down.
+    fn destination_stopping(
+        engine: &dyn ConnectorTestEngine,
+        copy: &Arc<CopyBarrier>,
+        consumer: MockInputConsumer,
+        defer_acks: bool,
+        stopping: &Arc<AtomicBool>,
+    ) -> FelderaDestination {
+        let stream = engine
+            .input_collection(&relation(), &InputOptions::default())
+            .unwrap()
+            .input_handle()
+            .handle
+            .configure_deserializer(RecordFormat::Json(JsonFlavor::Datagen))
+            .unwrap();
+        let (_state_tx, pipeline_state_rx) = channel(PipelineState::Running);
+        FelderaDestination {
+            input_stream: Arc::new(Mutex::new(stream)),
+            queue: Arc::new(InputQueue::new(Box::new(consumer.clone()))),
+            source_table: "public.t".to_string(),
+            endpoint_name: "cdc_in".to_string(),
+            feldera_required_columns: Vec::new(),
+            defer_acks,
+            pipeline_state_rx,
+            copy: Arc::clone(copy),
+            consumer: Box::new(consumer),
+            stopping: Arc::clone(stopping),
+            parked: Arc::new(ParkedResults::default()),
+        }
+    }
+
+    /// One row of streamed events, serialized through the destination's own
+    /// deserializer as `write_events` does, so the buffer holds a record and
+    /// counts against the reader's batch size.
+    fn event_buffer(
+        destination: &FelderaDestination,
+        id: u32,
+    ) -> (
+        Option<Box<dyn feldera_adapterlib::format::InputBuffer>>,
+        Vec<ParseError>,
+    ) {
+        let mut stream = destination.input_stream.lock().unwrap();
+        let json = json!({ "id": id, "b": false, "i": null, "s": "" }).to_string();
+        stream.insert(json.as_bytes(), &None).unwrap();
+        (stream.take_all(), Vec::new())
+    }
+
+    #[engine_test]
+    pub fn a_queued_snapshot_buffer_holds_the_terminal_barrier_until_the_reader_flushes_it(
+        engine: &dyn ConnectorTestEngine,
+    ) {
+        let copy = Arc::new(CopyBarrier::new());
+        let destination = destination(engine, &copy);
+        destination.push_snapshot_buffer((None, Vec::new()), Utc::now());
+        destination.push_snapshot_buffer((None, Vec::new()), Utc::now());
+
+        let flag = Arc::new(AtomicBool::new(false));
+        assert!(
+            !copy.hold_terminal(terminal(&flag)),
+            "two buffers sit in the queue, so the barrier is held"
+        );
+        assert!(!answered(&flag));
+
+        // The reader's flush, as the Queue handler performs it.
+        let (_, _, flushed) = destination.queue.flush_with_aux();
+        assert_eq!(count_snapshot_buffers(&flushed), 2);
+        assert!(!copy.note_buffers_flushed(count_snapshot_buffers(&flushed)));
+        assert!(
+            take_acks(flushed).is_empty(),
+            "the copy answers etl through the barrier, never per entry"
+        );
+        assert!(answered(&flag), "the flush answered etl");
+        assert!(copy.note_sync_state_observed(&sync_done(3)));
+        assert!(!copy.copy_open());
+    }
+
+    // -----------------------------------------------------------------------
+    // Streamed write acknowledgment (#7122)
+    // -----------------------------------------------------------------------
+    //
+    // A write is answered only once every row of it is in the circuit. These
+    // drive the production destination and the queue the reader flushes, and
+    // cross the two through `take_acks`, as the Queue handler does.
+    //
+    // To validate them, restore the architecture the fix replaced: have
+    // `push_event_buffer` drop the answer into one shared list and `take_acks`
+    // drain that list instead of reading the entries its flush returned. Both
+    // tests then go red, the first because the opening flush answers a write
+    // whose rows are still queued, the second because the answer of a write
+    // that arrived mid-handler goes out with the flush that preceded it.
+
+    #[engine_test]
+    pub fn a_streamed_write_is_answered_only_when_its_last_buffer_reaches_the_circuit(
+        engine: &dyn ConnectorTestEngine,
+    ) {
+        let copy = Arc::new(CopyBarrier::new());
+        let consumer = MockInputConsumer::new();
+        // One record per step, so the write spans three flushes. This is the
+        // `max_batch_size` split of #7122, without depending on its default.
+        consumer.set_max_batch_size(1);
+        let destination = destination_with(engine, &copy, consumer, true);
+
+        let flag = Arc::new(AtomicBool::new(false));
+        for id in 0..2 {
+            let buffer = event_buffer(&destination, id);
+            destination.push_event_buffer(buffer, Utc::now(), None);
+        }
+        let last = event_buffer(&destination, 2);
+        destination.push_event_buffer(last, Utc::now(), Some(terminal(&flag)));
+
+        for flush in 1..=2 {
+            let (_, _, flushed) = destination.queue.flush_with_aux();
+            let taken = flushed.len();
+            assert!(
+                take_acks(flushed).is_empty(),
+                "flush {flush} left rows of the write in the queue, so it must not \
+             answer etl for it"
+            );
+            assert!(!answered(&flag));
+            assert_eq!(
+                taken, 1,
+                "flush {flush} took more than its one buffer, so the batch size \
+             stopped splitting the write and the test proves nothing"
+            );
+        }
+
+        let (_, _, flushed) = destination.queue.flush_with_aux();
+        assert_eq!(flushed.len(), 1);
+        let mut acks = take_acks(flushed);
+        assert_eq!(acks.len(), 1, "the last buffer carries the answer");
+        acks.pop().unwrap()();
+        assert!(answered(&flag), "every row of the write is in the circuit");
+    }
+
+    #[engine_test]
+    pub fn a_write_that_arrives_while_the_handler_runs_is_not_answered_by_it(
+        engine: &dyn ConnectorTestEngine,
+    ) {
+        let copy = Arc::new(CopyBarrier::new());
+        let destination = destination_with(engine, &copy, MockInputConsumer::new(), true);
+
+        let buffer = event_buffer(&destination, 0);
+        destination.push_event_buffer(buffer, Utc::now(), None);
+
+        // The handler's flush.
+        let (_, _, flushed) = destination.queue.flush_with_aux();
+
+        // etl hands a write over here, after the flush and before the handler
+        // answers: the second race of #7122. The old handler took every stored
+        // sender at this point, stamping this write with a step that holds no
+        // row of it.
+        let flag = Arc::new(AtomicBool::new(false));
+        let buffer = event_buffer(&destination, 1);
+        destination.push_event_buffer(buffer, Utc::now(), Some(terminal(&flag)));
+
+        // The handler's answers, drawn from what its own flush returned.
+        assert!(
+            take_acks(flushed).is_empty(),
+            "the write's rows are still in the queue"
+        );
+        assert!(!answered(&flag));
+
+        let (_, _, flushed) = destination.queue.flush_with_aux();
+        let mut acks = take_acks(flushed);
+        assert_eq!(acks.len(), 1, "the flush that takes its rows answers it");
+        acks.pop().unwrap()();
+        assert!(answered(&flag));
+    }
+
+    #[engine_test]
+    pub fn a_write_that_starts_once_the_connector_stops_is_turned_away_without_error(
+        engine: &dyn ConnectorTestEngine,
+    ) {
+        let copy = Arc::new(CopyBarrier::new());
+        let stopping = Arc::new(AtomicBool::new(false));
+        let destination =
+            destination_stopping(engine, &copy, MockInputConsumer::new(), true, &stopping);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            runtime.block_on(destination.wait_unpaused()),
+            Admission::Admit
+        );
+
+        // etl may still issue a write after the stop raised the flag. Refusing
+        // it would make etl record a table error; turning it away leaves etl
+        // to abandon it, and nothing reaches the queue.
+        stopping.store(true, Ordering::SeqCst);
+        assert_eq!(
+            runtime.block_on(destination.wait_unpaused()),
+            Admission::Stopping
+        );
+        let (size, _, _) = destination.queue.flush_with_aux();
+        assert_eq!(size.records, 0, "nothing reached the queue");
+    }
+
     /// An acknowledgment that answers into a oneshot, so a test can tell an
     /// answered write from a parked one.
+    #[cfg(test)]
     fn oneshot_ack() -> (Ack, tokio::sync::oneshot::Receiver<()>) {
         let (tx, rx) = tokio::sync::oneshot::channel::<()>();
         (Box::new(move || tx.send(()).unwrap()), rx)
@@ -4187,6 +4470,36 @@ mod tests {
 
         drop(parked);
         assert!(matches!(rx.try_recv(), Err(TryRecvError::Closed)));
+    }
+
+    #[engine_test]
+    pub fn a_queued_snapshot_buffer_stays_charged_to_the_copy_barrier_until_flushed(
+        engine: &dyn ConnectorTestEngine,
+    ) {
+        let copy = Arc::new(CopyBarrier::new());
+        let destination = destination_stopping(
+            engine,
+            &copy,
+            MockInputConsumer::new(),
+            true,
+            &Arc::new(AtomicBool::new(false)),
+        );
+
+        let buffer = event_buffer(&destination, 0);
+        destination.push_snapshot_buffer(buffer, Utc::now());
+
+        // The reader flushes the buffer, and the barrier counts it, which is
+        // what lets a terminal barrier be answered afterwards.
+        let (_, _, flushed) = destination.queue.flush_with_aux();
+        assert_eq!(count_snapshot_buffers(&flushed), 1);
+        copy.note_buffers_flushed(count_snapshot_buffers(&flushed));
+
+        let flag = Arc::new(AtomicBool::new(false));
+        assert!(
+            copy.hold_terminal(terminal(&flag)),
+            "no snapshot buffer is left pending, so a terminal barrier answers at once"
+        );
+        assert!(answered(&flag));
     }
 
     #[test]
@@ -4286,6 +4599,7 @@ mod tests {
     }
 
     /// An etl table error as the store hands it back.
+    #[cfg(test)]
     fn errored(reason: &str, retry_policy: TableRetryPolicy) -> TableState {
         TableState::Errored {
             reason: reason.to_string(),
@@ -4487,10 +4801,6 @@ mod tests {
         assert_eq!(barrier.sync_done_lsn(), Some(300));
     }
 
-    // -----------------------------------------------------------------------
-    // Acknowledgment against an unnamed step
-    // -----------------------------------------------------------------------
-
     /// A consumer that reports completed steps but never says which step it is
     /// feeding.
     ///
@@ -4499,6 +4809,7 @@ mod tests {
     /// first and forgets the second, the shape
     /// [`PostgresCdcInputInner::acknowledge_after_step`] refuses to
     /// acknowledge against (#7122).
+    #[cfg_attr(not(test), allow(dead_code))]
     #[derive(Clone)]
     struct StepBlindConsumer {
         mock: MockInputConsumer,
@@ -4511,6 +4822,7 @@ mod tests {
     }
 
     impl StepBlindConsumer {
+        #[cfg_attr(not(test), allow(dead_code))]
         fn new() -> Self {
             let (completions, _rx) = channel(Completion::default());
             Self {
@@ -4520,6 +4832,7 @@ mod tests {
             }
         }
 
+        #[cfg_attr(not(test), allow(dead_code))]
         fn reported_error(&self) -> Option<(bool, String)> {
             self.error.lock().unwrap().clone()
         }
@@ -4585,6 +4898,7 @@ mod tests {
 
     /// The configuration the reader needs to exist. Construction opens no
     /// connection, so the URI only has to parse.
+    #[cfg(test)]
     fn cdc_config() -> PostgresCdcReaderConfig {
         PostgresCdcReaderConfig {
             uri: "postgres://user@localhost:5432/db".to_string(),
@@ -4647,14 +4961,11 @@ mod tests {
         );
     }
 
-    // -----------------------------------------------------------------------
-    // A flush that races the completion watcher's stop
-    // -----------------------------------------------------------------------
-
     /// A consumer that reports completed steps and names the step it is feeding,
     /// standing for a correct controller. The completion frontier is controlled
     /// by the `Sender<Completion>` it holds, so a test can put it ahead of or
     /// behind the step the consumer feeds.
+    #[cfg_attr(not(test), allow(dead_code))]
     #[derive(Clone)]
     struct StepAwareConsumer {
         mock: MockInputConsumer,
@@ -4665,6 +4976,7 @@ mod tests {
     }
 
     impl StepAwareConsumer {
+        #[cfg_attr(not(test), allow(dead_code))]
         fn new(step: Step, frontier: Step) -> Self {
             let (completions, _rx) = channel(Completion {
                 total_completed_steps: frontier,

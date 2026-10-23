@@ -36,7 +36,7 @@ pub use output::KafkaOutputEndpoint as KafkaFtOutputEndpoint;
 
 use super::rdkafka_loglevel_from;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub mod test;
 
 /// Set `option` to `val`; return an error if `option` is set to a different

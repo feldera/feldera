@@ -197,14 +197,11 @@ fn first_stale_remove(table: &DeltaTable, actions: &[Action]) -> AnyResult<Optio
     Ok(expected.into_keys().next().map(str::to_string))
 }
 
-#[cfg(test)]
-mod model;
-
-#[cfg(test)]
-pub(super) mod test;
+#[cfg(any(test, feature = "testing"))]
+pub mod model;
 
 #[cfg(any(test, feature = "testing"))]
-pub mod tests;
+pub mod test;
 
 #[cfg(test)]
 mod retry_test {

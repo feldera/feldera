@@ -1,24 +1,44 @@
-use std::collections::HashMap;
-use std::time::Duration;
-
-use async_nats::HeaderMap;
-use futures::StreamExt as _;
-use serde_json::json;
-use xxhash_rust::xxh3::xxh3_128;
-
+#[cfg(test)]
 use super::{MAX_MESSAGE_ID_LEN, MessageIdGenerator, header_block_bytes};
-use crate::test::init_test_logger;
-use crate::test::nats as input_util;
-use crate::transport::nats::NatsOutputEndpoint;
+#[cfg(test)]
+use crate::{
+    test::init_test_logger,
+    transport::nats::{NatsOutputEndpoint, input::test::util as input_util},
+};
+use crate::{
+    test::{engine_test, pipeline::PipelineTestEngine},
+    transport::nats::input::test::control_tests::check_output_pipeline_end_to_end,
+};
+#[cfg(test)]
+use async_nats::HeaderMap;
+#[cfg(test)]
 use feldera_adapterlib::transport::{OutputBatchType, OutputEndpoint, Step};
-use feldera_types::transport::nats as cfg;
-use feldera_types::transport::nats::NatsOutputConfig;
+#[cfg(test)]
+use feldera_types::transport::{nats as cfg, nats::NatsOutputConfig};
+#[cfg(test)]
+use futures::StreamExt as _;
+#[cfg(test)]
+use serde_json::json;
+#[cfg(test)]
+use std::{collections::HashMap, time::Duration};
+#[cfg(test)]
 use tokio_util::sync::CancellationToken;
+#[cfg(test)]
+use xxhash_rust::xxh3::xxh3_128;
 
 // ---------------------------------------------------------------------------
 // Configuration validation (no server required)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Message ids and header overhead (no server required)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// End-to-end (requires nats-server; see crates/adapters/README.md)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
 fn config_from_value(value: serde_json::Value) -> NatsOutputConfig {
     serde_json::from_value(value).unwrap()
 }
@@ -95,10 +115,6 @@ fn push_key_is_rejected() {
         "error should state the format is unsupported, got: {text}"
     );
 }
-
-// ---------------------------------------------------------------------------
-// Message ids and header overhead (no server required)
-// ---------------------------------------------------------------------------
 
 /// Ids within one transaction: identical payloads get distinct ids (a record
 /// with weight two must be stored twice), distinct payloads get distinct
@@ -196,10 +212,6 @@ fn message_id_none_disables_ids() {
     assert!(endpoint.message_ids.is_none());
 }
 
-// ---------------------------------------------------------------------------
-// End-to-end (requires nats-server; see crates/adapters/README.md)
-// ---------------------------------------------------------------------------
-
 /// Publishes each record in `records` through a `nats_output` endpoint built
 /// from `config` against a private `nats-server` with a stream bound to the
 /// configured subject, and returns the JetStream context for verification.
@@ -208,6 +220,7 @@ fn message_id_none_disables_ids() {
 /// the given step, as the `json` format's `insert_delete` update format
 /// produces with `buffer_size_records: 1`. The server URL in `config` is
 /// replaced with the private server's address.
+#[cfg(test)]
 fn publish_records(
     rt: &tokio::runtime::Runtime,
     config: &NatsOutputConfig,
@@ -483,4 +496,13 @@ fn test_nats_output_max_message_size_override() -> anyhow::Result<()> {
         endpoint.max_buffer_size_bytes()
     );
     Ok(())
+}
+
+/// The full pipeline with the default json output format and message ids:
+/// records flow through the encoder and the endpoint to the stream bound to
+/// the subject, and every message carries a `Nats-Msg-Id` header the
+/// connector derived from the payload without knowing its format.
+#[engine_test(services(Nats))]
+pub fn output_pipeline_end_to_end(engine: &dyn PipelineTestEngine) {
+    check_output_pipeline_end_to_end(engine).unwrap();
 }

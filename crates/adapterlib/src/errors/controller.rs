@@ -710,6 +710,11 @@ pub enum ControllerError {
         error: String,
     },
 
+    /// The program's UDF library (its Rust UDFs compiled to a shared library) does not load.
+    UdfLibraryError {
+        error: String,
+    },
+
     /// Error parsing CLI arguments.
     CliArgsError {
         error: String,
@@ -816,6 +821,10 @@ pub enum ControllerError {
     /// Enterprise-only feature.
     EnterpriseFeature(&'static str),
 
+    /// A recognized operation whose subsystem is not implemented in this
+    /// runtime. Maps to HTTP 501 Not Implemented.
+    NotImplemented(&'static str),
+
     /// Cannot checkpoint or suspend.
     SuspendError(SuspendError),
 
@@ -895,6 +904,7 @@ impl ResponseError for ControllerError {
             Self::ParseError { .. } => StatusCode::BAD_REQUEST,
             Self::NotSupported { .. } => StatusCode::BAD_REQUEST,
             Self::EnterpriseFeature(_) => StatusCode::NOT_IMPLEMENTED,
+            Self::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
             Self::RestoreInProgress => StatusCode::SERVICE_UNAVAILABLE,
             Self::BootstrapInProgress => StatusCode::SERVICE_UNAVAILABLE,
             Self::PipelineRestarted { .. } => StatusCode::GONE,
@@ -1014,6 +1024,7 @@ impl DetailedError for ControllerError {
             Self::UnexpectedStep { .. } => Cow::from("UnexpectedStep"),
             Self::ReplayFailure { .. } => Cow::from("ReplayFailure"),
             Self::IrParseError { .. } => Cow::from("IrParseError"),
+            Self::UdfLibraryError { .. } => Cow::from("UdfLibraryError"),
             Self::CliArgsError { .. } => Cow::from("ControllerCliArgsError"),
             Self::Config { config_error } => {
                 Cow::from(format!("ConfigError.{}", config_error.error_code()))
@@ -1031,6 +1042,7 @@ impl DetailedError for ControllerError {
             Self::ControllerPanic => Cow::from("ControllerPanic"),
             Self::ControllerExit => Cow::from("ControllerExit"),
             Self::EnterpriseFeature(_) => Cow::from("EnterpriseFeature"),
+            Self::NotImplemented(_) => Cow::from("NotImplemented"),
             Self::StorageError { .. } => Cow::from("StorageError"),
             Self::SuspendError(_) => Cow::from("SuspendError"),
             Self::UnexpectedJsonStructure { .. } => Cow::from("UnexpectedJsonStructure"),
@@ -1121,6 +1133,9 @@ impl Display for ControllerError {
             Self::IrParseError { error } => {
                 write!(f, "Error parsing program IR: {error}")
             }
+            Self::UdfLibraryError { error } => {
+                write!(f, "Error loading the program's UDFs: {error}")
+            }
             Self::CliArgsError { error } => {
                 write!(f, "Error parsing command line arguments: {error}")
             }
@@ -1204,6 +1219,9 @@ impl Display for ControllerError {
                     f,
                     "Cannot use enterprise-only feature ({feature}) in Feldera community edition."
                 )
+            }
+            Self::NotImplemented(feature) => {
+                write!(f, "{feature} is not implemented in this runtime.")
             }
             Self::StorageError { context, error, .. } => {
                 write!(f, "I/O error {context}: {error}")
@@ -1320,6 +1338,12 @@ impl ControllerError {
 
     pub fn ir_parse_error(error: &str) -> Self {
         Self::IrParseError {
+            error: error.to_string(),
+        }
+    }
+
+    pub fn udf_library_error(error: &str) -> Self {
+        Self::UdfLibraryError {
             error: error.to_string(),
         }
     }
@@ -1643,6 +1667,7 @@ impl ControllerError {
             | Self::UnexpectedStep { .. }
             | Self::ReplayFailure { .. }
             | Self::IrParseError { .. }
+            | Self::UdfLibraryError { .. }
             | Self::CliArgsError { .. }
             | Self::Config { .. }
             | Self::UnknownInputEndpoint { .. }
@@ -1657,6 +1682,7 @@ impl ControllerError {
             | Self::ControllerPanic
             | Self::ControllerExit
             | Self::EnterpriseFeature(_)
+            | Self::NotImplemented(_)
             | Self::UnexpectedJsonStructure { .. }
             | Self::UnknownEndpointInCompletionToken { .. }
             | Self::CheckpointFetchError { .. }
@@ -1707,6 +1733,8 @@ mod test {
     use std::fmt::{Display, Formatter, Result as FmtResult};
     use std::io::ErrorKind;
 
+    use actix_web::ResponseError;
+    use actix_web::http::StatusCode;
     use feldera_types::error::{DetailedError, EngineError};
     use serde::Serialize;
     use serde_json::json;
@@ -1734,6 +1762,40 @@ mod test {
         fn io_error_kind(&self) -> Option<ErrorKind> {
             Some(ErrorKind::TimedOut)
         }
+    }
+
+    /// An engine that lacks a subsystem reports it with HTTP 501, in the wording and with the
+    /// code that customers see.
+    #[test]
+    fn not_implemented_names_the_feature() {
+        let error = ControllerError::NotImplemented("checkpoints");
+        assert_eq!(
+            error.to_string(),
+            "checkpoints is not implemented in this runtime."
+        );
+        assert_eq!(DetailedError::error_code(&error), "NotImplemented");
+        assert_eq!(
+            ResponseError::status_code(&error),
+            StatusCode::NOT_IMPLEMENTED
+        );
+        assert_eq!(error.kind(), ErrorKind::Other);
+    }
+
+    /// A UDF library that does not load is reported in the wording and with the code that
+    /// customers see.
+    #[test]
+    fn a_udf_library_error_names_the_cause() {
+        let error = ControllerError::udf_library_error("checksum mismatch");
+        assert_eq!(
+            error.to_string(),
+            "Error loading the program's UDFs: checksum mismatch"
+        );
+        assert_eq!(DetailedError::error_code(&error), "UdfLibraryError");
+        assert_eq!(
+            ResponseError::status_code(&error),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert_eq!(error.kind(), ErrorKind::Other);
     }
 
     /// An engine's error keeps its code, its I/O kind, its message, and its JSON inside a

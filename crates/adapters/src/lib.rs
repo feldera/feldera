@@ -115,7 +115,7 @@
 //! * a [`PipelineConfig`] object, which specifies input and output pipeline
 //!   configurations as well as global controller configuration settings, and
 //!
-//! * a [`Catalog`] object, which stores dictionaries of input and output
+//! * a [`CircuitCatalog`] object, which stores dictionaries of input and output
 //!   streams of the circuit.
 //!
 //! # Fault tolerance
@@ -148,21 +148,18 @@
 //!
 //! [`Step`]: crate::transport::Step
 
-// The connector layer still builds record metadata as the enum `Variant`.
-#![allow(deprecated)]
-
 use rustls::crypto::CryptoProvider;
 
 pub(crate) mod adhoc;
 mod catalog;
 mod controller;
+pub mod engine;
 pub mod format;
 pub mod integrated;
 #[cfg(any(test, feature = "testing"))]
 pub mod postprocess;
 pub mod preprocess;
 pub mod server;
-pub mod static_compile;
 pub mod transport;
 pub(crate) mod util;
 
@@ -177,8 +174,7 @@ pub use feldera_types::error::DetailedError;
 pub use server::{ErrorResponse, PipelineError, PipelinePhase};
 
 pub use catalog::{
-    Catalog, CircuitCatalog, DeCollectionHandle, DeCollectionStream, RecordFormat, SerBatch,
-    SerCursor,
+    CircuitCatalog, DeCollectionHandle, DeCollectionStream, RecordFormat, SerBatch, SerCursor,
 };
 pub use feldera_adapterlib::format::{
     Encoder, InputBuffer, InputFormat, OutputConsumer, OutputFormat, ParseError, Parser,

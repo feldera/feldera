@@ -382,6 +382,11 @@ pub fn use_key(config: &AvroEncoderConfig, is_index: bool) -> bool {
 }
 
 impl AvroEncoder {
+    /// Returns the Avro schema of the records that the encoder writes.
+    pub fn value_avro_schema(&self) -> &AvroSchema {
+        &self.value_avro_schema
+    }
+
     pub fn create(
         endpoint_name: &str,
         key_schema: &Option<Relation>,

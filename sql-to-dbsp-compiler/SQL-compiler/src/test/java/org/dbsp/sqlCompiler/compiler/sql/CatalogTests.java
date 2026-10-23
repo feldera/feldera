@@ -84,7 +84,7 @@ public class CatalogTests extends BaseSQLTests {
                   W VARCHAR NOT NULL DEFAULT COALESCE(CAST(CONNECTOR_METADATA()['topic'] AS VARCHAR), '')
                 );""");
         String rust = ccs.getRustSources();
-        Assert.assertTrue(rust.contains("connector_metadata: &Option<Variant>"));
+        Assert.assertTrue(rust.contains("connector_metadata: &Option<SqlVariant>"));
     }
 
     @Test

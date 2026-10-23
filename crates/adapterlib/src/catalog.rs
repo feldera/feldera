@@ -1,6 +1,3 @@
-// The connector layer still builds record metadata as the enum `Variant`.
-#![allow(deprecated)]
-
 use std::any::Any;
 #[cfg(any(feature = "with-avro", feature = "with-dynamodb"))]
 use std::collections::HashMap;
@@ -326,6 +323,12 @@ pub trait SerBatchReader: 'static + Send + Sync {
         num_ranges: usize,
         record_format: RecordFormat,
     ) -> AnyResult<Vec<Box<dyn SerKeyRange>>>;
+
+    /// The number of rows that an ad-hoc query's scan of the batch puts in one Arrow batch.
+    /// An engine whose rows convert to Arrow a column at a time takes larger batches.
+    fn adhoc_batch_rows(&self) -> usize {
+        256
+    }
 }
 
 /// A contiguous range of the keys of a batch, which one thread reads on its own.
@@ -690,22 +693,8 @@ pub trait SerCursor: Send {
 /// read-only batches.
 ///
 /// A trait for a type that wraps an output stream of the engine's circuit and
-/// yields the batches that the circuit produces as [`SerBatchReader`]s. Each
-/// worker of the circuit leaves its batch of a step in a mailbox of its own.
+/// yields the output of each step as [`SerBatchReader`]s.
 pub trait SerBatchReaderHandle: Send + Sync + DynClone {
-    /// Returns the number of workers whose mailbox holds a batch of the last step.
-    fn num_nonempty_mailboxes(&self) -> usize;
-
-    /// Takes the batch of the last step out of the mailbox of `worker`, if it holds
-    /// one.
-    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatchReader>>;
-
-    /// Takes the batches of the last step out of the mailboxes of all workers.
-    fn take_from_all(&self) -> Vec<Arc<dyn SerBatchReader>>;
-
-    /// Concatenate outputs from all workers into a single batch reader.
-    fn concat(&self) -> Arc<dyn SerBatchReader>;
-
     /// Takes the output of the last step once and returns it both whole and in parts.
     ///
     /// Without output in the last step, the whole reader is empty and there are no parts.
@@ -719,7 +708,8 @@ pub struct SnapshotReaders {
     pub whole: Arc<dyn SerBatchReader>,
 
     /// A set of readers, that iterate over non-overlapping partitions, whose union is
-    /// equivalent to `whole`.
+    /// equivalent to `whole`. After a step there is one for each local worker, in worker
+    /// order.
     pub partitions: Vec<Arc<dyn SerBatchReader>>,
 }
 
