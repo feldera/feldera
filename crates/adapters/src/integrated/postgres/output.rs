@@ -1091,7 +1091,7 @@ impl PostgresOutputEndpoint {
         is_index: bool,
     ) -> Result<Self, ControllerError> {
         config.validate().map_err(|e| {
-            ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
+            ControllerError::invalid_transport_configuration(endpoint_name, &e)
         })?;
 
         validate_extra_columns_against_value_schema(endpoint_name, config, value_schema)?;

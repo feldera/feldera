@@ -605,7 +605,7 @@ impl DynamoDBOutputEndpoint {
         metrics: Arc<DynamoDBOutputMetrics>,
     ) -> Result<Self, ControllerError> {
         config.validate().map_err(|e| {
-            ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
+            ControllerError::invalid_transport_configuration(endpoint_name, &e)
         })?;
 
         if !is_index || key_schema.is_none() {

@@ -188,7 +188,7 @@ impl InnerInit {
                     "can't configure Nexmark options from two different connectors"
                 ));
             }
-            self.options = config.options.clone();
+            self.options.clone_from(&config.options);
         }
         Ok(())
     }

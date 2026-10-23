@@ -649,7 +649,7 @@ impl CircuitHandle {
                 .collect::<BTreeMap<_, _>>();
 
             let replay_info = BootstrapInfo {
-                replay_sources: replay_sources.clone(),
+                replay_sources,
                 need_backfill,
             };
 

@@ -31,7 +31,7 @@ where
             .map(|pid| format!("{pid}.transaction_delay"));
 
         self.circuit()
-            .add_unary_operator(TransactionZ1::new(initial.clone()), self)
+            .add_unary_operator(TransactionZ1::new(initial), self)
             .set_persistent_id(delay_pid.as_deref())
     }
 }
@@ -83,7 +83,7 @@ where
             global_id: GlobalNodeId::root(),
             zero: zero.clone(),
             old_value: zero.clone(),
-            new_value: zero.clone(),
+            new_value: zero,
         }
     }
 

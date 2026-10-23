@@ -154,7 +154,6 @@ impl CsvParser {
                     &std::str::from_utf8(record)
                         .map(|s| s.to_string())
                         .unwrap_or_else(|_| format!("{:?}", record))
-                        .to_string(),
                 ),
                 None,
             ));

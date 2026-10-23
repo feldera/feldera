@@ -283,7 +283,7 @@ where
                 >::new(
                     self.handle.clone(),
                     self.map_func.clone(),
-                    (config, column_name.clone()),
+                    (config, column_name),
                 )))
             }
             RecordFormat::Parquet(_) => {
@@ -424,7 +424,7 @@ where
                 Ok(Box::new(
                     DeZSetStream::<RawDeserializerFromBytes, K, D, _>::new(
                         self.handle.clone(),
-                        (config, column_name.clone()),
+                        (config, column_name),
                     ),
                 ))
             }
@@ -981,7 +981,7 @@ where
                 self.handle.clone(),
                 self.value_key_func.clone(),
                 self.update_key_func.clone(),
-                (raw_serde_config(), column_name.clone()),
+                (raw_serde_config(), column_name),
             ))),
             #[cfg(feature = "with-dynamodb")]
             RecordFormat::DynamoDB => {
@@ -1127,7 +1127,7 @@ where
                 self.handle.clone(),
                 self.value_key_func.clone(),
                 self.value_key_func.clone(),
-                (raw_serde_config(), column_name.clone()),
+                (raw_serde_config(), column_name),
             ))),
             #[cfg(feature = "with-dynamodb")]
             RecordFormat::DynamoDB => {

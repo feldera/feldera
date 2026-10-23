@@ -2901,7 +2901,7 @@ impl ConnectorErrorList {
 
         entry.push_back(ConnectorError {
             timestamp: Utc::now(),
-            tag: tag.map(|tag| tag.to_string()),
+            tag,
             index,
             message: bound_error_message(&error.to_string()),
         });

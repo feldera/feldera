@@ -116,7 +116,6 @@ where
                         result.mark_sharded();
                         result
                     })
-                    .clone()
             })
             .clone()
     }
@@ -166,7 +165,6 @@ where
                             &ghost.dyn_accumulate(factories).into_enabled_stream(),
                         )
                     })
-                    .clone()
             })
             .clone()
     }

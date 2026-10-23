@@ -399,7 +399,7 @@ where
 
                 self.weight_times[self.current_index]
                     .0
-                    .push((weight, time.clone()));
+                    .push((weight, time));
             });
         } else {
             let weight =

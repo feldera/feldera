@@ -534,12 +534,12 @@ fn compute_program_diff(
     let new_relations_with_lateness = new_program_schema
         .relations_with_lateness()
         .into_iter()
-        .map(|s| s.name().to_string())
+        .map(|s| s.name())
         .collect::<Vec<_>>();
     let old_relations_with_lateness = old_program_schema
         .relations_with_lateness()
         .into_iter()
-        .map(|s| s.name().to_string())
+        .map(|s| s.name())
         .collect::<Vec<_>>();
 
     let blockers = BootstrapBlockers {
@@ -572,8 +572,6 @@ pub fn compute_pipeline_diff(
         });
     };
 
-    let mir_diff = diff.map(|(diff, _)| diff.clone());
-
     let mut old_configured_inputs = old_config
         .inputs
         .iter()
@@ -601,12 +599,11 @@ pub fn compute_pipeline_diff(
         .iter()
         .filter(|(k, config)| {
             !new_config.inputs.contains_key(*k)
-                && !mir_diff
-                    .as_ref()
-                    .map(|mir_diff| {
+                && !diff.as_ref().map(|(mir_diff, _)| {
                         mir_diff
                             .removed_tables()
-                            .contains(&config.stream.to_string())
+                            .iter()
+                            .any(|t| t == &config.stream)
                     })
                     .unwrap_or(true)
         })
@@ -638,12 +635,13 @@ pub fn compute_pipeline_diff(
         .iter()
         .filter(|(k, config)| {
             !new_config.outputs.contains_key(*k)
-                && !mir_diff
+                && !diff
                     .as_ref()
-                    .map(|mir_diff| {
+                    .map(|(mir_diff, _)| {
                         mir_diff
                             .removed_views()
-                            .contains(&config.stream.to_string())
+                            .iter()
+                            .any(|v| v == &config.stream)
                     })
                     .unwrap_or(true)
         })
@@ -664,7 +662,7 @@ pub fn compute_pipeline_diff(
         .map(|(k, _)| k.to_string())
         .collect::<Vec<_>>();
 
-    Ok(PipelineDiff::new(mir_diff)
+    Ok(PipelineDiff::new(diff.map(|(diff, _)| diff))
         .with_added_input_connectors(added_input_connectors)
         .with_modified_input_connectors(modified_input_connectors)
         .with_removed_input_connectors(removed_input_connectors)

@@ -1973,9 +1973,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     .runtime_status_details
                     .clone(),
             );
-            self.prev_storage_status_details = latest_runtime_extended_status
-                .storage_status_details
-                .clone();
+            self.prev_storage_status_details.clone_from(&latest_runtime_extended_status.storage_status_details);
             Action::RemainProvisionedUpdateDetails {
                 deployment_resources_status_details: latest_resources_status_details,
                 extended_runtime_status: latest_runtime_extended_status.clone(),

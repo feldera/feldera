@@ -497,7 +497,6 @@ where
                     .upsert::<O>(persistent_id, &factories.upsert_factories)
                     .mark_sharded()
             })
-            .clone()
     }
 
     /// See [`Stream::aggregate_linear`].
@@ -551,7 +550,6 @@ where
                         ),
                     )
             })
-            .clone()
     }
 
     /// See [`Stream::weigh`].
@@ -686,7 +684,6 @@ where
                         ),
                     )
             })
-            .clone()
     }
 }
 

@@ -1107,7 +1107,7 @@ where
             .map(|b| b.key_count_upper_bound())
             .sum();
         let key_filter = if collect_roaring_metadata() {
-            let filter_plan = FilterPlan::from_batches(batches.clone());
+            let filter_plan = FilterPlan::from_batches(batches);
             filter_plan.map_or_else(
                 || FilterPlan::<K>::decide_filter(None, key_capacity),
                 |filter_plan| FilterPlan::decide_filter(Some(&filter_plan), key_capacity),

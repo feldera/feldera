@@ -76,7 +76,6 @@ impl PostgresInputReader {
     ) -> AnyResult<Self> {
         let (sender, receiver) = channel(PipelineState::Paused);
         let endpoint_clone = endpoint.clone();
-        let receiver_clone = receiver.clone();
 
         // Used to communicate the status of connector initialization.
         let (init_status_sender, mut init_status_receiver) =
@@ -92,7 +91,7 @@ impl PostgresInputReader {
             .spawn(move || {
                 TOKIO.block_on(async {
                     let _ = endpoint_clone
-                        .worker_task(input_stream, schema, receiver_clone, init_status_sender)
+                        .worker_task(input_stream, schema, receiver, init_status_sender)
                         .await;
                 })
             })

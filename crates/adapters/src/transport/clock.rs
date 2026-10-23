@@ -151,10 +151,9 @@ impl ClockReader {
         let (sender, receiver) = unbounded_channel::<InputReaderCommand>();
         let (clock_sender, clock_receiver) = bounded_channel::<ClockCommand>(1);
 
-        let config_clone = config.clone();
         TOKIO.spawn(async {
             let _ =
-                Self::worker_task(config_clone, parser, consumer, receiver, clock_receiver).await;
+                Self::worker_task(config, parser, consumer, receiver, clock_receiver).await;
         });
 
         Self {

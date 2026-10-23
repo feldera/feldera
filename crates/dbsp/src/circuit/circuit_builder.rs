@@ -4711,7 +4711,7 @@ where
             // Log the actual edge going to the inner node as well
             self.parent().log_circuit_event(&CircuitEvent::stream(
                 parent_stream.origin_node_id().clone(),
-                node_id.clone(),
+                node_id,
                 input_preference,
             ));
             let output_stream = node.output_stream();
@@ -6794,7 +6794,7 @@ where
         Self {
             id: circuit.global_node_id().child(id),
             operator,
-            output_stream: Stream::new(circuit.clone(), id),
+            output_stream: Stream::new(circuit, id),
             export_stream: None,
             phantom_input: PhantomData,
             labels: BTreeMap::new(),

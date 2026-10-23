@@ -869,7 +869,6 @@ impl DeltaTableInputReader {
         distributed: Option<DistributedInput>,
     ) -> AnyResult<Self> {
         let (sender, receiver) = channel(PipelineState::Paused);
-        let receiver_clone = receiver.clone();
 
         let resume_info = if let Some(resume_info) = resume_info {
             let resume_info = parse_resume_info::<DeltaResumeInfo>(&resume_info)?;
@@ -1055,7 +1054,7 @@ impl DeltaTableInputReader {
                 .spawn(move || {
                     TOKIO.block_on(async {
                         let _ = endpoint_clone
-                            .worker_task(input_stream, receiver_clone, init_status_sender)
+                            .worker_task(input_stream, receiver, init_status_sender)
                             .await;
                     })
                 })
@@ -1072,7 +1071,7 @@ impl DeltaTableInputReader {
 
         Ok(Self {
             sender,
-            inner: endpoint.clone(),
+            inner: endpoint,
         })
     }
 
@@ -1728,9 +1727,9 @@ impl DeltaTableInputEndpointInner {
             }
         };
 
-        *self.last_resume_status.lock().unwrap() = resume_status.clone();
+        self.last_resume_status.lock().unwrap().clone_from(&resume_status);
         if let Some(resume_status) = &resume_status {
-            *self.last_checkpointable_status.lock().unwrap() = resume_status.clone();
+            self.last_checkpointable_status.lock().unwrap().clone_from(resume_status);
         }
 
         let resume = match resume_status {

@@ -173,7 +173,7 @@ impl PostgresCdcInputEndpoint {
         consumer: Box<dyn InputConsumer>,
     ) -> Result<Self, ControllerError> {
         config.validate().map_err(|e| {
-            ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
+            ControllerError::invalid_transport_configuration(endpoint_name, &e)
         })?;
         // A URI that does not parse fails here, where the other configuration
         // errors do, rather than once the reader starts.

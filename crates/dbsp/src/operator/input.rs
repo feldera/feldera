@@ -864,7 +864,6 @@ where
         assert!(!workers.is_empty());
         Self {
             mailbox: workers
-                .clone()
                 .map(move |_| Mailbox::new(empty_val.clone()))
                 .collect(),
         }

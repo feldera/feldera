@@ -187,7 +187,7 @@ mod kafka_connect_json_converter {
 
     fn field_schema(schema: &Field) -> JsonField {
         JsonField {
-            field: schema.name.name().clone(),
+            field: schema.name.name(),
             schema: type_schema(&schema.columntype),
         }
     }

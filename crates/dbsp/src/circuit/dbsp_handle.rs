@@ -1687,7 +1687,7 @@ impl DBSPHandle {
         }
 
         // Send command.
-        if self.command_senders[worker].send(command.clone()).is_err() {
+        if self.command_senders[worker].send(command).is_err() {
             let panic_info = self.collect_panic_info().unwrap_or_default();
 
             // Worker thread panicked. Exit without waiting for all workers to exit
@@ -2022,7 +2022,7 @@ impl DBSPHandle {
                     "Concurrent bootstrap not possible ({reason}); falling back to a \
                      non-concurrent bootstrap"
                 );
-                self.bootstrap_info = info.clone();
+                self.bootstrap_info.clone_from(&info);
                 return Ok(ConcurrentRestoreOutcome::FellBack { reason, info });
             }
             ConcurrentRestoreOutcome::Concurrent(info) => info,
