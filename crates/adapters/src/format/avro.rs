@@ -8,11 +8,16 @@ mod debezium;
 pub mod deserializer;
 pub mod input;
 pub mod output;
-mod schema;
+pub(crate) mod schema;
 pub mod serializer;
 
 #[cfg(test)]
 mod test;
+
+#[cfg(any(test, feature = "testing"))]
+pub mod encoder_tests;
+#[cfg(any(test, feature = "testing"))]
+pub mod parser_tests;
 
 pub use deserializer::from_avro_value;
 

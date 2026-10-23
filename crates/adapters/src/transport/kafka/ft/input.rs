@@ -633,7 +633,7 @@ impl KafkaFtInputReaderInner {
                         total += amt;
                         hasher.add(partition, &msg);
                         consumer.buffered(amt);
-                        msg.flush();
+                        consumer.check_flush(msg.flush());
                         if offset == max {
                             incomplete_partitions.remove(partition);
                         }
@@ -793,7 +793,7 @@ impl KafkaFtInputReaderInner {
                     InputReaderCommand::Pause => running = false,
                     InputReaderCommand::Queue { .. } => {
                         let mut buffer = stager.pop_staged_buffer(&*parser);
-                        buffer.buffers.flush();
+                        consumer.check_flush(buffer.buffers.flush());
                         let metadata = serde_json::to_value(&Metadata {
                             offsets: buffer.offsets,
                             shard,

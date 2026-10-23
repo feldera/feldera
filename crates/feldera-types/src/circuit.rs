@@ -266,7 +266,10 @@ impl StdError for LayoutError {}
 /// the cost can be hidden and data processing as a whole runs faster.
 pub trait StagedBuffers: Send + Sync {
     /// Flushes the data gathered into this buffer to the circuit.
-    fn flush(&mut self);
+    ///
+    /// Fails if the circuit cannot take the data, for example because the engine converts the
+    /// buffered records only now and a record does not convert.
+    fn flush(&mut self) -> anyhow::Result<()>;
 }
 
 /// Most accumulators (created with dyn_accumulate()) are always enabled.

@@ -255,6 +255,7 @@ parquet = "59"
 # sharing `arrow` with it, so keep the three on one point release.
 parquet-variant = "59"
 parquet-variant-compute = "59"
+parquet-variant-json = "59"
 paste = "1.0.12"
 petgraph = "0.6.0"
 pg-client-config = "0.1.2"

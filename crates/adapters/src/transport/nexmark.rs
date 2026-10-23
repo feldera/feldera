@@ -338,7 +338,7 @@ fn worker_thread(
         for (_events, mut buffer, _timestamp) in queue.lock().unwrap().drain(..) {
             total += buffer.len();
             buffer.hash(&mut hasher);
-            buffer.flush();
+            consumers[NexmarkTable::Bid].check_flush(buffer.flush());
         }
         consumers[NexmarkTable::Bid].replayed(total, hasher.finish());
         next_event_id = event_ids.end;
@@ -382,7 +382,7 @@ fn worker_thread(
                         if let Some(hasher) = hasher.as_mut() {
                             buffer.hash(hasher);
                         }
-                        buffer.flush();
+                        consumers[NexmarkTable::Bid].check_flush(buffer.flush());
                     }
                 }
                 let resume = Resume::new_metadata_only(

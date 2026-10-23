@@ -1,0 +1,549 @@
+//! Test framework for the `adapters` crate.
+
+#![allow(clippy::type_complexity)]
+
+use crate::{
+    Catalog, CircuitCatalog, FormatConfig, controller::InputEndpointConfig, transport::InputReader,
+};
+use anyhow::Result as AnyResult;
+use dbsp::{DBData, DBSPHandle, OrdZSet, Runtime};
+use feldera_adapterlib::format::InputBuffer;
+use feldera_sqllib::Variant;
+use feldera_types::secret_resolver::default_secrets_directory;
+use feldera_types::serde_with_context::{
+    DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
+};
+use serde_json::json;
+use std::borrow::Cow;
+use std::collections::BTreeMap;
+use std::ffi::OsStr;
+use std::fmt::Debug;
+use std::fs::{File, read_dir};
+use std::hash::Hash;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+pub use super::data::{
+    DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergSubsetTestStruct, IcebergTestStruct,
+    KeyStruct, S3TablesTestStruct, TestStruct, TestStruct2, TestStructSoftDelete,
+    generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
+};
+pub use super::engine::StaticTestEngine;
+pub use super::engine::records::KafkaRawMetadata;
+pub use super::mock_dezset::{
+    MockDeZSet, MockUpdate, wait_for_output_count, wait_for_output_ordered,
+    wait_for_output_unordered,
+};
+use crate::catalog::InputCollectionHandle;
+use crate::format::get_input_format;
+use crate::transport::input_transport_config_to_endpoint;
+use dbsp::circuit::CircuitConfig;
+use dbsp::utils::Tup2;
+use feldera_adapterlib::soft_delete::SoftDeleteHandle;
+pub use feldera_adapterlib::test::{
+    ErrorCallback, MockInputConsumer, MockInputParser, MockOutputConsumer, async_wait,
+    default_timeout_ms, wait,
+};
+use feldera_types::format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat};
+use feldera_types::program_schema::{
+    Field, PropertyValue, Relation, SourcePosition, SqlIdentifier,
+};
+
+/// Returns a mock parser over a parser of the format in `format_config`, which pushes the
+/// records into `input_handle`.
+pub(crate) fn mock_input_parser(
+    input_handle: &InputCollectionHandle,
+    format_config: &FormatConfig,
+) -> MockInputParser {
+    let format = get_input_format(&format_config.name).unwrap();
+    let parser = format
+        .new_parser("mock_input_endpoint", input_handle, &format_config.config)
+        .unwrap();
+    MockInputParser::new(parser)
+}
+
+/// Build an input pipeline that allows testing a parser
+/// standalone, without a DBSP circuit or controller.
+///
+/// ```text
+/// ┌─────────────────┐   ┌──────┐   ┌──────────┐
+/// │MockInputConsumer├──►│parser├──►│MockDeZSet│
+/// └─────────────────┘   └──────┘   └──────────┘
+/// ```
+pub fn mock_parser_pipeline<T, U>(
+    schema: &Relation,
+    config: &FormatConfig,
+) -> AnyResult<(MockInputConsumer, MockInputParser, MockDeZSet<T, U>)>
+where
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+{
+    let input_handle = <MockDeZSet<T, U>>::new();
+    let consumer = MockInputConsumer::new();
+    let parser = mock_input_parser(
+        &InputCollectionHandle::new(schema.clone(), input_handle.clone(), None),
+        config,
+    );
+    Ok((consumer, parser, input_handle))
+}
+
+/// Like [`mock_parser_pipeline`], but with soft deletes enabled, the way the
+/// controller configures an endpoint whose `soft_delete` property is set:
+///
+/// ```text
+/// ┌─────────────────┐   ┌──────┐   ┌────────────────┐   ┌──────────┐
+/// │MockInputConsumer├──►│parser├──►│SoftDeleteStream├──►│MockDeZSet│
+/// └─────────────────┘   └──────┘   └────────────────┘   └──────────┘
+/// ```
+pub fn mock_soft_delete_parser_pipeline<T, U>(
+    schema: &Relation,
+    config: &FormatConfig,
+) -> AnyResult<(MockInputConsumer, MockInputParser, MockDeZSet<T, U>)>
+where
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+{
+    let input_handle = <MockDeZSet<T, U>>::new();
+    let consumer = MockInputConsumer::new();
+    let parser = mock_input_parser(
+        &InputCollectionHandle::new(
+            schema.clone(),
+            SoftDeleteHandle::new(Box::new(input_handle.clone())),
+            None,
+        ),
+        config,
+    );
+    Ok((consumer, parser, input_handle))
+}
+
+/// Build an input pipeline that allows testing a transport endpoint and parser
+/// standalone, without a DBSP circuit or controller.
+///
+/// Creates a mock `Catalog` with a single input handle with name `name`
+/// and record type `T` backed by `MockDeZSet` and instantiates the following
+/// test pipeline:
+///
+/// ```text
+/// ┌────────┐   ┌─────────────────┐   ┌──────┐   ┌──────────┐
+/// │endpoint├──►│MockInputConsumer├──►│parser├──►│MockDeZSet│
+/// └────────┘   └─────────────────┘   └──────┘   └──────────┘
+/// ```
+pub fn mock_input_pipeline<T, U>(
+    config: InputEndpointConfig,
+    relation: Relation,
+) -> AnyResult<(
+    Box<dyn InputReader>,
+    MockInputConsumer,
+    MockInputParser,
+    MockDeZSet<T, U>,
+)>
+where
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+{
+    let default_format = FormatConfig {
+        name: Cow::from("json"),
+        config: serde_json::to_value(JsonParserConfig {
+            update_format: JsonUpdateFormat::Raw,
+            json_flavor: JsonFlavor::Datagen,
+            array: true,
+            lines: JsonLines::Multiple,
+        })
+        .unwrap(),
+    };
+
+    let (consumer, parser, input_handle) = mock_parser_pipeline(
+        &relation,
+        config
+            .connector_config
+            .format
+            .as_ref()
+            .unwrap_or(&default_format),
+    )?;
+
+    let endpoint = input_transport_config_to_endpoint(
+        &config.connector_config.transport,
+        "",
+        default_secrets_directory(),
+        None,
+    )?
+    .unwrap();
+
+    let reader = endpoint.open(
+        Box::new(consumer.clone()),
+        Box::new(parser.clone()),
+        relation,
+        None,
+    )?;
+
+    Ok((reader, consumer, parser, input_handle))
+}
+
+/// Create a simple test circuit that passes each of a number of streams right
+/// through to the corresponding output.  The number of streams is the length of
+/// `persistent_output_ids`, which also specifies optional persistent output ids.
+pub fn test_circuit<T>(
+    config: CircuitConfig,
+    schema: &[Field],
+    persistent_output_ids: &[Option<&str>],
+) -> (DBSPHandle, Box<dyn CircuitCatalog>)
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
+    test_circuit_with_properties::<T>(config, schema, &[], persistent_output_ids)
+}
+
+/// Like [`test_circuit`], but sets the given properties on the input relations,
+/// the way the SQL compiler records table-level `WITH` properties (e.g.,
+/// `skip_unused_columns`) in the program schema.
+pub fn test_circuit_with_properties<T>(
+    config: CircuitConfig,
+    schema: &[Field],
+    input_properties: &[(&str, &str)],
+    persistent_output_ids: &[Option<&str>],
+) -> (DBSPHandle, Box<dyn CircuitCatalog>)
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
+    test_circuit_inner::<T>(
+        config,
+        schema,
+        input_properties,
+        persistent_output_ids,
+        true,
+        true,
+    )
+}
+
+/// Creates a one-stream test circuit that cannot be checkpointed.
+///
+/// Shaped like [`test_circuit`], but assigns no persistent operator ids, so a
+/// checkpoint fails in every worker with `StorageError::NoPersistentId`.  Use
+/// it to exercise the controller's handling of a worker-side checkpoint
+/// failure.
+pub fn test_circuit_without_persistent_ids<T>(
+    config: CircuitConfig,
+    schema: &[Field],
+) -> (DBSPHandle, Box<dyn CircuitCatalog>)
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
+    test_circuit_inner::<T>(config, schema, &[], &[None], false, true)
+}
+
+/// The body of [`test_circuit_with_properties`] and
+/// [`test_circuit_without_persistent_ids`].  `persistent_ids` says whether the
+/// input operators get persistent ids, which is what a checkpoint needs.
+/// `materialized` says whether the inputs and outputs are materialized.
+pub(crate) fn test_circuit_inner<T>(
+    config: CircuitConfig,
+    schema: &[Field],
+    input_properties: &[(&str, &str)],
+    persistent_output_ids: &[Option<&str>],
+    persistent_ids: bool,
+    materialized: bool,
+) -> (DBSPHandle, Box<dyn CircuitCatalog>)
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
+    let zero_position = SourcePosition {
+        start_line_number: 0,
+        start_column: 0,
+        end_line_number: 0,
+        end_column: 0,
+    };
+    let input_properties: BTreeMap<String, PropertyValue> = input_properties
+        .iter()
+        .map(|(key, value)| {
+            (
+                key.to_string(),
+                PropertyValue {
+                    value: value.to_string(),
+                    key_position: zero_position,
+                    value_position: zero_position,
+                },
+            )
+        })
+        .collect();
+
+    let schema = schema.to_vec();
+    let persistent_output_ids = persistent_output_ids
+        .iter()
+        .map(|id| id.map(|s| s.to_string()))
+        .collect::<Vec<_>>();
+
+    let (circuit, catalog) = Runtime::init_circuit(config, move |circuit| {
+        let mut catalog = Catalog::new();
+        let n = persistent_output_ids.len();
+
+        for (persistent_output_id, i) in persistent_output_ids.iter().zip(1..) {
+            let (input, hinput) = circuit.add_input_zset::<T>();
+            if persistent_ids {
+                if n > 1 {
+                    input.set_persistent_mir_id(&format!("input{i}"));
+                } else {
+                    input.set_persistent_mir_id("input");
+                }
+            }
+
+            let input_schema = serde_json::to_string(&Relation::new(
+                format!("test_input{i}").into(),
+                schema.clone(),
+                false,
+                input_properties.clone(),
+            ))
+            .unwrap();
+
+            let output_schema = serde_json::to_string(&Relation::new(
+                format!("test_output{i}").into(),
+                schema.clone(),
+                false,
+                BTreeMap::new(),
+            ))
+            .unwrap();
+
+            if materialized {
+                catalog.register_materialized_input_zset(input.clone(), hinput, &input_schema);
+            } else {
+                catalog.register_input_zset(input.clone(), hinput, &input_schema);
+            }
+
+            let persistent_output_id = persistent_output_id.as_ref().map(|s| s.as_str());
+            if materialized {
+                catalog.register_materialized_output_zset_persistent(
+                    persistent_output_id,
+                    input,
+                    &output_schema,
+                );
+            } else {
+                catalog.register_output_zset_persistent(
+                    persistent_output_id,
+                    input,
+                    &output_schema,
+                );
+            }
+        }
+        Ok(catalog)
+    })
+    .unwrap();
+    (circuit, Box::new(catalog))
+}
+
+/// Similar to `test_circuit`, but the input stream has a primary key, and the output
+/// stream has an index associated with it.
+pub fn test_circuit_with_index<T, K, KF>(
+    config: CircuitConfig,
+    schema: &[Field],
+    key_fields: &[SqlIdentifier],
+    key_func: KF,
+    persistent_output_ids: &[Option<&str>],
+    index_is_alias: bool,
+) -> (DBSPHandle, Box<dyn CircuitCatalog>)
+where
+    KF: Fn(&T) -> K + Clone + Send + Sync + 'static,
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+    K: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
+    let schema = schema.to_vec();
+
+    let persistent_output_ids = persistent_output_ids
+        .iter()
+        .map(|id| id.map(|s| s.to_string()))
+        .collect::<Vec<_>>();
+
+    let key_fields = key_fields.to_vec();
+
+    let (circuit, catalog) = Runtime::init_circuit(config, move |circuit| {
+        let mut catalog = Catalog::new();
+        let n = persistent_output_ids.len();
+
+        for (persistent_output_id, i) in persistent_output_ids.iter().zip(1..) {
+            let (input, hinput) = circuit
+                .add_input_map_persistent::<K, T, T, _>(Some(&format!("input{i}")), |val, upd| {
+                    *val = upd.clone()
+                });
+            if n > 1 {
+                input.set_persistent_mir_id(&format!("input{i}"));
+            } else {
+                input.set_persistent_mir_id("input");
+            }
+
+            let input_schema = serde_json::to_string(
+                &Relation::new(
+                    format!("test_input{i}").into(),
+                    schema.clone(),
+                    false,
+                    BTreeMap::new(),
+                )
+                .with_primary_key(&key_fields),
+            )
+            .unwrap();
+
+            let output_schema = serde_json::to_string(&Relation::new(
+                format!("test_output{i}").into(),
+                schema.clone(),
+                false,
+                BTreeMap::new(),
+            ))
+            .unwrap();
+
+            catalog.register_materialized_input_map(
+                input.clone(),
+                hinput,
+                key_func.clone(),
+                key_func.clone(),
+                &input_schema,
+            );
+
+            catalog.register_materialized_output_map_persistent(
+                persistent_output_id.as_ref().map(|s| s.as_str()),
+                input.clone(),
+                if index_is_alias {
+                    Some(SqlIdentifier::from(&format!("idx{i}")))
+                } else {
+                    None
+                },
+                &output_schema,
+                &key_fields.iter().map(|id| id.name()).collect::<Vec<_>>(),
+            );
+
+            let persistent_index_id = persistent_output_id.as_ref().map(|id| format!("{id}.idx"));
+
+            if !index_is_alias {
+                catalog
+                    .register_index_persistent::<K, K, T, T>(
+                        persistent_index_id.as_deref(),
+                        input.clone(),
+                        &SqlIdentifier::from(&format!("idx{i}")),
+                        &SqlIdentifier::from(&format!("test_output{i}")),
+                        &key_fields.iter().map(|id| id.name()).collect::<Vec<_>>(),
+                    )
+                    .expect("failed to register index");
+            }
+        }
+        Ok(catalog)
+    })
+    .unwrap();
+    (circuit, Box::new(catalog))
+}
+
+pub fn list_files_recursive(dir: &Path, extension: &OsStr) -> Result<Vec<PathBuf>, std::io::Error> {
+    let mut result = Vec::new();
+
+    // Iterate over the entries in the directory
+    for entry in read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        // If the entry is a directory, recursively call list_files_recursive
+        if path.is_dir() {
+            result.append(&mut list_files_recursive(&path, extension)?);
+        } else if path.extension() == Some(extension) {
+            result.push(path);
+        }
+    }
+    Ok(result)
+}
+
+/// Parse file with data encoded using specified format into a Z-set.
+pub fn file_to_zset<T>(file: &mut File) -> OrdZSet<T>
+where
+    T: DBData + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
+{
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).unwrap();
+    bytes_to_zset(&bytes)
+}
+
+/// Parse `insert_delete` JSON records into a Z-set.
+pub fn bytes_to_zset<T>(bytes: &[u8]) -> OrdZSet<T>
+where
+    T: DBData + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
+{
+    let format = get_input_format("json").unwrap();
+    let buffer = MockDeZSet::<T, T>::new();
+
+    // Input parsers don't care about schema yet.
+    let schema = Relation::new("mock_schema".into(), vec![], false, BTreeMap::new());
+
+    let mut parser = format
+        .new_parser(
+            "BaseConsumer",
+            &InputCollectionHandle::new(schema, buffer.clone(), None),
+            &json!({"update_format": "insert_delete"}),
+        )
+        .unwrap();
+
+    let (mut parsed_buffers, errors) = parser.parse(bytes, None);
+    parsed_buffers.flush().unwrap();
+
+    // Use assert_eq, so errors are printed in case of a failure.
+    assert_eq!(errors, vec![]);
+    let records = buffer.state().flushed.clone();
+
+    OrdZSet::from_tuples(
+        (),
+        records
+            .into_iter()
+            .map(|update| match update {
+                MockUpdate::Insert(x) => Tup2(Tup2(x, ()), 1),
+                MockUpdate::Delete(x) => Tup2(Tup2(x, ()), -1),
+                MockUpdate::Update(_) => panic!("Unexpected MockUpdate::Update"),
+            })
+            .collect::<Vec<_>>(),
+    )
+}

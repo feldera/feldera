@@ -1154,7 +1154,7 @@ mod test {
                 result.push(b'\n');
                 cursor.step_val();
             }
-            cursor.step_key();
+            cursor.step_key().unwrap();
         }
 
         String::from_utf8(result).unwrap()
@@ -1206,7 +1206,7 @@ mod test {
         input_stream_handle
             .insert(br#"{"id": 2, "b": true, "s": "2"}"#, &None)
             .unwrap();
-        input_stream_handle.flush();
+        input_stream_handle.flush().unwrap();
 
         circuit.transaction().unwrap();
 
@@ -1223,7 +1223,7 @@ mod test {
         input_stream_handle
             .insert(br#"{"id": 1, "b": true, "s": "1-modified"}"#, &None)
             .unwrap();
-        input_stream_handle.flush();
+        input_stream_handle.flush().unwrap();
 
         circuit.transaction().unwrap();
 
@@ -1238,7 +1238,7 @@ mod test {
         // Step 3: delete an entry.
 
         input_stream_handle.delete(br#"2"#, &None).unwrap();
-        input_stream_handle.flush();
+        input_stream_handle.flush().unwrap();
 
         circuit.transaction().unwrap();
 
@@ -1248,5 +1248,80 @@ mod test {
             r#"-1: {"id":2,"b":true,"i":null,"s":"2"}
 "#
         );
+    }
+
+    /// One take reads a step's output whole and in parts, and leaves nothing for the next.
+    #[test]
+    fn take_readers_reads_a_step_whole_and_in_parts() {
+        let (mut circuit, catalog) = Runtime::init_circuit(4, |circuit| {
+            let mut catalog = Catalog::new();
+
+            let (input, hinput) = circuit.add_input_map::<u32, TestStruct, TestStruct, _>(|v, u| *v = u.clone());
+
+            catalog.register_materialized_input_map::<u32, u32, TestStruct, TestStruct, TestStruct, TestStruct, _, _>(
+                input.clone(),
+                hinput,
+                |test_struct| test_struct.id,
+                |test_struct| test_struct.id,
+                r#"{
+                "name": "input_MAP",
+                "case_sensitive": false,
+                "fields": [
+                    {"name":"id","case_sensitive":false,"columntype":{"nullable":false,"type":"BIGINT"},"unused":false},
+                    {"name":"b","case_sensitive":false,"columntype":{"nullable":true,"type":"BOOLEAN"},"unused":false},
+                    {"name":"i","case_sensitive":false,"columntype":{"nullable":true,"type":"BIGINT"},"unused":false},
+                    {"name":"s","case_sensitive":false,"columntype":{"nullable":true,"precision":-1,"type":"VARCHAR"},"unused":false}],
+                "primary_key": ["id"]}"#
+            );
+
+            Ok(catalog)
+        })
+        .unwrap();
+
+        let mut input_stream_handle = catalog
+            .input_collection_handle(&("input_map".into()))
+            .unwrap()
+            .handle
+            .configure_deserializer(RECORD_FORMAT.clone())
+            .unwrap();
+        let output_stream_handles = catalog.output_handles(&("input_map".into())).unwrap();
+        output_stream_handles.enable_count.enable();
+
+        for id in 1..=8 {
+            input_stream_handle
+                .insert(
+                    format!(r#"{{"id": {id}, "b": true, "s": "{id}"}}"#).as_bytes(),
+                    &None,
+                )
+                .unwrap();
+        }
+        input_stream_handle.flush().unwrap();
+        circuit.transaction().unwrap();
+
+        let readers = output_stream_handles.delta_handle.take_readers();
+        let whole = batch_to_json(readers.whole.deref());
+        assert_eq!(whole.lines().count(), 8);
+        let mut parts: Vec<String> = readers
+            .partitions
+            .iter()
+            .flat_map(|reader| {
+                batch_to_json(reader.deref())
+                    .lines()
+                    .map(String::from)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        parts.sort();
+        let mut whole: Vec<String> = whole.lines().map(String::from).collect();
+        whole.sort();
+        assert_eq!(parts, whole);
+        assert!(
+            readers.partitions.len() > 1,
+            "the workers hold the rows in parts"
+        );
+
+        let readers = output_stream_handles.delta_handle.take_readers();
+        assert_eq!(batch_to_json(readers.whole.deref()), "");
+        assert!(readers.partitions.is_empty());
     }
 }

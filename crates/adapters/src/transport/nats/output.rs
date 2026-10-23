@@ -44,7 +44,7 @@ mod test;
 
 /// Longest `Nats-Msg-Id` value [`MessageIdGenerator`] produces:
 /// `<u64 transaction>-<128-bit hash as 32 hex digits>-<u32 count>`.
-const MAX_MESSAGE_ID_LEN: usize = 20 + 1 + 32 + 1 + 10;
+pub(crate) const MAX_MESSAGE_ID_LEN: usize = 20 + 1 + 32 + 1 + 10;
 
 /// Produces the `Nats-Msg-Id` of each message under `message_id:
 /// content_hash`.

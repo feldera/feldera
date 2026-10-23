@@ -33,14 +33,14 @@ use pubsub::PubSubInputEndpoint;
 
 pub mod adhoc;
 mod empty;
-mod file;
+pub(crate) mod file;
 pub mod http;
 mod null;
 
 pub mod url;
 
 pub mod clock;
-mod s3;
+pub(crate) mod s3;
 
 #[cfg(feature = "with-kafka")]
 pub(crate) mod kafka;
@@ -55,10 +55,13 @@ pub(crate) mod s2;
 mod nexmark;
 
 #[cfg(feature = "with-pubsub")]
-mod pubsub;
+pub(crate) mod pubsub;
 
 #[cfg(feature = "with-redis")]
-mod redis;
+pub(crate) mod redis;
+
+#[cfg(any(test, feature = "testing"))]
+pub mod datagen_tests;
 
 use feldera_types::config::TransportConfig;
 use feldera_types::coordination::InputShard;
@@ -68,7 +71,7 @@ use redis::output::RedisOutputEndpoint;
 
 use crate::transport::empty::EmptyInputEndpoint;
 use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub use crate::transport::file::{set_barrier, set_failure};
 #[cfg(feature = "with-kafka")]
 use crate::transport::kafka::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint, KafkaOutputEndpoint};

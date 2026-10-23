@@ -476,10 +476,11 @@ impl<K> InputBuffer for DeZSetStreamBuffer<K>
 where
     K: DBData,
 {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         let updates = std::mem::take(&mut self.updates);
         self.handle.append(&mut updates.into());
         self.n_bytes = 0;
+        Ok(())
     }
 
     fn hash(&self, hasher: &mut dyn Hasher) {
@@ -640,7 +641,7 @@ where
     K: DBData + From<D>,
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + 'static,
 {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.buffer.flush()
     }
 
@@ -775,7 +776,7 @@ where
     D: for<'de> DeserializeWithContext<'de, C, Variant> + Send + 'static,
     C: Clone + Send + 'static,
 {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.buffer.flush()
     }
 
@@ -792,11 +793,36 @@ where
     }
 }
 
+/// The schema that an [`AvroStream`] decodes records with: the last one that the parser
+/// installed with [`AvroStream::configure_schema`]. Clones share it.
+#[cfg(feature = "with-avro")]
+#[derive(Clone, Default)]
+pub(crate) struct InstalledAvroSchema(Option<std::sync::Arc<(AvroSchema, AvroSchemaRefs)>>);
+
+#[cfg(feature = "with-avro")]
+impl InstalledAvroSchema {
+    /// Installs `schema`, whose named references `refs` resolves.
+    pub(crate) fn install(&mut self, schema: &AvroSchema, refs: &AvroSchemaRefs) {
+        self.0 = Some(std::sync::Arc::new((schema.clone(), refs.clone())));
+    }
+
+    /// Returns the installed schema and its references.
+    ///
+    /// Fails if the parser has not installed a schema yet.
+    pub(crate) fn get(&self) -> AnyResult<(&AvroSchema, &AvroSchemaRefs)> {
+        let (schema, refs) = self.0.as_deref().ok_or_else(|| {
+            anyhow!("the Avro stream has no schema: the parser must install one before it pushes records")
+        })?;
+        Ok((schema, refs))
+    }
+}
+
 /// `AvroStream` implementation that collects deserialized records
 /// into a Z-set.
 #[cfg(feature = "with-avro")]
 pub struct AvroZSetStream<K, D> {
     buffer: DeZSetStreamBuffer<K>,
+    schema: InstalledAvroSchema,
     metadata: MetadataVariant,
     phantom: PhantomData<D>,
 }
@@ -804,7 +830,10 @@ pub struct AvroZSetStream<K, D> {
 #[cfg(feature = "with-avro")]
 impl<K, D> Clone for AvroZSetStream<K, D> {
     fn clone(&self) -> Self {
-        Self::new(self.buffer.handle.clone())
+        Self {
+            schema: self.schema.clone(),
+            ..Self::new(self.buffer.handle.clone())
+        }
     }
 }
 
@@ -813,6 +842,7 @@ impl<K, D> AvroZSetStream<K, D> {
     pub fn new(handle: ZSetHandle<K>) -> Self {
         Self {
             buffer: DeZSetStreamBuffer::new(handle),
+            schema: InstalledAvroSchema::default(),
             metadata: MetadataVariant::default(),
             phantom: PhantomData,
         }
@@ -825,14 +855,18 @@ where
     K: DBData + From<D>,
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
 {
+    fn configure_schema(&mut self, schema: &AvroSchema, refs: &AvroSchemaRefs) -> AnyResult<()> {
+        self.schema.install(schema, refs);
+        Ok(())
+    }
+
     fn insert(
         &mut self,
         data: &AvroValue,
-        schema: &AvroSchema,
-        refs: &AvroSchemaRefs,
         n_bytes: usize,
         metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
+        let (schema, refs) = self.schema.get()?;
         let v: D = from_avro_value(data, schema, refs, self.metadata.get(metadata))
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
@@ -845,11 +879,10 @@ where
     fn delete(
         &mut self,
         data: &AvroValue,
-        schema: &AvroSchema,
-        refs: &AvroSchemaRefs,
         n_bytes: usize,
         metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
+        let (schema, refs) = self.schema.get()?;
         let v: D = from_avro_value(data, schema, refs, self.metadata.get(metadata))
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
@@ -880,7 +913,7 @@ where
     K: DBData + From<D>,
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
 {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.buffer.flush()
     }
 
@@ -1372,10 +1405,11 @@ where
     U: DBData,
     H: MapInput<K, V, U>,
 {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         let updates = std::mem::take(&mut self.updates);
         self.handle.append(&mut updates.into());
         self.n_bytes = 0;
+        Ok(())
     }
 
     fn len(&self) -> BufferSize {
@@ -1557,7 +1591,7 @@ where
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
     UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
 {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.buffer.flush()
     }
 
@@ -1725,7 +1759,7 @@ where
     H: MapInput<K, V, U>,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.buffer.flush()
     }
 
@@ -1754,6 +1788,7 @@ where
 {
     buffer: DeMapStreamBuffer<K, V, U, H>,
     value_key_func: VF,
+    schema: InstalledAvroSchema,
     metadata: MetadataVariant,
     phantom: PhantomData<(KD, VD)>,
 }
@@ -1768,7 +1803,10 @@ where
     VF: Clone,
 {
     fn clone(&self) -> Self {
-        Self::new(self.buffer.handle.clone(), self.value_key_func.clone())
+        Self {
+            schema: self.schema.clone(),
+            ..Self::new(self.buffer.handle.clone(), self.value_key_func.clone())
+        }
     }
 }
 
@@ -1784,6 +1822,7 @@ where
         Self {
             buffer: DeMapStreamBuffer::new(handle),
             value_key_func,
+            schema: InstalledAvroSchema::default(),
             metadata: MetadataVariant::default(),
             phantom: PhantomData,
         }
@@ -1801,14 +1840,18 @@ where
     H: MapInput<K, V, U>,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
+    fn configure_schema(&mut self, schema: &AvroSchema, refs: &AvroSchemaRefs) -> AnyResult<()> {
+        self.schema.install(schema, refs);
+        Ok(())
+    }
+
     fn insert(
         &mut self,
         data: &AvroValue,
-        schema: &AvroSchema,
-        refs: &AvroSchemaRefs,
         n_bytes: usize,
         metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
+        let (schema, refs) = self.schema.get()?;
         let v: VD = from_avro_value(data, schema, refs, self.metadata.get(metadata))
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
@@ -1824,11 +1867,10 @@ where
     fn delete(
         &mut self,
         data: &AvroValue,
-        schema: &AvroSchema,
-        refs: &AvroSchemaRefs,
         n_bytes: usize,
         metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
+        let (schema, refs) = self.schema.get()?;
         let v: VD = from_avro_value(data, schema, refs, self.metadata.get(metadata))
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
@@ -1865,7 +1907,7 @@ where
     H: MapInput<K, V, U>,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.buffer.flush()
     }
 
@@ -2058,7 +2100,7 @@ mod test {
         // A delete names the key; the last command for a key wins, so key 1
         // ends up deleted.
         stream.delete(b"1", &None).unwrap();
-        stream.flush();
+        stream.flush().unwrap();
         dbsp.transaction().unwrap();
         assert_eq!(
             output.consolidate(),
@@ -2182,8 +2224,8 @@ mod test {
             }
         }
 
-        zset_stream.flush();
-        map_stream.flush();
+        zset_stream.flush().unwrap();
+        map_stream.flush().unwrap();
 
         dbsp.transaction().unwrap();
 
@@ -2230,11 +2272,11 @@ mod test {
             let input = to_json_string(input).unwrap();
 
             zset_input.delete(input.as_bytes(), &None).unwrap();
-            zset_input.flush();
+            zset_input.flush().unwrap();
 
             let input_id = to_json_string(&id).unwrap();
             map_input.delete(input_id.as_bytes(), &None).unwrap();
-            map_input.flush();
+            map_input.flush().unwrap();
         }
 
         dbsp.transaction().unwrap();

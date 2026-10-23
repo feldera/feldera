@@ -1,9 +1,11 @@
-use crate::catalog::{SerBatchReader, SerBatchReaderHandle, SerTrace};
+use crate::catalog::{
+    ArrowRowSink, SerBatchReader, SerBatchReaderHandle, SerTrace, SnapshotReaders,
+};
 #[cfg(feature = "with-avro")]
 use crate::format::avro::serializer::{AvroSchemaSerializer, AvroSerializerError, avro_ser_config};
 use crate::{
     ControllerError,
-    catalog::{RecordFormat, SerBatch, SerCursor},
+    catalog::{RecordFormat, SerBatch, SerCursor, SerKeyRange},
 };
 use anyhow::{Result as AnyResult, anyhow};
 #[cfg(feature = "with-avro")]
@@ -12,12 +14,14 @@ use apache_avro::Schema as AvroSchema;
 use apache_avro::schema::NamesRef;
 #[cfg(feature = "with-avro")]
 use apache_avro::types::Value as AvroValue;
+use arrow::datatypes::SchemaRef;
+use arrow::record_batch::RecordBatch;
 #[cfg(feature = "with-dynamodb")]
 use aws_sdk_dynamodb::types::AttributeValue;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
 use dbsp::{
     Batch, BatchReader, OutputHandle, Trace,
-    dynamic::{Data, Factory},
+    dynamic::ClonableTrait,
     trace::{BatchReaderFactories, Cursor, TraceRole},
     typed_batch::{DynSpineSnapshot, SpineSnapshot},
 };
@@ -27,7 +31,7 @@ use dbsp::{
 };
 use dbsp::{
     DBWeight,
-    dynamic::{DowncastTrait, DynData, DynVec},
+    dynamic::{DowncastTrait, DynData},
 };
 use dbsp::{
     dynamic::Erase,
@@ -44,9 +48,9 @@ use feldera_types::{
     format::csv::CsvFormatConfig,
     serde_with_context::{SerializeWithContext, SqlSerdeConfig},
 };
-use rand::thread_rng;
 use serde::Serialize;
 use serde_arrow::ArrayBuilder;
+use serde_arrow::schema::SerdeArrowSchema;
 #[cfg(feature = "with-dynamodb")]
 use std::collections::HashMap;
 use std::{any::Any, collections::HashSet, fmt::Debug, iter::once};
@@ -134,27 +138,25 @@ where
     }
 }
 
-/// A wrapper type that adds the columns from E to records of type T.
-/// Both `T` and `E` must be structs or maps.
-#[derive(Serialize)]
-struct ExtraColumns<'a, T: Serialize, E: Serialize + ?Sized> {
-    #[serde(flatten)]
-    value: &'a T,
-    #[serde(flatten)]
-    extra_columns: &'a E,
+/// The rows that the static engine's cursors append, in a serde_arrow builder.
+struct ArrowBuilderSink(ArrayBuilder);
+
+impl ArrowRowSink for ArrowBuilderSink {
+    fn finish(&mut self) -> AnyResult<RecordBatch> {
+        Ok(self.0.to_record_batch()?)
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
-impl<C, T, E> SerializeWithContext<C> for ExtraColumns<'_, T, E>
-where
-    T: Serialize,
-    E: Serialize + ?Sized,
-{
-    fn serialize_with_context<S>(&self, serializer: S, _context: &C) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serde::Serialize::serialize(self, serializer)
-    }
+/// Returns the builder of `sink`, which a cursor of the static engine created.
+fn builder_of(sink: &mut dyn ArrowRowSink) -> AnyResult<&mut ArrayBuilder> {
+    sink.as_any_mut()
+        .downcast_mut::<ArrowBuilderSink>()
+        .map(|sink| &mut sink.0)
+        .ok_or_else(|| anyhow!("the Arrow row sink belongs to another engine"))
 }
 
 /// A serializer that encodes values to a byte array.
@@ -164,17 +166,6 @@ trait BytesSerializer: Send {
     fn serialize_arrow(
         &mut self,
         _val: &dyn ErasedSerialize,
-        _buf: &mut ArrayBuilder,
-    ) -> AnyResult<()> {
-        unimplemented!()
-    }
-
-    /// Serialize `val` to Arrow format, adding metadata columns from `metadata`.
-    /// `metadata` must be a struct or a map.
-    fn serialize_arrow_with_metadata(
-        &mut self,
-        _val: &dyn ErasedSerialize,
-        _metadata: &dyn ErasedSerialize,
         _buf: &mut ArrayBuilder,
     ) -> AnyResult<()> {
         unimplemented!()
@@ -283,23 +274,6 @@ impl BytesSerializer for ParquetSerializer {
         builder.push(val)?;
         Ok(())
     }
-
-    fn serialize_arrow_with_metadata(
-        &mut self,
-        val: &dyn ErasedSerialize,
-        metadata: &dyn ErasedSerialize,
-        builder: &mut ArrayBuilder,
-    ) -> AnyResult<()> {
-        {
-            let with_extras = ExtraColumns {
-                value: &val,
-                extra_columns: metadata,
-            };
-
-            builder.push(with_extras)?;
-            Ok(())
-        }
-    }
 }
 
 pub struct SerCollectionHandleImpl<B, KD, VD> {
@@ -363,6 +337,26 @@ where
             self.handle.concat(),
         )) as Arc<dyn SerBatchReader>
     }
+
+    fn take_readers(&self) -> SnapshotReaders {
+        let partitions = self.take_from_all();
+        let mut batches = partitions.iter().flat_map(|reader| reader.batches());
+        let whole = match batches.next() {
+            Some(first) => first.concat(batches.collect()),
+            // The mailboxes are empty now, so this concatenates no batches.
+            None => self.concat(),
+        };
+        SnapshotReaders { whole, partitions }
+    }
+}
+
+/// Appends `value` to `dst` as a datum of the Avro `schema`.
+#[cfg(feature = "with-avro")]
+fn write_avro_datum(schema: &AvroSchema, value: AvroValue, dst: &mut Vec<u8>) -> AnyResult<()> {
+    let mut datum = apache_avro::to_avro_datum(schema, value)
+        .map_err(|e| anyhow!("error serializing Avro value: {e}"))?;
+    dst.append(&mut datum);
+    Ok(())
 }
 
 #[cfg(feature = "with-dynamodb")]
@@ -452,25 +446,19 @@ where
     }
 }
 
-impl<B, KD, VD> SerBatchReader for SerBatchImpl<B, KD, VD>
+impl<B, KD, VD> SerBatchImpl<B, KD, VD>
 where
     B: BatchReader<Time = (), DynK = DynData> + Send + Sync,
     B::R: Into<i64>,
     KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
     VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
 {
-    fn key_count(&self) -> usize {
-        self.batch.inner().key_count_upper_bound()
-    }
-
-    fn len(&self) -> usize {
-        self.batch.inner().len_upper_bound()
-    }
-
-    fn cursor<'a>(
+    /// Creates a cursor that yields records in `record_format` and exposes the batch's
+    /// keys, which a key range seeks to and stops at.
+    fn keyed_cursor<'a>(
         &'a self,
         record_format: RecordFormat,
-    ) -> Result<Box<dyn SerCursor + Send + 'a>, ControllerError> {
+    ) -> Result<Box<dyn KeyedCursor + Send + 'a>, ControllerError> {
         Ok(match record_format {
             RecordFormat::Csv(config) => {
                 Box::new(<SerCursorImpl<'a, CsvSerializer, B, KD, VD>>::new(
@@ -514,6 +502,29 @@ where
             }
         })
     }
+}
+
+impl<B, KD, VD> SerBatchReader for SerBatchImpl<B, KD, VD>
+where
+    B: BatchReader<Time = (), DynK = DynData> + Send + Sync,
+    B::R: Into<i64>,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
+{
+    fn key_count(&self) -> usize {
+        self.batch.inner().key_count_upper_bound()
+    }
+
+    fn len(&self) -> usize {
+        self.batch.inner().len_upper_bound()
+    }
+
+    fn cursor<'a>(
+        &'a self,
+        record_format: RecordFormat,
+    ) -> Result<Box<dyn SerCursor + Send + 'a>, ControllerError> {
+        Ok(self.keyed_cursor(record_format)?)
+    }
 
     fn batches(&self) -> Vec<Arc<dyn SerBatch>> {
         self.batch
@@ -534,23 +545,226 @@ where
         )))
     }
 
-    fn sample_keys(&self, sample_size: usize, sample: &mut DynVec<DynData>) {
-        self.batch
-            .inner()
-            .sample_keys(&mut thread_rng(), sample_size, sample);
+    fn split(
+        self: Arc<Self>,
+        num_ranges: usize,
+        record_format: RecordFormat,
+    ) -> AnyResult<Vec<Box<dyn SerKeyRange>>> {
+        let factories = self.batch.inner().factories();
+        let mut bounds = factories.keys_factory().default_box();
+        self.batch.inner().partition_keys(num_ranges, &mut *bounds);
+
+        // Range `index` starts at bound `index - 1`, or at the first key, and ends before
+        // bound `index`, or after the last key.
+        let mut ranges: Vec<Box<dyn SerKeyRange>> = Vec::new();
+        for index in 0..=bounds.len() {
+            let start_key = {
+                let mut cursor = self.keyed_cursor(record_format.clone())?;
+                if index > 0 {
+                    cursor.seek_key_exact(bounds.index(index - 1).as_data());
+                }
+
+                // The key that the cursor landed on; a range without one is empty.
+                let Some(key) = cursor.get_key() else {
+                    continue;
+                };
+                let mut start_key = factories.key_factory().default_box();
+                key.clone_to(start_key.as_mut());
+                start_key
+            };
+            let end_key = (index < bounds.len()).then(|| {
+                let mut end_key = factories.key_factory().default_box();
+                bounds.index(index).as_data().clone_to(end_key.as_mut());
+                end_key
+            });
+            ranges.push(Box::new(KeyRange {
+                batch: self.clone(),
+                start_key,
+                end_key,
+                record_format: record_format.clone(),
+            }));
+        }
+        Ok(ranges)
+    }
+}
+
+/// The keys of a batch from `start_key`, which the batch holds, up to `end_key`, if any,
+/// which the range does not include.
+struct KeyRange<B, KD, VD>
+where
+    B: BatchReader,
+{
+    batch: Arc<SerBatchImpl<B, KD, VD>>,
+    start_key: Box<DynData>,
+    end_key: Option<Box<DynData>>,
+    record_format: RecordFormat,
+}
+
+impl<B, KD, VD> SerKeyRange for KeyRange<B, KD, VD>
+where
+    B: BatchReader<Time = (), DynK = DynData> + Send + Sync,
+    B::R: Into<i64>,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
+{
+    fn cursor(&self) -> AnyResult<Box<dyn SerCursor + Send + '_>> {
+        let mut cursor = self.batch.keyed_cursor(self.record_format.clone())?;
+
+        // Not `seek_key_exact`, so that the cursor can single-step afterward.
+        cursor.seek_key(self.start_key.as_data());
+
+        Ok(Box::new(SplitCursor {
+            cursor,
+            start_key: self.start_key.clone(),
+            end_key: self.end_key.clone(),
+        }))
+    }
+}
+
+/// A cursor over the keys of a [`KeyRange`].
+struct SplitCursor<'a> {
+    cursor: Box<dyn KeyedCursor + Send + 'a>,
+    start_key: Box<DynData>,
+    end_key: Option<Box<DynData>>,
+}
+
+impl SplitCursor<'_> {
+    fn finished(&self) -> bool {
+        if let Some(ref end_key) = self.end_key
+            && let Some(current_key) = self.cursor.get_key()
+        {
+            return current_key >= end_key.as_data();
+        }
+
+        false
+    }
+}
+
+impl SerCursor for SplitCursor<'_> {
+    fn key_valid(&self) -> bool {
+        self.cursor.key_valid() && !self.finished()
     }
 
-    fn keys_factory(&self) -> &'static dyn Factory<DynVec<DynData>> {
-        self.batch.inner().factories().keys_factory()
+    fn val_valid(&self) -> bool {
+        self.cursor.val_valid()
     }
 
-    fn key_factory(&self) -> &'static dyn Factory<DynData> {
-        self.batch.inner().factories().key_factory()
+    fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_key(dst)
     }
 
-    fn partition_keys(&self, num_partitions: usize, bounds: &mut DynVec<DynData>) {
-        self.batch.inner().partition_keys(num_partitions, bounds);
+    fn key_to_json(&mut self) -> AnyResult<serde_json::Value> {
+        self.cursor.key_to_json()
     }
+
+    #[cfg(feature = "with-dynamodb")]
+    fn key_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>> {
+        self.cursor.key_to_dynamodb_item()
+    }
+
+    fn serialize_key_fields(
+        &mut self,
+        fields: &HashSet<String>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.cursor.serialize_key_fields(fields, dst)
+    }
+
+    fn serialize_val_fields(
+        &mut self,
+        fields: &HashSet<String>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.cursor.serialize_val_fields(fields, dst)
+    }
+
+    #[cfg(feature = "with-avro")]
+    fn serialize_key_avro(
+        &mut self,
+        schema: &AvroSchema,
+        refs: &NamesRef<'_>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.cursor.serialize_key_avro(schema, refs, dst)
+    }
+
+    fn arrow_sink(&self, schema: SchemaRef) -> AnyResult<Box<dyn ArrowRowSink>> {
+        self.cursor.arrow_sink(schema)
+    }
+
+    fn append_key_to_arrow(&mut self, sink: &mut dyn ArrowRowSink) -> AnyResult<()> {
+        self.cursor.append_key_to_arrow(sink)
+    }
+
+    fn append_val_to_arrow(&mut self, sink: &mut dyn ArrowRowSink) -> AnyResult<()> {
+        self.cursor.append_val_to_arrow(sink)
+    }
+
+    fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_key_weight(dst)
+    }
+
+    fn serialize_val_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_val_weight(dst)
+    }
+
+    fn serialize_val(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
+        self.cursor.serialize_val(dst)
+    }
+
+    fn val_to_json(&mut self) -> AnyResult<serde_json::Value> {
+        self.cursor.val_to_json()
+    }
+
+    #[cfg(feature = "with-dynamodb")]
+    fn val_to_dynamodb_item(&mut self) -> AnyResult<HashMap<String, AttributeValue>> {
+        self.cursor.val_to_dynamodb_item()
+    }
+
+    #[cfg(feature = "with-avro")]
+    fn serialize_val_avro(
+        &mut self,
+        schema: &AvroSchema,
+        refs: &NamesRef<'_>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        self.cursor.serialize_val_avro(schema, refs, dst)
+    }
+
+    fn weight(&mut self) -> i64 {
+        self.cursor.weight()
+    }
+
+    fn step_key(&mut self) -> AnyResult<()> {
+        self.cursor.step_key()
+    }
+
+    fn step_val(&mut self) {
+        self.cursor.step_val();
+    }
+
+    fn rewind_keys(&mut self) -> AnyResult<()> {
+        self.cursor.rewind_keys()?;
+        self.cursor.seek_key(self.start_key.as_data());
+        Ok(())
+    }
+
+    fn rewind_vals(&mut self) {
+        self.cursor.rewind_vals();
+    }
+}
+
+/// A cursor of the static engine that exposes the keys of its batch.
+trait KeyedCursor: SerCursor {
+    /// Returns the current key, or `None` if the cursor has passed the last key.
+    fn get_key(&self) -> Option<&DynData>;
+
+    /// Moves the cursor to `key`, or to the first key after it, and returns whether the
+    /// batch holds `key`.
+    fn seek_key_exact(&mut self, key: &DynData) -> bool;
+
+    /// Moves the cursor to the first key that is at least `key`.
+    fn seek_key(&mut self, key: &DynData);
 }
 
 impl<B, KD, VD> SerBatch for SerBatchImpl<B, KD, VD>
@@ -751,22 +965,6 @@ where
         self.cursor.val_valid()
     }
 
-    fn key(&self) -> &DynData {
-        self.cursor.key()
-    }
-
-    fn get_key(&self) -> Option<&DynData> {
-        self.cursor.get_key()
-    }
-
-    fn val(&self) -> &DynData {
-        self.cursor.val().as_data()
-    }
-
-    fn get_val(&self) -> Option<&DynData> {
-        self.cursor.get_val().map(|v| v.as_data())
-    }
-
     fn serialize_key(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
         self.serializer.serialize(
             &SerializeWithContextWrapper::new(self.key.as_ref().unwrap(), &self.serde_config),
@@ -820,52 +1018,42 @@ where
         )
     }
 
-    fn serialize_key_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
-        self.serializer.serialize_arrow(
-            &SerializeWithContextWrapper::new(self.key.as_ref().unwrap(), &self.serde_config),
-            dst,
-        )
-    }
-
-    fn serialize_key_to_arrow_with_metadata(
-        &mut self,
-        metadata: &dyn ErasedSerialize,
-        dst: &mut ArrayBuilder,
-    ) -> AnyResult<()> {
-        self.serializer.serialize_arrow_with_metadata(
-            &SerializeWithContextWrapper::new(self.key.as_ref().unwrap(), &self.serde_config),
-            metadata,
-            dst,
-        )
-    }
-
-    fn serialize_val_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
-        self.serializer.serialize_arrow(
-            &SerializeWithContextWrapper::new(self.val.as_ref().unwrap(), &self.serde_config),
-            dst,
-        )
-    }
-
-    fn serialize_val_to_arrow_with_metadata(
-        &mut self,
-        metadata: &dyn erased_serde::Serialize,
-        dst: &mut ArrayBuilder,
-    ) -> AnyResult<()> {
-        self.serializer.serialize_arrow_with_metadata(
-            &SerializeWithContextWrapper::new(self.val.as_ref().unwrap(), &self.serde_config),
-            metadata,
-            dst,
-        )
-    }
-
     #[cfg(feature = "with-avro")]
-    fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
-        Ok(self.serializer.serialize_avro(
+    fn serialize_key_avro(
+        &mut self,
+        schema: &AvroSchema,
+        refs: &NamesRef<'_>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        let value = self.serializer.serialize_avro(
             &SerializeWithContextWrapper::new(self.key.as_ref().unwrap(), &self.serde_config),
             schema,
             refs,
             false,
-        )?)
+        )?;
+        write_avro_datum(schema, value, dst)
+    }
+
+    fn arrow_sink(&self, schema: SchemaRef) -> AnyResult<Box<dyn ArrowRowSink>> {
+        let schema = SerdeArrowSchema::try_from(schema.fields().as_ref())
+            .map_err(|e| anyhow!("Unable to convert schema to parquet/arrow: {e}"))?;
+        let builder =
+            ArrayBuilder::new(schema).map_err(|e| anyhow!("error creating array builder: {e}"))?;
+        Ok(Box::new(ArrowBuilderSink(builder)))
+    }
+
+    fn append_key_to_arrow(&mut self, sink: &mut dyn ArrowRowSink) -> AnyResult<()> {
+        self.serializer.serialize_arrow(
+            &SerializeWithContextWrapper::new(self.key.as_ref().unwrap(), &self.serde_config),
+            builder_of(sink)?,
+        )
+    }
+
+    fn append_val_to_arrow(&mut self, sink: &mut dyn ArrowRowSink) -> AnyResult<()> {
+        self.serializer.serialize_arrow(
+            &SerializeWithContextWrapper::new(self.val.as_ref().unwrap(), &self.serde_config),
+            builder_of(sink)?,
+        )
     }
 
     fn serialize_key_weight(&mut self, dst: &mut Vec<u8>) -> AnyResult<()> {
@@ -908,15 +1096,19 @@ where
     }
 
     #[cfg(feature = "with-avro")]
-    fn val_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
-        // println!("val_to_avro {:?}", &self.val);
-
-        Ok(self.serializer.serialize_avro(
+    fn serialize_val_avro(
+        &mut self,
+        schema: &AvroSchema,
+        refs: &NamesRef<'_>,
+        dst: &mut Vec<u8>,
+    ) -> AnyResult<()> {
+        let value = self.serializer.serialize_avro(
             &SerializeWithContextWrapper::new(self.val.as_ref().unwrap(), &self.serde_config),
             schema,
             refs,
             true,
-        )?)
+        )?;
+        write_avro_datum(schema, value, dst)
     }
 
     fn weight(&mut self) -> i64 {
@@ -924,11 +1116,12 @@ where
         unsafe { self.cursor.weight().downcast::<B::R>().clone().into() }
     }
 
-    fn step_key(&mut self) {
+    fn step_key(&mut self) -> AnyResult<()> {
         self.cursor.step_key();
         debug_assert!(!self.cursor.key_valid() || self.weight() != 0);
         self.update_key();
         self.update_val();
+        Ok(())
     }
 
     /// Advances the cursor to the next value.
@@ -940,11 +1133,12 @@ where
     }
 
     /// Rewinds the cursor to the first key.
-    fn rewind_keys(&mut self) {
+    fn rewind_keys(&mut self) -> AnyResult<()> {
         self.cursor.rewind_keys();
         debug_assert!(!self.cursor.key_valid() || self.weight() != 0);
         self.update_key();
         self.update_val();
+        Ok(())
     }
 
     /// Rewinds the cursor to the first value for current key.
@@ -952,6 +1146,20 @@ where
         self.cursor.rewind_vals();
         debug_assert!(!self.cursor.val_valid() || self.weight() != 0);
         self.update_val();
+    }
+}
+
+impl<'a, Ser, B, KD, VD> KeyedCursor for SerCursorImpl<'a, Ser, B, KD, VD>
+where
+    Ser: BytesSerializer,
+    B: BatchReader<Time = (), DynK = DynData> + Send,
+    B::R: Into<i64>,
+    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,
+    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + Send + Debug,
+    <B::Inner as DynBatchReader>::Cursor<'a>: Send,
+{
+    fn get_key(&self) -> Option<&DynData> {
+        self.cursor.get_key()
     }
 
     fn seek_key_exact(&mut self, key: &DynData) -> bool {
