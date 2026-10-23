@@ -60,25 +60,24 @@ where
         inclusive: (bool, bool),
         bounds: &Stream<C, (Box<B::Key>, Box<B::Key>)>,
     ) -> Stream<C, B> {
-        self.circuit()
-            .region("window", || {
-                let bound = TraceBound::new();
-                let bound_clone = bound.clone();
-                bounds.apply(move |(lower, _upper)| {
-                    bound_clone.set(lower.clone());
-                });
-                let trace = self
-                    .dyn_accumulate_integrate_trace_with_bound(factories, bound, TraceBound::new())
-                    .accumulate_delay_trace();
-                self.circuit().add_ternary_operator(
-                    StreamingTernaryWrapper::new(<Window<B, SpineSnapshot<B>>>::new(
-                        factories, inclusive,
-                    )),
-                    &trace,
-                    &self.dyn_accumulate(factories).into_enabled_stream(),
-                    bounds,
-                )
-            })
+        self.circuit().region("window", || {
+            let bound = TraceBound::new();
+            let bound_clone = bound.clone();
+            bounds.apply(move |(lower, _upper)| {
+                bound_clone.set(lower.clone());
+            });
+            let trace = self
+                .dyn_accumulate_integrate_trace_with_bound(factories, bound, TraceBound::new())
+                .accumulate_delay_trace();
+            self.circuit().add_ternary_operator(
+                StreamingTernaryWrapper::new(<Window<B, SpineSnapshot<B>>>::new(
+                    factories, inclusive,
+                )),
+                &trace,
+                &self.dyn_accumulate(factories).into_enabled_stream(),
+                bounds,
+            )
+        })
     }
 }
 

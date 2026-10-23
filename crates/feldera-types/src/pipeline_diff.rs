@@ -599,7 +599,9 @@ pub fn compute_pipeline_diff(
         .iter()
         .filter(|(k, config)| {
             !new_config.inputs.contains_key(*k)
-                && !diff.as_ref().map(|(mir_diff, _)| {
+                && !diff
+                    .as_ref()
+                    .map(|(mir_diff, _)| {
                         mir_diff
                             .removed_tables()
                             .iter()
@@ -638,10 +640,7 @@ pub fn compute_pipeline_diff(
                 && !diff
                     .as_ref()
                     .map(|(mir_diff, _)| {
-                        mir_diff
-                            .removed_views()
-                            .iter()
-                            .any(|v| v == &config.stream)
+                        mir_diff.removed_views().iter().any(|v| v == &config.stream)
                     })
                     .unwrap_or(true)
         })

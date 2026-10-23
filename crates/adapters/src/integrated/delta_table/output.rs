@@ -314,9 +314,9 @@ impl DeltaTableWriter {
         is_index: bool,
         output_buffered: bool,
     ) -> Result<Self, ControllerError> {
-        config.validate().map_err(|e| {
-            ControllerError::invalid_transport_configuration(endpoint_name, &e)
-        })?;
+        config
+            .validate()
+            .map_err(|e| ControllerError::invalid_transport_configuration(endpoint_name, &e))?;
 
         if let Some(advice) = unbuffered_merge_advice(config, output_buffered) {
             warn!("delta_table {endpoint_name}: {advice}");

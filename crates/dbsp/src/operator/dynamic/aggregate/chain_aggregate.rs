@@ -64,34 +64,33 @@ where
 
         let circuit = self.circuit();
 
-        circuit
-            .region("chain_aggregate", || {
-                let bounds = TraceBounds::unbounded();
+        circuit.region("chain_aggregate", || {
+            let bounds = TraceBounds::unbounded();
 
-                let feedback = circuit.add_accumulate_integrate_trace_feedback::<Spine<OZ>>(
-                    persistent_id,
-                    output_factories,
-                    bounds,
-                );
+            let feedback = circuit.add_accumulate_integrate_trace_feedback::<Spine<OZ>>(
+                persistent_id,
+                output_factories,
+                bounds,
+            );
 
-                let output = circuit
-                    .add_binary_operator(
-                        StreamingBinaryWrapper::new(ChainAggregate::new(
-                            output_factories,
-                            finit,
-                            fupdate,
-                        )),
-                        &self
-                            .dyn_shard_accumulate(input_factories)
-                            .into_enabled_stream(),
-                        &feedback.delayed_trace,
-                    )
-                    .mark_sharded();
+            let output = circuit
+                .add_binary_operator(
+                    StreamingBinaryWrapper::new(ChainAggregate::new(
+                        output_factories,
+                        finit,
+                        fupdate,
+                    )),
+                    &self
+                        .dyn_shard_accumulate(input_factories)
+                        .into_enabled_stream(),
+                    &feedback.delayed_trace,
+                )
+                .mark_sharded();
 
-                feedback.connect(&output, output_factories);
+            feedback.connect(&output, output_factories);
 
-                output
-            })
+            output
+        })
     }
 }
 

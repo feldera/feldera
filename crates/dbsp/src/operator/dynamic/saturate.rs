@@ -79,43 +79,42 @@ where
 
         self.circuit()
             .cache_get_or_insert_with(SaturateId::new(self.stream_id()), || {
-                self.circuit()
-                    .region("saturate", || {
-                        let delayed_trace = self
-                            .dyn_shard_accumulate_trace(factories, factories)
-                            .accumulate_delay_trace();
+                self.circuit().region("saturate", || {
+                    let delayed_trace = self
+                        .dyn_shard_accumulate_trace(factories, factories)
+                        .accumulate_delay_trace();
 
-                        let ghost = self.circuit().add_binary_operator(
-                            StreamingBinaryWrapper::new(Saturate::new(factories)),
-                            &self.dyn_shard_accumulate(factories).into_enabled_stream(),
-                            &delayed_trace,
-                        );
+                    let ghost = self.circuit().add_binary_operator(
+                        StreamingBinaryWrapper::new(Saturate::new(factories)),
+                        &self.dyn_shard_accumulate(factories).into_enabled_stream(),
+                        &delayed_trace,
+                    );
 
-                        ghost.mark_sharded();
+                    ghost.mark_sharded();
 
-                        let output_factories = factories.clone();
+                    let output_factories = factories.clone();
 
-                        // Plus
-                        let result = self.circuit().add_binary_operator(
-                            AccumulateApply2::new(
-                                move |stream, saturation| {
-                                    SpineSnapshot::concat(
-                                        output_factories.clone(),
-                                        vec![&stream, &saturation],
-                                    )
-                                },
-                                Location::caller(),
-                            ),
-                            &self.dyn_shard_accumulate(factories).into_enabled_stream(),
-                            &ghost.dyn_accumulate(factories).into_enabled_stream(),
-                        );
+                    // Plus
+                    let result = self.circuit().add_binary_operator(
+                        AccumulateApply2::new(
+                            move |stream, saturation| {
+                                SpineSnapshot::concat(
+                                    output_factories.clone(),
+                                    vec![&stream, &saturation],
+                                )
+                            },
+                            Location::caller(),
+                        ),
+                        &self.dyn_shard_accumulate(factories).into_enabled_stream(),
+                        &ghost.dyn_accumulate(factories).into_enabled_stream(),
+                    );
 
-                        // `result` is also the saturated version of the sharded stream.
-                        self.circuit()
-                            .cache_insert(SaturateId::new(self.stream_id()), result.clone());
-                        result.mark_sharded();
-                        result
-                    })
+                    // `result` is also the saturated version of the sharded stream.
+                    self.circuit()
+                        .cache_insert(SaturateId::new(self.stream_id()), result.clone());
+                    result.mark_sharded();
+                    result
+                })
             })
             .clone()
     }
@@ -126,45 +125,44 @@ where
     ) -> Stream<RootCircuit, Option<SpineSnapshot<OrdIndexedZSet<K, V>>>> {
         self.circuit()
             .cache_get_or_insert_with(BalancedSaturateId::new(self.stream_id()), || {
-                self.circuit()
-                    .region("saturate_balanced", || {
-                        // let stream = self.dyn_shard(&factories.batch_factories);
+                self.circuit().region("saturate_balanced", || {
+                    // let stream = self.dyn_shard(&factories.batch_factories);
 
-                        // let delayed_trace = stream
-                        //     .dyn_accumulate_trace(
-                        //         &factories.trace_factories,
-                        //         &factories.batch_factories,
-                        //     )
-                        //     .accumulate_delay_trace();
+                    // let delayed_trace = stream
+                    //     .dyn_accumulate_trace(
+                    //         &factories.trace_factories,
+                    //         &factories.batch_factories,
+                    //     )
+                    //     .accumulate_delay_trace();
 
-                        let (accumulator, trace) =
-                            self.dyn_accumulate_trace_balanced(factories, factories);
+                    let (accumulator, trace) =
+                        self.dyn_accumulate_trace_balanced(factories, factories);
 
-                        let delayed_trace = trace.accumulate_delay_trace();
+                    let delayed_trace = trace.accumulate_delay_trace();
 
-                        let ghost = self.circuit().add_binary_operator(
-                            StreamingBinaryWrapper::new(Saturate::new(factories)),
-                            &accumulator,
-                            &delayed_trace,
-                        );
+                    let ghost = self.circuit().add_binary_operator(
+                        StreamingBinaryWrapper::new(Saturate::new(factories)),
+                        &accumulator,
+                        &delayed_trace,
+                    );
 
-                        let output_factories = factories.clone();
+                    let output_factories = factories.clone();
 
-                        // Plus
-                        self.circuit().add_binary_operator(
-                            AccumulateApply2::new(
-                                move |stream, saturation| {
-                                    SpineSnapshot::concat(
-                                        output_factories.clone(),
-                                        vec![&stream, &saturation],
-                                    )
-                                },
-                                Location::caller(),
-                            ),
-                            &accumulator,
-                            &ghost.dyn_accumulate(factories).into_enabled_stream(),
-                        )
-                    })
+                    // Plus
+                    self.circuit().add_binary_operator(
+                        AccumulateApply2::new(
+                            move |stream, saturation| {
+                                SpineSnapshot::concat(
+                                    output_factories.clone(),
+                                    vec![&stream, &saturation],
+                                )
+                            },
+                            Location::caller(),
+                        ),
+                        &accumulator,
+                        &ghost.dyn_accumulate(factories).into_enabled_stream(),
+                    )
+                })
             })
             .clone()
     }
