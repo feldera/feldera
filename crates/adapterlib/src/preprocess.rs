@@ -203,7 +203,7 @@ impl PreprocessorWatchdog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use feldera_sqllib::{SqlString, Variant};
+    use feldera_types::variant::VariantValue;
     use serde_json::json;
 
     /// Preprocessor whose output depends on connector metadata: it prepends
@@ -223,8 +223,8 @@ mod tests {
                 return (data.to_vec(), vec![]);
             };
             let mut output = Vec::new();
-            if let Some(Variant::String(topic)) = metadata.get_by_name("topic") {
-                output.extend_from_slice(topic.str().as_bytes());
+            if let Some(VariantValue::String(topic)) = metadata.get_by_name("topic") {
+                output.extend_from_slice(topic.as_bytes());
                 output.push(b':');
             }
             output.extend_from_slice(data);
@@ -279,7 +279,7 @@ mod tests {
 
     fn make_metadata() -> ConnectorMetadata {
         let mut metadata = ConnectorMetadata::new();
-        metadata.insert("topic", Variant::String(SqlString::from("events")));
+        metadata.insert("topic", VariantValue::String("events".into()));
         metadata
     }
 

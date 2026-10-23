@@ -1012,7 +1012,7 @@ fn insert_flat_variant<S: parquet_variant::BuilderSpecificState>(
 
 /// Render an encoded map key as a Parquet variant object field name; see
 /// `variant_binary::variant_object_key`.
-fn flat_variant_object_key(key: &[u8]) -> Result<Cow<'_, str>, String> {
+pub(crate) fn flat_variant_object_key(key: &[u8]) -> Result<Cow<'_, str>, String> {
     let p = &key[1..];
     Ok(match key[0] {
         TAG_STRING => Cow::Borrowed(std::str::from_utf8(p).expect("encoded string must be UTF-8")),
@@ -1199,8 +1199,8 @@ pub(crate) fn build_document_infallible(
     }
 }
 
-/// The connector-metadata boundary: the adapters always build metadata as
-/// the enum `Variant`, and a metadata DEFAULT expression for a FlatVariant
+/// The connector-metadata boundary: the record deserializer receives metadata
+/// as the enum `Variant`, and a metadata DEFAULT expression for a FlatVariant
 /// column converts it once here. Goes away with the enum.
 #[allow(deprecated)]
 impl From<&Variant> for FlatVariant {

@@ -456,7 +456,7 @@ fn insert_variant<S: parquet_variant::BuilderSpecificState>(
 /// renders an integer key as its digits, so this does the same rather than
 /// rejecting a value the other encoding accepts. Keys that JSON also refuses
 /// are refused here.
-fn variant_object_key(key: &Variant) -> Result<Cow<'_, str>, String> {
+pub(crate) fn variant_object_key(key: &Variant) -> Result<Cow<'_, str>, String> {
     Ok(match key {
         Variant::String(key) => Cow::Borrowed(key.str()),
         Variant::TinyInt(v) => Cow::Owned(v.to_string()),
@@ -472,20 +472,26 @@ fn variant_object_key(key: &Variant) -> Result<Cow<'_, str>, String> {
 }
 
 /// The Parquet variant decimal that holds `significand` at `scale`, in the
-/// narrowest width that fits.
+/// narrowest width that fits. A width can take `significand`'s type and still
+/// refuse its digits or its scale, so a refusal moves on to the next width.
 pub(crate) fn parquet_decimal(
     significand: i128,
     scale: u8,
 ) -> Result<ParquetVariant<'static, 'static>, String> {
     use parquet_variant::{VariantDecimal4, VariantDecimal8, VariantDecimal16};
-    let bad = |e| format!("cannot encode a variant decimal: {e}");
-    Ok(if let Ok(v) = i32::try_from(significand) {
-        ParquetVariant::Decimal4(VariantDecimal4::try_new(v, scale).map_err(bad)?)
-    } else if let Ok(v) = i64::try_from(significand) {
-        ParquetVariant::Decimal8(VariantDecimal8::try_new(v, scale).map_err(bad)?)
-    } else {
-        ParquetVariant::Decimal16(VariantDecimal16::try_new(significand, scale).map_err(bad)?)
-    })
+    if let Ok(narrow) = i32::try_from(significand)
+        && let Ok(decimal) = VariantDecimal4::try_new(narrow, scale)
+    {
+        return Ok(ParquetVariant::Decimal4(decimal));
+    }
+    if let Ok(narrow) = i64::try_from(significand)
+        && let Ok(decimal) = VariantDecimal8::try_new(narrow, scale)
+    {
+        return Ok(ParquetVariant::Decimal8(decimal));
+    }
+    VariantDecimal16::try_new(significand, scale)
+        .map(ParquetVariant::Decimal16)
+        .map_err(|e| format!("cannot encode a variant decimal: {e}"))
 }
 
 /// The encoding has no unsigned types, so a `u64` becomes an `Int64` when it
@@ -743,6 +749,61 @@ mod test {
             )),
             Variant::SqlDecimal((123_456_789_012_345_678, 9))
         );
+    }
+
+    /// A decimal encodes in the narrowest width that holds both its digits and its scale,
+    /// through either encoder, and fails only past 38 of either.
+    #[test]
+    fn decimals_encode_in_the_narrowest_width_that_holds_them() {
+        let cases = [
+            (
+                (999_999_999, 9),
+                Some(ParquetVariant::Decimal4(
+                    VariantDecimal4::try_new(999_999_999, 9).unwrap(),
+                )),
+            ),
+            // Fits an `i32`, but ten digits are too many for four bytes.
+            (
+                (1_500_000_000, 0),
+                Some(ParquetVariant::Decimal8(
+                    VariantDecimal8::try_new(1_500_000_000, 0).unwrap(),
+                )),
+            ),
+            // Fits an `i32`, but a scale of 10 is too large for four bytes.
+            (
+                (1, 10),
+                Some(ParquetVariant::Decimal8(
+                    VariantDecimal8::try_new(1, 10).unwrap(),
+                )),
+            ),
+            (
+                (-5_000_000_000_000_000_000, 0),
+                Some(ParquetVariant::Decimal16(
+                    VariantDecimal16::try_new(-5_000_000_000_000_000_000, 0).unwrap(),
+                )),
+            ),
+            (
+                (1, 19),
+                Some(ParquetVariant::Decimal16(
+                    VariantDecimal16::try_new(1, 19).unwrap(),
+                )),
+            ),
+            ((10i128.pow(38), 0), None),
+            ((1, 39), None),
+        ];
+        for ((significand, scale), expected) in cases {
+            let value = Variant::SqlDecimal((significand, scale));
+            let encoded = to_variant_binary(&value).ok();
+            let decoded = encoded
+                .as_ref()
+                .map(|(metadata, value)| ParquetVariant::try_new(metadata, value).unwrap());
+            assert_eq!(decoded, expected, "{value:?}");
+            assert_eq!(
+                crate::flat_variant::flat_variant_to_parquet(&FlatVariant::from(&value)).ok(),
+                encoded,
+                "the encoders disagree on {value:?}"
+            );
+        }
     }
 
     #[test]

@@ -23,13 +23,13 @@ use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{
     InputEndpoint, InputReaderCommand, Resume, Watermark, parse_resume_info,
 };
-use feldera_sqllib::{ByteArray, SqlString, Timestamp, Variant};
 use feldera_types::config::FtModel;
 use feldera_types::coordination::InputShard;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::{
     CompiledHeaderFilter, KafkaInputConfig, KafkaStartFromConfig,
 };
+use feldera_types::variant::VariantValue;
 use itertools::Itertools;
 use rdkafka::client::OAuthToken;
 use rdkafka::config::RDKafkaLogLevel;
@@ -1393,26 +1393,28 @@ impl PartitionReceiver {
         if self.config.include_topic == Some(true) {
             metadata.insert(
                 "kafka_topic",
-                Variant::String(SqlString::from(message.topic())),
+                VariantValue::String(message.topic().to_string()),
             );
         };
 
         if self.config.include_timestamp == Some(true) {
             let timestamp = message.timestamp().to_millis();
-            if let Some(timestamp) = timestamp {
+            if let Some(timestamp) = timestamp
+                && let Some(timestamp) = DateTime::<Utc>::from_timestamp_millis(timestamp)
+            {
                 metadata.insert(
                     "kafka_timestamp",
-                    Variant::Timestamp(Timestamp::from_milliseconds(timestamp)),
+                    VariantValue::TimestampNtzMicros(timestamp.naive_utc()),
                 );
             }
         }
 
         if self.config.include_partition == Some(true) {
-            metadata.insert("kafka_partition", Variant::Int(message.partition()));
+            metadata.insert("kafka_partition", VariantValue::Int32(message.partition()));
         }
 
         if self.config.include_offset == Some(true) {
-            metadata.insert("kafka_offset", Variant::BigInt(message.offset()));
+            metadata.insert("kafka_offset", VariantValue::Int64(message.offset()));
         }
 
         if self.config.include_headers == Some(true) {
@@ -1422,15 +1424,15 @@ impl PartitionReceiver {
                 for i in 0..headers.count() {
                     let header = headers.get(i);
                     let value = if let Some(value) = header.value {
-                        Variant::Binary(ByteArray::from(value))
+                        VariantValue::Binary(value.to_vec())
                     } else {
-                        Variant::SqlNull
+                        VariantValue::Null
                     };
-                    kafka_headers.insert(Variant::String(SqlString::from(header.key)), value);
+                    kafka_headers.insert(header.key.to_string(), value);
                 }
             }
 
-            metadata.insert("kafka_headers", Variant::Map(Arc::new(kafka_headers)));
+            metadata.insert("kafka_headers", VariantValue::Object(kafka_headers));
         }
 
         Some(metadata)
