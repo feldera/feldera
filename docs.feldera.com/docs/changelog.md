@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.369.0
+
 - Python SDK: the new `reloadable_tables` argument of `Pipeline.start()`,
   `start_paused()`, `start_standby()`, and `restart()` lists the tables that
   bootstrapping may reload. With `bootstrap_policy=BootstrapPolicy.ALLOW`, the
