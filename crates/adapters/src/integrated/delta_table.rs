@@ -5,6 +5,8 @@ pub(crate) mod input;
 pub(crate) mod merge;
 pub(crate) mod output;
 
+pub use output::delta_output_serde_config;
+
 #[cfg(test)]
 mod test;
 

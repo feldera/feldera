@@ -1,3 +1,5 @@
+//! Serde `trait Serializer` implementation that converts values to the Avro format.
+
 use apache_avro::Decimal;
 use apache_avro::schema::{Name, NamesRef, RecordSchema};
 use apache_avro::{Schema as AvroSchema, types::Value as AvroValue};
@@ -13,7 +15,7 @@ use std::fmt::{Display, Formatter};
 use std::iter::once;
 use std::mem::take;
 
-use super::schema::{OptionalField, schema_unwrap_optional};
+use dbsp_adapters::format::avro::schema::{OptionalField, schema_unwrap_optional};
 
 /// Serde configuration expected by [`AvroSchemaSerializer`].
 pub fn avro_ser_config() -> SqlSerdeConfig {

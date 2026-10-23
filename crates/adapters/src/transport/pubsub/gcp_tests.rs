@@ -6,8 +6,9 @@
 //! `./bin/gcloud auth application-default login`.
 //! Detailed instructions: <https://cloud.google.com/pubsub/docs/authentication#client-libs>
 
-use dbsp::circuit::tokio::TOKIO;
+use crate::test::engine_test;
 use feldera_adapterlib::test::{ConnectorTestEngine, InputOptions, Updates};
+use feldera_storage::tokio::TOKIO;
 use proptest::prelude::*;
 use serde_json::json;
 use tracing::info;
@@ -141,6 +142,7 @@ fn config() -> ProptestConfig {
 }
 
 /// Random batches arrive through a subscription, with Application Default Credentials.
+#[engine_test]
 pub fn random_input_with_auth(engine: &dyn ConnectorTestEngine) {
     proptest!(config(), |(data in rows::batches(&relation(), "id", 0..=10, 100), topic_id in 0..1000000)| {
         crate::ensure_default_crypto_provider();
@@ -156,6 +158,7 @@ pub fn random_input_with_auth(engine: &dyn ConnectorTestEngine) {
 
 /// Random batches arrive through a subscription, with credentials in the connector's
 /// configuration.
+#[engine_test]
 pub fn random_input_with_credentials(engine: &dyn ConnectorTestEngine) {
     proptest!(config(), |(data in rows::batches(&relation(), "id", 0..=10, 100), topic_id in 0..1000000)| {
         crate::ensure_default_crypto_provider();
@@ -181,6 +184,7 @@ pub fn random_input_with_credentials(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Two subscribers with filters split random batches between them.
+#[engine_test]
 pub fn random_multiple_subscribers(engine: &dyn ConnectorTestEngine) {
     proptest!(config(), |(data in rows::batches(&relation(), "id", 0..=10, 100), topic_id in 0..1000000)| {
         crate::ensure_default_crypto_provider();

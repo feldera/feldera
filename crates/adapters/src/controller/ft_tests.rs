@@ -2,10 +2,10 @@
 //! changed connectors, snapshots that output connectors receive once, and the publication
 //! and the activity of checkpoints.
 
+use crate::test::engine_test;
 use std::borrow::Cow;
-use std::collections::VecDeque;
 use std::fs::{File, create_dir};
-use std::io::{ErrorKind, Write};
+use std::io::Write;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,13 +16,13 @@ use csv::WriterBuilder as CsvWriterBuilder;
 use feldera_adapterlib::test::{default_timeout_ms, wait};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, PipelineConfig};
-use feldera_types::constants::{CHECKPOINT_FILE_NAME, STATE_FILE};
 use serde_json::json;
 use tempfile::{NamedTempFile, TempDir};
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::Controller;
+use crate::engine::PipelineStorage;
 use crate::test::init_test_logger;
 use crate::test::pipeline::PipelineTestEngine;
 use crate::test::suites::controller::{
@@ -356,7 +356,8 @@ fn test_ft(engine: &dyn PipelineTestEngine, rounds: &[FtTestRound]) {
         if do_checkpoint || immediate_checkpoint {
             checkpointed_records = total_records;
 
-            // Read the checkpoint file and make sure that:
+            // Read the stored state to resume from and make sure that, as
+            // JSON:
             //
             // - The TABOO string does not appear in it.  It must not be in
             //   there because it appears only in the expanded version of the
@@ -365,19 +366,11 @@ fn test_ft(engine: &dyn PipelineTestEngine, rounds: &[FtTestRound]) {
             // - The INPUT_SECRET_REFERENCE and OUTPUT_SECRET_REFERENCE strings
             //   do appear in it.  These must be there because they are what
             //   expands to the secrets.
-            //
-            //   It is valuable to check for these because this gives us some
-            //   confidence that the file isn't encoded in some form such that
-            //   TABOO appears but just not literally.  That is, our check for
-            //   TABOO would fail if TABOO were to be base64-encoded, but in
-            //   that case it's likely that INPUT_SECRET_REFERENCE and
-            //   OUTPUT_SECRET_REFERENCE are also base64-encoded, so that these
-            //   tests would fail.
-            //
-            //   (As of this writing, the checkpoint file is encoded in
-            //   plaintext JSON, but this check will alert us if that changes
-            //   without updating this test.)
-            let checkpoint = std::fs::read(storage_dir.join(STATE_FILE)).unwrap();
+            let checkpoint = open_storage(engine, &config)
+                .latest_checkpoint()
+                .unwrap()
+                .expect("the pipeline stored no state to resume from");
+            let checkpoint = serde_json::to_vec(&checkpoint).unwrap();
             assert!(!contains_subslice(&checkpoint, TABOO.as_bytes()));
             assert!(contains_subslice(
                 &checkpoint,
@@ -404,6 +397,7 @@ fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
         .any(|window| window == needle)
 }
 
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn ft_with_checkpoints(engine: &dyn PipelineTestEngine) {
     test_ft(
         engine,
@@ -417,6 +411,7 @@ pub fn ft_with_checkpoints(engine: &dyn PipelineTestEngine) {
     );
 }
 
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn ft_immediate_checkpoints(engine: &dyn PipelineTestEngine) {
     test_ft(
         engine,
@@ -439,6 +434,7 @@ pub fn ft_immediate_checkpoints(engine: &dyn PipelineTestEngine) {
     );
 }
 
+#[engine_test(requires(Storage, FaultTolerance))]
 pub fn ft_without_checkpoints(engine: &dyn PipelineTestEngine) {
     test_ft(
         engine,
@@ -452,6 +448,7 @@ pub fn ft_without_checkpoints(engine: &dyn PipelineTestEngine) {
     );
 }
 
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn ft_with_checkpoints_with_pauses(engine: &dyn PipelineTestEngine) {
     test_ft(
         engine,
@@ -465,6 +462,7 @@ pub fn ft_with_checkpoints_with_pauses(engine: &dyn PipelineTestEngine) {
     );
 }
 
+#[engine_test(requires(Storage, FaultTolerance))]
 pub fn ft_without_checkpoints_with_pauses(engine: &dyn PipelineTestEngine) {
     test_ft(
         engine,
@@ -478,6 +476,7 @@ pub fn ft_without_checkpoints_with_pauses(engine: &dyn PipelineTestEngine) {
     );
 }
 
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn ft_alternating(engine: &dyn PipelineTestEngine) {
     test_ft(
         engine,
@@ -496,6 +495,7 @@ pub fn ft_alternating(engine: &dyn PipelineTestEngine) {
     );
 }
 
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn ft_initially_zero_without_checkpoint(engine: &dyn PipelineTestEngine) {
     test_ft(
         engine,
@@ -512,6 +512,7 @@ pub fn ft_initially_zero_without_checkpoint(engine: &dyn PipelineTestEngine) {
     );
 }
 
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn ft_initially_zero_with_checkpoint(engine: &dyn PipelineTestEngine) {
     test_ft(
         engine,
@@ -580,6 +581,7 @@ fn remove_output(mut config: PipelineConfig) -> PipelineConfig {
     config
 }
 
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn ft_modified_connectors(engine: &dyn PipelineTestEngine) {
     test_ft(
         engine,
@@ -611,6 +613,7 @@ pub fn ft_modified_connectors(engine: &dyn PipelineTestEngine) {
 ///
 /// Round 0 is handled separately because that is the one round where the
 /// (empty) snapshot is sent.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn ft_send_snapshot_delivered_once(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -727,6 +730,7 @@ pub fn ft_send_snapshot_delivered_once(engine: &dyn PipelineTestEngine) {
 ///   file is repopulated with the full view state.
 /// * Round 2 (`send_snapshot: true` unchanged, 500 more records) -- the
 ///   snapshot is not re-sent; only the new deltas reach the file.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn ft_send_snapshot_resent_on_flag_flip(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -856,6 +860,7 @@ pub fn ft_send_snapshot_resent_on_flag_flip(engine: &dyn PipelineTestEngine) {
 /// End-to-end: modified `send_snapshot: true` delta sink delivers its
 /// snapshot on a restart that never calls `start()` (stays paused).
 #[cfg(feature = "with-deltalake")]
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn ft_send_snapshot_delta_delivered_while_paused(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -957,16 +962,23 @@ pub fn ft_send_snapshot_delta_delivered_while_paused(engine: &dyn PipelineTestEn
 
 /// The UUIDs in the checkpoint catalog, oldest first, or an empty list if the
 /// catalog does not exist yet.
-fn published_checkpoints(storage_dir: &Path) -> Vec<Uuid> {
-    match std::fs::read(storage_dir.join(CHECKPOINT_FILE_NAME)) {
-        Ok(bytes) => serde_json::from_slice::<VecDeque<CheckpointMetadata>>(&bytes)
-            .unwrap()
-            .iter()
-            .map(|metadata| metadata.uuid)
-            .collect(),
-        Err(error) if error.kind() == ErrorKind::NotFound => Vec::new(),
-        Err(error) => panic!("cannot read checkpoint catalog: {error}"),
-    }
+fn published_checkpoints(engine: &dyn PipelineTestEngine, config: &PipelineConfig) -> Vec<Uuid> {
+    open_storage(engine, config)
+        .checkpoints()
+        .unwrap()
+        .iter()
+        .map(|metadata| metadata.uuid)
+        .collect()
+}
+
+/// The storage that `config` names, opened as `engine` opens it.
+fn open_storage(
+    engine: &dyn PipelineTestEngine,
+    config: &PipelineConfig,
+) -> Arc<dyn PipelineStorage> {
+    engine.open_storage()(config)
+        .unwrap()
+        .expect("the configuration names no storage")
 }
 
 /// True if a checkpoint directory exists in `storage_dir`, which means the
@@ -987,6 +999,7 @@ fn checkpoint_dir_exists(storage_dir: &Path) -> bool {
 /// covers, and publishes the checkpoint only then.  Publishing before the wait
 /// would leave a checkpoint that looks restorable but whose output never
 /// reached its sinks (feldera/feldera#7031).
+#[engine_test(requires(Storage, Checkpoints, StaticStorageLayout))]
 pub fn checkpoint_publishes_only_after_output_completes(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -1068,7 +1081,7 @@ pub fn checkpoint_publishes_only_after_output_completes(engine: &dyn PipelineTes
         0
     );
 
-    let before = published_checkpoints(&storage_dir);
+    let before = published_checkpoints(engine, &config);
     let (sender, receiver) = oneshot::channel();
     controller.start_checkpoint(Box::new(move |result| sender.send(result).unwrap()));
 
@@ -1086,7 +1099,7 @@ pub fn checkpoint_publishes_only_after_output_completes(engine: &dyn PipelineTes
         "the connector drained, so it never held the checkpoint back"
     );
     assert_eq!(
-        published_checkpoints(&storage_dir),
+        published_checkpoints(engine, &config),
         before,
         "the checkpoint was published while its output was still stuck in a connector"
     );
@@ -1099,7 +1112,7 @@ pub fn checkpoint_publishes_only_after_output_completes(engine: &dyn PipelineTes
 
     let mut expected = before;
     expected.push(uuid);
-    assert_eq!(published_checkpoints(&storage_dir), expected);
+    assert_eq!(published_checkpoints(engine, &config), expected);
     assert_eq!(
         output_endpoint_metrics(&controller, "test_output1").transmitted_records,
         RECORDS as u64
@@ -1108,17 +1121,17 @@ pub fn checkpoint_publishes_only_after_output_completes(engine: &dyn PipelineTes
     controller.stop().unwrap();
 }
 
-/// The `CheckpointMetadata` named by checkpoint `uuid`'s own `state.json`,
-/// read the way checkpoint sync reads it.
-fn checkpoint_state_circuit(storage_dir: &Path, uuid: Uuid) -> CheckpointMetadata {
-    let bytes = std::fs::read(storage_dir.join(uuid.to_string()).join(STATE_FILE)).unwrap();
-    let state: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    let circuit = state
-        .get("circuit")
-        .expect("the checkpoint's state.json has no `circuit` field")
-        .clone();
-    serde_json::from_value(circuit)
-        .expect("`circuit` in the checkpoint's state.json is not checkpoint metadata")
+/// The `CheckpointMetadata` that the state stored with checkpoint `uuid` names.
+fn checkpoint_state_circuit(
+    engine: &dyn PipelineTestEngine,
+    config: &PipelineConfig,
+    uuid: Uuid,
+) -> CheckpointMetadata {
+    open_storage(engine, config)
+        .checkpoint(uuid)
+        .unwrap()
+        .circuit
+        .expect("the state stored with the checkpoint has no circuit metadata")
 }
 
 /// A checkpoint's own `state.json` names the circuit checkpoint it belongs to.
@@ -1136,6 +1149,7 @@ fn checkpoint_state_circuit(storage_dir: &Path, uuid: Uuid) -> CheckpointMetadat
 /// already in hand when this file was written, so `circuit` was never null.
 /// The other half of the fix, that the catalog entry appears only once this
 /// file is on disk, is a crash window that no test here covers.
+#[engine_test(requires(Storage, Checkpoints, StaticStorageLayout))]
 pub fn checkpoint_state_file_names_its_own_circuit(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -1200,11 +1214,11 @@ pub fn checkpoint_state_file_names_its_own_circuit(engine: &dyn PipelineTestEngi
             .expect("the checkpoint the controller reports has no circuit metadata")
             .uuid;
         assert_eq!(
-            checkpoint_state_circuit(&storage_dir, uuid).uuid,
+            checkpoint_state_circuit(engine, &config, uuid).uuid,
             uuid,
             "checkpoint {uuid}'s state.json names a different checkpoint"
         );
-        assert!(published_checkpoints(&storage_dir).contains(&uuid));
+        assert!(published_checkpoints(engine, &config).contains(&uuid));
     }
 
     controller.stop().unwrap();
@@ -1213,12 +1227,14 @@ pub fn checkpoint_state_file_names_its_own_circuit(engine: &dyn PipelineTestEngi
 /// A restart resumes from the newest published checkpoint, even when the root
 /// `state.json` still names the one before it, as a crash between publishing a
 /// checkpoint and rewriting the root file leaves it.
+#[engine_test(requires(Storage, Checkpoints))]
 pub fn restart_resumes_from_newest_published_checkpoint(engine: &dyn PipelineTestEngine) {
     test_restart_from_newest_published_checkpoint(engine, false);
 }
 
 /// Exactly-once variant: journal replay starts at the newest checkpoint and
 /// counts no record twice.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn ft_restart_resumes_from_newest_published_checkpoint(engine: &dyn PipelineTestEngine) {
     test_restart_from_newest_published_checkpoint(engine, true);
 }
@@ -1300,11 +1316,7 @@ fn test_restart_from_newest_published_checkpoint(
     controller.stop().unwrap();
 
     let older_uuid = older.circuit.unwrap().uuid;
-    std::fs::copy(
-        storage_dir.join(older_uuid.to_string()).join(STATE_FILE),
-        storage_dir.join(STATE_FILE),
-    )
-    .unwrap();
+    engine.rewind_resume_state(&storage_dir, older_uuid);
 
     let controller = start_controller();
     if fault_tolerant {
@@ -1338,6 +1350,7 @@ fn test_restart_from_newest_published_checkpoint(
 
 /// Tests that `checkpoint_activity()` returns correct states and timestamps
 /// during a coordinated checkpoint flow (prepare → delayed → in_progress → idle).
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn checkpoint_activity_state_transitions(engine: &dyn PipelineTestEngine) {
     use chrono::Utc;
     use feldera_types::checkpoint::CheckpointActivity;
@@ -1513,6 +1526,7 @@ pub fn checkpoint_activity_state_transitions(engine: &dyn PipelineTestEngine) {
 /// Tests that `checkpoint_activity()` transitions correctly during a
 /// `start_checkpoint()` call, and that the `checkpoint_started` timestamp is
 /// set during the write.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn checkpoint_activity_async_checkpoint(engine: &dyn PipelineTestEngine) {
     use chrono::Utc;
     use feldera_types::checkpoint::CheckpointActivity;
@@ -1638,6 +1652,7 @@ pub fn checkpoint_activity_async_checkpoint(engine: &dyn PipelineTestEngine) {
 
 /// Tests that `permanent_checkpoint_errors()` returns errors when storage
 /// is explicitly disabled (the pipeline cannot checkpoint).
+#[engine_test]
 pub fn permanent_checkpoint_errors_without_storage(engine: &dyn PipelineTestEngine) {
     use feldera_types::suspend::PermanentSuspendError;
 
@@ -1708,5 +1723,112 @@ pub fn permanent_checkpoint_errors_without_storage(engine: &dyn PipelineTestEngi
         "expected Idle, got {activity:?}"
     );
 
+    controller.stop().unwrap();
+}
+
+/// A restart whose program changed a table's definition rebuilds the table: its
+/// fault-tolerant input reads the input again from the start, rather than resuming where the
+/// checkpoint left it, so the table holds every row again.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance, Bootstrap))]
+pub fn bootstrap_restarts_the_input_of_a_changed_table(engine: &dyn PipelineTestEngine) {
+    use arrow::array::AsArray;
+    use arrow::datatypes::Int64Type;
+
+    use crate::test::pipeline::{ControllerOptions, TestCircuit, query};
+    use crate::test::suites::controller::relation;
+
+    const RECORDS: usize = 1000;
+
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_path = tempdir.path().join("input.csv");
+    let input_file = File::create_new(&input_path).unwrap();
+    let mut writer = CsvWriterBuilder::new()
+        .has_headers(false)
+        .from_writer(&input_file);
+    for id in 0..RECORDS {
+        writer.serialize(for_id(id)).unwrap();
+    }
+    writer.flush().unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": input_path.display().to_string(),
+                    },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+    }))
+    .unwrap();
+
+    // Version 1 stands for a changed table, and the view that reads it changes with it, as
+    // the SQL compiler gives both new persistent ids.
+    let circuit = |table_version: u32| TestCircuit::Identity {
+        relation: relation(),
+        persistent_output_ids: vec![Some(format!("output_v{table_version}"))],
+        input_properties: Vec::new(),
+        materialized: true,
+        persistent_ids: true,
+        table_version,
+        attribute_defaults: Vec::new(),
+    };
+    let table_rows = |controller: &Controller| -> i64 {
+        let batches = query(controller, "select count(*) from test_input1").unwrap();
+        batches
+            .iter()
+            .find(|batch| batch.num_rows() > 0)
+            .map(|batch| batch.column(0).as_primitive::<Int64Type>().value(0))
+            .unwrap_or_default()
+    };
+    let read_all_input = |controller: &Controller| {
+        controller.start();
+        wait(|| controller.pipeline_complete(), default_timeout_ms())
+            .expect("the pipeline never read all of its input");
+    };
+
+    let controller = engine
+        .controller(&circuit(0), &config, Box::new(|e, _| panic!("error: {e}")))
+        .unwrap();
+    read_all_input(&controller);
+    assert_eq!(table_rows(&controller), RECORDS as i64);
+    controller.checkpoint().unwrap();
+    controller.stop().unwrap();
+
+    // The test configuration carries no program IR, so the controller cannot tell what
+    // changed; it keeps the diff, which then counts as a change, rather than taking the
+    // circuit as unchanged.
+    let controller = engine
+        .controller_with_options(
+            &circuit(1),
+            &config,
+            ControllerOptions {
+                keep_program_diff: true,
+                ..ControllerOptions::default()
+            },
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    read_all_input(&controller);
+    assert_eq!(
+        table_rows(&controller),
+        RECORDS as i64,
+        "the changed table did not read its input again"
+    );
     controller.stop().unwrap();
 }

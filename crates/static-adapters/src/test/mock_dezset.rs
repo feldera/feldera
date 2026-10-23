@@ -1,23 +1,21 @@
 use crate::{
-    ControllerError, DeCollectionHandle,
-    catalog::{ArrowStream, DeCollectionStream, RecordFormat},
-    format::{InputBuffer, raw::raw_serde_config},
-    static_compile::deinput::{
+    ControllerError,
+    catalog::{ArrowStream, DeCollectionHandle, DeCollectionStream, RecordFormat},
+    deinput::{
         CsvDeserializerFromBytes, DeserializerFromBytes, JsonDeserializerFromBytes,
         RawDeserializerFromBytes, fraction, fraction_take,
     },
-    static_compile::metadata::MetadataVariant,
+    format::raw::raw_serde_config,
+    metadata::MetadataVariant,
 };
 #[cfg(feature = "with-avro")]
-use crate::{
-    catalog::AvroStream, format::avro::from_avro_value,
-    static_compile::deinput::InstalledAvroSchema,
-};
+use crate::{catalog::AvroStream, deinput::InstalledAvroSchema, format::avro::from_avro_value};
 use anyhow::{Result as AnyResult, bail};
 #[cfg(feature = "with-avro")]
 use apache_avro::{Schema as AvroSchema, types::Value as AvroValue};
 use arrow::array::RecordBatch;
-use dbsp::{DBData, operator::StagedBuffers};
+use dbsp::operator::StagedBuffers;
+use dbsp_adapters::format::InputBuffer;
 use erased_serde::Deserializer as ErasedDeserializer;
 use feldera_adapterlib::ConnectorMetadata;
 #[cfg(feature = "with-avro")]
@@ -33,8 +31,6 @@ use std::{
     mem::swap,
     sync::{Arc, Mutex, MutexGuard},
 };
-
-use super::{default_timeout_ms, wait};
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
 pub enum MockUpdate<T, U> {
@@ -697,99 +693,4 @@ where
             hasher.write_u64(elem_hasher.finish())
         }
     }
-}
-
-/// Wait to receive all records in `data` in the same order.
-pub fn wait_for_output_ordered<T, F>(zset: &MockDeZSet<T, T>, data: &[Vec<T>], flush: F)
-where
-    T: DBData,
-    F: Fn(),
-{
-    let num_records: usize = data.iter().map(Vec::len).sum();
-
-    wait(
-        || {
-            flush();
-            zset.state().flushed.len() == num_records
-        },
-        default_timeout_ms(),
-    )
-    .unwrap();
-
-    let received = zset
-        .state()
-        .flushed
-        .iter()
-        .map(|u| u.unwrap_insert())
-        .cloned()
-        .collect::<Vec<_>>();
-
-    let expected = data
-        .iter()
-        .flat_map(|data| data.iter())
-        .cloned()
-        .collect::<Vec<_>>();
-
-    assert_eq!(&received, &expected);
-
-    // for (i, val) in data.iter().flat_map(|data| data.iter()).enumerate() {
-    //     assert_eq!(zset.state().flushed[i].unwrap_insert(), val);
-    // }
-}
-
-/// Wait for `count` records to be received.
-pub fn wait_for_output_count<T, F>(zset: &MockDeZSet<T, T>, count: usize, flush: F) -> Vec<T>
-where
-    T: DBData,
-    F: Fn(),
-{
-    wait(
-        || {
-            flush();
-            zset.state().flushed.len() == count
-        },
-        default_timeout_ms(),
-    )
-    .unwrap();
-
-    zset.state()
-        .flushed
-        .iter()
-        .map(|u| u.unwrap_insert())
-        .cloned()
-        .collect::<Vec<_>>()
-}
-
-/// Wait to receive all records in `data` in some order.
-pub fn wait_for_output_unordered<T, F>(zset: &MockDeZSet<T, T>, data: &[Vec<T>], flush: F)
-where
-    T: DBData,
-    F: Fn(),
-{
-    let num_records: usize = data.iter().map(Vec::len).sum();
-
-    wait(
-        || {
-            flush();
-            zset.state().flushed.len() == num_records
-        },
-        default_timeout_ms(),
-    )
-    .unwrap();
-
-    let mut data_sorted = data
-        .iter()
-        .flat_map(|data| data.clone().into_iter())
-        .collect::<Vec<_>>();
-    data_sorted.sort();
-
-    let mut zset_sorted = zset
-        .state()
-        .flushed
-        .iter()
-        .map(|upd| upd.unwrap_insert().clone())
-        .collect::<Vec<_>>();
-    zset_sorted.sort();
-
-    assert_eq!(zset_sorted, data_sorted);
 }

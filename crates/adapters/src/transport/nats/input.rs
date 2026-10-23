@@ -47,10 +47,10 @@ use async_nats::{
 
 use chrono::Utc;
 use config_utils::{translate_connect_options, translate_consumer_options};
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::ConnectorMetrics;
 use feldera_adapterlib::transport::{InputCommandReceiver, Resume, Watermark};
+use feldera_storage::tokio::TOKIO;
 use feldera_types::{
     config::FtModel,
     program_schema::Relation,

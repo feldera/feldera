@@ -7,6 +7,7 @@
 //! `POSTGRES_URL` must connect as an administrator to a server with
 //! `wal_level=logical`; the fixtures create databases, roles, and event triggers.
 
+use crate::test::engine_test;
 use feldera_adapterlib::test::wait;
 use serde_json::json;
 use tempfile::NamedTempFile;
@@ -360,6 +361,7 @@ fn documented_grants(db: &Database, table: &CdcTestTable) -> String {
     sql
 }
 
+#[engine_test(serial, services(Postgres))]
 pub fn snapshot_stream_restart_and_ddl(engine: &dyn PipelineTestEngine) {
     let db = Database::new(engine);
     let mut table = db.table();
@@ -453,6 +455,7 @@ pub fn snapshot_stream_restart_and_ddl(engine: &dyn PipelineTestEngine) {
     run.stop_after_error(&mut table);
 }
 
+#[engine_test(serial, services(Postgres))]
 pub fn switch_credentials_resumes(engine: &dyn PipelineTestEngine) {
     let db = Database::new(engine);
     let mut table = db.table();
@@ -493,6 +496,7 @@ pub fn switch_credentials_resumes(engine: &dyn PipelineTestEngine) {
     run.stop(&mut table);
 }
 
+#[engine_test(serial, services(Postgres))]
 pub fn source_migration_switch(engine: &dyn PipelineTestEngine) {
     let db = Database::new(engine);
     let mut table = db.table();
@@ -547,6 +551,7 @@ pub fn source_migration_switch(engine: &dyn PipelineTestEngine) {
     run.stop(&mut table);
 }
 
+#[engine_test(serial, services(Postgres))]
 pub fn missing_setup_errors(engine: &dyn PipelineTestEngine) {
     let db = Database::new(engine);
     let mut table = db.table();
@@ -611,6 +616,7 @@ pub fn missing_setup_errors(engine: &dyn PipelineTestEngine) {
 /// Without the event trigger, DDL on the published tables would go unnoticed,
 /// so a missing or disabled trigger fails the start with either setting: the
 /// recorded source migration does not recreate it for a superuser either.
+#[engine_test(serial, services(Postgres))]
 pub fn event_trigger_required(engine: &dyn PipelineTestEngine) {
     let db = Database::new(engine);
     let mut table = db.table();
@@ -641,6 +647,7 @@ pub fn event_trigger_required(engine: &dyn PipelineTestEngine) {
 
 /// A runtime role pointed at a database no superuser has bootstrapped is
 /// refused before the state-store migrations create any etl object there.
+#[engine_test(serial, services(Postgres))]
 pub fn unbootstrapped_database(engine: &dyn PipelineTestEngine) {
     let db = Database::create();
     let mut table = db.table();
@@ -666,6 +673,7 @@ pub fn unbootstrapped_database(engine: &dyn PipelineTestEngine) {
 /// snapshot. The recipe's first statement grants REPLICATION; the test ends by
 /// taking it away to check that PostgreSQL's refusal reaches the user with
 /// the hint that names the attribute.
+#[engine_test(serial, services(Postgres))]
 pub fn documented_recipe(engine: &dyn PipelineTestEngine) {
     let db = Database::bare();
     let mut table = db.owned_table();

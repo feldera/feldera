@@ -8,10 +8,10 @@ use arrow::datatypes::{
     TimeUnit,
 };
 use bytes::Bytes;
-use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::catalog::{ArrowStream, SerCursorFlattened};
+use feldera_types::circuit::StagedBuffers;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::serde_with_context::serde_config::{
     BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
@@ -485,7 +485,7 @@ impl Encoder for ParquetEncoder {
                 );
             }
             if w < 0 {
-                panic!("Deletes for the parquet format are not yet supported.");
+                bail!("Deletes for the parquet format are not yet supported.");
             }
 
             while w != 0 {

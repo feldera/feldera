@@ -1,6 +1,7 @@
 //! The datagen input connector: generation plans, the strategies of each column type, NULLs,
 //! transactions, and invalid plans.
 
+use crate::test::engine_test;
 use std::collections::BTreeMap;
 use std::env;
 use std::sync::{Arc, Mutex};
@@ -130,6 +131,7 @@ fn bytes(value: &Value) -> Vec<u64> {
 
 /// A generator with a transaction size starts a transaction with its first step and commits
 /// it once the transaction is full.
+#[engine_test]
 pub fn transaction(engine: &dyn ConnectorTestEngine) {
     let pipeline = generator(
         engine,
@@ -169,6 +171,7 @@ pub fn transaction(engine: &dyn ConnectorTestEngine) {
 /// The worker's wake-ups coalesce, so `Extend` then `Queue`, as the controller sends them when
 /// it resumes inputs, reach the worker as one wake-up. A worker that handled one command per
 /// wake-up would leave the `Queue` unanswered, and the controller's step would wait forever.
+#[engine_test]
 pub fn extend_and_queue_at_end_of_input(engine: &dyn ConnectorTestEngine) {
     let relation = assorted_relation();
     let pipeline = generator(
@@ -190,6 +193,7 @@ pub fn extend_and_queue_at_end_of_input(engine: &dyn ConnectorTestEngine) {
 }
 
 /// By default, an integer column counts up from 0, and a boolean column alternates.
+#[engine_test]
 pub fn limit_increment(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -205,6 +209,7 @@ pub fn limit_increment(engine: &dyn ConnectorTestEngine) {
 }
 
 /// An incrementing column with a scale steps by the scale and wraps within its range.
+#[engine_test]
 pub fn scaled_range_increment(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -221,6 +226,7 @@ pub fn scaled_range_increment(engine: &dyn ConnectorTestEngine) {
 }
 
 /// An incrementing DOUBLE column steps by its scale from the start of its range.
+#[engine_test]
 pub fn scaled_range_increment_reals(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -239,6 +245,7 @@ pub fn scaled_range_increment_reals(engine: &dyn ConnectorTestEngine) {
 
 /// Incrementing DECIMAL columns stay within the precision and scale of their types, and
 /// within a range or a set of values.
+#[engine_test]
 pub fn decimal_increment(engine: &dyn ConnectorTestEngine) {
     let relation = real_relation();
     let rows = generate(
@@ -278,6 +285,7 @@ pub fn decimal_increment(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Uniform DECIMAL columns stay within a set of values or a range.
+#[engine_test]
 pub fn decimal_uniform(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -301,6 +309,7 @@ pub fn decimal_uniform(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Zipf DECIMAL columns stay within a set of values or a range.
+#[engine_test]
 pub fn decimal_zipf(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -324,6 +333,7 @@ pub fn decimal_zipf(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A VARBINARY column with a length range holds bytes that count up from 0.
+#[engine_test]
 pub fn array_increment(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -337,6 +347,7 @@ pub fn array_increment(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A uniform integer column stays within its range.
+#[engine_test]
 pub fn uniform_range(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -349,6 +360,7 @@ pub fn uniform_range(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A column with a list of values takes them in turn.
+#[engine_test]
 pub fn values(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -399,31 +411,37 @@ fn check_invalid_values(
 }
 
 /// Strings in the values of an integer column are an error.
+#[engine_test]
 pub fn invalid_integer_values(engine: &dyn ConnectorTestEngine) {
     check_invalid_values(engine, &assorted_relation(), "id", json!(["a", "b"]));
 }
 
 /// Numbers in the values of a VARCHAR column are an error.
+#[engine_test]
 pub fn invalid_string_values(engine: &dyn ConnectorTestEngine) {
     check_invalid_values(engine, &assorted_relation(), "nAmE", json!([1, 2]));
 }
 
 /// A boolean in the values of a TIMESTAMP column is an error.
+#[engine_test]
 pub fn invalid_timestamp_values(engine: &dyn ConnectorTestEngine) {
     check_invalid_values(engine, &assorted_relation(), "ts", json!([true]));
 }
 
 /// A number in the values of a TIME column is an error.
+#[engine_test]
 pub fn invalid_time_values(engine: &dyn ConnectorTestEngine) {
     check_invalid_values(engine, &time_relation(), "t", json!([1]));
 }
 
 /// A number in the values of a DATE column is an error.
+#[engine_test]
 pub fn invalid_date_values(engine: &dyn ConnectorTestEngine) {
     check_invalid_values(engine, &assorted_relation(), "dt", json!([1]));
 }
 
 /// A column with `null_percentage` 100 is always NULL.
+#[engine_test]
 pub fn null(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -435,6 +453,7 @@ pub fn null(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A column with `null_percentage` 50 is sometimes NULL and sometimes not.
+#[engine_test]
 pub fn null_percentage(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -447,6 +466,7 @@ pub fn null_percentage(engine: &dyn ConnectorTestEngine) {
 }
 
 /// The `word` strategy makes a VARCHAR that is not NULL.
+#[engine_test]
 pub fn string_generators(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -458,6 +478,7 @@ pub fn string_generators(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A VARBINARY column with a list of values takes them in turn.
+#[engine_test]
 pub fn byte_array_with_values(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -473,6 +494,7 @@ pub fn byte_array_with_values(engine: &dyn ConnectorTestEngine) {
 
 /// A VARBINARY column with a length range and a byte range grows by one byte per row, and
 /// wraps.
+#[engine_test]
 pub fn byte_array_with_increment(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -487,6 +509,7 @@ pub fn byte_array_with_increment(engine: &dyn ConnectorTestEngine) {
 }
 
 /// The bytes of a VARBINARY column follow the strategy and range of `value`.
+#[engine_test]
 pub fn byte_array_with_value(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -506,6 +529,7 @@ pub fn byte_array_with_value(engine: &dyn ConnectorTestEngine) {
 
 /// By default, a TIMESTAMP column counts milliseconds, a DATE column days, and a TIME column
 /// milliseconds.
+#[engine_test]
 pub fn time_types(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -522,6 +546,7 @@ pub fn time_types(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Temporal columns with integer ranges count up within them, and wrap.
+#[engine_test]
 pub fn time_types_with_integer_range(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -547,6 +572,7 @@ pub fn time_types_with_integer_range(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Uniform temporal columns stay within their ranges.
+#[engine_test]
 pub fn uniform_dates_times_timestamps(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -578,6 +604,7 @@ pub fn uniform_dates_times_timestamps(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Temporal columns with string ranges count up within them by their scales, and wrap.
+#[engine_test]
 pub fn time_types_with_string_range(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -604,6 +631,7 @@ pub fn time_types_with_string_range(engine: &dyn ConnectorTestEngine) {
 
 /// A plan that names a case-sensitive column in another case names no column, and the
 /// endpoint does not open.
+#[engine_test]
 pub fn case_sensitivity(engine: &dyn ConnectorTestEngine) {
     let result = input_pipeline(
         engine,
@@ -615,6 +643,7 @@ pub fn case_sensitivity(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A plan names case-insensitive columns in any case.
+#[engine_test]
 pub fn case_insensitivity(engine: &dyn ConnectorTestEngine) {
     let rows = generate(
         engine,
@@ -636,6 +665,7 @@ pub fn case_insensitivity(engine: &dyn ConnectorTestEngine) {
 
 /// Prints the rate at which `WORKERS` workers (default 1) generate `RECORDS` rows (default
 /// 5,000,000).
+#[engine_test(ignore = "a benchmark")]
 pub fn throughput(engine: &dyn ConnectorTestEngine) {
     let records: usize = env::var("RECORDS")
         .ok()

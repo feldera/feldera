@@ -3,6 +3,7 @@
 //! columns; the output connector writing from a view or an index; and the two together, from
 //! one table to another, across suspends, restarts, and failures.
 
+use crate::test::engine_test;
 use std::cmp::min;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsStr;
@@ -25,7 +26,7 @@ use deltalake::protocol::SaveMode;
 use deltalake::table::config::TableProperty;
 use deltalake::{DeltaTable, DeltaTableBuilder, ensure_table_uri};
 use feldera_adapterlib::errors::controller::ControllerError;
-use feldera_adapterlib::test::{Updates, ZSet, wait};
+use feldera_adapterlib::test::{Capability, Updates, ZSet, wait};
 use feldera_types::config::{PipelineConfig, TransportConfig};
 use feldera_types::constants::DATAFUSION_TEMP_DIR;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
@@ -275,6 +276,8 @@ fn identity(relation: &Relation, persistent_output_ids: &[Option<&str>]) -> Test
         input_properties: Vec::new(),
         materialized: true,
         persistent_ids: true,
+        table_version: 0,
+        attribute_defaults: Vec::new(),
     }
 }
 
@@ -964,7 +967,7 @@ pub(super) fn delta_table_output_test(
     println!("delta_table_output_test: success");
 }
 
-pub(super) fn init_logging() {
+pub fn init_logging() {
     let _ = tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().with_test_writer())
         .with(
@@ -1216,7 +1219,7 @@ fn read_uniform_table(
 /// Arrow schema options matching what the Delta output connector writes by
 /// default, so a table the tests create by hand lines up with one the connector
 /// would have created.
-pub(super) fn delta_schema_options() -> ArrowSchemaOptions {
+pub fn delta_schema_options() -> ArrowSchemaOptions {
     ArrowSchemaOptions::new(true).with_parquet_variant(true)
 }
 
@@ -1870,6 +1873,7 @@ pub(super) async fn create_table(
 /// batch; this guarantees that all values of each non-unique key are encoded
 /// together (otherwise the conflict would not be observable within a single
 /// batch).
+#[engine_test]
 pub fn output_non_unique_keys_skipped_test(engine: &dyn PipelineTestEngine) {
     init_logging();
 
@@ -2912,6 +2916,7 @@ async fn delta_table_follow_file_test_common(
     .await;
 }
 
+#[engine_test(requires(Storage))]
 pub fn cdc_file_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         // We cannot use proptest macros in `async` context, so generate
@@ -2944,6 +2949,7 @@ pub fn cdc_file_test(engine: &dyn PipelineTestEngine) {
 ///
 /// The Delta Lake connector evaluates the delete filter per row, so one batch
 /// can mix insertions and deletions; this covers that path end to end.
+#[engine_test(requires(Storage))]
 pub fn cdc_soft_delete_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         use arrow::array::{Array, Int64Array, RecordBatch, StringArray};
@@ -3021,7 +3027,10 @@ pub fn cdc_soft_delete_test(engine: &dyn PipelineTestEngine) {
                 .unwrap();
                 engine
                     .controller(
-                        &identity(&soft_delete_relation(), &[Some("output")]),
+                        &identity(&soft_delete_relation(), &[Some("output")])
+                            .with_attribute_defaults(
+                                relations::soft_delete_options().attribute_defaults,
+                            ),
                         &pipeline_config,
                         Box::new(move |e, _| panic!("cdc soft delete test: {e}")),
                     )
@@ -3055,6 +3064,7 @@ pub fn cdc_soft_delete_test(engine: &dyn PipelineTestEngine) {
 /// CDC mode must honor `skip_unused_columns`: the connector should not read the
 /// `unused` column (nullable, marked unused in the SQL schema), even though the
 /// Delta table stores a non-null value for it. Regression test for issue #6113.
+#[engine_test(requires(Storage))]
 pub fn cdc_skip_unused_columns_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let mut runner = TestRunner::default();
@@ -3083,6 +3093,7 @@ pub fn cdc_skip_unused_columns_test(engine: &dyn PipelineTestEngine) {
 /// Same as [`cdc_skip_unused_columns_test`] but in `Catchup`
 /// transaction mode, so projection is exercised across the catchup
 /// transaction-batching path as well. Regression test for issue #6113.
+#[engine_test(requires(Storage))]
 pub fn cdc_skip_unused_columns_catchup_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let mut runner = TestRunner::default();
@@ -3111,6 +3122,7 @@ pub fn cdc_skip_unused_columns_catchup_test(engine: &dyn PipelineTestEngine) {
 /// Same as [`cdc_skip_unused_columns_catchup_test`] but with
 /// suspend/resume, so projection is exercised across the catchup re-read from a
 /// resumed version. Regression test for issue #6113.
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn cdc_skip_unused_columns_catchup_suspend_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let mut runner = TestRunner::default();
@@ -3136,6 +3148,7 @@ pub fn cdc_skip_unused_columns_catchup_suspend_test(engine: &dyn PipelineTestEng
     })
 }
 
+#[engine_test(requires(Storage))]
 pub fn cdc_file_catchup_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let mut runner = TestRunner::default();
@@ -3161,6 +3174,7 @@ pub fn cdc_file_catchup_test(engine: &dyn PipelineTestEngine) {
     })
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn cdc_file_catchup_suspend_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let mut runner = TestRunner::default();
@@ -3183,6 +3197,7 @@ pub fn cdc_file_catchup_suspend_test(engine: &dyn PipelineTestEngine) {
     })
 }
 
+#[engine_test(requires(Storage))]
 pub fn cdc_file_indexed_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         // We cannot use proptest macros in `async` context, so generate
@@ -3210,6 +3225,10 @@ pub fn cdc_file_indexed_test(engine: &dyn PipelineTestEngine) {
     })
 }
 
+#[engine_test(
+    ignore_if(target_arch = "aarch64", "flaky on aarch64"),
+    requires(Storage, Checkpoints, SuspendResume)
+)]
 pub fn cdc_file_suspend_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         // We cannot use proptest macros in `async` context, so generate
@@ -3248,6 +3267,7 @@ pub fn cdc_file_suspend_test(engine: &dyn PipelineTestEngine) {
 /// processes Delta versions in order, the sentinel can appear in the
 /// materialized output only after the prior step has been processed; that
 /// turns each `wait_for_records_materialized` into a deterministic check.
+#[engine_test(requires(Storage))]
 pub fn cdc_rewrite_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         use arrow::array::{
@@ -3464,6 +3484,7 @@ pub fn cdc_rewrite_test(engine: &dyn PipelineTestEngine) {
 ///
 /// One transaction deletes the old value and inserts a new one for the same id,
 /// and the connector applies both, leaving the updated row.
+#[engine_test(requires(Storage))]
 pub fn cdc_multi_key_order_by_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         use arrow::array::{
@@ -3617,6 +3638,7 @@ pub fn cdc_multi_key_order_by_test(engine: &dyn PipelineTestEngine) {
 /// does not exist on the Delta table must fail before any row flows
 /// through the pipeline, with an error that names the missing column
 /// and the `cdc_delete_filter` setting.
+#[engine_test(requires(Storage))]
 pub fn cdc_invalid_delete_filter_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         use deltalake::kernel::{DataType as KernelDataType, PrimitiveType, StructField};
@@ -3698,6 +3720,7 @@ pub fn cdc_invalid_delete_filter_test(engine: &dyn PipelineTestEngine) {
 
 /// CDC `EXCEPT ALL` is an anti join on every column, so a rewritten row must cancel
 /// whatever its column types.
+#[engine_test]
 pub fn except_all_cancels_a_rewrite_across_all_types(_engine: &dyn PipelineTestEngine) {
     run_async(async {
         use crate::integrated::delta_table::input::build_cdc_dataframe;
@@ -3749,6 +3772,7 @@ pub fn except_all_cancels_a_rewrite_across_all_types(_engine: &dyn PipelineTestE
     })
 }
 
+#[engine_test(requires(Storage))]
 pub fn snapshot_and_follow_file_test(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -3762,6 +3786,7 @@ pub fn snapshot_and_follow_file_test(engine: &dyn PipelineTestEngine) {
     })
 }
 
+#[engine_test(requires(Storage))]
 pub fn transactional_snapshot_and_follow_file_test(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -3775,6 +3800,7 @@ pub fn transactional_snapshot_and_follow_file_test(engine: &dyn PipelineTestEngi
     })
 }
 
+#[engine_test(requires(Storage))]
 pub fn transactional_always_snapshot_and_follow_file_test(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -3790,6 +3816,7 @@ pub fn transactional_always_snapshot_and_follow_file_test(engine: &dyn PipelineT
 
 /// With the input endpoint paused between rounds, verify catchup batches each round's Delta
 /// commits into a single Feldera transaction.
+#[engine_test(requires(Storage))]
 pub fn catchup_batches_multiple_versions_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let result = run_catchup_lag_experiment(
@@ -3809,6 +3836,7 @@ pub fn catchup_batches_multiple_versions_test(engine: &dyn PipelineTestEngine) {
 /// latch a target from before the pause: the commits written during the pause belong to the
 /// same window as the one that started the listing.
 #[cfg(unix)]
+#[engine_test(requires(Storage))]
 pub fn catchup_pause_during_target_listing_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         if running_as_root() {
@@ -3829,6 +3857,7 @@ pub fn catchup_pause_during_target_listing_test(engine: &dyn PipelineTestEngine)
 
 /// Control for [`catchup_batches_multiple_versions_test`]: `always` mode commits once
 /// per Delta log version in each round.
+#[engine_test(requires(Storage))]
 pub fn always_one_transaction_per_version_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let result = run_catchup_lag_experiment(
@@ -3845,6 +3874,7 @@ pub fn always_one_transaction_per_version_test(engine: &dyn PipelineTestEngine) 
 }
 
 /// `end_version` caps the catchup window target at startup of the window.
+#[engine_test(requires(Storage))]
 pub fn catchup_end_version_caps_window_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         const NUM_VERSIONS: i64 = 8;
@@ -3868,6 +3898,7 @@ pub fn catchup_end_version_caps_window_test(engine: &dyn PipelineTestEngine) {
 }
 
 /// Large bursts across two rounds: each round still uses one Feldera transaction.
+#[engine_test(requires(Storage))]
 pub fn catchup_rapid_versions_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let result = run_catchup_lag_experiment(
@@ -3886,6 +3917,7 @@ pub fn catchup_rapid_versions_test(engine: &dyn PipelineTestEngine) {
 /// Catchup survives a transient unreadable table (chmod on input root): unhealthy, then healthy,
 /// one Feldera transaction per catch-up round.
 #[cfg(unix)]
+#[engine_test(requires(Storage))]
 pub fn catchup_transient_read_failure_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         if running_as_root() {
@@ -3926,6 +3958,7 @@ pub fn catchup_transient_read_failure_test(engine: &dyn PipelineTestEngine) {
 
 /// With `max_retries = 0`, a read failure is fatal: connector stays unhealthy and does not advance.
 #[cfg(unix)]
+#[engine_test(requires(Storage))]
 pub fn catchup_max_retries_fatal_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         if running_as_root() {
@@ -3964,6 +3997,7 @@ pub fn catchup_max_retries_fatal_test(engine: &dyn PipelineTestEngine) {
     })
 }
 
+#[engine_test(requires(Storage))]
 pub fn follow_file_catchup_test(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -3979,6 +4013,7 @@ pub fn follow_file_catchup_test(engine: &dyn PipelineTestEngine) {
 
 /// In `snapshot_and_follow` + `catchup`, the initial snapshot uses one Feldera transaction; each
 /// follow catch-up window still uses one transaction.
+#[engine_test(requires(Storage))]
 pub fn snapshot_and_follow_catchup_snapshot_transaction_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         const SNAPSHOT_ROWS: i64 = 10;
@@ -4008,6 +4043,7 @@ pub fn snapshot_and_follow_catchup_snapshot_transaction_test(engine: &dyn Pipeli
 /// without starting a Feldera transaction: `follow_start_transaction` dropped the `snapshot-*`
 /// label instead of propagating it. The `snapshot_transaction_starts` metric counts transactions
 /// actually started (the label reaching a queue entry), so it reads 0 when the bug is present.
+#[engine_test(requires(Storage))]
 pub fn snapshot_mode_snapshot_transaction_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         const SNAPSHOT_ROWS: i64 = 10;
@@ -4033,6 +4069,7 @@ pub fn snapshot_mode_snapshot_transaction_test(engine: &dyn PipelineTestEngine) 
     })
 }
 
+#[engine_test(requires(Storage))]
 pub fn snapshot_and_follow_file_catchup_test(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -4046,6 +4083,7 @@ pub fn snapshot_and_follow_file_catchup_test(engine: &dyn PipelineTestEngine) {
     })
 }
 
+#[engine_test(requires(Storage))]
 pub fn follow_file_catchup_end_version_test(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -4059,6 +4097,7 @@ pub fn follow_file_catchup_end_version_test(engine: &dyn PipelineTestEngine) {
     })
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn follow_file_catchup_suspend_test(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -4072,6 +4111,7 @@ pub fn follow_file_catchup_suspend_test(engine: &dyn PipelineTestEngine) {
     })
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn snapshot_and_follow_file_catchup_suspend_test(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -4085,6 +4125,7 @@ pub fn snapshot_and_follow_file_catchup_suspend_test(engine: &dyn PipelineTestEn
     })
 }
 
+#[engine_test(requires(Storage))]
 pub fn snapshot_and_follow_file_catchup_end_version_test(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -4098,6 +4139,7 @@ pub fn snapshot_and_follow_file_catchup_end_version_test(engine: &dyn PipelineTe
     })
 }
 
+#[engine_test(requires(Storage))]
 pub fn follow_file_test(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -4111,6 +4153,7 @@ pub fn follow_file_test(engine: &dyn PipelineTestEngine) {
     })
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn follow_file_test_suspend(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -4124,6 +4167,7 @@ pub fn follow_file_test_suspend(engine: &dyn PipelineTestEngine) {
     })
 }
 
+#[engine_test(requires(Storage))]
 pub fn follow_file_test_end_version(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -4137,6 +4181,7 @@ pub fn follow_file_test_end_version(engine: &dyn PipelineTestEngine) {
     })
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn snapshot_and_follow_file_test_suspend(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -4150,6 +4195,7 @@ pub fn snapshot_and_follow_file_test_suspend(engine: &dyn PipelineTestEngine) {
     })
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn transactional_snapshot_and_follow_file_test_suspend(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -4163,6 +4209,7 @@ pub fn transactional_snapshot_and_follow_file_test_suspend(engine: &dyn Pipeline
     })
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn transactional_always_snapshot_and_follow_file_test_suspend(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -4176,6 +4223,7 @@ pub fn transactional_always_snapshot_and_follow_file_test_suspend(engine: &dyn P
     })
 }
 
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn snapshot_and_follow_file_test_suspend_end_version(engine: &dyn PipelineTestEngine) {
     run_async(async {
         delta_table_follow_file_test_common(
@@ -4193,6 +4241,7 @@ pub fn snapshot_and_follow_file_test_suspend_end_version(engine: &dyn PipelineTe
 /// `version: null`.  The connector republishes that state as a watermark when it
 /// resumes, so its completed frontier reports a null version until the connector
 /// processes a table version (issue 7174).
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn completed_frontier_null_version_after_resume(engine: &dyn PipelineTestEngine) {
     run_async(async {
         init_logging();
@@ -4248,6 +4297,7 @@ pub fn completed_frontier_null_version_after_resume(engine: &dyn PipelineTestEng
 
 /// An ordered snapshot suspended between slices resumes from its checkpoint and
 /// reads the rest of the table.
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn ordered_snapshot_resume_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         run_ordered_snapshot_resume_test(engine, false).await;
@@ -4256,6 +4306,7 @@ pub fn ordered_snapshot_resume_test(engine: &dyn PipelineTestEngine) {
 
 /// The same from a checkpoint that holds the resume point as a SQL expression,
 /// as older connectors wrote it.
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn ordered_snapshot_resume_legacy_checkpoint_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         run_ordered_snapshot_resume_test(engine, true).await;
@@ -4266,6 +4317,7 @@ pub fn ordered_snapshot_resume_legacy_checkpoint_test(engine: &dyn PipelineTestE
 ///
 /// delta-rs resolves `datetime` from each commit file's modification time, so
 /// the test sets those rather than racing the clock.
+#[engine_test]
 pub fn snapshot_datetime_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         use std::fs::{File, FileTimes};
@@ -4471,6 +4523,7 @@ async fn run_ordered_snapshot_resume_test(
 /// ```text
 /// input.json --> [pipeline1]--->delta_table-->[pipeline2]-->output.json
 /// ```
+#[engine_test]
 pub fn file_output_proptest(engine: &dyn PipelineTestEngine) {
     proptest!(ProptestConfig::with_cases(1), |(data in delta_data(20_000))| {
     let table_dir = TempDir::new().unwrap();
@@ -4616,6 +4669,7 @@ pub fn file_output_proptest(engine: &dyn PipelineTestEngine) {
 /// ```text
 /// input.json --> [pipeline1]--->delta_table
 /// ```
+#[engine_test]
 pub fn file_output_proptest_index_alias(engine: &dyn PipelineTestEngine) {
     proptest!(ProptestConfig::with_cases(1), |(data in delta_data(20_000))| {
     let table_dir = TempDir::new().unwrap();
@@ -4826,6 +4880,7 @@ async fn create_table_from_arrow(
 /// Delta keeps a partition column's value in the file path and the log, never in
 /// the data file, so follow mode must reconstruct it the way the snapshot read
 /// (which delegates to delta-rs) already does.
+#[engine_test(requires(Storage))]
 pub fn follow_partition_column_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         // `s` is the partition column. Its values need escaping in the file path, so
@@ -4848,6 +4903,7 @@ pub fn follow_partition_column_test(engine: &dyn PipelineTestEngine) {
 
 /// A partition value reaches the connector as the string Delta wrote into the
 /// path, so every SQL type Delta can partition on must survive the cast back.
+#[engine_test(requires(Storage))]
 pub fn follow_partition_column_types_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         // Every scalar type in `relation` except `binary`: delta-rs writes
@@ -4883,6 +4939,7 @@ pub fn follow_partition_column_types_test(engine: &dyn PipelineTestEngine) {
 /// A partitioned read names every other column in a projection, and a name read
 /// as SQL rather than taken verbatim would arrive lowercased, matching no column
 /// of such a table.
+#[engine_test(requires(Storage))]
 pub fn follow_partition_uppercase_columns_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let rows: Vec<Value> = (0..6)
@@ -4899,6 +4956,7 @@ pub fn follow_partition_uppercase_columns_test(engine: &dyn PipelineTestEngine) 
 /// The connector matches the two schemas ignoring case, so the SQL side resolves
 /// whatever it is spelled; the projection still has to name each column the way
 /// the Delta table does.
+#[engine_test(requires(Storage))]
 pub fn follow_partition_unquoted_sql_columns_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let written_rows: Vec<Value> = (0..6)
@@ -4926,6 +4984,7 @@ pub fn follow_partition_unquoted_sql_columns_test(engine: &dyn PipelineTestEngin
 /// `timestamp_column` holds an SQL identifier rather than a bare column name,
 /// so a case-sensitive column has to be quoted. Unquoted, it folds to lower
 /// case and the connector rejects it at startup as missing from the table.
+#[engine_test(requires(Storage))]
 pub fn snapshot_uppercase_timestamp_column_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         init_logging();
@@ -4973,6 +5032,7 @@ pub fn snapshot_uppercase_timestamp_column_test(engine: &dyn PipelineTestEngine)
 
 /// CDC mode over a partitioned table: the adds side reads files that span two
 /// partitions, so each file's value must come back with its own rows.
+#[engine_test(requires(Storage))]
 pub fn cdc_partition_column_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         use arrow::array::{
@@ -5123,6 +5183,7 @@ fn arrow_schema_of(relation: &[Field]) -> Arc<ArrowSchema> {
 ///
 /// `delta_unity::unity_change_feed` pins the same property against a live
 /// Databricks table, where Spark rather than delta-rs writes the change data.
+#[engine_test(requires(Storage))]
 pub fn change_feed_keyed_update_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         init_logging();
@@ -5328,6 +5389,7 @@ async fn run_change_feed_filter_test(
 
 /// A change feed read under a `filter` over a Delta column the SQL table never
 /// declares admits the rows the predicate selects.
+#[engine_test(requires(Storage))]
 pub fn change_feed_filter_undeclared_column_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         run_change_feed_filter_test(engine, "region = 'us'", false).await;
@@ -5337,6 +5399,7 @@ pub fn change_feed_filter_undeclared_column_test(engine: &dyn PipelineTestEngine
 /// The same with the filter naming a field of an undeclared struct column, which
 /// parses as a compound identifier, so the read set keeps `meta` rather than
 /// `meta.tag`.
+#[engine_test(requires(Storage))]
 pub fn change_feed_filter_struct_field_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         run_change_feed_filter_test(engine, "meta.tag = 'us'", false).await;
@@ -5347,6 +5410,7 @@ pub fn change_feed_filter_struct_field_test(engine: &dyn PipelineTestEngine) {
 ///
 /// Delta keeps a partition value in the log rather than the file, so the
 /// partition columns are supplied as literals before the filter runs.
+#[engine_test(requires(Storage))]
 pub fn change_feed_filter_partition_column_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         run_change_feed_filter_test(engine, "region = 'us'", true).await;
@@ -5363,6 +5427,7 @@ pub fn change_feed_filter_partition_column_test(engine: &dyn PipelineTestEngine)
 /// `test_delta_input_change_feed_merge` in
 /// `python/tests/platform/test_delta_input_change_feed.py` drives the same
 /// commit shape written by Spark, and asserts how much of it was read.
+#[engine_test(requires(Storage))]
 pub fn change_feed_merge_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         use deltalake::datafusion::prelude::SessionContext;
@@ -5527,6 +5592,7 @@ async fn run_change_feed_option(
 /// `off` reconstructs every change from file actions; `auto` reads the rows the
 /// commit recorded. Both halves are asserted: the results agree, the record
 /// counts do not.
+#[engine_test(requires(Storage))]
 pub fn change_feed_off_reads_file_actions_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         const ROWS: u32 = 50;
@@ -5565,6 +5631,7 @@ pub fn change_feed_off_reads_file_actions_test(engine: &dyn PipelineTestEngine) 
 
 /// `auto` reads a table that records no change feed, falling back to its file
 /// actions.
+#[engine_test(requires(Storage))]
 pub fn change_feed_auto_without_feed_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         init_logging();
@@ -5715,6 +5782,7 @@ async fn run_change_feed_transaction_burst(
 /// mode, so this covers `cdf` mode taking part in it and ingesting the backlog,
 /// not the label reaching the data. The follow-mode catchup tests above measure
 /// the same way.
+#[engine_test(requires(Storage))]
 pub fn change_feed_catchup_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         let (transactions, snapshot_transactions) =
@@ -5737,6 +5805,7 @@ pub fn change_feed_catchup_test(engine: &dyn PipelineTestEngine) {
 ///
 /// Counted the same way as [`change_feed_catchup_test`], with the
 /// same caveat about what the metric measures.
+#[engine_test(requires(Storage))]
 pub fn change_feed_always_transaction_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         let (transactions, _) = run_change_feed_transaction_burst(engine, "always").await;
@@ -5763,6 +5832,7 @@ pub fn change_feed_always_transaction_test(engine: &dyn PipelineTestEngine) {
 /// `VARIANT` and `UUID` are where that machinery breaks, and none of them is
 /// reached by four scalar columns. The oracle is the follow-mode connector
 /// reading the same history, so the wider row type costs no new assertions.
+#[engine_test(requires(Storage))]
 pub fn change_feed_matches_file_actions_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         init_logging();
@@ -5869,6 +5939,7 @@ pub fn change_feed_matches_file_actions_test(engine: &dyn PipelineTestEngine) {
 
 /// A commit that records change data is counted as read from change data, and an
 /// append, which records none, is counted against the file-action fallback.
+#[engine_test(requires(Storage))]
 pub fn change_feed_reads_change_data_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         init_logging();
@@ -5936,6 +6007,7 @@ pub fn change_feed_reads_change_data_test(engine: &dyn PipelineTestEngine) {
 /// A change data file keeps its partition column in the path, like any other
 /// Delta data file, so the pre-image is written under the old partition and the
 /// post-image under the new one.
+#[engine_test(requires(Storage))]
 pub fn change_feed_partition_column_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         init_logging();
@@ -5999,6 +6071,7 @@ pub fn change_feed_partition_column_test(engine: &dyn PipelineTestEngine) {
 ///
 /// `filter` decides which rows the connector ingested at all, and the change feed
 /// carries both images, so each is judged by the predicate the snapshot used.
+#[engine_test(requires(Storage))]
 pub fn change_feed_filter_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         init_logging();
@@ -6082,6 +6155,7 @@ pub fn change_feed_filter_test(engine: &dyn PipelineTestEngine) {
 
 /// `change_feed = require` against a table that records no feed fails at startup,
 /// with an error naming the table property that is missing.
+#[engine_test(requires(Storage))]
 pub fn change_feed_require_not_enabled_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         init_logging();
@@ -6128,6 +6202,7 @@ pub fn change_feed_require_not_enabled_test(engine: &dyn PipelineTestEngine) {
 /// nothing from the feed is the one outcome it exists to rule out. `snapshot`
 /// never follows the log, and `cdc` reads a change log the user encoded as
 /// table rows.
+#[engine_test(requires(Storage))]
 pub fn change_feed_rejected_outside_follow_modes_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         init_logging();
@@ -6181,6 +6256,7 @@ pub fn change_feed_rejected_outside_follow_modes_test(engine: &dyn PipelineTestE
 
 /// A `follow` mode connector accepts `change_feed`, so the rejection above is
 /// about the mode and not about the property.
+#[engine_test(requires(Storage))]
 pub fn change_feed_accepted_in_follow_modes_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         init_logging();
@@ -6214,6 +6290,7 @@ pub fn change_feed_accepted_in_follow_modes_test(engine: &dyn PipelineTestEngine
 ///
 /// Suspension leaves the connector on a Delta version boundary, so the ad hoc
 /// query after the resume returns each row once.
+#[engine_test(requires(Storage, Checkpoints, SuspendResume))]
 pub fn change_feed_suspend_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         init_logging();
@@ -6302,6 +6379,7 @@ pub fn change_feed_suspend_test(engine: &dyn PipelineTestEngine) {
 
 /// `skip_unused_columns` applies to a change feed read, and the columns it drops
 /// leave `_change_type` in place.
+#[engine_test(requires(Storage))]
 pub fn change_feed_skip_unused_columns_test(engine: &dyn PipelineTestEngine) {
     run_async_on(4, async {
         init_logging();
@@ -6352,6 +6430,7 @@ pub fn change_feed_skip_unused_columns_test(engine: &dyn PipelineTestEngine) {
 
 /// A follow read under a `filter` over a Delta column the SQL table never
 /// declares admits the rows the predicate selects.
+#[engine_test(requires(Storage))]
 pub fn follow_filter_undeclared_column_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         run_follow_filter_undeclared_column_test(engine, "region = 'us'").await;
@@ -6360,6 +6439,7 @@ pub fn follow_filter_undeclared_column_test(engine: &dyn PipelineTestEngine) {
 
 /// The same over a field of an undeclared struct column, which parses as a
 /// compound identifier, so the read set keeps `meta`.
+#[engine_test(requires(Storage))]
 pub fn follow_filter_undeclared_struct_field_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         run_follow_filter_undeclared_column_test(engine, "meta.tag = 'us'").await;
@@ -6507,6 +6587,7 @@ async fn run_cdc_filter_undeclared_column_test(engine: &dyn PipelineTestEngine, 
 
 /// A CDC read under a `filter` over a Delta column the SQL table never declares
 /// admits the rows the predicate selects.
+#[engine_test(requires(Storage))]
 pub fn cdc_filter_undeclared_column_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         run_cdc_filter_undeclared_column_test(engine, "region = 'us'").await;
@@ -6515,6 +6596,7 @@ pub fn cdc_filter_undeclared_column_test(engine: &dyn PipelineTestEngine) {
 
 /// The same over a field of an undeclared struct column, which parses as a
 /// compound identifier, so the read set keeps `meta`.
+#[engine_test(requires(Storage))]
 pub fn cdc_filter_undeclared_struct_field_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         run_cdc_filter_undeclared_column_test(engine, "meta.tag = 'us'").await;
@@ -6526,6 +6608,7 @@ pub fn cdc_filter_undeclared_struct_field_test(engine: &dyn PipelineTestEngine) 
 ///
 /// The directory holds no Delta table, so opening it would fail with a different
 /// error; validation happens before the connector opens it.
+#[engine_test(requires(Storage))]
 pub fn follow_invalid_filter_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         init_logging();
@@ -6668,12 +6751,19 @@ fn variant_output_records(path: &Path) -> Vec<Value> {
 /// The typed values are the point: a date arrives as a date and a decimal as a
 /// number because the connector decoded the Parquet variant, which a detour
 /// through JSON text could not have produced.
-fn expected_variant_records() -> Vec<Value> {
+fn expected_variant_records(engine: &dyn PipelineTestEngine) -> Vec<Value> {
+    // A binary value reads back as an array of bytes on an engine with
+    // `VariantBinaryAsArray`, and as base64 text on any other.
+    let bin = if engine.has(Capability::VariantBinaryAsArray) {
+        json!([1, 2, 3])
+    } else {
+        json!("AQID")
+    };
     vec![
         json!({
             "id": 1,
             "v": {
-                "bin": [1, 2, 3],
+                "bin": bin,
                 "bool": true,
                 "date": "2026-09-01",
                 "dec": 123.45,
@@ -6695,6 +6785,7 @@ fn expected_variant_records() -> Vec<Value> {
 /// another engine, values of types that the rows of [`relation`] never hold,
 /// and a JSON-string `VARIANT` column beside a binary one, which is the
 /// per-column choice the reader makes from the data.
+#[engine_test]
 pub fn foreign_variant_test(engine: &dyn PipelineTestEngine) {
     run_async(async {
         init_logging();
@@ -6718,7 +6809,7 @@ pub fn foreign_variant_test(engine: &dyn PipelineTestEngine) {
 
         assert_eq!(
             variant_output_records(output_file.path()),
-            expected_variant_records()
+            expected_variant_records(engine)
         );
     })
 }
@@ -6726,8 +6817,8 @@ pub fn foreign_variant_test(engine: &dyn PipelineTestEngine) {
 /// Whether the table's protocol advertises the `variantType` writer feature,
 /// which a table holding a `variant` column requires.
 fn delta_has_variant_writer_feature(table_uri: &str) -> bool {
-    use dbsp::circuit::tokio::TOKIO;
     use deltalake::open_table;
+    use feldera_storage::tokio::TOKIO;
 
     let url = url::Url::from_file_path(table_uri).unwrap();
     let table = TOKIO
@@ -6743,8 +6834,8 @@ fn delta_has_variant_writer_feature(table_uri: &str) -> bool {
 
 /// The declared Delta type of `column`, as the table's schema JSON spells it.
 fn delta_column_type(table_uri: &str, column: &str) -> String {
-    use dbsp::circuit::tokio::TOKIO;
     use deltalake::open_table;
+    use feldera_storage::tokio::TOKIO;
 
     let url = url::Url::from_file_path(table_uri).unwrap();
     let table = TOKIO
@@ -6763,6 +6854,7 @@ fn delta_column_type(table_uri: &str, column: &str) -> String {
 /// The values must survive either way. The default is what the rest of these
 /// tests exercise; `json_string` is the encoding Feldera wrote before it
 /// supported the Delta `variant` type, and nothing else covers it now.
+#[engine_test]
 pub fn output_variant_encoding_test(engine: &dyn PipelineTestEngine) {
     let data: Vec<Value> = (0..10).map(|i| delta_test_record(i * 2)).collect();
 
@@ -6798,6 +6890,7 @@ pub fn output_variant_encoding_test(engine: &dyn PipelineTestEngine) {
 /// The file names its columns logically whereas the log maps them to `col-<id>`,
 /// so matching by name finds nothing and null-fills every column, silently.
 /// Snapshot mode resolves this inside delta-rs; follow reads the file itself.
+#[engine_test]
 pub fn follow_uniform_field_id_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let table_dir = TempDir::new().unwrap();
@@ -6833,6 +6926,7 @@ pub fn follow_uniform_field_id_test(engine: &dyn PipelineTestEngine) {
 /// CDC mode resolves a Uniform file's columns by field id too, including the
 /// undeclared `op` and `ts` its own configuration names. The second commit's
 /// delete cancels the first commit's row only if both reads resolved alike.
+#[engine_test]
 pub fn cdc_uniform_field_id_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let table_dir = TempDir::new().unwrap();
@@ -7568,6 +7662,7 @@ fn write_id_mapped_change_data_table(
 /// A `mode = 'id'` file named the log's way, which is how Delta writes one,
 /// reads correctly. It needs no field-id projection, so it must keep the
 /// listing and the row-group pruning that comes with it.
+#[engine_test]
 pub fn follow_id_mapped_physical_names_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let table_dir = TempDir::new().unwrap();
@@ -7654,6 +7749,7 @@ async fn run_id_mapped_change_data_test(
 }
 
 /// Delta names a change data file's columns the way the log does.
+#[engine_test]
 pub fn follow_id_mapped_change_data_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         run_id_mapped_change_data_test(engine, true).await;
@@ -7661,6 +7757,7 @@ pub fn follow_id_mapped_change_data_test(engine: &dyn PipelineTestEngine) {
 }
 
 /// Iceberg leaves the logical names, so the read resolves them by field id.
+#[engine_test]
 pub fn follow_id_mapped_change_data_logical_names_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         run_id_mapped_change_data_test(engine, false).await;
@@ -7672,6 +7769,7 @@ pub fn follow_id_mapped_change_data_logical_names_test(engine: &dyn PipelineTest
 /// `realign_container` rebuilds a list or a map by hand, carrying the
 /// container's own null buffer and offsets across; dropping either shows up
 /// only on a row whose nested columns are NULL or empty.
+#[engine_test]
 pub fn follow_id_mapped_nulls_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let table_dir = TempDir::new().unwrap();
@@ -7714,6 +7812,7 @@ pub fn follow_id_mapped_nulls_test(engine: &dyn PipelineTestEngine) {
 
 /// `filter` still selects rows on the direct path, including on a column the
 /// SQL table does not declare, which the connector reads for the filter alone.
+#[engine_test]
 pub fn follow_id_mapped_filter_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let table_dir = TempDir::new().unwrap();
@@ -7756,6 +7855,7 @@ pub fn follow_id_mapped_filter_test(engine: &dyn PipelineTestEngine) {
 /// `mode = 'id'` routes every file through `project_to_logical` instead of
 /// delta-rs's reader, so every column's Arrow type passes through
 /// `realign_array`.
+#[engine_test]
 pub fn follow_id_mapped_all_types_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let table_dir = TempDir::new().unwrap();
@@ -7786,6 +7886,7 @@ pub fn follow_id_mapped_all_types_test(engine: &dyn PipelineTestEngine) {
 /// Delta stores a partition column's value in the log, never in the data file,
 /// and the direct read this mode forces bypasses the `ListingTable` that would
 /// otherwise supply it, leaving `add_partition_columns` as the only source.
+#[engine_test]
 pub fn follow_id_mapped_partitioned_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let table_dir = TempDir::new().unwrap();
@@ -7818,6 +7919,7 @@ pub fn follow_id_mapped_partitioned_test(engine: &dyn PipelineTestEngine) {
 /// CDC plans each data file on its own and joins them with `UNION ALL`, so every
 /// column's Arrow type meets `realign_array` on a second path, and the files'
 /// columns have to line up. No row is a delete, so the read is every row.
+#[engine_test]
 pub fn cdc_id_mapped_all_types_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let table_dir = TempDir::new().unwrap();
@@ -7859,6 +7961,7 @@ pub fn cdc_id_mapped_all_types_test(engine: &dyn PipelineTestEngine) {
 /// reaches by field id on its own. The object-store route is also the one an
 /// unlistable `uc://` location takes for every file, which no local table can
 /// otherwise reach.
+#[engine_test]
 pub fn cdc_id_mapped_deletion_vector_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let table_dir = TempDir::new().unwrap();
@@ -7915,6 +8018,7 @@ pub fn cdc_id_mapped_deletion_vector_test(engine: &dyn PipelineTestEngine) {
 ///
 /// `after` is the control: a struct outside a container was always paired by
 /// name, so it read correctly even while the other two did not.
+#[engine_test]
 pub fn snapshot_id_mapped_reordered_nested_fields_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         /// `snapshot` mode rejects `end_version`, so this cannot use
@@ -7970,6 +8074,7 @@ pub fn snapshot_id_mapped_reordered_nested_fields_test(engine: &dyn PipelineTest
 /// wrote with a long year makes the whole table unreadable.
 ///
 /// arrow-json 58 rejects a 7-digit year; 59 accepts it.
+#[engine_test]
 pub fn snapshot_out_of_range_date_stats_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         init_logging();
@@ -8055,6 +8160,7 @@ pub fn snapshot_out_of_range_date_stats_test(engine: &dyn PipelineTestEngine) {
 /// Delta 3.x stamps `vacuumProtocolCheck` on ordinary tables, and delta-rs
 /// rejects any reader feature it does not list. The fork's `7f8bb445`
 /// downgrades that rejection to a warning.
+#[engine_test]
 pub fn snapshot_unlisted_reader_feature_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         init_logging();
@@ -8146,6 +8252,7 @@ fn stamp_protocol_features(table_dir: &Path, features: &[&str]) {
 
 /// A table that enables VARIANT shredding is refused: delta-rs would read only the unshredded
 /// part of each value and drop the shredded fields without an error.
+#[engine_test]
 pub fn variant_shredding_is_refused_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let relation_schema = relation();
@@ -8194,6 +8301,7 @@ pub fn variant_shredding_is_refused_test(engine: &dyn PipelineTestEngine) {
 }
 
 /// A commit that turns VARIANT shredding on while the connector follows the table stops it.
+#[engine_test]
 pub fn variant_shredding_turned_on_while_following_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let relation_schema = relation();
@@ -8271,6 +8379,7 @@ pub fn variant_shredding_turned_on_while_following_test(engine: &dyn PipelineTes
 ///
 /// The follow half also pins `collect_statistics = false`: with statistics on,
 /// DataFusion pairs them to the wrong field and the follow reads all NULL.
+#[engine_test]
 pub fn snapshot_and_follow_id_mapped_test(engine: &dyn PipelineTestEngine) {
     run_async_on(2, async {
         let table_dir = TempDir::new().unwrap();

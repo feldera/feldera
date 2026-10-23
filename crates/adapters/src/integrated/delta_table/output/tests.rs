@@ -3,6 +3,7 @@
 //! restarts, compaction, and key columns of every type; with the commits, metrics, and
 //! failures along the way.
 
+use crate::test::engine_test;
 use std::collections::BTreeMap;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -343,6 +344,7 @@ fn assert_matches_model(table_uri: &str, model: &BTreeMap<i64, Value>, step: &st
 /// Merge mode builds its own writer config, so it needs the target size cdc mode sets:
 /// without one, a flush writes a single object, which an object store rejects once the
 /// multipart upload passes 10000 parts.
+#[engine_test]
 pub fn merge_batch_larger_than_target_file_size_rolls_over(engine: &dyn ConnectorTestEngine) {
     const PAYLOAD_LEN: usize = 8 * 1024;
     let dir = TempDir::new().unwrap();
@@ -376,6 +378,7 @@ pub fn merge_batch_larger_than_target_file_size_rolls_over(engine: &dyn Connecto
 /// Walks every transition a key can make -- absent to present, updated, deleted, deleted
 /// again, reinserted -- then mixes them in one batch, where a per-key branch that works in
 /// isolation tends to break.
+#[engine_test]
 pub fn merge_tracks_the_view(engine: &dyn ConnectorTestEngine) {
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -452,6 +455,7 @@ pub fn merge_tracks_the_view(engine: &dyn ConnectorTestEngine) {
 /// The insert shortcut is only sound when the table started empty. Here a second connector
 /// opens a populated table and is fed an *insert* for a key already in it; the old row
 /// must be tombstoned anyway. This is also what a pipeline restart looks like.
+#[engine_test]
 pub fn merge_supersedes_a_row_left_by_an_earlier_run(engine: &dyn ConnectorTestEngine) {
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -481,6 +485,7 @@ pub fn merge_supersedes_a_row_left_by_an_earlier_run(engine: &dyn ConnectorTestE
 ///
 /// The budget below is small enough that a few keys cross it, so the flush runs the
 /// multi-pass path that a default-sized budget never reaches.
+#[engine_test]
 pub fn merge_is_unaffected_by_chunking(engine: &dyn ConnectorTestEngine) {
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -534,6 +539,7 @@ fn merge_metric(endpoint: &DeltaTableWriter, name: &str) -> f64 {
 
 /// An insert-only flush onto a table that started empty must not read the table at all.
 /// That shortcut is what makes a bootstrap affordable.
+#[engine_test]
 pub fn merge_skips_the_lookup_for_inserts_into_an_empty_table(engine: &dyn ConnectorTestEngine) {
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -570,6 +576,7 @@ pub fn merge_skips_the_lookup_for_inserts_into_an_empty_table(engine: &dyn Conne
 ///
 /// Five flushes leave five files with disjoint key ranges; a sixth updating two keys from
 /// one of them must open that file and skip the other four.
+#[engine_test]
 pub fn merge_prunes_files_outside_the_changed_key_range(engine: &dyn ConnectorTestEngine) {
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -628,9 +635,10 @@ pub fn merge_prunes_files_outside_the_changed_key_range(engine: &dyn ConnectorTe
 /// against a table a pipeline is writing. The commit conflicts and the flush redoes the
 /// lookup against the new files. Without the reload it would conflict for ever, so this
 /// fails rather than merely running slow.
+#[engine_test]
 pub fn merge_converges_after_a_concurrent_compaction(engine: &dyn ConnectorTestEngine) {
-    use dbsp::circuit::tokio::TOKIO;
     use deltalake::open_table;
+    use feldera_storage::tokio::TOKIO;
 
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -675,6 +683,7 @@ pub fn merge_converges_after_a_concurrent_compaction(engine: &dyn ConnectorTestE
 }
 
 /// Auto compaction must never make a flush lose its batch, here with `max_retries: 0`.
+#[engine_test]
 pub fn auto_compaction_never_races_a_flush(engine: &dyn ConnectorTestEngine) {
     use crate::integrated::delta_table::merge::compact::Compactor;
     use futures::StreamExt;
@@ -773,6 +782,7 @@ pub fn auto_compaction_never_races_a_flush(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A batch is acknowledged before its step ends, and the next flush commits after the step.
+#[engine_test]
 pub fn the_next_flush_waits_for_the_compaction_step(engine: &dyn ConnectorTestEngine) {
     use crate::integrated::delta_table::merge::compact::Compactor;
     use crate::integrated::delta_table::merge::tests::{FlakyStore, table_over};
@@ -896,9 +906,10 @@ pub fn the_next_flush_waits_for_the_compaction_step(engine: &dyn ConnectorTestEn
 ///
 /// The retry walks the same batch, so a conflicting commit would otherwise repeat every
 /// violation on every attempt -- without a `max_retries` limit, for ever.
+#[engine_test]
 pub fn a_uniqueness_violation_is_reported_once_across_retries(engine: &dyn ConnectorTestEngine) {
-    use dbsp::circuit::tokio::TOKIO;
     use deltalake::open_table;
+    use feldera_storage::tokio::TOKIO;
 
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -946,9 +957,10 @@ pub fn a_uniqueness_violation_is_reported_once_across_retries(engine: &dyn Conne
 /// An error can also mean the commit landed and only its response was lost, in which case
 /// the object is one the live version references and deleting it breaks every reader.
 /// Forced here with a conflict, the one commit failure a test can produce on demand.
+#[engine_test]
 pub fn a_failed_commit_keeps_its_deletion_vector_file(engine: &dyn ConnectorTestEngine) {
-    use dbsp::circuit::tokio::TOKIO;
     use deltalake::open_table;
+    use feldera_storage::tokio::TOKIO;
 
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -992,6 +1004,7 @@ pub fn a_failed_commit_keeps_its_deletion_vector_file(engine: &dyn ConnectorTest
 /// The commit lands, but reading the log afterwards fails, so the attempt reports an error.
 /// The reload before the retry fails too. A retry on the old snapshot would miss the
 /// committed rows and append every one of them again.
+#[engine_test]
 pub fn a_retry_after_a_commit_that_landed_does_not_duplicate(engine: &dyn ConnectorTestEngine) {
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -1024,7 +1037,7 @@ pub fn a_retry_after_a_commit_that_landed_does_not_duplicate(engine: &dyn Connec
 
 /// Endpoint whose table reads and writes its log through `store`.
 fn reopen_over(endpoint: &mut DeltaTableWriter, uri: &str, store: Arc<LogOutageStore>) {
-    use dbsp::circuit::tokio::TOKIO;
+    use feldera_storage::tokio::TOKIO;
     let url = deltalake::table::builder::ensure_table_uri(uri).unwrap();
     endpoint.task.delta_table = TOKIO.block_on(async {
         deltalake::DeltaTableBuilder::from_url(url.clone())
@@ -1050,6 +1063,7 @@ fn encode_failing_batch(endpoint: &mut DeltaTableWriter, batch: &Arc<dyn SerBatc
 ///
 /// The failed batch's commit landed, but reading the log afterwards failed and no retry
 /// was allowed. An update of a key it inserted must find that row, not add a second one.
+#[engine_test]
 pub fn a_batch_after_a_failed_batch_whose_commit_landed_does_not_duplicate(
     engine: &dyn ConnectorTestEngine,
 ) {
@@ -1086,9 +1100,10 @@ pub fn a_batch_after_a_failed_batch_whose_commit_landed_does_not_duplicate(
 ///
 /// The table started empty, so inserts skip the lookup. The delete conflicts with a
 /// compaction and no retry is allowed, which drops the batch.
+#[engine_test]
 pub fn the_insert_shortcut_does_not_survive_a_dropped_batch(engine: &dyn ConnectorTestEngine) {
-    use dbsp::circuit::tokio::TOKIO;
     use deltalake::open_table;
+    use feldera_storage::tokio::TOKIO;
 
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -1130,6 +1145,7 @@ pub fn the_insert_shortcut_does_not_survive_a_dropped_batch(engine: &dyn Connect
 
 /// A key skipped for a uniqueness violation keeps its old row, so a later insert of that
 /// key must find it.
+#[engine_test]
 pub fn the_insert_shortcut_does_not_survive_a_skipped_key(engine: &dyn ConnectorTestEngine) {
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -1306,9 +1322,10 @@ impl ObjectStore for LogOutageStore {
 /// We tell administrators to run OPTIMIZE, and a compaction that rewrote a file while
 /// ignoring its vector would bring every superseded row back. Nothing in the connector
 /// could detect that afterwards.
+#[engine_test]
 pub fn compaction_drops_the_rows_a_vector_marks_deleted(engine: &dyn ConnectorTestEngine) {
-    use dbsp::circuit::tokio::TOKIO;
     use deltalake::open_table;
+    use feldera_storage::tokio::TOKIO;
 
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -1364,10 +1381,11 @@ pub fn compaction_drops_the_rows_a_vector_marks_deleted(engine: &dyn ConnectorTe
 /// The rewrite reads the live rows back through DataFusion and casts them to the table's
 /// schema, so a lossy cast would alter values with no row missing for its count check
 /// to notice. [`value_relation`] holds every type the connector writes.
+#[engine_test]
 pub fn reclaim_rewrites_every_column_type_unchanged(engine: &dyn ConnectorTestEngine) {
     use crate::integrated::delta_table::merge::rewrite::reclaim_superseded_rows;
-    use dbsp::circuit::tokio::TOKIO;
     use deltalake::open_table;
+    use feldera_storage::tokio::TOKIO;
 
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -1406,9 +1424,10 @@ pub fn reclaim_rewrites_every_column_type_unchanged(engine: &dyn ConnectorTestEn
 
 /// No data file is ever rewritten, which is the point of the design. A file may leave the
 /// table once every row in it is tombstoned, but no file's contents move to a new path.
+#[engine_test]
 pub fn merge_never_rewrites_a_data_file(engine: &dyn ConnectorTestEngine) {
-    use dbsp::circuit::tokio::TOKIO;
     use deltalake::open_table;
+    use feldera_storage::tokio::TOKIO;
 
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -1615,6 +1634,7 @@ fn merge_key_type_case(engine: &dyn ConnectorTestEngine, column: &str) {
 /// Shaped as a second run over an existing table because that is what reproduces against
 /// a live pipeline: within one run the view's index keeps whichever sign it saw first, so
 /// the connector is handed a key that already matches what it wrote.
+#[engine_test(requires(NegativeZeroKeys))]
 pub fn merge_treats_signed_zeroes_as_one_key(engine: &dyn ConnectorTestEngine) {
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -1659,6 +1679,7 @@ pub fn merge_treats_signed_zeroes_as_one_key(engine: &dyn ConnectorTestEngine) {
 
 /// A null key must still find its row. Statistics leave nulls out, so a chunk holding one
 /// turns pruning off; a flush that pruned anyway would leave two live rows for that key.
+#[engine_test]
 pub fn merge_supersedes_a_row_whose_key_is_null(engine: &dyn ConnectorTestEngine) {
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -1857,6 +1878,7 @@ fn insert_test(engine: &dyn ConnectorTestEngine, threads: usize) {
     assert_eq!(output_data, values_zset(&records));
 }
 
+#[engine_test]
 pub fn insert_single_thread(engine: &dyn ConnectorTestEngine) {
     insert_test(engine, 1);
 }
@@ -1867,6 +1889,7 @@ pub fn insert_single_thread(engine: &dyn ConnectorTestEngine) {
 /// thread that `RuntimeHandle::kill` joins, and the retry loop in
 /// `encode_and_write_range` is unbounded unless `max_retries` says
 /// otherwise.  A write that outlives the shutdown hangs the teardown.
+#[engine_test]
 pub fn shutdown_aborts_the_write(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -1895,7 +1918,7 @@ pub fn shutdown_aborts_the_write(engine: &dyn ConnectorTestEngine) {
 
 /// Set table properties from outside the pipeline, as an `ALTER TABLE` would.
 fn alter_table(uri: &str, property: &str, value: &str) {
-    dbsp::circuit::tokio::TOKIO.block_on(async {
+    feldera_storage::tokio::TOKIO.block_on(async {
         deltalake::open_table(url::Url::from_file_path(uri).unwrap())
             .await
             .unwrap()
@@ -1911,6 +1934,7 @@ fn alter_table(uri: &str, property: &str, value: &str) {
 
 /// An `ALTER TABLE` that breaks a startup requirement stops merge mode, rather than its
 /// retry reloading the table and committing past the change.
+#[engine_test]
 pub fn merge_stops_when_the_table_no_longer_fits(engine: &dyn ConnectorTestEngine) {
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -1931,6 +1955,7 @@ pub fn merge_stops_when_the_table_no_longer_fits(engine: &dyn ConnectorTestEngin
 }
 
 /// A change merge mode does not depend on must not stop it.
+#[engine_test]
 pub fn merge_survives_an_unrelated_table_change(engine: &dyn ConnectorTestEngine) {
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -1948,6 +1973,7 @@ pub fn merge_survives_an_unrelated_table_change(engine: &dyn ConnectorTestEngine
 }
 
 /// A shutdown aborts a merge flush, as it does a cdc write, rather than letting it run on.
+#[engine_test]
 pub fn shutdown_aborts_the_merge_flush(engine: &dyn ConnectorTestEngine) {
     let dir = TempDir::new().unwrap();
     let uri = dir.path().to_str().unwrap();
@@ -1975,6 +2001,7 @@ pub fn shutdown_aborts_the_merge_flush(engine: &dyn ConnectorTestEngine) {
 /// `max_retries: None` is the documented default and an unbounded loop, so
 /// `encode` cannot return here on its own: the table directory is
 /// read-only, every attempt fails, and only the shutdown ends it.
+#[engine_test]
 pub fn a_shutdown_ends_an_unbounded_retry_loop(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2032,6 +2059,7 @@ pub fn a_shutdown_ends_an_unbounded_retry_loop(engine: &dyn ConnectorTestEngine)
 /// controller's output thread, and that loop is unbounded when
 /// `max_retries` is `None`.  Data that reached the object store but no
 /// `_delta_log` entry hangs the teardown exactly like a failed write.
+#[engine_test]
 pub fn a_shutdown_ends_an_unbounded_commit_loop(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2098,6 +2126,7 @@ fn count_log_versions(log_dir: &Path) -> usize {
         .count()
 }
 
+#[engine_test]
 pub fn insert_multi_thread(engine: &dyn ConnectorTestEngine) {
     insert_test(engine, 4);
 }
@@ -2110,6 +2139,7 @@ pub fn insert_multi_thread(engine: &dyn ConnectorTestEngine) {
 /// It pins `WRITE_BATCH_ROWS` too: at delta-rs's 8192-row default these
 /// 16000 rows are two slices, and the size first passes the target after
 /// the last one, so they still land in one file.
+#[engine_test]
 pub fn batch_larger_than_target_file_size_rolls_over(engine: &dyn ConnectorTestEngine) {
     const PAYLOAD_LEN: usize = 8 * 1024;
     let table_dir = TempDir::new().unwrap();
@@ -2142,6 +2172,7 @@ pub fn batch_larger_than_target_file_size_rolls_over(engine: &dyn ConnectorTestE
 }
 
 /// A slow object store must stall the encoder, not grow memory by the size of the output.
+#[engine_test]
 pub fn a_stalled_object_store_stops_the_encoder(engine: &dyn ConnectorTestEngine) {
     const PAYLOAD_LEN: usize = 8 * 1024;
     let table_dir = TempDir::new().unwrap();
@@ -2351,10 +2382,12 @@ fn upsert_test(engine: &dyn ConnectorTestEngine, threads: usize) {
     );
 }
 
+#[engine_test]
 pub fn upsert_single_thread(engine: &dyn ConnectorTestEngine) {
     upsert_test(engine, 1);
 }
 
+#[engine_test]
 pub fn upsert_multi_thread(engine: &dyn ConnectorTestEngine) {
     upsert_test(engine, 4);
 }
@@ -2381,10 +2414,12 @@ fn delete_test(engine: &dyn ConnectorTestEngine, threads: usize) {
     assert_eq!(deletes.len(), 10);
 }
 
+#[engine_test]
 pub fn delete_single_thread(engine: &dyn ConnectorTestEngine) {
     delete_test(engine, 1);
 }
 
+#[engine_test]
 pub fn delete_multi_thread(engine: &dyn ConnectorTestEngine) {
     delete_test(engine, 4);
 }
@@ -2408,6 +2443,7 @@ fn non_indexed_insert_test(engine: &dyn ConnectorTestEngine, threads: usize) {
     assert_eq!(output_data, values_zset(&records));
 }
 
+#[engine_test]
 pub fn non_indexed_insert_single_thread(engine: &dyn ConnectorTestEngine) {
     non_indexed_insert_test(engine, 1);
 }
@@ -2426,10 +2462,12 @@ fn empty_batch_test(engine: &dyn ConnectorTestEngine, threads: usize) {
     assert_eq!(output.len(), 0);
 }
 
+#[engine_test]
 pub fn empty_batch_single_thread(engine: &dyn ConnectorTestEngine) {
     empty_batch_test(engine, 1);
 }
 
+#[engine_test]
 pub fn empty_batch_multi_thread(engine: &dyn ConnectorTestEngine) {
     empty_batch_test(engine, 4);
 }
@@ -2482,15 +2520,18 @@ fn multiple_batches_test(engine: &dyn ConnectorTestEngine, threads: usize) {
     assert_eq!(deletes, 10);
 }
 
+#[engine_test]
 pub fn multiple_batches_single_thread(engine: &dyn ConnectorTestEngine) {
     multiple_batches_test(engine, 1);
 }
 
+#[engine_test]
 pub fn multiple_batches_multi_thread(engine: &dyn ConnectorTestEngine) {
     multiple_batches_test(engine, 4);
 }
 
 /// Write to a read-only directory should fail with no retries.
+#[engine_test]
 pub fn write_failure_readonly_dir(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2513,6 +2554,7 @@ pub fn write_failure_readonly_dir(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Exhausting max_retries should propagate the error.
+#[engine_test]
 pub fn retry_exhaustion(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2571,6 +2613,7 @@ pub(super) fn records_written(endpoint: &DeltaTableWriter) -> u64 {
 ///
 /// Both sides count: a flush that only supersedes rows appends nothing, and reporting
 /// just the appends would show no progress at all while it works.
+#[engine_test]
 pub fn merge_reports_the_rows_it_writes(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2600,6 +2643,7 @@ pub fn merge_reports_the_rows_it_writes(engine: &dyn ConnectorTestEngine) {
     assert_eq!(records_written(&endpoint), 0);
 }
 
+#[engine_test]
 pub fn progress_counter_single_thread(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2616,6 +2660,7 @@ pub fn progress_counter_single_thread(engine: &dyn ConnectorTestEngine) {
     assert_eq!(records_written(&endpoint), 0);
 }
 
+#[engine_test]
 pub fn progress_counter_multi_thread(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2631,6 +2676,7 @@ pub fn progress_counter_multi_thread(engine: &dyn ConnectorTestEngine) {
     assert_eq!(records_written(&endpoint), 0);
 }
 
+#[engine_test]
 pub fn progress_counter_empty_batch(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2645,6 +2691,7 @@ pub fn progress_counter_empty_batch(engine: &dyn ConnectorTestEngine) {
     assert_eq!(records_written(&endpoint), 0);
 }
 
+#[engine_test]
 pub fn progress_counter_multiple_batches(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2670,6 +2717,7 @@ pub fn progress_counter_multiple_batches(engine: &dyn ConnectorTestEngine) {
     assert_eq!(records_written(&endpoint), 0);
 }
 
+#[engine_test]
 pub fn progress_counter_resets_on_batch_start(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2687,6 +2735,7 @@ pub fn progress_counter_resets_on_batch_start(engine: &dyn ConnectorTestEngine) 
     assert_eq!(records_written(&endpoint), 0);
 }
 
+#[engine_test]
 pub fn progress_counter_resets_on_write_failure(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2709,6 +2758,7 @@ pub fn progress_counter_resets_on_write_failure(engine: &dyn ConnectorTestEngine
     assert_eq!(records_written(&endpoint), 0);
 }
 
+#[engine_test]
 pub fn progress_counter_resets_after_retries(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2760,6 +2810,7 @@ pub fn progress_counter_resets_after_retries(engine: &dyn ConnectorTestEngine) {
     assert_eq!(records_written(&endpoint), 0);
 }
 
+#[engine_test]
 pub fn progress_large_batch_increments(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2784,6 +2835,7 @@ pub fn progress_large_batch_increments(engine: &dyn ConnectorTestEngine) {
 /// Simulate a pipeline restart: drop the first endpoint, create a new one
 /// on the same table with `continue_previous_state=true`. Data written before the
 /// restart must survive.
+#[engine_test]
 pub fn truncate_preserves_data_across_restart(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2816,6 +2868,7 @@ pub fn truncate_preserves_data_across_restart(engine: &dyn ConnectorTestEngine) 
 }
 
 /// First-start truncation still clears pre-existing data.
+#[engine_test]
 pub fn truncate_clears_data_on_first_start(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2847,6 +2900,7 @@ pub fn truncate_clears_data_on_first_start(engine: &dyn ConnectorTestEngine) {
 }
 
 /// `error_if_exists` mode must not fail on restart.
+#[engine_test]
 pub fn error_if_exists_succeeds_on_restart(engine: &dyn ConnectorTestEngine) {
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
@@ -2876,61 +2930,73 @@ pub fn error_if_exists_succeeds_on_restart(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Merge mode keyed on `int`.
+#[engine_test]
 pub fn merge_keyed_on_int(engine: &dyn ConnectorTestEngine) {
     merge_key_type_case(engine, "int");
 }
 
 /// Merge mode keyed on `string`.
+#[engine_test]
 pub fn merge_keyed_on_string(engine: &dyn ConnectorTestEngine) {
     merge_key_type_case(engine, "string");
 }
 
 /// Merge mode keyed on `binary`.
+#[engine_test]
 pub fn merge_keyed_on_binary(engine: &dyn ConnectorTestEngine) {
     merge_key_type_case(engine, "binary");
 }
 
 /// Merge mode keyed on `timestamp_ntz`.
+#[engine_test]
 pub fn merge_keyed_on_timestamp(engine: &dyn ConnectorTestEngine) {
     merge_key_type_case(engine, "timestamp_ntz");
 }
 
 /// Merge mode keyed on `decimal_10_3`.
+#[engine_test]
 pub fn merge_keyed_on_decimal(engine: &dyn ConnectorTestEngine) {
     merge_key_type_case(engine, "decimal_10_3");
 }
 
 /// Merge mode keyed on `uuid`.
+#[engine_test]
 pub fn merge_keyed_on_uuid(engine: &dyn ConnectorTestEngine) {
     merge_key_type_case(engine, "uuid");
 }
 
 /// Merge mode keyed on `date`.
+#[engine_test]
 pub fn merge_keyed_on_date(engine: &dyn ConnectorTestEngine) {
     merge_key_type_case(engine, "date");
 }
 
 /// Merge mode keyed on `struct1`.
+#[engine_test]
 pub fn merge_keyed_on_row(engine: &dyn ConnectorTestEngine) {
     merge_key_type_case(engine, "struct1");
 }
 
 /// Merge mode keyed on `double`.
+#[engine_test]
 pub fn merge_keyed_on_double(engine: &dyn ConnectorTestEngine) {
     merge_key_type_case(engine, "double");
 }
 
 /// Merge mode keyed on `float`.
+#[engine_test]
 pub fn merge_keyed_on_float(engine: &dyn ConnectorTestEngine) {
     merge_key_type_case(engine, "float");
 }
 
 /// Merge mode keyed on `tinyint`.
+#[engine_test]
 pub fn merge_keyed_on_tinyint(engine: &dyn ConnectorTestEngine) {
     merge_key_type_case(engine, "tinyint");
 }
 
 /// Merge mode keyed on `smallint`.
+#[engine_test]
 pub fn merge_keyed_on_smallint(engine: &dyn ConnectorTestEngine) {
     merge_key_type_case(engine, "smallint");
 }

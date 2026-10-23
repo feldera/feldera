@@ -113,9 +113,9 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
 
     /** Emitted only for circuits that register their streams in a Catalog.
      * Handles mode (--handles) needs no Catalog, and omitting the import lets the
-     * generated crates drop dbsp_adapters and its dependencies entirely. */
+     * generated crates drop static_adapters and its dependencies entirely. */
     public static final String CATALOG_PREAMBLE = """
-            use dbsp_adapters::{Catalog, CircuitCatalog};
+            use static_adapters::{Catalog, CircuitCatalog};
             """;
 
     public static final String STANDARD_PREAMBLE = """

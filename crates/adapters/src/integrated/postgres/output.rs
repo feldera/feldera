@@ -530,7 +530,7 @@ These statements were successfully prepared before reconnecting. Does the table 
 
     fn batch_start_inner(&mut self) -> Result<(), BackoffError> {
         // Skip the controller check in test/bench mode.
-        #[cfg(not(any(test, feature = "bench-mode")))]
+        #[cfg(not(any(test, feature = "testing", feature = "bench-mode")))]
         if self.controller.upgrade().is_none() {
             tracing::warn!("controller is shutting down: aborting");
             return Ok(());

@@ -5,50 +5,52 @@
 //! between that type and the relation's published Arrow form.
 
 use std::collections::BTreeMap;
+use std::fmt::Debug;
+use std::hash::Hash;
 use std::marker::PhantomData;
+use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Result as AnyResult, anyhow, bail};
 use arrow::array::{Int64Array, RecordBatch};
 use arrow::datatypes::{DataType, Field as ArrowField, Schema, SchemaRef};
 use dbsp::circuit::CircuitConfig;
+use dbsp::storage::dirlock::LockedDirectory;
 use dbsp::utils::{Tup1, Tup2};
 use dbsp::{DBData, DBSPHandle, OrdIndexedZSet, OrdZSet, Runtime};
 use feldera_adapterlib::catalog::{InputCollectionHandle, SerBatchReader};
 use feldera_adapterlib::soft_delete::SoftDeleteHandle;
 use feldera_adapterlib::test::{ConnectorTestEngine, InputOptions, TestCollection, WEIGHT_COLUMN};
 use feldera_sqllib::{Timestamp, Variant};
-use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
+use feldera_types::constants::STATE_FILE;
+use feldera_types::program_schema::{
+    ColumnType, Field, PropertyValue, Relation, SourcePosition, SqlIdentifier,
+};
 use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
 use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
+use uuid::Uuid;
 
-use crate::format::parquet::default_arrow_serde_config;
-use crate::server::CircuitFactoryFunc;
-use crate::static_compile::seroutput::SerBatchImpl;
+use crate::engine::{static_circuit_factory, static_open_storage};
+use crate::seroutput::SerBatchImpl;
 use crate::test::data::TestStructMetadata;
 use crate::test::pipeline::{
     CatalogSetup, PipelineTestEngine, TestCircuit, count_columns, skewed_key,
 };
 use crate::test::suites::{
-    controller, csv_parser, datagen, file_input, json_encoder, json_parser, parquet, raw_parser,
-    s3_input, soft_delete, url_input,
+    arrow_ipc, controller, csv_parser, datagen, file_input, json_encoder, json_parser, parquet,
+    raw_parser, s3_input, soft_delete, url_input,
 };
-use crate::test::{
-    MockDeZSet, MockUpdate, TestStruct, TestStruct2, test_circuit_inner, test_circuit_with_index,
-};
+use crate::test::{KeyStruct, MockDeZSet, MockUpdate, TestStruct, TestStruct2};
 use crate::test::{published_schema, relations};
 use crate::{Catalog, CircuitCatalog, ControllerError};
+use dbsp_adapters::engine::OpenStorageFn;
+use dbsp_adapters::format::parquet::default_arrow_serde_config;
 
 pub(super) mod records;
-
-/// The connector suites, run against the static engine.
-mod suites {
-    crate::connector_suites!(crate::test::StaticTestEngine::new());
-}
 
 /// A compiled record type that the fixture serves a relation with.
 trait CompiledRecord:
@@ -102,6 +104,11 @@ impl StaticTestEngine {
             indexes: BTreeMap::new(),
         };
         engine.serve::<TestStruct>(TestStruct::relation_schema(), Vec::new());
+        engine.serve_index::<KeyStruct, TestStruct>(
+            KeyStruct::relation_schema(),
+            TestStruct::relation_schema(),
+            |row| KeyStruct { id: row.id },
+        );
         engine.serve::<TestStruct2>(TestStruct2::relation_schema(), Vec::new());
         engine.serve::<records::Basic>(controller::relation(), Vec::new());
         engine.serve_index::<records::BasicKey, records::Basic>(
@@ -124,6 +131,8 @@ impl StaticTestEngine {
         );
         engine.serve::<TestStruct2>(parquet::relation(), Vec::new());
         engine.serve::<records::ParquetVariant>(parquet::variant_relation(), Vec::new());
+        engine.serve::<TestStruct2>(arrow_ipc::assorted_relation(), Vec::new());
+        engine.serve::<records::EveryType>(arrow_ipc::every_type_relation(), Vec::new());
         engine.serve::<crate::test::TestStructSoftDelete>(
             soft_delete::relation(),
             crate::test::relations::soft_delete_options().attribute_defaults,
@@ -154,8 +163,8 @@ impl StaticTestEngine {
         }
         #[cfg(feature = "with-postgres-cdc")]
         {
-            use crate::integrated::postgres::cdc_input::destination_tests as postgres_cdc_destination;
-            use crate::integrated::postgres::cdc_tests as postgres_cdc;
+            use crate::test::suites::postgres_cdc;
+            use crate::test::suites::postgres_cdc_destination;
             engine.serve::<records::Basic>(postgres_cdc::cdc_relation(), Vec::new());
             engine.serve::<records::Basic>(postgres_cdc_destination::relation(), Vec::new());
             engine.serve::<records::CdcAllTypesStruct>(
@@ -164,7 +173,7 @@ impl StaticTestEngine {
             );
         }
         {
-            use crate::integrated::postgres::tests as postgres;
+            use crate::test::suites::postgres;
             engine.serve_index::<records::PostgresAllKey, records::PostgresAll>(
                 postgres::key_relation(),
                 postgres::relation(),
@@ -180,7 +189,7 @@ impl StaticTestEngine {
             );
         }
         {
-            use crate::integrated::postgres::output::endpoint_tests as postgres_output;
+            use crate::test::suites::postgres_output;
             engine.serve_index::<records::PostgresKey, records::PostgresRow>(
                 postgres_output::key_relation(),
                 postgres_output::value_relation(),
@@ -189,8 +198,8 @@ impl StaticTestEngine {
         }
         #[cfg(feature = "with-deltalake")]
         {
-            use crate::integrated::delta_table::input::tests as delta_input;
-            use crate::integrated::delta_table::tests as delta_table;
+            use crate::test::suites::delta_input;
+            use crate::test::suites::delta_table;
             engine.serve::<records::Basic>(delta_input::stream_relation(), Vec::new());
             use crate::test::data::DeltaTestKey;
             engine.serve::<records::EveryType>(delta_table::relation(), Vec::new());
@@ -231,7 +240,7 @@ impl StaticTestEngine {
         }
         #[cfg(feature = "with-deltalake")]
         {
-            use crate::integrated::delta_table::merge::tests as delta_merge;
+            use crate::test::suites::delta_merge;
             engine.serve_index::<records::DeltaMergeKey, records::DeltaMergeRow>(
                 delta_merge::key_relation(),
                 delta_merge::value_relation(),
@@ -240,13 +249,13 @@ impl StaticTestEngine {
         }
         #[cfg(feature = "with-deltalake")]
         {
-            use crate::integrated::delta_table::output::tests as delta_output;
             use crate::test::data::{
                 DeltaTestKey, DeltaTestKeyBinary, DeltaTestKeyDate, DeltaTestKeyDecimal,
                 DeltaTestKeyDouble, DeltaTestKeyFloat, DeltaTestKeyInt, DeltaTestKeySmallInt,
                 DeltaTestKeyString, DeltaTestKeyStruct, DeltaTestKeyTimestamp, DeltaTestKeyTinyInt,
                 DeltaTestKeyUnused, DeltaTestKeyUuid, DeltaTestStruct,
             };
+            use crate::test::suites::delta_output;
             engine.serve::<DeltaTestStruct>(delta_output::value_relation(), Vec::new());
             engine.serve_index::<DeltaTestKey, DeltaTestStruct>(
                 delta_output::key_relation_on("bigint"),
@@ -339,7 +348,7 @@ impl StaticTestEngine {
         }
         #[cfg(feature = "with-dynamodb")]
         {
-            use crate::integrated::dynamodb::tests as dynamodb;
+            use crate::test::suites::dynamodb;
             engine.serve_index::<records::DynamoKey, records::DynamoRow>(
                 dynamodb::key_relation(),
                 dynamodb::value_relation(),
@@ -399,8 +408,8 @@ impl StaticTestEngine {
         #[cfg(feature = "with-avro")]
         engine.serve_avro();
         engine.serve_index::<records::BasicKey, records::Basic>(
-            tests::index_key(),
-            tests::indexed_relation(),
+            index_key(),
+            indexed_relation(),
             |row| records::BasicKey { id: row.id },
         );
         engine
@@ -435,6 +444,8 @@ impl StaticTestEngine {
         self.serve::<records::AvroDecimal>(avro_parser::decimal_relation(), Vec::new());
         self.serve::<records::AvroIntegers>(avro_parser::integers_relation(), Vec::new());
         self.serve::<records::Basic>(avro_encoder::relation(), Vec::new());
+        self.serve::<TestStruct2>(avro_encoder::assorted_relation(), Vec::new());
+        self.serve::<records::EveryType>(avro_encoder::every_type_relation(), Vec::new());
         self.serve_index::<records::BasicKey, records::Basic>(
             avro_encoder::key_relation(),
             avro_encoder::relation(),
@@ -499,6 +510,68 @@ impl StaticTestEngine {
     fn supports(&self, relation: &Relation, options: &InputOptions) -> bool {
         self.served(relation)
             .is_some_and(|served| served.attribute_defaults == options.attribute_defaults)
+    }
+
+    /// Builds the circuit of `circuit` with `config`, without a controller, for the tests of
+    /// the static engine that read a circuit or its catalog.
+    ///
+    /// Fails if the fixture does not serve the relations of `circuit`.
+    pub fn circuit(
+        &self,
+        circuit: &TestCircuit,
+        config: CircuitConfig,
+    ) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError> {
+        Ok(self.circuit_builder(circuit)?.build(config, circuit))
+    }
+
+    /// Returns the builder of the circuit of `circuit`.
+    ///
+    /// Fails if the fixture does not serve the relations of `circuit`.
+    fn circuit_builder(
+        &self,
+        circuit: &TestCircuit,
+    ) -> Result<Box<dyn CircuitFactory>, ControllerError> {
+        let builder: Box<dyn CircuitFactory> = match (circuit.relation(), circuit.key()) {
+            (Some(relation), _) if matches!(circuit, TestCircuit::Aggregate { .. }) => {
+                if relation.fields != relations::basic_columns() {
+                    return Err(ControllerError::not_supported(&format!(
+                        "the static engine's fixture builds the aggregate circuit only over the columns of `relations::basic`, not over those of '{}'",
+                        relation.name
+                    )));
+                }
+                Box::new(AggregateCircuit)
+            }
+            (None, _) => Box::new(ClockCircuit),
+            (Some(relation), None) => {
+                let served = self.served(relation).ok_or_else(|| {
+                    ControllerError::not_supported(&format!(
+                        "the static engine's fixture serves no relation '{}' with these columns",
+                        relation.name
+                    ))
+                })?;
+                // The record type compiles its attribute defaults in, so the circuit must
+                // declare the same ones.
+                if served.attribute_defaults != circuit.attribute_defaults() {
+                    return Err(ControllerError::not_supported(&format!(
+                        "the static engine's fixture serves relation '{}' with the attribute defaults {:?}, not {:?}",
+                        relation.name,
+                        served.attribute_defaults,
+                        circuit.attribute_defaults()
+                    )));
+                }
+                Box::new(RecordCircuit(served.record_type.clone()))
+            }
+            (Some(relation), Some(key)) => {
+                let served = self.served_index(key, relation).ok_or_else(|| {
+                    ControllerError::not_supported(&format!(
+                        "the static engine's fixture serves no index '{}' on '{}' with these columns",
+                        key.name, relation.name
+                    ))
+                })?;
+                Box::new(IndexCircuit(served.index_type.clone()))
+            }
+        };
+        Ok(builder)
     }
 }
 
@@ -566,45 +639,36 @@ impl PipelineTestEngine for StaticTestEngine {
         &self,
         circuit: &TestCircuit,
         setup: Option<CatalogSetup>,
-    ) -> Result<CircuitFactoryFunc, ControllerError> {
-        let factory: Box<dyn CircuitFactory> = match (circuit.relation(), circuit.key()) {
-            (Some(relation), _) if matches!(circuit, TestCircuit::Aggregate { .. }) => {
-                if relation.fields != relations::basic_columns() {
-                    return Err(ControllerError::not_supported(&format!(
-                        "the static engine's fixture builds the aggregate circuit only over the columns of `relations::basic`, not over those of '{}'",
-                        relation.name
-                    )));
-                }
-                Box::new(AggregateCircuit)
-            }
-            (None, _) => Box::new(ClockCircuit),
-            (Some(relation), None) => {
-                let served = self.served(relation).ok_or_else(|| {
-                    ControllerError::not_supported(&format!(
-                        "the static engine's fixture serves no relation '{}' with these columns",
-                        relation.name
-                    ))
-                })?;
-                Box::new(RecordCircuit(served.record_type.clone()))
-            }
-            (Some(relation), Some(key)) => {
-                let served = self.served_index(key, relation).ok_or_else(|| {
-                    ControllerError::not_supported(&format!(
-                        "the static engine's fixture serves no index '{}' on '{}' with these columns",
-                        key.name, relation.name
-                    ))
-                })?;
-                Box::new(IndexCircuit(served.index_type.clone()))
-            }
-        };
+    ) -> Result<dbsp_adapters::engine::CircuitFactory, ControllerError> {
+        let factory = self.circuit_builder(circuit)?;
         let circuit = circuit.clone();
-        Ok(Box::new(move |config| {
+        Ok(static_circuit_factory(Box::new(move |config| {
             let (handle, catalog) = factory.build(config, &circuit);
             if let Some(setup) = setup {
                 setup(catalog.as_ref());
             }
             Ok((handle, catalog))
-        }))
+        })))
+    }
+
+    fn open_storage(&self) -> OpenStorageFn {
+        static_open_storage()
+    }
+
+    /// The root `state.json` names the state to resume from, and each checkpoint keeps its
+    /// own copy of its state.
+    fn rewind_resume_state(&self, path: &Path, checkpoint: Uuid) {
+        std::fs::copy(
+            path.join(checkpoint.to_string()).join(STATE_FILE),
+            path.join(STATE_FILE),
+        )
+        .unwrap();
+    }
+
+    /// dbsp locks a pipeline's storage with a lock file, so the storage is free once the
+    /// lock can be taken. Dropping the lock releases it at once.
+    fn storage_released(&self, path: &Path) -> bool {
+        LockedDirectory::new(path).is_ok()
     }
 }
 
@@ -755,7 +819,7 @@ impl<T: CompiledRecord> RecordType for Records<T> {
         relation: &Relation,
         options: &InputOptions,
     ) -> Box<dyn TestCollection> {
-        Box::new(Collection::<T> {
+        Box::new(TypedCollection::<T> {
             relation: relation.clone(),
             handle: MockDeZSet::new(),
             soft_delete: options.soft_delete,
@@ -790,6 +854,9 @@ impl<T: CompiledRecord> RecordType for Records<T> {
                 input_properties,
                 materialized,
                 persistent_ids,
+                table_version,
+                // The record type compiles them in, and `circuit_factory` checks them.
+                attribute_defaults: _,
             } => {
                 let input_properties: Vec<(&str, &str)> = input_properties
                     .iter()
@@ -797,13 +864,14 @@ impl<T: CompiledRecord> RecordType for Records<T> {
                     .collect();
                 let persistent_output_ids: Vec<Option<&str>> =
                     persistent_output_ids.iter().map(Option::as_deref).collect();
-                test_circuit_inner::<T>(
+                identity_circuit::<T>(
                     config,
                     &relation.fields,
                     &input_properties,
                     &persistent_output_ids,
                     *persistent_ids,
                     *materialized,
+                    *table_version,
                 )
             }
             TestCircuit::Keyed { .. }
@@ -869,7 +937,7 @@ impl<K: CompiledRecord, V: CompiledRecord> IndexType for Index<K, V> {
                     key.fields.iter().map(|field| field.name.clone()).collect();
                 let persistent_output_ids: Vec<Option<&str>> =
                     persistent_output_ids.iter().map(Option::as_deref).collect();
-                test_circuit_with_index::<V, K, _>(
+                keyed_circuit::<V, K, _>(
                     config,
                     &relation.fields,
                     &key_fields,
@@ -893,6 +961,209 @@ impl<K: CompiledRecord, V: CompiledRecord> IndexType for Index<K, V> {
             }
         }
     }
+}
+
+/// Returns the circuit of [`TestCircuit::Identity`] over records of type `T`: tables
+/// `test_input1` to `test_input{n}` with the columns `schema` and the properties
+/// `input_properties`, each feeding a view `test_output{i}`, one per entry of
+/// `persistent_output_ids`. `persistent_ids` says whether the tables get persistent ids, which a
+/// checkpoint needs, and `materialized` whether the tables and views are materialized. A later
+/// `table_version` gives the tables new persistent ids, as a changed table does.
+fn identity_circuit<T: CompiledRecord>(
+    config: CircuitConfig,
+    schema: &[Field],
+    input_properties: &[(&str, &str)],
+    persistent_output_ids: &[Option<&str>],
+    persistent_ids: bool,
+    materialized: bool,
+    table_version: u32,
+) -> (DBSPHandle, Box<dyn CircuitCatalog>) {
+    let zero_position = SourcePosition {
+        start_line_number: 0,
+        start_column: 0,
+        end_line_number: 0,
+        end_column: 0,
+    };
+    let input_properties: BTreeMap<String, PropertyValue> = input_properties
+        .iter()
+        .map(|(key, value)| {
+            (
+                key.to_string(),
+                PropertyValue {
+                    value: value.to_string(),
+                    key_position: zero_position,
+                    value_position: zero_position,
+                },
+            )
+        })
+        .collect();
+
+    let schema = schema.to_vec();
+    let persistent_output_ids = persistent_output_ids
+        .iter()
+        .map(|id| id.map(|s| s.to_string()))
+        .collect::<Vec<_>>();
+
+    let (circuit, catalog) = Runtime::init_circuit(config, move |circuit| {
+        let mut catalog = Catalog::new();
+        let n = persistent_output_ids.len();
+
+        for (persistent_output_id, i) in persistent_output_ids.iter().zip(1..) {
+            let (input, hinput) = circuit.add_input_zset::<T>();
+            if persistent_ids {
+                let id = if n > 1 {
+                    format!("input{i}")
+                } else {
+                    "input".to_string()
+                };
+                let id = if table_version == 0 {
+                    id
+                } else {
+                    format!("{id}_v{table_version}")
+                };
+                input.set_persistent_mir_id(&id);
+            }
+
+            let input_schema = serde_json::to_string(&Relation::new(
+                format!("test_input{i}").into(),
+                schema.clone(),
+                false,
+                input_properties.clone(),
+            ))
+            .unwrap();
+
+            let output_schema = serde_json::to_string(&Relation::new(
+                format!("test_output{i}").into(),
+                schema.clone(),
+                false,
+                BTreeMap::new(),
+            ))
+            .unwrap();
+
+            if materialized {
+                catalog.register_materialized_input_zset(input.clone(), hinput, &input_schema);
+            } else {
+                catalog.register_input_zset(input.clone(), hinput, &input_schema);
+            }
+
+            let persistent_output_id = persistent_output_id.as_ref().map(|s| s.as_str());
+            if materialized {
+                catalog.register_materialized_output_zset_persistent(
+                    persistent_output_id,
+                    input,
+                    &output_schema,
+                );
+            } else {
+                catalog.register_output_zset_persistent(
+                    persistent_output_id,
+                    input,
+                    &output_schema,
+                );
+            }
+        }
+        Ok(catalog)
+    })
+    .unwrap();
+    (circuit, Box::new(catalog))
+}
+
+/// Returns the circuit of [`TestCircuit::Keyed`] over records of type `T` with keys of type `K`:
+/// tables `test_input1` to `test_input{n}` with the columns `schema` and the primary key
+/// `key_fields`, whose key `key_func` computes, each feeding a view `test_output{i}`, one per
+/// entry of `persistent_output_ids`, with an index `idx{i}` that is an alias of the view if
+/// `index_is_alias`.
+fn keyed_circuit<T: CompiledRecord, K: CompiledRecord, KF>(
+    config: CircuitConfig,
+    schema: &[Field],
+    key_fields: &[SqlIdentifier],
+    key_func: KF,
+    persistent_output_ids: &[Option<&str>],
+    index_is_alias: bool,
+) -> (DBSPHandle, Box<dyn CircuitCatalog>)
+where
+    KF: Fn(&T) -> K + Clone + Send + Sync + 'static,
+{
+    let schema = schema.to_vec();
+
+    let persistent_output_ids = persistent_output_ids
+        .iter()
+        .map(|id| id.map(|s| s.to_string()))
+        .collect::<Vec<_>>();
+
+    let key_fields = key_fields.to_vec();
+
+    let (circuit, catalog) = Runtime::init_circuit(config, move |circuit| {
+        let mut catalog = Catalog::new();
+        let n = persistent_output_ids.len();
+
+        for (persistent_output_id, i) in persistent_output_ids.iter().zip(1..) {
+            let (input, hinput) = circuit
+                .add_input_map_persistent::<K, T, T, _>(Some(&format!("input{i}")), |val, upd| {
+                    *val = upd.clone()
+                });
+            if n > 1 {
+                input.set_persistent_mir_id(&format!("input{i}"));
+            } else {
+                input.set_persistent_mir_id("input");
+            }
+
+            let input_schema = serde_json::to_string(
+                &Relation::new(
+                    format!("test_input{i}").into(),
+                    schema.clone(),
+                    false,
+                    BTreeMap::new(),
+                )
+                .with_primary_key(&key_fields),
+            )
+            .unwrap();
+
+            let output_schema = serde_json::to_string(&Relation::new(
+                format!("test_output{i}").into(),
+                schema.clone(),
+                false,
+                BTreeMap::new(),
+            ))
+            .unwrap();
+
+            catalog.register_materialized_input_map(
+                input.clone(),
+                hinput,
+                key_func.clone(),
+                key_func.clone(),
+                &input_schema,
+            );
+
+            catalog.register_materialized_output_map_persistent(
+                persistent_output_id.as_ref().map(|s| s.as_str()),
+                input.clone(),
+                if index_is_alias {
+                    Some(SqlIdentifier::from(&format!("idx{i}")))
+                } else {
+                    None
+                },
+                &output_schema,
+                &key_fields.iter().map(|id| id.name()).collect::<Vec<_>>(),
+            );
+
+            let persistent_index_id = persistent_output_id.as_ref().map(|id| format!("{id}.idx"));
+
+            if !index_is_alias {
+                catalog
+                    .register_index_persistent::<K, K, T, T>(
+                        persistent_index_id.as_deref(),
+                        input.clone(),
+                        &SqlIdentifier::from(&format!("idx{i}")),
+                        &SqlIdentifier::from(&format!("test_output{i}")),
+                        &key_fields.iter().map(|id| id.name()).collect::<Vec<_>>(),
+                    )
+                    .expect("failed to register index");
+            }
+        }
+        Ok(catalog)
+    })
+    .unwrap();
+    (circuit, Box::new(catalog))
 }
 
 /// Returns the circuit of [`TestCircuit::IndexedView`]: a table `test_input1` of `relation`
@@ -995,14 +1266,44 @@ fn batch_to_records<T: CompiledRecord>(rows: &RecordBatch, weights: &[i64]) -> A
     Ok(records)
 }
 
-/// An input collection that records the inserts and deletes that parsers flush.
-struct Collection<T> {
+/// An input collection that records the updates that parsers flush in a [`MockDeZSet`], from
+/// which a test of the static engine reads them as compiled records: of type `T`, and of type
+/// `U` for a partial update.
+pub struct TypedCollection<T, U = T> {
     relation: Relation,
-    handle: MockDeZSet<T, T>,
+    handle: MockDeZSet<T, U>,
     soft_delete: bool,
 }
 
-impl<T: CompiledRecord> TestCollection for Collection<T> {
+impl<T, U> TypedCollection<T, U> {
+    /// Returns a collection of `relation` that records its updates in `handle`.
+    pub fn new(relation: Relation, handle: MockDeZSet<T, U>) -> Self {
+        Self {
+            relation,
+            handle,
+            soft_delete: false,
+        }
+    }
+}
+
+impl<T, U> TestCollection for TypedCollection<T, U>
+where
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + SerializeWithContext<SqlSerdeConfig>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Hash
+        + Send
+        + Sync
+        + Debug
+        + Clone
+        + 'static,
+{
     fn input_handle(&self) -> InputCollectionHandle {
         let handle = self.handle.clone();
         if self.soft_delete {
@@ -1054,7 +1355,7 @@ impl<T: CompiledRecord> TestCollection for Collection<T> {
 }
 
 /// Returns `records` in the published form of `relation`.
-fn records_to_batch<T: CompiledRecord>(
+fn records_to_batch<T: SerializeWithContext<SqlSerdeConfig>>(
     relation: &Relation,
     records: &[T],
 ) -> AnyResult<RecordBatch> {
@@ -1085,6 +1386,16 @@ fn with_weights(rows: &RecordBatch, weights: Vec<i64>) -> AnyResult<RecordBatch>
     )?)
 }
 
+/// The key of the index that the fixture's own tests read.
+fn index_key() -> Relation {
+    relations::basic_key("fixture_key")
+}
+
+/// The relation that the index of the fixture's own tests indexes.
+fn indexed_relation() -> Relation {
+    relations::basic("fixture_indexed")
+}
+
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
@@ -1100,19 +1411,11 @@ mod tests {
     use feldera_types::format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat};
     use feldera_types::program_schema::{Relation, SqlIdentifier};
 
-    use super::{StaticTestEngine, published_schema};
+    use super::{StaticTestEngine, index_key, indexed_relation, published_schema};
+    use crate::test::pipeline::{PipelineTestEngine, TestCircuit};
     use crate::test::relations;
-    use crate::test::{TestStruct, mock_input_parser};
-
-    /// The key of the index that the fixture tests read.
-    pub(super) fn index_key() -> Relation {
-        relations::basic_key("fixture_key")
-    }
-
-    /// The relation that the index of the fixture tests indexes.
-    pub(super) fn indexed_relation() -> Relation {
-        relations::basic("fixture_indexed")
-    }
+    use crate::test::suites::soft_delete;
+    use crate::test::{TestStruct, parser};
 
     /// `TestStruct` rows in its published form.
     fn rows(ids: &[i64], bs: &[bool], is: &[Option<i64>], ss: &[&str]) -> RecordBatch {
@@ -1136,8 +1439,8 @@ mod tests {
             array: false,
             lines: JsonLines::Multiple,
         };
-        let mut parser = mock_input_parser(
-            &collection.input_handle(),
+        let mut parser = parser(
+            collection,
             &FormatConfig {
                 name: Cow::from("json"),
                 config: serde_json::to_value(config).unwrap(),
@@ -1335,6 +1638,32 @@ mod tests {
         assert!(
             engine
                 .output_batch(&renamed, &rows(&[1], &[true], &[None], &["one"]), &[1])
+                .is_err()
+        );
+    }
+
+    /// A circuit declares the attribute defaults that the record type of its relation
+    /// compiles in, and the fixture refuses a circuit that declares others.
+    #[test]
+    fn a_circuit_declares_the_attribute_defaults_of_its_type() {
+        let engine = StaticTestEngine::new();
+        let defaults = relations::soft_delete_options().attribute_defaults;
+        let circuit = TestCircuit::identity(soft_delete::relation());
+        assert!(
+            engine
+                .circuit_factory(
+                    &circuit.clone().with_attribute_defaults(defaults.clone()),
+                    None
+                )
+                .is_ok()
+        );
+        let error = engine.circuit_factory(&circuit, None).err().unwrap();
+        assert!(error.to_string().contains("attribute defaults"), "{error}");
+        let plain = TestCircuit::identity(TestStruct::relation_schema());
+        assert!(engine.circuit_factory(&plain, None).is_ok());
+        assert!(
+            engine
+                .circuit_factory(&plain.with_attribute_defaults(defaults), None)
                 .is_err()
         );
     }

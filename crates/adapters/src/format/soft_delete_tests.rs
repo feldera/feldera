@@ -5,6 +5,7 @@
 //! data themselves, through the input stream that the connector writes to: the Arrow stream
 //! for Delta Lake and Iceberg, the record stream for Postgres CDC.
 
+use crate::test::engine_test;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -55,6 +56,13 @@ pub fn key_relation() -> Relation {
     relations::basic_key("soft_delete_key")
 }
 
+/// The identity circuit over [`relation`], whose `is_delete` column reads the connector
+/// attribute of that name.
+fn circuit() -> TestCircuit {
+    TestCircuit::identity(relation())
+        .with_attribute_defaults(relations::soft_delete_options().attribute_defaults)
+}
+
 /// Returns a format configuration.
 fn format(name: &str, config: serde_json::Value) -> FormatConfig {
     FormatConfig {
@@ -90,6 +98,7 @@ fn ingest(
 }
 
 /// The JSON insert/delete format states both polarities.
+#[engine_test]
 pub fn json_insert_delete(engine: &dyn ConnectorTestEngine) {
     let relation = relation();
     let collection = ingest(
@@ -121,6 +130,7 @@ pub fn json_insert_delete(engine: &dyn ConnectorTestEngine) {
 
 /// A Debezium update deletes the record before and inserts the record after, so the table
 /// records both.
+#[engine_test]
 pub fn json_debezium(engine: &dyn ConnectorTestEngine) {
     let relation = relation();
     let collection = ingest(
@@ -148,6 +158,7 @@ pub fn json_debezium(engine: &dyn ConnectorTestEngine) {
 }
 
 /// The JSON raw format only inserts.
+#[engine_test]
 pub fn json_raw(engine: &dyn ConnectorTestEngine) {
     let relation = relation();
     let collection = ingest(
@@ -170,6 +181,7 @@ pub fn json_raw(engine: &dyn ConnectorTestEngine) {
 
 /// A CSV record is positional, so it holds the `is_delete` column, and a value in the record
 /// takes precedence over the metadata, as a column default does.
+#[engine_test]
 pub fn csv(engine: &dyn ConnectorTestEngine) {
     let relation = relation();
     let collection = ingest(
@@ -191,6 +203,7 @@ pub fn csv(engine: &dyn ConnectorTestEngine) {
 }
 
 /// The raw format only inserts.
+#[engine_test(requires(RawFormat))]
 pub fn raw(engine: &dyn ConnectorTestEngine) {
     let relation = raw_relation();
     let collection = ingest(
@@ -225,6 +238,7 @@ fn arrow_batch(rows: &[(i64, &str)]) -> RecordBatch {
 }
 
 /// The Parquet format only inserts.
+#[engine_test]
 pub fn parquet(engine: &dyn ConnectorTestEngine) {
     let rows = arrow_batch(&[(1, "one"), (2, "two")]);
     let mut file = Vec::new();
@@ -266,6 +280,7 @@ fn arrow_stream(
 }
 
 /// A batch of deletes is a batch of inserts.
+#[engine_test]
 pub fn arrow_delete(engine: &dyn ConnectorTestEngine) {
     let (collection, mut stream) = arrow_stream(engine);
     stream.insert(&arrow_batch(&[(1, "one")]), &None).unwrap();
@@ -285,6 +300,7 @@ pub fn arrow_delete(engine: &dyn ConnectorTestEngine) {
 
 /// A CDC connector gives the polarity of each row of a batch. A batch of one polarity arrives
 /// as it is; a mixed batch is split, inserts first, since metadata applies to a whole batch.
+#[engine_test]
 pub fn arrow_polarities(engine: &dyn ConnectorTestEngine) {
     let (collection, mut stream) = arrow_stream(engine);
     stream
@@ -328,6 +344,7 @@ pub fn arrow_polarities(engine: &dyn ConnectorTestEngine) {
 
 /// Polarities that do not match the batch are an error of the caller, which the stream
 /// reports rather than misapplies.
+#[engine_test]
 pub fn arrow_polarities_length_mismatch(engine: &dyn ConnectorTestEngine) {
     let (_collection, mut stream) = arrow_stream(engine);
     let error = stream
@@ -338,6 +355,7 @@ pub fn arrow_polarities_length_mismatch(engine: &dyn ConnectorTestEngine) {
 
 /// A transport that stages buffers instead of flushing them, as the fault-tolerant Kafka
 /// connector does, delivers the same records.
+#[engine_test]
 pub fn staged_buffers(engine: &dyn ConnectorTestEngine) {
     let relation = relation();
     let collection = engine
@@ -358,6 +376,7 @@ pub fn staged_buffers(engine: &dyn ConnectorTestEngine) {
 
 /// A fork of a soft-delete stream or handle, as transports make to run parsers in parallel,
 /// keeps soft deletes.
+#[engine_test]
 pub fn fork_preserves_soft_delete(engine: &dyn ConnectorTestEngine) {
     let relation = relation();
     let collection = engine
@@ -392,6 +411,7 @@ pub fn fork_preserves_soft_delete(engine: &dyn ConnectorTestEngine) {
 
 /// A pipeline whose input connector sets `soft_delete` fills its table with the history of
 /// the input stream.
+#[engine_test]
 pub fn controller_ingests_history(engine: &dyn PipelineTestEngine) {
     let mut input = NamedTempFile::new().unwrap();
     input
@@ -421,7 +441,7 @@ pub fn controller_ingests_history(engine: &dyn PipelineTestEngine) {
     .unwrap();
     let controller = engine
         .controller(
-            &TestCircuit::identity(relation()),
+            &circuit(),
             &config,
             Box::new(|error, _| panic!("error: {error}")),
         )
@@ -447,6 +467,7 @@ pub fn controller_ingests_history(engine: &dyn PipelineTestEngine) {
 
 /// A delete in a table with a primary key names a key, not a record, so there is no record to
 /// insert in its place, and a soft-delete connector on such a table does not start.
+#[engine_test]
 pub fn controller_rejects_primary_key(engine: &dyn PipelineTestEngine) {
     let config: PipelineConfig = serde_json::from_value(json!({
         "name": "test_soft_delete_primary_key",
@@ -479,6 +500,7 @@ pub fn controller_rejects_primary_key(engine: &dyn PipelineTestEngine) {
 
 /// Soft deletes are how an input connector ingests records, so an output connector that sets
 /// the property does not start.
+#[engine_test]
 pub fn controller_rejects_output_connector(engine: &dyn PipelineTestEngine) {
     let output = NamedTempFile::new().unwrap();
     let config: PipelineConfig = serde_json::from_value(json!({
@@ -496,7 +518,7 @@ pub fn controller_rejects_output_connector(engine: &dyn PipelineTestEngine) {
     .unwrap();
     let error = engine
         .controller(
-            &TestCircuit::identity(relation()),
+            &circuit(),
             &config,
             Box::new(|error, _| panic!("error: {error}")),
         )

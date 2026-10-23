@@ -20,7 +20,6 @@ default = [
     "with-deltalake",
     "with-iceberg",
     "with-avro",
-    "with-nexmark",
     "with-pubsub",
     "with-redis",
     "with-nats",
@@ -48,10 +47,8 @@ with-avro = [
 ]
 with-dynamodb = [
     "aws-sdk-dynamodb",
-    "serde_dynamo",
     "feldera-adapterlib/with-dynamodb",
 ]
-with-nexmark = ["dbsp_nexmark"]
 with-redis = ["redis", "r2d2"]
 with-nats = []
 # The connector suites, for an engine's crate to run against its fixture.
@@ -67,6 +64,8 @@ testing = [
     "dep:postgres-types",
     "dep:reqwest",
     "dep:google-cloud-googleapis",
+    "dep:feldera-macros",
+    "dep:libtest-mimic",
 ]
 with-s2 = ["s2-sdk"]
 # Run delta table tests against an S3 bucket.  Requires S3 authentication key
@@ -120,10 +119,8 @@ s2-sdk = { workspace = true, optional = true }
 bytestring = "1.4.0"
 circular-queue = { workspace = true, features = ["serde_support"] }
 crossbeam = { workspace = true }
-dbsp = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
-serde_dynamo = { workspace = true, optional = true }
 erased-serde = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
 serde_urlencoded = { workspace = true }
@@ -158,7 +155,6 @@ size-of = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 proptest = { workspace = true, optional = true }
-proptest-derive = { workspace = true, optional = true }
 parquet-variant = { workspace = true, optional = true }
 parquet-variant-compute = { workspace = true, optional = true }
 parquet-variant-json = { workspace = true, optional = true }
@@ -174,8 +170,6 @@ utoipa = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 colored = { workspace = true }
 uuid = { workspace = true, features = ["v4", "v7", "std"] }
-rkyv = { workspace = true, features = ["std", "size_64"] }
-csv-core = { workspace = true }
 rand = { workspace = true, features = ["small_rng"] }
 tempfile = { workspace = true }
 async-trait = { workspace = true }
@@ -209,8 +203,6 @@ rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1",
 url = { workspace = true }
 atomic = { workspace = true }
 once_cell = { workspace = true }
-dbsp_nexmark = { workspace = true, features = [], optional = true }
-enum-map = { workspace = true }
 google-cloud-pubsub = { workspace = true, optional = true }
 google-cloud-gax = { workspace = true, optional = true }
 tokio-util = { workspace = true, features = ["io", "rt"] }
@@ -239,7 +231,6 @@ r2d2 = { workspace = true, optional = true }
 async-channel = { workspace = true }
 threadpool = { workspace = true }
 postgres = { workspace = true }
-dyn-clone = { workspace = true }
 cpu-time = "1.0.0"
 feldera-ir = { workspace = true }
 aws-lc-rs = { workspace = true }
@@ -254,8 +245,10 @@ google-cloud-metadata = { workspace = true }
 # lockfile regenerated during a rebase resolved it back below that twice; a
 # floor the resolver enforces cannot regress that way.
 aws-sigv4 = { version = "1.4.5", default-features = false }
-feldera-sqllib = { workspace = true }
 inventory = { workspace = true }
+# The connector suites' `#[engine_test]` cases and the harness that runs them.
+feldera-macros = { workspace = true, optional = true }
+libtest-mimic = { workspace = true, optional = true }
 backtrace = { workspace = true }
 itertools = { workspace = true }
 metrics-process = { version = "2.4.0", default-features = false }
@@ -289,6 +282,10 @@ signal-hook = { workspace = true }
 vergen-gitcl = { workspace = true }
 
 [dev-dependencies]
+# The private unit tests that need a storage backend or the VARIANT parser of the static
+# engine. The connector suites, which every engine runs, must not use them.
+dbsp = { workspace = true }
+feldera-sqllib = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 feldera-adapterlib = { workspace = true, features = ["testing"] }
 # Test key generation only; runtime signing goes through aws-lc-rs.
@@ -296,13 +293,10 @@ nkeys = { workspace = true }
 actix-test = { workspace = true }
 flate2 = { workspace = true }
 rcgen = { workspace = true }
-bstr = { workspace = true, features = ["serde1"] }
-feldera-macros = { workspace = true }
 serde_json = { workspace = true }
 size-of = { workspace = true }
 tempfile = { workspace = true }
 proptest = { workspace = true }
-proptest-derive = { workspace = true }
 futures = { workspace = true }
 bytestring = { workspace = true }
 actix-codec = { workspace = true }
@@ -311,30 +305,13 @@ futures-timer = { workspace = true }
 test_bin = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 serial_test = { workspace = true }
+feldera-macros = { workspace = true }
+libtest-mimic = { workspace = true }
 mockall = { workspace = true }
 pretty_assertions = { workspace = true }
 google-cloud-googleapis = { workspace = true }
 postgres-types = { version = "0.2.9", features = ["derive"] }
-criterion = { workspace = true }
 # Builds the Parquet variant fixtures the VARIANT tests read.
 parquet-variant = { workspace = true }
 parquet-variant-compute = { workspace = true }
 parquet-variant-json = { workspace = true }
-
-[[bench]]
-name = "avro_encoder"
-harness = false
-required-features = ["with-avro"]
-
-[[bench]]
-name = "postgres_output"
-harness = false
-required-features = ["bench-mode"]
-
-[[bench]]
-name = "delta_encoder"
-harness = false
-
-[[bench]]
-name = "delta_merge"
-harness = false

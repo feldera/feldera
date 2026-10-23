@@ -1,6 +1,7 @@
 //! The JSON parser: object and array framing, the raw, insert/delete, and Debezium update
 //! formats, record errors, and connector metadata.
 
+use crate::test::engine_test;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::panic::Location;
@@ -158,6 +159,7 @@ fn run(
 }
 
 /// Raw rows, alone or several to a chunk, as objects or as arrays of column values.
+#[engine_test(requires(JsonArrayRecords))]
 pub fn raw_records(engine: &dyn ConnectorTestEngine) {
     run(
         engine,
@@ -279,6 +281,7 @@ pub fn raw_records(engine: &dyn ConnectorTestEngine) {
 
 /// Raw input that is an insert/delete envelope, that is not JSON, or whose records do not
 /// fit the table. A record that does not fit is dropped, along with the rest of its array.
+#[engine_test(requires(SerdeParseErrors))]
 pub fn raw_errors(engine: &dyn ConnectorTestEngine) {
     let envelope_hint = |text: &str| {
         ParseError::text_envelope_error(
@@ -441,6 +444,7 @@ pub fn raw_errors(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Inserts and deletes in the insert/delete format, alone or several to a chunk.
+#[engine_test(requires(JsonArrayRecords))]
 pub fn insert_delete_records(engine: &dyn ConnectorTestEngine) {
     run(
         engine,
@@ -517,6 +521,7 @@ pub fn insert_delete_records(engine: &dyn ConnectorTestEngine) {
 
 /// Insert/delete input that is not JSON, that is not an envelope, or whose records do not
 /// fit the table.
+#[engine_test(requires(SerdeParseErrors))]
 pub fn insert_delete_errors(engine: &dyn ConnectorTestEngine) {
     let missing_i = |event| {
         record_error(
@@ -580,6 +585,7 @@ pub fn insert_delete_errors(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Debezium change events: creates, updates as a delete and an insert, and deletes.
+#[engine_test(requires(JsonArrayRecords))]
 pub fn debezium_records(engine: &dyn ConnectorTestEngine) {
     run(
         engine,
@@ -651,6 +657,7 @@ pub fn debezium_records(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Debezium input that is not JSON, or whose records do not fit the table.
+#[engine_test(requires(SerdeParseErrors))]
 pub fn debezium_errors(engine: &dyn ConnectorTestEngine) {
     run(
         engine,
@@ -702,6 +709,7 @@ pub fn debezium_errors(engine: &dyn ConnectorTestEngine) {
 
 /// Columns whose DEFAULTs read connector attributes take them from the metadata that the
 /// transport attaches to the chunk.
+#[engine_test]
 pub fn metadata(engine: &dyn ConnectorTestEngine) {
     let mut metadata = ConnectorMetadata::new();
     metadata.insert("kafka_headers", VariantValue::Object(BTreeMap::new()));
@@ -734,6 +742,7 @@ pub fn every_type_relation() -> Relation {
 
 /// Random rows of every type, written one object per line in the default flavor, read back
 /// unchanged and in order.
+#[engine_test]
 pub fn random_rows(engine: &dyn ConnectorTestEngine) {
     let relation = every_type_relation();
     let format = FormatConfig {

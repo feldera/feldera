@@ -2,6 +2,7 @@
 //! the table, logical and Debezium types, the `cdc_field` operations, soft deletes, and
 //! connector metadata.
 
+use crate::test::engine_test;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
@@ -414,6 +415,7 @@ fn debezium_updates(
 }
 
 /// Raw records with optional fields, a record, a map, and a decimal.
+#[engine_test]
 pub fn raw_records(engine: &dyn ConnectorTestEngine) {
     let relation = assorted_relation();
     let rows = updates(&relation, &ASSORTED_ROWS.map(|row| (1, row)));
@@ -429,6 +431,7 @@ pub fn raw_records(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A Debezium update deletes the record before and inserts the record after, in that order.
+#[engine_test]
 pub fn debezium_records(engine: &dyn ConnectorTestEngine) {
     let relation = assorted_relation();
     let rows = updates(&relation, &ASSORTED_ROWS.map(|row| (1, row)));
@@ -445,6 +448,7 @@ pub fn debezium_records(engine: &dyn ConnectorTestEngine) {
 }
 
 /// With soft deletes, a Debezium delete is an insert with `is_delete` set.
+#[engine_test]
 pub fn soft_delete_debezium(engine: &dyn ConnectorTestEngine) {
     let value_schema = r#"{
         "type": "record",
@@ -483,6 +487,7 @@ pub fn soft_delete_debezium(engine: &dyn ConnectorTestEngine) {
 
 /// A Debezium field that is not a column is skipped, even when Debezium marks it as a type
 /// to convert and its value is NULL in one record and set in the other.
+#[engine_test]
 pub fn debezium_ignored_coerced_field(engine: &dyn ConnectorTestEngine) {
     let value_schema = r#"{
         "type": "record",
@@ -569,6 +574,7 @@ fn cdc_field_config(
 
 /// The field that `cdc_field` names selects an insert, an upsert, or a delete, whether it is
 /// a string, a nullable string, or an enum.
+#[engine_test]
 pub fn cdc_field(engine: &dyn ConnectorTestEngine) {
     /// The Avro type of `op`, and a function that returns an `op` value.
     type OpType = (&'static str, fn(&str) -> Value);
@@ -606,6 +612,7 @@ pub fn cdc_field(engine: &dyn ConnectorTestEngine) {
 }
 
 /// An unknown or NULL operation is an error of that record only.
+#[engine_test]
 pub fn cdc_field_invalid_op(engine: &dyn ConnectorTestEngine) {
     let text = cdc_field_schema(r#"["null", "string"]"#);
     let schema = AvroSchema::parse_str(&text).unwrap();
@@ -655,6 +662,7 @@ pub fn cdc_field_invalid_op(engine: &dyn ConnectorTestEngine) {
 
 /// A parser refuses a `cdc_field` with an update format other than raw, an empty name, a
 /// name that is not a field, or a field that is not a string or an enum.
+#[engine_test]
 pub fn cdc_field_config_errors(engine: &dyn ConnectorTestEngine) {
     let collection = engine
         .input_collection(&cdc_field_relation(), &InputOptions::default())
@@ -694,6 +702,7 @@ pub fn cdc_field_config_errors(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A nullable column that the Avro schema lacks is NULL.
+#[engine_test]
 pub fn extra_columns(engine: &dyn ConnectorTestEngine) {
     let text = r#"{
         "type": "record",
@@ -784,11 +793,13 @@ fn check_nullability(engine: &dyn ConnectorTestEngine, text: &str) {
 }
 
 /// A field that is not nullable fills a nullable column.
+#[engine_test]
 pub fn non_null_to_nullable(engine: &dyn ConnectorTestEngine) {
     check_nullability(engine, &nullability_schema(r#""long""#, r#""string""#));
 }
 
 /// A nullable field fills a column that is not nullable.
+#[engine_test]
 pub fn nullable_to_non_nullable(engine: &dyn ConnectorTestEngine) {
     check_nullability(
         engine,
@@ -797,6 +808,7 @@ pub fn nullable_to_non_nullable(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A fixed-size field fills a BINARY(32) column, and a bytes field a VARBINARY column.
+#[engine_test]
 pub fn binary(engine: &dyn ConnectorTestEngine) {
     let text = r#"{
         "type": "record",
@@ -828,6 +840,7 @@ pub fn binary(engine: &dyn ConnectorTestEngine) {
 
 /// A UUID column reads a plain string and a string with the `uuid` logical type, and a VARCHAR
 /// column reads a `uuid` string.
+#[engine_test]
 pub fn uuid(engine: &dyn ConnectorTestEngine) {
     let text = r#"{
         "type": "record",
@@ -859,6 +872,7 @@ pub fn uuid(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A VARIANT column reads JSON in an Avro string.
+#[engine_test]
 pub fn variant(engine: &dyn ConnectorTestEngine) {
     let relation = variant_relation();
     let schema = AvroSchema::parse_str(VARIANT_SCHEMA).unwrap();
@@ -877,6 +891,7 @@ pub fn variant(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A VARCHAR column reads the symbol of an Avro enum.
+#[engine_test]
 pub fn enums(engine: &dyn ConnectorTestEngine) {
     let text = r#"{
         "type": "record",
@@ -904,6 +919,7 @@ pub fn enums(engine: &dyn ConnectorTestEngine) {
 
 /// A column whose DEFAULT reads `avro_schema_id` takes the id of the schema, 0 for a static
 /// schema.
+#[engine_test]
 pub fn metadata(engine: &dyn ConnectorTestEngine) {
     let text = r#"{
         "type": "record",
@@ -926,6 +942,7 @@ pub fn metadata(engine: &dyn ConnectorTestEngine) {
 
 /// A field that declares `timestamp-millis` where the field, not its type, carries the logical
 /// type, is a plain `long` of microseconds.
+#[engine_test]
 pub fn timestamp_millis(engine: &dyn ConnectorTestEngine) {
     let text = r#"{
         "type": "record",
@@ -963,6 +980,7 @@ pub fn timestamp_millis(engine: &dyn ConnectorTestEngine) {
 
 /// Every Debezium temporal type fills the matching TIMESTAMP, TIMESTAMP WITH TIME ZONE, TIME,
 /// or DATE column.
+#[engine_test]
 pub fn debezium_temporal_types(engine: &dyn ConnectorTestEngine) {
     let value_schema = r#"{
         "type": "record",
@@ -1051,6 +1069,7 @@ pub fn debezium_temporal_types(engine: &dyn ConnectorTestEngine) {
 
 /// A Debezium zoned timestamp and a Debezium microsecond timestamp each fill a TIMESTAMP and a
 /// TIMESTAMP WITH TIME ZONE column.
+#[engine_test]
 pub fn debezium_timestamp_column_targets(engine: &dyn ConnectorTestEngine) {
     let value_schema = r#"{
         "type": "record",
@@ -1088,6 +1107,7 @@ pub fn debezium_timestamp_column_targets(engine: &dyn ConnectorTestEngine) {
 
 /// A Debezium variable-scale decimal fills a DECIMAL column of another scale, also through a
 /// reference to its record type by name.
+#[engine_test]
 pub fn debezium_variable_scale_decimal(engine: &dyn ConnectorTestEngine) {
     let value_schema = r#"{
         "type": "record",
@@ -1153,6 +1173,7 @@ pub fn debezium_variable_scale_decimal(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Avro `int` fields fill unsigned and signed integer columns of 32 and 64 bits.
+#[engine_test]
 pub fn int_conversions(engine: &dyn ConnectorTestEngine) {
     let text = r#"{
         "type": "record",
@@ -1231,6 +1252,7 @@ fn assorted_rows(max_rows: usize) -> BoxedStrategy<Updates> {
 }
 
 /// Random raw records read back unchanged and in order.
+#[engine_test]
 pub fn random_raw_records(engine: &dyn ConnectorTestEngine) {
     let relation = assorted_relation();
     let schema = AvroSchema::parse_str(ASSORTED_SCHEMA).unwrap();
@@ -1247,6 +1269,7 @@ pub fn random_raw_records(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Random Debezium updates delete and insert each record, in order.
+#[engine_test]
 pub fn random_debezium_records(engine: &dyn ConnectorTestEngine) {
     let relation = assorted_relation();
     proptest!(ProptestConfig::with_cases(2), |(rows in assorted_rows(10000))| {

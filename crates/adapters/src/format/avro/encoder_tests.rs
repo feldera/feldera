@@ -1,6 +1,7 @@
 //! The Avro encoder: raw and Confluent JDBC output of plain and indexed batches, keys, VARIANT
 //! columns, a key with several values, and encoding on several threads.
 
+use crate::test::engine_test;
 use std::sync::{Arc, Mutex};
 
 use apache_avro::{Schema as AvroSchema, from_avro_datum};
@@ -13,6 +14,8 @@ use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::format::avro::{AvroEncoderConfig, AvroEncoderKeyMode, AvroUpdateFormat};
 use feldera_types::program_schema::{ColumnType, Field, Relation};
 use proptest::prelude::*;
+use proptest::strategy::ValueTree;
+use proptest::test_runner::TestRunner;
 use serde_json::Value;
 
 use crate::format::avro::output::AvroEncoder;
@@ -163,6 +166,7 @@ fn flip_b(rows: &RecordBatch) -> RecordBatch {
 }
 
 /// The VARIANT columns encode as JSON in Avro strings.
+#[engine_test]
 pub fn variant_output(engine: &dyn ConnectorTestEngine) {
     let relation = variant_relation();
     let config = AvroEncoderConfig {
@@ -188,6 +192,7 @@ pub fn variant_output(engine: &dyn ConnectorTestEngine) {
 
 /// Each change of each random batch encodes once per unit of weight, with its operation in
 /// the `op` header.
+#[engine_test]
 pub fn random_raw_output(engine: &dyn ConnectorTestEngine) {
     let relation = relation();
     let schema = AvroSchema::parse_str(SCHEMA).unwrap();
@@ -270,6 +275,7 @@ fn check_indexed_steps(
 }
 
 /// An indexed view encodes inserts, updates, and deletes, without keys.
+#[engine_test]
 pub fn random_raw_output_indexed(engine: &dyn ConnectorTestEngine) {
     proptest!(|(batches in rows::batches(&relation(), "id", 10..=10, 20))| {
         check_indexed_steps(
@@ -286,6 +292,7 @@ pub fn random_raw_output_indexed(engine: &dyn ConnectorTestEngine) {
 
 /// By default, an indexed view encodes each change with a key of the key columns, under
 /// schemas that the encoder derives from the relations.
+#[engine_test]
 pub fn random_raw_output_indexed_with_key(engine: &dyn ConnectorTestEngine) {
     proptest!(|(batches in rows::batches(&relation(), "id", 10..=10, 20))| {
         check_indexed_steps(engine, AvroEncoderConfig::default(), &batches);
@@ -295,6 +302,7 @@ pub fn random_raw_output_indexed_with_key(engine: &dyn ConnectorTestEngine) {
 /// In the Confluent JDBC format, an insert is a record once per unit of weight, and a delete is
 /// a tombstone whose key is the whole record. The deletes come first, then the inserts, each in
 /// the order of the batch's cursor.
+#[engine_test]
 pub fn random_confluent_output(engine: &dyn ConnectorTestEngine) {
     let relation = relation();
     let schema = AvroSchema::parse_str(SCHEMA).unwrap();
@@ -337,6 +345,7 @@ pub fn random_confluent_output(engine: &dyn ConnectorTestEngine) {
 
 /// In the Confluent JDBC format, an indexed view encodes an insert and an update as a record
 /// under its own key, and a delete as a tombstone of the key.
+#[engine_test]
 pub fn random_confluent_output_indexed(engine: &dyn ConnectorTestEngine) {
     let (relation, key) = (relation(), key_relation());
     proptest!(|(batches in rows::batches(&relation, "id", 10..=10, 20))| {
@@ -403,6 +412,7 @@ pub fn random_confluent_output_indexed(engine: &dyn ConnectorTestEngine) {
 
 /// An indexed batch with a key that has two values, or one value with a weight past one, is
 /// an error that says so.
+#[engine_test]
 pub fn non_unique_keys(engine: &dyn ConnectorTestEngine) {
     let (relation, key) = (relation(), key_relation());
     let config = AvroEncoderConfig {
@@ -440,6 +450,7 @@ pub fn non_unique_keys(engine: &dyn ConnectorTestEngine) {
 }
 
 /// An encoder with ten threads encodes each change of a large indexed batch once.
+#[engine_test]
 pub fn parallel_indexed_output(engine: &dyn ConnectorTestEngine) {
     let (relation, key) = (relation(), key_relation());
     let config = AvroEncoderConfig {
@@ -496,6 +507,7 @@ pub fn parallel_indexed_output(engine: &dyn ConnectorTestEngine) {
 
 /// An indexed encoder with a `cdc_field` writes each change with the field set to its
 /// operation: `I` for an insert, `U` for an update, and `D` for a delete.
+#[engine_test]
 pub fn cdc_field_output(engine: &dyn ConnectorTestEngine) {
     let (relation, key) = (relation(), key_relation());
     let config = AvroEncoderConfig {
@@ -554,4 +566,59 @@ pub fn cdc_field_output(engine: &dyn ConnectorTestEngine) {
         updates(&with_op, &decoded).zset().unwrap(),
         updates(&with_op, &expected).zset().unwrap()
     );
+}
+
+/// A relation of assorted types, with a nullable ROW column.
+pub fn assorted_relation() -> Relation {
+    relations::assorted("avro_output_assorted")
+}
+
+/// A relation of every type, with ROW columns, an ARRAY of ROW, and a MAP of ROW.
+pub fn every_type_relation() -> Relation {
+    relations::every_type("avro_output_every_type")
+}
+
+/// Rows of every type, ROW columns among them, encode under the schema that the encoder
+/// generates, in the raw and the Confluent JDBC formats, and decode to the rows of the batch.
+#[engine_test]
+pub fn generated_schema_encodes_row_columns(engine: &dyn ConnectorTestEngine) {
+    for (relation, numbered) in [
+        (assorted_relation(), "id"),
+        (every_type_relation(), "bigint"),
+    ] {
+        let rows = rows::batches(&relation, numbered, 1..=1, 5)
+            .prop_filter("some rows", |batches| !batches[0].is_empty())
+            .new_tree(&mut TestRunner::deterministic())
+            .unwrap()
+            .current()
+            .remove(0);
+        for update_format in [AvroUpdateFormat::Raw, AvroUpdateFormat::ConfluentJdbc] {
+            let config = AvroEncoderConfig {
+                update_format: update_format.clone(),
+                ..Default::default()
+            };
+            let (mut encoder, output) = encoder(None, &relation, config);
+            let schema = encoder.value_avro_schema.clone();
+            AvroSchema::parse_str(&crate::format::avro::schema::schema_json(&schema)).unwrap();
+            let messages = encode(
+                &mut encoder,
+                &output,
+                engine
+                    .output_batch(&relation, rows.rows(), rows.weights())
+                    .unwrap(),
+            );
+            let decoded: Vec<(i64, String)> = messages
+                .iter()
+                .map(|(_key, value, _headers)| {
+                    (1, decode(&relation, &schema, value.as_ref().unwrap()))
+                })
+                .collect();
+            assert_eq!(
+                updates(&relation, &decoded).zset().unwrap(),
+                rows.zset().unwrap(),
+                "{} in {update_format:?}",
+                relation.name
+            );
+        }
+    }
 }

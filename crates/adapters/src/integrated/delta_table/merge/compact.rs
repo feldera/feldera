@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result as AnyResult;
-use dbsp::circuit::tokio::TOKIO;
 use deltalake::DeltaTable;
+use feldera_storage::tokio::TOKIO;
 use feldera_types::transport::delta_table::DeltaTableWriterConfig;
 use futures::FutureExt;
 use tokio::task::JoinHandle;

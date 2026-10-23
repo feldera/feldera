@@ -2,6 +2,7 @@
 //! in materialized and cdc mode, with conflicts, column defaults, errors, and reconnects, and
 //! the input connector reading a table, with and without TLS.
 
+use crate::test::engine_test;
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::ops::RangeInclusive;
@@ -642,18 +643,22 @@ fn test_pg_on_conflict(
     controller.stop().unwrap();
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn on_conflict_do_update(engine: &dyn PipelineTestEngine) {
     test_pg_on_conflict(engine, false, PostgresWriteMode::Materialized);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn on_conflict_do_nothing(engine: &dyn PipelineTestEngine) {
     test_pg_on_conflict(engine, true, PostgresWriteMode::Materialized);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn insert0(engine: &dyn PipelineTestEngine) {
     pg_insert0(engine, PostgresWriteMode::Materialized);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn insert0_cdc(engine: &dyn PipelineTestEngine) {
     pg_insert0(engine, PostgresWriteMode::Cdc);
 }
@@ -763,6 +768,7 @@ fn pg_insert0(engine: &dyn PipelineTestEngine, mode: PostgresWriteMode) {
 
 // A NOT NULL DEFAULT column (served_at) omitted from the Feldera schema must be
 // populated from its default, not NULL (#6694).
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn insert_omitted_default_column(engine: &dyn PipelineTestEngine) {
     let table_name = unique_pg_name("test_pg_default");
     let url = postgres_url();
@@ -855,6 +861,7 @@ fn payload_bytes_in_error(message: &str) -> Option<usize> {
 /// tag, so quoting the payload in full grew `/stats` and
 /// `/output_endpoints/{name}/stats` past the size limit the pipeline manager
 /// applies while proxying them, failing the whole request.
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn error_message_is_bounded(engine: &dyn PipelineTestEngine) {
     let table_name = unique_pg_name("test_pg_errmsg");
     let url = postgres_url();
@@ -1103,6 +1110,7 @@ fn pg_row_count(url: &str, table_name: &str) -> u64 {
 /// A failing statement aborts the whole transaction, and Postgres answers the
 /// following COMMIT with ROLLBACK instead of an error, so a commit that reports
 /// success proves nothing on its own.
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn transmitted_records_excludes_rolled_back_rows(engine: &dyn PipelineTestEngine) {
     let table_name = unique_pg_name("test_pg_rollback_count");
     let url = postgres_url();
@@ -1168,6 +1176,7 @@ fn records_in_error(message: &str) -> Option<usize> {
 
 /// A transaction that fails partway discards the statements that already
 /// succeeded, so none of the batch counts as transmitted.
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn transmitted_records_excludes_rows_lost_to_a_later_failure(engine: &dyn PipelineTestEngine) {
     const RECORDS: usize = 3000;
     const REJECTED: &str = "__reject__";
@@ -1465,14 +1474,17 @@ fn pg_reconnect_test(engine: &dyn PipelineTestEngine, name: &str, threads: usize
     );
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn reconnect_does_not_lose_the_batch(engine: &dyn PipelineTestEngine) {
     pg_reconnect_test(engine, "test_pg_reconnect", 1, 1);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn reconnect_does_not_lose_the_batch_multi_thread(engine: &dyn PipelineTestEngine) {
     pg_reconnect_test(engine, "test_pg_reconnect_mt", 3, 1);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn reconnect_survives_repeated_drops(engine: &dyn PipelineTestEngine) {
     pg_reconnect_test(engine, "test_pg_reconnect_repeat", 1, 3);
 }
@@ -1554,6 +1566,7 @@ impl Drop for RefusedConnections {
 /// there the reconnect succeeds on the first try, so `retry_connecting_with_backoff` never
 /// enters its error branch. Refusing connections for a few seconds forces that
 /// branch, and the batch still has to arrive once they are let through.
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn reconnect_waits_out_a_refusing_database(engine: &dyn PipelineTestEngine) {
     const RECORDS: usize = 3000;
 
@@ -1636,6 +1649,7 @@ pub fn reconnect_waits_out_a_refusing_database(engine: &dyn PipelineTestEngine) 
 /// the endpoint's drop joins that thread, so anything that keeps the loop from
 /// noticing the shutdown hangs the pipeline rather than merely stalling its
 /// output.
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn stops_while_the_database_is_unreachable(engine: &dyn PipelineTestEngine) {
     const RECORDS: usize = 3000;
     const STOP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
@@ -1689,6 +1703,7 @@ pub fn stops_while_the_database_is_unreachable(engine: &dyn PipelineTestEngine) 
 }
 
 /// The `transmitted_records` counter still reports every row of a batch that commits.
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn transmitted_records_counts_committed_rows(engine: &dyn PipelineTestEngine) {
     let table_name = unique_pg_name("test_pg_commit_count");
     let url = postgres_url();
@@ -1727,6 +1742,7 @@ pub fn transmitted_records_counts_committed_rows(engine: &dyn PipelineTestEngine
     );
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn insert(engine: &dyn PipelineTestEngine) {
     let table_name = unique_pg_name("test_pg_insert");
     let url = postgres_url();
@@ -1803,10 +1819,12 @@ pub fn insert(engine: &dyn PipelineTestEngine) {
     .expect("timeout: failed to insert data into postgres");
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn upsert0(engine: &dyn PipelineTestEngine) {
     pg_upsert0(engine, PostgresWriteMode::Materialized);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn upsert0_cdc(engine: &dyn PipelineTestEngine) {
     pg_upsert0(engine, PostgresWriteMode::Cdc);
 }
@@ -2011,6 +2029,7 @@ fn pg_upsert0(engine: &dyn PipelineTestEngine, mode: PostgresWriteMode) {
     }
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn upsert(engine: &dyn PipelineTestEngine) {
     let table_name = unique_pg_name("test_pg_upsert");
     let url = postgres_url();
@@ -2146,10 +2165,12 @@ pub fn upsert(engine: &dyn PipelineTestEngine) {
     .expect("timeout: failed to update data into postgres");
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn delete(engine: &dyn PipelineTestEngine) {
     pg_delete(engine, PostgresWriteMode::Materialized)
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn delete_cdc(engine: &dyn PipelineTestEngine) {
     pg_delete(engine, PostgresWriteMode::Cdc)
 }
@@ -2565,11 +2586,13 @@ fn pg_simple(engine: &dyn PipelineTestEngine, url: String, tls: Option<PostgresT
         .unwrap();
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn simple(engine: &dyn PipelineTestEngine) {
     pg_simple(engine, postgres_url(), None);
 }
 
 /// Same as `test_pg_simple` but over a TLS connection.
+#[engine_test(serial, requires(PostgresRendering), services(PostgresTls))]
 pub fn simple_tls(engine: &dyn PipelineTestEngine) {
     let (url, tls) = postgres_ssl_config();
     pg_simple(engine, url, Some(tls));
@@ -2579,6 +2602,7 @@ pub fn simple_tls(engine: &dyn PipelineTestEngine) {
 ///
 /// Inserts rows into TLS-enabled postgres directly, then reads them back
 /// through the `postgres_input` transport and writes them to a file.
+#[engine_test(serial, services(PostgresTls))]
 pub fn input_tls(engine: &dyn PipelineTestEngine) {
     let (url, tls) = postgres_ssl_config();
     let table_name = unique_pg_name("test_pg_input_tls");
@@ -2721,6 +2745,7 @@ pub fn input_tls(engine: &dyn PipelineTestEngine) {
 /// init-status channel has been consumed. The query error used to be sent on
 /// that channel and silently dropped, so the connector terminated without
 /// notifying the controller and the pipeline stalled forever.
+#[engine_test(serial, services(Postgres))]
 pub fn input_query_error(engine: &dyn PipelineTestEngine) {
     let url = postgres_url();
 
@@ -2805,6 +2830,7 @@ pub fn input_query_error(engine: &dyn PipelineTestEngine) {
 /// batch; this guarantees that both values of each non-unique key are encoded
 /// together (otherwise the conflict would not be observable within a single
 /// batch).
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn non_unique_keys_skipped(engine: &dyn PipelineTestEngine) {
     let table_name = unique_pg_name("test_pg_non_unique");
     let url = postgres_url();

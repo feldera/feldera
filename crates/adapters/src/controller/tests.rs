@@ -3,6 +3,7 @@
 //! own bookkeeping of connector transactions, input probes, and output endpoints; and the
 //! helpers that the other controller tests share.
 
+use crate::test::engine_test;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fs::{File, create_dir};
@@ -62,6 +63,8 @@ pub(crate) fn identity(persistent_output_ids: &[Option<&str>]) -> TestCircuit {
         input_properties: Vec::new(),
         materialized: true,
         persistent_ids: true,
+        table_version: 0,
+        attribute_defaults: Vec::new(),
     }
 }
 
@@ -264,6 +267,7 @@ impl OutputEndpoint for BlockedOutputEndpoint {
 
 /// Random rows, written as CSV to a file that a secret names, reach the output file that
 /// another secret names, whatever the batch sizes and buffering of the pipeline.
+#[engine_test]
 pub fn proptest_csv_file(engine: &dyn PipelineTestEngine) {
     let relation = relation();
     let cases = (
@@ -360,6 +364,7 @@ pub fn proptest_csv_file(engine: &dyn PipelineTestEngine) {
     });
 }
 
+#[engine_test]
 pub fn start_after_cyclic(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -424,6 +429,7 @@ pub fn start_after_cyclic(engine: &dyn PipelineTestEngine) {
     );
 }
 
+#[engine_test]
 pub fn start_after(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -522,6 +528,7 @@ pub fn start_after(engine: &dyn PipelineTestEngine) {
 /// A panic on the circuit thread after initialization must reach the error
 /// callback as `ControllerPanic`; otherwise the server never learns that the
 /// pipeline died and keeps reporting it as running.
+#[engine_test]
 pub fn circuit_thread_panic_is_reported(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -640,12 +647,14 @@ fn check_concurrent_init(engine: &dyn PipelineTestEngine, max_parallel_connector
     controller.stop().unwrap();
 }
 
+#[engine_test]
 pub fn concurrent_init(engine: &dyn PipelineTestEngine) {
     check_concurrent_init(engine, 1);
     check_concurrent_init(engine, 10);
     check_concurrent_init(engine, 100);
 }
 
+#[engine_test]
 pub fn connector_init_error(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -700,6 +709,7 @@ pub fn connector_init_error(engine: &dyn PipelineTestEngine) {
 /// `add_input_endpoint` used to return the error while leaving the endpoint in
 /// the status map, where the endpoint could never run yet still reserved its
 /// own name against a retry.
+#[engine_test(requires(Storage, FaultTolerance))]
 pub fn fault_tolerance_mismatch_unregisters_the_endpoint(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -809,6 +819,7 @@ impl TransportInputEndpoint for OpenRecordingEndpoint {
 ///
 /// Opening a connector can connect to external systems, start threads, and
 /// report end of input, so the check must come before `open`, not after it.
+#[engine_test(requires(Storage, FaultTolerance))]
 pub fn fault_tolerance_mismatch_does_not_open_the_endpoint(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -879,6 +890,7 @@ impl TransportInputEndpoint for GatedOpenEndpoint {
 /// endpoint without a reader never gets `queue()`, so it can never report
 /// progress.  Waiting for it stalls the pipeline forever.  Once `open()`
 /// returns, later steps must consume the endpoint's input.
+#[engine_test]
 pub fn step_does_not_wait_for_endpoint_without_reader(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -1065,6 +1077,7 @@ impl InputReader for TransactionalInputEndpoint {
 /// same input still buffered, and steps again: the circuit thread spins on
 /// empty steps for the rest of the transaction, evaluating the whole circuit
 /// each time.
+#[engine_test]
 pub fn committed_connector_input_does_not_spin_the_circuit(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -1293,6 +1306,7 @@ impl InputReader for ManualInputEndpoint {
 /// A `disconnect_input` removes the endpoint, losing this count.  The records
 /// reach the circuit either way, so losing their count would leave
 /// `total_processed_records` permanently below `total_input_records`.
+#[engine_test]
 pub fn removed_input_endpoint_input_is_still_counted(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -1362,6 +1376,7 @@ pub fn removed_input_endpoint_input_is_still_counted(engine: &dyn PipelineTestEn
 
 /// The other half of `ControllerInner::shutdown_token`: an ordinary stop cancels the
 /// shutdown signal without any help from the DBSP runtime.
+#[engine_test]
 pub fn stop_cancels_the_shutdown_signal(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -1411,6 +1426,7 @@ pub fn stop_cancels_the_shutdown_signal(engine: &dyn PipelineTestEngine) {
 ///
 /// The view is not materialized, because a materialized view's accumulator
 /// is always enabled.
+#[engine_test]
 pub fn output_endpoint_records_transaction_after_enable(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let config: PipelineConfig = serde_json::from_value(json!({
@@ -1426,6 +1442,8 @@ pub fn output_endpoint_records_transaction_after_enable(engine: &dyn PipelineTes
         input_properties: Vec::new(),
         materialized: false,
         persistent_ids: true,
+        table_version: 0,
+        attribute_defaults: Vec::new(),
     };
     let controller = engine
         .controller(&circuit, &config, Box::new(|e, _| panic!("error: {e}")))
@@ -1585,6 +1603,7 @@ fn check_endpoint_transmitted(controller: &Controller, endpoint_name: &str, n_re
 /// handle, and reading a handle removes the step's updates from it.  The
 /// controller must read the handle once and hand the updates to every
 /// connector on either relation, whichever of the two names sorts first.
+#[engine_test]
 pub fn view_and_aliased_index_connectors_receive_the_same_output(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -1621,6 +1640,7 @@ pub fn view_and_aliased_index_connectors_receive_the_same_output(engine: &dyn Pi
 /// stream on the view before any input arrived.  From then on, the PostgreSQL
 /// connector on the index received nothing, although the view held every
 /// record.
+#[engine_test]
 pub fn closing_a_view_connector_does_not_starve_its_aliased_index(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -1662,6 +1682,7 @@ pub fn closing_a_view_connector_does_not_starve_its_aliased_index(engine: &dyn P
 /// The index shares the view's output handles, so the controller files the
 /// connector under the view's name, and finds the view's snapshot under that
 /// name.
+#[engine_test]
 pub fn aliased_index_connector_receives_the_snapshot(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -1715,6 +1736,7 @@ pub fn aliased_index_connector_receives_the_snapshot(engine: &dyn PipelineTestEn
 /// group first reads the handle before the transaction commits, so the handle
 /// must not still hold the output of the transaction that committed before
 /// the connector was attached.
+#[engine_test]
 pub fn connector_attached_between_transactions_receives_no_earlier_output(
     engine: &dyn PipelineTestEngine,
 ) {
@@ -1817,6 +1839,7 @@ pub fn connector_attached_between_transactions_receives_no_earlier_output(
 /// A missed wakeup here is a hang, not a slowdown:
 /// [`committed_connector_input_does_not_spin_the_circuit`] covers the case
 /// end to end.
+#[engine_test]
 pub fn input_batch_wakes_the_circuit_thread(engine: &dyn PipelineTestEngine) {
     init_test_logger();
 
@@ -1872,6 +1895,7 @@ pub fn input_batch_wakes_the_circuit_thread(engine: &dyn PipelineTestEngine) {
 /// The disk reported on the stats endpoint is the one holding the storage
 /// backend's own path, so a pipeline with local storage reports it and one
 /// without storage omits it.
+#[engine_test(requires(Storage))]
 pub fn api_status_reports_disk_usage_from_storage_backend(engine: &dyn PipelineTestEngine) {
     use feldera_storage::disk::DiskUsage;
 
@@ -1956,6 +1980,7 @@ pub fn api_status_reports_disk_usage_from_storage_backend(engine: &dyn PipelineT
 ///
 /// Reading `total_completed_steps` here instead of `total_initiated_steps`
 /// makes this test fail, which the arithmetic test above cannot do.
+#[engine_test]
 pub fn a_reader_is_told_the_step_being_fed_not_the_one_the_outputs_finished(
     engine: &dyn PipelineTestEngine,
 ) {
@@ -2050,6 +2075,7 @@ fn waits_for_connector(controller: &Controller) -> bool {
 /// transaction can never commit it, so its part ends.  Otherwise the
 /// transaction would stay open forever.  A connector that recovers from an
 /// error keeps its part.
+#[engine_test]
 pub fn stopped_connector_ends_its_transaction(engine: &dyn PipelineTestEngine) {
     let config = json!({"name": "test", "workers": 1, "inputs": {}, "outputs": {}});
     for stop in ["nonfatal", "fatal", "disconnect"] {
@@ -2073,6 +2099,7 @@ pub fn stopped_connector_ends_its_transaction(engine: &dyn PipelineTestEngine) {
 /// In a multihost pipeline, a host whose part of a transaction that needs
 /// every host fails reports the connector as done, so that the coordinator
 /// does not wait for it forever.
+#[engine_test]
 pub fn stopped_connector_finishes_all_hosts_transaction(engine: &dyn PipelineTestEngine) {
     let (controller, probe) = controller_with_probe(
         engine,
@@ -2107,6 +2134,7 @@ pub fn stopped_connector_finishes_all_hosts_transaction(engine: &dyn PipelineTes
 
 /// The controller reports a paused input connector that the open transaction
 /// waits for, because the transaction cannot commit until it is started.
+#[engine_test]
 pub fn paused_connector_holds_transaction(engine: &dyn PipelineTestEngine) {
     let (controller, probe) = controller_with_probe(
         engine,
@@ -2151,6 +2179,7 @@ pub fn paused_connector_holds_transaction(engine: &dyn PipelineTestEngine) {
 /// The ingest deliberately runs many small steps with the connector racing
 /// ahead of the circuit, so that the commit boundary falls while records are
 /// still queued.
+#[engine_test(requires(Storage))]
 pub fn transaction_leaves_views_on_the_same_input_prefix(engine: &dyn PipelineTestEngine) {
     // The circuit keeps up with the connector: nothing is queued when the
     // commit starts.
@@ -2161,6 +2190,7 @@ pub fn transaction_leaves_views_on_the_same_input_prefix(engine: &dyn PipelineTe
 /// been fed into the transaction and only a couple of batches are still
 /// queued.  In the failing run the aggregate view was short by 160,215
 /// records, two of that pipeline's 80,000-record batches.
+#[engine_test(requires(Storage))]
 pub fn transaction_committing_on_a_short_tail_leaves_views_on_the_same_input_prefix(
     engine: &dyn PipelineTestEngine,
 ) {
@@ -2171,6 +2201,7 @@ pub fn transaction_committing_on_a_short_tail_leaves_views_on_the_same_input_pre
 /// therefore the commit) arrives while a large backlog is still queued.  That
 /// is the state the CI pipeline was in: at the last progress sample it had
 /// received 830,486 records and processed 814,623 of them.
+#[engine_test(requires(Storage))]
 pub fn transaction_with_a_backlog_leaves_views_on_the_same_input_prefix(
     engine: &dyn PipelineTestEngine,
 ) {
@@ -2240,6 +2271,7 @@ where
 ///
 /// * `passthrough` and `counts` agree, so no snapshot is internally torn.
 /// * neither view ever goes backwards from one snapshot to the next.
+#[engine_test(requires(Storage))]
 pub fn many_transactions_leave_views_on_the_same_input_prefix(engine: &dyn PipelineTestEngine) {
     repeat_for_budget("many_transactions", || {
         transaction_rounds(engine, 200_000, 500, 4_000, 16, 0)
@@ -2248,6 +2280,7 @@ pub fn many_transactions_leave_views_on_the_same_input_prefix(engine: &dyn Pipel
 
 /// Same, with one group per record instead of sixteen, so the aggregate carries
 /// a large trace and the circuit merges and spills while the transaction runs.
+#[engine_test(requires(Storage))]
 pub fn many_transactions_with_a_high_cardinality_aggregate(engine: &dyn PipelineTestEngine) {
     repeat_for_budget("high_cardinality", || {
         transaction_rounds(engine, 200_000, 500, 4_000, 200_000, 0)
@@ -2256,6 +2289,7 @@ pub fn many_transactions_with_a_high_cardinality_aggregate(engine: &dyn Pipeline
 
 /// Same, with kilobyte records, so each step carries far more bytes and spends
 /// far longer in parse, exchange, and spill.
+#[engine_test(requires(Storage))]
 pub fn many_transactions_with_large_records(engine: &dyn PipelineTestEngine) {
     repeat_for_budget("large_records", || {
         transaction_rounds(engine, 50_000, 500, 4_000, 16, 1_024)
@@ -2533,6 +2567,9 @@ fn transaction_view_consistency(
             }
             samples
         });
+        // A failed wait below panics; `thread::scope` then waits for the sampler before it
+        // passes the panic on, so the sampler must stop on the way out as well.
+        let stop_sampler = StopSampler(&done);
 
         controller.start();
 
@@ -2569,7 +2606,7 @@ fn transaction_view_consistency(
         wait(|| controller.pipeline_complete(), default_timeout_ms())
             .expect("timed out waiting for the pipeline to complete");
 
-        done.store(true, Ordering::Release);
+        drop(stop_sampler);
         let samples = sampler.join().unwrap();
         info!("{} distinct snapshots observed", samples.len());
         torn = samples
@@ -2595,6 +2632,16 @@ fn transaction_view_consistency(
     );
 
     controller.stop().unwrap();
+}
+
+/// Sets its flag when it is dropped, also while a panic unwinds, to stop the sampler of
+/// [`transaction_view_consistency`].
+struct StopSampler<'a>(&'a AtomicBool);
+
+impl Drop for StopSampler<'_> {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
 }
 
 /// One ad-hoc snapshot, read through a single query so that every count comes

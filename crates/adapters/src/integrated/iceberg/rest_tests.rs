@@ -4,11 +4,13 @@
 //! `iceberg_test.test_table_v3` from `s3://feldera-ci-iceberg/`, and runs with the
 //! `iceberg-tests-rest` feature. See `crates/iceberg/src/test/README.md`.
 
+use crate::test::engine_test;
 use serde_json::json;
 
 use super::tests::{env_or, iceberg_snapshot_to_json, lateness_relation, output_zset};
 use crate::test::pipeline::PipelineTestEngine;
 
+#[engine_test(cfg(feature = "iceberg-tests-rest"))]
 pub fn rest_s3_input_test(engine: &dyn PipelineTestEngine) {
     // Read delta table unordered.
     let (json_file, _metrics) = iceberg_snapshot_to_json(

@@ -4,6 +4,7 @@
 //!
 //! This module also holds the fixtures that the output module's own tests share with it.
 
+use crate::test::engine_test;
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
@@ -314,10 +315,12 @@ fn insert_test(engine: &dyn ConnectorTestEngine, threads: usize) {
     assert_eq!(got, records);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn insert_single_thread(engine: &dyn ConnectorTestEngine) {
     insert_test(engine, 1);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn insert_multi_thread(engine: &dyn ConnectorTestEngine) {
     insert_test(engine, 4);
 }
@@ -362,6 +365,7 @@ fn upsert_test(engine: &dyn ConnectorTestEngine, threads: usize) {
     assert_eq!(got, expected);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn extra_columns_test(engine: &dyn ConnectorTestEngine) {
     let mut client = pg_client();
     setup_table_with_extra_columns(&mut client);
@@ -513,10 +517,12 @@ pub fn extra_columns_test(engine: &dyn ConnectorTestEngine) {
     assert_eq!(got, expected);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn upsert_single_thread(engine: &dyn ConnectorTestEngine) {
     upsert_test(engine, 1);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn upsert_multi_thread(engine: &dyn ConnectorTestEngine) {
     upsert_test(engine, 4);
 }
@@ -542,10 +548,12 @@ fn delete_test(engine: &dyn ConnectorTestEngine, threads: usize) {
     assert_eq!(got, expected);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn delete_single_thread(engine: &dyn ConnectorTestEngine) {
     delete_test(engine, 1);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn delete_multi_thread(engine: &dyn ConnectorTestEngine) {
     delete_test(engine, 4);
 }
@@ -563,14 +571,17 @@ fn empty_batch_test(engine: &dyn ConnectorTestEngine, threads: usize) {
     assert!(got.is_empty());
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn empty_batch_single_thread(engine: &dyn ConnectorTestEngine) {
     empty_batch_test(engine, 1);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn empty_batch_multi_thread(engine: &dyn ConnectorTestEngine) {
     empty_batch_test(engine, 4);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn single_record_multi_thread(engine: &dyn ConnectorTestEngine) {
     let mut client = pg_client();
     setup_table(&mut client);
@@ -646,10 +657,12 @@ fn multiple_batches_test(engine: &dyn ConnectorTestEngine, threads: usize) {
     assert_eq!(got, expected[..75]);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn multiple_batches_single_thread(engine: &dyn ConnectorTestEngine) {
     multiple_batches_test(engine, 1);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn multiple_batches_multi_thread(engine: &dyn ConnectorTestEngine) {
     multiple_batches_test(engine, 4);
 }
@@ -698,14 +711,17 @@ fn progress_basic(engine: &dyn ConnectorTestEngine, threads: usize) {
     assert_eq!(got, records);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn progress_counter_single_thread(engine: &dyn ConnectorTestEngine) {
     progress_basic(engine, 1);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn progress_counter_multi_thread(engine: &dyn ConnectorTestEngine) {
     progress_basic(engine, 4);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn progress_counter_empty_batch(engine: &dyn ConnectorTestEngine) {
     let mut client = pg_client();
     setup_table(&mut client);
@@ -720,6 +736,7 @@ pub fn progress_counter_empty_batch(engine: &dyn ConnectorTestEngine) {
     assert_eq!(records_written(&endpoint), 0);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn progress_counter_advances_mid_batch_single_thread(engine: &dyn ConnectorTestEngine) {
     let mut client = pg_client();
     setup_table(&mut client);
@@ -745,6 +762,7 @@ pub fn progress_counter_advances_mid_batch_single_thread(engine: &dyn ConnectorT
     assert_eq!(records_written(&endpoint), 0);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn progress_counter_multiple_batches(engine: &dyn ConnectorTestEngine) {
     let mut client = pg_client();
     setup_table(&mut client);
@@ -766,6 +784,7 @@ pub fn progress_counter_multiple_batches(engine: &dyn ConnectorTestEngine) {
     assert_eq!(records_written(&endpoint), 0);
 }
 
+#[engine_test(serial, requires(PostgresRendering), services(Postgres))]
 pub fn progress_counter_advances_mid_batch_multi_thread(engine: &dyn ConnectorTestEngine) {
     let mut client = pg_client();
     setup_table(&mut client);

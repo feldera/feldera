@@ -1,23 +1,17 @@
 #[cfg(feature = "feldera-enterprise")]
 use anyhow::Context;
+use anyhow::anyhow;
+use std::sync::atomic::AtomicU64;
 #[cfg(feature = "feldera-enterprise")]
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, LazyLock, atomic::AtomicU64};
 
-#[cfg(feature = "feldera-enterprise")]
-use dbsp::circuit::{CircuitStorageConfig, checkpointer::Checkpointer};
+use crate::engine::{CheckpointSync, PipelineStorage};
 use feldera_adapterlib::errors::journal::ControllerError;
-#[cfg(feature = "feldera-enterprise")]
-use feldera_storage::StoragePath;
-use feldera_storage::{
-    StorageBackend, checkpoint_synchronizer::CheckpointSynchronizer,
-    histogram::ExponentialHistogram,
-};
+use feldera_storage::histogram::ExponentialHistogram;
 #[cfg(feature = "feldera-enterprise")]
 use feldera_types::{
     checkpoint::CheckpointMetadata,
-    config::{FileBackendConfig, StorageBackendConfig},
-    constants::ACTIVATION_MARKER_FILE,
+    config::{FileBackendConfig, StorageBackendConfig, StorageOptions},
 };
 use feldera_types::{
     checkpoint::HostInfo,
@@ -60,41 +54,30 @@ pub static CHECKPOINT_SYNC_PUSH_FAILURES: AtomicU64 = AtomicU64::new(0);
 pub static CHECKPOINT_SYNC_PUSH_DURATION_SECONDS: ExponentialHistogram =
     ExponentialHistogram::new();
 
-/// Lazily resolves the checkpoint synchronizer.
-///
-/// This panic is safe as all enterprise builds must include the checkpoint-sync
-/// crate.
-pub(super) static SYNCHRONIZER: LazyLock<&'static dyn CheckpointSynchronizer> =
-    LazyLock::new(|| {
-        let Some(synchronizer) = inventory::iter::<&dyn CheckpointSynchronizer>
-            .into_iter()
-            .next()
-        else {
-            unreachable!("no checkpoint synchronizer found; are enterprise features enabled?");
-        };
-
-        *synchronizer
-    });
+/// The checkpoint sync of `storage`, or an error if its engine has none.
+pub(crate) fn checkpoint_sync(
+    storage: &dyn PipelineStorage,
+) -> anyhow::Result<&dyn CheckpointSync> {
+    storage.sync().ok_or_else(|| {
+        anyhow!("this pipeline's engine cannot sync checkpoints with object storage")
+    })
+}
 
 /// Pulls the checkpoint specified by the sync config and garbage collects all
 /// older checkpoints.
 #[cfg(feature = "feldera-enterprise")]
 fn pull_and_gc(
-    storage: Arc<dyn StorageBackend>,
+    storage: &dyn PipelineStorage,
     sync: &SyncConfig,
     prev: &mut uuid::Uuid,
     host_info: Option<HostInfo>,
     standby: bool,
     pipeline: &PipelineIdentity,
 ) -> Result<CheckpointMetadata, ControllerError> {
-    match SYNCHRONIZER
-        .pull(
-            storage.clone(),
-            sync.to_owned(),
-            host_info,
-            standby,
-            pipeline.clone(),
-        )
+    match checkpoint_sync(storage)
+        .and_then(|checkpoint_sync| {
+            checkpoint_sync.pull(sync.to_owned(), host_info, standby, pipeline.clone())
+        })
         .map_err(|e| ControllerError::checkpoint_fetch_error(format!("{e:?}")))
     {
         Err(err) => {
@@ -113,8 +96,7 @@ fn pull_and_gc(
                 }
             }
 
-            let checkpointer = Checkpointer::new(storage.clone())?;
-            checkpointer.gc_startup()?;
+            storage.gc_startup()?;
 
             Ok(cpm)
         }
@@ -122,8 +104,8 @@ fn pull_and_gc(
 }
 
 #[cfg(feature = "feldera-enterprise")]
-pub fn is_pull_necessary(storage: &CircuitStorageConfig) -> Option<&SyncConfig> {
-    let StorageBackendConfig::File(ref file_cfg) = storage.options.backend else {
+pub fn is_pull_necessary(options: &StorageOptions) -> Option<&SyncConfig> {
+    let StorageBackendConfig::File(ref file_cfg) = options.backend else {
         return None;
     };
 
@@ -140,33 +122,12 @@ pub fn is_pull_necessary(storage: &CircuitStorageConfig) -> Option<&SyncConfig> 
     Some(sync)
 }
 
+/// Pulls the latest checkpoint from object storage into `storage`, once.
+///
+/// Used as a pipeline starts, and by the multihost coordinator's pull endpoint.
 #[cfg(feature = "feldera-enterprise")]
 pub fn pull_once(
-    storage: &CircuitStorageConfig,
-    sync: &SyncConfig,
-    host_info: Option<HostInfo>,
-    pipeline: &PipelineIdentity,
-) -> Result<(), ControllerError> {
-    pull_and_gc(
-        storage.backend.clone(),
-        sync,
-        &mut uuid::Uuid::nil(),
-        host_info,
-        false,
-        pipeline,
-    )?;
-
-    Ok(())
-}
-
-/// Pulls the latest checkpoint from object storage directly using a storage
-/// backend, without a full `CircuitStorageConfig`.
-///
-/// Used by the multihost coordinator's pull endpoint, which has access to the
-/// storage backend but not the full circuit storage config.
-#[cfg(feature = "feldera-enterprise")]
-pub fn pull_once_with_backend(
-    storage: Arc<dyn StorageBackend>,
+    storage: &dyn PipelineStorage,
     sync: &SyncConfig,
     host_info: Option<HostInfo>,
     standby: bool,
@@ -187,7 +148,7 @@ pub fn pull_once_with_backend(
 ///
 /// Called once per run, before the pipeline starts processing, when
 /// `take_bucket_ownership` is set; see
-/// [`CheckpointSynchronizer::take_ownership`].
+/// [`CheckpointSync::take_ownership`].
 ///
 /// # Arguments
 /// - `storage`: local storage, used to stage the ownership file.
@@ -199,12 +160,14 @@ pub fn pull_once_with_backend(
 /// pipeline startup.
 #[cfg(feature = "feldera-enterprise")]
 pub fn take_bucket_ownership(
-    storage: Arc<dyn StorageBackend>,
+    storage: &dyn PipelineStorage,
     sync: &SyncConfig,
     pipeline: &PipelineIdentity,
 ) -> Result<(), ControllerError> {
-    SYNCHRONIZER
-        .take_ownership(storage, sync.to_owned(), pipeline.clone())
+    checkpoint_sync(storage)
+        .and_then(|checkpoint_sync| {
+            checkpoint_sync.take_ownership(sync.to_owned(), pipeline.clone())
+        })
         .map_err(|e| {
             ControllerError::checkpoint_push_error(format!(
                 "cannot take ownership of bucket '{}' at startup: {e:?}",
@@ -214,8 +177,8 @@ pub fn take_bucket_ownership(
 }
 
 #[cfg(not(feature = "feldera-enterprise"))]
-pub fn pull_once_with_backend(
-    _storage: Arc<dyn StorageBackend>,
+pub fn pull_once(
+    _storage: &dyn PipelineStorage,
     _sync: &SyncConfig,
     _host_info: Option<HostInfo>,
     _standby: bool,
@@ -226,15 +189,17 @@ pub fn pull_once_with_backend(
 
 #[cfg(feature = "feldera-enterprise")]
 pub fn list_remote_checkpoints(
+    storage: &dyn PipelineStorage,
     sync: &SyncConfig,
 ) -> Result<Vec<feldera_types::checkpoint::RemoteCheckpoint>, ControllerError> {
-    SYNCHRONIZER
-        .list_remote(sync.to_owned())
+    checkpoint_sync(storage)
+        .and_then(|checkpoint_sync| checkpoint_sync.list_remote(sync.to_owned()))
         .map_err(|e| ControllerError::checkpoint_fetch_error(format!("{e:?}")))
 }
 
 #[cfg(not(feature = "feldera-enterprise"))]
 pub fn list_remote_checkpoints(
+    _storage: &dyn PipelineStorage,
     _sync: &SyncConfig,
 ) -> Result<Vec<feldera_types::checkpoint::RemoteCheckpoint>, ControllerError> {
     Err(ControllerError::EnterpriseFeature("list S3 checkpoints"))
@@ -242,7 +207,8 @@ pub fn list_remote_checkpoints(
 
 #[cfg(feature = "feldera-enterprise")]
 pub fn continuous_pull<F>(
-    storage: &CircuitStorageConfig,
+    storage: &dyn PipelineStorage,
+    options: &StorageOptions,
     is_activated: F,
     host_info: Option<HostInfo>,
     pipeline: &PipelineIdentity,
@@ -250,7 +216,7 @@ pub fn continuous_pull<F>(
 where
     F: Fn() -> bool,
 {
-    let StorageBackendConfig::File(ref file_cfg) = storage.options.backend else {
+    let StorageBackendConfig::File(ref file_cfg) = options.backend else {
         return Err(ControllerError::InvalidStandby(
             "standby mode requires file storage backend",
         ));
@@ -276,16 +242,10 @@ where
     }
 
     let mut cpm = None;
-    let activation_file = StoragePath::from(ACTIVATION_MARKER_FILE);
-    let previously_activated = storage.backend.exists(&activation_file).unwrap_or(false);
+    let activation = checkpoint_sync(storage)
+        .map_err(|e| ControllerError::checkpoint_fetch_error(format!("{e:?}")))?;
 
-    if previously_activated {
-        let previous_activation = storage
-            .backend
-            .read_json::<Option<CheckpointMetadata>>(&activation_file)
-            .ok()
-            .flatten();
-
+    if let Some(previous_activation) = activation.read_activation() {
         tracing::info!(
             "this pipeline was previously activated from {}, skipping standby mode",
             previous_activation
@@ -303,14 +263,7 @@ where
     // Also, if we receive an activation signal, we run one more iteration to
     // ensure that we have the latest checkpoint before activating.
     loop {
-        match pull_and_gc(
-            storage.backend.clone(),
-            sync,
-            &mut prev,
-            host_info,
-            true,
-            pipeline,
-        ) {
+        match pull_and_gc(storage, sync, &mut prev, host_info, true, pipeline) {
             Err(err) => {
                 // On our final attempt to pull the checkpoint after activation, if we fail, we should error out and not activate with a potentially stale or missing checkpoint.
                 if pull_once_again_after_activation {
@@ -334,12 +287,8 @@ where
         std::thread::sleep(sync.standby_pull_interval().into());
     }
 
-    tracing::debug!("creating activation marker file: {}", activation_file);
-
-    if let Err(marker_err) = storage
-        .backend
-        .write_json(&activation_file, &cpm)
-        .and_then(|reader| reader.commit())
+    if let Err(marker_err) = activation
+        .write_activation(&cpm)
         .context("failed to write activation marker file")
     {
         tracing::error!("{marker_err:?}");

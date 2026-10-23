@@ -1,13 +1,15 @@
 //! The clock connector that fills the `now` table: ticks driven by the wall clock with an
-//! offset, ticks driven over HTTP, the timezone offset, and checkpoints and restarts.
+//! offset, ticks driven over HTTP, the timezone offset, checkpoints and restarts, and an engine
+//! without a wall clock.
 
+use crate::test::engine_test;
 use std::fs::create_dir;
 use std::thread::sleep;
 use std::time::Duration;
 
 use arrow::array::{Array, AsArray};
 use arrow::datatypes::{Int64Type, TimestampMicrosecondType};
-use feldera_adapterlib::test::{default_timeout_ms, wait};
+use feldera_adapterlib::test::{Capability, default_timeout_ms, wait};
 use feldera_storage::tokio::TOKIO;
 use feldera_types::config::PipelineConfig;
 use feldera_types::transport::clock::ClockTimezoneOffset;
@@ -163,9 +165,38 @@ fn controller(
         .unwrap()
 }
 
+/// While the pipeline runs, the wall clock fills `now` about once a second. An engine without a
+/// wall clock connects no clock, so `now` stays empty.
+#[engine_test]
+pub fn now_follows_the_wall_clock_of_the_engine(engine: &dyn PipelineTestEngine) {
+    let config: PipelineConfig =
+        serde_json::from_value(json!({ "name": "test", "workers": 4, "inputs": {} })).unwrap();
+    let pipeline = controller(engine, &config, "wall clock");
+    pipeline.start();
+    if engine.has(Capability::WallClock) {
+        assert!(
+            wait(|| tick_count(&pipeline) >= 2, default_timeout_ms()).is_ok(),
+            "the wall clock did not tick"
+        );
+    } else {
+        assert!(
+            pipeline.get_input_endpoint("now").is_none(),
+            "an engine without a wall clock has a clock connector"
+        );
+        sleep(Duration::from_secs(3));
+        assert_eq!(
+            tick_count(&pipeline),
+            0,
+            "`now` received ticks without a wall clock"
+        );
+    }
+    pipeline.stop().unwrap();
+}
+
 /// The wall clock ticks about once a second, not while paused; a restart replays exactly the
 /// ticks since the checkpoint, and `NOW()` then continues from where it stopped, not from the
 /// anchor.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn clock(engine: &dyn PipelineTestEngine) {
     let tempdir = TempDir::new().unwrap();
     // An anchor far in the past makes a return to the anchor visible.
@@ -245,6 +276,7 @@ pub fn clock(engine: &dyn PipelineTestEngine) {
 
 /// With HTTP-driven ticks, the first `NOW()` is the anchor plus the timezone offset, and
 /// advances build on it.
+#[engine_test(requires(Storage, FaultTolerance))]
 pub fn timezone_offset_http_driven(engine: &dyn PipelineTestEngine) {
     let tempdir = TempDir::new().unwrap();
     let timezone_ms: i64 = (5 * 60 + 30) * 60_000;
@@ -275,6 +307,7 @@ pub fn timezone_offset_http_driven(engine: &dyn PipelineTestEngine) {
 
 /// The timezone offset of the first start holds after a restart from a checkpoint with
 /// another offset.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn timezone_offset_pinned_across_restart(engine: &dyn PipelineTestEngine) {
     let tempdir = TempDir::new().unwrap();
     let storage = storage(&tempdir);
@@ -322,6 +355,7 @@ pub fn timezone_offset_pinned_across_restart(engine: &dyn PipelineTestEngine) {
 
 /// An HTTP-driven `advance` reads `NOW()` for 0, moves it by the resolution for `None`, and
 /// moves it by a delta rounded up to the resolution otherwise.
+#[engine_test(requires(Storage, FaultTolerance))]
 pub fn advance_http_driven(engine: &dyn PipelineTestEngine) {
     let tempdir = TempDir::new().unwrap();
     let resolution_ms: i64 = 1_000;
@@ -364,6 +398,7 @@ pub fn advance_http_driven(engine: &dyn PipelineTestEngine) {
 }
 
 /// A clock driven by the wall clock refuses `advance`.
+#[engine_test(requires(Storage, FaultTolerance))]
 pub fn advance_rejected_when_wall_driven(engine: &dyn PipelineTestEngine) {
     let tempdir = TempDir::new().unwrap();
     let config = config(&storage(&tempdir), 1, json!({}));
@@ -381,6 +416,7 @@ pub fn advance_rejected_when_wall_driven(engine: &dyn PipelineTestEngine) {
 /// A step is journaled after the circuit evaluates it, so that the entry carries the
 /// transaction id assigned there; a stop between a step's output and its journal write must
 /// not drop the step, or the advance past the checkpoint is not replayed.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn advance_survives_checkpoint(engine: &dyn PipelineTestEngine) {
     let tempdir = TempDir::new().unwrap();
     let anchor = millis(HTTP_ANCHOR);

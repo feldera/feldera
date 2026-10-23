@@ -47,13 +47,13 @@ use base64::{Engine, prelude::BASE64_URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 use cpu_time::ProcessTime;
 use crossbeam::sync::Unparker;
-use dbsp::utils::process_rss_bytes;
 use feldera_adapterlib::{
     errors::journal::ControllerError,
     format::{BufferSize, ParseError},
     metrics::ConnectorMetrics,
     transport::{InputReader, Resume, Step, Watermark},
 };
+use feldera_observability::system::process_rss_bytes;
 use feldera_samply::Event;
 use feldera_storage::disk::DiskUsage;
 use feldera_storage::histogram::SlidingHistogram;

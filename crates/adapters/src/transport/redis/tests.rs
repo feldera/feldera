@@ -4,6 +4,7 @@
 //!
 //! The cases need a Redis server at `REDIS_URL`, by default `redis://localhost:6379/0`.
 
+use crate::test::engine_test;
 use std::collections::HashSet;
 use std::env;
 use std::io::Write;
@@ -59,6 +60,7 @@ fn record() -> Value {
     })
 }
 
+#[engine_test(services(Redis))]
 pub fn redis_output(engine: &dyn PipelineTestEngine) {
     let temp_input_file1 = NamedTempFile::new().unwrap();
     let temp_input_file2 = NamedTempFile::new().unwrap();
@@ -216,6 +218,7 @@ pub fn redis_output(engine: &dyn PipelineTestEngine) {
     controller.stop().unwrap();
 }
 
+#[engine_test(services(Redis))]
 pub fn redis_output_fail(engine: &dyn PipelineTestEngine) {
     let temp_input_file1 = NamedTempFile::new().unwrap();
 

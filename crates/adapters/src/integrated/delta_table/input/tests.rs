@@ -4,6 +4,7 @@
 //! This module also holds the fixtures that the input module's own distributed snapshot tests
 //! share with it: a partitioned table and the reader over it.
 
+use crate::test::engine_test;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -127,6 +128,7 @@ pub(super) fn shard(host: usize) -> InputShard {
 /// A read error in a distributed snapshot keeps the snapshot's
 /// transaction open, so that the retry reads into the same transaction.
 /// Without distribution, the error commits the transaction.
+#[engine_test]
 pub fn distributed_snapshot_error_keeps_transaction_open(engine: &dyn ConnectorTestEngine) {
     run_async(async {
         let dir = tempfile::TempDir::new().unwrap();

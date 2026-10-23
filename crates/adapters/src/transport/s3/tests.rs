@@ -1,6 +1,7 @@
 //! The S3 input connector, over a mock S3 client: one object or many, listing continuations,
 //! errors of a listing and of an object, and records of one object split across steps.
 
+use crate::test::engine_test;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -195,6 +196,7 @@ fn check(
 }
 
 /// An endpoint with a key reads that object.
+#[engine_test]
 pub fn single_key_read(engine: &dyn ConnectorTestEngine) {
     let mut mock = MockS3Client::default();
     mock.expect_get_object_keys()
@@ -212,6 +214,7 @@ pub fn single_key_read(engine: &dyn ConnectorTestEngine) {
 ///
 /// Newline-delimited JSON splits with a line splitter that takes as many records as it can,
 /// so one nested element holds many records and a step boundary falls inside it.
+#[engine_test]
 pub fn preprocessed_read_split_across_batches(engine: &dyn ConnectorTestEngine) {
     const RECORDS: i64 = 100;
     // Not a divisor of RECORDS, so the last step is short too.
@@ -245,6 +248,7 @@ pub fn preprocessed_read_split_across_batches(engine: &dyn ConnectorTestEngine) 
 }
 
 /// An endpoint with a prefix reads the object it lists.
+#[engine_test]
 pub fn single_object_with_prefix_read(engine: &dyn ConnectorTestEngine) {
     let mut mock = MockS3Client::default();
     mock.expect_get_object_keys()
@@ -257,6 +261,7 @@ pub fn single_object_with_prefix_read(engine: &dyn ConnectorTestEngine) {
 }
 
 /// An endpoint follows a listing's continuation token and reads the objects of both pages.
+#[engine_test]
 pub fn multi_object_read_with_continuation(engine: &dyn ConnectorTestEngine) {
     let mut mock = MockS3Client::default();
     mock.expect_get_object_keys()
@@ -280,6 +285,7 @@ pub fn multi_object_read_with_continuation(engine: &dyn ConnectorTestEngine) {
 }
 
 /// An endpoint reads a thousand objects of one record each.
+#[engine_test]
 pub fn multi_object_read(engine: &dyn ConnectorTestEngine) {
     let mut mock = MockS3Client::default();
     let objects: Vec<String> = (0..1000).map(|i| format!("obj{i}")).collect();
@@ -301,6 +307,7 @@ pub fn multi_object_read(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A listing that fails is a fatal error that names the S3 error.
+#[engine_test]
 pub fn list_object_read_error(engine: &dyn ConnectorTestEngine) {
     let mut mock = MockS3Client::default();
     mock.expect_get_object_keys()
@@ -329,6 +336,7 @@ pub fn list_object_read_error(engine: &dyn ConnectorTestEngine) {
 }
 
 /// An object that fails to read is skipped, and the next object still arrives.
+#[engine_test]
 pub fn get_object_read_error(engine: &dyn ConnectorTestEngine) {
     let mut mock = MockS3Client::default();
     mock.expect_get_object_keys()

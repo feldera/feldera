@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use chrono::{DateTime, Utc};
-use dbsp::circuit::tokio::TOKIO;
+use feldera_storage::tokio::TOKIO;
 use feldera_types::{
     config::FtModel, program_schema::Relation, transport::pubsub::PubSubInputConfig,
 };

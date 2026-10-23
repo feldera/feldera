@@ -3,6 +3,7 @@
 //! restarts, topic expiration, and new partitions; output with a buffer and to a broker that
 //! does not exist; and pipelines from an input topic to an output topic.
 
+use crate::test::engine_test;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fs::create_dir;
@@ -12,7 +13,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::sleep;
 use std::time::Duration;
 
-use feldera_adapterlib::test::{ConnectorTestEngine, InputOptions, Updates, wait, wait_for_rows};
+use feldera_adapterlib::test::{
+    Capability, ConnectorTestEngine, InputOptions, Updates, wait, wait_for_rows,
+};
 use feldera_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, PipelineConfig, TransportConfig,
 };
@@ -163,6 +166,7 @@ fn check_output_errors(
 }
 
 /// A fault-tolerant output connector to a broker that does not exist does not start.
+#[engine_test(ignore)]
 pub fn output_errors_fault_tolerant(engine: &dyn PipelineTestEngine) {
     check_output_errors(
         engine,
@@ -173,6 +177,7 @@ pub fn output_errors_fault_tolerant(engine: &dyn PipelineTestEngine) {
 }
 
 /// An output connector to a broker that does not exist does not start.
+#[engine_test]
 pub fn output_errors(engine: &dyn PipelineTestEngine) {
     check_output_errors(engine, "end_to_end_test_output_topic", json!({}), false);
 }
@@ -290,6 +295,8 @@ fn check_fault_tolerance(
         input_properties: Vec::new(),
         materialized: true,
         persistent_ids: true,
+        table_version: 0,
+        attribute_defaults: Vec::new(),
     };
 
     // Records written to the topic, and records that the latest checkpoint holds.
@@ -367,6 +374,7 @@ fn check_fault_tolerance(
 }
 
 /// Restarts after checkpoints deliver each record once.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Kafka))]
 pub fn ft_with_checkpoints(engine: &dyn PipelineTestEngine) {
     check_fault_tolerance(
         engine,
@@ -384,6 +392,7 @@ pub fn ft_with_checkpoints(engine: &dyn PipelineTestEngine) {
 
 /// A topic that disappears and comes back empty after a checkpoint stops a restart from
 /// resuming.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Kafka))]
 pub fn ft_with_topic_expiration(engine: &dyn PipelineTestEngine) {
     check_fault_tolerance(
         engine,
@@ -399,6 +408,7 @@ pub fn ft_with_topic_expiration(engine: &dyn PipelineTestEngine) {
 
 /// With `resume_earliest_if_data_expires`, a restart resumes from the start of a topic that
 /// disappeared and came back empty.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Kafka))]
 pub fn ft_with_topic_expiration_and_resume_earliest(engine: &dyn PipelineTestEngine) {
     check_fault_tolerance(
         engine,
@@ -413,6 +423,7 @@ pub fn ft_with_topic_expiration_and_resume_earliest(engine: &dyn PipelineTestEng
 }
 
 /// The same as [`ft_with_topic_expiration`], on another topic.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Kafka))]
 pub fn ft_with_tolerance_topic_expiration(engine: &dyn PipelineTestEngine) {
     check_fault_tolerance(
         engine,
@@ -427,6 +438,7 @@ pub fn ft_with_tolerance_topic_expiration(engine: &dyn PipelineTestEngine) {
 }
 
 /// Restarts without checkpoints replay every record.
+#[engine_test(requires(Storage, FaultTolerance), services(Kafka))]
 pub fn ft_without_checkpoints(engine: &dyn PipelineTestEngine) {
     check_fault_tolerance(
         engine,
@@ -443,6 +455,7 @@ pub fn ft_without_checkpoints(engine: &dyn PipelineTestEngine) {
 }
 
 /// Rounds with and without checkpoints alternate, starting with a checkpoint.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Kafka))]
 pub fn ft_alternating(engine: &dyn PipelineTestEngine) {
     let rounds: Vec<FtRound> = (0..10)
         .map(|round| FtRound::new(2500, round % 2 == 0))
@@ -451,6 +464,7 @@ pub fn ft_alternating(engine: &dyn PipelineTestEngine) {
 }
 
 /// The first round has no records and no checkpoint.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Kafka))]
 pub fn ft_initially_zero_without_checkpoint(engine: &dyn PipelineTestEngine) {
     check_fault_tolerance(
         engine,
@@ -470,6 +484,7 @@ pub fn ft_initially_zero_without_checkpoint(engine: &dyn PipelineTestEngine) {
 }
 
 /// The first round has no records and a checkpoint.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Kafka))]
 pub fn ft_initially_zero_with_checkpoint(engine: &dyn PipelineTestEngine) {
     check_fault_tolerance(
         engine,
@@ -489,6 +504,7 @@ pub fn ft_initially_zero_with_checkpoint(engine: &dyn PipelineTestEngine) {
 }
 
 /// Partitions added to the topic between restarts are read too.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance), services(Kafka))]
 pub fn ft_with_adding_partitions(engine: &dyn PipelineTestEngine) {
     check_fault_tolerance(
         engine,
@@ -648,6 +664,7 @@ fn testdata2() -> Vec<Updates> {
 }
 
 /// An endpoint that starts from an offset reads the messages from that offset.
+#[engine_test(services(Kafka))]
 pub fn input_offset(engine: &dyn ConnectorTestEngine) {
     check_start_from(
         engine,
@@ -659,6 +676,7 @@ pub fn input_offset(engine: &dyn ConnectorTestEngine) {
 }
 
 /// An endpoint that starts from a time reads the messages after that time.
+#[engine_test(services(Kafka))]
 pub fn input_timestamp(engine: &dyn ConnectorTestEngine) {
     check_start_from(
         engine,
@@ -670,6 +688,10 @@ pub fn input_timestamp(engine: &dyn ConnectorTestEngine) {
 }
 
 /// An endpoint that starts from an offset past the end of the partition reports it.
+#[engine_test(
+    should_panic = "provided offset '3' not currently in partition '0'",
+    services(Kafka)
+)]
 pub fn input_offset_doesnt_exist(engine: &dyn ConnectorTestEngine) {
     check_start_from(
         engine,
@@ -681,6 +703,10 @@ pub fn input_offset_doesnt_exist(engine: &dyn ConnectorTestEngine) {
 }
 
 /// The same as [`input_offset_doesnt_exist`], with three partitions.
+#[engine_test(
+    should_panic = "provided offset '3' not currently in partition '0'",
+    services(Kafka)
+)]
 pub fn input_offset_doesnt_exist_2(engine: &dyn ConnectorTestEngine) {
     check_start_from(
         engine,
@@ -692,6 +718,7 @@ pub fn input_offset_doesnt_exist_2(engine: &dyn ConnectorTestEngine) {
 }
 
 /// An endpoint that starts from the earliest message reads every message.
+#[engine_test(services(Kafka))]
 pub fn input_offset_earliest(engine: &dyn ConnectorTestEngine) {
     check_start_from(
         engine,
@@ -703,6 +730,7 @@ pub fn input_offset_earliest(engine: &dyn ConnectorTestEngine) {
 }
 
 /// The same as [`input_offset_earliest`], with two partitions.
+#[engine_test(services(Kafka))]
 pub fn input_offset_earliest_2(engine: &dyn ConnectorTestEngine) {
     check_start_from(
         engine,
@@ -714,6 +742,7 @@ pub fn input_offset_earliest_2(engine: &dyn ConnectorTestEngine) {
 }
 
 /// An endpoint that starts from the latest message reads the messages sent after it starts.
+#[engine_test(services(Kafka))]
 pub fn input_offset_latest(engine: &dyn ConnectorTestEngine) {
     check_start_from(
         engine,
@@ -725,6 +754,7 @@ pub fn input_offset_latest(engine: &dyn ConnectorTestEngine) {
 }
 
 /// The same as [`input_offset_latest`], with two partitions.
+#[engine_test(services(Kafka))]
 pub fn input_offset_latest_2(engine: &dyn ConnectorTestEngine) {
     check_start_from(
         engine,
@@ -825,6 +855,7 @@ fn partition_extra() -> Vec<Updates> {
 
 /// An endpoint of some partitions that starts from the latest message reads the messages of
 /// those partitions sent after it starts.
+#[engine_test(services(Kafka))]
 pub fn input_partitions_latest(engine: &dyn ConnectorTestEngine) {
     check_partitions(
         engine,
@@ -839,6 +870,7 @@ pub fn input_partitions_latest(engine: &dyn ConnectorTestEngine) {
 
 /// An endpoint of some partitions that starts from the earliest message reads every message
 /// of those partitions.
+#[engine_test(services(Kafka))]
 pub fn input_partitions_earliest(engine: &dyn ConnectorTestEngine) {
     check_partitions(
         engine,
@@ -853,6 +885,7 @@ pub fn input_partitions_earliest(engine: &dyn ConnectorTestEngine) {
 
 /// An endpoint of some partitions that starts from an offset in each reads the messages of
 /// those partitions from those offsets.
+#[engine_test(services(Kafka))]
 pub fn input_partitions_offsets(engine: &dyn ConnectorTestEngine) {
     check_partitions(
         engine,
@@ -975,16 +1008,19 @@ fn check_input(
 }
 
 /// If the broker is down, the Kafka cases fail here first, and fail fast.
+#[engine_test(services(Kafka))]
 pub fn input_trivial(engine: &dyn ConnectorTestEngine) {
     check_input(engine, Vec::new(), "trivial_test_topic", 1);
 }
 
 /// The same as [`input_trivial`], with three pollers.
+#[engine_test(services(Kafka))]
 pub fn input_trivial_threaded(engine: &dyn ConnectorTestEngine) {
     check_input(engine, Vec::new(), "threaded_trivial_test_topic1", 3);
 }
 
 /// Random batches arrive in order through one poller.
+#[engine_test(services(Kafka))]
 pub fn random_input(engine: &dyn ConnectorTestEngine) {
     proptest!(ProptestConfig::with_cases(2), |(data in rows::batches(&relation(), "id", 0..=100, 1000))| {
         check_input(engine, data, "input_test_topic1", 1);
@@ -992,6 +1028,7 @@ pub fn random_input(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Random batches arrive through three pollers.
+#[engine_test(services(Kafka))]
 pub fn random_input_threaded(engine: &dyn ConnectorTestEngine) {
     proptest!(ProptestConfig::with_cases(2), |(data in rows::batches(&relation(), "id", 0..=100, 1000))| {
         check_input(engine, data, "threaded_test_topic1", 3);
@@ -1000,6 +1037,7 @@ pub fn random_input_threaded(engine: &dyn ConnectorTestEngine) {
 
 /// An output connector with a buffer sends records in groups of the buffer's size, and sends
 /// the rest when the buffer's time runs out; every message carries the configured headers.
+#[engine_test(services(Kafka))]
 pub fn buffer(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let input_topic = "buffer_test_input_topic";
@@ -1203,6 +1241,7 @@ fn check_end_to_end(
 }
 
 /// Random batches go through a pipeline as CSV, in messages up to 1,000,000 bytes.
+#[engine_test(services(Kafka))]
 pub fn random_end_to_end_csv_large(engine: &dyn PipelineTestEngine) {
     proptest!(ProptestConfig::with_cases(2), |(data in rows::batches(&relation(), "id", 0..=30, 1000))| {
         check_end_to_end(engine, "proptest_kafka_end_to_end_csv_large", "csv", json!({}), 1_000_000, data);
@@ -1210,6 +1249,7 @@ pub fn random_end_to_end_csv_large(engine: &dyn PipelineTestEngine) {
 }
 
 /// Random batches go through a pipeline as CSV, in messages up to 1,500 bytes.
+#[engine_test(services(Kafka))]
 pub fn random_end_to_end_csv_small(engine: &dyn PipelineTestEngine) {
     proptest!(ProptestConfig::with_cases(2), |(data in rows::batches(&relation(), "id", 0..=30, 1000))| {
         check_end_to_end(engine, "proptest_kafka_end_to_end_csv_small", "csv", json!({}), 1500, data);
@@ -1217,6 +1257,7 @@ pub fn random_end_to_end_csv_small(engine: &dyn PipelineTestEngine) {
 }
 
 /// Random batches go through a pipeline as JSON, in messages up to 2,048 bytes.
+#[engine_test(services(Kafka))]
 pub fn random_end_to_end_json_small(engine: &dyn PipelineTestEngine) {
     proptest!(ProptestConfig::with_cases(2), |(data in rows::batches(&relation(), "id", 0..=30, 1000))| {
         check_end_to_end(engine, "proptest_kafka_end_to_end_json_small", "json", json!({}), 2048, data);
@@ -1224,6 +1265,7 @@ pub fn random_end_to_end_json_small(engine: &dyn PipelineTestEngine) {
 }
 
 /// Random batches go through a pipeline as JSON arrays, in messages up to 5,000 bytes.
+#[engine_test(services(Kafka))]
 pub fn random_end_to_end_json_array_small(engine: &dyn PipelineTestEngine) {
     proptest!(ProptestConfig::with_cases(2), |(data in rows::batches(&relation(), "id", 0..=30, 1000))| {
         check_end_to_end(engine, "proptest_kafka_end_to_end_json_array_small", "json", json!({"array": true}), 5000, data);
@@ -1301,8 +1343,21 @@ fn check_metadata(
     assert_eq!(without_timestamp(&updates), without_timestamp(&expected));
 }
 
+/// The JSON text of the headers of the first message of [`check_metadata`]: a VARIANT map
+/// whose binary value is an array of bytes on an engine with
+/// [`Capability::VariantBinaryAsArray`], and base64 text on any other.
+fn headers_json(engine: &dyn ConnectorTestEngine) -> String {
+    let foobar = if engine.has(Capability::VariantBinaryAsArray) {
+        "[102,111,111,98,97,114]"
+    } else {
+        r#""Zm9vYmFy""#
+    };
+    format!(r#"{{"header1":{foobar},"header2":null}}"#)
+}
+
 /// JSON records receive the Kafka attributes, with the headers as a VARIANT map in which a
 /// header without a value is NULL.
+#[engine_test(services(Kafka))]
 pub fn metadata_json(engine: &dyn ConnectorTestEngine) {
     let topic = "kafka_metadata_json_test_topic";
     let row = |i: i64, headers: &str, offset: i64| {
@@ -1316,14 +1371,7 @@ pub fn metadata_json(engine: &dyn ConnectorTestEngine) {
         })
         .to_string()
     };
-    let (row0, row1) = (
-        row(
-            0,
-            r#"{"header1":[102,111,111,98,97,114],"header2":null}"#,
-            0,
-        ),
-        row(1, "{}", 1),
-    );
+    let (row0, row1) = (row(0, &headers_json(engine), 0), row(1, "{}", 1));
     check_metadata(
         engine,
         topic,
@@ -1336,6 +1384,7 @@ pub fn metadata_json(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Raw messages receive the Kafka attributes.
+#[engine_test(requires(RawFormat), services(Kafka))]
 pub fn metadata_raw(engine: &dyn ConnectorTestEngine) {
     let topic = "kafka_metadata_raw_test_topic";
     let row = |data: &str, headers: &str, offset: i64| {
@@ -1349,14 +1398,7 @@ pub fn metadata_raw(engine: &dyn ConnectorTestEngine) {
         })
         .to_string()
     };
-    let (row0, row1) = (
-        row(
-            "foo",
-            r#"{"header1":[102,111,111,98,97,114],"header2":null}"#,
-            0,
-        ),
-        row("bar", "{}", 1),
-    );
+    let (row0, row1) = (row("foo", &headers_json(engine), 0), row("bar", "{}", 1));
     check_metadata(
         engine,
         topic,

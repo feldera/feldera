@@ -6,6 +6,7 @@
 //!
 //! This module also holds the fixtures that the CDC scenario and privilege tests share with it.
 
+use crate::test::engine_test;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -584,6 +585,8 @@ pub(super) fn cdc_ft_test_circuit_for(
                 input_properties: Vec::new(),
                 materialized: true,
                 persistent_ids: true,
+                table_version: 0,
+                attribute_defaults: Vec::new(),
             },
             &config,
             Box::new(move |e, _| {
@@ -765,6 +768,7 @@ fn has_insert_id(rows: &[serde_json::Value], id: i64) -> bool {
 /// via the initial snapshot and/or logical replication stream.
 ///
 /// Requires: wal_level=logical, user with REPLICATION privilege.
+#[engine_test(serial, ignore, services(Postgres))]
 pub fn basic_insert(engine: &dyn PipelineTestEngine) {
     let url = postgres_url();
     let table_name = unique_pg_name("cdc_test_basic_insert");
@@ -840,6 +844,7 @@ pub fn basic_insert(engine: &dyn PipelineTestEngine) {
 /// resumes delivery after the endpoint is started again.
 ///
 /// Requires: wal_level=logical, user with REPLICATION privilege.
+#[engine_test(serial, ignore, services(Postgres))]
 pub fn pause_unpause(engine: &dyn PipelineTestEngine) {
     let url = postgres_url();
     let table_name = unique_pg_name("cdc_test_pause_unpause");
@@ -931,6 +936,7 @@ pub fn pause_unpause(engine: &dyn PipelineTestEngine) {
 ///
 /// Requires: wal_level=logical, user with REPLICATION privilege, and
 /// `POSTGRES_SSL_URL`/`POSTGRES_SSL_CA_LOCATION` or `POSTGRES_SSL_CA_PEM`.
+#[engine_test(serial, ignore, services(PostgresTls))]
 pub fn basic_insert_tls(engine: &dyn PipelineTestEngine) {
     let (url, tls) = postgres_cdc_ssl_config();
     let table_name = unique_pg_name("cdc_test_basic_insert_tls");
@@ -988,6 +994,7 @@ pub fn basic_insert_tls(engine: &dyn PipelineTestEngine) {
 /// Tests CDC replication of all common Postgres data types.
 ///
 /// Requires: wal_level=logical, user with REPLICATION privilege.
+#[engine_test(serial, ignore, services(Postgres))]
 pub fn all_data_types(engine: &dyn PipelineTestEngine) {
     let url = postgres_url();
     let table_name = unique_pg_name("cdc_test_all_types");
@@ -1133,6 +1140,7 @@ pub fn all_data_types(engine: &dyn PipelineTestEngine) {
 /// Tests that the CDC connector correctly captures UPDATE and DELETE operations.
 ///
 /// Requires: wal_level=logical, user with REPLICATION privilege, REPLICA IDENTITY FULL.
+#[engine_test(serial, ignore, services(Postgres))]
 pub fn update_delete(engine: &dyn PipelineTestEngine) {
     let url = postgres_url();
     let table_name = unique_pg_name("cdc_test_upd_del");
@@ -1244,6 +1252,7 @@ pub fn update_delete(engine: &dyn PipelineTestEngine) {
 /// the Feldera schema.
 ///
 /// Requires: wal_level=logical, user with REPLICATION privilege.
+#[engine_test(serial, ignore, services(Postgres))]
 pub fn compatible_schema_changes(engine: &dyn PipelineTestEngine) {
     let url = postgres_url();
     let table_name = unique_pg_name("cdc_test_compatible_schema");
@@ -1330,6 +1339,7 @@ pub fn compatible_schema_changes(engine: &dyn PipelineTestEngine) {
 /// a table outside `public` by its bare name no longer matches anything.
 /// Such a pipeline must fail at start with the publication's table list,
 /// instead of ingesting nothing until the stall monitor speaks.
+#[engine_test(serial, services(Postgres))]
 pub fn source_table_not_in_publication_fails_at_start(engine: &dyn PipelineTestEngine) {
     let url = postgres_url();
     let table_name = unique_pg_name("cdc_test_not_published");
@@ -1364,6 +1374,7 @@ pub fn source_table_not_in_publication_fails_at_start(engine: &dyn PipelineTestE
 /// required Feldera column, is surfaced as a fatal connector error.
 ///
 /// Requires: wal_level=logical, user with REPLICATION privilege.
+#[engine_test(serial, ignore, services(Postgres))]
 pub fn drop_primary_key_column_rejected(engine: &dyn PipelineTestEngine) {
     let url = postgres_url();
     let table_name = unique_pg_name("cdc_test_drop_pk_col");
@@ -1430,6 +1441,7 @@ pub fn drop_primary_key_column_rejected(engine: &dyn PipelineTestEngine) {
 /// bound, and no stop may reach the grace that closes etl's connections
 /// by force: that fallback releases the slots too, but late, and a
 /// release is prompt only when etl stopped on its own.
+#[engine_test(serial, services(Postgres))]
 pub fn stop_with_buffered_rows_releases_slots_promptly(engine: &dyn PipelineTestEngine) {
     use crate::integrated::postgres::cdc_input::{
         ETL_STOP_GRACE, RUNTIME_SHUTDOWN_TIMEOUT, STOPPED_PAST_GRACE, WATCHER_SHUTDOWN_TIMEOUT,
@@ -1499,6 +1511,7 @@ pub fn stop_with_buffered_rows_releases_slots_promptly(engine: &dyn PipelineTest
     }
 }
 
+#[engine_test(serial, services(Postgres))]
 pub fn restart_resumes_from_slot(engine: &dyn PipelineTestEngine) {
     let url = postgres_url();
     let table_name = unique_pg_name("cdc_test_restart");
@@ -1629,6 +1642,7 @@ pub fn restart_resumes_from_slot(engine: &dyn PipelineTestEngine) {
 /// slot replay.
 ///
 /// Requires: wal_level=logical, user with REPLICATION privilege.
+#[engine_test(serial, requires(Storage, FaultTolerance), services(Postgres))]
 pub fn ft_mode_holds_slot(engine: &dyn PipelineTestEngine) {
     let url = postgres_url();
     let table_name = unique_pg_name("cdc_test_strict_hold");

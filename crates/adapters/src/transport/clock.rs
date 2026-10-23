@@ -21,7 +21,6 @@
 
 use anyhow::{Result as AnyResult, anyhow};
 use chrono::Utc;
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
     PipelineState,
     format::{BufferSize, Parser},
@@ -30,6 +29,7 @@ use feldera_adapterlib::{
         TransportInputEndpoint, Watermark,
     },
 };
+use feldera_storage::tokio::TOKIO;
 use feldera_types::{
     config::{
         ConnectorConfig, FormatConfig, FtModel, InputEndpointConfig, PipelineConfig,

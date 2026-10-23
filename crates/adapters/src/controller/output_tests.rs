@@ -2,6 +2,7 @@
 //! receive while paused, defer the snapshot they owe, flush their buffers, lift
 //! backpressure, and keep their state across a restart.
 
+use crate::test::engine_test;
 use std::fs::{File, create_dir};
 use std::path::Path;
 use std::sync::Arc;
@@ -95,6 +96,7 @@ fn start_output_pause_controller(
 ///
 /// Output produced while the connector was paused is gone for good: starting it
 /// again resumes with the next output the pipeline produces.
+#[engine_test(requires(Storage, FaultTolerance))]
 pub fn output_connector_pause_drops_output(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -176,6 +178,7 @@ pub fn output_connector_pause_drops_output(engine: &dyn PipelineTestEngine) {
 
 /// A connector configured with `paused: true` starts out paused and transmits
 /// nothing until it is started.
+#[engine_test(requires(Storage, FaultTolerance))]
 pub fn output_connector_paused_on_startup(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -220,6 +223,7 @@ pub fn output_connector_paused_on_startup(engine: &dyn PipelineTestEngine) {
 /// Nothing else would flush them: a paused connector receives no more output to
 /// grow the buffer past its size limit, and the time limit is not configured
 /// here (nor by default).
+#[engine_test(requires(Storage, FaultTolerance))]
 pub fn output_connector_pause_flushes_the_output_buffer(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -290,6 +294,7 @@ pub fn output_connector_pause_flushes_the_output_buffer(engine: &dyn PipelineTes
 /// already over the limit when it is paused keeps the pipeline parked until its
 /// queue drains, which is why the test pauses the connector while its queue is
 /// still small.
+#[engine_test(requires(Storage))]
 pub fn output_connector_pause_lifts_backpressure(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -426,6 +431,7 @@ impl OutputEndpoint for DiscardOutputEndpoint {
 /// A connector that starts paused with `send_snapshot` keeps owing its
 /// snapshot rather than dropping it, and receives it when it is started --
 /// reflecting the state of the view at that moment, not at startup.
+#[engine_test(requires(Storage, FaultTolerance))]
 pub fn output_connector_paused_defers_the_initial_snapshot(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -480,6 +486,7 @@ pub fn output_connector_paused_defers_the_initial_snapshot(engine: &dyn Pipeline
 /// -- is not in that configuration, so its recorded paused state names an
 /// endpoint that is gone. Failing over it would leave the pipeline unable to
 /// start, and every retry would fail the same way.
+#[engine_test(requires(Storage, FaultTolerance))]
 pub fn output_connector_pause_replays_without_the_endpoint(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -543,6 +550,7 @@ pub fn output_connector_pause_replays_without_the_endpoint(engine: &dyn Pipeline
 /// A pause survives a restart: the checkpoint records the state the user left
 /// the connector in, and the journal carries a change that happened after the
 /// last checkpoint.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
 pub fn output_connector_pause_survives_restart(engine: &dyn PipelineTestEngine) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();

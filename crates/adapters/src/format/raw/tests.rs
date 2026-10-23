@@ -1,6 +1,7 @@
 //! The raw parser: each line of a message, or the whole message, as one column of a row,
 //! with connector attributes in the other columns.
 
+use crate::test::engine_test;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
@@ -111,6 +112,7 @@ fn check(
 }
 
 /// Each line becomes a VARCHAR row.
+#[engine_test(requires(RawFormat))]
 pub fn varchar_lines(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -127,6 +129,7 @@ pub fn varchar_lines(engine: &dyn ConnectorTestEngine) {
 
 /// The column that `column_name` names takes each line, and the other columns take their
 /// DEFAULTs from the connector attributes.
+#[engine_test(requires(RawFormat))]
 pub fn varchar_lines_with_metadata(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -145,6 +148,7 @@ pub fn varchar_lines_with_metadata(engine: &dyn ConnectorTestEngine) {
 }
 
 /// The whole message becomes one nullable VARCHAR row.
+#[engine_test(requires(RawFormat))]
 pub fn nullable_varchar_blob(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -160,6 +164,7 @@ pub fn nullable_varchar_blob(engine: &dyn ConnectorTestEngine) {
 }
 
 /// Each line becomes a VARBINARY row.
+#[engine_test(requires(RawFormat))]
 pub fn varbinary_lines(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -176,6 +181,7 @@ pub fn varbinary_lines(engine: &dyn ConnectorTestEngine) {
 }
 
 /// The whole message becomes one nullable VARBINARY row.
+#[engine_test(requires(RawFormat))]
 pub fn nullable_varbinary_blob(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -193,6 +199,7 @@ pub fn nullable_varbinary_blob(engine: &dyn ConnectorTestEngine) {
 
 /// The whole message goes into the column that `column_name` names, and the other columns
 /// take their DEFAULTs from the connector attributes.
+#[engine_test(requires(RawFormat))]
 pub fn nullable_varbinary_blob_with_metadata(engine: &dyn ConnectorTestEngine) {
     check(
         engine,
@@ -208,6 +215,7 @@ pub fn nullable_varbinary_blob_with_metadata(engine: &dyn ConnectorTestEngine) {
 }
 
 /// A nullable column without a DEFAULT is NULL when the parser fills another column.
+#[engine_test(requires(RawFormat))]
 pub fn nullable_varbinary_blob_with_nulls(engine: &dyn ConnectorTestEngine) {
     check(
         engine,

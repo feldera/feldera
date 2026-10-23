@@ -4,6 +4,7 @@
 //! `s3tables:GetTableData` on the test table, and runs with the `iceberg-tests-s3tables`
 //! feature. See `crates/iceberg/src/test/README.md`.
 
+use crate::test::engine_test;
 use std::collections::BTreeMap;
 
 use feldera_types::program_schema::{ColumnType, Field, Relation};
@@ -26,6 +27,7 @@ pub fn relation() -> Relation {
     )
 }
 
+#[engine_test(cfg(feature = "iceberg-tests-s3tables"))]
 pub fn s3tables_input_test(engine: &dyn PipelineTestEngine) {
     // Reads `dev.test_table` (schema `id BIGINT NOT NULL, name STRING,
     // created_at TIMESTAMP`, 100 rows) from an Amazon S3 Tables bucket.

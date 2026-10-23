@@ -3,6 +3,7 @@
 //! DynamoDB Local, the items that a table holds after inserts, upserts, deletes, conditional
 //! writes, and buffered pipelines.
 
+use crate::test::engine_test;
 use feldera_types::size::ConfigSize;
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
@@ -361,6 +362,7 @@ pub(super) fn attr_n<'a>(item: &'a HashMap<String, AttributeValue>, field: &str)
     item.get(field).unwrap().as_n().unwrap()
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_insert_as_put_item(engine: &dyn ConnectorTestEngine) {
     let mut worker = worker(25);
     let batch = build_batch(engine, vec![(record(1, "a", Some(10), "inserted"), 1)]);
@@ -374,6 +376,7 @@ pub fn encoder_insert_as_put_item(engine: &dyn ConnectorTestEngine) {
     assert_eq!(attr_s(item, "s"), "inserted");
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_delete_as_delete_item_key_only(engine: &dyn ConnectorTestEngine) {
     let mut worker = worker(25);
     let batch = build_batch(engine, vec![(record(2, "b", Some(20), "deleted"), -1)]);
@@ -386,6 +389,7 @@ pub fn encoder_delete_as_delete_item_key_only(engine: &dyn ConnectorTestEngine) 
     assert_eq!(attr_s(key, "sort"), "b");
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_upsert_as_put_item_with_new_value(engine: &dyn ConnectorTestEngine) {
     let mut worker = worker(25);
     let batch = build_batch(
@@ -404,6 +408,7 @@ pub fn encoder_upsert_as_put_item_with_new_value(engine: &dyn ConnectorTestEngin
     assert_eq!(attr_s(item, "s"), "new");
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_stages_until_batch_end(engine: &dyn ConnectorTestEngine) {
     let mut worker = worker(100);
     let batch = build_batch(
@@ -440,6 +445,7 @@ pub fn encoder_stages_until_batch_end(engine: &dyn ConnectorTestEngine) {
     assert_eq!(ids, vec![0, 1, 2, 3, 4]);
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_flushes_when_buffer_limit_is_reached(engine: &dyn ConnectorTestEngine) {
     // max_buffer_size_bytes=1 forces a flush after the first record.
     let mut worker = worker_with_max_buffer_size(25, 1);
@@ -452,6 +458,7 @@ pub fn encoder_flushes_when_buffer_limit_is_reached(engine: &dyn ConnectorTestEn
     assert!(worker.pending.is_empty());
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_flushes_when_record_threshold_is_reached(engine: &dyn ConnectorTestEngine) {
     // threshold = batch_size(2) × max_concurrent_requests(2) = 4
     let mut config = config(2);
@@ -469,6 +476,7 @@ pub fn encoder_flushes_when_record_threshold_is_reached(engine: &dyn ConnectorTe
     assert!(worker.pending.is_empty());
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_pending_never_buffers_whole_batch(engine: &dyn ConnectorTestEngine) {
     // `push_request` flushes every `batch_size` records, so a batch far larger
     // than `batch_size` is never buffered whole in `pending`: only the
@@ -498,6 +506,7 @@ pub fn encoder_pending_never_buffers_whole_batch(engine: &dyn ConnectorTestEngin
     assert!(worker.pending.len() < RECORDS as usize);
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_empty_batch_single_thread(engine: &dyn ConnectorTestEngine) {
     let mut worker = worker(25);
     encode_batch(&mut worker, &build_batch(engine, Vec::new()));
@@ -505,6 +514,7 @@ pub fn encoder_empty_batch_single_thread(engine: &dyn ConnectorTestEngine) {
     assert_eq!(worker.records_written.load(Ordering::Relaxed), 0);
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_empty_batch_multi_thread(engine: &dyn ConnectorTestEngine) {
     let batch = build_batch(engine, Vec::new());
     for _ in 0..4 {
@@ -515,6 +525,7 @@ pub fn encoder_empty_batch_multi_thread(engine: &dyn ConnectorTestEngine) {
     }
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_multiple_batches_insert_upsert_delete(engine: &dyn ConnectorTestEngine) {
     let mut worker = worker(25);
 
@@ -555,6 +566,7 @@ pub fn encoder_multiple_batches_insert_upsert_delete(engine: &dyn ConnectorTestE
     assert!(worker.pending[0].delete_request().is_some());
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_non_unique_key_is_skipped_without_failing_batch(engine: &dyn ConnectorTestEngine) {
     let mut worker = worker(25);
     let batch = build_batch(
@@ -575,6 +587,7 @@ pub fn encoder_non_unique_key_is_skipped_without_failing_batch(engine: &dyn Conn
     assert_eq!(attr_s(item, "s"), "kept");
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_non_unique_key_updates_connector_metric(engine: &dyn ConnectorTestEngine) {
     let mut worker = worker(25);
     let batch = build_batch(
@@ -597,6 +610,7 @@ pub fn encoder_non_unique_key_updates_connector_metric(engine: &dyn ConnectorTes
     );
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_drops_oversized_item_keeping_the_rest(engine: &dyn ConnectorTestEngine) {
     let mut worker = worker(25);
     // The middle record's `s` attribute alone exceeds the 400 KB item-size
@@ -625,6 +639,7 @@ pub fn encoder_drops_oversized_item_keeping_the_rest(engine: &dyn ConnectorTestE
     );
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_oversized_item_updates_connector_metric(engine: &dyn ConnectorTestEngine) {
     let mut worker = worker(25);
     let oversized_value = "x".repeat(410 * 1024);
@@ -650,6 +665,7 @@ pub fn encoder_oversized_item_updates_connector_metric(engine: &dyn ConnectorTes
 /// unreachable endpoint: `batch_end_inner` flushes (spawning a write task on the
 /// `JoinSet`), then blocks draining it and aggregates the task's error. With
 /// `max_retries = 0` the worker does not retry, so the failure surfaces promptly.
+#[engine_test(requires(DynamoDbItems))]
 pub fn worker_surfaces_write_failure_at_batch_end(engine: &dyn ConnectorTestEngine) {
     let mut config = config(25);
     config.max_retries = Some(0);
@@ -676,6 +692,7 @@ pub fn worker_surfaces_write_failure_at_batch_end(engine: &dyn ConnectorTestEngi
     );
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_all_supported_sql_types(engine: &dyn ConnectorTestEngine) {
     let mut worker = all_types_worker();
     let batch = build_all_types_batch(engine, vec![(all_types_record(), 1)]);
@@ -727,12 +744,14 @@ fn encoded_variant_attribute(engine: &dyn ConnectorTestEngine, variant: Value) -
         .clone()
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_variant_decimal_serializes_as_number(engine: &dyn ConnectorTestEngine) {
     let variant = encoded_variant_attribute(engine, json!(123.45));
 
     assert_eq!(variant.as_n().unwrap(), "123.45");
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_variant_map_preserves_private_number_key(engine: &dyn ConnectorTestEngine) {
     let variant = encoded_variant_attribute(
         engine,
@@ -751,6 +770,7 @@ pub fn encoder_variant_map_preserves_private_number_key(engine: &dyn ConnectorTe
     assert_eq!(variant.get("other").unwrap().as_n().unwrap(), "1");
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_variant_list_recursively_serializes_numbers(engine: &dyn ConnectorTestEngine) {
     let variant = encoded_variant_attribute(engine, json!([123.45, {"nested": 6.789}]));
     let values = variant.as_l().unwrap();
@@ -768,6 +788,7 @@ pub fn encoder_variant_list_recursively_serializes_numbers(engine: &dyn Connecto
     );
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_split_cursor_partitions_encode_disjoint_key_ranges(
     engine: &dyn ConnectorTestEngine,
 ) {
@@ -806,6 +827,7 @@ pub fn encoder_split_cursor_partitions_encode_disjoint_key_ranges(
     assert_eq!(ids, (0..10).collect::<Vec<_>>());
 }
 
+#[engine_test(requires(DynamoDbItems))]
 pub fn encoder_composite_key_delete_excludes_non_key_fields(engine: &dyn ConnectorTestEngine) {
     // A delete request must carry exactly the two key columns. Value-only
     // fields ("b", "i", "s") must not appear; including them would be rejected
@@ -1074,6 +1096,7 @@ fn expected_all_types_item(engine: &dyn ConnectorTestEngine) -> HashMap<String, 
     worker.pending[0].put_request().unwrap().item().clone()
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_insert(engine: &dyn ConnectorTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
@@ -1102,6 +1125,7 @@ pub fn dynamodb_insert(engine: &dyn ConnectorTestEngine) {
     assert_eq!(attr_s(&rows[1], "s"), "two");
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_upsert(engine: &dyn ConnectorTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
@@ -1134,6 +1158,7 @@ pub fn dynamodb_upsert(engine: &dyn ConnectorTestEngine) {
     assert_eq!(attr_s(&rows[0], "s"), "two-updated");
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_delete(engine: &dyn ConnectorTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
@@ -1210,6 +1235,7 @@ fn seed_item(client: &Client, table: &str, id: i32, sort: &str, marker: &str) {
         .unwrap();
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_conditional_put_skips_existing_row(engine: &dyn ConnectorTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
@@ -1260,6 +1286,7 @@ pub fn dynamodb_conditional_put_skips_existing_row(engine: &dyn ConnectorTestEng
     );
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_conditional_put_writes_all_new_rows(engine: &dyn ConnectorTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
@@ -1299,6 +1326,7 @@ pub fn dynamodb_conditional_put_writes_all_new_rows(engine: &dyn ConnectorTestEn
     );
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_conditional_delete_skips_absent_row(engine: &dyn ConnectorTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
@@ -1338,6 +1366,7 @@ pub fn dynamodb_conditional_delete_skips_absent_row(engine: &dyn ConnectorTestEn
     );
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_all_supported_sql_types_round_trip(engine: &dyn ConnectorTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
@@ -1355,6 +1384,7 @@ pub fn dynamodb_all_supported_sql_types_round_trip(engine: &dyn ConnectorTestEng
     assert_eq!(rows[0], expected_all_types_item(engine,));
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_output_buffer_flushes_by_size(engine: &dyn PipelineTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
@@ -1382,6 +1412,7 @@ pub fn dynamodb_output_buffer_flushes_by_size(engine: &dyn PipelineTestEngine) {
     controller.stop().unwrap();
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_output_buffer_flushes_by_time(engine: &dyn PipelineTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
@@ -1479,10 +1510,12 @@ fn check_oversized_item_dropped(engine: &dyn ConnectorTestEngine, write_mode: Dy
     );
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_oversized_item_dropped_batch_mode(engine: &dyn ConnectorTestEngine) {
     check_oversized_item_dropped(engine, DynamoDBWriteMode::Batch);
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_oversized_item_dropped_transactional_mode(engine: &dyn ConnectorTestEngine) {
     check_oversized_item_dropped(engine, DynamoDBWriteMode::Transactional);
 }
@@ -1512,6 +1545,7 @@ fn dynamodb_endpoint_flush_every(
     .unwrap()
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_empty_batch(engine: &dyn ConnectorTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
@@ -1526,6 +1560,7 @@ pub fn dynamodb_empty_batch(engine: &dyn ConnectorTestEngine) {
     assert_eq!(scan_table(&client, &table).len(), 0);
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_multiple_batches(engine: &dyn ConnectorTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
@@ -1611,10 +1646,12 @@ fn backpressure_writes_all_records(engine: &dyn ConnectorTestEngine, threads: us
     assert_eq!(records_written(&endpoint), 0);
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_backpressure_single_thread(engine: &dyn ConnectorTestEngine) {
     backpressure_writes_all_records(engine, 1);
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_backpressure_multi_thread(engine: &dyn ConnectorTestEngine) {
     backpressure_writes_all_records(engine, 4);
 }
@@ -1645,14 +1682,17 @@ fn progress_basic(engine: &dyn ConnectorTestEngine, threads: usize) {
     assert_eq!(scan_table(&client, &table).len(), 100);
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_progress_counter_single_thread(engine: &dyn ConnectorTestEngine) {
     progress_basic(engine, 1);
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_progress_counter_multi_thread(engine: &dyn ConnectorTestEngine) {
     progress_basic(engine, 3);
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_progress_counter_empty_batch(engine: &dyn ConnectorTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
@@ -1706,16 +1746,19 @@ fn progress_advances_mid_batch(engine: &dyn ConnectorTestEngine, threads: usize)
     assert_eq!(scan_table(&client, &table).len(), num_records);
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_progress_counter_advances_mid_batch_single_thread(
     engine: &dyn ConnectorTestEngine,
 ) {
     progress_advances_mid_batch(engine, 1);
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_progress_counter_advances_mid_batch_multi_thread(engine: &dyn ConnectorTestEngine) {
     progress_advances_mid_batch(engine, 3);
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_composite_key_same_hash_different_sort(engine: &dyn ConnectorTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
@@ -1758,6 +1801,7 @@ pub fn dynamodb_composite_key_same_hash_different_sort(engine: &dyn ConnectorTes
     assert_eq!(attr_s(&rows[0], "s"), "row-two");
 }
 
+#[engine_test(requires(DynamoDbItems), services(DynamoDbLocal))]
 pub fn dynamodb_progress_counter_multiple_batches(engine: &dyn ConnectorTestEngine) {
     let endpoint_url = dynamodb_endpoint_url();
     let client = dynamodb_client(endpoint_url.as_deref());
