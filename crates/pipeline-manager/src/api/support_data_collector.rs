@@ -159,31 +159,41 @@ async fn collect_pipeline_logs(
     tenant_id: TenantId,
     pipeline_name: &str,
 ) -> Result<String, ManagerError> {
-    let mut first_line = true;
-    let next_line_timeout = Duration::from_millis(500);
-    let mut logs = String::with_capacity(4096);
-
     let response = state
         .runner
         // The bundle wants the whole retained buffer every time.
         .get_logs_from_pipeline(client, tenant_id, pipeline_name, FollowMode::Full)
         .await?;
 
-    let mut response = response;
-    while let Ok(Some(chunk)) = timeout(
-        if first_line {
-            COLLECTION_TIMEOUT
-        } else {
-            next_line_timeout
-        },
-        response.next(),
-    )
-    .await
-    {
+    Ok(drain_logs(response, Duration::from_millis(500), COLLECTION_TIMEOUT).await)
+}
+
+/// Reads a followed log stream until it pauses for `gap` or `total` has passed.
+/// The cap matters because a pipeline that never pauses its logs would hold the
+/// collector, which serves all pipelines one after another, for hours.
+async fn drain_logs<S, B, E>(mut stream: S, gap: Duration, total: Duration) -> String
+where
+    S: futures_util::Stream<Item = Result<B, E>> + Unpin,
+    B: AsRef<[u8]>,
+    E: std::fmt::Display,
+{
+    let deadline = Instant::now() + total;
+    let mut first_line = true;
+    let mut logs = String::with_capacity(4096);
+
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        // `timeout` polls the stream before the timer, so a ready stream never times out.
+        if left.is_zero() {
+            break;
+        }
+        let wait = if first_line { left } else { min(gap, left) };
+        let Ok(Some(chunk)) = timeout(wait, stream.next()).await else {
+            break;
+        };
         match chunk {
             Ok(chunk) => {
-                let text = String::from_utf8_lossy(&chunk);
-                logs.push_str(&text);
+                logs.push_str(&String::from_utf8_lossy(chunk.as_ref()));
                 first_line = false;
             }
             Err(e) => {
@@ -192,7 +202,7 @@ async fn collect_pipeline_logs(
         }
     }
 
-    Ok(logs)
+    logs
 }
 
 /// Prettify JSON data for better readability in support bundles.
@@ -1589,6 +1599,35 @@ mod tests {
         );
         assert_eq!(decode_transport_encoding(gz, "x-gzip").unwrap(), payload);
         assert!(decode_transport_encoding(payload, "br").is_err());
+    }
+
+    /// A log stream that never pauses still ends at the total cap.
+    #[tokio::test(start_paused = true)]
+    async fn drain_logs_stops_at_total_cap() {
+        // 30 ms does not divide 500 ms, so no line lands on the deadline.
+        let endless = Box::pin(futures_util::stream::unfold((), |()| async {
+            sleep(Duration::from_millis(30)).await;
+            Some((Ok::<_, String>(b"line\n"), ()))
+        }));
+        let logs = tokio::time::timeout(
+            Duration::from_secs(5),
+            drain_logs(
+                endless,
+                Duration::from_millis(200),
+                Duration::from_millis(500),
+            ),
+        )
+        .await
+        .expect("drain_logs must stop at the total cap");
+        assert_eq!(logs.matches("line\n").count(), 16);
+    }
+
+    /// A stream that always has data ready still ends once the cap has passed.
+    #[tokio::test]
+    async fn drain_logs_stops_when_data_is_always_ready() {
+        let ready = futures_util::stream::iter(vec![Ok::<_, String>(b"line\n"); 1000]);
+        let logs = drain_logs(ready, Duration::from_millis(200), Duration::ZERO).await;
+        assert!(logs.is_empty(), "read {} bytes past the cap", logs.len());
     }
 
     /// Data collected before version 4 holds the JSON profile inside a zip;
