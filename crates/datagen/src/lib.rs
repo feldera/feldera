@@ -588,7 +588,7 @@ impl InputGenerator {
                 let size = buffer.len();
                 consumer.buffered(size);
                 hasher.write(&hash_data);
-                buffer.flush();
+                consumer.check_flush(buffer.flush());
                 size
             }
 
@@ -684,7 +684,7 @@ impl InputGenerator {
                                 hasher.write(&hash_data);
                             }
                             consumed[plan_idx].insert_range(rows.start..=rows.end - 1);
-                            buffer.flush();
+                            consumer.check_flush(buffer.flush());
                         }
                     }
                     let mut metadata_todo = unassigned.clone();

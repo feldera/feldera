@@ -1,9 +1,9 @@
 use super::super::ConnectorError;
-use super::NatsTestRecord;
-use super::util;
-use crate::test::mock_input_pipeline;
+use crate::test::nats as util;
+use crate::transport::input_transport_config_to_endpoint;
 use async_nats::jetstream;
-use feldera_types::program_schema::Relation;
+use feldera_types::config::InputEndpointConfig;
+use feldera_types::secret_resolver::default_secrets_directory;
 use serde_json::json;
 use std::time::Duration;
 
@@ -37,9 +37,12 @@ fn validate_config_with(key: &str, value: serde_json::Value) -> Result<(), Strin
     });
     config["transport"]["config"][key] = value;
 
-    mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
-        serde_json::from_value(config).unwrap(),
-        Relation::empty(),
+    let config: InputEndpointConfig = serde_json::from_value(config).unwrap();
+    input_transport_config_to_endpoint(
+        &config.connector_config.transport,
+        "",
+        default_secrets_directory(),
+        None,
     )
     .map(|_| ())
     .map_err(|err| format!("{err:#}"))

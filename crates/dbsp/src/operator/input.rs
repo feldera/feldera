@@ -43,12 +43,13 @@ pub struct ZSetStagedBuffers {
 }
 
 impl StagedBuffers for ZSetStagedBuffers {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> anyhow::Result<()> {
         for (worker, vals) in self.vals.drain(..).enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
         }
+        Ok(())
     }
 }
 
@@ -131,12 +132,13 @@ pub struct IndexedZSetStagedBuffers {
 }
 
 impl StagedBuffers for IndexedZSetStagedBuffers {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> anyhow::Result<()> {
         for (worker, vals) in self.vals.drain(..).enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
         }
+        Ok(())
     }
 }
 
@@ -175,12 +177,13 @@ pub struct MapStagedBuffers {
 }
 
 impl StagedBuffers for MapStagedBuffers {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> anyhow::Result<()> {
         for (worker, vals) in self.vals.drain(..).enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
         }
+        Ok(())
     }
 }
 
@@ -190,12 +193,13 @@ pub struct LazyMapStagedBuffers {
 }
 
 impl StagedBuffers for LazyMapStagedBuffers {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> anyhow::Result<()> {
         for (worker, vals) in self.vals.drain(..).enumerate() {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
         }
+        Ok(())
     }
 }
 

@@ -1,5 +1,6 @@
 //! Shared fixtures for the merge-mode tests, plus the protocol-level checks that
-//! the whole design rests on.
+//! the whole design rests on. The fixtures that the `delta_merge` connector suite also uses live
+//! in that suite, and this module re-exports them.
 //!
 //! Three assumptions the design rests on, all of them in delta-rs and the Delta protocol
 //! rather than in our code. A regression in any one is data loss no care on our side catches:
@@ -13,22 +14,22 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use arrow::array::{ArrayRef, Int64Array, RecordBatch, StringArray};
-use arrow::datatypes::{DataType, Field as ArrowField, Schema as ArrowSchema};
+use arrow::datatypes::Field as ArrowField;
 use deltalake::datafusion::prelude::{SessionConfig, SessionContext};
+use deltalake::kernel::Action;
 use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, PROTOCOL, TableReference};
-use deltalake::kernel::{Action, DataType as DeltaDataType, PrimitiveType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::vacuum::{VacuumMetrics, VacuumMode};
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use deltalake::{DeltaTable, TableProperty};
-use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
+use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
 use tempfile::TempDir;
 
 use deltalake::operations::get_num_idx_cols_and_stats_columns;
 use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
 use deltalake::parquet::file::properties::WriterProperties;
 use std::collections::{BTreeSet, HashMap};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::Ordering;
 
 use deltalake::logstore::object_store;
 
@@ -38,36 +39,9 @@ use super::probe::{Candidate, Pruning, locate};
 use super::prune::PartitionFilter;
 use super::tombstone::{Tombstones, write_deletion_vectors};
 
-/// Arrow schema of the fixture table: an `id` key and a `payload` value.
-pub(super) fn arrow_schema() -> ArrowSchema {
-    ArrowSchema::new(vec![
-        ArrowField::new("id", DataType::Int64, true),
-        ArrowField::new("payload", DataType::Utf8, true),
-    ])
-}
-
-/// Key relation naming `id`, matching what the `index` property would produce.
-pub(super) fn key_relation() -> Relation {
-    Relation {
-        name: SqlIdentifier::new("k", false),
-        fields: vec![Field::new(
-            "id".into(),
-            ColumnType {
-                typ: SqlType::BigInt,
-                nullable: false,
-                precision: None,
-                scale: None,
-                component: None,
-                fields: None,
-                key: None,
-                value: None,
-            },
-        )],
-        materialized: false,
-        properties: Default::default(),
-        primary_key: None,
-    }
-}
+pub(super) use super::tests::{
+    FlakyStore, arrow_schema, fixture_columns, key_relation, table_over,
+};
 
 /// Key relation naming both `id` and the partition column `payload`.
 pub(super) fn partitioned_key_relation() -> Relation {
@@ -94,18 +68,6 @@ pub(super) fn partition_only_key_relation() -> Relation {
     let mut relation = partitioned_key_relation();
     relation.fields.remove(0);
     relation
-}
-
-/// Delta columns of the fixture table.
-pub(super) fn fixture_columns() -> Vec<StructField> {
-    vec![
-        StructField::new("id", DeltaDataType::Primitive(PrimitiveType::Long), true),
-        StructField::new(
-            "payload",
-            DeltaDataType::Primitive(PrimitiveType::String),
-            true,
-        ),
-    ]
 }
 
 /// A partitioned table whose partition column is also a key column, with each
@@ -824,182 +786,6 @@ async fn a_file_maintenance_replaced_is_transient() {
     };
     assert!(matches!(error, WriteError::Transient(_)), "{error:?}");
     assert!(error.to_string().contains("must be redone"), "{error}");
-}
-
-/// An object store that fails the first few requests of a kind, then behaves.
-///
-/// The connector's own retries are what keep a flush alive across an object store having a
-/// bad minute, and nothing exercised them end to end: the unit tests drive the retry helper
-/// directly, and the probe test only shows a failure that never recovers.
-#[derive(Debug)]
-pub(in crate::integrated::delta_table) struct FlakyStore {
-    inner: Arc<dyn deltalake::ObjectStore>,
-    /// Remaining reads of a data file to fail.
-    fail_reads: AtomicUsize,
-    /// Remaining writes of a deletion vector object to fail.
-    fail_writes: AtomicUsize,
-    injected: AtomicUsize,
-    /// Data-file reads wait while this is set; `hung_reads` counts those waiting now.
-    hang_reads: std::sync::atomic::AtomicBool,
-    hung_reads: AtomicUsize,
-}
-
-impl FlakyStore {
-    /// Wraps the whole local filesystem: `with_storage_backend` wants a store rooted at "/"
-    /// and resolves the table's own location against it.
-    pub(in crate::integrated::delta_table) fn new(
-        fail_reads: usize,
-        fail_writes: usize,
-    ) -> Arc<Self> {
-        Arc::new(Self {
-            inner: Arc::new(object_store::local::LocalFileSystem::new()),
-            fail_reads: AtomicUsize::new(fail_reads),
-            fail_writes: AtomicUsize::new(fail_writes),
-            injected: AtomicUsize::new(0),
-            hang_reads: Default::default(),
-            hung_reads: AtomicUsize::new(0),
-        })
-    }
-
-    /// Make data-file reads wait until `release_data_reads`, to hold a reader mid-run.
-    pub(in crate::integrated::delta_table) fn hang_data_reads(&self) {
-        self.hang_reads.store(true, Ordering::Relaxed);
-    }
-
-    pub(in crate::integrated::delta_table) fn release_data_reads(&self) {
-        self.hang_reads.store(false, Ordering::Relaxed);
-    }
-
-    /// Data-file reads waiting now. A reader that gives up, or is dropped, is no longer counted.
-    pub(in crate::integrated::delta_table) fn hung_reads(&self) -> usize {
-        self.hung_reads.load(Ordering::Relaxed)
-    }
-
-    /// Whether this request is one of the remaining ones to fail.
-    fn should_fail(&self, budget: &AtomicUsize) -> bool {
-        let claimed = budget
-            .try_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
-                left.checked_sub(1)
-            })
-            .is_ok();
-        if claimed {
-            self.injected.fetch_add(1, Ordering::Relaxed);
-        }
-        claimed
-    }
-
-    fn outage() -> object_store::Error {
-        object_store::Error::Generic {
-            store: "flaky",
-            source: "injected outage".into(),
-        }
-    }
-}
-
-impl std::fmt::Display for FlakyStore {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FlakyStore({})", self.inner)
-    }
-}
-
-#[async_trait::async_trait]
-impl deltalake::ObjectStore for FlakyStore {
-    async fn put_opts(
-        &self,
-        location: &object_store::path::Path,
-        payload: object_store::PutPayload,
-        opts: object_store::PutOptions,
-    ) -> object_store::Result<object_store::PutResult> {
-        // Only the deletion vector object: failing the log write would fail the commit,
-        // which is a different path with its own retry.
-        if location.as_ref().ends_with(".bin") && self.should_fail(&self.fail_writes) {
-            return Err(Self::outage());
-        }
-        self.inner.put_opts(location, payload, opts).await
-    }
-
-    async fn put_multipart_opts(
-        &self,
-        location: &object_store::path::Path,
-        opts: object_store::PutMultipartOptions,
-    ) -> object_store::Result<Box<dyn object_store::MultipartUpload>> {
-        self.inner.put_multipart_opts(location, opts).await
-    }
-
-    async fn get_opts(
-        &self,
-        location: &object_store::path::Path,
-        options: object_store::GetOptions,
-    ) -> object_store::Result<object_store::GetResult> {
-        if location.as_ref().ends_with(".parquet") && self.should_fail(&self.fail_reads) {
-            return Err(Self::outage());
-        }
-        // Data files only: a log checkpoint is Parquet too, and a reload may read it.
-        if location.as_ref().ends_with(".parquet")
-            && !location.as_ref().contains("_delta_log")
-            && self.hang_reads.load(Ordering::Relaxed)
-        {
-            struct Waiting<'a>(&'a AtomicUsize);
-            impl Drop for Waiting<'_> {
-                fn drop(&mut self) {
-                    self.0.fetch_sub(1, Ordering::Relaxed);
-                }
-            }
-            self.hung_reads.fetch_add(1, Ordering::Relaxed);
-            let _waiting = Waiting(&self.hung_reads);
-            while self.hang_reads.load(Ordering::Relaxed) {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        }
-        self.inner.get_opts(location, options).await
-    }
-
-    fn list(
-        &self,
-        prefix: Option<&object_store::path::Path>,
-    ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::ObjectMeta>> {
-        self.inner.list(prefix)
-    }
-
-    async fn list_with_delimiter(
-        &self,
-        prefix: Option<&object_store::path::Path>,
-    ) -> object_store::Result<object_store::ListResult> {
-        self.inner.list_with_delimiter(prefix).await
-    }
-
-    fn delete_stream(
-        &self,
-        locations: futures::stream::BoxStream<
-            'static,
-            object_store::Result<object_store::path::Path>,
-        >,
-    ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::path::Path>> {
-        self.inner.delete_stream(locations)
-    }
-
-    async fn copy_opts(
-        &self,
-        from: &object_store::path::Path,
-        to: &object_store::path::Path,
-        options: object_store::CopyOptions,
-    ) -> object_store::Result<()> {
-        self.inner.copy_opts(from, to, options).await
-    }
-}
-
-/// Open `dir`'s table through `store`, so the merge paths read and write through it.
-pub(in crate::integrated::delta_table) async fn table_over(
-    store: Arc<FlakyStore>,
-    dir: &TempDir,
-) -> DeltaTable {
-    let url = deltalake::table::builder::ensure_table_uri(dir.path().to_str().unwrap()).unwrap();
-    deltalake::DeltaTableBuilder::from_url(url.clone())
-        .unwrap()
-        .with_storage_backend(store, url)
-        .load()
-        .await
-        .unwrap()
 }
 
 /// A flush survives an object store that drops requests, and lands the same table.

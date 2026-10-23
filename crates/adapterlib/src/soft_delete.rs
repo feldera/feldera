@@ -170,7 +170,7 @@ impl DeCollectionStream for SoftDeleteStream {
 }
 
 impl InputBuffer for SoftDeleteStream {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.inner.flush()
     }
 
@@ -274,7 +274,7 @@ impl ArrowStream for SoftDeleteArrowStream {
 }
 
 impl InputBuffer for SoftDeleteArrowStream {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.inner.flush()
     }
 
@@ -310,27 +310,27 @@ impl SoftDeleteAvroStream {
 
 #[cfg(feature = "with-avro")]
 impl AvroStream for SoftDeleteAvroStream {
+    fn configure_schema(&mut self, schema: &AvroSchema, refs: &AvroSchemaRefs) -> AnyResult<()> {
+        self.inner.configure_schema(schema, refs)
+    }
+
     fn insert(
         &mut self,
         data: &AvroValue,
-        schema: &AvroSchema,
-        refs: &AvroSchemaRefs,
         n_bytes: usize,
         metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
-        self.inner.insert(data, schema, refs, n_bytes, metadata)
+        self.inner.insert(data, n_bytes, metadata)
     }
 
     fn delete(
         &mut self,
         data: &AvroValue,
-        schema: &AvroSchema,
-        refs: &AvroSchemaRefs,
         n_bytes: usize,
         metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
         let metadata = self.metadata.extend(metadata);
-        self.inner.insert(data, schema, refs, n_bytes, &metadata)
+        self.inner.insert(data, n_bytes, &metadata)
     }
 
     fn fork(&self) -> Box<dyn AvroStream> {
@@ -344,7 +344,7 @@ impl AvroStream for SoftDeleteAvroStream {
 
 #[cfg(feature = "with-avro")]
 impl InputBuffer for SoftDeleteAvroStream {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.inner.flush()
     }
 

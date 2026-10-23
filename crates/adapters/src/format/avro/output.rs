@@ -10,7 +10,7 @@ use apache_avro::schema::RecordField;
 use apache_avro::{Schema as AvroSchema, to_avro_datum, types::Value as AvroValue};
 use crossbeam::channel::Sender;
 use erased_serde::Serialize as ErasedSerialize;
-use feldera_adapterlib::catalog::{SerCursorFlattened, SplitCursorBuilder};
+use feldera_adapterlib::catalog::SerCursorFlattened;
 use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::format::avro::{
     AvroEncoderConfig, AvroEncoderKeyMode, AvroUpdateFormat, SubjectNameStrategy,
@@ -147,9 +147,6 @@ struct AvroParallelEncoder {
 
     /// CDC Field.
     cdc_field: Option<String>,
-
-    /// Avro Schema when the CDC field is Some.
-    value_avro_schema_with_cdc: Option<AvroSchema>,
 }
 
 impl AvroParallelEncoder {
@@ -161,26 +158,39 @@ impl AvroParallelEncoder {
         self.key_sql_schema.as_ref().map(|schema| &schema.name)
     }
 
-    fn serialize_avro_value(
-        skip_schema_id: bool,
-        value: AvroValue,
-        schema: &AvroSchema,
-        buffer: &mut Vec<u8>,
-    ) -> AnyResult<()> {
-        let mut avro_buffer = to_avro_datum(schema, value)
-            .map_err(|e| anyhow!("error serializing Avro value: {e}"))?;
-
+    /// Clears `buffer` for the next message, keeping the message header unless the encoder
+    /// skips the schema id.
+    fn start_message(skip_schema_id: bool, buffer: &mut Vec<u8>) {
         if !skip_schema_id {
             // 5 is the length of the Avro message header (magic byte + 4-byte schema id).
             buffer.truncate(5);
         } else {
             buffer.clear();
         }
+    }
+    /// Writes the current value to the value buffer as a message, with the CDC field, if
+    /// any, set to `cdc_field`.
+    fn serialize_value(&mut self, cursor: &mut dyn SerCursor, cdc_field: &str) -> AnyResult<()> {
+        Self::start_message(self.skip_schema_id, &mut self.value_buffer);
+        cursor
+            .serialize_val_avro(
+                &self.value_avro_schema,
+                &HashMap::new(),
+                &mut self.value_buffer,
+            )
+            .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
 
-        buffer.append(&mut avro_buffer);
-
+        // The CDC field is the last field of the record, a string, and a record's datum is
+        // its fields' datums in order, so the field's datum follows the value's.
+        if self.cdc_field.is_some() {
+            let mut datum =
+                to_avro_datum(&AvroSchema::String, AvroValue::String(cdc_field.to_owned()))
+                    .map_err(|e| anyhow!("error serializing Avro value: {e}"))?;
+            self.value_buffer.append(&mut datum);
+        }
         Ok(())
     }
+
     /// Serialize key and/or value needed for this operation by the given output format.
     fn serialize(&mut self, cursor: &mut dyn SerCursor) -> AnyResult<Option<IndexedOperationType>> {
         let Some(operation_type) =
@@ -199,16 +209,10 @@ impl AvroParallelEncoder {
         cursor.rewind_vals();
 
         if let Some(key_schema) = self.key_avro_schema.as_ref() {
-            let avro_key = cursor
-                .key_to_avro(key_schema, &HashMap::new())
+            Self::start_message(self.skip_schema_id, &mut self.key_buffer);
+            cursor
+                .serialize_key_avro(key_schema, &HashMap::new(), &mut self.key_buffer)
                 .map_err(|e| anyhow!("error converting record key to Avro format: {e}"))?;
-
-            Self::serialize_avro_value(
-                self.skip_schema_id,
-                avro_key,
-                key_schema,
-                &mut self.key_buffer,
-            )?;
         }
 
         while cursor.val_valid() {
@@ -218,29 +222,7 @@ impl AvroParallelEncoder {
                 match operation_type {
                     IndexedOperationType::Insert | IndexedOperationType::Upsert => {
                         // println!("schema: {:#?}", self.value_avro_schema);
-                        let mut avro_value = cursor
-                            .val_to_avro(&self.value_avro_schema, &HashMap::new())
-                            .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
-
-                        let AvroValue::Record(items) = &mut avro_value else {
-                            bail!("expected avro value of type record, found: {avro_value:?}")
-                        };
-
-                        if let Some(field_name) = &self.cdc_field {
-                            items.push((
-                                field_name.to_owned(),
-                                AvroValue::String(cdc_field.to_owned()),
-                            ));
-                        }
-
-                        Self::serialize_avro_value(
-                            self.skip_schema_id,
-                            avro_value,
-                            self.value_avro_schema_with_cdc
-                                .as_ref()
-                                .unwrap_or(&self.value_avro_schema),
-                            &mut self.value_buffer,
-                        )?;
+                        self.serialize_value(cursor, cdc_field)?;
                     }
                     _ => (),
                 }
@@ -249,29 +231,7 @@ impl AvroParallelEncoder {
             if w == -1 {
                 match operation_type {
                     IndexedOperationType::Delete if self.update_format == AvroUpdateFormat::Raw => {
-                        let mut avro_value = cursor
-                            .val_to_avro(&self.value_avro_schema, &HashMap::new())
-                            .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
-
-                        let AvroValue::Record(items) = &mut avro_value else {
-                            bail!("expected avro value of type record, found: {avro_value:?}")
-                        };
-
-                        if let Some(field_name) = &self.cdc_field {
-                            items.push((
-                                field_name.to_owned(),
-                                AvroValue::String(cdc_field.to_owned()),
-                            ));
-                        }
-
-                        Self::serialize_avro_value(
-                            self.skip_schema_id,
-                            avro_value,
-                            self.value_avro_schema_with_cdc
-                                .as_ref()
-                                .unwrap_or(&self.value_avro_schema),
-                            &mut self.value_buffer,
-                        )?;
+                        self.serialize_value(cursor, cdc_field)?;
                     }
                     _ => (),
                 }
@@ -355,7 +315,7 @@ impl AvroParallelEncoder {
                 ),
             }
 
-            cursor.step_key()
+            cursor.step_key()?;
         }
 
         Ok(())
@@ -392,9 +352,6 @@ pub struct AvroEncoder {
 
     /// CDC Field.
     cdc_field: Option<String>,
-
-    /// Avro Schema when the CDC field is Some.
-    value_avro_schema_with_cdc: Option<AvroSchema>,
 
     /// The thread pool for parallel encoding.
     pool: Option<ThreadPool>,
@@ -726,31 +683,20 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
             skip_schema_id: config.skip_schema_id,
             update_format: config.update_format,
             cdc_field: config.cdc_field,
-            value_avro_schema_with_cdc,
             pool: None,
             threads: config.threads,
         })
     }
 
-    fn serialize_avro_value(
-        skip_schema_id: bool,
-        value: AvroValue,
-        schema: &AvroSchema,
-        buffer: &mut Vec<u8>,
-    ) -> AnyResult<()> {
-        let mut avro_buffer = to_avro_datum(schema, value)
-            .map_err(|e| anyhow!("error serializing Avro value: {e}"))?;
-
+    /// Clears `buffer` for the next message, keeping the message header unless the encoder
+    /// skips the schema id.
+    fn start_message(skip_schema_id: bool, buffer: &mut Vec<u8>) {
         if !skip_schema_id {
             // 5 is the length of the Avro message header (magic byte + 4-byte schema id).
             buffer.truncate(5);
         } else {
             buffer.clear();
         }
-
-        buffer.append(&mut avro_buffer);
-
-        Ok(())
     }
 
     /// Encode a non-indexed batch.
@@ -777,16 +723,14 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                 }
 
                 while w != 0 {
-                    let avro_value = cursor
-                        .key_to_avro(&self.value_avro_schema, &HashMap::new())
+                    Self::start_message(self.skip_schema_id, &mut self.value_buffer);
+                    cursor
+                        .serialize_key_avro(
+                            &self.value_avro_schema,
+                            &HashMap::new(),
+                            &mut self.value_buffer,
+                        )
                         .map_err(|e| anyhow!("error converting record to Avro format: {e}"))?;
-
-                    Self::serialize_avro_value(
-                        self.skip_schema_id,
-                        avro_value,
-                        &self.value_avro_schema,
-                        &mut self.value_buffer,
-                    )?;
 
                     match self.update_format {
                         AvroUpdateFormat::Raw => {
@@ -822,7 +766,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                 }
                 cursor.step_val();
             }
-            cursor.step_key()
+            cursor.step_key()?;
         }
 
         Ok(())
@@ -836,15 +780,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
 
         let (tx, rx) = crossbeam::channel::bounded(self.threads);
 
-        let mut bounds = batch.keys_factory().default_box();
-        batch.partition_keys(self.threads, &mut *bounds);
-
-        for i in 0..=bounds.len() {
-            let Some(cursor_builder) =
-                SplitCursorBuilder::from_bounds(batch.clone(), &*bounds, i, RecordFormat::Avro)
-            else {
-                break;
-            };
+        for range in batch.split(self.threads, RecordFormat::Avro)? {
             let mut value_buffer = vec![0u8; 5];
             let mut key_buffer = vec![0u8; 5];
 
@@ -862,13 +798,15 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                 skip_schema_id: self.skip_schema_id,
                 update_format: self.update_format.clone(),
                 cdc_field: self.cdc_field.clone(),
-                value_avro_schema_with_cdc: self.value_avro_schema_with_cdc.clone(),
                 consumer: tx.clone(),
             };
 
             pool.execute(move || {
-                let mut cursor = cursor_builder.build();
-                if let Err(e) = encoder.encode_indexed(&mut cursor) {
+                let result = match range.cursor() {
+                    Ok(mut cursor) => encoder.encode_indexed(cursor.as_mut()),
+                    Err(e) => Err(e),
+                };
+                if let Err(e) = result {
                     let _ = encoder.consumer.send(ConsumerMessage::Error(e));
                 }
             });

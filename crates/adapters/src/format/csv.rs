@@ -18,6 +18,9 @@ use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::{borrow::Cow, mem::take, sync::Arc};
 
 pub(crate) mod deserializer;
+
+#[cfg(any(test, feature = "testing"))]
+pub mod tests;
 use crate::catalog::{InputCollectionHandle, SerBatchReader};
 pub use deserializer::byte_record_deserializer;
 pub use deserializer::string_record_deserializer;
@@ -408,7 +411,7 @@ impl Encoder for CsvEncoder {
 
         while cursor.key_valid() {
             if !cursor.val_valid() {
-                cursor.step_key();
+                cursor.step_key()?;
                 continue;
             }
             let prev_len = buffer.len();
@@ -449,7 +452,7 @@ impl Encoder for CsvEncoder {
             }
 
             if !overflow {
-                cursor.step_key();
+                cursor.step_key()?;
             }
         }
 
@@ -473,7 +476,6 @@ mod test {
     use super::CsvSplitter;
     use crate::format::Splitter;
     use feldera_sqllib::{SqlString, Variant};
-    use feldera_types::format::csv::{CsvFormatConfig, CsvTrim};
     use std::collections::BTreeMap;
 
     #[derive(Debug, Eq, PartialEq)]
@@ -666,237 +668,5 @@ true,bar,buzz"#;
         // After the first record is consumed, the comment is skipped and the
         // second record is returned.
         assert_eq!(s.input(b"# skip\nc,d\n"), Some(11));
-    }
-
-    // ---- End-to-end tests via mock_parser_pipeline ----
-    //
-    // These tests push bytes through a real CsvParser (the same code path that
-    // a live input connector uses) and verify the deserialized records.
-
-    use crate::FormatConfig;
-    use crate::format::InputBuffer;
-    use crate::test::mock_parser_pipeline;
-    use feldera_adapterlib::format::Parser;
-    use feldera_types::deserialize_without_context;
-    use feldera_types::program_schema::Relation;
-    use serde::{Deserialize, Serialize};
-    use std::borrow::Cow;
-
-    /// Two-string record used by the end-to-end tests below.
-    #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone)]
-    struct TwoStrings {
-        first: String,
-        second: String,
-    }
-
-    deserialize_without_context!(TwoStrings);
-
-    /// Push `data` through a fully-configured `CsvParser` and return the
-    /// inserted `TwoStrings` records.
-    fn e2e_parse_csv(config: CsvFormatConfig, data: &[u8]) -> Vec<TwoStrings> {
-        let format_config = FormatConfig {
-            name: Cow::from("csv"),
-            config: serde_json::to_value(config).unwrap(),
-        };
-        let (_, mut parser, input_handle) =
-            mock_parser_pipeline::<TwoStrings, TwoStrings>(&Relation::empty(), &format_config)
-                .unwrap();
-        let (buf, errors) = parser.parse(data, None);
-        assert!(errors.is_empty(), "unexpected parse errors: {errors:?}");
-        if let Some(mut buf) = buf {
-            buf.flush();
-        }
-        input_handle
-            .state()
-            .flushed
-            .iter()
-            .map(|upd| upd.unwrap_insert().clone())
-            .collect()
-    }
-
-    // `quote`: single-quote wraps a field containing a comma.
-    #[test]
-    fn csv_e2e_quote() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                quote: '\'',
-                ..Default::default()
-            },
-            b"foo,'bar,baz'\nqux,'quux,corge'\n",
-        );
-        assert_eq!(rows.len(), 2);
-        assert_eq!(
-            rows[0],
-            TwoStrings {
-                first: "foo".into(),
-                second: "bar,baz".into()
-            }
-        );
-        assert_eq!(
-            rows[1],
-            TwoStrings {
-                first: "qux".into(),
-                second: "quux,corge".into()
-            }
-        );
-    }
-
-    // `escape` + `double_quote = false`: backslash escapes a literal quote.
-    #[test]
-    fn csv_e2e_escape() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                escape: Some('\\'),
-                double_quote: false,
-                ..Default::default()
-            },
-            // "foo\"bar" → foo"bar
-            b"\"foo\\\"bar\",baz\n",
-        );
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first, "foo\"bar");
-        assert_eq!(rows[0].second, "baz");
-    }
-
-    // `double_quote = true` (default): `""` inside a quoted field is one `"`.
-    #[test]
-    fn csv_e2e_double_quote() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig::default(),
-            // "foo""bar" → foo"bar
-            b"\"foo\"\"bar\",baz\n",
-        );
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first, "foo\"bar");
-        assert_eq!(rows[0].second, "baz");
-    }
-
-    // `double_quote = false`: `""` is not collapsed; the first `"` ends the
-    // quoted field, and the remainder of the token is appended unquoted.
-    // (Matches csv-core's `quote_escapes_no_double` test: `"a""b"` → `a"b"`.)
-    #[test]
-    fn csv_e2e_double_quote_disabled() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                double_quote: false,
-                ..Default::default()
-            },
-            b"\"foo\"\"bar\",baz\n",
-        );
-        assert_eq!(rows.len(), 1);
-        assert_ne!(rows[0].first, "foo\"bar"); // not collapsed
-        assert_eq!(rows[0].second, "baz");
-    }
-
-    // `trim = None` (default): leading and trailing whitespace is preserved.
-    #[test]
-    fn csv_e2e_trim_none() {
-        let rows = e2e_parse_csv(CsvFormatConfig::default(), b"  foo  ,  bar  \n");
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first, "  foo  ");
-        assert_eq!(rows[0].second, "  bar  ");
-    }
-
-    // `quoting = false`: quote characters are treated as ordinary bytes.
-    #[test]
-    fn csv_e2e_quoting_disabled() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                quoting: false,
-                ..Default::default()
-            },
-            // The outer " chars are kept verbatim in the field value.
-            b"\"hello\",world\n",
-        );
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first, "\"hello\"");
-        assert_eq!(rows[0].second, "world");
-    }
-
-    // `comment`: lines starting with `#` are skipped.
-    #[test]
-    fn csv_e2e_comment() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                comment: Some('#'),
-                ..Default::default()
-            },
-            b"# opening comment\nfoo,bar\n# mid comment\nbaz,qux\n",
-        );
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].first, "foo");
-        assert_eq!(rows[1].first, "baz");
-    }
-
-    // `flexible = true` (default): a record with extra fields is accepted;
-    // only the first two are used for deserialization.
-    #[test]
-    fn csv_e2e_flexible_true() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig::default(), // flexible=true
-            b"foo,bar\nqux,quux,extra\n",
-        );
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].first, "foo");
-        assert_eq!(rows[1].first, "qux");
-        assert_eq!(rows[1].second, "quux");
-    }
-
-    // `flexible = false`: a record whose field count differs from the first
-    // record's count produces a parse error.
-    #[test]
-    fn csv_e2e_flexible_false() {
-        let format_config = FormatConfig {
-            name: Cow::from("csv"),
-            config: serde_json::to_value(CsvFormatConfig {
-                flexible: false,
-                ..Default::default()
-            })
-            .unwrap(),
-        };
-        let (_, mut parser, _) =
-            mock_parser_pipeline::<TwoStrings, TwoStrings>(&Relation::empty(), &format_config)
-                .unwrap();
-
-        // Suppress the default panic-on-error so we can inspect the error list.
-        parser.on_error(Some(Box::new(|_fatal, _err| {})));
-
-        // Record 1: 2 fields (sets the expected count).
-        // Record 2: 3 fields (different count → error with flexible=false).
-        let (_buf, errors) = parser.parse(b"foo,bar\nqux,quux,extra\n", None);
-        assert!(
-            !errors.is_empty(),
-            "expected a parse error for flexible=false with mismatched field counts"
-        );
-    }
-
-    // `trim = Fields`: leading/trailing whitespace is stripped from field values.
-    #[test]
-    fn csv_e2e_trim_fields() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                trim: CsvTrim::Fields,
-                ..Default::default()
-            },
-            b"  foo  ,  bar  \n",
-        );
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first, "foo");
-        assert_eq!(rows[0].second, "bar");
-    }
-
-    // `headers = true`: the first line is a header row and is skipped.
-    #[test]
-    fn csv_e2e_headers() {
-        let rows = e2e_parse_csv(
-            CsvFormatConfig {
-                headers: true,
-                ..Default::default()
-            },
-            b"first,second\nfoo,bar\n",
-        );
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].first, "foo");
-        assert_eq!(rows[0].second, "bar");
     }
 }

@@ -158,7 +158,7 @@ mod catalog;
 mod controller;
 pub mod format;
 pub mod integrated;
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub mod postprocess;
 pub mod preprocess;
 pub mod server;
@@ -166,7 +166,7 @@ pub mod static_compile;
 pub mod transport;
 pub(crate) mod util;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub mod test;
 
 pub use integrated::{IntegratedOutputEndpoint, create_integrated_output_endpoint};

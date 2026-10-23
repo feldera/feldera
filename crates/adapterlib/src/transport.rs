@@ -655,10 +655,10 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
                 if let Some(hasher) = hasher.as_mut() {
                     buffer.hash(hasher);
                 }
-                buffer.flush();
+                stop = !self.consumer.check_flush(buffer.flush());
             }
 
-            stop = stop_at(&aux);
+            stop |= stop_at(&aux);
             consumed_aux.push((timestamp, aux));
 
             if commit_transaction && self.commit_transaction() {
@@ -818,7 +818,9 @@ impl InputQueue<(), Box<dyn InputBuffer>> {
                 let mut taken = buffer.take_some(n - total.records);
                 total += taken.len();
                 consumed.push(Watermark::new(timestamp, None));
-                taken.flush();
+                if !self.consumer.check_flush(taken.flush()) {
+                    break;
+                }
                 drop(taken);
                 if !buffer.is_empty() {
                     self.queue.lock().unwrap().push_front(InputQueueEntry {
@@ -1171,6 +1173,20 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// Optional tag that can be used for additional context
     /// e.g. for rate limiting
     fn error(&self, fatal: bool, error: AnyError, tag: Option<&'static str>);
+
+    /// Checks `result`, the outcome of flushing input to the circuit.
+    ///
+    /// A failed flush is a fatal error of the endpoint: this reports it with
+    /// [`Self::error`] and returns `false`.
+    fn check_flush(&self, result: AnyResult<()>) -> bool {
+        match result {
+            Ok(()) => true,
+            Err(error) => {
+                self.error(true, error, None);
+                false
+            }
+        }
+    }
 
     /// Updates the health status of the connector.
     fn update_connector_health(&self, health: ConnectorHealth);
@@ -1718,8 +1734,11 @@ mod transaction_boundary_tests {
         /// transaction was open when it did.
         flushed: Vec<(u32, bool)>,
 
-        /// Errors that the connector reported.
+        /// Non-fatal errors that the connector reported.
         errors: Vec<String>,
+
+        /// Fatal errors that the connector reported.
+        fatal_errors: Vec<String>,
 
         /// The number of requests that every host makes.
         on_all_hosts: usize,
@@ -1786,8 +1805,14 @@ mod transaction_boundary_tests {
         fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<Completion>> {
             None
         }
-        fn error(&self, _fatal: bool, error: AnyError, _tag: Option<&'static str>) {
-            self.0.lock().unwrap().errors.push(error.to_string());
+        fn error(&self, fatal: bool, error: AnyError, _tag: Option<&'static str>) {
+            let mut state = self.0.lock().unwrap();
+            let errors = if fatal {
+                &mut state.fatal_errors
+            } else {
+                &mut state.errors
+            };
+            errors.push(error.to_string());
         }
         fn update_connector_health(&self, _health: ConnectorHealth) {}
     }
@@ -1799,12 +1824,13 @@ mod transaction_boundary_tests {
     }
 
     impl InputBuffer for Records {
-        fn flush(&mut self) {
+        fn flush(&mut self) -> anyhow::Result<()> {
             let mut state = self.pipeline.0.lock().unwrap();
             let open = state.open.is_some();
             state
                 .flushed
                 .extend(self.ids.drain(..).map(|id| (id, open)));
+            Ok(())
         }
         fn len(&self) -> BufferSize {
             BufferSize {
@@ -1833,6 +1859,33 @@ mod transaction_boundary_tests {
             as Box<dyn InputBuffer>))
     }
 
+    /// Records that the circuit refuses to take.
+    struct Refused(usize);
+
+    impl InputBuffer for Refused {
+        fn flush(&mut self) -> anyhow::Result<()> {
+            anyhow::bail!("the circuit refused {} records", self.0)
+        }
+        fn len(&self) -> BufferSize {
+            BufferSize {
+                records: self.0,
+                bytes: self.0,
+            }
+        }
+        fn hash(&self, _hasher: &mut dyn Hasher) {}
+        fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
+            let n = n.min(self.0);
+            self.0 -= n;
+            (n > 0).then(|| Box::new(Refused(n)) as Box<dyn InputBuffer>)
+        }
+    }
+
+    /// A queue entry with `n` records that the circuit refuses.
+    fn refused(n: usize) -> InputQueueEntry<(), Box<dyn InputBuffer>> {
+        InputQueueEntry::new_with_aux(Utc::now(), ())
+            .with_buffer(Some(Box::new(Refused(n)) as Box<dyn InputBuffer>))
+    }
+
     /// A queue entry with no records.
     fn marker() -> InputQueueEntry<(), Box<dyn InputBuffer>> {
         InputQueueEntry::new_with_aux(Utc::now(), ())
@@ -1857,6 +1910,38 @@ mod transaction_boundary_tests {
     }
 
     const FLUSHES: [Flush; 2] = [Flush::WithAux, Flush::Queue];
+
+    /// `check_flush` passes a successful flush and reports a failed one as fatal.
+    #[test]
+    fn check_flush_reports_a_failure_as_fatal() {
+        let pipeline = Pipeline::default();
+        assert!(pipeline.check_flush(Ok(())));
+        assert!(!pipeline.check_flush(Err(anyhow::anyhow!("the circuit is gone"))));
+        let state = pipeline.0.lock().unwrap();
+        assert_eq!(state.fatal_errors, ["the circuit is gone"]);
+        assert!(state.errors.is_empty());
+    }
+
+    /// A failed flush is a fatal error, and the queue flushes nothing after it.
+    #[test]
+    fn a_failed_flush_is_fatal_and_stops_the_queue() {
+        for flush in FLUSHES {
+            let pipeline = Pipeline::default();
+            let queue = InputQueue::new(Box::new(pipeline.clone()));
+            queue.push_entry(records(&pipeline, &[1]), Vec::new());
+            queue.push_entry(refused(2), Vec::new());
+            queue.push_entry(records(&pipeline, &[3]), Vec::new());
+
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [(1, false)], "{flush:?}");
+            assert_eq!(
+                pipeline.0.lock().unwrap().fatal_errors,
+                ["the circuit refused 2 records"],
+                "{flush:?}"
+            );
+            assert_eq!(queue.len(), 1, "{flush:?}");
+        }
+    }
 
     /// Records after a request to start a transaction wait until the
     /// transaction is open.
@@ -2265,12 +2350,13 @@ mod transaction_boundary_model_tests {
     }
 
     impl InputBuffer for Records {
-        fn flush(&mut self) {
+        fn flush(&mut self) -> anyhow::Result<()> {
             let mut world = self.host.shared.world();
             let open = world.open;
             world.hosts[self.host.index]
                 .flushed
                 .extend(self.ids.drain(..).map(|id| (id, open)));
+            Ok(())
         }
         fn len(&self) -> BufferSize {
             BufferSize {
