@@ -1,5 +1,4 @@
 use bytemuck::NoUninit;
-pub use dbsp::DetailedError as DbspDetailedError;
 use num_derive::FromPrimitive;
 use serde::Serialize;
 

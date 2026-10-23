@@ -6,7 +6,6 @@ use crate::format::get_input_format;
 use crate::test::{DEFAULT_TIMEOUT_MS, MockDeZSet, MockUpdate, TestStruct, wait};
 use anyhow::{Result as AnyResult, anyhow, bail};
 use csv::WriterBuilder as CsvWriterBuilder;
-use dbsp::circuit::NodeId;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::default_redpanda_server;
 use futures::executor::block_on;
@@ -318,7 +317,7 @@ impl BufferConsumer {
         let mut parser = format
             .new_parser(
                 "BaseConsumer",
-                &InputCollectionHandle::new(schema, buffer.clone(), NodeId::new(0)),
+                &InputCollectionHandle::new(schema, buffer.clone(), None),
                 &format_config,
             )
             .unwrap();

@@ -1,5 +1,6 @@
 use crate::transport::Step;
-use dbsp::storage::backend::{StorageError, StoragePath};
+use feldera_storage::StoragePath;
+use feldera_storage::error::StorageError;
 use serde::{Serialize, Serializer};
 use std::backtrace::Backtrace;
 use std::fmt::{Display, Formatter, Result as FmtResult};

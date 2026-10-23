@@ -1,11 +1,4 @@
-use std::{
-    borrow::Cow,
-    panic::Location,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-};
+use std::{borrow::Cow, panic::Location};
 
 use size_of::SizeOf;
 use typedmap::TypedMapKey;
@@ -87,52 +80,7 @@ impl EnableCountId {
 
 /// Used to enable/disable an accumulator during a transaction.
 ///
-/// Most accumulators (created with dyn_accumulate()) are always enabled.
-/// One special case is when the accumulator is used as part of an output handle
-/// to collect updates to the output stream within a transaction. In this case,
-/// if there is no output connector attached to the stream, there is no need to
-/// store the updates (which during backfill can amount to storing a complete copy
-/// of the table or view).
-///
-/// This flag enables this optimization by keeping track of the number of consumers
-/// of the accumulator's output. It is equal to the number of attached output connectors
-/// plus the number of times the same accumulator was instantiated as part of a regular
-/// (non-output) operator with dyn_accumulate().
-#[derive(Clone, Debug, Default)]
-pub struct EnableCount(Arc<AtomicUsize>);
-
-impl EnableCount {
-    /// Creates a new `EnableCount` that is initially disabled.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Returns true if this `EnableCount` is enabled.
-    ///
-    /// This and [EnableCount::enable] use `SeqCst`, so that a caller that
-    /// enables and then reads another `SeqCst` atomic, such as a transaction
-    /// number, cannot miss a concurrent update of that atomic that precedes
-    /// a call to this function.
-    pub fn is_enabled(&self) -> bool {
-        self.0.load(Ordering::SeqCst) > 0
-    }
-
-    /// Enable the accumulator for this output stream.
-    ///
-    /// This may be paired with a later call to [EnableCount::disable], if the
-    /// stream should eventually be disabled.
-    pub fn enable(&self) {
-        self.0.fetch_add(1, Ordering::SeqCst);
-    }
-
-    /// Disable the accumulator for this output stream.
-    ///
-    /// This must be paired with a prior call to [EnableCount::enable].
-    pub fn disable(&self) {
-        let old = self.0.fetch_sub(1, Ordering::AcqRel);
-        assert!(old > 0);
-    }
-}
+pub use feldera_types::circuit::EnableCount;
 
 impl TypedMapKey<LocalStoreMarker> for EnableCountId {
     type Value = EnableCount;

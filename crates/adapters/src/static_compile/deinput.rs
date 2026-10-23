@@ -4,6 +4,7 @@ use crate::catalog::AvroStream;
 use crate::format::avro::from_avro_value;
 use crate::format::csv::{csv_reader_builder, deserializer::ByteRecordDeserializer};
 use crate::format::raw::{RawDeserializer, raw_serde_config};
+use crate::static_compile::metadata::MetadataVariant;
 use crate::{
     ControllerError, DeCollectionHandle,
     catalog::{DeCollectionStream, RecordFormat},
@@ -21,6 +22,7 @@ use dbsp::{
     operator::Update, utils::Tup2,
 };
 use erased_serde::Deserializer as ErasedDeserializer;
+use feldera_adapterlib::ConnectorMetadata;
 #[cfg(feature = "with-avro")]
 use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_adapterlib::format::{BufferSize, flatten_nested};
@@ -523,6 +525,7 @@ pub struct DeZSetStream<De, K, D, C> {
     buffer: DeZSetStreamBuffer<K>,
     deserializer: De,
     config: C,
+    metadata: MetadataVariant,
     phantom: PhantomData<D>,
 }
 
@@ -536,6 +539,7 @@ where
             buffer: DeZSetStreamBuffer::new(handle),
             deserializer: De::create(config.clone()),
             config,
+            metadata: MetadataVariant::default(),
             phantom: PhantomData,
         }
     }
@@ -548,15 +552,21 @@ where
     K: DBData + From<D>,
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
-        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data, metadata)?);
+    fn insert(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()> {
+        let key = <K as From<D>>::from(
+            self.deserializer
+                .deserialize::<D>(data, self.metadata.get(metadata))?,
+        );
         self.buffer.updates.push_back(Tup2(key, ZWeight::one()));
         self.buffer.n_bytes += data.len();
         Ok(())
     }
 
-    fn delete(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
-        let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data, metadata)?);
+    fn delete(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()> {
+        let key = <K as From<D>>::from(
+            self.deserializer
+                .deserialize::<D>(data, self.metadata.get(metadata))?,
+        );
 
         self.buffer
             .updates
@@ -565,7 +575,7 @@ where
         Ok(())
     }
 
-    fn update(&mut self, _data: &[u8], _metadata: &Option<Variant>) -> AnyResult<()> {
+    fn update(&mut self, _data: &[u8], _metadata: &Option<ConnectorMetadata>) -> AnyResult<()> {
         bail!("update operation is not supported on this stream")
     }
 
@@ -650,6 +660,7 @@ where
 pub struct ArrowZSetStream<K, D, C> {
     buffer: DeZSetStreamBuffer<K>,
     config: C,
+    metadata: MetadataVariant,
     phantom: PhantomData<D>,
 }
 
@@ -658,6 +669,7 @@ impl<K, D, C> ArrowZSetStream<K, D, C> {
         Self {
             buffer: DeZSetStreamBuffer::new(handle),
             config,
+            metadata: MetadataVariant::default(),
             phantom: PhantomData,
         }
     }
@@ -669,10 +681,18 @@ where
     D: for<'de> DeserializeWithContext<'de, C, Variant> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
+    fn insert(
+        &mut self,
+        data: &RecordBatch,
+        metadata: &Option<ConnectorMetadata>,
+    ) -> AnyResult<()> {
         let deserializer = arrow_deserializer(data)?;
 
-        let records = Vec::<D>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
+        let records = Vec::<D>::deserialize_with_context_aux(
+            deserializer,
+            &self.config,
+            self.metadata.get(metadata),
+        )?;
         self.buffer
             .updates
             .extend(records.into_iter().map(|r| Tup2(K::from(r), 1)));
@@ -681,10 +701,18 @@ where
         Ok(())
     }
 
-    fn delete(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
+    fn delete(
+        &mut self,
+        data: &RecordBatch,
+        metadata: &Option<ConnectorMetadata>,
+    ) -> AnyResult<()> {
         let deserializer = arrow_deserializer(data)?;
 
-        let records = Vec::<D>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
+        let records = Vec::<D>::deserialize_with_context_aux(
+            deserializer,
+            &self.config,
+            self.metadata.get(metadata),
+        )?;
         self.buffer
             .updates
             .extend(records.into_iter().map(|r| Tup2(K::from(r), -1)));
@@ -697,7 +725,7 @@ where
         &mut self,
         data: &RecordBatch,
         polarities: &[bool],
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
         if polarities.len() != data.num_rows() {
             // This should never happen. We could use an assertion here, but since the `polarities` array
@@ -711,7 +739,11 @@ where
 
         let deserializer = arrow_deserializer(data)?;
 
-        let records = Vec::<D>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
+        let records = Vec::<D>::deserialize_with_context_aux(
+            deserializer,
+            &self.config,
+            self.metadata.get(metadata),
+        )?;
 
         self.buffer.updates.extend(
             zip(records, polarities)
@@ -765,6 +797,7 @@ where
 #[cfg(feature = "with-avro")]
 pub struct AvroZSetStream<K, D> {
     buffer: DeZSetStreamBuffer<K>,
+    metadata: MetadataVariant,
     phantom: PhantomData<D>,
 }
 
@@ -780,6 +813,7 @@ impl<K, D> AvroZSetStream<K, D> {
     pub fn new(handle: ZSetHandle<K>) -> Self {
         Self {
             buffer: DeZSetStreamBuffer::new(handle),
+            metadata: MetadataVariant::default(),
             phantom: PhantomData,
         }
     }
@@ -797,9 +831,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
-        let v: D = from_avro_value(data, schema, refs, metadata)
+        let v: D = from_avro_value(data, schema, refs, self.metadata.get(metadata))
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), 1));
@@ -814,9 +848,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
-        let v: D = from_avro_value(data, schema, refs, metadata)
+        let v: D = from_avro_value(data, schema, refs, self.metadata.get(metadata))
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), -1));
@@ -1395,6 +1429,7 @@ where
     update_key_func: UF,
     config: C,
     deserializer: De,
+    metadata: MetadataVariant,
     phantom: PhantomData<fn(KD, VD, UD)>,
 }
 
@@ -1414,6 +1449,7 @@ where
             update_key_func,
             deserializer: De::create(config.clone()),
             config,
+            metadata: MetadataVariant::default(),
             phantom: PhantomData,
         }
     }
@@ -1434,8 +1470,11 @@ where
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
     UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
-        let val = V::from(self.deserializer.deserialize::<VD>(data, metadata)?);
+    fn insert(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()> {
+        let val = V::from(
+            self.deserializer
+                .deserialize::<VD>(data, self.metadata.get(metadata))?,
+        );
         let key = (self.value_key_func)(&val);
 
         self.buffer.updates.push_back(Tup2(key, H::insert(val)));
@@ -1443,21 +1482,27 @@ where
         Ok(())
     }
 
-    fn delete(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
-        let key = K::from(self.deserializer.deserialize::<KD>(data, metadata)?);
+    fn delete(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()> {
+        let key = K::from(
+            self.deserializer
+                .deserialize::<KD>(data, self.metadata.get(metadata))?,
+        );
 
         self.buffer.updates.push_back(Tup2(key, H::delete()));
         self.buffer.n_bytes += data.len();
         Ok(())
     }
 
-    fn update(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
+    fn update(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()> {
         if !H::TAKES_UPDATES {
             bail!(
                 "this table does not take update records, because the program sets FELDERA_LAZY_UPSERT to ON; insert the whole row instead"
             );
         }
-        let upd = U::from(self.deserializer.deserialize::<UD>(data, metadata)?);
+        let upd = U::from(
+            self.deserializer
+                .deserialize::<UD>(data, self.metadata.get(metadata))?,
+        );
         let key = (self.update_key_func)(&upd);
         let Some(command) = H::update(upd) else {
             bail!("this table does not take update records");
@@ -1539,6 +1584,7 @@ where
     buffer: DeMapStreamBuffer<K, V, U, H>,
     value_key_func: VF,
     config: C,
+    metadata: MetadataVariant,
     phantom: PhantomData<fn(KD, VD)>,
 }
 
@@ -1555,6 +1601,7 @@ where
             buffer: DeMapStreamBuffer::new(handle),
             value_key_func,
             config,
+            metadata: MetadataVariant::default(),
             phantom: PhantomData,
         }
     }
@@ -1571,11 +1618,18 @@ where
     H: MapInput<K, V, U>,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
+    fn insert(
+        &mut self,
+        data: &RecordBatch,
+        metadata: &Option<ConnectorMetadata>,
+    ) -> AnyResult<()> {
         let deserializer = arrow_deserializer(data)?;
 
-        let records =
-            Vec::<VD>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
+        let records = Vec::<VD>::deserialize_with_context_aux(
+            deserializer,
+            &self.config,
+            self.metadata.get(metadata),
+        )?;
         self.buffer.updates.extend(records.into_iter().map(|r| {
             let v = V::from(r);
             Tup2((self.value_key_func)(&v), H::insert(v))
@@ -1585,11 +1639,18 @@ where
         Ok(())
     }
 
-    fn delete(&mut self, data: &RecordBatch, metadata: &Option<Variant>) -> AnyResult<()> {
+    fn delete(
+        &mut self,
+        data: &RecordBatch,
+        metadata: &Option<ConnectorMetadata>,
+    ) -> AnyResult<()> {
         let deserializer = arrow_deserializer(data)?;
 
-        let records =
-            Vec::<VD>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
+        let records = Vec::<VD>::deserialize_with_context_aux(
+            deserializer,
+            &self.config,
+            self.metadata.get(metadata),
+        )?;
         self.buffer.updates.extend(records.into_iter().map(|r| {
             let v = V::from(r);
             Tup2((self.value_key_func)(&v), H::delete())
@@ -1611,7 +1672,7 @@ where
         &mut self,
         data: &RecordBatch,
         polarities: &[bool],
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
         if polarities.len() != data.num_rows() {
             // This should never happen. We could use an assertion here, but since the `polarities` array
@@ -1625,8 +1686,11 @@ where
 
         let deserializer = arrow_deserializer(data)?;
 
-        let records =
-            Vec::<VD>::deserialize_with_context_aux(deserializer, &self.config, metadata)?;
+        let records = Vec::<VD>::deserialize_with_context_aux(
+            deserializer,
+            &self.config,
+            self.metadata.get(metadata),
+        )?;
         self.buffer
             .updates
             .extend(zip(records, polarities).map(|(record, polarity)| {
@@ -1690,6 +1754,7 @@ where
 {
     buffer: DeMapStreamBuffer<K, V, U, H>,
     value_key_func: VF,
+    metadata: MetadataVariant,
     phantom: PhantomData<(KD, VD)>,
 }
 
@@ -1719,6 +1784,7 @@ where
         Self {
             buffer: DeMapStreamBuffer::new(handle),
             value_key_func,
+            metadata: MetadataVariant::default(),
             phantom: PhantomData,
         }
     }
@@ -1741,9 +1807,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
-        let v: VD = from_avro_value(data, schema, refs, metadata)
+        let v: VD = from_avro_value(data, schema, refs, self.metadata.get(metadata))
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         let val = V::from(v);
@@ -1761,9 +1827,9 @@ where
         schema: &AvroSchema,
         refs: &AvroSchemaRefs,
         n_bytes: usize,
-        metadata: &Option<Variant>,
+        metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
-        let v: VD = from_avro_value(data, schema, refs, metadata)
+        let v: VD = from_avro_value(data, schema, refs, self.metadata.get(metadata))
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         let val = V::from(v);

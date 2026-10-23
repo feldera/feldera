@@ -171,8 +171,8 @@ pub mod test;
 
 pub use integrated::{IntegratedOutputEndpoint, create_integrated_output_endpoint};
 
-pub use dbsp::DetailedError;
 pub use feldera_adapterlib::PipelineState;
+pub use feldera_types::error::DetailedError;
 
 pub use server::{ErrorResponse, PipelineError, PipelinePhase};
 

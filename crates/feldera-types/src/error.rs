@@ -4,6 +4,7 @@ use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::{borrow::Cow, error::Error as StdError};
+use tracing::Level;
 use utoipa::ToSchema;
 pub const MAX_REPORTED_PARSE_ERRORS: usize = 1_000;
 
@@ -24,14 +25,37 @@ pub struct ErrorResponse {
 
 /// Error trait which internal errors must implement such that it
 /// can be transformed to a complete JSON error response.
-pub trait DetailedError: StdError + ResponseError + Serialize {
+///
+/// An error that is also an HTTP response, an actix `ResponseError`, converts to an
+/// [`ErrorResponse`] that is logged by its status code.
+pub trait DetailedError: StdError + Serialize {
     /// Identifying name of the error.
     fn error_code(&self) -> Cow<'static, str>;
+
+    /// The level to log the error at.
+    fn log_level(&self) -> Level {
+        Level::ERROR
+    }
 }
+
+/// An error from the engine that runs a pipeline's circuit, where the engine's own error type
+/// is unknown: inside the pipeline controller's errors. It reports what a [`DetailedError`]
+/// reports, and it serializes behind a pointer.
+pub trait EngineError: StdError + erased_serde::Serialize + Send + Sync + 'static {
+    /// Identifying name of the error, as [`DetailedError::error_code`] gives it.
+    fn error_code(&self) -> Cow<'static, str>;
+
+    /// The kind of the I/O error that caused this error, if an I/O error did.
+    fn io_error_kind(&self) -> Option<std::io::ErrorKind> {
+        None
+    }
+}
+
+erased_serde::serialize_trait_object!(EngineError);
 
 impl<E> From<&E> for ErrorResponse
 where
-    E: DetailedError,
+    E: DetailedError + ResponseError,
 {
     /// Transform the detailed error to a complete JSON error response.
     /// - The message is retrieved using `to_string()` (available due to trait `StdError`)
@@ -46,7 +70,7 @@ where
 impl ErrorResponse {
     pub fn from_error<E>(error: &E) -> Self
     where
-        E: DetailedError,
+        E: DetailedError + ResponseError,
     {
         // Transform the error into a response
         let response = Self::from_error_nolog(error);
