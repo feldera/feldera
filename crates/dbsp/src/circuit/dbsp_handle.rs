@@ -329,6 +329,10 @@ pub enum StepSize {
     ///
     /// Nonincremental circuits need this setting because their steps cannot be
     /// divided into microsteps without changing the results.
+    ///
+    /// Adaptive joins do not support this setting: [`Runtime::run`] refuses to
+    /// start a circuit that runs in full steps with `dev_tweaks.adaptive_joins`
+    /// enabled.
     FullSteps,
 }
 
@@ -459,8 +463,10 @@ pub fn balancer_key_distribution_refresh_threshold() -> f64 {
     Runtime::with_dev_tweaks(|d| d.balancer_key_distribution_refresh_threshold())
 }
 
+/// Whether adaptive joins are enabled and can run in the current runtime
+/// (see [`Runtime::adaptive_joins`]).
 pub fn adaptive_joins_enabled() -> bool {
-    Runtime::with_dev_tweaks(|d| d.adaptive_joins())
+    Runtime::runtime().is_some_and(|runtime| runtime.adaptive_joins())
 }
 
 pub fn max_level0_batch_size_records() -> usize {
@@ -2518,8 +2524,8 @@ impl DBSPHandle {
         Ok(())
     }
 
-    /// Whether adaptive joins are enabled for this circuit
-    /// (`dev_tweaks.adaptive_joins`). When disabled, the circuit uses plain hash
+    /// Whether adaptive joins are enabled and can run in this circuit (see
+    /// [`Runtime::adaptive_joins`]). When disabled, the circuit uses plain hash
     /// joins that never register with the balancer, so balancer hints have no effect.
     ///
     /// Compiler-generated circuit code gates its `set_balancer_hint` calls on this;
@@ -2532,7 +2538,7 @@ impl DBSPHandle {
             .is_some_and(|runtime| runtime.runtime().adaptive_joins());
         if !enabled {
             warn!(
-                "ignoring balancer hints: adaptive joins are disabled (dev_tweaks.adaptive_joins)"
+                "ignoring balancer hints: adaptive joins are disabled (they need dev_tweaks.adaptive_joins, the streaming exchange, and microsteps)"
             );
         }
         enabled

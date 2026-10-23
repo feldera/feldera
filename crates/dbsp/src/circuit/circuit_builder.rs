@@ -2223,7 +2223,8 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         operator: Op,
         input_stream1: &Stream<Self, I1>,
         input_stream2: &Stream<Self, I2>,
-    ) where
+    ) -> GlobalNodeId
+    where
         I1: Data,
         I2: Data,
         Op: BinarySinkOperator<I1, I2>;
@@ -2236,7 +2237,8 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         operator: Op,
         input_stream1: (&Stream<Self, I1>, OwnershipPreference),
         input_stream2: (&Stream<Self, I2>, OwnershipPreference),
-    ) where
+    ) -> GlobalNodeId
+    where
         I1: Data,
         I2: Data,
         Op: BinarySinkOperator<I1, I2>;
@@ -4102,7 +4104,8 @@ where
         operator: Op,
         input_stream1: &Stream<Self, I1>,
         input_stream2: &Stream<Self, I2>,
-    ) where
+    ) -> GlobalNodeId
+    where
         I1: Data,
         I2: Data,
         Op: BinarySinkOperator<I1, I2>,
@@ -4120,7 +4123,8 @@ where
         operator: Op,
         input_stream1: (&Stream<Self, I1>, OwnershipPreference),
         input_stream2: (&Stream<Self, I2>, OwnershipPreference),
-    ) where
+    ) -> GlobalNodeId
+    where
         I1: Data,
         I2: Data,
         Op: BinarySinkOperator<I1, I2>,
@@ -4129,8 +4133,10 @@ where
         let (input_stream2, input_preference2) = input_stream2;
 
         self.add_node(|id| {
+            let global_node_id = GlobalNodeId::child_of(self, id);
+
             self.log_circuit_event(&CircuitEvent::operator(
-                GlobalNodeId::child_of(self, id),
+                global_node_id.clone(),
                 operator.name(),
                 operator.location(),
             ));
@@ -4144,8 +4150,8 @@ where
             );
             self.connect_stream(input_stream1, id, input_preference1);
             self.connect_stream(input_stream2, id, input_preference2);
-            (node, ())
-        });
+            (node, global_node_id)
+        })
     }
 
     /// Add a ternary sink operator (see [`TernarySinkOperator`]).

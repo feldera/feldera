@@ -313,6 +313,16 @@ where
         self.handles[host].runtime().layout().local_workers()
     }
 
+    /// Returns the handle of `host`.
+    pub(crate) fn handle(&mut self, host: usize) -> &mut DBSPHandle {
+        &mut self.handles[host]
+    }
+
+    /// Returns the handle of each host.
+    pub(crate) fn handles(&mut self) -> &mut [DBSPHandle] {
+        &mut self.handles
+    }
+
     /// Returns the value that the circuit's constructor returned on `host`.
     pub(crate) fn result(&self, host: usize) -> &T {
         &self.results[host]

@@ -20,7 +20,7 @@ use tokio::sync::Notify;
 use crate::{
     Circuit, NumEntries, Runtime, Scope, Stream,
     circuit::{
-        GlobalNodeId, NodeId, OwnershipPreference, StepSize, WorkerLocation, WorkerLocations,
+        GlobalNodeId, NodeId, OwnershipPreference, WorkerLocation, WorkerLocations,
         circuit_builder::{MetadataExchange, StreamId},
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT,
@@ -53,6 +53,27 @@ circuit_cache_key!(local StreamingExchangeCacheId<B: Batch>(ExchangeId => Arc<Sh
 circuit_cache_key!(ShardedAccumulatorId<C, B: Batch>((StreamId, Range<usize>) => Accumulation<Stream<C, Option<Spine<B>>>>));
 
 circuit_cache_key!(ShardedAccumulatorRemoteWaiterId(() => NodeId));
+
+#[cfg(test)]
+circuit_cache_key!(local RemoteDeliveryDelayId(() => std::time::Duration));
+
+/// Makes the sharded accumulators in `runtime` wait for `delay` before they
+/// deliver each message from a remote host, so that remote data arrives late.
+///
+/// A host delivers the messages from another host one at a time, so the
+/// delays add up: a host that receives several messages in each step falls
+/// further behind its peers with every step.
+///
+/// # Arguments
+///
+/// * `runtime` - the runtime whose accumulators wait.
+/// * `delay` - how long to wait before each delivery.
+#[cfg(test)]
+pub(crate) fn delay_remote_deliveries(runtime: &Runtime, delay: std::time::Duration) {
+    runtime
+        .local_store()
+        .insert(RemoteDeliveryDelayId::new(()), delay);
+}
 
 impl<C, B> Stream<C, B>
 where
@@ -124,10 +145,9 @@ where
         B: Batch<Time = ()>,
     {
         if !self.has_workers_sharded_version(workers.clone())
-            && Runtime::with_dev_tweaks(|d| d.streaming_exchange())
             && let Some(runtime) = Runtime::runtime()
+            && runtime.streaming_exchange()
             && runtime.layout().n_workers() > 1
-            && runtime.step_size() == StepSize::Microsteps
         {
             let remote_waiter_node_id = self.sharded_accumulator_remote_waiter(&runtime);
             self.circuit()
@@ -160,7 +180,7 @@ where
 {
     /// Returns the node ID of the circuit's [ShardedAccumulatorRemoteWaiter],
     /// first adding it if necessary, or `None` on a single-host runtime.
-    fn sharded_accumulator_remote_waiter(&self, runtime: &Runtime) -> Option<NodeId> {
+    pub(crate) fn sharded_accumulator_remote_waiter(&self, runtime: &Runtime) -> Option<NodeId> {
         if !runtime.layout().is_multihost() {
             return None;
         }
@@ -243,7 +263,7 @@ where
     /// # Returns
     ///
     /// The receiver's output stream and the [ShardedAccumulator].
-    fn add_sharded_accumulator_receiver(
+    pub(crate) fn add_sharded_accumulator_receiver(
         &self,
         runtime: &Runtime,
         factories: &B::Factories,
@@ -280,7 +300,7 @@ where
     }
 }
 
-struct ShardedAccumulator<B>
+pub(crate) struct ShardedAccumulator<B>
 where
     B: Batch,
 {
@@ -531,8 +551,12 @@ where
     ///   this accumulator must be empty.
     /// * `flush` - whether these are the sender's last batches in the
     ///   transaction.
-    #[cfg_attr(not(test), expect(dead_code, reason = "awaiting first caller"))]
-    async fn send_partitioned(self: &Arc<Self>, name: Arc<String>, batches: Vec<B>, flush: bool) {
+    pub(crate) async fn send_partitioned(
+        self: &Arc<Self>,
+        name: Arc<String>,
+        batches: Vec<B>,
+        flush: bool,
+    ) {
         let mut serializer_inner = None;
         let mailboxes = zip_eq(batches, WorkerLocations::new())
             .enumerate()
@@ -660,8 +684,7 @@ where
     /// # Arguments
     ///
     /// * `name` - the calling operator's name, for profiles.
-    #[cfg_attr(not(test), expect(dead_code, reason = "awaiting first caller"))]
-    async fn wait_for_arrival(&self, name: Arc<String>) {
+    pub(crate) async fn wait_for_arrival(&self, name: Arc<String>) {
         let worker = Runtime::worker_index();
         let runtime = Runtime::runtime().unwrap();
         let layout = runtime.layout();
@@ -716,8 +739,7 @@ where
     /// # Panics
     ///
     /// Panics if a sender has already flushed the current transaction.
-    #[cfg_attr(not(test), expect(dead_code, reason = "awaiting first caller"))]
-    fn take_received(&self) -> Vec<Arc<B>> {
+    pub(crate) fn take_received(&self) -> Vec<Arc<B>> {
         let receiver = Runtime::worker_index();
         self.rxq(receiver).take(&self.factories).get_batches()
     }
@@ -791,6 +813,17 @@ where
             #[cfg(test)]
             self.remote_messages
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            #[cfg(test)]
+            {
+                let delay = self
+                    .runtime
+                    .local_store()
+                    .get(&RemoteDeliveryDelayId::new(()))
+                    .map(|delay| *delay.value());
+                if let Some(delay) = delay {
+                    tokio::time::sleep(delay).await;
+                }
+            }
             for (receiver, mut data) in zip_eq(self.local_workers.clone(), data) {
                 if data.is_empty() {
                     // An arrival marker (see `wait_for_arrival`).
