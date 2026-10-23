@@ -197,7 +197,8 @@ The following table lists supported Delta Lake data types and corresponding Feld
 | `SMALLINT`                  | `SMALLINT`       |               |
 | `STRING`                    | `STRING`         |               |
 | `DECIMAL(P,S)`              | `DECIMAL(P,S)`   | The largest supported precision `P` is 28.|
-| `TIMESTAMP`, `TIMESTAMP_NTZ`| `TIMESTAMP`      | Timestamp values are rounded to the nearest millisecond.  Feldera currently does not support timestamps with time zones.  When using the `TIMESTAMP` DeltaLake type, time zone information gets discarded. |
+| `TIMESTAMP`                 | `TIMESTAMP WITH TIME ZONE` or `TIMESTAMP` | Timestamp values are truncated to the microsecond.  Read into a `TIMESTAMP` column, the time zone information gets discarded. |
+| `TIMESTAMP_NTZ`             | `TIMESTAMP`      | Timestamp values are truncated to the microsecond. |
 | `TINYINT`                   | `TINYINT`        |               |
 | `MAP<K,V>`                  | `MAP<K,V>`       |               |
 | `ARRAY<T>`                  | `T ARRAY`        |               |

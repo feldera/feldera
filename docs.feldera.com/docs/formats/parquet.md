@@ -15,20 +15,26 @@ use [Arrow](https://arrow.apache.org/) to specify the data-types in parquet. The
 shows the mapping between Feldera SQL types
 and [Arrow types](https://docs.rs/arrow/latest/arrow/datatypes/enum.DataType.html).
 
-| Feldera SQL Type                           | Apache Arrow Type                                                                  |
-|--------------------------------------------|------------------------------------------------------------------------------------|
-| `BOOLEAN`                                  | `Boolean`                                                                          |
-| `TINYINT`, `SMALLINT`, `INTEGER`, `BIGINT` | `Int8`, `Int16`, `Int32`, `Int64`                                                  |
-| `FLOAT`, `DOUBLE`, `DECIMAL`               | `Float32`, `Float64`, `Decimal`                                                    |
-| `VARCHAR`, `CHAR`, `STRING`                | `LargeUtf8`                                                                        |
-| `BINARY`, `VARBINARY`                      | `DataType::Binary`                                                                 |
-| `TIME`                                     | `DataType::UInt64` (time in nanoseconds)                                           |
-| `TIMESTAMP`                                | `DataType::Timestamp(TimeUnit::Millisecond, None)` (milliseconds since unix epoch) |
-| `DATE`                                     | `DataType::Int32` (days since unix epoch)|
-| `ARRAY`                                    | `DataType::LargeList`                                                              |
-| `STRUCT`                                   | `DataType::Struct`                                                                 |
-| `MAP`                                      | `DataType::Dictionary`                                                             |
-| `VARIANT`                                  | `LargeUtf8` (JSON-encoded string, see [VARIANT documentation](/sql/json))   |
+| Feldera SQL Type                                                | Apache Arrow Type                                                          |
+|-----------------------------------------------------------------|----------------------------------------------------------------------------|
+| `BOOLEAN`                                                       | `Boolean`                                                                  |
+| `TINYINT`, `SMALLINT`, `INTEGER`, `BIGINT`                      | `Int8`, `Int16`, `Int32`, `Int64`                                          |
+| `TINYINT UNSIGNED`, `SMALLINT UNSIGNED`, `INTEGER UNSIGNED`, `BIGINT UNSIGNED` | `UInt8`, `UInt16`, `UInt32`, `UInt64`                       |
+| `REAL`, `DOUBLE`                                                | `Float32`, `Float64`                                                       |
+| `DECIMAL(P,S)`                                                  | `Decimal128(P,S)`                                                          |
+| `VARCHAR`, `CHAR`, `STRING`                                     | `Utf8`                                                                     |
+| `BINARY`, `VARBINARY`                                           | `LargeBinary`                                                              |
+| `UUID`                                                          | `Utf8`                                                                     |
+| `TIME`                                                          | `Time64(Nanosecond)`                                                       |
+| `TIMESTAMP`                                                     | `Timestamp(Microsecond, None)`                                             |
+| `TIMESTAMP WITH TIME ZONE`                                      | `Timestamp(Microsecond, "UTC")`                                            |
+| `DATE`                                                          | `Date32` (days since unix epoch)                                           |
+| `INTERVAL` (year, month)                                        | `Interval(YearMonth)`                                                      |
+| `INTERVAL` (all other units)                                    | `Interval(DayTime)`                                                        |
+| `ARRAY`                                                         | `LargeList`                                                                |
+| `ROW` and user-defined types                                    | `Struct`                                                                   |
+| `MAP`                                                           | `Map`                                                                      |
+| `VARIANT`                                                       | `Utf8` (JSON-encoded string, see [VARIANT documentation](/sql/json))       |
 
 
 ## Output configuration
