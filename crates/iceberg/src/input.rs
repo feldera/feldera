@@ -1053,9 +1053,15 @@ impl IcebergInputEndpointInner {
             }
         };
 
-        self.last_resume_status.lock().unwrap().clone_from(&resume_status);
+        self.last_resume_status
+            .lock()
+            .unwrap()
+            .clone_from(&resume_status);
         if let Some(resume_status) = &resume_status {
-            self.last_checkpointable_status.lock().unwrap().clone_from(resume_status);
+            self.last_checkpointable_status
+                .lock()
+                .unwrap()
+                .clone_from(resume_status);
         }
 
         let resume = match resume_status {

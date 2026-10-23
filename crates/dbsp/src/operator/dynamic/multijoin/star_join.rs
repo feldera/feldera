@@ -397,9 +397,7 @@ where
                 let weight = **weight * previous_weight;
                 let time = time.join(&previous_time);
 
-                self.weight_times[self.current_index]
-                    .0
-                    .push((weight, time));
+                self.weight_times[self.current_index].0.push((weight, time));
             });
         } else {
             let weight =

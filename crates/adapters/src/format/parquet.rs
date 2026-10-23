@@ -536,8 +536,7 @@ impl Encoder for ParquetEncoder {
 
         if num_records > 0 {
             let buffer_cursor = Cursor::new(&mut buffer);
-            let mut writer =
-                ArrowWriter::try_new(buffer_cursor, schema, Some(props))?;
+            let mut writer = ArrowWriter::try_new(buffer_cursor, schema, Some(props))?;
             let batch = builder.to_record_batch()?;
             writer.write(&batch)?;
             writer.close()?;

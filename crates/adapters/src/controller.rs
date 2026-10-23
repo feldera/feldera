@@ -7493,7 +7493,8 @@ impl TransactionInfo {
     /// the open transaction, it counts this host's report in that one, so
     /// this fills in that transaction's id.
     fn set_coordinator_transaction(&mut self, request: &StepRequest) {
-        self.coordinator_members.clone_from(&request.transaction_members);
+        self.coordinator_members
+            .clone_from(&request.transaction_members);
         self.coordinator_transaction_id = request.transaction_id;
         if let (Some(id), Some(members)) = (request.transaction_id, &request.transaction_members) {
             let mut changed = false;
