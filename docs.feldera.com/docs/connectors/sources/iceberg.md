@@ -151,10 +151,10 @@ The following table lists supported Iceberg data types and corresponding Feldera
 | `decimal(P,S)`              | `DECIMAL(P, S)`  | The largest supported precision `P` is 28.|
 | `date`                      | `DATE`           |               |
 | `time`                      | `TIME`           |               |
-| `timestamp`                 | `TIMESTAMP`      | Timestamp values are rounded to the nearest millisecond.|
-| `timestamp_ns`              | `TIMESTAMP`      | Timestamp values are rounded to the nearest millisecond.|
-| `timestamptz`               | `TIMESTAMP WITH TIME ZONE` | Timestamp values are rounded to the nearest millisecond.|
-| `timestamptz_ns`            | `TIMESTAMP WITH TIME ZONE` | Timestamp values are rounded to the nearest millisecond.|
+| `timestamp`                 | `TIMESTAMP`      | Timestamp values are truncated to the microsecond.|
+| `timestamp_ns`              | `TIMESTAMP`      | Timestamp values are truncated to the microsecond.|
+| `timestamptz`               | `TIMESTAMP WITH TIME ZONE` | Timestamp values are truncated to the microsecond.|
+| `timestamptz_ns`            | `TIMESTAMP WITH TIME ZONE` | Timestamp values are truncated to the microsecond.|
 | `string`                    | `STRING`         |               |
 | `fixed(L)`                  | `BINARY(L)`      |               |
 | `binary`                    | `VARBINARY`      |               |
