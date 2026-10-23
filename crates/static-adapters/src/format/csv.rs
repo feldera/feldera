@@ -4,13 +4,15 @@ pub mod deserializer;
 
 pub use deserializer::{byte_record_deserializer, string_record_deserializer};
 
+// The tests read `VARIANT` columns of the deprecated enum `Variant`.
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::string_record_deserializer;
     use feldera_types::deserialize_table_record;
     use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 
-    use feldera_sqllib::{SqlString, Variant};
+    use feldera_sqllib::{SqlString, SqlVariant, Variant};
     use std::collections::BTreeMap;
 
     #[derive(Debug, Eq, PartialEq)]
@@ -73,7 +75,7 @@ true,bar,buzz"#;
         null: Variant,
     }
 
-    deserialize_table_record!(VariantRow["VariantRow", Variant, 9] {
+    deserialize_table_record!(VariantRow["VariantRow", SqlVariant, 9] {
     (object, "object", true, Variant, |_| None),
     (positive, "positive", true, Variant, |_| None),
     (negative, "negative", true, Variant, |_| None),

@@ -64,6 +64,13 @@ Source edition can be found on github.
     non-negative integer is a `BIGINT` instead of a `BIGINT UNSIGNED`, and
     a number with more than 38 digits is rejected.
 
+- Bug fix (SQL): a column `DEFAULT` that applies `TYPEOF` or `TO_JSON` to
+  `CONNECTOR_METADATA()`, and a `VARIANT` column with
+  `DEFAULT VARIANTNULL()`, failed to compile.  A column default now reads
+  connector metadata as a `SqlVariant`, like every other `VARIANT` value,
+  so building a pipeline also no longer reports a deprecation warning for
+  each table and view.
+
 - Bug fix (Delta Lake output connector): with the default
   `"variant_encoding": "variant"`, writing a `VARIANT` that holds some
   `DECIMAL` values, such as `1500000000` or `0.0000000001`, failed,

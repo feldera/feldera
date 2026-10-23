@@ -29,7 +29,7 @@ use feldera_adapterlib::ConnectorMetadata;
 #[cfg(feature = "with-avro")]
 use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_adapterlib::format::{BufferSize, flatten_nested};
-use feldera_sqllib::Variant;
+use feldera_sqllib::SqlVariant;
 use feldera_types::format::csv::CsvFormatConfig;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
@@ -84,9 +84,9 @@ pub trait DeserializerFromBytes<C> {
     ///
     /// * `metadata` - optional record metadata passed as an aux argument to
     ///   `DeserializeWithContext::deserialize_with_context_aux`.
-    fn deserialize<T>(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<T>
+    fn deserialize<T>(&mut self, data: &[u8], metadata: &Option<SqlVariant>) -> AnyResult<T>
     where
-        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>;
+        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>;
 }
 
 /// Deserializer for CSV-encoded data.
@@ -109,9 +109,9 @@ impl DeserializerFromBytes<(SqlSerdeConfig, CsvFormatConfig)> for CsvDeserialize
             config: serde_config,
         }
     }
-    fn deserialize<T>(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<T>
+    fn deserialize<T>(&mut self, data: &[u8], metadata: &Option<SqlVariant>) -> AnyResult<T>
     where
-        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
+        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>,
     {
         // Push new data to reader.
         self.reader.get_mut().extend(data.iter());
@@ -134,9 +134,9 @@ impl DeserializerFromBytes<SqlSerdeConfig> for JsonDeserializerFromBytes {
     fn create(config: SqlSerdeConfig) -> Self {
         JsonDeserializerFromBytes { config }
     }
-    fn deserialize<T>(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<T>
+    fn deserialize<T>(&mut self, data: &[u8], metadata: &Option<SqlVariant>) -> AnyResult<T>
     where
-        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
+        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>,
     {
         let mut deserializer = serde_json::Deserializer::from_slice(data);
         let deserializer = json_deserializer(&mut deserializer);
@@ -158,9 +158,9 @@ impl DeserializerFromBytes<(SqlSerdeConfig, String)> for RawDeserializerFromByte
             config,
         }
     }
-    fn deserialize<T>(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<T>
+    fn deserialize<T>(&mut self, data: &[u8], metadata: &Option<SqlVariant>) -> AnyResult<T>
     where
-        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
+        T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>,
     {
         let deserializer = raw_deserializer(&self.column_name, data);
 
@@ -238,7 +238,7 @@ impl<T, D, F> DeScalarHandle for DeScalarHandleImpl<T, D, F>
 where
     T: Default + Send + Clone + 'static,
     D: Default
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
         + Send
         + Clone
         + 'static,
@@ -334,7 +334,7 @@ impl<De, T, D, C, F> DeScalarStream for DeScalarStreamImpl<De, T, D, C, F>
 where
     T: Default + Send + Clone + 'static,
     D: Default
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
         + Send
         + Clone
         + 'static,
@@ -393,7 +393,7 @@ impl<K, D> DeZSetHandle<K, D> {
 impl<K, D> DeCollectionHandle for DeZSetHandle<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
 {
     fn configure_deserializer(
         &self,
@@ -554,7 +554,7 @@ where
     De: DeserializerFromBytes<C> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
 {
     fn insert(&mut self, data: &[u8], metadata: &Option<ConnectorMetadata>) -> AnyResult<()> {
         let key = <K as From<D>>::from(
@@ -642,7 +642,7 @@ where
     De: DeserializerFromBytes<C> + Send + 'static,
     C: Clone + Send + 'static,
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + 'static,
 {
     fn flush(&mut self) -> AnyResult<()> {
         self.buffer.flush()
@@ -682,7 +682,7 @@ impl<K, D, C> ArrowZSetStream<K, D, C> {
 impl<K, D, C> ArrowStream for ArrowZSetStream<K, D, C>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, C, Variant> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, C, SqlVariant> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
 {
     fn insert(
@@ -776,7 +776,7 @@ where
 impl<K, D, C> InputBuffer for ArrowZSetStream<K, D, C>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, C, Variant> + Send + 'static,
+    D: for<'de> DeserializeWithContext<'de, C, SqlVariant> + Send + 'static,
     C: Clone + Send + 'static,
 {
     fn flush(&mut self) -> AnyResult<()> {
@@ -856,7 +856,7 @@ impl<K, D> AvroZSetStream<K, D> {
 impl<K, D> AvroStream for AvroZSetStream<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
 {
     fn configure_schema(&mut self, schema: &AvroSchema, refs: &AvroSchemaRefs) -> AnyResult<()> {
         self.schema.install(schema, refs);
@@ -914,7 +914,7 @@ where
 impl<K, D> InputBuffer for AvroZSetStream<K, D>
 where
     K: DBData + From<D>,
-    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
 {
     fn flush(&mut self) -> AnyResult<()> {
         self.buffer.flush()
@@ -979,11 +979,11 @@ where
 impl<K, KD, V, VD, U, UD, VF, UF> DeCollectionHandle for DeMapHandle<K, KD, V, VD, U, UD, VF, UF>
 where
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     U: DBData + From<UD>,
-    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
     UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
 {
@@ -1128,9 +1128,9 @@ where
 impl<K, KD, V, VD, VF> DeCollectionHandle for DeLazyMapHandle<K, KD, V, VD, VF>
 where
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
     fn configure_deserializer(
@@ -1498,12 +1498,12 @@ where
     De: DeserializerFromBytes<C> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     U: DBData + From<UD>,
     H: MapInput<K, V, U>,
-    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
     UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
 {
@@ -1585,12 +1585,12 @@ where
     De: DeserializerFromBytes<C> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     U: DBData + From<UD>,
     H: MapInput<K, V, U>,
-    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
     UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
 {
@@ -1648,9 +1648,9 @@ impl<K, KD, V, VD, U, VF, C, H> ArrowStream for ArrowMapStream<K, KD, V, VD, U, 
 where
     C: Clone + Send + Sync + 'static,
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, C, Variant> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, C, SqlVariant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, C, Variant> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, C, SqlVariant> + Send + Sync + 'static,
     U: DBData,
     H: MapInput<K, V, U>,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
@@ -1755,9 +1755,9 @@ impl<K, KD, V, VD, U, VF, C, H> InputBuffer for ArrowMapStream<K, KD, V, VD, U, 
 where
     C: Clone + Send + Sync + 'static,
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, C, Variant> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, C, SqlVariant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, C, Variant> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, C, SqlVariant> + Send + Sync + 'static,
     U: DBData,
     H: MapInput<K, V, U>,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
@@ -1836,9 +1836,9 @@ where
 impl<K, KD, V, VD, U, VF, H> AvroStream for AvroMapStream<K, KD, V, VD, U, VF, H>
 where
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     U: DBData,
     H: MapInput<K, V, U>,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
@@ -1903,9 +1903,9 @@ where
 impl<K, KD, V, VD, U, VF, H> InputBuffer for AvroMapStream<K, KD, V, VD, U, VF, H>
 where
     K: DBData + From<KD>,
-    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     V: DBData + From<VD>,
-    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Send + Sync + 'static,
+    VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant> + Send + Sync + 'static,
     U: DBData,
     H: MapInput<K, V, U>,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,

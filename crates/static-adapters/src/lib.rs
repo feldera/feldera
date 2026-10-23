@@ -8,9 +8,6 @@
 //! entry points that the generated code calls, [`server::init_circuit`] and
 //! [`server::server_main`].
 
-// The record layer still reads connector metadata and `VARIANT` values as the enum `Variant`.
-#![allow(deprecated)]
-
 pub(crate) mod bootstrap;
 mod catalog;
 pub mod deinput;
@@ -23,7 +20,10 @@ pub mod seroutput;
 pub mod server;
 pub(crate) mod storage;
 
+// The fixture also serves records with `VARIANT` columns of the deprecated enum `Variant`,
+// the type that programs with `SET FELDERA_FLAT_VARIANT = 'OFF'` compile to.
 #[cfg(any(test, feature = "testing"))]
+#[allow(deprecated)]
 pub mod test;
 
 pub use catalog::Catalog;

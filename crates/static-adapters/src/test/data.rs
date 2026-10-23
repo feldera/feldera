@@ -6,7 +6,8 @@ use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
 use feldera_macros::{IsNone, OrdRepr};
 use feldera_sqllib::{
-    ByteArray, Date, F32, F64, SqlDecimal, SqlString, Time, Timestamp, TimestampTz, Uuid, Variant,
+    ByteArray, Date, F32, F64, SqlDecimal, SqlString, SqlVariant, Time, Timestamp, TimestampTz,
+    Uuid, Variant, cast_to_bN_FVN, indexFVN_,
 };
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::{
@@ -264,6 +265,10 @@ pub fn generate_test_batches_with_weights(
 }
 
 /// Used to test passing of record metadata from Kafka connector to deserializer.
+///
+/// The columns default to the connector's attributes the way a program that keeps the enum
+/// representation of VARIANT (`SET FELDERA_FLAT_VARIANT = 'OFF'`) reads them: each default
+/// converts the metadata to the enum first.
 #[derive(
     Debug,
     Default,
@@ -292,13 +297,13 @@ pub struct TestStructMetadata {
     pub kafka_offset: i64,
 }
 
-deserialize_table_record!(TestStructMetadata["TestStructMetadata", Variant, 6] {
+deserialize_table_record!(TestStructMetadata["TestStructMetadata", SqlVariant, 6] {
     (i, "i", false, i32, |_| None),
-    (kafka_headers, "kafka_headers", false, Variant, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().map(|metadata| metadata.index_string("kafka_headers"))),
-    (kafka_topic, "kafka_topic", false, SqlString, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| SqlString::try_from(metadata.index_string("kafka_topic")).ok())),
-    (kafka_timestamp, "kafka_timestamp", false, Timestamp, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| Timestamp::try_from(metadata.index_string("kafka_timestamp")).ok())),
-    (kafka_partition, "kafka_partition", false, i32, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| i32::try_from(metadata.index_string("kafka_partition")).ok())),
-    (kafka_offset, "kafka_offset", false, i64, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| i64::try_from(metadata.index_string("kafka_offset")).ok()))
+    (kafka_headers, "kafka_headers", false, Variant, |__feldera_metadata: &Option<SqlVariant>| __feldera_metadata.as_ref().map(Variant::from).map(|metadata| metadata.index_string("kafka_headers"))),
+    (kafka_topic, "kafka_topic", false, SqlString, |__feldera_metadata: &Option<SqlVariant>| __feldera_metadata.as_ref().map(Variant::from).and_then(|metadata| SqlString::try_from(metadata.index_string("kafka_topic")).ok())),
+    (kafka_timestamp, "kafka_timestamp", false, Timestamp, |__feldera_metadata: &Option<SqlVariant>| __feldera_metadata.as_ref().map(Variant::from).and_then(|metadata| Timestamp::try_from(metadata.index_string("kafka_timestamp")).ok())),
+    (kafka_partition, "kafka_partition", false, i32, |__feldera_metadata: &Option<SqlVariant>| __feldera_metadata.as_ref().map(Variant::from).and_then(|metadata| i32::try_from(metadata.index_string("kafka_partition")).ok())),
+    (kafka_offset, "kafka_offset", false, i64, |__feldera_metadata: &Option<SqlVariant>| __feldera_metadata.as_ref().map(Variant::from).and_then(|metadata| i64::try_from(metadata.index_string("kafka_offset")).ok()))
 });
 
 serialize_table_record!(TestStructMetadata[6]{
@@ -371,10 +376,10 @@ pub struct TestStructSoftDelete {
     pub is_delete: Option<bool>,
 }
 
-deserialize_table_record!(TestStructSoftDelete["TestStructSoftDelete", Variant, 3] {
+deserialize_table_record!(TestStructSoftDelete["TestStructSoftDelete", SqlVariant, 3] {
     (id, "id", false, i64, |_| None),
     (s, "s", false, String, |_| None),
-    (is_delete, "is_delete", false, Option<bool>, |__feldera_metadata: &Option<Variant>| Some(__feldera_metadata.as_ref().and_then(|metadata| bool::try_from(metadata.index_string("is_delete")).ok())))
+    (is_delete, "is_delete", false, Option<bool>, |__feldera_metadata: &Option<SqlVariant>| Some(cast_to_bN_FVN(indexFVN_(__feldera_metadata, SqlString::from_ref("is_delete"))).ok().flatten()))
 });
 
 serialize_table_record!(TestStructSoftDelete[3]{
@@ -462,7 +467,7 @@ serialize_table_record!(EmbeddedStruct[1]{
     r#field["a"]: bool
 });
 
-deserialize_table_record!(EmbeddedStruct["EmbeddedStruct", Variant, 1] {
+deserialize_table_record!(EmbeddedStruct["EmbeddedStruct", SqlVariant, 1] {
     (r#field, "a", false, bool, |_| None)
 });
 
@@ -788,7 +793,7 @@ serialize_table_record!(TestStruct2[8]{
     r#field_7["dec"]: SqlDecimal
 });
 
-deserialize_table_record!(TestStruct2["TestStruct2", Variant, 8] {
+deserialize_table_record!(TestStruct2["TestStruct2", SqlVariant, 8] {
     (r#field, "id", false, i64, |_| None),
     (r#field_0, "nAmE", true, Option<String>, |_| Some(None)),
     (r#field_1, "b", false, bool, |_| None),
@@ -857,7 +862,7 @@ serialize_table_record!(DatabricksPeople[8]{
     r#salary["salary"]: Option<i32>
 });
 
-deserialize_table_record!(DatabricksPeople["DatabricksPeople", Variant, 8] {
+deserialize_table_record!(DatabricksPeople["DatabricksPeople", SqlVariant, 8] {
     (r#id, "id", false, i32, |_| None),
     (r#first_name, "firstname", false, Option<String>, |_| Some(None)),
     (r#middle_name, "middlename", false, Option<String>, |_| Some(None)),
@@ -1180,7 +1185,7 @@ serialize_table_record!(IcebergTestStruct[18]{
     string_struct_map["string_struct_map"]: BTreeMap<String, TestStruct>
 });
 
-deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", Variant, 18] {
+deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", SqlVariant, 18] {
     (b, "b", false, bool, |_| None),
     (i, "i", false, i32, |_| None),
     (l, "l", false, i64, |_| None),
@@ -1246,7 +1251,7 @@ serialize_table_record!(S3TablesTestStruct[3]{
     created_at["created_at"]: Option<Timestamp>
 });
 
-deserialize_table_record!(S3TablesTestStruct["S3TablesTestStruct", Variant, 3] {
+deserialize_table_record!(S3TablesTestStruct["S3TablesTestStruct", SqlVariant, 3] {
     (id, "id", false, i64, |_| None),
     (name, "name", true, Option<String>, |_| Some(None)),
     (created_at, "created_at", true, Option<Timestamp>, |_| Some(None))
@@ -1298,7 +1303,7 @@ serialize_table_record!(IcebergSubsetTestStruct[3]{
     l["l"]: Option<i64>
 });
 
-deserialize_table_record!(IcebergSubsetTestStruct["IcebergSubsetTestStruct", Variant, 3] {
+deserialize_table_record!(IcebergSubsetTestStruct["IcebergSubsetTestStruct", SqlVariant, 3] {
     (i, "i", false, i32, |_| None),
     (s, "s", false, String, |_| None),
     (l, "l", false, Option<i64>, |_| Some(None))
@@ -1647,7 +1652,7 @@ serialize_table_record!(DeltaTestStruct[21]{
     uuid["uuid"]: Uuid
 });
 
-deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", Variant, 21] {
+deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", SqlVariant, 21] {
     (bigint, "bigint", false, i64, |_| None),
     (binary, "binary", false, ByteArray, |_| None),
     (boolean, "boolean", false, bool, |_| None),
@@ -1697,7 +1702,7 @@ serialize_table_record!(DeltaTestKey[1]{
     bigint["bigint"]: i64
 });
 
-deserialize_table_record!(DeltaTestKey["DeltaTestKey", Variant, 1] {
+deserialize_table_record!(DeltaTestKey["DeltaTestKey", SqlVariant, 1] {
     (bigint, "bigint", false, i64, |_| None)
 });
 
@@ -1732,7 +1737,7 @@ macro_rules! delta_test_key {
 
         serialize_table_record!($name[1]{ $column[$column_name]: $ty });
 
-        deserialize_table_record!($name[$column_name, Variant, 1] {
+        deserialize_table_record!($name[$column_name, SqlVariant, 1] {
             ($column, $column_name, false, $ty, |_| None)
         });
     };

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use arrow::array::RecordBatch;
 use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
 use feldera_adapterlib::test::wait_for_rows_within;
-use feldera_sqllib::Variant;
+use feldera_sqllib::{SqlVariant, Variant};
 use feldera_types::program_schema::{ColumnType, Field, Relation};
 use feldera_types::{deserialize_table_record, serialize_table_record};
 use parquet::arrow::ArrowWriter;
@@ -27,7 +27,7 @@ struct VariantRecord {
     json_v: Option<Variant>,
 }
 
-deserialize_table_record!(VariantRecord["VariantRecord", Variant, 3] {
+deserialize_table_record!(VariantRecord["VariantRecord", SqlVariant, 3] {
     (id, "id", false, i64, |_| None),
     (v, "v", false, Option<Variant>, |_| Some(None)),
     (json_v, "json_v", false, Option<Variant>, |_| Some(None))

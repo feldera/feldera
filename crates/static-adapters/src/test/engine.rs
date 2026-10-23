@@ -21,7 +21,7 @@ use dbsp::{DBData, DBSPHandle, OrdIndexedZSet, OrdZSet, Runtime};
 use feldera_adapterlib::catalog::{InputCollectionHandle, SerBatchReader};
 use feldera_adapterlib::soft_delete::SoftDeleteHandle;
 use feldera_adapterlib::test::{ConnectorTestEngine, InputOptions, TestCollection, WEIGHT_COLUMN};
-use feldera_sqllib::{Timestamp, Variant};
+use feldera_sqllib::{SqlVariant, Timestamp};
 use feldera_types::constants::STATE_FILE;
 use feldera_types::program_schema::{
     ColumnType, Field, PropertyValue, Relation, SourcePosition, SqlIdentifier,
@@ -57,7 +57,7 @@ trait CompiledRecord:
     DBData
     + Default
     + SerializeWithContext<SqlSerdeConfig>
-    + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+    + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
     + Sync
 {
 }
@@ -66,7 +66,7 @@ impl<T> CompiledRecord for T where
     T: DBData
         + Default
         + SerializeWithContext<SqlSerdeConfig>
-        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
         + Sync
 {
 }
@@ -1288,7 +1288,7 @@ impl<T, U> TypedCollection<T, U> {
 
 impl<T, U> TestCollection for TypedCollection<T, U>
 where
-    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+    T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
         + SerializeWithContext<SqlSerdeConfig>
         + Hash
         + Send
@@ -1296,7 +1296,7 @@ where
         + Debug
         + Clone
         + 'static,
-    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+    U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
         + Hash
         + Send
         + Sync

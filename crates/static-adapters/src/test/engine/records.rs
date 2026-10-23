@@ -4,8 +4,9 @@ use std::collections::BTreeMap;
 
 use feldera_macros::{IsNone, OrdRepr};
 use feldera_sqllib::{
-    ByteArray, Date, F32, F64, FlatVariant, SqlDecimal, SqlString, Time, Timestamp, TimestampTz,
-    Uuid, Variant,
+    ByteArray, Date, F32, F64, FlatVariant, SqlDecimal, SqlString, SqlVariant, Time, Timestamp,
+    TimestampTz, Uuid, Variant, cast_to_TimestampN_FVN, cast_to_bN_FVN, cast_to_i32N_FVN,
+    cast_to_i64N_FVN, cast_to_sN_FVN, cast_to_u32N_FVN, indexFVN_,
 };
 use feldera_types::{deserialize_table_record, serialize_table_record};
 use size_of::SizeOf;
@@ -48,7 +49,7 @@ macro_rules! record {
             $(pub $field: $type,)*
         }
 
-        deserialize_table_record!($name[$table, Variant, count!($($field)*)] {
+        deserialize_table_record!($name[$table, SqlVariant, count!($($field)*)] {
             $(($field, $column, false, $type, $missing)),*
         });
 
@@ -121,11 +122,18 @@ record! {
     }
 }
 
+/// Returns the connector attribute `name`, as `CONNECTOR_METADATA()[name]` reads it.
+fn attribute(metadata: &Option<SqlVariant>, name: &str) -> Option<SqlVariant> {
+    indexFVN_(metadata, SqlString::from_ref(name))
+}
+
 /// Returns the connector attribute `kafka_topic` as a string, if the record has metadata.
-fn kafka_topic(metadata: &Option<Variant>) -> Option<Option<SqlString>> {
-    metadata
-        .as_ref()
-        .map(|metadata| SqlString::try_from(metadata.index_string("kafka_topic")).ok())
+fn kafka_topic(metadata: &Option<SqlVariant>) -> Option<Option<SqlString>> {
+    metadata.as_ref().map(|_| {
+        cast_to_sN_FVN(attribute(metadata, "kafka_topic"), -1, false)
+            .ok()
+            .flatten()
+    })
 }
 
 record! {
@@ -234,10 +242,12 @@ record! {
     /// [`avro_parser::metadata_relation`](crate::test::suites::avro_parser::metadata_relation).
     AvroMetadata["avro_metadata"] {
         id: i64 = "id", |_| None,
-        schema_id: Option<u32> = "schema_id", |metadata: &Option<Variant>| {
-            metadata
-                .as_ref()
-                .map(|metadata| u32::try_from(metadata.index_string("avro_schema_id")).ok())
+        schema_id: Option<u32> = "schema_id", |metadata: &Option<SqlVariant>| {
+            metadata.as_ref().map(|_| {
+                cast_to_u32N_FVN(attribute(metadata, "avro_schema_id"))
+                    .ok()
+                    .flatten()
+            })
         },
     }
 }
@@ -442,7 +452,7 @@ serialize_table_record!(UpperCaseTestStruct[3]{
 
 // Deserialized case-sensitively: the connector must deliver each column under
 // the name the Delta table gives it, not a case-folded one.
-deserialize_table_record!(UpperCaseTestStruct["UpperCaseTestStruct", Variant, 3] {
+deserialize_table_record!(UpperCaseTestStruct["UpperCaseTestStruct", SqlVariant, 3] {
     (id, "ID", true, i64, |_| None),
     (payload, "PAYLOAD", true, String, |_| None),
     (region, "REGION", true, String, |_| None)
@@ -483,7 +493,7 @@ serialize_table_record!(UnquotedSqlTestStruct[3]{
     region["region"]: String
 });
 
-deserialize_table_record!(UnquotedSqlTestStruct["UnquotedSqlTestStruct", Variant, 3] {
+deserialize_table_record!(UnquotedSqlTestStruct["UnquotedSqlTestStruct", SqlVariant, 3] {
     (id, "id", false, i64, |_| None),
     (payload, "payload", false, String, |_| None),
     (region, "region", false, String, |_| None)
@@ -522,7 +532,7 @@ serialize_table_record!(VariantTestStruct[3]{
     json_v["json_v"]: Option<Variant>
 });
 
-deserialize_table_record!(VariantTestStruct["VariantTestStruct", Variant, 3] {
+deserialize_table_record!(VariantTestStruct["VariantTestStruct", SqlVariant, 3] {
     (id, "id", false, i64, |_| None),
     (v, "v", false, Option<Variant>, |_| Some(None)),
     (json_v, "json_v", false, Option<Variant>, |_| Some(None))
@@ -559,7 +569,7 @@ serialize_table_record!(UniformNested[2]{
     status["status"]: Option<String>
 });
 
-deserialize_table_record!(UniformNested["UniformNested", Variant, 2] {
+deserialize_table_record!(UniformNested["UniformNested", SqlVariant, 2] {
     (merchant, "merchant", false, Option<String>, |_| Some(None)),
     (status, "status", false, Option<String>, |_| Some(None))
 });
@@ -599,7 +609,7 @@ serialize_table_record!(UniformTestStruct[5]{
     tags["tags"]: Option<BTreeMap<String, UniformNested>>
 });
 
-deserialize_table_record!(UniformTestStruct["UniformTestStruct", Variant, 5] {
+deserialize_table_record!(UniformTestStruct["UniformTestStruct", SqlVariant, 5] {
     (id, "id", false, Option<i64>, |_| Some(None)),
     (label, "label", false, Option<String>, |_| Some(None)),
     (after, "after", false, Option<UniformNested>, |_| Some(None)),
@@ -689,7 +699,7 @@ pub struct CdcAllTypesStruct {
     pub col_int_array: Option<Vec<Option<i32>>>,
 }
 
-feldera_types::deserialize_table_record!(CdcAllTypesStruct["CdcAllTypesStruct", Variant, 19] {
+feldera_types::deserialize_table_record!(CdcAllTypesStruct["CdcAllTypesStruct", SqlVariant, 19] {
     (id, "id", false, i32, |_| None),
     (col_text, "col_text", true, Option<String>, |_| Some(None)),
     (col_integer, "col_integer", true, Option<i32>, |_| Some(None)),
@@ -802,12 +812,8 @@ record! {
     /// A row of [`soft_delete::raw_relation`](crate::test::suites::soft_delete::raw_relation).
     RawSoftDelete["soft_delete_raw"] {
         s: String = "s", |_| None,
-        is_delete: Option<bool> = "is_delete", |metadata: &Option<Variant>| {
-            Some(
-                metadata
-                    .as_ref()
-                    .and_then(|metadata| bool::try_from(metadata.index_string("is_delete")).ok()),
-            )
+        is_delete: Option<bool> = "is_delete", |metadata: &Option<SqlVariant>| {
+            Some(cast_to_bN_FVN(attribute(metadata, "is_delete")).ok().flatten())
         },
     }
 }
@@ -835,28 +841,20 @@ record! {
     /// A row of [`kafka::raw_metadata_relation`](crate::test::suites::kafka::raw_metadata_relation).
     KafkaRawMetadata["kafka_raw_metadata"] {
         data: SqlString = "data", |_| None,
-        kafka_headers: Variant = "kafka_headers", |metadata: &Option<Variant>| {
-            metadata.as_ref().map(|metadata| metadata.index_string("kafka_headers"))
+        kafka_headers: SqlVariant = "kafka_headers", |metadata: &Option<SqlVariant>| {
+            attribute(metadata, "kafka_headers")
         },
-        kafka_topic: SqlString = "kafka_topic", |metadata: &Option<Variant>| {
-            metadata
-                .as_ref()
-                .and_then(|metadata| SqlString::try_from(metadata.index_string("kafka_topic")).ok())
+        kafka_topic: SqlString = "kafka_topic", |metadata: &Option<SqlVariant>| {
+            cast_to_sN_FVN(attribute(metadata, "kafka_topic"), -1, false).ok().flatten()
         },
-        kafka_timestamp: Timestamp = "kafka_timestamp", |metadata: &Option<Variant>| {
-            metadata
-                .as_ref()
-                .and_then(|metadata| Timestamp::try_from(metadata.index_string("kafka_timestamp")).ok())
+        kafka_timestamp: Timestamp = "kafka_timestamp", |metadata: &Option<SqlVariant>| {
+            cast_to_TimestampN_FVN(attribute(metadata, "kafka_timestamp")).ok().flatten()
         },
-        kafka_partition: i32 = "kafka_partition", |metadata: &Option<Variant>| {
-            metadata
-                .as_ref()
-                .and_then(|metadata| i32::try_from(metadata.index_string("kafka_partition")).ok())
+        kafka_partition: i32 = "kafka_partition", |metadata: &Option<SqlVariant>| {
+            cast_to_i32N_FVN(attribute(metadata, "kafka_partition")).ok().flatten()
         },
-        kafka_offset: i64 = "kafka_offset", |metadata: &Option<Variant>| {
-            metadata
-                .as_ref()
-                .and_then(|metadata| i64::try_from(metadata.index_string("kafka_offset")).ok())
+        kafka_offset: i64 = "kafka_offset", |metadata: &Option<SqlVariant>| {
+            cast_to_i64N_FVN(attribute(metadata, "kafka_offset")).ok().flatten()
         },
     }
 }

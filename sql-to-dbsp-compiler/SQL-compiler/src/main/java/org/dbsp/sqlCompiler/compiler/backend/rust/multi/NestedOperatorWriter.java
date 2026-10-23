@@ -163,7 +163,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         boolean useHandles = compiler.options.ioOptions.emitHandles;
         this.builder()
                 .append(RustWriter.COMMON_PREAMBLE)
-                .append(RustWriter.ALLOW_DEPRECATED_PREAMBLE)
+                .append(RustWriter.allowDeprecatedPreamble())
                 .append(RustWriter.STANDARD_PREAMBLE);
         if (!useHandles)
             this.builder().append(RustWriter.CATALOG_PREAMBLE);

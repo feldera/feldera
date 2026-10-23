@@ -1,37 +1,29 @@
-//! Connector metadata in the form that the generated record deserializers read: a `Variant`
-//! map from attribute name to value.
-
-use std::collections::BTreeMap;
+//! Connector metadata in the form that the generated record deserializers read: a `SqlVariant`
+//! object with one field per attribute.
 
 use feldera_adapterlib::ConnectorMetadata;
-use feldera_sqllib::{SqlString, Variant};
+use feldera_sqllib::SqlVariant;
 
-/// `metadata` as a `Variant` map, one entry per attribute.
-pub(crate) fn metadata_variant(metadata: &ConnectorMetadata) -> Variant {
-    Variant::Map(
-        metadata
-            .iter()
-            .map(|(name, value)| (Variant::String(SqlString::from_ref(name)), value.into()))
-            .collect::<BTreeMap<_, _>>()
-            .into(),
-    )
+/// `metadata` as a `SqlVariant` object, one field per attribute.
+pub(crate) fn metadata_variant(metadata: &ConnectorMetadata) -> SqlVariant {
+    SqlVariant::from_object(metadata.attributes())
 }
 
-/// The `Variant` that a stream's record deserializer reads, converted once per metadata value
+/// The `SqlVariant` that a stream's record deserializer reads, encoded once per metadata value
 /// rather than once per record: a parser attaches the same metadata to every record of a
 /// message.
 #[derive(Clone, Default)]
 pub(crate) struct MetadataVariant {
-    /// The metadata that `variant` was converted from. Holding it keeps its allocation alive,
+    /// The metadata that `variant` was encoded from. Holding it keeps its allocation alive,
     /// which keeps the pointer comparison in [`Self::get`] meaningful.
     source: Option<ConnectorMetadata>,
-    variant: Option<Variant>,
+    variant: Option<SqlVariant>,
 }
 
 impl MetadataVariant {
-    /// `metadata` as a `Variant`, converted only if it is not the metadata that the last call
-    /// converted.
-    pub(crate) fn get(&mut self, metadata: &Option<ConnectorMetadata>) -> &Option<Variant> {
+    /// `metadata` as a `SqlVariant`, encoded only if it is not the metadata that the last call
+    /// encoded.
+    pub(crate) fn get(&mut self, metadata: &Option<ConnectorMetadata>) -> &Option<SqlVariant> {
         let unchanged = match (&self.source, metadata) {
             (None, None) => true,
             (Some(source), Some(metadata)) => source.ptr_eq(metadata),
@@ -48,10 +40,9 @@ impl MetadataVariant {
 #[cfg(test)]
 mod test {
     use std::collections::BTreeMap;
-    use std::sync::Arc;
 
     use feldera_adapterlib::ConnectorMetadata;
-    use feldera_sqllib::{ByteArray, SqlString, Variant, cast_to_mapN_V};
+    use feldera_sqllib::{ByteArray, SqlString, SqlVariant, cast_to_mapN_FVN, indexFVN_};
     use feldera_types::variant::VariantValue;
 
     use super::{MetadataVariant, metadata_variant};
@@ -69,20 +60,22 @@ mod test {
         metadata
     }
 
-    /// The deserializer sees a `Variant` map keyed by attribute name, each attribute converted
-    /// the way any `VariantValue` converts.
+    /// The deserializer sees a `SqlVariant` object keyed by attribute name, each attribute
+    /// encoded the way any `VariantValue` encodes.
     #[test]
-    fn metadata_reads_as_a_variant_map() {
-        let variant = metadata_variant(&kafka_metadata());
-        assert_eq!(variant.index_string("kafka_offset"), Variant::BigInt(17));
+    fn metadata_reads_as_a_variant_object() {
+        let variant = Some(metadata_variant(&kafka_metadata()));
+        let attribute = |name: &str| indexFVN_(&variant, SqlString::from_ref(name));
         assert_eq!(
-            variant.index_string("kafka_headers").index_string("trace"),
-            Variant::from(&VariantValue::Binary(vec![1, 2]))
+            attribute("kafka_offset"),
+            Some(SqlVariant::from(&VariantValue::Int64(17)))
         );
+        let header = |name: &str| indexFVN_(&attribute("kafka_headers"), SqlString::from_ref(name));
         assert_eq!(
-            variant.index_string("kafka_headers").index_string("empty"),
-            Variant::VariantNull
+            header("trace"),
+            Some(SqlVariant::from(&VariantValue::Binary(vec![1, 2])))
         );
+        assert_eq!(header("empty"), Some(SqlVariant::variant_null()));
     }
 
     /// A Kafka header without a value reads as NULL through the cast the Kafka connector
@@ -90,8 +83,11 @@ mod test {
     /// VARBINARY>)`.
     #[test]
     fn a_header_without_a_value_casts_to_null() {
-        let headers = metadata_variant(&kafka_metadata()).index_string("kafka_headers");
-        let headers = cast_to_mapN_V::<SqlString, Option<ByteArray>>(headers)
+        let headers = indexFVN_(
+            &Some(metadata_variant(&kafka_metadata())),
+            SqlString::from_ref("kafka_headers"),
+        );
+        let headers = cast_to_mapN_FVN::<SqlString, Option<ByteArray>>(headers)
             .unwrap()
             .expect("the headers cast to a map");
         assert_eq!(headers.get(&SqlString::from_ref("empty")), Some(&None));
@@ -101,28 +97,25 @@ mod test {
         );
     }
 
-    /// The cache converts a metadata value once, also when it gets a clone of it, and again
+    /// The cache encodes a metadata value once, also when it gets a clone of it, and again
     /// for a different value, even an equal one.
     #[test]
-    fn metadata_converts_once_per_value() {
-        fn map(variant: &Option<Variant>) -> Arc<BTreeMap<Variant, Variant>> {
-            let Some(Variant::Map(map)) = variant else {
-                panic!("metadata converts to a map");
-            };
-            map.clone()
+    fn metadata_encodes_once_per_value() {
+        fn object(variant: &Option<SqlVariant>) -> SqlVariant {
+            variant.clone().expect("metadata encodes to an object")
         }
 
         let mut cache = MetadataVariant::default();
         assert_eq!(cache.get(&None), &None);
 
         let metadata = Some(kafka_metadata());
-        let first = map(cache.get(&metadata));
-        assert!(Arc::ptr_eq(&first, &map(cache.get(&metadata))));
-        assert!(Arc::ptr_eq(&first, &map(cache.get(&metadata.clone()))));
+        let first = object(cache.get(&metadata));
+        assert!(first.ptr_eq(&object(cache.get(&metadata))));
+        assert!(first.ptr_eq(&object(cache.get(&metadata.clone()))));
 
-        let equal = map(cache.get(&Some(kafka_metadata())));
+        let equal = object(cache.get(&Some(kafka_metadata())));
         assert_eq!(equal, first);
-        assert!(!Arc::ptr_eq(&equal, &first));
+        assert!(!equal.ptr_eq(&first));
 
         assert_eq!(cache.get(&None), &None);
     }

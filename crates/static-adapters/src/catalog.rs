@@ -19,7 +19,7 @@ use feldera_adapterlib::{
     errors::controller::ControllerError, postprocess::PostprocessorRegistry,
     preprocess::PreprocessorRegistry,
 };
-use feldera_sqllib::{SqlString, Variant, build_string_interner};
+use feldera_sqllib::{SqlString, SqlVariant, build_string_interner};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -276,7 +276,7 @@ impl Catalog {
         handle: ZSetHandle<Z::Key>,
         schema: &str,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -319,7 +319,7 @@ impl Catalog {
         handle: ZSetHandle<Z::Key>,
         schema: &str,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -382,14 +382,14 @@ impl Catalog {
     ) where
         VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
         UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Clone
@@ -398,7 +398,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<U>
             + Send
@@ -465,14 +465,14 @@ impl Catalog {
     ) where
         VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
         UF: Fn(&U) -> K + Clone + Send + Sync + 'static,
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Clone
@@ -481,7 +481,7 @@ impl Catalog {
             + Send
             + Sync
             + 'static,
-        UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        UD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<U>
             + Send
@@ -556,14 +556,14 @@ impl Catalog {
         schema: &str,
     ) where
         VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Clone
@@ -621,7 +621,7 @@ impl Catalog {
     /// Add an output stream of Z-sets to the catalog.
     pub fn register_output_zset<Z, D>(&mut self, stream: Stream<RootCircuit, Z>, schema: &str)
     where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -648,7 +648,7 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         schema: &str,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -676,7 +676,7 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         schema: &Relation,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -738,7 +738,7 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         schema: &str,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -760,7 +760,7 @@ impl Catalog {
         stream: Stream<RootCircuit, Z>,
         schema: &str,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -798,7 +798,7 @@ impl Catalog {
         schema: &Relation,
         gather_integral: bool,
     ) where
-        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<Z::Key>
             + Clone
@@ -873,14 +873,14 @@ impl Catalog {
         schema: &str,
         key_fields: &[String],
     ) where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Default
@@ -908,14 +908,14 @@ impl Catalog {
         schema: &str,
         key_fields: &[String],
     ) where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Default
@@ -980,14 +980,14 @@ impl Catalog {
         key_fields: &[String],
     ) -> Option<OutputCollectionHandles>
     where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Default
@@ -1071,14 +1071,14 @@ impl Catalog {
         key_fields: &[String],
     ) -> Option<()>
     where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Default
@@ -1103,14 +1103,14 @@ impl Catalog {
         key_fields: &[String],
     ) -> Option<()>
     where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Default
@@ -1162,14 +1162,14 @@ impl Catalog {
         key_fields: &[String],
     ) -> Option<()>
     where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Default
@@ -1194,14 +1194,14 @@ impl Catalog {
         key_fields: &[String],
     ) -> Option<()>
     where
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<K>
             + Send
             + Sync
             + Debug
             + 'static,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, SqlVariant>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
             + Default

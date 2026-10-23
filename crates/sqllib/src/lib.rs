@@ -62,7 +62,7 @@ mod variant_binary;
 mod variant_value;
 pub use flat_variant::casts::*;
 pub use flat_variant::functions::*;
-pub use flat_variant::{FlatVariant, SqlVariant, variant_to_fv, variant_to_fvN};
+pub use flat_variant::{FlatVariant, SqlVariant};
 // Re-export the engine-neutral VARIANT value that connector metadata carries, so UDFs and
 // preprocessors can use it without importing the feldera-types crate.
 pub use feldera_types::variant::{
