@@ -62,7 +62,7 @@ See [user-defined types](types.md#user-defined-types)
 ```
 createTableStatement
   :   CREATE TABLE name
-      '(' tableElement [, tableElement ]* ')'
+      '(' tableElement [, tableElement ]* [ , ] ')'
       [ 'WITH' keyValueList ]
 
 tableElement
@@ -94,6 +94,8 @@ keyValue
  TODO: Removed INTERNED from columnConstraint, add when supported
     |   INTERNED
 -->
+
+The list of `tableElement`s may end with a comma.
 
 Columns that are part of a `PRIMARY KEY` cannot have nullable types.
 
@@ -358,13 +360,15 @@ values
   :   { VALUES | VALUE } expression [, expression ]*
 
 select
-  :   SELECT [ hintComment ] [ ALL | DISTINCT [ ON '(' expression [ ',' expression ]* ')' ] ] { * | projectItem [, projectItem ]* }
+  :   SELECT [ hintComment ] [ ALL | DISTINCT [ ON '(' expression [ ',' expression ]* ')' ] ] { * | projectItem [, projectItem ]* [ , ] }
       FROM tableExpression
       [ WHERE booleanExpression ]
       [ GROUP BY { ALL | [ ALL | DISTINCT ] { groupItem [, groupItem ]* } } ]
       [ HAVING booleanExpression ]
       [ QUALIFY booleanExpression ]
 ```
+
+The list of `projectItem`s may end with a comma.
 
 `DISTINCT ON` allows you to eliminate duplicate rows based on
 specified expressions, keeping the first row in each group as
@@ -399,7 +403,7 @@ groupItem:
 
 selectWithoutFrom
   :   SELECT [ ALL | DISTINCT ]
-          { * | projectItem [, projectItem ]* }
+          { * | projectItem [, projectItem ]* [ , ] }
 
 selectWithExclude
   :   SELECT [ tableName '.' ] '*' [ ( 'EXCLUDE' | 'EXCEPT' ) parensColumnList ]

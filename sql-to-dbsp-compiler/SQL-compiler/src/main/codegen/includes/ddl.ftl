@@ -19,8 +19,10 @@ SqlNodeList ExtendedTableElementList() :
     <LPAREN> { s = span(); }
     ExtendedTableElement(list)
     (
-        <COMMA> ExtendedTableElement(list)
+        // Two tokens: a COMMA followed by RPAREN is the optional trailing comma
+        LOOKAHEAD(2) <COMMA> ExtendedTableElement(list)
     )*
+    [ <COMMA> ]
     <RPAREN> {
         return new SqlNodeList(list, s.end(this));
     }

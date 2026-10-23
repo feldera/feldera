@@ -116,6 +116,29 @@ public class ParserTests {
     }
 
     @Test
+    public void trailingCommaTest() throws SqlParseException {
+        // The SELECT list may end with a comma
+        SqlToRelCompiler compiler = this.getCompiler();
+        List<ParsedStatement> node = compiler.parseStatements("""
+                CREATE TABLE T(x INT, y INT);
+                CREATE VIEW V AS SELECT x, y, FROM T;""");
+        Assert.assertEquals(2, node.size());
+        SqlNode query = ((SqlCreateView) node.get(1).statement()).query;
+        Assert.assertEquals(2, ((SqlSelect) query).getSelectList().size());
+    }
+
+    @Test
+    public void createTableTrailingCommaTest() throws SqlParseException {
+        // The column list of CREATE TABLE may end with a comma
+        SqlToRelCompiler compiler = this.getCompiler();
+        List<ParsedStatement> node = compiler.parseStatements("""
+                CREATE TABLE T(x INT, y INT PRIMARY KEY,);""");
+        Assert.assertEquals(1, node.size());
+        SqlCreateTable table = (SqlCreateTable) node.get(0).statement();
+        Assert.assertEquals(2, table.columnsOrForeignKeys.size());
+    }
+
+    @Test
     public void hintTest() throws SqlParseException {
         SqlToRelCompiler compiler = this.getCompiler();
         List<ParsedStatement> node = compiler.parseStatements("""
