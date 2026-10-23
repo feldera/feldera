@@ -189,7 +189,7 @@ pub(crate) fn aes256gcm_decrypt(
 }
 
 /// Encrypt `plaintext` with AES-256-GCM, returning the ciphertext and its tag.
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub(crate) fn aes256gcm_encrypt_with_tag(
     key: &[u8],
     nonce: &[u8],
@@ -203,7 +203,7 @@ pub(crate) fn aes256gcm_encrypt_with_tag(
     Ok((ciphertext, tag.as_ref().to_vec()))
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 /// Encrypt `plaintext` with AES-256-GCM, returning `[nonce || ciphertext || tag]`.
 pub fn aes256gcm_encrypt(key: &[u8], nonce: &[u8; 12], plaintext: &[u8]) -> Vec<u8> {
     let (ciphertext, tag) =

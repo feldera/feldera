@@ -40,6 +40,9 @@ pub use nonft::KafkaOutputEndpoint;
 mod ft;
 mod nonft;
 
+#[cfg(any(test, feature = "testing"))]
+pub mod tests;
+
 const MAX_POLLING_INTERVAL: Duration = Duration::from_millis(5000);
 
 pub(crate) fn rdkafka_loglevel_from(level: KafkaLogLevel) -> RDKafkaLogLevel {

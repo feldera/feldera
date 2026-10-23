@@ -9,7 +9,10 @@ use crate::{
     static_compile::metadata::MetadataVariant,
 };
 #[cfg(feature = "with-avro")]
-use crate::{catalog::AvroStream, format::avro::from_avro_value};
+use crate::{
+    catalog::AvroStream, format::avro::from_avro_value,
+    static_compile::deinput::InstalledAvroSchema,
+};
 use anyhow::{Result as AnyResult, bail};
 #[cfg(feature = "with-avro")]
 use apache_avro::{Schema as AvroSchema, types::Value as AvroValue};
@@ -32,7 +35,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-use super::{DEFAULT_TIMEOUT_MS, wait};
+use super::{default_timeout_ms, wait};
 
 #[derive(Clone, PartialEq, Eq, Debug, Hash, PartialOrd, Ord)]
 pub enum MockUpdate<T, U> {
@@ -234,10 +237,11 @@ where
     T: Hash + Send + Sync + 'static,
     U: Hash + Send + Sync + 'static,
 {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         let mut state = self.handle.0.lock().unwrap();
         state.flushed.append(&mut self.updates);
         self.n_bytes = 0;
+        Ok(())
     }
 
     fn len(&self) -> BufferSize {
@@ -299,13 +303,14 @@ where
     T: Send + Sync,
     U: Send + Sync,
 {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.handle
             .0
             .lock()
             .unwrap()
             .flushed
             .append(&mut self.buffers);
+        Ok(())
     }
 }
 
@@ -406,7 +411,7 @@ where
     De: DeserializerFromBytes<C> + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
 {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.buffer.flush()
     }
 
@@ -455,7 +460,7 @@ where
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
     C: Clone + Send + Sync + 'static,
 {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         self.buffer.flush()
     }
 
@@ -581,6 +586,7 @@ pub struct MockAvroStream<T, U> {
     updates: Vec<MockUpdate<T, U>>,
     n_bytes: usize,
     handle: MockDeZSet<T, U>,
+    schema: InstalledAvroSchema,
     metadata: MetadataVariant,
 }
 
@@ -591,6 +597,7 @@ impl<T, U> MockAvroStream<T, U> {
             updates: Vec::new(),
             n_bytes: 0,
             handle,
+            schema: InstalledAvroSchema::default(),
             metadata: MetadataVariant::default(),
         }
     }
@@ -602,14 +609,18 @@ where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
 {
+    fn configure_schema(&mut self, schema: &AvroSchema, refs: &AvroSchemaRefs) -> AnyResult<()> {
+        self.schema.install(schema, refs);
+        Ok(())
+    }
+
     fn insert(
         &mut self,
         data: &AvroValue,
-        schema: &AvroSchema,
-        refs: &AvroSchemaRefs,
         n_bytes: usize,
         metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
+        let (schema, refs) = self.schema.get()?;
         let v: T = from_avro_value(data, schema, refs, self.metadata.get(metadata))
             .map_err(|e| anyhow::anyhow!("error deserializing Avro record: {e}"))?;
         self.updates.push(MockUpdate::Insert(v));
@@ -620,11 +631,10 @@ where
     fn delete(
         &mut self,
         data: &AvroValue,
-        schema: &AvroSchema,
-        refs: &AvroSchemaRefs,
         n_bytes: usize,
         metadata: &Option<ConnectorMetadata>,
     ) -> AnyResult<()> {
+        let (schema, refs) = self.schema.get()?;
         let v: T = from_avro_value(data, schema, refs, self.metadata.get(metadata))
             .map_err(|e| anyhow::anyhow!("error deserializing Avro record: {e}"))?;
 
@@ -634,7 +644,10 @@ where
     }
 
     fn fork(&self) -> Box<dyn AvroStream> {
-        Box::new(Self::new(self.handle.clone()))
+        Box::new(Self {
+            schema: self.schema.clone(),
+            ..Self::new(self.handle.clone())
+        })
     }
 
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
@@ -648,9 +661,10 @@ where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant> + Hash + Send + Sync + 'static,
 {
-    fn flush(&mut self) {
+    fn flush(&mut self) -> AnyResult<()> {
         let mut state = self.handle.0.lock().unwrap();
         state.flushed.append(&mut self.updates);
+        Ok(())
     }
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
@@ -699,7 +713,7 @@ where
             flush();
             zset.state().flushed.len() == num_records
         },
-        DEFAULT_TIMEOUT_MS,
+        default_timeout_ms(),
     )
     .unwrap();
 
@@ -735,7 +749,7 @@ where
             flush();
             zset.state().flushed.len() == count
         },
-        DEFAULT_TIMEOUT_MS,
+        default_timeout_ms(),
     )
     .unwrap();
 
@@ -760,7 +774,7 @@ where
             flush();
             zset.state().flushed.len() == num_records
         },
-        DEFAULT_TIMEOUT_MS,
+        default_timeout_ms(),
     )
     .unwrap();
 

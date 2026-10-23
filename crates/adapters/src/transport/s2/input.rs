@@ -974,7 +974,7 @@ async fn replay_checkpoint(
                         consumer.parse_errors(errors);
                         if let Some(mut buffer) = buffer {
                             buffer.hash(&mut hasher);
-                            buffer.flush();
+                            consumer.check_flush(buffer.flush());
                         }
                         let amt = BufferSize {
                             records: 1,

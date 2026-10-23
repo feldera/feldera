@@ -11,6 +11,9 @@ pub(crate) mod json;
 pub mod parquet;
 pub(crate) mod raw;
 
+#[cfg(any(test, feature = "testing"))]
+pub mod soft_delete_tests;
+
 #[cfg(feature = "with-avro")]
 use crate::format::avro::output::AvroOutputFormat;
 pub use parquet::relation_to_parquet_schema;

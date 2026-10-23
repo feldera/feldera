@@ -2,8 +2,8 @@
 # for the connector's follow-mode tests. Each `append` produces a new snapshot
 # the connector must pick up.
 #
-# The table schema matches `IcebergTestStruct` in the Rust tests, so the same
-# `data()` generator and `file_to_zset` assertions apply.
+# The table schema matches the columns of the `iceberg` connector suite in the
+# Rust tests, so the same `data()` generator and `output_zset` assertions apply.
 #
 # Connection settings come from the environment (defaults target the local
 # docker setup in crates/iceberg/src/test/README.md):

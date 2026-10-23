@@ -21,7 +21,6 @@ use parquet::arrow::ArrowWriter;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReader;
 use parquet::file::properties::WriterProperties;
 use serde::Deserialize;
-use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_json::json;
 use serde_urlencoded::Deserializer as UrlDeserializer;
@@ -40,6 +39,9 @@ use super::{InputBuffer, SpongeSplitter};
 
 #[cfg(test)]
 pub mod test;
+
+#[cfg(any(test, feature = "testing"))]
+pub mod tests;
 
 /// Default arrow serder config used to encode data in Parquet.
 pub const fn default_arrow_serde_config() -> &'static SqlSerdeConfig {
@@ -455,8 +457,6 @@ impl Encoder for ParquetEncoder {
             <Vec<FieldRef> as TryFrom<SerdeArrowSchema>>::try_from(self.parquet_schema.clone())?;
         let schema = Arc::new(Schema::new(fields));
 
-        let mut builder = ArrayBuilder::new(self.parquet_schema.clone())?;
-
         let mut num_records = 0;
         let mut cursor = if self.input_is_indexed {
             CursorWithPolarity::new(
@@ -471,10 +471,11 @@ impl Encoder for ParquetEncoder {
                 batch.cursor(RecordFormat::Parquet(default_arrow_serde_config().clone()))?,
             )
         };
+        let mut rows = cursor.arrow_sink(schema.clone())?;
 
         while cursor.key_valid() {
             if !cursor.val_valid() {
-                cursor.step_key();
+                cursor.step_key()?;
                 continue;
             }
             let mut w = cursor.weight();
@@ -491,7 +492,7 @@ impl Encoder for ParquetEncoder {
 
             while w != 0 {
                 let prev_len = buffer.len();
-                cursor.serialize_key_to_arrow(&mut builder)?;
+                cursor.append_key_to_arrow(rows.as_mut())?;
 
                 // TODO: buffer.len() is always 0 here atm:
                 let buffer_full = buffer.len() > self.max_buffer_size;
@@ -518,7 +519,7 @@ impl Encoder for ParquetEncoder {
                     let buffer_cursor = Cursor::new(&mut buffer);
                     let mut writer =
                         ArrowWriter::try_new(buffer_cursor, schema.clone(), Some(props.clone()))?;
-                    let batch = builder.to_record_batch()?;
+                    let batch = rows.finish()?;
                     writer.write(&batch)?;
                     writer.close()?;
 
@@ -528,13 +529,13 @@ impl Encoder for ParquetEncoder {
                     num_records = 0;
                 }
             }
-            cursor.step_key();
+            cursor.step_key()?;
         }
 
         if num_records > 0 {
             let buffer_cursor = Cursor::new(&mut buffer);
             let mut writer = ArrowWriter::try_new(buffer_cursor, schema, Some(props))?;
-            let batch = builder.to_record_batch()?;
+            let batch = rows.finish()?;
             writer.write(&batch)?;
             writer.close()?;
             self.output_consumer.push_buffer(&buffer, num_records);
