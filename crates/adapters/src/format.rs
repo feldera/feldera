@@ -1,9 +1,11 @@
+use crate::format::arrow_ipc::{ArrowIpcInputFormat, ArrowIpcOutputFormat};
 use crate::format::parquet::{ParquetInputFormat, ParquetOutputFormat};
 #[cfg(feature = "with-avro")]
 use avro::input::AvroInputFormat;
 use once_cell::sync::Lazy;
 use std::collections::BTreeMap;
 
+pub mod arrow_ipc;
 #[cfg(feature = "with-avro")]
 pub mod avro;
 pub(crate) mod csv;
@@ -11,14 +13,11 @@ pub(crate) mod json;
 pub mod parquet;
 pub(crate) mod raw;
 
-#[cfg(any(test, feature = "testing"))]
-pub mod soft_delete_tests;
-
 #[cfg(feature = "with-avro")]
 use crate::format::avro::output::AvroOutputFormat;
 pub use parquet::relation_to_parquet_schema;
 
-pub use self::csv::{byte_record_deserializer, string_record_deserializer};
+pub use self::csv::csv_reader_builder;
 use self::{
     csv::{CsvInputFormat, CsvOutputFormat},
     json::{JsonInputFormat, JsonOutputFormat},
@@ -41,6 +40,10 @@ static INPUT_FORMATS: Lazy<BTreeMap<&'static str, Box<dyn InputFormat>>> = Lazy:
         #[cfg(feature = "with-avro")]
         ("avro", Box::new(AvroInputFormat) as Box<dyn InputFormat>),
         ("raw", Box::new(RawInputFormat) as Box<dyn InputFormat>),
+        (
+            "arrow_ipc",
+            Box::new(ArrowIpcInputFormat) as Box<dyn InputFormat>,
+        ),
     ])
 });
 
@@ -59,6 +62,10 @@ static OUTPUT_FORMATS: Lazy<BTreeMap<&'static str, Box<dyn OutputFormat>>> = Laz
         ),
         #[cfg(feature = "with-avro")]
         ("avro", Box::new(AvroOutputFormat) as Box<dyn OutputFormat>),
+        (
+            "arrow_ipc",
+            Box::new(ArrowIpcOutputFormat) as Box<dyn OutputFormat>,
+        ),
     ])
 });
 

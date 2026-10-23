@@ -2,9 +2,10 @@
 //! Kafka transport's tests.
 
 use std::collections::BTreeMap;
-use std::sync::LazyLock;
+use std::fs::File;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle, sleep};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -97,6 +98,26 @@ fn wait_for_completion<C: ClientContext>(admin_client: &AdminClient<C>, topics: 
     }
 }
 
+/// Returns the file whose lock serializes topic setup, in the temporary directory that every
+/// test process on this machine shares.
+fn topic_setup_lock_path() -> PathBuf {
+    std::env::temp_dir().join("feldera-kafka-test-topics.lock")
+}
+
+/// Opens `path` and waits for its exclusive lock, which lasts until the returned file is
+/// dropped. Unlike a mutex, the lock also excludes holders in other processes.
+fn lock_file(path: &Path) -> File {
+    let file = File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path)
+        .unwrap_or_else(|error| panic!("cannot open {}: {error}", path.display()));
+    file.lock()
+        .unwrap_or_else(|error| panic!("cannot lock {}: {error}", path.display()));
+    file
+}
+
 /// An object that creates Kafka topics on startup and deletes them
 /// on drop.  Helps make sure that test runs don't leave garbage behind.
 impl KafkaResources {
@@ -105,9 +126,8 @@ impl KafkaResources {
     pub fn create_topics(topics: &[(&str, i32)]) -> Self {
         // Kafka does not handle topic deletion and creation consistently when
         // multiple operations are performed in parallel, so serialize calls to
-        // this function.
-        static LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
-        let _guard = LOCK.lock().expect("panicking because a previous attempt to create a Kafka topic panicked already (probably the Kafka broker is down)");
+        // this function, also across the processes that run the tests.
+        let _lock = lock_file(&topic_setup_lock_path());
 
         let mut admin_config = ClientConfig::new();
         admin_config
@@ -410,18 +430,36 @@ impl BufferConsumer {
 }
 
 /// Returns each batch of `data` as one message of CSV records.
-#[cfg(test)]
-pub fn csv_messages(data: &[Vec<crate::test::TestStruct>]) -> Vec<Vec<u8>> {
+pub fn csv_messages<T: serde::Serialize>(data: &[Vec<T>]) -> Vec<Vec<u8>> {
     data.iter()
         .map(|batch| {
             let mut writer = csv::WriterBuilder::new()
                 .has_headers(false)
                 .from_writer(Vec::with_capacity(batch.len() * 32));
-            for val in batch.iter().cloned() {
+            for val in batch {
                 writer.serialize(val).unwrap();
             }
             writer.flush().unwrap();
             writer.into_inner().unwrap()
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{File, TryLockError};
+
+    use super::lock_file;
+
+    /// The lock excludes another open file of the same path, as it excludes another process.
+    #[test]
+    fn a_topic_setup_lock_excludes_another_holder() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("topics.lock");
+        let held = lock_file(&path);
+        let other = File::options().write(true).open(&path).unwrap();
+        assert!(matches!(other.try_lock(), Err(TryLockError::WouldBlock)));
+        drop(held);
+        other.try_lock().unwrap();
+    }
 }

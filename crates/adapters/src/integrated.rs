@@ -15,9 +15,6 @@ pub mod delta_table;
 pub(crate) mod dynamodb;
 pub(crate) mod postgres;
 
-#[cfg(all(any(test, feature = "testing"), feature = "with-iceberg"))]
-pub mod iceberg;
-
 #[cfg(feature = "with-dynamodb")]
 pub use crate::integrated::dynamodb::DynamoDBOutputEndpoint;
 #[cfg(feature = "with-postgres-cdc")]

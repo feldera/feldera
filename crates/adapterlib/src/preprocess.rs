@@ -9,9 +9,6 @@
 //! Transport → Preprocessor → Parser → Circuit
 //! ```
 
-// The connector layer still builds record metadata as the enum `Variant`.
-#![allow(deprecated)]
-
 use crate::ConnectorMetadata;
 use crate::format::{ParseError, Splitter};
 use crate::utils::transition_counter::{TransitionCounter, TransitionReader};

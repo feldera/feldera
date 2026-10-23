@@ -16,7 +16,7 @@ feldera-adapterlib = { workspace = true }
 feldera-storage = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
-feldera-fxp = { workspace = true }
+feldera-fxp = { workspace = true, features = ["serde"] }
 num-traits = { workspace = true }
 rand = { workspace = true, features = ["small_rng"] }
 rand_distr = { workspace = true }

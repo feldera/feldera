@@ -22,6 +22,7 @@ testing = ["tokio/time"]
 [dependencies]
 feldera-types = { workspace = true }
 feldera-storage = { workspace = true }
+feldera-fxp = { workspace = true, features = ["serde"] }
 anyhow = { workspace = true, features = ["backtrace"] }
 aws-sdk-dynamodb = { workspace = true, optional = true }
 actix-web = { workspace = true, features = ["cookies", "macros", "compress-gzip", "compress-brotli"] }

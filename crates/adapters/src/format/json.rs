@@ -1,13 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-mod input;
+pub(crate) mod input;
 pub(crate) mod output;
 mod schema;
-
-#[cfg(any(test, feature = "testing"))]
-pub mod encoder_tests;
-#[cfg(any(test, feature = "testing"))]
-pub mod parser_tests;
 
 pub use input::JsonInputFormat;
 pub use output::JsonOutputFormat;

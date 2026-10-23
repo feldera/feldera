@@ -3,7 +3,7 @@
 //! require it, plus the configuration-validation error paths.
 
 use super::super::config_utils::translate_connect_options;
-use crate::test::nats as util;
+use crate::transport::nats::input::test::util;
 use feldera_types::duration::ConfigDuration;
 use feldera_types::transport::nats as cfg;
 

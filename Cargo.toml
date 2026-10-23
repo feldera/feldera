@@ -14,6 +14,7 @@ edition = "2021"
 members = [
   "crates/adapterlib",
   "crates/adapters",
+  "crates/static-connectors",
   "crates/dbsp",
   "crates/feldera-macros",
   "crates/feldera-observability",
@@ -167,7 +168,7 @@ fdlimit = "0.3.0"
 feldera-buffer-cache = { version = "0.370.0", path = "crates/buffer-cache" }
 feldera-cloud1-client = "0.3.0"
 feldera-datagen = { path = "crates/datagen" }
-feldera-fxp = { version = "0.370.0", path = "crates/fxp", features = ["dbsp"] }
+feldera-fxp = { version = "0.370.0", path = "crates/fxp" }
 feldera-iceberg = { path = "crates/iceberg" }
 feldera-observability = { version = "0.370.0", path = "crates/feldera-observability" }
 feldera-macros = { version = "0.370.0", path = "crates/feldera-macros" }
@@ -226,6 +227,7 @@ json_to_table = "0.14.0"
 jsonwebtoken = { version = "10.4.0", features = ["aws_lc_rs"] }
 lexical-core = "1.0.5"
 libc = "0.2.153"
+libtest-mimic = "0.8.2"
 like = "0.3.1"
 log = "0.4.20"
 md-5 = "0.10.6"

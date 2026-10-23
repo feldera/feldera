@@ -12,15 +12,13 @@ use anyhow::{Error as AnyError, Result as AnyResult, anyhow};
 use atomic::Atomic;
 use chrono::{DateTime, Utc};
 use circular_queue::CircularQueue;
-use dbsp::circuit::tokio::TOKIO;
-use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
-use feldera_sqllib::FlatVariant;
+use feldera_adapterlib::{ConnectorMetadata, JsonMetadataError};
+use feldera_storage::tokio::TOKIO;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::http::HttpInputConfig;
-use feldera_types::variant::VariantValue;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
@@ -76,19 +74,18 @@ pub(crate) struct RequestMetadata {
 impl RequestMetadata {
     /// Decodes the `connector_metadata` query parameter.
     pub(crate) fn parse(json: &str) -> Result<Self, String> {
-        let value: FlatVariant = serde_json::from_str(json)
-            .map_err(|e| format!("'connector_metadata' is not valid JSON: {e}"))?;
-        let value = VariantValue::try_from(&value).map_err(|e| {
-            format!(
+        let metadata = ConnectorMetadata::from_json_object(json).map_err(|error| match error {
+            JsonMetadataError::Json(e) => format!("'connector_metadata' is not valid JSON: {e}"),
+            JsonMetadataError::Unrepresentable(e) => format!(
                 "'connector_metadata' holds a value that connector metadata cannot represent: {e}"
-            )
+            ),
+            JsonMetadataError::NotAnObject => {
+                "'connector_metadata' must be a JSON object".to_string()
+            }
         })?;
-        let VariantValue::Object(attributes) = value else {
-            return Err("'connector_metadata' must be a JSON object".to_string());
-        };
         Ok(Self {
             json: Arc::from(json),
-            metadata: ConnectorMetadata::from(attributes),
+            metadata,
         })
     }
 }
@@ -481,15 +478,105 @@ mod test {
     use feldera_adapterlib::ConnectorMetadata;
     use feldera_adapterlib::catalog::StagedBuffers;
     use feldera_adapterlib::format::{InputBuffer, ParseError, Parser, Splitter};
+    use feldera_sqllib::FlatVariant;
     use feldera_types::program_schema::Relation;
     use feldera_types::transport::http::HttpInputConfig;
     use feldera_types::variant::VariantValue;
+    use proptest::prelude::*;
     use serde_bytes::ByteBuf;
 
     use super::{Data, HttpInputEndpoint, RequestMetadata};
     use crate::TransportInputEndpoint;
     use crate::test::{MockInputConsumer, wait};
     use crate::transport::InputReaderCommand;
+
+    /// Returns what the VARIANT JSON parser of `feldera-sqllib` reads from
+    /// `json`, with the errors that `RequestMetadata::parse` reports: the
+    /// oracle for the decoder of the connector metadata.
+    fn variant_json_parser(json: &str) -> Result<VariantValue, String> {
+        let value: FlatVariant = serde_json::from_str(json)
+            .map_err(|e| format!("'connector_metadata' is not valid JSON: {e}"))?;
+        let value = VariantValue::try_from(&value).map_err(|e| {
+            format!(
+                "'connector_metadata' holds a value that connector metadata cannot represent: {e}"
+            )
+        })?;
+        match value {
+            VariantValue::Object(_) => Ok(value),
+            _ => Err("'connector_metadata' must be a JSON object".to_string()),
+        }
+    }
+
+    /// JSON numbers in the forms that take different paths: integers that fit
+    /// `i64`, `u64`, or neither, fractions, exponents, and texts with leading
+    /// zeros, which are not JSON.
+    fn number() -> impl Strategy<Value = String> {
+        prop_oneof![
+            any::<i64>().prop_map(|n| n.to_string()),
+            any::<u64>().prop_map(|n| n.to_string()),
+            any::<i128>().prop_map(|n| n.to_string()),
+            "-?[0-9]{1,45}",
+            "-?[0-9]{1,20}\\.[0-9]{1,25}",
+            "-?[0-9]{1,5}(\\.[0-9]{1,5})?[eE][+-]?[0-9]{1,3}",
+        ]
+    }
+
+    /// JSON objects of up to 4 fields of `value`, whose names repeat and
+    /// include serde_json's private number key.
+    fn object(value: impl Strategy<Value = String>) -> impl Strategy<Value = String> {
+        let name = prop_oneof![
+            Just("a".to_string()),
+            Just("b".to_string()),
+            Just("$serde_json::private::Number".to_string()),
+            "\\PC{0,4}",
+        ]
+        .prop_map(|name| serde_json::to_string(&name).unwrap());
+        prop::collection::vec((name, value), 0..4).prop_map(|fields| {
+            let fields: Vec<String> = fields
+                .into_iter()
+                .map(|(name, value)| format!("{name}:{value}"))
+                .collect();
+            format!("{{{}}}", fields.join(","))
+        })
+    }
+
+    /// Texts for `RequestMetadata::parse`: objects of nested values, other
+    /// JSON values, and texts that are not JSON.
+    fn json_text() -> impl Strategy<Value = String> {
+        let leaf = prop_oneof![
+            Just("null".to_string()),
+            Just("true".to_string()),
+            Just("false".to_string()),
+            number(),
+            "\\PC{0,6}".prop_map(|text| serde_json::to_string(&text).unwrap()),
+        ];
+        let value = leaf.prop_recursive(4, 24, 4, |inner| {
+            prop_oneof![
+                prop::collection::vec(inner.clone(), 0..4)
+                    .prop_map(|items| format!("[{}]", items.join(","))),
+                object(inner),
+            ]
+        });
+        prop_oneof![
+            6 => object(value.clone()),
+            1 => value.clone(),
+            1 => (value, prop_oneof![Just("x"), Just("]"), Just(",")])
+                .prop_map(|(json, garbage)| format!("{json}{garbage}")),
+        ]
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(2000))]
+
+        /// `RequestMetadata::parse` reads every text as the VARIANT JSON parser
+        /// of `feldera-sqllib` does, value for value and error for error.
+        #[test]
+        fn request_metadata_matches_the_variant_json_parser(json in json_text()) {
+            let parsed = RequestMetadata::parse(&json)
+                .map(|request| VariantValue::from(request.metadata));
+            prop_assert_eq!(parsed, variant_json_parser(&json), "{}", json);
+        }
+    }
 
     /// Each field of the `connector_metadata` object becomes one attribute,
     /// converted the way any JSON value converts to a VARIANT.

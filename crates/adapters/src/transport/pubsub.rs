@@ -3,8 +3,6 @@
 mod input;
 
 #[cfg(any(test, feature = "testing"))]
-pub mod gcp_tests;
-#[cfg(any(test, feature = "testing"))]
-pub mod tests;
+pub mod test;
 
 pub use input::PubSubInputEndpoint;

@@ -161,6 +161,22 @@ impl FlatVariant {
         }
     }
 
+    /// Returns `true` if `self` and `other` are the same value, not only equal ones: one is a
+    /// clone of the other.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use feldera_sqllib::FlatVariant;
+    ///
+    /// let value: FlatVariant = serde_json::from_str("[1, 2]").unwrap();
+    /// assert!(value.ptr_eq(&value.clone()));
+    /// assert!(!value.ptr_eq(&serde_json::from_str("[1, 2]").unwrap()));
+    /// ```
+    pub fn ptr_eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.buf, &other.buf) && self.start == other.start && self.len == other.len
+    }
+
     /// The SQL NULL value (`Variant::SqlNull` equivalent).
     ///
     /// # Examples
@@ -1199,9 +1215,8 @@ pub(crate) fn build_document_infallible(
     }
 }
 
-/// The connector-metadata boundary: the record deserializer receives metadata
-/// as the enum `Variant`, and a metadata DEFAULT expression for a FlatVariant
-/// column converts it once here. Goes away with the enum.
+/// Encodes the deprecated enum, for code that still builds it. Goes away with
+/// the enum.
 #[allow(deprecated)]
 impl From<&Variant> for FlatVariant {
     fn from(v: &Variant) -> Self {
@@ -1294,10 +1309,7 @@ impl From<FlatVariant> for Variant {
     }
 }
 
-// The connector-metadata boundary: metadata is always built by the adapters
-// as the enum Variant, and a metadata DEFAULT expression for a FlatVariant
-// VARIANT column converts once here. The only sanctioned production use of
-// an enum-to-flat conversion.
+// Encodes the deprecated enum by value, like `From<&Variant>`.
 #[allow(deprecated)]
 impl From<Variant> for FlatVariant {
     fn from(v: Variant) -> Self {
@@ -1305,23 +1317,8 @@ impl From<Variant> for FlatVariant {
     }
 }
 
-/// See [`From<Variant>`]: the connector-metadata boundary conversion for a
-/// nullable VARIANT column with a metadata DEFAULT.
-#[doc(hidden)]
-#[allow(deprecated)]
-pub fn variant_to_fvN(v: Option<Variant>) -> Option<FlatVariant> {
-    v.map(|v| FlatVariant::from(&v))
-}
-
-/// See [`From<Variant>`]: the non-null variant of the boundary conversion.
-#[doc(hidden)]
-#[allow(deprecated)]
-pub fn variant_to_fv(v: Variant) -> FlatVariant {
-    FlatVariant::from(&v)
-}
-
 // TryFrom<Variant> for FlatVariant comes from core's blanket over the
-// From<Variant> boundary conversion above.
+// From<Variant> conversion above.
 
 // A VARIANT container element is always `Some`: a JSON null inside a map
 // or array stays a variant-null VALUE (MapTests#mapValuesVariant depends
@@ -2694,11 +2691,6 @@ mod tests {
             f2::to_json_FVN(Some(map2.clone()))
         );
         assert_eq!(f2::to_json_FVN(None), None);
-
-        // Metadata boundary helpers.
-        assert_eq!(variant_to_fv(map.clone()), map2);
-        assert_eq!(variant_to_fvN(Some(map.clone())), Some(map2.clone()));
-        assert_eq!(variant_to_fvN(None), None);
 
         // Literal From constructors match encoding through the enum.
         macro_rules! check_literal_from {

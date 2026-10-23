@@ -3,23 +3,14 @@ use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_types::format::avro::AvroSchemaRegistryConfig;
 use schema_registry_converter::blocking::schema_registry::SrSettings;
 
-mod coercion;
-mod debezium;
-pub mod deserializer;
+pub mod coercion;
+pub mod debezium;
 pub mod input;
 pub mod output;
-pub(crate) mod schema;
-pub mod serializer;
-
-#[cfg(test)]
-mod test;
+pub mod schema;
 
 #[cfg(any(test, feature = "testing"))]
-pub mod encoder_tests;
-#[cfg(any(test, feature = "testing"))]
-pub mod parser_tests;
-
-pub use deserializer::from_avro_value;
+pub mod test;
 
 /// Convert schema registry config to `struct SrSettings` used by the
 /// `schema_registry_converter` crate.
@@ -87,7 +78,7 @@ fn schema_registry_settings(
     }
 }
 
-fn resolve_ref<'a>(
+pub fn resolve_ref<'a>(
     schema: &'a AvroSchema,
     refs: &'a AvroSchemaRefs,
 ) -> Result<&'a AvroSchema, AvroName> {

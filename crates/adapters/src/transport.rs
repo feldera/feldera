@@ -51,17 +51,11 @@ pub(crate) mod nats;
 #[cfg(feature = "with-s2")]
 pub(crate) mod s2;
 
-#[cfg(feature = "with-nexmark")]
-mod nexmark;
-
 #[cfg(feature = "with-pubsub")]
 pub(crate) mod pubsub;
 
 #[cfg(feature = "with-redis")]
 pub(crate) mod redis;
-
-#[cfg(any(test, feature = "testing"))]
-pub mod datagen_tests;
 
 use feldera_types::config::TransportConfig;
 use feldera_types::coordination::InputShard;
@@ -83,13 +77,47 @@ use crate::transport::nats::{NatsInputEndpoint, NatsOutputEndpoint};
 #[cfg(feature = "with-s2")]
 use crate::transport::s2::{S2InputEndpoint, S2OutputEndpoint};
 
-#[cfg(feature = "with-nexmark")]
-use crate::transport::nexmark::NexmarkEndpoint;
 use crate::transport::s3::S3InputEndpoint;
 use crate::transport::url::UrlInputEndpoint;
 use feldera_datagen::GeneratorEndpoint;
 
 pub use feldera_adapterlib::transport::*;
+
+/// An input transport that another crate provides.
+///
+/// The Nexmark generator is one: its record types derive the static engine's traits, so it
+/// lives with that engine. A crate registers a factory with `inventory::submit!`, and
+/// [`input_transport_config_to_endpoint`] asks the registered factories for the configurations
+/// that this crate does not build itself.
+pub trait InputTransportFactory: Sync {
+    /// Returns the endpoint that `config` describes, or `None` if `config` names a transport
+    /// that this factory does not build.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - the transport configuration of an input endpoint, with its secrets
+    ///   resolved.
+    ///
+    /// # Returns
+    ///
+    /// The endpoint, an error if `config` is invalid, or `None`.
+    fn endpoint(
+        &self,
+        config: &TransportConfig,
+    ) -> Option<AnyResult<Box<dyn TransportInputEndpoint>>>;
+}
+
+inventory::collect!(&'static dyn InputTransportFactory);
+
+/// Returns the endpoint that a registered [`InputTransportFactory`] builds for `config`, or
+/// `None` if no registered factory builds one.
+fn registered_input_endpoint(
+    config: &TransportConfig,
+) -> Option<AnyResult<Box<dyn TransportInputEndpoint>>> {
+    inventory::iter::<&dyn InputTransportFactory>
+        .into_iter()
+        .find_map(|factory| factory.endpoint(config))
+}
 
 /// Creates an input transport endpoint instance using an input transport
 /// configuration, resolving secrets by reading `secrets_dir`.
@@ -130,10 +158,10 @@ pub fn input_transport_config_to_endpoint(
         TransportConfig::UrlInput(config) => Box::new(UrlInputEndpoint::new(config)),
         TransportConfig::S3Input(config) => Box::new(S3InputEndpoint::new(config)?),
         TransportConfig::Datagen(config) => Box::new(GeneratorEndpoint::new(config)),
-        #[cfg(feature = "with-nexmark")]
-        TransportConfig::Nexmark(config) => Box::new(NexmarkEndpoint::new(config)),
-        #[cfg(not(feature = "with-nexmark"))]
-        TransportConfig::Nexmark(_) => return Ok(None),
+        config @ TransportConfig::Nexmark(_) => match registered_input_endpoint(&config) {
+            Some(endpoint) => endpoint?,
+            None => return Ok(None),
+        },
         TransportConfig::HttpInput(config) => Box::new(HttpInputEndpoint::new(config)),
         TransportConfig::AdHocInput(config) => Box::new(AdHocInputEndpoint::new(config)),
         TransportConfig::ClockInput(config) => Box::new(ClockEndpoint::new(config)?),
@@ -203,5 +231,27 @@ pub fn output_transport_config_to_endpoint(
         }
         TransportConfig::NullOutput => Ok(Some(Box::new(NullOutputEndpoint))),
         _ => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use feldera_types::config::TransportConfig;
+    use feldera_types::secret_resolver::default_secrets_directory;
+    use serde_json::json;
+
+    use super::input_transport_config_to_endpoint;
+
+    /// A transport that another crate provides gives no endpoint while no factory for it is
+    /// registered, as in this crate's own tests.
+    #[test]
+    fn an_unregistered_transport_gives_no_endpoint() {
+        let config: TransportConfig =
+            serde_json::from_value(json!({ "name": "nexmark", "config": { "table": "bid" } }))
+                .unwrap();
+        let endpoint =
+            input_transport_config_to_endpoint(&config, "test", default_secrets_directory(), None)
+                .unwrap();
+        assert!(endpoint.is_none());
     }
 }

@@ -345,6 +345,12 @@ public class MetadataTests extends BaseSQLTests {
                 }""", str);
     }
 
+    /** Whether the generated Rust embeds a table or view's 'connectors' property.
+     * Matches the quoted JSON key, since the code also imports the static_connectors crate. */
+    static boolean embedsConnectorsProperty(String rust) {
+        return rust.contains("\"" + CreateTableStatement.CONNECTORS + "\"");
+    }
+
     @Test
     public void stripProperties1() throws IOException, SQLException {
         String sql = """
@@ -430,7 +436,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
-        Assert.assertFalse(rust.contains(CreateTableStatement.CONNECTORS));
+        Assert.assertFalse(embedsConnectorsProperty(rust));
     }
 
     @Test
@@ -454,7 +460,7 @@ public class MetadataTests extends BaseSQLTests {
         File file = createInputScript(sql);
         CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         String rust = Utilities.readFile(BaseSQLTests.TEST_FILE_PATH);
-        Assert.assertFalse(rust.contains(CreateTableStatement.CONNECTORS));
+        Assert.assertFalse(embedsConnectorsProperty(rust));
     }
 
     @Test
@@ -2556,10 +2562,12 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE TABLE T(V VARIANT);
                 CREATE VIEW P AS SELECT V FROM T;""");
         CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
-        // Every generated file names the enum in deserialize_table_record!,
-        // which passes connector metadata; only the column type varies.
+        // Every generated file names SqlVariant in deserialize_table_record!,
+        // which passes connector metadata, so read the type of the column.
         String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
-        return rust.contains("SqlVariant") ? "SqlVariant" : "Variant";
+        Matcher m = Pattern.compile("\"v\", (?:true|false), Option<(\\w+)>").matcher(rust);
+        Assert.assertTrue("no field for column v", m.find());
+        return m.group(1);
     }
 
 
@@ -2627,8 +2635,8 @@ public class MetadataTests extends BaseSQLTests {
         Assert.assertEquals("SqlVariant", this.variantColumnType(""));
     }
 
-    /** A VARIANT column defaulted from connector metadata uses the
-     * legacy representation. */
+    /** A VARIANT column defaulted from connector metadata takes the
+     * SqlVariant that connectors deliver, with no conversion. */
     @Test
     public void variantColumnFromConnectorMetadata()
             throws IOException, InterruptedException, SQLException {
@@ -2643,7 +2651,37 @@ public class MetadataTests extends BaseSQLTests {
         if (messages.errorCount() > 0)
             throw new RuntimeException(messages.toString());
         String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
-        Assert.assertTrue(rust.contains("variant_to_fvN("));
+        Assert.assertTrue(rust.contains("connector_metadata: &Option<SqlVariant>| Some(indexFVN_("));
+        Assert.assertFalse(rust.contains("Variant::from"));
         BaseSQLTests.compileAndTestRust(false);
+    }
+
+    /** A DEFAULT expression applies the VARIANT functions of the program's
+     * representation to connector metadata: a program that sets
+     * {@code FELDERA_FLAT_VARIANT=OFF} keeps the legacy enum {@code Variant}
+     * representation of connector metadata, and converts the metadata only
+     * where it reads it. */
+    @Test
+    public void variantFunctionsOfConnectorMetadata()
+            throws IOException, InterruptedException, SQLException {
+        for (String setStatement : List.of("", "SET FELDERA_FLAT_VARIANT = 'off';\n")) {
+            File file = createInputScript(setStatement + """
+                    CREATE TABLE T(
+                        TY VARCHAR DEFAULT TYPEOF(CONNECTOR_METADATA()['topic']),
+                        J VARCHAR DEFAULT TO_JSON(CONNECTOR_METADATA()),
+                        VN VARIANT DEFAULT VARIANTNULL(),
+                        S VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['topic'] AS VARCHAR)
+                    );
+                    CREATE VIEW P AS SELECT * FROM T;""");
+            CompilerMessages messages = CompilerMain.execute(
+                    "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+            if (messages.errorCount() > 0)
+                throw new RuntimeException(messages.toString());
+            String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
+            long conversions = Pattern.compile("\\.as_ref\\(\\)\\.map\\(Variant::from\\)")
+                    .matcher(rust).results().count();
+            Assert.assertEquals(setStatement.isEmpty() ? 0 : 3, conversions);
+            BaseSQLTests.compileAndTestRust(false);
+        }
     }
 }

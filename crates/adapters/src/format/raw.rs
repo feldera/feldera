@@ -3,22 +3,14 @@ use crate::{
     catalog::{DeCollectionStream, RecordFormat},
     format::{InputFormat, ParseError, Parser},
 };
-use core::str;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::catalog::StagedBuffers;
-use feldera_types::{
-    format::raw::{RawParserConfig, RawParserMode},
-    serde_with_context::{SqlSerdeConfig, serde_config::BinaryFormat},
-};
-use serde::{
-    Deserialize, Deserializer,
-    de::{Error as _, MapAccess, value::StrDeserializer},
-    forward_to_deserialize_any,
-};
+use feldera_types::format::raw::{RawParserConfig, RawParserMode};
+use serde::Deserialize;
 use serde_json::json;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use std::{borrow::Cow, fmt::Display};
+use std::borrow::Cow;
 
 use crate::catalog::InputCollectionHandle;
 
@@ -28,10 +20,6 @@ use super::{InputBuffer, LineSplitter, SpongeSplitter};
 ///
 /// Ingest raw byte stream into a table with a single column of type VARCHAR or VARBINARY.
 pub struct RawInputFormat;
-
-pub fn raw_serde_config() -> SqlSerdeConfig {
-    SqlSerdeConfig::default().with_binary_format(BinaryFormat::Bytes)
-}
 
 impl InputFormat for RawInputFormat {
     fn name(&self) -> Cow<'static, str> {
@@ -188,147 +176,237 @@ impl Parser for RawParser {
     }
 }
 
-/// Deserializer implementation that deserializes a byte slice as a struct with one column that contains
-/// these bytes.
-pub(crate) struct RawDeserializer<'de> {
-    column_name: &'de str,
-    bytes: &'de [u8],
-}
-
-impl<'de> RawDeserializer<'de> {
-    pub(crate) fn new(column_name: &'de str, bytes: &'de [u8]) -> Self {
-        Self { column_name, bytes }
-    }
-}
-
-#[derive(Clone)]
-struct RawMapDeserializer<'de> {
-    column_name: &'de str,
-    bytes: &'de [u8],
-    done: bool,
-}
-
-impl<'de> RawMapDeserializer<'de> {
-    fn new(column_name: &'de str, bytes: &'de [u8]) -> Self {
-        Self {
-            column_name,
-            bytes,
-            done: false,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct RawDeserializeError {
-    message: String,
-}
-
-impl Display for RawDeserializeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.message.fmt(f)
-    }
-}
-
-impl std::error::Error for RawDeserializeError {}
-
-impl serde::de::Error for RawDeserializeError {
-    fn custom<T>(msg: T) -> Self
-    where
-        T: Display,
-    {
-        Self {
-            message: msg.to_string(),
-        }
-    }
-}
-
-impl<'de> MapAccess<'de> for RawMapDeserializer<'de> {
-    type Error = RawDeserializeError;
-
-    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
-    where
-        K: serde::de::DeserializeSeed<'de>,
-    {
-        if self.done {
-            Ok(None)
-        } else {
-            self.done = true;
-            seed.deserialize(StrDeserializer::new(self.column_name))
-                .map(Some)
-        }
-    }
-
-    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
-    where
-        V: serde::de::DeserializeSeed<'de>,
-    {
-        seed.deserialize(self.clone())
-    }
-}
-
-impl<'de> Deserializer<'de> for RawMapDeserializer<'de> {
-    type Error = RawDeserializeError;
-
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        visitor.visit_bytes(self.bytes)
-    }
-
-    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        let s = str::from_utf8(self.bytes).map_err(|e| {
-            RawDeserializeError::custom(format!("unable to convert buffer to UTF-8 string (consider changing column type to 'VARBINARY'): {e}"))
-        })?;
-        visitor.visit_str(s)
-    }
-
-    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        self.deserialize_str(visitor)
-    }
-
-    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        visitor.visit_bytes(self.bytes)
-    }
-
-    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        visitor.visit_some(self)
-    }
-
-    forward_to_deserialize_any! {
-        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char
-        byte_buf unit unit_struct newtype_struct seq tuple
-        tuple_struct map enum struct identifier ignored_any
-    }
-}
-
-impl<'de> Deserializer<'de> for RawDeserializer<'de> {
-    type Error = RawDeserializeError;
-
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: serde::de::Visitor<'de>,
-    {
-        visitor.visit_map(RawMapDeserializer::new(self.column_name, self.bytes))
-    }
-    forward_to_deserialize_any! {
-        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
-        bytes byte_buf option unit unit_struct newtype_struct seq tuple
-        tuple_struct map enum struct identifier ignored_any
-    }
-}
-
 #[cfg(any(test, feature = "testing"))]
-pub mod tests;
+pub mod test {
+    use crate::test::{engine_test, parser};
+    use feldera_adapterlib::{
+        ConnectorMetadata,
+        format::{InputBuffer, Parser},
+        test::{ConnectorTestEngine, InputOptions, Updates},
+    };
+    use feldera_types::{
+        config::FormatConfig,
+        format::raw::{RawParserConfig, RawParserMode},
+        program_schema::{ColumnType, Field, Relation},
+        variant::VariantValue,
+    };
+    use std::{borrow::Cow, collections::BTreeMap};
+
+    /// Returns a table named `name` with a column `data` of type `data`, and, if `kafka_topic`,
+    /// a nullable column `kafka_topic`.
+    fn table(name: &str, data: ColumnType, kafka_topic: bool) -> Relation {
+        let mut fields = vec![Field::new("data".into(), data)];
+        if kafka_topic {
+            fields.push(Field::new("kafka_topic".into(), ColumnType::varchar(true)));
+        }
+        Relation::new(name.into(), fields, false, BTreeMap::new())
+    }
+
+    /// A table of one VARCHAR column.
+    pub fn varchar_relation() -> Relation {
+        table("raw_varchar", ColumnType::varchar(false), false)
+    }
+
+    /// A table of one VARCHAR column and the Kafka topic, as [`metadata_options`] declares.
+    pub fn varchar_metadata_relation() -> Relation {
+        table("raw_varchar_metadata", ColumnType::varchar(false), true)
+    }
+
+    /// A table of one nullable VARCHAR column.
+    pub fn nullable_varchar_relation() -> Relation {
+        table("raw_nullable_varchar", ColumnType::varchar(true), false)
+    }
+
+    /// A table of one VARBINARY column.
+    pub fn varbinary_relation() -> Relation {
+        table("raw_varbinary", ColumnType::varbinary(false), false)
+    }
+
+    /// A table of one nullable VARBINARY column.
+    pub fn nullable_varbinary_relation() -> Relation {
+        table("raw_nullable_varbinary", ColumnType::varbinary(true), false)
+    }
+
+    /// A table of one nullable VARBINARY column and the Kafka topic, as [`metadata_options`]
+    /// declares.
+    pub fn nullable_varbinary_metadata_relation() -> Relation {
+        table(
+            "raw_nullable_varbinary_metadata",
+            ColumnType::varbinary(true),
+            true,
+        )
+    }
+
+    /// A table of one nullable VARBINARY column and a nullable column without a DEFAULT.
+    pub fn nullable_varbinary_nulls_relation() -> Relation {
+        table(
+            "raw_nullable_varbinary_nulls",
+            ColumnType::varbinary(true),
+            true,
+        )
+    }
+
+    /// The input options of the tables with a Kafka topic: the DEFAULT of `kafka_topic` reads the
+    /// attribute of the same name.
+    pub fn metadata_options() -> InputOptions {
+        InputOptions {
+            soft_delete: false,
+            attribute_defaults: BTreeMap::from([(
+                "kafka_topic".to_string(),
+                "kafka_topic".to_string(),
+            )]),
+        }
+    }
+
+    /// Connector metadata that names the Kafka topic `my_topic`.
+    fn kafka_topic() -> ConnectorMetadata {
+        let mut metadata = ConnectorMetadata::new();
+        metadata.insert("kafka_topic", VariantValue::String("my_topic".into()));
+        metadata
+    }
+
+    /// Parses `foo\nbar` in `mode`, into the column `column_name`, with `metadata`, into a fresh
+    /// table of `relation`, and checks that it reports no error and inserts `rows`, in order.
+    #[track_caller]
+    fn check(
+        engine: &dyn ConnectorTestEngine,
+        relation: &Relation,
+        options: &InputOptions,
+        config: RawParserConfig,
+        metadata: Option<ConnectorMetadata>,
+        rows: &[&str],
+    ) {
+        let collection = engine.input_collection(relation, options).unwrap();
+        let format = FormatConfig {
+            name: Cow::from("raw"),
+            config: serde_json::to_value(config).unwrap(),
+        };
+        let mut parser = parser(collection.as_ref(), &format);
+        let (mut buffer, errors) = parser.parse(b"foo\nbar", metadata);
+        assert_eq!(errors, []);
+        buffer.flush().unwrap();
+
+        let rows: Vec<(i64, &str)> = rows.iter().map(|row| (1, *row)).collect();
+        let expected = Updates::from_json(collection.schema(), &rows).unwrap();
+        assert_eq!(collection.updates().unwrap(), expected);
+    }
+
+    /// Each line becomes a VARCHAR row.
+    #[engine_test(requires(RawFormat))]
+    pub fn varchar_lines(engine: &dyn ConnectorTestEngine) {
+        check(
+            engine,
+            &varchar_relation(),
+            &InputOptions::default(),
+            RawParserConfig {
+                mode: RawParserMode::Lines,
+                column_name: None,
+            },
+            None,
+            &[r#"{"data": "foo"}"#, r#"{"data": "bar"}"#],
+        );
+    }
+
+    /// Each line becomes a VARBINARY row.
+    #[engine_test(requires(RawFormat))]
+    pub fn varbinary_lines(engine: &dyn ConnectorTestEngine) {
+        check(
+            engine,
+            &varbinary_relation(),
+            &InputOptions::default(),
+            RawParserConfig {
+                mode: RawParserMode::Lines,
+                column_name: None,
+            },
+            None,
+            // The bytes of `foo` and `bar`.
+            &[r#"{"data": "666f6f"}"#, r#"{"data": "626172"}"#],
+        );
+    }
+
+    /// The column that `column_name` names takes each line, and the other columns take their
+    /// DEFAULTs from the connector attributes.
+    #[engine_test(requires(RawFormat))]
+    pub fn varchar_lines_with_metadata(engine: &dyn ConnectorTestEngine) {
+        check(
+            engine,
+            &varchar_metadata_relation(),
+            &metadata_options(),
+            RawParserConfig {
+                mode: RawParserMode::Lines,
+                column_name: Some("data".to_string()),
+            },
+            Some(kafka_topic()),
+            &[
+                r#"{"data": "foo", "kafka_topic": "my_topic"}"#,
+                r#"{"data": "bar", "kafka_topic": "my_topic"}"#,
+            ],
+        );
+    }
+
+    /// The whole message becomes one nullable VARCHAR row.
+    #[engine_test(requires(RawFormat))]
+    pub fn nullable_varchar_blob(engine: &dyn ConnectorTestEngine) {
+        check(
+            engine,
+            &nullable_varchar_relation(),
+            &InputOptions::default(),
+            RawParserConfig {
+                mode: RawParserMode::Blob,
+                column_name: None,
+            },
+            None,
+            &[r#"{"data": "foo\nbar"}"#],
+        );
+    }
+
+    /// The whole message becomes one nullable VARBINARY row.
+    #[engine_test(requires(RawFormat))]
+    pub fn nullable_varbinary_blob(engine: &dyn ConnectorTestEngine) {
+        check(
+            engine,
+            &nullable_varbinary_relation(),
+            &InputOptions::default(),
+            RawParserConfig {
+                mode: RawParserMode::Blob,
+                column_name: None,
+            },
+            None,
+            // The bytes of `foo\nbar`.
+            &[r#"{"data": "666f6f0a626172"}"#],
+        );
+    }
+
+    /// The whole message goes into the column that `column_name` names, and the other columns
+    /// take their DEFAULTs from the connector attributes.
+    #[engine_test(requires(RawFormat))]
+    pub fn nullable_varbinary_blob_with_metadata(engine: &dyn ConnectorTestEngine) {
+        check(
+            engine,
+            &nullable_varbinary_metadata_relation(),
+            &metadata_options(),
+            RawParserConfig {
+                mode: RawParserMode::Blob,
+                column_name: Some("data".to_string()),
+            },
+            Some(kafka_topic()),
+            &[r#"{"data": "666f6f0a626172", "kafka_topic": "my_topic"}"#],
+        );
+    }
+
+    /// A nullable column without a DEFAULT is NULL when the parser fills another column.
+    #[engine_test(requires(RawFormat))]
+    pub fn nullable_varbinary_blob_with_nulls(engine: &dyn ConnectorTestEngine) {
+        check(
+            engine,
+            &nullable_varbinary_nulls_relation(),
+            &InputOptions::default(),
+            RawParserConfig {
+                mode: RawParserMode::Blob,
+                column_name: Some("data".to_string()),
+            },
+            None,
+            &[r#"{"data": "666f6f0a626172", "kafka_topic": null}"#],
+        );
+    }
+}

@@ -7,8 +7,8 @@
 
 use std::collections::BTreeMap;
 
-use dbsp::circuit::Layout;
 use feldera_adapterlib::errors::controller::ConfigError;
+use feldera_types::circuit::Layout;
 use feldera_types::{
     config::ConnectorConfig,
     coordination::{InputDistribution, InputShard},
@@ -131,7 +131,7 @@ pub fn input_shard(
 mod tests {
     use std::net::SocketAddr;
 
-    use dbsp::circuit::Layout;
+    use feldera_types::circuit::Layout;
     use feldera_types::{
         config::{ConnectorConfig, TransportConfig},
         coordination::{InputDistribution, InputShard},

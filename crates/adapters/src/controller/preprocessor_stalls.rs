@@ -186,25 +186,24 @@ impl PreprocessorStalls {
 
 #[cfg(test)]
 mod test {
-    use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
+    use feldera_adapterlib::ConnectorMetadata;
+    use feldera_adapterlib::catalog::StagedBuffers;
     use feldera_adapterlib::format::{
-        MessageOrientedPreprocessedParser, Parser, StreamingPreprocessedParser,
+        InputBuffer, MessageOrientedPreprocessedParser, Parser, StreamingPreprocessedParser,
     };
     use feldera_adapterlib::preprocess::{Preprocessor, PreprocessorWatchdog};
     use feldera_types::adapter_stats::{ConnectorHealth, ConnectorHealthStatus};
-    use feldera_types::config::{FormatConfig, InputEndpointConfig};
-    use feldera_types::program_schema::Relation;
+    use feldera_types::config::InputEndpointConfig;
     use serde_json::{Value, json};
 
     use super::PreprocessorStalls;
     use crate::controller::EndpointId;
     use crate::controller::stats::InputEndpointStatus;
-    use crate::format::{ParseError, Splitter};
-    use crate::test::{TestStruct, mock_parser_pipeline};
+    use crate::format::{LineSplitter, ParseError, Splitter};
 
     type Endpoints = BTreeMap<EndpointId, InputEndpointStatus>;
 
@@ -256,22 +255,40 @@ mod test {
         (watchdog, [(0, endpoint)].into())
     }
 
-    /// Wraps `preprocessor` and a CSV parser in the parser for a
-    /// message-oriented or a streaming preprocessor.
+    /// Accepts any input and parses nothing: the preprocessor in front of it
+    /// is what the tests watch.
+    struct NullParser;
+
+    impl Parser for NullParser {
+        fn parse(
+            &mut self,
+            _data: &[u8],
+            _metadata: Option<ConnectorMetadata>,
+        ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
+            (None, Vec::new())
+        }
+
+        fn stage(&self, _buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+            unreachable!("the tests never stage parsed data")
+        }
+
+        fn splitter(&self) -> Box<dyn Splitter> {
+            Box::new(LineSplitter)
+        }
+
+        fn fork(&self) -> Box<dyn Parser> {
+            Box::new(NullParser)
+        }
+    }
+
+    /// Wraps `preprocessor` and a parser in the parser for a message-oriented
+    /// or a streaming preprocessor.
     fn preprocessed_parser(
         preprocessor: Box<dyn Preprocessor>,
         watchdog: PreprocessorWatchdog,
         message_oriented: bool,
     ) -> Box<dyn Parser> {
-        let (_consumer, parser, _input_handle) = mock_parser_pipeline::<TestStruct, TestStruct>(
-            &Relation::empty(),
-            &FormatConfig {
-                name: Cow::from("csv"),
-                config: json!({}),
-            },
-        )
-        .unwrap();
-        let parser = Box::new(parser);
+        let parser = Box::new(NullParser);
         if message_oriented {
             Box::new(MessageOrientedPreprocessedParser::new(
                 preprocessor,

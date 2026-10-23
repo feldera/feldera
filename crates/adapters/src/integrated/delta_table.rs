@@ -5,15 +5,10 @@ pub(crate) mod input;
 pub(crate) mod merge;
 pub(crate) mod output;
 
-#[cfg(test)]
-mod test;
+pub use output::delta_output_serde_config;
 
-#[cfg(all(any(test, feature = "testing"), feature = "delta-s3-test"))]
-pub mod s3_tests;
 #[cfg(any(test, feature = "testing"))]
-pub mod tests;
-#[cfg(all(any(test, feature = "testing"), feature = "delta-unity-test"))]
-pub mod unity_tests;
+pub mod test;
 
 use arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, FieldRef, Schema as ArrowSchema, SchemaRef,

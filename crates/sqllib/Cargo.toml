@@ -25,7 +25,7 @@ chrono-tz = { workspace = true }
 dbsp = { workspace = true }
 feldera-types = { workspace = true }
 flate2 = { workspace = true }
-feldera-fxp = { workspace = true }
+feldera-fxp = { workspace = true, features = ["dbsp"] }
 geo = { workspace = true }
 hex = { workspace = true }
 itertools = { workspace = true }

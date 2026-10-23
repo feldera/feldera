@@ -1,9 +1,8 @@
-//! Test support: the connector test suites that every engine runs and the helpers they share,
-//! and the static engine's test fixtures, which only this crate's tests use.
+//! Test support: the connector test suites that every engine runs and the helpers they share.
 //!
 //! A suite is a function of an engine's fixture, a [`ConnectorTestEngine`], so one copy of it
-//! checks every engine. An engine's crate defines a `#[test]` for each suite with
-//! [`connector_suites`](crate::connector_suites).
+//! checks every engine. Each case carries [`engine_test`], which registers it, and an engine's
+//! crate runs every registered case with [`run_suites`].
 //!
 //! [`ConnectorTestEngine`]: feldera_adapterlib::test::ConnectorTestEngine
 
@@ -13,8 +12,11 @@ use std::sync::Arc;
 
 use anyhow::Result as AnyResult;
 use arrow::datatypes::{Schema, SchemaRef};
+pub use feldera_adapterlib::test::{
+    Capability, ErrorCallback, MockInputConsumer, MockInputParser, MockOutputConsumer, async_wait,
+    default_timeout_ms, wait,
+};
 use feldera_adapterlib::test::{ConnectorTestEngine, InputOptions, TestCollection};
-pub use feldera_adapterlib::test::{MockInputConsumer, MockInputParser};
 use feldera_types::config::{FormatConfig, InputEndpointConfig};
 use feldera_types::format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::Relation;
@@ -29,16 +31,20 @@ use crate::{ConnectorConfig, Encoder, OutputConsumer};
 pub mod avro;
 #[cfg(feature = "with-deltalake")]
 pub mod delta;
+mod harness;
 #[cfg(feature = "with-kafka")]
 pub mod kafka;
-#[cfg(feature = "with-nats")]
-pub mod nats;
 pub mod pipeline;
 pub mod read;
 pub mod relations;
 pub mod render;
 pub mod rows;
+mod service;
 pub mod suites;
+
+pub use feldera_macros::engine_test;
+pub use harness::{CaseFn, CaseLock, EngineCase, run_suites};
+pub use service::Service;
 
 /// Sends the logs of the tests to the test output, at the level that `RUST_LOG` names, or
 /// `info`.
@@ -227,16 +233,8 @@ pub fn input_pipeline_into(
     })
 }
 
-// The static engine's test fixtures.
-#[cfg(test)]
-pub mod data;
-#[cfg(test)]
-mod datagen;
-#[cfg(test)]
-mod engine;
-#[cfg(test)]
-mod mock_dezset;
-#[cfg(test)]
-mod typed;
-#[cfg(test)]
-pub use typed::*;
+pub mod datagen;
+pub mod soft_delete;
+
+#[cfg(feature = "with-iceberg")]
+pub mod iceberg;

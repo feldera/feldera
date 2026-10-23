@@ -1,6 +1,6 @@
 use anyhow::{Context, Error as AnyError, Result as AnyResult, anyhow};
-use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::transport::{AsyncErrorCallback, OutputEndpoint};
+use feldera_storage::tokio::TOKIO;
 use feldera_types::transport::s2::S2OutputConfig;
 use s2_sdk::{
     S2, S2Stream,

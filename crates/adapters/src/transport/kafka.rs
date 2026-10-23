@@ -1,7 +1,7 @@
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use aws_msk_iam_sasl_signer::generate_auth_token;
 use base64::{Engine as _, prelude::BASE64_URL_SAFE_NO_PAD};
-use dbsp::circuit::tokio::TOKIO;
+use feldera_storage::tokio::TOKIO;
 use feldera_types::transport::kafka::{KafkaHeader, KafkaLogLevel, KafkaOauthProvider};
 use google_cloud_auth::project::{
     Config as GcpAuthConfig, Project as GcpProject, create_token_source_from_project,
@@ -26,7 +26,7 @@ use std::error::Error;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::SystemTime;
@@ -37,11 +37,8 @@ use tracing::warn;
 pub use ft::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint};
 pub use nonft::KafkaOutputEndpoint;
 
-mod ft;
+pub(crate) mod ft;
 mod nonft;
-
-#[cfg(any(test, feature = "testing"))]
-pub mod tests;
 
 const MAX_POLLING_INTERVAL: Duration = Duration::from_millis(5000);
 
@@ -164,10 +161,10 @@ please create an issue at: https://github.com/feldera/feldera/issues",
 /// provoke.
 ///
 /// When tests are disabled, this framework compiles to nothing.
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 pub(crate) struct DeferredLogging(Mutex<Option<Vec<(RDKafkaLogLevel, String, String)>>>);
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testing"))]
 impl DeferredLogging {
     pub fn new() -> Self {
         Self(Mutex::new(None))
@@ -200,10 +197,10 @@ impl DeferredLogging {
     }
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "testing")))]
 pub(crate) struct DeferredLogging;
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "testing")))]
 impl DeferredLogging {
     pub fn new() -> Self {
         Self

@@ -163,7 +163,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
         }
         this.builder().append("let (mut circuit, streams) = ");
         if (!useHandles)
-            this.builder().append("dbsp_adapters::server::init_circuit(cconf, Box::new(");
+            this.builder().append("static_connectors::server::init_circuit(cconf, Box::new(");
         else
             this.builder().append("Runtime::init_circuit(cconf, ");
         this.builder().append("|circuit| {")
@@ -226,7 +226,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
     @Override
     public void write(DBSPCompiler compiler) {
         this.builder().append(COMMON_PREAMBLE);
-        this.builder().append(ALLOW_DEPRECATED_PREAMBLE);
+        this.builder().append(allowDeprecatedPreamble());
         this.builder().append(STANDARD_PREAMBLE);
         if (!compiler.options.ioOptions.emitHandles)
             this.builder().append(CATALOG_PREAMBLE);
@@ -247,15 +247,15 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
         if (generateMainFunction) {
             this.builder().append("""
                     fn main() {
-                        dbsp_adapters::server::server_main(|cconfig| {
+                        static_connectors::server::server_main(|cconfig| {
                             circuit(cconfig)
                                 .map(|(dbsp, catalog)| {
                                     (
                                         dbsp,
-                                        Box::new(catalog) as Box<dyn dbsp_adapters::CircuitCatalog>,
+                                        Box::new(catalog) as Box<dyn static_connectors::CircuitCatalog>,
                                     )
                                 })
-                                .map_err(|e| dbsp_adapters::ControllerError::dbsp_error(e))
+                                .map_err(|e| static_connectors::ControllerError::dbsp_error(e))
                         })
                         .unwrap_or_else(|e| {
                             eprintln!("{e}");
