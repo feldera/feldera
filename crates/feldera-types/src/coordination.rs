@@ -396,14 +396,17 @@ pub struct StepStatus {
     ///   execute at least one more step to commit it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transaction_status: Option<bool>,
-    /// Number of input records that this host has committed.  The input of a
-    /// step commits when the step ends, except that the input of a transaction
-    /// commits only when the transaction commits, so the input of an open
-    /// transaction does not count yet.  Reported while `Idle`, when it is the
-    /// count as of `step`.
+    /// If `action` is [StepAction::Idle], the number of input records that
+    /// this host committed in the steps before `step`; otherwise, `None`.
     ///
-    /// The coordinator adds up the hosts' counts for a step to get the number
-    /// for the whole pipeline.  `None` if the host does not report it.
+    /// The input of a step commits when the step ends, except that the input
+    /// of a transaction commits only when the transaction commits.  Thus, the
+    /// input of an open transaction does not count yet.
+    ///
+    /// The coordinator adds up the counts that all of the hosts report for the
+    /// same `step` to get the count for the whole pipeline.  A host that runs
+    /// an older version does not report a count, so this is always `None` in
+    /// the status that it sends.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_committed_records: Option<u64>,
 }
