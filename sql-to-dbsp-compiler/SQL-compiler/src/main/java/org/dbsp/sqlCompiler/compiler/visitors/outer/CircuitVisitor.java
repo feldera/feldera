@@ -824,7 +824,7 @@ public abstract class CircuitVisitor
         return this.id + " " + this.getClass().getSimpleName();
     }
 
-    public String getName() { return this.toString(); }
+    public String getName() { return this.getClass().getSimpleName(); }
 
     @Override
     public long getId() {

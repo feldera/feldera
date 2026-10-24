@@ -18,11 +18,14 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.util.IJson;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.math.BigInteger;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.HashSet;
 import java.util.Set;
@@ -35,11 +38,14 @@ public class ProgramMetadata implements IJson {
     final LinkedHashMap<ProgramIdentifier, IHasSchema> outputViews;
     /** The variables created by SET statements with their values. */
     final LinkedHashMap<String, DBSPExpression> variables;
+    /** Maps each variable to the position of the SET statement that gave it its value. */
+    final LinkedHashMap<String, SourcePositionRange> positions;
 
     public ProgramMetadata() {
         this.inputTables = new LinkedHashMap<>();
         this.outputViews = new LinkedHashMap<>();
         this.variables = new LinkedHashMap<>();
+        this.positions = new LinkedHashMap<>();
         DBSPTypeVariant.useLegacyRepresentation(false);
     }
 
@@ -50,6 +56,7 @@ public class ProgramMetadata implements IJson {
     static final Set<String> reserved = Set.of(
             DBSPCompiler.WARNINGS_ARE_ERRORS.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.AVOID_STAR_JOINS.toLowerCase(Locale.ENGLISH),
+            ProgramMetadata.DISABLE_OPTIMIZATIONS.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.ENFORCE_POSITIVE_INPUTS.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.LAZY_UPSERT.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.USE_FLAT_VARIANT.toLowerCase(Locale.ENGLISH),
@@ -84,7 +91,15 @@ public class ProgramMetadata implements IJson {
                     "Variable " + Utilities.singleQuote(variable) + " must be a positive integer; "
                             + ToSqlVisitor.convert(compiler, value) + " is ignored");
         }
+        if (variable.equals(DISABLE_OPTIMIZATIONS.toLowerCase(Locale.ENGLISH)) &&
+                (!value.is(DBSPStringLiteral.class) || value.to(DBSPStringLiteral.class).value == null)) {
+            compiler.reportWarning(range, "Invalid setting",
+                    "Variable " + Utilities.singleQuote(variable) +
+                            " must be a string with a comma-separated list of optimization names; "
+                            + ToSqlVisitor.convert(compiler, value) + " is ignored");
+        }
         this.variables.put(variable, value);
+        this.positions.put(variable, range);
         // The representation must be fixed before any expression of the program
         // is compiled to Rust names; SET statements precede other statements,
         // so updating it here is early enough.
@@ -95,6 +110,12 @@ public class ProgramMetadata implements IJson {
     public boolean hasValue(String variable) {
         variable = canonicalVariableName(variable);
         return this.variables.containsKey(variable);
+    }
+
+    /** The position of the SET statement that gave {@code variable} its value.
+     * The variable must have a value. */
+    public SourcePositionRange getPosition(String variable) {
+        return Utilities.getExists(this.positions, canonicalVariableName(variable));
     }
 
     /** Return true if the value of the supplied variable is falsy
@@ -169,6 +190,8 @@ public class ProgramMetadata implements IJson {
     }
 
     public static final String AVOID_STAR_JOINS = "FELDERA_AVOID_STAR_JOINS";
+    /** A comma-separated list of the optimization passes that the compiler skips. */
+    public static final String DISABLE_OPTIMIZATIONS = "FELDERA_DISABLE_OPTIMIZATIONS";
     /** When set to {@code true}, inserts a weight-validation check after every
      * input table that has no primary key. */
     public static final String ENFORCE_POSITIVE_INPUTS = "ENFORCE_POSITIVE_INPUTS";
@@ -198,6 +221,21 @@ public class ProgramMetadata implements IJson {
 
     public boolean noStarJoins() {
         return this.isExplicitlyOn(AVOID_STAR_JOINS);
+    }
+
+    /** The names in the list of {@link #DISABLE_OPTIMIZATIONS}, empty if the program
+     * does not set it to a string. */
+    public List<String> disabledOptimizations() {
+        if (!this.hasValue(DISABLE_OPTIMIZATIONS))
+            return List.of();
+        DBSPExpression expression = Utilities.getExists(this.variables, canonicalVariableName(DISABLE_OPTIMIZATIONS));
+        if (!expression.is(DBSPStringLiteral.class))
+            return List.of();
+        String value = expression.to(DBSPStringLiteral.class).value;
+        if (value == null)
+            return List.of();
+        List<String> names = Linq.map(Arrays.asList(value.split(",")), String::trim);
+        return Linq.where(names, name -> !name.isEmpty());
     }
 
     /** Returns {@code true} if VARIANT values use the flat-buffer

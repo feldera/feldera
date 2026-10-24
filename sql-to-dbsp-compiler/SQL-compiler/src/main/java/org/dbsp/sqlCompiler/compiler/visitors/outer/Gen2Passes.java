@@ -8,7 +8,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.RemoveClones;
  * the Rust backend needs. */
 public class Gen2Passes extends Passes {
     public Gen2Passes(DBSPCompiler compiler) {
-        super("Gen2", compiler);
+        super("Gen2Passes", compiler);
         this.add(new RemoveTypedBox(compiler));
         this.add(new RemoveClones(compiler).circuitRewriter(true));
     }
