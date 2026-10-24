@@ -203,9 +203,66 @@ Default settings applied to all pipeline pods.
 |-----|---------|-------------|
 | `pipeline.serviceAccountName` | `null` | Default Kubernetes service account for pipeline pods. Typically used for IRSA-based cloud authentication. |
 | `pipeline.env` | `null` | List of environment variables injected into all pipeline pods. |
+| `pipeline.extraVolumes` | `null` | List of extra volumes added to all pipeline pods, after the built-in ones. Chart v0.366.0 and later. See [Extra volumes](#extra-volumes). |
+| `pipeline.extraVolumeMounts` | `null` | List of extra volume mounts added to the pipeline container, after the built-in ones. Chart v0.366.0 and later. See [Extra volumes](#extra-volumes). |
 | `pipeline.allowInitContainers` | `true` | Allow pipelines to specify init containers (e.g., sidecars) via runtime configuration. See [sidecar containers](/pipelines/sidecar). |
 | `pipeline.allowProfiling` | `false` | Grant the `PERFMON` and `IPC_LOCK` capabilities to pipeline containers, enabling performance profiling. Node kernel settings may also be required, see [Visualizing profiles](/operations/visualizing-profiles.md#enterprise-environments). |
 | `pipeline.terminationGracePeriodSeconds` | `60` | Seconds a pipeline has to write a checkpoint when Kubernetes evicts its pod or drains its node. See [Writing checkpoints](/pipelines/fault-tolerance#writing-checkpoints). |
+
+### Extra volumes
+
+`pipeline.extraVolumes` and `pipeline.extraVolumeMounts` are available in chart v0.366.0 and later. Older charts ignore them.
+
+They are added to the chart's default pipeline template only. A pipeline that uses a custom template through `pipeline_template_configmap` must add these volumes and mounts to that template itself.
+
+For example, to give each pipeline pod a projected service account token for workload identity federation:
+
+```yaml
+pipeline:
+  serviceAccountName: feldera-pipeline
+  extraVolumes:
+    - name: databricks-token
+      projected:
+        sources:
+          - serviceAccountToken:
+              path: token
+              audience: my-databricks-federation-audience
+              expirationSeconds: 3600
+  extraVolumeMounts:
+    - name: databricks-token
+      mountPath: /var/run/secrets/databricks
+      readOnly: true
+```
+
+The chart fails the install if:
+
+| Check | Rejected values |
+|-------|-----------------|
+| Volume name is reserved | `config-volume`, `container-status`, `https-config`, `public-ca-config`, `secret-<n>`, any name that ends in `-storage` |
+| Mount names a volume that is not in `pipeline.extraVolumes` | Any other name |
+| Mount path is reserved | Exactly `/pipeline-config`, `/status`, `/https-config`, `/public-ca-config` or `/pipeline-storage`, and `/etc/feldera-secrets` or any path under it |
+
+Only the exact paths in the table are checked, except for `/etc/feldera-secrets`. Do not mount below the other reserved paths either (for example `/pipeline-storage/data`), because the mount hides that part of the pipeline's own files.
+
+The runner builds each pipeline pod from a template that includes these two values. The same placeholders are documented for custom templates on `PipelineTemplateConfig` in the REST API reference. It does a plain text replace of the placeholders below over the whole template, so they are replaced anywhere in `pipeline.extraVolumes` and `pipeline.extraVolumeMounts` too. There is no way to escape them: do not use any of these names in braces as literal text. Other text in braces, for example `{foo}`, is not changed.
+
+| Placeholder | Replaced with |
+|-------------|---------------|
+| `{id}` | `pipeline-<pipeline UUID>`, the name of the pipeline's StatefulSet |
+| `{name}` | The pipeline name as a quoted JSON string. Use it only as a whole value, not inside a path. |
+| `{namespace}` | The namespace of the pipeline pod |
+| `{deployment_id}` | The UUID of this deployment of the pipeline |
+| `{pipeline_storage_path}` | `/pipeline-storage` |
+| `{storage_class_name}` | The storage class as a quoted string, or empty if none is set |
+| `{hosts}` | The number of hosts the pipeline runs on |
+| `{multihost}` | `yes` or `no` |
+| `{pipeline_executor_image}` | The pipeline executor image |
+| `{binary_ref}` | The URL of the program binary |
+| `{program_info_ref}` | The URL of the program info |
+| `{deployment_initial}` | The initial runtime status of the pipeline |
+| `{bootstrap_policy}` | The bootstrap policy, or `none` |
+| `{silent_bootstrap}` | `yes` or `no` |
+| `{concurrent_bootstrap}` | `yes` or `no` |
 
 ---
 

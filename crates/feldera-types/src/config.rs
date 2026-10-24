@@ -972,6 +972,7 @@ fn is_gcs_bucket(bucket: &str) -> bool {
 /// - The runner performs simple string substitution for the following placeholders. Please ensure these
 ///   placeholders are placed at appropriate location for their semantics:
 ///   - `{id}`: pipeline Kubernetes name (used for object names and labels)
+///   - `{name}`: pipeline name as a quoted JSON string (use it only as a whole YAML value)
 ///   - `{namespace}`: Kubernetes namespace where the pipeline runs
 ///   - `{pipeline_executor_image}`: container image used to run the pipeline executor
 ///   - `{binary_ref}`: program binary reference passed as an argument
@@ -980,7 +981,15 @@ fn is_gcs_bucket(bucket: &str) -> bool {
 ///   - `{storage_class_name}`: storage class name to use for PVCs (if applicable)
 ///   - `{deployment_id}`: UUID identifying the deployment instance
 ///   - `{deployment_initial}`: initial desired runtime status (e.g., `provisioning`)
-///   - `{bootstrap_policy}`: bootstrap policy value when applicable
+///   - `{bootstrap_policy}`: bootstrap policy value when applicable, otherwise `none`
+///   - `{silent_bootstrap}`: `yes` or `no`
+///   - `{concurrent_bootstrap}`: `yes` or `no`
+///   - `{hosts}`: number of hosts the pipeline runs on
+///   - `{multihost}`: `yes` or `no`
+///
+///   The substitution has no escape: do not use these names in braces as literal text.
+// Keep the placeholder list in sync with the table in
+// docs.feldera.com/docs/get-started/enterprise/helm-chart-reference.md.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct PipelineTemplateConfig {
     /// Name of the ConfigMap containing the pipeline template.
