@@ -1984,6 +1984,40 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             body={"name": name, "role": role},
         )
 
+    def list_api_keys(self) -> List[dict]:
+        """
+        List the API keys of the current tenant.
+
+        The key itself is only ever returned by :meth:`create_api_key`.
+
+        :returns: A list of dicts with keys `id`, `name` and `role`.
+        """
+        return self.http.get(path="/api_keys")
+
+    def get_api_key(self, name: str) -> dict:
+        """
+        Retrieve the metadata of an API key by name.
+
+        :param name: The API key name.
+        :returns: A dict with keys `id`, `name` and `role`.
+        :raises FelderaAPIError: If there is no API key with this name.
+        """
+        if not name:
+            raise ValueError("API key name must be a non-empty string")
+        # The endpoint answers with a one-element list.
+        return self.http.get(path=f"/api_keys/{quote(name, safe='')}")[0]
+
+    def delete_api_key(self, name: str) -> None:
+        """
+        Delete an API key by name, which revokes it.
+
+        :param name: The API key name.
+        :raises FelderaAPIError: If there is no API key with this name.
+        """
+        if not name:
+            raise ValueError("API key name must be a non-empty string")
+        self.http.delete(path=f"/api_keys/{quote(name, safe='')}")
+
     def list_tenants(self) -> List[dict]:
         """
         List every tenant in the installation. Platform owners only.
@@ -2066,6 +2100,71 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :raises FelderaAPIError: If the tenant still holds any of the above.
         """
         self.http.delete(path=f"/tenants/{quote(tenant_id, safe='')}")
+
+    def list_tenant_members(self) -> List[dict]:
+        """
+        List the members of the current tenant and their roles. Requires the
+        `admin` role.
+
+        :returns: A list of dicts each describing a member (`user_id`,
+                  `provider`, `subject`, `role`, and, when known, `email`,
+                  `email_verified`, `display_name` and `origin`).
+        """
+        return self.http.get(path="/tenant/users")
+
+    def add_tenant_member(
+        self, subject: str, role: str, email: Optional[str] = None
+    ) -> dict:
+        """
+        Add a member to the current tenant by identity, before the user's
+        first login. Requires the `admin` role.
+
+        :param subject: The user's OIDC subject (the `sub` claim of their
+                        tokens).
+        :param role: The role to grant: ``"read"``, ``"write"`` or
+                     ``"admin"``. It may not exceed the caller's own role.
+        :param email: (Optional) Email shown in the member list.
+        :returns: A dict with the new member's `user_id`.
+        """
+        if not subject:
+            raise ValueError("Member subject must be a non-empty string")
+        if role not in ("read", "write", "admin"):
+            raise ValueError("Member role must be 'read', 'write' or 'admin'")
+        body: dict = {"subject": subject, "role": role}
+        if email is not None:
+            body["email"] = email
+        return self.http.post(path="/tenant/users", body=body)
+
+    def set_tenant_member_role(self, user_id: str, role: str) -> None:
+        """
+        Change a member's role in the current tenant. Requires the `admin`
+        role.
+
+        :param user_id: The member's `user_id`, as listed by
+                        :meth:`list_tenant_members`.
+        :param role: The new role: ``"read"``, ``"write"`` or ``"admin"``. It
+                     may not exceed the caller's own role.
+        :raises FelderaAPIError: If the user is not a member of the tenant.
+        """
+        if role not in ("read", "write", "admin"):
+            raise ValueError("Member role must be 'read', 'write' or 'admin'")
+        self.http.put(
+            path=f"/tenant/users/{quote(user_id, safe='')}", body={"role": role}
+        )
+
+    def remove_tenant_member(self, user_id: str) -> None:
+        """
+        Remove a member from the current tenant. Requires the `admin` role.
+
+        This drops their role now, but if the identity provider still grants
+        them the tenant, they are added again on their next login. Revoke
+        access at the provider to lock them out completely.
+
+        :param user_id: The member's `user_id`, as listed by
+                        :meth:`list_tenant_members`.
+        :raises FelderaAPIError: If the user is not a member of the tenant.
+        """
+        self.http.delete(path=f"/tenant/users/{quote(user_id, safe='')}")
 
     def list_oidc_trust(self) -> List[dict]:
         """
