@@ -336,7 +336,8 @@ A `ROW` column becomes a nested Avro record, named after its path in the view: `
 column `c` of view `v`, `v_c_d` for a `ROW` field `d` inside it, `v_a_item` for the elements
 of an array column `a`, and `v_m_value` for the values of a map column `m`. Avro requires the
 names in a schema to be unique, so when two paths produce the same name, the second record
-gets a numeric suffix, such as `v_a_b_2`.
+gets a numeric suffix, such as `v_a_b_2`. The nested records share the namespace of the
+top-level record: in a key schema named `v.key`, column `c` becomes the record `v.key_c`.
 
 The encoder supports an alternative workflow where users provide the schema as a JSON string
 as part of connector configuration and the encoder produces messages using this schema instead of

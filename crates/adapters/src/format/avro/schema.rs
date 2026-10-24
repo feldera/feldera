@@ -542,6 +542,7 @@ impl AvroSchemaBuilder {
         // Names such as 'view.key', which the catalog assigns to the key
         // schema of an indexed view, are Avro fullnames: the segments before
         // the last dot form a namespace, appended to the configured one.
+        let prefix = name.rsplit_once('.').map(|(prefix, _)| prefix);
         let (namespace, name) = match name.rsplit_once('.') {
             Some((prefix, base)) => (
                 Some(match &self.namespace {
@@ -555,6 +556,12 @@ impl AvroSchemaBuilder {
         // The records of one schema share the namespace of its top level, so their names
         // differ when their base names do.
         let name = unique_name(name, names);
+        // A nested record's name extends this one with its namespace prefix, so that the
+        // record is in the namespace of the top level.
+        let path = match prefix {
+            Some(prefix) => format!("{prefix}.{name}"),
+            None => name.clone(),
+        };
 
         let mut fields = Vec::with_capacity(struct_fields.len());
         let mut lookup = BTreeMap::new();
@@ -562,7 +569,7 @@ impl AvroSchemaBuilder {
         for (i, field) in struct_fields.iter().enumerate() {
             let key_field = self.key_fields.is_none()
                 || self.key_fields.as_ref().unwrap().contains(&field.name);
-            let f = self.field_to_avro_schema(&name, field, i, top_level && !key_field, names)?;
+            let f = self.field_to_avro_schema(&path, field, i, top_level && !key_field, names)?;
             lookup.insert(f.name.clone(), i);
             fields.push(f);
         }
@@ -915,6 +922,88 @@ mod test {
         assert_eq!(record_name(a).name, "v_a");
         assert_eq!(record_name(field(a, "b")).name, "v_a_b_2");
         assert_eq!(record_name(field(&schema, "a_b_2")).name, "v_a_b_2_2");
+    }
+
+    /// Returns the fullnames of the records in `schema`, depth first.
+    fn record_fullnames(schema: &AvroSchema) -> Vec<String> {
+        fn walk(schema: &AvroSchema, names: &mut Vec<String>) {
+            match schema {
+                AvroSchema::Record(record) => {
+                    names.push(record.name.fullname(None));
+                    for field in &record.fields {
+                        walk(&field.schema, names);
+                    }
+                }
+                AvroSchema::Array(array) => walk(&array.items, names),
+                AvroSchema::Map(map) => walk(&map.types, names),
+                AvroSchema::Union(union) => {
+                    for variant in union.variants() {
+                        walk(variant, names);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut names = Vec::new();
+        walk(schema, &mut names);
+        names
+    }
+
+    /// The nested records of a key schema, which a name such as `v.key` gives a namespace,
+    /// share that namespace, so a schema registry that parses the schema names every record
+    /// as the encoder does.
+    #[test]
+    fn records_of_a_key_schema_share_its_namespace() {
+        for (namespace, prefix) in [(None, "v"), (Some("com.acme"), "com.acme.v")] {
+            let schema = AvroSchemaBuilder::new()
+                .with_namespace(namespace)
+                .relation_to_avro_schema(&Relation::new(
+                    SqlIdentifier::new("v.key", false),
+                    vec![
+                        Field::new(
+                            "c".into(),
+                            ColumnType::structure(false, &[Field::new("d".into(), point())]),
+                        ),
+                        Field::new("a".into(), ColumnType::array(false, point())),
+                    ],
+                    false,
+                    BTreeMap::new(),
+                ))
+                .unwrap();
+            let names = record_fullnames(&schema);
+            assert_eq!(
+                names,
+                ["key", "key_c", "key_c_d", "key_a_item"].map(|name| format!("{prefix}.{name}"))
+            );
+            let parsed = AvroSchema::parse_str(&schema_json(&schema)).unwrap();
+            assert_eq!(record_fullnames(&parsed), names);
+        }
+    }
+
+    /// Every record of a value schema keeps its fullname when a schema registry parses the
+    /// schema, with or without a configured namespace.
+    #[test]
+    fn record_fullnames_survive_parsing() {
+        for namespace in [None, Some("com.acme")] {
+            let schema = AvroSchemaBuilder::new()
+                .with_namespace(namespace)
+                .relation_to_avro_schema(&Relation::new(
+                    SqlIdentifier::new("v", false),
+                    vec![
+                        Field::new("c".into(), point()),
+                        Field::new("a".into(), ColumnType::array(true, point())),
+                        Field::new(
+                            "m".into(),
+                            ColumnType::map(false, ColumnType::varchar(false), point()),
+                        ),
+                    ],
+                    false,
+                    BTreeMap::new(),
+                ))
+                .unwrap();
+            let parsed = AvroSchema::parse_str(&schema_json(&schema)).unwrap();
+            assert_eq!(record_fullnames(&parsed), record_fullnames(&schema));
+        }
     }
 
     /// Refuse INTERVAL columns.
