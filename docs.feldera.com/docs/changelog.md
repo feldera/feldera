@@ -10,6 +10,12 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Python SDK: `FelderaClient` can now list, look up and delete API keys
+  (`list_api_keys()`, `get_api_key()`, `delete_api_key()`) and manage the
+  members of the current tenant (`list_tenant_members()`,
+  `add_tenant_member()`, `set_tenant_member_role()`,
+  `remove_tenant_member()`), matching `fda apikey` and `fda member`.
+
 - Bug fix (Parquet output): a deletion in the output of a view with a Parquet
   output connector crashed the pipeline.  The connector now reports an
   encoder error for that batch instead; the Parquet format still cannot
