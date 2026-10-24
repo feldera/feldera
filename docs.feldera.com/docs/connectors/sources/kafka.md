@@ -342,6 +342,10 @@ Kafka messages include several metadata attributes in addition to the payload. T
 | Message offset     | `BIGINT`                 | `kafka_offset`               |`include_offset`     |
 | Timestamp          | `TIMESTAMP`              | `kafka_timestamp`            |`include_timestamp`  |
 
+A Kafka timestamp outside the legal [`TIMESTAMP` range](/sql/datetime#timestamps)
+is clamped to that range: an earlier timestamp becomes `0001-01-01 00:00:00`,
+and a later one becomes `9999-12-31 23:59:59.999999`.
+
 Some applications need to ingest and store these attributes alongside the message payload.
 The steps below describe how to extract and use Kafka metadata in SQL tables.
 

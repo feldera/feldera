@@ -1,14 +1,16 @@
 //! Conversions between [`VariantValue`], the engine-neutral `VARIANT` value, and the two
 //! `VARIANT` representations of this crate, [`Variant`] and [`FlatVariant`].
 //!
-//! - A `VariantValue` always converts, and three values change form on the way:
+//! - A `VariantValue` always converts, and four values change form on the way:
 //!   - a nanosecond timestamp rounds toward the past to a whole microsecond, the unit
 //!     [`crate::Timestamp`] and [`crate::TimestampTz`] hold;
 //!   - a decimal takes the canonical form every other `VARIANT` decimal has, with no trailing
 //!     zeros after the point, so `15.00` becomes `15`. The canonical form gives equal values
 //!     identical bytes, which [`FlatVariant`] equality and hashing compare;
-//!   - a leap second becomes the last nanosecond of the second before it, since a SQL `TIME`
-//!     has no leap seconds.
+//!   - a leap second becomes the last instant of the second before it, since SQL has no leap
+//!     seconds: the last nanosecond for a `TIME`, the last microsecond for a timestamp;
+//!   - a timestamp outside the range 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999
+//!     becomes the nearest end of that range.
 //! - A [`Variant`] or [`FlatVariant`] converts unless it holds a type the encoding lacks (an
 //!   interval or a geometry) or a map which does not have string or integer keys. An unsigned
 //!   integer widens to the smallest signed type that holds it, or to a decimal of scale 0 when
@@ -23,7 +25,6 @@ use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::ops::Range;
 
-use chrono::{NaiveTime, Timelike};
 use feldera_fxp::DynamicDecimal;
 use feldera_types::variant::{VariantDecimal4, VariantDecimal8, VariantDecimal16, VariantValue};
 
@@ -35,6 +36,7 @@ use crate::flat_variant::{
     TAG_UBIGINT, TAG_UINT, TAG_USMALLINT, TAG_UTINYINT, TAG_UUID, TAG_VARIANT_NULL, Writer,
     build_document_infallible, flat_variant_object_key, payload_array,
 };
+use crate::timestamp::without_leap_second;
 use crate::variant::Variant;
 use crate::variant_binary::{
     MAX_VARIANT_DEPTH, unencodable_variant, variant_object_key, variant_too_deep,
@@ -72,12 +74,16 @@ impl From<&VariantValue> for Variant {
             VariantValue::String(v) => Variant::String(SqlString::from_ref(v)),
             VariantValue::Binary(v) => Variant::Binary(ByteArray::new(v)),
             VariantValue::Date(v) => Variant::Date(Date::from_date(*v)),
-            VariantValue::Time(v) => Variant::Time(Time::from_time(without_leap_second(*v))),
+            VariantValue::Time(v) => Variant::Time(Time::from_time(*v)),
             VariantValue::TimestampMicros(v) | VariantValue::TimestampNanos(v) => {
-                Variant::TimestampTz(TimestampTz::from_microseconds(v.timestamp_micros()))
+                Variant::TimestampTz(TimestampTz::clamped_from_microseconds(
+                    without_leap_second(*v).timestamp_micros(),
+                ))
             }
             VariantValue::TimestampNtzMicros(v) | VariantValue::TimestampNtzNanos(v) => {
-                Variant::Timestamp(Timestamp::from_microseconds(v.and_utc().timestamp_micros()))
+                Variant::Timestamp(Timestamp::clamped_from_microseconds(
+                    without_leap_second(*v).and_utc().timestamp_micros(),
+                ))
             }
             VariantValue::Uuid(v) => Variant::Uuid(Uuid::from_bytes(*v.as_bytes())),
             VariantValue::List(elements) => Variant::Array(
@@ -193,14 +199,18 @@ fn encode_flat_variant(w: &mut Writer, value: &VariantValue) -> Range<usize> {
         VariantValue::Binary(v) => w.scalar(TAG_BINARY, v),
         VariantValue::Date(v) => w.scalar(TAG_DATE, &Date::from_date(*v).days().to_le_bytes()),
         VariantValue::Time(v) => {
-            let time = Time::from_time(without_leap_second(*v));
+            let time = Time::from_time(*v);
             w.scalar(TAG_TIME, &time.nanoseconds().to_le_bytes())
         }
         VariantValue::TimestampMicros(v) | VariantValue::TimestampNanos(v) => {
-            w.scalar(TAG_TIMESTAMP_TZ, &v.timestamp_micros().to_le_bytes())
+            let micros = without_leap_second(*v).timestamp_micros();
+            let timestamp = TimestampTz::clamped_from_microseconds(micros);
+            w.scalar(TAG_TIMESTAMP_TZ, &timestamp.microseconds().to_le_bytes())
         }
         VariantValue::TimestampNtzMicros(v) | VariantValue::TimestampNtzNanos(v) => {
-            w.scalar(TAG_TIMESTAMP, &v.and_utc().timestamp_micros().to_le_bytes())
+            let micros = without_leap_second(*v).and_utc().timestamp_micros();
+            let timestamp = Timestamp::clamped_from_microseconds(micros);
+            w.scalar(TAG_TIMESTAMP, &timestamp.microseconds().to_le_bytes())
         }
         VariantValue::Uuid(v) => w.scalar(TAG_UUID, v.as_bytes()),
         VariantValue::List(elements) => w.array_in_place(elements.len(), |w, i| {
@@ -237,17 +247,6 @@ fn encode_flat_decimal(w: &mut Writer, integer: i128, scale: u8) -> Range<usize>
 fn canonical_decimal(integer: i128, scale: u8) -> (i128, u8) {
     let decimal = DynamicDecimal::new(integer, scale);
     (decimal.significand(), decimal.exponent())
-}
-
-/// `time`, with a leap second moved back to the last nanosecond of the second before it. A
-/// SQL `TIME` has no leap seconds: [`Time`] counts nanoseconds from midnight, so a leap second
-/// would count past the end of the day.
-fn without_leap_second(time: NaiveTime) -> NaiveTime {
-    if time.nanosecond() < 1_000_000_000 {
-        return time;
-    }
-    NaiveTime::from_num_seconds_from_midnight_opt(time.num_seconds_from_midnight(), 999_999_999)
-        .expect("the second before a leap second is a time of day")
 }
 
 /// The flat-encoded value at `bytes` as a [`VariantValue`]. `depth` counts
@@ -427,7 +426,7 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    use chrono::{NaiveDate, NaiveTime, TimeZone, Utc};
+    use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
     use feldera_types::variant::{
         VariantDecimal4, VariantDecimal8, VariantDecimal16, VariantValue,
     };
@@ -1189,6 +1188,77 @@ mod tests {
             VariantValue::Time(last)
         );
         assert!(flat.to_json_string().is_ok());
+    }
+
+    /// A timestamp in a leap second becomes the last microsecond of the second before it.
+    #[test]
+    fn a_leap_second_timestamp_becomes_the_last_microsecond_before_it() {
+        let day = NaiveDate::from_ymd_opt(2024, 12, 31).unwrap();
+        let leap = day.and_hms_milli_opt(23, 59, 59, 1_500).unwrap();
+        let last = day.and_hms_micro_opt(23, 59, 59, 999_999).unwrap();
+        for (value, expected) in [
+            (
+                VariantValue::TimestampNtzMicros(leap),
+                VariantValue::TimestampNtzMicros(last),
+            ),
+            (
+                VariantValue::TimestampMicros(leap.and_utc()),
+                VariantValue::TimestampMicros(last.and_utc()),
+            ),
+        ] {
+            let variant = Variant::from(&value);
+            assert_eq!(VariantValue::try_from(&variant).unwrap(), expected);
+            let flat = FlatVariant::from(&value);
+            assert_eq!(VariantValue::try_from(&flat).unwrap(), expected);
+        }
+    }
+
+    /// A timestamp outside the SQL range becomes the nearest end of the range.
+    #[test]
+    fn far_timestamps_clamp_to_the_sql_range() {
+        let first = NaiveDate::from_ymd_opt(1, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc();
+        let last = NaiveDate::from_ymd_opt(9999, 12, 31)
+            .unwrap()
+            .and_hms_micro_opt(23, 59, 59, 999_999)
+            .unwrap()
+            .and_utc();
+        let one_microsecond = chrono::TimeDelta::microseconds(1);
+        for (timestamp, clamped) in [
+            (DateTime::<Utc>::MIN_UTC, first),
+            (first - one_microsecond, first),
+            (first, first),
+            (last, last),
+            (last + one_microsecond, last),
+            (DateTime::<Utc>::MAX_UTC, last),
+        ] {
+            for (value, expected) in [
+                (
+                    VariantValue::TimestampMicros(timestamp),
+                    VariantValue::TimestampMicros(clamped),
+                ),
+                (
+                    VariantValue::TimestampNtzMicros(timestamp.naive_utc()),
+                    VariantValue::TimestampNtzMicros(clamped.naive_utc()),
+                ),
+            ] {
+                let variant = Variant::from(&value);
+                assert_eq!(
+                    VariantValue::try_from(&variant).unwrap(),
+                    expected,
+                    "{value:?}"
+                );
+                let flat = FlatVariant::from(&value);
+                assert_eq!(
+                    VariantValue::try_from(&flat).unwrap(),
+                    expected,
+                    "{value:?}"
+                );
+            }
+        }
     }
 
     /// A TIME finer than a microsecond converts the same way to both representations.

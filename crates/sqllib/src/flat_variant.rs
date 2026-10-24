@@ -65,6 +65,7 @@ use std::borrow::Cow;
 
 #[allow(deprecated)]
 use crate::variant::{NumberTokenValue, TokenValue, Variant};
+use crate::variant_binary::{legal_date, legal_timestamp, legal_timestamp_tz};
 use crate::{
     ByteArray, Date, LongInterval, ShortInterval, SqlString, Time, Timestamp, TimestampTz, Uuid,
 };
@@ -894,20 +895,16 @@ fn encode_parquet_variant(
         PqVariant::ShortString(x) => w.scalar(TAG_STRING, x.as_str().as_bytes()),
         PqVariant::Binary(x) => w.scalar(TAG_BINARY, x),
         PqVariant::Uuid(x) => w.scalar(TAG_UUID, &x.as_bytes()[..]),
-        PqVariant::Date(x) => w.scalar(TAG_DATE, &Date::from_date(x).days().to_le_bytes()),
+        PqVariant::Date(x) => w.scalar(TAG_DATE, &legal_date(x)?.days().to_le_bytes()),
         PqVariant::Time(x) => w.scalar(TAG_TIME, &Time::from_time(x).nanoseconds().to_le_bytes()),
-        PqVariant::TimestampNtzMicros(x) => {
-            w.scalar(TAG_TIMESTAMP, &x.and_utc().timestamp_micros().to_le_bytes())
-        }
-        PqVariant::TimestampNtzNanos(x) => {
-            w.scalar(TAG_TIMESTAMP, &x.and_utc().timestamp_micros().to_le_bytes())
-        }
-        PqVariant::TimestampMicros(x) => {
-            w.scalar(TAG_TIMESTAMP_TZ, &x.timestamp_micros().to_le_bytes())
-        }
-        PqVariant::TimestampNanos(x) => {
-            w.scalar(TAG_TIMESTAMP_TZ, &x.timestamp_micros().to_le_bytes())
-        }
+        PqVariant::TimestampNtzMicros(x) | PqVariant::TimestampNtzNanos(x) => w.scalar(
+            TAG_TIMESTAMP,
+            &legal_timestamp(x)?.microseconds().to_le_bytes(),
+        ),
+        PqVariant::TimestampMicros(x) | PqVariant::TimestampNanos(x) => w.scalar(
+            TAG_TIMESTAMP_TZ,
+            &legal_timestamp_tz(x)?.microseconds().to_le_bytes(),
+        ),
         PqVariant::List(list) => {
             let elements: Vec<_> = list
                 .iter_try()

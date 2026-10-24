@@ -2,7 +2,7 @@
 //! Intervals are differences between dates and/or times
 
 use crate::{
-    Date, SqlDecimal, finite_or_null,
+    Date, MICROS_PER_DAY, MICROS_PER_HOUR, MICROS_PER_MINUTE, MICROS_PER_SECOND, SqlDecimal,
     operators::{eq, gt, gte, lt, lte, neq},
     plus_Date_Date_LongInterval__, sign, some_existing_operator, some_function1, some_function2,
     some_operator, some_polymorphic_function1, some_polymorphic_function2,
@@ -14,6 +14,7 @@ use feldera_macros::{IsNone, OrdRepr};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
+use num_traits::cast::NumCast;
 use serde::{Deserialize, Serialize, de::Error as _, ser::Error as _};
 use size_of::SizeOf;
 use std::fmt;
@@ -197,6 +198,19 @@ pub fn to_bound_ShortInterval_Time_u64(value: &ShortInterval) -> u64 {
     (value.microseconds * 1_000) as u64
 }
 
+/// Panic for an INTERVAL multiplication `left * right` that overflows.
+#[cold]
+fn multiplication_failed(left: impl fmt::Display, right: impl fmt::Display) -> ! {
+    panic!("overflow in INTERVAL multiplication {left} * {right}")
+}
+
+/// Panic for a `kind` INTERVAL `value` that does not fit in the DECIMAL that
+/// `operation` uses.
+#[cold]
+fn decimal_conversion_failed(kind: &str, operation: &str, value: impl fmt::Display) -> ! {
+    panic!("overflow in {kind} interval {operation} while converting {value} to DECIMAL")
+}
+
 /// Multiply a `ShortInterval` by a numeric value, producing a `ShortInterval`.
 impl Mul<i64> for ShortInterval {
     type Output = Self;
@@ -204,7 +218,10 @@ impl Mul<i64> for ShortInterval {
     /// Multiply a short interval by an long integer
     fn mul(self, rhs: i64) -> Self {
         Self {
-            microseconds: self.microseconds * rhs,
+            microseconds: self
+                .microseconds
+                .checked_mul(rhs)
+                .unwrap_or_else(|| multiplication_failed(self, rhs)),
         }
     }
 }
@@ -214,9 +231,11 @@ impl Mul<F64> for ShortInterval {
     type Output = Self;
 
     fn mul(self, rhs: F64) -> Self {
-        Self {
-            microseconds: (F64::from(self.microseconds as f64) * rhs).into_inner() as i64,
-        }
+        let product = (F64::from(self.microseconds as f64) * rhs).into_inner();
+        // Truncates; None for NaN, infinities and values out of range
+        let microseconds = <i64 as NumCast>::from(product)
+            .unwrap_or_else(|| multiplication_failed(self, rhs.into_inner()));
+        Self { microseconds }
     }
 }
 
@@ -225,21 +244,44 @@ impl<const P: usize, const S: usize> Mul<SqlDecimal<P, S>> for ShortInterval {
     type Output = Self;
 
     fn mul(self, rhs: SqlDecimal<P, S>) -> Self {
-        let us = SqlDecimal::<38, 0>::try_from(self.microseconds).unwrap_or_else(|_| {
-            panic!(
-                "overflow in short interval multiplication while converting {} to DECIMAL",
-                self
-            )
-        });
+        let us = SqlDecimal::<38, 0>::try_from(self.microseconds)
+            .unwrap_or_else(|_| decimal_conversion_failed("short", "multiplication", self));
         let mul = us
             .checked_mul_generic::<P, S, 38, 0>(rhs)
-            .unwrap_or_else(|| panic!("overflow in INTERVAL multiplication {} * {}", self, rhs));
+            .unwrap_or_else(|| multiplication_failed(self, rhs));
         Self {
-            microseconds: mul.try_into().unwrap_or_else(|_| {
-                panic!("overflow in INTERVAL multiplication {} * {}", self, rhs)
-            }),
+            microseconds: mul
+                .try_into()
+                .unwrap_or_else(|_| multiplication_failed(self, rhs)),
         }
     }
+}
+
+/// Panic for an INTERVAL division `left / right` that has no result.
+#[cold]
+fn division_failed(left: impl fmt::Display, right: impl fmt::Display, by_zero: bool) -> ! {
+    if by_zero {
+        panic!("division by zero in INTERVAL division {left} / {right}")
+    }
+    panic!("overflow in INTERVAL division {left} / {right}")
+}
+
+/// Panic for an INTERVAL addition `left + right` that overflows.
+#[cold]
+fn addition_failed(left: impl fmt::Display, right: impl fmt::Display) -> ! {
+    panic!("overflow in INTERVAL addition {left} + {right}")
+}
+
+/// Panic for an INTERVAL subtraction `left - right` that overflows.
+#[cold]
+fn subtraction_failed(left: impl fmt::Display, right: impl fmt::Display) -> ! {
+    panic!("overflow in INTERVAL subtraction {left} - {right}")
+}
+
+/// Panic for an INTERVAL negation `-value` that overflows.
+#[cold]
+fn negation_failed(value: impl fmt::Display) -> ! {
+    panic!("overflow in INTERVAL negation -{value}")
 }
 
 /// Divide a `ShortInterval` by a numeric value, producing a `ShortInterval`.
@@ -247,20 +289,19 @@ impl Div<i64> for ShortInterval {
     type Output = Self;
 
     fn div(self, rhs: i64) -> Self {
-        Self {
-            microseconds: self.microseconds / rhs,
-        }
+        div_null_ShortInterval_i64(self, rhs)
+            .unwrap_or_else(|| division_failed(self, rhs, rhs == 0))
     }
 }
 
 impl fmt::Display for ShortInterval {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (sign, interval) = self.into_sign_and_magnitude();
-        let days = extract_day_ShortInterval(interval);
-        let hours = extract_hour_ShortInterval(interval);
-        let minutes = extract_minute_ShortInterval(interval);
-        let seconds = extract_second_ShortInterval(interval);
-        let micro = interval.microseconds % 1_000_000;
+        let (sign, magnitude) = self.into_sign_and_magnitude();
+        let days = magnitude / MICROS_PER_DAY;
+        let hours = (magnitude / MICROS_PER_HOUR) % 24;
+        let minutes = (magnitude / MICROS_PER_MINUTE) % 60;
+        let seconds = (magnitude / MICROS_PER_SECOND) % 60;
+        let micro = magnitude % MICROS_PER_SECOND;
         if micro == 0 {
             write!(
                 f,
@@ -281,15 +322,9 @@ impl fmt::Display for ShortInterval {
 impl Div<F64> for ShortInterval {
     type Output = Self;
     fn div(self, rhs: F64) -> Self {
-        let result = div_null_ShortInterval_d(self, rhs);
-        match result {
-            None => panic!(
-                "overflow while dividing INTERVAL {} / {}",
-                self,
-                rhs.into_inner()
-            ),
-            Some(interval) => interval,
-        }
+        let divisor = rhs.into_inner();
+        div_null_ShortInterval_d(self, rhs)
+            .unwrap_or_else(|| division_failed(self, divisor, divisor == 0.0))
     }
 }
 
@@ -298,19 +333,15 @@ impl<const P: usize, const S: usize> Div<SqlDecimal<P, S>> for ShortInterval {
     type Output = Self;
 
     fn div(self, rhs: SqlDecimal<P, S>) -> Self {
-        let us = SqlDecimal::<38, 0>::try_from(self.microseconds).unwrap_or_else(|_| {
-            panic!(
-                "overflow in short interval division while converting {} to DECIMAL",
-                self
-            )
-        });
+        let us = SqlDecimal::<38, 0>::try_from(self.microseconds)
+            .unwrap_or_else(|_| decimal_conversion_failed("short", "division", self));
         let div = us
             .checked_div_generic::<P, S, 38, 0>(rhs)
-            .unwrap_or_else(|| panic!("overflow in INTERVAL division {} / {}", self, rhs));
+            .unwrap_or_else(|| division_failed(self, rhs, rhs == SqlDecimal::<P, S>::ZERO));
         Self {
             microseconds: div
                 .try_into()
-                .unwrap_or_else(|_| panic!("overflow in INTERVAL division {} / {}", self, rhs)),
+                .unwrap_or_else(|_| division_failed(self, rhs, false)),
         }
     }
 }
@@ -324,7 +355,7 @@ impl Add<ShortInterval> for ShortInterval {
             microseconds: self
                 .microseconds
                 .checked_add(rhs.microseconds)
-                .unwrap_or_else(|| panic!("overflow in INTERVAL addition {} + {}", self, rhs)),
+                .unwrap_or_else(|| addition_failed(self, rhs)),
         }
     }
 }
@@ -338,7 +369,7 @@ impl Sub<ShortInterval> for ShortInterval {
             microseconds: self
                 .microseconds
                 .checked_sub(rhs.microseconds)
-                .unwrap_or_else(|| panic!("overflow in INTERVAL subtraction {} - {}", self, rhs)),
+                .unwrap_or_else(|| subtraction_failed(self, rhs)),
         }
     }
 }
@@ -352,7 +383,7 @@ impl Neg for ShortInterval {
             microseconds: self
                 .microseconds
                 .checked_neg()
-                .unwrap_or_else(|| panic!("overflow in INTERVAL negation -{}", self)),
+                .unwrap_or_else(|| negation_failed(self)),
         }
     }
 }
@@ -468,11 +499,8 @@ some_polymorphic_function2!(div, ShortInterval, ShortInterval, d, F64, ShortInte
 #[doc(hidden)]
 pub fn div_null_ShortInterval_d(left: ShortInterval, right: F64) -> Option<ShortInterval> {
     let div = (left.microseconds() as f64) / right.into_inner();
-    let fin: f64 = finite_or_null(div)?;
-    if fin < i64::MIN as f64 || fin > i64::MAX as f64 {
-        return None;
-    }
-    Some(ShortInterval::from_microseconds(fin as i64))
+    // Truncates; None for NaN, infinities and values out of range
+    <i64 as NumCast>::from(div).map(ShortInterval::from_microseconds)
 }
 
 some_polymorphic_null_function2!(
@@ -616,7 +644,10 @@ impl Mul<i32> for LongInterval {
 
     fn mul(self, rhs: i32) -> Self {
         Self {
-            months: self.months * rhs,
+            months: self
+                .months
+                .checked_mul(rhs)
+                .unwrap_or_else(|| multiplication_failed(self, rhs)),
         }
     }
 }
@@ -626,9 +657,11 @@ impl Mul<F64> for LongInterval {
     type Output = Self;
 
     fn mul(self, rhs: F64) -> Self {
-        Self {
-            months: (F64::from(self.months as f64) * rhs).into_inner() as i32,
-        }
+        let product = (F64::from(self.months as f64) * rhs).into_inner();
+        // Truncates; None for NaN, infinities and values out of range
+        let months = <i32 as NumCast>::from(product)
+            .unwrap_or_else(|| multiplication_failed(self, rhs.into_inner()));
+        Self { months }
     }
 }
 
@@ -637,19 +670,15 @@ impl<const P: usize, const S: usize> Mul<SqlDecimal<P, S>> for LongInterval {
     type Output = Self;
 
     fn mul(self, rhs: SqlDecimal<P, S>) -> Self {
-        let months = SqlDecimal::<10, 0>::try_from(self.months).unwrap_or_else(|_| {
-            panic!(
-                "overflow in long interval multiplication while converting {} to DECIMAL",
-                self
-            )
-        });
+        let months = SqlDecimal::<10, 0>::try_from(self.months)
+            .unwrap_or_else(|_| decimal_conversion_failed("long", "multiplication", self));
         let mul = months
             .checked_mul_generic::<P, S, 10, 0>(rhs)
-            .unwrap_or_else(|| panic!("overflow in INTERVAL multiplication {} * {}", self, rhs));
+            .unwrap_or_else(|| multiplication_failed(self, rhs));
         Self {
-            months: mul.try_into().unwrap_or_else(|_| {
-                panic!("overflow in INTERVAL multiplication {} * {}", self, rhs)
-            }),
+            months: mul
+                .try_into()
+                .unwrap_or_else(|_| multiplication_failed(self, rhs)),
         }
     }
 }
@@ -659,9 +688,7 @@ impl Div<i32> for LongInterval {
     type Output = Self;
 
     fn div(self, rhs: i32) -> Self {
-        Self {
-            months: self.months / rhs,
-        }
+        div_null_LongInterval_i32(self, rhs).unwrap_or_else(|| division_failed(self, rhs, rhs == 0))
     }
 }
 
@@ -670,15 +697,9 @@ impl Div<F64> for LongInterval {
     type Output = Self;
 
     fn div(self, rhs: F64) -> Self {
-        let result = div_null_LongInterval_d(self, rhs);
-        match result {
-            None => panic!(
-                "overflow while dividing INTERVAL {} / {}",
-                self,
-                rhs.into_inner()
-            ),
-            Some(interval) => interval,
-        }
+        let divisor = rhs.into_inner();
+        div_null_LongInterval_d(self, rhs)
+            .unwrap_or_else(|| division_failed(self, divisor, divisor == 0.0))
     }
 }
 
@@ -687,19 +708,15 @@ impl<const P: usize, const S: usize> Div<SqlDecimal<P, S>> for LongInterval {
     type Output = Self;
 
     fn div(self, rhs: SqlDecimal<P, S>) -> Self {
-        let months = SqlDecimal::<10, 0>::try_from(self.months).unwrap_or_else(|_| {
-            panic!(
-                "overflow in short interval division while converting {} to DECIMAL",
-                self
-            )
-        });
+        let months = SqlDecimal::<10, 0>::try_from(self.months)
+            .unwrap_or_else(|_| decimal_conversion_failed("long", "division", self));
         let div = months
             .checked_div_generic::<P, S, 10, 0>(rhs)
-            .unwrap_or_else(|| panic!("overflow in INTERVAL division {} / {}", self, rhs));
+            .unwrap_or_else(|| division_failed(self, rhs, rhs == SqlDecimal::<P, S>::ZERO));
         Self {
             months: div
                 .try_into()
-                .unwrap_or_else(|_| panic!("overflow in INTERVAL division {} / {}", self, rhs)),
+                .unwrap_or_else(|_| division_failed(self, rhs, false)),
         }
     }
 }
@@ -747,7 +764,7 @@ impl Add<LongInterval> for LongInterval {
             months: self
                 .months
                 .checked_add(rhs.months)
-                .unwrap_or_else(|| panic!("overflow in INTERVAL addition {} + {}", self, rhs)),
+                .unwrap_or_else(|| addition_failed(self, rhs)),
         }
     }
 }
@@ -761,7 +778,7 @@ impl Sub<LongInterval> for LongInterval {
             months: self
                 .months
                 .checked_sub(rhs.months)
-                .unwrap_or_else(|| panic!("overflow in INTERVAL subtraction {} - {}", self, rhs)),
+                .unwrap_or_else(|| subtraction_failed(self, rhs)),
         }
     }
 }
@@ -775,7 +792,7 @@ impl Neg for LongInterval {
             months: self
                 .months
                 .checked_neg()
-                .unwrap_or_else(|| panic!("overflow in INTERVAL negation -{}", self)),
+                .unwrap_or_else(|| negation_failed(self)),
         }
     }
 }
@@ -844,11 +861,8 @@ some_polymorphic_function2!(div, LongInterval, LongInterval, d, F64, LongInterva
 #[doc(hidden)]
 pub fn div_null_LongInterval_d(left: LongInterval, right: F64) -> Option<LongInterval> {
     let div: f64 = (left.months() as f64) / right.into_inner();
-    let fin: f64 = finite_or_null(div)?;
-    if fin < i32::MIN as f64 || fin > i32::MAX as f64 {
-        return None;
-    }
-    Some(LongInterval::from_months(fin as i32))
+    // Truncates; None for NaN, infinities and values out of range
+    <i32 as NumCast>::from(div).map(LongInterval::from_months)
 }
 
 some_polymorphic_null_function2!(div_null, LongInterval, LongInterval, d, F64, LongInterval);
@@ -1079,4 +1093,137 @@ some_polymorphic_function1!(extract_hour, ShortInterval, ShortInterval, i64);
 crate::hash_repr::hash_repr_struct! {
     ShortInterval => ArchivedShortInterval { microseconds: i64 },
     LongInterval => ArchivedLongInterval { months: i32 },
+}
+
+#[cfg(test)]
+mod test {
+    use super::{LongInterval, ShortInterval, div_null_LongInterval_d, div_null_ShortInterval_d};
+    use crate::SqlDecimal;
+    use dbsp::algebra::F64;
+
+    #[test]
+    #[should_panic(expected = "overflow in INTERVAL multiplication +106751991 04:00:54.775807 * 2")]
+    fn short_interval_times_integer_overflow() {
+        let _ = ShortInterval::from_microseconds(i64::MAX) * 2;
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow in INTERVAL multiplication +106751991 04:00:54.775807 * 2")]
+    fn short_interval_times_double_overflow() {
+        let _ = ShortInterval::from_microseconds(i64::MAX) * F64::new(2.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow in INTERVAL multiplication +0 00:00:01 * NaN")]
+    fn short_interval_times_nan() {
+        let _ = ShortInterval::from_microseconds(1_000_000) * F64::new(f64::NAN);
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow in INTERVAL multiplication +178956970-07 * 2")]
+    fn long_interval_times_integer_overflow() {
+        let _ = LongInterval::from_months(i32::MAX) * 2;
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow in INTERVAL multiplication +178956970-07 * 2")]
+    fn long_interval_times_double_overflow() {
+        let _ = LongInterval::from_months(i32::MAX) * F64::new(2.0);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "overflow in INTERVAL addition +106751991 04:00:54.775807 + +0 00:00:00.000001"
+    )]
+    fn short_interval_addition_overflow() {
+        let _ = ShortInterval::from_microseconds(i64::MAX) + ShortInterval::from_microseconds(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow in INTERVAL subtraction -178956970-08 - +0-01")]
+    fn long_interval_subtraction_overflow() {
+        let _ = LongInterval::from_months(i32::MIN) - LongInterval::from_months(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow in INTERVAL negation --106751991 04:00:54.775808")]
+    fn most_negative_short_interval_negation() {
+        let _ = -ShortInterval::from_microseconds(i64::MIN);
+    }
+
+    #[test]
+    #[should_panic(expected = "division by zero in INTERVAL division +0 00:00:01 / 0")]
+    fn short_interval_divided_by_zero() {
+        let _ = ShortInterval::from_microseconds(1_000_000) / 0;
+    }
+
+    #[test]
+    #[should_panic(expected = "division by zero in INTERVAL division +0 00:00:01 / 0")]
+    fn short_interval_divided_by_double_zero() {
+        let _ = ShortInterval::from_microseconds(1_000_000) / F64::new(0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow in INTERVAL division -106751991 04:00:54.775808 / -1")]
+    fn most_negative_short_interval_divided_by_minus_one() {
+        let _ = ShortInterval::from_microseconds(i64::MIN) / -1;
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow in INTERVAL division -106751991 04:00:54.775808 / -1")]
+    fn most_negative_short_interval_divided_by_double_minus_one() {
+        let _ = ShortInterval::from_microseconds(i64::MIN) / F64::new(-1.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "division by zero in INTERVAL division +1-00 / 0")]
+    fn long_interval_divided_by_zero() {
+        let _ = LongInterval::from_months(12) / 0;
+    }
+
+    #[test]
+    #[should_panic(expected = "division by zero in INTERVAL division +1-00 / 0")]
+    fn long_interval_divided_by_decimal_zero() {
+        let _ = LongInterval::from_months(12) / SqlDecimal::<10, 0>::ZERO;
+    }
+
+    #[test]
+    fn interval_times_double_at_the_limits() {
+        let min = ShortInterval::from_microseconds(i64::MIN);
+        assert_eq!(min * F64::new(1.0), min);
+        let max = LongInterval::from_months(i32::MAX);
+        assert_eq!(max * F64::new(1.0), max);
+        // The product truncates towards zero
+        assert_eq!(
+            LongInterval::from_months(-3) * F64::new(0.5),
+            LongInterval::from_months(-1)
+        );
+    }
+
+    #[test]
+    fn interval_divided_by_double_at_the_limits() {
+        // 2^63 microseconds does not fit
+        let min = ShortInterval::from_microseconds(i64::MIN);
+        assert_eq!(div_null_ShortInterval_d(min, F64::new(-1.0)), None);
+        assert_eq!(div_null_ShortInterval_d(min, F64::new(1.0)), Some(min));
+        // The quotient truncates towards zero
+        let max = LongInterval::from_months(i32::MAX);
+        assert_eq!(
+            div_null_LongInterval_d(max, F64::new(0.9999999999)),
+            Some(max)
+        );
+        assert_eq!(div_null_LongInterval_d(max, F64::new(0.5)), None);
+    }
+
+    #[test]
+    fn display_extreme_short_intervals() {
+        assert_eq!(
+            ShortInterval::from_microseconds(i64::MIN).to_string(),
+            "-106751991 04:00:54.775808"
+        );
+        assert_eq!(
+            ShortInterval::from_microseconds(i64::MAX).to_string(),
+            "+106751991 04:00:54.775807"
+        );
+    }
 }

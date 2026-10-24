@@ -50,6 +50,12 @@ Source edition can be found on github.
   for example, casting `-x` to a string gives `0.0` when `x` is zero,
   and `1e0 / -0e0` is `Infinity`.
 
+- Incompatible change (input formats): an input value of type `DATE`,
+  `TIME`, `TIMESTAMP` or `TIMESTAMP WITH TIME ZONE` outside the legal range
+  is now a parse error.  Before this change, such a
+  value was accepted: for example, a timestamp of `253402300800000000`
+  microseconds in an Avro or Parquet input became `10000-01-01 00:00:00`.
+
 ## v0.369.0
 
 - Python SDK: the new `reloadable_tables` argument of `Pipeline.start()`,
