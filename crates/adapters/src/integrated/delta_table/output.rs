@@ -26,7 +26,9 @@ use delta_kernel::table_features::ColumnMappingMode;
 use delta_kernel::table_properties::DataSkippingNumIndexedCols;
 use deltalake::DeltaTable;
 use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, TableReference};
-use deltalake::kernel::{Action, Add, ArrayType, DataType, MapType, StructField, StructType};
+use deltalake::kernel::{
+    Action, Add, ArrayType, DataType, MapType, StructField, StructType, Transaction,
+};
 use deltalake::logstore::ObjectStoreRef;
 
 use super::bounded_upload::bound_uploads;
@@ -518,6 +520,13 @@ fn build_merge_writer(inner: &DeltaTableWriterInner, table: &DeltaTable) -> AnyR
 struct WriterTask {
     inner: Arc<DeltaTableWriterInner>,
     delta_table: DeltaTable,
+    /// Application id recorded in a `txn` (SetTransaction) action of every
+    /// commit this writer makes.  Unique per writer instance.
+    app_id: String,
+    /// Application transaction version of the next batch to commit.  Every
+    /// attempt of one batch carries the same version, so a retry can tell
+    /// from the table's latest snapshot that an earlier attempt landed.
+    next_txn_version: i64,
 }
 
 /// Retry the future `op` with exponential backoff of up to 10 seconds until it
@@ -774,10 +783,39 @@ impl WriterTask {
         // what actually landed in the table metadata and warn on any discrepancy.
         warn_about_table_property_discrepancies(&inner, &delta_table);
 
-        Ok(Self { inner, delta_table })
+        let app_id = format!(
+            "feldera-delta-output-{}-{}",
+            inner.endpoint_name,
+            uuid::Uuid::new_v4()
+        );
+
+        Ok(Self {
+            inner,
+            delta_table,
+            app_id,
+            next_txn_version: 0,
+        })
     }
 
-    async fn commit(&mut self, actions: &[Add]) -> AnyResult<()> {
+    /// The application transaction version this writer last committed, as
+    /// recorded in the table's current snapshot.
+    async fn committed_txn_version(&self) -> AnyResult<Option<i64>> {
+        let Some(state) = self.delta_table.state.as_ref() else {
+            return Ok(None);
+        };
+        let log_store = self.delta_table.log_store();
+        state
+            .transaction_version(log_store.as_ref(), &self.app_id)
+            .await
+            .map_err(|e| {
+                anyhow!(
+                    "reading application transaction version (current version: {}): {e:?}",
+                    self.current_version()
+                )
+            })
+    }
+
+    async fn commit(&mut self, actions: &[Add], txn_version: i64) -> AnyResult<()> {
         // The snapshot version for the next commit is computed as the current version + 1.
         // We need to update the current version manually, since it doesn't happen automatically.
         self.delta_table
@@ -790,45 +828,94 @@ impl WriterTask {
                 ))
             })?;
 
+        // An earlier attempt of this batch may have landed even though it
+        // reported an error: the log PUT succeeded and then the post-commit
+        // hook (checkpoint) failed, or the PUT's response was lost.  The
+        // batch's `txn` action tells: committing it again would add the same
+        // files twice, with `dataChange = true`.
+        if let Some(committed) = self.committed_txn_version().await?
+            && committed >= txn_version
+        {
+            info!(
+                "delta_table {}: transaction {txn_version} already committed (table version {}), not committing it again",
+                &self.inner.endpoint_name,
+                self.current_version()
+            );
+            return Ok(());
+        }
+
         // `CommitBuilder::default()` leaves `post_commit_hook` unset, so delta-rs skips the
         // post-commit hook entirely and never writes `_last_checkpoint` / `*.checkpoint.parquet`,
         // regardless of `delta.checkpointInterval`. Use default commit properties so checkpoint
         // creation runs when `(version + 1) % checkpoint_interval == 0`.
-        CommitBuilder::from(CommitProperties::default())
-            .with_actions(
-                actions
-                    .iter()
-                    .map(|add| Action::Add(add.clone()))
-                    .collect::<Vec<_>>(),
-            )
-            .build(
-                self.delta_table
-                    .state
-                    .as_ref()
-                    .map(|state| state as &dyn TableReference),
-                self.delta_table.log_store(),
-                DeltaOperation::Write {
-                    mode: SaveMode::Append,
-                    partition_by: None,
-                    predicate: None,
-                },
-            )
-            .await
-            .map_err(|e| {
-                anyhow!(format!(
-                    "error committing changes to the Delta table (current version: {}): {e:?}",
-                    self.current_version()
-                ))
-            })?;
+        let prepared = CommitBuilder::from(
+            CommitProperties::default()
+                // `lastUpdated` lets `delta.setTransactionRetentionDuration` expire
+                // the entries of old writers; without it they are kept forever.
+                .with_application_transaction(Transaction::new_with_last_update(
+                    &self.app_id,
+                    txn_version,
+                    Some(Utc::now().timestamp_millis()),
+                )),
+        )
+        .with_actions(
+            actions
+                .iter()
+                .map(|add| Action::Add(add.clone()))
+                .collect::<Vec<_>>(),
+        )
+        .build(
+            self.delta_table
+                .state
+                .as_ref()
+                .map(|state| state as &dyn TableReference),
+            self.delta_table.log_store(),
+            DeltaOperation::Write {
+                mode: SaveMode::Append,
+                partition_by: None,
+                predicate: None,
+            },
+        )
+        .into_prepared_commit_future()
+        .await
+        .map_err(|e| {
+            anyhow!(format!(
+                "error preparing Delta table commit (current version: {}): {e:?}",
+                self.current_version()
+            ))
+        })?;
+
+        let post_commit = prepared.await.map_err(|e| {
+            anyhow!(format!(
+                "error committing changes to the Delta table (current version: {}): {e:?}",
+                self.current_version()
+            ))
+        })?;
+
+        // From here on the commit is in the log.  A failure of the post-commit
+        // hook (checkpoint, log cleanup) must not be reported as a failed
+        // commit, or the retry would commit the same files again.  The next
+        // commit's `update_incremental` catches up with the table.
+        let version = post_commit.version;
+        if let Err(e) = post_commit.await {
+            warn!(
+                "delta_table {}: committed table version {version}, but its post-commit hook failed (checkpoint not written): {e:?}",
+                &self.inner.endpoint_name
+            );
+        }
 
         Ok(())
     }
 
     async fn commit_with_retry(&mut self, actions: &[Add]) -> AnyResult<()> {
+        let txn_version = self.next_txn_version;
+        // Advance even if every attempt fails: one of them may still have
+        // landed, and the next batch must not be mistaken for this one.
+        self.next_txn_version += 1;
         retry!(
             self,
             "committing Delta table transaction",
-            self.commit(actions)
+            self.commit(actions, txn_version)
         )
     }
 }
