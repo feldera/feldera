@@ -378,10 +378,9 @@ public class SqlToRelCompiler implements IWritesLogs {
                 DefaultRelMetadataProvider.INSTANCE));
         this.cluster.setMetadataProvider(metadataProvider);
         this.converterConfig = SqlToRelConverter.config()
-                // Calcite recommends not using withExpand, but there are no
-                // rules to decorrelate some queries that withExpand will produce,
-                // e.g., AggScottTests.testAggregates4
-                .withExpand(true)
+                // Sub-queries stay as RexSubQuery nodes; the optimizer step
+                // "Remove sub-queries" converts them to Correlate/Join nodes.
+                .withExpand(false)
                 .withTrimUnusedFields(true)
                 .withRelBuilderConfigTransform(t -> t.withSimplify(false))
                 .withHintStrategyTable(hints)
@@ -2111,9 +2110,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         SqlNode validated = DBSPCompiler.timed("Calcite.validate", () -> this.getValidator().validate(node));
         validated.accept(new WarnFloatingPointEquality(
                 this.getValidator(), this.errorReporter, this.sourcePositionRemap));
-        RelRoot root = DBSPCompiler.timed("Calcite.toRel", () -> converter.convertQuery(validated, false, true));
-        root.rel.accept(new RejectUnsupportedPlans(this.errorReporter));
-        return root;
+        return DBSPCompiler.timed("Calcite.toRel", () -> converter.convertQuery(validated, false, true));
     }
 
     void validateViewProperty(ProgramIdentifier view, SqlCreateView.ViewKind viewKind,

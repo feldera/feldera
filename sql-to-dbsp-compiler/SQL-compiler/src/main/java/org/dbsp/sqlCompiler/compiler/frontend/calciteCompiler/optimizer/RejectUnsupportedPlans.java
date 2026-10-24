@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer;
 
 import org.apache.calcite.plan.RelOptPredicateList;
 import org.apache.calcite.plan.Strong;
