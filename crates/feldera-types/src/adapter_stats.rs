@@ -476,15 +476,18 @@ pub struct ExternalOutputEndpointMetrics {
     /// the batch, or discarding it while silent bootstrapping suppresses the
     /// endpoint's output.
     ///
-    /// In a multihost pipeline, this count reflects only the input records
-    /// processed on the same host as the output endpoint, which is not usually
-    /// meaningful.
+    /// In a multihost pipeline, `N` counts the input records that all of the
+    /// hosts received, not only the endpoint's own host.  (Each host counts
+    /// only its own input, and the coordinator adds up the hosts' counts as of
+    /// `total_processed_steps`.)  If a host runs an older version that does
+    /// not report its count to the coordinator, `N` counts only the input
+    /// records that the endpoint's own host received.
     pub total_processed_input_records: u64,
     /// The number of steps whose input records have been processed by the
     /// endpoint.
     ///
-    /// This is meaningful in a multihost pipeline because steps are
-    /// synchronized across all of the hosts.
+    /// In a multihost pipeline, all of the hosts run the same steps together,
+    /// so a step number refers to the same step on every host.
     ///
     /// # Interpretation
     ///
@@ -623,6 +626,12 @@ pub struct ExternalGlobalControllerMetrics {
     /// Total bytes of input records processed by the DBSP engine.
     pub total_processed_bytes: u64,
     /// Total number of input records processed to completion.
+    ///
+    /// In a multihost pipeline, this counts the input records that all of the
+    /// hosts received.  If a host runs an older version that does not report
+    /// its count to the coordinator, this is instead the sum of the counts
+    /// that each host reports for its own input, which can include input whose
+    /// output an output connector on a different host has not yet processed.
     pub total_completed_records: u64,
     /// If the pipeline is stalled because one or more output connectors' output
     /// buffers are full, this is the number of milliseconds that the current
