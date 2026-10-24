@@ -104,14 +104,18 @@ impl From<TimestampTz> for Timestamp {
 
 impl Debug for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let datetime = DateTime::from_timestamp_micros(self.microseconds).ok_or(fmt::Error)?;
-        f.write_str(&datetime.format("%F %T%.f").to_string())
+        match DateTime::from_timestamp_micros(self.microseconds) {
+            Some(datetime) => f.write_str(&datetime.format("%F %T%.f").to_string()),
+            None => write!(f, "timestamp value '{}' out of range", self.microseconds),
+        }
     }
 }
 
 impl fmt::Display for Timestamp {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let dt = self.to_dateTime();
+        let Some(dt) = DateTime::from_timestamp_micros(self.microseconds) else {
+            return Debug::fmt(self, f);
+        };
         let month = dt.month();
         let day = dt.day();
         let year = dt.year();
@@ -287,14 +291,14 @@ impl Timestamp {
     pub fn to_dateTime(&self) -> DateTime<Utc> {
         Utc.timestamp_micros(self.microseconds)
             .single()
-            .unwrap_or_else(|| panic!("Could not convert timestamp {:?} to DateTime", self))
+            .unwrap_or_else(|| panic!("Could not convert {:?} to DateTime", self))
     }
 
     /// Convert a [Timestamp] to a chrono [NaiveDateTime]
     pub fn to_naiveDateTime(&self) -> NaiveDateTime {
         Utc.timestamp_micros(self.microseconds)
             .single()
-            .unwrap_or_else(|| panic!("Could not convert timestamp {:?} to DateTime", self))
+            .unwrap_or_else(|| panic!("Could not convert {:?} to NaiveDateTime", self))
             .naive_utc()
     }
 
@@ -433,18 +437,25 @@ impl FromInteger<i64> for TimestampTz {
 
 impl Debug for TimestampTz {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let datetime = match Utc.timestamp_micros(self.microseconds) {
-            LocalResult::Single(v) => v,
-            LocalResult::None | LocalResult::Ambiguous(_, _) => Err(fmt::Error)?,
-        };
-        f.write_str(&datetime.format("%F %T%.f%:z").to_string())
+        match Utc.timestamp_micros(self.microseconds) {
+            LocalResult::Single(datetime) => {
+                f.write_str(&datetime.format("%F %T%.f%:z").to_string())
+            }
+            LocalResult::None | LocalResult::Ambiguous(_, _) => write!(
+                f,
+                "timestamp with time zone value '{}' out of range",
+                self.microseconds
+            ),
+        }
     }
 }
 
 impl fmt::Display for TimestampTz {
     // The format is chosen so that CAST(CAST(ts AS VARCHAR) AS TIMESTAMP WITH TIME ZONE) = ts
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let dt = self.to_dateTime();
+        let Some(dt) = DateTime::from_timestamp_micros(self.microseconds) else {
+            return Debug::fmt(self, f);
+        };
         let month = dt.month();
         let day = dt.day();
         let year = dt.year();
@@ -477,18 +488,21 @@ impl SerializeWithContext<SqlSerdeConfig> for TimestampTz {
     where
         S: Serializer,
     {
+        let datetime = || {
+            DateTime::from_timestamp_micros(self.microseconds).ok_or_else(|| {
+                S::Error::custom(format!(
+                    "timestamp with time zone value '{}' out of range",
+                    self.microseconds
+                ))
+            })
+        };
         match context.timestamp_tz_format {
             TimestampFormat::Default => {
-                let datetime = self.to_dateTime();
-                serializer.serialize_str(&datetime.format("%F %T%.f%:z").to_string())
+                serializer.serialize_str(&datetime()?.format("%F %T%.f%:z").to_string())
             }
-            TimestampFormat::Rfc3339 => {
-                let datetime = self.to_dateTime();
-                serializer.serialize_str(&datetime.to_rfc3339())
-            }
+            TimestampFormat::Rfc3339 => serializer.serialize_str(&datetime()?.to_rfc3339()),
             TimestampFormat::String(format_string) => {
-                let datetime = self.to_dateTime();
-                serializer.serialize_str(&datetime.format(format_string).to_string())
+                serializer.serialize_str(&datetime()?.format(format_string).to_string())
             }
             TimestampFormat::MillisSinceEpoch => serializer.serialize_i64(self.milliseconds()),
             TimestampFormat::MicrosSinceEpoch => serializer.serialize_i64(self.microseconds),
@@ -595,7 +609,7 @@ impl TimestampTz {
     pub fn to_dateTime(&self) -> DateTime<Utc> {
         Utc.timestamp_micros(self.microseconds)
             .single()
-            .unwrap_or_else(|| panic!("Could not convert timestamp {:?} to DateTime", self))
+            .unwrap_or_else(|| panic!("Could not convert {:?} to DateTime", self))
     }
 
     /// Create a [TimestampTz] from a chrono [DateTime] in the [Utc]
@@ -616,12 +630,7 @@ impl TimestampTz {
     pub fn to_naiveDateTime(&self) -> NaiveDateTime {
         Utc.timestamp_micros(self.microseconds)
             .single()
-            .unwrap_or_else(|| {
-                panic!(
-                    "Could not convert timestamp with time zone {:?} to DateTime",
-                    self
-                )
-            })
+            .unwrap_or_else(|| panic!("Could not convert {:?} to NaiveDateTime", self))
             .naive_utc()
     }
 
@@ -2399,7 +2408,9 @@ impl fmt::Debug for Date {
 
 impl fmt::Display for Date {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let dt = self.to_date();
+        let Some(dt) = NaiveDate::from_epoch_days(self.days) else {
+            return Debug::fmt(self, f);
+        };
         let month = dt.month();
         let day = dt.day();
         let year = dt.year();
@@ -3446,6 +3457,9 @@ pub struct Time {
 
 impl fmt::Display for Time {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if *self >= Time::ONE_DAY {
+            return write!(f, "time value '{}' out of range", self.nanoseconds);
+        }
         let dt = self.to_time();
         let hr = dt.hour();
         let min = dt.minute();
@@ -3516,11 +3530,15 @@ impl Time {
 
     /// Convert a [Time] to a chrono [NaiveTime].
     pub fn to_time(&self) -> NaiveTime {
-        NaiveTime::from_num_seconds_from_midnight_opt(
-            (self.nanoseconds / BILLION) as u32,
-            (self.nanoseconds % BILLION) as u32,
-        )
-        .unwrap()
+        u32::try_from(self.nanoseconds / BILLION)
+            .ok()
+            .and_then(|seconds| {
+                NaiveTime::from_num_seconds_from_midnight_opt(
+                    seconds,
+                    (self.nanoseconds % BILLION) as u32,
+                )
+            })
+            .unwrap_or_else(|| panic!("Could not convert {self} to NaiveTime"))
     }
 
     /// Time that represents the duration of a day
@@ -3568,6 +3586,12 @@ impl SerializeWithContext<SqlSerdeConfig> for Time {
     {
         match context.time_format {
             TimeFormat::String(format_string) => {
+                if *self >= Self::ONE_DAY {
+                    return Err(S::Error::custom(format!(
+                        "time value '{}' out of range",
+                        self.nanoseconds
+                    )));
+                }
                 let time = self.to_time();
                 serializer.serialize_str(&time.format(format_string).to_string())
             }
@@ -4355,6 +4379,72 @@ mod test {
     #[should_panic(expected = "Rounding timestamp '9999-12-31 23:59:59.500000' to a second")]
     fn timestamp_ceil_out_of_range() {
         super::ceil_second_Timestamp(timestamp("9999-12-31 23:59:59.5"));
+    }
+
+    #[test]
+    fn format_beyond_chrono_range() {
+        let ts = Timestamp::from_microseconds(i64::MAX);
+        let ts_text = "timestamp value '9223372036854775807' out of range";
+        assert_eq!(format!("{ts:?}"), ts_text);
+        assert_eq!(ts.to_string(), ts_text);
+        let tstz = TimestampTz::from_microseconds(i64::MIN);
+        let tstz_text = "timestamp with time zone value '-9223372036854775808' out of range";
+        assert_eq!(format!("{tstz:?}"), tstz_text);
+        assert_eq!(tstz.to_string(), tstz_text);
+        let date = Date::from_days(i32::MAX);
+        let date_text = "date value '2147483647' out of range";
+        assert_eq!(format!("{date:?}"), date_text);
+        assert_eq!(date.to_string(), date_text);
+        assert_eq!(
+            Time::ONE_DAY.to_string(),
+            "time value '86400000000000' out of range"
+        );
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Could not convert timestamp value '9223372036854775807' out of range to DateTime"
+    )]
+    fn to_dateTime_beyond_chrono_range() {
+        Timestamp::from_microseconds(i64::MAX).to_dateTime();
+    }
+
+    /// The error from serializing `value` with the default configuration.
+    fn serialize_error<T: SerializeWithContext<SqlSerdeConfig>>(value: T) -> String {
+        let mut data = Vec::new();
+        value
+            .serialize_with_context(&mut serde_json::Serializer::new(&mut data), &DEFAULT_CONFIG)
+            .unwrap_err()
+            .to_string()
+    }
+
+    #[test]
+    fn serialize_beyond_range() {
+        assert_eq!(
+            serialize_error(Timestamp::from_microseconds(i64::MAX)),
+            "timestamp value '9223372036854775807' out of range"
+        );
+        assert_eq!(
+            serialize_error(TimestampTz::from_microseconds(i64::MAX)),
+            "timestamp with time zone value '9223372036854775807' out of range"
+        );
+        assert_eq!(
+            serialize_error(Date::from_days(i32::MAX)),
+            "date value '2147483647' out of range"
+        );
+        assert_eq!(
+            serialize_error(Time::ONE_DAY),
+            "time value '86400000000000' out of range"
+        );
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Could not convert time value '4294967301000000000' out of range to NaiveTime"
+    )]
+    fn to_time_beyond_u32_seconds() {
+        // 2^32 + 5 seconds
+        Time::from_nanoseconds(4_294_967_301_000_000_000).to_time();
     }
 
     #[test]
