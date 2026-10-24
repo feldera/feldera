@@ -12,6 +12,8 @@ use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand, Integrated
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use arrow::array::{Array, ArrayData, ArrayRef, AsArray, BooleanArray, make_array};
+use arrow::compute::kernels::cmp::eq;
+use arrow::compute::{filter_record_batch, is_null, not, prep_null_mask_filter};
 use arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, FieldRef, Schema as ArrowSchema, SchemaRef,
 };
@@ -39,7 +41,7 @@ use delta_kernel::table_features::ColumnMappingMode;
 use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
 use deltalake::datafusion::logical_expr::{ExprSchemable, SortExpr};
-use deltalake::datafusion::prelude::{Expr, SessionConfig, SessionContext, ident, lit};
+use deltalake::datafusion::prelude::{Expr, SessionConfig, SessionContext, cast, ident, lit};
 use deltalake::datafusion::sql::sqlparser::dialect::GenericDialect;
 use deltalake::datafusion::sql::sqlparser::parser::Parser;
 use deltalake::datafusion::sql::sqlparser::tokenizer::Token;
@@ -2382,12 +2384,25 @@ impl DeltaTableInputEndpointInner {
             }
         );
 
-        let bounds = execute_query_collect(&self.datafusion, &bounds_query).await?;
-
         info!(
-            "delta_table {}: querying the table for min and max timestamp values",
+            "delta_table {}: finding the min and max timestamp values",
             &self.endpoint_name,
         );
+
+        // The log only saves a scan, so an error reading it falls back to the query.
+        let from_log = self
+            .timestamp_bounds_from_log(table, timestamp_field)
+            .unwrap_or_else(|e| {
+                warn!(
+                    "delta_table {}: cannot read the timestamp bounds from the Delta log, so querying the table instead: {e}",
+                    &self.endpoint_name
+                );
+                None
+            });
+        let bounds = match from_log {
+            Some(bounds) => bounds.collect().await?,
+            None => execute_query_collect(&self.datafusion, &bounds_query).await?,
+        };
 
         if bounds.len() != 1 || bounds[0].num_rows() != 1 {
             info!(
@@ -2508,6 +2523,111 @@ impl DeltaTableInputEndpointInner {
         }
 
         Ok(total_records)
+    }
+
+    /// The min and max of the timestamp column, as `start_ts` and `end_ts`, from the Delta log's
+    /// per-file statistics, so that no data file is read. `None` when a file has no statistics for
+    /// the column, when the table is empty, or when a filter is set.
+    fn timestamp_bounds_from_log(
+        &self,
+        table: &DeltaTable,
+        timestamp_field: &Field,
+    ) -> AnyResult<Option<DataFrame>> {
+        // With a filter the query finds tighter bounds, so skip reading the statistics.
+        if self.effective_snapshot_filter().is_some() {
+            return Ok(None);
+        }
+        let snapshot = table.snapshot()?;
+        let name = ColumnNameSet::from_names([timestamp_field.name.name()]);
+        let schema = snapshot.schema();
+        let Some(field) = schema.fields().find(|f| name.contains(f.name())) else {
+            return Ok(None);
+        };
+        // The add actions name a partition column's value by its logical name, and its statistics
+        // by its physical name.
+        let physical = match field.get_config_value(&ColumnMetadataKey::ColumnMappingPhysicalName) {
+            Some(MetadataValue::String(physical)) => physical.clone(),
+            _ => field.name().to_string(),
+        };
+        let partitioned = snapshot
+            .metadata()
+            .partition_columns()
+            .contains(field.name());
+        let (lo, hi) = if partitioned {
+            let partition = format!("partition.{}", field.name());
+            (partition.clone(), partition)
+        } else {
+            (format!("min.{physical}"), format!("max.{physical}"))
+        };
+
+        let mut stats = Vec::new();
+        for batch in snapshot.add_actions_batches(true)? {
+            let (Some(lo), Some(hi)) = (batch.column_by_name(&lo), batch.column_by_name(&hi))
+            else {
+                return Ok(self.warn_no_statistics(field.name()));
+            };
+            // A file whose column is all NULL has no min or max, and no range reads it.
+            let all_null = match (
+                batch.column_by_name(&format!("null_count.{physical}")),
+                batch.column_by_name("num_records"),
+            ) {
+                _ if partitioned => is_null(lo)?,
+                (Some(nulls), Some(records)) => {
+                    // An unknown count keeps the file; `prep_null_mask_filter` needs a NULL.
+                    let all_null = eq(nulls, records)?;
+                    match all_null.null_count() {
+                        0 => all_null,
+                        _ => prep_null_mask_filter(&all_null),
+                    }
+                }
+                _ => BooleanArray::from(vec![false; batch.num_rows()]),
+            };
+            let file_stats = filter_record_batch(
+                &RecordBatch::try_from_iter([("lo", lo.clone()), ("hi", hi.clone())])?,
+                &not(&all_null)?,
+            )?;
+            if file_stats.column(0).null_count() + file_stats.column(1).null_count() > 0 {
+                return Ok(self.warn_no_statistics(field.name()));
+            }
+            stats.push(file_stats);
+        }
+        // An empty table aggregates to NULL bounds, which the query reports as an empty snapshot.
+        if stats.iter().all(|b| b.num_rows() == 0) {
+            return Ok(None);
+        }
+
+        // The log keeps a timestamp's max truncated to milliseconds; rounding it up keeps the true
+        // max inside the ranges, which stay one `LATENESS` wide.
+        let hi = match stats[0].schema().field(1).data_type() {
+            ArrowDataType::Timestamp(..) => {
+                ident("hi") + lit(ScalarValue::new_interval_mdn(0, 0, 1_000_000))
+            }
+            _ => ident("hi"),
+        };
+        let bounds = self
+            .datafusion
+            .read_batches(stats)?
+            .aggregate(
+                vec![],
+                vec![
+                    datafusion::functions_aggregate::expr_fn::min(ident("lo")).alias("lo"),
+                    datafusion::functions_aggregate::expr_fn::max(ident("hi")).alias("hi"),
+                ],
+            )?
+            .select(vec![
+                cast(ident("lo"), ArrowDataType::Utf8).alias("start_ts"),
+                cast(hi, ArrowDataType::Utf8).alias("end_ts"),
+            ])?;
+        Ok(Some(bounds))
+    }
+
+    /// Warns that some files have no statistics for `column`, and returns `None`.
+    fn warn_no_statistics(&self, column: &str) -> Option<DataFrame> {
+        warn!(
+            "delta_table {}: the Delta log has no statistics for column '{column}' in some data files, so the connector cannot skip those files when it finds the column's range or reads one range of it; to read faster, collect statistics for the column (table property 'delta.dataSkippingStatsColumns') and recompute them for the existing files",
+            &self.endpoint_name,
+        );
+        None
     }
 
     /// Runs `operation` until it succeeds or [`DeltaTableReaderConfig::max_retries`] is exhausted.
@@ -7427,5 +7547,194 @@ mod distributed_snapshot_tests {
                 .get("snapshot_pending")
                 .is_none()
         );
+    }
+}
+
+#[cfg(test)]
+mod timestamp_bounds_tests {
+    use super::DeltaTableInputEndpointInner;
+    use crate::test::MockInputConsumer;
+    use deltalake::datafusion::prelude::SessionContext;
+    use feldera_adapterlib::utils::datafusion::array_to_string;
+    use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
+    use serde_json::{Value, json};
+    use std::collections::BTreeMap;
+
+    /// The bounds of `column` that the connector reads from the log of a table with `fields`,
+    /// `partitions`, `configuration`, and one file per `(partition values, stats)` of `files`. The
+    /// table has no data file, so reading one fails.
+    async fn bounds(
+        fields: Vec<Value>,
+        partitions: Value,
+        configuration: Value,
+        files: Vec<(Value, Option<Value>)>,
+        column: &str,
+        filter: Option<&str>,
+    ) -> Option<(String, String)> {
+        let dir = tempfile::tempdir().unwrap();
+        let meta = json!({"id": "t", "format": {"provider": "parquet", "options": {}},
+            "schemaString": json!({"type": "struct", "fields": fields}).to_string(),
+            "partitionColumns": partitions, "configuration": configuration, "createdTime": 0});
+        let mut log = vec![
+            json!({"protocol": {"minReaderVersion": 2, "minWriterVersion": 5}}),
+            json!({"metaData": meta}),
+        ];
+        for (i, (partition_values, stats)) in files.into_iter().enumerate() {
+            log.push(json!({"add": {"path": format!("{i}.parquet"), "size": 1,
+                "partitionValues": partition_values, "modificationTime": 0, "dataChange": true,
+                "stats": stats.map(|s| s.to_string())}}));
+        }
+        let log: Vec<String> = log.iter().map(Value::to_string).collect();
+        std::fs::create_dir(dir.path().join("_delta_log")).unwrap();
+        std::fs::write(
+            dir.path().join("_delta_log/00000000000000000000.json"),
+            log.join("\n"),
+        )
+        .unwrap();
+        let table = deltalake::open_table(url::Url::from_directory_path(dir.path()).unwrap())
+            .await
+            .unwrap();
+
+        let mut config =
+            json!({"uri": "/tmp/unused", "mode": "snapshot", "timestamp_column": column});
+        if let Some(filter) = filter {
+            config["snapshot_filter"] = json!(filter);
+        }
+        let field = Field::new(
+            SqlIdentifier::new(column, false),
+            ColumnType::timestamp(false),
+        );
+        let endpoint = DeltaTableInputEndpointInner::new(
+            "test_endpoint",
+            serde_json::from_value(config).unwrap(),
+            SessionContext::new(),
+            Box::new(MockInputConsumer::new()),
+            Relation::new(
+                SqlIdentifier::new("t", false),
+                vec![field],
+                false,
+                BTreeMap::new(),
+            ),
+            None,
+            None,
+        );
+        let field = endpoint.schema.field(column).unwrap();
+        let bounds = endpoint.timestamp_bounds_from_log(&table, field).unwrap()?;
+        let bounds = bounds.collect().await.unwrap();
+        Some((
+            array_to_string(bounds[0].column(0)).unwrap(),
+            array_to_string(bounds[0].column(1)).unwrap(),
+        ))
+    }
+
+    fn field(name: &str, typ: &str, metadata: Value) -> Value {
+        json!({"name": name, "type": typ, "nullable": true, "metadata": metadata})
+    }
+
+    /// The stats of a file with one row of `values`, none of them NULL.
+    fn one_row(values: Value) -> Option<Value> {
+        let nulls: serde_json::Map<_, _> = values
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(|k| (k.clone(), json!(0)))
+            .collect();
+        Some(json!({"numRecords": 1, "nullCount": nulls, "minValues": values, "maxValues": values}))
+    }
+
+    fn some(min: &str, max: &str) -> Option<(String, String)> {
+        Some((min.to_string(), max.to_string()))
+    }
+
+    /// Under column mapping, the log keys statistics by physical name. A partition column's
+    /// bounds come from its partition values, where NULL matches no range. The log keeps a
+    /// timestamp to the millisecond, so only a timestamp's max is rounded up.
+    #[tokio::test]
+    async fn bounds_from_log() {
+        let mapped = |name: &str, typ: &str, id: i64| {
+            let physical = json!({"delta.columnMapping.id": id,
+                "delta.columnMapping.physicalName": format!("col-{name}")});
+            field(name, typ, physical)
+        };
+        let fields = || vec![mapped("ts", "timestamp", 1), mapped("day", "date", 2)];
+        let mapping =
+            || json!({"delta.columnMapping.mode": "name", "delta.columnMapping.maxColumnId": "2"});
+        let file = |day: Value, ts: &str| (json!({"col-day": day}), one_row(json!({"col-ts": ts})));
+        let files = || {
+            vec![
+                file(json!("2024-01-05"), "2024-01-05T10:00:00.000Z"),
+                file(json!("2024-01-03"), "2024-01-03T08:00:00.000Z"),
+                file(Value::Null, "2024-01-04T00:00:00.000Z"),
+            ]
+        };
+
+        assert_eq!(
+            bounds(fields(), json!(["day"]), mapping(), files(), "ts", None).await,
+            some("2024-01-03T08:00:00Z", "2024-01-05T10:00:00.001Z")
+        );
+        assert_eq!(
+            bounds(fields(), json!(["day"]), mapping(), files(), "day", None).await,
+            some("2024-01-03", "2024-01-05")
+        );
+    }
+
+    /// A file whose `ts` is all NULL matches no range, so it needs no statistics. The query finds
+    /// the bounds when a filter is set, when the log keeps no statistics for the column (by
+    /// default, only for the first 32 columns), when only some files have them, and when the
+    /// table is empty.
+    #[tokio::test]
+    async fn bounds_from_log_need_statistics_and_no_filter() {
+        let ts = || vec![field("ts", "timestamp", json!({}))];
+        let stats = || {
+            (
+                json!({}),
+                one_row(json!({"ts": "2024-01-05T10:00:00.000Z"})),
+            )
+        };
+        let nulls = |n: i64| {
+            (
+                json!({}),
+                Some(json!({"numRecords": 2, "nullCount": {"ts": n}})),
+            )
+        };
+        assert_eq!(
+            bounds(
+                ts(),
+                json!([]),
+                json!({}),
+                vec![stats(), nulls(2)],
+                "ts",
+                None
+            )
+            .await,
+            some("2024-01-05T10:00:00Z", "2024-01-05T10:00:00.001Z")
+        );
+
+        // Only a timestamp's max is rounded up, and partition values compare as numbers.
+        let n = vec![field("n", "long", json!({}))];
+        let files = ["9", "10", "-2"]
+            .map(|n| (json!({ "n": n }), None))
+            .to_vec();
+        assert_eq!(
+            bounds(n, json!(["n"]), json!({}), files, "n", None).await,
+            some("-2", "10")
+        );
+
+        let mut wide: Vec<Value> = (0..32)
+            .map(|i| field(&format!("p{i}"), "long", json!({})))
+            .collect();
+        wide.extend(ts());
+        for (fields, files, filter) in [
+            (ts(), vec![stats()], Some("ts > now()")),
+            (wide, vec![stats()], None),
+            (ts(), vec![stats(), (json!({}), None)], None),
+            (ts(), vec![stats(), nulls(1)], None),
+            (ts(), vec![], None),
+        ] {
+            assert_eq!(
+                bounds(fields, json!([]), json!({}), files, "ts", filter).await,
+                None
+            );
+        }
     }
 }
