@@ -4,7 +4,8 @@
     feature = "iceberg-tests-fs",
     feature = "iceberg-tests-glue",
     feature = "iceberg-tests-rest",
-    feature = "iceberg-tests-s3tables"
+    feature = "iceberg-tests-s3tables",
+    feature = "iceberg-tests-follow"
 ))]
 use crate::test::file_to_zset;
 use crate::{Controller, test::wait};
@@ -51,7 +52,7 @@ use super::IcebergSubsetTestStruct;
     feature = "iceberg-tests-follow"
 ))]
 use super::IcebergTestStruct;
-#[cfg(feature = "iceberg-tests-s3tables")]
+#[cfg(any(feature = "iceberg-tests-s3tables", feature = "iceberg-tests-follow"))]
 use super::S3TablesTestStruct;
 #[cfg(any(feature = "iceberg-tests-fs", feature = "iceberg-tests-follow"))]
 use super::TestStruct;
@@ -1468,4 +1469,161 @@ fn expected_zset(data: &[IcebergTestStruct]) -> dbsp::OrdZSet<IcebergTestStruct>
             .map(|x| dbsp::utils::Tup2(dbsp::utils::Tup2(x, ()), 1))
             .collect(),
     )
+}
+
+/// Tables written by `crates/iceberg/src/test/create_v3_tables.py`.
+#[cfg(feature = "iceberg-tests-follow")]
+#[derive(serde::Deserialize)]
+struct SparkTables {
+    v3: SparkTable,
+    v2: SparkTable,
+}
+
+#[cfg(feature = "iceberg-tests-follow")]
+#[derive(serde::Deserialize)]
+struct SparkTable {
+    table: String,
+    start_snapshot_id: i64,
+    #[serde(default)]
+    end_snapshot_id: i64,
+    /// Rows a follow from `start_snapshot_id` reads, from snapshot summaries.
+    #[serde(default)]
+    follow_records: u64,
+    /// `(id, name)` of every row in the final table.
+    #[serde(default)]
+    rows: Vec<(i64, String)>,
+}
+
+/// Build the Spark tables once per test run. Needs `uv` and a JDK.
+#[cfg(feature = "iceberg-tests-follow")]
+fn spark_tables() -> &'static SparkTables {
+    static TABLES: std::sync::OnceLock<SparkTables> = std::sync::OnceLock::new();
+    TABLES.get_or_init(|| {
+        let script = "../iceberg/src/test/create_v3_tables.py";
+        let namespace = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+        // Jar downloads from Maven Central fail now and then; retry like the
+        // Delta Spark fixtures.
+        let mut attempt = 1;
+        let output = loop {
+            let output = std::process::Command::new("uv")
+                .args(["run", "--no-project", "--with", "pyspark==4.0.1", "python"])
+                .arg(script)
+                .arg(format!("--namespace={namespace}"))
+                .output()
+                .unwrap_or_else(|e| panic!("failed to run '{script}' (is `uv` on PATH?): {e}"));
+            if output.status.success() || attempt == 3 {
+                break output;
+            }
+            eprintln!(
+                "'{script}' failed (attempt {attempt}/3), retrying:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            std::thread::sleep(std::time::Duration::from_secs(5 * attempt));
+            attempt += 1;
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "'{script}' failed (status {}):\nstdout: {stdout}\nstderr: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr),
+        );
+        let last = stdout.trim().lines().last().unwrap_or_default();
+        serde_json::from_str(last)
+            .unwrap_or_else(|e| panic!("'{script}' printed unexpected output {last:?}: {e}"))
+    })
+}
+
+/// The zset of `table`'s final rows.
+#[cfg(feature = "iceberg-tests-follow")]
+fn spark_table_zset(table: &SparkTable) -> dbsp::OrdZSet<S3TablesTestStruct> {
+    let created_at = Timestamp::from_naiveDateTime(
+        chrono::NaiveDate::from_ymd_opt(2024, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap(),
+    );
+    dbsp::OrdZSet::from_tuples(
+        (),
+        table
+            .rows
+            .iter()
+            .map(|(id, name)| {
+                let row = S3TablesTestStruct {
+                    id: *id,
+                    name: Some(name.clone()),
+                    created_at: Some(created_at),
+                };
+                dbsp::utils::Tup2(dbsp::utils::Tup2(row, ()), 1)
+            })
+            .collect(),
+    )
+}
+
+/// Follow a V3 table through merge-on-read changes, a copy-on-write DELETE and
+/// a compaction. Checks the final rows, and that only changed rows are read.
+#[test]
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_rest_follow_v3_reads_only_changed_rows() {
+    let v3 = &spark_tables().v3;
+    let mut config = rest_follow_config_with(
+        &v3.table,
+        "snapshot_and_follow",
+        "snapshot_id",
+        json!(v3.start_snapshot_id),
+    );
+    config["end_snapshot_id"] = json!(v3.end_snapshot_id);
+
+    let json_file = NamedTempFile::new().unwrap();
+    let (pipeline, err_receiver) = iceberg_input_pipeline::<S3TablesTestStruct>(
+        &S3TablesTestStruct::schema(),
+        &[],
+        config,
+        &json_file.path().display().to_string(),
+    );
+    pipeline.start();
+    wait(
+        || pipeline.status().pipeline_complete() || !err_receiver.is_empty(),
+        120_000,
+    )
+    .expect("timed out following the table");
+    assert!(err_receiver.is_empty(), "{:?}", err_receiver.try_recv());
+
+    assert_eq!(
+        iceberg_metric(&pipeline, "input_connector_iceberg_follow_records_total") as u64,
+        v3.follow_records
+    );
+    let mut output = std::fs::File::open(json_file.path()).unwrap();
+    assert_eq!(
+        file_to_zset::<S3TablesTestStruct>(&mut output),
+        spark_table_zset(v3)
+    );
+    pipeline.stop().unwrap();
+}
+
+/// Follow mode rejects a table that still has a V2 delete file, even when a
+/// change does not touch the file it applies to.
+#[test]
+#[cfg(feature = "iceberg-tests-follow")]
+fn iceberg_rest_follow_rejects_v2_delete_files() {
+    let v2 = &spark_tables().v2;
+    let json_file = NamedTempFile::new().unwrap();
+    let (pipeline, err_receiver) = iceberg_input_pipeline::<S3TablesTestStruct>(
+        &S3TablesTestStruct::schema(),
+        &[],
+        rest_follow_config_with(
+            &v2.table,
+            "follow",
+            "snapshot_id",
+            json!(v2.start_snapshot_id),
+        ),
+        &json_file.path().display().to_string(),
+    );
+    pipeline.start();
+
+    let error = err_receiver
+        .recv_timeout(std::time::Duration::from_secs(120))
+        .expect("the connector should reject the V2 delete file");
+    assert!(error.contains("has a V2 position delete file"), "{error}");
+    pipeline.stop().unwrap();
 }

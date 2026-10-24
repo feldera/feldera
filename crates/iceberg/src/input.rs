@@ -4,7 +4,9 @@ use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use bytemuck::NoUninit;
 use chrono::{DateTime, Utc};
-use datafusion::arrow::datatypes::Schema as ArrowSchema;
+use datafusion::arrow::array::{AsArray, BooleanArray};
+use datafusion::arrow::compute::{cast, filter_record_batch};
+use datafusion::arrow::datatypes::{DataType, Int64Type, Schema as ArrowSchema};
 use datafusion::catalog::TableProvider;
 use datafusion::common::arrow::array::RecordBatch;
 use datafusion::prelude::{DataFrame, SQLOptions, SessionContext};
@@ -38,15 +40,17 @@ use feldera_types::{
         IcebergCatalogType, IcebergIngestMode, IcebergReaderConfig, IcebergTransactionMode,
     },
 };
-use futures_util::{stream, StreamExt};
+use futures_util::{stream, StreamExt, TryStreamExt};
 use iceberg::CatalogBuilder;
 use iceberg::{
     arrow::ArrowReaderBuilder,
-    io::{FileIO, FileIOBuilder, StorageFactory},
-    scan::{FileScanTask, FileScanTaskStream},
+    io::{FileIO, FileIOBuilder, FileRead as _, StorageFactory},
+    metadata_columns::{RESERVED_FIELD_ID_FILE, RESERVED_FIELD_ID_POS},
+    scan::{FileScanTask, FileScanTaskDeleteFile, FileScanTaskStream},
     spec::{
-        DataContentType, DataFile, ManifestStatus, NameMapping, Operation,
-        SchemaRef as IcebergSchemaRef, SnapshotRef, TableMetadata,
+        DataContentType, DataFile, DataFileFormat, Manifest, ManifestContentType,
+        ManifestFile as IcebergManifestFile, ManifestList, ManifestStatus, NameMapping, Operation,
+        SchemaRef as IcebergSchemaRef, SnapshotRef, Struct, TableMetadata,
     },
     table::{StaticTable, Table as IcebergTable},
     Catalog, Runtime, TableIdent,
@@ -65,12 +69,17 @@ use iceberg_catalog_s3tables::{
 };
 use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
 use log::{debug, info, trace, warn};
+use roaring::RoaringTreemap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{collections::BTreeSet, sync::Arc, thread};
+use std::{
+    collections::{BTreeSet, HashMap},
+    sync::Arc,
+    thread,
+};
 use tokio::{
     select,
     sync::{
@@ -516,25 +525,295 @@ enum QueueEntry {
 /// How often follow mode polls the catalog for new snapshots.
 const FOLLOW_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// A data file a snapshot added or removed. `DataFile` omits its partition-spec
-/// id, so carry it from the manifest: the Arrow reader needs it to fill in
-/// identity-partition columns kept in partition metadata, not in the data file.
-struct ChangedFile {
+/// A manifest entry's file, with the partition-spec id that `DataFile` lacks.
+/// The reader needs it to fill in identity-partition columns.
+#[derive(Debug)]
+struct ManifestFile {
     data_file: DataFile,
     partition_spec_id: i32,
 }
 
-/// One snapshot's changelog versus its predecessor: files it added (rows to
-/// insert) and files it removed (rows to delete).
+/// The files one snapshot added and removed, from its own manifest entries.
+#[derive(Default)]
+struct SnapshotFiles {
+    added: Vec<ManifestFile>,
+    removed: Vec<ManifestFile>,
+    added_dvs: Vec<ManifestFile>,
+    removed_dvs: Vec<ManifestFile>,
+}
+
+/// A kept data file with a new deletion vector. Its newly deleted rows are
+/// `added` minus `replaced`.
+#[derive(Debug)]
+struct NewDeletes {
+    data_file_path: String,
+    added: ManifestFile,
+    replaced: Option<ManifestFile>,
+}
+
+/// A snapshot's files with each deletion vector matched to its data file.
+struct PairedFiles {
+    removed: Vec<FileRead>,
+    added: Vec<FileRead>,
+    new_deletes: Vec<NewDeletes>,
+}
+
+/// A data-file read: all its rows, or only the rows at `selected_positions`.
+struct FileRead {
+    path: String,
+    file_format: DataFileFormat,
+    file_size_in_bytes: u64,
+    record_count: Option<u64>,
+    partition: Struct,
+    partition_spec_id: i32,
+    deletion_vector: Option<FileScanTaskDeleteFile>,
+    selected_positions: Option<Arc<RoaringTreemap>>,
+}
+
+/// One snapshot's changes: rows to delete and rows to insert.
 struct SnapshotDelta {
-    added: Vec<ChangedFile>,
-    removed: Vec<ChangedFile>,
+    deletes: Vec<FileRead>,
+    inserts: Vec<FileRead>,
+}
+
+impl FileRead {
+    /// Read all rows of `file` that `deletion_vector` does not delete.
+    fn whole(file: ManifestFile, deletion_vector: Option<ManifestFile>) -> Self {
+        Self {
+            path: file.data_file.file_path().to_string(),
+            file_format: file.data_file.file_format(),
+            file_size_in_bytes: file.data_file.file_size_in_bytes(),
+            record_count: Some(file.data_file.record_count()),
+            partition: file.data_file.partition().clone(),
+            partition_spec_id: file.partition_spec_id,
+            deletion_vector: deletion_vector.as_ref().map(deletion_vector_task),
+            selected_positions: None,
+        }
+    }
+}
+
+/// The reader's view of a deletion vector.
+fn deletion_vector_task(dv: &ManifestFile) -> FileScanTaskDeleteFile {
+    let file = &dv.data_file;
+    FileScanTaskDeleteFile::builder()
+        .with_file_path(file.file_path().to_string())
+        .with_file_size_in_bytes(file.file_size_in_bytes())
+        .with_file_type(DataContentType::PositionDeletes)
+        .with_file_format(DataFileFormat::Puffin)
+        .with_partition_spec_id(dv.partition_spec_id)
+        .with_referenced_data_file(file.referenced_data_file())
+        .with_content_offset(file.content_offset())
+        .with_content_size_in_bytes(file.content_size_in_bytes())
+        .with_record_count(Some(file.record_count()))
+        .with_key_metadata(file.key_metadata().map(Box::from))
+        .build()
 }
 
 impl SnapshotDelta {
     fn is_empty(&self) -> bool {
-        self.added.is_empty() && self.removed.is_empty()
+        self.deletes.is_empty() && self.inserts.is_empty()
     }
+}
+
+/// Whether `file` is a V3 deletion vector, not a V2 delete file.
+fn is_deletion_vector(file: &DataFile) -> bool {
+    file.content_type() == DataContentType::PositionDeletes
+        && file.file_format() == DataFileFormat::Puffin
+}
+
+/// Match each deletion vector of a snapshot to its data file. The spec allows
+/// one vector per data file, and the snapshot that removes a file or replaces
+/// its vector must also remove the old vector.
+fn pair_deletion_vectors(snapshot_id: i64, files: SnapshotFiles) -> AnyResult<PairedFiles> {
+    let referenced = |dv: &ManifestFile| {
+        dv.data_file.referenced_data_file().ok_or_else(|| {
+            anyhow!(
+                "deletion vector '{}' names no data file",
+                dv.data_file.file_path()
+            )
+        })
+    };
+    let mut added_dvs = HashMap::new();
+    for dv in files.added_dvs {
+        let path = referenced(&dv)?;
+        if added_dvs.insert(path.clone(), dv).is_some() {
+            bail!("snapshot {snapshot_id} adds two deletion vectors for data file '{path}'");
+        }
+    }
+    let mut removed_dvs = HashMap::new();
+    for dv in files.removed_dvs {
+        let path = referenced(&dv)?;
+        if removed_dvs.insert(path.clone(), dv).is_some() {
+            bail!("snapshot {snapshot_id} removes two deletion vectors for data file '{path}'");
+        }
+    }
+
+    let removed: Vec<FileRead> = files
+        .removed
+        .into_iter()
+        .map(|file| {
+            let path = file.data_file.file_path();
+            if added_dvs.contains_key(path) {
+                bail!("snapshot {snapshot_id} removes data file '{path}' and adds a deletion vector for it");
+            }
+            let deletion_vector = removed_dvs.remove(path);
+            Ok(FileRead::whole(file, deletion_vector))
+        })
+        .collect::<AnyResult<_>>()?;
+    let added = files
+        .added
+        .into_iter()
+        .map(|file| {
+            let deletion_vector = added_dvs.remove(file.data_file.file_path());
+            FileRead::whole(file, deletion_vector)
+        })
+        .collect();
+    let new_deletes = added_dvs
+        .into_iter()
+        .map(|(data_file_path, added)| NewDeletes {
+            replaced: removed_dvs.remove(&data_file_path),
+            data_file_path,
+            added,
+        })
+        .collect();
+
+    // Removing a vector alone would bring deleted rows back.
+    if let Some(path) = removed_dvs.keys().next() {
+        bail!("snapshot {snapshot_id} removes the deletion vector of data file '{path}' without replacing it or removing the file");
+    }
+
+    Ok(PairedFiles {
+        removed,
+        added,
+        new_deletes,
+    })
+}
+
+/// Read a deletion vector's positions from its Puffin file.
+async fn read_deletion_vector(
+    file_io: &FileIO,
+    max_retries: u32,
+    dv: &DataFile,
+) -> AnyResult<RoaringTreemap> {
+    let path = dv.file_path();
+    if dv.key_metadata().is_some() {
+        bail!("deletion vector '{path}' is encrypted; encrypted tables are not supported");
+    }
+    let (Some(offset), Some(size)) = (dv.content_offset(), dv.content_size_in_bytes()) else {
+        bail!("deletion vector '{path}' has no content offset or size");
+    };
+    let start = u64::try_from(offset)?;
+    let end = start + u64::try_from(size)?;
+    let descr = format!("deletion vector '{path}'");
+    let blob = retry_storage_read(max_retries, &descr, || async {
+        file_io
+            .new_input(path)?
+            .reader()
+            .await?
+            .read(start..end)
+            .await
+    })
+    .await?;
+    let positions = decode_deletion_vector(&blob)
+        .map_err(|e| anyhow!("error decoding deletion vector '{path}': {e}"))?;
+    if positions.len() != dv.record_count() {
+        bail!(
+            "deletion vector '{path}' holds {} positions, but its manifest entry says {}",
+            positions.len(),
+            dv.record_count()
+        );
+    }
+    Ok(positions)
+}
+
+/// Retry a storage read like [`IcebergInputEndpointInner::read_changed_files`].
+async fn retry_storage_read<T, Fut>(
+    max_retries: u32,
+    descr: &str,
+    mut read: impl FnMut() -> Fut,
+) -> AnyResult<T>
+where
+    Fut: std::future::Future<Output = iceberg::Result<T>>,
+{
+    let mut retry_count = 0;
+    loop {
+        let error = match read().await {
+            Ok(value) => return Ok(value),
+            Err(error) => error.to_string(),
+        };
+        if retry_count >= max_retries || is_permanent_read_error(&error) {
+            bail!("error reading {descr}: {error}");
+        }
+        let backoff_delay = calculate_backoff_delay(retry_count);
+        retry_count += 1;
+        warn!("iceberg: error reading {descr}: {error}; retrying in {backoff_delay:?} (attempt {retry_count})");
+        sleep(backoff_delay).await;
+    }
+}
+
+const V2_DELETE_FIX: &str = "To follow this table, configure the writer to use copy-on-write or deletion vectors (format version 3), rewrite the table to remove its V2 delete files, and restart the connector from a snapshot after the rewrite.";
+
+/// The error for a delete file that follow mode cannot read.
+fn v2_delete_file_error(file: &DataFile) -> AnyError {
+    let path = file.file_path();
+    if file.content_type() == DataContentType::EqualityDeletes {
+        anyhow!("the Iceberg table has an equality delete file ('{path}'); follow mode cannot read equality deletes. {V2_DELETE_FIX}")
+    } else {
+        anyhow!("the Iceberg table has a V2 position delete file ('{path}'); follow mode reads only V3 deletion vectors. {V2_DELETE_FIX}")
+    }
+}
+
+/// Decode a Puffin `deletion-vector-v1` blob: length, magic, 64-bit roaring
+/// bitmap, CRC-32.
+fn decode_deletion_vector(blob: &[u8]) -> AnyResult<RoaringTreemap> {
+    const MAGIC: [u8; 4] = [0xD1, 0xD3, 0x39, 0x64];
+    let too_short = || anyhow!("the blob is only {} bytes", blob.len());
+    let (length, rest) = blob.split_first_chunk::<4>().ok_or_else(too_short)?;
+    let (body, crc) = rest.split_last_chunk::<4>().ok_or_else(too_short)?;
+    if u32::from_be_bytes(*length) as usize != body.len() {
+        bail!("the length prefix does not match the blob size");
+    }
+    if crc32fast::hash(body) != u32::from_be_bytes(*crc) {
+        bail!("the checksum does not match");
+    }
+    let mut bitmap = match body.split_first_chunk::<4>() {
+        Some((magic, bitmap)) if *magic == MAGIC => bitmap,
+        _ => bail!("the magic bytes are wrong"),
+    };
+    let positions = RoaringTreemap::deserialize_from(&mut bitmap)?;
+    if !bitmap.is_empty() {
+        bail!("{} bytes follow the bitmap", bitmap.len());
+    }
+    Ok(positions)
+}
+
+/// Keep the selected rows of `batch`, then drop its last two columns, `_file`
+/// and `_pos`.
+fn select_positions(
+    batch: RecordBatch,
+    selected: &HashMap<String, Arc<RoaringTreemap>>,
+) -> AnyResult<RecordBatch> {
+    let columns = batch.num_columns();
+    if batch.num_rows() == 0 {
+        return Ok(batch.project(&(0..columns - 2).collect::<Vec<_>>())?);
+    }
+    // `_file` is a run-end encoded constant, so cast one value only.
+    let file = cast(&batch.column(columns - 2).slice(0, 1), &DataType::Utf8)?;
+    let file = file.as_string::<i32>().value(0);
+    let positions = selected
+        .get(file)
+        .ok_or_else(|| anyhow!("internal error: no selected positions for data file '{file}'"))?;
+    let pos = batch
+        .column(columns - 1)
+        .as_primitive_opt::<Int64Type>()
+        .ok_or_else(|| anyhow!("the '_pos' column is not Int64"))?;
+    let keep: BooleanArray = pos
+        .values()
+        .iter()
+        .map(|&pos| Some(positions.contains(pos as u64)))
+        .collect();
+    let batch = filter_record_batch(&batch, &keep)?;
+    Ok(batch.project(&(0..columns - 2).collect::<Vec<_>>())?)
 }
 
 /// Snapshots committed after `after_id`, oldest first, found by walking the
@@ -1581,24 +1860,55 @@ impl IcebergInputEndpointInner {
     /// diffing manifests. Reads only the manifests this snapshot added, so the
     /// cost is proportional to the change, not the table size.
     ///
-    /// Rejects merge-on-read delete files (position or equality deletes) with a
-    /// clear error: v1 follow mode handles copy-on-write changes only.
+    /// Rejects V2 position and equality delete files.
     async fn snapshot_delta(
         &self,
         table: &IcebergTable,
         snapshot: &SnapshotRef,
+        checked_for_v2_deletes: &mut bool,
     ) -> Result<SnapshotDelta, AnyError> {
         let snapshot_id = snapshot.snapshot_id();
+        let files = self.snapshot_files(table, snapshot).await?;
 
-        let manifest_list = table
-            .manifest_list_reader(snapshot)
-            .load()
-            .await
-            .map_err(|e| anyhow!("error reading manifest list of snapshot {snapshot_id}: {e}"))?;
+        // An old V2 delete file may have deleted rows we would delete again.
+        // `snapshot_files` rejects new ones, so one check is enough.
+        let needs_prior_deletes = !files.removed.is_empty() || !files.added_dvs.is_empty();
+        if needs_prior_deletes && !*checked_for_v2_deletes {
+            if let Some(file) = self.find_v2_delete_file(table, snapshot).await? {
+                return Err(v2_delete_file_error(&file));
+            }
+            *checked_for_v2_deletes = true;
+        }
 
-        let mut added = Vec::new();
-        let mut removed = Vec::new();
+        let PairedFiles {
+            removed: mut deletes,
+            added: inserts,
+            new_deletes,
+        } = pair_deletion_vectors(snapshot_id, files)?;
 
+        // One DELETE can touch thousands of files, so read them concurrently.
+        let new_deletes: Vec<Option<FileRead>> = stream::iter(new_deletes)
+            .map(|new_deletes| {
+                Self::new_deletes_read(table.file_io(), self.config.max_retries(), new_deletes)
+            })
+            .buffer_unordered(self.config.num_parsers as usize)
+            .try_collect()
+            .await?;
+        deletes.extend(new_deletes.into_iter().flatten());
+
+        Ok(SnapshotDelta { deletes, inserts })
+    }
+
+    /// The data files and deletion vectors `snapshot` added or removed.
+    async fn snapshot_files(
+        &self,
+        table: &IcebergTable,
+        snapshot: &SnapshotRef,
+    ) -> Result<SnapshotFiles, AnyError> {
+        let snapshot_id = snapshot.snapshot_id();
+        let manifest_list = self.read_manifest_list(table, snapshot).await?;
+
+        let mut files = SnapshotFiles::default();
         for manifest_file in manifest_list.entries() {
             // Only manifests this snapshot wrote carry its ADDED/DELETED
             // entries; the rest are inherited unchanged. Skipping them keeps the
@@ -1607,16 +1917,7 @@ impl IcebergInputEndpointInner {
                 continue;
             }
 
-            let manifest = table
-                .manifest_reader()
-                .read(manifest_file)
-                .await
-                .map_err(|e| {
-                    anyhow!(
-                        "error reading manifest '{}': {e}",
-                        manifest_file.manifest_path
-                    )
-                })?;
+            let manifest = self.read_manifest(table, manifest_file).await?;
 
             for entry in manifest.entries() {
                 // Skip entries carried into this manifest from earlier snapshots
@@ -1625,63 +1926,179 @@ impl IcebergInputEndpointInner {
                     continue;
                 }
 
-                if entry.content_type() != DataContentType::Data {
-                    bail!(
-                        "snapshot {snapshot_id} of the Iceberg table adds a merge-on-read delete file ('{}'); follow mode does not yet support merge-on-read deletes (position or equality delete files). Configure the writer to use copy-on-write, or track merge-on-read support in issue #6165.",
-                        entry.file_path()
-                    );
+                let is_data = entry.content_type() == DataContentType::Data;
+                if !is_data && !is_deletion_vector(entry.data_file()) {
+                    return Err(v2_delete_file_error(entry.data_file()));
                 }
 
-                let changed = ChangedFile {
+                let file = ManifestFile {
                     data_file: entry.data_file().clone(),
                     partition_spec_id: manifest_file.partition_spec_id,
                 };
-                match entry.status() {
-                    ManifestStatus::Added => added.push(changed),
-                    ManifestStatus::Deleted => removed.push(changed),
-                    ManifestStatus::Existing => {}
-                }
+                let list = match (entry.status(), is_data) {
+                    (ManifestStatus::Added, true) => &mut files.added,
+                    (ManifestStatus::Deleted, true) => &mut files.removed,
+                    (ManifestStatus::Added, false) => &mut files.added_dvs,
+                    (ManifestStatus::Deleted, false) => &mut files.removed_dvs,
+                    (ManifestStatus::Existing, _) => continue,
+                };
+                list.push(file);
             }
         }
 
-        Ok(SnapshotDelta { added, removed })
+        Ok(files)
     }
 
-    /// Build an Arrow record-batch stream over `files`, projecting `field_ids`.
+    /// A live V2 position or equality delete file in `snapshot`, if any.
+    async fn find_v2_delete_file(
+        &self,
+        table: &IcebergTable,
+        snapshot: &SnapshotRef,
+    ) -> Result<Option<DataFile>, AnyError> {
+        let manifest_list = self.read_manifest_list(table, snapshot).await?;
+        // A large table has many delete manifests, so read them concurrently.
+        let delete_manifests = manifest_list
+            .entries()
+            .iter()
+            .filter(|manifest_file| manifest_file.content == ManifestContentType::Deletes);
+        let mut manifests = stream::iter(delete_manifests)
+            .map(|manifest_file| self.read_manifest(table, manifest_file))
+            .buffer_unordered(self.config.num_parsers as usize);
+        while let Some(manifest) = manifests.try_next().await? {
+            if let Some(entry) = manifest
+                .entries()
+                .iter()
+                .find(|entry| entry.is_alive() && !is_deletion_vector(entry.data_file()))
+            {
+                return Ok(Some(entry.data_file().clone()));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn read_manifest_list(
+        &self,
+        table: &IcebergTable,
+        snapshot: &SnapshotRef,
+    ) -> AnyResult<ManifestList> {
+        let snapshot_id = snapshot.snapshot_id();
+        table
+            .manifest_list_reader(snapshot)
+            .load()
+            .await
+            .map_err(|e| anyhow!("error reading manifest list of snapshot {snapshot_id}: {e}"))
+    }
+
+    async fn read_manifest(
+        &self,
+        table: &IcebergTable,
+        manifest_file: &IcebergManifestFile,
+    ) -> AnyResult<Manifest> {
+        table
+            .manifest_reader()
+            .read(manifest_file)
+            .await
+            .map_err(|e| {
+                anyhow!(
+                    "error reading manifest '{}': {e}",
+                    manifest_file.manifest_path
+                )
+            })
+    }
+
+    /// A read of the rows `new_deletes` newly deletes, or `None` if there are
+    /// none.
+    async fn new_deletes_read(
+        file_io: &FileIO,
+        max_retries: u32,
+        new_deletes: NewDeletes,
+    ) -> Result<Option<FileRead>, AnyError> {
+        let NewDeletes {
+            data_file_path: path,
+            added,
+            replaced,
+        } = new_deletes;
+
+        let mut positions = read_deletion_vector(file_io, max_retries, &added.data_file).await?;
+        if let Some(replaced) = &replaced {
+            let replaced = read_deletion_vector(file_io, max_retries, &replaced.data_file).await?;
+            if !replaced.is_subset(&positions) {
+                bail!("the new deletion vector of data file '{path}' does not keep all rows its old one deleted");
+            }
+            positions -= replaced;
+        }
+        if positions.is_empty() {
+            return Ok(None);
+        }
+
+        // The reader needs the data file's size, which the vector's entry lacks.
+        let descr = format!("the size of data file '{path}'");
+        let file_size_in_bytes = retry_storage_read(max_retries, &descr, || async {
+            Ok(file_io.new_input(&path)?.metadata().await?.size)
+        })
+        .await?;
+
+        // A deletion vector has the partition of the data file it applies to.
+        Ok(Some(FileRead {
+            path,
+            // The reader reads only Parquet data files.
+            file_format: DataFileFormat::Parquet,
+            file_size_in_bytes,
+            record_count: None,
+            partition: added.data_file.partition().clone(),
+            partition_spec_id: added.partition_spec_id,
+            deletion_vector: None,
+            selected_positions: Some(Arc::new(positions)),
+        }))
+    }
+
+    /// Build an Arrow record-batch stream over `reads`, projecting `field_ids`.
     ///
     /// Uses the iceberg core reader so field-id projection, name mapping, and
-    /// identity-partition constants are handled correctly. `deletes` is empty:
-    /// merge-on-read is rejected earlier in [`snapshot_delta`].
+    /// identity-partition constants are handled correctly. A read with
+    /// selected positions reads the whole file and keeps only those rows.
     fn read_changed_files_stream(
         &self,
         table: &IcebergTable,
         schema: &IcebergSchemaRef,
         field_ids: &[i32],
         name_mapping: &Option<Arc<NameMapping>>,
-        files: &[ChangedFile],
+        reads: &[FileRead],
     ) -> Result<stream::BoxStream<'static, Result<RecordBatch, String>>, AnyError> {
         let metadata = table.metadata();
-        let tasks: Vec<Result<FileScanTask, iceberg::Error>> = files
+        let selected: HashMap<String, Arc<RoaringTreemap>> = reads
             .iter()
-            .map(|file| {
-                let data_file = &file.data_file;
+            .filter_map(|read| Some((read.path.clone(), read.selected_positions.clone()?)))
+            .collect();
+        let selected_field_ids: Vec<i32> = field_ids
+            .iter()
+            .copied()
+            .chain([RESERVED_FIELD_ID_FILE, RESERVED_FIELD_ID_POS])
+            .collect();
+        let tasks: Vec<Result<FileScanTask, iceberg::Error>> = reads
+            .iter()
+            .map(|read| {
+                let field_ids = match read.selected_positions {
+                    Some(_) => &selected_field_ids,
+                    None => field_ids,
+                };
                 FileScanTask::builder()
-                    .with_file_size_in_bytes(data_file.file_size_in_bytes())
+                    .with_file_size_in_bytes(read.file_size_in_bytes)
                     .with_start(0)
-                    .with_length(data_file.file_size_in_bytes())
-                    .with_record_count(Some(data_file.record_count()))
-                    .with_data_file_path(data_file.file_path().to_string())
-                    .with_data_file_format(data_file.file_format())
+                    .with_length(read.file_size_in_bytes)
+                    .with_record_count(read.record_count)
+                    .with_data_file_path(read.path.clone())
+                    .with_data_file_format(read.file_format)
                     .with_schema(schema.clone())
                     .with_project_field_ids(field_ids.to_vec())
                     .with_predicate(None)
-                    .with_deletes(vec![])
+                    .with_deletes(read.deletion_vector.iter().cloned().collect())
                     // Both `partition` and `partition_spec` must be set for the
                     // reader to materialize identity-partition column constants.
-                    .with_partition(Some(data_file.partition().clone()))
+                    .with_partition(Some(read.partition.clone()))
                     .with_partition_spec(
                         metadata
-                            .partition_spec_by_id(file.partition_spec_id)
+                            .partition_spec_by_id(read.partition_spec_id)
                             .cloned(),
                     )
                     .with_name_mapping(name_mapping.clone())
@@ -1698,17 +2115,27 @@ impl IcebergInputEndpointInner {
             .with_data_file_concurrency_limit(self.config.num_parsers as usize)
             .build();
 
+        let num_fields = field_ids.len();
         let batch_stream = reader
             .read(task_stream)
             .map_err(|e| anyhow!("error starting Iceberg data-file read: {e}"))?
             .stream()
-            .map(|batch| batch.map_err(|e| format!("error reading Iceberg data file: {e}")))
+            .map(move |batch| {
+                let batch = batch.map_err(|e| format!("error reading Iceberg data file: {e}"))?;
+                // Only reads with selected positions add `_file` and `_pos`.
+                if batch.num_columns() > num_fields {
+                    select_positions(batch, &selected)
+                        .map_err(|e| format!("error selecting deleted rows: {e}"))
+                } else {
+                    Ok(batch)
+                }
+            })
             .boxed();
 
         Ok(batch_stream)
     }
 
-    /// Read `files` and push their rows to the circuit with `polarity`, wrapped
+    /// Read `reads` and push their rows to the circuit with `polarity`, wrapped
     /// in `transaction`. Retries the whole read on transient failure, mirroring
     /// [`execute_df`].
     #[allow(clippy::too_many_arguments)]
@@ -1718,14 +2145,14 @@ impl IcebergInputEndpointInner {
         schema: &IcebergSchemaRef,
         field_ids: &[i32],
         name_mapping: &Option<Arc<NameMapping>>,
-        files: &[ChangedFile],
+        reads: &[FileRead],
         polarity: bool,
         mut transaction: Option<Option<String>>,
         descr: &str,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) -> Result<usize, AnyError> {
-        if files.is_empty() {
+        if reads.is_empty() {
             return Ok(0);
         }
 
@@ -1733,7 +2160,7 @@ impl IcebergInputEndpointInner {
         let mut retry_count = 0;
         loop {
             let result =
-                match self.read_changed_files_stream(table, schema, field_ids, name_mapping, files)
+                match self.read_changed_files_stream(table, schema, field_ids, name_mapping, reads)
                 {
                     Ok(stream) => self
                         .drain_batch_stream(
@@ -1820,6 +2247,7 @@ impl IcebergInputEndpointInner {
         receiver: &mut Receiver<PipelineState>,
     ) -> Result<(), AnyError> {
         let mut last_snapshot_id = start_snapshot_id;
+        let mut checked_for_v2_deletes = false;
 
         loop {
             wait_running(receiver).await;
@@ -1864,7 +2292,9 @@ impl IcebergInputEndpointInner {
                 // change; skip reading but still treat the snapshot as a
                 // boundary below.
                 if !is_noop_operation(&snapshot) {
-                    let delta = self.snapshot_delta(&table, &snapshot).await?;
+                    let delta = self
+                        .snapshot_delta(&table, &snapshot, &mut checked_for_v2_deletes)
+                        .await?;
 
                     if !delta.is_empty() {
                         let transaction = self.follow_data_transaction();
@@ -1876,7 +2306,7 @@ impl IcebergInputEndpointInner {
                             &schema,
                             &field_ids,
                             &name_mapping,
-                            &delta.removed,
+                            &delta.deletes,
                             false,
                             transaction.clone(),
                             &format!("snapshot {snapshot_id} deletes"),
@@ -1889,7 +2319,7 @@ impl IcebergInputEndpointInner {
                             &schema,
                             &field_ids,
                             &name_mapping,
-                            &delta.added,
+                            &delta.inserts,
                             true,
                             transaction,
                             &format!("snapshot {snapshot_id} inserts"),
@@ -3202,6 +3632,311 @@ mod tests {
         let json = serde_json::to_value(&resume_info).unwrap();
         let parsed = parse_resume_info::<IcebergResumeInfo>(&json).unwrap();
         assert_eq!(parsed.snapshot_id, Some(snapshot_id));
+    }
+}
+
+#[cfg(test)]
+mod deletion_vector_tests {
+    use super::*;
+    use iceberg::spec::DataFileBuilder;
+
+    fn manifest_file(
+        path: &str,
+        content: DataContentType,
+        data_file: Option<&str>,
+    ) -> ManifestFile {
+        ManifestFile {
+            data_file: DataFileBuilder::default()
+                .file_path(path.to_string())
+                .file_format(DataFileFormat::Parquet)
+                .content(content)
+                .record_count(1)
+                .referenced_data_file(data_file.map(str::to_string))
+                .partition(Struct::empty())
+                .partition_spec_id(0)
+                .file_size_in_bytes(100)
+                .build()
+                .unwrap(),
+            partition_spec_id: 0,
+        }
+    }
+
+    fn data_file(path: &str) -> ManifestFile {
+        manifest_file(path, DataContentType::Data, None)
+    }
+
+    fn dv(puffin: &str, data_file: &str) -> ManifestFile {
+        manifest_file(puffin, DataContentType::PositionDeletes, Some(data_file))
+    }
+
+    /// A `deletion-vector-v1` blob: length, magic, portable roaring bitmap, CRC.
+    fn dv_blob(positions: &[u64]) -> Vec<u8> {
+        let mut body = vec![0xD1, 0xD3, 0x39, 0x64];
+        RoaringTreemap::from_iter(positions.iter().copied())
+            .serialize_into(&mut body)
+            .unwrap();
+        let mut blob = (body.len() as u32).to_be_bytes().to_vec();
+        blob.extend_from_slice(&body);
+        blob.extend_from_slice(&crc32fast::hash(&body).to_be_bytes());
+        blob
+    }
+
+    /// Runs `new_deletes_read` on a 42-byte local data file and its vectors.
+    /// An empty `old` means no old vector; `new_count` is the new vector's
+    /// record count.
+    async fn newly_deleted(
+        old: &[u64],
+        new: &[u64],
+        new_count: u64,
+    ) -> AnyResult<Option<Vec<u64>>> {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data.parquet").display().to_string();
+        std::fs::write(&data, [0u8; 42]).unwrap();
+        let write_dv = |name: &str, positions: &[u64], record_count: u64| {
+            let blob = dv_blob(positions);
+            let path = dir.path().join(name).display().to_string();
+            std::fs::write(&path, [vec![0u8; 4], blob.clone()].concat()).unwrap();
+            let mut dv = dv(&path, &data);
+            dv.data_file = DataFileBuilder::default()
+                .file_path(path)
+                .file_format(DataFileFormat::Puffin)
+                .content(DataContentType::PositionDeletes)
+                .record_count(record_count)
+                .referenced_data_file(Some(data.clone()))
+                .content_offset(Some(4))
+                .content_size_in_bytes(Some(blob.len() as i64))
+                .partition(Struct::empty())
+                .partition_spec_id(0)
+                .file_size_in_bytes(100)
+                .build()
+                .unwrap();
+            dv
+        };
+        let new_deletes = NewDeletes {
+            replaced: (!old.is_empty()).then(|| write_dv("old.puffin", old, old.len() as u64)),
+            added: write_dv("new.puffin", new, new_count),
+            data_file_path: data.clone(),
+        };
+        let read =
+            IcebergInputEndpointInner::new_deletes_read(&FileIO::new_with_fs(), 0, new_deletes)
+                .await?;
+        Ok(read.map(|read| {
+            assert_eq!(read.file_size_in_bytes, 42);
+            read.selected_positions.unwrap().iter().collect()
+        }))
+    }
+
+    #[tokio::test]
+    async fn new_deletes_read_selects_only_newly_deleted_rows() {
+        let selected = newly_deleted(&[1, 5], &[1, 3, 5, 1 << 33], 4)
+            .await
+            .unwrap();
+        assert_eq!(selected, Some(vec![3, 1 << 33]));
+        assert_eq!(newly_deleted(&[1, 5], &[1, 5], 2).await.unwrap(), None);
+        // A file's first vector: every position is new.
+        let first = newly_deleted(&[], &[0, 2, 1 << 33], 3).await.unwrap();
+        assert_eq!(first, Some(vec![0, 2, 1 << 33]));
+
+        let error = |result: AnyResult<_>| result.unwrap_err().to_string();
+        let shrunk = error(newly_deleted(&[1, 5], &[1, 3], 2).await);
+        assert!(shrunk.contains("does not keep all rows"), "{shrunk}");
+        let miscounted = error(newly_deleted(&[1], &[1, 2], 3).await);
+        assert!(miscounted.contains("holds 2 positions"), "{miscounted}");
+    }
+
+    #[tokio::test]
+    async fn retries_storage_reads_up_to_max_retries() {
+        let attempts = &AtomicUsize::new(0);
+        let read = |max_retries, error: &'static str| {
+            attempts.store(0, Ordering::Relaxed);
+            retry_storage_read(max_retries, "f", move || async move {
+                match attempts.fetch_add(1, Ordering::Relaxed) {
+                    0 => Err(iceberg::Error::new(iceberg::ErrorKind::Unexpected, error)),
+                    _ => Ok(()),
+                }
+            })
+        };
+        read(1, "throttled").await.unwrap();
+        assert_eq!(attempts.load(Ordering::Relaxed), 2);
+        assert!(read(0, "throttled").await.is_err());
+        assert!(read(1, "FeatureUnsupported").await.is_err());
+        assert_eq!(attempts.load(Ordering::Relaxed), 1);
+    }
+
+    /// A batch in the reader's shape: data columns of each type family, then a
+    /// run-end encoded `_file` and `_pos`.
+    #[test]
+    fn select_positions_keeps_selected_rows_of_any_type() {
+        use datafusion::arrow::array::*;
+        use datafusion::arrow::compute::take_record_batch;
+        use datafusion::arrow::datatypes::{Field, Int32Type};
+
+        let mut list = ListBuilder::new(StringBuilder::new());
+        let mut map = MapBuilder::new(None, StringBuilder::new(), StringBuilder::new());
+        for row in ["a", "b", "c", "d"] {
+            list.values().append_value(row);
+            list.append(true);
+            map.keys().append_value(row);
+            map.values().append_value(row);
+            map.append(true).unwrap();
+        }
+        let ints = || Arc::new(Int32Array::from(vec![1, 2, 3, 4])) as ArrayRef;
+        let file = RunArray::<Int32Type>::try_new(
+            &Int32Array::from(vec![4]),
+            &StringArray::from(vec!["f.parquet"]),
+        )
+        .unwrap();
+        let columns: Vec<(&str, ArrayRef)> = vec![
+            ("i32", ints()),
+            (
+                "dec",
+                Arc::new(
+                    Decimal128Array::from(vec![1, 2, 3, 4])
+                        .with_precision_and_scale(10, 3)
+                        .unwrap(),
+                ),
+            ),
+            (
+                "time",
+                Arc::new(Time64MicrosecondArray::from(vec![1, 2, 3, 4])),
+            ),
+            (
+                "tstz",
+                Arc::new(TimestampMicrosecondArray::from(vec![1, 2, 3, 4]).with_timezone("UTC")),
+            ),
+            (
+                "s",
+                Arc::new(StringArray::from(vec![Some("a"), None, Some("c"), None])),
+            ),
+            (
+                "bin",
+                Arc::new(BinaryArray::from_vec(vec![b"a", b"b", b"c", b"d"])),
+            ),
+            ("list", Arc::new(list.finish())),
+            (
+                "struct",
+                Arc::new(StructArray::from(vec![(
+                    Arc::new(Field::new("x", DataType::Int32, false)),
+                    ints(),
+                )])),
+            ),
+            ("map", Arc::new(map.finish())),
+            ("_file", Arc::new(file)),
+            ("_pos", Arc::new(Int64Array::from(vec![10, 11, 12, 13]))),
+        ];
+        let batch = RecordBatch::try_from_iter(columns).unwrap();
+        let data_columns: Vec<usize> = (0..batch.num_columns() - 2).collect();
+        let selected = HashMap::from([(
+            "f.parquet".to_string(),
+            Arc::new(RoaringTreemap::from_iter([11, 13])),
+        )]);
+
+        let expected = take_record_batch(&batch, &UInt32Array::from(vec![1, 3]))
+            .unwrap()
+            .project(&data_columns)
+            .unwrap();
+        assert_eq!(
+            select_positions(batch.clone(), &selected).unwrap(),
+            expected
+        );
+
+        let empty = select_positions(batch.slice(0, 0), &selected).unwrap();
+        assert_eq!(empty.schema(), expected.schema());
+        assert_eq!(empty.num_rows(), 0);
+    }
+
+    #[test]
+    fn decodes_only_valid_deletion_vector_blobs() {
+        let blob = dv_blob(&[0, 7, 1 << 40]);
+
+        let positions: Vec<u64> = decode_deletion_vector(&blob).unwrap().iter().collect();
+        assert_eq!(positions, [0, 7, 1 << 40]);
+
+        let corrupt = |index: usize| {
+            let mut blob = blob.clone();
+            blob[index] ^= 1;
+            decode_deletion_vector(&blob).unwrap_err().to_string()
+        };
+        assert!(corrupt(0).contains("length prefix"));
+        assert!(corrupt(4).contains("checksum"));
+        assert!(corrupt(blob.len() - 1).contains("checksum"));
+        let mut bad_magic = blob.clone();
+        bad_magic[4] ^= 1;
+        let crc = crc32fast::hash(&bad_magic[4..blob.len() - 4]).to_be_bytes();
+        bad_magic[blob.len() - 4..].copy_from_slice(&crc);
+        let error = decode_deletion_vector(&bad_magic).unwrap_err().to_string();
+        assert!(error.contains("magic"), "{error}");
+        assert!(decode_deletion_vector(&blob[..6]).is_err());
+    }
+
+    #[test]
+    fn pairs_each_deletion_vector_with_its_data_file() {
+        let paired = pair_deletion_vectors(
+            7,
+            SnapshotFiles {
+                added: vec![data_file("new.parquet")],
+                removed: vec![data_file("gone.parquet")],
+                added_dvs: vec![
+                    dv("a.puffin", "new.parquet"),
+                    dv("b.puffin", "kept.parquet"),
+                ],
+                removed_dvs: vec![
+                    dv("c.puffin", "gone.parquet"),
+                    dv("d.puffin", "kept.parquet"),
+                ],
+            },
+        )
+        .unwrap();
+        let dv_path =
+            |read: &FileRead| read.deletion_vector.as_ref().map(|dv| dv.file_path.clone());
+        assert_eq!(dv_path(&paired.added[0]).as_deref(), Some("a.puffin"));
+        assert_eq!(dv_path(&paired.removed[0]).as_deref(), Some("c.puffin"));
+        let [new] = &paired.new_deletes[..] else {
+            panic!("{:?}", paired.new_deletes)
+        };
+        assert_eq!(new.data_file_path, "kept.parquet");
+        assert_eq!(new.added.data_file.file_path(), "b.puffin");
+        assert_eq!(
+            new.replaced.as_ref().unwrap().data_file.file_path(),
+            "d.puffin"
+        );
+    }
+
+    #[test]
+    fn names_the_unreadable_delete_file() {
+        let error = |content| {
+            v2_delete_file_error(&manifest_file("d.parquet", content, None).data_file).to_string()
+        };
+        assert!(
+            error(DataContentType::EqualityDeletes).contains("equality delete file ('d.parquet')")
+        );
+        assert!(error(DataContentType::PositionDeletes)
+            .contains("V2 position delete file ('d.parquet')"));
+    }
+
+    #[test]
+    fn rejects_inconsistent_deletion_vectors() {
+        let error = |files| match pair_deletion_vectors(7, files) {
+            Ok(_) => panic!("inconsistent deletion vectors were accepted"),
+            Err(error) => error.to_string(),
+        };
+
+        assert!(error(SnapshotFiles {
+            removed_dvs: vec![dv("a.puffin", "f.parquet")],
+            ..Default::default()
+        })
+        .contains("without replacing it"));
+        assert!(error(SnapshotFiles {
+            removed: vec![data_file("f.parquet")],
+            added_dvs: vec![dv("a.puffin", "f.parquet")],
+            ..Default::default()
+        })
+        .contains("adds a deletion vector for it"));
+        assert!(error(SnapshotFiles {
+            added_dvs: vec![dv("a.puffin", "f.parquet"), dv("b.puffin", "f.parquet")],
+            ..Default::default()
+        })
+        .contains("two deletion vectors"));
     }
 }
 
