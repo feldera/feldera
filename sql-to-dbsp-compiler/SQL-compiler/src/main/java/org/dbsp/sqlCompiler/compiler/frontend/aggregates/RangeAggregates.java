@@ -270,6 +270,7 @@ public class RangeAggregates extends WindowAggregates {
 
         DBSPSimpleOperator windowAgg;
         DBSPTypeTuple aggResultType;
+        DBSPExpression emptySetResult;
         {
             // Compute the window aggregate
 
@@ -301,6 +302,7 @@ public class RangeAggregates extends WindowAggregates {
                             .closure(pr);
 
             aggResultType = list.getEmptySetResultType().to(DBSPTypeTuple.class);
+            emptySetResult = list.getEmptySetResult();
             // Prepare a type that will make the operator following the window aggregate happy
             // (that operator is a map_index).  Currently, the compiler cannot represent
             // exactly the output type of the WindowAggregateOperator, so it lies about the actual type.
@@ -323,7 +325,7 @@ public class RangeAggregates extends WindowAggregates {
             // map_index(|(key_ts_agg)| (
             //         Tup2::new(key_ts_agg.0.0,
             //                   UnsignedWrappers::to_signed::<i32, i32, i64, u64>(key_ts_agg.1.0, true, true)),
-            //         key_ts_agg.1.1.unwrap_or_default() ))
+            //         key_ts_agg.1.1.unwrap_or(emptySetResult) ))
             DBSPVariablePath var = new DBSPVariablePath("key_ts_agg",
                     new DBSPTypeRawTuple(
                             partitionType.ref(),
@@ -364,9 +366,10 @@ public class RangeAggregates extends WindowAggregates {
             List<DBSPExpression> keyFields = new ArrayList<>(Arrays.asList(
                     Objects.requireNonNull(DBSPTupleExpression.flatten(ixKey).fields)));
             keyFields.add(unwrap);
+            // An empty window holds the results of the aggregates on an empty set
             DBSPExpression body = new DBSPRawTupleExpression(
                     new DBSPTupleExpression(keyFields, false),
-                    new DBSPApplyMethodExpression(this.node, "unwrap_or_default", aggResultType, agg));
+                    new DBSPApplyMethodExpression(this.node, "unwrap_or", aggResultType, agg, emptySetResult));
             index = new DBSPMapIndexOperator(this.node, body.closure(var), windowAgg.outputPort())
                     .addAnnotation(new NoChain(), DBSPMapIndexOperator.class);
             this.compiler.addOperator(index);

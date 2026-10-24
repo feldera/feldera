@@ -99,6 +99,8 @@ public class CircuitOptimizer extends Passes {
         this.add(new OptimizeWithGraph(compiler,
                 g -> new OptimizeProjections(compiler, true, g, operatorsAnalyzed), 1));
         this.add(new FuseExpensiveMaps(compiler));
+        // First invocation, fuses aggregates and maps
+        this.add(new FuseIntoArrayAgg(compiler));
         this.add(new RemoveViewOperators(compiler, false));
         this.add(new LeftJoinChains(compiler));
         this.add(new UnusedFields(compiler));
@@ -164,6 +166,8 @@ public class CircuitOptimizer extends Passes {
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
         this.add(new OptimizeWithGraph(compiler,
                 g -> new OptimizeProjections(compiler, false, g, operatorsAnalyzed)));
+        // Second invocation, fuses aggregates and joins
+        this.add(new FuseIntoArrayAgg(compiler));
         this.add(new SimplifyWaterline(compiler)
                 .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));
         this.add(new Simplify(compiler).circuitRewriter(true));
