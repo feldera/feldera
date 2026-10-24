@@ -188,6 +188,34 @@ impl SerializeWithContext<SqlSerdeConfig> for Timestamp {
     }
 }
 
+/// The text of an error for a TIMESTAMP outside the legal range.
+pub(crate) const TIMESTAMP_RANGE: &str =
+    "outside the range 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999";
+/// The text of an error for a DATE outside the legal range.
+pub(crate) const DATE_RANGE: &str = "outside the range 0001-01-01 to 9999-12-31";
+/// The text of an error for a TIME outside the legal range.
+const TIME_RANGE: &str = "outside the range 00:00:00 to 23:59:59.999999999";
+
+/// The deserialization error for a `type_name` `value` that is `range`.
+fn decoded_out_of_range<E: serde::de::Error>(
+    type_name: &str,
+    value: fmt::Arguments<'_>,
+    range: &str,
+) -> E {
+    E::custom(format!("{type_name} {value} is {range}"))
+}
+
+/// `datetime`, with a leap second moved back to the last microsecond of the
+/// second before it.
+pub(crate) fn without_leap_second<T: Timelike>(datetime: T) -> T {
+    if datetime.nanosecond() < 1_000_000_000 {
+        return datetime;
+    }
+    datetime
+        .with_nanosecond(999_999_000)
+        .expect("the second before a leap second has a last microsecond")
+}
+
 impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Timestamp {
     fn deserialize_with_context<D>(
         deserializer: D,
@@ -207,7 +235,14 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Timestamp {
                         ))
                     })?;
 
-                Ok(Self::from_microseconds(timestamp.timestamp_micros()))
+                Self::legal_from_microseconds(without_leap_second(timestamp).timestamp_micros())
+                    .ok_or_else(|| {
+                        decoded_out_of_range(
+                            "timestamp",
+                            format_args!("'{timestamp_str}'"),
+                            TIMESTAMP_RANGE,
+                        )
+                    })
             }
             TimestampFormat::String(format) => {
                 // `timestamp_str: &'de` doesn't work for JSON, which escapes strings
@@ -219,17 +254,36 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Timestamp {
                         D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e} (expected format: '{format}')"))
                     })?;
 
-                Ok(Self::from_microseconds(
-                    timestamp.and_utc().timestamp_micros(),
-                ))
+                Self::legal_from_microseconds(
+                    without_leap_second(timestamp).and_utc().timestamp_micros(),
+                )
+                .ok_or_else(|| {
+                    decoded_out_of_range(
+                        "timestamp",
+                        format_args!("'{timestamp_str}'"),
+                        TIMESTAMP_RANGE,
+                    )
+                })
             }
             TimestampFormat::MillisSinceEpoch => {
                 let millis: i64 = Deserialize::deserialize(deserializer)?;
-                Ok(Self::from_milliseconds(millis))
+                Self::legal_from_milliseconds(millis).ok_or_else(|| {
+                    decoded_out_of_range(
+                        "timestamp",
+                        format_args!("{millis} milliseconds since 1970-01-01"),
+                        TIMESTAMP_RANGE,
+                    )
+                })
             }
             TimestampFormat::MicrosSinceEpoch => {
                 let micros: i64 = Deserialize::deserialize(deserializer)?;
-                Ok(Self::from_microseconds(micros))
+                Self::legal_from_microseconds(micros).ok_or_else(|| {
+                    decoded_out_of_range(
+                        "timestamp",
+                        format_args!("{micros} microseconds since 1970-01-01"),
+                        TIMESTAMP_RANGE,
+                    )
+                })
             }
         }
     }
@@ -253,9 +307,14 @@ impl<'de> Deserialize<'de> for Timestamp {
                 ))
             })?;
 
-        Ok(Self::from_microseconds(
-            timestamp.and_utc().timestamp_micros(),
-        ))
+        Self::legal_from_microseconds(without_leap_second(timestamp).and_utc().timestamp_micros())
+            .ok_or_else(|| {
+                decoded_out_of_range(
+                    "timestamp",
+                    format_args!("'{timestamp_str}'"),
+                    TIMESTAMP_RANGE,
+                )
+            })
     }
 }
 
@@ -360,15 +419,32 @@ impl Timestamp {
         Self::legal_from_microseconds(milliseconds.checked_mul(1000)?)
     }
 
+    /// The first legal [Timestamp], 0001-01-01 00:00:00.
+    pub const FIRST_LEGAL: Self = Self {
+        microseconds: -62_135_596_800_000_000,
+    };
+
+    /// The last legal [Timestamp], 9999-12-31 23:59:59.999999.
+    pub const LAST_LEGAL: Self = Self {
+        microseconds: 253_402_300_799_999_999,
+    };
+
+    /// The [Timestamp] `microseconds` after the Unix epoch, clamped to the
+    /// range 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999.
+    pub fn clamped_from_microseconds(microseconds: i64) -> Self {
+        let microseconds = microseconds.clamp(
+            Self::FIRST_LEGAL.microseconds,
+            Self::LAST_LEGAL.microseconds,
+        );
+        Self { microseconds }
+    }
+
     /// The [Timestamp] for `dt`, or `None` if it is outside the legal range.
     /// The range check follows the rounding of `dt` to microseconds.
     pub fn legal_from_naiveDateTime(dt: NaiveDateTime) -> Option<Self> {
         Self::legal_from_microseconds(Self::from_naiveDateTime(dt).microseconds)
     }
 }
-
-/// The text of an error for a TIMESTAMP outside the legal range.
-const TIMESTAMP_RANGE: &str = "outside the range 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999";
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -528,7 +604,14 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for TimestampTz 
                     ))
                 })?;
 
-                Ok(Self::from_dateTime(dateTime.to_utc()))
+                Self::legal_from_microseconds(without_leap_second(dateTime).timestamp_micros())
+                    .ok_or_else(|| {
+                        decoded_out_of_range(
+                            "timestamp with time zone",
+                            format_args!("'{timestamp_str}'"),
+                            TIMESTAMP_RANGE,
+                        )
+                    })
             }
             TimestampFormat::String(format) => {
                 // `timestamp_str: &'de` doesn't work for JSON, which escapes strings
@@ -539,17 +622,39 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for TimestampTz 
                         D::Error::custom(format!("invalid timestamp string '{timestamp_str}': {e} (expected format: '{format}')"))
                     })?;
 
-                Ok(Self::from_microseconds(
-                    timestamp.and_utc().timestamp_micros(),
-                ))
+                Self::legal_from_microseconds(
+                    without_leap_second(timestamp).and_utc().timestamp_micros(),
+                )
+                .ok_or_else(|| {
+                    decoded_out_of_range(
+                        "timestamp with time zone",
+                        format_args!("'{timestamp_str}'"),
+                        TIMESTAMP_RANGE,
+                    )
+                })
             }
             TimestampFormat::MillisSinceEpoch => {
                 let millis: i64 = Deserialize::deserialize(deserializer)?;
-                Ok(Self::from_milliseconds(millis))
+                millis
+                    .checked_mul(1000)
+                    .and_then(Self::legal_from_microseconds)
+                    .ok_or_else(|| {
+                        decoded_out_of_range(
+                            "timestamp with time zone",
+                            format_args!("{millis} milliseconds since 1970-01-01"),
+                            TIMESTAMP_RANGE,
+                        )
+                    })
             }
             TimestampFormat::MicrosSinceEpoch => {
                 let micros: i64 = Deserialize::deserialize(deserializer)?;
-                Ok(Self::from_microseconds(micros))
+                Self::legal_from_microseconds(micros).ok_or_else(|| {
+                    decoded_out_of_range(
+                        "timestamp with time zone",
+                        format_args!("{micros} microseconds since 1970-01-01"),
+                        TIMESTAMP_RANGE,
+                    )
+                })
             }
         }
     }
@@ -573,7 +678,15 @@ impl<'de> Deserialize<'de> for TimestampTz {
                 ))
             })?;
 
-        Ok(Self::from_dateTime(datetime.to_utc()))
+        Self::legal_from_microseconds(without_leap_second(datetime).timestamp_micros()).ok_or_else(
+            || {
+                decoded_out_of_range(
+                    "timestamp with time zone",
+                    format_args!("'{timestamp_str}'"),
+                    TIMESTAMP_RANGE,
+                )
+            },
+        )
     }
 }
 
@@ -639,6 +752,12 @@ impl TimestampTz {
     pub fn legal_from_microseconds(microseconds: i64) -> Option<Self> {
         Timestamp::legal_from_microseconds(microseconds).map(|_| Self { microseconds })
     }
+
+    /// The [TimestampTz] `microseconds` after the Unix epoch, clamped to the
+    /// range 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999 UTC.
+    pub fn clamped_from_microseconds(microseconds: i64) -> Self {
+        Self::from_timestamp(Timestamp::clamped_from_microseconds(microseconds))
+    }
 }
 
 /// Parse a timestamp of the form %Y-%m-%d %H:%M:%S %z, where %z
@@ -676,7 +795,7 @@ pub fn parse_timestamp_tz(st: &str) -> SqlResult<TimestampTz> {
         ))
     })?;
 
-    let result = zone.local_to_utc(dt)?;
+    let result = zone.local_to_utc(without_leap_second(dt))?;
     TimestampTz::legal_from_microseconds(result.timestamp_micros()).ok_or_else(|| {
         SqlRuntimeError::from_string(format!(
             "Failed to parse '{st}' as a TIMESTAMP WITH TIME ZONE: the result is {TIMESTAMP_RANGE}"
@@ -2270,7 +2389,7 @@ pub fn hop_TimestampTzN_ShortInterval_ShortInterval_ShortInterval(
 pub fn parse_timestamp__(format: SqlString, st: SqlString) -> Option<Timestamp> {
     let nt = NaiveDateTime::parse_from_str(st.str(), format.str());
     match nt {
-        Ok(nt) => Timestamp::legal_from_naiveDateTime(nt),
+        Ok(nt) => Timestamp::legal_from_naiveDateTime(without_leap_second(nt)),
         Err(e) => match e.kind() {
             ParseErrorKind::BadFormat | ParseErrorKind::NotEnough | ParseErrorKind::Impossible => {
                 panic!(
@@ -2474,13 +2593,20 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Date {
                         "invalid date string '{str}': {e} (expected format: '{format}')"
                     ))
                 })?;
-                Ok(Self::from_days(
-                    (date.and_time(NaiveTime::default()).and_utc().timestamp() / 86400) as i32,
-                ))
+                Self::legal_from_date(date).ok_or_else(|| {
+                    decoded_out_of_range("date", format_args!("'{str}'"), DATE_RANGE)
+                })
             }
-            DateFormat::DaysSinceEpoch => Ok(Self {
-                days: i32::deserialize(deserializer)?,
-            }),
+            DateFormat::DaysSinceEpoch => {
+                let days = i32::deserialize(deserializer)?;
+                Self::legal_from_days(days as i64).ok_or_else(|| {
+                    decoded_out_of_range(
+                        "date",
+                        format_args!("{days} days since 1970-01-01"),
+                        DATE_RANGE,
+                    )
+                })
+            }
         }
     }
 }
@@ -2497,9 +2623,8 @@ impl<'de> Deserialize<'de> for Date {
                 "invalid date string '{str}': {e} (expected format: '%Y-%m-%d')"
             ))
         })?;
-        Ok(Self::from_days(
-            (date.and_time(NaiveTime::default()).and_utc().timestamp() / 86400) as i32,
-        ))
+        Self::legal_from_date(date)
+            .ok_or_else(|| decoded_out_of_range("date", format_args!("'{str}'"), DATE_RANGE))
     }
 }
 
@@ -3515,16 +3640,23 @@ impl Time {
         Self { nanoseconds }
     }
 
+    /// Create a [Time] from a number of nanoseconds since midnight, or
+    /// `None` if it is outside the range 00:00:00 to 23:59:59.999999999.
+    pub fn legal_from_nanoseconds(nanoseconds: u64) -> Option<Self> {
+        (nanoseconds < Self::ONE_DAY.nanoseconds).then_some(Self { nanoseconds })
+    }
+
     #[doc(hidden)]
     pub fn nanoseconds(&self) -> u64 {
         self.nanoseconds
     }
 
-    /// Create a [Time] from a chrono [NaiveTime].
+    /// Create a [Time] from a chrono [NaiveTime].  A leap second becomes
+    /// the last nanosecond of the second before it.
     pub fn from_time(time: NaiveTime) -> Self {
+        let nanosecond = time.nanosecond().min(BILLION as u32 - 1);
         Self {
-            nanoseconds: (time.num_seconds_from_midnight() as u64) * BILLION
-                + (time.nanosecond() as u64),
+            nanoseconds: (time.num_seconds_from_midnight() as u64) * BILLION + (nanosecond as u64),
         }
     }
 
@@ -3621,18 +3753,55 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Time {
                 })?;
                 Ok(Self::from_time(time))
             }
-            TimeFormat::Nanos => Ok(Self {
-                nanoseconds: u64::deserialize(deserializer)?,
-            }),
-            TimeFormat::NanosSigned => Ok(Self {
-                nanoseconds: i64::deserialize(deserializer)? as u64,
-            }),
-            TimeFormat::Micros => Ok(Self {
-                nanoseconds: u64::deserialize(deserializer)? * 1_000,
-            }),
-            TimeFormat::Millis => Ok(Self {
-                nanoseconds: u64::deserialize(deserializer)? * 1_000_000,
-            }),
+            TimeFormat::Nanos => {
+                let nanos = u64::deserialize(deserializer)?;
+                Self::legal_from_nanoseconds(nanos).ok_or_else(|| {
+                    decoded_out_of_range(
+                        "time",
+                        format_args!("{nanos} nanoseconds since midnight"),
+                        TIME_RANGE,
+                    )
+                })
+            }
+            TimeFormat::NanosSigned => {
+                let nanos = i64::deserialize(deserializer)?;
+                u64::try_from(nanos)
+                    .ok()
+                    .and_then(Self::legal_from_nanoseconds)
+                    .ok_or_else(|| {
+                        decoded_out_of_range(
+                            "time",
+                            format_args!("{nanos} nanoseconds since midnight"),
+                            TIME_RANGE,
+                        )
+                    })
+            }
+            TimeFormat::Micros => {
+                let micros = u64::deserialize(deserializer)?;
+                micros
+                    .checked_mul(1_000)
+                    .and_then(Self::legal_from_nanoseconds)
+                    .ok_or_else(|| {
+                        decoded_out_of_range(
+                            "time",
+                            format_args!("{micros} microseconds since midnight"),
+                            TIME_RANGE,
+                        )
+                    })
+            }
+            TimeFormat::Millis => {
+                let millis = u64::deserialize(deserializer)?;
+                millis
+                    .checked_mul(1_000_000)
+                    .and_then(Self::legal_from_nanoseconds)
+                    .ok_or_else(|| {
+                        decoded_out_of_range(
+                            "time",
+                            format_args!("{millis} milliseconds since midnight"),
+                            TIME_RANGE,
+                        )
+                    })
+            }
         }
     }
 }
@@ -4086,9 +4255,14 @@ mod test {
     use crate::{LongInterval, ShortInterval, SqlString};
     use feldera_types::format::json::JsonFlavor;
     use feldera_types::serde_with_context::{
-        DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
+        DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
+        TimestampFormat,
     };
     use feldera_types::{deserialize_table_record, serialize_table_record};
+    use serde::Deserialize;
+    use serde::de::IntoDeserializer;
+    use serde::de::value::{BorrowedStrDeserializer, Error as ValueError};
+    use std::fmt::Debug;
 
     #[derive(Debug, Eq, PartialEq, serde::Serialize)]
     #[allow(non_snake_case)]
@@ -4445,6 +4619,229 @@ mod test {
     fn to_time_beyond_u32_seconds() {
         // 2^32 + 5 seconds
         Time::from_nanoseconds(4_294_967_301_000_000_000).to_time();
+    }
+
+    /// The error from decoding `value` as a `T` with `config`.
+    fn decode_error<'de, T: DeserializeWithContext<'de, SqlSerdeConfig, ()> + Debug>(
+        value: impl IntoDeserializer<'de, ValueError>,
+        config: &'de SqlSerdeConfig,
+    ) -> String {
+        T::deserialize_with_context(value.into_deserializer(), config)
+            .unwrap_err()
+            .to_string()
+    }
+
+    /// The value decoded from `value` as a `T` with `config`.
+    fn decode<'de, T: DeserializeWithContext<'de, SqlSerdeConfig, ()>>(
+        value: impl IntoDeserializer<'de, ValueError>,
+        config: &'de SqlSerdeConfig,
+    ) -> T {
+        T::deserialize_with_context(value.into_deserializer(), config).unwrap()
+    }
+
+    /// The error from decoding `text` as a `T` without a configuration.
+    fn plain_decode_error<'de, T: Deserialize<'de> + Debug>(text: &'de str) -> String {
+        T::deserialize(BorrowedStrDeserializer::<ValueError>::new(text))
+            .unwrap_err()
+            .to_string()
+    }
+
+    #[test]
+    fn decode_timestamp_range() {
+        let range = "outside the range 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999";
+        let config = SqlSerdeConfig::default();
+        let format = config
+            .clone()
+            .with_timestamp_format(TimestampFormat::String("%F %T"));
+        let millis = config
+            .clone()
+            .with_timestamp_format(TimestampFormat::MillisSinceEpoch);
+        let micros = config
+            .clone()
+            .with_timestamp_format(TimestampFormat::MicrosSinceEpoch);
+        assert_eq!(
+            decode_error::<Timestamp>("0000-12-31 23:59:59", &config),
+            format!("timestamp '0000-12-31 23:59:59' is {range}")
+        );
+        assert_eq!(
+            decode_error::<Timestamp>("+10000-01-01 00:00:00", &format),
+            format!("timestamp '+10000-01-01 00:00:00' is {range}")
+        );
+        assert_eq!(
+            decode_error::<Timestamp>(i64::MAX, &millis),
+            format!("timestamp 9223372036854775807 milliseconds since 1970-01-01 is {range}")
+        );
+        assert_eq!(
+            decode_error::<Timestamp>(253402300800000000i64, &micros),
+            format!("timestamp 253402300800000000 microseconds since 1970-01-01 is {range}")
+        );
+        assert_eq!(
+            plain_decode_error::<Timestamp>("+10000-01-01 00:00:00"),
+            format!("timestamp '+10000-01-01 00:00:00' is {range}")
+        );
+        // The limits are legal
+        let first = timestamp("0001-01-01 00:00:00");
+        let last = timestamp("9999-12-31 23:59:59.999999");
+        assert_eq!(
+            decode::<Timestamp>("9999-12-31 23:59:59.999999", &config),
+            last
+        );
+        assert_eq!(decode::<Timestamp>("0001-01-01 00:00:00", &format), first);
+        assert_eq!(
+            decode::<Timestamp>(253402300799999i64, &millis),
+            timestamp("9999-12-31 23:59:59.999")
+        );
+        assert_eq!(decode::<Timestamp>(253402300799999999i64, &micros), last);
+    }
+
+    #[test]
+    fn decode_timestamp_tz_range() {
+        let range = "outside the range 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999";
+        let config = SqlSerdeConfig::default();
+        let format = config
+            .clone()
+            .with_timestamp_tz_format(TimestampFormat::String("%F %T"));
+        let millis = config
+            .clone()
+            .with_timestamp_tz_format(TimestampFormat::MillisSinceEpoch);
+        let micros = config
+            .clone()
+            .with_timestamp_tz_format(TimestampFormat::MicrosSinceEpoch);
+        // The year 10000 in UTC
+        assert_eq!(
+            decode_error::<TimestampTz>("9999-12-31T23:00:00-05:00", &config),
+            format!("timestamp with time zone '9999-12-31T23:00:00-05:00' is {range}")
+        );
+        assert_eq!(
+            decode_error::<TimestampTz>("0000-12-31 23:59:59", &format),
+            format!("timestamp with time zone '0000-12-31 23:59:59' is {range}")
+        );
+        assert_eq!(
+            decode_error::<TimestampTz>(i64::MIN, &millis),
+            format!(
+                "timestamp with time zone -9223372036854775808 milliseconds since 1970-01-01 is {range}"
+            )
+        );
+        assert_eq!(
+            decode_error::<TimestampTz>(-62135596800000001i64, &micros),
+            format!(
+                "timestamp with time zone -62135596800000001 microseconds since 1970-01-01 is {range}"
+            )
+        );
+        assert_eq!(
+            plain_decode_error::<TimestampTz>("9999-12-31 23:00:00-05:00"),
+            format!("timestamp with time zone '9999-12-31 23:00:00-05:00' is {range}")
+        );
+        // The limits are legal
+        let first = TimestampTz::from_microseconds(-62135596800000000);
+        let last = TimestampTz::from_microseconds(253402300799999999);
+        assert_eq!(
+            decode::<TimestampTz>("9999-12-31T18:59:59.999999-05:00", &config),
+            last
+        );
+        assert_eq!(decode::<TimestampTz>("0001-01-01 00:00:00", &format), first);
+        assert_eq!(decode::<TimestampTz>(-62135596800000i64, &millis), first);
+        assert_eq!(decode::<TimestampTz>(-62135596800000000i64, &micros), first);
+    }
+
+    #[test]
+    fn decode_date_range() {
+        let range = "outside the range 0001-01-01 to 9999-12-31";
+        let config = SqlSerdeConfig::default();
+        let days = config.clone().with_date_format(DateFormat::DaysSinceEpoch);
+        assert_eq!(
+            decode_error::<Date>("0000-12-31", &config),
+            format!("date '0000-12-31' is {range}")
+        );
+        // 10000-01-01
+        assert_eq!(
+            decode_error::<Date>(2932897, &days),
+            format!("date 2932897 days since 1970-01-01 is {range}")
+        );
+        assert_eq!(
+            plain_decode_error::<Date>("+10000-01-01"),
+            format!("date '+10000-01-01' is {range}")
+        );
+        // The limits are legal: 0001-01-01 and 9999-12-31
+        assert_eq!(
+            decode::<Date>("0001-01-01", &config),
+            Date::from_days(-719162)
+        );
+        assert_eq!(decode::<Date>(2932896, &days), Date::from_days(2932896));
+    }
+
+    #[test]
+    fn leap_seconds() {
+        // A leap second is the last instant of the second before it
+        let config = SqlSerdeConfig::default();
+        let last_of_day = Time::from_nanoseconds(86_399_999_999_999);
+        let last_of_year = timestamp("2024-12-31 23:59:59.999999");
+        assert_eq!(
+            decode::<Time>("12:30:60", &config),
+            decode::<Time>("12:30:59.999999999", &config)
+        );
+        assert_eq!(decode::<Time>("23:59:60", &config), last_of_day);
+        assert_eq!(
+            decode::<Timestamp>("2024-12-31 23:59:60", &config),
+            last_of_year
+        );
+        assert_eq!(
+            decode::<TimestampTz>("2024-12-31T23:59:60+00:00", &config),
+            TimestampTz::from(last_of_year)
+        );
+        assert_eq!(
+            super::parse_time__(
+                SqlString::from_ref("%H:%M:%S"),
+                SqlString::from_ref("23:59:60")
+            ),
+            Some(last_of_day)
+        );
+        assert_eq!(
+            super::parse_timestamp__(
+                SqlString::from_ref("%Y-%m-%d %H:%M:%S"),
+                SqlString::from_ref("2024-12-31 23:59:60")
+            ),
+            Some(last_of_year)
+        );
+    }
+
+    #[test]
+    fn decode_time_range() {
+        let range = "outside the range 00:00:00 to 23:59:59.999999999";
+        let config = SqlSerdeConfig::default();
+        let nanos = config.clone().with_time_format(TimeFormat::Nanos);
+        let signed = config.clone().with_time_format(TimeFormat::NanosSigned);
+        let micros = config.clone().with_time_format(TimeFormat::Micros);
+        let millis = config.clone().with_time_format(TimeFormat::Millis);
+        assert_eq!(
+            decode_error::<Time>(86400000000000u64, &nanos),
+            format!("time 86400000000000 nanoseconds since midnight is {range}")
+        );
+        assert_eq!(
+            decode_error::<Time>(-1i64, &signed),
+            format!("time -1 nanoseconds since midnight is {range}")
+        );
+        assert_eq!(
+            decode_error::<Time>(u64::MAX, &micros),
+            format!("time 18446744073709551615 microseconds since midnight is {range}")
+        );
+        assert_eq!(
+            decode_error::<Time>(86400000u64, &millis),
+            format!("time 86400000 milliseconds since midnight is {range}")
+        );
+        // The limits are legal
+        let last = Time::from_nanoseconds(86399999999999);
+        assert_eq!(decode::<Time>("23:59:59.999999999", &config), last);
+        assert_eq!(decode::<Time>(86399999999999u64, &nanos), last);
+        assert_eq!(decode::<Time>(86399999999999i64, &signed), last);
+        assert_eq!(
+            decode::<Time>(86399999999u64, &micros),
+            Time::from_nanoseconds(86399999999000)
+        );
+        assert_eq!(
+            decode::<Time>(86399999u64, &millis),
+            Time::from_nanoseconds(86399999000000)
+        );
     }
 
     #[test]

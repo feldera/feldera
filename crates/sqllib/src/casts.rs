@@ -1391,14 +1391,20 @@ pub fn cast_to_s_LongInterval_YEARS_TO_MONTHS(
     limit_or_size_string(&result, size, fixed)
 }
 
+pub(crate) const MICROS_PER_SECOND: u64 = 1_000_000;
+pub(crate) const MICROS_PER_MINUTE: u64 = 60 * MICROS_PER_SECOND;
+pub(crate) const MICROS_PER_HOUR: u64 = 60 * MICROS_PER_MINUTE;
+pub(crate) const MICROS_PER_DAY: u64 = 24 * MICROS_PER_HOUR;
+
 impl ShortInterval {
+    /// The sign and the absolute value in microseconds.
     #[doc(hidden)]
-    pub(crate) fn into_sign_and_magnitude(self) -> (&'static str, Self) {
-        if self.microseconds() < 0 {
-            ("-", Self::from_microseconds(-self.microseconds()))
-        } else {
-            ("+", self)
-        }
+    pub(crate) fn into_sign_and_magnitude(self) -> (&'static str, u64) {
+        (
+            sign(self.microseconds() < 0),
+            // The absolute value of `i64::MIN` does not fit in an `i64`
+            self.microseconds().unsigned_abs(),
+        )
     }
 }
 
@@ -1408,8 +1414,8 @@ pub fn cast_to_s_ShortInterval_DAYS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let (sign, interval) = interval.into_sign_and_magnitude();
-    let days = extract_day_ShortInterval(interval);
+    let (sign, micros) = interval.into_sign_and_magnitude();
+    let days = micros / MICROS_PER_DAY;
     let result = format_args!("{sign}{days}").to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
@@ -1420,10 +1426,9 @@ pub fn cast_to_s_ShortInterval_HOURS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let (sign, interval) = interval.into_sign_and_magnitude();
-    let days = extract_day_ShortInterval(interval);
-    let hours = extract_hour_ShortInterval(interval);
-    let result = format_args!("{sign}{}", 24 * days + hours).to_small_string::<32>();
+    let (sign, micros) = interval.into_sign_and_magnitude();
+    let hours = micros / MICROS_PER_HOUR;
+    let result = format_args!("{sign}{hours}").to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1433,9 +1438,9 @@ pub fn cast_to_s_ShortInterval_DAYS_TO_HOURS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let (sign, interval) = interval.into_sign_and_magnitude();
-    let days = extract_day_ShortInterval(interval);
-    let hours = extract_hour_ShortInterval(interval);
+    let (sign, micros) = interval.into_sign_and_magnitude();
+    let days = micros / MICROS_PER_DAY;
+    let hours = (micros / MICROS_PER_HOUR) % 24;
     let result = format_args!("{sign}{} {:02}", days, hours).to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
@@ -1457,10 +1462,10 @@ pub fn cast_to_s_ShortInterval_DAYS_TO_MINUTES(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let (sign, interval) = interval.into_sign_and_magnitude();
-    let days = extract_day_ShortInterval(interval);
-    let hours = extract_hour_ShortInterval(interval);
-    let minutes = extract_minute_ShortInterval(interval);
+    let (sign, micros) = interval.into_sign_and_magnitude();
+    let days = micros / MICROS_PER_DAY;
+    let hours = (micros / MICROS_PER_HOUR) % 24;
+    let minutes = (micros / MICROS_PER_MINUTE) % 60;
     let result = format_args!("{sign}{} {:02}:{:02}", days, hours, minutes).to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
@@ -1471,11 +1476,10 @@ pub fn cast_to_s_ShortInterval_HOURS_TO_MINUTES(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let (sign, interval) = interval.into_sign_and_magnitude();
-    let days = extract_day_ShortInterval(interval);
-    let hours = extract_hour_ShortInterval(interval);
-    let minutes = extract_minute_ShortInterval(interval);
-    let result = format_args!("{sign}{}:{:02}", days * 24 + hours, minutes).to_small_string::<32>();
+    let (sign, micros) = interval.into_sign_and_magnitude();
+    let hours = micros / MICROS_PER_HOUR;
+    let minutes = (micros / MICROS_PER_MINUTE) % 60;
+    let result = format_args!("{sign}{}:{:02}", hours, minutes).to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1485,10 +1489,10 @@ pub fn cast_to_s_ShortInterval_SECONDS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let (sign, interval) = interval.into_sign_and_magnitude();
-    let seconds = interval.microseconds() / 1_000_000;
-    let micros = interval.microseconds() % 1_000_000;
-    let result = format_args!("{sign}{seconds}.{:06}", micros).to_small_string::<32>();
+    let (sign, micros) = interval.into_sign_and_magnitude();
+    let seconds = micros / MICROS_PER_SECOND;
+    let fraction = micros % MICROS_PER_SECOND;
+    let result = format_args!("{sign}{seconds}.{:06}", fraction).to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1508,18 +1512,14 @@ pub fn cast_to_s_ShortInterval_HOURS_TO_SECONDS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let (sign, interval) = interval.into_sign_and_magnitude();
-    let days = extract_day_ShortInterval(interval);
-    let hours = extract_hour_ShortInterval(interval);
-    let minutes = extract_minute_ShortInterval(interval);
-    let seconds = extract_second_ShortInterval(interval);
-    let micros = interval.microseconds() % 1_000_000;
+    let (sign, micros) = interval.into_sign_and_magnitude();
+    let hours = micros / MICROS_PER_HOUR;
+    let minutes = (micros / MICROS_PER_MINUTE) % 60;
+    let seconds = (micros / MICROS_PER_SECOND) % 60;
+    let fraction = micros % MICROS_PER_SECOND;
     let result = format_args!(
         "{sign}{}:{:02}:{:02}.{:06}",
-        days * 24 + hours,
-        minutes,
-        seconds,
-        micros
+        hours, minutes, seconds, fraction
     )
     .to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
@@ -1531,19 +1531,12 @@ pub fn cast_to_s_ShortInterval_MINUTES_TO_SECONDS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let (sign, interval) = interval.into_sign_and_magnitude();
-    let days = extract_day_ShortInterval(interval);
-    let hours = extract_hour_ShortInterval(interval);
-    let minutes = extract_minute_ShortInterval(interval);
-    let seconds = extract_second_ShortInterval(interval);
-    let micros = interval.microseconds() % 1_000_000;
-    let result = format_args!(
-        "{sign}{:02}:{:02}.{:06}",
-        (days * 24 + hours) * 60 + minutes,
-        seconds,
-        micros
-    )
-    .to_small_string::<32>();
+    let (sign, micros) = interval.into_sign_and_magnitude();
+    let minutes = micros / MICROS_PER_MINUTE;
+    let seconds = (micros / MICROS_PER_SECOND) % 60;
+    let fraction = micros % MICROS_PER_SECOND;
+    let result =
+        format_args!("{sign}{:02}:{:02}.{:06}", minutes, seconds, fraction).to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -3019,7 +3012,7 @@ pub fn cast_to_Timestamp_s(value: SqlString) -> SqlResult<Timestamp> {
     if let Ok(v) = NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%d %H:%M:%S%.f") {
         //println!("Parsed successfully {} using {} into {:?} ({})",
         //         value, "%Y-%m-%d %H:%M:%S%.f", result, result.microseconds());
-        return Timestamp::legal_from_naiveDateTime(v)
+        return Timestamp::legal_from_naiveDateTime(crate::timestamp::without_leap_second(v))
             .ok_or_else(|| timestamp_out_of_range(&value, "TIMESTAMP"));
     }
 
@@ -4129,6 +4122,30 @@ mod tests {
     }
 
     #[test]
+    fn leap_second_casts() {
+        use crate::{Time, cast_to_Time_s, cast_to_Timestamp_s, cast_to_TimestampTz_s};
+
+        // A leap second is the last instant of the second before it
+        let s = SqlString::from_ref;
+        assert_eq!(
+            cast_to_Time_s(s("12:30:60")).unwrap(),
+            cast_to_Time_s(s("12:30:59.999999999")).unwrap()
+        );
+        assert_eq!(
+            cast_to_Time_s(s("23:59:60")).unwrap(),
+            Time::from_nanoseconds(Time::ONE_DAY.nanoseconds() - 1)
+        );
+        assert_eq!(
+            cast_to_Timestamp_s(s("2024-12-31 23:59:60")).unwrap(),
+            cast_to_Timestamp_s(s("2024-12-31 23:59:59.999999")).unwrap()
+        );
+        assert_eq!(
+            cast_to_TimestampTz_s(s("2024-12-31 23:59:60 +00:00")).unwrap(),
+            cast_to_TimestampTz_s(s("2024-12-31 23:59:59.999999 +00:00")).unwrap()
+        );
+    }
+
+    #[test]
     fn integer_casts_to_timestamp_keep_milliseconds() {
         // Signed and unsigned integers give the same timestamp
         use crate::{
@@ -4446,6 +4463,36 @@ mod tests {
             .unwrap(),
             SqlString::from_ref("-2057:36.789000")
         );
+    }
+
+    #[test]
+    fn most_negative_short_interval_to_string() {
+        type Cast = fn(ShortInterval, i32, bool) -> crate::SqlResult<SqlString>;
+        let cases: [(Cast, &str); 10] = [
+            (cast_to_s_ShortInterval_DAYS, "-106751991"),
+            (cast_to_s_ShortInterval_HOURS, "-2562047788"),
+            (cast_to_s_ShortInterval_DAYS_TO_HOURS, "-106751991 04"),
+            (cast_to_s_ShortInterval_MINUTES, "-153722867280"),
+            (cast_to_s_ShortInterval_DAYS_TO_MINUTES, "-106751991 04:00"),
+            (cast_to_s_ShortInterval_HOURS_TO_MINUTES, "-2562047788:00"),
+            (cast_to_s_ShortInterval_SECONDS, "-9223372036854.775808"),
+            (
+                cast_to_s_ShortInterval_DAYS_TO_SECONDS,
+                "-106751991 04:00:54.775808",
+            ),
+            (
+                cast_to_s_ShortInterval_HOURS_TO_SECONDS,
+                "-2562047788:00:54.775808",
+            ),
+            (
+                cast_to_s_ShortInterval_MINUTES_TO_SECONDS,
+                "-153722867280:54.775808",
+            ),
+        ];
+        let min = ShortInterval::from_microseconds(i64::MIN);
+        for (cast, expected) in cases {
+            assert_eq!(cast(min, -1, false).unwrap(), SqlString::from_ref(expected));
+        }
     }
 
     #[test]

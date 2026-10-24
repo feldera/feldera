@@ -40,7 +40,8 @@ time zone.  This extends to dates before the Gregorian calendar was
 introduced, effectively meaning that the dates use a <a href="https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar">Proleptic calendar</a>.
 
 The legal dates are `0001-01-01` to `9999-12-31`.  A computation whose
-result is outside this range stops the pipeline with an error.
+result is outside this range stops the pipeline with an error.  An input
+value outside this range is a parse error.
 
 ### Date literals
 
@@ -81,8 +82,13 @@ Values of type `DATE` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 ## Times
 
 A time represents the time of day, a value between 0 and 24 hours
-(excluding the latter).  Time values are stored to a precision of
-nanoseconds -- 9 subsecond digits.  Leap seconds are not supported.
+(excluding the latter).  An input value outside this range is a parse
+error.  Time values are stored to a precision of
+nanoseconds -- 9 subsecond digits.  Leap seconds are not supported:
+when a string is converted to a `TIME`, by a cast, by `PARSE_TIME`, or
+when reading input data, a time with 60 seconds is read as the last
+nanosecond before the next minute.  For example, `'12:30:60'` is
+`12:30:59.999999999`.
 The specified scale for the `TIME` data type is ignored, and it is
 always assumed to be `TIME(9)`.
 
@@ -150,7 +156,9 @@ always assumed to be `TIMESTAMP(6)`.
 
 The legal timestamps are `0001-01-01 00:00:00` to `9999-12-31
 23:59:59.999999` (in UTC for `TIMESTAMP WITH TIME ZONE`).  Values
-outside this range behave as for [dates](#dates).
+outside this range behave as for [dates](#dates).  Leap seconds are
+handled as for [times](#times), to microsecond precision: for example,
+`'2024-12-31 23:59:60'` is `2024-12-31 23:59:59.999999`.
 
 ### Timestamp literals
 
@@ -278,7 +286,10 @@ they can appear in the computed views.
 There are two kinds of intervals: short (from `DAY` to `SECOND`), and
 long (`YEAR` to `MONTH`).  Short intervals are represented with a
 precision of microseconds.  Long intervals are represented with a
-precision of an integer number of months.
+precision of an integer number of months.  A short interval can be at
+most about 106 million days (about 292,000 years), positive or
+negative.  A long interval can be at most about 179 million years,
+positive or negative.
 
 ### Interval literals
 
@@ -343,6 +354,10 @@ The following arithmetic operations are supported:
 | _interval_ `-` _interval_         | `INTERVAL`         | Subtract two intervals                                           |
 | _interval_ `*` _double_           | `INTERVAL`         | Multiply an interval by a scalar                                 |
 | _interval_ `/` _double_           | `INTERVAL`         | Divide an interval by a scalar                                   |
+
+An interval computation whose result is too large for the interval
+type stops the pipeline with an error.  This includes multiplication
+by a `NaN` or infinite `DOUBLE`.
 
 Arithmetic involving a `TIME` value always produces a (positive)
 `TIME` value, between `00:00:00` (inclusive) and `24:00:00`

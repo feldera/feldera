@@ -1399,9 +1399,14 @@ impl PartitionReceiver {
 
         if self.config.include_timestamp == Some(true) {
             let timestamp = message.timestamp().to_millis();
-            if let Some(timestamp) = timestamp
-                && let Some(timestamp) = DateTime::<Utc>::from_timestamp_millis(timestamp)
-            {
+            if let Some(timestamp) = timestamp {
+                // Saturates at chrono's limits; the SQL engine clamps to the TIMESTAMP range
+                let saturated = if timestamp < 0 {
+                    DateTime::<Utc>::MIN_UTC
+                } else {
+                    DateTime::<Utc>::MAX_UTC
+                };
+                let timestamp = DateTime::from_timestamp_millis(timestamp).unwrap_or(saturated);
                 metadata.insert(
                     "kafka_timestamp",
                     VariantValue::TimestampNtzMicros(timestamp.naive_utc()),

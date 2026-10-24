@@ -20,9 +20,13 @@
 #![allow(deprecated)]
 
 use crate::{
-    Date, SqlString, Time, Timestamp, TimestampTz, Uuid, binary::ByteArray,
-    flat_variant::FlatVariant, variant::Variant,
+    Date, SqlString, Time, Timestamp, TimestampTz, Uuid,
+    binary::ByteArray,
+    flat_variant::FlatVariant,
+    timestamp::{DATE_RANGE, TIMESTAMP_RANGE},
+    variant::Variant,
 };
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use dbsp::algebra::{F32, F64};
 use parquet_variant::{
     ObjectBuilder, Variant as ParquetVariant, VariantBuilder, VariantBuilderExt,
@@ -603,6 +607,26 @@ fn to_parquet_scalar(value: &Variant) -> Result<ParquetVariant<'_, '_>, String> 
     })
 }
 
+/// The [Date] for a Parquet variant date, or an error if it is outside
+/// the legal range.
+pub(crate) fn legal_date(date: NaiveDate) -> Result<Date, String> {
+    Date::legal_from_date(date).ok_or_else(|| format!("date '{date}' is {DATE_RANGE}"))
+}
+
+/// The [Timestamp] for a Parquet variant timestamp, or an error if it is
+/// outside the legal range.
+pub(crate) fn legal_timestamp(timestamp: NaiveDateTime) -> Result<Timestamp, String> {
+    Timestamp::legal_from_microseconds(timestamp.and_utc().timestamp_micros())
+        .ok_or_else(|| format!("timestamp '{timestamp}' is {TIMESTAMP_RANGE}"))
+}
+
+/// The [TimestampTz] for a Parquet variant timestamp with time zone, or an
+/// error if it is outside the legal range.
+pub(crate) fn legal_timestamp_tz(timestamp: DateTime<Utc>) -> Result<TimestampTz, String> {
+    TimestampTz::legal_from_microseconds(timestamp.timestamp_micros())
+        .ok_or_else(|| format!("timestamp with time zone '{timestamp}' is {TIMESTAMP_RANGE}"))
+}
+
 /// Map a decoded Parquet variant onto [`Variant`].
 ///
 /// The two type systems line up almost exactly. The one lossy step is a
@@ -624,20 +648,12 @@ fn to_variant(value: ParquetVariant<'_, '_>, depth: usize) -> Result<Variant, St
         ParquetVariant::Decimal4(v) => Variant::SqlDecimal((v.integer() as i128, v.scale())),
         ParquetVariant::Decimal8(v) => Variant::SqlDecimal((v.integer() as i128, v.scale())),
         ParquetVariant::Decimal16(v) => Variant::SqlDecimal((v.integer(), v.scale())),
-        ParquetVariant::Date(v) => Variant::Date(Date::from_date(v)),
+        ParquetVariant::Date(v) => Variant::Date(legal_date(v)?),
         ParquetVariant::Time(v) => Variant::Time(Time::from_time(v)),
-        ParquetVariant::TimestampNtzMicros(v) => {
-            Variant::Timestamp(Timestamp::from_microseconds(v.and_utc().timestamp_micros()))
-        }
-        ParquetVariant::TimestampNtzNanos(v) => {
-            Variant::Timestamp(Timestamp::from_microseconds(v.and_utc().timestamp_micros()))
-        }
-        ParquetVariant::TimestampMicros(v) => {
-            Variant::TimestampTz(TimestampTz::from_microseconds(v.timestamp_micros()))
-        }
-        ParquetVariant::TimestampNanos(v) => {
-            Variant::TimestampTz(TimestampTz::from_microseconds(v.timestamp_micros()))
-        }
+        ParquetVariant::TimestampNtzMicros(v) => Variant::Timestamp(legal_timestamp(v)?),
+        ParquetVariant::TimestampNtzNanos(v) => Variant::Timestamp(legal_timestamp(v)?),
+        ParquetVariant::TimestampMicros(v) => Variant::TimestampTz(legal_timestamp_tz(v)?),
+        ParquetVariant::TimestampNanos(v) => Variant::TimestampTz(legal_timestamp_tz(v)?),
         ParquetVariant::Binary(v) => Variant::Binary(ByteArray::new(v)),
         ParquetVariant::String(v) => Variant::String(SqlString::from_ref(v)),
         ParquetVariant::ShortString(v) => Variant::String(SqlString::from_ref(v.as_str())),
@@ -854,6 +870,48 @@ mod test {
             Variant::TimestampTz(TimestampTz::from_microseconds(
                 naive.and_utc().timestamp_micros()
             ))
+        );
+    }
+
+    /// Both decoders reject dates and timestamps outside the legal range.
+    #[test]
+    fn out_of_range_dates_and_timestamps_are_rejected() {
+        let year_10000 = NaiveDate::from_ymd_opt(10000, 1, 1).unwrap();
+        let year_0 = NaiveDate::from_ymd_opt(0, 12, 31)
+            .unwrap()
+            .and_hms_opt(23, 59, 59)
+            .unwrap();
+        let cases = [
+            (
+                ParquetVariant::Date(year_10000),
+                "date '+10000-01-01' is outside the range 0001-01-01 to 9999-12-31",
+            ),
+            (
+                ParquetVariant::TimestampNtzMicros(year_10000.and_hms_opt(0, 0, 0).unwrap()),
+                "timestamp '+10000-01-01 00:00:00' is outside the range \
+                 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999",
+            ),
+            (
+                ParquetVariant::TimestampMicros(year_0.and_utc()),
+                "timestamp with time zone '0000-12-31 23:59:59 UTC' is outside the range \
+                 0001-01-01 00:00:00 to 9999-12-31 23:59:59.999999",
+            ),
+        ];
+        for (value, message) in cases {
+            let (metadata, encoded) = encode(|b| b.append_value(value));
+            assert_eq!(
+                Variant::from_binary(&metadata, &encoded).unwrap_err(),
+                message
+            );
+            assert_eq!(
+                FlatVariant::from_binary(&metadata, &encoded).unwrap_err(),
+                message
+            );
+        }
+        let last = NaiveDate::from_ymd_opt(9999, 12, 31).unwrap();
+        assert_eq!(
+            scalar(ParquetVariant::Date(last)),
+            Variant::Date(Date::from_date(last))
         );
     }
 
