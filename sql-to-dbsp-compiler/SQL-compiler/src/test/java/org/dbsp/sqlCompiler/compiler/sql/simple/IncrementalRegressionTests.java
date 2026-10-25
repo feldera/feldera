@@ -2992,4 +2992,35 @@ public class IncrementalRegressionTests extends SqlIoTest {
                      2024-01-01 12:30:00 | 1 | 1""");
         }
     }
+
+    @Test
+    public void issue7212() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(k INT NOT NULL, a INT);
+                CREATE TABLE S(k INT NOT NULL, b INT);
+                CREATE VIEW V AS SELECT * FROM T WHERE T.a NOT IN (SELECT S.b FROM S WHERE S.k = T.k);""");
+        // Expected outputs validated with Postgres
+        // k=1: a matches; k=2: no match; k=3: a is NULL; k=4: NULL in S;
+        // k=5 and k=6: no S rows, so NOT IN is TRUE even for a NULL a
+        ccs.step("""
+                INSERT INTO T VALUES (1, 10), (2, 20), (3, NULL), (4, 40), (5, 50), (6, NULL);
+                INSERT INTO S VALUES (1, 10), (1, 20), (2, 30), (3, 30), (4, NULL), (4, 41);""", """
+                 k | a    | weight
+                -------------------
+                 2 | 20   | 1
+                 5 | 50   | 1
+                 6 |NULL  | 1""");
+        ccs.step("INSERT INTO S VALUES (2, 20);", """
+                 k | a  | weight
+                -----------------
+                 2 | 20 | -1""");
+        ccs.step("REMOVE FROM S VALUES (4, NULL);", """
+                 k | a  | weight
+                -----------------
+                 4 | 40 | 1""");
+        ccs.step("INSERT INTO S VALUES (6, 1);", """
+                 k | a    | weight
+                -------------------
+                 6 |NULL  | -1""");
+    }
 }
