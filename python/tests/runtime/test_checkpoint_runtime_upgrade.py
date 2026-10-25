@@ -67,7 +67,7 @@ from feldera.testutils import (
     single_host_only,
 )
 from tests import TEST_CLIENT, enterprise_only
-from tests.platform.helper import gen_pipeline_name
+from tests.platform.helper import gen_pipeline_name, wait_until_compiled
 from tests.platform.test_checkpoint_sync import checkpoint_sync_bucket, storage_cfg
 from tests.utils import DeltaTestLocation
 
@@ -784,6 +784,7 @@ CREATE MATERIALIZED VIEW closure AS
     )
     try:
         legacy_pipeline.update_runtime()
+        wait_until_compiled(legacy_pipeline)
         legacy_pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW, timeout_s=600)
         legacy_pipeline.wait_for_idle()
 

@@ -355,6 +355,18 @@ def wait_for_program_success(
     )
 
 
+def wait_until_compiled(pipeline, timeout_s: float = 600.0) -> None:
+    """
+    Wait until the latest program of `pipeline` compiles.
+
+    Call this after a program change and before `start(timeout_s=...)`.
+    Then the start timeout does not include time in the compiler queue.
+    """
+    # A program change sets the new version and `Pending` in one step,
+    # so this never accepts the old program as compiled.
+    wait_for_program_success(pipeline.name, pipeline.program_version(), timeout_s)
+
+
 def extract_object_by_name(
     collection: Iterable[Dict[str, Any]], name: str
 ) -> Dict[str, Any]:
