@@ -1228,14 +1228,18 @@ public class SqlToRelCompiler implements IWritesLogs {
                     if (subtract.getKind() == SqlKind.CAST) {
                         subtract = ((RexCall) subtract).getOperands().get(0);
                     }
-                    if (subtract instanceof RexCall call) {
-                        if (call.getKind() == SqlKind.MINUS || call.getKind() == SqlKind.CHECKED_MINUS) {
-                            RexNode left = call.getOperands().get(0);
-                            if (left instanceof RexInputRef) {
-                                // This may include some casts
-                                return call.getOperands().get(1);
-                            }
+                    if (subtract instanceof RexCall call
+                            && (call.getKind() == SqlKind.MINUS || call.getKind() == SqlKind.CHECKED_MINUS)) {
+                        RexNode left = call.getOperands().get(0);
+                        if (left instanceof RexInputRef) {
+                            // This may include some casts
+                            return call.getOperands().get(1);
                         }
+                    } else {
+                        // No subtraction: the simplifier removed a subtraction with 0,
+                        // so the lateness must have been zero.
+                        Utilities.enforce(this.converter != null);
+                        return this.converter.convertExpression(value);
                     }
                 }
             }

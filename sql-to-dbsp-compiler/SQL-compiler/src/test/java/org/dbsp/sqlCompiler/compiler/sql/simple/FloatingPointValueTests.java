@@ -14,6 +14,7 @@ public class FloatingPointValueTests extends SqlIoTest {
                 CREATE TABLE t(x DOUBLE);
                 CREATE VIEW str AS SELECT CAST(x AS VARCHAR) AS s FROM t;
                 CREATE VIEW neg AS SELECT x FROM t WHERE 1e0 / x < 0e0;
+                CREATE VIEW fold AS SELECT CAST(x AS VARCHAR) AS s FROM t WHERE x < 1e0 / -0e0;
                 CREATE VIEW ln AS SELECT CAST(LN(x) AS VARCHAR) AS l, CAST(LN(x / x) AS VARCHAR) AS n FROM t;""")
                 .withStringTrim();
         String negEmpty = """
@@ -25,6 +26,7 @@ public class FloatingPointValueTests extends SqlIoTest {
                  0.0 | 2""";
         ccs.stepMultiView("INSERT INTO t VALUES (CAST('-0' AS DOUBLE)), (0e0);", Map.of(
                 "str", inserted,
+                "fold", inserted,
                 "neg", negEmpty,
                 "ln", """
                  l    | n   | weight
@@ -37,6 +39,7 @@ public class FloatingPointValueTests extends SqlIoTest {
                      0.0 | -1""";
             ccs.stepMultiView("REMOVE FROM t VALUES (" + value + ");", Map.of(
                     "str", deleted,
+                    "fold", deleted,
                     "neg", negEmpty,
                     "ln", """
                      l    | n   | weight
