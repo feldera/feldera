@@ -42,7 +42,7 @@ from feldera.enums import BootstrapPolicy, PipelineStatus
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT, enterprise_only
-from .helper import gen_pipeline_name
+from .helper import gen_pipeline_name, wait_until_compiled
 from feldera.testutils import (
     FELDERA_TEST_NUM_WORKERS,
     FELDERA_TEST_NUM_HOSTS,
@@ -125,6 +125,7 @@ def test_concurrent_bootstrap_new_view(pipeline_name):
     pipeline = _seed_and_checkpoint(pipeline_name, BASE_SQL)
 
     pipeline.modify(sql=ADD_VIEW_SQL)
+    wait_until_compiled(pipeline)
     pipeline.start(
         bootstrap_policy=BootstrapPolicy.ALLOW,
         concurrent_bootstrap=True,
@@ -181,6 +182,7 @@ def _check_lazy_table_new_view(pipeline_name: str, concurrent: bool) -> None:
     pipeline.wait_for_status(PipelineStatus.STOPPED, timeout=120)
 
     pipeline.modify(sql=LAZY_ADD_VIEW_SQL)
+    wait_until_compiled(pipeline)
     pipeline.start(
         bootstrap_policy=BootstrapPolicy.ALLOW,
         concurrent_bootstrap=concurrent,
@@ -246,6 +248,7 @@ def test_concurrent_bootstrap_modified_view(pipeline_name):
     pipeline = _seed_and_checkpoint(pipeline_name, BASE_SQL)
 
     pipeline.modify(sql=MODIFY_VIEW_SQL)
+    wait_until_compiled(pipeline)
     pipeline.start(
         bootstrap_policy=BootstrapPolicy.ALLOW,
         concurrent_bootstrap=True,
@@ -294,6 +297,7 @@ def test_concurrent_bootstrap_crash_recovery(pipeline_name):
         pipeline.stop(force=True, timeout_s=120)
 
     # Recover for real and let the bootstrap finish this time.
+    wait_until_compiled(pipeline)
     pipeline.start(
         bootstrap_policy=BootstrapPolicy.ALLOW,
         concurrent_bootstrap=True,
@@ -361,6 +365,7 @@ def test_concurrent_bootstrap_unsupported_diff(pipeline_name):
     pipeline.wait_for_status(PipelineStatus.STOPPED, timeout=120)
 
     pipeline.modify(sql=UNSUPPORTED_MODIFIED_SQL)
+    wait_until_compiled(pipeline)
 
     # Concurrent bootstrap is refused (fatal): the new view's input stream has
     # no replay source.

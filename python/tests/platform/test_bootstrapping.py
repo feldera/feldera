@@ -12,6 +12,7 @@ from tests import TEST_CLIENT, enterprise_only
 from .helper import (
     gen_pipeline_name,
     wait_for_condition,
+    wait_until_compiled,
 )
 from feldera.testutils import (
     FELDERA_TEST_NUM_WORKERS,
@@ -399,6 +400,7 @@ AS SELECT {view_expr} AS x FROM t1;
     pipeline.stop(force=True)
 
     pipeline.modify(sql=sql_for_view("x + 1"))
+    wait_until_compiled(pipeline)
     pipeline.start(
         bootstrap_policy=BootstrapPolicy.ALLOW,
         silent_bootstrap=True,
@@ -425,6 +427,7 @@ AS SELECT {view_expr} AS x FROM t1;
     pipeline.stop(force=True)
 
     pipeline.modify(sql=sql_for_view("x + 2"))
+    wait_until_compiled(pipeline)
     pipeline.start(
         bootstrap_policy=BootstrapPolicy.ALLOW,
         silent_bootstrap=True,
@@ -450,6 +453,7 @@ AS SELECT {view_expr} AS x FROM t1;
 
     # Final round with silent bootstrap disabled should produce all accumulated records.
     pipeline.modify(sql=sql_for_view("x + 3"))
+    wait_until_compiled(pipeline)
     pipeline.start(
         bootstrap_policy=BootstrapPolicy.ALLOW,
         silent_bootstrap=False,
@@ -543,6 +547,7 @@ AS SELECT {view_expr} AS x FROM t1;
     # Concurrent bootstrap: the modified view backfills in the background while
     # the pre-existing view stays live, then emits its full contents at cutover.
     pipeline.modify(sql=sql_for_view("x + 1"))
+    wait_until_compiled(pipeline)
     pipeline.start(
         bootstrap_policy=BootstrapPolicy.ALLOW,
         concurrent_bootstrap=True,
@@ -579,6 +584,7 @@ AS SELECT {view_expr} AS x FROM t1;
     # A second concurrent bootstrap round re-emits the full (now larger) view
     # contents again at cutover.
     pipeline.modify(sql=sql_for_view("x + 2"))
+    wait_until_compiled(pipeline)
     pipeline.start(
         bootstrap_policy=BootstrapPolicy.ALLOW,
         concurrent_bootstrap=True,
@@ -946,6 +952,7 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     pipeline.stop(force=True)
 
     pipeline.modify(sql=gen_sql(200))
+    wait_until_compiled(pipeline)
     pipeline.start(bootstrap_policy=BootstrapPolicy.REJECT, timeout_s=300)
     assert pipeline.status() == PipelineStatus.RUNNING
 
