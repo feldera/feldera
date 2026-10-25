@@ -63,7 +63,7 @@
     "openapi-to-postmanv2/**/js-yaml": "^4.2.0",
     "*/js-yaml": "^4.2.0",
     "yaml": "^1.10.3",
-    "dompurify": "3.4.16",
+    "dompurify": "3.4.17",
     "http-proxy-middleware": "2.0.10",
     "webpack-dev-server": "5.2.6",
     "path-to-regexp": "0.1.13",
