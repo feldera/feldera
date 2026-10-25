@@ -1010,7 +1010,13 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
             if (notEvaluated(call.getType().getSqlTypeName()))
                 callConstancy = Constancy.NON_CONSTANT;
             for (RexNode operand : call.getOperands()) {
-                if (notEvaluated(operand.getType().getSqlTypeName()))
+                SqlTypeName operandType = operand.getType().getSqlTypeName();
+                if (notEvaluated(operandType))
+                    callConstancy = Constancy.NON_CONSTANT;
+                // Calcite computes on REAL and DOUBLE operands with the IEEE 754 rules,
+                // and Feldera stores -0 as +0 and treats all NaNs as equal: e.g., Calcite
+                // evaluates 1e0 / -0e0 to -Infinity, and Feldera to Infinity
+                if (SqlTypeName.APPROX_TYPES.contains(operandType))
                     callConstancy = Constancy.NON_CONSTANT;
             }
             if (castNotEvaluated(call))

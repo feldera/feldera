@@ -38,6 +38,11 @@ Source edition can be found on github.
   that fails to parse; all other values of these columns are unaffected. The
   connector used to report an etl decoding error for such a row instead.
 
+- Incompatible change (SQL): `REAL` and `DOUBLE` `-0.0` and `0.0` are
+  not distinguished.  An operation that produced `-0e0` now produces `0e0`:
+  for example, casting `-x` to a string gives `0.0` when `x` is zero,
+  and `1e0 / -0e0` is `Infinity`.
+
 ## v0.369.0
 
 - Python SDK: the new `reloadable_tables` argument of `Pipeline.start()`,

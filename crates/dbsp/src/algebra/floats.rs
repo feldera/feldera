@@ -22,22 +22,54 @@ macro_rules! float {
         $(
             paste!{
             #[doc = concat!("A wrapper around [`", stringify!($inner), "`] that provides additional useful traits, such as [Ord].")]
-            #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf, rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, feldera_macros::IsNone, feldera_macros::OrdRepr)]
+            ///
+            /// The wrapper holds one zero and one NaN: it stores -0.0 as +0.0 and
+            /// every NaN as the same NaN.  `Eq` treats -0.0 and +0.0 as equal, and
+            /// all NaNs as equal; storing one bit pattern for each such value
+            /// ensures that every function gives the same result for equal values.
+            #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, SizeOf, rkyv::Archive, rkyv::Serialize, feldera_macros::IsNone, feldera_macros::OrdRepr)]
             #[repr(transparent)]
             #[size_of(skip_all)]
-            #[derive(Serialize, Deserialize)]
+            #[derive(Serialize)]
             #[serde(transparent)]
             #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
             #[archive(compare(PartialEq, PartialOrd))]
             pub struct $outer(OrderedFloat<$inner>);
+
+            impl<D: rkyv::Fallible + ?Sized> rkyv::Deserialize<$outer, D> for [<Archived $outer>] {
+                #[inline]
+                fn deserialize(&self, deserializer: &mut D) -> Result<$outer, D::Error> {
+                    let float: OrderedFloat<$inner> =
+                        rkyv::Deserialize::deserialize(&self.0, deserializer)?;
+                    Ok($outer::new(float.0))
+                }
+            }
+            }
+
+            impl<'de> Deserialize<'de> for $outer {
+                #[inline]
+                fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+                where
+                    D: serde::Deserializer<'de>,
+                {
+                    $inner::deserialize(deserializer).map(Self::new)
+                }
             }
 
             impl $outer {
                 pub const EPSILON: Self = Self::new($inner::EPSILON);
 
+                /// Wraps `float`, replacing -0.0 by +0.0 and any NaN by `NAN`.
                 #[inline]
                 pub const fn new(float: $inner) -> Self {
-                    Self(OrderedFloat(float))
+                    let canonical = if float.is_nan() {
+                        $inner::NAN
+                    } else if float == 0.0 {
+                        0.0
+                    } else {
+                        float
+                    };
+                    Self(OrderedFloat(canonical))
                 }
 
                 #[inline]
@@ -81,7 +113,7 @@ macro_rules! float {
 
                 #[inline]
                 fn add(self, rhs: Self) -> Self::Output {
-                    Self(self.0 + rhs.0)
+                    Self::new(self.into_inner() + rhs.into_inner())
                 }
             }
 
@@ -122,7 +154,7 @@ macro_rules! float {
 
                 #[inline]
                 fn sub(self, rhs: Self) -> Self::Output {
-                    Self(self.0 - rhs.0)
+                    Self::new(self.into_inner() - rhs.into_inner())
                 }
             }
 
@@ -172,7 +204,7 @@ macro_rules! float {
 
                 #[inline]
                 fn mul(self, rhs: Self) -> Self::Output {
-                    Self(self.0 * rhs.0)
+                    Self::new(self.into_inner() * rhs.into_inner())
                 }
             }
 
@@ -240,7 +272,7 @@ macro_rules! float {
 
                 #[inline]
                 fn div(self, rhs: Self) -> Self::Output {
-                    Self(self.0 / rhs.0)
+                    Self::new(self.into_inner() / rhs.into_inner())
                 }
             }
 
@@ -299,7 +331,7 @@ macro_rules! float {
 
                 #[inline]
                 fn neg(self) -> Self::Output {
-                    Self(-self.0)
+                    Self::new(-self.into_inner())
                 }
             }
 
@@ -308,7 +340,7 @@ macro_rules! float {
 
                 #[inline]
                 fn neg(self) -> Self::Output {
-                    $outer(-self.0)
+                    $outer::new(-self.into_inner())
                 }
             }
 
@@ -469,6 +501,51 @@ mod tests {
             let decoded: F64 = archived.deserialize(&mut rkyv::Infallible).unwrap();
             assert_eq!(decoded, input);
         }
+    }
+
+    #[test]
+    fn one_zero_and_one_nan() {
+        use ordered_float::OrderedFloat;
+
+        let zero = 0.0f64.to_bits();
+        let nan = f64::NAN.to_bits();
+        let negative_nan = f64::from_bits(nan | (1 << 63));
+        // An archive written by a version that stored -0.0; the field bypasses F64::new
+        let archive = rkyv::to_bytes::<_, 256>(&F64(OrderedFloat(-0.0))).unwrap();
+        // SAFETY: `archive` holds the archive of an `F64` that `rkyv::to_bytes` just wrote.
+        let archived = unsafe { rkyv::archived_root::<F64>(&archive[..]) };
+        let decoded: F64 = archived.deserialize(&mut rkyv::Infallible).unwrap();
+
+        let zeros = [
+            F64::new(-0.0),
+            -F64::new(0.0),
+            -&F64::new(0.0),
+            F64::new(0.0) * F64::new(-1.0),
+            F64::new(0.0) / F64::new(-1.0),
+            F64::new(-1e-300) * F64::new(1e-300),
+            F64::from_str("-0").unwrap(),
+            serde_json::from_str::<F64>("-0.0").unwrap(),
+            decoded,
+        ];
+        for value in zeros {
+            assert_eq!(value.into_inner().to_bits(), zero, "{value:?}");
+        }
+
+        let nans = [
+            F64::new(negative_nan),
+            F64::new(0.0) / F64::new(0.0),
+            F64::new(f64::INFINITY) - F64::new(f64::INFINITY),
+        ];
+        for value in nans {
+            assert_eq!(value.into_inner().to_bits(), nan, "{value:?}");
+        }
+
+        assert_eq!((-F32::new(0.0)).into_inner().to_bits(), 0.0f32.to_bits());
+        let negative_nan32 = f32::from_bits(f32::NAN.to_bits() | (1 << 31));
+        assert_eq!(
+            F32::new(negative_nan32).into_inner().to_bits(),
+            f32::NAN.to_bits()
+        );
     }
 
     #[test]

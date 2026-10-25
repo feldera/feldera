@@ -77,6 +77,18 @@ REAL '1.23'  -- string style
 1.23::REAL   -- PostgreSQL style
 ```
 
+## Differences from IEEE 754
+
+Feldera has only one zero and only one `NaN` value.  An operation
+whose IEEE 754 result is a negative zero produces `0e0`: for example
+`-x` when `x` is zero, `0e0 * -1e0`, or `CAST('-0' AS DOUBLE)`.
+Some results differ from the results that IEEE 754 specifies:
+
+- `1e0 / -0e0` is `Infinity`; IEEE 754 specifies `-Infinity`.
+- `POWER(-0e0, -1e0)` is `Infinity`; IEEE 754 specifies `-Infinity`.
+- `ATAN2(0e0, -0e0)` is `0`; IEEE 754 specifies pi.
+- A zero converted to a string never has a minus sign.
+
 ## Predefined functions on Floating-point Values
 
 <table>
