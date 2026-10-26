@@ -824,13 +824,15 @@ fn panic_hook(panic_info: &PanicHookInfo<'_>, default_panic_hook: &dyn Fn(&Panic
     // Call the default panic hook first.
     default_panic_hook(panic_info);
 
-    RUNTIME.with(|runtime| {
+    // A thread-local destructor can panic after `RUNTIME` is gone.  Panicking
+    // again here would turn a panic that the caller catches into an abort.
+    let _ = RUNTIME.try_with(|runtime| {
         if let Ok(runtime) = runtime.try_borrow()
             && let Some(runtime) = runtime.as_ref()
         {
             runtime.panic(panic_info);
         }
-    })
+    });
 }
 
 /// A multithreaded runtime that hosts `N` circuits running in parallel worker
