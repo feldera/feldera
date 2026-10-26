@@ -1550,7 +1550,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         else
                             throw new UnimplementedException("Support for operation/function " +
                                     Utilities.singleQuote(opName) + " on type " +
-                                    arg0Type.asSqlString() + " not yet implemented", 1265, node);
+                                    arg0Type.asSqlString() + " not yet implemented", node);
                         if (arg0Type.mayBeNull)
                             name += "N";
                         return new DBSPApplyExpression(node, name, type, op0);
@@ -1955,7 +1955,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "dayofweek" -> this.handleExtract(call, type, "dow", ops);
                     case "dayofmonth" -> this.handleExtract(call, type, "day", ops);
                     default -> throw new UnimplementedException("Support for operation/function " +
-                            Utilities.singleQuote(opName) + " not yet implemented", 1265, node);
+                            Utilities.singleQuote(opName) + " not yet implemented", node);
                 };
             }
             case EXTRACT: {
@@ -2393,8 +2393,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case TIMESTAMP_ADD:
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
-                        + " not yet implemented", 1265,
-                        "Perhaps you can use DATE_ADD or addition between a date and an interval?", node);
+                        + " not yet implemented" + System.lineSeparator()
+                        + "Perhaps you can use DATE_ADD or addition between a date and an interval?", node);
             case NULLIF: {
                 // The return type is the type of arg0, but the comparison may introduce casts
                 validateArgCount(node, operationName, ops.size(), 2);
@@ -2483,7 +2483,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case DOT:
             default:
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
-                        + " not yet implemented", 1265, node);
+                        + " not yet implemented", node);
         }
     }
 
