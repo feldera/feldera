@@ -19,7 +19,9 @@ Source edition can be found on github.
 
 - `GET /v0/pipelines/{pipeline_name}/logs` accepts `follow=false`, which
   returns the retained logs and ends the response instead of waiting for
-  new lines. Support bundles use it to collect logs.
+  new lines. Support bundles use it to collect logs, and so does `fda logs`
+  without `--watch`. In Python, `Pipeline.logs(follow=False)` and
+  `FelderaClient.get_pipeline_logs(name, follow=False)` request it.
 
 - Bug fix (Parquet output): a deletion in the output of a view with a Parquet
   output connector crashed the pipeline.  The connector now reports an
