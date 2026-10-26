@@ -12,8 +12,6 @@ use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand, Integrated
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use arrow::array::{Array, ArrayData, ArrayRef, AsArray, BooleanArray, make_array};
-use arrow::compute::kernels::cmp::eq;
-use arrow::compute::{filter_record_batch, is_null, not, prep_null_mask_filter};
 use arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, FieldRef, Schema as ArrowSchema, SchemaRef,
 };
@@ -36,12 +34,15 @@ use datafusion::physical_plan::{
 };
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 use dbsp::circuit::tokio::TOKIO;
+use delta_kernel::expressions::{
+    Expression as KernelExpression, Predicate, Scalar as KernelScalar, StructData,
+};
 use delta_kernel::schema::{ColumnMetadataKey, MetadataValue};
 use delta_kernel::table_features::ColumnMappingMode;
 use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
 use deltalake::datafusion::logical_expr::{ExprSchemable, SortExpr};
-use deltalake::datafusion::prelude::{Expr, SessionConfig, SessionContext, cast, ident, lit};
+use deltalake::datafusion::prelude::{Expr, SessionConfig, SessionContext, ident, lit};
 use deltalake::datafusion::sql::sqlparser::dialect::GenericDialect;
 use deltalake::datafusion::sql::sqlparser::parser::Parser;
 use deltalake::datafusion::sql::sqlparser::tokenizer::Token;
@@ -72,7 +73,7 @@ use feldera_types::program_schema::{Field, Relation};
 use feldera_types::transport::delta_table::{
     DeltaTableIngestMode, DeltaTableReaderConfig, DeltaTableTransactionMode,
 };
-use futures_util::StreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use roaring::RoaringTreemap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -2387,6 +2388,7 @@ impl DeltaTableInputEndpointInner {
         // The log only saves a scan, so an error reading it falls back to the query.
         let from_log = self
             .timestamp_bounds_from_log(table, timestamp_field)
+            .await
             .unwrap_or_else(|e| {
                 warn!(
                     "delta_table {}: cannot read the timestamp bounds from the Delta log, so querying the table instead: {e}",
@@ -2535,7 +2537,7 @@ impl DeltaTableInputEndpointInner {
     /// The min and max of the timestamp column, as `start_ts` and `end_ts`, from the Delta log's
     /// per-file statistics, so that no data file is read. No rows when no file has a non-NULL
     /// value. `None` when a filter is set or a file has no statistics for the column.
-    fn timestamp_bounds_from_log(
+    async fn timestamp_bounds_from_log(
         &self,
         table: &DeltaTable,
         timestamp_field: &Field,
@@ -2551,8 +2553,8 @@ impl DeltaTableInputEndpointInner {
         let Some(field) = schema.fields().find(|f| name.contains(f.name())) else {
             return Ok(None);
         };
-        // The add actions name a partition column's value by its logical name, and its statistics
-        // by its physical name.
+        // Under column mapping, the statistics, and the partition values of a column that the
+        // predicate below names, use the column's physical name.
         let physical = match field.get_config_value(&ColumnMetadataKey::ColumnMappingPhysicalName) {
             Some(MetadataValue::String(physical)) => physical.clone(),
             _ => field.name().to_string(),
@@ -2561,77 +2563,75 @@ impl DeltaTableInputEndpointInner {
             .metadata()
             .partition_columns()
             .contains(field.name());
-        let (lo, hi) = if partitioned {
-            let partition = format!("partition.{}", field.name());
-            (partition.clone(), partition)
-        } else {
-            (format!("min.{physical}"), format!("max.{physical}"))
+        // The predicate skips the files whose column is all NULL, since no range reads them, and
+        // limits the parsed statistics to this column.
+        let predicate = Arc::new(Predicate::is_not_null(KernelExpression::column([field
+            .name()
+            .as_str()])));
+        let mut files = snapshot
+            .snapshot()
+            .file_views(table.log_store().as_ref(), Some(predicate));
+        let value = |values: Option<StructData>, name: &str| {
+            values.and_then(|v| {
+                v.fields()
+                    .iter()
+                    .position(|f| f.name() == name)
+                    .map(|i| v.values()[i].clone())
+                    .filter(|s| !s.is_null())
+            })
         };
-
-        let mut stats = Vec::new();
-        for batch in snapshot.add_actions_batches(true)? {
-            let (Some(lo), Some(hi)) = (batch.column_by_name(&lo), batch.column_by_name(&hi))
-            else {
+        let mut bounds: Option<(KernelScalar, KernelScalar)> = None;
+        while let Some(file) = files.try_next().await? {
+            let (lo, hi) = if partitioned {
+                let v = value(file.partition_values(), &physical);
+                (v.clone(), v)
+            } else {
+                let structs = |s: Option<KernelScalar>| match s {
+                    Some(KernelScalar::Struct(s)) => Some(s),
+                    _ => None,
+                };
+                // delta-rs rounds a millisecond-aligned timestamp max up by 1 ms, since the log may
+                // truncate it.
+                (
+                    value(structs(file.min_values()), &physical),
+                    value(structs(file.max_values()), &physical),
+                )
+            };
+            let (Some(lo), Some(hi)) = (lo, hi) else {
                 return Ok(self.warn_no_statistics(field.name()));
             };
-            // A file whose column is all NULL has a NULL min and max, and no range reads it.
-            let all_null = match (
-                batch.column_by_name(&format!("null_count.{physical}")),
-                batch.column_by_name("num_records"),
-            ) {
-                _ if partitioned => is_null(lo)?,
-                (Some(nulls), Some(records)) => {
-                    // An unknown count keeps the file; `prep_null_mask_filter` needs a NULL.
-                    let all_null = eq(nulls, records)?;
-                    match all_null.null_count() {
-                        0 => all_null,
-                        _ => prep_null_mask_filter(&all_null),
-                    }
+            bounds = match bounds {
+                None => Some((lo, hi)),
+                Some((min, max)) => {
+                    let (Some(lo_cmp), Some(hi_cmp)) =
+                        (lo.logical_partial_cmp(&min), hi.logical_partial_cmp(&max))
+                    else {
+                        return Ok(self.warn_no_statistics(field.name()));
+                    };
+                    Some((
+                        if lo_cmp.is_lt() { lo } else { min },
+                        if hi_cmp.is_gt() { hi } else { max },
+                    ))
                 }
-                _ => BooleanArray::from(vec![false; batch.num_rows()]),
             };
-            let file_stats = filter_record_batch(
-                &RecordBatch::try_from_iter([("lo", lo.clone()), ("hi", hi.clone())])?,
-                &not(&all_null)?,
-            )?;
-            if file_stats.column(0).null_count() + file_stats.column(1).null_count() > 0 {
-                return Ok(self.warn_no_statistics(field.name()));
-            }
-            stats.push(file_stats);
-        }
-        // No file has a non-NULL value, so the snapshot is empty.
-        if stats.iter().all(|b| b.num_rows() == 0) {
-            let schema = ArrowSchema::new(vec![
-                ArrowField::new("start_ts", ArrowDataType::Utf8, true),
-                ArrowField::new("end_ts", ArrowDataType::Utf8, true),
-            ]);
-            let empty = RecordBatch::new_empty(Arc::new(schema));
-            return Ok(Some(self.datafusion.read_batch(empty)?));
         }
 
-        // The log truncates a timestamp's max to milliseconds; round it up so that the ranges, each
-        // as wide as the column's `LATENESS`, reach past the true max.
-        let hi = match stats[0].schema().field(1).data_type() {
-            ArrowDataType::Timestamp(..) => {
-                ident("hi") + lit(ScalarValue::new_interval_mdn(0, 0, 1_000_000))
-            }
-            _ => ident("hi"),
+        let schema = Arc::new(ArrowSchema::new(vec![
+            ArrowField::new("start_ts", ArrowDataType::Utf8, true),
+            ArrowField::new("end_ts", ArrowDataType::Utf8, true),
+        ]));
+        // No file has a non-NULL value, so the snapshot is empty.
+        let Some((lo, hi)) = bounds else {
+            return Ok(Some(
+                self.datafusion.read_batch(RecordBatch::new_empty(schema))?,
+            ));
         };
-        let bounds = self
-            .datafusion
-            .read_batches(stats)?
-            .aggregate(
-                vec![],
-                vec![
-                    datafusion::functions_aggregate::expr_fn::min(ident("lo")).alias("lo"),
-                    datafusion::functions_aggregate::expr_fn::max(ident("hi")).alias("hi"),
-                ],
-            )?
-            .select(vec![
-                cast(ident("lo"), ArrowDataType::Utf8).alias("start_ts"),
-                cast(hi, ArrowDataType::Utf8).alias("end_ts"),
-            ])?;
-        Ok(Some(bounds))
+        let to_string = |s: KernelScalar| -> AnyResult<ArrayRef> {
+            let value = ScalarValue::try_from_array(&s.to_array(1)?, 0)?;
+            Ok(value.cast_to(&ArrowDataType::Utf8)?.to_array()?)
+        };
+        let batch = RecordBatch::try_new(schema, vec![to_string(lo)?, to_string(hi)?])?;
+        Ok(Some(self.datafusion.read_batch(batch)?))
     }
 
     /// Warns that some files have no statistics for `column`, and returns `None`.
@@ -7632,7 +7632,10 @@ mod timestamp_bounds_tests {
             None,
         );
         let field = endpoint.schema.field(column).unwrap();
-        let bounds = endpoint.timestamp_bounds_from_log(&table, field).unwrap()?;
+        let bounds = endpoint
+            .timestamp_bounds_from_log(&table, field)
+            .await
+            .unwrap()?;
         let bounds = bounds.collect().await.unwrap();
         Some(bounds.iter().find(|b| b.num_rows() > 0).map(|b| {
             (
@@ -7725,7 +7728,30 @@ mod timestamp_bounds_tests {
             some("2024-01-05T10:00:00Z", "2024-01-05T10:00:00.001Z")
         );
 
-        // Only a timestamp's max is rounded up, and partition values compare as numbers.
+        // A partition value is exact, and so is a max finer than a millisecond.
+        let partitions = vec![
+            (json!({"ts": "2024-01-05 10:00:00.123456"}), None),
+            (json!({"ts": "2024-01-03 10:00:00"}), None),
+        ];
+        assert_eq!(
+            bounds(ts(), json!(["ts"]), json!({}), partitions, "ts", None).await,
+            some("2024-01-03T10:00:00Z", "2024-01-05T10:00:00.123456Z")
+        );
+        let fine = one_row(json!({"ts": "2024-01-05T10:00:00.123456Z"}));
+        assert_eq!(
+            bounds(
+                ts(),
+                json!([]),
+                json!({}),
+                vec![(json!({}), fine)],
+                "ts",
+                None
+            )
+            .await,
+            some("2024-01-05T10:00:00.123456Z", "2024-01-05T10:00:00.123456Z")
+        );
+
+        // Only a timestamp's max is rounded up, and values compare by type, not as text.
         let n = vec![field("n", "long", json!({}))];
         let files = ["9", "10", "-2"]
             .map(|n| (json!({ "n": n }), None))
@@ -7734,7 +7760,38 @@ mod timestamp_bounds_tests {
             bounds(n, json!(["n"]), json!({}), files, "n", None).await,
             some("-2", "10")
         );
+        for (typ, values, expected) in [
+            (
+                "date",
+                ["2024-01-05", "2023-12-31"].map(Value::from).to_vec(),
+                some("2023-12-31", "2024-01-05"),
+            ),
+            (
+                "long",
+                [7, -3, 100].map(Value::from).to_vec(),
+                some("-3", "100"),
+            ),
+        ] {
+            let files = values
+                .into_iter()
+                .map(|v| (json!({}), one_row(json!({ "v": v }))))
+                .collect();
+            let v = vec![field("v", typ, json!({}))];
+            assert_eq!(
+                bounds(v, json!([]), json!({}), files, "v", None).await,
+                expected
+            );
+        }
 
+        // Statistics for another column only.
+        let with_c = || {
+            vec![
+                field("ts", "timestamp", json!({})),
+                field("c", "long", json!({})),
+            ]
+        };
+        let other = json!({"numRecords": 2, "nullCount": {"ts": 1, "c": 0},
+            "minValues": {"c": 1}, "maxValues": {"c": 1}});
         let mut wide: Vec<Value> = (0..32)
             .map(|i| field(&format!("p{i}"), "long", json!({})))
             .collect();
@@ -7744,6 +7801,7 @@ mod timestamp_bounds_tests {
             (wide, vec![stats()], None),
             (ts(), vec![stats(), (json!({}), None)], None),
             (ts(), vec![stats(), nulls(1)], None),
+            (with_c(), vec![(json!({}), Some(other))], None),
         ] {
             assert_eq!(
                 bounds(fields, json!([]), json!({}), files, "ts", filter).await,
