@@ -15,7 +15,7 @@ class LongOperationWarning:
     `done()` logs that the operation finished, so a warning about a stuck
     operation does not go unresolved in the log.
 
-    Mirrors `LongOperationWarning` in crates/adapters/src/util.rs. Defaults to
+    Mirrors `LongOperationWarning` in crates/connectors/src/util.rs. Defaults to
     WARNING, not DEBUG: these messages only fire rarely (thanks to the
     backoff), so there's no spam to hide, and a DEBUG default would make them
     invisible under most logging configurations -- including this project's

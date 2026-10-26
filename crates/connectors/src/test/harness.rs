@@ -84,11 +84,11 @@ fn lock_of(key: &'static str) -> Arc<RwLock<()>> {
 }
 
 impl EngineCase {
-    /// The name of the case's test: its module path in `dbsp_adapters`, then its name.
+    /// The name of the case's test: its module path in `dbsp_connectors`, then its name.
     pub fn test_name(&self) -> String {
         let module = self
             .module
-            .strip_prefix("dbsp_adapters::")
+            .strip_prefix("dbsp_connectors::")
             .unwrap_or(self.module);
         format!("{module}::{}", self.name)
     }
@@ -510,7 +510,7 @@ mod tests {
 
     /// A case that needs storage and checkpoints, and a Kafka broker and a Postgres server.
     static GATED_CASE: EngineCase = EngineCase {
-        module: "dbsp_adapters::transport::kafka::tests",
+        module: "dbsp_connectors::transport::kafka::tests",
         name: "gated",
         run: CaseFn::Connector(no_case),
         lock: None,
@@ -523,7 +523,7 @@ mod tests {
 
     /// A case that the attribute ignores, and that needs nothing.
     static IGNORED_CASE: EngineCase = EngineCase {
-        module: "dbsp_adapters::format::json::tests",
+        module: "dbsp_connectors::format::json::tests",
         name: "ignored",
         run: CaseFn::Connector(no_case),
         lock: None,
@@ -753,7 +753,7 @@ mod tests {
         let mut names = BTreeSet::new();
         for case in inventory::iter::<EngineCase> {
             let name = case.test_name();
-            assert!(!name.starts_with("dbsp_adapters::"), "{name}");
+            assert!(!name.starts_with("dbsp_connectors::"), "{name}");
             assert!(names.insert(name.clone()), "two cases are named {name}");
         }
         assert!(!names.is_empty());
@@ -763,7 +763,7 @@ mod tests {
     fn a_test_name_drops_the_crate_name() {
         fn case(_engine: &dyn ConnectorTestEngine) {}
         let case = EngineCase {
-            module: "dbsp_adapters::transport::kafka::tests",
+            module: "dbsp_connectors::transport::kafka::tests",
             name: "metadata_json",
             run: CaseFn::Connector(case),
             lock: None,

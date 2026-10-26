@@ -1,11 +1,11 @@
 //! The static engine's test fixture, with which the `connector_suites` test target runs the
-//! connector suites of `dbsp_adapters`, and the tests of the static engine itself.
+//! connector suites of `dbsp_connectors`, and the tests of the static engine itself.
 //!
-//! The module extends the shared test module of `dbsp_adapters`: it re-exports that module's
+//! The module extends the shared test module of `dbsp_connectors`: it re-exports that module's
 //! items, so that the fixtures here name the shared items and their own by the same
 //! `crate::test` paths.
 
-pub use dbsp_adapters::test::*;
+pub use dbsp_connectors::test::*;
 
 pub mod data;
 mod engine;

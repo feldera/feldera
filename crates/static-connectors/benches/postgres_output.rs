@@ -5,9 +5,9 @@ use bench_common::{
     build_indexed_batch, generate_test_data,
 };
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use dbsp_adapters::Encoder;
-use dbsp_adapters::SerBatch;
-use dbsp_adapters::integrated::PostgresOutputEndpoint;
+use dbsp_connectors::Encoder;
+use dbsp_connectors::SerBatch;
+use dbsp_connectors::integrated::PostgresOutputEndpoint;
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::size::ConfigSize;
 use feldera_types::transport::postgres::{

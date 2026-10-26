@@ -1,5 +1,5 @@
 //! Controller tests of the static engine itself: a full disk, a checkpoint of a circuit
-//! without persistent ids, and the LIR dump. The shared suites in `dbsp_adapters` cover the
+//! without persistent ids, and the LIR dump. The shared suites in `dbsp_connectors` cover the
 //! controller with any engine.
 
 use std::collections::BTreeMap;
@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use dbsp_adapters::PipelineConfig;
+use dbsp_connectors::PipelineConfig;
 use feldera_types::error::DetailedError;
 use serde_json::json;
 use tempfile::TempDir;

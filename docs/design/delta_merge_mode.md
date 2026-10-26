@@ -88,8 +88,8 @@ Two further mismatches, either of which would rule it out on its own:
 | It rewrites data files | Merge mode targets tables someone else administers, where the file layout is the administrator's business. Rewriting files changes that layout on every flush, and not doing so is the one thing the ownership contract promises |
 | Its source is a DataFusion `DataFrame` (`merge/mod.rs:164`) | The output batch would have to be materialized as a table provider. The connector instead walks it through a single forward cursor and holds only the encoded keys, which is what bounds memory by configuration rather than by batch size |
 
-DataFusion itself is not a reason. `crates/adapters` already enables it, because delta-rs
-needs it for the writer's `Invariant` support (`crates/adapters/Cargo.toml:162`).
+DataFusion itself is not a reason. `crates/connectors` already enables it, because delta-rs
+needs it for the writer's `Invariant` support (`crates/connectors/Cargo.toml:162`).
 
 What MERGE offers beyond this design -- schema evolution, arbitrary match predicates,
 several conditional clauses -- merge mode does not need. Its predicate is always key
@@ -102,9 +102,9 @@ moves.
 
 | Requirement | Reason |
 |-------------|--------|
-| `index` property naming a unique key | The key identifies the row to supersede. The Postgres sink imposes the same requirement (`crates/adapters/src/integrated/postgres/output.rs:1101`) |
+| `index` property naming a unique key | The key identifies the row to supersede. The Postgres sink imposes the same requirement (`crates/connectors/src/integrated/postgres/output.rs:1101`) |
 | Key columns are scalars, or `ROW` of scalars | See "Supported key types" |
-| Key column physical types match what the connector encodes | Decimal scale, timestamp unit, and binary representation are fixed by `delta_output_serde_config` (`crates/adapters/src/integrated/delta_table/output.rs`). A mismatch would make a round-tripped key compare unequal to itself |
+| Key column physical types match what the connector encodes | Decimal scale, timestamp unit, and binary representation are fixed by `delta_output_serde_config` (`crates/connectors/src/integrated/delta_table/output.rs`). A mismatch would make a round-tripped key compare unequal to itself |
 | `delta.enableDeletionVectors` is true | Without it the connector cannot tombstone |
 | delta-rs `PROTOCOL.can_write_to` passes | Fails fast on row tracking, column mapping, and identity columns, which delta-rs does not list as supported writer features |
 | Change Data Feed is off | A CDF table needs `_change_data` files describing each update and delete. Producing those alongside deletion vector updates needs its own design |
@@ -122,7 +122,7 @@ Guarantees:
   compaction reclaims.
 
 Merge mode is not exactly-once and the connector remains not fault tolerant. The "make this
-connector fault tolerant" TODO in `crates/adapters/src/integrated/delta_table/output.rs`
+connector fault tolerant" TODO in `crates/connectors/src/integrated/delta_table/output.rs`
 stays open.
 
 ## Table ownership
@@ -368,13 +368,13 @@ failures (`stream_encode_and_write`).
 
 A deletion vector addresses rows by file path and row ordinal, not by key, as the adapter's
 existing vector reader already notes
-(`crates/adapters/src/integrated/delta_table/deletion_vector.rs:4`). Turning keys into
+(`crates/connectors/src/integrated/delta_table/deletion_vector.rs:4`). Turning keys into
 ordinals is the only expensive step in a flush, and it is a funnel where only the last
 stage reads data.
 
 ### Stage 1: classification, free
 
-`indexed_operation_type` (`crates/adapters/src/util.rs:82`) already reports, per key,
+`indexed_operation_type` (`crates/connectors/src/util.rs:82`) already reports, per key,
 whether the view held that key before this step: `Insert` means weight `+1` with no `-1`,
 so the key is new to the view.
 
@@ -792,7 +792,7 @@ the user documentation carries the measurements.
 
 ## Code layout
 
-Merge mode lives under `crates/adapters/src/integrated/delta_table/merge/`.
+Merge mode lives under `crates/connectors/src/integrated/delta_table/merge/`.
 
 | Module | Role |
 |--------|------|

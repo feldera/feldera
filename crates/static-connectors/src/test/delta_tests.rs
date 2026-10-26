@@ -4,8 +4,10 @@
 use std::collections::BTreeMap;
 
 use arrow::datatypes::Schema as ArrowSchema;
-use dbsp_adapters::format::parquet::relation_to_arrow_fields;
-use dbsp_adapters::integrated::delta_table::{delta_input_serde_config, delta_output_serde_config};
+use dbsp_connectors::format::parquet::relation_to_arrow_fields;
+use dbsp_connectors::integrated::delta_table::{
+    delta_input_serde_config, delta_output_serde_config,
+};
 use feldera_sqllib::Variant;
 use feldera_types::serde_with_context::DeserializeWithContext;
 use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;

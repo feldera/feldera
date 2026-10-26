@@ -1,10 +1,10 @@
-# Feldera I/O adapter framework
+# Feldera I/O connector framework
 
 This crate implements an infrastructure to ingest data into a DBSP
 circuit from external data sources and to stream the outputs of the
 circuit to external consumers. It also implements a Feldera I/O
 controller that controls the execution of a DBSP circuit along with
-its input and output adapters, and a server that exposes the
+its input and output connectors, and a server that exposes the
 controller API over HTTP and through a web interface.
 
 ## Engines
@@ -28,7 +28,7 @@ cargo test -p static-connectors --test connector_suites -- transport::kafka::
 ```
 
 A test's name is the module path of its case, as the second command shows.
-`cargo test -p dbsp_adapters` runs only the tests that need no engine.
+`cargo test -p dbsp_connectors` runs only the tests that need no engine.
 
 A case that needs more than the fixture's methods says so in the attribute:
 `requires(...)` lists the capabilities that it needs from the engine, such as

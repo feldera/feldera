@@ -34,7 +34,7 @@ use crate::bootstrap::{self, InputOperators};
 use crate::catalog::OUTPUT_MAPPING;
 use crate::storage::{StaticStorage, publish_with_state};
 use dbsp::Error as DbspError;
-use dbsp_adapters::engine::{
+use dbsp_connectors::engine::{
     Checkpoint, CheckpointCommitter, CheckpointPublisher, CircuitDriver, CircuitFactory,
     CircuitParams, Engine, EngineCircuit, EngineGraphProfile, EngineMetrics, EngineRuntime,
     JsonProfileChunks, OpenStorageFn, PipelineStorage, ProgramLoader, RuntimeGauges,
@@ -535,7 +535,7 @@ impl Iterator for JsonProfileWriterChunks {
 #[cfg(test)]
 mod test {
     use dbsp::profile::{DbspProfile, WorkerProfile};
-    use dbsp_adapters::engine::Engine;
+    use dbsp_connectors::engine::Engine;
 
     use super::{JsonProfileWriterChunks, StaticEngine, StaticEngineArgs};
 

@@ -795,7 +795,7 @@ pub fn server_main<E: Engine>(engine: E) -> Result<(), ControllerError> {
 
 // We pass the engine as trait objects to make sure that this function
 // doesn't have any generics and gets generated, along with the entire web server
-// as part of the adapters crate. This reduces the size of the generated code for
+// as part of this crate. This reduces the size of the generated code for
 // the main crate by ~300L lines of LLVM code.
 pub fn run_server(
     args: ServerArgs,
@@ -7842,7 +7842,7 @@ pub mod test_http {
         let test_name = format!(
             "{}::sigterm_process_without_ft",
             module_path!()
-                .strip_prefix("dbsp_adapters::")
+                .strip_prefix("dbsp_connectors::")
                 .unwrap_or(module_path!())
         );
         // Kills the child process if the test fails.

@@ -4,7 +4,7 @@
 
 use std::{borrow::Cow, fmt::Debug, hash::Hash, panic::Location};
 
-use dbsp_adapters::{
+use dbsp_connectors::{
     FormatConfig, ParseError,
     format::{InputBuffer, Parser},
 };

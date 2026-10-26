@@ -112,7 +112,7 @@ jobs:
         run: |
           uv venv
           uv pip install -r ../iceberg/src/test/requirements.ci.txt
-        working-directory: crates/adapters
+        working-directory: crates/connectors
 
       - name: Wait for Redpanda broker
         run: |
@@ -180,15 +180,15 @@ jobs:
       - name: Run adapters tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         # The connector suites run from `connector_suites`, a test target of `static-connectors`,
-        # the static engine's crate. The tests of `feldera-adapterlib` and `dbsp_adapters` reach
+        # the static engine's crate. The tests of `feldera-adapterlib` and `dbsp_connectors` reach
         # no engine.
         run: |
           source .venv/bin/activate
           ../../build/feldera_adapterlib-*
-          ../../build/dbsp_adapters-*
+          ../../build/dbsp_connectors-*
           ../../build/static_connectors-*
           ../../build/connector_suites-* --skip transport::pubsub::
-        working-directory: crates/adapters
+        working-directory: crates/connectors
         shell: bash
         env:
           RUST_BACKTRACE: 1
@@ -212,7 +212,7 @@ jobs:
           FELDERA_ICEBERG_NAMESPACE: follow_${{ github.run_id }}_${{ matrix.arch }}
           # The tests shell out to a pyiceberg writer; `python3` on PATH
           # lacks pyiceberg.
-          FELDERA_ICEBERG_PYTHON: ${{ github.workspace }}/crates/adapters/.venv/bin/python
+          FELDERA_ICEBERG_PYTHON: ${{ github.workspace }}/crates/connectors/.venv/bin/python
           # No pubsub emulator runs in this job; the probe sees
           # connection-refused here and the pubsub tests skip.
           PUBSUB_EMULATOR_HOST: 127.0.0.1:8681
@@ -276,7 +276,7 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: |
           ../../build/connector_suites-* transport::pubsub::
-        working-directory: crates/adapters
+        working-directory: crates/connectors
         env:
           RUST_BACKTRACE: 1
           # The job container and the emulator share the job's docker

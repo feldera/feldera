@@ -3,7 +3,7 @@
 //! Data transport adapters implement support for a specific streaming
 //! technology like Kafka.  A transport adapter carries data without
 //! interpreting it (data interpretation is the job of **data format** adapters
-//! found in [dbsp_adapters::format](crate::format)).
+//! found in [dbsp_connectors::format](crate::format)).
 //!
 //! Both input and output data transport adapters exist.  Some transports
 //! have both input and output variants, and others only have one.
@@ -11,7 +11,7 @@
 //! Data transports are created and configured through Yaml, with a string name
 //! that designates a transport and a transport-specific Yaml object to
 //! configure it.  Transport configuration is encapsulated in
-//! [`dbsp_adapters::TransportConfig`](crate::TransportConfig).
+//! [`dbsp_connectors::TransportConfig`](crate::TransportConfig).
 //!
 //! To obtain a transport, create an endpoint with it, and then start reading it
 //! from the beginning:

@@ -11,7 +11,7 @@ mod engine_test;
 mod ord_repr;
 mod tuples;
 
-/// Registers a connector suite case of `dbsp_adapters`, a function of
+/// Registers a connector suite case of `dbsp_connectors`, a function of
 /// `&dyn ConnectorTestEngine` or `&dyn PipelineTestEngine`, so that the test harness of
 /// every engine runs it as one test.
 ///

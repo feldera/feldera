@@ -3,7 +3,7 @@
 
 use dbsp::OrdIndexedZSet;
 use dbsp::utils::Tup2;
-use dbsp_adapters::{OutputConsumer, SerBatch};
+use dbsp_connectors::{OutputConsumer, SerBatch};
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_macros::{IsNone, OrdRepr};
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
