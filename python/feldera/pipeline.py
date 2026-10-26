@@ -125,10 +125,14 @@ class Pipeline:
 
         return self.client.get_pipeline_metrics(self.name, format=format)
 
-    def logs(self) -> Generator[str, None, None]:
-        """Gets the pipeline logs."""
+    def logs(self, follow: bool = True) -> Generator[str, None, None]:
+        """Gets the pipeline logs.
 
-        return self.client.get_pipeline_logs(self.name)
+        :param follow: Set False to stop after the retained logs instead of
+            waiting for new lines.
+        """
+
+        return self.client.get_pipeline_logs(self.name, follow=follow)
 
     def resume_logs(self, cursor: Optional[str] = None) -> LogStream:
         """

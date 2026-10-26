@@ -449,7 +449,8 @@ def log_transaction_lines(pipeline, max_lines: int = 5000, budget_s: float = 30.
     deadline = time.monotonic() + budget_s
     shown = 0
     try:
-        for index, line in enumerate(pipeline.logs()):
+        # `follow=False` ends the stream even if the pipeline stops logging.
+        for index, line in enumerate(pipeline.logs(follow=False)):
             if index >= max_lines or time.monotonic() > deadline:
                 break
             if "Transaction" in line or "commit" in line or "snapshot" in line:

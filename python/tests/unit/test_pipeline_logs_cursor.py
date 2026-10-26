@@ -226,3 +226,9 @@ class TestResumePipelineLogs:
         with _make_client([_logs_response(b"a\nb\n", headers=None)]) as m:
             assert list(_client().get_pipeline_logs("p")) == ["a", "b"]
         assert m.call_args.kwargs["params"] is None
+
+    def test_snapshot_sends_lowercase_follow_false(self):
+        # The server's boolean parser refuses Python's `False`.
+        with _make_client([_logs_response(b"a\nb\n", headers=None)]) as m:
+            assert list(_client().get_pipeline_logs("p", follow=False)) == ["a", "b"]
+        assert m.call_args.kwargs["params"] == {"follow": "false"}

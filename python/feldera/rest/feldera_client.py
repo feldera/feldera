@@ -568,16 +568,22 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             params={"format": format},
         )
 
-    def get_pipeline_logs(self, pipeline_name: str) -> Generator[str, None, None]:
+    def get_pipeline_logs(
+        self, pipeline_name: str, follow: bool = True
+    ) -> Generator[str, None, None]:
         """
         Get the pipeline logs
 
         :param name: The name of the pipeline
+        :param follow: Set False to stop after the retained logs instead of
+            waiting for new lines. A server older than this parameter ignores it.
         :return: A generator yielding the logs, one line at a time.
         """
         chunk: bytes
         with self.http.get(
             path=f"/pipelines/{pipeline_name}/logs",
+            # The server parses only lowercase `false`, not Python's `False`.
+            params=None if follow else {"follow": "false"},
             stream=True,
         ) as resp:
             for chunk in resp.iter_lines(chunk_size=50000000):
