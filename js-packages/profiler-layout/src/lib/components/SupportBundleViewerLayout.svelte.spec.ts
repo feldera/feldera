@@ -193,3 +193,27 @@ describe('SupportBundleViewerLayout source navigation', () => {
     expect(highlighted).toEqual([ranges.operator, []])
   })
 })
+
+describe('SupportBundleViewerLayout Connectors tab', () => {
+  // The analysis tabs are a SegmentedControl; each item holds a hidden radio input.
+  const connectorsTab = (container: HTMLElement) => {
+    const tab = container.querySelector<HTMLInputElement>('input[value="Connectors"]')
+    if (!tab) {
+      throw new Error('Connectors tab not found')
+    }
+    return tab
+  }
+
+  it('is disabled when the bundle has no connector statistics', () => {
+    const { container } = render(SupportBundleViewerLayout, baseProps())
+    expect(connectorsTab(container).disabled).toBe(true)
+  })
+
+  it('is enabled when the bundle has connector statistics', () => {
+    const { container } = render(SupportBundleViewerLayout, {
+      ...baseProps(),
+      connectorMetrics: { tables: new Map(), views: new Map() }
+    })
+    expect(connectorsTab(container).disabled).toBe(false)
+  })
+})
