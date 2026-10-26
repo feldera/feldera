@@ -27,6 +27,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.runtime.CalciteException;
 import org.apache.calcite.schema.Schema;
@@ -64,6 +65,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.WarnFloatingPointEquality;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.CustomFunctions;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateAggregate;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
@@ -597,6 +599,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             }
             i++;
         }
+        // Output connectors identify the rows of an indexed view by comparing their index keys
+        List<RelDataTypeField> keyColumns = Linq.map(statement.columns,
+                col -> view.columns.get(view.getColumnIndex(col)).field);
+        WarnFloatingPointEquality.checkColumns(this,
+                new SourcePositionRange(statement.createIndex.getParserPosition()), "CREATE INDEX", keyColumns);
         return true;
     }
 

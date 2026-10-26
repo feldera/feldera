@@ -1383,6 +1383,9 @@ public class SqlToRelCompiler implements IWritesLogs {
         Map<String, SqlNode> columnDefinition = new HashMap<>();
         SqlPrimaryKey key = null;
         Map<String, SqlIdentifier> primaryKeys = new HashMap<>();
+        // The PRIMARY KEY columns, and the first PRIMARY KEY column declaration
+        List<RelDataTypeField> keyColumns = new ArrayList<>();
+        SqlParserPos keyPosition = null;
 
         // First scan for standard style PRIMARY KEY constraints.
         for (SqlNode col: Objects.requireNonNull(list)) {
@@ -1507,6 +1510,11 @@ public class SqlToRelCompiler implements IWritesLogs {
                     CalciteObject.create(col), field, isPrimaryKey, Utilities.identifierIsQuoted(name),
                     lateness, defaultValue, defaultValueRange, interned);
             result.add(meta);
+            if (isPrimaryKey) {
+                keyColumns.add(field);
+                if (keyPosition == null)
+                    keyPosition = col.getParserPosition();
+            }
         }
 
         if (!primaryKeys.isEmpty()) {
@@ -1519,6 +1527,12 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         if (this.errorReporter.hasErrors())
             throw new CompilationError("aborting.");
+        // Upserts and deletes find rows by comparing their keys for equality
+        if (key != null)
+            keyPosition = key.getParserPosition();
+        if (keyPosition != null)
+            WarnFloatingPointEquality.checkColumns(this.errorReporter,
+                    new SourcePositionRange(keyPosition), "PRIMARY KEY", keyColumns);
         return result;
     }
 

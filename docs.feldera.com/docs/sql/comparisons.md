@@ -143,15 +143,16 @@ values:
 | Construct | What is compared |
 |-----------|------------------|
 | `=`, `<>`, `!=`, `<=>`, `IS [NOT] DISTINCT FROM`, `NULLIF` | the two operands |
-| `IN`, `NOT IN`, `CASE x WHEN v` | the value and each candidate |
+| `IN`, `NOT IN`, `=` or `<>` with `SOME`, `ANY`, or `ALL`, `CASE x WHEN v` | the value and each candidate |
 | `GROUP BY`, `PARTITION BY` | the grouping keys |
-| `DISTINCT`, `UNION`, `INTERSECT [ALL]`, `EXCEPT [ALL]` | whole rows |
+| `DISTINCT`, `UNION`, `INTERSECT [ALL]`, `EXCEPT [ALL]`, `UNIQUE` | whole rows |
 | `COUNT(DISTINCT x)` and other `DISTINCT` aggregates, `MODE` | the aggregated values |
 | `NATURAL JOIN`, `JOIN ... USING` | the shared columns |
 | `RANK`, `DENSE_RANK`, `PERCENT_RANK`, `CUME_DIST` | the `ORDER BY` keys, to detect ties |
 | `PIVOT` | the `FOR` columns and the pivot values |
 | `ARRAY_CONTAINS`, `ARRAY_POSITION`, `ARRAY_REMOVE`, `ARRAY_DISTINCT`, `ARRAY_EXCEPT`, `ARRAY_UNION`, `ARRAY_INTERSECT`, `ARRAYS_OVERLAP` | the array elements |
 | `map[key]`, `MAP_CONTAINS_KEY` | the map keys |
+| `PRIMARY KEY`, `CREATE INDEX` | the key columns |
 
 The analysis inspects declared types only, so it does not report a
 `VARIANT` value that holds a floating point number at run time.
