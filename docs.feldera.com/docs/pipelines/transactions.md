@@ -118,7 +118,9 @@ commit the transaction using the [`commit_transaction`](/api/commit-transaction)
 
 * Before the commit starts, the pipeline ingests the input that its input connectors received
   before `commit_transaction`. Thus, the transaction can also include some input that arrives
-  after `commit_transaction`, until the commit starts.
+  after `commit_transaction`, until the commit starts. During the synchronization phase of
+  [concurrent bootstrapping](/pipelines/modifying#concurrent-bootstrapping), which pauses input
+  ingestion, the commit starts without the input that is still queued.
 
 * The Python SDK and `fda` CLI provide both blocking and non-blocking variants of the commit operation.
   The blocking variant waits until the commit is complete before returning control to the caller.
