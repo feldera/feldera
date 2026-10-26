@@ -628,12 +628,16 @@ A scalar sub-query is a sub-query used as an expression. If the
 sub-query returns no rows, the value is `NULL`; if it returns more
 than one row, it is an error.
 
-`IN`, `EXISTS`, and scalar sub-queries can occur in any place where an
-expression can occur (such as the `SELECT` clause, `WHERE` clause,
-`ON` clause of a `JOIN`, or as an argument to an aggregate function).
+`IN`, `EXISTS`, and `UNIQUE` sub-queries, quantified comparisons
+(`value <OP> ANY (query)`, and the same with `SOME` or `ALL`), and
+scalar sub-queries can occur in any place where an expression can
+occur (such as the `SELECT` clause, `WHERE` clause, `ON` clause of a
+`JOIN`, or as an argument to an aggregate function).  The [comparison
+operations](comparisons.md#any) describe the results of quantified
+comparisons and `UNIQUE`.
 
-An `IN`, `EXISTS`, or scalar sub-query may be correlated; that is,
-it may refer to tables in the `FROM` clause of an enclosing query.
+All these sub-queries may be correlated; that is, they may refer to
+tables in the `FROM` clause of an enclosing query.
 
 `GROUP BY DISTINCT` removes duplicate grouping sets (for example,
 `GROUP BY DISTINCT GROUPING SETS ((a), (a, b), (a))` is equivalent to
