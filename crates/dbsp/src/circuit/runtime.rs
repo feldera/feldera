@@ -1331,8 +1331,12 @@ impl Runtime {
         F: Fn(&DevTweaks) -> T,
     {
         static DEFAULT: Lazy<DevTweaks> = Lazy::new(DevTweaks::default);
+        // Evicting a file that a thread-local destructor drops gets here, so
+        // use the defaults if the runtime thread-local is gone.
         RUNTIME
-            .with(|rt| Some(f(&rt.borrow().as_ref()?.inner().dev_tweaks)))
+            .try_with(|rt| Some(f(&rt.borrow().as_ref()?.inner().dev_tweaks)))
+            .ok()
+            .flatten()
             .unwrap_or_else(|| f(&DEFAULT))
     }
 
@@ -2995,6 +2999,28 @@ pub(crate) mod tests {
             // Any file read on this thread uses the idle accumulator after
             // `LATE`, so it is destroyed first.
             let _blocked = BlockingFor::new(ParkReason::StorageRead);
+        })
+        .join()
+        .unwrap();
+    }
+
+    /// Evicting a dropped file from the buffer cache reads the runtime's dev
+    /// tweaks, which must not panic after the runtime thread-local is gone.
+    #[test]
+    fn dev_tweaks_during_thread_local_destruction() {
+        struct ReadsDevTweaksOnDrop;
+        impl Drop for ReadsDevTweaksOnDrop {
+            fn drop(&mut self) {
+                Runtime::with_dev_tweaks(|_| ());
+            }
+        }
+        thread_local! {
+            static LATE: RefCell<Option<ReadsDevTweaksOnDrop>> = const { RefCell::new(None) };
+        }
+
+        std::thread::spawn(|| {
+            LATE.with(|late| *late.borrow_mut() = Some(ReadsDevTweaksOnDrop));
+            Runtime::with_dev_tweaks(|_| ());
         })
         .join()
         .unwrap();
