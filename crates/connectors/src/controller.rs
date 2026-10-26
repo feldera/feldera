@@ -2958,10 +2958,10 @@ struct CircuitThread {
     /// meantime.
     pending_new_inputs: HashMap<EndpointId, (String, InputEndpointConfig, bool)>,
 
-    /// The number of records that [Self::input_step] fed this step from each
-    /// input endpoint that it polled, or `None` if it did not poll all of them.
+    /// What [Self::input_step] fed this step from each input endpoint that it
+    /// polled, or `None` if it did not poll all of them.
     /// See [CommitTarget::drained].
-    step_feed: Option<HashMap<EndpointId, u64>>,
+    step_feed: Option<StepFeed>,
 
     /// Whether [Self::input_step] fed a replay step to the circuit this step.
     /// Used by [FtState::next_step] to decide whether to advance the replay
@@ -4610,6 +4610,11 @@ impl CircuitThread {
         let coordination_request = self.controller.coordination_request.lock().unwrap().clone();
         let selection = self.next_step_selection(coordination_request.as_ref());
 
+        // Begin the poll before listing the endpoints, so that a poll that
+        // begins after a commit request lists every endpoint that the request
+        // counted (see [CommitTarget::drained]).
+        let poll = self.controller.begin_poll();
+
         // Only newly reported input belongs in this step's journal. An
         // unpolled endpoint keeps its checkpoint cursor in `input_metadata`,
         // but that cursor may be Seek-only and is not a replayable input log.
@@ -4829,14 +4834,15 @@ impl CircuitThread {
         };
 
         if !self.replaying() && selection.inputs == StepInputs::All {
-            self.step_feed = Some(
-                step_metadata
+            self.step_feed = Some(StepFeed {
+                poll,
+                records: step_metadata
                     .iter()
                     .map(|(&endpoint_id, (_name, results))| {
                         (endpoint_id, results.amt.records as u64)
                     })
                     .collect(),
-            );
+            });
         }
 
         // Defer journaling to `step()`, after `step_circuit` assigns the
@@ -7431,6 +7437,10 @@ pub struct TransactionInfo {
     /// circuit has it.  `None` if the API has not committed the transaction.
     commit_target: Option<CommitTarget>,
 
+    /// The number of steps that have begun to poll the input endpoints (see
+    /// [ControllerInner::begin_poll]).
+    polls_begun: u64,
+
     /// For sending updates to the coordination status to the coordinator.
     sender: tokio::sync::watch::Sender<TransactionCoordination>,
 }
@@ -7451,6 +7461,7 @@ impl TransactionInfo {
             coordinator_members: None,
             coordinator_transaction_id: None,
             commit_target: None,
+            polls_begun: 0,
             sender,
         }
     }
@@ -9704,7 +9715,8 @@ impl ControllerInner {
         // The input queued now belongs to the transaction.  In a multihost
         // pipeline, the coordinator commits with steps that feed no input.
         if !transaction_info.is_multihost {
-            transaction_info.commit_target = Some(CommitTarget::new(&statuses));
+            transaction_info.commit_target =
+                Some(CommitTarget::new(&statuses, transaction_info.polls_begun));
         }
         transaction_info.update_transaction_status();
         self.unpark_circuit();
@@ -9807,6 +9819,14 @@ impl ControllerInner {
         }
     }
 
+    /// Counts a step that begins to poll the input endpoints, and returns the
+    /// step's number among such steps (see [StepFeed::poll]).
+    fn begin_poll(&self) -> u64 {
+        let mut transaction_info = self.transaction_info.lock().unwrap();
+        transaction_info.polls_begun += 1;
+        transaction_info.polls_begun
+    }
+
     /// Read the current value of transaction_info.transaction_state.
     pub fn get_transaction_state(&self) -> TransactionState {
         self.transaction_info.lock().unwrap().transaction_state
@@ -9862,15 +9882,11 @@ impl ControllerInner {
     /// During fault-tolerance replay, a single-host pipeline instead
     /// reproduces the journaled transaction boundaries.
     ///
-    /// `feed` is the number of records that this step fed from each input
-    /// endpoint that it polled, or `None` if it did not poll all of them (see
-    /// [CommitTarget::drained]).
+    /// `feed` is what this step fed from each input endpoint that it polled,
+    /// or `None` if it did not poll all of them (see [CommitTarget::drained]).
     ///
     /// Returns how the transaction is advancing (if it is).
-    fn advance_transaction_state(
-        &self,
-        feed: Option<&HashMap<EndpointId, u64>>,
-    ) -> Option<AdvanceTransaction> {
+    fn advance_transaction_state(&self, feed: Option<&StepFeed>) -> Option<AdvanceTransaction> {
         // Lock the input statuses first, like `input_step`.
         let statuses = self.status.input_status();
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
@@ -10025,16 +10041,23 @@ impl ControllerInner {
     }
 }
 
-/// The input that an API commit includes: for each input endpoint, its
-/// [InputEndpointMetrics::total_records] at the commit request.
+/// The input that an API commit includes.
 #[derive(Clone, Debug)]
-struct CommitTarget(BTreeMap<EndpointId, u64>);
+struct CommitTarget {
+    /// Each input endpoint's [InputEndpointMetrics::total_records] at the
+    /// commit request.
+    records: BTreeMap<EndpointId, u64>,
+
+    /// [TransactionInfo::polls_begun] at the commit request.
+    polls_begun: u64,
+}
 
 impl CommitTarget {
     /// Returns the input that the endpoints in `statuses` have received.
-    fn new(statuses: &BTreeMap<EndpointId, InputEndpointStatus>) -> Self {
-        Self(
-            statuses
+    /// `polls_begun` is [TransactionInfo::polls_begun] at the commit request.
+    fn new(statuses: &BTreeMap<EndpointId, InputEndpointStatus>, polls_begun: u64) -> Self {
+        Self {
+            records: statuses
                 .iter()
                 .map(|(endpoint_id, status)| {
                     (
@@ -10043,24 +10066,31 @@ impl CommitTarget {
                     )
                 })
                 .collect(),
-        )
+            polls_begun,
+        }
     }
 
     /// Returns true if the endpoints in `statuses` have fed the target input
     /// to the circuit.
     ///
     /// An endpoint also counts as drained if it has no input buffered, if it
-    /// was removed, or if `feed`, the records that this step fed from each
-    /// endpoint that it polled, has none from it.  The last case covers an
-    /// endpoint that this step did not poll, and one that holds its input
-    /// back.  Thus, each step that polls all endpoints either feeds more of
-    /// the queued input or ends the wait, even if other clients keep sending.
+    /// was removed, or if `feed`, what this step fed from each endpoint that
+    /// it polled, has no records from it and the step began to poll after the
+    /// commit request.  The last case covers an endpoint that this step did
+    /// not poll, and one that holds its input back.  Thus, each step that
+    /// polls all endpoints after the commit request either feeds more of the
+    /// queued input or ends the wait, even if other clients keep sending.
     fn drained(
         &self,
         statuses: &BTreeMap<EndpointId, InputEndpointStatus>,
-        feed: Option<&HashMap<EndpointId, u64>>,
+        feed: Option<&StepFeed>,
     ) -> bool {
-        self.0.iter().all(|(endpoint_id, target)| {
+        // A poll that began before the commit request can predate input that
+        // the commit includes.
+        let feed = feed
+            .filter(|feed| feed.poll > self.polls_begun)
+            .map(|feed| &feed.records);
+        self.records.iter().all(|(endpoint_id, target)| {
             let Some(status) = statuses.get(endpoint_id) else {
                 return true;
             };
@@ -10070,6 +10100,18 @@ impl CommitTarget {
                     .is_some_and(|feed| feed.get(endpoint_id).is_none_or(|&records| records == 0))
         })
     }
+}
+
+/// What a step fed to the circuit from each input endpoint that it polled.
+#[derive(Debug)]
+struct StepFeed {
+    /// The step's number among the steps that began to poll the input
+    /// endpoints (see [TransactionInfo::polls_begun]).
+    poll: u64,
+
+    /// The number of records that the step fed from each endpoint that it
+    /// polled.
+    records: HashMap<EndpointId, u64>,
 }
 
 /// An [InputConsumer] for an input adapter to use.
