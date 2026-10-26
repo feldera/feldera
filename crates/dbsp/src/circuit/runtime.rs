@@ -1087,8 +1087,12 @@ impl Runtime {
     /// - If the thread is a background thread, but no buffer cache is set, this
     ///   ordinarily indicates a bug.  However, this can happen when a
     ///   background task is dropped, because it's normal for task-local
-    ///   variables to be unavailable in `Drop` during task shutdown.  The
-    ///   function returns `None` in this case (and only in this case).
+    ///   variables to be unavailable in `Drop` during task shutdown.
+    ///
+    /// The function returns `None` in that case, and when a thread-local
+    /// destructor calls it after this thread's buffer cache or runtime is gone
+    /// (for example while the thread calls `std::process::exit`).  There is
+    /// no cache to use in either case.
     pub fn buffer_cache() -> Option<Arc<BufferCache>> {
         // A thread-local destructor can drop a file-backed batch after this
         // thread's buffer cache, or its runtime, is gone, for example while a
@@ -1119,8 +1123,9 @@ impl Runtime {
                     // We are in a background thread in a Tokio runtime but no
                     // buffer cache is set in [TOKIO_BUFFER_CACHE].  This is
                     // probably a bug, but it can happen when a background task
-                    // is canceled.  It is the reason that this function returns
-                    // an `Option`.
+                    // is canceled.  It is one of the two reasons that this
+                    // function returns an `Option`; the other is thread-local
+                    // teardown, above.
                     None
                 }
             }
@@ -2896,6 +2901,34 @@ pub(crate) mod tests {
             // use, so `LATE`, used first, is destroyed after the buffer cache.
             LATE.with(|late| *late.borrow_mut() = Some(LooksUpBufferCacheOnDrop));
             assert!(Runtime::buffer_cache().is_some());
+        })
+        .join()
+        .unwrap();
+    }
+
+    /// The same holds for a value that blocks on storage while it drops, which
+    /// charges the time to the thread's runtime idle accumulator.
+    #[test]
+    fn blocking_for_during_thread_local_destruction() {
+        use crate::profile::{BlockingFor, ParkReason};
+
+        struct BlocksOnDrop;
+        impl Drop for BlocksOnDrop {
+            fn drop(&mut self) {
+                let _ = Runtime::buffer_cache();
+                let _blocked = BlockingFor::new(ParkReason::StorageMetadata);
+            }
+        }
+        thread_local! {
+            static LATE: RefCell<Option<BlocksOnDrop>> = const { RefCell::new(None) };
+        }
+
+        std::thread::spawn(|| {
+            LATE.with(|late| *late.borrow_mut() = Some(BlocksOnDrop));
+            assert!(Runtime::buffer_cache().is_some());
+            // Any file read on this thread uses the idle accumulator after
+            // `LATE`, so it is destroyed first.
+            let _blocked = BlockingFor::new(ParkReason::StorageRead);
         })
         .join()
         .unwrap();
