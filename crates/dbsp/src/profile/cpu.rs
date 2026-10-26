@@ -138,7 +138,10 @@ thread_local! {
 /// The accumulator installed on this thread, if it is a worker's.
 #[cfg(test)]
 pub(crate) fn current_runtime_idle() -> Option<RuntimeIdle> {
-    RUNTIME_IDLE.with(|idle| idle.borrow().clone())
+    RUNTIME_IDLE
+        .try_with(|idle| idle.borrow().clone())
+        .ok()
+        .flatten()
 }
 
 /// The reasons declared on one thread, by [`ParkingFor`] guards it handed out.
@@ -236,8 +239,15 @@ impl BlockingFor {
             depth.set(depth_before + 1);
             depth_before == 0
         });
-        let start = (outermost && RUNTIME_IDLE.with(|idle| idle.borrow().is_some()))
-            .then(|| (Instant::now(), ThreadCpuTime::now()));
+        // A thread-local destructor can block after the accumulator is gone,
+        // for example while a thread calls `std::process::exit`.  There is
+        // nothing to charge then, and panicking in a thread-local destructor
+        // aborts the process.
+        let start = (outermost
+            && RUNTIME_IDLE
+                .try_with(|idle| idle.borrow().is_some())
+                .unwrap_or(false))
+        .then(|| (Instant::now(), ThreadCpuTime::now()));
         Self { reason, start }
     }
 }
@@ -250,7 +260,9 @@ impl Drop for BlockingFor {
         });
         if let Some((start, cpu)) = &self.start {
             let blocked = start.elapsed().saturating_sub(cpu.elapsed());
-            RUNTIME_IDLE.with(|idle| {
+            // The accumulator can be gone if this guard drops during
+            // thread-local destruction; see `new`.
+            let _ = RUNTIME_IDLE.try_with(|idle| {
                 if let Some(idle) = idle.borrow().as_ref() {
                     idle.blocked(self.reason, blocked);
                 }
