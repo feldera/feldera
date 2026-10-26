@@ -139,12 +139,18 @@ along with the following configuration options
 | `unity_msi_endpoint`, `databricks_msi_endpoint`                           | `UNITY_MSI_ENDPOINT`, `DATABRICKS_MSI_ENDPOINT` | Endpoint to request a IMDS managed identity token.                         |
 | `unity_object_id`, `databricks_object_id`                                 | `UNITY_OBJECT_ID`, `DATABRICKS_OBJECT_ID`| Object id for use with managed identity authentication.                           |
 | `unity_msi_resource_id`, `databricks_msi_resource_id`                     | `UNITY_MSI_RESOURCE_ID`, `DATABRICKS_MSI_RESOURCE_ID`| MSI resource id for use with managed identity authentication.         |
-| `unity_federated_token_file`, `databricks_federated_token_file`           | `UNITY_FEDERATED_TOKEN_FILE`, `DATABRICKS_FEDERATED_TOKEN_FILE`| File containing token for Azure AD workload identity federation.|
+| `unity_federated_token_file`, `databricks_federated_token_file`           | `UNITY_FEDERATED_TOKEN_FILE`, `DATABRICKS_FEDERATED_TOKEN_FILE`| File containing an OIDC token (for example a Kubernetes service account token) for Databricks workload identity federation. Use it with `unity_client_id` and `databricks_host` and no client secret. The file is read again on each token refresh.|
 | `unity_allow_http_url`, `databricks_allow_http_url`                       | `UNITY_ALLOW_HTTP_URL`, `DATABRICKS_ALLOW_HTTP_URL`| Allow http url (e.g. http://localhost:8080/api/2.1/...)                 |
     </TabItem>
 </Tabs>
 
 A typical connector config includes `unity_client_id`, `unity_client_secret`,  and `databricks_host` options.
+To authenticate without a long-lived secret, replace `unity_client_secret` with
+`unity_federated_token_file` ([workload identity federation](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-federation)).
+If several credentials are set, the connector uses the first of: `unity_token`,
+`unity_client_id` + `unity_client_secret`, `unity_client_id` + `unity_federated_token_file`.
+Unity Catalog options are shared by all Delta Lake connectors in a pipeline, so use one
+type of credential for all of them.
 You may need to configure additional object store-specific properties,
 e.g., you may need to configure `aws_region` when opening a Delta table in S3.
 
@@ -607,6 +613,19 @@ Read table snapshot via Unity catalog.
   "mode": "snapshot",
   "unity_client_id": "<CLIENT_ID>",
   "unity_client_secret": "<CLIENT_SECRET>",
+  "databricks_host": "https://dbc-XXX-XXX.cloud.databricks.com",
+  "aws_region": "us-west-1"
+}
+```
+
+Read the same table with workload identity federation instead of a client secret.
+
+```json
+{
+  "uri": "uc://feldera_experimental.default.people_2m",
+  "mode": "snapshot",
+  "unity_client_id": "<CLIENT_ID>",
+  "unity_federated_token_file": "/var/run/secrets/databricks/token",
   "databricks_host": "https://dbc-XXX-XXX.cloud.databricks.com",
   "aws_region": "us-west-1"
 }
