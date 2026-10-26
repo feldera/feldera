@@ -44,6 +44,7 @@ import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
 import org.apache.calcite.util.TimestampWithTimeZoneString;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
@@ -162,6 +163,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             "CURRENT_DATE", "CAST(NOW() AS DATE)",
             "CURRENT_TIME", "CAST(NOW() AS TIME)",
             "LOCALTIME", "CAST(NOW() AS TIME)");
+    public static final Documentation.Link QUANTIFIED_ARRAY_DOCUMENTATION =
+            new Documentation.Link("sql/unsupported-operations", "quantified-comparisons-with-arrays");
 
     private final TypeCompiler typeCompiler;
     @Nullable
@@ -2472,6 +2475,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 }
                 return current;
             }
+            case SOME:
+            case ALL:
+                // Sub-query, VALUES, and list operands never get here, so the operand is an array
+                throw new UnsupportedException("Comparisons with SOME, ANY, or ALL over an array are not supported.\n" +
+                        QUANTIFIED_ARRAY_DOCUMENTATION.citation(), node.getPositionRange());
             case DOT:
             default:
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())

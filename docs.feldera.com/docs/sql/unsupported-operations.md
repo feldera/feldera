@@ -107,6 +107,24 @@ subqueries. In these cases, we recommend users refactor the query.
 
 See [#2555](https://github.com/feldera/feldera/issues/2555).
 
+## Quantified comparisons with arrays
+
+A [quantified comparison](comparisons.md#any) accepts a sub-query or a
+`VALUES` list, but not an array: `x = ANY (ARRAY[1, 2, 3])`, and
+`x > SOME (a)` where `a` is an array column, are rejected.
+
+```sql
+-- NOT supported: quantified comparison with an array
+SELECT * FROM t WHERE x = ANY (ARRAY[1, 2, 3]);
+```
+
+A sub-query over `UNNEST(a)` does not work for an array column, because
+of the [`LEFT JOIN UNNEST`](#left-join-unnest) limitation.  When the
+array has at least one element and no `NULL` elements, and `x` is not
+`NULL`, rewrite `x = ANY (a)` as `ARRAY_CONTAINS(a, x)`, `x > ANY (a)`
+as `x > ARRAY_MIN(a)`, and `x > ALL (a)` as `x > ARRAY_MAX(a)`; the
+other ordering comparisons are similar.
+
 ## `LEFT JOIN UNNEST`
 
 `LEFT JOIN UNNEST(...)` and `OUTER APPLY (...)`, are not yet supported:
