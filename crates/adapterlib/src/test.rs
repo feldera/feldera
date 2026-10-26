@@ -6,6 +6,7 @@
 mod canonical;
 mod engine;
 mod mock_input_consumer;
+mod mock_output_callbacks;
 mod mock_output_consumer;
 mod updates;
 mod wait;
@@ -18,6 +19,7 @@ pub use engine::{
 pub use mock_input_consumer::{
     ErrorCallback, MockInputConsumer, MockInputConsumerState, MockInputParser, MockInputParserState,
 };
+pub use mock_output_callbacks::MockOutputCallbacks;
 pub use mock_output_consumer::MockOutputConsumer;
 pub use updates::{Updates, WEIGHT_COLUMN};
 pub use wait::{async_wait, default_timeout_ms, wait};

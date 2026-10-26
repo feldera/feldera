@@ -36,7 +36,9 @@ use feldera_adapterlib::{
     ConnectorMetadata,
     catalog::StagedBuffers,
     format::{BufferSize, flatten_nested},
-    test::{Capability, ConnectorTestEngine, InputOptions, Updates, wait_for_rows},
+    test::{
+        Capability, ConnectorTestEngine, InputOptions, MockOutputCallbacks, Updates, wait_for_rows,
+    },
     transport::{OutputBatchType, Resume, Watermark},
 };
 use feldera_types::{
@@ -1130,11 +1132,7 @@ fn kafka_output_test(
     .unwrap()
     .unwrap();
     assert!(endpoint.is_fault_tolerant());
-    endpoint
-        .connect(Box::new(|fatal, error, tag| {
-            info!("({fatal:?}, {error:?}, {tag:?})")
-        }))
-        .unwrap();
+    endpoint.connect(Arc::new(MockOutputCallbacks)).unwrap();
     for step in 0..5 {
         endpoint.batch_start(step, OutputBatchType::Delta).unwrap();
         endpoint
@@ -1182,11 +1180,7 @@ fn output_headers_test() {
     .unwrap()
     .unwrap();
     assert!(endpoint.is_fault_tolerant());
-    endpoint
-        .connect(Box::new(|fatal, error, tag| {
-            info!("({fatal:?}, {error:?}, {tag:?})")
-        }))
-        .unwrap();
+    endpoint.connect(Arc::new(MockOutputCallbacks)).unwrap();
 
     // `push_buffer` writes just the configured headers.
     endpoint.batch_start(0, OutputBatchType::Delta).unwrap();
@@ -1307,11 +1301,7 @@ fn _test() {
     .unwrap()
     .unwrap();
     assert!(endpoint.is_fault_tolerant());
-    endpoint
-        .connect(Box::new(|fatal, error, tag| {
-            info!("({fatal:?}, {error:?}, {tag:?})")
-        }))
-        .unwrap();
+    endpoint.connect(Arc::new(MockOutputCallbacks)).unwrap();
     for step in 0..5 {
         endpoint.batch_start(step, OutputBatchType::Delta).unwrap();
         endpoint

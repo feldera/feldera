@@ -1,5 +1,6 @@
-use super::OutputEndpoint;
-use anyhow::{Error as AnyError, Result as AnyResult};
+use super::{OutputEndpoint, OutputEndpointCallbacks};
+use anyhow::Result as AnyResult;
+use std::sync::Arc;
 
 /// Output transport endpoint that discards all data (aka /dev/null).
 ///
@@ -8,10 +9,7 @@ use anyhow::{Error as AnyError, Result as AnyResult};
 pub(crate) struct NullOutputEndpoint;
 
 impl OutputEndpoint for NullOutputEndpoint {
-    fn connect(
-        &mut self,
-        _async_error_callback: Box<dyn Fn(bool, AnyError, Option<&'static str>) + Send + Sync>,
-    ) -> AnyResult<()> {
+    fn connect(&mut self, _callbacks: Arc<dyn OutputEndpointCallbacks>) -> AnyResult<()> {
         Ok(())
     }
 

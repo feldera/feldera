@@ -19,7 +19,9 @@ use crate::{
 use anyhow::{Context, Result as AnyResult, anyhow, bail};
 use feldera_adapterlib::catalog::SerKeyRange;
 use feldera_adapterlib::format::MAX_RECORD_LEN_IN_ERRMSG;
-use feldera_adapterlib::transport::{AsyncErrorCallback, CommandHandler, OutputBatchType, Step};
+use feldera_adapterlib::transport::{
+    CommandHandler, OutputBatchType, OutputEndpointCallbacks, Step,
+};
 use feldera_types::{
     format::json::JsonFlavor,
     program_schema::{Relation, SqlIdentifier},
@@ -1365,7 +1367,7 @@ impl OutputEndpoint for PostgresOutputEndpoint {
         )))
     }
 
-    fn connect(&mut self, _: AsyncErrorCallback) -> anyhow::Result<()> {
+    fn connect(&mut self, _: Arc<dyn OutputEndpointCallbacks>) -> anyhow::Result<()> {
         todo!()
     }
 

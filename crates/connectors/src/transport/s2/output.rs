@@ -1,5 +1,5 @@
 use anyhow::{Context, Error as AnyError, Result as AnyResult, anyhow};
-use feldera_adapterlib::transport::{AsyncErrorCallback, OutputEndpoint};
+use feldera_adapterlib::transport::{OutputEndpoint, OutputEndpointCallbacks};
 use feldera_storage::tokio::TOKIO;
 use feldera_types::transport::s2::S2OutputConfig;
 use s2_sdk::{
@@ -79,7 +79,7 @@ impl S2OutputEndpoint {
 }
 
 impl OutputEndpoint for S2OutputEndpoint {
-    fn connect(&mut self, _async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
+    fn connect(&mut self, _callbacks: Arc<dyn OutputEndpointCallbacks>) -> AnyResult<()> {
         Ok(())
     }
 

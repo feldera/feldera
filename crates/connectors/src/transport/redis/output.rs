@@ -1,8 +1,9 @@
 use anyhow::{Result as AnyResult, anyhow};
-use feldera_adapterlib::transport::{AsyncErrorCallback, OutputBatchType, OutputEndpoint};
+use feldera_adapterlib::transport::{OutputBatchType, OutputEndpoint, OutputEndpointCallbacks};
 use feldera_types::transport::redis::RedisOutputConfig;
 use redis::{ConnectionInfo, Pipeline};
 use std::str::FromStr;
+use std::sync::Arc;
 use tracing::{info_span, span::EnteredSpan};
 
 /// Handles output to Redis.
@@ -35,7 +36,7 @@ impl RedisOutputEndpoint {
 }
 
 impl OutputEndpoint for RedisOutputEndpoint {
-    fn connect(&mut self, _: AsyncErrorCallback) -> anyhow::Result<()> {
+    fn connect(&mut self, _: Arc<dyn OutputEndpointCallbacks>) -> anyhow::Result<()> {
         let _guard = self.span();
         let client = redis::Client::open(self.config.clone())
             .map_err(|e| anyhow!("error connecting to the Redis server: {e}"))?;

@@ -1,6 +1,6 @@
 use super::{
     InputConsumer, InputEndpoint, InputReader, InputReaderCommand, OutputEndpoint,
-    TransportInputEndpoint,
+    OutputEndpointCallbacks, TransportInputEndpoint,
 };
 use crate::format::StreamSplitter;
 use crate::{InputBuffer, Parser};
@@ -19,6 +19,7 @@ use std::hash::Hasher;
 use std::io::{Seek, SeekFrom};
 use std::ops::Range;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::thread;
 use std::{fs::File, io::Write, time::Duration};
 use tokio::sync::mpsc::error::TryRecvError;
@@ -382,10 +383,7 @@ impl FileOutputEndpoint {
 }
 
 impl OutputEndpoint for FileOutputEndpoint {
-    fn connect(
-        &mut self,
-        _async_error_callback: Box<dyn Fn(bool, AnyError, Option<&'static str>) + Send + Sync>,
-    ) -> AnyResult<()> {
+    fn connect(&mut self, _callbacks: Arc<dyn OutputEndpointCallbacks>) -> AnyResult<()> {
         Ok(())
     }
 

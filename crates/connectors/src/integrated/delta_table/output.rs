@@ -12,8 +12,8 @@ use crate::integrated::delta_table::{WriteError, register_storage_handlers};
 use crate::transport::Step;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 use crate::{
-    AsyncErrorCallback, ControllerError, Encoder, OutputConsumer, OutputEndpoint, RecordFormat,
-    SerCursor,
+    ControllerError, Encoder, OutputConsumer, OutputEndpoint, OutputEndpointCallbacks,
+    RecordFormat, SerCursor,
 };
 use anyhow::{Result as AnyResult, anyhow, bail};
 use arrow::array::{Int64Array, RecordBatch, StringArray};
@@ -1849,7 +1849,7 @@ impl Encoder for DeltaTableWriter {
 }
 
 impl OutputEndpoint for DeltaTableWriter {
-    fn connect(&mut self, _async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
+    fn connect(&mut self, _callbacks: Arc<dyn OutputEndpointCallbacks>) -> AnyResult<()> {
         todo!()
     }
 
