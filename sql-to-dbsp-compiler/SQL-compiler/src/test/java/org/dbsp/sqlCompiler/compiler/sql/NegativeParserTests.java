@@ -299,4 +299,15 @@ public class NegativeParserTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT current_date FROM T;""",
                 "Function 'CURRENT_DATE' is not supported; use CAST(NOW() AS DATE) instead.");
     }
+
+    @Test
+    public void distinctOnTest() {
+        // The newline checks that nothing follows the URL
+        this.statementsFailingInCompilation("""
+                CREATE TABLE raw(id INT, ver INT, v INT);
+                CREATE VIEW v AS SELECT DISTINCT ON (id) id, ver, v FROM raw ORDER BY id, ver DESC;""", """
+                2:18: error: Not supported: SELECT DISTINCT ON is not supported.
+                See https://docs.feldera.com/sql/unsupported-operations#select-distinct-on
+                """);
+    }
 }
