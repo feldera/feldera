@@ -2180,17 +2180,22 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             }
         }
         PipelineAction::Logs { name, watch } => {
-            // The log endpoint is a stream that never ends. However, we want to be able for
-            // fda to exit after a certain amount of time without any new logs to emulate
-            // a log snapshot functionality.
+            // Without `--watch`, `follow=false` ends the stream after the retained logs.
+            // A server older than `follow=false` streams forever, so a pause still ends it.
+            // The pause is long enough that a slow link does not cut a newer server's
+            // snapshot short.
             let mut first_line = true;
             let next_line_timeout = if !watch {
-                Duration::from_millis(250)
+                Duration::from_secs(2)
             } else {
                 Duration::MAX
             };
 
-            let response = client.get_pipeline_logs().pipeline_name(name).send().await;
+            let mut request = client.get_pipeline_logs().pipeline_name(name);
+            if !watch {
+                request = request.follow(false);
+            }
+            let response = request.send().await;
             match response {
                 Ok(response) => {
                     let mut byte_stream = response.into_inner();
