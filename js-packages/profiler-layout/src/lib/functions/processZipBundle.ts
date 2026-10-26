@@ -1,5 +1,9 @@
 import { unzip, type ZipItem } from 'but-unzip'
-import type { ConnectorStatus } from 'common-lib/connectorMetrics'
+import {
+  aggregateConnectorMetrics,
+  type ConnectorMetrics,
+  type ConnectorStatus
+} from 'common-lib/connectorMetrics'
 import type { Dataflow, JsonProfiles } from 'profiler-lib'
 import sortOn from 'sort-on'
 import { groupBy } from './array'
@@ -63,8 +67,9 @@ export interface ProcessedProfile {
   pipelineName?: string
   /** Cumulative pipeline-wide metrics from `stats.json`, when the bundle includes them. */
   globalMetrics?: GlobalMetrics
-  /** Input and output connector statistics from `stats.json`, when the bundle includes them. */
-  connectorStatus?: ConnectorStatus
+  /** Input and output connector statistics from `stats.json`, grouped by table and view, when the
+   *  bundle includes them. */
+  connectorMetrics?: ConnectorMetrics
   /** Pipeline runtime configuration (`runtime_config` from `pipeline_config.json`), when the
    *  bundle includes it. */
   runtimeConfig?: unknown
@@ -168,24 +173,21 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
   }
 
   // `stats.json` holds the `/stats` response. The overview tile reads its `global_metrics`, and the
-  // Connectors tab reads its `inputs` and `outputs`. A malformed or missing file leaves both
-  // undefined and does not fail the load, because the profile does not need the stats.
+  // Connectors tab reads its `inputs` and `outputs`. A missing file or a file that is not JSON
+  // leaves both undefined and does not fail the load, because the profile does not need the stats.
+  // Connector entries that cannot be aggregated fail the load.
   const statsFile = files.find((file) => statsRegex.test(file.filename))
   let globalMetrics: GlobalMetrics | undefined
-  let connectorStatus: ConnectorStatus | undefined
+  let connectorMetrics: ConnectorMetrics | undefined
   if (statsFile) {
+    let stats: (Partial<ConnectorStatus> & { global_metrics?: GlobalMetrics }) | undefined
     try {
-      const stats = JSON.parse(
-        decoder.decode(await statsFile.read())
-      ) as Partial<ConnectorStatus> & {
-        global_metrics?: GlobalMetrics
-      }
-      globalMetrics = stats.global_metrics
-      connectorStatus = parseConnectorStatus(stats)
+      stats = JSON.parse(decoder.decode(await statsFile.read()))
     } catch {
-      globalMetrics = undefined
-      connectorStatus = undefined
+      stats = undefined
     }
+    globalMetrics = stats?.global_metrics
+    connectorMetrics = aggregateBundleConnectorMetrics(stats)
   }
 
   return {
@@ -195,14 +197,14 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
     logText,
     pipelineName,
     globalMetrics,
-    connectorStatus,
+    connectorMetrics,
     runtimeConfig
   }
 }
 
 /**
  * Returns the connector statistics of a parsed `stats.json`, or `undefined` when it lists no
- * input and no output connectors.
+ * input and no output connectors. The entries are not validated.
  */
 export function parseConnectorStatus(
   stats: Partial<ConnectorStatus> | null | undefined
@@ -213,4 +215,29 @@ export function parseConnectorStatus(
     return undefined
   }
   return { inputs, outputs, global_metrics: stats?.global_metrics }
+}
+
+/**
+ * Groups the connector statistics of a parsed `stats.json` by table and view. Returns `undefined`
+ * when it lists no connectors.
+ *
+ * @throws Error if a connector entry cannot be aggregated, for example one without
+ *         `config.stream`
+ */
+function aggregateBundleConnectorMetrics(
+  stats: Partial<ConnectorStatus> | null | undefined
+): ConnectorMetrics | undefined {
+  const connectorStatus = parseConnectorStatus(stats)
+  if (!connectorStatus) {
+    return undefined
+  }
+  // A bundle holds one `/stats` sample, so `io_active` is false for all connectors.
+  try {
+    return aggregateConnectorMetrics(connectorStatus)
+  } catch (e) {
+    throw new Error(
+      `Cannot read the connector statistics in stats.json: ${e instanceof Error ? e.message : String(e)}`,
+      { cause: e }
+    )
+  }
 }

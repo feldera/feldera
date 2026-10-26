@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Switch } from '@skeletonlabs/skeleton-svelte'
   import type { ZipItem } from 'but-unzip'
-  import { aggregateConnectorMetrics, type ConnectorStatus } from 'common-lib/connectorMetrics'
+  import type { ConnectorMetrics } from 'common-lib/connectorMetrics'
   import {
     isFindShortcut,
     PersistentContent,
@@ -55,9 +55,9 @@
     logText?: string
     /** Cumulative pipeline-wide metrics from the bundle's `stats.json`; shown in the overview. */
     globalMetrics?: GlobalMetrics
-    /** Input and output connector statistics from the bundle's `stats.json`, shown in the
-     *  Connectors tab. Absent when the bundle has no connector statistics. */
-    connectorStatus?: ConnectorStatus
+    /** Input and output connector statistics from the bundle's `stats.json`, grouped by table and
+     *  view, shown in the Connectors tab. Absent when the bundle has no connector statistics. */
+    connectorMetrics?: ConnectorMetrics
     /** Pipeline runtime configuration from the bundle's `pipeline_config.json`; shown in the Config
      *  tab. Absent when the bundle carried no config. */
     runtimeConfig?: unknown
@@ -86,7 +86,7 @@
     programCode,
     logText,
     globalMetrics,
-    connectorStatus,
+    connectorMetrics,
     runtimeConfig,
     triageResults,
     theme = 'light',
@@ -101,10 +101,6 @@
   }: Props = $props()
 
   const hasProfile = $derived(profileData !== undefined)
-  // A bundle holds one `/stats` sample, so `io_active` is false for all connectors.
-  const connectorMetrics = $derived(
-    connectorStatus ? aggregateConnectorMetrics(connectorStatus) : undefined
-  )
 
   const graphPaneDefaultSize = 55
   const graphPaneMinSize = 20
@@ -143,8 +139,8 @@
   let nodeSearchInput: HTMLInputElement | undefined = $state()
 
   // Ctrl/Cmd-F targets the "Search node" input while focused on the circuit diagram, otherwise the
-  // active tab's search. Inactive on Connectors and Config (no in-tab search), so native find runs
-  // there.
+  // active tab's search. Inactive on Connectors and Config (no in-tab search), so the browser's
+  // native find popup appears there.
   useShortcut(
     isFindShortcut,
     () => {
