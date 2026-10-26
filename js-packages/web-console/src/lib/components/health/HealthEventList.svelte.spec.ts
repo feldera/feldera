@@ -66,17 +66,71 @@ describe('HealthEventList', () => {
   })
 
   it.each([
-    ['returns no details', async () => null],
-    ['fails', async () => Promise.reject(new Error('not found'))]
-  ])('asks for the details of an event once when the loader %s', async (_, outcome) => {
+    ['returns no details', async () => null, 'This event has no details.'],
+    [
+      'fails',
+      async () => Promise.reject(new Error('network error')),
+      'The details of this event could not be loaded. Close and reopen the event to try again.'
+    ]
+  ])('asks for the details of an event once when the loader %s', async (_, outcome, message) => {
     let calls = 0
     // After a few calls the loader never settles, so a retry loop stops instead of hanging.
     const loadEventDetail = vi.fn(() => (++calls <= 3 ? outcome() : new Promise<never>(() => {})))
     renderDetails(loadEventDetail)
-    await expect
-      .element(page.getByText('The details of this event are not available.'))
-      .toBeInTheDocument()
+    await expect.element(page.getByText(message)).toBeInTheDocument()
     expect(loadEventDetail).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a failed load when the event is closed and opened again', async () => {
+    const loadEventDetail = vi
+      .fn<(eventId: string) => Promise<EventDetail | null>>()
+      .mockRejectedValueOnce(new Error('network error'))
+      .mockResolvedValueOnce({ timestamp: at(2), description: 'details of e2' })
+    const { container } = render(HealthEventList<HealthStatus, 'pipeline'>, {
+      eventParts: bucket,
+      loadEventDetail,
+      onClose: () => {}
+    })
+    await expect.element(page.getByText(/could not be loaded/)).toBeInTheDocument()
+    const firstEventHeader = container.querySelector<HTMLElement>('[role="button"]')!
+    await userEvent.click(firstEventHeader)
+    await userEvent.click(firstEventHeader)
+    await expect.element(page.getByText('details of e2')).toBeInTheDocument()
+    expect(loadEventDetail).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    [
+      'succeeds',
+      (late: PromiseWithResolvers<EventDetail | null>) =>
+        late.resolve({ timestamp: at(2), description: 'details of e2' })
+    ],
+    [
+      'fails',
+      (late: PromiseWithResolvers<EventDetail | null>) => late.reject(new Error('network error'))
+    ]
+  ])('ignores a load that %s after the list switched to another incident', async (_, settle) => {
+    const late = Promise.withResolvers<EventDetail | null>()
+    const otherBucket = {
+      ...bucket,
+      events: [{ id: 'o1', timestamp: at(3), status: 'major_issue' as const }]
+    }
+    const loadEventDetail = vi.fn((eventId: string) =>
+      eventId === 'e2' ? late.promise : new Promise<never>(() => {})
+    )
+    const { rerender } = render(HealthEventList<HealthStatus, 'pipeline'>, {
+      eventParts: bucket,
+      loadEventDetail,
+      onClose: () => {}
+    })
+    await expect.poll(() => loadEventDetail).toHaveBeenCalledWith('e2', bucket)
+    await rerender({ eventParts: otherBucket })
+    await expect.poll(() => loadEventDetail).toHaveBeenCalledWith('o1', otherBucket)
+    settle(late)
+    await late.promise.catch(() => {})
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(document.body.textContent).not.toContain('details of e2')
+    expect(document.body.textContent).not.toContain('could not be loaded')
   })
 
   it('closes on Escape', async () => {

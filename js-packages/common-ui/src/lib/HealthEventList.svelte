@@ -23,60 +23,54 @@
     onNavigateNext?: () => void
   } = $props()
 
-  // Track loaded event details and loading states
-  let fullEvents: (null | EventDetail)[] = $state([])
+  type DetailLoad =
+    | { state: 'idle' }
+    | { state: 'loading' }
+    | { state: 'loaded'; detail: EventDetail }
+    | { state: 'missing' }
+    | { state: 'failed' }
 
-  let loadingStates = $state<boolean[]>([])
-  // Events that have no details or whose details failed to load. loadEvent skips them, because
-  // the effect that loads the open events would otherwise retry them at once and without end.
-  let unavailableStates = $state<boolean[]>([])
+  let detailLoads = $state<DetailLoad[]>([])
   let openStates = $state<boolean[]>([])
+  // Increments when `eventParts` changes, so that a reply for the previous `eventParts` is
+  // ignored instead of being written to the event at the same index of the new one.
+  let generation = 0
 
-  // Reset state when eventParts changes
   $effect.pre(() => {
     eventParts
-    fullEvents = Array(eventParts.events.length).fill(null)
-    loadingStates = Array(eventParts.events.length).fill(false)
-    unavailableStates = Array(eventParts.events.length).fill(false)
-    openStates = Array(eventParts.events.length)
-      .fill(false)
-      .map((_, i) => i === 0)
+    generation++
+    detailLoads = eventParts.events.map(() => ({ state: 'idle' }))
+    openStates = eventParts.events.map((_, i) => i === 0)
   })
 
-  // Load event details on-demand when dropdown is opened
+  // Only an idle event starts a load. The effect below runs again after each load, so loading a
+  // missing or failed event again here would retry it at once and without end.
   function loadEvent(index: number) {
-    if (fullEvents[index] !== null || loadingStates[index] || unavailableStates[index]) {
-      return
-    }
-
     const event = eventParts.events[index]
-    if (!event) {
+    if (!event || detailLoads[index]?.state !== 'idle') {
       return
     }
-
-    loadingStates[index] = true
-    loadEventDetail(event.id, eventParts).then(
-      (detail) => {
-        if (!detail) {
-          loadingStates[index] = false
-          unavailableStates[index] = true
-          return
-        }
-        if (eventParts === null) {
-          // Handle the case when the component was unmounted before the request completed
-          return
-        }
-        fullEvents[index] = detail
-        loadingStates[index] = false
-      },
-      () => {
-        loadingStates[index] = false
-        unavailableStates[index] = true
+    const requestGeneration = generation
+    const setLoad = (load: DetailLoad) => {
+      if (requestGeneration === generation) {
+        detailLoads[index] = load
       }
+    }
+    setLoad({ state: 'loading' })
+    loadEventDetail(event.id, eventParts).then(
+      (detail) => setLoad(detail ? { state: 'loaded', detail } : { state: 'missing' }),
+      () => setLoad({ state: 'failed' })
     )
   }
 
-  // Load event when dropdown is opened
+  // Closing a failed event makes it idle, so that opening it again retries the load.
+  function setOpen(index: number, isOpen: boolean) {
+    openStates[index] = isOpen
+    if (!isOpen && detailLoads[index]?.state === 'failed') {
+      detailLoads[index] = { state: 'idle' }
+    }
+  }
+
   $effect(() => {
     openStates.forEach((isOpen, index) => {
       if (isOpen) {
@@ -141,7 +135,7 @@
 
     <div class="flex flex-col gap-2">
       {#each eventParts.events as event, i}
-        <InlineDropdown bind:open={openStates[i]}>
+        <InlineDropdown bind:open={() => openStates[i], (isOpen) => setOpen(i, isOpen)}>
           {#snippet header(open, toggle)}
             <div
               class="flex cursor-pointer items-center gap-3 rounded p-2 hover:bg-surface-100-900/50"
@@ -166,17 +160,23 @@
             </div>
           {/snippet}
           {#snippet content()}
-            {#if fullEvents[i]}
+            {@const load = detailLoads[i]}
+            {#if load?.state === 'loaded'}
               <div transition:slide={{ duration: 150 }} class="px-2 pb-2">
                 <div class="rounded font-dm-mono whitespace-pre-wrap">
-                  {fullEvents[i]?.description || ''}
+                  {load.detail.description}
                 </div>
               </div>
-            {:else if unavailableStates[i]}
+            {:else if load?.state === 'missing'}
               <div transition:slide={{ duration: 150 }} class="px-2 pb-2 text-surface-600-400">
-                The details of this event are not available.
+                This event has no details.
               </div>
-            {:else if loadingStates[i]}
+            {:else if load?.state === 'failed'}
+              <div transition:slide={{ duration: 150 }} class="px-2 pb-2 text-surface-600-400">
+                The details of this event could not be loaded. Close and reopen the event to try
+                again.
+              </div>
+            {:else if load?.state === 'loading'}
               <Progress class="-mt-2 -mb-1 h-1" value={null}>
                 <Progress.Track>
                   <Progress.Range class="bg-primary-500" />
