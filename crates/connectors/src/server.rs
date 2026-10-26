@@ -2407,6 +2407,16 @@ pub mod test_http_helpers {
     use tracing::trace;
     use uuid::Uuid;
 
+    /// Per-request timeout for the test HTTP client.
+    ///
+    /// awc defaults to a 5s response timeout, shorter than the harness's own 20s
+    /// `async_wait`/completion budgets. Under CI load (or a k8s CPU-quota freeze)
+    /// the in-process server can stall past 5s and trip that deadline, panicking an
+    /// otherwise-healthy request. The `/ingress` POST is non-idempotent and cannot
+    /// be retried safely, so we widen the client deadline and let the higher-level
+    /// waits govern liveness.
+    pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+
     /// Writes `config` to a temporary file, as a launcher writes `config.json`.
     pub(super) fn json_config_file(config: &serde_json::Value) -> NamedTempFile {
         let mut config_file = NamedTempFile::new().unwrap();
@@ -2637,6 +2647,7 @@ pub mod test_http_helpers {
     pub(crate) async fn get_stats(server: &TestServer) -> ExternalControllerStatus {
         server
             .get("/stats")
+            .timeout(REQUEST_TIMEOUT)
             .send()
             .await
             .unwrap()
@@ -5693,13 +5704,14 @@ pub mod test_http {
         engine::{CircuitFactory, ProgramLoader},
         ensure_default_crypto_provider,
         server::test_http_helpers::{
-            adhoc_query_count, adhoc_query_rows, assert_no_file_output, batch_num_records,
-            collect_output_chunks, collect_output_chunks_through_step, crash_pipeline,
-            get_completion_status, get_stats, json_config_file, output_progress, pause_pipeline,
-            print_stats, send_input, send_input_no_wait, start_pipeline, start_test_server,
-            start_test_server_for, start_test_server_with_loader, start_test_server_with_options,
-            start_test_server_with_state, suspend_pipeline, test_batches, test_program_ir,
-            wait_for_completion, wait_for_file_output, wait_for_status,
+            REQUEST_TIMEOUT, adhoc_query_count, adhoc_query_rows, assert_no_file_output,
+            batch_num_records, collect_output_chunks, collect_output_chunks_through_step,
+            crash_pipeline, get_completion_status, get_stats, json_config_file, output_progress,
+            pause_pipeline, print_stats, send_input, send_input_no_wait, start_pipeline,
+            start_test_server, start_test_server_for, start_test_server_with_loader,
+            start_test_server_with_options, start_test_server_with_state, suspend_pipeline,
+            test_batches, test_program_ir, wait_for_completion, wait_for_file_output,
+            wait_for_status,
         },
         test::{
             engine_test,
@@ -5789,16 +5801,6 @@ pub mod test_http {
             .map(|batch| render::csv(&relation(), batch.rows()))
             .collect()
     }
-
-    /// Per-request timeout for the test HTTP client.
-    ///
-    /// awc defaults to a 5s response timeout, shorter than the harness's own 20s
-    /// `async_wait`/completion budgets. Under CI load (or a k8s CPU-quota freeze)
-    /// the in-process server can stall past 5s and trip that deadline, panicking an
-    /// otherwise-healthy request. The `/ingress` POST is non-idempotent and cannot
-    /// be retried safely, so we widen the client deadline and let the higher-level
-    /// waits govern liveness.
-    const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
     /// Sends batches of rows of [`relation`] as CSV to the server.
     pub(crate) struct TestHttpSender;
