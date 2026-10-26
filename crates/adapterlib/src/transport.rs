@@ -1360,8 +1360,36 @@ where
             .map_err(|e| anyhow::anyhow!("unable to parse checkpointed connector state (checkpointed state: {metadata}; parse error: {e})"))
 }
 
-#[doc(hidden)]
-pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError, Option<&'static str>) + Send + Sync>;
+/// The controller side of an output endpoint.
+///
+/// [`OutputEndpoint::connect`] hands the endpoint one of these. The endpoint
+/// keeps it and calls it from any thread, for example from a delivery callback
+/// that the transport library runs on its own thread, to report what happens
+/// outside the [`OutputEndpoint`] methods. This is the output counterpart of
+/// the reporting methods of [`InputConsumer`].
+pub trait OutputEndpointCallbacks: Send + Sync {
+    /// Reports an asynchronous error, i.e., an error that happens outside the
+    /// context of the [`OutputEndpoint::push_buffer`] method. For instance, a
+    /// reliable message bus like Kafka may notify the endpoint about a failure
+    /// to deliver a previously sent message via an async callback. `fatal`
+    /// indicates an error that the endpoint cannot recover from. The optional
+    /// `tag` groups errors of one kind, e.g., for rate limiting.
+    fn error(&self, fatal: bool, error: AnyError, tag: Option<&'static str>);
+
+    /// Updates the health status of the connector.
+    ///
+    /// An endpoint that retries an operation for a long time, such as a sink
+    /// that waits for a broker to come back, reports itself unhealthy while it
+    /// waits and healthy again once it succeeds. The status is visible in the
+    /// pipeline statistics.
+    fn update_connector_health(&self, health: ConnectorHealth);
+
+    /// Registers connector-specific metrics for Prometheus export.
+    ///
+    /// An endpoint may call this once to provide an [`Arc<dyn ConnectorMetrics>`]
+    /// whose [`ConnectorMetrics::metrics`] will be polled on every scrape.
+    fn set_custom_metrics(&self, metrics: Arc<dyn ConnectorMetrics>);
+}
 
 /// Command handler API exposed by connectors.
 ///
@@ -1435,16 +1463,12 @@ pub trait OutputEndpoint: Send {
 
     /// Finishes establishing the connection to the output endpoint.
     ///
-    /// If the endpoint encounters any errors during output, now or later, it
-    /// invokes `async_error_callback` to notify the client about asynchronous
-    /// errors, i.e., errors that happen outside the context of the
-    /// [`OutputEndpoint::push_buffer`] method. For instance, a reliable message
-    /// bus like Kafka may notify the endpoint about a failure to deliver a
-    /// previously sent message via an async callback. If the endpoint is unable
-    /// to handle this error, it must forward it to the client via the
-    /// `async_error_callback`.  The first argument of the callback is a flag
-    /// that indicates a fatal error that the endpoint cannot recover from.
-    fn connect(&mut self, async_error_callback: AsyncErrorCallback) -> AnyResult<()>;
+    /// `callbacks` is the endpoint's channel back to the controller. If the
+    /// endpoint encounters an error that it cannot handle during output, now or
+    /// later, it must forward it through [`OutputEndpointCallbacks::error`].
+    /// The endpoint may also report its health and register its metrics
+    /// through the other methods, at connect time or later.
+    fn connect(&mut self, callbacks: Arc<dyn OutputEndpointCallbacks>) -> AnyResult<()>;
 
     /// Maximum buffer size that this transport can transmit.
     /// The encoder should not generate buffers exceeding this size.

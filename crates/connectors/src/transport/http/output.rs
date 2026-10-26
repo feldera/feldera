@@ -1,4 +1,4 @@
-use crate::{AsyncErrorCallback, OutputEndpoint};
+use crate::{OutputEndpoint, OutputEndpointCallbacks};
 use actix_web::{HttpResponse, http::header::ContentType, web::Bytes};
 use anyhow::{Result as AnyResult, anyhow, bail};
 use async_stream::stream;
@@ -85,7 +85,6 @@ struct HttpOutputEndpointInner {
     /// `backpressure` wait that the client is not going to end.  See
     /// [HttpOutputEndpointInner::wait_for_ack].
     shutdown: CancellationToken,
-    // async_error_callback: RwLock<Option<AsyncErrorCallback>>,
 }
 
 impl HttpOutputEndpointInner {
@@ -103,7 +102,6 @@ impl HttpOutputEndpointInner {
             snapshot: AtomicBool::new(false),
             sender: ShardedLock::new(None),
             shutdown,
-            // async_error_callback: RwLock::new(None),
         }
     }
 
@@ -339,9 +337,7 @@ impl HttpOutputEndpoint {
 }
 
 impl OutputEndpoint for HttpOutputEndpoint {
-    fn connect(&mut self, _async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
-        // *self.inner.async_error_callback.write().unwrap() =
-        // Some(async_error_callback);
+    fn connect(&mut self, _callbacks: Arc<dyn OutputEndpointCallbacks>) -> AnyResult<()> {
         Ok(())
     }
 

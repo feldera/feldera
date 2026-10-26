@@ -12,6 +12,8 @@ use crate::{
 #[cfg(test)]
 use async_nats::HeaderMap;
 #[cfg(test)]
+use feldera_adapterlib::test::MockOutputCallbacks;
+#[cfg(test)]
 use feldera_adapterlib::transport::{OutputBatchType, OutputEndpoint, Step};
 #[cfg(test)]
 use feldera_types::transport::{nats as cfg, nats::NatsOutputConfig};
@@ -20,7 +22,7 @@ use futures::StreamExt as _;
 #[cfg(test)]
 use serde_json::json;
 #[cfg(test)]
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 #[cfg(test)]
 use tokio_util::sync::CancellationToken;
 #[cfg(test)]
@@ -238,7 +240,7 @@ fn publish_records(
     };
 
     let mut endpoint = NatsOutputEndpoint::new(config, CancellationToken::new())?;
-    endpoint.connect(Box::new(|_fatal, _error, _tag| {}))?;
+    endpoint.connect(Arc::new(MockOutputCallbacks))?;
 
     for (step, record) in records {
         endpoint.batch_start(*step, OutputBatchType::Delta)?;
@@ -326,9 +328,7 @@ fn test_nats_output_unbound_subject_fails_at_connect() -> anyhow::Result<()> {
     }));
 
     let mut endpoint = NatsOutputEndpoint::new(config, CancellationToken::new())?;
-    let error = endpoint
-        .connect(Box::new(|_fatal, _error, _tag| {}))
-        .unwrap_err();
+    let error = endpoint.connect(Arc::new(MockOutputCallbacks)).unwrap_err();
     let text = format!("{error:#}");
     assert!(
         text.contains("no JetStream stream is bound to subject"),
@@ -439,7 +439,7 @@ fn test_nats_output_oversize_payload_rejected() -> anyhow::Result<()> {
 
     use feldera_adapterlib::transport::OutputEndpoint;
     let mut endpoint = NatsOutputEndpoint::new(config, CancellationToken::new())?;
-    endpoint.connect(Box::new(|_fatal, _error, _tag| {}))?;
+    endpoint.connect(Arc::new(MockOutputCallbacks))?;
 
     // The stream's limit minus the `Nats-Msg-Id` header's overhead bounds
     // the encoder; a payload over it fails with the limit named.
@@ -489,7 +489,7 @@ fn test_nats_output_max_message_size_override() -> anyhow::Result<()> {
 
     use feldera_adapterlib::transport::OutputEndpoint;
     let mut endpoint = NatsOutputEndpoint::new(config, CancellationToken::new())?;
-    endpoint.connect(Box::new(|_fatal, _error, _tag| {}))?;
+    endpoint.connect(Arc::new(MockOutputCallbacks))?;
     assert!(
         endpoint.max_buffer_size_bytes() <= 256,
         "the override should bound the encoder, got {}",

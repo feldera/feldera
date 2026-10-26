@@ -7,7 +7,7 @@ use super::{
 use crate::controller::{ControllerStatusContext, TransactionInfo};
 use crate::{
     ConfigError, Controller, ControllerError, InputConsumer, InputEndpoint, OutputEndpoint,
-    TransportInputEndpoint,
+    OutputEndpointCallbacks, TransportInputEndpoint,
     engine::PipelineStorage,
     format::{LineSplitter, SpongeSplitter},
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
@@ -41,7 +41,7 @@ use feldera_storage::tokio::TOKIO;
 use feldera_types::memory_pressure::MemoryPressure;
 use feldera_types::size::ConfigSize;
 use feldera_types::{
-    adapter_stats::ExternalOutputEndpointMetrics,
+    adapter_stats::{ConnectorHealth, ExternalOutputEndpointMetrics},
     checkpoint::CheckpointMetadata,
     config::{
         DynamicConfig, DynamicResources, FormatConfig, FtModel, InputEndpointConfig,
@@ -68,7 +68,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
     thread::{self, sleep},
@@ -368,7 +368,7 @@ pub(crate) struct BlockedOutputEndpoint {
 impl OutputEndpoint for BlockedOutputEndpoint {
     fn connect(
         &mut self,
-        _async_error_callback: Box<dyn Fn(bool, anyhow::Error, Option<&'static str>) + Send + Sync>,
+        _callbacks: Arc<dyn OutputEndpointCallbacks>,
     ) -> Result<(), anyhow::Error> {
         Ok(())
     }
@@ -3995,6 +3995,230 @@ pub fn output_connector_pause_lifts_backpressure(engine: &dyn PipelineTestEngine
     controller.stop().unwrap();
 }
 
+/// An output endpoint that reports through the callbacks it gets from
+/// `connect`: a gauge, its health, and an error.
+struct ReportingOutputEndpoint {
+    callbacks: Option<Arc<dyn OutputEndpointCallbacks>>,
+    /// A copy of the callbacks for the test, which outlives the endpoint.
+    shared: Arc<Mutex<Option<Arc<dyn OutputEndpointCallbacks>>>>,
+    gauge: Arc<AtomicU64>,
+}
+
+/// The gauge that `ReportingOutputEndpoint` registers.
+struct ReportingMetrics(Arc<AtomicU64>);
+
+impl ReportingMetrics {
+    const NAME: &'static str = "reporting_output_queue_messages";
+}
+
+impl feldera_adapterlib::metrics::ConnectorMetrics for ReportingMetrics {
+    fn metrics(
+        &self,
+    ) -> Vec<(
+        &'static str,
+        &'static str,
+        feldera_adapterlib::metrics::ValueType,
+        f64,
+    )> {
+        vec![(
+            Self::NAME,
+            "Messages the mock endpoint holds.",
+            feldera_adapterlib::metrics::ValueType::Gauge,
+            self.0.load(Ordering::Acquire) as f64,
+        )]
+    }
+}
+
+impl OutputEndpoint for ReportingOutputEndpoint {
+    fn connect(
+        &mut self,
+        callbacks: Arc<dyn OutputEndpointCallbacks>,
+    ) -> Result<(), anyhow::Error> {
+        callbacks.set_custom_metrics(Arc::new(ReportingMetrics(self.gauge.clone())));
+        callbacks.update_connector_health(ConnectorHealth::unhealthy("waiting for the sink"));
+        *self.shared.lock().unwrap() = Some(callbacks.clone());
+        self.callbacks = Some(callbacks);
+        Ok(())
+    }
+
+    fn max_buffer_size_bytes(&self) -> usize {
+        usize::MAX
+    }
+
+    fn push_buffer(&mut self, _buffer: &[u8]) -> Result<(), anyhow::Error> {
+        let callbacks = self.callbacks.as_ref().unwrap();
+        callbacks.error(
+            false,
+            anyhow!("the sink dropped a message"),
+            Some("dropped"),
+        );
+        callbacks.update_connector_health(ConnectorHealth::healthy());
+        Ok(())
+    }
+
+    fn push_key(
+        &mut self,
+        _key: Option<&[u8]>,
+        _val: Option<&[u8]>,
+        _headers: &[(&str, Option<&[u8]>)],
+    ) -> Result<(), anyhow::Error> {
+        unreachable!("the test uses a format that pushes buffers, not keys")
+    }
+
+    fn is_fault_tolerant(&self) -> bool {
+        false
+    }
+}
+
+/// What a transport output endpoint reports through `OutputEndpointCallbacks`
+/// reaches the endpoint status and the Prometheus metrics.
+#[engine_test]
+pub fn output_endpoint_callbacks_reach_status_and_metrics(engine: &dyn PipelineTestEngine) {
+    use crate::server::metrics::{LabelStack, MetricsWriter, PrometheusFormatter};
+    use feldera_types::adapter_stats::ConnectorHealthStatus;
+
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let input_path = tempdir.path().join("input.csv");
+    File::create_new(&input_path).unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_path.display().to_string(), "follow": true },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+        "outputs": {},
+    }))
+    .unwrap();
+
+    // The mock reports a non-fatal error on each buffer. The pipeline must
+    // keep running, and the error must only reach the endpoint status.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let errors_clone = errors.clone();
+    let controller = engine
+        .controller(
+            &identity(&[Some("output")]),
+            &config,
+            Box::new(move |e, tag| errors_clone.lock().unwrap().push((e.to_string(), tag))),
+        )
+        .unwrap();
+
+    let gauge = Arc::new(AtomicU64::new(7));
+    let shared = Arc::new(Mutex::new(None));
+    let endpoint_config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_output1",
+        "transport": { "name": "null_output" },
+        "format": { "name": "csv", "config": {} },
+    }))
+    .unwrap();
+    let endpoint_id = controller
+        .add_output_endpoint(
+            "test_output1",
+            &endpoint_config,
+            Box::new(ReportingOutputEndpoint {
+                callbacks: None,
+                shared: shared.clone(),
+                gauge: gauge.clone(),
+            }),
+            None,
+        )
+        .unwrap();
+
+    // Health reported at connect time.
+    let status = controller.output_endpoint_status("test_output1").unwrap();
+    let health = status.health.expect("health reported in connect");
+    assert!(matches!(health.status, ConnectorHealthStatus::Unhealthy));
+    assert_eq!(health.description.as_deref(), Some("waiting for the sink"));
+    assert_eq!(status.metrics.num_transport_errors, 0);
+
+    // The gauge registered at connect time, labeled with the endpoint name.
+    let prometheus = |controller: &Controller| {
+        let mut writer = MetricsWriter::<PrometheusFormatter>::new();
+        controller.write_metrics(&mut writer, &LabelStack::new(), controller.status());
+        writer.into_output()
+    };
+    let metric_line = |value: u64| {
+        format!(
+            "{}{{endpoint=\"test_output1\"}} {value}",
+            ReportingMetrics::NAME
+        )
+    };
+    let output = prometheus(&controller);
+    assert!(output.contains(&metric_line(7)), "{output}");
+
+    // Health and errors reported from `push_buffer`, gauge read on each scrape.
+    controller.start();
+    append_input(&input_path, 0..10);
+    wait_for_records(&controller, &[10]);
+    gauge.store(0, Ordering::Release);
+    wait(
+        || {
+            let status = controller.output_endpoint_status("test_output1").unwrap();
+            status.metrics.num_transport_errors > 0
+                && matches!(
+                    status.health.as_ref().map(|h| &h.status),
+                    Some(ConnectorHealthStatus::Healthy)
+                )
+        },
+        default_timeout_ms(),
+    )
+    .unwrap();
+    let status = controller.output_endpoint_status("test_output1").unwrap();
+    let transport_errors = status.transport_errors.unwrap_or_default();
+    assert_eq!(
+        transport_errors.first().map(|e| e.tag.as_deref()),
+        Some(Some("dropped")),
+        "{transport_errors:?}"
+    );
+    assert!(
+        transport_errors[0]
+            .message
+            .contains("the sink dropped a message"),
+        "{transport_errors:?}"
+    );
+    let output = prometheus(&controller);
+    assert!(output.contains(&metric_line(0)), "{output}");
+
+    // The error reached the controller's error callback under the endpoint's
+    // tag, and the pipeline went on running.
+    let errors = errors.lock().unwrap();
+    assert!(
+        errors
+            .iter()
+            .any(|(_, tag)| tag.as_deref() == Some("test_output1-dropped")),
+        "{errors:?}"
+    );
+    drop(errors);
+    let status = controller.output_endpoint_status("test_output1").unwrap();
+    assert_eq!(status.fatal_error, None);
+
+    // A transport thread can report after the endpoint is gone. With the
+    // endpoint removed, the reports find no status to update and do nothing;
+    // with the controller gone, they find no controller.
+    let callbacks = shared.lock().unwrap().clone().unwrap();
+    controller.disconnect_output(&endpoint_id);
+    assert!(controller.output_endpoint_status("test_output1").is_err());
+    callbacks.update_connector_health(ConnectorHealth::unhealthy("late report"));
+    callbacks.set_custom_metrics(Arc::new(ReportingMetrics(gauge.clone())));
+    callbacks.error(false, anyhow!("late error"), Some("late"));
+    assert!(controller.output_endpoint_status("test_output1").is_err());
+    assert!(!prometheus(&controller).contains(ReportingMetrics::NAME));
+
+    controller.stop().unwrap();
+    callbacks.update_connector_health(ConnectorHealth::healthy());
+    callbacks.set_custom_metrics(Arc::new(ReportingMetrics(gauge)));
+    callbacks.error(false, anyhow!("error after stop"), Some("after-stop"));
+}
+
 /// The UUIDs in the checkpoint catalog, oldest first, or an empty list if the
 /// catalog does not exist yet.
 fn published_checkpoints(engine: &dyn PipelineTestEngine, config: &PipelineConfig) -> Vec<Uuid> {
@@ -4390,7 +4614,7 @@ struct DiscardOutputEndpoint;
 impl OutputEndpoint for DiscardOutputEndpoint {
     fn connect(
         &mut self,
-        _async_error_callback: Box<dyn Fn(bool, anyhow::Error, Option<&'static str>) + Send + Sync>,
+        _callbacks: Arc<dyn OutputEndpointCallbacks>,
     ) -> Result<(), anyhow::Error> {
         Ok(())
     }

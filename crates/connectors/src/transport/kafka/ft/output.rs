@@ -3,7 +3,7 @@ use crate::transport::kafka::{
     resolve_oauthbearer_auth,
 };
 use crate::util::MemoryUseReporter;
-use crate::{AsyncErrorCallback, OutputEndpoint, transport::kafka::DeferredLogging};
+use crate::{OutputEndpoint, OutputEndpointCallbacks, transport::kafka::DeferredLogging};
 use anyhow::{Context, Error as AnyError, Result as AnyResult, anyhow, bail};
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::transport::kafka::KafkaOutputConfig;
@@ -21,8 +21,8 @@ use rdkafka::{
 };
 use serde::{Deserialize, Serialize};
 use std::error::Error;
-use std::sync::Mutex;
-use std::{cmp::max, sync::RwLock, time::Duration};
+use std::sync::{Arc, Mutex, RwLock};
+use std::{cmp::max, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::span::EnteredSpan;
 use tracing::{debug, info, info_span, warn};
@@ -224,17 +224,12 @@ impl KafkaOutputEndpoint {
 }
 
 impl OutputEndpoint for KafkaOutputEndpoint {
-    fn connect(&mut self, async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
+    fn connect(&mut self, callbacks: Arc<dyn OutputEndpointCallbacks>) -> AnyResult<()> {
         debug_assert_eq!(self.state, State::New);
         let _guard = span(&self.topic);
         self.state = State::Connected;
 
-        *self
-            .kafka_producer
-            .context()
-            .async_error_callback
-            .write()
-            .unwrap() = Some(async_error_callback);
+        *self.kafka_producer.context().callbacks.write().unwrap() = Some(callbacks);
         Ok(())
     }
 
@@ -378,8 +373,8 @@ impl OutputEndpoint for KafkaOutputEndpoint {
 }
 
 struct DataProducerContext {
-    /// Callback to notify the controller about delivery failure.
-    async_error_callback: RwLock<Option<AsyncErrorCallback>>,
+    /// Channel to the controller, set by `connect`.
+    callbacks: RwLock<Option<Arc<dyn OutputEndpointCallbacks>>>,
 
     deferred_logging: DeferredLogging,
 
@@ -399,7 +394,7 @@ impl DataProducerContext {
         )?;
 
         Ok(Self {
-            async_error_callback: RwLock::new(None),
+            callbacks: RwLock::new(None),
             deferred_logging: DeferredLogging::new(),
             oauthbearer_config,
             topic: kafka_config.topic.clone(),
@@ -416,11 +411,11 @@ impl ClientContext for DataProducerContext {
     }
 
     fn error(&self, error: KafkaError, reason: &str) {
-        if let Some(cb) = self.async_error_callback.read().unwrap().as_ref() {
+        if let Some(cb) = self.callbacks.read().unwrap().as_ref() {
             let fatal = error
                 .rdkafka_error_code()
                 .is_some_and(|code| code == RDKafkaErrorCode::Fatal);
-            cb(
+            cb.error(
                 fatal,
                 anyhow!("Kafka producer error: {error}; Reason: {reason}"),
                 Some("kafka_ft_err"),
@@ -452,9 +447,9 @@ impl ProducerContext for DataProducerContext {
         _delivery_opaque: Self::DeliveryOpaque,
     ) {
         if let Err((error, _message)) = delivery_result
-            && let Some(cb) = self.async_error_callback.read().unwrap().as_ref()
+            && let Some(cb) = self.callbacks.read().unwrap().as_ref()
         {
-            cb(
+            cb.error(
                 false,
                 AnyError::new(error.clone()),
                 Some("kafka_ft_delivery"),

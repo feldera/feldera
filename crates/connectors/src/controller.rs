@@ -65,7 +65,7 @@ use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::preprocess::PreprocessorWatchdog;
 use feldera_adapterlib::soft_delete::SoftDeleteHandle;
 use feldera_adapterlib::transport::{
-    CommandHandler, InputReader, OutputBatchType, Resume, Watermark,
+    CommandHandler, InputReader, OutputBatchType, OutputEndpointCallbacks, Resume, Watermark,
 };
 use feldera_adapterlib::utils::datafusion::{create_runtime_env, create_session_context};
 use feldera_ir::LirCircuit;
@@ -8714,19 +8714,11 @@ impl ControllerInner {
 
         let (encoder, command_handler) = if let Some(mut endpoint) = endpoint {
             endpoint
-                .connect(Box::new(
-                    move |fatal: bool, e: AnyError, error_tag: Option<&str>| {
-                        if let Some(controller) = self_weak.upgrade() {
-                            controller.output_transport_error(
-                                endpoint_id,
-                                &endpoint_name_str,
-                                fatal,
-                                e,
-                                error_tag,
-                            )
-                        }
-                    },
-                ))
+                .connect(Arc::new(OutputCallbacks {
+                    controller: self_weak,
+                    endpoint_id,
+                    endpoint_name: endpoint_name_str,
+                }))
                 .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
 
             let command_handler = endpoint.command_handler();
@@ -10293,6 +10285,45 @@ impl InputConsumer for InputProbe {
     fn update_connector_health(&self, health: ConnectorHealth) {
         self.controller
             .update_input_connector_health(self.endpoint_id, health);
+    }
+}
+
+/// The controller side of a transport output endpoint, handed to
+/// [`OutputEndpoint::connect`].
+///
+/// Holds a weak reference, since the endpoint may call it from a transport
+/// thread after the controller is gone.
+struct OutputCallbacks {
+    controller: Weak<ControllerInner>,
+    endpoint_id: EndpointId,
+    endpoint_name: String,
+}
+
+impl OutputEndpointCallbacks for OutputCallbacks {
+    fn error(&self, fatal: bool, error: AnyError, tag: Option<&'static str>) {
+        if let Some(controller) = self.controller.upgrade() {
+            controller.output_transport_error(
+                self.endpoint_id,
+                &self.endpoint_name,
+                fatal,
+                error,
+                tag,
+            );
+        }
+    }
+
+    fn update_connector_health(&self, health: ConnectorHealth) {
+        if let Some(controller) = self.controller.upgrade() {
+            controller.update_output_connector_health(self.endpoint_id, health);
+        }
+    }
+
+    fn set_custom_metrics(&self, metrics: Arc<dyn ConnectorMetrics>) {
+        if let Some(controller) = self.controller.upgrade() {
+            controller
+                .status
+                .set_output_custom_metrics(self.endpoint_id, metrics);
+        }
     }
 }
 

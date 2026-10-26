@@ -21,6 +21,7 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
@@ -37,7 +38,7 @@ use tracing::{debug, info_span, warn};
 use xxhash_rust::xxh3::xxh3_128;
 
 use crate::transport::nats::input::config_utils::translate_connect_options;
-use crate::{AsyncErrorCallback, OutputEndpoint};
+use crate::{OutputEndpoint, OutputEndpointCallbacks};
 
 #[cfg(any(test, feature = "testing"))]
 pub mod test;
@@ -303,7 +304,7 @@ fn header_block_bytes(headers: &HeaderMap, with_message_id: bool) -> usize {
 }
 
 impl OutputEndpoint for NatsOutputEndpoint {
-    fn connect(&mut self, _async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
+    fn connect(&mut self, _callbacks: Arc<dyn OutputEndpointCallbacks>) -> AnyResult<()> {
         let _guard = self.span();
         let connection_config = self.config.connection_config.clone();
         let subject = self.config.subject.clone();

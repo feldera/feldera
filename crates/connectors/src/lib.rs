@@ -186,7 +186,7 @@ pub use controller::{
     RuntimeConfig, TransportConfig,
 };
 pub use transport::{
-    AsyncErrorCallback, InputConsumer, InputEndpoint, InputReader, OutputEndpoint,
+    InputConsumer, InputEndpoint, InputReader, OutputEndpoint, OutputEndpointCallbacks,
     TransportInputEndpoint,
 };
 

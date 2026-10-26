@@ -3,7 +3,7 @@ use crate::transport::kafka::{
     generate_oauthbearer_token, kafka_send, rdkafka_loglevel_from, resolve_oauthbearer_auth,
 };
 use crate::util::MemoryUseReporter;
-use crate::{AsyncErrorCallback, OutputEndpoint};
+use crate::{OutputEndpoint, OutputEndpointCallbacks};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use feldera_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::client::OAuthToken;
@@ -16,8 +16,8 @@ use rdkafka::{
     types::RDKafkaErrorCode,
 };
 use std::error::Error;
-use std::sync::Mutex;
-use std::{sync::RwLock, time::Duration};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::span::EnteredSpan;
 use tracing::{debug, info_span};
@@ -32,8 +32,8 @@ const MAX_MESSAGE_OVERHEAD: usize = 64;
 /// Producer context object used to handle async delivery notifications from
 /// Kafka.
 struct KafkaOutputContext {
-    /// Callback to notify the controller about delivery failure.
-    async_error_callback: RwLock<Option<AsyncErrorCallback>>,
+    /// Channel to the controller, set by `connect`.
+    callbacks: RwLock<Option<Arc<dyn OutputEndpointCallbacks>>>,
 
     deferred_logging: DeferredLogging,
 
@@ -54,7 +54,7 @@ impl KafkaOutputContext {
 
         Ok(Self {
             oauthbearer_config,
-            async_error_callback: RwLock::new(None),
+            callbacks: RwLock::new(None),
             deferred_logging: DeferredLogging::new(),
             topic: kafka_config.topic.clone(),
             memory_use_reporter: Mutex::new(MemoryUseReporter::new("buffers", 1024 * 1024)),
@@ -77,8 +77,8 @@ impl ClientContext for KafkaOutputContext {
 
         // eprintln!("Kafka error: {error}, fatal: {fatal}, reason: {reason}");
 
-        if let Some(cb) = self.async_error_callback.read().unwrap().as_ref() {
-            cb(
+        if let Some(cb) = self.callbacks.read().unwrap().as_ref() {
+            cb.error(
                 fatal,
                 anyhow!("Kafka producer error: {error}; Reason: {reason}"),
                 Some("kafka_nonft_producer"),
@@ -108,9 +108,9 @@ impl ProducerContext for KafkaOutputContext {
         _delivery_opaque: Self::DeliveryOpaque,
     ) {
         if let Err((error, _message)) = delivery_result
-            && let Some(cb) = self.async_error_callback.read().unwrap().as_ref()
+            && let Some(cb) = self.callbacks.read().unwrap().as_ref()
         {
-            cb(
+            cb.error(
                 false,
                 AnyError::new(error.clone()),
                 Some("kafka_nonft_delivery"),
@@ -191,7 +191,7 @@ impl KafkaOutputEndpoint {
 }
 
 impl OutputEndpoint for KafkaOutputEndpoint {
-    fn connect(&mut self, async_error_callback: AsyncErrorCallback) -> AnyResult<()> {
+    fn connect(&mut self, callbacks: Arc<dyn OutputEndpointCallbacks>) -> AnyResult<()> {
         // Retrieve metadata for our producer.  This makes first contact with
         // the broker, which allows us to limit the time for initialization to
         // make sure that the configuration is correct.  After this, Kafka will
@@ -214,12 +214,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
                     self.config.topic
                 )
             })?;
-        *self
-            .kafka_producer
-            .context()
-            .async_error_callback
-            .write()
-            .unwrap() = Some(async_error_callback);
+        *self.kafka_producer.context().callbacks.write().unwrap() = Some(callbacks);
         Ok(())
     }
 

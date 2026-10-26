@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Result as AnyResult, anyhow, bail};
 use aws_sdk_dynamodb::Client;
 use aws_sdk_dynamodb::types::{AttributeValue, DeleteRequest, PutRequest, WriteRequest};
-use feldera_adapterlib::transport::{AsyncErrorCallback, OutputBatchType, Step};
+use feldera_adapterlib::transport::{OutputBatchType, OutputEndpointCallbacks, Step};
 use feldera_storage::tokio::TOKIO;
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::transport::dynamodb::{DynamoDBWriteMode, DynamoDBWriterConfig};
@@ -865,7 +865,7 @@ impl Encoder for DynamoDBOutputEndpoint {
 }
 
 impl OutputEndpoint for DynamoDBOutputEndpoint {
-    fn connect(&mut self, _: AsyncErrorCallback) -> AnyResult<()> {
+    fn connect(&mut self, _: Arc<dyn OutputEndpointCallbacks>) -> AnyResult<()> {
         unreachable!("DynamoDB is an integrated endpoint; connect() is never called")
     }
 
