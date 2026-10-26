@@ -150,6 +150,19 @@ Several `MAP` functions are not yet implemented:
 A list of supported MAP operations is available [here](./map.md).
 See [#1907](https://github.com/feldera/feldera/issues/1907).
 
+## `SELECT DISTINCT ON`
+
+`SELECT DISTINCT ON (...)` is not supported.  To keep one row per group,
+number the rows of each group with `ROW_NUMBER` and keep the first:
+
+```sql
+-- NOT supported: DISTINCT ON
+SELECT DISTINCT ON (id) id, ver, v FROM raw ORDER BY id, ver DESC;
+-- Supported: the latest version of each id
+SELECT id, ver, v FROM raw
+QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY ver DESC) = 1;
+```
+
 ## `MATCH_RECOGNIZE`
 
 The `MATCH_RECOGNIZE` clause for pattern matching over rows is not yet

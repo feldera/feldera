@@ -26,6 +26,7 @@ public class DocumentationTests {
             SqlToRelCompiler.RECURSION_DOCUMENTATION,
             SqlToRelCompiler.QUANTIFIED_DISTINCT_DOCUMENTATION,
             ExpressionCompiler.QUANTIFIED_ARRAY_DOCUMENTATION,
+            DBSPCompiler.DISTINCT_ON_DOCUMENTATION,
             RewriteNow.NOW_DOCUMENTATION,
             StubsWriter.UDF_DOCUMENTATION,
             FindUnboundedState.DOCUMENTATION);

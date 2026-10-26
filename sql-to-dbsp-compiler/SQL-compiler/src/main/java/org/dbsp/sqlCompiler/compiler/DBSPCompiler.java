@@ -112,6 +112,8 @@ import java.util.regex.Pattern;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
+import static org.apache.calcite.util.Static.RESOURCE;
+
 /**
  * This class compiles SQL statements into DBSP circuits.
  * The protocol is:
@@ -892,8 +894,16 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 new SourcePosition(e.getEndPosLine(), e.getEndPosColumn()));
     }
 
+    public static final Documentation.Link DISTINCT_ON_DOCUMENTATION =
+            new Documentation.Link("sql/unsupported-operations", "select-distinct-on");
+
     /** Rewrite the error message for some Calcite errors which are confusing */
     private CompilationError improveErrorMessage(CalciteContextException e) {
+        // Calcite's error message blames the SQL conformance level, which users cannot change
+        Throwable cause = e.getCause();
+        if (cause != null && RESOURCE.distinctOnNotAllowed().str().equals(cause.getMessage()))
+            return new CompilationError(getRange(e), UnsupportedException.KIND,
+                    "SELECT DISTINCT ON is not supported.\n" + DISTINCT_ON_DOCUMENTATION.citation());
         String message = e.getMessage();
         if (message != null && !message.isEmpty()) {
             var matcher = ITEM_ERROR.matcher(message);

@@ -360,7 +360,7 @@ values
   :   { VALUES | VALUE } expression [, expression ]*
 
 select
-  :   SELECT [ hintComment ] [ ALL | DISTINCT [ ON '(' expression [ ',' expression ]* ')' ] ] { * | projectItem [, projectItem ]* [ , ] }
+  :   SELECT [ hintComment ] [ ALL | DISTINCT ] { * | projectItem [, projectItem ]* [ , ] }
       FROM tableExpression
       [ WHERE booleanExpression ]
       [ GROUP BY { ALL | [ ALL | DISTINCT ] { groupItem [, groupItem ]* } } ]
@@ -369,12 +369,6 @@ select
 ```
 
 The list of `projectItem`s may end with a comma.
-
-`DISTINCT ON` allows you to eliminate duplicate rows based on
-specified expressions, keeping the first row in each group as
-determined by the `ORDER BY` clause. When using `DISTINCT ON`, the
-expressions in the `DISTINCT ON` clause must match a prefix of the
-`ORDER BY` clause.
 
 `GROUP BY ALL` without any groupItem specified groups by every
 expression in the `SELECT` clause that is not an aggregate function.
