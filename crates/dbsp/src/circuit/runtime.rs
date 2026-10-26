@@ -1090,13 +1090,21 @@ impl Runtime {
     ///   variables to be unavailable in `Drop` during task shutdown.  The
     ///   function returns `None` in this case (and only in this case).
     pub fn buffer_cache() -> Option<Arc<BufferCache>> {
-        if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
+        // A thread-local destructor can drop a file-backed batch after this
+        // thread's buffer cache, or its runtime, is gone, for example while a
+        // thread calls `std::process::exit`.  There is nothing to evict from
+        // then, and panicking in a thread-local destructor aborts the process.
+        let Ok(buffer_cache) = BUFFER_CACHE.try_with(|bc| bc.borrow().clone()) else {
+            return None;
+        };
+        if let Some(buffer_cache) = buffer_cache {
             // Fast path common case for foreground threads.
             Some(buffer_cache)
         } else if let Ok(buffer_cache) = TOKIO_BUFFER_CACHE.try_get() {
             // Background tasks case.
             Some(buffer_cache)
-        } else if let Some(rt) = Runtime::runtime()
+        } else if let Ok(runtime) = RUNTIME.try_with(|rt| rt.borrow().clone())
+            && let Some(rt) = runtime
             && let Some(thread_type) = current_thread_type()
         {
             // Slow path for threads running in a [Runtime].
@@ -2864,5 +2872,32 @@ pub(crate) mod tests {
         assert_eq!(min_step, 0);
 
         circuit.kill().unwrap();
+    }
+
+    /// A thread-local destructor can drop a file-backed batch after the
+    /// thread's own buffer cache is gone, for example when a thread calls
+    /// `std::process::exit`.  Looking up the buffer cache to evict the file
+    /// must not panic then: a panic in a thread-local destructor aborts the
+    /// process.
+    #[test]
+    fn buffer_cache_during_thread_local_destruction() {
+        struct LooksUpBufferCacheOnDrop;
+        impl Drop for LooksUpBufferCacheOnDrop {
+            fn drop(&mut self) {
+                let _ = Runtime::buffer_cache();
+            }
+        }
+        thread_local! {
+            static LATE: RefCell<Option<LooksUpBufferCacheOnDrop>> = const { RefCell::new(None) };
+        }
+
+        std::thread::spawn(|| {
+            // Thread-local destructors run in the reverse order of first
+            // use, so `LATE`, used first, is destroyed after the buffer cache.
+            LATE.with(|late| *late.borrow_mut() = Some(LooksUpBufferCacheOnDrop));
+            assert!(Runtime::buffer_cache().is_some());
+        })
+        .join()
+        .unwrap();
     }
 }
