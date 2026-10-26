@@ -9946,9 +9946,10 @@ impl ControllerInner {
     ///
     /// - Commit: in state Started, start to commit once no initiator still
     ///   adds input to the transaction and the input queued at the API's
-    ///   commit request is in the circuit (see [CommitTarget]).  An automatic
-    ///   transaction has no initiators, so it commits in the step that starts
-    ///   it.
+    ///   commit request is in the circuit (see [CommitTarget]).  The cutover
+    ///   of a concurrent bootstrap pauses ingestion, so then the commit does
+    ///   not wait for queued input.  An automatic transaction has no
+    ///   initiators, so it commits in the step that starts it.
     ///
     /// During fault-tolerance replay, a single-host pipeline instead
     /// reproduces the journaled transaction boundaries.
@@ -10064,7 +10065,11 @@ impl ControllerInner {
                 };
             }
 
-            // Commit rule.
+            // Commit rule.  Ingestion stays paused while the cutover of a
+            // concurrent bootstrap waits for the transaction to commit (see
+            // [CircuitThread::input_step]).
+            let ingestion_paused =
+                self.status.concurrent_bootstrap_phase() == ConcurrentBootstrapPhase::Synchronizing;
             if let TransactionState::Started {
                 tid,
                 start,
@@ -10074,7 +10079,7 @@ impl ControllerInner {
                 && transaction_info
                     .commit_target
                     .as_ref()
-                    .is_none_or(|target| target.drained(&statuses, feed))
+                    .is_none_or(|target| ingestion_paused || target.drained(&statuses, feed))
             {
                 if !started {
                     let duration = start.elapsed();
