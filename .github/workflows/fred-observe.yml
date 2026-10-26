@@ -37,8 +37,9 @@ jobs:
   # The trust gate of a public repository. Nothing PR-authored runs here:
   # main-branch scripts and API calls. The observe job starts only when a
   # watched test job failed, the PR is still open, its branch lives in this
-  # repo and its author is a feldera org member. A fork's test output is
-  # untrusted text and never reaches a job holding a write token.
+  # repo and its author is a feldera org member or one of fred's apps. A
+  # fork's test output is untrusted text and never reaches a job holding a
+  # write token.
   triage:
     name: Triage the failed run
     # Merge-queue runs only: a workflow_dispatch of ci.yml has no PR to
@@ -105,6 +106,9 @@ jobs:
           ORG_TOKEN: ${{ steps.app-token-org.outputs.token }}
           ORG: ${{ github.repository_owner }}
           PR_NUMBER: ${{ steps.capture.outputs.pr_number }}
+          TRUSTED_BOT_AUTHORS: |
+            app/mythical-fred-oss
+            app/mythical-fred-ops
         run: |
           pr=$(gh pr view "$PR_NUMBER" --json author,headRefName,isCrossRepository,state)
           author=$(jq -r .author.login <<<"$pr")
@@ -119,6 +123,14 @@ jobs:
           if [ "$(jq -r .state <<<"$pr")" != "OPEN" ]; then
             echo "PR #$PR_NUMBER is no longer open; no observation"
             echo "trusted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # fred's own GitHub Apps open PRs too and are not org members; gh
+          # shows an app author as app/<slug>, a name no user account can take
+          if [ "$(jq -r .author.is_bot <<<"$pr")" = "true" ] &&
+             grep -qxF "$author" <<<"$TRUSTED_BOT_AUTHORS"; then
+            echo "$author is a trusted feldera app"
+            echo "trusted=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # 204 for a member, public or private; 404 otherwise. An API failure
