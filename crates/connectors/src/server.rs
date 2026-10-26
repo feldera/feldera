@@ -5724,6 +5724,7 @@ pub mod test_http {
             RuntimeStatus, RuntimeStatusDetails,
         },
         size::ConfigSize,
+        transaction::ConcurrentBootstrapPhase,
     };
     use futures::Stream;
     use proptest::{
@@ -7272,6 +7273,138 @@ pub mod test_http {
          bootstrapping: 'test_input1'. We recommend materializing all tables in the program to \
          avoid such errors in the future."
         );
+    }
+
+    /// An API transaction that is open when a concurrent bootstrap finishes its
+    /// backfill must still commit, and the bootstrap must then finish, even
+    /// if an input endpoint holds queued records when the client commits.
+    ///
+    /// Inputs pause for the cutover, and the cutover waits for the open
+    /// transaction to commit, so the commit cannot wait for queued input that
+    /// only a step that ingests input could deliver.
+    #[engine_test(requires(Storage, Checkpoints, SuspendResume, Bootstrap))]
+    pub fn concurrent_bootstrap_api_commit_with_queued_input(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+
+            let tempdir = TempDir::new().unwrap();
+            let storage_dir = tempdir.path().join("storage");
+            let output_path = tempdir.path().join("output.csv");
+            std::fs::create_dir(&storage_dir).unwrap();
+
+            // A one-record replay chunk stretches the backfill over many steps, so
+            // the transaction opens before the backfill commits.
+            let config_json = json!({
+                "name": "test",
+                "workers": 4,
+                "storage_config": {
+                    "path": storage_dir,
+                },
+                "storage": true,
+                "clock_resolution_usecs": null,
+                "dev_tweaks": {
+                    "splitter_chunk_size_records": 1,
+                },
+                "inputs": {},
+                "outputs": {
+                    "test_output1": {
+                        "stream": "test_output1",
+                        "transport": {
+                            "name": "file_output",
+                            "config": {
+                                "path": output_path,
+                            },
+                        },
+                        "format": {
+                            "name": "csv",
+                            "config": {},
+                        },
+                    },
+                },
+            });
+
+            let first_batch = test_batches(0, 2_000);
+            let (server, _) = start_test_server_with_state(
+                engine,
+                &config_json,
+                Uuid::new_v4(),
+                BootstrapConfig::from(BootstrapPolicy::Allow),
+                &[Some("v0")],
+                Some(test_program_ir("v0")),
+            )
+            .await;
+            start_pipeline(&server).await;
+            send_input(&server, &first_batch).await;
+            wait_for_file_output(&output_path, &first_batch).await;
+            suspend_pipeline(engine, &server, Some(&storage_dir)).await;
+            drop(server);
+
+            let (server, _) = start_test_server_with_state(
+                engine,
+                &config_json,
+                Uuid::new_v4(),
+                BootstrapConfig::from(BootstrapPolicy::Allow).with_concurrent_bootstrap(true),
+                &[Some("v1")],
+                Some(test_program_ir("v1")),
+            )
+            .await;
+            start_transaction(&server).await;
+            assert_eq!(
+                get_stats(&server)
+                    .await
+                    .global_metrics
+                    .concurrent_bootstrap_phase,
+                ConcurrentBootstrapPhase::ConcurrentBootstrapping,
+                "the backfill finished before the transaction opened"
+            );
+
+            // The cutover waits for the transaction.
+            async_wait(
+                || async {
+                    get_stats(&server)
+                        .await
+                        .global_metrics
+                        .concurrent_bootstrap_phase
+                        == ConcurrentBootstrapPhase::Synchronizing
+                },
+                20_000,
+            )
+            .await
+            .expect("the backfill never finished");
+            assert_eq!(
+                get_stats(&server).await.global_metrics.transaction_status,
+                TransactionStatus::TransactionInProgress
+            );
+
+            // The endpoints are paused for the cutover, so input that arrives now
+            // stays queued.  (`force` gets it past the pause.)
+            let _: CompletionTokenResponse = TestHttpSender::send_stream_deserialize_resp(
+                server.post("/ingress/test_input1?force=true"),
+                &test_batches(10_000, 10),
+            )
+            .await;
+            commit_transaction(&server).await;
+
+            let finished = async_wait(
+                || async {
+                    let stats = get_stats(&server).await;
+                    stats.global_metrics.transaction_status == TransactionStatus::NoTransaction
+                        && stats.global_metrics.concurrent_bootstrap_phase
+                            == ConcurrentBootstrapPhase::Inactive
+                },
+                20_000,
+            )
+            .await;
+            if finished.is_err() {
+                let stats = get_stats(&server).await;
+                panic!(
+                    "after 20 s, the transaction is {:?} and the bootstrap is {:?}, after {} steps",
+                    stats.global_metrics.transaction_status,
+                    stats.global_metrics.concurrent_bootstrap_phase,
+                    stats.global_metrics.total_initiated_steps,
+                );
+            }
+        })
     }
 
     /// Regression test for the fault-tolerant replay path, the analogue of
