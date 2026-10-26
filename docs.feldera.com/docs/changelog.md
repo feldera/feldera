@@ -10,6 +10,12 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Delta Lake input connector: `uc://` tables can use Databricks workload
+  identity federation. Set `unity_client_id`, `databricks_host` and
+  `unity_federated_token_file` (for example a Kubernetes service account
+  token) instead of `unity_client_secret`. See
+  [Unity catalog](/connectors/sources/delta).
+
 ## v0.370.0
 
 - Experimental (Enterprise, Kubernetes): a resize of `memory_max` with
