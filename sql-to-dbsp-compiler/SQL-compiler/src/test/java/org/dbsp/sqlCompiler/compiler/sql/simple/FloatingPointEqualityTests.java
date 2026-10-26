@@ -159,6 +159,33 @@ public class FloatingPointEqualityTests extends BaseSQLTests {
     }
 
     @Test
+    public void unique() {
+        this.assertWarnings("CREATE VIEW V AS SELECT UNIQUE (SELECT x, z FROM S) AS u;",
+                "3:25: warning: Floating point equality: 'UNIQUE' compares the floating point values in column 'x' for equality.");
+        this.assertNoWarnings("CREATE VIEW V AS SELECT UNIQUE (SELECT z FROM S) AS u;");
+    }
+
+    @Test
+    public void primaryKeys() {
+        this.assertWarnings("CREATE TABLE P(d DOUBLE NOT NULL PRIMARY KEY, v INT);",
+                "3:16: warning: Floating point equality: 'PRIMARY KEY' compares the floating point values in column 'd' for equality.");
+        this.assertWarnings("CREATE TABLE P(i INT NOT NULL, r REAL NOT NULL, d DOUBLE NOT NULL, PRIMARY KEY (i, r, d));",
+                "3:68: warning: Floating point equality: 'PRIMARY KEY' compares the floating point values in columns 'r' and 'd' for equality.");
+        this.assertNoWarnings("CREATE TABLE P(i INT NOT NULL PRIMARY KEY, d DOUBLE);");
+    }
+
+    @Test
+    public void indexes() {
+        this.assertWarnings("""
+                CREATE MATERIALIZED VIEW V AS SELECT x, z FROM S;
+                CREATE INDEX v_index ON V(z, x);""",
+                "4:1: warning: Floating point equality: 'CREATE INDEX' compares the floating point values in column 'x' for equality.");
+        this.assertNoWarnings("""
+                CREATE MATERIALIZED VIEW V AS SELECT x, z FROM S;
+                CREATE INDEX v_index ON V(z);""");
+    }
+
+    @Test
     public void joins() {
         this.assertWarnings("CREATE VIEW V AS SELECT * FROM T JOIN S ON T.x = S.x;",
                 "3:44: warning: Floating point equality: '=' " + DOUBLE);
