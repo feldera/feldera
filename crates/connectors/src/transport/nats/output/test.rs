@@ -35,7 +35,7 @@ use xxhash_rust::xxh3::xxh3_128;
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// End-to-end (requires nats-server; see crates/adapters/README.md)
+// End-to-end (requires nats-server; see crates/connectors/README.md)
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]

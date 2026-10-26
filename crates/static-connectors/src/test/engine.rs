@@ -49,8 +49,8 @@ use crate::test::suites::{
 use crate::test::{KeyStruct, MockDeZSet, MockUpdate, TestStruct, TestStruct2};
 use crate::test::{published_schema, relations};
 use crate::{Catalog, CircuitCatalog, ControllerError};
-use dbsp_adapters::engine::OpenStorageFn;
-use dbsp_adapters::format::parquet::default_arrow_serde_config;
+use dbsp_connectors::engine::OpenStorageFn;
+use dbsp_connectors::format::parquet::default_arrow_serde_config;
 
 pub(super) mod records;
 
@@ -662,7 +662,7 @@ impl PipelineTestEngine for StaticTestEngine {
         &self,
         circuit: &TestCircuit,
         setup: Option<CatalogSetup>,
-    ) -> Result<dbsp_adapters::engine::CircuitFactory, ControllerError> {
+    ) -> Result<dbsp_connectors::engine::CircuitFactory, ControllerError> {
         let factory = self.circuit_builder(circuit)?;
         let circuit = circuit.clone();
         Ok(static_circuit_factory(Box::new(move |config| {

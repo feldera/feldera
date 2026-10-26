@@ -15,7 +15,7 @@ use std::fmt::{Display, Formatter};
 use std::iter::once;
 use std::mem::take;
 
-use dbsp_adapters::format::avro::schema::{OptionalField, schema_unwrap_optional};
+use dbsp_connectors::format::avro::schema::{OptionalField, schema_unwrap_optional};
 
 /// Serde configuration expected by [`AvroSchemaSerializer`].
 pub fn avro_ser_config() -> SqlSerdeConfig {

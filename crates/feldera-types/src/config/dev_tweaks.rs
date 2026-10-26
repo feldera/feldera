@@ -115,7 +115,7 @@ pub struct DevTweaks {
     /// Attempt to print a stack trace on stack overflow.
     ///
     /// To be used for debugging only; do not enable in production.
-    // NOTE: this flag is handled manually in `adapters/src/server.rs` before
+    // NOTE: this flag is handled manually in `connectors/src/server.rs` before
     // parsing DevTweaks. If the name or type of this field changes, make sure to
     // adjust `server.rs` accordingly.
     #[serde(skip_serializing_if = "Option::is_none")]

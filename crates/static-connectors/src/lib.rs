@@ -1,7 +1,7 @@
 //! The connector runtime of pipelines that the SQL compiler compiles to Rust, on the DBSP
 //! engine.
 //!
-//! The controller, the server, the transports, and the formats live in `dbsp_adapters`, which
+//! The controller, the server, the transports, and the formats live in `dbsp_connectors`, which
 //! reaches the engine only through its engine traits. This crate is the engine's side: it
 //! registers a circuit's streams in a [`Catalog`] through the record types that the compiler
 //! generates, implements the engine traits over `DBSPHandle` and `Runtime`, and provides the
@@ -27,6 +27,6 @@ pub(crate) mod storage;
 pub mod test;
 
 pub use catalog::Catalog;
-pub use dbsp_adapters::{CircuitCatalog, ControllerError, RecordFormat};
+pub use dbsp_connectors::{CircuitCatalog, ControllerError, RecordFormat};
 pub use deinput::{DeLazyMapHandle, DeMapHandle, DeScalarHandle, DeScalarHandleImpl, DeZSetHandle};
 pub use seroutput::SerCollectionHandleImpl;

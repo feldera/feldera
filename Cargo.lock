@@ -4361,7 +4361,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dbsp_adapters"
+name = "dbsp_connectors"
 version = "0.370.0"
 dependencies = [
  "actix",
@@ -12597,7 +12597,7 @@ dependencies = [
  "csv-core",
  "datafusion",
  "dbsp",
- "dbsp_adapters",
+ "dbsp_connectors",
  "dbsp_nexmark",
  "deltalake",
  "dyn-clone",

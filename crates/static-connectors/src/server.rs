@@ -2,7 +2,7 @@
 //! code.
 
 use dbsp::{DBSPHandle, RootCircuit, Runtime, circuit::CircuitConfig};
-use dbsp_adapters::{CircuitCatalog, ControllerError};
+use dbsp_connectors::{CircuitCatalog, ControllerError};
 use dyn_clone::DynClone;
 
 use crate::Catalog;
@@ -52,5 +52,5 @@ where
         + Send
         + 'static,
 {
-    dbsp_adapters::server::server_main(StaticEngine::new(Box::new(circuit_factory)))
+    dbsp_connectors::server::server_main(StaticEngine::new(Box::new(circuit_factory)))
 }

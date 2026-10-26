@@ -86,7 +86,7 @@ Pipeline log:
 {
   "timestamp": "2025-12-09T21:26:17.362514Z",
   "level": "INFO",
-  "target": "dbsp_adapters::server",
+  "target": "dbsp_connectors::server",
   "feldera-service": "pipeline",
   "pipeline-name": "MyPipeline",
   "pipeline-id": "019af16a-ba26-7933-a6e5-65d9d717cb7a",

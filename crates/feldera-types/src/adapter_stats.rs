@@ -79,7 +79,7 @@ pub struct PipelineStatsErrorsResponse {
 }
 
 // OpenAPI schema definitions for controller statistics
-// These match the serialized JSON structure from the adapters crate
+// These match the serialized JSON structure from the connectors crate
 
 /// Transaction status summarized as a single value.
 #[derive(

@@ -14,7 +14,7 @@ use anyhow::{Result as AnyResult, bail};
 #[cfg(feature = "with-avro")]
 use apache_avro::{Schema as AvroSchema, types::Value as AvroValue};
 use arrow::array::RecordBatch;
-use dbsp_adapters::format::InputBuffer;
+use dbsp_connectors::format::InputBuffer;
 use erased_serde::Deserializer as ErasedDeserializer;
 use feldera_adapterlib::ConnectorMetadata;
 #[cfg(feature = "with-avro")]

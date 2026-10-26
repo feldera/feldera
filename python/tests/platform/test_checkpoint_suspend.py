@@ -145,7 +145,7 @@ def test_suspend_enterprise(pipeline_name):
     before_max_rss_mb = 2_000
     after_max_rss_mb = 2_100
     # The pipeline carves the DataFusion pool out of `max_rss_mb` before sizing
-    # the circuit (`Controller::circuit_config` in crates/adapters); pinning the
+    # the circuit (`Controller::circuit_config` in crates/connectors); pinning the
     # pool makes the expected circuit RSS exact.
     datafusion_memory_mb = 500
 
@@ -318,7 +318,7 @@ def test_suspend_failure_enterprise(pipeline_name):
 
     Regression: the adapter used to report the terminated circuit as a clean
     `Suspended` whenever a suspend was desired (see `terminated_status` in
-    `crates/adapters/src/server.rs`), so a failed suspend reached `Stopped`
+    `crates/connectors/src/server.rs`), so a failed suspend reached `Stopped`
     with no `deployment_error`. With the fix, a failed suspend leaves the
     circuit running and the `/suspend` handler reports `PipelinePhase::Failed`,
     so the failure surfaces as a `deployment_error`.

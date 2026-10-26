@@ -173,7 +173,7 @@ The engine layer builds the API on `DBSPHandle` (`start_concurrent_bootstrap`,
 `step_bootstrap_circuit`, `sync_concurrent_bootstrap`,
 `complete_concurrent_bootstrap`, the `BootstrapCircuitState` /
 `ConcurrentBootstrapPhase` machines, and the `ConcurrentRestoreOutcome` return).
-The controller (`crates/adapters/src/controller.rs`) drives it so a pipeline keeps
+The controller (`crates/connectors/src/controller.rs`) drives it so a pipeline keeps
 serving old views while new/modified views backfill.
 
 The key fact: `DBSPHandle::bootstrap_in_progress()` is **false** during a

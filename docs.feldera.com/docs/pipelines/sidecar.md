@@ -38,7 +38,7 @@ to start if the user specifies `runtime_config.init_containers`.
 :::info
  (*) Documentation for the pipeline's internal HTTP API is not yet available.
 For now, it requires reading the Rust source code at:
-https://github.com/feldera/feldera/blob/main/crates/adapters/src/server.rs
+https://github.com/feldera/feldera/blob/main/crates/connectors/src/server.rs
 :::
 
 ## Example

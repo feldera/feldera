@@ -1,6 +1,6 @@
 [package]
-name = "dbsp_adapters"
-description = "Data adapters for continuous streaming data analytics with DBSP"
+name = "dbsp_connectors"
+description = "Data connectors for continuous streaming data analytics with DBSP"
 readme = "README.md"
 publish = false
 categories = ["database", "api-bindings", "network-programming"]
@@ -267,10 +267,10 @@ ignored = ["aws-sigv4", "deltalake-catalog-unity"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Optional so the SQL test fixture (sql-to-dbsp-compiler/temp), which builds
-# adapters with default-features = false, drops the jemalloc/tikv-jemalloc-sys
+# dbsp_connectors with default-features = false, drops the jemalloc/tikv-jemalloc-sys
 # C-build subtree. That subtree has a non-deterministic build fingerprint that
 # made cargo recompile it on every test invocation. Production pipelines build
-# adapters with default features, so they keep heap profiling.
+# dbsp_connectors with default features, so they keep heap profiling.
 jemalloc_pprof = { workspace = true, features = ["symbolize"], optional = true }
 
 [target.'cfg(unix)'.dependencies]

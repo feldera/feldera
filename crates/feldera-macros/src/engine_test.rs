@@ -152,7 +152,7 @@ fn engine_kind(function: &ItemFn) -> syn::Result<proc_macro2::Ident> {
 }
 
 /// Keeps `item`, a suite case, and registers it with `inventory` for the harness of every
-/// engine. The registration names items of the crate that defines the case, `dbsp_adapters`.
+/// engine. The registration names items of the crate that defines the case, `dbsp_connectors`.
 pub fn engine_test(args: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
     let options = CaseOptions::parse(args)?;
     let function: ItemFn = syn::parse2(item)?;

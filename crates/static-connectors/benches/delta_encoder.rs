@@ -2,8 +2,8 @@ mod bench_common;
 
 use bench_common::{BenchKeyStruct, BenchTestStruct, build_indexed_batch, generate_test_data};
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use dbsp_adapters::Encoder;
-use dbsp_adapters::integrated::delta_table::DeltaTableWriter;
+use dbsp_connectors::Encoder;
+use dbsp_connectors::integrated::delta_table::DeltaTableWriter;
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::transport::delta_table::{DeltaTableWriteMode, DeltaTableWriterConfig};
 use std::sync::Weak;

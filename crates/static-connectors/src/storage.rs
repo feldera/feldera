@@ -12,7 +12,7 @@ use std::sync::{Arc, LazyLock};
 use anyhow::Result as AnyResult;
 use dbsp::circuit::CircuitStorageConfig;
 use dbsp::circuit::checkpointer::Checkpointer;
-use dbsp_adapters::engine::{
+use dbsp_connectors::engine::{
     Checkpoint, CheckpointSync, JournalMode, PipelineStorage, StepJournal, StepMetadata,
     StoredStatus,
 };
@@ -504,7 +504,7 @@ mod tests {
     use dbsp::circuit::StorageCacheConfig;
     use dbsp::circuit::metrics::FILES_SYNCED;
     use dbsp::storage::backend::posixio_impl::PosixBackend;
-    use dbsp_adapters::engine::{
+    use dbsp_connectors::engine::{
         Checkpoint, CheckpointOffsets, JournalMode, PipelineStorage, StepJournal, StepMetadata,
     };
     use feldera_storage::StoragePath;
@@ -591,7 +591,7 @@ mod tests {
         let storage = storage_in(dir.path());
         assert!(storage.read_status().is_none());
 
-        let status: dbsp_adapters::engine::StoredStatus = serde_json::from_value(json!({
+        let status: dbsp_connectors::engine::StoredStatus = serde_json::from_value(json!({
             "desired_status": "Paused",
             "bootstrap_policy": "allow",
             "deployment_id": Uuid::nil(),
@@ -608,7 +608,7 @@ mod tests {
         let storage = storage_in(dir.path());
         let before = storage.usage_bytes().unwrap();
 
-        let status: dbsp_adapters::engine::StoredStatus = serde_json::from_value(json!({
+        let status: dbsp_connectors::engine::StoredStatus = serde_json::from_value(json!({
             "desired_status": "Paused",
             "bootstrap_policy": "allow",
             "deployment_id": Uuid::nil(),
@@ -715,7 +715,7 @@ mod tests {
             &state(9, Some(failed)),
             failed,
             || {
-                Err(dbsp_adapters::ControllerError::not_supported(
+                Err(dbsp_connectors::ControllerError::not_supported(
                     "publication failed",
                 ))
             },

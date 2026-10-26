@@ -27,42 +27,42 @@ default = [
     "with-heap-profiling",
     "with-s2",
 ]
-with-kafka = ["dbsp_adapters/with-kafka"]
-with-deltalake = ["dbsp_adapters/with-deltalake"]
-with-iceberg = ["dbsp_adapters/with-iceberg"]
-with-avro = ["dbsp_adapters/with-avro", "feldera-adapterlib/with-avro", "dep:apache-avro"]
+with-kafka = ["dbsp_connectors/with-kafka"]
+with-deltalake = ["dbsp_connectors/with-deltalake"]
+with-iceberg = ["dbsp_connectors/with-iceberg"]
+with-avro = ["dbsp_connectors/with-avro", "feldera-adapterlib/with-avro", "dep:apache-avro"]
 with-nexmark = ["dep:dbsp_nexmark"]
-with-pubsub = ["dbsp_adapters/with-pubsub"]
-with-redis = ["dbsp_adapters/with-redis"]
-with-nats = ["dbsp_adapters/with-nats"]
-with-postgres-cdc = ["dbsp_adapters/with-postgres-cdc"]
+with-pubsub = ["dbsp_connectors/with-pubsub"]
+with-redis = ["dbsp_connectors/with-redis"]
+with-nats = ["dbsp_connectors/with-nats"]
+with-postgres-cdc = ["dbsp_connectors/with-postgres-cdc"]
 with-dynamodb = [
-    "dbsp_adapters/with-dynamodb",
+    "dbsp_connectors/with-dynamodb",
     "feldera-adapterlib/with-dynamodb",
     "dep:aws-sdk-dynamodb",
     "dep:serde_dynamo",
 ]
-with-heap-profiling = ["dbsp_adapters/with-heap-profiling"]
-with-s2 = ["dbsp_adapters/with-s2"]
-feldera-enterprise = ["dbsp_adapters/feldera-enterprise"]
+with-heap-profiling = ["dbsp_connectors/with-heap-profiling"]
+with-s2 = ["dbsp_connectors/with-s2"]
+feldera-enterprise = ["dbsp_connectors/feldera-enterprise"]
 # The test features of the connector suites, which run from this crate's tests. See
-# `crates/adapters/Cargo.toml`.
-delta-s3-test = ["dbsp_adapters/delta-s3-test"]
-delta-unity-test = ["dbsp_adapters/delta-unity-test"]
-pubsub-emulator-test = ["dbsp_adapters/pubsub-emulator-test"]
-pubsub-gcp-test = ["dbsp_adapters/pubsub-gcp-test"]
-iceberg-tests-fs = ["dbsp_adapters/iceberg-tests-fs"]
-iceberg-tests-glue = ["dbsp_adapters/iceberg-tests-glue"]
-iceberg-tests-rest = ["dbsp_adapters/iceberg-tests-rest"]
-iceberg-tests-s3tables = ["dbsp_adapters/iceberg-tests-s3tables"]
-iceberg-tests-follow = ["dbsp_adapters/iceberg-tests-follow"]
-fips = ["dbsp_adapters/fips"]
-bench-mode = ["dbsp_adapters/bench-mode"]
+# `crates/connectors/Cargo.toml`.
+delta-s3-test = ["dbsp_connectors/delta-s3-test"]
+delta-unity-test = ["dbsp_connectors/delta-unity-test"]
+pubsub-emulator-test = ["dbsp_connectors/pubsub-emulator-test"]
+pubsub-gcp-test = ["dbsp_connectors/pubsub-gcp-test"]
+iceberg-tests-fs = ["dbsp_connectors/iceberg-tests-fs"]
+iceberg-tests-glue = ["dbsp_connectors/iceberg-tests-glue"]
+iceberg-tests-rest = ["dbsp_connectors/iceberg-tests-rest"]
+iceberg-tests-s3tables = ["dbsp_connectors/iceberg-tests-s3tables"]
+iceberg-tests-follow = ["dbsp_connectors/iceberg-tests-follow"]
+fips = ["dbsp_connectors/fips"]
+bench-mode = ["dbsp_connectors/bench-mode"]
 # The static engine's test fixture, `test::StaticTestEngine`, for the `connector_suites` test
-# target, which runs the connector suites of `dbsp_adapters`. This crate's dev-dependency on
+# target, which runs the connector suites of `dbsp_connectors`. This crate's dev-dependency on
 # itself turns it on, so a plain `cargo test` builds the target.
 testing = [
-    "dbsp_adapters/testing",
+    "dbsp_connectors/testing",
     "feldera-adapterlib/testing",
     "dep:feldera-macros",
     "dep:postgres",
@@ -76,7 +76,7 @@ testing = [
 [dependencies]
 # Without default features, so that a crate that turns off this crate's default features
 # drops the connectors too.
-dbsp_adapters = { path = "../adapters", default-features = false }
+dbsp_connectors = { path = "../connectors", default-features = false }
 dbsp = { workspace = true }
 dbsp_nexmark = { workspace = true, optional = true }
 feldera-adapterlib = { workspace = true }
@@ -121,7 +121,7 @@ tempfile = { workspace = true, optional = true }
 
 [dev-dependencies]
 static-connectors = { path = ".", default-features = false, features = ["testing"] }
-dbsp_adapters = { path = "../adapters", default-features = false, features = ["testing"] }
+dbsp_connectors = { path = "../connectors", default-features = false, features = ["testing"] }
 feldera-adapterlib = { workspace = true, features = ["testing"] }
 feldera-macros = { workspace = true }
 bstr = { workspace = true, features = ["serde1"] }
@@ -143,7 +143,7 @@ size-of = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
-# The connector suites of `dbsp_adapters`, each case one test, on the static engine.
+# The connector suites of `dbsp_connectors`, each case one test, on the static engine.
 [[test]]
 name = "connector_suites"
 harness = false

@@ -8,7 +8,7 @@ deleted in a deletion vector, so a flush never rewrites a data file.
 These tests cover what only a running pipeline can show: the config reaches the
 connector, the startup checks fire, and the table left behind holds the right
 number of live rows and no rewritten files. Row-level correctness of the write
-path is covered by the Rust tests in `crates/adapters`;
+path is covered by the Rust tests in `crates/connectors`;
 :func:`test_delta_spark_agrees_through_maintenance` covers agreement with the
 reference implementation.
 

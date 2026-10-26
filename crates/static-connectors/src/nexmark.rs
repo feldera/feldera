@@ -1,7 +1,7 @@
 //! An input adapter that generates Nexmark event input data.
 //!
 //! The adapter needs the static engine's crates, so it registers an
-//! [`InputTransportFactory`](dbsp_adapters::transport::InputTransportFactory), through which
+//! [`InputTransportFactory`](dbsp_connectors::transport::InputTransportFactory), through which
 //! the shared transport factory builds its endpoints.
 
 use chrono::{DateTime, Utc};
@@ -23,9 +23,9 @@ use xxhash_rust::xxh3::Xxh3Default;
 
 use anyhow::{Result as AnyResult, anyhow};
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
-use dbsp_adapters::format::InputBuffer;
-use dbsp_adapters::transport::InputTransportFactory;
-use dbsp_adapters::{InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint};
+use dbsp_connectors::format::InputBuffer;
+use dbsp_connectors::transport::InputTransportFactory;
+use dbsp_connectors::{InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint};
 use dbsp_nexmark::generator::RandomGenerator;
 use dbsp_nexmark::model::Event;
 use dbsp_nexmark::{config::GeneratorOptions, generator::config::Config as GeneratorConfig};
@@ -508,7 +508,7 @@ inventory::submit! {
 
 #[cfg(test)]
 mod tests {
-    use dbsp_adapters::transport::input_transport_config_to_endpoint;
+    use dbsp_connectors::transport::input_transport_config_to_endpoint;
     use feldera_types::config::TransportConfig;
     use feldera_types::secret_resolver::default_secrets_directory;
     use serde_json::json;

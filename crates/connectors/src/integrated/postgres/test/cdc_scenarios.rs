@@ -23,7 +23,7 @@
 //!
 //! ```text
 //! POSTGRES_URL=postgres://postgres:postgres@localhost:5435/postgres \
-//!   cargo test -p dbsp_adapters --features with-postgres-cdc \
+//!   cargo test -p dbsp_connectors --features with-postgres-cdc \
 //!   cdc_scenarios -- --ignored --test-threads=1 --nocapture
 //! ```
 

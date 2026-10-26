@@ -6606,7 +6606,7 @@ mod read_schema_tests {
     /// `Utf8View` has no such ceiling.
     ///
     /// Ignored because it has to allocate past `i32::MAX` to prove it. Run with
-    /// `cargo test -p dbsp_adapters --lib read_schema_lifts -- --ignored`.
+    /// `cargo test -p dbsp_connectors --lib read_schema_lifts -- --ignored`.
     #[tokio::test]
     #[ignore]
     async fn read_schema_lifts_the_two_gib_ceiling() {

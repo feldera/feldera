@@ -58,7 +58,7 @@
 //! ## Input
 //!
 //! To process data in DBSP, we need to get data from somewhere.  The
-//! `dbsp_adapters` crate in `crates/adapters` implements input and output
+//! `dbsp_connectors` crate in `crates/connectors` implements input and output
 //! adapters for a number of formats and transports along with a server that
 //! instantiates a DBSP pipeline and adapters based on a user-provided
 //! declarative configuration.  In this tutorial we take a different approach,

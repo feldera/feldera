@@ -7,7 +7,7 @@ publish = false
 [features]
 default = []
 # Catalog-mode tests (CatalogTests) reference static_connectors::Catalog; handles-mode
-# tests do not, and leaving adapters out of their build removes 220 crates from the
+# tests do not, and leaving the connectors out of their build removes 220 crates from the
 # dependency graph.
 catalog = ["static-connectors"]
 # A UDF that implements a pre- or postprocessor uses adapterlib directly

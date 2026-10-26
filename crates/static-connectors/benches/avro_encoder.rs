@@ -4,8 +4,8 @@ use bench_common::{
     BenchKeyStruct, BenchOutputConsumer, BenchTestStruct, build_indexed_batch, generate_test_data,
 };
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use dbsp_adapters::Encoder;
-use dbsp_adapters::format::avro::output::AvroEncoder;
+use dbsp_connectors::Encoder;
+use dbsp_connectors::format::avro::output::AvroEncoder;
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::format::avro::{AvroEncoderConfig, AvroUpdateFormat};
 

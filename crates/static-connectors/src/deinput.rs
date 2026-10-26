@@ -22,7 +22,7 @@ use dbsp::{
     DBData, InputHandle, LazyMapHandle, MapHandle, ZSetHandle, ZWeight, algebra::HasOne,
     operator::Update, utils::Tup2,
 };
-use dbsp_adapters::format::{InputBuffer, csv_reader_builder};
+use dbsp_connectors::format::{InputBuffer, csv_reader_builder};
 use erased_serde::Deserializer as ErasedDeserializer;
 use feldera_adapterlib::ConnectorMetadata;
 #[cfg(feature = "with-avro")]

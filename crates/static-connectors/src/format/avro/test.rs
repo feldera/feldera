@@ -1,6 +1,6 @@
 //! Tests of the Avro format specific to the static engine.
 //!
-//! The main body of Avro tests is in the `dbsp_adapters` crate.
+//! The main body of Avro tests is in the `dbsp_connectors` crate.
 
 use super::serializer::{AvroSchemaSerializer, avro_ser_config};
 use crate::catalog::SerBatchReader;
@@ -17,8 +17,8 @@ use apache_avro::{Schema as AvroSchema, from_avro_datum, to_avro_datum};
 use dbsp::trace::BatchReaderFactories;
 use dbsp::typed_batch::{DynSpineSnapshot, SpineSnapshot as TypedSpineSnapshot, TypedBatch};
 use dbsp::{DBData, IndexedZSetReader, OrdIndexedZSet, ZWeight, utils::Tup2};
-use dbsp_adapters::format::avro::output::AvroEncoder;
-use dbsp_adapters::{Encoder, InputBuffer, Parser};
+use dbsp_connectors::format::avro::output::AvroEncoder;
+use dbsp_connectors::{Encoder, InputBuffer, Parser};
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_sqllib::{FlatVariant, SqlVariant, Variant};
 use feldera_types::config::FormatConfig;

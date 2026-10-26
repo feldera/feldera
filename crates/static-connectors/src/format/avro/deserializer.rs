@@ -45,9 +45,9 @@ use std::{
     slice::Iter,
 };
 
-use dbsp_adapters::format::avro::coercion::{Coerced, Coercion, field_coercion};
-use dbsp_adapters::format::avro::input::avro_de_config;
-use dbsp_adapters::format::avro::resolve_ref;
+use dbsp_connectors::format::avro::coercion::{Coerced, Coercion, field_coercion};
+use dbsp_connectors::format::avro::input::avro_de_config;
+use dbsp_connectors::format::avro::resolve_ref;
 
 fn deserialize_decimal<E: serde::de::Error>(d: &Decimal, schema: &Schema) -> Result<String, E> {
     let Schema::Decimal(schema) = schema else {
@@ -640,7 +640,7 @@ pub fn from_avro_value<'de, D: DeserializeWithContext<'de, SqlSerdeConfig, AUX>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dbsp_adapters::format::avro::{coercion::Coercion, debezium::DebeziumTimeType};
+    use dbsp_connectors::format::avro::{coercion::Coercion, debezium::DebeziumTimeType};
 
     #[test]
     fn ignore_nullable_coerced_null() {
