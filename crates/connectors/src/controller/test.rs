@@ -1973,6 +1973,196 @@ pub fn api_transaction_committed_during_another_commit(engine: &dyn PipelineTest
     controller.stop().unwrap();
 }
 
+/// An input endpoint that answers each `Queue` command at once, with no input,
+/// except the one after [DeferredQueueEndpoint::arm], which it answers only
+/// when the test calls [DeferredQueueEndpoint::release].
+///
+/// The controller polls endpoints in order of their ids, so an armed endpoint
+/// added after another one holds the circuit thread inside a step after the
+/// step has polled the other endpoint and before it decides whether the
+/// transaction starts or commits.
+#[derive(Clone)]
+struct DeferredQueueEndpoint {
+    /// The consumer that the controller opened the endpoint with.
+    consumer: Arc<Mutex<Option<Box<dyn InputConsumer>>>>,
+
+    /// Told when the armed `Queue` command arrives.
+    armed: Arc<Mutex<Option<mpsc::Sender<()>>>>,
+}
+
+impl DeferredQueueEndpoint {
+    fn new() -> Self {
+        Self {
+            consumer: Arc::new(Mutex::new(None)),
+            armed: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Defers the answer to the next `Queue` command.  Returns a receiver
+    /// that gets a message when that command arrives.
+    fn arm(&self) -> mpsc::Receiver<()> {
+        let (sender, receiver) = mpsc::channel();
+        *self.armed.lock().unwrap() = Some(sender);
+        receiver
+    }
+
+    /// Answers the deferred `Queue` command, with no input.
+    fn release(&self) {
+        self.consumer.lock().unwrap().as_ref().unwrap().extended(
+            BufferSize::empty(),
+            None,
+            Vec::new(),
+        );
+    }
+}
+
+impl InputEndpoint for DeferredQueueEndpoint {
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        None
+    }
+}
+
+impl TransportInputEndpoint for DeferredQueueEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        _parser: Box<dyn Parser>,
+        _schema: Relation,
+        _resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn InputReader>> {
+        *self.consumer.lock().unwrap() = Some(consumer);
+        Ok(Box::new(self.clone()))
+    }
+}
+
+impl InputReader for DeferredQueueEndpoint {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn request(&self, command: InputReaderCommand) {
+        if let InputReaderCommand::Queue { .. } = command {
+            match self.armed.lock().unwrap().take() {
+                Some(polled) => polled.send(()).unwrap(),
+                None => self.release(),
+            }
+        }
+    }
+
+    fn is_closed(&self) -> bool {
+        false
+    }
+}
+
+/// Adds a [DeferredQueueEndpoint] named "gate" to `controller`, after the
+/// endpoints that it already has.
+fn add_gate(controller: &Controller) -> DeferredQueueEndpoint {
+    let gate = DeferredQueueEndpoint::new();
+    let config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" },
+    }))
+    .unwrap();
+    controller
+        .add_input_endpoint("gate", config, Box::new(gate.clone()), None)
+        .unwrap();
+    gate
+}
+
+/// Requests a step and returns once the step has polled every endpoint but
+/// `gate`, which holds it until the test calls
+/// [DeferredQueueEndpoint::release].
+fn hold_next_step(controller: &Controller, gate: &DeferredQueueEndpoint) {
+    let polled = gate.arm();
+    controller.request_step();
+    polled
+        .recv_timeout(Duration::from_millis(API_TRANSACTION_TIMEOUT_MS))
+        .expect("the step never polled the gate");
+}
+
+/// An API transaction's commit includes the records queued before the commit
+/// request, even if the request arrives during a step that polled their
+/// endpoint before they were queued.
+#[engine_test]
+pub fn api_transaction_commit_during_a_step_includes_queued_records(
+    engine: &dyn PipelineTestEngine,
+) {
+    let (controller, feeder, before) = start_api_transaction_test(engine, false);
+    let gate = add_gate(&controller);
+
+    controller.start_transaction().unwrap();
+    controller.request_step();
+    wait(
+        || controller.inner.get_transaction_state().is_started(),
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .expect("the transaction never started");
+
+    hold_next_step(&controller, &gate);
+    push_records(&feeder, 0..100);
+    controller.start_commit_transaction().unwrap();
+    gate.release();
+
+    assert_eq!(transactions_to_commit(&controller, 100, before), 1);
+    controller.stop().unwrap();
+}
+
+/// Like [api_transaction_commit_during_a_step_includes_queued_records], for a
+/// transaction that no step has started yet.
+#[engine_test]
+pub fn api_transaction_committed_before_it_starts_during_a_step(engine: &dyn PipelineTestEngine) {
+    let (controller, feeder, before) = start_api_transaction_test(engine, false);
+    let gate = add_gate(&controller);
+
+    controller.start_transaction().unwrap();
+    hold_next_step(&controller, &gate);
+    push_records(&feeder, 0..100);
+    controller.start_commit_transaction().unwrap();
+    gate.release();
+
+    assert_eq!(transactions_to_commit(&controller, 100, before), 1);
+    controller.stop().unwrap();
+}
+
+/// Like [api_transaction_commit_during_a_step_includes_queued_records], for
+/// records sent to an endpoint that the client created after the step began,
+/// the way the first `/ingress` request for a table creates one.
+#[engine_test]
+pub fn api_transaction_commit_during_a_step_includes_records_of_a_new_endpoint(
+    engine: &dyn PipelineTestEngine,
+) {
+    let (controller, _feeder, before) = start_api_transaction_test(engine, false);
+    let gate = add_gate(&controller);
+
+    controller.start_transaction().unwrap();
+    controller.request_step();
+    wait(
+        || controller.inner.get_transaction_state().is_started(),
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .expect("the transaction never started");
+
+    hold_next_step(&controller, &gate);
+    let late = TransactionalInputEndpoint::new();
+    let config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" },
+        "max_batch_size": 10,
+    }))
+    .unwrap();
+    controller
+        .add_input_endpoint("late", config, Box::new(late.clone()), None)
+        .unwrap();
+    push_records(&late, 0..100);
+    controller.start_commit_transaction().unwrap();
+    gate.release();
+
+    assert_eq!(transactions_to_commit(&controller, 100, before), 1);
+    controller.stop().unwrap();
+}
+
 /// A step must replay even if an ad hoc INSERT whose input it consumed removed
 /// its endpoint before the step was journaled.
 ///
