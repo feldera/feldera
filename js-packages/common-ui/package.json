@@ -10,7 +10,7 @@
     "@skeletonlabs/skeleton-svelte": "^4.9.0",
     "@svelte-bin/clipboard": "0.1.4",
     "@sveltejs/adapter-auto": "^7.0.0",
-    "@sveltejs/kit": "^2.49.5",
+    "@sveltejs/kit": "^3.1.0",
     "@sveltejs/package": "^2.5.7",
     "@sveltejs/vite-plugin-svelte": "^7.0.0",
     "@tailwindcss/vite": "^4.1.17",
