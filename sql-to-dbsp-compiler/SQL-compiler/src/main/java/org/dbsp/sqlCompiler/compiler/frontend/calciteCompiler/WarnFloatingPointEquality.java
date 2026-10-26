@@ -45,11 +45,12 @@ import java.util.function.UnaryOperator;
  * values for equality.
  *
  * <p>Equality is explicit in {@code =}, {@code <>}, {@code IS [NOT] DISTINCT FROM},
- * {@code NULLIF}, and {@code IN}; the parser rewrites {@code CASE x WHEN v} into {@code x = v}.
+ * {@code NULLIF}, {@code IN}, and in {@code =} or {@code <>} with {@code SOME}, {@code ANY},
+ * or {@code ALL}; the parser rewrites {@code CASE x WHEN v} into {@code x = v}.
  * Equality is implicit in {@code GROUP BY}, {@code DISTINCT}, {@code DISTINCT}
  * aggregates, {@code MODE}, {@code UNION}, {@code INTERSECT}, {@code EXCEPT},
- * {@code PARTITION BY}, {@code NATURAL JOIN}, {@code USING}, and in the ties of the
- * {@code RANK} family of window functions.
+ * {@code UNIQUE}, {@code PARTITION BY}, {@code NATURAL JOIN}, {@code USING}, and in the
+ * ties of the {@code RANK} family of window functions.
  *
  * <p>A value is floating point when its type is {@code REAL} or {@code DOUBLE}; a
  * {@code ROW}, {@code ARRAY}, or {@code MAP} value contains floating point values when
@@ -106,6 +107,14 @@ public class WarnFloatingPointEquality extends SqlBasicVisitor<Void> {
         return false;
     }
 
+    /** UNIQUE compares the rows of its query for equality */
+    void checkUnique(SqlCall call) {
+        RelDataType row = this.validator.getValidatedNodeTypeIfKnown(call.operand(0));
+        if (row == null || !row.isStruct())
+            return;
+        this.checkColumns(call.getParserPosition(), "UNIQUE", row.getFieldList());
+    }
+
     @Override
     public Void visit(SqlCall call) {
         if (call instanceof SqlSelect select) {
@@ -130,6 +139,8 @@ public class WarnFloatingPointEquality extends SqlBasicVisitor<Void> {
             this.checkAggregate(call);
         else if (call.getOperator() instanceof SqlInOperator in)
             this.checkIn(call, in);
+        else if (call.getKind() == SqlKind.UNIQUE)
+            this.checkUnique(call);
         else if (EQUALITY_OPERATORS.contains(call.getKind()))
             this.checkOperands(call, call.getOperator().getName());
         return super.visit(call);
@@ -299,11 +310,19 @@ public class WarnFloatingPointEquality extends SqlBasicVisitor<Void> {
             this.warn(expression.getParserPosition(), construct, describeValues(type), suffix);
     }
 
-    /** Warn if any of the columns is, or contains, a floating point value */
-    void checkColumns(SqlParserPos position, String construct, List<RelDataTypeField> columns) {
+    /** Warn if any of the columns that {@code construct} compares for equality is, or
+     * contains, a floating point value */
+    public static void checkColumns(IErrorReporter reporter, SourcePositionRange position,
+                                    String construct, List<RelDataTypeField> columns) {
         List<RelDataTypeField> floating = Linq.where(columns, field -> containsFloatingPoint(field.getType()));
         if (!floating.isEmpty())
-            this.warn(position, construct, describeColumns(floating), "");
+            reporter.reportWarning(position, WARNING, message(construct, describeColumns(floating), ""));
+    }
+
+    /** Warn if any of the columns is, or contains, a floating point value */
+    void checkColumns(SqlParserPos position, String construct, List<RelDataTypeField> columns) {
+        SourcePositionRange range = new SourcePositionRange(this.sourcePositionRemap.apply(position));
+        checkColumns(this.reporter, range, construct, columns);
     }
 
     void warn(SqlParserPos position, String construct, String values, String suffix) {
