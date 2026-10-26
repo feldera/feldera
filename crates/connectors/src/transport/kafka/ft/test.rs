@@ -58,7 +58,7 @@ use rand::thread_rng;
 use rdkafka::{
     ClientConfig,
     consumer::{BaseConsumer, Consumer},
-    producer::BaseRecord,
+    producer::{BaseRecord, Producer},
 };
 use rdkafka::{
     Message, Timestamp,
@@ -130,17 +130,16 @@ fn create_reader(
     DummyInputReceiver,
     Box<dyn InputReader>,
 ) {
-    create_reader_config(topic, resume_info, synchronize_partitions, None)
+    create_reader_config(topic, resume_info, synchronize_partitions, json!({}))
 }
 
-/// Like [`create_reader`], but with an optional `header_filter` added to the
-/// connector configuration.
+/// Like [`create_reader`], plus `extra_config` in the connector configuration.
 #[cfg(test)]
 fn create_reader_config(
     topic: &str,
     resume_info: Option<JsonValue>,
     synchronize_partitions: bool,
-    header_filter: Option<JsonValue>,
+    extra_config: JsonValue,
 ) -> (
     Box<dyn TransportInputEndpoint>,
     DummyInputReceiver,
@@ -152,11 +151,11 @@ fn create_reader_config(
         "start_from": "earliest",
         "synchronize_partitions": synchronize_partitions,
     });
-    if let Some(header_filter) = header_filter {
+    for (key, value) in extra_config.as_object().unwrap() {
         inner_config
             .as_object_mut()
             .unwrap()
-            .insert("header_filter".to_string(), header_filter);
+            .insert(key.clone(), value.clone());
     }
 
     let config = serde_json::from_value(json!({
@@ -410,6 +409,72 @@ fn test_synchronization_backpressure() {
     assert!(!BACKPRESSURE.lock().unwrap().contains(&partition0));
 }
 
+/// Prefetch for a partition that the reader does not drain stays near 4 MB.
+#[test]
+fn test_prefetch_limit() {
+    init_test_logger();
+
+    const TOPIC: &str = "prefetch_limit";
+    const MIB: usize = 1024 * 1024;
+    let mut _kafka_resources = KafkaResources::create_topics(&[(TOPIC, 2)]);
+
+    // Empty partition 1 stops synchronized partition 0 at 1000 messages, like a stuck parser.
+    let (_endpoint, _receiver, reader) =
+        create_reader_config(TOPIC, None, true, json!({"statistics.interval.ms": "1000"}));
+    reader.extend();
+
+    // 32 MiB: without the limit, librdkafka prefetches all of it.
+    let producer = TestProducer::new();
+    let payload = vec![b'x'; 16 * 1024];
+    for _ in 0..2048 {
+        let record = <BaseRecord<(), [u8], ()>>::to(TOPIC)
+            .payload(&payload)
+            .partition(0);
+        producer.producer.send(record).unwrap();
+    }
+    producer.producer.flush(Duration::from_secs(30)).unwrap();
+
+    wait(|| reader.memory() > 2 * MIB, 20000).expect("no prefetch measured");
+
+    // Watch a few more 1 s reports in case prefetch keeps growing.
+    let mut peak = 0;
+    for _ in 0..30 {
+        peak = peak.max(reader.memory());
+        sleep(Duration::from_millis(100));
+    }
+    // 4 MB limit plus up to 1 MiB from one fetch.
+    assert!(peak < 8 * MIB, "prefetch {peak} bytes exceeds the limit");
+}
+
+/// librdkafka accepts the defaults with options that interact with the fetch size.
+#[test]
+fn test_prefetch_defaults_accepted() {
+    for options in [
+        vec![],
+        vec![("message.max.bytes", "104857600")],
+        vec![("message.max.bytes", "0x6400000")],
+        vec![("message.max.bytes", " 104857600")],
+        vec![
+            ("queued.max.messages.kbytes", "1024"),
+            ("receive.message.max.bytes", "10000000"),
+        ],
+    ] {
+        let options = options
+            .into_iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect();
+        let mut config = KafkaInputConfig::default(options, "t");
+        config.validate().unwrap();
+        let mut client_config = ClientConfig::new();
+        for (key, value) in &config.kafka_options {
+            client_config.set(key, value);
+        }
+        if let Err(error) = client_config.create::<BaseConsumer>() {
+            panic!("{:?}: {error}", config.kafka_options);
+        }
+    }
+}
+
 #[cfg(test)]
 fn test_input(topic: &str, batch_sizes: &[u32]) {
     init_test_logger();
@@ -575,7 +640,7 @@ fn test_input_header_filter() {
     let filter = json!({"header": {"name": "keep", "pattern": "yes"}});
 
     let (endpoint, receiver, reader) =
-        create_reader_config(topic, None, false, Some(filter.clone()));
+        create_reader_config(topic, None, false, json!({"header_filter": filter.clone()}));
     reader.extend();
 
     // Offsets 0..6.  `keep=yes` at 0, 2, 4 are admitted; 1, 3 (`keep=no`) and 5
@@ -612,7 +677,8 @@ fn test_input_header_filter() {
 
     // Replay the recorded range with the same filter.  The filter is re-applied
     // during replay, so exactly the admitted records reappear, in order.
-    let (_endpoint, receiver, reader) = create_reader_config(topic, None, false, Some(filter));
+    let (_endpoint, receiver, reader) =
+        create_reader_config(topic, None, false, json!({"header_filter": filter}));
     receiver.inner.drop_buffered.store(true, Ordering::Release);
     reader.replay(serde_json::to_value(&metadata).unwrap(), RmpValue::Nil);
     receiver.expect(vec![ConsumerCall::Replayed { num_records: 3 }]);
@@ -642,7 +708,7 @@ fn test_input_header_filter_boolean() {
     });
 
     let (endpoint, receiver, reader) =
-        create_reader_config(topic, None, false, Some(filter.clone()));
+        create_reader_config(topic, None, false, json!({"header_filter": filter.clone()}));
     reader.extend();
 
     let producer = TestProducer::new();
@@ -687,7 +753,8 @@ fn test_input_header_filter_boolean() {
     drop(reader);
 
     // Replaying the recorded range reproduces the admitted records.
-    let (_endpoint, receiver, reader) = create_reader_config(topic, None, false, Some(filter));
+    let (_endpoint, receiver, reader) =
+        create_reader_config(topic, None, false, json!({"header_filter": filter}));
     receiver.inner.drop_buffered.store(true, Ordering::Release);
     reader.replay(serde_json::to_value(&metadata).unwrap(), RmpValue::Nil);
     receiver.expect(vec![ConsumerCall::Replayed { num_records: 2 }]);

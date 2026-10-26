@@ -45,6 +45,26 @@ The connector passes additional options directly to [**librdkafka**](https://git
     [input connector orchestration](/connectors/orchestration) or if
     the pipeline starts paused.
 
+* `queued.max.messages.kbytes`: The maximum size, in kilobytes, of the
+  messages that librdkafka prefetches for each partition.  The connector
+  default is 4096 (about 4 MB), not the librdkafka default of 65536.
+  Each partition that the connector reads can use this much memory,
+  plus one fetch (`max.partition.fetch.bytes`, 1 MiB by default).
+  If your messages are several MB or larger, increase this option to
+  read them faster.  Each partition then uses more memory.
+
+* `fetch.max.bytes`: If you do not set `queued.max.messages.kbytes`,
+  the connector sets this option to 52428800 (50 MiB), or to
+  `message.max.bytes` if that is larger.  Without this default,
+  librdkafka lowers this option to the `queued.max.messages.kbytes`
+  limit (about 4 MB), which reduces throughput.
+
+* `fetch.queue.backoff.ms`: The connector default is 10, not the
+  librdkafka default of 1000.  When the prefetch for a partition reaches
+  `queued.max.messages.kbytes`, librdkafka waits this many milliseconds
+  before it fetches again.  With 1000, messages larger than
+  `queued.max.messages.kbytes` are read slowly.
+
 ## Example usage
 
 We will create a Kafka connector named `book-fair-sales`.

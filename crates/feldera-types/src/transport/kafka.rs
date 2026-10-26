@@ -495,6 +495,15 @@ pub const DEFAULT_GROUP_JOIN_TIMEOUT: ConfigDuration = ConfigDuration::from_secs
 /// Default time to wait for the endpoint to connect to a Kafka broker.
 pub const DEFAULT_INITIALIZATION_TIMEOUT: ConfigDuration = ConfigDuration::from_secs(60);
 
+/// Default `queued.max.messages.kbytes`, the prefetch limit for each partition.
+const DEFAULT_QUEUED_MAX_MESSAGES_KBYTES: u64 = 4096;
+
+/// Lowest default `fetch.max.bytes`, which is the librdkafka default.
+const MIN_DEFAULT_FETCH_MAX_BYTES: u64 = 52_428_800;
+
+/// Default `fetch.queue.backoff.ms`.
+const DEFAULT_FETCH_QUEUE_BACKOFF_MS: u64 = 10;
+
 // The defaults as the OpenAPI schema shows them, one function per
 // `#[schema(default = ...)]`.
 fn default_group_join_timeout() -> String {
@@ -586,6 +595,34 @@ impl KafkaInputConfig {
         // Enable client context `stats` callback so we can periodically check
         // up on librdkafka memory usage.
         self.set_option_if_missing("statistics.interval.ms", "10000");
+
+        // Prefetch is per partition (split queues), so 64 MB x many partitions can OOM.
+        if !self
+            .kafka_options
+            .contains_key("queued.max.messages.kbytes")
+        {
+            self.kafka_options.insert(
+                "queued.max.messages.kbytes".into(),
+                DEFAULT_QUEUED_MAX_MESSAGES_KBYTES.to_string(),
+            );
+            // Keep the fetch size librdkafka used before, which it would lower to 4 MB.
+            // If we cannot parse message.max.bytes (librdkafka also takes hex), librdkafka decides.
+            let message_max_bytes = match self.kafka_options.get("message.max.bytes") {
+                None => Some(0),
+                Some(value) => value.parse::<u64>().ok(),
+            };
+            if let Some(message_max_bytes) = message_max_bytes {
+                let fetch_max_bytes = message_max_bytes
+                    .max(MIN_DEFAULT_FETCH_MAX_BYTES)
+                    .to_string();
+                self.set_option_if_missing("fetch.max.bytes", &fetch_max_bytes);
+            }
+        }
+        // At the 1 s default, each message over queued.max.messages.kbytes waits 1 s.
+        self.set_option_if_missing(
+            "fetch.queue.backoff.ms",
+            &DEFAULT_FETCH_QUEUE_BACKOFF_MS.to_string(),
+        );
 
         if let (Some(partitions), KafkaStartFromConfig::Offsets(offsets)) =
             (&self.partitions, &self.start_from)
@@ -679,6 +716,49 @@ fn test_kafka_header_value_deserialize() {
     assert!(serde_json::from_str::<KafkaHeaderValue>(r#"150"#).is_err());
 
     assert!(serde_json::from_str::<KafkaHeaderValue>(r#"{{"foo": "bar"}}"#).is_err());
+}
+
+#[cfg(test)]
+#[test]
+fn test_prefetch_limit_default_and_override() {
+    let mut config = KafkaInputConfig::default(BTreeMap::new(), "t");
+    config.validate().unwrap();
+    assert_eq!(config.kafka_options["queued.max.messages.kbytes"], "4096");
+    assert_eq!(config.kafka_options["fetch.max.bytes"], "52428800");
+    assert_eq!(config.kafka_options["fetch.queue.backoff.ms"], "10");
+
+    let options = BTreeMap::from([("message.max.bytes".into(), "104857600".into())]);
+    let mut config = KafkaInputConfig::default(options, "t");
+    config.validate().unwrap();
+    assert_eq!(config.kafka_options["fetch.max.bytes"], "104857600");
+
+    let options = BTreeMap::from([("message.max.bytes".into(), "1000".into())]);
+    let mut config = KafkaInputConfig::default(options, "t");
+    config.validate().unwrap();
+    assert_eq!(config.kafka_options["fetch.max.bytes"], "52428800");
+
+    // librdkafka also takes hex, which we do not parse, so librdkafka picks the fetch size.
+    let options = BTreeMap::from([("message.max.bytes".into(), "0x6400000".into())]);
+    let mut config = KafkaInputConfig::default(options, "t");
+    config.validate().unwrap();
+    assert!(!config.kafka_options.contains_key("fetch.max.bytes"));
+
+    // A user prefetch limit leaves `fetch.max.bytes` to librdkafka, as before.
+    let options = BTreeMap::from([("queued.max.messages.kbytes".into(), "65536".into())]);
+    let mut config = KafkaInputConfig::default(options, "t");
+    config.validate().unwrap();
+    assert_eq!(config.kafka_options["queued.max.messages.kbytes"], "65536");
+    assert!(!config.kafka_options.contains_key("fetch.max.bytes"));
+    assert_eq!(config.kafka_options["fetch.queue.backoff.ms"], "10");
+
+    let options = BTreeMap::from([
+        ("fetch.max.bytes".into(), "1000000".into()),
+        ("fetch.queue.backoff.ms".into(), "500".into()),
+    ]);
+    let mut config = KafkaInputConfig::default(options, "t");
+    config.validate().unwrap();
+    assert_eq!(config.kafka_options["fetch.max.bytes"], "1000000");
+    assert_eq!(config.kafka_options["fetch.queue.backoff.ms"], "500");
 }
 
 /// Kafka message header.
