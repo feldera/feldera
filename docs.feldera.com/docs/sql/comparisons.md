@@ -95,9 +95,29 @@ but always return a Boolean value (sometimes nullable):
     <td></td>
   </tr>
   <tr>
+    <td><a id="any"></a><code>value &lt;OP&gt; ANY (query)</code></td>
+    <td><code>true</code> if the comparison holds for some row of the query; <code>NULL</code> if it holds for no row and some comparison is <code>NULL</code>; <code>false</code> otherwise, also when the query has no rows.  <code>&lt;OP&gt;</code> is one of <code>=</code>, <code>&lt;&gt;</code>, <code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, and <code>&gt;=</code>; the query can be a <code>VALUES</code> list</td>
+    <td>Example: <code>10 &lt;= ANY (VALUES 10, 20, 30)</code> is <code>true</code></td>
+  </tr>
+  <tr>
+    <td><a id="some"></a><code>value &lt;OP&gt; SOME (query)</code></td>
+    <td>A synonym for <code>ANY</code></td>
+    <td>Example: <code>10 &lt;= SOME (VALUES 10, 20, 30)</code> is <code>true</code></td>
+  </tr>
+  <tr>
+    <td><a id="all"></a><code>value &lt;OP&gt; ALL (query)</code></td>
+    <td><code>true</code> if the comparison holds for every row of the query, also when the query has no rows; <code>NULL</code> if it fails for no row and some comparison is <code>NULL</code>; <code>false</code> otherwise</td>
+    <td>Example: <code>10 &lt;= ALL (VALUES 10, 20, 30)</code> is <code>true</code></td>
+  </tr>
+  <tr>
     <td><a id="exists"></a><code>EXISTS query</code></td>
     <td>check whether query results have at least one row</td>
     <td></td>
+  </tr>
+  <tr>
+    <td><a id="unique"></a><code>UNIQUE query</code></td>
+    <td><code>true</code> unless two rows of the query are equal and have no <code>NULL</code> column</td>
+    <td>a row with a <code>NULL</code> column is never a duplicate</td>
   </tr>
 </table>
 
