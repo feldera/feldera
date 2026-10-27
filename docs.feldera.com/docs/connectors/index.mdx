@@ -119,7 +119,10 @@ The following attributes are common to all connectors:
   will read into memory, before the endpoint pauses further reading
   until the pipeline has consumed some of the backlog.  We recommend
   setting `max_queued_size` rather than `max_queued_records` to limit
-  memory consumption, since records can be any size.
+  memory consumption, since records can be any size.  For a
+  [`distributed`](#distributed) connector, these limits apply to the
+  connector as a whole: each of the pipeline's hosts may queue its
+  share of them.
 
   For an output connector, `max_queued_records` is the maximum number
   that the endpoint will hold in memory waiting for the output

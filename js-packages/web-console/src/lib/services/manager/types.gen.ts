@@ -905,6 +905,8 @@ export type ConnectorConfig = OutputBufferConfig & {
    * For input endpoints, this setting bounds the number of records that have
    * been received from the input transport but haven't yet been consumed by
    * the circuit, since the circuit is still busy processing previous inputs.
+   * For a distributed input connector, the bound applies to the connector as
+   * a whole, and each host queues its share of it.
    *
    * For output endpoints, this setting bounds the number of records that have
    * been produced by the circuit but not yet sent via the output transport endpoint
@@ -926,7 +928,8 @@ export type ConnectorConfig = OutputBufferConfig & {
    * For input endpoints, this setting bounds the number of bytes that have
    * been received from the input transport but haven't yet been consumed by
    * the circuit since the circuit, since the circuit is still busy processing
-   * previous inputs.
+   * previous inputs.  For a distributed input connector, the bound applies
+   * to the connector as a whole, and each host queues its share of it.
    *
    * This setting is not yet implemented for output endpoints.
    *
