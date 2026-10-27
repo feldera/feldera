@@ -184,21 +184,6 @@ fn legacy_spelling_for(
     }
 }
 
-/// URL at which the compiler server serves the pipeline binary or UDF library with these
-/// checksums.
-pub(crate) fn compiler_binary_url(
-    common_config: &CommonConfig,
-    pipeline_id: PipelineId,
-    program_version: crate::db::types::version::Version,
-    source_checksum: &str,
-    integrity_checksum: &str,
-) -> String {
-    common_config.compiler_url(&format!(
-        "binary/{}/{}/{}/{}",
-        pipeline_id, program_version, source_checksum, integrity_checksum,
-    ))
-}
-
 /// Pipeline automaton monitors the runtime state of a single pipeline and continually reconciles
 /// actual with desired state. The automaton runs as a separate tokio task.
 pub struct PipelineAutomaton<T>
@@ -1299,14 +1284,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             (source_checksum.as_str(), binary_integrity_checksum.as_str())
         };
 
-        let binary_check_url = self.common_config.compiler_url(&format!(
-            "artifacts/{}/{}/{}/{}/{}",
+        let binary_check_url = self.common_config.compiler_artifacts_url(
             self.pipeline_id,
             program_version,
             source_checksum,
             binary_integrity_checksum,
             program_info_integrity_checksum,
-        ));
+        );
 
         match self
             .client
@@ -1544,8 +1528,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     storage_status_details: None,
                 };
             };
-            let program_binary_url = compiler_binary_url(
-                &self.common_config,
+            let program_binary_url = self.common_config.compiler_binary_url(
                 self.pipeline_id,
                 pipeline.program_version,
                 source_checksum,
@@ -1555,13 +1538,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         };
 
         // URL where the program info can be downloaded from
-        let program_info_url = self.common_config.compiler_url(&format!(
-            "program_info/{}/{}/{}/{}",
+        let program_info_url = self.common_config.compiler_program_info_url(
             self.pipeline_id,
             pipeline.program_version,
-            program_info_source_checksum,
+            &program_info_source_checksum,
             program_info_integrity_checksum,
-        ));
+        );
 
         let bootstrap_config =
             if Self::platform_version_requires_bootstrap_policy(&pipeline.platform_version) {

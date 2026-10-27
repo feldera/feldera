@@ -589,10 +589,7 @@ impl RunnerInteraction {
         // rather than forwarded verbatim, so the URL is well-formed whatever the caller
         // sent. `Full` renders empty, leaving the URL as it is without a cursor.
         let query = mode.to_query_string();
-        let separator = if query.is_empty() { "" } else { "?" };
-        let url = self
-            .common_config
-            .runner_url(&format!("logs/{}{separator}{query}", pipeline.id));
+        let url = self.common_config.runner_logs_url(pipeline.id, &query);
 
         // Perform request to the runner
         let response = client

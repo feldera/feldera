@@ -1282,13 +1282,7 @@ pub async fn run(
     // The base path is part of the reachable URL: with `--http-base-path` set,
     // the console lives at `<origin><base>/` and the API at `<origin><base>/v0`,
     // so a bare origin printed here would send the reader to a 404.
-    let url = format!(
-        "{}://{}:{}{}",
-        common_config.http_scheme(),
-        addr,
-        common_config.api_port,
-        base_path
-    );
+    let url = common_config.api_base_url(&addr, &base_path);
 
     // Lock both out streams so that the banner is printed in one go
     // and not interrupted by log messages from other threads.

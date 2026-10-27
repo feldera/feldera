@@ -11,7 +11,6 @@ use crate::db::types::version::Version;
 use crate::error::{ManagerError, source_error};
 use crate::pipeline_env::validate_pipeline_env;
 use crate::runner::error::RunnerError;
-use crate::runner::pipeline_automata::compiler_binary_url;
 use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use async_trait::async_trait;
@@ -544,8 +543,7 @@ impl LocalRunner {
         else {
             return Ok(None);
         };
-        let udf_library_url = compiler_binary_url(
-            &self.common_config,
+        let udf_library_url = self.common_config.compiler_binary_url(
             self.pipeline_id,
             program_version,
             &udf_library.source_checksum,
