@@ -124,7 +124,6 @@ import org.apache.calcite.sql.validate.SqlConformance;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
 import org.apache.calcite.sql.validate.SqlDelegatingConformance;
 import org.apache.calcite.sql.validate.SqlValidator;
-import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.sql2rel.ConvertToChecked;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.tools.RelBuilder;
@@ -770,11 +769,14 @@ public class SqlToRelCompiler implements IWritesLogs {
                 Collections.singletonList(calciteCatalog.schemaName),
                 this.typeFactory,
                 this.connectionConfig);
-        this.validator = SqlValidatorUtil.newValidator(
+        this.validator = new FelderaSqlValidator(
                 newOperatorTable,
                 catalogReader,
                 this.typeFactory,
-                validatorConfig
+                validatorConfig,
+                // The lambda reads the remap when the validator reports an error:
+                // a clone of this compiler replaces the remap after it creates its validator
+                position -> this.sourcePositionRemap.apply(position)
         );
         this.converter = new FelderaSqlToRelConverter(
                 (type, query, schema, path) -> null,
