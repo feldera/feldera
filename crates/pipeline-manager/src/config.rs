@@ -507,34 +507,84 @@ impl CommonConfig {
         if self.enable_https { "wss" } else { "ws" }
     }
 
+    /// Returns the URL of `path` on the server at `host:port`. An empty `path` gives the origin only.
+    fn service_url(&self, host: &str, port: u16, path: &str) -> String {
+        let scheme = self.http_scheme();
+        if path.is_empty() {
+            format!("{scheme}://{host}:{port}")
+        } else {
+            format!("{scheme}://{host}:{port}/{path}")
+        }
+    }
+
     /// Returns the URL of `path` on the API server.
     pub fn api_url(&self, path: &str) -> String {
-        format!(
-            "{}://{}:{}/{path}",
-            self.http_scheme(),
-            self.api_host,
-            self.api_port
-        )
+        self.service_url(&self.api_host, self.api_port, path)
+    }
+
+    /// Returns the base URL of the API server and web console at `host`: the origin plus
+    /// the HTTP base path. `base_path` is empty or starts with `/`.
+    pub fn api_base_url(&self, host: &str, base_path: &str) -> String {
+        self.service_url(host, self.api_port, base_path.trim_start_matches('/'))
     }
 
     /// Returns the URL of `path` on the compiler server.
     pub fn compiler_url(&self, path: &str) -> String {
-        format!(
-            "{}://{}:{}/{path}",
-            self.http_scheme(),
-            self.compiler_host,
-            self.compiler_port
-        )
+        self.service_url(&self.compiler_host, self.compiler_port, path)
+    }
+
+    /// Returns the compiler URL that serves the pipeline binary or UDF library with these checksums.
+    pub fn compiler_binary_url(
+        &self,
+        pipeline_id: PipelineId,
+        program_version: Version,
+        source_checksum: &str,
+        integrity_checksum: &str,
+    ) -> String {
+        self.compiler_url(&format!(
+            "binary/{pipeline_id}/{program_version}/{source_checksum}/{integrity_checksum}"
+        ))
+    }
+
+    /// Returns the compiler URL that serves the program info with these checksums.
+    pub fn compiler_program_info_url(
+        &self,
+        pipeline_id: PipelineId,
+        program_version: Version,
+        source_checksum: &str,
+        integrity_checksum: &str,
+    ) -> String {
+        self.compiler_url(&format!(
+            "program_info/{pipeline_id}/{program_version}/{source_checksum}/{integrity_checksum}"
+        ))
+    }
+
+    /// Returns the compiler URL that checks if the compilation artifacts with these checksums exist.
+    pub fn compiler_artifacts_url(
+        &self,
+        pipeline_id: PipelineId,
+        program_version: Version,
+        source_checksum: &str,
+        binary_integrity_checksum: &str,
+        program_info_integrity_checksum: &str,
+    ) -> String {
+        self.compiler_url(&format!(
+            "artifacts/{pipeline_id}/{program_version}/{source_checksum}/{binary_integrity_checksum}/{program_info_integrity_checksum}"
+        ))
     }
 
     /// Returns the URL of `path` on the runner server.
     pub fn runner_url(&self, path: &str) -> String {
-        format!(
-            "{}://{}:{}/{path}",
-            self.http_scheme(),
-            self.runner_host,
-            self.runner_port
-        )
+        self.service_url(&self.runner_host, self.runner_port, path)
+    }
+
+    /// Returns the runner URL of the logs of the pipeline. An empty `query_string` adds no `?`.
+    pub fn runner_logs_url(&self, pipeline_id: PipelineId, query_string: &str) -> String {
+        if query_string.is_empty() {
+            self.runner_url(&format!("logs/{pipeline_id}"))
+        } else {
+            self.runner_url(&format!("logs/{pipeline_id}?{query_string}"))
+        }
     }
 
     /// Returns the HTTP URL of `endpoint` on the pipeline at `location`.
@@ -1978,6 +2028,46 @@ mod tests {
         assert_eq!(
             https.pipeline_ws_url("10.0.0.1:8080", "query", "a=b"),
             "wss://10.0.0.1:8080/query?a=b"
+        );
+    }
+
+    #[test]
+    fn endpoint_urls_match_the_routes() {
+        let config = CommonConfig::test_config();
+        let id = PipelineId(uuid::Uuid::nil());
+        let version = Version(3);
+        let compiler = "http://127.0.0.1:8085";
+        assert_eq!(
+            config.compiler_binary_url(id, version, "src", "bin"),
+            format!("{compiler}/binary/{id}/3/src/bin")
+        );
+        assert_eq!(
+            config.compiler_program_info_url(id, version, "src", "info"),
+            format!("{compiler}/program_info/{id}/3/src/info")
+        );
+        assert_eq!(
+            config.compiler_artifacts_url(id, version, "src", "bin", "info"),
+            format!("{compiler}/artifacts/{id}/3/src/bin/info")
+        );
+
+        // An empty query string adds no `?`.
+        assert_eq!(
+            config.runner_logs_url(id, ""),
+            format!("http://127.0.0.1:8089/logs/{id}")
+        );
+        assert_eq!(
+            config.runner_logs_url(id, "follow=false"),
+            format!("http://127.0.0.1:8089/logs/{id}?follow=false")
+        );
+
+        // An empty base path gives the origin only, with no trailing `/`.
+        assert_eq!(
+            config.api_base_url("localhost", ""),
+            "http://localhost:8080"
+        );
+        assert_eq!(
+            config.api_base_url("localhost", "/feldera"),
+            "http://localhost:8080/feldera"
         );
     }
 
