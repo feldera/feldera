@@ -770,11 +770,14 @@ public class SqlToRelCompiler implements IWritesLogs {
                 Collections.singletonList(calciteCatalog.schemaName),
                 this.typeFactory,
                 this.connectionConfig);
-        this.validator = SqlValidatorUtil.newValidator(
+        this.validator = new FelderaSqlValidator(
                 newOperatorTable,
                 catalogReader,
                 this.typeFactory,
-                validatorConfig
+                validatorConfig,
+                // The lambda reads the remap when the validator reports an error:
+                // a clone of this compiler replaces the remap after it creates its validator
+                position -> this.sourcePositionRemap.apply(position)
         );
         this.converter = new FelderaSqlToRelConverter(
                 (type, query, schema, path) -> null,
