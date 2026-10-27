@@ -257,39 +257,75 @@ pub fn build_headers(headers: &Vec<KafkaHeader>) -> OwnedHeaders {
     result
 }
 
+/// A produce call that librdkafka refused for a reason other than a full
+/// queue. The exactly-once sink reads the Kafka error to decide whether the
+/// open transaction must be aborted.
+#[derive(Debug)]
+pub(crate) struct SendError {
+    pub topic: String,
+    pub error: KafkaError,
+}
+
+impl std::fmt::Display for SendError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "error sending Kafka message to topic '{}': {}",
+            self.topic, self.error
+        )
+    }
+}
+
+impl std::error::Error for SendError {
+    // `Display` prints the Kafka error already. Returning it here too would
+    // make `{:#}` print it twice.
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        None
+    }
+}
+
 /// Hands `record` to `producer`, waiting out a full producer queue.
 ///
 /// The wait is unbounded, so it ends on `shutdown`: this runs on the
 /// controller's output thread, a DBSP aux thread that `RuntimeHandle::kill`
 /// joins, and a queue that a down broker keeps full would otherwise hold the
 /// teardown open for as long as the broker stays down.
+///
+/// Returns the time spent waiting, zero when the queue had room. `on_wait`
+/// receives the cumulative wait after each attempt, including the final
+/// attempt on success or failure, so metrics include interrupted waits.
 pub fn kafka_send<T1, T2, C>(
     producer: &ThreadedProducer<C>,
     topic: &str,
     mut record: BaseRecord<T1, T2, C::DeliveryOpaque>,
     shutdown: &CancellationToken,
-) -> AnyResult<()>
+    on_wait: &mut dyn FnMut(Duration),
+) -> AnyResult<Duration>
 where
     T1: ToBytes + ?Sized,
     T2: ToBytes + ?Sized,
     C: ProducerContext,
 {
     let mut polling_interval = Duration::from_micros(10);
-    let mut start;
+    let mut start: Option<Instant> = None;
 
     loop {
-        match producer.send(record) {
-            Ok(()) => return Ok(()),
+        let result = producer.send(record);
+        if let Some(start) = start {
+            on_wait(start.elapsed());
+        }
+        match result {
+            Ok(()) => return Ok(start.map(|start| start.elapsed()).unwrap_or_default()),
             Err((e, r)) => match e {
                 KafkaError::MessageProduction(e) if is_retriable_send_error(e) => {
                     // Start timing after the first error.
-                    start = Some(Instant::now());
+                    let start = *start.get_or_insert_with(Instant::now);
                     record = r;
 
                     if shutdown.is_cancelled() {
                         bail!(
-                            "gave up sending a message to Kafka topic '{topic}' after {:?}                              because the pipeline is shutting down (error: {e})",
-                            start.unwrap().elapsed()
+                            "gave up sending a message to Kafka topic '{topic}' after {:?} because the pipeline is shutting down (error: {e})",
+                            start.elapsed()
                         );
                     }
 
@@ -298,7 +334,7 @@ where
                         warn!(
                             "Attempts to send a message to Kafka topic '{}' have failed for {:?}, will keep retrying (error: {e})",
                             &topic,
-                            start.unwrap().elapsed()
+                            start.elapsed()
                         );
                     }
 
@@ -307,7 +343,13 @@ where
                         polling_interval = min(polling_interval * 2, MAX_POLLING_INTERVAL);
                     }
                 }
-                _ => bail!("error sending Kafka message: {e}"),
+                _ => {
+                    return Err(SendError {
+                        topic: topic.to_owned(),
+                        error: e,
+                    }
+                    .into());
+                }
             },
         }
     }
@@ -607,6 +649,7 @@ mod send_tests {
     use super::{MAX_POLLING_INTERVAL, kafka_send};
     use rdkafka::ClientConfig;
     use rdkafka::producer::{BaseRecord, DefaultProducerContext, ThreadedProducer};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, mpsc};
     use std::time::Duration;
     use tokio_util::sync::CancellationToken;
@@ -635,6 +678,7 @@ mod send_tests {
             "test_topic",
             BaseRecord::<(), [u8], ()>::to("test_topic").payload(b"first".as_slice()),
             &shutdown,
+            &mut |_| {},
         )
         .expect("the first message must fit in the queue");
 
@@ -643,12 +687,17 @@ mod send_tests {
         let sending_producer = producer.clone();
         let sending_shutdown = shutdown.clone();
         let (done, send_returned) = mpsc::channel();
+        let reported_wait = Arc::new(AtomicU64::new(0));
+        let sending_wait = reported_wait.clone();
         let sender = std::thread::spawn(move || {
             let result = kafka_send(
                 &sending_producer,
                 "test_topic",
                 BaseRecord::<(), [u8], ()>::to("test_topic").payload(b"second".as_slice()),
                 &sending_shutdown,
+                &mut |waited| {
+                    sending_wait.store(waited.as_micros() as u64, Ordering::Release);
+                },
             );
             let _ = done.send(result.err());
         });
@@ -657,6 +706,10 @@ mod send_tests {
             send_returned.recv_timeout(MAX_POLLING_INTERVAL).is_err(),
             "a full queue must make `kafka_send` wait"
         );
+        assert!(
+            reported_wait.load(Ordering::Acquire) > 0,
+            "report an active wait"
+        );
 
         shutdown.cancel();
         let error = send_returned
@@ -664,6 +717,10 @@ mod send_tests {
             .expect("a shutdown must end the wait")
             .expect("a send that gave up must report an error");
         sender.join().unwrap();
+        assert!(
+            reported_wait.load(Ordering::Acquire) >= MAX_POLLING_INTERVAL.as_micros() as u64,
+            "report the entire wait even when shutdown interrupts it"
+        );
 
         assert!(
             error.to_string().contains("shutting down"),

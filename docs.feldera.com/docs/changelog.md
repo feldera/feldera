@@ -10,6 +10,22 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Behavior change (non-fault-tolerant Kafka output): temporary delivery
+  failures are retried without a deadline by default, replacing the former
+  five-minute limit. When the broker is down the producer queue fills,
+  the connector blocks, and the pipeline waits behind it until the broker is
+  back. Set `message.timeout.ms` or its alias `delivery.timeout.ms` in the
+  transport configuration to restore a bound. Permanent errors and explicit
+  timeout or retry limits can still lose records. The connector reports
+  unhealthy after a failed delivery, or when a message has waited ten seconds
+  for delivery with no delivery completed meanwhile, and recovers after
+  successful delivery when no messages remain overdue.
+  Broker connection failures are logged as warnings and no longer counted
+  as connector errors, since the queued records are not lost.
+  Metrics prefixed `kafka_output_` expose producer queue depth, delivery
+  counts, and queue wait time. See
+  [Kafka output delivery and metrics](/connectors/sinks/kafka#delivery-retries-and-backpressure).
+
 ## v0.371.0
 
 - Delta Lake input connector: `uc://` tables can use Databricks workload
