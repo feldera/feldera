@@ -70,12 +70,16 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
                 this.builder().append(", handle_").append(name).append(")");
         } else {
             this.builder().append("(");
+            Set<String> bound = new HashSet<>();
             for (int i = 0; i < node.outputCount(); i++) {
-                if (node.hasOutput(i)) {
-                    String portName = node.getOutput(i).getName(false);
+                if (!node.hasOutput(i))
+                    continue;
+                String portName = node.getOutput(i).getName(false);
+                // Two outputs of a recursive component can name the same stream, which the
+                // function that creates the component returns once
+                if (bound.add(portName))
                     this.builder().append(portName)
                             .append(",");
-                }
             }
             if (useHandles && node.is(DBSPInputMapWithWaterlineOperator.class)) {
                 this.builder().append("handle_").append(name);
