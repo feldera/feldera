@@ -2358,7 +2358,7 @@ pub mod test_http_helpers {
 
     use actix_test::{PayloadError, TestServer};
     use actix_web::{
-        App,
+        App, HttpMessage,
         http::StatusCode,
         middleware::Logger,
         web::{self, Data as WebData},
@@ -2385,6 +2385,7 @@ pub mod test_http_helpers {
     };
     use futures::{Stream, StreamExt};
 
+    use serde::de::DeserializeOwned;
     use serde_json::json;
     use tempfile::{NamedTempFile, TempDir};
 
@@ -2409,15 +2410,22 @@ pub mod test_http_helpers {
     use tracing::trace;
     use uuid::Uuid;
 
-    /// Per-request timeout for the test HTTP client.
+    /// Request timeout for the test HTTP client and server.
     ///
-    /// awc defaults to a 5s response timeout, shorter than the harness's own 20s
-    /// `async_wait`/completion budgets. Under CI load (or a k8s CPU-quota freeze)
-    /// the in-process server can stall past 5s and trip that deadline, panicking an
-    /// otherwise-healthy request. The `/ingress` POST is non-idempotent and cannot
-    /// be retried safely, so we widen the client deadline and let the higher-level
-    /// waits govern liveness.
+    /// Under CI load, the client or server can stall past their default 5s
+    /// deadlines. Extending only the client's timeout still lets the server
+    /// reject delayed request headers with an empty HTTP 408 response, which
+    /// awc's JSON reader reports as `ContentType`. Extend both deadlines;
+    /// `/ingress` uploads are non-idempotent and cannot be retried safely.
+    /// Polling helpers check their deadlines between requests, so a pending
+    /// request can outlast the polling budget.
     pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+
+    /// The test server's configuration, with [`REQUEST_TIMEOUT`] as its deadline
+    /// for reading a request's headers.
+    fn test_server_config() -> actix_test::TestServerConfig {
+        actix_test::config().client_request_timeout(REQUEST_TIMEOUT)
+    }
 
     /// Writes `config` to a temporary file, as a launcher writes `config.json`.
     pub(super) fn json_config_file(config: &serde_json::Value) -> NamedTempFile {
@@ -2647,29 +2655,45 @@ pub mod test_http_helpers {
     }
 
     pub(crate) async fn get_stats(server: &TestServer) -> ExternalControllerStatus {
-        server
-            .get("/stats")
-            .timeout(REQUEST_TIMEOUT)
-            .send()
-            .await
-            .unwrap()
-            .json::<ExternalControllerStatus>()
-            .await
-            .unwrap()
+        get_json(server, "/stats").await
     }
 
     pub(crate) async fn get_completion_status(
         server: &TestServer,
         token: &str,
     ) -> CompletionStatusResponse {
-        server
-            .get(format!("/completion_status?token={token}"))
+        get_json(server, &format!("/completion_status?token={token}")).await
+    }
+
+    async fn get_json<T: DeserializeOwned>(server: &TestServer, path: &str) -> T {
+        let mut response = server
+            .get(path)
+            .timeout(REQUEST_TIMEOUT)
             .send()
             .await
-            .unwrap()
-            .json::<CompletionStatusResponse>()
-            .await
-            .unwrap()
+            .unwrap_or_else(|error| panic!("GET {path} failed: {error}"));
+        let status = response.status();
+        let headers = response.headers().clone();
+        let is_json =
+            response.mime_type().ok().flatten().is_some_and(|mime| {
+                mime.subtype() == mime::JSON || mime.suffix() == Some(mime::JSON)
+            });
+        // Read the body before decoding it so unexpected responses retain the
+        // status, headers, and body in the failure report.
+        let body = response.body().await.unwrap_or_else(|error| {
+            panic!("GET {path}: {status}, headers: {headers:?}; reading body failed: {error}")
+        });
+        assert!(
+            status == StatusCode::OK && is_json,
+            "GET {path}: expected HTTP 200 JSON, got {status}, headers: {headers:?}, body: {}",
+            String::from_utf8_lossy(&body),
+        );
+        serde_json::from_slice(&body).unwrap_or_else(|error| {
+            panic!(
+                "GET {path}: invalid JSON: {error}; {status}, headers: {headers:?}, body: {}",
+                String::from_utf8_lossy(&body),
+            )
+        })
     }
 
     pub(crate) async fn print_stats(server: &TestServer) {
@@ -2790,7 +2814,9 @@ pub mod test_http_helpers {
             state.complete_initialization(controller).is_ok(),
             "a new server state takes the controller"
         );
-        actix_test::start(move || build_app(App::new(), state.clone()))
+        actix_test::start_with(test_server_config(), move || {
+            build_app(App::new(), state.clone())
+        })
     }
 
     /// Like [`start_test_server_with_state`], but the tables and views of the
@@ -2894,13 +2920,28 @@ pub mod test_http_helpers {
         }
 
         let state_ret = state.clone();
-        let server =
-            actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
+        let server = actix_test::start_with(test_server_config(), move || {
+            build_app(App::new().wrap(Logger::default()), state.clone())
+        });
 
+        // `/stats` answers 503 until the controller is in place. A request that
+        // fails outright counts as not ready too, and the deadline reports it.
         let start = Instant::now();
-        while server.get("/stats").send().await.unwrap().status() == StatusCode::SERVICE_UNAVAILABLE
-        {
-            assert!(start.elapsed() < Duration::from_millis(20_000));
+        loop {
+            let ready = match server.get("/stats").timeout(REQUEST_TIMEOUT).send().await {
+                Ok(response) => response.status() != StatusCode::SERVICE_UNAVAILABLE,
+                Err(error) => {
+                    trace!("GET /stats failed while the server starts: {error}");
+                    false
+                }
+            };
+            if ready {
+                break;
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(20),
+                "the test server did not become ready within 20 s"
+            );
             sleep(Duration::from_millis(200));
         }
 
@@ -2926,6 +2967,7 @@ pub mod test_http_helpers {
             let mut plain = server
                 .get("/dump_json_profile")
                 .no_decompress()
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap();
@@ -2946,6 +2988,7 @@ pub mod test_http_helpers {
                 .get("/dump_json_profile")
                 .insert_header(("accept-encoding", "gzip"))
                 .no_decompress()
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap();
@@ -2964,7 +3007,12 @@ pub mod test_http_helpers {
             assert_eq!(gz_json["graph"], plain_json["graph"]);
 
             // The dot profile is a zip with one `.dot` and `.txt` per worker plus a Makefile.
-            let mut dot = server.get("/dump_profile").send().await.unwrap();
+            let mut dot = server
+                .get("/dump_profile")
+                .timeout(REQUEST_TIMEOUT)
+                .send()
+                .await
+                .unwrap();
             assert_eq!(dot.status(), StatusCode::OK);
             assert_eq!(
                 dot.headers().get("content-type").unwrap(),
@@ -3130,6 +3178,7 @@ pub mod test_http_helpers {
             || async {
                 let Ok(status) = server
                     .get("/status")
+                    .timeout(REQUEST_TIMEOUT)
                     .send()
                     .await
                     .unwrap()
@@ -3148,14 +3197,24 @@ pub mod test_http_helpers {
 
     pub(crate) async fn start_pipeline(server: &TestServer) {
         println!("/start");
-        let resp = server.get("/start").send().await.unwrap();
+        let resp = server
+            .get("/start")
+            .timeout(REQUEST_TIMEOUT)
+            .send()
+            .await
+            .unwrap();
         assert!(resp.status().is_success());
         wait_for_status(server, RuntimeStatus::Running).await;
     }
 
     pub(crate) async fn pause_pipeline(server: &TestServer) {
         println!("/pause");
-        let resp = server.get("/pause").send().await.unwrap();
+        let resp = server
+            .get("/pause")
+            .timeout(REQUEST_TIMEOUT)
+            .send()
+            .await
+            .unwrap();
         assert!(resp.status().is_success());
         wait_for_status(server, RuntimeStatus::Paused).await;
     }
@@ -3180,7 +3239,12 @@ pub mod test_http_helpers {
         storage_dir: Option<&Path>,
     ) {
         println!("/suspend");
-        let resp = server.post("/suspend").send().await.unwrap();
+        let resp = server
+            .post("/suspend")
+            .timeout(REQUEST_TIMEOUT)
+            .send()
+            .await
+            .unwrap();
         assert!(resp.status().is_success());
         wait_for_status(server, RuntimeStatus::Suspended).await;
         if let Some(storage_dir) = storage_dir {
@@ -3219,7 +3283,12 @@ pub mod test_http_helpers {
             .append_pair("sql", sql)
             .append_pair("format", "json")
             .finish();
-        let mut resp = server.get(format!("/query?{qs}")).send().await.unwrap();
+        let mut resp = server
+            .get(format!("/query?{qs}"))
+            .timeout(REQUEST_TIMEOUT)
+            .send()
+            .await
+            .unwrap();
         assert!(
             resp.status().is_success(),
             "ad-hoc query failed: {}",
@@ -3242,7 +3311,12 @@ pub mod test_http_helpers {
             .append_pair("sql", sql)
             .append_pair("format", "json")
             .finish();
-        let mut resp = server.get(format!("/query?{qs}")).send().await.unwrap();
+        let mut resp = server
+            .get(format!("/query?{qs}"))
+            .timeout(REQUEST_TIMEOUT)
+            .send()
+            .await
+            .unwrap();
         assert!(
             resp.status().is_success(),
             "ad-hoc query failed: {}",
@@ -3337,8 +3411,8 @@ pub mod test_with_kafka {
                 start_input_endpoint,
             },
             test_http_helpers::{
-                get_completion_status, get_stats, pause_pipeline, print_stats, send_input_no_wait,
-                start_pipeline, start_test_server, wait_for_completion,
+                REQUEST_TIMEOUT, get_completion_status, get_stats, pause_pipeline, print_stats,
+                send_input_no_wait, start_pipeline, start_test_server, wait_for_completion,
             },
         },
         test::{engine_test, pipeline::PipelineTestEngine, rows, suites::controller::relation},
@@ -3439,7 +3513,12 @@ pub mod test_with_kafka {
             get_stats(&server).await;
 
             println!("/metadata");
-            let resp = server.get("/metadata").send().await.unwrap();
+            let resp = server
+                .get("/metadata")
+                .timeout(REQUEST_TIMEOUT)
+                .send()
+                .await
+                .unwrap();
             assert!(resp.status().is_success());
 
             // Pause input endpoint.
@@ -3487,6 +3566,7 @@ pub mod test_with_kafka {
                 assert!(
                     server
                         .post("/egress/test_output1")
+                        .timeout(REQUEST_TIMEOUT)
                         .send()
                         .await
                         .unwrap()
@@ -3499,12 +3579,14 @@ pub mod test_with_kafka {
             println!("Connecting to HTTP output endpoint");
             let mut resp1 = server
                 .post("/egress/test_output1?backpressure=true")
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap();
 
             let mut resp2 = server
                 .post("/egress/test_output1?backpressure=true")
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap();
@@ -5898,13 +5980,23 @@ pub mod test_http {
 
     async fn start_transaction(server: &TestServer) {
         println!("/start_transaction");
-        let resp = server.post("/start_transaction").send().await.unwrap();
+        let resp = server
+            .post("/start_transaction")
+            .timeout(REQUEST_TIMEOUT)
+            .send()
+            .await
+            .unwrap();
         assert!(resp.status().is_success());
     }
 
     async fn commit_transaction(server: &TestServer) {
         println!("/commit_transaction");
-        let resp = server.post("/commit_transaction").send().await.unwrap();
+        let resp = server
+            .post("/commit_transaction")
+            .timeout(REQUEST_TIMEOUT)
+            .send()
+            .await
+            .unwrap();
         assert!(resp.status().is_success());
     }
 
@@ -5913,6 +6005,7 @@ pub mod test_http {
         println!("/input_endpoints/{endpoint_name}/start");
         let resp = server
             .get(format!("/input_endpoints/{endpoint_name}/start"))
+            .timeout(REQUEST_TIMEOUT)
             .send()
             .await
             .unwrap();
@@ -5924,6 +6017,7 @@ pub mod test_http {
         println!("/input_endpoints/{endpoint_name}/pause");
         let resp = server
             .get(format!("/input_endpoints/{endpoint_name}/pause"))
+            .timeout(REQUEST_TIMEOUT)
             .send()
             .await
             .unwrap();
@@ -5945,7 +6039,12 @@ pub mod test_http {
             .await;
             start_pipeline(&server).await;
 
-            let mut response = server.get("/lir").send().await.unwrap();
+            let mut response = server
+                .get("/lir")
+                .timeout(REQUEST_TIMEOUT)
+                .send()
+                .await
+                .unwrap();
             let body = response.body().limit(64 << 20).await.unwrap();
             if engine.has(Capability::Lir) {
                 assert_eq!(response.status(), StatusCode::OK);
@@ -5983,6 +6082,7 @@ pub mod test_http {
             .finish();
         let mut response = server
             .post(format!("/ingress/test_input1?{query}"))
+            .timeout(REQUEST_TIMEOUT)
             .send_body(body)
             .await
             .unwrap();
@@ -6070,6 +6170,7 @@ pub mod test_http {
         let mut response = server
             .post("/testing/load")
             .insert_header(("Content-Type", "application/json"))
+            .timeout(REQUEST_TIMEOUT)
             .send_body(body.into())
             .await
             .unwrap();
@@ -6153,6 +6254,7 @@ pub mod test_http {
 
             let mut response = server
                 .post("/testing/load?udf_library=/no/such/libudf.so")
+                .timeout(REQUEST_TIMEOUT)
                 .send_json(&json!({"name": "program_b", "inputs": {}, "outputs": {}}))
                 .await
                 .unwrap();
@@ -6197,6 +6299,7 @@ pub mod test_http {
             let memory_max = || async {
                 let status = server
                     .get("/status")
+                    .timeout(REQUEST_TIMEOUT)
                     .send()
                     .await
                     .unwrap()
@@ -6211,6 +6314,7 @@ pub mod test_http {
 
             let response = server
                 .patch("/dynamic_config")
+                .timeout(REQUEST_TIMEOUT)
                 .send_json(&json!({"resources": {"memory_max": "600MB"}}))
                 .await
                 .unwrap();
@@ -6242,6 +6346,7 @@ pub mod test_http {
                         .post(format!(
                             "/ingress/test_input1?format=json&update_format={update_format}"
                         ))
+                        .timeout(REQUEST_TIMEOUT)
                         .send_body(r#"{"weight": 1, "data": {}}"#),
                 )
                 .await
@@ -6319,6 +6424,7 @@ pub mod test_http {
 
             let mut response = server
                 .post("/ingress/test_input1?format=json&update_format=raw")
+                .timeout(REQUEST_TIMEOUT)
                 .send_body(r#"{"id": 2, "b": false, "i": 2, "s": "b"}"#)
                 .await
                 .unwrap();
@@ -6450,6 +6556,7 @@ pub mod test_http {
             for datum in &datums {
                 let mut response = server
                     .post(format!("/ingress/test_input1?{query}"))
+                    .timeout(REQUEST_TIMEOUT)
                     .send_body(datum.clone())
                     .await
                     .unwrap();
@@ -6465,6 +6572,7 @@ pub mod test_http {
             let two_datums = [datums[0].as_slice(), datums[1].as_slice()].concat();
             let mut response = server
                 .post(format!("/ingress/test_input1?{query}"))
+                .timeout(REQUEST_TIMEOUT)
                 .send_body(two_datums)
                 .await
                 .unwrap();
@@ -6475,6 +6583,7 @@ pub mod test_http {
 
             let mut response = server
                 .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap();
@@ -6523,6 +6632,7 @@ pub mod test_http {
 
             let mut response = server
                 .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap();
@@ -6569,6 +6679,7 @@ pub mod test_http {
 
             let mut response2 = server
                 .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap();
@@ -6631,6 +6742,7 @@ pub mod test_http {
 
             let mut response = server
                 .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap();
@@ -6820,6 +6932,7 @@ pub mod test_http {
 
             let listed: Vec<Uuid> = server
                 .get("/checkpoints")
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap()
@@ -7070,6 +7183,7 @@ pub mod test_http {
             .await;
             let response = server
                 .post("/testing/load")
+                .timeout(REQUEST_TIMEOUT)
                 .send_json(&json!({"name": "b", "inputs": {}, "outputs": {}}))
                 .await
                 .unwrap();
@@ -7395,6 +7509,7 @@ pub mod test_http {
 
             let resp = server
                 .post("/checkpoint")
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap()
@@ -7412,6 +7527,7 @@ pub mod test_http {
             loop {
                 let status = server
                     .get("/checkpoint_status")
+                    .timeout(REQUEST_TIMEOUT)
                     .send()
                     .await
                     .unwrap()
@@ -7449,6 +7565,7 @@ pub mod test_http {
                 .get(format!(
                     "/checkpoint_status?incarnation_uuid={stale_incarnation_uuid}"
                 ))
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap();
@@ -7458,6 +7575,7 @@ pub mod test_http {
             // backward-compatible behavior for clients that don't send it.
             let status = server
                 .get("/checkpoint_status")
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap()
@@ -7474,6 +7592,7 @@ pub mod test_http {
     async fn take_checkpoint(server: &TestServer, state: &ServerState) -> Uuid {
         let sequence_number = server
             .post("/checkpoint")
+            .timeout(REQUEST_TIMEOUT)
             .send()
             .await
             .unwrap()
@@ -7485,6 +7604,7 @@ pub mod test_http {
             || async {
                 let status = server
                     .get("/checkpoint_status")
+                    .timeout(REQUEST_TIMEOUT)
                     .send()
                     .await
                     .unwrap()
@@ -8042,6 +8162,7 @@ pub mod test_http {
             println!("Connecting to HTTP output endpoint");
             let mut egress_resp = server
                 .post("/egress/test_output1?backpressure=true")
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap();
@@ -8070,6 +8191,7 @@ pub mod test_http {
 
             let mut egress = server
                 .post("/egress/test_output1?format=csv")
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap();
@@ -8081,6 +8203,7 @@ pub mod test_http {
             let record = r#"{"id": 1, "b": true, "i": 5, "s": "x"}"#;
             let mut response = server
                 .post("/ingress/test_input1?format=json&update_format=insert_delete")
+                .timeout(REQUEST_TIMEOUT)
                 .send_body(format!(
                     "{{\"insert\": {record}}}\n{{\"delete\": {record}}}"
                 ))
@@ -8119,6 +8242,7 @@ pub mod test_http {
 
             let mut egress = server
                 .post("/egress/test_output1?format=csv")
+                .timeout(REQUEST_TIMEOUT)
                 .send()
                 .await
                 .unwrap();
