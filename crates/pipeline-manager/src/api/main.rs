@@ -1284,11 +1284,7 @@ pub async fn run(
     // so a bare origin printed here would send the reader to a 404.
     let url = format!(
         "{}://{}:{}{}",
-        if common_config.enable_https {
-            "https"
-        } else {
-            "http"
-        },
+        common_config.http_scheme(),
         addr,
         common_config.api_port,
         base_path
