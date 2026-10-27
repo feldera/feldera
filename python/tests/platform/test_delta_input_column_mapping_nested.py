@@ -29,14 +29,19 @@ FIXTURE_VERSION = "v1"
 _FIXTURE_BUILDER = Path(__file__).parent / "fixtures" / "column_mapping_nested.py"
 
 
-def _build_sql(loc: DeltaTestLocation) -> str:
+def _build_sql(
+    loc: DeltaTestLocation,
+    extra_config: dict[str, object] | None = None,
+    distributed: bool = False,
+) -> str:
     config = dict(loc.connector_config)
     # Replay v1 + v2 (v0 is the empty CREATE) through the follow path.
-    config.update({"version": 0, "end_version": 2})
+    config.update(extra_config or {"version": 0, "end_version": 2})
     connectors = json.dumps(
         [
             {
                 "name": CONNECTOR,
+                "distributed": distributed,
                 "transport": {"name": "delta_table_input", "config": config},
             }
         ]
@@ -99,6 +104,46 @@ def test_delta_input_column_mapping_nested_follow(pipeline_name):
             "follow must resolve the nested column-mapped struct children to "
             f"their logical names; got {rows}"
         )
+
+        pipeline.stop(force=True)
+    finally:
+        loc.cleanup()
+
+
+def test_delta_input_column_mapping_nested_distributed_filter(pipeline_name):
+    """A distributed snapshot of a nested column-mapped table applies a
+    ``filter`` that names a nested field (#7657). Each host reads its part of
+    the snapshot as raw Parquet, so the nested names must be logical before the
+    filter runs."""
+    loc = DeltaTestLocation.create(
+        pipeline_name,
+        mode="snapshot",
+        stable_subpath=f"column_mapping_nested_{FIXTURE_VERSION}",
+    )
+    try:
+        ensure_delta_spark_fixture(loc, _FIXTURE_BUILDER)
+
+        pipeline = PipelineBuilder(
+            TEST_CLIENT,
+            pipeline_name,
+            sql=_build_sql(
+                loc,
+                {"filter": "after.transaction__amount <> '20'"},
+                distributed=True,
+            ),
+            runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+            ),
+        ).create_or_replace()
+        pipeline.start()
+        pipeline.wait_for_completion(force_stop=False, timeout_s=600)
+
+        ids = sorted(
+            r["id"]
+            for r in pipeline.query(f"SELECT after.transaction__id AS id FROM {TABLE}")
+        )
+        assert ids == ["t1", "t3"], f"the nested filter must drop t2; got {ids}"
 
         pipeline.stop(force=True)
     finally:
