@@ -211,6 +211,10 @@ impl StaticTestEngine {
             use crate::test::data::DeltaTestKey;
             engine.serve::<records::EveryType>(delta_table::relation(), BTreeMap::new());
             engine.serve::<records::EveryType>(delta_table::lateness_relation(), BTreeMap::new());
+            engine.serve::<records::EveryType>(
+                delta_table::coarse_lateness_relation(),
+                BTreeMap::new(),
+            );
             engine.serve_index::<DeltaTestKey, records::EveryType>(
                 delta_table::key_relation(),
                 delta_table::relation(),

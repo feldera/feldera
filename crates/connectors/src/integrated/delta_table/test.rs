@@ -2699,6 +2699,21 @@ pub fn lateness_relation() -> Relation {
     relation
 }
 
+/// [`lateness_relation`] with a lateness of 1000 days on `timestamp_ntz`. The test rows have
+/// timestamps from 1970 to 2100, so a read ordered by `timestamp_ntz` with a 10-day lateness
+/// runs about 4,750 range queries, and each one decodes most of the table. A 1000-day lateness
+/// runs about 48.
+pub fn coarse_lateness_relation() -> Relation {
+    let mut relation = lateness_relation();
+    relation.name = "delta_table_coarse_lateness".into();
+    for field in &mut relation.fields {
+        if field.name.name() == "timestamp_ntz" {
+            *field = field.clone().with_lateness("interval '1000 days'");
+        }
+    }
+    relation
+}
+
 /// The index of [`relation`] on `bigint`.
 pub fn key_relation() -> Relation {
     Relation::new(
@@ -8969,10 +8984,10 @@ pub fn file_output_proptest(engine: &dyn PipelineTestEngine) {
     let zset = file_zset(&relation(), &json_file_filtered);
     assert_eq!(zset, expected_filtered_zset);
 
-    // Order delta table by `timestamp`.
+    // Order delta table by `timestamp`, in 1000-day ranges.
     let json_file_ordered_by_ts = delta_table_snapshot_to_json(engine,
         &table_uri,
-        &lateness_relation(),
+        &coarse_lateness_relation(),
         &HashMap::from([("timestamp_column".to_string(), "timestamp_ntz".to_string())]));
 
     let zset = file_zset(&relation(), &json_file_ordered_by_ts);
@@ -8981,7 +8996,7 @@ pub fn file_output_proptest(engine: &dyn PipelineTestEngine) {
     // Order delta table by `timestamp`; specify an empty filter condition
     let json_file_ordered_by_ts = delta_table_snapshot_to_json(engine,
         &table_uri,
-        &lateness_relation(),
+        &coarse_lateness_relation(),
         &HashMap::from([("timestamp_column".to_string(), "timestamp_ntz".to_string()), ("snapshot_filter".to_string(), "timestamp_ntz < timestamp '1970-01-01T00:00:00'".to_string())]));
 
     let zset = file_zset(&relation(), &json_file_ordered_by_ts);
