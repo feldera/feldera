@@ -16,6 +16,13 @@ Source edition can be found on github.
   token) instead of `unity_client_secret`. See
   [Unity catalog](/connectors/sources/delta).
 
+- Bug fix (Python SDK, fda): `commit_transaction(transaction_id=N)` and
+  `fda commit-transaction` failed with "doesn't match current active
+  transaction" if an earlier transaction, for example one that a connector
+  started, was still committing. Without a transaction ID, they returned
+  before the API's transaction committed. Now both wait for the transaction
+  that `start_transaction` started.
+
 ## v0.370.0
 
 - Experimental (Enterprise, Kubernetes): a resize of `memory_max` with

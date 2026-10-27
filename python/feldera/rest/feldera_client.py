@@ -89,6 +89,40 @@ def _validate_no_none_keys_in_map(data):
         return
 
 
+def _open_api_transaction(global_metrics: Mapping[str, Any]) -> Optional[int]:
+    """Return the ID of the transaction that the API started and did not yet
+    commit, or `None` if there is no such transaction.
+
+    `transaction_id` in `global_metrics` is the transaction that the pipeline
+    runs now.  That can be an earlier transaction that is still committing, so
+    this uses the initiators of the transaction instead.
+    """
+
+    initiators = global_metrics.get("transaction_initiators")
+    if initiators is None:
+        # A pipeline that does not report initiators.
+        return global_metrics["transaction_id"] or None
+    if initiators.get("initiated_by_api") != "Started":
+        return None
+    return initiators.get("transaction_id")
+
+
+def _transaction_pending(
+    global_metrics: Mapping[str, Any], transaction_id: int
+) -> bool:
+    """Return true if transaction `transaction_id` did not yet commit.
+
+    The transaction can be the one that the pipeline runs now, or the next one,
+    which waits for an earlier transaction to commit.
+    """
+
+    initiators = global_metrics.get("transaction_initiators") or {}
+    return transaction_id in (
+        global_metrics["transaction_id"],
+        initiators.get("transaction_id"),
+    )
+
+
 def _prepare_boolean_input(value: bool) -> str:
     return "true" if value else "false"
 
@@ -1212,9 +1246,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         # TODO: implement this without using /stats when we have a better pipeline status reporting API.
         stats = self.get_pipeline_stats(pipeline_name)
-        current_transaction_id = stats["global_metrics"]["transaction_id"]
+        current_transaction_id = _open_api_transaction(stats["global_metrics"])
 
-        if current_transaction_id == 0:
+        if current_transaction_id is None:
             raise RuntimeError(
                 "Attempting to commit a transaction, but there is no transaction in progress"
             )
@@ -1253,7 +1287,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                     raise TimeoutError("Timed out waiting for transaction to commit")
 
             stats = self.get_pipeline_stats(pipeline_name)
-            if stats["global_metrics"]["transaction_id"] != transaction_id:
+            if not _transaction_pending(stats["global_metrics"], transaction_id):
                 wait_for_commit.done()
                 return
 
