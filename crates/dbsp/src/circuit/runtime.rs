@@ -820,9 +820,9 @@ impl RuntimeInner {
 // correctly for threads from different DBSP runtimes or for threads
 // that don't belong to any DBSP runtime since it uses `RUNTIME`
 // thread-local variable to detect a DBSP runtime.
-fn panic_hook(panic_info: &PanicHookInfo<'_>, default_panic_hook: &dyn Fn(&PanicHookInfo<'_>)) {
-    // Call the default panic hook first.
-    default_panic_hook(panic_info);
+fn panic_hook(panic_info: &PanicHookInfo<'_>, previous_panic_hook: &dyn Fn(&PanicHookInfo<'_>)) {
+    // Call the previous panic hook first.
+    previous_panic_hook(panic_info);
 
     // A thread-local destructor can panic after `RUNTIME` is gone.  Panicking
     // again here would turn a panic that the caller catches into an abort.
@@ -853,19 +853,22 @@ impl WeakRuntime {
     }
 }
 
-/// Stores the default Rust panic hook, so we can invoke it as part of
-/// the DBSP custom hook.
+/// Stores the panic hook that was installed before the first DBSP runtime
+/// started, so that the DBSP custom hook can call it.
+///
+/// This is the default Rust panic hook, unless the process installed its own,
+/// such as the pipeline server's hook that counts panics for the
+/// `process_panics_total` metric.  It must not be dropped, or such a hook
+/// silently stops working.  It is taken only once, before DBSP installs its
+/// own hook, so the DBSP hook never calls itself.
 #[allow(clippy::type_complexity)]
-static DEFAULT_PANIC_HOOK: Lazy<Box<dyn Fn(&PanicHookInfo<'_>) + 'static + Sync + Send>> =
-    Lazy::new(|| {
-        // Clear any hooks installed by other libraries.
-        let _ = panic::take_hook();
-        panic::take_hook()
-    });
+static PREVIOUS_PANIC_HOOK: Lazy<Box<dyn Fn(&PanicHookInfo<'_>) + 'static + Sync + Send>> =
+    Lazy::new(panic::take_hook);
 
-/// Returns the default Rust panic hook.
-fn default_panic_hook() -> &'static (dyn Fn(&PanicHookInfo<'_>) + 'static + Sync + Send) {
-    &*DEFAULT_PANIC_HOOK
+/// Returns the panic hook that was installed before the first DBSP runtime
+/// started.
+fn previous_panic_hook() -> &'static (dyn Fn(&PanicHookInfo<'_>) + 'static + Sync + Send) {
+    &*PREVIOUS_PANIC_HOOK
 }
 
 impl Runtime {
@@ -922,9 +925,9 @@ impl Runtime {
         let runtime = Self(Arc::new(RuntimeInner::new(config)?));
 
         // Install custom panic hook.
-        let default_hook = default_panic_hook();
+        let previous_hook = previous_panic_hook();
         panic::set_hook(Box::new(move |panic_info| {
-            panic_hook(panic_info, default_hook)
+            panic_hook(panic_info, previous_hook)
         }));
 
         // Create a tokio runtime for async merger tasks.
