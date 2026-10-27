@@ -33,7 +33,7 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void issue3653() {
         this.statementsFailingInCompilation("CREATE TYPE t AS (related t ARRAY);",
-                "error: Compilation error: At line 1, column 27: Unknown identifier 't'");
+                "1:27: error: Compilation error: Unknown identifier 't'");
     }
 
     @Test
@@ -514,7 +514,7 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void issue3041() {
         this.statementsFailingInCompilation("CREATE MATERIALIZED VIEW v199 AS SELECT TRIM();",
-                "Error parsing SQL: Encountered \")\" at line 1");
+                "Error parsing SQL: Encountered \")\".\n");
     }
 
     @Test
