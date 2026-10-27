@@ -56,6 +56,23 @@ pub(crate) fn select_share<T, K: Ord>(
         .collect()
 }
 
+/// Reports how many of the snapshot's files this host reads, out of how many
+/// (see `InputConsumer::set_input_share`).
+#[derive(Clone)]
+pub(crate) struct ShareReporter(Arc<dyn Fn(usize, usize) + Send + Sync>);
+
+impl ShareReporter {
+    pub(crate) fn new(report: impl Fn(usize, usize) + Send + Sync + 'static) -> Self {
+        Self(Arc::new(report))
+    }
+}
+
+impl std::fmt::Debug for ShareReporter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ShareReporter")
+    }
+}
+
 /// A table of one host's share of an Iceberg table snapshot.
 #[derive(Debug)]
 pub(crate) struct IcebergShareTableProvider {
@@ -67,17 +84,21 @@ pub(crate) struct IcebergShareTableProvider {
     snapshot_id: Option<i64>,
     schema: ArrowSchemaRef,
     shard: InputShard,
+    report_share: ShareReporter,
 }
 
 impl IcebergShareTableProvider {
     /// Returns `shard`'s share of snapshot `snapshot_id` of `table`, whose
     /// schema is `schema` (the schema of the whole snapshot's provider).
+    /// Reading the share calls `report_share` with the number of files that
+    /// this host reads and the number in the snapshot.
     pub(crate) fn new(
         endpoint_name: &str,
         table: Table,
         snapshot_id: Option<i64>,
         schema: ArrowSchemaRef,
         shard: InputShard,
+        report_share: ShareReporter,
     ) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
@@ -85,6 +106,7 @@ impl IcebergShareTableProvider {
             snapshot_id,
             schema,
             shard,
+            report_share,
         }
     }
 }
@@ -121,6 +143,7 @@ impl TableProvider for IcebergShareTableProvider {
             table: self.table.clone(),
             snapshot_id: self.snapshot_id,
             shard: self.shard,
+            report_share: self.report_share.clone(),
             properties: Arc::new(PlanProperties::new(
                 EquivalenceProperties::new(output_schema),
                 Partitioning::UnknownPartitioning(1),
@@ -149,6 +172,7 @@ struct IcebergShareScan {
     table: Table,
     snapshot_id: Option<i64>,
     shard: InputShard,
+    report_share: ShareReporter,
     properties: Arc<PlanProperties>,
     /// `None` reads every column.
     column_names: Option<Vec<String>>,
@@ -169,6 +193,7 @@ impl IcebergShareScan {
         column_names: Option<Vec<String>>,
         predicate: Option<Predicate>,
         shard: InputShard,
+        report_share: ShareReporter,
     ) -> DFResult<BoxStream<'static, DFResult<RecordBatch>>> {
         let Some(snapshot_id) = snapshot_id else {
             info!(
@@ -199,6 +224,7 @@ impl IcebergShareScan {
             |task| (task.data_file_path().to_string(), task.start()),
             &shard,
         );
+        (report_share.0)(tasks.len(), n_tasks);
         info!(
             "iceberg {endpoint_name}: host {} reads {} of the snapshot's {n_tasks} files",
             shard.host(),
@@ -278,6 +304,7 @@ impl ExecutionPlan for IcebergShareScan {
             self.column_names.clone(),
             self.predicate.clone(),
             self.shard,
+            self.report_share.clone(),
         );
         Ok(Box::pin(RecordBatchStreamAdapter::new(
             self.properties.eq_properties.schema().clone(),
@@ -292,7 +319,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{select_share, IcebergShareScan};
+    use super::{select_share, IcebergShareScan, ShareReporter};
     use feldera_storage::tokio::TOKIO;
     use feldera_types::coordination::{InputDistribution, InputShard};
     use futures_util::TryStreamExt;
@@ -374,7 +401,9 @@ mod tests {
     #[test]
     fn no_chosen_snapshot_reads_nothing() {
         let table = table_with_unreadable_snapshot();
+        let reported = Arc::new(std::sync::Mutex::new(Vec::new()));
         let read = |snapshot_id| {
+            let reported = reported.clone();
             TOKIO.block_on(async {
                 IcebergShareScan::read(
                     "t".to_string(),
@@ -383,6 +412,9 @@ mod tests {
                     None,
                     None,
                     InputShard::ALL,
+                    ShareReporter::new(move |mine, total| {
+                        reported.lock().unwrap().push((mine, total))
+                    }),
                 )
                 .await?
                 .try_collect::<Vec<_>>()
@@ -390,6 +422,9 @@ mod tests {
             })
         };
         assert_eq!(read(None).unwrap().len(), 0);
+        // Without a snapshot there are no files to divide, so the host keeps
+        // its initial share of the queue.
+        assert!(reported.lock().unwrap().is_empty());
         // Reading the snapshot itself fails, so the share above did not read it.
         assert!(read(Some(1)).is_err());
     }

@@ -1112,6 +1112,14 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// so connectors that have no custom metrics need not override it.
     fn set_custom_metrics(&self, _metrics: Arc<dyn ConnectorMetrics>) {}
 
+    /// Reports that this host of a distributed connector reads `mine` of the
+    /// `total` units, such as partitions or files, that the hosts divide, so
+    /// that the controller can give this host the same fraction of the
+    /// connector's backpressure thresholds.  A host that reads the rest of the
+    /// input alone, such as the host that follows a table's log after the
+    /// snapshot, reports `(1, 1)`.  The default implementation does nothing.
+    fn set_input_share(&self, _mine: usize, _total: usize) {}
+
     /// Returns a watch receiver that fires each time pipeline step processing
     /// completes.  The value is the count of fully-processed steps
     /// (`total_completed_steps`): a record ingested in step `n` is done when

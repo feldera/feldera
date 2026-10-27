@@ -53,6 +53,10 @@ pub struct MockInputConsumerState {
     /// trip, so a test built on it is not sensitive to how fast that
     /// external service happens to respond under load.
     custom_metrics: Option<Arc<dyn ConnectorMetrics>>,
+
+    /// The last share reported through `InputConsumer::set_input_share`, as
+    /// `(mine, total)`.
+    pub input_share: Option<(usize, usize)>,
 }
 
 impl MockInputConsumerState {
@@ -67,6 +71,7 @@ impl MockInputConsumerState {
             transaction_on_all_hosts: false,
             open_transaction: None,
             custom_metrics: None,
+            input_share: None,
         }
     }
 
@@ -77,8 +82,8 @@ impl MockInputConsumerState {
         self.endpoint_error = None;
         self.transaction_in_progress = false;
         self.transaction_on_all_hosts = false;
-        // `custom_metrics` is not reset: the endpoint sets it once, at
-        // `open()`, not on every step.
+        // `custom_metrics` and `input_share` are not reset: the endpoint sets
+        // them when it opens or changes phase, not on every step.
     }
 }
 
@@ -201,6 +206,10 @@ impl InputConsumer for MockInputConsumer {
 
     fn set_custom_metrics(&self, metrics: Arc<dyn ConnectorMetrics>) {
         self.state().custom_metrics = Some(metrics);
+    }
+
+    fn set_input_share(&self, mine: usize, total: usize) {
+        self.state().input_share = Some((mine, total));
     }
 
     fn completion_watcher(
