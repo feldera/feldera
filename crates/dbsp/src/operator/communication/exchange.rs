@@ -140,12 +140,20 @@ impl ExchangeHeader {
 
     /// Deserializes an `ExchangeHeader` with `count` payload lengths from
     /// `bytes`.  `bytes.len()` must equal `Self::len_for_count(count)`.
-    fn from_bytes(count: usize, bytes: &[u8]) -> Self {
+    ///
+    /// The bytes come from the network, so a header that does not parse is an
+    /// [std::io::ErrorKind::InvalidData] error, not a panic.
+    fn from_bytes(count: usize, bytes: &[u8]) -> std::io::Result<Self> {
         debug_assert_eq!(bytes.len(), Self::len_for_count(count));
         let mut cursor = Cursor::new(bytes);
-        let this = Self::read_le_args(&mut cursor, (count,)).unwrap();
+        let this = Self::read_le_args(&mut cursor, (count,)).map_err(|error| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("invalid exchange header: {error}"),
+            )
+        })?;
         assert_eq!(cursor.position(), bytes.len() as u64);
-        this
+        Ok(this)
     }
 
     /// Reads an `ExchangeHeader` with `count` payload lengths from `stream`.
@@ -159,7 +167,7 @@ impl ExchangeHeader {
             0 => Ok(None),
             n => {
                 stream.read_exact(&mut buf[n..]).await?;
-                Ok(Some(Self::from_bytes(count, &buf)))
+                Self::from_bytes(count, &buf).map(Some)
             }
         }
     }
@@ -196,6 +204,51 @@ impl ExchangeHeader {
 /// whether the connection has gone half-open, without paying to retransmit a
 /// possibly large backlog on the chance that the receiver is merely busy.
 const PING_SEQUENCE: u64 = u64::MAX;
+
+/// Bytes that a client sends first on each exchange connection.
+///
+/// The exchange port accepts connections from anything on the network, such
+/// as a port scanner.  The server closes a connection that does not start with
+/// these bytes, so such a client cannot get its data parsed as messages.  This
+/// is not authentication.  Change the version at the end if the wire format
+/// changes, so that hosts that run different versions do not talk to each
+/// other.
+const EXCHANGE_MAGIC: [u8; 16] = *b"feldera-xchg-v1\n";
+
+/// Reads [EXCHANGE_MAGIC] from `stream`.
+///
+/// Returns `Ok(false)` if the stream reaches EOF before it sends any bytes, as
+/// a TCP liveness probe does, and an [std::io::ErrorKind::InvalidData] error
+/// if the stream sends other bytes.
+async fn read_exchange_magic<S>(stream: &mut S) -> std::io::Result<bool>
+where
+    S: AsyncRead + Unpin,
+{
+    let mut buf = [0; EXCHANGE_MAGIC.len()];
+    let mut n = 0;
+    while n < buf.len() {
+        match stream.read(&mut buf[n..]).await? {
+            0 if n == 0 => return Ok(false),
+            0 => return Err(std::io::ErrorKind::UnexpectedEof.into()),
+            count => n += count,
+        }
+        if buf[..n] != EXCHANGE_MAGIC[..n] {
+            // Don't wait for the rest of the magic once it already differs.
+            break;
+        }
+    }
+    if buf[..n] == EXCHANGE_MAGIC {
+        Ok(true)
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "connection did not start with the exchange magic (received {:?})",
+                String::from_utf8_lossy(&buf[..n])
+            ),
+        ))
+    }
+}
 
 struct ExchangeMessage {
     /// The time at which the message was created.  This allows tracking the
@@ -566,13 +619,14 @@ impl ExchangeClient {
     }
 
     async fn run_connection(
-        stream: TcpStream,
+        mut stream: TcpStream,
         message_type: MessageType,
         remote_workers: &Range<usize>,
         channel: &ExchangeChannel,
     ) -> std::io::Result<()> {
         stream.set_nodelay(true)?;
         stream.set_zero_linger()?;
+        stream.write_all(&EXCHANGE_MAGIC).await?;
         let (rx, tx) = stream.into_split();
 
         let rx = pin!(Self::run_connection_rx(rx, channel.clone()));
@@ -1005,6 +1059,13 @@ impl ExchangeServer {
 
     async fn serve(mut self) -> std::io::Result<()> {
         self.stream.set_nodelay(true)?;
+        let has_magic = tokio::select! {
+            result = read_exchange_magic(&mut self.stream) => result?,
+            () = self.cancel.cancelled() => return Ok(()),
+        };
+        if !has_magic {
+            return Ok(());
+        }
         let receivers = self.layout.local_workers();
         while let Some((header, data, bytes)) = tokio::select! {
             result = Self::read_message(&mut self.stream, receivers.len()) => result?,
@@ -1465,7 +1526,7 @@ impl ExchangeListener {
                 _ = token.cancelled() => None,
             } {
                 match stream {
-                    Ok((stream, _address)) => {
+                    Ok((stream, address)) => {
                         let layout = layout.clone();
                         let directory = directory.clone();
                         // `ExchangeServer` needs its own join handle to
@@ -1479,7 +1540,7 @@ impl ExchangeListener {
                         let (tx, rx) = tokio::sync::oneshot::channel();
                         let handle = tokio::spawn(async move {
                             let self_handle = rx.await.ok();
-                            ExchangeServer {
+                            let result = ExchangeServer {
                                 layout,
                                 directory,
                                 stream,
@@ -1487,7 +1548,16 @@ impl ExchangeListener {
                                 self_handle,
                             }
                             .serve()
-                            .await
+                            .await;
+                            // Other errors are dropped connections, which the
+                            // sending side reports.  Only the receiving side
+                            // sees bad data, so it reports it here.
+                            if let Err(error) = &result
+                                && error.kind() == std::io::ErrorKind::InvalidData
+                            {
+                                warn!("closing exchange connection from {address}: {error}");
+                            }
+                            result
                         });
                         let _ = tx.send(handle);
                     }
@@ -2972,6 +3042,7 @@ mod tests {
             )
             .await;
             let (mut stream, _) = listener.accept().await.unwrap();
+            assert!(super::read_exchange_magic(&mut stream).await.unwrap());
 
             client.send(Arc::new("test".into()), 0, 0, 0, vec![FBuf::new()]);
 
@@ -3021,6 +3092,7 @@ mod tests {
             )
             .await;
             let (mut stream, _) = listener.accept().await.unwrap();
+            assert!(super::read_exchange_magic(&mut stream).await.unwrap());
 
             // Send and never acknowledge the first message, leaving the sender
             // idle with an unacknowledged backlog, then wait for it to actually
@@ -3216,6 +3288,74 @@ mod tests {
         });
     }
 
+    // A header that does not parse is an error, not a panic.  The bytes are the
+    // start of an HTTP request, whose byte 20 is not a message type.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn read_message_rejects_invalid_header() {
+        use super::{ExchangeHeader, ExchangeServer};
+        use tokio::io::AsyncWriteExt;
+
+        let _guard = FaultInjectionDisabled::new();
+        let mut bytes = b"OPTIONS / HTTP/1.1\r\nHost: example.com\r\n".to_vec();
+        bytes.resize(ExchangeHeader::len_for_count(1), b'x');
+
+        TOKIO.block_on(async {
+            let (mut writer, mut stream) = tokio::io::duplex(bytes.len());
+            writer.write_all(&bytes).await.unwrap();
+            drop(writer);
+            let result = ExchangeServer::read_message(&mut stream, 1).await;
+            assert_eq!(
+                result.err().map(|error| error.kind()),
+                Some(std::io::ErrorKind::InvalidData)
+            );
+        });
+    }
+
+    // The server accepts a connection only if it starts with the magic, and
+    // treats a connection that closes before it sends anything as a clean EOF.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn read_exchange_magic_checks_the_magic() {
+        use super::{EXCHANGE_MAGIC, read_exchange_magic};
+        use std::{io::ErrorKind, time::Duration};
+        use tokio::{io::AsyncWriteExt, time::timeout};
+
+        async fn check(bytes: &[u8], close: bool) -> std::io::Result<bool> {
+            let (mut writer, mut stream) = tokio::io::duplex(64);
+            writer.write_all(bytes).await.unwrap();
+            if close {
+                drop(writer);
+            }
+            timeout(Duration::from_secs(5), read_exchange_magic(&mut stream))
+                .await
+                .expect("reading the magic should not hang")
+        }
+
+        TOKIO.block_on(async {
+            assert!(check(&EXCHANGE_MAGIC, true).await.unwrap());
+            assert!(!check(b"", true).await.unwrap());
+            assert_eq!(
+                check(&EXCHANGE_MAGIC[..4], true).await.unwrap_err().kind(),
+                ErrorKind::UnexpectedEof
+            );
+
+            // A stranger is rejected as soon as its bytes differ, even if it
+            // keeps the connection open and waits for a reply.
+            assert_eq!(
+                check(b"OPTIONS / HTTP/1.1\r\n", false)
+                    .await
+                    .unwrap_err()
+                    .kind(),
+                ErrorKind::InvalidData
+            );
+            assert_eq!(
+                check(b"G", false).await.unwrap_err().kind(),
+                ErrorKind::InvalidData
+            );
+        });
+    }
+
     // End to end at the configured budget: a sender that pushes past the
     // capacity through a real client and socket waits, and resumes once the
     // receiver acknowledges.  This is the behavior that #7176 was missing; the
@@ -3247,6 +3387,7 @@ mod tests {
             let client =
                 ExchangeClient::new(MessageType::Streaming, addr, &remote_workers, capacity).await;
             let (mut stream, _) = listener.accept().await.unwrap();
+            assert!(super::read_exchange_magic(&mut stream).await.unwrap());
 
             let message = || {
                 let mut payload = FBuf::new();
