@@ -71,7 +71,9 @@ metrics but are not reported as connector errors.
 Enqueuing another message does not establish recovery. A successful delivery
 restores healthy status only if no other message is overdue and the producer
 has no fatal error. After a fatal error, fix the underlying broker or
-configuration problem and restart the pipeline.
+configuration problem and restart the pipeline. Broker connection failures
+during an outage are logged as warnings. They are not counted as connector
+errors, because the queued records are retained.
 
 These delivery defaults and health rules apply to the non-fault-tolerant sink.
 The exactly-once sink uses Kafka transactions and its own producer settings.
