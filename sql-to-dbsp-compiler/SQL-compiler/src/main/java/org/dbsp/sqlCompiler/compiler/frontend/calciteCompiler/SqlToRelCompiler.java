@@ -576,6 +576,31 @@ public class SqlToRelCompiler implements IWritesLogs {
             this.errorReporter = errorReporter;
         }
 
+        /** Calcite has no quantified IS [NOT] DISTINCT FROM: in 'x <=> SOME (query)' the parser
+         * applies the SOME aggregate function, or an unknown function ALL, to the query */
+        void checkQuantifiedDistinct(SqlCall call) {
+            if (!(call.operand(1) instanceof SqlCall right) || right.operandCount() != 1)
+                return;
+            String name = right.getOperator().getName();
+            String quantifier;
+            if (name.equalsIgnoreCase("SOME"))
+                quantifier = "SOME";
+            else if (name.equalsIgnoreCase("ALL"))
+                quantifier = "ALL";
+            else
+                return;
+            SqlNode argument = right.operand(0);
+            if (argument == null || !SqlKind.QUERY.contains(argument.getKind()))
+                return;
+            String rewrite = quantifier.equals("ALL") ? "NOT EXISTS" : "EXISTS";
+            this.errorReporter.reportError(new SourcePositionRange(call.getParserPosition()),
+                    UnsupportedException.KIND,
+                    Utilities.singleQuote(call.getOperator().getName()) + " cannot be combined with " +
+                            Utilities.singleQuote(quantifier) + "; consider using " +
+                            Utilities.singleQuote(rewrite) + " instead.\n" +
+                            QUANTIFIED_DISTINCT_DOCUMENTATION.citation());
+        }
+
         /** Calcite can build calls that have null operands.
          * Find such cases and reject them. */
         @Override
@@ -589,6 +614,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                                 "use DECLARE RECURSIVE VIEW instead. " +
                                 RECURSION_DOCUMENTATION.citation());
             }
+            if (call.getKind() == SqlKind.IS_NOT_DISTINCT_FROM || call.getKind() == SqlKind.IS_DISTINCT_FROM)
+                this.checkQuantifiedDistinct(call);
             SqlOperator operator = call.getOperator();
             if (operator instanceof SqlFunction) {
                 for (SqlNode node : call.getOperandList()) {
@@ -785,6 +812,8 @@ public class SqlToRelCompiler implements IWritesLogs {
      * below: for each invocation of parseStatements we create a new SqlParser.
      * There is no way to reuse the previous parser one, unfortunately. */
     public static final Documentation.Link RECURSION_DOCUMENTATION = new Documentation.Link("sql/recursion");
+    public static final Documentation.Link QUANTIFIED_DISTINCT_DOCUMENTATION =
+            new Documentation.Link("sql/comparisons", "any");
     final StringBuilder newlines = new StringBuilder();
     /** Maps a position in the program being compiled to the position reported to the user.
      * This is the identity function, except while compiling SQL that the compiler generates:
@@ -1354,6 +1383,9 @@ public class SqlToRelCompiler implements IWritesLogs {
         Map<String, SqlNode> columnDefinition = new HashMap<>();
         SqlPrimaryKey key = null;
         Map<String, SqlIdentifier> primaryKeys = new HashMap<>();
+        // The PRIMARY KEY columns, and the first PRIMARY KEY column declaration
+        List<RelDataTypeField> keyColumns = new ArrayList<>();
+        SqlParserPos keyPosition = null;
 
         // First scan for standard style PRIMARY KEY constraints.
         for (SqlNode col: Objects.requireNonNull(list)) {
@@ -1478,6 +1510,11 @@ public class SqlToRelCompiler implements IWritesLogs {
                     CalciteObject.create(col), field, isPrimaryKey, Utilities.identifierIsQuoted(name),
                     lateness, defaultValue, defaultValueRange, interned);
             result.add(meta);
+            if (isPrimaryKey) {
+                keyColumns.add(field);
+                if (keyPosition == null)
+                    keyPosition = col.getParserPosition();
+            }
         }
 
         if (!primaryKeys.isEmpty()) {
@@ -1490,6 +1527,12 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         if (this.errorReporter.hasErrors())
             throw new CompilationError("aborting.");
+        // Upserts and deletes find rows by comparing their keys for equality
+        if (key != null)
+            keyPosition = key.getParserPosition();
+        if (keyPosition != null)
+            WarnFloatingPointEquality.checkColumns(this.errorReporter,
+                    new SourcePositionRange(keyPosition), "PRIMARY KEY", keyColumns);
         return result;
     }
 
@@ -2112,6 +2155,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         SqlToRelConverter converter = this.getConverter();
         // Phase names with a "Calcite." prefix measure parts of the "Calcite" phase
         SqlNode validated = DBSPCompiler.timed("Calcite.validate", () -> this.getValidator().validate(node));
+        validated.accept(new RejectQuantifiedRowComparisons(this.getValidator(), this.sourcePositionRemap));
         validated.accept(new WarnFloatingPointEquality(
                 this.getValidator(), this.errorReporter, this.sourcePositionRemap));
         return DBSPCompiler.timed("Calcite.toRel", () -> converter.convertQuery(validated, false, true));

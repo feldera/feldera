@@ -52,7 +52,7 @@ import org.dbsp.util.Utilities;
  * accepted.  So are the ordering comparisons '&lt;', '&lt;=', '&gt;' and '&gt;='.
  */
 public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
-    private static final String ERROR_KIND = "Unsupported comparison";
+    public static final String ERROR_KIND = "Unsupported comparison";
 
     public static final Documentation.Link ROW_DOCUMENTATION =
             new Documentation.Link("sql/comparisons", "comparing-row-values");
@@ -187,7 +187,7 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
         static void checkSimilar(RexCall call) {
             if (call.getKind() == SqlKind.SIMILAR)
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
-                        + " not yet implemented", 1265, CalciteObject.create(call.getParserPosition()));
+                        + " not yet implemented", CalciteObject.create(call.getParserPosition()));
         }
 
         /** Report an error if 'call' compares its ROW-typed operands for equality */

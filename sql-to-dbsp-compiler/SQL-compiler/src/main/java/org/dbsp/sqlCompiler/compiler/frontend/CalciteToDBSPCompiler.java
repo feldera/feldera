@@ -3045,7 +3045,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // A VALUES with several rows becomes a union: a row that Calcite can represent
             // as a literal is a LogicalValues, any other row needs a LogicalProject.
             // Every input must contribute, otherwise rows are lost silently.
-            result = null;
+            // The inputs can differ in nullability; the union has the least restrictive type.
+            DBSPType unionType = this.convertType(
+                    CalciteObject.create(union).getPositionRange(), union.getRowType(), false);
+            result = DBSPZSetExpression.emptyWithElementType(unionType);
             for (RelNode node: union.getInputs()) {
                 DBSPZSetExpression lit;
                 if (node instanceof LogicalProject project) {
@@ -3060,12 +3063,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     throw new UnimplementedException("statement of this form not supported",
                             modify.getCalciteObject());
                 }
-                if (result == null)
-                    result = lit;
-                else
-                    result.append(lit);
+                result.addUsingCast(lit);
             }
-            Utilities.enforce(result != null);
         } else {
             throw new UnimplementedException("statement of this form not supported",
                     modify.getCalciteObject());

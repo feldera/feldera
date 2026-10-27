@@ -47,12 +47,12 @@ but always return a Boolean value (sometimes nullable):
   <tr>
     <td><a id="isnull"></a><code>IS NULL</code></td>
     <td>true if operand is <code>NULL</code></td>
-    <td></td>
+    <td><a href="#row-is-null">differs from the SQL standard</a> for <code>ROW</code> values</td>
   </tr>
   <tr>
     <td><a id="isnotnull"></a><code>IS NOT NULL</code></td>
     <td>true if operand is not <code>NULL</code></td>
-    <td></td>
+    <td><a href="#row-is-null">differs from the SQL standard</a> for <code>ROW</code> values</td>
   </tr>
   <tr>
     <td><a id="nne"></a><code>&lt;=&gt;</code></td>
@@ -92,19 +92,34 @@ but always return a Boolean value (sometimes nullable):
   <tr>
     <td><a id="in"></a><code>... [NOT] IN ...</code></td>
     <td>checks whether value appears/does not appear in a list or set</td>
-    <td></td>
+    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a></td>
+  </tr>
+  <tr>
+    <td><a id="any"></a><code>value &lt;OP&gt; ANY (query)</code></td>
+    <td><code>true</code> if the comparison holds for some row of the query; <code>NULL</code> if it holds for no row and some comparison is <code>NULL</code>; <code>false</code> otherwise, also when the query has no rows.  <code>&lt;OP&gt;</code> is one of <code>=</code>, <code>&lt;&gt;</code>, <code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, and <code>&gt;=</code>; the query can be a <code>VALUES</code> list</td>
+    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a>; example: <code>10 &lt;= ANY (VALUES 10, 20, 30)</code> is <code>true</code></td>
+  </tr>
+  <tr>
+    <td><a id="some"></a><code>value &lt;OP&gt; SOME (query)</code></td>
+    <td>A synonym for <code>ANY</code></td>
+    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a>; example: <code>10 &lt;= SOME (VALUES 10, 20, 30)</code> is <code>true</code></td>
+  </tr>
+  <tr>
+    <td><a id="all"></a><code>value &lt;OP&gt; ALL (query)</code></td>
+    <td><code>true</code> if the comparison holds for every row of the query, also when the query has no rows; <code>NULL</code> if it fails for no row and some comparison is <code>NULL</code>; <code>false</code> otherwise</td>
+    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a>; example: <code>10 &lt;= ALL (VALUES 10, 20, 30)</code> is <code>true</code></td>
   </tr>
   <tr>
     <td><a id="exists"></a><code>EXISTS query</code></td>
     <td>check whether query results have at least one row</td>
     <td></td>
   </tr>
+  <tr>
+    <td><a id="unique"></a><code>UNIQUE query</code></td>
+    <td><code>true</code> unless two rows of the query have no <code>NULL</code> column and are not distinct, compared column by column with <a href="#notdistinct"><code>IS NOT DISTINCT FROM</code></a></td>
+    <td>a row with a <code>NULL</code> column is never a duplicate; a <code>ROW</code> value with <code>NULL</code> fields <a href="#row-is-null">is not <code>NULL</code></a></td>
+  </tr>
 </table>
-
-Note that the SQL standard mandates `IS NULL` to return `true` for a
-`ROW` object where all fields are `NULL` (similarly, `IS NOT NULL` is
-required to return `false`).  Our compiler diverges from the standard,
-returning `false` for `ROW(null) is null`.
 
 ## Comparing floating point values {#comparing-floating-point-values}
 
@@ -123,15 +138,16 @@ values:
 | Construct | What is compared |
 |-----------|------------------|
 | `=`, `<>`, `!=`, `<=>`, `IS [NOT] DISTINCT FROM`, `NULLIF` | the two operands |
-| `IN`, `NOT IN`, `CASE x WHEN v` | the value and each candidate |
+| `IN`, `NOT IN`, `=` or `<>` with `SOME`, `ANY`, or `ALL`, `CASE x WHEN v` | the value and each candidate |
 | `GROUP BY`, `PARTITION BY` | the grouping keys |
-| `DISTINCT`, `UNION`, `INTERSECT [ALL]`, `EXCEPT [ALL]` | whole rows |
+| `DISTINCT`, `UNION`, `INTERSECT [ALL]`, `EXCEPT [ALL]`, `UNIQUE` | whole rows |
 | `COUNT(DISTINCT x)` and other `DISTINCT` aggregates, `MODE` | the aggregated values |
 | `NATURAL JOIN`, `JOIN ... USING` | the shared columns |
 | `RANK`, `DENSE_RANK`, `PERCENT_RANK`, `CUME_DIST` | the `ORDER BY` keys, to detect ties |
 | `PIVOT` | the `FOR` columns and the pivot values |
 | `ARRAY_CONTAINS`, `ARRAY_POSITION`, `ARRAY_REMOVE`, `ARRAY_DISTINCT`, `ARRAY_EXCEPT`, `ARRAY_UNION`, `ARRAY_INTERSECT`, `ARRAYS_OVERLAP` | the array elements |
 | `map[key]`, `MAP_CONTAINS_KEY` | the map keys |
+| `PRIMARY KEY`, `CREATE INDEX` | the key columns |
 
 The analysis inspects declared types only, so it does not report a
 `VARIANT` value that holds a floating point number at run time.
@@ -196,7 +212,9 @@ produces `false`.
 
 ### Comparing `ROW` values {#comparing-row-values}
 
-Feldera rejects `=`, `<>`, and `!=` between `ROW` values.
+Feldera rejects `=`, `<>`, and `!=` between `ROW` values, and `IN`,
+`NOT IN`, and comparisons with `SOME`, `ANY`, or `ALL` with a `ROW`
+value on the left.
 
 The reason is that the standard meaning of these operators on `ROW`
 values surprises most users.  The standard compares the fields
@@ -294,6 +312,26 @@ the accepted rewrite:
     <td><code>EXISTS (SELECT 1 FROM s WHERE s.p IS NOT DISTINCT FROM r)</code></td>
   </tr>
   <tr>
+    <td><code>r NOT IN (SELECT p FROM s)</code></td>
+    <td>expands to an equality test</td>
+    <td><code>NOT EXISTS (SELECT 1 FROM s WHERE s.p IS NOT DISTINCT FROM r)</code></td>
+  </tr>
+  <tr>
+    <td><code>(a, b) IN (SELECT x, y FROM s)</code></td>
+    <td>a row constructor builds a <code>ROW</code> value</td>
+    <td><code>EXISTS (SELECT 1 FROM s WHERE (a, b) IS NOT DISTINCT FROM (s.x, s.y))</code></td>
+  </tr>
+  <tr>
+    <td><code>r &lt; SOME (SELECT p FROM s)</code>, and the same with <code>ANY</code> or another comparison</td>
+    <td>quantified comparisons do not support <code>ROW</code> values</td>
+    <td><code>EXISTS (SELECT 1 FROM s WHERE r &lt; s.p)</code>; for <code>=</code> and <code>&lt;&gt;</code> use <code>IS [NOT] DISTINCT FROM</code></td>
+  </tr>
+  <tr>
+    <td><code>r &lt; ALL (SELECT p FROM s)</code>, and the same with another comparison</td>
+    <td>quantified comparisons do not support <code>ROW</code> values</td>
+    <td><code>NOT EXISTS (SELECT 1 FROM s WHERE (r &lt; s.p) IS NOT TRUE)</code>; for <code>=</code> and <code>&lt;&gt;</code> use <code>IS [NOT] DISTINCT FROM</code></td>
+  </tr>
+  <tr>
     <td><code>CASE r WHEN v THEN a ELSE b END</code></td>
     <td>expands to <code>r = v</code></td>
     <td><code>CASE WHEN r IS NOT DISTINCT FROM v THEN a ELSE b END</code></td>
@@ -332,16 +370,68 @@ WHERE EXISTS (SELECT 1 FROM r WHERE r.p IS NOT DISTINCT FROM l.p);
 
 The following remain legal on `ROW` values:
 
-- the ordering comparisons `<`, `<=`, `>`, `>=`;
-- `IS [NOT] DISTINCT FROM`, `<=>`, and `IS [NOT] NULL`;
+- the ordering comparisons `<`, `<=`, `>`, `>=`, but not with `SOME`,
+  `ANY`, or `ALL`;
+- `IS [NOT] DISTINCT FROM`, `<=>`, and `IS [NOT] NULL`, which
+  [differs from the SQL standard](#row-is-null);
 - constructs that group values rather than compare them, because they
   use distinctness and not equality: `GROUP BY`, `SELECT DISTINCT`,
-  `PARTITION BY`, `UNION`, `INTERSECT`, and `EXCEPT`.
+  `PARTITION BY`, `UNION`, `INTERSECT`, `EXCEPT`, and `UNIQUE`.
 
-The restriction covers a comparison written directly between two row
-constructors, such as `(a, b) = (c, d)`: a row constructor builds a
-`ROW` value like any other.  Compare the fields, `a = c AND b = d`, if
-that is what you mean.
+The restriction covers row constructors, such as `(a, b)` in
+`(a, b) = (c, d)` or in `(a, b) IN (SELECT x, y FROM s)`: a row
+constructor builds a `ROW` value like any other.  Compare the fields,
+`a = c AND b = d`, if that is what you mean.
+
+<a id="row-is-null"></a>`IS NULL` and `IS NOT NULL` on `ROW` values do not follow the SQL
+standard.  In Feldera, `r IS NULL` is `true` only when the `ROW` value
+`r` is itself `NULL`, whatever its fields hold, and `r IS NOT NULL` is
+always the negation of `r IS NULL`.  A row constructor such as `(a, b)`
+is never `NULL`.  The standard looks at the fields instead: `r IS NULL`
+is `true` when every field is `NULL`, and `r IS NOT NULL` is `true` when
+no field is `NULL`, so a `ROW` value with some `NULL` fields is neither.
+
+<table>
+  <tr>
+    <th><code>r</code></th>
+    <th>Feldera <code>r IS NULL</code></th>
+    <th>Feldera <code>r IS NOT NULL</code></th>
+    <th>Standard <code>r IS NULL</code></th>
+    <th>Standard <code>r IS NOT NULL</code></th>
+  </tr>
+  <tr>
+    <td><code>NULL</code></td>
+    <td><code>true</code></td>
+    <td><code>false</code></td>
+    <td><code>true</code></td>
+    <td><code>false</code></td>
+  </tr>
+  <tr>
+    <td><code>ROW(NULL, NULL)</code></td>
+    <td><code>false</code></td>
+    <td><code>true</code></td>
+    <td><code>true</code></td>
+    <td><code>false</code></td>
+  </tr>
+  <tr>
+    <td><code>ROW(1, NULL)</code></td>
+    <td><code>false</code></td>
+    <td><code>true</code></td>
+    <td><code>false</code></td>
+    <td><code>false</code></td>
+  </tr>
+  <tr>
+    <td><code>ROW(1, 2)</code></td>
+    <td><code>false</code></td>
+    <td><code>true</code></td>
+    <td><code>false</code></td>
+    <td><code>true</code></td>
+  </tr>
+</table>
+
+To test the fields as the standard does, write the condition on the
+fields, such as `r.a IS NULL AND r.b IS NULL`.  The same rule decides
+which rows [`UNIQUE`](#unique) treats as having a `NULL` column.
 
 ## Other conditional operators
 

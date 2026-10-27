@@ -107,6 +107,24 @@ subqueries. In these cases, we recommend users refactor the query.
 
 See [#2555](https://github.com/feldera/feldera/issues/2555).
 
+## Quantified comparisons with arrays
+
+A [quantified comparison](comparisons.md#any) accepts a sub-query or a
+`VALUES` list, but not an array: `x = ANY (ARRAY[1, 2, 3])`, and
+`x > SOME (a)` where `a` is an array column, are rejected.
+
+```sql
+-- NOT supported: quantified comparison with an array
+SELECT * FROM t WHERE x = ANY (ARRAY[1, 2, 3]);
+```
+
+A sub-query over `UNNEST(a)` does not work for an array column, because
+of the [`LEFT JOIN UNNEST`](#left-join-unnest) limitation.  When the
+array has at least one element and no `NULL` elements, and `x` is not
+`NULL`, rewrite `x = ANY (a)` as `ARRAY_CONTAINS(a, x)`, `x > ANY (a)`
+as `x > ARRAY_MIN(a)`, and `x > ALL (a)` as `x > ARRAY_MAX(a)`; the
+other ordering comparisons are similar.
+
 ## `LEFT JOIN UNNEST`
 
 `LEFT JOIN UNNEST(...)` and `OUTER APPLY (...)`, are not yet supported:
@@ -132,6 +150,19 @@ Several `MAP` functions are not yet implemented:
 A list of supported MAP operations is available [here](./map.md).
 See [#1907](https://github.com/feldera/feldera/issues/1907).
 
+## `SELECT DISTINCT ON`
+
+`SELECT DISTINCT ON (...)` is not supported.  To keep one row per group,
+number the rows of each group with `ROW_NUMBER` and keep the first:
+
+```sql
+-- NOT supported: DISTINCT ON
+SELECT DISTINCT ON (id) id, ver, v FROM raw ORDER BY id, ver DESC;
+-- Supported: the latest version of each id
+SELECT id, ver, v FROM raw
+QUALIFY ROW_NUMBER() OVER (PARTITION BY id ORDER BY ver DESC) = 1;
+```
+
 ## `MATCH_RECOGNIZE`
 
 The `MATCH_RECOGNIZE` clause for pattern matching over rows is not yet
@@ -151,7 +182,8 @@ The `MULTISET` data type is not currently supported.
 
 `=`, `<>`, and `!=` are rejected between `ROW` values, and so are the
 forms that imply such a comparison: a join condition, `NATURAL JOIN`,
-`USING`, `IN`, `CASE`, and `NULLIF`.  A user-defined structure type is
+`USING`, `IN`, `NOT IN`, comparisons with `SOME`, `ANY`, or `ALL`,
+`CASE`, and `NULLIF`.  A user-defined structure type is
 a `ROW` type, so the restriction covers its values too.  Use `IS [NOT]
 DISTINCT FROM` instead, and see [comparing `ROW`
 values](comparisons.md#comparing-row-values) for the accepted rewrite

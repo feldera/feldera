@@ -360,7 +360,7 @@ values
   :   { VALUES | VALUE } expression [, expression ]*
 
 select
-  :   SELECT [ hintComment ] [ ALL | DISTINCT [ ON '(' expression [ ',' expression ]* ')' ] ] { * | projectItem [, projectItem ]* [ , ] }
+  :   SELECT [ hintComment ] [ ALL | DISTINCT ] { * | projectItem [, projectItem ]* [ , ] }
       FROM tableExpression
       [ WHERE booleanExpression ]
       [ GROUP BY { ALL | [ ALL | DISTINCT ] { groupItem [, groupItem ]* } } ]
@@ -369,12 +369,6 @@ select
 ```
 
 The list of `projectItem`s may end with a comma.
-
-`DISTINCT ON` allows you to eliminate duplicate rows based on
-specified expressions, keeping the first row in each group as
-determined by the `ORDER BY` clause. When using `DISTINCT ON`, the
-expressions in the `DISTINCT ON` clause must match a prefix of the
-`ORDER BY` clause.
 
 `GROUP BY ALL` without any groupItem specified groups by every
 expression in the `SELECT` clause that is not an aggregate function.
@@ -628,12 +622,18 @@ A scalar sub-query is a sub-query used as an expression. If the
 sub-query returns no rows, the value is `NULL`; if it returns more
 than one row, it is an error.
 
-`IN`, `EXISTS`, and scalar sub-queries can occur in any place where an
-expression can occur (such as the `SELECT` clause, `WHERE` clause,
-`ON` clause of a `JOIN`, or as an argument to an aggregate function).
+`IN`, `EXISTS`, and `UNIQUE` sub-queries, quantified comparisons
+(`value <OP> ANY (query)`, and the same with `SOME` or `ALL`), and
+scalar sub-queries can occur in any place where an expression can
+occur (such as the `SELECT` clause, `WHERE` clause, `ON` clause of a
+`JOIN`, or as an argument to an aggregate function).  The [comparison
+operations](comparisons.md#any) describe the results of quantified
+comparisons and `UNIQUE`.  `IN` and quantified comparisons [reject
+`ROW` values](comparisons.md#comparing-row-values) on the left, such
+as `(a, b) IN (SELECT x, y FROM t)`.
 
-An `IN`, `EXISTS`, or scalar sub-query may be correlated; that is,
-it may refer to tables in the `FROM` clause of an enclosing query.
+All these sub-queries may be correlated; that is, they may refer to
+tables in the `FROM` clause of an enclosing query.
 
 `GROUP BY DISTINCT` removes duplicate grouping sets (for example,
 `GROUP BY DISTINCT GROUPING SETS ((a), (a, b), (a))` is equivalent to

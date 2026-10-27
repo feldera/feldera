@@ -10,8 +10,15 @@ public final class CompilationError extends BaseCompilerException {
      * org.dbsp.sqlCompiler.compiler.IErrorReporter#reportWarning}. */
     private final String title;
 
+    /** The message of the exception without its position, which the error reports separately */
+    static String messageWithoutPosition(CalciteContextException exception) {
+        Throwable cause = exception.getCause();
+        String message = cause != null ? cause.getMessage() : exception.getMessage();
+        return message != null ? message : "Error";
+    }
+
     public CompilationError(CalciteContextException exception) {
-        this(exception.getMessage() != null ? exception.getMessage() : "Error",
+        this(messageWithoutPosition(exception),
                 new SourcePositionRange(
                         new SourcePosition(exception.getPosLine(), exception.getPosColumn()),
                         new SourcePosition(exception.getEndPosLine(), exception.getEndPosColumn())));
