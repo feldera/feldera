@@ -7404,6 +7404,17 @@ pub mod test_http {
                     stats.global_metrics.total_initiated_steps,
                 );
             }
+
+            // The input queued during the cutover goes into a later transaction.
+            async_wait(
+                || async {
+                    adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await
+                        == 2_010
+                },
+                20_000,
+            )
+            .await
+            .expect("the input queued during the cutover was lost");
         })
     }
 
