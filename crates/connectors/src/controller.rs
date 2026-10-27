@@ -4672,6 +4672,18 @@ impl CircuitThread {
         }
         drop(statuses);
 
+        #[cfg(any(test, feature = "testing"))]
+        {
+            let names = waiting.values().map(String::as_str).collect::<Vec<_>>();
+            let mut hook = self.controller.collect_input_hook.lock().unwrap();
+            if hook
+                .as_mut()
+                .is_some_and(|hook| hook(&self.controller, &names))
+            {
+                *hook = None;
+            }
+        }
+
         let mut total_consumed = BufferSize::empty();
 
         let mut long_op_warning = LongOperationWarning::new(Duration::from_secs(10));
@@ -4680,11 +4692,17 @@ impl CircuitThread {
             let statuses = self.controller.status.input_status();
             let mut failed = Vec::new();
             let mut failed_replay = None;
-            waiting.retain(|&endpoint_id, _| {
+            waiting.retain(|&endpoint_id, endpoint_name| {
                 let Some(status) = statuses.get(&endpoint_id) else {
-                    // Input adapter was deleted. Input that it had already
-                    // yielded is accounted for by
-                    // `ControllerStatus::orphaned_input`.
+                    // Input adapter was deleted. Its input is in the circuit,
+                    // so this step processes it and must journal it. See
+                    // `ControllerStatus::orphaned_results`.
+                    if let Some(results) =
+                        self.controller.status.take_orphaned_results(&endpoint_id)
+                    {
+                        total_consumed += results.amt;
+                        step_metadata.insert(endpoint_id, (endpoint_name.clone(), results));
+                    }
                     return false;
                 };
                 let Some(results) = mem::take(&mut *status.progress.lock().unwrap()) else {
@@ -7825,6 +7843,12 @@ pub struct ControllerInner {
     /// once it returns true.
     #[cfg(any(test, feature = "testing"))]
     journal_step_hook: Mutex<Option<JournalStepHook>>,
+
+    /// Runs on the circuit thread after `input_step` asks the polled input
+    /// endpoints for input and before it collects their replies, with the
+    /// names of the endpoints it waits for.  Removed once it returns true.
+    #[cfg(any(test, feature = "testing"))]
+    collect_input_hook: Mutex<Option<JournalStepHook>>,
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -7939,6 +7963,8 @@ impl ControllerInner {
                 commit_step_hook: Mutex::new(None),
                 #[cfg(any(test, feature = "testing"))]
                 journal_step_hook: Mutex::new(None),
+                #[cfg(any(test, feature = "testing"))]
+                collect_input_hook: Mutex::new(None),
                 modified_output_endpoints,
                 bootstrapped_output_endpoints,
                 input_completions: Mutex::new(Vec::new()),
