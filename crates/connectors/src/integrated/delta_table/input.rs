@@ -112,7 +112,8 @@ static DELTA_READER_SEMAPHORE: std::sync::LazyLock<Semaphore> =
 /// for `DELTA_READER_SEMAPHORE`, which bounds how many connector queries read at
 /// once. It does not bound the scan parallelism *within* one query; that is
 /// DataFusion's `target_partitions`, which `create_session_context_with` derives
-/// from `io_workers` / `workers` unless `DELTA_DF_TARGET_PARTITIONS` overrides it.
+/// from `io_workers` or the workers on this host unless
+/// `DELTA_DF_TARGET_PARTITIONS` overrides it.
 const DEFAULT_MAX_CONCURRENT_READERS: usize = 6;
 
 /// Configured `max_concurrent_readers` value (0 = not set by any connector).
