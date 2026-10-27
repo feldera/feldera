@@ -16,28 +16,12 @@ public class AggScottTests extends ScottBaseTests {
                 (1 row)""");
     }
 
+    /** Feldera rejects IN with a row constructor on the left */
     @Test
     public void testPairs() {
-        this.qst("""
-                select comm, (comm, comm) in ((500, 500), (300, 300), (0, 0)) from emp;
-                 comm | in
-                -----------
-                 0    | true
-                 300  | true
-                 500  | true
-                 1400 | false
-                      |
-                      |
-                      |
-                      |
-                      |
-                      |
-                      |
-                      |
-                      |
-                      |
-                -----------
-                (14 rows)""");
+        this.statementsFailingInCompilation(
+                "CREATE VIEW V AS select comm, (comm, comm) in ((500, 500), (300, 300), (0, 0)) from emp;",
+                "ROW values cannot be compared using 'IN'");
     }
 
     @Test @Ignore("Cannot decorrelate LATERAL join")

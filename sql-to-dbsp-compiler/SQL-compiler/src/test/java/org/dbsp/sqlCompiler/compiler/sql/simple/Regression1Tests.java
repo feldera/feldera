@@ -1233,7 +1233,7 @@ public class Regression1Tests extends SqlIoTest {
 
                 CREATE MATERIALIZED VIEW v2 AS SELECT
                 roww IN (ROW(4,'cat')) AS roww
-                FROM tbl;""", "ROW values cannot be compared using '='");
+                FROM tbl;""", "ROW values cannot be compared using 'IN'");
     }
 
     @Test
@@ -1248,7 +1248,7 @@ public class Regression1Tests extends SqlIoTest {
 
                 CREATE MATERIALIZED VIEW v2 AS SELECT
                 roww NOT IN (roww) AS roww
-                FROM tbl;""", "ROW values cannot be compared using '='");
+                FROM tbl;""", "ROW values cannot be compared using 'IN'");
     }
 
     @Test

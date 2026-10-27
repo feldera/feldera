@@ -2147,6 +2147,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         // Phase names with a "Calcite." prefix measure parts of the "Calcite" phase
         SqlNode validated = DBSPCompiler.timed("Calcite.validate",
                 () -> this.getValidator().validate(wrappedStringLiterals));
+        validated.accept(new RejectQuantifiedRowComparisons(this.getValidator(), this.sourcePositionRemap));
         validated.accept(new WarnFloatingPointEquality(
                 this.getValidator(), this.errorReporter, this.sourcePositionRemap));
         return DBSPCompiler.timed("Calcite.toRel", () -> converter.convertQuery(validated, false, true));
