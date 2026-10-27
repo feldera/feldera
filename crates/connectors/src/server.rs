@@ -793,6 +793,9 @@ pub fn server_main<E: Engine>(engine: E) -> Result<(), ControllerError> {
     })
 }
 
+/// The time limit for the server to receive the first request from a new client.
+const CLIENT_REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
+
 // We pass the engine as trait objects to make sure that this function
 // doesn't have any generics and gets generated, along with the entire web server
 // as part of this crate. This reduces the size of the generated code for
@@ -1126,7 +1129,7 @@ pub fn run_server(
     // CI.  By extending the timeout, we hope to suppress those problems.  (The
     // timeouts might be a symptom of another problem, though, such as the
     // client in some cases getting stuck and not sending its request.)
-    .client_request_timeout(Duration::from_secs(180))
+    .client_request_timeout(CLIENT_REQUEST_TIMEOUT)
     // Set timeout for graceful shutdown of workers.
     // The default in actix is 30s. We may consider making this configurable.
     .shutdown_timeout(10);
@@ -2356,7 +2359,7 @@ fn json_profile_body(
 pub mod test_http_helpers {
     use std::collections::BTreeMap;
 
-    use actix_test::{PayloadError, TestServer};
+    use actix_test::{PayloadError, TestServer, TestServerConfig};
     use actix_web::{
         App,
         http::StatusCode,
@@ -2389,8 +2392,8 @@ pub mod test_http_helpers {
     use tempfile::{NamedTempFile, TempDir};
 
     use super::{
-        InitializationState, PipelinePhase, ServerArgs, ServerState, bootstrap, build_app,
-        error_handler, get_status, parse_config,
+        CLIENT_REQUEST_TIMEOUT, InitializationState, PipelinePhase, ServerArgs, ServerState,
+        bootstrap, build_app, error_handler, get_status, parse_config,
     };
     use crate::{
         Controller, ControllerError,
@@ -2418,6 +2421,16 @@ pub mod test_http_helpers {
     /// be retried safely, so we widen the client deadline and let the higher-level
     /// waits govern liveness.
     pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+
+    /// Returns actix-test's server configuration with the pipeline server's client
+    /// request timeout.
+    ///
+    /// actix-test keeps actix's 5 s timeout, so a handler that holds the test
+    /// server's only worker for 5 s fails the new connections waiting behind it
+    /// with 408 Request Timeout.
+    fn test_server_config() -> TestServerConfig {
+        actix_test::config().client_request_timeout(CLIENT_REQUEST_TIMEOUT)
+    }
 
     /// Writes `config` to a temporary file, as a launcher writes `config.json`.
     pub(super) fn json_config_file(config: &serde_json::Value) -> NamedTempFile {
@@ -2790,7 +2803,9 @@ pub mod test_http_helpers {
             state.complete_initialization(controller).is_ok(),
             "a new server state takes the controller"
         );
-        actix_test::start(move || build_app(App::new(), state.clone()))
+        actix_test::start_with(test_server_config(), move || {
+            build_app(App::new(), state.clone())
+        })
     }
 
     /// Like [`start_test_server_with_state`], but the tables and views of the
@@ -2894,8 +2909,9 @@ pub mod test_http_helpers {
         }
 
         let state_ret = state.clone();
-        let server =
-            actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
+        let server = actix_test::start_with(test_server_config(), move || {
+            build_app(App::new().wrap(Logger::default()), state.clone())
+        });
 
         let start = Instant::now();
         while server.get("/stats").send().await.unwrap().status() == StatusCode::SERVICE_UNAVAILABLE
