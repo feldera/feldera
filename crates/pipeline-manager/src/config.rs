@@ -495,6 +495,18 @@ impl CommonConfig {
         }
     }
 
+    /// Returns the URL scheme for HTTP requests to the other services:
+    /// `https` if HTTPS is enabled, otherwise `http`.
+    pub fn http_scheme(&self) -> &'static str {
+        if self.enable_https { "https" } else { "http" }
+    }
+
+    /// Returns the URL scheme for websocket connections:
+    /// `wss` if HTTPS is enabled, otherwise `ws`.
+    pub fn ws_scheme(&self) -> &'static str {
+        if self.enable_https { "wss" } else { "ws" }
+    }
+
     /// Creates the `ServerConfig` for the HTTP servers of the API server, compiler and runner if
     /// HTTPS is enabled. Otherwise, returns `None`.
     pub fn https_server_config(&self) -> Option<rustls::ServerConfig> {
@@ -1869,6 +1881,20 @@ mod tests {
             ..CommonConfig::test_config()
         };
         assert!(std::panic::catch_unwind(|| config.https_config()).is_err());
+    }
+
+    #[test]
+    fn url_schemes_follow_enable_https() {
+        let http = CommonConfig::test_config();
+        assert_eq!(http.http_scheme(), "http");
+        assert_eq!(http.ws_scheme(), "ws");
+
+        let https = CommonConfig {
+            enable_https: true,
+            ..CommonConfig::test_config()
+        };
+        assert_eq!(https.http_scheme(), "https");
+        assert_eq!(https.ws_scheme(), "wss");
     }
 
     /// The Gen-2 UDF SDK location is made absolute, and one that is not a crate stops startup.

@@ -74,11 +74,7 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
     info!("Cluster monitor is starting");
 
     // Determine URLs of the services for their self-reporting
-    let protocol = if common_config.enable_https {
-        "https"
-    } else {
-        "http"
-    };
+    let protocol = common_config.http_scheme();
     let api_url = format!(
         "{protocol}://{}:{}/healthz",
         common_config.api_host, common_config.api_port

@@ -195,11 +195,7 @@ pub(crate) fn compiler_binary_url(
 ) -> String {
     format!(
         "{}://{}:{}/binary/{}/{}/{}/{}",
-        if common_config.enable_https {
-            "https"
-        } else {
-            "http"
-        },
+        common_config.http_scheme(),
         common_config.compiler_host,
         common_config.compiler_port,
         pipeline_id,
@@ -969,16 +965,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         endpoint: &str,
         timeout: Duration,
     ) -> Result<(StatusCode, serde_json::Value), InternalRequestError> {
-        let url = format_pipeline_url(
-            if self.common_config.enable_https {
-                "https"
-            } else {
-                "http"
-            },
-            location,
-            endpoint,
-            "",
-        );
+        let url = format_pipeline_url(self.common_config.http_scheme(), location, endpoint, "");
         let response = self
             .client
             .request(method, &url)
@@ -1040,11 +1027,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             return;
         }
         let url = format_pipeline_url(
-            if self.common_config.enable_https {
-                "https"
-            } else {
-                "http"
-            },
+            self.common_config.http_scheme(),
             location,
             "dynamic_config",
             "",
@@ -1327,11 +1310,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
         let binary_check_url = format!(
             "{}://{}:{}/artifacts/{}/{}/{}/{}/{}",
-            if self.common_config.enable_https {
-                "https"
-            } else {
-                "http"
-            },
+            self.common_config.http_scheme(),
             self.common_config.compiler_host,
             self.common_config.compiler_port,
             self.pipeline_id,
@@ -1590,11 +1569,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // URL where the program info can be downloaded from
         let program_info_url = format!(
             "{}://{}:{}/program_info/{}/{}/{}/{}",
-            if self.common_config.enable_https {
-                "https"
-            } else {
-                "http"
-            },
+            self.common_config.http_scheme(),
             self.common_config.compiler_host,
             self.common_config.compiler_port,
             self.pipeline_id,

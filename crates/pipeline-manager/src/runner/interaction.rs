@@ -269,11 +269,7 @@ impl RunnerInteraction {
     ) -> Result<HttpResponse, ManagerError> {
         // Perform request to the pipeline
         let url = format_pipeline_url(
-            if common_config.enable_https {
-                "https"
-            } else {
-                "http"
-            },
+            common_config.http_scheme(),
             location,
             endpoint,
             query_string,
@@ -479,11 +475,7 @@ impl RunnerInteraction {
 
         // Connect to the pipeline
         let server_url = format_pipeline_url(
-            if self.common_config.enable_https {
-                "wss"
-            } else {
-                "ws"
-            },
+            self.common_config.ws_scheme(),
             &location,
             endpoint,
             client_request.query_string(),
@@ -590,11 +582,7 @@ impl RunnerInteraction {
     ) -> Result<HttpResponse, ManagerError> {
         let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
         let url = format_pipeline_url(
-            if self.common_config.enable_https {
-                "https"
-            } else {
-                "http"
-            },
+            self.common_config.http_scheme(),
             &location,
             endpoint,
             request.query_string(),
@@ -625,11 +613,7 @@ impl RunnerInteraction {
         let separator = if query.is_empty() { "" } else { "?" };
         let url = format!(
             "{}://{}:{}/logs/{}{separator}{query}",
-            if self.common_config.enable_https {
-                "https"
-            } else {
-                "http"
-            },
+            self.common_config.http_scheme(),
             self.common_config.runner_host,
             self.common_config.runner_port,
             pipeline.id,
