@@ -20,6 +20,13 @@ Source edition can be found on github.
   `CompilerUnavailable`). GET requests and idempotent requests keep the full
   retry policy.
 
+- Bug fix (Python SDK, fda): `commit_transaction(transaction_id=N)` and
+  `fda commit-transaction` failed with "doesn't match current active
+  transaction" if an earlier transaction, for example one that a connector
+  started, was still committing. Without a transaction ID, they returned
+  before the API's transaction committed. Now both wait for the transaction
+  that `start_transaction` started.
+
 ## v0.373.0
 
 - With `FELDERA_REFUSE_LOCAL_FILE_URIS=true`, Delta Lake and Iceberg connectors

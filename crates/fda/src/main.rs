@@ -2818,15 +2818,14 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     1,
                 ))
                 .unwrap();
-            let current_transaction_id = stats.into_inner().global_metrics.transaction_id;
-
-            // Check if there's no transaction in progress
-            if current_transaction_id == 0 {
+            let Some(current_transaction_id) =
+                open_api_transaction(&stats.into_inner().global_metrics.transaction_initiators)
+            else {
                 eprintln!(
                     "Attempting to commit a transaction, but there is no transaction in progress"
                 );
                 std::process::exit(1);
-            }
+            };
 
             // Verify transaction ID if provided
             if let Some(expected_transaction_id) = transaction_id
@@ -2868,10 +2867,12 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         ))
                         .unwrap();
 
-                    let current_transaction_id = stats.into_inner().global_metrics.transaction_id;
-
-                    // If transaction_id is 0, it means the transaction has been committed
-                    if current_transaction_id != actual_transaction_id {
+                    let metrics = stats.into_inner().global_metrics;
+                    if !transaction_pending(
+                        metrics.transaction_id,
+                        &metrics.transaction_initiators,
+                        actual_transaction_id,
+                    ) {
                         break;
                     }
 
@@ -4129,6 +4130,33 @@ fn main() {
         })
 }
 
+/// Returns the ID of the transaction that the API started and did not yet
+/// commit, or `None` if there is no such transaction.
+///
+/// The global metric `transaction_id` is the transaction that the pipeline runs
+/// now.  That can be an earlier transaction that is still committing, so this
+/// uses `initiators`, the initiators of the transaction, instead.
+fn open_api_transaction(initiators: &TransactionInitiators) -> Option<i64> {
+    if initiators.initiated_by_api == Some(TransactionPhase::Started) {
+        initiators.transaction_id
+    } else {
+        None
+    }
+}
+
+/// Returns true if transaction `transaction_id` did not yet commit, given the
+/// global metrics `current_transaction_id` and `initiators`.
+///
+/// The transaction can be the one that the pipeline runs now, or the next one,
+/// which waits for an earlier transaction to commit.
+fn transaction_pending(
+    current_transaction_id: i64,
+    initiators: &TransactionInitiators,
+    transaction_id: i64,
+) -> bool {
+    current_transaction_id == transaction_id || initiators.transaction_id == Some(transaction_id)
+}
+
 fn init_logging(default_level: &str) {
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
@@ -4148,14 +4176,58 @@ fn init_logging(default_level: &str) {
 mod tests {
     use super::{
         Client, ClientInfo, ClientOpts, RuntimeConfig, RuntimeConfigKey, format_program_errors,
-        install_crypto_provider, make_client, patch_runtime_config, read_oidc_token_file,
+        install_crypto_provider, make_client, open_api_transaction, patch_runtime_config,
+        read_oidc_token_file, transaction_pending,
     };
     use feldera_rest_api::types::{
         ProgramError, RustCompilationInfo, SqlCompilationInfo, SqlCompilerMessage,
+        TransactionInitiators,
     };
     use feldera_types::duration::ConfigDuration;
     use feldera_types::size::ConfigSize;
+    use serde_json::json;
     use std::io::Write;
+
+    fn initiators(id: Option<i64>, api: Option<&str>) -> TransactionInitiators {
+        serde_json::from_value(json!({
+            "transaction_id": id,
+            "initiated_by_api": api,
+            "initiated_by_connectors": {},
+        }))
+        .unwrap()
+    }
+
+    /// After `start_transaction`, the pipeline can still be committing an
+    /// earlier transaction 4.  `commit-transaction` must commit the API's
+    /// transaction 5 and wait until 5, not 4, commits.
+    #[test]
+    fn commit_waits_for_api_transaction_behind_earlier_commit() {
+        assert_eq!(
+            open_api_transaction(&initiators(Some(5), Some("Started"))),
+            Some(5)
+        );
+        for (current, next) in [
+            (4, initiators(Some(5), Some("Committed"))),
+            (5, initiators(Some(5), Some("Committed"))),
+            (5, initiators(None, None)),
+        ] {
+            assert!(transaction_pending(current, &next, 5), "{current} {next:?}");
+        }
+        for current in [0, 6] {
+            assert!(!transaction_pending(current, &initiators(None, None), 5));
+        }
+    }
+
+    /// There is nothing to commit if the API has no transaction, or if it
+    /// already asked to commit it.
+    #[test]
+    fn commit_needs_open_api_transaction() {
+        assert_eq!(open_api_transaction(&initiators(None, None)), None);
+        assert_eq!(
+            open_api_transaction(&initiators(Some(5), Some("Committed"))),
+            None
+        );
+    }
     use std::time::Duration;
 
     /// A duration key stores what the user typed as a duration. One field
