@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::span::EnteredSpan;
-use tracing::{debug, info_span};
+use tracing::{debug, info_span, warn};
 
 const DEFAULT_MAX_MESSAGE_SIZE: usize = 1_000_000;
 
@@ -319,8 +319,12 @@ impl ClientContext for KafkaOutputContext {
         ) {
             // librdkafka reconnects without losing the queued messages. The
             // delivery-age monitor reports a sustained outage; an output
-            // error would incorrectly imply that records were lost.
-            debug!("Kafka producer reconnecting: {error}; {reason}");
+            // error would incorrectly imply that records were lost. Log it,
+            // so the log says why the pipeline stalled.
+            let _guard = span(&self.topic);
+            warn!(
+                "Kafka producer lost its broker connection and is reconnecting: {error}; {reason}"
+            );
             return;
         }
         let fatal = match error.rdkafka_error_code() {
