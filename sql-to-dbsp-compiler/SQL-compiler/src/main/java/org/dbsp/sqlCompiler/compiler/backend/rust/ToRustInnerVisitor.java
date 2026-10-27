@@ -1814,6 +1814,23 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.decrease().append("))");
                 break;
             }
+            case COALESCE: {
+                String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
+                        expression.getNode(),
+                        expression.opcode,
+                        expression.left.getType(),
+                        expression.right.getType());
+                // A macro, lazy in the right argument
+                this.builder.append(function).append("!(").increase();
+                this.visitingChild = 0;
+                expression.left.accept(this);
+                this.builder.append(",")
+                        .newline();
+                this.visitingChild = 1;
+                expression.right.accept(this);
+                this.builder.decrease().append(")");
+                break;
+            }
             default: {
                 if (expression.opcode == DBSPOpcode.ADD && expression.left.getType().is(DBSPTypeTuple.class)) {
                     this.visitingChild = 0;

@@ -30,7 +30,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -325,7 +324,7 @@ public class RangeAggregates extends WindowAggregates {
             // map_index(|(key_ts_agg)| (
             //         Tup2::new(key_ts_agg.0.0,
             //                   UnsignedWrappers::to_signed::<i32, i32, i64, u64>(key_ts_agg.1.0, true, true)),
-            //         if key_ts_agg.1.1.is_none() { emptySetResult } else { key_ts_agg.1.1.unwrap() } ))
+            //         coalesce(key_ts_agg.1.1, Some(emptySetResult)).unwrap() ))
             DBSPVariablePath var = new DBSPVariablePath("key_ts_agg",
                     new DBSPTypeRawTuple(
                             partitionType.ref(),
@@ -366,10 +365,11 @@ public class RangeAggregates extends WindowAggregates {
             List<DBSPExpression> keyFields = new ArrayList<>(Arrays.asList(
                     Objects.requireNonNull(DBSPTupleExpression.flatten(ixKey).fields)));
             keyFields.add(unwrap);
-            // An empty window holds the results of the aggregates on an empty set.  The if computes
+            // An empty window holds the results of the aggregates on an empty set.  COALESCE computes
             // them only for an empty window, since a postprocessing step can fail on an empty set.
-            DBSPExpression value = new DBSPIfExpression(this.node, agg.is_null(),
-                    emptySetResult, agg.applyCloneIfNeeded().neverFailsUnwrap(this.node));
+            DBSPExpression value = new DBSPBinaryExpression(this.node, agg.getType(), DBSPOpcode.COALESCE,
+                    agg.applyCloneIfNeeded(), emptySetResult.some())
+                    .neverFailsUnwrap(this.node);
             DBSPExpression body = new DBSPRawTupleExpression(
                     new DBSPTupleExpression(keyFields, false), value);
             index = new DBSPMapIndexOperator(this.node, body.closure(var), windowAgg.outputPort())

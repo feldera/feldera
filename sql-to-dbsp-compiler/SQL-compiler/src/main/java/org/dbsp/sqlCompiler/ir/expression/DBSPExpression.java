@@ -291,6 +291,12 @@ public abstract class DBSPExpression
             return this;
         if (this.is(DBSPIfExpression.class))
             return this;
+        // A COALESCE produces a new value, and so does unwrapping it
+        DBSPExpression produced = this.is(DBSPUnwrapExpression.class)
+                ? this.to(DBSPUnwrapExpression.class).expression
+                : this;
+        if (produced.is(DBSPBinaryExpression.class) && produced.to(DBSPBinaryExpression.class).opcode == DBSPOpcode.COALESCE)
+            return this;
         return this.applyClone();
     }
 

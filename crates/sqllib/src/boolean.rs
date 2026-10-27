@@ -186,3 +186,66 @@ pub const fn i8_to_bool_(value: i8) -> bool {
 }
 
 some_function1!(i8_to_bool, i8, bool);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    /// SQL AND: FALSE wins over NULL.
+    fn sql_and(left: Option<bool>, right: Option<bool>) -> Option<bool> {
+        match (left, right) {
+            (Some(false), _) | (_, Some(false)) => Some(false),
+            (Some(true), Some(true)) => Some(true),
+            _ => None,
+        }
+    }
+
+    /// SQL OR: TRUE wins over NULL.
+    fn sql_or(left: Option<bool>, right: Option<bool>) -> Option<bool> {
+        match (left, right) {
+            (Some(true), _) | (_, Some(true)) => Some(true),
+            (Some(false), Some(false)) => Some(false),
+            _ => None,
+        }
+    }
+
+    /// Applies `$op` and checks the result and how many times the right operand is evaluated.
+    macro_rules! check {
+        ($op:ident, $left:expr, $right:expr, $expected:expr, $decided:expr) => {{
+            let evaluations = Cell::new(0);
+            let result = $op($left, || {
+                evaluations.set(evaluations.get() + 1);
+                $right
+            });
+            let context = format!("{}({:?}, {:?})", stringify!($op), $left, $right);
+            assert_eq!(result, $expected, "{context}");
+            assert_eq!(evaluations.get(), if $decided { 0 } else { 1 }, "{context}");
+        }};
+    }
+
+    #[test]
+    fn and_or_are_lazy() {
+        let values = [Some(false), Some(true), None];
+        for left in values {
+            for right in values {
+                let and = sql_and(left, right);
+                let or = sql_or(left, right);
+                check!(and_bN_bN, left, right, and, left == Some(false));
+                check!(or_bN_bN, left, right, or, left == Some(true));
+                if let Some(l) = left {
+                    check!(and_b_bN, l, right, and, !l);
+                    check!(or_b_bN, l, right, or, l);
+                }
+                if let Some(r) = right {
+                    check!(and_bN_b, left, r, and, left == Some(false));
+                    check!(or_bN_b, left, r, or, left == Some(true));
+                }
+                if let (Some(l), Some(r)) = (left, right) {
+                    check!(and_b_b, l, r, and.unwrap(), !l);
+                    check!(or_b_b, l, r, or.unwrap(), l);
+                }
+            }
+        }
+    }
+}

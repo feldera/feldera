@@ -2360,6 +2360,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 }
                 return new DBSPTupleExpression(node, tuple, converted);
             }
+            // NVL and its alias IFNULL are COALESCE with two operands
+            case NVL:
             case COALESCE: {
                 if (ops.isEmpty()) {
                     throw new CompilationError(
@@ -2373,20 +2375,22 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                 "COALESCE of all-NULL values returning non-nullable result", node);
                     return type.none();
                 }
-                DBSPExpression last = ops.get(ops.size() - 1).cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
-                for (int i = 1; i < ops.size(); i++) {
-                    int index = ops.size() - i - 1;
-                    final DBSPExpression op = ops.get(index);
-                    final DBSPExpression castOp;
-                    if (op.getType().sameTypeIgnoringNullability(type) &&
-                            op.getType().mayBeNull && !type.mayBeNull) {
-                        castOp = op.neverFailsUnwrap(node);
-                    } else {
-                        castOp = op.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
-                    }
-                    last = new DBSPIfExpression(node, op.is_null(), last, castOp);
+                // Operands after the first non-nullable operand are never evaluated
+                int last = 0;
+                while (last < ops.size() - 1 && ops.get(last).getType().mayBeNull)
+                    last++;
+                if (last == 0)
+                    return ops.get(0).cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
+                // A chain of binary COALESCE expressions on nullable operands, nested to the right
+                DBSPType nullableType = type.withMayBeNull(true);
+                DBSPExpression result = ops.get(last).cast(node, nullableType, DBSPCastExpression.CastType.SqlUnsafe);
+                for (int i = last - 1; i >= 0; i--) {
+                    DBSPExpression op = ops.get(i).cast(node, nullableType, DBSPCastExpression.CastType.SqlUnsafe);
+                    result = new DBSPBinaryExpression(node, nullableType, DBSPOpcode.COALESCE, op, result);
                 }
-                return last;
+                if (!type.mayBeNull)
+                    result = result.neverFailsUnwrap(node);
+                return result;
             }
             case TIMESTAMP_ADD:
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())

@@ -645,3 +645,39 @@ where
 pub fn blackbox<T>(value: T) -> T {
     value
 }
+
+/// SQL COALESCE of two nullable values of the same type.  COALESCE is lazy:
+/// the right operand is evaluated only when the left operand is NULL.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! coalesce_N_N {
+    ($left:expr, $right:expr) => {
+        match $left {
+            None => $right,
+            left => left,
+        }
+    };
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+
+    #[test]
+    fn coalesce_is_lazy() {
+        let values = [Some(1), Some(2), None];
+        for left in values {
+            for right in values {
+                let evaluations = Cell::new(0);
+                let result = coalesce_N_N!(left, {
+                    evaluations.set(evaluations.get() + 1);
+                    right
+                });
+                let context = format!("coalesce_N_N({left:?}, {right:?})");
+                assert_eq!(result, left.or(right), "{context}");
+                let expected = if left.is_none() { 1 } else { 0 };
+                assert_eq!(evaluations.get(), expected, "{context}");
+            }
+        }
+    }
+}

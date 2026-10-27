@@ -438,6 +438,16 @@ public class InternInner extends ExpressionTranslator {
                 this.map(expression, result);
                 return;
             }
+            case COALESCE: {
+                // Do not replace if both are interned; the result has the type of the operands
+                Pair<DBSPExpression, DBSPExpression> pair = this.uninternBothOrNone(
+                        this.getE(expression.left), this.getE(expression.right),
+                        expression.left.getType(), expression.right.getType());
+                DBSPExpression result = new DBSPBinaryExpression(
+                        expression.getNode(), pair.right.getType(), expression.opcode, pair.left, pair.right);
+                this.map(expression, result);
+                return;
+            }
             default:
                 break;
         }

@@ -24,6 +24,25 @@ public class InternTests extends SqlIoTest {
     }
 
     @Test
+    public void testCoalesce() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(s VARCHAR INTERNED, t VARCHAR INTERNED, u VARCHAR);
+                CREATE VIEW V AS SELECT
+                  COALESCE(s, t, 'z') AS stz,
+                  COALESCE(s, t) AS st,
+                  COALESCE(s, u) AS su
+                FROM T;""").withStringTrim();
+        ccs.stepWeightOne("""
+                INSERT INTO T VALUES('a', 'b', 'c'), (NULL, 'b', 'c'), (NULL, NULL, 'c'), (NULL, NULL, NULL);""", """
+                 stz | st  | su
+                ----------------
+                 a   | a   | a
+                 b   | b   | c
+                 z   |NULL | c
+                 z   |NULL |NULL""");
+    }
+
+    @Test
     public void testRecursive() {
         this.getCCS("""
                 CREATE TABLE T(X VARCHAR INTERNED);
