@@ -9,6 +9,13 @@ import org.junit.Test;
 public class RowComparisonTests extends SqlIoTest {
     static final String EQ_REJECTED = "ROW values cannot be compared using '='";
     static final String NE_REJECTED = "ROW values cannot be compared using '<>'";
+    static final String IN_REJECTED = "ROW values cannot be compared using 'IN'; consider using 'EXISTS' instead.";
+
+    /** Two tables with two INT columns each */
+    static final String INT_TABLES = """
+            CREATE TABLE T(a INT, b INT);
+            CREATE TABLE S(x INT, y INT);
+            """;
 
     /** Two tables with a single column of the user-defined type 'point' */
     static final String UDT_TABLES = """
@@ -53,7 +60,37 @@ public class RowComparisonTests extends SqlIoTest {
     @Test
     public void rejectEqualityInInList() {
         this.statementsFailingInCompilation(ROW_TABLE +
-                "CREATE VIEW V AS SELECT r IN (ROW(1, 2), ROW(3, 4)) FROM T;", EQ_REJECTED);
+                "CREATE VIEW V AS SELECT r IN (ROW(1, 2), ROW(3, 4)) FROM T;", IN_REJECTED);
+    }
+
+    /** IN, NOT IN, and comparisons with SOME, ANY, or ALL with a ROW left operand,
+     * which can be a row constructor */
+    @Test
+    public void rejectQuantifiedComparisonsOnRow() {
+        this.statementsFailingInCompilation(INT_TABLES +
+                "CREATE VIEW V AS SELECT (a, b) IN (SELECT x, y FROM S) FROM T;", """
+                error: Unsupported comparison: ROW values cannot be compared using 'IN'; consider using 'EXISTS' instead.
+                See https://docs.feldera.com/sql/comparisons#comparing-row-values
+                """);
+        this.statementsFailingInCompilation(INT_TABLES +
+                "CREATE VIEW V AS SELECT (a, b) IN ((1, 2), (3, 4)) FROM T;", IN_REJECTED);
+        this.statementsFailingInCompilation(INT_TABLES +
+                "CREATE VIEW V AS SELECT (a, b) NOT IN (SELECT x, y FROM S) FROM T;",
+                "ROW values cannot be compared using 'NOT IN'; consider using 'NOT EXISTS' instead.");
+        this.statementsFailingInCompilation(INT_TABLES +
+                "CREATE VIEW V AS SELECT (a, b) = SOME (SELECT x, y FROM S) FROM T;",
+                "ROW values cannot be compared using '= SOME'; consider using 'EXISTS' instead.");
+        // ANY is a synonym of SOME
+        this.statementsFailingInCompilation(INT_TABLES +
+                "CREATE VIEW V AS SELECT (a, b) < ANY (VALUES (1, 2)) FROM T;",
+                "ROW values cannot be compared using '< SOME'; consider using 'EXISTS' instead.");
+        this.statementsFailingInCompilation(INT_TABLES +
+                "CREATE VIEW V AS SELECT (a, b) >= ALL (SELECT x, y FROM S) FROM T;",
+                "ROW values cannot be compared using '>= ALL'; consider using 'NOT EXISTS' instead.");
+        // Calcite crashes when it converts this comparison
+        this.statementsFailingInCompilation(UDT_TABLES +
+                "CREATE VIEW V AS SELECT p = SOME (VALUES ROW(1, 2), ROW(3, 4)) FROM L;",
+                "ROW values cannot be compared using '= SOME'; consider using 'EXISTS' instead.");
     }
 
     /** 'CASE r WHEN v' expands into 'r = v' */
@@ -174,6 +211,10 @@ public class RowComparisonTests extends SqlIoTest {
         this.getCC("""
                 CREATE TABLE T(a INT, b INT);
                 CREATE VIEW V AS SELECT (a, b) IS DISTINCT FROM (b, a) FROM T;""");
+        this.getCC(INT_TABLES + """
+                CREATE VIEW V1 AS SELECT EXISTS (SELECT 1 FROM S WHERE (a, b) IS NOT DISTINCT FROM (x, y)) FROM T;
+                CREATE VIEW V2 AS SELECT EXISTS (SELECT 1 FROM S WHERE (a, b) < (x, y)) FROM T;
+                CREATE VIEW V3 AS SELECT NOT EXISTS (SELECT 1 FROM S WHERE ((a, b) >= (x, y)) IS NOT TRUE) FROM T;""");
     }
 
     /** A join key of ROW type joins on IS NOT DISTINCT FROM: two NULL fields match,
@@ -241,6 +282,45 @@ public class RowComparisonTests extends SqlIoTest {
                 CREATE VIEW V4 AS SELECT p FROM L INTERSECT SELECT p FROM R;
                 CREATE VIEW V5 AS SELECT p FROM L EXCEPT SELECT p FROM R;
                 CREATE VIEW V6 AS SELECT p, COUNT(*) OVER (PARTITION BY p) FROM L;""");
+    }
+
+    /** IS NULL is true only for a NULL ROW value, and IS NOT NULL is its negation; a row
+     * constructor is never NULL.  The SQL standard tests the fields instead. */
+    @Test
+    public void isNullOnRow() {
+        CompilerCircuitStream ccs = this.getCCS("""
+                CREATE TABLE T(id INT, a INT NULL, b INT NULL, r ROW(a INT NULL, b INT NULL) NULL);
+                CREATE VIEW V AS SELECT id, r IS NULL AS r_null, r IS NOT NULL AS r_not_null,
+                  (a, b) IS NULL AS c_null, (a, b) IS NOT NULL AS c_not_null FROM T;""");
+        ccs.step("""
+                INSERT INTO T VALUES(1, NULL, NULL, ROW(CAST(NULL AS INT), CAST(NULL AS INT)));
+                INSERT INTO T VALUES(2, 1, NULL, ROW(1, CAST(NULL AS INT)));
+                INSERT INTO T VALUES(3, 1, 2, ROW(1, 2));
+                INSERT INTO T VALUES(4, NULL, NULL, NULL);""", """
+                 id | r_null | r_not_null | c_null | c_not_null | weight
+                -----------------------------------------------------------
+                 1  | false  | true       | false  | true       | 1
+                 2  | false  | true       | false  | true       | 1
+                 3  | false  | true       | false  | true       | 1
+                 4  | true   | false      | false  | true       | 1""");
+    }
+
+    /** UNIQUE compares ROW values by distinctness: two ROW values with the same NULL fields
+     * are duplicates, and only a NULL ROW value is a NULL column */
+    @Test
+    public void uniqueOnRowValues() {
+        CompilerCircuitStream ccs = this.getCCS("""
+                CREATE TABLE T(id INT, r ROW(a INT, b INT NULL) NULL);
+                CREATE VIEW V AS SELECT
+                  UNIQUE (SELECT r FROM T WHERE id IN (1, 2)) AS null_field,
+                  UNIQUE (SELECT r FROM T WHERE id IN (3, 4)) AS no_null,
+                  UNIQUE (SELECT r FROM T WHERE id IN (5, 6)) AS null_row;""");
+        ccs.step("""
+                INSERT INTO T VALUES(1, ROW(1, NULL)), (2, ROW(1, NULL)), (3, ROW(1, 2)),
+                                    (4, ROW(1, 2)), (5, NULL), (6, NULL);""", """
+                 null_field | no_null | null_row | weight
+                ------------------------------------------
+                 false      | false   | true     | 1""");
     }
 
     /** For ARRAY values '=' means IS NOT DISTINCT FROM: two NULL elements are equal */

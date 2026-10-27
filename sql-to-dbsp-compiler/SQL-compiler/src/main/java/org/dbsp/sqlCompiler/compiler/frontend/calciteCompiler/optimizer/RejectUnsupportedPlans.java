@@ -52,7 +52,7 @@ import org.dbsp.util.Utilities;
  * accepted.  So are the ordering comparisons '&lt;', '&lt;=', '&gt;' and '&gt;='.
  */
 public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
-    private static final String ERROR_KIND = "Unsupported comparison";
+    public static final String ERROR_KIND = "Unsupported comparison";
 
     public static final Documentation.Link ROW_DOCUMENTATION =
             new Documentation.Link("sql/comparisons", "comparing-row-values");

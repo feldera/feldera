@@ -628,7 +628,9 @@ scalar sub-queries can occur in any place where an expression can
 occur (such as the `SELECT` clause, `WHERE` clause, `ON` clause of a
 `JOIN`, or as an argument to an aggregate function).  The [comparison
 operations](comparisons.md#any) describe the results of quantified
-comparisons and `UNIQUE`.
+comparisons and `UNIQUE`.  `IN` and quantified comparisons [reject
+`ROW` values](comparisons.md#comparing-row-values) on the left, such
+as `(a, b) IN (SELECT x, y FROM t)`.
 
 All these sub-queries may be correlated; that is, they may refer to
 tables in the `FROM` clause of an enclosing query.
