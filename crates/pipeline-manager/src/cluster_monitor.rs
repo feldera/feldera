@@ -74,21 +74,11 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
     info!("Cluster monitor is starting");
 
     // Determine URLs of the services for their self-reporting
-    let protocol = common_config.http_scheme();
-    let api_url = format!(
-        "{protocol}://{}:{}/healthz",
-        common_config.api_host, common_config.api_port
-    );
+    let api_url = common_config.api_url("healthz");
     // `check_storage` additionally fails on storage pressure of the compiler
     // working directory, which would make binary uploads fail with ENOSPC.
-    let compiler_url = format!(
-        "{protocol}://{}:{}/healthz?check_storage=true",
-        common_config.compiler_host, common_config.compiler_port
-    );
-    let runner_url = format!(
-        "{protocol}://{}:{}/healthz",
-        common_config.runner_host, common_config.runner_port
-    );
+    let compiler_url = common_config.compiler_url("healthz?check_storage=true");
+    let runner_url = common_config.runner_url("healthz");
 
     // Indefinitely loop checking status
     let client = common_config.reqwest_client().await;

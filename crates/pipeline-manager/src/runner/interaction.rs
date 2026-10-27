@@ -127,16 +127,6 @@ impl From<ExtendedPipelineDescrMonitoring> for CachedPipelineDescr {
     }
 }
 
-/// Formats the URL to reach the pipeline.
-pub fn format_pipeline_url(
-    protocol: &str,
-    location: &str,
-    endpoint: &str,
-    query_string: &str,
-) -> String {
-    format!("{protocol}://{location}/{endpoint}?{query_string}")
-}
-
 /// Formats the error message displayed when a request to a pipeline timed out.
 pub fn format_timeout_error_message<T: Display>(timeout: Duration, error: T) -> String {
     format!(
@@ -268,12 +258,7 @@ impl RunnerInteraction {
         accept_encoding: Option<&str>,
     ) -> Result<HttpResponse, ManagerError> {
         // Perform request to the pipeline
-        let url = format_pipeline_url(
-            common_config.http_scheme(),
-            location,
-            endpoint,
-            query_string,
-        );
+        let url = common_config.pipeline_url(location, endpoint, query_string);
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
         // `.no_decompress()` also suppresses awc's own `Accept-Encoding` header.
         let mut request = client
@@ -474,12 +459,9 @@ impl RunnerInteraction {
         let mut client_rx = client_rx.max_frame_size(MAX_WS_FRAME_SIZE);
 
         // Connect to the pipeline
-        let server_url = format_pipeline_url(
-            self.common_config.ws_scheme(),
-            &location,
-            endpoint,
-            client_request.query_string(),
-        );
+        let server_url =
+            self.common_config
+                .pipeline_ws_url(&location, endpoint, client_request.query_string());
         let (_response, pipeline_conn) = awc_client
             .ws(server_url)
             .max_frame_size(MAX_WS_FRAME_SIZE)
@@ -581,12 +563,9 @@ impl RunnerInteraction {
         timeout: Option<Duration>, // If no timeout is specified, a default timeout is used
     ) -> Result<HttpResponse, ManagerError> {
         let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
-        let url = format_pipeline_url(
-            self.common_config.http_scheme(),
-            &location,
-            endpoint,
-            request.query_string(),
-        );
+        let url = self
+            .common_config
+            .pipeline_url(&location, endpoint, request.query_string());
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
         streaming_proxy(client, &url, pipeline_name, &request, body, timeout).await
     }
@@ -611,13 +590,9 @@ impl RunnerInteraction {
         // sent. `Full` renders empty, leaving the URL as it is without a cursor.
         let query = mode.to_query_string();
         let separator = if query.is_empty() { "" } else { "?" };
-        let url = format!(
-            "{}://{}:{}/logs/{}{separator}{query}",
-            self.common_config.http_scheme(),
-            self.common_config.runner_host,
-            self.common_config.runner_port,
-            pipeline.id,
-        );
+        let url = self
+            .common_config
+            .runner_url(&format!("logs/{}{separator}{query}", pipeline.id));
 
         // Perform request to the runner
         let response = client

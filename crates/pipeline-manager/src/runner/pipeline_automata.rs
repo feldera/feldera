@@ -18,7 +18,7 @@ use crate::db::types::utils::{
 use crate::error::source_error;
 use crate::is_supported_runtime;
 use crate::runner::error::RunnerError;
-use crate::runner::interaction::{format_pipeline_url, format_timeout_error_message};
+use crate::runner::interaction::format_timeout_error_message;
 use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
 use crate::runner::pipeline_logs::{
     FollowRequest, LogMessage, LogsSender, start_thread_pipeline_logs,
@@ -193,16 +193,10 @@ pub(crate) fn compiler_binary_url(
     source_checksum: &str,
     integrity_checksum: &str,
 ) -> String {
-    format!(
-        "{}://{}:{}/binary/{}/{}/{}/{}",
-        common_config.http_scheme(),
-        common_config.compiler_host,
-        common_config.compiler_port,
-        pipeline_id,
-        program_version,
-        source_checksum,
-        integrity_checksum,
-    )
+    common_config.compiler_url(&format!(
+        "binary/{}/{}/{}/{}",
+        pipeline_id, program_version, source_checksum, integrity_checksum,
+    ))
 }
 
 /// Pipeline automaton monitors the runtime state of a single pipeline and continually reconciles
@@ -965,7 +959,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         endpoint: &str,
         timeout: Duration,
     ) -> Result<(StatusCode, serde_json::Value), InternalRequestError> {
-        let url = format_pipeline_url(self.common_config.http_scheme(), location, endpoint, "");
+        let url = self.common_config.pipeline_url(location, endpoint, "");
         let response = self
             .client
             .request(method, &url)
@@ -1026,12 +1020,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         if applied == desired {
             return;
         }
-        let url = format_pipeline_url(
-            self.common_config.http_scheme(),
-            location,
-            "dynamic_config",
-            "",
-        );
+        let url = self
+            .common_config
+            .pipeline_url(location, "dynamic_config", "");
         let update = DynamicConfig {
             resources: DynamicResources {
                 memory_max: Some(desired),
@@ -1308,17 +1299,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             (source_checksum.as_str(), binary_integrity_checksum.as_str())
         };
 
-        let binary_check_url = format!(
-            "{}://{}:{}/artifacts/{}/{}/{}/{}/{}",
-            self.common_config.http_scheme(),
-            self.common_config.compiler_host,
-            self.common_config.compiler_port,
+        let binary_check_url = self.common_config.compiler_url(&format!(
+            "artifacts/{}/{}/{}/{}/{}",
             self.pipeline_id,
             program_version,
             source_checksum,
             binary_integrity_checksum,
             program_info_integrity_checksum,
-        );
+        ));
 
         match self
             .client
@@ -1567,16 +1555,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         };
 
         // URL where the program info can be downloaded from
-        let program_info_url = format!(
-            "{}://{}:{}/program_info/{}/{}/{}/{}",
-            self.common_config.http_scheme(),
-            self.common_config.compiler_host,
-            self.common_config.compiler_port,
+        let program_info_url = self.common_config.compiler_url(&format!(
+            "program_info/{}/{}/{}/{}",
             self.pipeline_id,
             pipeline.program_version,
             program_info_source_checksum,
             program_info_integrity_checksum,
-        );
+        ));
 
         let bootstrap_config =
             if Self::platform_version_requires_bootstrap_policy(&pipeline.platform_version) {

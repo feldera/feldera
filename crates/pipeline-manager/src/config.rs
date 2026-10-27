@@ -507,6 +507,52 @@ impl CommonConfig {
         if self.enable_https { "wss" } else { "ws" }
     }
 
+    /// Returns the URL of `path` on the API server.
+    pub fn api_url(&self, path: &str) -> String {
+        format!(
+            "{}://{}:{}/{path}",
+            self.http_scheme(),
+            self.api_host,
+            self.api_port
+        )
+    }
+
+    /// Returns the URL of `path` on the compiler server.
+    pub fn compiler_url(&self, path: &str) -> String {
+        format!(
+            "{}://{}:{}/{path}",
+            self.http_scheme(),
+            self.compiler_host,
+            self.compiler_port
+        )
+    }
+
+    /// Returns the URL of `path` on the runner server.
+    pub fn runner_url(&self, path: &str) -> String {
+        format!(
+            "{}://{}:{}/{path}",
+            self.http_scheme(),
+            self.runner_host,
+            self.runner_port
+        )
+    }
+
+    /// Returns the HTTP URL of `endpoint` on the pipeline at `location`.
+    pub fn pipeline_url(&self, location: &str, endpoint: &str, query_string: &str) -> String {
+        format!(
+            "{}://{location}/{endpoint}?{query_string}",
+            self.http_scheme()
+        )
+    }
+
+    /// Returns the websocket URL of `endpoint` on the pipeline at `location`.
+    pub fn pipeline_ws_url(&self, location: &str, endpoint: &str, query_string: &str) -> String {
+        format!(
+            "{}://{location}/{endpoint}?{query_string}",
+            self.ws_scheme()
+        )
+    }
+
     /// Creates the `ServerConfig` for the HTTP servers of the API server, compiler and runner if
     /// HTTPS is enabled. Otherwise, returns `None`.
     pub fn https_server_config(&self) -> Option<rustls::ServerConfig> {
@@ -1895,6 +1941,44 @@ mod tests {
         };
         assert_eq!(https.http_scheme(), "https");
         assert_eq!(https.ws_scheme(), "wss");
+    }
+
+    #[test]
+    fn service_urls_follow_hosts_ports_and_scheme() {
+        let http = CommonConfig::test_config();
+        assert_eq!(http.api_url("healthz"), "http://127.0.0.1:8080/healthz");
+        assert_eq!(
+            http.compiler_url("validate_program"),
+            "http://127.0.0.1:8085/validate_program"
+        );
+        assert_eq!(http.runner_url("logs/1"), "http://127.0.0.1:8089/logs/1");
+        assert_eq!(
+            http.pipeline_url("10.0.0.1:8080", "stats", ""),
+            "http://10.0.0.1:8080/stats?"
+        );
+        assert_eq!(
+            http.pipeline_ws_url("10.0.0.1:8080", "query", "a=b"),
+            "ws://10.0.0.1:8080/query?a=b"
+        );
+
+        let https = CommonConfig {
+            enable_https: true,
+            ..CommonConfig::test_config()
+        };
+        assert_eq!(https.api_url("healthz"), "https://127.0.0.1:8080/healthz");
+        assert_eq!(
+            https.compiler_url("validate_program"),
+            "https://127.0.0.1:8085/validate_program"
+        );
+        assert_eq!(https.runner_url("logs/1"), "https://127.0.0.1:8089/logs/1");
+        assert_eq!(
+            https.pipeline_url("10.0.0.1:8080", "stats", ""),
+            "https://10.0.0.1:8080/stats?"
+        );
+        assert_eq!(
+            https.pipeline_ws_url("10.0.0.1:8080", "query", "a=b"),
+            "wss://10.0.0.1:8080/query?a=b"
+        );
     }
 
     /// The Gen-2 UDF SDK location is made absolute, and one that is not a crate stops startup.
