@@ -18,6 +18,7 @@ import org.apache.calcite.rex.RexWindow;
 import org.apache.calcite.rex.RexWindowBound;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.util.ImmutableBitSet;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -64,7 +65,7 @@ import java.util.Locale;
  * ROW values; ordering comparisons are rejected, as they are on ROW values.
  */
 public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
-    private static final String ERROR_KIND = "Unsupported comparison";
+    public static final String ERROR_KIND = "Unsupported comparison";
 
     public static final Documentation.Link ROW_DOCUMENTATION =
             new Documentation.Link("sql/comparisons", "comparing-row-values");
@@ -109,6 +110,25 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
                         UnsupportedException.KIND,
                         "WITHIN DISTINCT is not supported.\n" + WITHIN_DISTINCT_DOCUMENTATION.citation());
         }
+    }
+
+    /** The error for a comparison of kind 'kind' with the quoted name 'operator', or null if
+     * the comparison is accepted.  'isRow' is true when an operand is a ROW value, and false
+     * when an operand is an ARRAY or MAP value that contains ROW values. */
+    public static @Nullable String rowComparisonMessage(SqlKind kind, String operator, boolean isRow) {
+        return switch (kind) {
+            case EQUALS -> !isRow ? null : "ROW values cannot be compared using " + operator +
+                    "; consider using 'IS NOT DISTINCT FROM' (or its shorthand '<=>') instead";
+            case NOT_EQUALS -> !isRow ? null : "ROW values cannot be compared using " + operator +
+                    "; consider using 'IS DISTINCT FROM' instead";
+            case NULLIF -> !isRow ? null : "'NULLIF' compares ROW values for equality; consider using " +
+                    "'CASE WHEN x IS NOT DISTINCT FROM y THEN NULL ELSE x END' instead";
+            case LESS_THAN, LESS_THAN_OR_EQUAL, GREATER_THAN, GREATER_THAN_OR_EQUAL,
+                 GREATEST, LEAST, GREATEST_PG, LEAST_PG -> isRow ?
+                    "ROW values cannot be compared using " + operator + "; compare their fields instead" :
+                    "ARRAY and MAP values that contain ROW values cannot be compared using " + operator;
+            default -> null;
+        };
     }
 
     /** Reports the offending comparisons and window frames found in an expression. */
@@ -222,19 +242,7 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
             if (!hasRow)
                 return;
             String operator = Utilities.singleQuote(call.op.getName().toUpperCase(Locale.ROOT));
-            String message = switch (call.getKind()) {
-                case EQUALS -> !isRow ? null : "ROW values cannot be compared using " + operator +
-                        "; consider using 'IS NOT DISTINCT FROM' (or its shorthand '<=>') instead";
-                case NOT_EQUALS -> !isRow ? null : "ROW values cannot be compared using " + operator +
-                        "; consider using 'IS DISTINCT FROM' instead";
-                case NULLIF -> !isRow ? null : "'NULLIF' compares ROW values for equality; consider using " +
-                        "'CASE WHEN x IS NOT DISTINCT FROM y THEN NULL ELSE x END' instead";
-                case LESS_THAN, LESS_THAN_OR_EQUAL, GREATER_THAN, GREATER_THAN_OR_EQUAL,
-                     GREATEST, LEAST, GREATEST_PG, LEAST_PG -> isRow ?
-                        "ROW values cannot be compared using " + operator + "; compare their fields instead" :
-                        "ARRAY and MAP values that contain ROW values cannot be compared using " + operator;
-                default -> null;
-            };
+            String message = rowComparisonMessage(call.getKind(), operator, isRow);
             if (message == null)
                 return;
             this.reporter.reportError(new SourcePositionRange(call.getParserPosition()),
