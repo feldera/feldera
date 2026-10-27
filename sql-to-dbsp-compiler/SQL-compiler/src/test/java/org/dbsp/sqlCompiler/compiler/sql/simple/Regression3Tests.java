@@ -1023,6 +1023,20 @@ public class Regression3Tests extends SqlIoTest {
                  2.50""");
     }
 
+    /** The rows of an INSERT differ in nullability; each ROW constructor makes its row a
+     * separate input of a union */
+    @Test
+    public void insertRowsWithDifferentNullability() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(a INT, r ROW(x INT));
+                CREATE VIEW V AS SELECT a, r.x AS x FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(NULL, ROW(1)), (2, ROW(2))", """
+                 a | x
+                -------
+                   | 1
+                 2 | 2""");
+    }
+
     /** A NULL ROW constant reaching the monotonicity analysis */
     @Test
     public void nullRowConstantMonotone() {
