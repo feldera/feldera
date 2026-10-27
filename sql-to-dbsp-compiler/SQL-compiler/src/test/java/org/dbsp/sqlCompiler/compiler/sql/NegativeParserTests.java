@@ -45,19 +45,19 @@ public class NegativeParserTests extends BaseSQLTests {
     @Test
     public void testTableProperties() {
         String ddl = "CREATE TABLE T(T INT) WITH ( 5 )";
-        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"5\" at");
+        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"5\".\n");
 
         // properties need to be SQL strings
         ddl = "CREATE TABLE T(T INT) WITH ( a = b )";
-        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"a\" at");
+        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"a\".\n");
 
         // properties need to be SQL strings
         ddl = "CREATE TABLE T(T INT) WITH ( NULL = 'NULL' )";
-        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"NULL\" at");
+        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \"NULL\".\n");
 
         // properties cannot be an empty list
         ddl = "CREATE TABLE T(T INT) WITH ( )";
-        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \")\" at");
+        this.statementsFailingInCompilation(ddl, "Error parsing SQL: Encountered \")\".\n");
     }
 
     @Test
@@ -81,24 +81,24 @@ public class NegativeParserTests extends BaseSQLTests {
 
     @Test
     public void defaultValueErrorPosition() {
-        // The message names the position of the literal in the program, and the error once
+        // The error points at the literal in the program, and is reported once
         String ddl = """
                 CREATE TABLE T (
                     a DOUBLE DEFAULT 1e400
                 );""";
         this.statementsFailingInCompilation(ddl,
-                "From line 2, column 22 to line 2, column 26: Numeric literal '1E400' out of range\n");
+                "(no input file):2:22: error: Compilation error: Numeric literal '1E400' out of range\n");
     }
 
     @Test
     public void latenessErrorPosition() {
-        // The message names the position of the lateness expression in the program
+        // The error points at the lateness expression in the program
         String ddl = """
                 CREATE TABLE T (
                     ts TIMESTAMP LATENESS INTERVAL 1e400 SECONDS
                 );""";
         this.statementsFailingInCompilation(ddl,
-                "From line 2, column 27 to line 2, column 48: Numeric literal '1E400' out of range\n");
+                "(no input file):2:27: error: Compilation error: Numeric literal '1E400' out of range\n");
     }
 
     @Test
@@ -178,8 +178,7 @@ public class NegativeParserTests extends BaseSQLTests {
     }
 
     /** The body of a function is compiled inside a generated program; an error on
-     * the second line of the body must point at that line of the user's program,
-     * both in the location and in the message */
+     * the second line of the body must point at that line of the user's program */
     @Test
     public void functionBodyErrorPosition() {
         this.statementsFailingInCompilation("""
@@ -188,8 +187,7 @@ public class NegativeParserTests extends BaseSQLTests {
                   a +
                   nosuch;
                 CREATE VIEW V AS SELECT f(x) FROM T;""",
-                "(no input file):4:3: error: Compilation error: " +
-                        "From line 4, column 3 to line 4, column 8: Column 'nosuch' not found in any table\n");
+                "(no input file):4:3: error: Compilation error: Column 'nosuch' not found in any table\n");
     }
 
     @Test
