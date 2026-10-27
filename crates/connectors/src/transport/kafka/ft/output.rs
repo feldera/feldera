@@ -287,7 +287,13 @@ impl OutputEndpoint for KafkaOutputEndpoint {
             if let Some(val) = val {
                 record = record.payload(val);
             }
-            kafka_send(&self.kafka_producer, &self.topic, record, &self.shutdown)?;
+            kafka_send(
+                &self.kafka_producer,
+                &self.topic,
+                record,
+                &self.shutdown,
+                &mut |_| {},
+            )?;
 
             self.next_partition += 1;
             if self.next_partition >= self.n_partitions {

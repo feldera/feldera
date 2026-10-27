@@ -864,6 +864,16 @@ impl KafkaOutputConfig {
         // up on librdkafka memory usage.
         self.set_option_if_missing("statistics.interval.ms", "10000");
 
+        // Retry delivery until it succeeds. librdkafka's default drops a
+        // message after 5 minutes of retries, and nothing but a non-fatal error
+        // tells that it did. With no bound the sink waits on a full producer
+        // queue, and the pipeline parks behind it, until the broker is back.
+        // Either spelling of the timeout restores a bound. Do not insert a
+        // conflicting alias: librdkafka applies both to the same option.
+        if !self.kafka_options.contains_key("delivery.timeout.ms") {
+            self.set_option_if_missing("message.timeout.ms", "0");
+        }
+
         Ok(())
     }
 }
@@ -1366,6 +1376,37 @@ mod timeout_tests {
             error.contains("duplicate field `group_join_timeout`"),
             "{error}"
         );
+    }
+
+    /// The output connector retries delivery without bound unless the user
+    /// bounds it.
+    #[test]
+    fn output_message_timeout_defaults_to_unbounded() {
+        let mut config: KafkaOutputConfig = serde_json::from_str(&config_json("")).unwrap();
+        config.validate().unwrap();
+        assert_eq!(
+            config
+                .kafka_options
+                .get("message.timeout.ms")
+                .map(String::as_str),
+            Some("0")
+        );
+
+        for option in ["message.timeout.ms", "delivery.timeout.ms"] {
+            for value in ["0", "30000"] {
+                let mut config: KafkaOutputConfig =
+                    serde_json::from_str(&config_json(&format!(r#""{option}": "{value}""#)))
+                        .unwrap();
+                config.validate().unwrap();
+                assert_eq!(config.kafka_options.get(option).unwrap(), value);
+                let other = if option == "message.timeout.ms" {
+                    "delivery.timeout.ms"
+                } else {
+                    "message.timeout.ms"
+                };
+                assert!(!config.kafka_options.contains_key(other));
+            }
+        }
     }
 
     /// See [`group_join_timeout_accepts_both_spellings`].

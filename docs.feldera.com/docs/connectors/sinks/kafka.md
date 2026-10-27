@@ -43,6 +43,61 @@ producer with the connector's other Kafka options and the librdkafka defaults.
 }
 ```
 
+## Delivery, retries, and backpressure
+
+For pipelines without exactly-once fault tolerance, the connector defaults
+`message.timeout.ms` to `0`: temporary broker failures are retried without a
+delivery deadline. When the producer queue fills, the connector waits for room.
+The controller's output queue then fills to `max_queued_records`, and the
+pipeline stops advancing until the sink catches up. Configure
+`queue.buffering.max.messages` and `queue.buffering.max.kbytes` to bound the
+producer queue; the byte limit takes priority. These bounds apply per connector.
+
+To restore the former five-minute delivery deadline, add either
+`"message.timeout.ms": "300000"` or `"delivery.timeout.ms": "300000"` to the
+transport's `config` object. The two names are aliases; configure only one.
+An explicit finite timeout or retry count can cause undelivered records to be
+dropped. Permanent errors, such as a rejected oversized message, can also lose
+records. The connector reports these losses as errors. Shutdown does not
+guarantee delivery of records still in the non-fault-tolerant producer queue.
+
+The connector reports unhealthy when a pending message has waited at least
+10 seconds for delivery and no delivery completed in the last 10 seconds, or
+when a delivery fails. A slow broker that keeps acknowledging is not a stall,
+however long its queue. This check also runs on a quiet connector with spare
+queue capacity and when statistics are disabled. Records purged from the
+producer queue when the pipeline stops count as delivery errors in the
+metrics but are not reported as connector errors.
+Enqueuing another message does not establish recovery. A successful delivery
+restores healthy status only if no other message is overdue and the producer
+has no fatal error. After a fatal error, fix the underlying broker or
+configuration problem and restart the pipeline.
+
+These delivery defaults and health rules apply to the non-fault-tolerant sink.
+The exactly-once sink uses Kafka transactions and its own producer settings.
+
+### Output metrics
+
+The pipeline's `/metrics` endpoint exports the following metrics per output
+endpoint. Queue gauges and broker request counters refresh every
+`statistics.interval.ms`, which defaults to 10 seconds. With that option set to
+`0`, those statistics are disabled and the corresponding metrics stay at their
+initial zero values. Delivery counters and health checks remain active. The
+full-queue wait counter updates during retries and when a wait ends, including
+cancellation; its refresh delay is at most the retry polling interval (5 seconds).
+
+| Metric | Type | Meaning |
+|---|---|---|
+| `kafka_output_queue_messages` | gauge | Messages in the producer queue. |
+| `kafka_output_queue_bytes` | gauge | Bytes in the producer queue. |
+| `kafka_output_queue_max_messages` | gauge | Configured message limit; zero means no message-count limit. |
+| `kafka_output_queue_max_bytes` | gauge | Configured byte limit. |
+| `kafka_output_produce_retries_total` | counter | Broker request retries, including metadata requests as well as produce requests. |
+| `kafka_output_request_timeouts_total` | counter | Broker requests that timed out. |
+| `kafka_output_delivered_messages_total` | counter | Successful delivery reports from librdkafka, according to the configured acknowledgement policy. |
+| `kafka_output_delivery_errors_total` | counter | Failed asynchronous deliveries. |
+| `kafka_output_queue_full_wait_seconds_total` | counter | Time spent waiting for producer queue space. |
+
 ## Example usage
 
 We will create a Kafka output connector named `total-sales`.
