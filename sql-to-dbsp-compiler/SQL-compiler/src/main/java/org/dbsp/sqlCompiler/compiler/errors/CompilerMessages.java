@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.calcite.runtime.CalciteContextException;
 import org.apache.calcite.runtime.CalciteException;
 import org.apache.calcite.sql.parser.SqlParseException;
+import org.apache.calcite.sql.parser.SqlParserPos;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.IHasSourcePositionRange;
 import org.dbsp.util.Utilities;
@@ -15,9 +16,21 @@ import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 public class CompilerMessages {
+    /** The message of a parse exception without its position, which the error reports separately */
+    static String messageWithoutPosition(SqlParseException e) {
+        String message = Objects.requireNonNullElse(e.getMessage(), "");
+        SqlParserPos pos = e.getPos();
+        String position = " at line " + pos.getLineNum() + ", column " + pos.getColumnNum();
+        int index = message.indexOf(position);
+        if (index < 0)
+            return message;
+        return message.substring(0, index) + message.substring(index + position.length());
+    }
+
     public class Message implements IHasSourcePositionRange {
         public final SourcePositionRange context;
         public final SourcePositionRange range;
@@ -39,7 +52,7 @@ public class CompilerMessages {
         }
 
         Message(SourcePositionRange context, SqlParseException e) {
-            this(context, new SourcePositionRange(e.getPos()), false, false, "Error parsing SQL", e.getMessage());
+            this(context, new SourcePositionRange(e.getPos()), false, false, "Error parsing SQL", messageWithoutPosition(e));
         }
 
         Message(SourcePositionRange context, CalciteContextException e) {
