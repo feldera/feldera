@@ -192,6 +192,10 @@ jobs:
         shell: bash
         env:
           RUST_BACKTRACE: 1
+          # Panics print backtraces; errors don't capture them. Each connector
+          # suite case runs in a process of its own, where resolving the first
+          # backtrace takes seconds.
+          RUST_LIB_BACKTRACE: 0
           DELTA_TABLE_TEST_UNITY_ACCESS_TOKEN: ${{ steps.databricks-oidc.outputs.token }}
           DELTA_TABLE_TEST_UNITY_HOST: ${{ vars.DATABRICKS_WORKSPACE_HOST }}
           # Cap libtest parallelism at the runner core budget. Adapter tests
@@ -279,6 +283,10 @@ jobs:
         working-directory: crates/connectors
         env:
           RUST_BACKTRACE: 1
+          # Panics print backtraces; errors don't capture them. Each connector
+          # suite case runs in a process of its own, where resolving the first
+          # backtrace takes seconds.
+          RUST_LIB_BACKTRACE: 0
           # The job container and the emulator share the job's docker
           # network, so the emulator is addressed by service name.
           PUBSUB_EMULATOR_HOST: pubsub:8681
