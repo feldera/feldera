@@ -249,11 +249,11 @@ The runner builds each pipeline pod from a template that includes these two valu
 | Placeholder | Replaced with |
 |-------------|---------------|
 | `{id}` | `pipeline-<pipeline UUID>`, the name of the pipeline's StatefulSet |
-| `{name}` | The pipeline name as a quoted JSON string. Use it only as a whole value, not inside a path. |
+| `{name}` | The pipeline name as a quoted JSON string. Do not use it in `pipeline.extraVolumes` or `pipeline.extraVolumeMounts`, see below. |
 | `{namespace}` | The namespace of the pipeline pod |
 | `{deployment_id}` | The UUID of this deployment of the pipeline |
 | `{pipeline_storage_path}` | `/pipeline-storage` |
-| `{storage_class_name}` | The storage class as a quoted string, or empty if none is set |
+| `{storage_class_name}` | The storage class as a quoted string, or empty if none is set. Do not use it in `pipeline.extraVolumes` or `pipeline.extraVolumeMounts`, see below. |
 | `{hosts}` | The number of hosts the pipeline runs on |
 | `{multihost}` | `yes` or `no` |
 | `{pipeline_executor_image}` | The pipeline executor image |
@@ -263,6 +263,8 @@ The runner builds each pipeline pod from a template that includes these two valu
 | `{bootstrap_policy}` | The bootstrap policy, or `none` |
 | `{silent_bootstrap}` | `yes` or `no` |
 | `{concurrent_bootstrap}` | `yes` or `no` |
+
+`{name}` and `{storage_class_name}` do not work in `pipeline.extraVolumes` or `pipeline.extraVolumeMounts`. The runner inserts them with their own quotes. Helm writes a quoted `"{name}"` as `'{name}'`, so the value becomes `'"my-pipeline"'` and keeps the quotes. Without quotes, YAML reads `{name}` as a map. Use `{id}` to name per-pipeline objects instead.
 
 ---
 
