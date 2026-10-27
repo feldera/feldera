@@ -928,6 +928,14 @@ public class Simplify extends ExpressionTranslator {
                     boolean same = leftLit.sameValue(rightLit);
                     result = new DBSPBoolLiteral(expression.getNode(), expression.type, !same);
                 }
+            } else if (opcode == DBSPOpcode.COALESCE) {
+                if (left.is(DBSPLiteral.class)) {
+                    // COALESCE(NULL, x) = x; COALESCE(literal, x) = literal
+                    result = left.to(DBSPLiteral.class).isNull() ? right : left;
+                } else if (right.is(DBSPLiteral.class) && right.to(DBSPLiteral.class).isNull()) {
+                    // COALESCE(x, NULL) = x
+                    result = left;
+                }
             }
         } catch (ArithmeticException unused) {
             // ignore, defer to runtime

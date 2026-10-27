@@ -255,7 +255,8 @@ public class ConvertletTable extends ReflectiveConvertletTable {
         QUANTIFY_OPERATORS.forEach(operator ->
                 registerOp(operator, ConvertletTable::convertQuantifyOperator));
 
-        registerOp(SqlLibraryOperators.NVL, ConvertletTable::convertNvl);
+        // Removed NVL (and its alias IFNULL)
+        // registerOp(SqlLibraryOperators.NVL, ConvertletTable::convertNvl);
         registerOp(SqlLibraryOperators.NVL2, ConvertletTable::convertNvl2);
         registerOp(SqlLibraryOperators.DECODE,
                 ConvertletTable::convertDecode);

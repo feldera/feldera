@@ -679,6 +679,13 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             reduced = expression.replaceSources(
                     left.getReducedExpression(),
                     right.getReducedExpression());
+        } else if (expression.opcode == DBSPOpcode.COALESCE && lm && rm) {
+            resultType = new MonotoneType(expression.type);
+            reduced = new DBSPBinaryExpression(expression.getNode(), expression.type, DBSPOpcode.MIN,
+                    left.getReducedExpression()
+                            .cast(expression.getNode(), expression.type, DBSPCastExpression.CastType.SqlUnsafe),
+                    right.getReducedExpression()
+                            .cast(expression.getNode(), expression.type, DBSPCastExpression.CastType.SqlUnsafe));
         }
         // Some expressions are monotone if some of their operands are constant
         if (left.mayBeMonotone() && expression.opcode == DBSPOpcode.SUB) {

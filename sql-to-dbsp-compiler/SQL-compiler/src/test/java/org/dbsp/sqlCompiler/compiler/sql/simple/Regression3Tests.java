@@ -1030,4 +1030,81 @@ public class Regression3Tests extends SqlIoTest {
                 CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, x INT);
                 CREATE VIEW V AS SELECT ts, CAST(NULL AS ROW(a INT)) AS r FROM T;""");
     }
+
+    /** AND and OR evaluate the right operand only when the left operand does not decide
+     * the result; in the row (0, 0) every right operand would divide by zero. */
+    @Test
+    public void andOrLazy() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(y INT, z INT NOT NULL);
+                CREATE VIEW V AS SELECT
+                  z <> 0 AND 10 / z > 1 AS bb,
+                  z <> 0 AND 10 / y > 1 AS bn,
+                  y <> 0 AND 10 / z > 1 AS nb,
+                  y <> 0 AND 10 / y > 1 AS nn,
+                  z = 0 OR 10 / z > 1 AS o_bb,
+                  z = 0 OR 10 / y > 1 AS o_bn,
+                  y = 0 OR 10 / z > 1 AS o_nb,
+                  y = 0 OR 10 / y > 1 AS o_nn
+                FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(0, 0), (NULL, 5), (20, 20);", """
+                 bb    | bn    | nb    | nn    | o_bb  | o_bn  | o_nb  | o_nn
+                ---------------------------------------------------------------
+                 false | false | false | false | true  | true  | true  | true
+                 true  |NULL   |NULL   |NULL   | true  |NULL   | true  |NULL
+                 false | false | false | false | false | false | false | false""");
+    }
+
+    /** COALESCE and IFNULL evaluate an operand only when all operands on its left are NULL;
+     * in the rows with z = 0 the last operand would divide by zero. */
+    @Test
+    public void coalesceLazy() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(y INT, w BIGINT, z INT NOT NULL);
+                CREATE VIEW V AS SELECT
+                  COALESCE(y, w, 10 / z) AS e,
+                  COALESCE(y, w) AS d,
+                  IFNULL(y, IFNULL(w, 10 / z)) AS f
+                FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(1, NULL, 0), (NULL, 3, 0), (NULL, NULL, 5);", """
+                 e | d    | f
+                --------------
+                 1 | 1    | 1
+                 3 | 3    | 3
+                 2 |NULL  | 2""");
+    }
+
+    /** COALESCE agrees with the equivalent CASE for operands of different types */
+    @Test
+    public void coalesceTypes() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(y TINYINT, d DECIMAL(10, 2), s VARCHAR, c CHAR(3),
+                               a INT ARRAY, r ROW(x INT), m MAP<INT, INT>);
+                CREATE LOCAL VIEW V AS SELECT
+                  COALESCE(y, d) AS yd,
+                  COALESCE(s, c, 'zz') AS sc,
+                  COALESCE(a, ARRAY[7]) AS aa,
+                  COALESCE(r, ROW(5)) AS rr,
+                  COALESCE(m, MAP[1, 2]) AS mm,
+                  COALESCE(NULL, y, 3) AS ny
+                FROM T;
+                CREATE LOCAL VIEW W AS SELECT
+                  CASE WHEN y IS NULL THEN d ELSE y END AS yd,
+                  CASE WHEN s IS NOT NULL THEN s WHEN c IS NOT NULL THEN c ELSE 'zz' END AS sc,
+                  CASE WHEN a IS NULL THEN ARRAY[7] ELSE a END AS aa,
+                  CASE WHEN r IS NULL THEN ROW(5) ELSE r END AS rr,
+                  CASE WHEN m IS NULL THEN MAP[1, 2] ELSE m END AS mm,
+                  CASE WHEN y IS NULL THEN 3 ELSE y END AS ny
+                FROM T;
+                -- Empty when V and W agree
+                CREATE VIEW D AS (SELECT * FROM V EXCEPT SELECT * FROM W)
+                    UNION ALL (SELECT * FROM W EXCEPT SELECT * FROM V);""");
+        for (String row: new String[] {
+                "(NULL, 1.5, NULL, 'ab', NULL, NULL, NULL)",
+                "(2, NULL, 'q', NULL, ARRAY[1], ROW(1), MAP[3, 4])",
+                "(NULL, NULL, NULL, NULL, NULL, NULL, NULL)" })
+            ccs.stepWeightOne("INSERT INTO T VALUES" + row + ";", """
+                     yd | sc | aa | rr | mm | ny
+                    -----------------------------""");
+    }
 }

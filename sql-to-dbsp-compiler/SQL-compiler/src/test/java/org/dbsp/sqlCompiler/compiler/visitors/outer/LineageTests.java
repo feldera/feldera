@@ -95,6 +95,31 @@ public class LineageTests extends BaseSQLTests {
         Assert.assertEquals("Tuple[fields=[Unknown[], Unknown[], [t.col3], Constant[value=1]]]", result.toString());
     }
 
+    /** COALESCE keeps the lineage its operands share */
+    @Test
+    public void testCoalesceLineage() {
+        Lineage outer = new Lineage(this.testCompiler(), false);
+        Lineage.InnerLineage lineage = new Lineage.InnerLineage(this.testCompiler(), outer);
+
+        DBSPType i32 = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true);
+        var var = new DBSPVariablePath(new DBSPTypeTuple(i32, i32, i32).ref());
+        DBSPExpression same = new DBSPBinaryExpression(
+                CalciteObject.EMPTY, i32, DBSPOpcode.COALESCE, var.deref().field(0), var.deref().field(1));
+        DBSPExpression different = new DBSPBinaryExpression(
+                CalciteObject.EMPTY, i32, DBSPOpcode.COALESCE, var.deref().field(0), var.deref().field(2));
+        DBSPClosureExpression tup = new DBSPTupleExpression(same, different).closure(var);
+
+        // Fields 0 and 1 come from the same column
+        Lineage.ValueSource x = new Lineage.Atom<>(new Lineage.ColumnSet(new Lineage.TableColumn("t", "x")));
+        Lineage.ValueSource y = new Lineage.Atom<>(new Lineage.ColumnSet(new Lineage.TableColumn("t", "y")));
+        Map<DBSPParameter, Lineage.ValueSource> initial = new HashMap<>();
+        initial.put(tup.parameters[0], new Lineage.Ref(new Lineage.Tuple(Linq.list(x, x, y))));
+
+        Lineage.ValueSource result = lineage.analyze(tup, initial);
+        Assert.assertNotNull(result);
+        Assert.assertEquals("Tuple[fields=[[t.x], Unknown[]]]", result.toString());
+    }
+
     @Test
     public void testCorrelateFlag() throws IOException, SQLException {
         String sql = """

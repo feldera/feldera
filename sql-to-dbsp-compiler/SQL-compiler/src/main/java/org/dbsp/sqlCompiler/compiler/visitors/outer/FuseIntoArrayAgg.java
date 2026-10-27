@@ -27,14 +27,15 @@ import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -68,7 +69,7 @@ import java.util.TreeMap;
  * pattern  := producer -> reader
  * producer := aggregate(.., |acc| to_array(acc), ..)
  *           | window_aggregate(.., |acc| to_array(acc), ..)
- *             -> map_index(|(partition, (order, agg))| ((partition, order), if agg.is_none() { empty } else { agg.unwrap() }))
+ *             -> map_index(|(partition, (order, agg))| ((partition, order), COALESCE(agg, Some(empty)).unwrap()))
  * reader   := map(|(k, v)| (k, .., h(v.j), .., g(v.i), ..))         or a map_index
  *           | join(|k, l, r| (k, l, .., h(r.j), .., g(r.i), ..))                  the producer can be on either side
  *           | star_join(|k, v0, .., vn| (k, v0, .., h(vs.j), .., g(vs.i), ..))    the producer on input s
@@ -87,7 +88,7 @@ import java.util.TreeMap;
  * producer' := aggregate(.., |acc| g(to_array(acc)), ..)
  *            | window_aggregate(.., |acc| g(to_array(acc)), ..)
  *              -> map_index(|(partition, (order, agg))|
- *                   ((partition, order), if agg.is_none() { (.., g(empty.i), ..) } else { agg.unwrap() }))
+ *                   ((partition, order), COALESCE(agg, Some((.., g(empty.i), ..))).unwrap()))
  * reader'   := map(|(k, v)| (k, .., h(v.j), .., v.i, ..))         or a map_index
  *            | join(|k, l, r| (k, l, .., h(r.j), .., r.i, ..))
  *            | star_join(|k, v0, .., vn| (k, v0, .., h(vs.j), .., vs.i, ..))
@@ -349,7 +350,7 @@ public class FuseIntoArrayAgg extends Repeat {
         }
 
         /** True for the map_index that follows a window aggregate,
-         * {@code |p: (&partition, &(order, agg))| (key(partition, order), if agg.is_none() { empty } else { agg.unwrap() })}:
+         * {@code |p: (&partition, &(order, agg))| (key(partition, order), COALESCE(agg, Some(empty)).unwrap())}:
          * the key reads anything but the aggregate tuple, the value is the aggregate tuple, or
          * {@code empty} when the window is empty.
          * @param empty  The results of the aggregates of the window on an empty set. */
@@ -358,22 +359,21 @@ public class FuseIntoArrayAgg extends Repeat {
             if (!body.is(DBSPRawTupleExpression.class))
                 return false;
             DBSPExpression[] fields = body.to(DBSPRawTupleExpression.class).fields;
-            if (fields == null || fields.length != 2 || !fields[1].is(DBSPIfExpression.class))
+            if (fields == null || fields.length != 2 || !fields[1].is(DBSPUnwrapExpression.class))
                 return false;
-            DBSPIfExpression value = fields[1].to(DBSPIfExpression.class);
-            if (!value.condition.is(DBSPIsNullExpression.class) || value.negative == null ||
-                    !value.negative.is(DBSPUnwrapExpression.class))
+            DBSPExpression unwrapped = fields[1].to(DBSPUnwrapExpression.class).expression;
+            if (!unwrapped.is(DBSPBinaryExpression.class))
                 return false;
-            ISameValue positive = value.positive.as(ISameValue.class);
-            if (positive == null || !positive.sameValue(empty.as(ISameValue.class)))
+            DBSPBinaryExpression value = unwrapped.to(DBSPBinaryExpression.class);
+            if (value.opcode != DBSPOpcode.COALESCE || !value.right.is(DBSPSomeExpression.class))
+                return false;
+            ISameValue ifEmpty = value.right.to(DBSPSomeExpression.class).expression.as(ISameValue.class);
+            if (ifEmpty == null || !ifEmpty.sameValue(empty.as(ISameValue.class)))
                 return false;
             MapReader reader = new MapReader(compiler, index);
             ParameterUses key = new ParameterUses(compiler, reader);
             key.apply(fields[0]);
-            DBSPExpression tested = value.condition.to(DBSPIsNullExpression.class).expression;
-            DBSPExpression unwrapped = value.negative.to(DBSPUnwrapExpression.class).expression;
-            return key.fieldsOnly() && !key.valueFields.contains(1) &&
-                    isAggregateTuple(reader, tested) && isAggregateTuple(reader, unwrapped);
+            return key.fieldsOnly() && !key.valueFields.contains(1) && isAggregateTuple(reader, value.left);
         }
 
         /** Finds the producer read through {@code port}: an aggregate, or a window aggregate
@@ -700,9 +700,9 @@ public class FuseIntoArrayAgg extends Repeat {
 
             // The map_index keeps its key, which reads the partition and the order-by column:
             //   before: |q: (&Tup1<p>, &Tup2<u64, Tup1<Array>?>)|
-            //               ((q.0.0, to_signed(q.1.0)), if q.1.1.is_none() { empty } else { q.1.1.unwrap() })
+            //               ((q.0.0, to_signed(q.1.0)), coalesce(q.1.1, Some(empty)).unwrap())
             //   after:  |q: (&Tup1<p>, &Tup2<u64, Tup1<i32?>?>)|
-            //               ((q.0.0, to_signed(q.1.0)), if q.1.1.is_none() { fusedEmpty } else { q.1.1.unwrap() })
+            //               ((q.0.0, to_signed(q.1.0)), coalesce(q.1.1, Some(fusedEmpty)).unwrap())
             // where fusedEmpty holds the results of the fused aggregates on an empty set
             DBSPMapIndexOperator index = producer.index();
             DBSPClosureExpression indexFunction = index.getClosureFunction();
@@ -720,12 +720,13 @@ public class FuseIntoArrayAgg extends Repeat {
                     .reduce(this.compiler());
             // (*q.1).1
             DBSPExpression agg = q.field(1).deref().field(1);
-            // g can fail on an empty array, e.g. 100 / CARDINALITY(..) divides by 0, so the if computes
+            // g can fail on an empty array, e.g. 100 / CARDINALITY(..) divides by 0, so COALESCE computes
             // g(empty) only for an empty window:
-            // if (*q.1).1.is_none() { Tup1::new(cardinalityVecN(array_distinctN(Some(Arc::new(Vec::<Option<i32>>::new()))))) }
-            // else { (*q.1).1.clone().unwrap() }
-            DBSPExpression value = new DBSPIfExpression(index.getNode(), agg.is_null(),
-                    list.getEmptySetResult(), agg.applyCloneIfNeeded().neverFailsUnwrap(index.getNode()));
+            // coalesce((*q.1).1.clone(),
+            //     Some(Tup1::new(cardinalityVecN(array_distinctN(Some(Arc::new(Vec::<Option<i32>>::new()))))))).unwrap()
+            DBSPExpression value = new DBSPBinaryExpression(index.getNode(), agg.getType(), DBSPOpcode.COALESCE,
+                    agg.applyCloneIfNeeded(), list.getEmptySetResult().some())
+                    .neverFailsUnwrap(index.getNode());
             DBSPSimpleOperator fusedIndex = new DBSPMapIndexOperator(index.getRelNode(),
                     new DBSPRawTupleExpression(key, value).closure(q), fused.outputPort())
                     .copyAnnotations(index);

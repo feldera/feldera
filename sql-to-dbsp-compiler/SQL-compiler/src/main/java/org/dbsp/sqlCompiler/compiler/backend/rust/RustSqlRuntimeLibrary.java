@@ -56,6 +56,7 @@ public class RustSqlRuntimeLibrary {
         this.universalFunctions.put(DBSPOpcode.LTE, "lte");
         this.universalFunctions.put(DBSPOpcode.GTE, "gte");
         this.universalFunctions.put(DBSPOpcode.IS_DISTINCT, DBSPOpcode.IS_DISTINCT.toString());
+        this.universalFunctions.put(DBSPOpcode.COALESCE, DBSPOpcode.COALESCE.toString());
         this.universalFunctions.put(DBSPOpcode.MIN, DBSPOpcode.MIN.toString());
         this.universalFunctions.put(DBSPOpcode.MAX, DBSPOpcode.MAX.toString());
         this.universalFunctions.put(DBSPOpcode.MIN_IGNORE_NULLS, DBSPOpcode.MIN_IGNORE_NULLS.toString());

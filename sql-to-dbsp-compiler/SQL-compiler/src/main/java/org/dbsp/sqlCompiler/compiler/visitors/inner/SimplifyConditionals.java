@@ -130,6 +130,7 @@ public class SimplifyConditionals implements IRTransform {
             this.identitySubstitution = new Substitution<>();
         }
 
+        // TODO: COALESCE(x, y) could be handled too: while visiting y, x IS NULL is true
         @Override
         public VisitDecision preorder(DBSPIfExpression expression) {
             expression.condition.accept(this);

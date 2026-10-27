@@ -76,7 +76,10 @@ public class ExpressionGCIncrementalTests extends StreamingTestBase {
                     Key.of("BROUND(ts, -1)"), Key.of("TRUNC(ts, -1)"),
                     Key.of("GREATEST(ts, x)"), Key.of("GREATEST(ts, 120)"), Key.of("GREATEST_IGNORE_NULLS(ts, x)"),
                     Key.of("LEAST(ts, ts + 1)"), Key.of("LEAST_IGNORE_NULLS(ts, ts + 1)"),
-                    Key.of("LEAST(ts, x)"), Key.of("LEAST_IGNORE_NULLS(ts, x)")));
+                    Key.of("LEAST(ts, x)"), Key.of("LEAST_IGNORE_NULLS(ts, x)"),
+                    Key.of("COALESCE(GREATEST(ts, x), ts)"), Key.of("COALESCE(GREATEST(ts, x), x)"),
+                    // The left operand is NULL when x = 7, and the result is below its bound
+                    new Key("COALESCE, left NULL at x = 7", "COALESCE(GREATEST(ts, NULLIF(x, 7)), ts - 9)", "T")));
 
     static final Family TIMESTAMP = new Family(
             List.of("TIMESTAMP"),
@@ -151,6 +154,9 @@ public class ExpressionGCIncrementalTests extends StreamingTestBase {
             LEAST_IGNORE_NULLS(ts, ts + 1) | K      | K      | K      | K
             LEAST(ts, x)                   | -      | -      | -      | -
             LEAST_IGNORE_NULLS(ts, x)      | -      | -      | -      | -
+            COALESCE(GREATEST(ts, x), ts)  | K      | K      | K      | K
+            COALESCE(GREATEST(ts, x), x)   | -      | -      | -      | -
+            COALESCE, left NULL at x = 7   | K      | K      | K      | K
             """;
 
     static final String EXPECTED_TIMESTAMP_GC = """

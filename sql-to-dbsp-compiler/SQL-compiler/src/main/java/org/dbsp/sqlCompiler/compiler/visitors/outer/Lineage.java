@@ -769,6 +769,13 @@ public class Lineage extends CircuitVisitor {
 
         @Override
         public void postorder(DBSPBinaryExpression expression) {
+            if (expression.opcode == DBSPOpcode.COALESCE) {
+                // The result is one of the operands, unchanged
+                ValueSource left = this.get(expression.left);
+                ValueSource right = this.get(expression.right);
+                this.set(expression, left.intersect(right));
+                return;
+            }
             if (expression.opcode.isComparison()) {
                 ValueSource left = this.get(expression.left);
                 ValueSource right = this.get(expression.right);

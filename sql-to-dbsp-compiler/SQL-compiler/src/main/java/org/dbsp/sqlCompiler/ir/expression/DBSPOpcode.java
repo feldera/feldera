@@ -55,9 +55,11 @@ public enum DBSPOpcode {
     GT(">", false),
     LTE("<=", false),
     GTE(">=", false),
+    // Lazy: the right operand is evaluated only when the left operand is not FALSE
     AND("&&", false),
     BW_AND("&", false),
     MUL_WEIGHT("mul_weight", false),
+    // Lazy: the right operand is evaluated only when the left operand is not TRUE
     OR("||", false),
     BW_OR("|", false), // bitwise or
     XOR("^", false),
@@ -68,6 +70,9 @@ public enum DBSPOpcode {
     MAX_NULL_WINS("max_null_wins", false),
     CONCAT("||", false),
     IS_DISTINCT("is_distinct", false),
+    // Lazy: the right operand is evaluated only when the left operand is NULL.
+    // Both operands and the result are nullable and have the same type.
+    COALESCE("coalesce", false),
     SQL_INDEX("index", false),
     SAFE_RUST_INDEX("safe_index", false),
     MAP_INDEX("map_index", false),
@@ -142,7 +147,7 @@ public enum DBSPOpcode {
         return switch (this) {
             case WRAP_BOOL, MAP_CONVERT, ARRAY_CONVERT, CONTROLLED_FILTER_GTE, AGG_LTE, AGG_GTE, AGG_ADD, AGG_MIN,
                  AGG_MAX, AGG_XOR, AGG_OR, AGG_AND, IS_DISTINCT, CONCAT, MIN, MAX, OR, AND, IS_NOT_FALSE, IS_NOT_TRUE,
-                 AGG_MAX1, AGG_MIN1, INDICATOR -> false;
+                 AGG_MAX1, AGG_MIN1, INDICATOR, COALESCE -> false;
             case NEG, DIV_INTERVAL, DIV_INTERVAL_NULL, MUL_INTERVAL, DECIMAL_TO_INTEGER, INTEGER_TO_DECIMAL,
                  SHORT_INTERVAL_TO_INTEGER, INTEGER_TO_SHORT_INTERVAL, INTEGER_TO_UUID, UUID_TO_INTEGER,
                  LONG_INTERVAL_TO_INTEGER, INTEGER_TO_LONG_INTERVAL, BINARY_TO_U64, U64_TO_BINARY,
