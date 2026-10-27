@@ -734,8 +734,8 @@ pub struct DeltaTableReaderConfig {
     /// this applies to one connector and governs the parallelism of a single
     /// read.
     ///
-    /// Defaults to the pipeline's `io_workers`, or its `workers` when
-    /// `io_workers` is not set.
+    /// Defaults to the pipeline's `io_workers`, or to the workers on each host
+    /// when `io_workers` is not set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scan_parallelism: Option<u64>,
 

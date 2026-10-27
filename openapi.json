@@ -10196,7 +10196,7 @@
           "scan_parallelism": {
             "type": "integer",
             "format": "int64",
-            "description": "Number of data files the connector decodes concurrently.\n\nReading more files at a time is faster and holds more decoded data in\nmemory at once. Unlike `max_concurrent_readers`, which caps concurrent\nobject store reads across every Delta Lake connector in the pipeline,\nthis applies to one connector and governs the parallelism of a single\nread.\n\nDefaults to the pipeline's `io_workers`, or its `workers` when\n`io_workers` is not set.",
+            "description": "Number of data files the connector decodes concurrently.\n\nReading more files at a time is faster and holds more decoded data in\nmemory at once. Unlike `max_concurrent_readers`, which caps concurrent\nobject store reads across every Delta Lake connector in the pipeline,\nthis applies to one connector and governs the parallelism of a single\nread.\n\nDefaults to the pipeline's `io_workers`, or to the workers on each host\nwhen `io_workers` is not set.",
             "nullable": true,
             "minimum": 0
           },
