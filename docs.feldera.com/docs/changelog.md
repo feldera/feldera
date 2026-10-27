@@ -131,6 +131,15 @@ Source edition can be found on github.
 
 ## v0.368.0
 
+- In a multihost pipeline, a Kafka input connector can now divide the
+  partitions of its topic among the hosts, and a Delta Lake or Iceberg input
+  connector can divide the data files of its snapshot.  Set the new connector
+  attribute [`distributed`](/connectors#distributed) to `true`.  See
+  distributed connectors for
+  [Kafka](/connectors/sources/kafka#distributed-connectors),
+  [Delta Lake](/connectors/sources/delta#distributed-connectors), and
+  [Iceberg](/connectors/sources/iceberg#distributed-connectors).
+
 - Incompatible change (SQL): a cast from `DOUBLE` or `REAL` to `DECIMAL`
   now gives the same result as Calcite.  It uses the shortest decimal form
   of the value, then truncates it to the scale.  Before, the cast
@@ -228,15 +237,6 @@ Source edition can be found on github.
   after the last snapshot that it ingested.  A checkpoint taken before this
   fix still makes the connector read the snapshot again once.  See
   [Iceberg input connector](/connectors/sources/iceberg).
-
-- In a multihost pipeline, a Kafka input connector can now divide the
-  partitions of its topic among the hosts, and a Delta Lake or Iceberg input
-  connector can divide the data files of its snapshot.  Set the new connector
-  attribute [`distributed`](/connectors#distributed) to `true`.  See
-  distributed connectors for
-  [Kafka](/connectors/sources/kafka#distributed-connectors),
-  [Delta Lake](/connectors/sources/delta#distributed-connectors), and
-  [Iceberg](/connectors/sources/iceberg#distributed-connectors).
 
 - Deprecation (pipeline and connector configuration): every size setting now
   takes a string with a unit, in the format Kubernetes uses for a quantity,
