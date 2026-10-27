@@ -1701,6 +1701,81 @@ pub fn adhoc_insert_removed_before_journaling_replays(engine: &dyn PipelineTestE
     controller.stop().unwrap();
 }
 
+/// An ad hoc INSERT whose endpoint is removed before the step collects its
+/// input must still have that input journaled.
+///
+/// The INSERT's endpoint hands its rows to the circuit when the step asks it
+/// for input, and the INSERT then removes the endpoint at once.  If the
+/// removal comes before the step collects the endpoint's reply, the step
+/// still processes the rows, so the journal must record them, or a restart
+/// from the journal loses a row whose INSERT succeeded.
+#[engine_test(requires(Storage, FaultTolerance))]
+pub fn adhoc_insert_removed_before_collection_replays(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let controller = start_exactly_once_controller(engine, &tempdir);
+    let config = controller.inner.status.pipeline_config.clone();
+    let is_adhoc = |name: &str| name.starts_with("adhoc-ingress-");
+
+    // Hold the step that asked the INSERT's endpoint for input until the
+    // INSERT has removed the endpoint.
+    let held = Arc::new(AtomicBool::new(false));
+    *controller.inner.collect_input_hook.lock().unwrap() = Some(Box::new({
+        let held = held.clone();
+        move |inner, names| {
+            if !names.iter().any(|name| is_adhoc(name)) {
+                return false;
+            }
+            let removed = wait(
+                || {
+                    !inner
+                        .status
+                        .input_status()
+                        .values()
+                        .any(|status| is_adhoc(&status.endpoint_name))
+                },
+                10_000,
+            );
+            held.store(removed.is_ok(), Ordering::Release);
+            true
+        }
+    }));
+    insert_row(&controller, 1).unwrap();
+    wait(|| held.load(Ordering::Acquire), 10_000)
+        .expect("the INSERT did not remove its endpoint before the step collected its input");
+    let _ = wait(|| count_rows(&controller, "test_input1") >= 1, 10_000);
+    assert_eq!(count_rows(&controller, "test_input1"), 1);
+    controller.stop().unwrap();
+
+    // Restart from the journal.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new({
+                let errors = errors.clone();
+                move |e, _| errors.lock().unwrap().push(e.to_string())
+            }),
+        )
+        .unwrap_or_else(|e| panic!("restart failed: {e}"));
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        10_000,
+    );
+    let errors = errors.lock().unwrap().clone();
+    assert!(errors.is_empty(), "replay failed: {errors:?}");
+    replayed.expect("replay never finished");
+    assert_eq!(
+        count_rows(&controller, "test_input1"),
+        1,
+        "the restart lost the INSERT's row"
+    );
+    controller.stop().unwrap();
+}
+
 /// Makes one `/ingress` request for rows with `ids` to `test_input1` through a
 /// new HTTP input endpoint named `name`, the way the server does.  Returns the
 /// request's completion token.
