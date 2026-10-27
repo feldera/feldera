@@ -1488,11 +1488,7 @@ async fn call_compiler_validate(
     program_code: String,
     ir: bool,
 ) -> Result<ValidateProgramResponse, ApiError> {
-    let protocol = common_config.http_scheme();
-    let url = format!(
-        "{protocol}://{}:{}/validate_program",
-        common_config.compiler_host, common_config.compiler_port
-    );
+    let url = common_config.compiler_url("validate_program");
     let client = common_config.reqwest_client().await;
     let response = client
         .post(&url)
