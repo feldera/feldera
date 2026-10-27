@@ -118,6 +118,12 @@ fn sort_partitions(target_partitions: usize, partition_floor: usize) -> usize {
 /// counts the workers on every host, while the memory pool is per host, so
 /// the local share is what a sort here actually runs.
 fn adhoc_partition_floor(pipeline_config: &PipelineConfig) -> usize {
+    local_workers(pipeline_config)
+}
+
+/// The DBSP workers on this host. `workers` counts the workers on every host
+/// of a multihost pipeline, which divides them evenly among its hosts.
+fn local_workers(pipeline_config: &PipelineConfig) -> usize {
     let workers = pipeline_config.global.workers as usize;
     workers.div_ceil(pipeline_config.global.hosts.max(1))
 }
@@ -243,7 +249,11 @@ pub fn create_session_context(
     runtime_env: Arc<RuntimeEnv>,
 ) -> SessionContext {
     let floor = adhoc_partition_floor(pipeline_config);
-    create_session_context_inner(pipeline_config, runtime_env, floor, |cfg| cfg)
+    let parallelism = pipeline_config
+        .global
+        .io_workers
+        .unwrap_or(pipeline_config.global.workers as u64);
+    create_session_context_inner(runtime_env, parallelism, floor, |cfg| cfg)
 }
 
 /// `SessionContext` for a connector, with a hook to override individual
@@ -253,6 +263,11 @@ pub fn create_session_context(
 /// DataFusion plans. Unlike [`create_session_context`] there is no worker
 /// floor: a connector session queries external tables, never the ad-hoc
 /// snapshot, so the DBSP worker count does not bound its parallelism.
+///
+/// `target_partitions` defaults to `io_workers`, or else to the DBSP workers on
+/// this host. Each host of a multihost pipeline runs its own connectors, so
+/// sizing their scans for the workers on every host would multiply their
+/// concurrent reads, and the memory those hold, by the number of hosts.
 ///
 /// The hook may raise or lower `target_partitions`. `sort_spill_reservation_bytes`
 /// and `repartition_sorts` are derived from whatever partition count the hook
@@ -266,28 +281,28 @@ pub fn create_session_context_with<F>(
 where
     F: FnOnce(SessionConfig) -> SessionConfig,
 {
-    create_session_context_inner(pipeline_config, runtime_env, 0, customize_config)
+    let parallelism = pipeline_config
+        .global
+        .io_workers
+        .unwrap_or(local_workers(pipeline_config) as u64);
+    create_session_context_inner(runtime_env, parallelism, 0, customize_config)
 }
 
 fn create_session_context_inner<F>(
-    pipeline_config: &PipelineConfig,
     runtime_env: Arc<RuntimeEnv>,
+    parallelism: u64,
     partition_floor: usize,
     customize_config: F,
 ) -> SessionContext
 where
     F: FnOnce(SessionConfig) -> SessionConfig,
 {
-    let workers = pipeline_config
-        .global
-        .io_workers
-        .unwrap_or(pipeline_config.global.workers as u64);
     let session_config = SessionConfig::new()
-        .with_target_partitions(workers as usize)
+        .with_target_partitions(parallelism as usize)
         .with_sort_in_place_threshold_bytes(SORT_IN_PLACE_THRESHOLD_BYTES)
         .set(
             "datafusion.execution.planning_concurrency",
-            &ScalarValue::UInt64(Some(workers)),
+            &ScalarValue::UInt64(Some(parallelism)),
         );
     let session_config = customize_config(session_config);
 
@@ -805,6 +820,71 @@ mod tests {
         let env = create_runtime_env(&cfg).unwrap();
         let ctx = create_session_context(&cfg, env);
         assert_eq!(ctx.copied_config().target_partitions(), 12);
+    }
+
+    /// A connector on one host of a multihost pipeline scans with that host's
+    /// workers, not every host's. The ad-hoc engine is unchanged.
+    #[test]
+    fn connector_session_scans_with_local_workers() {
+        use super::create_session_context_with;
+        let storage = TempStorage::new("feldera-datafusion-connector-local-workers-test");
+        let cfg = pipeline_config(
+            RuntimeConfig {
+                workers: 32,
+                hosts: 4,
+                ..Default::default()
+            },
+            Some(storage.path()),
+        );
+        let env = create_runtime_env(&cfg).unwrap();
+        let ctx = create_session_context_with(&cfg, env.clone(), |c| c);
+        assert_eq!(ctx.copied_config().target_partitions(), 8);
+        assert_eq!(
+            create_session_context(&cfg, env)
+                .copied_config()
+                .target_partitions(),
+            32
+        );
+
+        let cfg = pipeline_config(
+            RuntimeConfig {
+                workers: 32,
+                hosts: 4,
+                io_workers: Some(12),
+                ..Default::default()
+            },
+            Some(storage.path()),
+        );
+        let env = create_runtime_env(&cfg).unwrap();
+        let ctx = create_session_context_with(&cfg, env, |c| c);
+        assert_eq!(ctx.copied_config().target_partitions(), 12);
+    }
+
+    /// Workers that do not divide evenly among the hosts round up, and a host
+    /// with fewer workers than hosts still scans with one.
+    /// `planning_concurrency` follows the same default.
+    #[test]
+    fn connector_session_rounds_local_workers_up() {
+        use super::create_session_context_with;
+        let storage = TempStorage::new("feldera-datafusion-connector-local-workers-round-test");
+        for (workers, hosts, expected) in [(10, 4, 3), (2, 4, 1), (8, 1, 8)] {
+            let cfg = pipeline_config(
+                RuntimeConfig {
+                    workers,
+                    hosts,
+                    ..Default::default()
+                },
+                Some(storage.path()),
+            );
+            let env = create_runtime_env(&cfg).unwrap();
+            let config = create_session_context_with(&cfg, env, |c| c).copied_config();
+            assert_eq!(config.target_partitions(), expected, "{workers}/{hosts}");
+            assert_eq!(
+                config.options().execution.planning_concurrency,
+                expected,
+                "{workers}/{hosts}"
+            );
+        }
     }
 
     #[test]

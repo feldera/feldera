@@ -21,7 +21,7 @@ use feldera_adapterlib::{
     },
     utils::backoff::calculate_backoff_delay,
     utils::datafusion::{
-        array_to_string, columns_referenced_by_expression, create_session_context,
+        array_to_string, columns_referenced_by_expression, create_session_context_with,
         execute_query_collect, execute_singleton_query, quote_sql_identifier,
         timestamp_to_sql_expression, validate_sql_expression, validate_timestamp_column,
         ColumnNameSet,
@@ -954,7 +954,7 @@ impl IcebergInputEndpointInner {
         // Share the pipeline-wide `RuntimeEnv` so that scans against the
         // iceberg table spill to the bounded memory pool and on-disk scratch
         // dir alongside every other datafusion user in the pipeline.
-        let datafusion = create_session_context(pipeline_config, runtime_env);
+        let datafusion = create_session_context_with(pipeline_config, runtime_env, |cfg| cfg);
 
         // Note: metrics are registered with the consumer in `IcebergInputReader::new`
         // (the `open` path), not here. The controller inserts this endpoint's status

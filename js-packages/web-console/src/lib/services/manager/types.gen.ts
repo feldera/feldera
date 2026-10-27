@@ -1427,8 +1427,8 @@ export type DeltaTableReaderConfig = {
    * this applies to one connector and governs the parallelism of a single
    * read.
    *
-   * Defaults to the pipeline's `io_workers`, or its `workers` when
-   * `io_workers` is not set.
+   * Defaults to the pipeline's `io_workers`, or to the workers on each host
+   * when `io_workers` is not set.
    */
   scan_parallelism?: number | null
   /**
