@@ -1018,6 +1018,15 @@ impl ControllerStatus {
         self.inputs.read_recursive()
     }
 
+    /// Sets the backpressure thresholds of input endpoint `endpoint_id` to its
+    /// share of a distributed connector's input (see
+    /// `InputEndpointStatus::set_share`).
+    pub fn set_input_share(&self, endpoint_id: EndpointId, mine: usize, total: usize) {
+        if let Some(status) = self.inputs.write().get_mut(&endpoint_id) {
+            status.set_share(mine, total);
+        }
+    }
+
     /// Register connector-specific metrics for an input endpoint.
     pub fn set_input_custom_metrics(
         &self,
@@ -1281,10 +1290,7 @@ impl ControllerStatus {
             let inputs = self.input_status();
             if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
                 let old = endpoint_stats.add_buffered(amt);
-                let threshold = BufferSize {
-                    records: endpoint_stats.config.connector_config.max_queued_records() as usize,
-                    bytes: endpoint_stats.config.connector_config.max_queued_bytes() as usize,
-                };
+                let threshold = endpoint_stats.max_queued();
 
                 fn crossed(old: usize, increment: usize, threshold: usize) -> bool {
                     old < threshold && old + increment >= threshold
@@ -2348,6 +2354,15 @@ pub struct InputEndpointStatus {
     /// Endpoint configuration (doesn't change).
     pub config: InputEndpointConfig,
 
+    /// The backpressure thresholds that `config` sets, from its
+    /// `max_queued_records` and `max_queued_size`.
+    configured_max_queued: BufferSize,
+
+    /// This host's backpressure thresholds.  These are
+    /// `configured_max_queued`, except that each host of a distributed
+    /// connector gets its share of them (see [Self::set_share]).
+    max_queued: BufferSize,
+
     /// Performance metrics.
     pub metrics: InputEndpointMetrics,
 
@@ -2493,8 +2508,14 @@ impl InputEndpointStatus {
             .map(|s| ConnectorErrorList::from_api_type(s.parse_errors.clone()))
             .unwrap_or_default();
 
+        let configured_max_queued = BufferSize {
+            records: config.connector_config.max_queued_records() as usize,
+            bytes: config.connector_config.max_queued_bytes() as usize,
+        };
         Self {
             endpoint_name: endpoint_name.to_string(),
+            configured_max_queued,
+            max_queued: configured_max_queued,
             config,
             metrics: initial_statistics
                 .map_or(InputEndpointMetrics::default(), |initial_statistics| {
@@ -2517,6 +2538,41 @@ impl InputEndpointStatus {
             #[cfg(test)]
             completion_token_hook: Mutex::new(None),
         }
+    }
+
+    /// Divides the backpressure thresholds evenly among the `n_hosts` hosts of
+    /// a distributed connector, until its reader reports the share it actually
+    /// reads (see [Self::set_share]).  Otherwise, each host would queue up to
+    /// the full thresholds, multiplying the connector's buffering by `n_hosts`.
+    pub fn share_queue(mut self, n_hosts: usize) -> Self {
+        self.set_share(1, n_hosts);
+        self
+    }
+
+    /// Sets this host's backpressure thresholds to `mine / total` of the
+    /// configured ones, rounded up, because this host reads `mine` of the
+    /// `total` units that the hosts of a distributed connector divide.  Then
+    /// the connector as a whole queues about as much input as it would on one
+    /// host, however unevenly its input divides.
+    ///
+    /// A host that reads nothing gets a threshold of 1 rather than 0.
+    pub fn set_share(&mut self, mine: usize, total: usize) {
+        fn share(configured: usize, mine: usize, total: usize) -> usize {
+            if total == 0 {
+                return configured;
+            }
+            let share = (configured as u128 * mine.min(total) as u128).div_ceil(total as u128);
+            (share as usize).max(1)
+        }
+        self.max_queued = BufferSize {
+            records: share(self.configured_max_queued.records, mine, total),
+            bytes: share(self.configured_max_queued.bytes, mine, total),
+        };
+    }
+
+    /// Returns this host's backpressure thresholds.
+    pub fn max_queued(&self) -> BufferSize {
+        self.max_queued
     }
 
     /// Adds `amt` to the number of buffered bytes and records, and returns the
@@ -2605,14 +2661,12 @@ impl InputEndpointStatus {
 
     fn is_full_of_records(&self) -> bool {
         let buffered_records = self.metrics.buffered_records.load(Ordering::Acquire);
-        let max_queued_records = self.config.connector_config.max_queued_records();
-        buffered_records >= max_queued_records
+        buffered_records >= self.max_queued.records as u64
     }
 
     fn is_full_of_bytes(&self) -> bool {
         let buffered_bytes = self.metrics.buffered_bytes.load(Ordering::Acquire);
-        let max_queued_bytes = self.config.connector_config.max_queued_bytes();
-        buffered_bytes >= max_queued_bytes
+        buffered_bytes >= self.max_queued.bytes as u64
     }
 
     /// True if the number of records or bytes buffered by the endpoint exceeds
@@ -3395,6 +3449,135 @@ mod test {
         // The records are in step 5, so the token completes only once
         // `total_completed_steps` reaches 6.
         assert_eq!(endpoint.completion_status(token), Some(6));
+    }
+
+    /// Each host of a distributed connector gets its share of the
+    /// backpressure thresholds, so that the connector as a whole buffers as
+    /// much as one connector on one host.
+    #[test]
+    fn distributed_connector_shares_its_queue() {
+        let config: InputEndpointConfig = serde_json::from_value(json!({
+            "stream": "test_input",
+            "transport": { "name": "file_input", "config": { "path": "unused" } },
+            "max_queued_records": 1000,
+            "max_queued_size": 10_001,
+        }))
+        .unwrap();
+
+        let solo =
+            InputEndpointStatus::new("solo", config.clone(), None, None, None).share_queue(1);
+        assert_eq!(
+            solo.max_queued(),
+            BufferSize {
+                records: 1000,
+                bytes: 10_001
+            }
+        );
+
+        // A share rounds up, so the hosts together allow at least the
+        // configured thresholds.
+        let shared = InputEndpointStatus::new("shared", config, None, None, None).share_queue(4);
+        assert_eq!(
+            shared.max_queued(),
+            BufferSize {
+                records: 250,
+                bytes: 2501
+            }
+        );
+
+        // The endpoint is full at its share, not at the configured threshold.
+        shared.add_buffered(BufferSize {
+            records: 249,
+            bytes: 249,
+        });
+        assert!(!shared.is_full());
+        shared.add_buffered(BufferSize {
+            records: 1,
+            bytes: 1,
+        });
+        assert!(shared.is_full());
+    }
+
+    /// Once a reader reports how much of the input its host reads, the host's
+    /// thresholds follow that share instead of an even split.
+    #[test]
+    fn reported_share_sets_the_queue() {
+        let config: InputEndpointConfig = serde_json::from_value(json!({
+            "stream": "test_input",
+            "transport": { "name": "file_input", "config": { "path": "unused" } },
+            "max_queued_records": 1000,
+            "max_queued_size": 10_000,
+        }))
+        .unwrap();
+        let mut status = InputEndpointStatus::new("e", config, None, None, None).share_queue(4);
+        let mut share = |mine, total| {
+            status.set_share(mine, total);
+            status.max_queued()
+        };
+
+        // 2 of a topic's 5 partitions: 2/5 of the queue, not 1/4.
+        assert_eq!(
+            share(2, 5),
+            BufferSize {
+                records: 400,
+                bytes: 4000
+            }
+        );
+
+        // 1 of 2 partitions on 4 hosts: half the queue, so the 2 hosts that
+        // read anything together get all of it.
+        assert_eq!(
+            share(1, 2),
+            BufferSize {
+                records: 500,
+                bytes: 5000
+            }
+        );
+
+        // The host that follows a table alone after its snapshot.
+        assert_eq!(
+            share(1, 1),
+            BufferSize {
+                records: 1000,
+                bytes: 10_000
+            }
+        );
+
+        // A host that reads nothing still has a nonzero threshold.
+        assert_eq!(
+            share(0, 3),
+            BufferSize {
+                records: 1,
+                bytes: 1
+            }
+        );
+    }
+
+    /// A new share applies at once to input that the endpoint already holds,
+    /// and a share outside `0..=total` falls back to the whole queue.
+    #[test]
+    fn share_change_while_buffered() {
+        let config: InputEndpointConfig = serde_json::from_value(json!({
+            "stream": "test_input",
+            "transport": { "name": "file_input", "config": { "path": "unused" } },
+            "max_queued_records": 1000,
+            "max_queued_size": 1_000_000,
+        }))
+        .unwrap();
+        let mut status = InputEndpointStatus::new("e", config, None, None, None).share_queue(4);
+        status.add_buffered(BufferSize {
+            records: 300,
+            bytes: 300,
+        });
+        assert!(status.is_full());
+        status.set_share(1, 1);
+        assert!(!status.is_full());
+        status.set_share(0, 5);
+        assert!(status.is_full());
+        status.set_share(0, 0);
+        assert_eq!(status.max_queued().records, 1000);
+        status.set_share(7, 3);
+        assert_eq!(status.max_queued().records, 1000);
     }
 
     /// Returns true if endpoint `waits`, which starts after label `backfill`,

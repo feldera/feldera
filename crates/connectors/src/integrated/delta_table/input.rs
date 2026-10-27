@@ -2796,6 +2796,12 @@ impl DeltaTableInputEndpointInner {
 
         // Start following the table if required by the configuration.
         if self.follows() {
+            // The home host of a distributed connector follows the log alone,
+            // so it gets the connector's whole queue.
+            if self.distributed.is_some() {
+                self.consumer.set_input_share(1, 1);
+            }
+
             // The schema source stays at the version we opened at; each commit's
             // schema change advances it as the loop reaches that commit (see
             // `advance_schema`), so every commit's data is read against the
@@ -3257,6 +3263,7 @@ impl DeltaTableInputEndpointInner {
             shard.host(),
             files.len(),
         );
+        self.consumer.set_input_share(files.len(), n_files);
 
         let df = match self.files_dataframe(table, &files, "snapshot").await? {
             Some(df) => df,
@@ -7522,6 +7529,43 @@ pub mod distributed_snapshot_tests {
             for (id, part) in &all {
                 assert_eq!(part, &format!("p{}", id % 3));
             }
+        }
+    }
+
+    /// Each host reports the share of the snapshot's files that it reads, so
+    /// that the controller can size its queue to match.  Together, the
+    /// reported shares account for every file once.
+    #[tokio::test]
+    async fn hosts_report_their_share_of_the_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let (table, uri) = write_table(dir.path(), 60, 4).await;
+        let table = Arc::new(table);
+        let n_files = table.snapshot().unwrap().log_data().num_files();
+
+        // More hosts than files, so that some hosts report a share of 0.
+        for n_hosts in [3, n_files + 2] {
+            let mut mine = Vec::new();
+            for host in 0..n_hosts {
+                let consumer = MockInputConsumer::new();
+                let shard = InputShard::new(host, n_hosts, InputDistribution { home: 1 }).unwrap();
+                let endpoint = endpoint_with_consumer(
+                    json!({"uri": uri, "mode": "snapshot"}),
+                    Some(shard),
+                    None,
+                    consumer.clone(),
+                );
+                *endpoint.schema_table.lock().unwrap() = Some(table.clone());
+                endpoint.register_snapshot_table(&table).await.unwrap();
+                let (share, total) = consumer.state().input_share.unwrap();
+                assert_eq!(total, n_files, "host {host} of {n_hosts}");
+                mine.push(share);
+            }
+            assert_eq!(
+                mine.iter().sum::<usize>(),
+                n_files,
+                "{n_hosts} hosts: {mine:?}"
+            );
+            assert!(mine.iter().max().unwrap() - mine.iter().min().unwrap() <= 1);
         }
     }
 

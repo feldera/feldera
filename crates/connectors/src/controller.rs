@@ -8274,6 +8274,13 @@ impl ControllerInner {
     ) -> Result<EndpointId, ControllerError> {
         let (seek, initial_statistics) = resume_info.unzip();
 
+        // The number of hosts that share this connector's backpressure
+        // thresholds: all of them for a connector that the coordinator
+        // distributed, otherwise just this one.
+        let queue_hosts = distributed
+            .as_ref()
+            .map_or(1, |distributed| distributed.shard.n_hosts());
+
         debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
         let resolved_connector_config = resolve_secret_references_in_connector_config(
@@ -8463,7 +8470,8 @@ impl ControllerInner {
                 fault_tolerance,
                 initial_statistics.as_ref(),
                 preprocessor_watchdog,
-            ),
+            )
+            .share_queue(queue_hosts),
             || {
                 let reader = open()?;
                 if let Some(completion) = reader.take_completion() {
@@ -10260,6 +10268,14 @@ impl InputConsumer for InputProbe {
         self.controller
             .status
             .set_input_custom_metrics(self.endpoint_id, metrics);
+    }
+
+    fn set_input_share(&self, mine: usize, total: usize) {
+        self.controller
+            .status
+            .set_input_share(self.endpoint_id, mine, total);
+        // A larger share can unblock an endpoint that backpressure paused.
+        self.controller.unpark_backpressure();
     }
 
     fn update_connector_health(&self, health: ConnectorHealth) {
