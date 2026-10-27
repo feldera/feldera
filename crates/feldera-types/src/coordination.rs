@@ -338,6 +338,11 @@ impl InputShard {
         self.host
     }
 
+    /// Returns the number of hosts that divide the input.
+    pub fn n_hosts(&self) -> usize {
+        self.n_hosts
+    }
+
     /// Returns true if this host chooses the values that all of the hosts use
     /// (see [CoordinationActivate::input_choices]).
     pub fn is_leader(&self) -> bool {

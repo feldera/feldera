@@ -1009,7 +1009,16 @@ impl KafkaFtInputReader {
         let partition_count = count_partitions_in_topic(&kafka_consumer, &config.topic)?;
         let mut config = sort_partitions(config);
         if let Some(shard) = shard {
+            let total = config
+                .partitions
+                .as_ref()
+                .map_or(partition_count, |partitions| partitions.len());
             config = select_partitions(config, partition_count, shard)?;
+            let mine = config
+                .partitions
+                .as_ref()
+                .map_or(0, |partitions| partitions.len());
+            consumer.set_input_share(mine, total);
         }
         let config = Arc::new(config);
 

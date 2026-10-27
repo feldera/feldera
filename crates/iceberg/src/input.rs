@@ -1,5 +1,5 @@
 use crate::iceberg_input_serde_config;
-use crate::share::IcebergShareTableProvider;
+use crate::share::{IcebergShareTableProvider, ShareReporter};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use bytemuck::NoUninit;
@@ -2088,6 +2088,12 @@ impl IcebergInputEndpointInner {
         }
 
         if self.follows() {
+            // The home host of a distributed connector follows the table
+            // alone, so it gets the connector's whole queue.
+            if self.distributed.is_some() {
+                self.consumer.set_input_share(1, 1);
+            }
+
             // Follow until the worker task is canceled. `snapshot_id` is the
             // start: the snapshot just ingested (snapshot_and_follow) or the
             // resolved starting snapshot (follow-only).
@@ -2533,13 +2539,19 @@ impl IcebergInputEndpointInner {
         // reader, not the datafusion `snapshot` table.
         if self.config.snapshot() {
             let provider: Arc<dyn TableProvider> = match &self.distributed {
-                Some(distributed) => Arc::new(IcebergShareTableProvider::new(
-                    &self.endpoint_name,
-                    table.clone(),
-                    snapshot_id,
-                    provider.schema(),
-                    distributed.shard,
-                )),
+                Some(distributed) => {
+                    let consumer = self.consumer.clone();
+                    Arc::new(IcebergShareTableProvider::new(
+                        &self.endpoint_name,
+                        table.clone(),
+                        snapshot_id,
+                        provider.schema(),
+                        distributed.shard,
+                        ShareReporter::new(move |mine, total| {
+                            consumer.set_input_share(mine, total)
+                        }),
+                    ))
+                }
                 None => Arc::new(provider),
             };
             self.datafusion
