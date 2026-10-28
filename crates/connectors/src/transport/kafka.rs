@@ -38,6 +38,7 @@ pub use ft::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint};
 pub use nonft::KafkaOutputEndpoint;
 
 pub(crate) mod ft;
+pub(crate) mod metrics;
 mod nonft;
 
 const MAX_POLLING_INTERVAL: Duration = Duration::from_millis(5000);

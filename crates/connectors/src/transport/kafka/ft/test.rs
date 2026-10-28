@@ -1127,6 +1127,7 @@ fn kafka_output_test(
         "",
         true,
         default_secrets_directory(),
+        None,
         CancellationToken::new(),
     )
     .unwrap()
@@ -1175,6 +1176,7 @@ fn output_headers_test() {
         "",
         true,
         default_secrets_directory(),
+        None,
         CancellationToken::new(),
     )
     .unwrap()
@@ -1296,6 +1298,7 @@ fn _test() {
         "",
         true,
         default_secrets_directory(),
+        None,
         CancellationToken::new(),
     )
     .unwrap()
