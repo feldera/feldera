@@ -1961,6 +1961,11 @@ mod test {
             provision_on_login: true,
             http_base_path: String::new(),
             enable_pipeline_resize: false,
+            enable_storage_classes_allowlist: false,
+            storage_classes: vec![],
+            enable_volume_attributes_classes_allowlist: false,
+            volume_attributes_classes: vec![],
+            upper_limit_storage_megabyte: None,
         }
     }
 
