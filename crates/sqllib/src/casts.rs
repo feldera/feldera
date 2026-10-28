@@ -24,8 +24,7 @@ use num_traits::{CheckedDiv, CheckedMul, cast::NumCast};
 use regex::{Captures, Regex};
 use smallstr::SmallString;
 use std::{
-    error::Error, fmt::Display, fmt::Write, iter::once, marker::PhantomData, ops::Div,
-    sync::LazyLock,
+    error::Error, fmt::Display, fmt::Write, iter::once, marker::PhantomData, sync::LazyLock,
 };
 
 trait ToSmallString: Display {
@@ -3440,8 +3439,20 @@ cast_function!(u64, u64, Timestamp, Timestamp);
 pub fn cast_to_SqlDecimal_Timestamp<const P: usize, const S: usize>(
     value: Timestamp,
 ) -> SqlResult<SqlDecimal<P, S>> {
-    cast_to_SqlDecimal_i64::<P, S>(value.microseconds())
-        .map(|x| x.div(SqlDecimal::<P, S>::for_i32(1000)))
+    // The number of milliseconds, rounded toward zero to the scale of the result
+    SqlDecimal::<P, S>::new(value.microseconds() as i128, 3).ok_or_else(|| {
+        SqlRuntimeError::from_string(format!(
+            "Cannot represent {value} as DECIMAL({P}, {S}): precision of DECIMAL type too small to represent value"
+        ))
+    })
+}
+
+#[doc(hidden)]
+pub fn cast_to_SqlDecimal_Timestamp_saturating<const P: usize, const S: usize>(
+    value: Timestamp,
+) -> SqlDecimal<P, S> {
+    cast_to_SqlDecimal_Timestamp::<P, S>(value)
+        .unwrap_or(saturated_decimal(value.microseconds() >= 0))
 }
 
 #[doc(hidden)]
@@ -3591,6 +3602,13 @@ pub fn cast_to_SqlDecimal_TimestampTz<const P: usize, const S: usize>(
     value: TimestampTz,
 ) -> SqlResult<SqlDecimal<P, S>> {
     cast_to_SqlDecimal_Timestamp(value.into())
+}
+
+#[doc(hidden)]
+pub fn cast_to_SqlDecimal_TimestampTz_saturating<const P: usize, const S: usize>(
+    value: TimestampTz,
+) -> SqlDecimal<P, S> {
+    cast_to_SqlDecimal_Timestamp_saturating(value.into())
 }
 
 #[doc(hidden)]
@@ -5150,6 +5168,30 @@ mod tests {
         assert!(cast_to_ShortInterval_MINUTES_u64(200_000_000_000_000).is_err());
         assert!(cast_to_ShortInterval_SECONDS_i64(10_000_000_000_000_000).is_err());
     }
+
+    #[test]
+    fn timestamp_to_decimal() {
+        use crate::{SqlDecimal, Timestamp, cast_to_SqlDecimal_Timestamp};
+
+        // 2024-01-01 00:00:00: the milliseconds have 13 digits, the microseconds 16
+        let timestamp = Timestamp::from_milliseconds(1_704_067_200_000);
+        let result = cast_to_SqlDecimal_Timestamp::<15, 0>(timestamp).unwrap();
+        assert_eq!(
+            result,
+            SqlDecimal::<15, 0>::new(1_704_067_200_000, 0).unwrap()
+        );
+        assert!(cast_to_SqlDecimal_Timestamp::<12, 0>(timestamp).is_err());
+        // A DECIMAL with fewer than 10 integer digits
+        let second = Timestamp::from_milliseconds(1000);
+        let result = cast_to_SqlDecimal_Timestamp::<9, 0>(second).unwrap();
+        assert_eq!(result, SqlDecimal::<9, 0>::new(1000, 0).unwrap());
+        // The microseconds are the fraction, rounded toward zero
+        let before = Timestamp::from_microseconds(-1500);
+        let result = cast_to_SqlDecimal_Timestamp::<10, 0>(before).unwrap();
+        assert_eq!(result, SqlDecimal::<10, 0>::new(-1, 0).unwrap());
+        let result = cast_to_SqlDecimal_Timestamp::<10, 3>(before).unwrap();
+        assert_eq!(result, SqlDecimal::<10, 3>::new(-1500, 3).unwrap());
+    }
 }
 
 #[cfg(test)]
@@ -5216,7 +5258,8 @@ mod saturating_test {
     #[test]
     fn saturating_casts_with_timestamps() {
         use crate::{
-            Timestamp, TimestampTz, cast_to_Timestamp_SqlDecimal_saturating,
+            Timestamp, TimestampTz, cast_to_SqlDecimal_Timestamp_saturating,
+            cast_to_SqlDecimal_TimestampTz_saturating, cast_to_Timestamp_SqlDecimal_saturating,
             cast_to_Timestamp_d_saturating, cast_to_Timestamp_i64_saturating,
             cast_to_Timestamp_u64_saturating, cast_to_TimestampTz_i32_saturating,
             cast_to_i8_Timestamp_saturating, cast_to_u16_TimestampTz_saturating,
@@ -5252,6 +5295,10 @@ mod saturating_test {
         );
         assert_eq!(cast_to_u64_Timestamp_saturating(Timestamp::FIRST_LEGAL), 0);
         assert_eq!(cast_to_u16_TimestampTz_saturating(minute), 0);
+        let result: D3 = cast_to_SqlDecimal_Timestamp_saturating(Timestamp::LAST_LEGAL);
+        assert_eq!(result, D3::MAX);
+        let result: D3 = cast_to_SqlDecimal_TimestampTz_saturating(minute);
+        assert_eq!(result, D3::MIN);
     }
 
     #[test]
