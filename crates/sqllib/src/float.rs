@@ -5,7 +5,7 @@ use crate::{
 use dbsp::algebra::{F32, F64};
 use lexical_core::format::STANDARD;
 use lexical_core::{ToLexicalWithOptions, WriteFloatOptions};
-use num_traits::{Pow, Zero};
+use num_traits::{Float, NumCast, Zero};
 use std::sync::LazyLock;
 
 #[doc(hidden)]
@@ -52,24 +52,6 @@ pub fn log_d(left: F64) -> F64 {
 
 some_polymorphic_function1!(log, d, F64, F64);
 
-fn normalize_zero_d(v: f64) -> f64 {
-    if v.is_zero() {
-        // avoid -0
-        0.0f64
-    } else {
-        v
-    }
-}
-
-fn normalize_zero_f(v: f32) -> f32 {
-    if v.is_zero() {
-        // avoid -0
-        0.0f32
-    } else {
-        v
-    }
-}
-
 #[doc(hidden)]
 #[inline(always)]
 pub fn log_d_d(left: F64, right: F64) -> F64 {
@@ -90,15 +72,29 @@ pub fn log_d_d(left: F64, right: F64) -> F64 {
 
 some_polymorphic_function2!(log, d, F64, d, F64, F64);
 
+/// Returns `round(value * 10^digits) / 10^digits`, without -0.  When `value * 10^digits` is not
+/// finite, `value` has no digits at the position `digits`, so the result is `value`.
+fn round_to_digits<T: Float>(value: T, digits: i32, round: fn(T) -> T) -> T {
+    let tens = <T as NumCast>::from(10).unwrap().powi(digits);
+    let scaled = value * tens;
+    let result = if scaled.is_finite() {
+        let rounded = round(scaled);
+        // When `10^digits` is 0, `rounded` is 0 too.
+        if rounded.is_zero() {
+            rounded
+        } else {
+            rounded / tens
+        }
+    } else {
+        value
+    };
+    if result.is_zero() { T::zero() } else { result }
+}
+
 #[doc(hidden)]
 #[inline(always)]
 pub fn truncate_d_i32(left: F64, right: i32) -> F64 {
-    let tens = 10.0_f64.pow(right);
-    let mut left = left.into_inner() * tens;
-    left = left.trunc();
-    left /= tens;
-    left = normalize_zero_d(left);
-    (left).into()
+    round_to_digits(left.into_inner(), right, f64::trunc).into()
 }
 
 some_polymorphic_function2!(truncate, d, F64, i32, i32, F64);
@@ -106,12 +102,7 @@ some_polymorphic_function2!(truncate, d, F64, i32, i32, F64);
 #[doc(hidden)]
 #[inline(always)]
 pub fn truncate_f_i32(left: F32, right: i32) -> F32 {
-    let tens = 10.0_f32.pow(right);
-    let mut left = left.into_inner() * tens;
-    left = left.trunc();
-    left /= tens;
-    left = normalize_zero_f(left);
-    (left).into()
+    round_to_digits(left.into_inner(), right, f32::trunc).into()
 }
 
 some_polymorphic_function2!(truncate, f, F32, i32, i32, F32);
@@ -119,12 +110,7 @@ some_polymorphic_function2!(truncate, f, F32, i32, i32, F32);
 #[doc(hidden)]
 #[inline(always)]
 pub fn round_d_i32(left: F64, right: i32) -> F64 {
-    let tens = 10.0_f64.pow(right);
-    let mut left = left.into_inner() * tens;
-    left = left.round();
-    left /= tens;
-    left = normalize_zero_d(left);
-    (left).into()
+    round_to_digits(left.into_inner(), right, f64::round).into()
 }
 
 some_polymorphic_function2!(round, d, F64, i32, i32, F64);
@@ -132,12 +118,7 @@ some_polymorphic_function2!(round, d, F64, i32, i32, F64);
 #[doc(hidden)]
 #[inline(always)]
 pub fn round_f_i32(left: F32, right: i32) -> F32 {
-    let tens = 10.0_f32.pow(right);
-    let mut left = left.into_inner() * tens;
-    left = left.round();
-    left /= tens;
-    left = normalize_zero_f(left);
-    (left).into()
+    round_to_digits(left.into_inner(), right, f32::round).into()
 }
 
 some_polymorphic_function2!(round, f, F32, i32, i32, F32);
@@ -544,3 +525,20 @@ pub fn finite_or_null_f(value: F32) -> Option<F32> {
 }
 
 some_polymorphic_null_function1!(finite_or_null, f, F32, F32);
+
+#[cfg(test)]
+mod test {
+    use super::{round_d_i32, round_f_i32, truncate_d_i32};
+    use dbsp::algebra::{F32, F64};
+
+    #[test]
+    fn round_to_many_digits() {
+        // 10^digits is infinity or 0, or the scaled value is not finite.
+        assert_eq!(round_d_i32(F64::new(1.5), 400), F64::new(1.5));
+        assert_eq!(truncate_d_i32(F64::new(1.5), 400), F64::new(1.5));
+        assert_eq!(round_d_i32(F64::new(1.5), -400), F64::new(0.0));
+        assert_eq!(round_d_i32(F64::new(1e300), 20), F64::new(1e300));
+        assert_eq!(round_f_i32(F32::new(1.5), 50), F32::new(1.5));
+        assert_eq!(round_d_i32(F64::new(1.25), 1), F64::new(1.3));
+    }
+}

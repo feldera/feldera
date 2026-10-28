@@ -77,6 +77,18 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void roundFloatManyDigits() {
+        // 10^digits is infinity or 0, or the value times 10^digits is not finite.
+        this.qs("""
+                SELECT ROUND(1.5e0, 400) = 1.5e0, TRUNCATE(1.5e0, 400) = 1.5e0, ROUND(1.5e0, -400) = 0e0,
+                       ROUND(1e300, 20) = 1e300, ROUND(CAST(1.5 AS REAL), 50) = CAST(1.5 AS REAL);
+                 a    | b    | c    | d    | e
+                -----------------------------------
+                 true | true | true | true | true
+                (1 row)""");
+    }
+
+    @Test
     public void absOfMostNegativeInterval() {
         this.qf("SELECT CAST(ABS(INTERVAL '1' MONTH * CAST(-2147483648 AS INT)) AS VARCHAR)",
                 "overflow in INTERVAL ABS(-178956970-08)");
