@@ -3,7 +3,8 @@
 //! `--require-client-certificates`.
 //!
 //! The control plane presents a certificate with the URI SAN [`CONTROL_PLANE_CERTIFICATE_URI`],
-//! a pipeline one with [`pipeline_certificate_uri`]. The private CA signs both.
+//! a pipeline one with [`pipeline_certificate_uri`]. The private CA signs both. Pipelines may
+//! also admit external clients, such as sidecars, by a URI SAN outside `urn:feldera:`.
 
 use actix_tls::accept::rustls_0_23::TlsStream;
 use actix_web::body::{BoxBody, MessageBody};
@@ -32,18 +33,28 @@ pub const CONTROL_PLANE_CERTIFICATE_URI: &str = "urn:feldera:control-plane";
 /// Prefix of the URI SAN of a pipeline certificate. The pipeline id follows it.
 const PIPELINE_CERTIFICATE_URI_PREFIX: &str = "urn:feldera:pipeline:";
 
+/// Namespace of the URI SANs of Feldera components. URN namespaces are case-insensitive.
+const FELDERA_URI_PREFIX: &str = "urn:feldera:";
+
+fn is_feldera_uri(uri: &str) -> bool {
+    uri.get(..FELDERA_URI_PREFIX.len())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(FELDERA_URI_PREFIX))
+}
+
 /// URI SAN of the certificate of pipeline `pipeline_id`.
 pub fn pipeline_certificate_uri(pipeline_id: Uuid) -> String {
     format!("{PIPELINE_CERTIFICATE_URI_PREFIX}{pipeline_id}")
 }
 
 /// Who called a server, according to the client certificate of the connection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Caller {
-    /// No client certificate, or a certificate without exactly one Feldera identity.
+    /// No client certificate, or a certificate without exactly one identity.
     Anonymous,
     ControlPlane,
     Pipeline(Uuid),
+    /// A client outside Feldera, by its URI SAN.
+    External(String),
 }
 
 impl Caller {
@@ -56,10 +67,13 @@ impl Caller {
         let mut callers = cert.valid_uri_names().filter_map(|uri| {
             if uri == CONTROL_PLANE_CERTIFICATE_URI {
                 Some(Self::ControlPlane)
+            } else if let Some(id) = uri.strip_prefix(PIPELINE_CERTIFICATE_URI_PREFIX) {
+                Uuid::parse_str(id).ok().map(Self::Pipeline)
+            } else if is_feldera_uri(uri) {
+                // Not an identity that Feldera issues, in any spelling.
+                None
             } else {
-                uri.strip_prefix(PIPELINE_CERTIFICATE_URI_PREFIX)
-                    .and_then(|id| Uuid::parse_str(id).ok())
-                    .map(Self::Pipeline)
+                Some(Self::External(uri.to_string()))
             }
         });
         match (callers.next(), callers.next()) {
@@ -82,7 +96,7 @@ impl Caller {
 
     /// The caller of the connection that carried `req`.
     pub fn of(req: &ServiceRequest) -> Self {
-        req.conn_data::<Self>().copied().unwrap_or(Self::Anonymous)
+        req.conn_data::<Self>().cloned().unwrap_or(Self::Anonymous)
     }
 }
 
@@ -90,12 +104,12 @@ impl Caller {
 /// refuses it with 401 (no identity) or 403 (another identity) otherwise.
 pub async fn authorize<B: MessageBody>(
     server: &'static str,
-    is_allowed: impl FnOnce(Caller, &Method, &str) -> bool,
+    is_allowed: impl FnOnce(&Caller, &Method, &str) -> bool,
     req: ServiceRequest,
     next: Next<B>,
 ) -> Result<ServiceResponse<B>, actix_web::Error> {
     let caller = Caller::of(&req);
-    if is_allowed(caller, req.method(), req.path()) {
+    if is_allowed(&caller, req.method(), req.path()) {
         return next.call(req).await;
     }
     let method = req.method().to_string();
@@ -209,16 +223,31 @@ pub fn client_certificate_verifier(
         .map_err(|e| format!("client certificate verifier: {e}"))
 }
 
-/// The client verifier and own identity of a pipeline or coordinator server. Its
+/// The client verifier and admitted callers of a pipeline or coordinator server. Its
 /// certificate chain names the pipeline in the leaf and ends with the private CA chain, which
 /// the runner appends, so the server needs no separate CA file.
 pub struct PipelineClientAuth {
     pub own: Caller,
+    /// URI SANs of the external clients that the server admits like the control plane.
+    pub extra_client_uris: Vec<String>,
     pub verifier: Arc<dyn ClientCertVerifier>,
 }
 
 impl PipelineClientAuth {
-    pub fn from_chain(chain: &[CertificateDer<'static>]) -> Result<Self, String> {
+    pub fn from_chain(
+        chain: &[CertificateDer<'static>],
+        extra_client_uris: &[String],
+    ) -> Result<Self, String> {
+        // Feldera mints `urn:feldera:` URIs for its own components, so admitting one here
+        // could admit another pipeline.
+        if let Some(uri) = extra_client_uris
+            .iter()
+            .find(|uri| uri.is_empty() || uri.contains(char::is_whitespace) || is_feldera_uri(uri))
+        {
+            return Err(format!(
+                "extra client URI '{uri}' must be non-empty, have no whitespace, and lie outside {FELDERA_URI_PREFIX}, which Feldera components use"
+            ));
+        }
         let (leaf, ca_chain) = chain
             .split_first()
             .ok_or("the certificate file holds no certificate")?;
@@ -235,14 +264,21 @@ impl PipelineClientAuth {
         }
         Ok(Self {
             own,
+            extra_client_uris: extra_client_uris.to_vec(),
             verifier: client_certificate_verifier(ca_chain.iter().cloned())?,
         })
     }
 
-    /// Whether a pipeline or coordinator server admits `caller`: the control plane, or the
-    /// pipeline itself (the coordinator calls the hosts of its pipeline).
-    pub fn is_allowed(&self, caller: Caller) -> bool {
-        caller == Caller::ControlPlane || caller == self.own
+    /// Whether a pipeline or coordinator server admits `caller`: the control plane, the
+    /// pipeline itself (the coordinator calls the hosts of its pipeline), or a listed external
+    /// client.
+    pub fn is_allowed(&self, caller: &Caller) -> bool {
+        match caller {
+            Caller::ControlPlane => true,
+            Caller::Pipeline(_) => *caller == self.own,
+            Caller::External(uri) => self.extra_client_uris.contains(uri),
+            Caller::Anonymous => false,
+        }
     }
 }
 
@@ -284,12 +320,15 @@ mod tests {
         Caller::from_certificate(&leaf(&ca().0, uris))
     }
 
+    const SIDECAR: &str = "urn:example:sidecar";
+
     /// Certificate URIs map to callers, and a certificate with two identities grants neither.
     #[test]
     fn caller_from_certificate() {
         let control_plane = CONTROL_PLANE_CERTIFICATE_URI.to_string();
         let a = pipeline_certificate_uri(PIPELINE_A);
         let b = pipeline_certificate_uri(PIPELINE_B);
+        let sidecar = SIDECAR.to_string();
         assert_eq!(
             caller_of(std::slice::from_ref(&control_plane)),
             Caller::ControlPlane
@@ -303,24 +342,58 @@ mod tests {
             caller_of(&["urn:feldera:pipeline:not-a-uuid".to_string()]),
             Caller::Anonymous
         );
-        assert_eq!(caller_of(&[control_plane, a.clone()]), Caller::Anonymous);
+        assert_eq!(
+            caller_of(std::slice::from_ref(&sidecar)),
+            Caller::External(SIDECAR.to_string())
+        );
+        assert_eq!(
+            caller_of(&[format!("URN:Feldera:pipeline:{PIPELINE_A}")]),
+            Caller::Anonymous
+        );
+        assert_eq!(
+            caller_of(&["urn:feldera:sidecar".to_string()]),
+            Caller::Anonymous
+        );
+        assert_eq!(
+            caller_of(&[control_plane.clone(), a.clone()]),
+            Caller::Anonymous
+        );
+        assert_eq!(caller_of(&[control_plane, sidecar]), Caller::Anonymous);
         assert_eq!(caller_of(&[a, b]), Caller::Anonymous);
     }
 
-    /// A pipeline server admits the control plane and its own pipeline, and needs a CA chain
-    /// and a pipeline identity in its own certificate file.
+    /// A pipeline server admits the control plane, its own pipeline and the listed external
+    /// clients, and needs a CA chain and a pipeline identity in its own certificate file.
     #[test]
     fn pipeline_client_auth() {
         let (issuer, ca_cert) = ca();
         let own_leaf = leaf(&issuer, &[pipeline_certificate_uri(PIPELINE_A)]);
-        let auth = PipelineClientAuth::from_chain(&[own_leaf.clone(), ca_cert.clone()]).unwrap();
-        assert!(auth.is_allowed(Caller::ControlPlane));
-        assert!(auth.is_allowed(Caller::Pipeline(PIPELINE_A)));
-        assert!(!auth.is_allowed(Caller::Pipeline(PIPELINE_B)));
-        assert!(!auth.is_allowed(Caller::Anonymous));
+        let chain = [own_leaf.clone(), ca_cert.clone()];
+        let auth = PipelineClientAuth::from_chain(&chain, &[SIDECAR.to_string()]).unwrap();
+        assert!(auth.is_allowed(&Caller::ControlPlane));
+        assert!(auth.is_allowed(&Caller::Pipeline(PIPELINE_A)));
+        assert!(auth.is_allowed(&Caller::External(SIDECAR.to_string())));
+        assert!(!auth.is_allowed(&Caller::External("urn:example:other".to_string())));
+        assert!(!auth.is_allowed(&Caller::Pipeline(PIPELINE_B)));
+        assert!(!auth.is_allowed(&Caller::Anonymous));
 
-        assert!(PipelineClientAuth::from_chain(&[own_leaf]).is_err());
+        let no_external = PipelineClientAuth::from_chain(&chain, &[]).unwrap();
+        assert!(!no_external.is_allowed(&Caller::External(SIDECAR.to_string())));
+
+        for invalid in [
+            pipeline_certificate_uri(PIPELINE_B),
+            format!("URN:FELDERA:pipeline:{PIPELINE_B}"),
+            String::new(),
+            "urn:example:a urn:example:b".to_string(),
+        ] {
+            assert!(
+                PipelineClientAuth::from_chain(&chain, std::slice::from_ref(&invalid)).is_err(),
+                "{invalid}"
+            );
+        }
+
+        assert!(PipelineClientAuth::from_chain(&[own_leaf], &[]).is_err());
         let server_leaf = leaf(&issuer, &[]);
-        assert!(PipelineClientAuth::from_chain(&[server_leaf, ca_cert]).is_err());
+        assert!(PipelineClientAuth::from_chain(&[server_leaf, ca_cert], &[]).is_err());
     }
 }
