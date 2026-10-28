@@ -2818,31 +2818,21 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     1,
                 ))
                 .unwrap();
-            let Some(current_transaction_id) =
-                open_api_transaction(&stats.into_inner().global_metrics.transaction_initiators)
-            else {
-                eprintln!(
-                    "Attempting to commit a transaction, but there is no transaction in progress"
-                );
+            let current_transaction_id = transaction_to_commit(
+                &stats.into_inner().global_metrics.transaction_initiators,
+                transaction_id.map(|id| id as i64),
+            )
+            .unwrap_or_else(|error| {
+                eprintln!("{error}");
                 std::process::exit(1);
-            };
-
-            // Verify transaction ID if provided
-            if let Some(expected_transaction_id) = transaction_id
-                && current_transaction_id != expected_transaction_id as i64
-            {
-                eprintln!(
-                    "Specified transaction {} doesn't match current active transaction {}",
-                    expected_transaction_id, current_transaction_id
-                );
-                std::process::exit(1);
-            }
+            });
 
             let actual_transaction_id = current_transaction_id;
 
             let response = client
                 .commit_transaction()
                 .pipeline_name(name.clone())
+                .transaction_id(current_transaction_id)
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
@@ -4144,6 +4134,29 @@ fn open_api_transaction(initiators: &TransactionInitiators) -> Option<i64> {
     }
 }
 
+/// Returns the transaction that `commit-transaction` commits, given the
+/// transaction `requested` on the command line, if any.
+///
+/// If no API transaction is open, this returns `requested`, because a retry
+/// can name a transaction that is already committing or committed.  The
+/// pipeline checks it.
+fn transaction_to_commit(
+    initiators: &TransactionInitiators,
+    requested: Option<i64>,
+) -> Result<i64, String> {
+    match (open_api_transaction(initiators), requested) {
+        (Some(open), Some(requested)) if open != requested => Err(format!(
+            "Specified transaction {requested} doesn't match current active transaction {open}"
+        )),
+        (Some(open), _) => Ok(open),
+        (None, Some(requested)) => Ok(requested),
+        (None, None) => Err(
+            "Attempting to commit a transaction, but there is no transaction in progress"
+                .to_string(),
+        ),
+    }
+}
+
 /// Returns true if transaction `transaction_id` did not yet commit, given the
 /// global metrics `current_transaction_id` and `initiators`.
 ///
@@ -4177,7 +4190,7 @@ mod tests {
     use super::{
         Client, ClientInfo, ClientOpts, RuntimeConfig, RuntimeConfigKey, format_program_errors,
         install_crypto_provider, make_client, open_api_transaction, patch_runtime_config,
-        read_oidc_token_file, transaction_pending,
+        read_oidc_token_file, transaction_pending, transaction_to_commit,
     };
     use feldera_rest_api::types::{
         ProgramError, RustCompilationInfo, SqlCompilationInfo, SqlCompilerMessage,
@@ -4227,6 +4240,29 @@ mod tests {
             open_api_transaction(&initiators(Some(5), Some("Committed"))),
             None
         );
+    }
+
+    /// A retry of `commit-transaction 5`, for example after a timeout, sends
+    /// the commit of 5 again while 5 commits or after it committed.  A
+    /// different open transaction is still an error.
+    #[test]
+    fn retried_commit_names_requested_transaction() {
+        assert_eq!(
+            transaction_to_commit(&initiators(Some(5), Some("Started")), None),
+            Ok(5)
+        );
+        assert_eq!(
+            transaction_to_commit(&initiators(Some(5), Some("Started")), Some(5)),
+            Ok(5)
+        );
+        assert!(transaction_to_commit(&initiators(Some(6), Some("Started")), Some(5)).is_err());
+        assert!(transaction_to_commit(&initiators(None, None), None).is_err());
+        for retry in [
+            initiators(Some(5), Some("Committed")),
+            initiators(None, None),
+        ] {
+            assert_eq!(transaction_to_commit(&retry, Some(5)), Ok(5), "{retry:?}");
+        }
     }
     use std::time::Duration;
 

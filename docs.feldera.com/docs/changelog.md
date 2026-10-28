@@ -27,6 +27,12 @@ Source edition can be found on github.
   before the API's transaction committed. Now both wait for the transaction
   that `start_transaction` started.
 
+- `POST /v0/pipelines/{pipeline_name}/commit_transaction` accepts an optional
+  `transaction_id` query parameter. With it, the pipeline commits only the
+  named transaction. A retry of a commit that is in progress or done succeeds
+  and does nothing. The Python SDK and `fda` send it. See
+  [Transactions](/pipelines/transactions).
+
 ## v0.373.0
 
 - With `FELDERA_REFUSE_LOCAL_FILE_URIS=true`, Delta Lake and Iceberg connectors
