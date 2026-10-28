@@ -22,7 +22,8 @@ Source edition can be found on github.
   call the runner or another pipeline.  Clients that reach a pipeline
   directly, instead of through the API server, are refused.  It requires
   `httpsSecretRef`, `caSecretRef` and cert-manager.  Restart running
-  pipelines after you turn it on.  See
+  pipelines after you turn it on.  `mtls.extraClientUris` lets external
+  clients, such as sidecars, call pipelines directly.  See
   [client certificates](/get-started/enterprise/https#client-certificates).
 
 - Enterprise (Kubernetes): with `caSecretRef` set, pipeline pods mount only
