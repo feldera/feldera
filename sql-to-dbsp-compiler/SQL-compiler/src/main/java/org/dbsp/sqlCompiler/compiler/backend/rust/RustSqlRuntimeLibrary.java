@@ -76,6 +76,7 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put(DBSPOpcode.MOD, "modulo");
         this.arithmeticFunctions.put(DBSPOpcode.MUL, "times");
         this.arithmeticFunctions.put(DBSPOpcode.DIV, "div");
+        this.arithmeticFunctions.put(DBSPOpcode.NEG, "neg");
         this.arithmeticFunctions.put(DBSPOpcode.BW_AND, "band");
         this.arithmeticFunctions.put(DBSPOpcode.BW_OR, "bor");
         this.arithmeticFunctions.put(DBSPOpcode.XOR, "bxor");
@@ -89,6 +90,7 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put(DBSPOpcode.CONTROLLED_FILTER_GTE, DBSPOpcode.CONTROLLED_FILTER_GTE.toString());
 
         this.dateFunctions.put(DBSPOpcode.MUL_INTERVAL, "times");
+        this.dateFunctions.put(DBSPOpcode.NEG, "neg");
         this.dateFunctions.put(DBSPOpcode.DIV_INTERVAL, "div");
         this.dateFunctions.put(DBSPOpcode.DIV_INTERVAL_NULL, "div_null");
         this.dateFunctions.put(DBSPOpcode.CONTROLLED_FILTER_GTE, DBSPOpcode.CONTROLLED_FILTER_GTE.toString());

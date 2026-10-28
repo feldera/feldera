@@ -77,6 +77,22 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void absOfMostNegativeInterval() {
+        this.qf("SELECT CAST(ABS(INTERVAL '1' MONTH * CAST(-2147483648 AS INT)) AS VARCHAR)",
+                "overflow in INTERVAL ABS(-178956970-08)");
+    }
+
+    @Test
+    public void absAndNegationOfMinimumValue() {
+        this.qf("SELECT ABS(CAST(-128 AS TINYINT))", "'ABS(-128)' causes overflow for type TINYINT");
+        this.qf("SELECT ABS(CAST(-32768 AS SMALLINT))", "'ABS(-32768)' causes overflow for type SMALLINT");
+        this.qf("SELECT ABS(CAST(-2147483648 AS INTEGER))", "'ABS(-2147483648)' causes overflow for type INTEGER");
+        this.qf("SELECT -CAST(-128 AS TINYINT)", "'-(-128)' causes overflow for type TINYINT");
+        this.qf("SELECT -CAST(-32768 AS SMALLINT)", "'-(-32768)' causes overflow for type SMALLINT");
+        this.qf("SELECT -CAST(-2147483648 AS INTEGER)", "'-(-2147483648)' causes overflow for type INTEGER");
+    }
+
+    @Test
     public void testBetween() {
         this.qst("""
                 SELECT TIMESTAMP '2020-02-02 10:00:00' between TIMESTAMP '2020-02-02 09:00:00' and TIMESTAMP '2020-02-02 11:00:00';

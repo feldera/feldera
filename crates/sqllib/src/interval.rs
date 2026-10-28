@@ -138,9 +138,16 @@ impl ShortInterval {
     }
 }
 
+/// Panic for an INTERVAL `ABS(value)` that overflows.
+#[cold]
+fn abs_failed(value: impl fmt::Display) -> ! {
+    panic!("overflow in INTERVAL ABS({value})")
+}
+
 #[doc(hidden)]
 pub fn abs_ShortInterval(value: ShortInterval) -> ShortInterval {
-    ShortInterval::from_microseconds(num::abs(value.microseconds))
+    let microseconds = value.microseconds.checked_abs();
+    ShortInterval::from_microseconds(microseconds.unwrap_or_else(|| abs_failed(value)))
 }
 
 some_polymorphic_function1!(abs, ShortInterval, ShortInterval, ShortInterval);
@@ -628,7 +635,8 @@ impl fmt::Display for LongInterval {
 
 #[doc(hidden)]
 pub fn abs_LongInterval(value: LongInterval) -> LongInterval {
-    LongInterval::from_months(num::abs(value.months))
+    let months = value.months.checked_abs();
+    LongInterval::from_months(months.unwrap_or_else(|| abs_failed(value)))
 }
 
 some_polymorphic_function1!(abs, LongInterval, LongInterval, LongInterval);
@@ -1092,7 +1100,10 @@ crate::hash_repr::hash_repr_struct! {
 
 #[cfg(test)]
 mod test {
-    use super::{LongInterval, ShortInterval, div_null_LongInterval_d, div_null_ShortInterval_d};
+    use super::{
+        LongInterval, ShortInterval, abs_LongInterval, abs_ShortInterval, div_null_LongInterval_d,
+        div_null_ShortInterval_d,
+    };
     use crate::SqlDecimal;
     use dbsp::algebra::F64;
 
@@ -1132,6 +1143,18 @@ mod test {
     )]
     fn short_interval_addition_overflow() {
         let _ = ShortInterval::from_microseconds(i64::MAX) + ShortInterval::from_microseconds(1);
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow in INTERVAL ABS(-178956970-08)")]
+    fn most_negative_long_interval_abs() {
+        let _ = abs_LongInterval(LongInterval::from_months(i32::MIN));
+    }
+
+    #[test]
+    #[should_panic(expected = "overflow in INTERVAL ABS(-106751991 04:00:54.775808)")]
+    fn most_negative_short_interval_abs() {
+        let _ = abs_ShortInterval(ShortInterval::from_microseconds(i64::MIN));
     }
 
     #[test]

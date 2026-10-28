@@ -55,7 +55,8 @@ string cannot be interpreted as a number.
 Division or modulus by zero cause a runtime error.
 
 Operations that cause integer overflow or underflow (example: multiplication or division
-of minimum integer value by -1) produce run time errors.
+of minimum integer value by -1, or the negation or `ABS` of the minimum integer value) produce
+run time errors.
 
 ## Predefined functions on integer values
 

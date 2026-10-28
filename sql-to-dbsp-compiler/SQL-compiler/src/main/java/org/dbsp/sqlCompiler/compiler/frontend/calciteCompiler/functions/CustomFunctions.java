@@ -45,8 +45,8 @@ import static org.apache.calcite.sql.type.OperandTypes.*;
 import static org.apache.calcite.util.Static.RESOURCE;
 
 /** Several functions that we define and add to the existing ones.
- * Unfortunately we cannot replace functions from the Calcite {@link SqlStdOperatorTable}, unless
- * we give them new names. */
+ * A function that replaces one from the Calcite {@link SqlStdOperatorTable} with the same name
+ * needs the Calcite function hidden in {@link CalciteFunctions#getFunctions}. */
 public class CustomFunctions {
     private final List<NonOptimizedFunction> functions;
     private final HashMap<ProgramIdentifier, ExternalFunction> udf;
@@ -55,6 +55,7 @@ public class CustomFunctions {
     public CustomFunctions() {
         this.functions = new ArrayList<>();
         // keep this sorted for faster search
+        this.functions.add(AbsFunction.INSTANCE);
         this.functions.add(ArrayContainsFunction.INSTANCE);
         this.functions.add(ArrayExcept.INSTANCE);
         this.functions.add(ArrayExistsFunction.INSTANCE);
@@ -201,6 +202,17 @@ public class CustomFunctions {
 
         public CalciteFunctionClone(SqlFunction calciteFunction, String documentationFile, String testedBy) {
             this(calciteFunction.getName(), calciteFunction, documentationFile, testedBy);
+        }
+    }
+
+    static class AbsFunction extends CalciteFunctionClone {
+        static final AbsFunction INSTANCE = new AbsFunction();
+
+        // Cannot be folded by Calcite, which computes the ABS of the minimum integer as the minimum integer
+        private AbsFunction() {
+            super(SqlStdOperatorTable.ABS, "decimal#abs,float#abs,integer#abs,datetime#abs", """
+                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
+                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""");
         }
     }
 
