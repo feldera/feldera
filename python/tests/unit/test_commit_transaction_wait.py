@@ -52,6 +52,7 @@ def commit(responses, **kwargs):
     with patch("feldera.rest.feldera_client.time.sleep"):
         client.commit_transaction("test-pipeline", **kwargs)
     client.http.post.assert_called_once()
+    assert client.http.post.call_args.kwargs["params"] == {"transaction_id": API}
     return client.get_pipeline_stats.call_count
 
 
@@ -74,6 +75,14 @@ def test_no_api_transaction():
 def test_api_transaction_already_committing():
     with pytest.raises(RuntimeError):
         commit([stats(EARLIER, API, "Committed")])
+
+
+@pytest.mark.parametrize("start", range(len(COMMIT)))
+def test_retry_waits_for_committing_transaction(start):
+    """A retry, for example after a `TimeoutError`, waits for the commit that
+    the first call started, or succeeds if the transaction committed."""
+    responses = [COMMIT[start]] + COMMIT[start:]
+    assert commit(responses, transaction_id=API) == len(responses)
 
 
 def test_transaction_id_mismatch():

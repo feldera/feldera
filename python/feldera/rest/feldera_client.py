@@ -1238,8 +1238,10 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param poll_interval_s: Polling interval at which to check while waiting for the
             transaction to commit (default is every 0.5 seconds). Not used if `wait=False`.
 
-        :raises RuntimeError: If there is currently no transaction in progress.
+        :raises RuntimeError: If `transaction_id` is not provided and there is currently no transaction in progress.
         :raises ValueError: If the provided `transaction_id` does not match the current transaction.
+            If there is no current transaction, the pipeline checks `transaction_id`: a transaction that is
+            already committing or committed succeeds, so it is safe to call this again after a `TimeoutError`.
         :raises TimeoutError: If the transaction does not commit within the specified timeout (when `wait` is True).
         :raises FelderaAPIError: If the pipeline fails to commit a transaction.
         """
@@ -1249,19 +1251,26 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         current_transaction_id = _open_api_transaction(stats["global_metrics"])
 
         if current_transaction_id is None:
-            raise RuntimeError(
-                "Attempting to commit a transaction, but there is no transaction in progress"
-            )
-
-        if transaction_id and current_transaction_id != transaction_id:
+            if not transaction_id:
+                raise RuntimeError(
+                    "Attempting to commit a transaction, but there is no transaction in progress"
+                )
+            # Maybe a retry: the pipeline accepts a commit of a transaction
+            # that is already committing or committed.
+            current_transaction_id = transaction_id
+        elif transaction_id and current_transaction_id != transaction_id:
             raise ValueError(
                 f"Specified transaction id {transaction_id} doesn't match current active transaction id {current_transaction_id}"
             )
 
         transaction_id = current_transaction_id
 
+        # A pipeline that knows `transaction_id` commits only that transaction,
+        # and accepts a retry once the transaction is committing.
         self.http.post(
             path=f"/pipelines/{pipeline_name}/commit_transaction",
+            params={"transaction_id": transaction_id},
+            idempotent=True,
         )
 
         start_time = time.monotonic()

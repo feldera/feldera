@@ -8291,13 +8291,29 @@ export type CommitTransactionData = {
      */
     pipeline_name: string
   }
-  query?: never
+  query?: {
+    /**
+     * The ID of the transaction to commit, which `/start_transaction`
+     * returned:
+     *
+     * - If this is the transaction that the API started and that is still
+     * open, the request commits it.
+     * - If this transaction is already committing or committed, the request
+     * succeeds and does nothing, so it is safe to retry.
+     * - Otherwise, the request fails with 409 Conflict, for example if no
+     * transaction with this ID has started yet.
+     *
+     * Without this parameter, the request commits the transaction that the
+     * API started.
+     */
+    transaction_id?: number | null
+  }
   url: '/v0/pipelines/{pipeline_name}/commit_transaction'
 }
 
 export type CommitTransactionErrors = {
   /**
-   * Another transaction is already in progress.
+   * Another transaction is already in progress, or `transaction_id` is not the transaction that the API started.
    */
   409: ErrorResponse
   500: ErrorResponse

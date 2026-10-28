@@ -19,6 +19,7 @@ use feldera_types::{
     error::{DetailedError, EngineError, ErrorResponse},
     runtime_status::RuntimeDesiredStatus,
     suspend::SuspendError,
+    transaction::TransactionId,
 };
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
@@ -857,6 +858,15 @@ pub enum ControllerError {
     TransactionInProgress,
     NoTransactionInProgress,
 
+    /// `/commit_transaction?transaction_id=<requested>` failed because
+    /// `requested` is not the open transaction that `/start_transaction`
+    /// started, and it is not committing or committed.  `open` is the ID of
+    /// the open transaction that `/start_transaction` started, if any.
+    TransactionIdMismatch {
+        requested: TransactionId,
+        open: Option<TransactionId>,
+    },
+
     /// Invalid initial desired status.
     InvalidInitialStatus(RuntimeDesiredStatus),
 
@@ -911,6 +921,7 @@ impl ResponseError for ControllerError {
             Self::UnknownEndpointInCompletionToken { .. } => StatusCode::GONE,
             Self::TransactionInProgress => StatusCode::CONFLICT,
             Self::NoTransactionInProgress => StatusCode::BAD_REQUEST,
+            Self::TransactionIdMismatch { .. } => StatusCode::CONFLICT,
             Self::InvalidInitialStatus(_) => StatusCode::GONE,
             Self::BootstrapRejectedByUser => StatusCode::CONFLICT,
             Self::UnexpectedBootstrap { .. } => StatusCode::INTERNAL_SERVER_ERROR,
@@ -1054,6 +1065,7 @@ impl DetailedError for ControllerError {
             Self::CheckpointPushError { .. } => Cow::from("CheckpointPushError"),
             Self::TransactionInProgress => Cow::from("TransactionInProgress"),
             Self::NoTransactionInProgress => Cow::from("NoTransactionInProgress"),
+            Self::TransactionIdMismatch { .. } => Cow::from("TransactionIdMismatch"),
             Self::InvalidInitialStatus(_) => Cow::from("InvalidInitialStatus"),
             Self::InvalidStandby(_) => Cow::from("InvalidStandby"),
             Self::InvalidStartupTransition { .. } => Cow::from("InvalidStartupTransition"),
@@ -1257,6 +1269,16 @@ impl Display for ControllerError {
                     "This operation requires an active transaction, but none is currently in progress"
                 )
             }
+            Self::TransactionIdMismatch { requested, open } => match open {
+                Some(open) => write!(
+                    f,
+                    "Cannot commit transaction {requested}: the open transaction that /start_transaction started is {open}"
+                ),
+                None => write!(
+                    f,
+                    "Cannot commit transaction {requested}: no transaction that /start_transaction started is open"
+                ),
+            },
             Self::InvalidInitialStatus(status) => {
                 write!(
                     f,
@@ -1689,6 +1711,7 @@ impl ControllerError {
             | Self::CheckpointPushError { .. }
             | Self::PipelineRestarted { .. }
             | Self::NoTransactionInProgress
+            | Self::TransactionIdMismatch { .. }
             | Self::InvalidInitialStatus(_)
             | Self::BootstrapRejectedByUser
             | Self::BootstrapNotAllowed { .. }

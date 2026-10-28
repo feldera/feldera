@@ -1582,7 +1582,7 @@ pub fn api_transaction_started_during_commit_does_not_stall_it(engine: &dyn Pipe
             )
             .unwrap();
     }));
-    controller.start_commit_transaction().unwrap();
+    controller.start_commit_transaction(None).unwrap();
     receiver
         .recv_timeout(Duration::from_millis(TIMEOUT_MS))
         .expect("X's commit finished in one step, so the test cannot start Y during it")
@@ -1595,7 +1595,7 @@ pub fn api_transaction_started_during_commit_does_not_stall_it(engine: &dyn Pipe
     );
 
     // Commit Y, so that the pipeline stops cleanly whatever happened to X.
-    controller.start_commit_transaction().unwrap();
+    controller.start_commit_transaction(None).unwrap();
     wait(
         || controller.inner.get_transaction_state() == TransactionState::None,
         TIMEOUT_MS,
@@ -1794,7 +1794,7 @@ pub fn replay_does_not_feed_http_input_during_commit(engine: &dyn PipelineTestEn
     wait(|| !controller.is_replaying(), default_timeout_ms()).unwrap();
     let first_tid = controller.start_transaction().unwrap().transaction_id;
     let token = ingress_rows(&controller, FIRST, 0..RECORDS);
-    controller.start_commit_transaction().unwrap();
+    controller.start_commit_transaction(None).unwrap();
     wait_for_completion(&controller, &token);
     let token = ingress_rows(&controller, SECOND, RECORDS..RECORDS + 1);
     wait_for_completion(&controller, &token);
@@ -4889,7 +4889,7 @@ pub fn connector_attached_between_transactions_receives_no_earlier_output(
     )
     .unwrap();
 
-    controller.start_commit_transaction().unwrap();
+    controller.start_commit_transaction(None).unwrap();
     wait(
         || {
             output_endpoint_metrics(&controller, "test_output1").total_processed_input_records
@@ -9162,7 +9162,7 @@ fn transaction_rounds(
                 .expect("timed out waiting for a transaction to ingest its slice");
 
             // Every commit lands with the rest of the input still queued.
-            controller.start_commit_transaction().unwrap();
+            controller.start_commit_transaction(None).unwrap();
             wait_fast(
                 || controller.inner.get_transaction_state() == TransactionState::None,
                 default_timeout_ms(),
@@ -9353,7 +9353,7 @@ fn transaction_view_consistency(
             controller.status().num_buffered_input_records()
         );
 
-        controller.start_commit_transaction().unwrap();
+        controller.start_commit_transaction(None).unwrap();
         wait(|| controller.pipeline_complete(), default_timeout_ms())
             .expect("timed out waiting for the pipeline to complete");
 
