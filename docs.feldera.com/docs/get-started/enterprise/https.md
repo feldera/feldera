@@ -25,8 +25,8 @@ external software.
 :::note
 
 The API server does not accept client certificates; it supports
-[API authentication](authentication/index.mdx).  The compiler server can
-require [client certificates](#client-certificates-for-the-compiler-server)
+[API authentication](authentication/index.mdx).  The compiler and runner
+servers can require [client certificates](#client-certificates-for-the-compiler-and-runner-servers)
 from the other Feldera components.
 
 :::
@@ -235,17 +235,17 @@ section below describes one way to generate these files.
    "Received HTTP/0.9 when not allowed" (curl).
    Use `https://` as the protocol.
 
-## Client certificates for the compiler server
+## Client certificates for the compiler and runner servers
 
-With the Helm value `mtls.enabled: true`, the compiler server requires a
-client certificate that the private CA signed, and admits each caller only
-to its own routes:
+With the Helm value `mtls.enabled: true`, the compiler and runner servers
+require a client certificate that the private CA signed, and admit each
+caller only to its own routes:
 
-| Caller | Certificate | Routes |
-|---|---|---|
-| API server, runner, compiler replicas | control-plane certificate (URI SAN `urn:feldera:control-plane`), issued by cert-manager from the private CA | all |
-| Pipeline `<id>` | pipeline certificate (URI SAN `urn:feldera:pipeline:<id>`), issued by the runner from the private CA | download its own binary and program info |
-| No certificate | none | `/healthz` |
+| Caller | Certificate | Compiler routes | Runner routes |
+|---|---|---|---|
+| API server, runner, compiler replicas | control-plane certificate (URI SAN `urn:feldera:control-plane`), issued by cert-manager from the private CA | all | all |
+| Pipeline `<id>` | pipeline certificate (URI SAN `urn:feldera:pipeline:<id>`), issued by the runner from the private CA | download its own binary and program info, `/healthz` | `/healthz` |
+| No certificate | none | `/healthz` | `/healthz` |
 
 Requirements:
 
