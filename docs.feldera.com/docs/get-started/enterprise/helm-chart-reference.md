@@ -202,12 +202,15 @@ Default settings applied to all pipeline pods.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `pipeline.serviceAccountName` | `null` | Default Kubernetes service account for pipeline pods. Typically used for IRSA-based cloud authentication. |
+| `pipeline.allowedServiceAccountNames` | `[]` | Service accounts a pipeline may select with `resources.service_account_name`. A pipeline that selects any other fails to start. List only accounts without Kubernetes API permissions; the chart refuses its own control-plane service accounts. |
 | `pipeline.env` | `null` | List of environment variables injected into all pipeline pods. |
+| `pipeline.allowEnv` | `true` | Allow pipelines to set environment variables with `env` in their runtime configuration. A pipeline that sets them fails to start when this is `false`. |
 | `pipeline.extraVolumes` | `null` | List of extra volumes added to all pipeline pods, after the built-in ones. Chart v0.366.0 and later. See [Extra volumes](#extra-volumes). |
 | `pipeline.extraVolumeMounts` | `null` | List of extra volume mounts added to the pipeline container, after the built-in ones. Chart v0.366.0 and later. See [Extra volumes](#extra-volumes). |
 | `pipeline.allowInitContainers` | `true` | Allow pipelines to specify init containers (e.g., sidecars) via runtime configuration. See [sidecar containers](/pipelines/sidecar). |
 | `pipeline.allowProfiling` | `false` | Grant the `PERFMON` and `IPC_LOCK` capabilities to pipeline containers, enabling performance profiling. Node kernel settings may also be required, see [Visualizing profiles](/operations/visualizing-profiles.md#enterprise-environments). |
 | `pipeline.terminationGracePeriodSeconds` | `60` | Seconds a pipeline has to write a checkpoint when Kubernetes evicts its pod or drains its node. See [Writing checkpoints](/pipelines/fault-tolerance#writing-checkpoints). |
+| `pipeline.deniedConnectors` | `[]` | Connectors that pipelines may not use, by their `transport.name` (for example `file_input`). A pipeline that uses one fails to start. |
 
 ### Extra volumes
 
