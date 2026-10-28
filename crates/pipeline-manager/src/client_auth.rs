@@ -1,80 +1,22 @@
-//! Client certificate authentication and route authorization of the compiler and runner
-//! servers (`--require-client-certificates`).
+//! Route authorization of the compiler and runner servers with client certificates
+//! (`--require-client-certificates`). The identities and the checks shared with the
+//! pipeline and coordinator servers are in `feldera_mtls`.
 
 use crate::config::CommonConfig;
 use crate::db::types::pipeline::PipelineId;
-use actix_tls::accept::rustls_0_23::TlsStream;
-use actix_web::body::{BoxBody, MessageBody};
-use actix_web::dev::{Extensions, ServiceRequest, ServiceResponse};
-use actix_web::http::{Method, StatusCode};
+use actix_web::body::MessageBody;
+use actix_web::dev::{ServiceRequest, ServiceResponse};
+use actix_web::http::Method;
 use actix_web::middleware::Next;
-use actix_web::rt::net::TcpStream;
-use actix_web::{HttpResponse, ResponseError};
-use feldera_types::error::DetailedError;
-use rustls::RootCertStore;
+pub(crate) use feldera_mtls::Caller;
+use feldera_mtls::authorize;
 use rustls::pki_types::CertificateDer;
 use rustls::pki_types::pem::PemObject;
-use rustls::server::WebPkiClientVerifier;
-use rustls::server::danger::ClientCertVerifier;
-use serde::Serialize;
-use std::any::Any;
-use std::borrow::Cow;
-use std::fmt;
-use std::sync::Arc;
-use tracing::warn;
 use uuid::Uuid;
-
-/// URI SAN of the control-plane client certificate (API server, runner, compiler replicas).
-pub const CONTROL_PLANE_CERTIFICATE_URI: &str = "urn:feldera:control-plane";
-
-/// Prefix of the URI SAN of a pipeline certificate. The pipeline id follows it.
-const PIPELINE_CERTIFICATE_URI_PREFIX: &str = "urn:feldera:pipeline:";
 
 /// URI SAN of the certificate of pipeline `pipeline_id`.
 pub fn pipeline_certificate_uri(pipeline_id: PipelineId) -> String {
-    format!("{PIPELINE_CERTIFICATE_URI_PREFIX}{pipeline_id}")
-}
-
-/// Who called a server, according to the client certificate of the connection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Caller {
-    /// No client certificate, or a certificate without exactly one Feldera identity.
-    Anonymous,
-    ControlPlane,
-    Pipeline(PipelineId),
-}
-
-impl Caller {
-    /// Maps a client certificate, which the TLS handshake verified, to its caller.
-    fn from_certificate(cert: &CertificateDer<'_>) -> Self {
-        let Ok(cert) = webpki::EndEntityCert::try_from(cert) else {
-            return Self::Anonymous;
-        };
-        let mut callers = cert.valid_uri_names().filter_map(|uri| {
-            if uri == CONTROL_PLANE_CERTIFICATE_URI {
-                Some(Self::ControlPlane)
-            } else {
-                uri.strip_prefix(PIPELINE_CERTIFICATE_URI_PREFIX)
-                    .and_then(|id| Uuid::parse_str(id).ok())
-                    .map(|id| Self::Pipeline(PipelineId(id)))
-            }
-        });
-        match (callers.next(), callers.next()) {
-            (Some(caller), None) => caller,
-            // A certificate with two identities is ambiguous, so it grants neither.
-            _ => Self::Anonymous,
-        }
-    }
-
-    /// Stores the caller of a new connection for the authorization middleware.
-    pub(crate) fn record(connection: &dyn Any, extensions: &mut Extensions) {
-        let caller = connection
-            .downcast_ref::<TlsStream<TcpStream>>()
-            .and_then(|stream| stream.get_ref().1.peer_certificates())
-            .and_then(|certs| certs.first())
-            .map_or(Self::Anonymous, Self::from_certificate);
-        extensions.insert(caller);
-    }
+    feldera_mtls::pipeline_certificate_uri(pipeline_id.0)
 }
 
 /// Decides whether `caller` may send a `method` request for `path` to the compiler server.
@@ -93,7 +35,7 @@ fn is_compiler_request_allowed(caller: Caller, method: &Method, path: &str) -> b
     let mut segments = path.strip_prefix('/').unwrap_or(path).split('/');
     method == Method::GET
         && matches!(segments.next(), Some("binary" | "program_info"))
-        && segments.next().and_then(|id| Uuid::parse_str(id).ok()) == Some(own_id.0)
+        && segments.next().and_then(|id| Uuid::parse_str(id).ok()) == Some(own_id)
 }
 
 /// Decides whether `caller` may send a `method` request for `path` to the runner server:
@@ -118,120 +60,13 @@ pub(crate) async fn authorize_runner_caller(
     authorize("runner", is_runner_request_allowed, req, next).await
 }
 
-async fn authorize<B: MessageBody>(
-    server: &'static str,
-    is_allowed: fn(Caller, &Method, &str) -> bool,
-    req: ServiceRequest,
-    next: Next<B>,
-) -> Result<ServiceResponse<B>, actix_web::Error> {
-    let caller = req
-        .conn_data::<Caller>()
-        .copied()
-        .unwrap_or(Caller::Anonymous);
-    if is_allowed(caller, req.method(), req.path()) {
-        return next.call(req).await;
-    }
-    let method = req.method().to_string();
-    let path = req.path().to_string();
-    warn!("The {server} server refused {method} {path} from {caller:?}");
-    Err(match caller {
-        Caller::Anonymous => ClientAuthError::ClientCertificateRequired {
-            server,
-            method,
-            path,
-        },
-        _ => ClientAuthError::CallerNotAllowed {
-            server,
-            caller: format!("{caller:?}"),
-            method,
-            path,
-        },
-    }
-    .into())
-}
-
-/// A request that a server refused because of the client certificate of its connection.
-#[derive(Debug, Serialize)]
-#[serde(untagged)]
-pub(crate) enum ClientAuthError {
-    ClientCertificateRequired {
-        server: &'static str,
-        method: String,
-        path: String,
-    },
-    CallerNotAllowed {
-        server: &'static str,
-        caller: String,
-        method: String,
-        path: String,
-    },
-}
-
-impl DetailedError for ClientAuthError {
-    fn error_code(&self) -> Cow<'static, str> {
-        match self {
-            Self::ClientCertificateRequired { .. } => Cow::from("ClientCertificateRequired"),
-            Self::CallerNotAllowed { .. } => Cow::from("CallerNotAllowed"),
-        }
-    }
-}
-
-impl fmt::Display for ClientAuthError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ClientCertificateRequired {
-                server,
-                method,
-                path,
-            } => write!(
-                f,
-                "The {server} server requires a client certificate for {method} {path}: present a certificate that the private CA signed (control plane: --https-client-cert-path)"
-            ),
-            Self::CallerNotAllowed {
-                server,
-                caller,
-                method,
-                path,
-            } => write!(
-                f,
-                "{caller} may not send {method} {path} to the {server} server: only the control plane may, apart from /healthz and a pipeline downloading its own artifacts from the compiler"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for ClientAuthError {}
-
-impl ResponseError for ClientAuthError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            Self::ClientCertificateRequired { .. } => StatusCode::UNAUTHORIZED,
-            Self::CallerNotAllowed { .. } => StatusCode::FORBIDDEN,
-        }
-    }
-
-    fn error_response(&self) -> HttpResponse<BoxBody> {
-        crate::error::json_error_response(self)
-    }
-}
-
 /// The TLS configuration of a server that the route tables protect: with
-/// `--require-client-certificates` it requests client certificates.
+/// `--require-client-certificates` it requests client certificates that the private CA
+/// (`--private-ca-cert-path`) signed.
 pub(crate) fn https_server_config(common_config: &CommonConfig) -> Option<rustls::ServerConfig> {
-    if common_config.require_client_certificates {
-        common_config
-            .https_server_config_with_client_verifier(client_certificate_verifier(common_config))
-    } else {
-        common_config.https_server_config()
+    if !common_config.require_client_certificates {
+        return common_config.https_server_config();
     }
-}
-
-/// Builds the client certificate verifier of a server. Every certificate in the private CA
-/// bundle is a trust anchor, so a client may send its leaf certificate without the chain.
-/// Clients without a certificate may connect, for `/healthz`.
-pub(crate) fn client_certificate_verifier(
-    common_config: &CommonConfig,
-) -> Arc<dyn ClientCertVerifier> {
     assert!(
         common_config.enable_https,
         "--require-client-certificates requires --enable-https"
@@ -239,27 +74,19 @@ pub(crate) fn client_certificate_verifier(
     let ca_path = common_config.private_ca_cert_path.as_ref().expect(
         "--require-client-certificates requires --private-ca-cert-path, the CA that signs client certificates",
     );
-    let mut roots = RootCertStore::empty();
-    for cert in CertificateDer::pem_file_iter(ca_path)
-        .unwrap_or_else(|e| panic!("private CA certificate '{ca_path}' should be read: {e}"))
-    {
-        let cert =
-            cert.unwrap_or_else(|e| panic!("private CA certificate '{ca_path}' should parse: {e}"));
-        roots
-            .add(cert)
-            .unwrap_or_else(|e| panic!("private CA certificate '{ca_path}' should be valid: {e}"));
-    }
-    WebPkiClientVerifier::builder(Arc::new(roots))
-        .allow_unauthenticated()
-        .build()
-        .unwrap_or_else(|e| panic!("client certificate verifier should be built: {e}"))
+    let anchors = CertificateDer::pem_file_iter(ca_path)
+        .and_then(|certs| certs.collect::<Result<Vec<_>, _>>())
+        .unwrap_or_else(|e| panic!("private CA certificate '{ca_path}' should be read: {e}"));
+    let verifier = feldera_mtls::client_certificate_verifier(anchors)
+        .unwrap_or_else(|e| panic!("private CA certificate '{ca_path}': {e}"));
+    common_config.https_server_config_with_client_verifier(verifier)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        CONTROL_PLANE_CERTIFICATE_URI, Caller, authorize_compiler_caller, https_server_config,
-        is_compiler_request_allowed, is_runner_request_allowed, pipeline_certificate_uri,
+        Caller, authorize_compiler_caller, https_server_config, is_compiler_request_allowed,
+        is_runner_request_allowed, pipeline_certificate_uri,
     };
     use crate::compiler::main::{check_compilation_artifacts, get_binary, upload_binary};
     use crate::compiler::util::pipeline_binary_filename;
@@ -270,12 +97,11 @@ mod tests {
     use actix_web::http::{Method, StatusCode};
     use actix_web::middleware::from_fn;
     use actix_web::{App, HttpResponse, HttpServer, web};
+    use feldera_mtls::CONTROL_PLANE_CERTIFICATE_URI;
     use rcgen::{
         BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair,
         SanType,
     };
-    use rustls::pki_types::CertificateDer;
-    use rustls::pki_types::pem::PemObject;
     use std::net::TcpListener;
     use std::path::Path;
     use uuid::Uuid;
@@ -317,50 +143,6 @@ mod tests {
         SanType::URI(uri.try_into().unwrap())
     }
 
-    fn caller_of(sans: Vec<SanType>) -> Caller {
-        let (chain, _) = issue(&test_ca("ca"), sans, ExtendedKeyUsagePurpose::ClientAuth);
-        let leaf = CertificateDer::from_pem_slice(chain.as_bytes()).unwrap();
-        Caller::from_certificate(&leaf)
-    }
-
-    /// Certificate URIs map to callers, and a certificate with two identities grants neither.
-    #[test]
-    fn caller_from_certificate() {
-        assert_eq!(
-            caller_of(vec![uri(CONTROL_PLANE_CERTIFICATE_URI)]),
-            Caller::ControlPlane
-        );
-        assert_eq!(
-            caller_of(vec![
-                SanType::DnsName("localhost".try_into().unwrap()),
-                uri(&pipeline_certificate_uri(PIPELINE_A)),
-            ]),
-            Caller::Pipeline(PIPELINE_A)
-        );
-        assert_eq!(
-            caller_of(vec![SanType::DnsName("localhost".try_into().unwrap())]),
-            Caller::Anonymous
-        );
-        assert_eq!(
-            caller_of(vec![uri("urn:feldera:pipeline:not-a-uuid")]),
-            Caller::Anonymous
-        );
-        assert_eq!(
-            caller_of(vec![
-                uri(CONTROL_PLANE_CERTIFICATE_URI),
-                uri(&pipeline_certificate_uri(PIPELINE_A)),
-            ]),
-            Caller::Anonymous
-        );
-        assert_eq!(
-            caller_of(vec![
-                uri(&pipeline_certificate_uri(PIPELINE_A)),
-                uri(&pipeline_certificate_uri(PIPELINE_B)),
-            ]),
-            Caller::Anonymous
-        );
-    }
-
     /// The runner admits only the control plane, apart from `/healthz`.
     #[test]
     fn runner_route_table() {
@@ -374,7 +156,7 @@ mod tests {
             (Method::GET, "/unknown", [true, false, false]),
         ];
         for (method, path, expected) in table {
-            for (caller, allowed) in [ControlPlane, Pipeline(PIPELINE_A), Anonymous]
+            for (caller, allowed) in [ControlPlane, Pipeline(PIPELINE_A.0), Anonymous]
                 .into_iter()
                 .zip(expected)
             {
@@ -398,7 +180,7 @@ mod tests {
         let info_a = format!("/program_info/{a}/1/{SHA}/{SHA}");
         let info_b = format!("/program_info/{b}/1/{SHA}/{SHA}");
         let artifacts_a = format!("/artifacts/{a}/1/{SHA}/{SHA}/{SHA}");
-        let pipeline_a = Pipeline(PIPELINE_A);
+        let pipeline_a = Pipeline(PIPELINE_A.0);
 
         #[rustfmt::skip]
         let table: Vec<(Method, &str, [bool; 3])> = vec![
