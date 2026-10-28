@@ -91,9 +91,16 @@
     )
   )
 
+  // With Rust UDFs turned off, an empty UDF file is read-only and says why, while existing
+  // UDF code stays editable so that its author can remove it.
+  const rustUdfsOffMessage = 'Rust UDFs are turned off by the operator of this Feldera instance'
+  const rustUdfsAllowed = $derived(page.data.feldera?.config.allow_rust_udfs ?? true)
+
   let files = $derived.by(() => {
     const current = pipeline.current
     const patch = pipeline.patch
+    const lockUdfRs = !rustUdfsAllowed && current.programUdfRs.trim() === ''
+    const lockUdfToml = !rustUdfsAllowed && current.programUdfToml.trim() === ''
     return [
       {
         name: `program.sql`,
@@ -127,43 +134,61 @@
       },
       {
         name: `udf.rs`,
-        access: {
-          get current() {
-            return current.programUdfRs
-          },
-          set current(programUdfRs: string) {
-            patch({ programUdfRs }, true)
-          }
-        },
+        access: lockUdfRs
+          ? {
+              get current() {
+                return current.programUdfRs
+              }
+            }
+          : {
+              get current() {
+                return current.programUdfRs
+              },
+              set current(programUdfRs: string) {
+                patch({ programUdfRs }, true)
+              }
+            },
         language: 'rust' as const,
         markers: ((errors) =>
           errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
           programErrors['udf.rs']
         ),
-        placeholder: `// UDF implementation in Rust.
+        placeholder: lockUdfRs
+          ? `// ${rustUdfsOffMessage}.`
+          : `// UDF implementation in Rust.
 // See function prototypes in \`stubs.rs\`
 
 pub fn my_udf(input: String) -> Result<String, Box<dyn std::error::Error>> {
   todo!()
-}`
+}`,
+        readOnlyMessage: rustUdfsOffMessage
       },
       {
         name: `udf.toml`,
-        access: {
-          get current() {
-            return current.programUdfToml
-          },
-          set current(programUdfToml: string) {
-            patch({ programUdfToml }, true)
-          }
-        },
+        access: lockUdfToml
+          ? {
+              get current() {
+                return current.programUdfToml
+              }
+            }
+          : {
+              get current() {
+                return current.programUdfToml
+              },
+              set current(programUdfToml: string) {
+                patch({ programUdfToml }, true)
+              }
+            },
         language: 'graphql' as const,
         markers: ((errors) =>
           errors ? { [felderaCompilerMarkerSource]: extractErrorMarkers(errors) } : undefined)(
           programErrors['udf.toml']
         ),
-        placeholder: `# List Rust dependencies required by udf.rs.
-example = "1.0"`
+        placeholder: lockUdfToml
+          ? `# ${rustUdfsOffMessage}.`
+          : `# List Rust dependencies required by udf.rs.
+example = "1.0"`,
+        readOnlyMessage: rustUdfsOffMessage
       }
     ]
   })

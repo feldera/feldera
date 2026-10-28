@@ -205,6 +205,7 @@ Default settings applied to all pipeline pods.
 | `pipeline.allowedServiceAccountNames` | `[]` | Service accounts a pipeline may select with `resources.service_account_name`. A pipeline that selects any other fails to start. List only accounts without Kubernetes API permissions; the chart refuses its own control-plane service accounts. |
 | `pipeline.env` | `null` | List of environment variables injected into all pipeline pods. |
 | `pipeline.allowEnv` | `true` | Allow pipelines to set environment variables with `env` in their runtime configuration. A pipeline that sets them fails to start when this is `false`. |
+| `pipeline.allowRustUdfs` | `true` | Allow pipelines to have Rust UDFs (`udf_rust` and `udf_toml`), which compile to native code. When `false`, the API server refuses pipelines with Rust UDFs, and existing ones fail to compile and to start. Set it to `false` unless pipeline authors are trusted. |
 | `pipeline.extraVolumes` | `null` | List of extra volumes added to all pipeline pods, after the built-in ones. Chart v0.366.0 and later. See [Extra volumes](#extra-volumes). |
 | `pipeline.extraVolumeMounts` | `null` | List of extra volume mounts added to the pipeline container, after the built-in ones. Chart v0.366.0 and later. See [Extra volumes](#extra-volumes). |
 | `pipeline.allowInitContainers` | `true` | Allow pipelines to specify init containers (e.g., sidecars) via runtime configuration. See [sidecar containers](/pipelines/sidecar). |
