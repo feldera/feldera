@@ -65,7 +65,7 @@ describe('MetricsView search', () => {
 
   it('scrolls the expanded block to the top of the panel', async () => {
     // A panel shorter than its content, so reaching the last block takes a real scroll.
-    await import('../../routes/layout.css')
+    await import('../../../test/tailwind.css')
     await import('feldera-theme/feldera-modern.css')
     document.documentElement.dataset.theme = 'feldera-modern-theme'
     const lookup = createLookupCoordinator()

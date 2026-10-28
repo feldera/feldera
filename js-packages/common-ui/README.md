@@ -40,14 +40,12 @@ live here. Import them by their path, e.g. `common-ui/pipelineHealth`:
 Code that is useful outside the web console and the profiler (formatting,
 collections) lives in [`common-lib`](../common-lib/README.md) instead.
 
-`src/lib` is the published surface (re-exported from `src/lib/index.ts`);
-`src/routes` is only a local preview/showcase app and is not published.
+`src/lib` is the published surface (re-exported from `src/lib/index.ts`).
 
 ## Developing
 
 ```sh
 bun install
-bun run dev      # preview/showcase app
 bun run check    # type-check
 ```
 
@@ -68,5 +66,5 @@ bun --cwd=js-packages/common-ui run build:self   # from the repo root
 
 `build` rebuilds `common-lib` first. `build:self` builds only this package.
 
-This package was scaffolded with [`sv`](https://npmjs.com/package/sv); the
-underlying tooling docs live at <https://svelte.dev/docs/kit/packaging>.
+`build:self` runs `svelte-package` (docs: <https://svelte.dev/docs/kit/packaging>).
+This package does not use SvelteKit.
