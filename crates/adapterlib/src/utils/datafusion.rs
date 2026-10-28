@@ -249,30 +249,28 @@ pub fn create_session_context(
     runtime_env: Arc<RuntimeEnv>,
 ) -> SessionContext {
     let floor = adhoc_partition_floor(pipeline_config);
-    let parallelism = pipeline_config
+    let target_partitions = pipeline_config
         .global
         .io_workers
         .unwrap_or(pipeline_config.global.workers as u64);
-    create_session_context_inner(runtime_env, parallelism, floor, |cfg| cfg)
+    create_session_context_inner(runtime_env, target_partitions, floor, |cfg| cfg)
 }
 
-/// `SessionContext` for a connector, with a hook to override individual
-/// datafusion settings (e.g. parquet decoding) before the context is built.
+/// `SessionContext` for a connector. `customize_config` can override
+/// individual datafusion settings (e.g. parquet decoding) before the context
+/// is built.
 ///
-/// Sorts are budgeted for `target_partitions`, which bounds every scan
-/// DataFusion plans. Unlike [`create_session_context`] there is no worker
-/// floor: a connector session queries external tables, never the ad-hoc
-/// snapshot, so the DBSP worker count does not bound its parallelism.
+/// Sets DataFusion's `target_partitions` (how many partitions a scan splits
+/// into) to `io_workers` (if that is set), or else to the DBSP workers on this
+/// host, before it calls `customize_config`. Each host of a multihost pipeline
+/// runs its own connectors, so sizing their scans for the workers on every
+/// host would multiply their concurrent reads, and the memory those hold, by
+/// the number of hosts.
 ///
-/// `target_partitions` defaults to `io_workers`, or else to the DBSP workers on
-/// this host. Each host of a multihost pipeline runs its own connectors, so
-/// sizing their scans for the workers on every host would multiply their
-/// concurrent reads, and the memory those hold, by the number of hosts.
-///
-/// The hook may raise or lower `target_partitions`. `sort_spill_reservation_bytes`
-/// and `repartition_sorts` are derived from whatever partition count the hook
-/// settles on and applied afterwards, so a hook that sets either of those two
-/// options does not take effect.
+/// `customize_config` may raise or lower `target_partitions`. Afterward, the
+/// sort settings `sort_spill_reservation_bytes` and `repartition_sorts` are
+/// calculated from the final `target_partitions`, so if `customize_config`
+/// sets either of them, it has no effect.
 pub fn create_session_context_with<F>(
     pipeline_config: &PipelineConfig,
     runtime_env: Arc<RuntimeEnv>,
@@ -281,16 +279,16 @@ pub fn create_session_context_with<F>(
 where
     F: FnOnce(SessionConfig) -> SessionConfig,
 {
-    let parallelism = pipeline_config
+    let target_partitions = pipeline_config
         .global
         .io_workers
         .unwrap_or(local_workers(pipeline_config) as u64);
-    create_session_context_inner(runtime_env, parallelism, 0, customize_config)
+    create_session_context_inner(runtime_env, target_partitions, 0, customize_config)
 }
 
 fn create_session_context_inner<F>(
     runtime_env: Arc<RuntimeEnv>,
-    parallelism: u64,
+    target_partitions: u64,
     partition_floor: usize,
     customize_config: F,
 ) -> SessionContext
@@ -298,11 +296,11 @@ where
     F: FnOnce(SessionConfig) -> SessionConfig,
 {
     let session_config = SessionConfig::new()
-        .with_target_partitions(parallelism as usize)
+        .with_target_partitions(target_partitions as usize)
         .with_sort_in_place_threshold_bytes(SORT_IN_PLACE_THRESHOLD_BYTES)
         .set(
             "datafusion.execution.planning_concurrency",
-            &ScalarValue::UInt64(Some(parallelism)),
+            &ScalarValue::UInt64(Some(target_partitions)),
         );
     let session_config = customize_config(session_config);
 
