@@ -245,10 +245,11 @@ and admit each caller only to its own routes:
 |---|---|---|---|---|
 | API server, runner, compiler replicas | control-plane certificate (URI SAN `urn:feldera:control-plane`), issued by cert-manager from the private CA | all routes | all routes | all routes |
 | Pipeline `<id>` | pipeline certificate (URI SAN `urn:feldera:pipeline:<id>`), issued by the runner from the private CA | download its own binary and program info, `/healthz` | `/healthz` | all routes if `<id>` is `<p>` (the multihost coordinator), else none |
+| External client, such as a sidecar | certificate with one URI SAN listed in `mtls.extraClientUris`, issued from the private CA | `/healthz` | `/healthz` | all routes |
 | No certificate | none | `/healthz` | `/healthz` | none |
 
 Clients that reach a pipeline directly, instead of through the API server,
-are refused.  Pipelines on an older runtime version (`runtime_version`) do
+are refused, except [external clients](#external-clients).  Pipelines on an older runtime version (`runtime_version`) do
 not check client certificates.
 
 The servers trust only the private CA, the first certificate in `tls.crt` of
@@ -272,3 +273,39 @@ mtls:
 Pipelines get their certificate when they start, so restart pipelines that
 were running before you set `mtls.enabled`.  Otherwise a pipeline pod that
 Kubernetes moves to another node cannot download its binary.
+
+### External clients
+
+To let a client in the cluster, such as a sidecar, call pipelines directly,
+list the URI SAN of its certificate in `mtls.extraClientUris`, and issue the
+certificate from the private CA, for example with the chart's
+`<release>-private-ca` Issuer:
+
+```
+mtls:
+  enabled: true
+  extraClientUris:
+    - "urn:example:sidecar"
+```
+
+```
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: sidecar-client
+spec:
+  secretName: sidecar-client
+  uris:
+    - urn:example:sidecar
+  usages:
+    - digital signature
+    - client auth
+  issuerRef:
+    kind: Issuer
+    name: <release>-private-ca
+```
+
+A listed client reaches every pipeline, like the control plane.  The URI must
+match exactly, and the certificate must have no other URI SAN.  URIs under
+`urn:feldera:` are refused, because Feldera issues those to its own
+components.
