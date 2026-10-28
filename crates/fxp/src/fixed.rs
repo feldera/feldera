@@ -2033,6 +2033,25 @@ mod test {
     }
 
     #[test]
+    fn round_far_left() {
+        // Rounding more than 38 digits away from the last digit of the scale
+        // gives 0.
+        fn test<const P: usize, const S: usize>(value: Fixed<P, S>, digits: i32) {
+            assert_eq!(value.checked_round(digits), Some(Fixed::ZERO));
+            assert_eq!(value.checked_round_ties_even(digits), Some(Fixed::ZERO));
+            assert_eq!((-value).checked_round(digits), Some(Fixed::ZERO));
+        }
+        let five = Fixed::<10, 0>::try_from(5).unwrap();
+        for digits in [-38, -39, -40, i32::MIN] {
+            test(five, digits);
+        }
+        let half = Fixed::<38, 38>::new(5, 1).unwrap();
+        for digits in [-1, -2, i32::MIN] {
+            test(half, digits);
+        }
+    }
+
+    #[test]
     fn trunc_digits() {
         let x = Fixed::<10, 4>(245368746);
         assert_eq!(x.trunc_digits(5).to_string(), "24536.8746");

@@ -610,14 +610,9 @@ impl LongInterval {
         self.months
     }
 
-    /// Retrieve the number of years in the long interval.
+    /// Retrieve the number of years in the long interval, rounded toward zero.
     pub fn years(&self) -> i32 {
-        let (mul, months) = if self.months() < 0 {
-            (-1, -self.months())
-        } else {
-            (1, self.months())
-        };
-        (months / 12) * mul
+        self.months / 12
     }
 }
 
@@ -1137,6 +1132,14 @@ mod test {
     )]
     fn short_interval_addition_overflow() {
         let _ = ShortInterval::from_microseconds(i64::MAX) + ShortInterval::from_microseconds(1);
+    }
+
+    #[test]
+    fn long_interval_years() {
+        assert_eq!(LongInterval::from_months(13).years(), 1);
+        assert_eq!(LongInterval::from_months(-13).years(), -1);
+        assert_eq!(LongInterval::from_months(i32::MAX).years(), 178956970);
+        assert_eq!(LongInterval::from_months(i32::MIN).years(), -178956970);
     }
 
     #[test]

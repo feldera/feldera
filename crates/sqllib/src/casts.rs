@@ -20,16 +20,11 @@ use crate::{
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use dbsp::algebra::{F32, F64, HasOne, HasZero};
 use num::{One, Zero};
-use num_traits::{CheckedDiv, cast::NumCast};
+use num_traits::{CheckedDiv, CheckedMul, cast::NumCast};
 use regex::{Captures, Regex};
 use smallstr::SmallString;
 use std::{
-    error::Error,
-    fmt::Display,
-    fmt::Write,
-    iter::once,
-    marker::PhantomData,
-    ops::{Div, Mul},
+    error::Error, fmt::Display, fmt::Write, iter::once, marker::PhantomData, ops::Div,
     sync::LazyLock,
 };
 
@@ -1935,13 +1930,12 @@ fn convert_to_ShortInterval_SqlDecimal<const P: usize, const S: usize>(
 ) -> SqlResult<ShortInterval> {
     let dd = DynamicDecimal::from(value);
     let mul = DynamicDecimal::from(multiplier);
-    let val = dd.mul(mul);
-    i64::try_from(val)
+    dd.checked_mul(&mul)
+        .and_then(|val| i64::try_from(val).ok())
         .map(ShortInterval::from_microseconds)
-        .map_err(|e| {
+        .ok_or_else(|| {
             SqlRuntimeError::from_string(format!(
-                "Overflow during conversion of {value} to INTERVAL {}: {}",
-                kind, e
+                "Overflow during conversion of {value} to INTERVAL {kind}"
             ))
         })
 }

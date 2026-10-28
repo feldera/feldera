@@ -10,7 +10,7 @@ use crate::{
     parse_decimal, pow10, u256::I256,
 };
 
-use num_traits::CheckedDiv;
+use num_traits::{CheckedDiv, CheckedMul};
 use rand::Rng;
 use rand::distributions::uniform::{UniformInt, UniformSampler};
 
@@ -163,6 +163,18 @@ impl DynamicDecimal {
         Self::new(self.sig.abs(), self.exponent)
     }
 
+    /// Returns `value * 10**-exponent`, or `None` if the integer part does not
+    /// fit in the significand.  Drops the trailing digits of `value` that do
+    /// not fit in the significand, and the fractional digits past the largest
+    /// exponent.
+    fn checked_from_i256(value: I256, exponent: usize) -> Option<Self> {
+        let (sig, dropped) = value.reduce_to_i128();
+        let exponent = exponent.checked_sub(dropped)?;
+        let excess = exponent.saturating_sub(u8::MAX.into());
+        let sig = if excess > 38 { 0 } else { sig / pow10(excess) };
+        Some(Self::new(sig, (exponent - excess) as u8))
+    }
+
     /// Deserializes [DynamicDecimal] into `Fixed`.  If successful, returns the
     /// original value from before serialization.  If `S < value.exponent`, then
     /// some trailing decimals are lost, by rounding toward even.  Returns an
@@ -196,35 +208,23 @@ impl Add<DynamicDecimal> for DynamicDecimal {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
-        match self.exponent.cmp(&other.exponent) {
-            Ordering::Less => {
-                let factor = pow10((other.exponent - self.exponent) as usize);
-                if self.sig <= i128::MAX / factor / 10 {
-                    DynamicDecimal::new(
-                        other.sig.checked_add(self.sig * factor).unwrap(),
-                        other.exponent,
-                    )
-                } else {
-                    let result = (I256::from_product(self.sig, factor) + I256::from(other.sig))
-                        .reduce_to_i128();
-                    DynamicDecimal::new(result.0, result.1 as u8)
-                }
-            }
-            Ordering::Equal => {
-                DynamicDecimal::new(self.sig.checked_add(other.sig).unwrap(), self.exponent)
-            }
-            Ordering::Greater => {
-                let factor = pow10((self.exponent - other.exponent) as usize);
-                if other.sig <= i128::MAX / factor / 10 {
-                    DynamicDecimal::new(
-                        self.sig.checked_add(other.sig * factor).unwrap(),
-                        self.exponent,
-                    )
-                } else {
-                    let result = (I256::from_product(other.sig, factor) + I256::from(self.sig))
-                        .reduce_to_i128();
-                    DynamicDecimal::new(result.0, result.1 as u8)
-                }
+        // `coarse` has fewer fractional digits, so it is scaled to the exponent of `fine`
+        let (coarse, fine) = if self.exponent <= other.exponent {
+            (self, other)
+        } else {
+            (other, self)
+        };
+        let factor = pow10((fine.exponent - coarse.exponent) as usize);
+        let sum = coarse
+            .sig
+            .checked_mul(factor)
+            .and_then(|scaled| scaled.checked_add(fine.sig));
+        match sum {
+            Some(sum) => DynamicDecimal::new(sum, fine.exponent),
+            None => {
+                let sum = I256::from_product(coarse.sig, factor) + I256::from(fine.sig);
+                DynamicDecimal::checked_from_i256(sum, fine.exponent.into())
+                    .unwrap_or_else(|| panic!("Overflow adding {} + {}", self, other))
             }
         }
     }
@@ -242,8 +242,17 @@ impl Mul<DynamicDecimal> for DynamicDecimal {
     type Output = Self;
 
     fn mul(self, other: Self) -> Self {
-        let result = I256::from_product(self.sig, other.sig).reduce_to_i128();
-        DynamicDecimal::new(result.0, result.1 as u8 + self.exponent + other.exponent)
+        self.checked_mul(&other)
+            .unwrap_or_else(|| panic!("Overflow multiplying {} * {}", self, other))
+    }
+}
+
+impl CheckedMul for DynamicDecimal {
+    fn checked_mul(&self, other: &Self) -> Option<Self> {
+        let product = I256::from_product(self.sig, other.sig);
+        // The exponent of a product is the sum of the exponents.
+        let exponent = self.exponent as usize + other.exponent as usize;
+        DynamicDecimal::checked_from_i256(product, exponent)
     }
 }
 
@@ -445,7 +454,11 @@ try_to_unsigned_int!(usize);
 
 impl From<DynamicDecimal> for f64 {
     fn from(value: DynamicDecimal) -> Self {
-        value.significand() as f64 / pow10(value.exponent() as usize) as f64
+        match checked_pow10(value.exponent().into()) {
+            Some(divisor) => value.significand() as f64 / divisor as f64,
+            // The divisor does not fit in an `i128`, so parse the decimal digits.
+            None => value.to_string().parse().unwrap(),
+        }
     }
 }
 
@@ -546,6 +559,7 @@ impl UniformDecimal {
 #[cfg(test)]
 mod test {
     use crate::{DynamicDecimal, OutOfRange, ParseDecimalError};
+    use num_traits::CheckedMul;
 
     #[test]
     fn eq() {
@@ -761,6 +775,74 @@ mod test {
                 assert_eq!(af + bf, DynamicDecimal::new(a + b, 2));
             }
         }
+    }
+
+    #[test]
+    fn to_f64() {
+        assert_eq!(f64::from(DynamicDecimal::new(15, 1)), 1.5);
+        // 10**100 and 10**44 do not fit in an `i128`.
+        assert_eq!(f64::from(DynamicDecimal::new(1, 100)), 1e-100);
+        assert_eq!(f64::from(DynamicDecimal::new(-12345, 44)), -1.2345e-40);
+    }
+
+    #[test]
+    fn mul_wide() {
+        // The products of these significands do not fit in an `i128`, so `mul`
+        // drops their trailing digits.
+        let x = DynamicDecimal::new(10i128.pow(20) + 1, 10);
+        assert_eq!(x * x, DynamicDecimal::new(10i128.pow(20) + 2, 0));
+        let fraction: DynamicDecimal = "0.12345678901234567890123456789012345".parse().unwrap();
+        let billion = DynamicDecimal::new(1_000_000_000, 0);
+        let expected: DynamicDecimal = "123456789.01234567890123456789012345".parse().unwrap();
+        assert_eq!(fraction * billion, expected);
+        assert_eq!(billion * fraction, expected);
+    }
+
+    #[test]
+    #[should_panic(expected = "Overflow multiplying")]
+    fn mul_overflow() {
+        let x = DynamicDecimal::new(10i128.pow(20), 0);
+        let _ = x * x;
+    }
+
+    #[test]
+    fn checked_mul() {
+        let x = DynamicDecimal::new(10i128.pow(20), 0);
+        assert_eq!(x.checked_mul(&x), None);
+        let y = DynamicDecimal::new(3, 1);
+        assert_eq!(y.checked_mul(&y), Some(DynamicDecimal::new(9, 2)));
+    }
+
+    #[test]
+    fn mul_many_fractional_digits() {
+        // A product with more than 255 fractional digits drops the digits past the 255th.
+        let tiny = DynamicDecimal::new(1, 200);
+        assert_eq!(tiny * tiny, DynamicDecimal::ZERO);
+        let x = DynamicDecimal::new(123456789, 200);
+        let y = DynamicDecimal::new(1, 60);
+        assert_eq!(x * y, DynamicDecimal::new(1234, 255));
+    }
+
+    #[test]
+    fn add_wide() {
+        // `add` computes these sums with 256 bits.
+        let big = DynamicDecimal::new(2 * 10i128.pow(35), 0);
+        let quarter = DynamicDecimal::new(25, 2);
+        let expected: DynamicDecimal = format!("{}.25", 2 * 10i128.pow(35)).parse().unwrap();
+        assert_eq!(big + quarter, expected);
+        assert_eq!(quarter + big, expected);
+        // The digits of 10**37 + 0.001 after the decimal point do not fit.
+        let large = DynamicDecimal::new(10i128.pow(37), 0);
+        let thousandth = DynamicDecimal::new(1, 3);
+        assert_eq!(large + thousandth, large);
+        assert_eq!(thousandth + large, large);
+        // -10**37 * 100 does not fit in an `i128`; -10**37 + 0.25 keeps one fractional digit.
+        let negative: DynamicDecimal = format!("-{}.7", 10i128.pow(37) - 1).parse().unwrap();
+        assert_eq!(-large + quarter, negative);
+        assert_eq!(quarter + -large, negative);
+        // The sum of two significands with the same exponent does not fit in an `i128`.
+        let half_max = DynamicDecimal::new(i128::MAX, 1);
+        assert_eq!(half_max + half_max, DynamicDecimal::new(i128::MAX / 5, 0));
     }
 
     #[test]
