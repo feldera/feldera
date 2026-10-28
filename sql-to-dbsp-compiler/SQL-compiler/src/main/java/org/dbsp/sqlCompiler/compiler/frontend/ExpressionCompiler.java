@@ -1383,7 +1383,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             return result;
                         return result.castToNullable();
                     }
-                    case "numeric_inc", "sign", "md5": {
+                    case "sign", "md5": {
                         DBSPExpression expr = this.strictnessCheck(ops, type);
                         if (expr != null)
                             return expr;

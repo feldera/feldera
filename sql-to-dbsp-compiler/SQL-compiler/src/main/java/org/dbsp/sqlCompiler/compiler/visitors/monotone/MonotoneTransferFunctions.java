@@ -455,12 +455,14 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         }
         MonotoneExpression result = new MonotoneExpression(
                 expression, new MonotoneType(expression.getType()), expression);
-        this.constantExpressions.add(expression);
-        if (expression.is(IsNumericLiteral.class)) {
-            if (!expression.to(DBSPLiteral.class).isNull() &&
-                    expression.to(IsNumericLiteral.class).gt0())
-                this.positiveExpressions.add(expression);
-        }
+        // A NULL literal is not a constant in this analysis: the rules for a constant operand,
+        // such as x - c or ROUND(x, c), do not apply to c = NULL, which makes the result NULL
+        // for every row.
+        boolean isNull = expression.isNull();
+        if (!isNull)
+            this.constantExpressions.add(expression);
+        if (!isNull && expression.is(IsNumericLiteral.class) && expression.to(IsNumericLiteral.class).gt0())
+            this.positiveExpressions.add(expression);
         this.set(expression, result);
     }
 
@@ -741,9 +743,11 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         DBSPExpression reduced = null;
 
         // A cast preserves monotonicity if the result type can represent monotone values
-        // and the cast preserves order.
+        // and the cast preserves order.  A SAFE_CAST that can fail returns NULL among values,
+        // which is not monotone for either position of NULL in the order.
         boolean outputTypeMayBeMonotone = typeCanBeMonotone(expression.getType());
-        boolean isMonotone = source.mayBeMonotone() && outputTypeMayBeMonotone &&
+        boolean nullAmongValues = expression.safe.isSafe() && expression.canFail();
+        boolean isMonotone = source.mayBeMonotone() && outputTypeMayBeMonotone && !nullAmongValues &&
                 castPreservesOrder(expression.source.getType(), expression.getType());
         IMaybeMonotoneType resultType;
         if (isMonotone) {
@@ -887,7 +891,6 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                         name.startsWith("radians_") ||
                         name.startsWith("floor_") ||
                         name.startsWith("sign_") ||
-                        name.startsWith("numeric_inc") ||
                         name.startsWith("extract_year_") ||
                         name.startsWith("extract_millennium_") ||
                         name.startsWith("extract_century_") ||
