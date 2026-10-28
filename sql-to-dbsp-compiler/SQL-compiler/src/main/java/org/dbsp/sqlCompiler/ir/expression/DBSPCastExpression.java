@@ -33,11 +33,19 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
+
+import java.math.BigInteger;
 
 /** This class represents a cast of an expression to a given type.
  * There are actually multiple kinds of casts, depending on the {@link #safe} value.
@@ -129,6 +137,49 @@ public final class DBSPCastExpression extends DBSPExpression {
     public DBSPCastExpression replaceSource(DBSPExpression source) {
         Utilities.enforce(source.getType().sameType(this.source.getType()));
         return new DBSPCastExpression(this.getNode(), source, this.type, this.safe);
+    }
+
+    /** True if the conversion of this cast fails for some argument, e.g. from INT to TINYINT;
+     * a SAFE_CAST returns NULL instead.  True for every conversion not known to succeed for all
+     * arguments. */
+    public boolean canFail() {
+        DBSPType from = this.source.getType();
+        DBSPType to = this.type;
+        if (from.sameTypeIgnoringNullability(to))
+            return false;
+        boolean dateToTimestamp = from.is(DBSPTypeDate.class) && to.is(DBSPTypeTimestamp.class);
+        boolean timestampToDate = from.is(DBSPTypeTimestamp.class) && to.is(DBSPTypeDate.class);
+        if (dateToTimestamp || timestampToDate)
+            return false;
+
+        DBSPTypeInteger fromInteger = from.as(DBSPTypeInteger.class);
+        DBSPTypeDecimal fromDecimal = from.as(DBSPTypeDecimal.class);
+        if (to.is(DBSPTypeDouble.class))
+            return fromInteger == null && fromDecimal == null && !from.is(DBSPTypeReal.class);
+        if (to.is(DBSPTypeReal.class))
+            return fromInteger == null || fromInteger.getWidth() > 64;
+
+        DBSPTypeInteger toInteger = to.as(DBSPTypeInteger.class);
+        DBSPTypeDecimal toDecimal = to.as(DBSPTypeDecimal.class);
+        if (fromInteger != null && toInteger != null)
+            return toInteger.minimum().compareTo(fromInteger.minimum()) > 0 ||
+                    toInteger.maximum().compareTo(fromInteger.maximum()) < 0;
+        if (fromInteger != null && toDecimal != null) {
+            // The DECIMAL holds the integers below 10^(precision - scale) in absolute value
+            BigInteger limit = BigInteger.TEN.pow(toDecimal.precision - toDecimal.scale);
+            return fromInteger.minimum().compareTo(limit.negate()) <= 0 ||
+                    fromInteger.maximum().compareTo(limit) >= 0;
+        }
+        if (fromDecimal != null && toInteger != null) {
+            // Rounding gives at most 10^(precision - scale) in absolute value
+            BigInteger limit = BigInteger.TEN.pow(fromDecimal.precision - fromDecimal.scale);
+            return toInteger.minimum().compareTo(limit.negate()) > 0 ||
+                    toInteger.maximum().compareTo(limit) < 0;
+        }
+        if (fromDecimal != null && toDecimal != null)
+            return toDecimal.scale < fromDecimal.scale ||
+                    toDecimal.precision - toDecimal.scale < fromDecimal.precision - fromDecimal.scale;
+        return true;
     }
 
     @Override

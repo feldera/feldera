@@ -115,6 +115,15 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
     }
 
     @Test
+    public void groupBySafeCastThatCannotFail() {
+        // A SAFE_CAST from INT to BIGINT never returns NULL, so it is monotone like a CAST
+        this.assertNoUnboundedStateWarnings("""
+                CREATE TABLE T(ts INT NOT NULL LATENESS 10, x INT NOT NULL);
+                CREATE VIEW V AS SELECT SAFE_CAST(ts AS BIGINT) AS g, SUM(x) AS s
+                FROM T GROUP BY SAFE_CAST(ts AS BIGINT);""");
+    }
+
+    @Test
     public void countWithoutGroupBy() {
         // A linear aggregate keeps one accumulator per group, and without
         // GROUP BY there is a single group, however large the input
@@ -212,6 +221,25 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
         this.assertUnboundedStateWarnings("""
                 CREATE TABLE orders(id INT, customer INT, ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR);
                 """ + UNBOUNDED_JOIN, JOIN_WARNING);
+    }
+
+    @Test
+    public void groupBySafeCastThatCanFail() {
+        // A SAFE_CAST from BIGINT to INT returns NULL below and above the INT range, so it
+        // is not monotone for either position of NULL in the order
+        this.assertUnboundedStateWarnings("""
+                CREATE TABLE T(ts BIGINT NOT NULL LATENESS 10, x INT NOT NULL);
+                CREATE VIEW V AS SELECT SAFE_CAST(ts AS INT) AS g, SUM(x) AS s
+                FROM T GROUP BY SAFE_CAST(ts AS INT);""",
+                """
+                (no input file): Unbounded state
+                (no input file):2:52: warning: Unbounded state: The state of an aggregate in the code implementing view 'v' may grow without bound
+                    2|CREATE VIEW V AS SELECT SAFE_CAST(ts AS INT) AS g, SUM(x) AS s
+                                                                         ^^^^^^
+                    3|FROM T GROUP BY SAFE_CAST(ts AS INT);
+                Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
+                See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+                """);
     }
 
     @Test
