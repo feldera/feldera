@@ -30,7 +30,7 @@ use deltalake::{
 };
 use feldera_adapterlib::{
     errors::controller::ControllerError,
-    test::{Capability, Updates, ZSet, wait},
+    test::{Capability, Updates, ZSet, default_timeout_ms, wait},
 };
 #[cfg(feature = "delta-unity-test")]
 use feldera_storage::tokio::TOKIO;
@@ -1214,7 +1214,7 @@ async fn wait_for_records_materialized(
             break;
         }
 
-        if start.elapsed() > Duration::from_millis(20_000) {
+        if start.elapsed() > Duration::from_millis(default_timeout_ms()) {
             panic!("timeout");
         }
 
