@@ -511,11 +511,27 @@ impl CommonConfig {
                 "--https-client-cert-path requires --enable-https: client certificates are sent only over HTTPS",
             ));
         }
+        if self.require_client_certificates && !self.enable_https {
+            return Err(AnyError::msg(
+                "--require-client-certificates requires --enable-https: client certificates are sent only over HTTPS",
+            ));
+        }
+        if self.require_client_certificates && self.private_ca_cert_path.is_none() {
+            return Err(AnyError::msg(
+                "--require-client-certificates requires --private-ca-cert-path, the CA that signs the client certificates",
+            ));
+        }
         if let Some(https_client_cert_path) = self.https_client_cert_path {
             self.https_client_cert_path = Some(help_canonicalize_path(&https_client_cert_path)?);
         }
         if let Some(https_client_key_path) = self.https_client_key_path {
             self.https_client_key_path = Some(help_canonicalize_path(&https_client_key_path)?);
+        }
+        if let (Some(cert_path), Some(key_path)) =
+            (&self.https_client_cert_path, &self.https_client_key_path)
+        {
+            read_certified_key(cert_path, key_path)
+                .context("--https-client-cert-path and --https-client-key-path")?;
         }
         Ok(self)
     }
@@ -764,10 +780,11 @@ impl CommonConfig {
         }
         let builder = ClientConfig::builder().with_root_certificates(root_cert_store);
         let config = match (&self.https_client_cert_path, &self.https_client_key_path) {
-            (Some(cert_path), Some(key_path)) => builder.with_client_cert_resolver(Arc::new(
-                ClientCertificateFiles::load(cert_path, key_path)
+            // `canonicalize` loaded the files at startup, so only their first load can fail.
+            (Some(cert_path), Some(key_path)) => builder.with_client_cert_resolver(
+                ClientCertificateFiles::shared(cert_path, key_path)
                     .unwrap_or_else(|error| panic!("HTTPS client certificate: {error:#}")),
-            )),
+            ),
             _ => builder.with_no_client_auth(),
         };
         feldera_observability::fips::log_rustls_fips_status("HTTPS client config", config.fips());
@@ -886,7 +903,29 @@ struct ClientCertificateFiles {
     loaded: std::sync::Mutex<(std::time::Instant, Arc<CertifiedKey>)>,
 }
 
+/// The client certificate files of each (certificate, key) path pair. Every HTTPS client of
+/// the process shares them, so a client built per request keeps the last certificate that
+/// loaded instead of reading the files again.
+static SHARED_CLIENT_CERTIFICATE_FILES: std::sync::LazyLock<
+    std::sync::Mutex<ClientCertificateFilesByPaths>,
+> = std::sync::LazyLock::new(Default::default);
+
+type ClientCertificateFilesByPaths =
+    std::collections::HashMap<(String, String), Arc<ClientCertificateFiles>>;
+
 impl ClientCertificateFiles {
+    /// The shared files for these paths, loaded on first use.
+    fn shared(cert_path: &str, key_path: &str) -> AnyResult<Arc<Self>> {
+        let mut shared = SHARED_CLIENT_CERTIFICATE_FILES.lock().unwrap();
+        let paths = (cert_path.to_string(), key_path.to_string());
+        if let Some(files) = shared.get(&paths) {
+            return Ok(files.clone());
+        }
+        let files = Arc::new(Self::load(cert_path, key_path)?);
+        shared.insert(paths, files.clone());
+        Ok(files)
+    }
+
     fn load(cert_path: &str, key_path: &str) -> AnyResult<Self> {
         let certified_key = read_certified_key(cert_path, key_path)?;
         Ok(Self {
@@ -2150,6 +2189,89 @@ mod tests {
         write(&cert_path, "").unwrap();
         expire(&files);
         assert_eq!(presented(&files), renewed);
+    }
+
+    /// HTTPS clients built from the same files share their client certificate, so a client
+    /// built after the files went missing still presents the last one that loaded.
+    #[test]
+    fn https_clients_share_client_certificate() {
+        let dir = tempfile::tempdir().unwrap();
+        let cert_path = dir.path().join("tls.crt").to_string_lossy().into_owned();
+        let key_path = dir.path().join("tls.key").to_string_lossy().into_owned();
+        let key = rcgen::KeyPair::generate().unwrap();
+        let cert = rcgen::CertificateParams::default()
+            .self_signed(&key)
+            .unwrap();
+        write(&cert_path, cert.pem()).unwrap();
+        write(&key_path, key.serialize_pem()).unwrap();
+
+        let first = ClientCertificateFiles::shared(&cert_path, &key_path).unwrap();
+        std::fs::remove_file(&cert_path).unwrap();
+        let second = ClientCertificateFiles::shared(&cert_path, &key_path).unwrap();
+        assert!(Arc::ptr_eq(&first, &second));
+        assert_eq!(&second.resolve(&[], &[]).unwrap().cert[0], cert.der());
+    }
+
+    /// `canonicalize` refuses client certificate options that cannot work, before any server
+    /// starts.
+    #[test]
+    fn canonicalize_checks_client_certificate_options() {
+        let dir = tempfile::tempdir().unwrap();
+        let write_pem = |name: &str, contents: String| {
+            let path = dir.path().join(name).to_string_lossy().into_owned();
+            write(&path, contents).unwrap();
+            path
+        };
+        let server_key = rcgen::KeyPair::generate().unwrap();
+        let server_cert = rcgen::CertificateParams::new(vec!["localhost".to_string()])
+            .unwrap()
+            .self_signed(&server_key)
+            .unwrap();
+        let client_key = rcgen::KeyPair::generate().unwrap();
+        let client_cert = rcgen::CertificateParams::default()
+            .self_signed(&client_key)
+            .unwrap();
+        let https = CommonConfig {
+            enable_https: true,
+            https_tls_cert_path: Some(write_pem("server.crt", server_cert.pem())),
+            https_tls_key_path: Some(write_pem("server.key", server_key.serialize_pem())),
+            ..CommonConfig::test_config()
+        };
+        let client_cert_path = write_pem("client.crt", client_cert.pem());
+        let client_key_path = write_pem("client.key", client_key.serialize_pem());
+        let error = |config: CommonConfig| format!("{:#}", config.canonicalize().unwrap_err());
+
+        assert!(
+            error(CommonConfig {
+                require_client_certificates: true,
+                ..CommonConfig::test_config()
+            })
+            .contains("requires --enable-https")
+        );
+        assert!(
+            error(CommonConfig {
+                require_client_certificates: true,
+                ..https.clone()
+            })
+            .contains("requires --private-ca-cert-path")
+        );
+        assert!(
+            error(CommonConfig {
+                https_client_cert_path: Some(client_cert_path.clone()),
+                https_client_key_path: Some(https.https_tls_key_path.clone().unwrap()),
+                ..https.clone()
+            })
+            .contains("--https-client-cert-path and --https-client-key-path")
+        );
+        CommonConfig {
+            require_client_certificates: true,
+            private_ca_cert_path: https.https_tls_cert_path.clone(),
+            https_client_cert_path: Some(client_cert_path),
+            https_client_key_path: Some(client_key_path),
+            ..https
+        }
+        .canonicalize()
+        .unwrap();
     }
 
     #[test]
