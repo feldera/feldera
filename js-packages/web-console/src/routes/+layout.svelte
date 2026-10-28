@@ -1,6 +1,5 @@
 <script lang="ts">
   import './layout.css'
-  import { BodyAttr, HtmlAttr } from 'svelte-attr'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import '@fortawesome/fontawesome-free/css/brands.min.css'
 
@@ -52,13 +51,18 @@
     }
     upsert(/^license_/, getLicenseMessage(page.data.feldera.config, new ServerDate()))
   }, 60000)
+
+  // <html> and <body> are outside the component tree, so set their classes directly.
+  $effect(() => {
+    document.documentElement.setAttribute('class', darkMode.current)
+  })
+  $effect(() => {
+    document.body.setAttribute(
+      'class',
+      'text-base scrollbar-h-[10px] scrollbar-thumb-primary-200 scrollbar-thumb-rounded-full scrollbar-w-[10px] dark:scrollbar-thumb-surface-600 scrollbar-hover:scrollbar-thumb-surface-400 dark:scrollbar-hover:scrollbar-thumb-surface-600'
+    )
+  })
 </script>
-
-<HtmlAttr class={darkMode.current}></HtmlAttr>
-
-<BodyAttr
-  class="text-base scrollbar-h-[10px] scrollbar-thumb-primary-200 scrollbar-thumb-rounded-full scrollbar-w-[10px] dark:scrollbar-thumb-surface-600 scrollbar-hover:scrollbar-thumb-surface-400 dark:scrollbar-hover:scrollbar-thumb-surface-600"
-/>
 
 <Toaster
   position={'bottom-right'}
