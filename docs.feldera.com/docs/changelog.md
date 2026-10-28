@@ -10,6 +10,21 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (Enterprise, Kubernetes): a pipeline can select a
+  Kubernetes service account with `resources.service_account_name` only if
+  the operator lists the account in the Helm value
+  `pipeline.allowedServiceAccountNames`.  The list is empty by default, so a
+  pipeline that sets `resources.service_account_name` fails to start until
+  the operator adds its account.  The service account is the pipeline pod's
+  Kubernetes identity: list only accounts without Kubernetes API
+  permissions, such as accounts that only carry an IRSA role.  The chart
+  refuses its own control-plane service accounts in the list.
+
+- Incompatible change (Enterprise, Kubernetes): pipeline pods no longer get
+  a Kubernetes API token (`automountServiceAccountToken: false`) or the
+  environment variables that Kubernetes adds for each service in the
+  namespace (`enableServiceLinks: false`).
+
 - Experimental (Enterprise, Kubernetes): a resize of `memory_max` with
   `PATCH /v0/pipelines/{name}` also changes the memory budget of the
   running pipeline, unless `max_rss` is set.  A smaller budget applies at
