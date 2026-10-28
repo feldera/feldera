@@ -18,6 +18,7 @@ members = [
   "crates/dbsp",
   "crates/feldera-macros",
   "crates/feldera-observability",
+  "crates/feldera-mtls",
   "crates/fda",
   "crates/nexmark",
   "crates/feldera-types",
@@ -172,6 +173,7 @@ feldera-datagen = { path = "crates/datagen" }
 feldera-fxp = { version = "0.370.0", path = "crates/fxp" }
 feldera-iceberg = { path = "crates/iceberg" }
 feldera-observability = { version = "0.370.0", path = "crates/feldera-observability" }
+feldera-mtls = { version = "0.370.0", path = "crates/feldera-mtls" }
 feldera-macros = { version = "0.370.0", path = "crates/feldera-macros" }
 feldera-modular-bloom = { version = "0.370.0", path = "crates/modular-bloom" }
 feldera-sqllib = { version = "0.370.0", path = "crates/sqllib" }

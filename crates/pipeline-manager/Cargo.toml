@@ -62,7 +62,7 @@ time = { workspace = true }
 tokio-postgres-rustls = { workspace = true }
 rustls-native-certs = { workspace = true }
 rustls-pemfile = { workspace = true }
-rustls-webpki = { workspace = true }
+feldera-mtls = { workspace = true }
 base64 = { workspace = true }
 zip = { workspace = true }
 semver = { workspace = true }
@@ -83,7 +83,6 @@ refinery = { workspace = true, features = ["tokio-postgres"] }
 # HTTP server and client
 actix-web = { workspace = true, features = ["rustls-0_23"] }
 actix-http = { workspace = true }
-actix-tls = { workspace = true }
 actix-web-static-files = { workspace = true }
 actix-files = { workspace = true }
 actix-cors = { workspace = true }
@@ -165,5 +164,4 @@ tokio = { workspace = true, features = ["sync", "test-util"] }
 libc = { workspace = true }  # For: asserting errno-to-ErrorKind mapping
 
 [package.metadata.cargo-machete]
-# The rustls-webpki package's library is named webpki, which cargo-machete cannot match.
-ignored = ["static-files", "compare", "tikv-jemallocator", "rustls-webpki"]
+ignored = ["static-files", "compare", "tikv-jemallocator"]

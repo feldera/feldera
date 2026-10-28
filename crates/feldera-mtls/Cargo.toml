@@ -1,0 +1,28 @@
+[package]
+name = "feldera-mtls"
+description = "Client certificate identities of Feldera components and the server-side checks"
+publish = true
+edition = "2024"
+version = { workspace = true }
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+rust-version = { workspace = true }
+
+[dependencies]
+actix-tls = { workspace = true }
+actix-web = { workspace = true, features = ["rustls-0_23"] }
+feldera-types = { workspace = true }
+rustls = { workspace = true }
+rustls-webpki = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+rcgen = { workspace = true }
+
+[package.metadata.cargo-machete]
+# The rustls-webpki package's library is named webpki, which cargo-machete cannot match.
+ignored = ["rustls-webpki"]
