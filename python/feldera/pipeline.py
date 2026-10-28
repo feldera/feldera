@@ -1095,7 +1095,14 @@ metrics"""
 
     def transaction_id(self) -> Optional[int]:
         """
-        Gets the ID of the currently active transaction or None if there is no active transaction.
+        Gets the ID of the transaction that the pipeline runs or commits now,
+        or None if there is no such transaction.  This is the transaction
+        that `transaction_status` describes.
+
+        This can be a different transaction than the one that
+        `start_transaction` started: an earlier transaction, for example one
+        that a connector started, can still be committing.  To commit a
+        transaction, use the ID that `start_transaction` returned.
 
         :return: The ID of the transaction.
         """
