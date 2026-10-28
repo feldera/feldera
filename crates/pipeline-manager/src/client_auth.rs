@@ -1,21 +1,25 @@
-//! Client certificate authentication and route authorization of the compiler server
-//! (`--require-client-certificates`).
+//! Client certificate authentication and route authorization of the compiler and runner
+//! servers (`--require-client-certificates`).
 
-use crate::compiler::error::CompilerError;
 use crate::config::CommonConfig;
 use crate::db::types::pipeline::PipelineId;
 use actix_tls::accept::rustls_0_23::TlsStream;
-use actix_web::body::MessageBody;
+use actix_web::body::{BoxBody, MessageBody};
 use actix_web::dev::{Extensions, ServiceRequest, ServiceResponse};
-use actix_web::http::Method;
+use actix_web::http::{Method, StatusCode};
 use actix_web::middleware::Next;
 use actix_web::rt::net::TcpStream;
+use actix_web::{HttpResponse, ResponseError};
+use feldera_types::error::DetailedError;
 use rustls::RootCertStore;
 use rustls::pki_types::CertificateDer;
 use rustls::pki_types::pem::PemObject;
 use rustls::server::WebPkiClientVerifier;
 use rustls::server::danger::ClientCertVerifier;
+use serde::Serialize;
 use std::any::Any;
+use std::borrow::Cow;
+use std::fmt;
 use std::sync::Arc;
 use tracing::warn;
 use uuid::Uuid;
@@ -31,16 +35,16 @@ pub fn pipeline_certificate_uri(pipeline_id: PipelineId) -> String {
     format!("{PIPELINE_CERTIFICATE_URI_PREFIX}{pipeline_id}")
 }
 
-/// Who called the compiler server, according to the client certificate of the connection.
+/// Who called a server, according to the client certificate of the connection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CompilerCaller {
+pub(crate) enum Caller {
     /// No client certificate, or a certificate without exactly one Feldera identity.
     Anonymous,
     ControlPlane,
     Pipeline(PipelineId),
 }
 
-impl CompilerCaller {
+impl Caller {
     /// Maps a client certificate, which the TLS handshake verified, to its caller.
     fn from_certificate(cert: &CertificateDer<'_>) -> Self {
         let Ok(cert) = webpki::EndEntityCert::try_from(cert) else {
@@ -62,7 +66,7 @@ impl CompilerCaller {
         }
     }
 
-    /// Stores the caller of a new connection for [`authorize_compiler_caller`].
+    /// Stores the caller of a new connection for the authorization middleware.
     pub(crate) fn record(connection: &dyn Any, extensions: &mut Extensions) {
         let caller = connection
             .downcast_ref::<TlsStream<TcpStream>>()
@@ -75,14 +79,14 @@ impl CompilerCaller {
 
 /// Decides whether `caller` may send a `method` request for `path` to the compiler server.
 /// Routes that are not listed are for the control plane only, so new routes start closed.
-fn is_request_allowed(caller: CompilerCaller, method: &Method, path: &str) -> bool {
-    if caller == CompilerCaller::ControlPlane {
+fn is_compiler_request_allowed(caller: Caller, method: &Method, path: &str) -> bool {
+    if caller == Caller::ControlPlane {
         return true;
     }
     if method == Method::GET && path == "/healthz" {
         return true;
     }
-    let CompilerCaller::Pipeline(own_id) = caller else {
+    let Caller::Pipeline(own_id) = caller else {
         return false;
     };
     // GET /binary/{pipeline_id}/... and GET /program_info/{pipeline_id}/...
@@ -92,25 +96,52 @@ fn is_request_allowed(caller: CompilerCaller, method: &Method, path: &str) -> bo
         && segments.next().and_then(|id| Uuid::parse_str(id).ok()) == Some(own_id.0)
 }
 
-/// Refuses the requests that [`is_request_allowed`] does not allow for the caller of the
-/// connection.
+/// Decides whether `caller` may send a `method` request for `path` to the runner server:
+/// the control plane may use every route, everyone else only `/healthz`.
+fn is_runner_request_allowed(caller: Caller, method: &Method, path: &str) -> bool {
+    caller == Caller::ControlPlane || (method == Method::GET && path == "/healthz")
+}
+
+/// Refuses the compiler server requests that [`is_compiler_request_allowed`] does not allow.
 pub(crate) async fn authorize_compiler_caller(
     req: ServiceRequest,
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
+    authorize("compiler", is_compiler_request_allowed, req, next).await
+}
+
+/// Refuses the runner server requests that [`is_runner_request_allowed`] does not allow.
+pub(crate) async fn authorize_runner_caller(
+    req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
+    authorize("runner", is_runner_request_allowed, req, next).await
+}
+
+async fn authorize<B: MessageBody>(
+    server: &'static str,
+    is_allowed: fn(Caller, &Method, &str) -> bool,
+    req: ServiceRequest,
+    next: Next<B>,
+) -> Result<ServiceResponse<B>, actix_web::Error> {
     let caller = req
-        .conn_data::<CompilerCaller>()
+        .conn_data::<Caller>()
         .copied()
-        .unwrap_or(CompilerCaller::Anonymous);
-    if is_request_allowed(caller, req.method(), req.path()) {
+        .unwrap_or(Caller::Anonymous);
+    if is_allowed(caller, req.method(), req.path()) {
         return next.call(req).await;
     }
     let method = req.method().to_string();
     let path = req.path().to_string();
-    warn!("Compiler server refused {method} {path} from {caller:?}");
+    warn!("The {server} server refused {method} {path} from {caller:?}");
     Err(match caller {
-        CompilerCaller::Anonymous => CompilerError::ClientCertificateRequired { method, path },
-        _ => CompilerError::CallerNotAllowed {
+        Caller::Anonymous => ClientAuthError::ClientCertificateRequired {
+            server,
+            method,
+            path,
+        },
+        _ => ClientAuthError::CallerNotAllowed {
+            server,
             caller: format!("{caller:?}"),
             method,
             path,
@@ -119,9 +150,85 @@ pub(crate) async fn authorize_compiler_caller(
     .into())
 }
 
-/// Builds the client certificate verifier of the compiler server. Every certificate in the
-/// private CA bundle is a trust anchor, so a client may send its leaf certificate without
-/// the chain. Clients without a certificate may connect, for `/healthz`.
+/// A request that a server refused because of the client certificate of its connection.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub(crate) enum ClientAuthError {
+    ClientCertificateRequired {
+        server: &'static str,
+        method: String,
+        path: String,
+    },
+    CallerNotAllowed {
+        server: &'static str,
+        caller: String,
+        method: String,
+        path: String,
+    },
+}
+
+impl DetailedError for ClientAuthError {
+    fn error_code(&self) -> Cow<'static, str> {
+        match self {
+            Self::ClientCertificateRequired { .. } => Cow::from("ClientCertificateRequired"),
+            Self::CallerNotAllowed { .. } => Cow::from("CallerNotAllowed"),
+        }
+    }
+}
+
+impl fmt::Display for ClientAuthError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ClientCertificateRequired {
+                server,
+                method,
+                path,
+            } => write!(
+                f,
+                "The {server} server requires a client certificate for {method} {path}: present a certificate that the private CA signed (control plane: --https-client-cert-path)"
+            ),
+            Self::CallerNotAllowed {
+                server,
+                caller,
+                method,
+                path,
+            } => write!(
+                f,
+                "{caller} may not send {method} {path} to the {server} server: only the control plane may, apart from /healthz and a pipeline downloading its own artifacts from the compiler"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ClientAuthError {}
+
+impl ResponseError for ClientAuthError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::ClientCertificateRequired { .. } => StatusCode::UNAUTHORIZED,
+            Self::CallerNotAllowed { .. } => StatusCode::FORBIDDEN,
+        }
+    }
+
+    fn error_response(&self) -> HttpResponse<BoxBody> {
+        crate::error::json_error_response(self)
+    }
+}
+
+/// The TLS configuration of a server that the route tables protect: with
+/// `--require-client-certificates` it requests client certificates.
+pub(crate) fn https_server_config(common_config: &CommonConfig) -> Option<rustls::ServerConfig> {
+    if common_config.require_client_certificates {
+        common_config
+            .https_server_config_with_client_verifier(client_certificate_verifier(common_config))
+    } else {
+        common_config.https_server_config()
+    }
+}
+
+/// Builds the client certificate verifier of a server. Every certificate in the private CA
+/// bundle is a trust anchor, so a client may send its leaf certificate without the chain.
+/// Clients without a certificate may connect, for `/healthz`.
 pub(crate) fn client_certificate_verifier(
     common_config: &CommonConfig,
 ) -> Arc<dyn ClientCertVerifier> {
@@ -151,8 +258,8 @@ pub(crate) fn client_certificate_verifier(
 #[cfg(test)]
 mod tests {
     use super::{
-        CONTROL_PLANE_CERTIFICATE_URI, CompilerCaller, authorize_compiler_caller,
-        client_certificate_verifier, is_request_allowed, pipeline_certificate_uri,
+        CONTROL_PLANE_CERTIFICATE_URI, Caller, authorize_compiler_caller, https_server_config,
+        is_compiler_request_allowed, is_runner_request_allowed, pipeline_certificate_uri,
     };
     use crate::compiler::main::{check_compilation_artifacts, get_binary, upload_binary};
     use crate::compiler::util::pipeline_binary_filename;
@@ -210,10 +317,10 @@ mod tests {
         SanType::URI(uri.try_into().unwrap())
     }
 
-    fn caller_of(sans: Vec<SanType>) -> CompilerCaller {
+    fn caller_of(sans: Vec<SanType>) -> Caller {
         let (chain, _) = issue(&test_ca("ca"), sans, ExtendedKeyUsagePurpose::ClientAuth);
         let leaf = CertificateDer::from_pem_slice(chain.as_bytes()).unwrap();
-        CompilerCaller::from_certificate(&leaf)
+        Caller::from_certificate(&leaf)
     }
 
     /// Certificate URIs map to callers, and a certificate with two identities grants neither.
@@ -221,43 +328,69 @@ mod tests {
     fn caller_from_certificate() {
         assert_eq!(
             caller_of(vec![uri(CONTROL_PLANE_CERTIFICATE_URI)]),
-            CompilerCaller::ControlPlane
+            Caller::ControlPlane
         );
         assert_eq!(
             caller_of(vec![
                 SanType::DnsName("localhost".try_into().unwrap()),
                 uri(&pipeline_certificate_uri(PIPELINE_A)),
             ]),
-            CompilerCaller::Pipeline(PIPELINE_A)
+            Caller::Pipeline(PIPELINE_A)
         );
         assert_eq!(
             caller_of(vec![SanType::DnsName("localhost".try_into().unwrap())]),
-            CompilerCaller::Anonymous
+            Caller::Anonymous
         );
         assert_eq!(
             caller_of(vec![uri("urn:feldera:pipeline:not-a-uuid")]),
-            CompilerCaller::Anonymous
+            Caller::Anonymous
         );
         assert_eq!(
             caller_of(vec![
                 uri(CONTROL_PLANE_CERTIFICATE_URI),
                 uri(&pipeline_certificate_uri(PIPELINE_A)),
             ]),
-            CompilerCaller::Anonymous
+            Caller::Anonymous
         );
         assert_eq!(
             caller_of(vec![
                 uri(&pipeline_certificate_uri(PIPELINE_A)),
                 uri(&pipeline_certificate_uri(PIPELINE_B)),
             ]),
-            CompilerCaller::Anonymous
+            Caller::Anonymous
         );
+    }
+
+    /// The runner admits only the control plane, apart from `/healthz`.
+    #[test]
+    fn runner_route_table() {
+        use Caller::{Anonymous, ControlPlane, Pipeline};
+        let logs = format!("/logs/{PIPELINE_A}");
+        #[rustfmt::skip]
+        let table: Vec<(Method, &str, [bool; 3])> = vec![
+            //                     control plane, pipeline A, anonymous
+            (Method::GET, &logs,      [true, false, false]),
+            (Method::GET, "/healthz", [true, true,  true]),
+            (Method::GET, "/unknown", [true, false, false]),
+        ];
+        for (method, path, expected) in table {
+            for (caller, allowed) in [ControlPlane, Pipeline(PIPELINE_A), Anonymous]
+                .into_iter()
+                .zip(expected)
+            {
+                assert_eq!(
+                    is_runner_request_allowed(caller, &method, path),
+                    allowed,
+                    "{caller:?} {method} {path}"
+                );
+            }
+        }
     }
 
     /// Each caller reaches only the routes of the compiler server route table.
     #[test]
-    fn route_table() {
-        use CompilerCaller::{Anonymous, ControlPlane, Pipeline};
+    fn compiler_route_table() {
+        use Caller::{Anonymous, ControlPlane, Pipeline};
         let a = PIPELINE_A.to_string();
         let b = PIPELINE_B.to_string();
         let binary_a = format!("/binary/{a}/1/{SHA}/{SHA}");
@@ -288,7 +421,7 @@ mod tests {
                 .zip(expected)
             {
                 assert_eq!(
-                    is_request_allowed(caller, &method, path),
+                    is_compiler_request_allowed(caller, &method, path),
                     allowed,
                     "{caller:?} {method} {path}"
                 );
@@ -353,11 +486,8 @@ mod tests {
             Some(write(dir.path(), "server.key", &server_key));
         server_common_config.private_ca_cert_path =
             Some(write(dir.path(), "private-ca.crt", &private_ca.pem));
-        let server_tls_config = server_common_config
-            .https_server_config_with_client_verifier(client_certificate_verifier(
-                &server_common_config,
-            ))
-            .unwrap();
+        server_common_config.require_client_certificates = true;
+        let server_tls_config = https_server_config(&server_common_config).unwrap();
         #[cfg(feature = "fips")]
         assert!(server_tls_config.fips());
 
@@ -377,7 +507,6 @@ mod tests {
             gen2_udf_sdk_path: None,
             gen2_udf_sdk_version: None,
             precompile: false,
-            require_client_certificates: true,
         };
         let binaries = compiler_dir
             .path()
@@ -401,7 +530,7 @@ mod tests {
                 .service(upload_binary)
                 .route("/healthz", web::get().to(HttpResponse::Ok))
         })
-        .on_connect(CompilerCaller::record)
+        .on_connect(Caller::record)
         .workers(1)
         .listen_rustls_0_23(listener, server_tls_config)
         .unwrap()
