@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.370.0
+
 - Experimental (Enterprise, Kubernetes): a resize of `memory_max` with
   `PATCH /v0/pipelines/{name}` also changes the memory budget of the
   running pipeline, unless `max_rss` is set.  A smaller budget applies at

@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.10, <3.14"
 resolution-markers = [
     "python_full_version >= '3.11' and sys_platform == 'win32'",
@@ -343,7 +343,7 @@ wheels = [
 
 [[package]]
 name = "feldera"
-version = "0.370.0"
+version = "0.371.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
