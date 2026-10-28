@@ -4413,6 +4413,7 @@ dependencies = [
  "feldera-ir",
  "feldera-macros",
  "feldera-modular-bloom",
+ "feldera-mtls",
  "feldera-observability",
  "feldera-samply",
  "feldera-size-of",
@@ -5726,6 +5727,21 @@ dependencies = [
  "fastbloom",
  "proptest",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "feldera-mtls"
+version = "0.371.0"
+dependencies = [
+ "actix-tls",
+ "actix-web",
+ "feldera-types",
+ "rcgen",
+ "rustls",
+ "rustls-webpki",
+ "serde",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -9238,7 +9254,6 @@ dependencies = [
  "actix-files",
  "actix-http",
  "actix-test",
- "actix-tls",
  "actix-web",
  "actix-web-httpauth",
  "actix-web-static-files",
@@ -9262,6 +9277,7 @@ dependencies = [
  "fdlimit",
  "feldera-cloud1-client",
  "feldera-ir",
+ "feldera-mtls",
  "feldera-observability",
  "feldera-types",
  "flate2",
@@ -9287,7 +9303,6 @@ dependencies = [
  "rustls",
  "rustls-native-certs 0.7.3",
  "rustls-pemfile",
- "rustls-webpki",
  "semver",
  "serde",
  "serde_json",
