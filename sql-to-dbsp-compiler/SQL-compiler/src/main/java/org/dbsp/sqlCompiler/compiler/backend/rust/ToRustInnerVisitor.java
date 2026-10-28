@@ -1293,6 +1293,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPU128Literal literal) {
+        if (literal.isNull())
+            return this.doNull(literal);
         String val = Objects.requireNonNull(literal.value).toString();
         this.push(literal);
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));

@@ -82,6 +82,7 @@ public abstract class DBSPLiteral extends DBSPExpression
             case UINT32 -> new DBSPU32Literal();
             case UINT64 -> new DBSPU64Literal();
             case INT128 -> new DBSPI128Literal();
+            case UINT128 -> new DBSPU128Literal(type.getNode(), type, null);
             case BOOL -> new DBSPBoolLiteral();
             case DATE -> new DBSPDateLiteral();
             case DECIMAL -> new DBSPDecimalLiteral(type.getNode(), type, null);
