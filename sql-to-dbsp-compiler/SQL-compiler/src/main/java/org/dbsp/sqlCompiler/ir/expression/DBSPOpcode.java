@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
+
 /** This enum encodes the various opcodes for unary and
  * binary operations used in the IR of the SQL compiler. */
 public enum DBSPOpcode {
@@ -48,6 +50,12 @@ public enum DBSPOpcode {
     // DIV_NULL is like DIV, but returns NULL for a 0 denominator
     DIV_NULL("div_null", false),
     DIV_INTERVAL_NULL("div_interval_null", false),
+    // Saturating forms of ADD, SUB, MUL and DIV, for non-nullable operands: a result above the
+    // range of the type is the maximum value of the type, and a result below it is the minimum
+    ADD_SATURATING("plus_saturating", false),
+    SUB_SATURATING("minus_saturating", false),
+    MUL_SATURATING("times_saturating", false),
+    DIV_SATURATING("div_saturating", false),
     MOD("%", false),
     EQ("==", false),
     NEQ("!=", false),
@@ -82,6 +90,9 @@ public enum DBSPOpcode {
     // Interval-based operations
     MUL_INTERVAL("*", false),
     DIV_INTERVAL("/", false),
+    // Saturating forms of MUL_INTERVAL and DIV_INTERVAL, for non-nullable operands
+    MUL_INTERVAL_SATURATING("times_saturating", false),
+    DIV_INTERVAL_SATURATING("div_saturating", false),
 
     // Aggregate operations.  These operations
     // handle NULL values differently from standard
@@ -155,6 +166,20 @@ public enum DBSPOpcode {
                  SQL_INDEX, XOR, BW_OR, MUL_WEIGHT, BW_AND, GTE, LTE, GT, LT, NEQ, EQ, MOD, DIV_NULL, DIV, MUL, SUB,
                  ADD, TYPEDBOX, IS_TRUE, IS_FALSE, NOT, UNARY_PLUS -> true;
             default -> throw new UnimplementedException();
+        };
+    }
+
+    /** The saturating form of this operation, or null if it has none. */
+    @Nullable
+    public DBSPOpcode saturating() {
+        return switch (this) {
+            case ADD -> ADD_SATURATING;
+            case SUB -> SUB_SATURATING;
+            case MUL -> MUL_SATURATING;
+            case DIV -> DIV_SATURATING;
+            case MUL_INTERVAL -> MUL_INTERVAL_SATURATING;
+            case DIV_INTERVAL -> DIV_INTERVAL_SATURATING;
+            default -> null;
         };
     }
 
