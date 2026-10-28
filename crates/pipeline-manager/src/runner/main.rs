@@ -65,8 +65,8 @@ const RESUME_POSITION_TIMEOUT: Duration = Duration::from_secs(5);
 /// The health check consults the continuous probe of database reachability.
 /// Decides whether `caller` may send a `method` request for `path` to the runner server:
 /// the control plane may use every route, everyone else only `/healthz`.
-fn is_runner_request_allowed(caller: Caller, method: &Method, path: &str) -> bool {
-    caller == Caller::ControlPlane || (method == Method::GET && path == "/healthz")
+fn is_runner_request_allowed(caller: &Caller, method: &Method, path: &str) -> bool {
+    *caller == Caller::ControlPlane || (method == Method::GET && path == "/healthz")
 }
 
 /// Refuses the runner server requests that [`is_runner_request_allowed`] does not allow.
@@ -519,22 +519,25 @@ mod test {
     /// The runner admits only the control plane, apart from `/healthz`.
     #[test]
     fn runner_route_table() {
-        use Caller::{Anonymous, ControlPlane, Pipeline};
+        use Caller::{Anonymous, ControlPlane, External, Pipeline};
         let pipeline_a = Uuid::from_u128(0xa);
         let logs = format!("/logs/{pipeline_a}");
+        let callers = [
+            ControlPlane,
+            Pipeline(pipeline_a),
+            External("urn:example:sidecar".to_string()),
+            Anonymous,
+        ];
         #[rustfmt::skip]
-        let table: Vec<(Method, &str, [bool; 3])> = vec![
-            //                         control plane, pipeline A, anonymous
-            (Method::GET, &logs,          [true, false, false]),
-            (Method::GET, "/healthz",     [true, true,  true]),
-            (Method::GET, "/health%7Az",  [true, false, false]),
-            (Method::GET, "/unknown",     [true, false, false]),
+        let table: Vec<(Method, &str, [bool; 4])> = vec![
+            //                         control plane, pipeline A, external, anonymous
+            (Method::GET, &logs,          [true, false, false, false]),
+            (Method::GET, "/healthz",     [true, true,  true,  true]),
+            (Method::GET, "/health%7Az",  [true, false, false, false]),
+            (Method::GET, "/unknown",     [true, false, false, false]),
         ];
         for (method, path, expected) in table {
-            for (caller, allowed) in [ControlPlane, Pipeline(pipeline_a), Anonymous]
-                .into_iter()
-                .zip(expected)
-            {
+            for (caller, allowed) in callers.iter().zip(expected) {
                 assert_eq!(
                     is_runner_request_allowed(caller, &method, path),
                     allowed,

@@ -712,15 +712,25 @@ pub struct ServerArgs {
     pub https_tls_key_path: Option<String>,
 
     /// Whether the HTTPS server requires client certificates, and admits only the control
-    /// plane (URI SAN `urn:feldera:control-plane`) and this pipeline itself, which the
-    /// multihost coordinator presents. The private CA verifies them: the runner appends its
-    /// chain after the leaf in `--https-tls-cert-path`.
+    /// plane (URI SAN `urn:feldera:control-plane`), this pipeline itself, which the
+    /// multihost coordinator presents, and the `--extra-client-certificate-uris`. The private
+    /// CA verifies them: the runner appends its chain after the leaf in `--https-tls-cert-path`.
     #[arg(
         long,
         default_value_t = false,
         env = "FELDERA_REQUIRE_CLIENT_CERTIFICATES"
     )]
     pub require_client_certificates: bool,
+
+    /// Comma-separated URI SANs of external clients, such as sidecars, that the HTTPS server
+    /// also admits with `--require-client-certificates`. URIs under `urn:feldera:` are
+    /// refused.
+    #[arg(
+        long,
+        env = "FELDERA_EXTRA_CLIENT_CERTIFICATE_URIS",
+        value_delimiter = ','
+    )]
+    pub extra_client_certificate_uris: Vec<String>,
 
     /// Initial runtime desired status.
     #[arg(long)]
@@ -1616,11 +1626,12 @@ fn pipeline_client_auth(args: &ServerArgs) -> PipelineClientAuth {
         .expect("HTTPS TLS certificate should be read")
         .flatten()
         .collect();
-    PipelineClientAuth::from_chain(&chain)
+    PipelineClientAuth::from_chain(&chain, &args.extra_client_certificate_uris)
         .unwrap_or_else(|e| panic!("client certificates with '{path}': {e}"))
 }
 
-/// Refuses requests from callers other than the control plane and this pipeline.
+/// Refuses requests from callers other than the control plane, this pipeline and the listed
+/// external clients.
 async fn authorize_pipeline_caller(
     client_auth: Option<Arc<PipelineClientAuth>>,
     req: ServiceRequest,
@@ -2927,6 +2938,7 @@ pub mod test_http_helpers {
             https_tls_cert_path: None,
             https_tls_key_path: None,
             require_client_certificates: false,
+            extra_client_certificate_uris: Vec::new(),
             initial: RuntimeDesiredStatus::Paused,
             bootstrap_policy: bootstrap_config.active_bootstrap_policy(),
             silent_bootstrap: bootstrap_config.silent_bootstrap,
@@ -5715,6 +5727,7 @@ mod test_program_load {
             https_tls_cert_path: None,
             https_tls_key_path: None,
             require_client_certificates: false,
+            extra_client_certificate_uris: Vec::new(),
             initial: RuntimeDesiredStatus::Running,
             bootstrap_policy: BootstrapPolicy::Allow,
             silent_bootstrap: false,
@@ -7954,6 +7967,7 @@ pub mod test_http {
                 https_tls_cert_path: None,
                 https_tls_key_path: None,
                 require_client_certificates: false,
+                extra_client_certificate_uris: Vec::new(),
                 initial: RuntimeDesiredStatus::Running,
                 bootstrap_policy: BootstrapPolicy::Allow,
                 silent_bootstrap: false,

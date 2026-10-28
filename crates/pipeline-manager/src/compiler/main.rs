@@ -1001,8 +1001,8 @@ pub async fn artifact_server_main(
 
 /// Decides whether `caller` may send a `method` request for `path` to the compiler server.
 /// Routes that are not listed are for the control plane only, so new routes start closed.
-fn is_compiler_request_allowed(caller: Caller, method: &Method, path: &str) -> bool {
-    if caller == Caller::ControlPlane {
+fn is_compiler_request_allowed(caller: &Caller, method: &Method, path: &str) -> bool {
+    if *caller == Caller::ControlPlane {
         return true;
     }
     if method == Method::GET && path == "/healthz" {
@@ -1016,7 +1016,7 @@ fn is_compiler_request_allowed(caller: Caller, method: &Method, path: &str) -> b
     let mut segments = path.strip_prefix('/').unwrap_or(path).split('/');
     method == Method::GET
         && matches!(segments.next(), Some("binary" | "program_info"))
-        && segments.next().and_then(|id| Uuid::parse_str(id).ok()) == Some(own_id)
+        && segments.next().and_then(|id| Uuid::parse_str(id).ok()) == Some(*own_id)
 }
 
 /// Refuses the compiler server requests that [`is_compiler_request_allowed`] does not allow.
@@ -1839,7 +1839,7 @@ mod test {
         /// the path is percent-encoded.
         #[test]
         fn compiler_route_table() {
-            use Caller::{Anonymous, ControlPlane, Pipeline};
+            use Caller::{Anonymous, ControlPlane, External, Pipeline};
             let a = PIPELINE_A.to_string();
             let b = PIPELINE_B.to_string();
             let binary_a = format!("/binary/{a}/1/{SHA}/{SHA}");
@@ -1853,35 +1853,37 @@ mod test {
             let binary_b_urn = format!("/binary/urn:uuid:{b}/1/{SHA}/{SHA}");
             let binary_a_slash_b = format!("/binary/{a}%2F..%2F{b}/1/{SHA}/{SHA}");
             let binary_a_double_slash = format!("//binary/{a}/1/{SHA}/{SHA}");
-            let pipeline_a = Pipeline(PIPELINE_A.0);
+            let callers = [
+                ControlPlane,
+                Pipeline(PIPELINE_A.0),
+                External("urn:example:sidecar".to_string()),
+                Anonymous,
+            ];
 
             #[rustfmt::skip]
-            let table: Vec<(Method, &str, [bool; 3])> = vec![
-                //                                     control plane, pipeline A, anonymous
-                (Method::GET,  &binary_a,               [true, true,  false]),
-                (Method::GET,  &binary_b,               [true, false, false]),
-                (Method::GET,  &info_a,                 [true, true,  false]),
-                (Method::GET,  &info_b,                 [true, false, false]),
-                (Method::GET,  &artifacts_a,            [true, false, false]),
-                (Method::POST, &binary_a,               [true, false, false]),
-                (Method::POST, &info_a,                 [true, false, false]),
-                (Method::POST, "/validate_program",     [true, false, false]),
-                (Method::GET,  "/healthz",              [true, true,  true]),
-                (Method::GET,  "/health%7Az",           [true, false, false]),
-                (Method::GET,  "/unknown",              [true, false, false]),
-                (Method::GET,  "/binary/A/1/x/y",       [true, false, false]),
-                (Method::GET,  &binary_a_upper,         [true, true,  false]),
-                (Method::GET,  &binary_a_encoded,       [true, false, false]),
-                (Method::GET,  &binary_b_encoded,       [true, false, false]),
-                (Method::GET,  &binary_b_urn,           [true, false, false]),
-                (Method::GET,  &binary_a_slash_b,       [true, false, false]),
-                (Method::GET,  &binary_a_double_slash,  [true, false, false]),
+            let table: Vec<(Method, &str, [bool; 4])> = vec![
+                //                                     control plane, pipeline A, external, anonymous
+                (Method::GET,  &binary_a,               [true, true,  false, false]),
+                (Method::GET,  &binary_b,               [true, false, false, false]),
+                (Method::GET,  &info_a,                 [true, true,  false, false]),
+                (Method::GET,  &info_b,                 [true, false, false, false]),
+                (Method::GET,  &artifacts_a,            [true, false, false, false]),
+                (Method::POST, &binary_a,               [true, false, false, false]),
+                (Method::POST, &info_a,                 [true, false, false, false]),
+                (Method::POST, "/validate_program",     [true, false, false, false]),
+                (Method::GET,  "/healthz",              [true, true,  true,  true]),
+                (Method::GET,  "/health%7Az",           [true, false, false, false]),
+                (Method::GET,  "/unknown",              [true, false, false, false]),
+                (Method::GET,  "/binary/A/1/x/y",       [true, false, false, false]),
+                (Method::GET,  &binary_a_upper,         [true, true,  false, false]),
+                (Method::GET,  &binary_a_encoded,       [true, false, false, false]),
+                (Method::GET,  &binary_b_encoded,       [true, false, false, false]),
+                (Method::GET,  &binary_b_urn,           [true, false, false, false]),
+                (Method::GET,  &binary_a_slash_b,       [true, false, false, false]),
+                (Method::GET,  &binary_a_double_slash,  [true, false, false, false]),
             ];
             for (method, path, expected) in table {
-                for (caller, allowed) in [ControlPlane, pipeline_a, Anonymous]
-                    .into_iter()
-                    .zip(expected)
-                {
+                for (caller, allowed) in callers.iter().zip(expected) {
                     assert_eq!(
                         is_compiler_request_allowed(caller, &method, path),
                         allowed,
