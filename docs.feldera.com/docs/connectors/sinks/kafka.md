@@ -3,6 +3,9 @@
 Feldera can output a stream of changes to a SQL table or view to a Kafka topic.
 
 The Kafka output connector supports [fault tolerance](/pipelines/fault-tolerance).
+[Delivery, retries, and backpressure](#delivery-retries-and-backpressure)
+describes what the connector does when the broker is slow or down, what it
+reports, and the [metrics](#output-metrics) it exports.
 
 ## Kafka Output Connector Configuration
 
