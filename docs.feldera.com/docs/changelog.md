@@ -26,10 +26,10 @@ Source edition can be found on github.
 - `POST /v0/pipelines/{pipeline_name}/commit_transaction` accepts optional
   `transaction_id` and `incarnation_uuid` query parameters, and
   `start_transaction` returns `incarnation_uuid`. With them, the pipeline
-  commits only the named transaction. A retry of a commit that is in
-  progress or done succeeds and does nothing. After a pipeline restart, the
-  request fails with `IncarnationUuidMismatch`. The Python SDK and `fda`
-  send both. In Python, `Pipeline.start_transaction_response()` returns both
+  commits only the named transaction. A retry of the last commit succeeds
+  and does nothing. A commit of a transaction that a pipeline restart lost
+  fails, with `IncarnationUuidMismatch` if the request has
+  `incarnation_uuid`. The Python SDK and `fda` send both. In Python, `Pipeline.start_transaction_response()` returns both
   values, and `commit_transaction()` takes `incarnation_uuid`. See
   [Transactions](/pipelines/transactions).
 

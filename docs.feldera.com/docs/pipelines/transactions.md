@@ -119,8 +119,8 @@ commit the transaction using the [`commit_transaction`](/api/commit-transaction)
 
 * The optional `transaction_id` query parameter, as in `commit_transaction?transaction_id=42`, names the
   transaction that `start_transaction` returned. The pipeline then commits only that transaction. If the
-  transaction is already committing or committed, the request succeeds without doing anything, so it is
-  safe to retry. The Python SDK and `fda` CLI always send it.
+  last `commit_transaction` request already committed it, the request succeeds without doing anything, so
+  it is safe to retry. The Python SDK and `fda` CLI always send it.
 
 * The optional `incarnation_uuid` query parameter names the `incarnation_uuid` that `start_transaction`
   returned. Transaction IDs start again when the pipeline restarts, so after a restart another transaction

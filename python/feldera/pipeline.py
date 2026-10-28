@@ -1091,8 +1091,8 @@ metrics"""
         :raises RuntimeError: If `transaction_id` is not provided and there is currently no transaction in progress,
             or if the pipeline restarts while the function waits for the commit.
         :raises ValueError: If the provided `transaction_id` does not match the current transaction.
-            If there is no current transaction, the pipeline checks `transaction_id`: a transaction that is
-            already committing or committed succeeds, so it is safe to call this again after a `TimeoutError`.
+            If there is no current transaction, the pipeline checks `transaction_id`: if the last commit
+            request already committed it, the commit succeeds, so it is safe to call this again after a `TimeoutError`.
         :raises TimeoutError: If the transaction does not commit within the specified timeout (when `wait` is True).
         :raises FelderaAPIError: If the pipeline fails to commit a transaction.
         """

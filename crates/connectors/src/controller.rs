@@ -1645,7 +1645,7 @@ impl Controller {
 
     /// Starts to commit the transaction that the API started.  If
     /// `transaction_id` is `Some`, commits only that transaction, and succeeds
-    /// without doing anything if it is already committing or committed.
+    /// without doing anything if this function already committed it.
     pub fn start_commit_transaction(
         &self,
         transaction_id: Option<TransactionId>,
@@ -7374,6 +7374,13 @@ pub struct TransactionInfo {
     /// Used to assign the next transaction id.
     last_transaction_id: TransactionId,
 
+    /// The last transaction that `/commit_transaction` asked to commit.  A
+    /// retry of that request succeeds without doing anything.  This is not
+    /// any transaction up to `last_transaction_id`, because that would accept
+    /// a commit of an automatic or connector transaction, or of a transaction
+    /// that a restart lost.
+    last_api_commit: Option<TransactionId>,
+
     /// Entities that initiated the current transaction.
     ///
     /// This field is modified by each transaction initiator: the REST API and connectors.
@@ -7422,6 +7429,7 @@ impl TransactionInfo {
         TransactionInfo {
             is_multihost,
             last_transaction_id: 0,
+            last_api_commit: None,
             initiators: TransactionInitiators::default(),
             all_hosts_done: HashMap::new(),
             transaction_state: TransactionState::None,
@@ -7520,8 +7528,8 @@ impl TransactionInfo {
     /// Commit the current transaction from the API.
     ///
     /// If `transaction_id` is `Some`, commits only that transaction.  Returns
-    /// false, without doing anything, if that transaction is already
-    /// committing or committed, so that a retried request succeeds.
+    /// false, without doing anything, if that is the last transaction that
+    /// this function committed, so that a retried request succeeds.
     fn start_commit_transaction_from_api(
         &mut self,
         transaction_id: Option<TransactionId>,
@@ -7534,7 +7542,7 @@ impl TransactionInfo {
         match transaction_id {
             None if open.is_none() => return Err(ControllerError::NoTransactionInProgress),
             Some(requested) if open != Some(requested) => {
-                return if self.commit_requested(requested) {
+                return if self.last_api_commit == Some(requested) {
                     Ok(false)
                 } else {
                     Err(ControllerError::TransactionIdMismatch { requested, open })
@@ -7543,19 +7551,8 @@ impl TransactionInfo {
             _ => (),
         }
         self.initiators.initiated_by_api = Some(TransactionPhase::Committed);
+        self.last_api_commit = open;
         Ok(true)
-    }
-
-    /// Returns true if transaction `tid` is not open: it is committing or
-    /// committed, or `/commit_transaction` already asked to commit it.
-    fn commit_requested(&self, tid: TransactionId) -> bool {
-        if self.initiators.transaction_id == Some(tid) {
-            self.initiators.initiated_by_api == Some(TransactionPhase::Committed)
-        } else if let TransactionState::Started { tid: started, .. } = self.transaction_state {
-            tid != started && tid > 0 && tid <= self.last_transaction_id
-        } else {
-            tid > 0 && tid <= self.last_transaction_id
-        }
     }
 
     /// Initiate a new transaction from a connector.
@@ -11195,6 +11192,12 @@ mod commit_transaction_id_tests {
             info.start_commit_transaction_from_api(Some(second))
                 .unwrap()
         );
+
+        // Only the last commit can be retried.
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Some(first)),
+            Err(ControllerError::TransactionIdMismatch { open: None, .. })
+        ));
     }
 
     /// A commit fails if it names a transaction that the API did not start.
@@ -11259,6 +11262,44 @@ mod commit_transaction_id_tests {
         assert!(matches!(
             info.start_commit_transaction_from_api(Some(connector)),
             Err(ControllerError::TransactionIdMismatch { open: None, .. })
+        ));
+    }
+
+    /// A commit fails if it names a transaction that `/commit_transaction`
+    /// did not commit: one that a connector committed, or one that a restart
+    /// lost while later transactions reused its ID.
+    #[test]
+    fn commit_of_unrequested_transaction_fails() {
+        let mut info = single_host();
+        info.start_transaction_from_connector("c", None, false)
+            .unwrap();
+        let connector = info.initiators.transaction_id.unwrap();
+        info.transaction_state = TransactionState::Committing {
+            tid: connector,
+            start: Instant::now(),
+            processed_records: 0,
+        };
+        info.clear_initiators();
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Some(connector)),
+            Err(ControllerError::TransactionIdMismatch { open: None, .. })
+        ));
+        info.transaction_state = TransactionState::None;
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Some(connector)),
+            Err(ControllerError::TransactionIdMismatch { open: None, .. })
+        ));
+
+        // After a restart, automatic transactions reached ID 7, so the
+        // API's transaction 5 from before the restart is lost.
+        let mut info = single_host();
+        info.last_transaction_id = 7;
+        assert!(matches!(
+            info.start_commit_transaction_from_api(Some(5)),
+            Err(ControllerError::TransactionIdMismatch {
+                requested: 5,
+                open: None
+            })
         ));
     }
 

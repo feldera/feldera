@@ -4161,8 +4161,8 @@ fn open_api_transaction(initiators: &TransactionInitiators) -> Option<i64> {
 /// transaction `requested` on the command line, if any.
 ///
 /// If no API transaction is open, this returns `requested`, because a retry
-/// can name a transaction that is already committing or committed.  The
-/// pipeline checks it.
+/// can name the transaction that an earlier `commit-transaction` committed.
+/// The pipeline checks it.
 fn transaction_to_commit(
     initiators: &TransactionInitiators,
     requested: Option<i64>,
