@@ -1,4 +1,5 @@
 use crate::api::error::ApiError;
+use crate::client_auth::{Caller, authorize_runner_caller, https_server_config};
 use crate::config::CommonConfig;
 use crate::db::listen_table::{Operation, PIPELINE_NOTIFY_CHANNEL_CAPACITY};
 use crate::db::probe::DbProbe;
@@ -16,6 +17,7 @@ use crate::runner::pipeline_logs::{
 use actix_web::HttpResponse;
 use actix_web::HttpResponseBuilder;
 use actix_web::Responder;
+use actix_web::middleware::{Condition, from_fn};
 use actix_web::{HttpServer, get, web};
 use async_stream::try_stream;
 use std::collections::BTreeMap;
@@ -257,13 +259,19 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
     // Setup HTTP(S) server
     let data_healthz = web::Data::new(DbProbe::new(db.clone()).await);
     let data_logs = web::Data::new(pipelines.clone());
+    let require_client_certificates = common_config.require_client_certificates;
     let server = HttpServer::new(move || {
         actix_web::App::new()
+            .wrap(Condition::new(
+                require_client_certificates,
+                from_fn(authorize_runner_caller),
+            ))
             .app_data(data_healthz.clone())
             .app_data(data_logs.clone())
             .service(get_healthz)
             .service(get_logs)
     })
+    .on_connect(Caller::record)
     .workers(common_config.http_workers)
     .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
     let listener = TcpListener::bind((
@@ -277,7 +285,7 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
         )
     });
     spawn(
-        if let Some(server_config) = common_config.https_server_config() {
+        if let Some(server_config) = https_server_config(&common_config) {
             server
                 .listen_rustls_0_23(listener, server_config)
                 .expect("runner HTTPS server unable to listen")
@@ -290,7 +298,7 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
         },
     );
     info!(
-        "Runner {} server: ready on port {} ({} workers)",
+        "Runner {} server: ready on port {} ({} workers, client certificates {})",
         if common_config.enable_https {
             "HTTPS"
         } else {
@@ -298,6 +306,11 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
         },
         common_config.runner_port,
         common_config.http_workers,
+        if require_client_certificates {
+            "required"
+        } else {
+            "not required"
+        },
     );
 
     // Reused HTTP(S) client
