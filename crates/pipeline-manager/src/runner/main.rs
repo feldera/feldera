@@ -61,8 +61,6 @@ type PipelinesState = BTreeMap<PipelineId, (JoinHandle<()>, Arc<Notify>, Sender<
 /// receives a response head rather than a timeout.
 const RESUME_POSITION_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Returns whether the runner is healthy.
-/// The health check consults the continuous probe of database reachability.
 /// Decides whether `caller` may send a `method` request for `path` to the runner server:
 /// the control plane may use every route, everyone else only `/healthz`.
 fn is_runner_request_allowed(caller: &Caller, method: &Method, path: &str) -> bool {
@@ -77,6 +75,8 @@ async fn authorize_runner_caller(
     authorize("runner", is_runner_request_allowed, req, next).await
 }
 
+/// Returns whether the runner is healthy.
+/// The health check consults the continuous probe of database reachability.
 #[get("/healthz")]
 async fn get_healthz(data: web::Data<Arc<Mutex<DbProbe>>>) -> Result<impl Responder, ManagerError> {
     Ok(data.lock().await.as_http_response())
