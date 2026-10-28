@@ -109,9 +109,8 @@ The code panel has one tab for each source file of the pipeline:
 | `udf.rs` | The Rust code of the [user-defined functions](/sql/udf) |
 | `udf.toml` | The Rust dependencies of the user-defined functions |
 
-The viewer shows the `udf.rs` and `udf.toml` tabs only when the pipeline has
-code in these files. Click a tab to open its file. A click on a node with a SQL source
-position opens `program.sql`.
+The viewer shows the `udf.rs` and `udf.toml` tabs only when these files are
+not empty. A click on a node with a SQL source position opens `program.sql`.
 
 The button in the top right corner of the code panel stretches it to the full
 height of the window.
@@ -130,13 +129,13 @@ The dataflow graph can be much larger than the window.
 
 ## The current node
 
-Click a node to make it the *current node*. The other parts of the
-viewer show information about the current node:
+Click a node to make it the *current node*. The current node glows, and the
+other parts of the viewer show information about it:
 
 | Action | Result |
 |---|---|
 | Move the pointer over a node | The node glows. The other parts of the viewer do not change. |
-| Click a node | The node becomes the current node and glows. The **Node** view of the **Metrics** tab shows its measurements. If the node has a SQL source position, the code panel selects its SQL in `program.sql`. The edges show its [reachability](#reachability). |
+| Click a node | The node becomes the current node. The **Node** view of the **Metrics** tab shows its measurements. If the node has a SQL source position, the code panel selects its SQL in `program.sql`. The edges show its [reachability](#reachability). |
 | Press Escape | There is no current node. |
 
 ### Nodes and SQL
@@ -292,25 +291,27 @@ connectors, a second table lists the views and their output connectors:
 
 | Column | What it shows |
 |---|---|
+| Table, View | The SQL table or view of the connector |
 | Connectors | The name and the status of each connector. Select **Unhealthy** to show only the connectors with problems. |
+| Transaction | Input only. **Started** or **Ready to commit** if the connector started the current transaction. |
 | Ingested, Transmitted | The number of records and bytes that the connector received or sent |
 | Buffered, Queued | The records and batches that wait in the connector |
+| Latency p99 | Input only. The 99th percentile of the time from the ingestion of a batch to the end of its processing, over the last 10 minutes. Red marks the slowest connectors. |
 | Parse, Encode and Transport errors | The number of errors of each kind |
 
-If a table is wider than the panel, scroll it sideways to see all the columns.
-The bundle has one sample of the statistics. So the tab cannot show whether
-a connector is transferring data.
+The statistics show the state of the connectors at a moment when the profile was collected.
+So the tab does not show the current performance.
 
-To see the errors of a connector, click its error icon or one of its error
-counts. A drawer opens with the most recent error messages of that connector,
-from the statistics in the bundle. The count that you click sets the filter of
-the drawer. You can change the filter to show all errors or only one kind of
-error. Click an error to see its full message. The pipeline keeps up to 100 of
-the most recent errors of each kind. If the pipeline dropped older errors, the
+The label of the **Connectors** tab shows the total number of connector
+errors. To see the errors of a connector, click its error icon or one of its
+error counts. A list of its most recent errors opens next to the table. A click
+on the number of errors shows the errors of that kind.
+
+![The parse errors of a connector](connector-errors.png)
+
+The pipeline keeps only the 100 most recent errors of each kind, so the bundle
+has at most 100 errors of each kind. If the pipeline dropped older errors, the
 list shows "N other errors skipped" in their place.
-
-If the pipeline has connector errors, the **Connectors** tab label shows a
-red chip with the total number of errors.
 
 ## Health
 
@@ -322,9 +323,9 @@ as an event. See [Pipeline monitoring](/tutorials/rest_api/pipeline-monitoring).
 
 | Part | What it shows |
 |---|---|
-| Pipeline status | The status of the pipeline in each hour of the 72 hours before the profile was collected. Click a bar to see the events of that hour. |
-| Incidents | The periods when the pipeline had a problem. Ongoing incidents show first, then previous incidents. Click an incident to see its events. |
-| Event details | The events of the incident or of the hour, with all their fields. The arrows move to the previous or the next incident or hour. |
+| Pipeline status | The status of the pipeline in each of the last 72 hours before the profile was collected. Click a bar to see the events of that hour. |
+| Incidents | The incidents of the pipeline, newest first. Click an incident to see its events. |
+| Event details | The fields of each event. The left and right arrow keys move to the previous or the next incident or hour. |
 
 ## Issues & Suggestions {#issues-and-suggestions}
 
@@ -384,8 +385,8 @@ Press Enter for the next match, and Shift+Enter for the previous match.
 | `Ctrl-F` (`Cmd-F` on macOS) | Anywhere else | Opens the search of the open tab. It selects the old text, so you can type a new search immediately. |
 | Escape | | Removes the current node, or closes the search |
 
-The **Connectors**, **Health** and **Config** tabs do not have their own
-search. On these tabs, `Ctrl-F` opens the search of the browser.
+To search the **Connectors**, **Health** and **Config** tabs, use the search
+function of the browser (`Ctrl-F`).
 
 ## Profiling pipelines using samply
 
