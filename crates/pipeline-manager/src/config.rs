@@ -1512,6 +1512,35 @@ pub struct ApiServerConfig {
     #[serde(default)]
     #[arg(long, action = clap::ArgAction::Set, default_value_t = false, env = "FELDERA_ENABLE_PIPELINE_RESIZE")]
     pub enable_pipeline_resize: bool,
+
+    /// Allow only the storage classes in `--storage-classes` in `resources.storage_class`.
+    /// Set it the same as the runner.
+    #[serde(default)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = false, env = "FELDERA_ENABLE_STORAGE_CLASSES_ALLOWLIST")]
+    pub enable_storage_classes_allowlist: bool,
+
+    /// Storage classes allowed when `--enable-storage-classes-allowlist` is set.
+    #[serde(default)]
+    #[arg(long, value_delimiter = ',', env = "FELDERA_STORAGE_CLASSES")]
+    pub storage_classes: Vec<String>,
+
+    /// Allow only the volume attributes classes in `--volume-attributes-classes` in
+    /// `resources.volume_attributes_class`. Set it the same as the runner.
+    #[serde(default)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = false, env = "FELDERA_ENABLE_VOLUME_ATTRIBUTES_CLASSES_ALLOWLIST")]
+    pub enable_volume_attributes_classes_allowlist: bool,
+
+    /// Volume attributes classes allowed when `--enable-volume-attributes-classes-allowlist` is
+    /// set.
+    #[serde(default)]
+    #[arg(long, value_delimiter = ',', env = "FELDERA_VOLUME_ATTRIBUTES_CLASSES")]
+    pub volume_attributes_classes: Vec<String>,
+
+    /// Maximum `resources.storage_min` and `resources.storage_max`, in megabytes (M). Unset is
+    /// no maximum. Set it the same as the runner.
+    #[serde(default)]
+    #[arg(long, env = "FELDERA_UPPER_LIMIT_STORAGE_MEGABYTE")]
+    pub upper_limit_storage_megabyte: Option<f64>,
 }
 
 /// A trust relationship granting the platform-wide `owner` role, declared at
@@ -1687,6 +1716,11 @@ impl ApiServerConfig {
             provision_on_login: true,
             http_base_path: String::new(),
             enable_pipeline_resize: false,
+            enable_storage_classes_allowlist: false,
+            storage_classes: vec![],
+            enable_volume_attributes_classes_allowlist: false,
+            volume_attributes_classes: vec![],
+            upper_limit_storage_megabyte: None,
         }
     }
 }
