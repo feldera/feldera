@@ -138,6 +138,18 @@ where
 mod tests {
     use super::*;
 
+    #[test]
+    fn abs() {
+        assert_eq!(abs_i32(-5), 5);
+        assert_eq!(abs_i64N(Some(i64::MIN + 1)), Some(i64::MAX));
+    }
+
+    #[test]
+    #[should_panic(expected = "'ABS(-2147483648)' causes overflow for type INTEGER")]
+    fn abs_of_min_overflows() {
+        abs_i32(i32::MIN);
+    }
+
     // -----------------------------
     // divisor = 1000
     // -----------------------------
@@ -844,34 +856,43 @@ where
 
 //////////////////////////////////////////
 
+/// Panic for an `ABS(value)` that overflows.
+#[cold]
+fn abs_failed<T: std::fmt::Display>(value: T) -> ! {
+    panic!(
+        "'ABS({value})' causes overflow for type {}",
+        type_name(std::any::type_name::<T>())
+    )
+}
+
 #[doc(hidden)]
 #[inline(always)]
 pub fn abs_i8(left: i8) -> i8 {
-    left.abs()
+    left.checked_abs().unwrap_or_else(|| abs_failed(left))
 }
 
 #[doc(hidden)]
 #[inline(always)]
 pub fn abs_i16(left: i16) -> i16 {
-    left.abs()
+    left.checked_abs().unwrap_or_else(|| abs_failed(left))
 }
 
 #[doc(hidden)]
 #[inline(always)]
 pub fn abs_i32(left: i32) -> i32 {
-    left.abs()
+    left.checked_abs().unwrap_or_else(|| abs_failed(left))
 }
 
 #[doc(hidden)]
 #[inline(always)]
 pub fn abs_i64(left: i64) -> i64 {
-    left.abs()
+    left.checked_abs().unwrap_or_else(|| abs_failed(left))
 }
 
 #[doc(hidden)]
 #[inline(always)]
 pub fn abs_i128(left: i128) -> i128 {
-    left.abs()
+    left.checked_abs().unwrap_or_else(|| abs_failed(left))
 }
 
 #[doc(hidden)]

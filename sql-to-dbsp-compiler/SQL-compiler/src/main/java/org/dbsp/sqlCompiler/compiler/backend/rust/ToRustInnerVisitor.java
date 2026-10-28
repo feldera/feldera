@@ -1991,6 +1991,15 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.pop(expression);
             return VisitDecision.STOP;
         }
+        if (expression.opcode == DBSPOpcode.NEG) {
+            String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
+                    expression.getNode(), expression.opcode, expression.source.getType(), null);
+            this.builder.append(function).append("(");
+            expression.source.accept(this);
+            this.builder.append(")");
+            this.pop(expression);
+            return VisitDecision.STOP;
+        }
         if (expression.source.getType().mayBeNull) {
             this.builder.append("(")
                     .append("match ");

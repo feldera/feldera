@@ -1,11 +1,14 @@
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use dbsp::algebra::{F32, F64};
 use num::{Float, PrimInt, Zero};
-use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
+use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedSub};
 use std::cmp::Ordering;
 
-use crate::{some_existing_operator, some_operator, some_polymorphic_null_function2, type_name};
+use crate::{
+    LongInterval, ShortInterval, SqlDecimal, some_existing_operator, some_operator,
+    some_polymorphic_null_function2, type_name,
+};
 
 macro_rules! for_all_int_operator {
     ($func_name: ident) => {
@@ -276,6 +279,51 @@ where
 
 some_operator!(fp_minus, minus, f, F32, F32);
 some_operator!(fp_minus, minus, d, F64, F64);
+
+#[inline(always)]
+#[doc(hidden)]
+fn neg<T>(value: T) -> T
+where
+    T: CheckedNeg + std::fmt::Display,
+{
+    match value.checked_neg() {
+        Some(result) => result,
+        None => panic!(
+            "'-({value})' causes overflow for type {}",
+            type_name(std::any::type_name::<T>())
+        ),
+    }
+}
+
+/// Defines the unary minus `neg_<short_name>_` and its nullable form `neg_<short_name>N_`.
+macro_rules! neg_operator {
+    ($short_name: ident $(< $( const $var:ident : $ty: ty),* >)?, $type: ty, $implementation: expr) => {
+        ::paste::paste! {
+            #[inline(always)]
+            #[doc(hidden)]
+            pub fn [<neg_ $short_name _>] $(< $( const $var : $ty ),* >)? (value: $type) -> $type {
+                $implementation(value)
+            }
+
+            #[inline(always)]
+            #[doc(hidden)]
+            pub fn [<neg_ $short_name N_>] $(< $( const $var : $ty ),* >)? (value: Option<$type>) -> Option<$type> {
+                value.map(|value| [<neg_ $short_name _>](value))
+            }
+        }
+    };
+}
+
+neg_operator!(i8, i8, neg);
+neg_operator!(i16, i16, neg);
+neg_operator!(i32, i32, neg);
+neg_operator!(i64, i64, neg);
+neg_operator!(i128, i128, neg);
+neg_operator!(f, F32, Neg::neg);
+neg_operator!(d, F64, Neg::neg);
+neg_operator!(SqlDecimal<const P: usize, const S: usize>, SqlDecimal<P, S>, Neg::neg);
+neg_operator!(ShortInterval, ShortInterval, Neg::neg);
+neg_operator!(LongInterval, LongInterval, Neg::neg);
 
 #[inline(always)]
 #[doc(hidden)]
@@ -661,7 +709,20 @@ macro_rules! coalesce_N_N {
 
 #[cfg(test)]
 mod tests {
+    use super::{neg_i8_, neg_i16N_, neg_i64_};
     use std::cell::Cell;
+
+    #[test]
+    fn neg() {
+        assert_eq!(neg_i64_(i64::MAX), -i64::MAX);
+        assert_eq!(neg_i16N_(None), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "'-(-128)' causes overflow for type TINYINT")]
+    fn neg_of_min_overflows() {
+        neg_i8_(i8::MIN);
+    }
 
     #[test]
     fn coalesce_is_lazy() {

@@ -523,6 +523,21 @@ public class BasicQueriesTests extends BaseSQLTests {
     }
 
     @Test
+    public void negateEveryType() {
+        var ccs = this.getCCS("""
+                CREATE TABLE N(s SMALLINT, n DECIMAL(10, 2), d DOUBLE, r REAL);
+                CREATE VIEW V AS SELECT -s AS s, -n AS n, CAST(-d AS VARCHAR) AS d, CAST(-r AS VARCHAR) AS r,
+                    -(INTERVAL '1' MONTH * s) = INTERVAL '-2' MONTH AS m,
+                    -(INTERVAL '1' SECOND * s) = INTERVAL '-2' SECOND AS sec
+                FROM N;""");
+        ccs.stepWeightOne("INSERT INTO N VALUES (2, 3.25, 1.5, 2.5), (NULL, NULL, NULL, NULL);", """
+                 s  | n     | d | r | m    | sec
+                ------------------------------------
+                 -2 | -3.25 | -1.5| -2.5| true | true
+                    |       |NULL|NULL|      |""");
+    }
+
+    @Test
     public void testVariant() {
         String query = "SELECT CAST(CAST(T.COL5 as VARIANT) AS INTEGER) FROM T";
         DBSPI32Literal one = new DBSPI32Literal(1, true);

@@ -382,10 +382,6 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     """
                     runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
                     runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
-            new Func(SqlStdOperatorTable.ABS, "ABS", SqlLibrary.STANDARD, "decimal#abs,float#abs,integer#abs,datetime#abs",
-                    """
-                    runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
-                    runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""", false),
             new Func(SqlStdOperatorTable.ACOS, "ACOS", SqlLibrary.STANDARD, "float#acos",
                     """
                     runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
@@ -765,10 +761,12 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                 operators.add(func.function);
         }
         return SqlOperatorTables.chain(
-                // Feldera defines its own JSON_* functions
+                // Every standard library function that CustomFunctions defines again must be hidden here.
+                // The lookup finds this table first, so otherwise the Calcite function is used.
+                // These are the JSON_* functions and ABS.
                 new HidingOperatorTable(
                         SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(SqlLibrary.STANDARD),
-                        operator -> operator.getName().startsWith("JSON_")),
+                        operator -> operator.getName().startsWith("JSON_") || operator == SqlStdOperatorTable.ABS),
                 new CaseInsensitiveOperatorTable(
                         SpatialOperatorTable.instance().getOperatorList()),
                 new CaseInsensitiveOperatorTable(operators));
