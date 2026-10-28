@@ -10,11 +10,15 @@ use actix_web::http::header;
 use anyhow::{Context, Error as AnyError, Result as AnyResult};
 use clap::Parser;
 use reqwest::Certificate;
-use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::client::{ResolvesClientCert, WebPkiServerVerifier};
+use rustls::crypto::CryptoProvider;
 use rustls::pki_types::PrivateKeyDer;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::server::WebPkiClientVerifier;
+use rustls::server::danger::ClientCertVerifier;
+use rustls::sign::CertifiedKey;
 use rustls::{
     CertificateError, ClientConfig, DigitallySignedStruct, RootCertStore, SignatureScheme,
 };
@@ -386,6 +390,27 @@ pub struct CommonConfig {
     #[arg(long, env = "FELDERA_CA_CERT_PATH")]
     pub private_ca_cert_path: Option<String>,
 
+    /// Path to the TLS x509 client certificate PEM file that the HTTPS clients present
+    /// to servers that request one (the compiler server with
+    /// `--require-client-certificates`). Requires `--enable-https`.
+    ///
+    /// The clients read the file again at most once per minute, so a renewed certificate
+    /// takes effect without a restart.
+    #[arg(
+        long,
+        env = "FELDERA_HTTPS_CLIENT_CERT_PATH",
+        requires = "https_client_key_path"
+    )]
+    pub https_client_cert_path: Option<String>,
+
+    /// Path to the TLS key PEM file of `--https-client-cert-path`.
+    #[arg(
+        long,
+        env = "FELDERA_HTTPS_CLIENT_KEY_PATH",
+        requires = "https_client_cert_path"
+    )]
+    pub https_client_key_path: Option<String>,
+
     /// Number of monitor events that are retained for each pipeline.
     #[arg(long, default_value_t = default_pipeline_monitor_events_retention(), env = "FELDERA_PIPELINE_MONITOR_EVENTS_RETENTION")]
     pub pipeline_monitor_events_retention: u32,
@@ -471,6 +496,17 @@ impl CommonConfig {
         }
         if let Some(private_ca_cert_path) = self.private_ca_cert_path {
             self.private_ca_cert_path = Some(help_canonicalize_path(&private_ca_cert_path)?);
+        }
+        if self.https_client_cert_path.is_some() && !self.enable_https {
+            return Err(AnyError::msg(
+                "--https-client-cert-path requires --enable-https: client certificates are sent only over HTTPS",
+            ));
+        }
+        if let Some(https_client_cert_path) = self.https_client_cert_path {
+            self.https_client_cert_path = Some(help_canonicalize_path(&https_client_cert_path)?);
+        }
+        if let Some(https_client_key_path) = self.https_client_key_path {
+            self.https_client_key_path = Some(help_canonicalize_path(&https_client_key_path)?);
         }
         Ok(self)
     }
@@ -612,33 +648,38 @@ impl CommonConfig {
     /// Creates the `ServerConfig` for the HTTP servers of the API server, compiler and runner if
     /// HTTPS is enabled. Otherwise, returns `None`.
     pub fn https_server_config(&self) -> Option<rustls::ServerConfig> {
-        if let Some((https_tls_cert_path, https_tls_key_path)) = self.https_config() {
-            // Load in certificate (public)
-            let cert_chain = CertificateDer::pem_file_iter(https_tls_cert_path)
-                .expect("HTTPS TLS certificate should be read")
-                .flatten()
-                .collect();
+        self.https_server_config_with_client_verifier(WebPkiClientVerifier::no_client_auth())
+    }
 
-            // Load in key (private)
-            let key_der = PrivateKeyDer::from_pem_file(https_tls_key_path)
-                .expect("HTTPS TLS key should be read");
+    /// Like [`Self::https_server_config`], with `client_verifier` deciding which client
+    /// certificates the server requests and accepts.
+    pub fn https_server_config_with_client_verifier(
+        &self,
+        client_verifier: Arc<dyn ClientCertVerifier>,
+    ) -> Option<rustls::ServerConfig> {
+        let (https_tls_cert_path, https_tls_key_path) = self.https_config()?;
 
-            // Server configuration
-            let server_config = rustls::ServerConfig::builder()
-                .with_no_client_auth()
-                .with_single_cert(cert_chain, key_der)
-                .expect(
-                    "server configuration should be built using the certificate and private key",
-                );
-            feldera_observability::fips::log_rustls_fips_status(
-                "HTTPS server config",
-                server_config.fips(),
-            );
+        // Load in certificate (public)
+        let cert_chain = CertificateDer::pem_file_iter(https_tls_cert_path)
+            .expect("HTTPS TLS certificate should be read")
+            .flatten()
+            .collect();
 
-            Some(server_config)
-        } else {
-            None
-        }
+        // Load in key (private)
+        let key_der =
+            PrivateKeyDer::from_pem_file(https_tls_key_path).expect("HTTPS TLS key should be read");
+
+        // Server configuration
+        let server_config = rustls::ServerConfig::builder()
+            .with_client_cert_verifier(client_verifier)
+            .with_single_cert(cert_chain, key_der)
+            .expect("server configuration should be built using the certificate and private key");
+        feldera_observability::fips::log_rustls_fips_status(
+            "HTTPS server config",
+            server_config.fips(),
+        );
+
+        Some(server_config)
     }
 
     fn ca_cert_paths(&self) -> Vec<&String> {
@@ -673,6 +714,36 @@ impl CommonConfig {
         Ok(roots)
     }
 
+    /// The TLS configuration of [`Self::awc_client`] and [`Self::reqwest_client`]. It trusts
+    /// only the root (last) certificate of each configured CA bundle, and presents the
+    /// `--https-client-cert-path` certificate to servers that request a client certificate.
+    pub(crate) fn https_client_tls_config(&self) -> ClientConfig {
+        let mut root_cert_store = RootCertStore::empty();
+        for path in self.ca_cert_paths() {
+            let cert_chain: Vec<_> = CertificateDer::pem_file_iter(path)
+                .expect("HTTPS TLS certificate should be read")
+                .flatten()
+                .collect();
+            let root_cert = cert_chain
+                .last()
+                .expect("At least one HTTPS TLS certificate should be present")
+                .clone();
+            root_cert_store
+                .add(root_cert)
+                .expect("Root HTTPS TLS certificate should be parsed");
+        }
+        let builder = ClientConfig::builder().with_root_certificates(root_cert_store);
+        let config = match (&self.https_client_cert_path, &self.https_client_key_path) {
+            (Some(cert_path), Some(key_path)) => builder.with_client_cert_resolver(Arc::new(
+                ClientCertificateFiles::load(cert_path, key_path)
+                    .unwrap_or_else(|error| panic!("HTTPS client certificate: {error:#}")),
+            )),
+            _ => builder.with_no_client_auth(),
+        };
+        feldera_observability::fips::log_rustls_fips_status("HTTPS client config", config.fips());
+        config
+    }
+
     /// Creates `awc` client.
     ///
     /// - If HTTPS is enabled for Feldera HTTP servers, the client will only have our root HTTPS
@@ -701,27 +772,6 @@ impl CommonConfig {
     /// - `reqwest` has an HTTPS-only mode.
     pub fn awc_client(&self) -> awc::Client {
         if self.https_config().is_some() {
-            let mut root_cert_store = RootCertStore::empty();
-            for path in self.ca_cert_paths() {
-                let cert_chain: Vec<_> = CertificateDer::pem_file_iter(path)
-                    .expect("HTTPS TLS certificate should be read")
-                    .flatten()
-                    .collect();
-                let root_cert = cert_chain
-                    .last()
-                    .expect("At least one HTTPS TLS certificate should be present")
-                    .clone();
-                root_cert_store
-                    .add(root_cert)
-                    .expect("Root HTTPS TLS certificate should be parsed");
-            }
-            let config = ClientConfig::builder()
-                .with_root_certificates(root_cert_store)
-                .with_no_client_auth();
-            feldera_observability::fips::log_rustls_fips_status(
-                "HTTPS client config",
-                config.fips(),
-            );
             // In the `awc` implementation, the connection is kept open for endpoints that return a
             // streaming response (e.g., `/logs`) when they are half closed. As a workaround,
             // increase the max connections limit to 25'000. This is also the default maximum number
@@ -729,7 +779,7 @@ impl CommonConfig {
             awc::Client::builder()
                 .connector(
                     awc::Connector::new()
-                        .rustls_0_23(Arc::new(config))
+                        .rustls_0_23(Arc::new(self.https_client_tls_config()))
                         .limit(25000),
                 )
                 .finish()
@@ -755,22 +805,11 @@ impl CommonConfig {
     /// See [Self::awc_client].
     pub async fn reqwest_client(&self) -> reqwest::Client {
         if self.https_config().is_some() {
-            let mut builder = reqwest::ClientBuilder::new()
+            reqwest::ClientBuilder::new()
                 .https_only(true) // Only connect to HTTPS
-                .tls_built_in_root_certs(false); // Other TLS certificates are not used
-            for path in self.ca_cert_paths() {
-                let cert_pem = tokio::fs::read_to_string(path)
-                    .await
-                    .expect("HTTPS TLS certificate should be read");
-                let cert_chain = Certificate::from_pem_bundle(cert_pem.as_bytes())
-                    .expect("HTTPS TLS certificate should be readable");
-                let root_cert = cert_chain
-                    .last()
-                    .expect("At least one HTTPS TLS certificate should be present")
-                    .clone();
-                builder = builder.add_root_certificate(root_cert);
-            }
-            builder.build().expect("HTTPS client should be built")
+                .use_preconfigured_tls(self.https_client_tls_config())
+                .build()
+                .expect("HTTPS client should be built")
         } else {
             reqwest::Client::new()
         }
@@ -794,11 +833,80 @@ impl CommonConfig {
             https_tls_cert_path: None,
             https_tls_key_path: None,
             private_ca_cert_path: None,
+            https_client_cert_path: None,
+            https_client_key_path: None,
             pipeline_monitor_events_retention: 720,
             disable_cluster_monitor_resources: false,
             allow_rust_udfs: true,
         }
     }
+}
+
+/// How long a TLS client presents a client certificate before it reads the files again.
+const CLIENT_CERTIFICATE_RELOAD_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// A client certificate and key that a TLS client presents. The files are read again
+/// after [`CLIENT_CERTIFICATE_RELOAD_INTERVAL`], so a certificate that cert-manager renews in
+/// a mounted secret takes effect without a restart.
+#[derive(Debug)]
+struct ClientCertificateFiles {
+    cert_path: String,
+    key_path: String,
+    loaded: std::sync::Mutex<(std::time::Instant, Arc<CertifiedKey>)>,
+}
+
+impl ClientCertificateFiles {
+    fn load(cert_path: &str, key_path: &str) -> AnyResult<Self> {
+        let certified_key = read_certified_key(cert_path, key_path)?;
+        Ok(Self {
+            cert_path: cert_path.to_string(),
+            key_path: key_path.to_string(),
+            loaded: std::sync::Mutex::new((std::time::Instant::now(), certified_key)),
+        })
+    }
+}
+
+impl ResolvesClientCert for ClientCertificateFiles {
+    fn resolve(
+        &self,
+        _root_hint_subjects: &[&[u8]],
+        _sigschemes: &[SignatureScheme],
+    ) -> Option<Arc<CertifiedKey>> {
+        let mut loaded = self.loaded.lock().unwrap();
+        if loaded.0.elapsed() >= CLIENT_CERTIFICATE_RELOAD_INTERVAL {
+            loaded.0 = std::time::Instant::now();
+            match read_certified_key(&self.cert_path, &self.key_path) {
+                Ok(certified_key) => loaded.1 = certified_key,
+                Err(error) => warn!("Keeping the previous HTTPS client certificate: {error:#}"),
+            }
+        }
+        Some(loaded.1.clone())
+    }
+
+    fn has_certs(&self) -> bool {
+        true
+    }
+}
+
+/// Reads a certificate chain and its private key from PEM files, and checks that they match.
+fn read_certified_key(cert_path: &str, key_path: &str) -> AnyResult<Arc<CertifiedKey>> {
+    let cert_chain = CertificateDer::pem_file_iter(cert_path)
+        .with_context(|| format!("reading certificate '{cert_path}'"))?
+        .collect::<Result<Vec<_>, _>>()
+        .with_context(|| format!("parsing certificate '{cert_path}'"))?;
+    if cert_chain.is_empty() {
+        return Err(AnyError::msg(format!(
+            "certificate file '{cert_path}' holds no certificate"
+        )));
+    }
+    let key_der = PrivateKeyDer::from_pem_file(key_path)
+        .with_context(|| format!("reading private key '{key_path}'"))?;
+    let provider = CryptoProvider::get_default()
+        .cloned()
+        .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
+    let certified_key = CertifiedKey::from_der(cert_chain, key_der, &provider)
+        .with_context(|| format!("loading certificate '{cert_path}' with key '{key_path}'"))?;
+    Ok(Arc::new(certified_key))
 }
 
 /// Embedded Postgres configuration.
@@ -1658,6 +1766,19 @@ pub struct CompilerConfig {
     )]
     pub gen2_udf_sdk_version: Option<String>,
 
+    /// Whether the compiler server requires callers to present a client certificate that
+    /// the private CA (`--private-ca-cert-path`) signed, and admits each caller only to its
+    /// own routes. The control plane (URI SAN `urn:feldera:control-plane`) may use all
+    /// routes. A pipeline (URI SAN `urn:feldera:pipeline:<id>`) may only download its own
+    /// binary and program info. `/healthz` stays open to callers without a certificate.
+    #[serde(default)]
+    #[arg(
+        long,
+        default_value_t = false,
+        env = "FELDERA_COMPILER_REQUIRE_CLIENT_CERTIFICATES"
+    )]
+    pub require_client_certificates: bool,
+
     /// Precompile Rust dependencies in the working directory.
     ///
     /// Instructs the manager to download and compile all crates needed by
@@ -1976,6 +2097,39 @@ mod tests {
         assert_eq!(config.runner_host, "localhost");
     }
 
+    /// The client presents a renewed certificate after the reload interval, and keeps the
+    /// previous one while the files do not hold a valid certificate.
+    #[test]
+    fn client_certificate_reloads_after_renewal() {
+        let dir = tempfile::tempdir().unwrap();
+        let cert_path = dir.path().join("tls.crt").to_string_lossy().into_owned();
+        let key_path = dir.path().join("tls.key").to_string_lossy().into_owned();
+        let write_certificate = || {
+            let key = rcgen::KeyPair::generate().unwrap();
+            let cert = rcgen::CertificateParams::default()
+                .self_signed(&key)
+                .unwrap();
+            write(&cert_path, cert.pem()).unwrap();
+            write(&key_path, key.serialize_pem()).unwrap();
+            cert.der().clone()
+        };
+        let presented =
+            |files: &ClientCertificateFiles| files.resolve(&[], &[]).unwrap().cert[0].clone();
+        let expire = |files: &ClientCertificateFiles| {
+            files.loaded.lock().unwrap().0 -= CLIENT_CERTIFICATE_RELOAD_INTERVAL;
+        };
+
+        let original = write_certificate();
+        let files = ClientCertificateFiles::load(&cert_path, &key_path).unwrap();
+        let renewed = write_certificate();
+        assert_eq!(presented(&files), original);
+        expire(&files);
+        assert_eq!(presented(&files), renewed);
+        write(&cert_path, "").unwrap();
+        expire(&files);
+        assert_eq!(presented(&files), renewed);
+    }
+
     #[test]
     fn test_https_without_testing_mode_requires_cert_and_key() {
         let config = CommonConfig {
@@ -2098,6 +2252,7 @@ mod tests {
             gen2_udf_sdk_path,
             gen2_udf_sdk_version: None,
             precompile: false,
+            require_client_certificates: false,
         };
         let sdk_path = format!("{}/.", sdk_dir.path().display());
 
@@ -2137,6 +2292,7 @@ mod tests {
                 gen2_udf_sdk_path,
                 gen2_udf_sdk_version: Some(gen2_udf_sdk_version.to_string()),
                 precompile: false,
+                require_client_certificates: false,
             };
 
         for version in ["0.1.0", "1.2.3-rc.1"] {
