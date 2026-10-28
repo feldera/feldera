@@ -10,12 +10,14 @@ Source edition can be found on github.
 
 ## Unreleased
 
-- Enterprise (Kubernetes): with the Helm value `mtls.enabled`, the compiler
-  and runner servers require client certificates.  A pipeline may only
-  download its own binary and program info, and may not call the runner.  It
-  requires `httpsSecretRef`, `caSecretRef` and cert-manager.  Restart running
+- Enterprise (Kubernetes): with the Helm value `mtls.enabled`, the compiler,
+  runner, pipeline and coordinator servers require client certificates.  A
+  pipeline may only download its own binary and program info, and may not
+  call the runner or another pipeline.  Clients that reach a pipeline
+  directly, instead of through the API server, are refused.  It requires
+  `httpsSecretRef`, `caSecretRef` and cert-manager.  Restart running
   pipelines after you turn it on.  See
-  [client certificates](/get-started/enterprise/https#client-certificates-for-the-compiler-and-runner-servers).
+  [client certificates](/get-started/enterprise/https#client-certificates).
 
 - Enterprise (Kubernetes): with `caSecretRef` set, pipeline pods mount only
   the certificate of `httpsSecretRef`, not its key, and the API server mounts

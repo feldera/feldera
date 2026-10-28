@@ -26,7 +26,7 @@ external software.
 
 The API server does not accept client certificates; it supports
 [API authentication](authentication/index.mdx).  The compiler and runner
-servers can require [client certificates](#client-certificates-for-the-compiler-and-runner-servers)
+servers can require [client certificates](#client-certificates)
 from the other Feldera components.
 
 :::
@@ -235,17 +235,21 @@ section below describes one way to generate these files.
    "Received HTTP/0.9 when not allowed" (curl).
    Use `https://` as the protocol.
 
-## Client certificates for the compiler and runner servers
+## Client certificates
 
-With the Helm value `mtls.enabled: true`, the compiler and runner servers
-require a client certificate that the private CA signed, and admit each
-caller only to its own routes:
+With the Helm value `mtls.enabled: true`, the compiler, runner, pipeline and
+coordinator servers require a client certificate that the private CA signed,
+and admit each caller only to its own routes:
 
-| Caller | Certificate | Compiler routes | Runner routes |
-|---|---|---|---|
-| API server, runner, compiler replicas | control-plane certificate (URI SAN `urn:feldera:control-plane`), issued by cert-manager from the private CA | all | all |
-| Pipeline `<id>` | pipeline certificate (URI SAN `urn:feldera:pipeline:<id>`), issued by the runner from the private CA | download its own binary and program info, `/healthz` | `/healthz` |
-| No certificate | none | `/healthz` | `/healthz` |
+| Caller | Certificate | Compiler | Runner | Pipeline `<p>` and its coordinator |
+|---|---|---|---|---|
+| API server, runner, compiler replicas | control-plane certificate (URI SAN `urn:feldera:control-plane`), issued by cert-manager from the private CA | all routes | all routes | all routes |
+| Pipeline `<id>` | pipeline certificate (URI SAN `urn:feldera:pipeline:<id>`), issued by the runner from the private CA | download its own binary and program info, `/healthz` | `/healthz` | all routes if `<id>` is `<p>` (the multihost coordinator), else none |
+| No certificate | none | `/healthz` | `/healthz` | none |
+
+Clients that reach a pipeline directly, instead of through the API server,
+are refused.  Pipelines on an older runtime version (`runtime_version`) do
+not check client certificates.
 
 Requirements:
 

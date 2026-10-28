@@ -319,7 +319,7 @@ Configure HTTPS for all Feldera components. See the [HTTPS guide](./https.md) fo
 |-----|---------|-------------|
 | `httpsSecretRef` | `null` | Name of a TLS secret (`kubectl create secret tls ...`) containing `tls.crt` and `tls.key`. When set, HTTPS is enabled for the API server, runner, compiler, and all pipelines. |
 | `caSecretRef` | `null` | Name of a TLS secret with a private CA certificate chain and key. The runner signs a certificate for each pipeline with it. Required for multihost pipelines and for `mtls.enabled`. See [private CA](./https.md#private-ca-certificate-chain-generation). |
-| `mtls.enabled` | `false` | Callers of the compiler and runner servers present client certificates. A pipeline may only download its own binary and program info, and may not call the runner. Requires `httpsSecretRef`, `caSecretRef` and [cert-manager](https://cert-manager.io). See [client certificates](./https.md#client-certificates-for-the-compiler-and-runner-servers). |
+| `mtls.enabled` | `false` | Callers of the compiler, runner, pipeline and coordinator servers present client certificates. A pipeline may only download its own binary and program info, and may not call the runner or another pipeline. Requires `httpsSecretRef`, `caSecretRef` and [cert-manager](https://cert-manager.io). See [client certificates](./https.md#client-certificates). |
 
 ---
 
