@@ -4190,7 +4190,9 @@ async fn load_program(
 
 #[post("/start_transaction")]
 async fn start_transaction(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    Ok(HttpResponse::Ok().json(state.controller()?.start_transaction()?))
+    let mut response = state.controller()?.start_transaction()?;
+    response.incarnation_uuid = Some(state.incarnation_uuid);
+    Ok(HttpResponse::Ok().json(response))
 }
 
 #[post("/commit_transaction")]
@@ -4198,6 +4200,7 @@ async fn commit_transaction(
     state: WebData<ServerState>,
     params: web::Query<CommitTransactionParams>,
 ) -> Result<impl Responder, PipelineError> {
+    check_incarnation_uuid(&state, params.incarnation_uuid)?;
     state
         .controller()?
         .start_commit_transaction(params.transaction_id)?;
@@ -8079,7 +8082,7 @@ pub mod test_http {
     }
 
     /// `/commit_transaction?transaction_id=N` commits transaction N only, and a retry of it
-    /// succeeds.
+    /// succeeds.  A commit that names another incarnation fails.
     #[engine_test]
     pub fn commit_transaction_by_id(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
@@ -8091,22 +8094,29 @@ pub mod test_http {
 
             let mut resp = server.post("/start_transaction").send().await.unwrap();
             assert!(resp.status().is_success());
-            let tid = resp.json::<serde_json::Value>().await.unwrap()["transaction_id"]
-                .as_i64()
-                .unwrap();
+            let started = resp.json::<serde_json::Value>().await.unwrap();
+            let tid = started["transaction_id"].as_i64().unwrap();
+            let incarnation = started["incarnation_uuid"].as_str().unwrap().to_string();
 
-            let commit = |tid: i64| {
-                let request = server.post(format!("/commit_transaction?transaction_id={tid}"));
+            let commit = |tid: i64, incarnation: &str| {
+                let request = server.post(format!(
+                    "/commit_transaction?transaction_id={tid}&incarnation_uuid={incarnation}"
+                ));
                 async move { request.send().await.unwrap() }
             };
 
-            let mut resp = commit(tid + 1).await;
+            let mut resp = commit(tid + 1, &incarnation).await;
             assert_eq!(resp.status(), StatusCode::CONFLICT);
             let error = resp.json::<serde_json::Value>().await.unwrap();
             assert_eq!(error["error_code"], "TransactionIdMismatch", "{error}");
 
-            assert!(commit(tid).await.status().is_success());
-            assert!(commit(tid).await.status().is_success());
+            let mut resp = commit(tid, &Uuid::now_v7().to_string()).await;
+            assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+            let error = resp.json::<serde_json::Value>().await.unwrap();
+            assert_eq!(error["error_code"], "IncarnationUuidMismatch", "{error}");
+
+            assert!(commit(tid, &incarnation).await.status().is_success());
+            assert!(commit(tid, &incarnation).await.status().is_success());
         })
     }
 

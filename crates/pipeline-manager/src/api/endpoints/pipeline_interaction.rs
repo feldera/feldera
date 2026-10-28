@@ -2381,6 +2381,11 @@ pub(crate) async fn start_transaction(
         (status = OK
             , description = "Commit operation initiated."
             , content_type = "application/json"),
+        (status = BAD_REQUEST
+            , description = "The given `incarnation_uuid` does not match the pipeline's \
+                              current incarnation (error code `IncarnationUuidMismatch`): \
+                              the pipeline process has restarted since the transaction started"
+            , body = ErrorResponse),
         (status = CONFLICT
             , description = "Another transaction is already in progress, or `transaction_id` is not the transaction that the API started."
             , body = ErrorResponse),

@@ -14,9 +14,13 @@ from feldera.rest.feldera_client import FelderaClient
 
 EARLIER = 4
 API = 5
+INCARNATION = "0190f0e0-0000-7000-8000-000000000001"
+RESTARTED = "0190f0e0-0000-7000-8000-000000000002"
 
 
-def stats(transaction_id, initiators_id=None, initiated_by_api=None):
+def stats(
+    transaction_id, initiators_id=None, initiated_by_api=None, incarnation=INCARNATION
+):
     initiators = {
         "transaction_id": initiators_id,
         "initiated_by_api": initiated_by_api,
@@ -26,6 +30,7 @@ def stats(transaction_id, initiators_id=None, initiated_by_api=None):
         "global_metrics": {
             "transaction_id": transaction_id,
             "transaction_initiators": initiators,
+            "incarnation_uuid": incarnation,
         }
     }
 
@@ -52,7 +57,10 @@ def commit(responses, **kwargs):
     with patch("feldera.rest.feldera_client.time.sleep"):
         client.commit_transaction("test-pipeline", **kwargs)
     client.http.post.assert_called_once()
-    assert client.http.post.call_args.kwargs["params"] == {"transaction_id": API}
+    assert client.http.post.call_args.kwargs["params"] == {
+        "transaction_id": API,
+        "incarnation_uuid": kwargs.get("incarnation_uuid", INCARNATION),
+    }
     return client.get_pipeline_stats.call_count
 
 
@@ -90,10 +98,27 @@ def test_transaction_id_mismatch():
         commit([EARLIER_COMMITTING], transaction_id=API + 1)
 
 
+def test_restart_while_waiting():
+    with pytest.raises(RuntimeError, match="restarted"):
+        commit([stats(API, API, "Started"), stats(0, incarnation=RESTARTED)])
+
+
+def test_commit_names_start_incarnation():
+    """A commit with the incarnation from `start_transaction` sends it even
+    after a restart, so that the pipeline rejects the commit, instead of
+    committing a new transaction with the same ID."""
+    with pytest.raises(RuntimeError, match="restarted"):
+        commit(
+            [stats(API, API, "Started", incarnation=RESTARTED)] * 2,
+            transaction_id=API,
+            incarnation_uuid=INCARNATION,
+        )
+
+
 def test_pipeline_without_initiators():
     responses = [
-        {"global_metrics": {"transaction_id": API}},
-        {"global_metrics": {"transaction_id": API}},
-        {"global_metrics": {"transaction_id": 0}},
+        {"global_metrics": {"transaction_id": API, "incarnation_uuid": INCARNATION}},
+        {"global_metrics": {"transaction_id": API, "incarnation_uuid": INCARNATION}},
+        {"global_metrics": {"transaction_id": 0, "incarnation_uuid": INCARNATION}},
     ]
     assert commit(responses, transaction_id=API) == len(responses)

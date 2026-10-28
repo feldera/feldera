@@ -1078,18 +1078,32 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
     def start_transaction(self, pipeline_name: str) -> int:
         """
-        Start a new transaction.
+        Start a new transaction and return its ID.
 
-            Transaction ID.
+        `start_transaction_response` is a better choice because it also
+        returns the pipeline's `incarnation_uuid`, which lets
+        `commit_transaction` detect a pipeline restart.
 
         :param pipeline_name: The name of the pipeline.
         """
 
-        resp = self.http.post(
+        return int(self.start_transaction_response(pipeline_name)["transaction_id"])
+
+    def start_transaction_response(self, pipeline_name: str) -> dict:
+        """
+        Start a new transaction, returning the full response.
+
+        :param pipeline_name: The name of the pipeline.
+        :return: dict with `transaction_id` and `incarnation_uuid`, the
+            latter identifying the pipeline process instance that started the
+            transaction; pass both to `commit_transaction`.  Transaction IDs
+            start again when the pipeline restarts, so `incarnation_uuid`
+            prevents a commit of another transaction with the same ID.
+        """
+
+        return self.http.post(
             path=f"/pipelines/{pipeline_name}/start_transaction",
         )
-
-        return int(resp.get("transaction_id"))
 
     def advance_clock(
         self,
@@ -1220,6 +1234,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         wait: bool = True,
         timeout_s: Optional[float] = None,
         poll_interval_s: float = 0.5,
+        incarnation_uuid: Optional[str] = None,
     ):
         """
         Commits the currently active transaction.
@@ -1238,7 +1253,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param poll_interval_s: Polling interval at which to check while waiting for the
             transaction to commit (default is every 0.5 seconds). Not used if `wait=False`.
 
-        :raises RuntimeError: If `transaction_id` is not provided and there is currently no transaction in progress.
+        :param incarnation_uuid: The `incarnation_uuid` that `start_transaction_response` returned.
+            If the pipeline restarted since then, the commit fails with `IncarnationUuidMismatch`.
+            If not provided, the function uses the pipeline's incarnation when the call starts.
+
+        :raises RuntimeError: If `transaction_id` is not provided and there is currently no transaction in progress,
+            or if the pipeline restarts while the function waits for the commit.
         :raises ValueError: If the provided `transaction_id` does not match the current transaction.
             If there is no current transaction, the pipeline checks `transaction_id`: a transaction that is
             already committing or committed succeeds, so it is safe to call this again after a `TimeoutError`.
@@ -1248,9 +1268,16 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         # TODO: implement this without using /stats when we have a better pipeline status reporting API.
         stats = self.get_pipeline_stats(pipeline_name)
-        current_transaction_id = _open_api_transaction(stats["global_metrics"])
+        metrics = stats["global_metrics"]
+        current_incarnation = metrics.get("incarnation_uuid")
+        if incarnation_uuid is None:
+            incarnation_uuid = current_incarnation
+        current_transaction_id = _open_api_transaction(metrics)
 
-        if current_transaction_id is None:
+        if incarnation_uuid != current_incarnation:
+            # The pipeline restarted.  Let it report `IncarnationUuidMismatch`.
+            current_transaction_id = transaction_id
+        elif current_transaction_id is None:
             if not transaction_id:
                 raise RuntimeError(
                     "Attempting to commit a transaction, but there is no transaction in progress"
@@ -1269,7 +1296,10 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         # and accepts a retry once the transaction is committing.
         self.http.post(
             path=f"/pipelines/{pipeline_name}/commit_transaction",
-            params={"transaction_id": transaction_id},
+            params={
+                "transaction_id": transaction_id,
+                "incarnation_uuid": incarnation_uuid,
+            },
             idempotent=True,
         )
 
@@ -1296,7 +1326,13 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                     raise TimeoutError("Timed out waiting for transaction to commit")
 
             stats = self.get_pipeline_stats(pipeline_name)
-            if not _transaction_pending(stats["global_metrics"], transaction_id):
+            metrics = stats["global_metrics"]
+            if metrics.get("incarnation_uuid") != incarnation_uuid:
+                raise RuntimeError(
+                    f"Pipeline {pipeline_name} restarted while transaction {transaction_id} "
+                    "was committing, so the transaction might not have committed"
+                )
+            if not _transaction_pending(metrics, transaction_id):
                 wait_for_commit.done()
                 return
 

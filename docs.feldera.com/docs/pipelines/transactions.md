@@ -58,7 +58,7 @@ Use the [`start_transaction`](/api/begin-transaction) API to start a transaction
     ```shell
     $ curl -X POST 'http://localhost:8080/v0/pipelines/my_pipeline/start_transaction'
 
-    {"transaction_id":1}
+    {"transaction_id":1,"incarnation_uuid":"019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b"}
     ```
     </TabItem>
 
@@ -75,6 +75,7 @@ Use the [`start_transaction`](/api/begin-transaction) API to start a transaction
     $ fda start-transaction my_pipeline
 
     Transaction started successfully with ID: 1
+    Pipeline incarnation UUID: 019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b
     ```
     </TabItem>
 </Tabs>
@@ -106,7 +107,7 @@ commit the transaction using the [`commit_transaction`](/api/commit-transaction)
 
     <TabItem value="fda" label="fda CLI">
     ```shell
-    $ fda commit-transaction my_pipeline
+    $ fda commit-transaction my_pipeline --tid 1 --incarnation-uuid 019a2b3c-4d5e-7f60-8a9b-0c1d2e3f4a5b
 
     Transaction committed successfully.
     ```
@@ -120,6 +121,11 @@ commit the transaction using the [`commit_transaction`](/api/commit-transaction)
   transaction that `start_transaction` returned. The pipeline then commits only that transaction. If the
   transaction is already committing or committed, the request succeeds without doing anything, so it is
   safe to retry. The Python SDK and `fda` CLI always send it.
+
+* The optional `incarnation_uuid` query parameter names the `incarnation_uuid` that `start_transaction`
+  returned. Transaction IDs start again when the pipeline restarts, so after a restart another transaction
+  can have the same ID. If the pipeline restarted, the request fails with error code
+  `IncarnationUuidMismatch` instead. The Python SDK's `start_transaction_response` returns both values.
 
 * The Python SDK and `fda` CLI provide both blocking and non-blocking variants of the commit operation.
   The blocking variant waits until the commit is complete before returning control to the caller.

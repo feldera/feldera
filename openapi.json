@@ -3573,11 +3573,32 @@
               "format": "int64",
               "nullable": true
             }
+          },
+          {
+            "name": "incarnation_uuid",
+            "in": "query",
+            "description": "The `incarnation_uuid` that `/start_transaction` returned.  If the\npipeline restarted since then, the request fails with 400 Bad Request\nand error code `IncarnationUuidMismatch`, because transaction IDs start\nagain after a restart.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            }
           }
         ],
         "responses": {
           "200": {
             "description": "Commit operation initiated."
+          },
+          "400": {
+            "description": "The given `incarnation_uuid` does not match the pipeline's current incarnation (error code `IncarnationUuidMismatch`): the pipeline process has restarted since the transaction started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           },
           "409": {
             "description": "Another transaction is already in progress, or `transaction_id` is not the transaction that the API started.",
@@ -16052,6 +16073,12 @@
           "transaction_id"
         ],
         "properties": {
+          "incarnation_uuid": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Pass back to `/commit_transaction` to detect pipeline restarts.\n\nOnly `None` if sent by an older pipeline.",
+            "nullable": true
+          },
           "transaction_id": {
             "type": "integer",
             "format": "int64"
