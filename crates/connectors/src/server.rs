@@ -66,7 +66,9 @@ use feldera_types::circuit::Layout;
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
-use feldera_types::config::{DynamicConfig, PipelineIdentity, SyncConfig};
+use feldera_types::config::{
+    DynamicConfig, PipelineIdentity, SyncConfig, ignored::ignored_settings,
+};
 use feldera_types::coordination::{
     AdHocScan, CoordinationActivate, CoordinationCapabilities, CoordinationStatus, InputChoices,
     Labels, RestartArgs, Step, StepRequest,
@@ -1333,13 +1335,23 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
     }
 
     let path = config_file.as_ref();
-    let mut config: PipelineConfig = serde_json::from_str(&read_config_file_as_string(path)?)
-        .map_err(|e| {
-            ControllerError::pipeline_config_parse_error(&format!(
-                "configuration file '{}' must be JSON (YAML is no longer read): {e}",
-                path.display()
-            ))
-        })?;
+    let string = read_config_file_as_string(path)?;
+    let mut config: PipelineConfig = serde_json::from_str(&string).map_err(|e| {
+        ControllerError::pipeline_config_parse_error(&format!(
+            "configuration file '{}' must be JSON (YAML is no longer read): {e}",
+            path.display()
+        ))
+    })?;
+
+    if let Ok(value) = serde_json::from_str(&string) {
+        for setting in ignored_settings::<PipelineConfig>(&value) {
+            // The logger is not running yet.
+            eprintln!(
+                "Ignoring pipeline configuration setting '{setting}', which this version \
+of the pipeline does not recognize (it may be misspelled, or newer than this pipeline)."
+            );
+        }
+    }
 
     // This is run in the pipeline process itself, so on a multihost deployment every
     // host derives the limit from its own machine.
