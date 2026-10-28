@@ -34,11 +34,11 @@ use actix_web::dev::Service;
 use actix_web::http::KeepAlive;
 use actix_web::{
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder, ResponseError,
-    dev::{ServiceFactory, ServiceRequest},
+    dev::{ServiceFactory, ServiceRequest, ServiceResponse},
     get,
     http::StatusCode,
     http::header,
-    middleware::Compress,
+    middleware::{Compress, Condition, Next, from_fn},
     patch, post, rt,
     web::{self, Data as WebData, Payload, Query},
 };
@@ -50,6 +50,7 @@ use clap::Parser;
 use colored::Colorize;
 use feldera_adapterlib::PipelineState;
 use feldera_adapterlib::errors::controller::ConfigError;
+use feldera_mtls::{Caller, PipelineClientAuth};
 use feldera_observability as observability;
 use feldera_observability::json_logging::init_pipeline_logging_with_id;
 use feldera_types::adapter_stats::{
@@ -710,6 +711,18 @@ pub struct ServerArgs {
     #[arg(long)]
     pub https_tls_key_path: Option<String>,
 
+    /// Whether the HTTPS server requires client certificates, and admits only the control
+    /// plane (URI SAN `urn:feldera:control-plane`) and this pipeline itself, which the
+    /// multihost coordinator presents. The CA chain after the leaf in `--https-tls-cert-path`
+    /// verifies them. Set through the environment, which pipeline binaries of older runtime
+    /// versions ignore.
+    #[arg(
+        long,
+        default_value_t = false,
+        env = "FELDERA_REQUIRE_CLIENT_CERTIFICATES"
+    )]
+    pub require_client_certificates: bool,
+
     /// Initial runtime desired status.
     #[arg(long)]
     pub initial: RuntimeDesiredStatus,
@@ -1077,42 +1090,56 @@ pub fn run_server(
     #[cfg(unix)]
     let sigterm_state = state.clone();
 
+    let client_auth = args
+        .require_client_certificates
+        .then(|| Arc::new(pipeline_client_auth(&args)));
+
     let server = HttpServer::new({
+        let client_auth = client_auth.clone();
         move || {
             let state = state.clone();
-            let app = App::new().wrap_fn(|req, srv| {
-                debug!("Request: {} {}", req.method(), req.path());
-                srv.call(req).map(|res| {
-                    match &res {
-                        Ok(response) => {
-                            let level = if response.status().is_success()
-                                || response.status().is_redirection()
-                                || response.status().is_informational()
-                            {
-                                Level::DEBUG
-                            } else {
-                                Level::ERROR
-                            };
-                            let req = response.request();
-                            dyn_event!(
-                                level,
-                                "Response: {} (size: {:?}) to request {} {}",
-                                response.status(),
-                                response.response().body().size(),
-                                req.method(),
-                                req.path()
-                            );
+            let client_auth = client_auth.clone();
+            let app = App::new()
+                .wrap(Condition::new(
+                    client_auth.is_some(),
+                    from_fn(move |req, next| {
+                        authorize_pipeline_caller(client_auth.clone(), req, next)
+                    }),
+                ))
+                .wrap_fn(|req, srv| {
+                    debug!("Request: {} {}", req.method(), req.path());
+                    srv.call(req).map(|res| {
+                        match &res {
+                            Ok(response) => {
+                                let level = if response.status().is_success()
+                                    || response.status().is_redirection()
+                                    || response.status().is_informational()
+                                {
+                                    Level::DEBUG
+                                } else {
+                                    Level::ERROR
+                                };
+                                let req = response.request();
+                                dyn_event!(
+                                    level,
+                                    "Response: {} (size: {:?}) to request {} {}",
+                                    response.status(),
+                                    response.response().body().size(),
+                                    req.method(),
+                                    req.path()
+                                );
+                            }
+                            Err(e) => {
+                                error!("Service response error: {e}");
+                            }
                         }
-                        Err(e) => {
-                            error!("Service response error: {e}");
-                        }
-                    }
-                    res
-                })
-            });
+                        res
+                    })
+                });
             build_app(app, state)
         }
     })
+    .on_connect(Caller::record)
     // The next two settings work around the issue that std::thread::available_parallelism()
     // which is what actix uses internally can't determine the number of threads available
     // in k8s (it will yield the number of cores on the node rather than the number of
@@ -1166,8 +1193,12 @@ pub fn run_server(
             PrivateKeyDer::from_pem_file(https_tls_key_path).expect("HTTPS TLS key should be read");
 
         // Server configuration
-        let server_config = rustls::ServerConfig::builder()
-            .with_no_client_auth()
+        let builder = rustls::ServerConfig::builder();
+        let builder = match &client_auth {
+            Some(client_auth) => builder.with_client_cert_verifier(client_auth.verifier.clone()),
+            None => builder.with_no_client_auth(),
+        };
+        let server_config = builder
             .with_single_cert(cert_chain, key_der)
             .expect("server configuration should be built");
         observability::fips::log_rustls_fips_status("HTTPS server config", server_config.fips());
@@ -1570,6 +1601,39 @@ fn do_bootstrap(
     }
 
     Ok(())
+}
+
+/// Loads the client certificate verifier and own identity from the pipeline certificate.
+fn pipeline_client_auth(args: &ServerArgs) -> PipelineClientAuth {
+    assert!(
+        args.enable_https,
+        "FELDERA_REQUIRE_CLIENT_CERTIFICATES requires --enable-https"
+    );
+    let path = args
+        .https_tls_cert_path
+        .as_ref()
+        .expect("CLI argument --https-tls-cert-path is required");
+    let chain: Vec<_> = CertificateDer::pem_file_iter(path)
+        .expect("HTTPS TLS certificate should be read")
+        .flatten()
+        .collect();
+    PipelineClientAuth::from_chain(&chain)
+        .unwrap_or_else(|e| panic!("client certificates with '{path}': {e}"))
+}
+
+/// Refuses requests from callers other than the control plane and this pipeline.
+async fn authorize_pipeline_caller(
+    client_auth: Option<Arc<PipelineClientAuth>>,
+    req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, ActixError> {
+    feldera_mtls::authorize(
+        "pipeline",
+        |caller, _, _| client_auth.is_none_or(|client_auth| client_auth.is_allowed(caller)),
+        req,
+        next,
+    )
+    .await
 }
 
 fn build_app<T>(app: App<T>, state: WebData<ServerState>) -> App<T>
@@ -2863,6 +2927,7 @@ pub mod test_http_helpers {
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
+            require_client_certificates: false,
             initial: RuntimeDesiredStatus::Paused,
             bootstrap_policy: bootstrap_config.active_bootstrap_policy(),
             silent_bootstrap: bootstrap_config.silent_bootstrap,
@@ -5650,6 +5715,7 @@ mod test_program_load {
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
+            require_client_certificates: false,
             initial: RuntimeDesiredStatus::Running,
             bootstrap_policy: BootstrapPolicy::Allow,
             silent_bootstrap: false,
@@ -7888,6 +7954,7 @@ pub mod test_http {
                 enable_https: false,
                 https_tls_cert_path: None,
                 https_tls_key_path: None,
+                require_client_certificates: false,
                 initial: RuntimeDesiredStatus::Running,
                 bootstrap_policy: BootstrapPolicy::Allow,
                 silent_bootstrap: false,
