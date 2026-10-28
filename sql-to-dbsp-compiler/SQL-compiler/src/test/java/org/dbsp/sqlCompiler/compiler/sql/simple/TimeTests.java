@@ -299,4 +299,15 @@ public class TimeTests extends SqlIoTest {
                 "Cannot apply 'make_time' to arguments of type 'make_time(<DECIMAL(2, 1)>, <INTEGER>, <INTEGER>)'." +
                         " Supported form(s): MAKE_TIME(<INTEGER>, <INTEGER>, <NUMERIC>)");
     }
+
+    @Test
+    public void makeTimeWithManySecondDigits() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(s DECIMAL(38, 35));
+                CREATE VIEW V AS SELECT MAKE_TIME(1, 2, s) AS t FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES (3.12345678901234567890123456789012345);", """
+                 t
+                ---
+                 01:02:03.123456789""");
+    }
 }

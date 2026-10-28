@@ -1234,6 +1234,18 @@ public class VariantTests extends SqlIoTest {
                 (1 row)""");
     }
 
+    @Test
+    public void numberWithManyFractionalDigitsToDouble() {
+        // The VARIANT holds a DECIMAL with more than 38 digits after the decimal point.
+        this.qs("""
+                SELECT CAST(PARSE_JSON('1e-100') AS DOUBLE) = 1e-100,
+                       CAST(PARSE_JSON('0.0000000000000000000000000000000000000001') AS DOUBLE) = 1e-40;
+                 a | b
+                -------
+                 true | true
+                (1 row)""");
+    }
+
     /** GeoPoint converted to VARIANT. */
     @Test
     public void testVariantGeoPoint() {

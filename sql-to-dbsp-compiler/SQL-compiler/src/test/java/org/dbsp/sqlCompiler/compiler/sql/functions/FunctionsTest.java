@@ -62,6 +62,21 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void roundFarLeft() {
+        // Rounding more than 38 digits away from the last digit of the scale gives 0.
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x DECIMAL(10, 0), y DECIMAL(38, 38));
+                CREATE VIEW V AS SELECT
+                    ROUND(x, -39) AS x39, ROUND(x, -40) AS x40, BROUND(x, -40) AS bx40,
+                    ROUND(y, -1) AS y1, BROUND(y, -2) AS by2
+                FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES (5, 0.5);", """
+                 x39 | x40 | bx40 | y1 | by2
+                -----------------------------
+                 0   | 0   | 0    | 0  | 0""");
+    }
+
+    @Test
     public void testBetween() {
         this.qst("""
                 SELECT TIMESTAMP '2020-02-02 10:00:00' between TIMESTAMP '2020-02-02 09:00:00' and TIMESTAMP '2020-02-02 11:00:00';

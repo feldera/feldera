@@ -815,6 +815,51 @@ public class CastTests extends SqlIoTest {
     }
 
     @Test
+    public void castMostNegativeYearInterval() {
+        var ccs = this.getCCS("""
+                CREATE TABLE M(m INT);
+                CREATE VIEW V AS SELECT
+                    CAST(CAST(INTERVAL '1' MONTH * m AS INTERVAL YEAR) AS VARCHAR) AS s,
+                    CAST(CAST(INTERVAL '1' MONTH * m AS INTERVAL YEAR) AS DECIMAL(10, 0)) AS d
+                FROM M;""");
+        ccs.stepWeightOne("INSERT INTO M VALUES (-2147483648);", """
+                 s | d
+                ---------------------------
+                 -178956970| -178956970""");
+    }
+
+    @Test
+    public void castWideDecimalToInterval() {
+        // The significand of d times the microseconds in a day does not fit in an i128.
+        var ccs = this.getCCS("""
+                CREATE TABLE D(d DECIMAL(38, 20));
+                CREATE VIEW V AS SELECT CAST(d AS INTERVAL DAYS) AS i FROM D;""");
+        ccs.stepWeightOne("INSERT INTO D VALUES (30000000.00000000000000000001);", """
+                 i
+                ---
+                 30000000 days""");
+    }
+
+    @Test
+    public void castLargeDecimalToInterval() {
+        // d times the microseconds in a day does not fit in an i128: CAST fails, SAFE_CAST is NULL
+        var ccs = this.getCCS("""
+                CREATE TABLE D(d DECIMAL(38, 0));
+                CREATE VIEW V AS SELECT SAFE_CAST(d AS INTERVAL DAYS) IS NULL AS n FROM D;""");
+        ccs.stepWeightOne("INSERT INTO D VALUES (10000000000000000000000000000);", """
+                 n
+                ------
+                 true""");
+
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE D(d DECIMAL(38, 0));
+                CREATE VIEW V AS SELECT CAST(d AS INTERVAL DAYS) AS i FROM D;""");
+        this.runtimeFail(compiler, "INSERT INTO D VALUES (10000000000000000000000000000);",
+                "to INTERVAL DAYS");
+    }
+
+    @Test
     public void issue7395() {
         // A cast from DOUBLE or REAL to DECIMAL follows Calcite: it uses the shortest decimal
         // form of the value, and truncates it to the scale.  REAL is converted to DOUBLE first.

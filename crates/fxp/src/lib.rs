@@ -313,7 +313,9 @@ fn round_inner(value: i128, scale: i32, n: i32, halfway: Halfway) -> Option<i128
     let position = scale.saturating_sub(n);
     if position <= 0 {
         Some(value)
-    } else if value.abs() < 5 * pow10(position as usize - 1) {
+    } else if position > 38 || value.abs() < 5 * pow10(position as usize - 1) {
+        // `|value| <= i128::MAX < 5 * 10**38`, so `value` rounds to 0 at any
+        // position over 38.
         Some(0)
     } else {
         let divisor = pow10(position as usize);
