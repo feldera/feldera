@@ -1142,9 +1142,9 @@ pub enum PipelineAction {
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
         /// The transaction ID that `start-transaction` printed.  The pipeline
-        /// commits only this transaction.  If the pipeline already committed
-        /// it, or is committing it, the command waits for that commit, so it
-        /// is safe to run the command again.
+        /// commits only this transaction.  If an earlier `commit-transaction`
+        /// already committed it, the command waits for that commit, so it is
+        /// safe to run the command again.
         #[arg(long = "tid", short = 't')]
         transaction_id: Option<u64>,
         /// The incarnation UUID that `start-transaction` printed.  If the
