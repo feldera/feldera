@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Configuration, LicenseInformation } from '$lib/services/manager'
+import type { Configuration, LicenseInformation } from '#lib/services/manager/index.ts'
 import { getLicenseMessage } from './license'
 
 const now = new Date('2026-01-10T00:00:00Z')

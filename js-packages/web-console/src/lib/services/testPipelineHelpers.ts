@@ -5,8 +5,8 @@
  * duplicating pipeline create/compile/start/stop/delete boilerplate.
  */
 
-import type { CompilationProfile } from '$lib/services/manager'
-import { client } from '$lib/services/manager/client.gen'
+import { client } from '#lib/services/manager/client.gen.ts'
+import type { CompilationProfile } from '#lib/services/manager/index.ts'
 import {
   deletePipeline,
   type ExtendedPipeline,
@@ -15,7 +15,7 @@ import {
   postPipelineAction,
   programStatusOf,
   putPipeline
-} from '$lib/services/pipelineManager'
+} from '#lib/services/pipelineManager.ts'
 
 export { type ExtendedPipeline }
 

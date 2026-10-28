@@ -27,7 +27,7 @@
  *     copy regardless of bundle size — anything beyond ~1 s is a real fault.
  */
 
-import { resolve } from '$lib/functions/svelte'
+import { resolve } from '#lib/functions/svelte.ts'
 
 const READY_MSG = 'profile-bundle-ready'
 const BUNDLE_MSG = 'profile-bundle-data'

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { OverlayDrawer, useIsTablet } from 'common-ui'
   import type { Snippet } from 'svelte'
-  import PipelineList from '$lib/components/pipelines/List.svelte'
-  import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
-  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import PipelineList from '#lib/components/pipelines/List.svelte'
+  import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
+  import { usePipelineList } from '#lib/compositions/pipelines/usePipelineList.svelte.ts'
   import type { LayoutData, LayoutProps } from './$types'
 
   const { children, data, params }: { children: Snippet; data: LayoutData } & LayoutProps = $props()

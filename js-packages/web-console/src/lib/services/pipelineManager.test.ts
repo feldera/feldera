@@ -9,14 +9,14 @@ import {
   getInputConnectorStatus,
   getOutputConnectorStatus,
   putPipeline
-} from '$lib/services/pipelineManager'
+} from '#lib/services/pipelineManager.ts'
 import {
   cleanupPipeline,
   configureTestClient,
   startPipelineAndWaitForRunning,
   TEST_COMPILATION_PROFILE,
   waitForCompilation
-} from '$lib/services/testPipelineHelpers'
+} from '#lib/services/testPipelineHelpers.ts'
 
 // Pipeline name is URL-safe by convention, but table/view/connector names are not.
 const PIPELINE_NAME = 'test-special-chars-connector-status'

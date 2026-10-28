@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fade } from 'svelte/transition'
-  import Popup from '$lib/components/common/Popup.svelte'
-  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
+  import Popup from '#lib/components/common/Popup.svelte'
+  import NavigationExtras from '#lib/components/layout/NavigationExtras.svelte'
 </script>
 
 <Popup>

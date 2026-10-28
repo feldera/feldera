@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getCaseIndependentName } from 'common-ui/felderaRelation'
-  import { displaySQLColumnType } from '$lib/functions/sql'
-  import type { Field } from '$lib/services/manager'
+  import { displaySQLColumnType } from '#lib/functions/sql.ts'
+  import type { Field } from '#lib/services/manager/index.ts'
 
   const {
     column,

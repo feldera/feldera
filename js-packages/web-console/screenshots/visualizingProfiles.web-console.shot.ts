@@ -3,13 +3,13 @@
 
 import path from 'node:path'
 import { test as base, expect, type Page } from '@playwright/test'
-import { putPipeline } from '$lib/services/pipelineManager'
+import { putPipeline } from '#lib/services/pipelineManager.ts'
 import {
   cleanupPipeline,
   configureTestClient,
   TEST_COMPILATION_PROFILE,
   waitForCompilation
-} from '$lib/services/testPipelineHelpers'
+} from '#lib/services/testPipelineHelpers.ts'
 import { annotate, boxOf, clearAnnotations, grow, union } from './annotate'
 import { APP_START_TIMEOUT, docsImage, expectClip, navigate, waitForTransitions } from './capture'
 import { BUNDLE_PATH } from './profileViewer'

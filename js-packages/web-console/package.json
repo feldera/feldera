@@ -143,5 +143,9 @@
     "test-integration": "bun run deps && vitest --run --project integration && vitest --run --project integration-client"
   },
   "trustedDependencies": ["@axa-fr/oidc-client", "sk-oidc-oauth", "svelte-preprocess"],
-  "type": "module"
+  "type": "module",
+  "imports": {
+    "#lib/*": "./src/lib/*",
+    "#assets/*": "./src/assets/*"
+  }
 }

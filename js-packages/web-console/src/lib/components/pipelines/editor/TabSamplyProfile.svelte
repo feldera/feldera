@@ -2,8 +2,8 @@
   export { label as Label }
 
   import { Input } from 'flowbite-svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { type ExtendedPipeline, getSamplyProfile } from '$lib/services/pipelineManager'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { type ExtendedPipeline, getSamplyProfile } from '#lib/services/pipelineManager.ts'
 
   // Helper to extract ProfilingNotEnabled error message
   export const getProfilingNotEnabledMessage = (error: unknown): string | null => {
@@ -20,14 +20,14 @@
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { onDestroy, untrack } from 'svelte'
-  import { isPipelineInteractive } from '$lib/functions/pipelines/status'
-  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
-  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
-  import { useToast } from '$lib/compositions/useToastNotification'
-  import { triggerFileDownload } from '$lib/services/browser'
-  import DownloadProgressDisplay from '$lib/components/dialogs/DownloadProgressDisplay.svelte'
+  import { isPipelineInteractive } from '#lib/functions/pipelines/status.ts'
+  import WarningBanner from '#lib/components/pipelines/editor/WarningBanner.svelte'
+  import GenericDialog from '#lib/components/dialogs/GenericDialog.svelte'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import { useDownloadProgress } from '#lib/compositions/useDownloadProgress.svelte.ts'
+  import { useToast } from '#lib/compositions/useToastNotification.ts'
+  import { triggerFileDownload } from '#lib/services/browser.ts'
+  import DownloadProgressDisplay from '#lib/components/dialogs/DownloadProgressDisplay.svelte'
 
   let {
     pipeline,

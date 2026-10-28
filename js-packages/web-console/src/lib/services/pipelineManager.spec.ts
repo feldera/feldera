@@ -7,10 +7,10 @@
  * and error.cause inspection work correctly.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ErrorResponse } from '$lib/services/manager'
+import type { ErrorResponse } from '#lib/services/manager/index.ts'
 
-vi.mock('$lib/services/manager', async (importOriginal) => {
-  const mod = await importOriginal<typeof import('$lib/services/manager')>()
+vi.mock('#lib/services/manager/index.ts', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('#lib/services/manager/index.ts')>()
   return {
     ...mod,
     getPipeline: vi.fn(),
@@ -20,8 +20,8 @@ vi.mock('$lib/services/manager', async (importOriginal) => {
   }
 })
 
-import type { CombinedDesiredStatus, CombinedStatus } from '$lib/services/manager'
-import * as sdkManager from '$lib/services/manager'
+import type { CombinedDesiredStatus, CombinedStatus } from '#lib/services/manager/index.ts'
+import * as sdkManager from '#lib/services/manager/index.ts'
 import {
   consolidatePipelineStatus,
   getExtendedPipeline,
@@ -29,7 +29,7 @@ import {
   getPipelineThumb,
   patchPipeline,
   putPipeline
-} from '$lib/services/pipelineManager'
+} from '#lib/services/pipelineManager.ts'
 
 const API_ERROR: ErrorResponse = {
   message:

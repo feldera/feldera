@@ -3,8 +3,8 @@ import { ConnectorMetricsTables } from 'common-ui'
 import { describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-import { accumulatePipelineMetrics } from '$lib/functions/pipelineMetrics'
+import type { PipelineMetrics } from '#lib/functions/pipelineMetrics.ts'
+import { accumulatePipelineMetrics } from '#lib/functions/pipelineMetrics.ts'
 import type {
   ControllerStatus,
   GlobalControllerMetrics,
@@ -12,7 +12,7 @@ import type {
   InputEndpointStatus,
   OutputEndpointMetrics,
   OutputEndpointStatus
-} from '$lib/services/manager'
+} from '#lib/services/manager/index.ts'
 
 // --- Factories ---
 

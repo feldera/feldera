@@ -4,9 +4,9 @@
 
 <script lang="ts">
   import { matchesSubstring } from 'common-lib/string'
-  import PipelineStatus from '$lib/components/pipelines/list/PipelineStatusDot.svelte'
-  import { resolve } from '$lib/functions/svelte'
-  import { type PipelineThumb } from '$lib/services/pipelineManager'
+  import PipelineStatus from '#lib/components/pipelines/list/PipelineStatusDot.svelte'
+  import { resolve } from '#lib/functions/svelte.ts'
+  import { type PipelineThumb } from '#lib/services/pipelineManager.ts'
 
   let {
     pipelineName,

@@ -1,15 +1,15 @@
 <script lang="ts">
   import { Tooltip } from 'common-ui'
-  import SplitButton from '$lib/components/common/SplitButton.svelte'
-  import DownloadProgressDisplay from '$lib/components/dialogs/DownloadProgressDisplay.svelte'
-  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
-  import SupportBundlePopup from '$lib/components/supportBundle/SupportBundlePopup.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-  import { openRemoteBundleTab } from '$lib/compositions/profileBundleHandoff'
-  import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import type { SupportBundleOptions } from '$lib/services/pipelineManager'
+  import SplitButton from '#lib/components/common/SplitButton.svelte'
+  import DownloadProgressDisplay from '#lib/components/dialogs/DownloadProgressDisplay.svelte'
+  import GenericDialog from '#lib/components/dialogs/GenericDialog.svelte'
+  import SupportBundlePopup from '#lib/components/supportBundle/SupportBundlePopup.svelte'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import { useLocalStorage } from '#lib/compositions/localStore.svelte.js'
+  import { openRemoteBundleTab } from '#lib/compositions/profileBundleHandoff.ts'
+  import { useDownloadProgress } from '#lib/compositions/useDownloadProgress.svelte.ts'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import type { SupportBundleOptions } from '#lib/services/pipelineManager.ts'
 
   const { pipelineName }: { pipelineName: string } = $props()
 

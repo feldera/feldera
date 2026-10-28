@@ -4,30 +4,33 @@
 
 <script lang="ts">
   import { nonNull } from 'common-lib/function'
-  import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
+  import PipelineActions from '#lib/components/pipelines/list/Actions.svelte'
   import {
     extractProgramErrors,
     programErrorReport,
     programErrorsPerFile,
     pipelineFileNameRegex
-  } from '$lib/compositions/health/systemErrors'
-  import { extractErrorMarkers, felderaCompilerMarkerSource } from '$lib/functions/pipelines/monaco'
-  import { type PipelineAction } from '$lib/services/pipelineManager'
-  import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
-  import { usePermission } from '$lib/compositions/usePermission.svelte'
+  } from '#lib/compositions/health/systemErrors.ts'
+  import {
+    extractErrorMarkers,
+    felderaCompilerMarkerSource
+  } from '#lib/functions/pipelines/monaco.ts'
+  import { type PipelineAction } from '#lib/services/pipelineManager.ts'
+  import { useUpdatePipelineList } from '#lib/compositions/pipelines/usePipelineList.svelte.ts'
+  import { usePipelineActionCallbacks } from '#lib/compositions/pipelines/usePipelineActionCallbacks.svelte.ts'
+  import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
   import CodeEditor, {
     disposeFile as disposeCodeEditorFile
-  } from '$lib/components/pipelines/editor/CodeEditor.svelte'
-  import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
+  } from '#lib/components/pipelines/editor/CodeEditor.svelte'
+  import type { WritablePipeline } from '#lib/compositions/useWritablePipeline.svelte.ts'
   import { untrack } from 'svelte'
   import { page } from '$app/state'
   import UnsavedPipelineChanges from './UnsavedPipelineChanges.svelte'
-  import type { Snippet } from '$lib/types/svelte'
-  import { getRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
-  import { isUpgradeRequired, isPipelineCodeEditable } from '$lib/functions/pipelines/status'
-  import FocusBanner from '$lib/components/pipelines/editor/FocusBanner.svelte'
-  import StorageInUseBanner from '$lib/components/pipelines/editor/StorageInUseBanner.svelte'
+  import type { Snippet } from '#lib/types/svelte.ts'
+  import { getRuntimeVersion } from '#lib/functions/pipelines/runtimeVersion.ts'
+  import { isUpgradeRequired, isPipelineCodeEditable } from '#lib/functions/pipelines/status.ts'
+  import FocusBanner from '#lib/components/pipelines/editor/FocusBanner.svelte'
+  import StorageInUseBanner from '#lib/components/pipelines/editor/StorageInUseBanner.svelte'
 
   let {
     pipeline,

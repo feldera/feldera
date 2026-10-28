@@ -1,4 +1,4 @@
-import { type Demo, getDemos } from '$lib/services/pipelineManager'
+import { type Demo, getDemos } from '#lib/services/pipelineManager.ts'
 
 let demos = $state<(Demo | null)[]>(new Array<Demo | null>(9).fill(null))
 let started = false

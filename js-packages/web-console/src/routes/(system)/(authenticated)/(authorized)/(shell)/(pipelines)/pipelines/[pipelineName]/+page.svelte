@@ -1,15 +1,15 @@
 <script lang="ts">
-  import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
+  import PipelineEditLayout from '#lib/components/layout/pipelines/PipelineEditLayout.svelte'
   import {
     usePipelineList,
     useUpdatePipelineList
-  } from '$lib/compositions/pipelines/usePipelineList.svelte.js'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte.js'
+  } from '#lib/compositions/pipelines/usePipelineList.svelte.ts'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
   import {
     useRefreshPipeline,
     writablePipeline
-  } from '$lib/compositions/useWritablePipeline.svelte.js'
-  import type { ExtendedPipeline, PipelineThumb } from '$lib/services/pipelineManager.js'
+  } from '#lib/compositions/useWritablePipeline.svelte.ts'
+  import type { ExtendedPipeline, PipelineThumb } from '#lib/services/pipelineManager.ts'
 
   const { data, params } = $props()
 

@@ -13,7 +13,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import type { Demo, PipelineThumb } from '$lib/services/pipelineManager'
+import type { Demo, PipelineThumb } from '#lib/services/pipelineManager.ts'
 
 const { PLATFORM_VERSION } = vi.hoisted(() => ({ PLATFORM_VERSION: '1.0.0' }))
 
@@ -76,16 +76,16 @@ vi.mock('$app/navigation', () => ({
   invalidateAll: vi.fn(),
   preloadCode: vi.fn(() => Promise.resolve())
 }))
-vi.mock('$lib/services/redirectTarget', () => ({
+vi.mock('#lib/services/redirectTarget.ts', () => ({
   takeRedirectTarget: vi.fn(),
   stashRedirectTarget: vi.fn()
 }))
 // Dialog bodies the profile menu can open. Each one fetches on import, and no test
 // opens them.
-vi.mock('$lib/components/other/ApiKeyMenu.svelte', () => ({ default: () => {} }))
-vi.mock('$lib/components/other/OidcTrustMenu.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/components/other/ApiKeyMenu.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/components/other/OidcTrustMenu.svelte', () => ({ default: () => {} }))
 // The page and the demo tiles read this list. Nothing here polls the API.
-vi.mock('$lib/compositions/pipelines/usePipelineList.svelte', () => ({
+vi.mock('#lib/compositions/pipelines/usePipelineList.svelte.ts', () => ({
   usePipelineList: () => ({
     get pipelines() {
       return list.names.map(thumb)
@@ -97,7 +97,7 @@ vi.mock('$lib/compositions/pipelines/usePipelineList.svelte', () => ({
     discardPendingListRefresh: vi.fn()
   })
 }))
-vi.mock('$lib/compositions/useDemos.svelte', () => ({
+vi.mock('#lib/compositions/useDemos.svelte.ts', () => ({
   useDemos: () => ({
     get current() {
       return demos as unknown as Demo[]
@@ -107,9 +107,9 @@ vi.mock('$lib/compositions/useDemos.svelte', () => ({
 }))
 
 // Imported AFTER vi.mock so the mocks take effect.
-import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
-import { pinnedPeekHeightPixels } from '$lib/components/layout/PinnedSections.svelte'
-import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+import GlobalModal from '#lib/components/dialogs/GlobalModal.svelte'
+import { pinnedPeekHeightPixels } from '#lib/components/layout/PinnedSections.svelte'
+import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
 import HomePage from './+page.svelte'
 
 const SCROLL_AREA_HEIGHT = 800

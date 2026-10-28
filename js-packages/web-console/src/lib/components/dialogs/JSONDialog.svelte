@@ -1,6 +1,6 @@
 <script lang="ts">
-  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
-  import JsonForm from '$lib/components/dialogs/JSONForm.svelte'
+  import GenericDialog from '#lib/components/dialogs/GenericDialog.svelte'
+  import JsonForm from '#lib/components/dialogs/JSONForm.svelte'
 
   const {
     value,

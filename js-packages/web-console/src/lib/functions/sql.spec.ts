@@ -5,7 +5,7 @@ import {
   displaySQLValue,
   formatNonFiniteNumber,
   serializeSQLValue
-} from '$lib/functions/sql'
+} from '#lib/functions/sql.ts'
 
 describe('bytesToHex', () => {
   it('renders bytes as zero-padded lowercase hex', () => {

@@ -1,8 +1,8 @@
 <script lang="ts">
-  import AdminPage from '$lib/components/admin/AdminPage.svelte'
-  import AppHeader from '$lib/components/layout/AppHeader.svelte'
-  import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
-  import { resolve } from '$lib/functions/svelte'
+  import AdminPage from '#lib/components/admin/AdminPage.svelte'
+  import AppHeader from '#lib/components/layout/AppHeader.svelte'
+  import PipelineBreadcrumbs from '#lib/components/layout/PipelineBreadcrumbs.svelte'
+  import { resolve } from '#lib/functions/svelte.ts'
 </script>
 
 <svelte:head>

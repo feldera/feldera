@@ -10,7 +10,7 @@ import { render } from 'vitest-browser-svelte'
 
 // The component's instance script imports this at module load; stub it so the
 // schema import does not drag in the real service.
-vi.mock('$lib/services/pipelineManager', () => ({ postOidcTrust: vi.fn() }))
+vi.mock('#lib/services/pipelineManager.ts', () => ({ postOidcTrust: vi.fn() }))
 
 // Imported AFTER vi.mock so the mock takes effect.
 import NewOidcTrustForm, { oidcTrustSchema } from './NewOidcTrustForm.svelte'

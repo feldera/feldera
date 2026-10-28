@@ -27,7 +27,7 @@ vi.mock('$app/state', () => ({
     }
   }
 }))
-vi.mock('$lib/compositions/switchTenant', () => ({
+vi.mock('#lib/compositions/switchTenant.ts', () => ({
   switchTenant: (...args: unknown[]) => switchTenant(...args)
 }))
 

@@ -1,6 +1,6 @@
 import invariant from 'tiny-invariant'
 import { match, P } from 'ts-pattern'
-import { getAuthConfig } from '$lib/services/pipelineManager'
+import { getAuthConfig } from '#lib/services/pipelineManager.ts'
 
 // import { decode } from '@auth/core/jwt'
 //
@@ -20,7 +20,7 @@ import type { StringMap } from '@axa-fr/oidc-client'
 //   Provider,
 //   TokenEndpointHandler
 // } from '@auth/sveltekit/providers'
-import { resolve } from '$lib/functions/svelte'
+import { resolve } from '#lib/functions/svelte.ts'
 
 // type AuthDetails =
 //   | {

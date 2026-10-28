@@ -1,11 +1,11 @@
 <script lang="ts">
   import { PipelineEventHistory } from 'common-ui'
-  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
-  import { useInterval } from '$lib/compositions/common/useInterval.svelte'
-  import { ServerDate } from '$lib/compositions/serverTime'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import type { PipelineMonitorEventSelectedInfo } from '$lib/services/manager'
-  import type { ExtendedPipeline } from '$lib/services/pipelineManager'
+  import { useElapsedTime } from '#lib/compositions/common/useElapsedTime.ts'
+  import { useInterval } from '#lib/compositions/common/useInterval.svelte.ts'
+  import { ServerDate } from '#lib/compositions/serverTime.ts'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import type { PipelineMonitorEventSelectedInfo } from '#lib/services/manager/index.ts'
+  import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
 
   let {
     pipeline,

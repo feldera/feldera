@@ -7,7 +7,7 @@
     type SearchState,
     sliceLinesForCopy
   } from 'common-ui'
-  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
+  import WarningBanner from '#lib/components/pipelines/editor/WarningBanner.svelte'
 
   const {
     logs,

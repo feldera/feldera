@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import { permissionsOf } from '$lib/services/rbac'
+import { permissionsOf } from '#lib/services/rbac.ts'
 
 const tenantsState = vi.hoisted(() => ({
   list: [{ id: 't-acme', name: 'acme', initial_provider: 'oidc' }] as any[]
@@ -28,12 +28,12 @@ vi.mock('$app/state', () => ({
   }
 }))
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn(async () => {}) }))
-vi.mock('$lib/compositions/configCache', () => ({ clearConfigCaches: vi.fn() }))
-vi.mock('$lib/services/auth', () => ({ setSelectedTenant: vi.fn() }))
+vi.mock('#lib/compositions/configCache.ts', () => ({ clearConfigCaches: vi.fn() }))
+vi.mock('#lib/services/auth.ts', () => ({ setSelectedTenant: vi.fn() }))
 // Only the members table is stubbed: it fetches on mount and has no part in
 // what the picker offers.
-vi.mock('$lib/components/admin/UserRoleTable.svelte', () => ({ default: () => {} }))
-vi.mock('$lib/services/pipelineManager', () => ({
+vi.mock('#lib/components/admin/UserRoleTable.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/services/pipelineManager.ts', () => ({
   getTenants: vi.fn(async () => [...tenantsState.list]),
   getAuthConfig: vi.fn(async () => undefined),
   getConfiguredOwners: vi.fn(async () => undefined),

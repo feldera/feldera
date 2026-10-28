@@ -1,6 +1,6 @@
 import { match, P } from 'ts-pattern'
-import type { StorageStatus } from '$lib/services/manager'
-import type { ExtendedPipeline, PipelineStatus } from '$lib/services/pipelineManager'
+import type { StorageStatus } from '#lib/services/manager/index.ts'
+import type { ExtendedPipeline, PipelineStatus } from '#lib/services/pipelineManager.ts'
 
 export const getPipelineStatusLabel = (status: PipelineStatus) => {
   return match(status)

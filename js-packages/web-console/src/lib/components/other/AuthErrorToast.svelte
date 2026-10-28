@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { triggerOidcLogin } from '$lib/services/auth'
+  import { triggerOidcLogin } from '#lib/services/auth.ts'
 </script>
 
 <span>

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import type { CheckpointMetadata } from '$lib/services/manager'
-import { permissionsOf } from '$lib/services/rbac'
+import type { CheckpointMetadata } from '#lib/services/manager/index.ts'
+import { permissionsOf } from '#lib/services/rbac.ts'
 
 const setDialogMock = vi.fn()
 
@@ -21,7 +21,7 @@ vi.mock('$app/state', () => ({
   }
 }))
 
-vi.mock('$lib/compositions/layout/useGlobalDialog.svelte', () => ({
+vi.mock('#lib/compositions/layout/useGlobalDialog.svelte.ts', () => ({
   useGlobalDialog: () => ({
     get dialog() {
       return null

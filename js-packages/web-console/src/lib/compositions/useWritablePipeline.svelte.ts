@@ -2,8 +2,8 @@ import { untrack } from 'svelte'
 import {
   type PipelineManagerApi,
   usePipelineManager
-} from '$lib/compositions/usePipelineManager.svelte'
-import type { ExtendedPipeline, Pipeline, PipelineThumb } from '$lib/services/pipelineManager'
+} from '#lib/compositions/usePipelineManager.svelte.ts'
+import type { ExtendedPipeline, Pipeline, PipelineThumb } from '#lib/services/pipelineManager.ts'
 
 export const writablePipeline = ({
   api,

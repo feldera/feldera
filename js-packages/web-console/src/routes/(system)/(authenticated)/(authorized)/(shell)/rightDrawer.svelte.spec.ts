@@ -32,14 +32,14 @@ vi.mock('$app/navigation', () => ({
   onNavigate: vi.fn()
 }))
 // Booking a demo tags its URL from the analytics loader, which no test loads.
-vi.mock('$lib/services/analytics', () => ({ captureEvent: vi.fn() }))
+vi.mock('#lib/services/analytics.ts', () => ({ captureEvent: vi.fn() }))
 // The layout's own pollers. Nothing here talks to a backend.
-vi.mock('$lib/compositions/configCache', () => ({ fetchConfigs: vi.fn(async () => ({})) }))
-vi.mock('$lib/compositions/health/useClusterHealth.svelte', () => ({
+vi.mock('#lib/compositions/configCache.ts', () => ({ fetchConfigs: vi.fn(async () => ({})) }))
+vi.mock('#lib/compositions/health/useClusterHealth.svelte.ts', () => ({
   useClusterHealth: () => ({ current: { api: 'healthy', compiler: 'healthy', runner: 'healthy' } }),
   useRefreshClusterHealth: vi.fn()
 }))
-vi.mock('$lib/compositions/pipelines/usePipelineList.svelte', () => ({
+vi.mock('#lib/compositions/pipelines/usePipelineList.svelte.ts', () => ({
   useRefreshPipelineList: vi.fn(),
   usePipelineList: () => ({
     get pipelines() {
@@ -52,14 +52,14 @@ vi.mock('$lib/compositions/pipelines/usePipelineList.svelte', () => ({
     discardPendingListRefresh: vi.fn()
   })
 }))
-vi.mock('$lib/compositions/usePipelineAction.svelte', () => ({ usePipelineAction: vi.fn() }))
-vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
+vi.mock('#lib/compositions/usePipelineAction.svelte.ts', () => ({ usePipelineAction: vi.fn() }))
+vi.mock('#lib/compositions/usePipelineManager.svelte.ts', () => ({
   usePipelineManager: () => ({ isNetworkHealthy: true, isAuthHealthy: true })
 }))
 
 // These imports come after the vi.mock calls above, so that the mocks are in place.
-import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
-import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+import GlobalModal from '#lib/components/dialogs/GlobalModal.svelte'
+import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
 import AuthorizedLayout from './+layout.svelte'
 
 const pageContent = createRawSnippet(() => ({ render: () => '<div>PAGE</div>' }))

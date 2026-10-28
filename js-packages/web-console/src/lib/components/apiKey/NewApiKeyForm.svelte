@@ -4,7 +4,7 @@
   import { setError, superForm } from 'sveltekit-superforms'
   import { valibot } from 'sveltekit-superforms/adapters'
   import * as va from 'valibot'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
 
   const { onSubmit, onSuccess }: { onSubmit?: () => void; onSuccess?: () => void } = $props()
 

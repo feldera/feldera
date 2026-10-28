@@ -1,5 +1,5 @@
 import { useIsTablet } from 'common-ui'
-import { useLocalStorage } from '$lib/compositions/localStore.svelte'
+import { useLocalStorage } from '#lib/compositions/localStore.svelte.js'
 
 export const useAdaptiveDrawer = (type: 'left' | 'right') => {
   const isTablet = useIsTablet()

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { switchTenant } from '$lib/compositions/switchTenant'
-  import { takeRedirectTarget } from '$lib/services/redirectTarget'
-  import type { TenantMembership } from '$lib/types/auth'
+  import { switchTenant } from '#lib/compositions/switchTenant.ts'
+  import { takeRedirectTarget } from '#lib/services/redirectTarget.ts'
+  import type { TenantMembership } from '#lib/types/auth.ts'
 
   const { memberships }: { memberships: TenantMembership[] } = $props()
 
