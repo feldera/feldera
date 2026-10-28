@@ -124,6 +124,15 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
     }
 
     @Test
+    public void groupByHourOfTime() {
+        // EXTRACT(HOUR) of a TIME is monotone, so the aggregate keeps only the recent groups
+        this.assertNoUnboundedStateWarnings("""
+                CREATE TABLE T(t TIME NOT NULL LATENESS INTERVAL 1 HOUR, x INT NOT NULL);
+                CREATE VIEW V AS SELECT EXTRACT(HOUR FROM t) AS h, SUM(x) AS s
+                FROM T GROUP BY EXTRACT(HOUR FROM t);""");
+    }
+
+    @Test
     public void countWithoutGroupBy() {
         // A linear aggregate keeps one accumulator per group, and without
         // GROUP BY there is a single group, however large the input

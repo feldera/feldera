@@ -48,12 +48,14 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTimeAddSub;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
@@ -62,9 +64,9 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
+import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
@@ -99,9 +101,30 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
  * the expandedInto map.  Moreover, the current circuit is being rewritten by the
  * visitor while it is being processed.
  *
- * <p>Each apply operator has the signature (bool, arg) -> (bool, result), where the
- * boolean field indicates whether this is the first step.  In the first step the
- * apply operators do not compute, since the inputs may cause exceptions.
+ * <p>A waterline of a stream is a lower bound of the values that the stream can still receive.
+ * Waterlines satisfy these invariants:
+ * <ul>
+ *     <li>Each value that is not NULL and arrives later is at least the waterline.  No rule
+ *     assumes a position of NULL in the order.</li>
+ *     <li>A waterline never decreases; no field of a tuple waterline decreases.</li>
+ *     <li>A waterline is never NULL; its type is the non-nullable type of the values.</li>
+ * </ul>
+ *
+ * <p>Each apply operator that computes a waterline computes w -> f(w).  The domain of f is the
+ * set of arguments for which f does not fail.  Outside the domain the analysis uses the
+ * saturating form of f, which does not fail:
+ * <table>
+ *     <caption>The waterline of f(x) from the waterline w of x</caption>
+ *     <tr><th>Input</th><th>f(w)</th><th>Saturating f(w)</th></tr>
+ *     <tr><td>w in the domain</td><td>f(w)</td><td>f(w)</td></tr>
+ *     <tr><td>w below the domain</td><td>fails</td><td>MIN</td></tr>
+ *     <tr><td>w above the domain</td><td>fails</td><td>MAX</td></tr>
+ *     <tr><td>NULL</td><td colspan="2">does not occur</td></tr>
+ * </table>
+ * MIN bounds every value.  MAX is also a bound: each later x is at least w, so x is also above
+ * the domain, and the data plane fails before f(x) reaches the stream.  Before its sources
+ * receive data a waterline is MIN, the minimum of its type, and f(MIN) is a bound, since every
+ * x is at least MIN.
  **/
 public class InsertLimiters extends CircuitCloneVisitor {
     /** For each operator in the expansion of the operators of this circuit
@@ -158,108 +181,43 @@ public class InsertLimiters extends CircuitCloneVisitor {
         Utilities.putNew(this.bound, operator, bound);
     }
 
-    /** Given a function for an apply operator, synthesizes an operator that performs
-     * the following computation:
-     * <p>
-     * |param| (
-     *    param.0,
-     *    if param.0 {
-     *       function(param.1)
-     *    } else {
-     *       min
-     *    })
-     * where 'min' is the minimum constant value with the appropriate type.
-     * Inserts the operator in the circuit.  'param.0' is true when param.1 is
-     * not the minimum legal value - i.e., the waterline has seen some data.
-     *
-     * @param source   Input operator.
-     * @param function Function to apply to the data.
-     */
+    /** Inserts in the circuit an apply operator that computes {@code function} of the
+     * waterline produced by {@code source}; the class documentation has the invariants. */
     OutputPort createApply(OutputPort source, DBSPClosureExpression function) {
         DBSPVariablePath var = source.outputType().ref().var();
-        DBSPExpression v0 = var.deepCopy().deref().field(0);
-        DBSPExpression v1 = var.deepCopy().deref().field(1);
-        DBSPExpression min = function.getResultType().minimumValue();
-        DBSPExpression call = function.call(v1.borrow()).reduce(this.compiler);
-        DBSPExpression cond = new DBSPTupleExpression(v0,
-                new DBSPIfExpression(source.node().getNode(), v0, call, min));
-        DBSPApplyOperator result = new DBSPApplyOperator(source.node().getRelNode(), cond.closure(var),
+        DBSPExpression call = function.call(var).reduce(this.compiler);
+        DBSPApplyOperator result = new DBSPApplyOperator(source.node().getRelNode(), call.closure(var),
                 source.simpleNode().outputPort(), null);
         this.addOperator(result);
         result.addAnnotation(Waterline.INSTANCE, DBSPApplyOperator.class);
         return result.outputPort();
     }
 
-    /** Given a function for an apply2 operator, synthesizes an operator that performs
-     * the following computation:
-     * <p>
-     * |param0, param1|
-     *    (param0.0 && param1.0,
-     *     if *param0.0 && *param1.0 {
-     *       function(*param0.1, *param1.1)
-     *     } else {
-     *       min
-     *     })
-     * where 'min' is the minimum constant value with the appropriate type.
-     * Inserts the operator in the circuit.  'param0.0' is true when param0.1 is
-     * not the minimum legal value - i.e., the waterline has seen some data
-     *
-     * @param left     Left input operator.
-     * @param right    Right input operator
-     * @param function Function to apply to the data.
-     */
+    /** Inserts in the circuit an apply2 operator that computes {@code function} of the
+     * waterlines produced by {@code left} and {@code right}. */
     OutputPort createApply2(OutputPort left, OutputPort right, DBSPClosureExpression function) {
         DBSPVariablePath leftVar = left.outputType().ref().var();
         DBSPVariablePath rightVar = right.outputType().ref().var();
-        DBSPExpression l0 = leftVar.deref().field(0);
-        DBSPExpression r0 = rightVar.deref().field(0);
-        DBSPExpression l1 = leftVar.deref().field(1);
-        DBSPExpression r1 = rightVar.deref().field(1);
-        DBSPExpression and = ExpressionCompiler.makeBinaryExpression(left.node().getNode(),
-                l0.getType(), DBSPOpcode.AND, l0, r0);
-        DBSPExpression min = function.getResultType().minimumValue();
-        DBSPExpression cond = new DBSPTupleExpression(and,
-                new DBSPIfExpression(left.node().getNode(), and,
-                        function.call(l1.borrow(), r1.borrow()), min).reduce(this.compiler));
+        DBSPExpression call = function.call(leftVar, rightVar).reduce(this.compiler);
         DBSPApply2Operator result = new DBSPApply2Operator(
-                left.node().getRelNode(), cond.closure(leftVar, rightVar), left, right);
+                left.node().getRelNode(), call.closure(leftVar, rightVar), left, right);
         result.addAnnotation(Waterline.INSTANCE, DBSPApply2Operator.class);
         this.addOperator(result);
         return result.outputPort();
     }
 
-    /** Given a function for an applyN operator, synthesizes an operator that performs
-     * the following computation:
-     * <p>
-     * |param0, param1, ..., paramN|
-     *    (*param0.0 && *param1.0 ... & *paramN.0,
-     *     if *param0.0 && *param1.0 ... && *param1.0 {
-     *       function(*param0.1, *param1.1, ..., *param1.1)
-     *     } else {
-     *       min
-     *     })
-     * where 'min' is the minimum constant value with the appropriate type.
-     * 'param0.0' is true when param0.1 is not the minimum legal value - i.e.,
-     * the waterline has seen some data.
-     *
-     * @param function Function to apply to the data.
-     */
+    /** An applyN operator that computes {@code function} of the waterlines produced by
+     * {@code inputs}.  The caller inserts the operator in the circuit. */
     public static OutputPort createApplyN(DBSPCompiler compiler, List<OutputPort> inputs, DBSPClosureExpression function) {
         Utilities.enforce(!inputs.isEmpty());
         OutputPort first = inputs.get(0);
         CalciteRelNode relNode = first.node().getRelNode();
 
         List<DBSPVariablePath> vars = Linq.map(inputs, i -> i.outputType().ref().var());
-        List<DBSPExpression> v0 = Linq.map(vars, v -> v.deref().field(0));
-        List<DBSPExpression> v1 = Linq.map(vars, v -> v.deref().field(1).borrow());
-        DBSPExpression and = v0.get(0);
-        if (v0.size() > 1)
-            and = ExpressionCompiler.makeBinaryExpressions(relNode, v0.get(0).getType(), DBSPOpcode.AND, v0);
-        DBSPExpression min = function.getResultType().minimumValue();
-        DBSPExpression cond = new DBSPTupleExpression(and,
-                new DBSPIfExpression(relNode, and, function.call(v1), min).reduce(compiler));
+        List<DBSPExpression> arguments = Linq.map(vars, v -> v);
+        DBSPExpression call = function.call(arguments).reduce(compiler);
         DBSPVariablePath[] params = vars.toArray(new DBSPVariablePath[0]);
-        DBSPApplyNOperator result = new DBSPApplyNOperator(relNode, cond.closure(params), inputs);
+        DBSPApplyNOperator result = new DBSPApplyNOperator(relNode, call.closure(params), inputs);
         result.addAnnotation(Waterline.INSTANCE, DBSPApplyNOperator.class);
         return result.outputPort();
     }
@@ -431,15 +389,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
             // window, since window.upper never decreases: it is a monotone function of
             // a nondecreasing input, such as NOW() + 1 HOUR.
             OutputPort inputBound = this.boundOf(replacement, replacement.inputs.get(0));
-            // The upper bound as a (valid, value) pair, to combine with the input's bound
-            DBSPExpression upperValue = new DBSPTupleExpression(
-                    new DBSPBoolLiteral(true), edges.upper().deepCopy());
             DBSPApplyOperator upper = new DBSPApplyOperator(
-                    operator.getRelNode(), upperValue.closure(edges.parameter()), edges.input(), null);
+                    operator.getRelNode(), edges.upper().deepCopy().closure(edges.parameter()), edges.input(), null);
             this.addOperator(upper);
             // The key is the first monotone field of the input's bound
-            DBSPType inputBoundType = inputBound.outputType().to(DBSPTypeTupleBase.class).getFieldType(1);
-            DBSPVariablePath inputVar = inputBoundType.ref().var();
+            DBSPVariablePath inputVar = inputBound.outputType().ref().var();
             DBSPVariablePath upperVar = edges.upper().getType().ref().var();
             DBSPExpression keyBound = min(
                     inputVar.deref().field(0).applyCloneIfNeeded(),
@@ -457,10 +411,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPExpression boundValue = valueInBound ?
                     new DBSPRawTupleExpression(keyBound, new DBSPTupleExpression()) :
                     new DBSPRawTupleExpression(keyBound);
-            // A bound is a pair (valid, value); the window has bounds at every step
-            DBSPExpression value = new DBSPTupleExpression(new DBSPBoolLiteral(true), boundValue);
             DBSPApplyOperator apply = new DBSPApplyOperator(
-                    operator.getRelNode(), value.closure(edges.parameter()), edges.input(), null);
+                    operator.getRelNode(), boundValue.closure(edges.parameter()), edges.input(), null);
             this.addOperator(apply);
             bound = apply.outputPort();
         }
@@ -528,9 +480,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPTypeTuple tuple = deindex.getOutputZSetElementType().to(DBSPTypeTuple.class);
             DBSPVariablePath t = tuple.ref().var();
 
-            final DBSPTupleExpression minValue = new DBSPTupleExpression(
-                    Linq.map(tuple.tupFields, type -> type.to(IsBoundedType.class).getMinValue(), DBSPExpression.class));
-            DBSPExpression timestampTuple = ExpressionCompiler.expandTuple(aggregator.getNode(), t.deref());
+            final DBSPTupleExpression minValue = new DBSPTupleExpression(Linq.map(tuple.tupFields,
+                    type -> type.withMayBeNull(false).to(IsBoundedType.class).getMinValue(), DBSPExpression.class));
+            DBSPExpression[] fields = new DBSPExpression[tuple.size()];
+            for (int i = 0; i < tuple.size(); i++)
+                fields[i] = waterlineValue(aggregator.getNode(), t.deref().field(i).applyCloneIfNeeded());
+            DBSPExpression timestampTuple = new DBSPTupleExpression(fields);
             DBSPClosureExpression max = InsertLimiters.timestampMax(aggregator.getNode(), minValue.getTypeAsTupleBase());
             DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
                     aggregator.getRelNode(), minValue.closure(),
@@ -538,17 +493,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     max, deindex.outputPort());
             this.addOperator(waterline);
 
-            // An apply operator to add a Boolean bit to the waterline.
-            // This bit is 'true' when the waterline produces a value
-            // that is not 'minimum'.
-            DBSPVariablePath var = t.getType().var();
-            DBSPExpression eq = eq(minValue, var.deref());
+            // An apply operator that gives the waterline the shape of the indexed output
+            DBSPVariablePath var = minValue.getType().ref().var();
             DBSPSimpleOperator extend = new DBSPApplyOperator(aggregator.getRelNode(),
-                    new DBSPTupleExpression(
-                            eq.not(),
-                            new DBSPRawTupleExpression(
-                                    new DBSPTupleExpression(),
-                                    var.deref().applyClone())).closure(var),
+                    new DBSPRawTupleExpression(
+                            new DBSPTupleExpression(),
+                            var.deref().applyClone()).closure(var),
                     waterline.outputPort(), null);
             extend.addAnnotation(Waterline.INSTANCE, DBSPSimpleOperator.class);
             this.addOperator(extend);
@@ -630,11 +580,29 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.map(aggregator, filteredAggregator, false);
     }
 
+    /** A delay of {@code source}, whose first output is the minimum of its type.  The type of a
+     * delay must implement Checkpoint, which the Tup types do, so a value of another type, such
+     * as a raw tuple or a u128, goes through the delay in a Tup1. */
     OutputPort createDelay(OutputPort source) {
-        DBSPExpression initial = source.outputType().minimumValue();
-        DBSPDelayOperator result = new DBSPDelayOperator(source.node().getRelNode(), initial, source);
-        this.addOperator(result);
-        return result.outputPort();
+        CalciteRelNode node = source.node().getRelNode();
+        DBSPType type = source.outputType();
+        if (type.is(DBSPTypeTuple.class)) {
+            DBSPDelayOperator result = new DBSPDelayOperator(node, type.minimumValue(), source);
+            this.addOperator(result);
+            return result.outputPort();
+        }
+        DBSPVariablePath var = type.ref().var();
+        DBSPApplyOperator wrap = new DBSPApplyOperator(node,
+                new DBSPTupleExpression(var.deref().applyCloneIfNeeded()).closure(var), source, null);
+        this.addOperator(wrap);
+        DBSPExpression initial = new DBSPTupleExpression(type.minimumValue());
+        DBSPDelayOperator delay = new DBSPDelayOperator(node, initial, wrap.outputPort());
+        this.addOperator(delay);
+        DBSPVariablePath wrapped = wrap.outputType().ref().var();
+        DBSPApplyOperator unwrap = new DBSPApplyOperator(node,
+                wrapped.deref().field(0).applyCloneIfNeeded().closure(wrapped), delay.outputPort(), null);
+        this.addOperator(unwrap);
+        return unwrap.outputPort();
     }
 
     @Override
@@ -836,7 +804,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
         varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         final DBSPVariablePath var = varType.var();
         DBSPExpression body = var.field(0).deref();
-        body = DBSPTypeTypedBox.wrapTypedBox(body, true);
         DBSPClosureExpression closure = body.closure(var);
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
                 this.compiler(), operator, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
@@ -879,21 +846,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
             this.markBound(expanded.replacement.outputPort(), bound);
         }
 
-        // Drop the boolean flag from the waterline
+        // The rolling aggregate reads its waterline in a TypedBox.  A delay cannot have a type
+        // that includes a TypedBox, so the box is added after the delay.
         DBSPVariablePath tmp = waterline.outputType().ref().var();
-        DBSPClosureExpression drop = tmp.deref().field(1).applyCloneIfNeeded().closure(tmp);
-        // Must insert the delay on the waterline, if we try to insert the delay
-        // on the output of the dropApply Rust will be upset, since Delays
-        // cannot have types that include TypedBox.
-        DBSPApplyOperator dropApply = new DBSPApplyOperator(
-                operator.getRelNode(), drop, this.createDelay(waterline), null);
-        this.addOperator(dropApply);
+        DBSPClosureExpression box = DBSPTypeTypedBox.wrapTypedBox(
+                tmp.deref().applyCloneIfNeeded(), true).closure(tmp);
+        DBSPApplyOperator boxApply = new DBSPApplyOperator(
+                operator.getRelNode(), box, this.createDelay(waterline), null);
+        this.addOperator(boxApply);
 
         DBSPPartitionedRollingAggregateWithWaterlineOperator replacement =
                 new DBSPPartitionedRollingAggregateWithWaterlineOperator(operator.getRelNode(),
                         operator.partitioningFunction, operator.function, operator.aggregateList,
                         operator.lower, operator.upper, operator.getOutputIndexedZSetType(),
-                        this.mapped(operator.input()), dropApply.outputPort());
+                        this.mapped(operator.input()), boxApply.outputPort());
         this.map(operator, replacement);
     }
 
@@ -1581,12 +1547,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
     /** Utility function for Apply operators that are introduced by the {@link InsertLimiters}
      * pass, converting their output type into a tuple.
      * This tuple always has a boolean on the first position. */
-    DBSPTypeTupleBase getLimiterOutputType(OutputPort operator) {
-        return operator.outputType().to(DBSPTypeTupleBase.class);
-    }
-
     DBSPType getLimiterDataOutputType(OutputPort operator) {
-        return this.getLimiterOutputType(operator).tupFields[1];
+        return operator.outputType();
     }
 
     void processJoin(@Nullable DBSPJoinBaseOperator expanded) {
@@ -1604,7 +1566,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        boolean rightMayBeNull = expanded.getClosureFunction().parameters[2].getType().deref().mayBeNull;
         PartiallyMonotoneTuple out = Monotonicity.getBodyType(monotoneValue).to(PartiallyMonotoneTuple.class);
         DBSPType outputType = out.getProjectedType();
         Utilities.enforce(outputType != null);
@@ -1658,7 +1619,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             if (rightMono.getFieldType(1).mayBeMonotone())
                 fields[2] = r.deref().field(rightIndex).applyCloneIfNeeded();
             else
-                fields[2] = new DBSPTupleExpression(rightMayBeNull);
+                fields[2] = new DBSPTupleExpression();
 
             DBSPClosureExpression closure =
                     new DBSPRawTupleExpression(fields)
@@ -1680,7 +1641,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     new DBSPRawTupleExpression(
                             k,
                             l,
-                            new DBSPTupleExpression(rightMayBeNull))
+                            new DBSPTupleExpression())
                             .closure(var);
             merger = this.createApply(leftLimiter, closure);
         } else {
@@ -1688,7 +1649,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             Utilities.enforce(rightMono != null);
             DBSPVariablePath var = new DBSPVariablePath(this.getLimiterDataOutputType(rightLimiter).ref());
             DBSPExpression k = new DBSPTupleExpression();
-            DBSPExpression r = new DBSPTupleExpression(rightMayBeNull);
+            DBSPExpression r = new DBSPTupleExpression();
             int currentField = 0;
             if (rightMono.getFieldType(0).mayBeMonotone()) {
                 k = var.deref().field(currentField++).applyCloneIfNeeded();
@@ -1709,30 +1670,29 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.markBound(expanded.outputPort(), limiter);
     }
 
-    public static DBSPClosureExpression timestampMax(CalciteObject node, DBSPTypeTupleBase type) {
-        return type.pairwiseOperation(node, DBSPOpcode.AGG_MAX);
+    /** {@code value}, or the minimum of its type for a NULL: the contribution of a value to a
+     * waterline, which is never NULL. */
+    static DBSPExpression waterlineValue(CalciteObject node, DBSPExpression value) {
+        DBSPType type = value.getType();
+        if (!type.mayBeNull)
+            return value;
+        return new DBSPIfExpression(node, value.is_null(), type.withMayBeNull(false).minimumValue(),
+                value.deepCopy().neverFailsUnwrap(node));
     }
 
-    /** Generate an expression that compares two other expressions for equality */
-    DBSPExpression eq(DBSPExpression left, DBSPExpression right) {
-        DBSPType type = left.getType();
-        if (type.is(DBSPTypeBaseType.class)) {
-            boolean mayBeNull = type.mayBeNull || right.getType().mayBeNull;
-            DBSPExpression compare = ExpressionCompiler.makeBinaryExpression(left.getNode(),
-                    DBSPTypeBool.create(mayBeNull), DBSPOpcode.EQ, left, right);
-            return compare.wrapBoolIfNeeded();
-        } else if (type.is(DBSPTypeTupleBase.class)) {
-            DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
-            DBSPExpression result = new DBSPBoolLiteral(true);
-            for (int i = 0; i < tuple.size(); i++) {
-                DBSPExpression compare = eq(left.field(i), right.field(i));
-                result = ExpressionCompiler.makeBinaryExpression(left.getNode(),
-                        DBSPTypeBool.create(false), DBSPOpcode.AND, result, compare);
-            }
-            return result;
-        } else {
-            throw new InternalCompilerError("Not handled equality of type " + type.asSqlString(), type);
-        }
+    /** {@code value} minus {@code lateness}, saturating at the minimum of the type of
+     * {@code value}. */
+    static DBSPExpression subtractLateness(CalciteObject node, DBSPExpression value, DBSPExpression lateness) {
+        DBSPType type = value.getType();
+        if (type.is(IsTimeRelatedType.class))
+            return new DBSPTimeAddSub(node, type, DBSPOpcode.SUB_SATURATING, value, lateness);
+        DBSPExpression amount = lateness.getType().sameType(type) ? lateness :
+                lateness.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
+        return new DBSPBinaryExpression(node, type, DBSPOpcode.SUB_SATURATING, value, amount);
+    }
+
+    public static DBSPClosureExpression timestampMax(CalciteObject node, DBSPTypeTupleBase type) {
+        return type.pairwiseOperation(node, DBSPOpcode.AGG_MAX);
     }
 
     /** Process LATENESS annotations.
@@ -1776,21 +1736,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPType columnType = rowType.getFieldType(index);
             DBSPExpression lateness = column.getLateness();
             if (lateness != null) {
-                DBSPExpression field = t.deref().field(index);
-                DBSPExpression waterline = ExpressionCompiler.makeBinaryExpression(operator.getRelNode(),
-                        columnType, DBSPOpcode.SUB, field, lateness);
-                if (columnType.is(IsBoundedType.class)) {
-                    // The waterline of a value within the lateness of the minimum is the minimum;
-                    // the subtraction would produce a value outside the range of the type
-                    DBSPExpression lowest = ExpressionCompiler.makeBinaryExpression(operator.getRelNode(),
-                            columnType, DBSPOpcode.ADD, columnType.minimumValue(), lateness.deepCopy());
-                    DBSPExpression below = ExpressionCompiler.makeBinaryExpression(operator.getRelNode(),
-                            DBSPTypeBool.create(columnType.mayBeNull), DBSPOpcode.LT,
-                            t.deref().field(index), lowest).wrapBoolIfNeeded();
-                    waterline = new DBSPIfExpression(operator.getNode(), below,
-                            columnType.minimumValue(), waterline);
-                }
-                timestamps.add(waterline);
+                DBSPExpression field = waterlineValue(operator.getNode(), t.deref().field(index));
+                timestamps.add(subtractLateness(operator.getNode(), field, lateness));
                 declaredFields.add(new MonotoneType(columnType));
             } else {
                 declaredFields.add(NonMonotoneType.nonMonotone(columnType));
@@ -1805,9 +1752,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         boolean replaceIndexedInput = indexedOutputType != null;
 
-        // The waterline operator will compute the *minimum legal value* of all the
-        // inputs that have a lateness attached.  The output signature contains only
-        // the columns that have lateness.
+        // The waterline operator computes, for each column with a LATENESS, the smallest
+        // value that a new row can have without being late.  The output signature contains
+        // only the columns that have lateness.
         DBSPTupleExpression timestamp = new DBSPTupleExpression(timestamps, false);
         DBSPExpression minValue = timestamp.getType().minimumValue();
         DBSPClosureExpression max = timestampMax(operator.getRelNode(), minValue.getType().to(DBSPTypeTupleBase.class));
@@ -1865,18 +1812,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
             result = filter;
         }
 
-        // An apply operator to add a Boolean bit to the waterline.
-        // This bit is 'true' when the waterline produces a value
-        // that is not 'minimum'.
+        // An apply operator that removes the TypedBox of the waterline of an indexed input
         DBSPVariablePath var = waterlineOutputPort.outputType().ref().var();
         // If the v is &TypedBox<T>, v.deref().deref() has type T
         DBSPExpression unwrapped = replaceIndexedInput ? var.deepCopy().deref().deref() : var.deepCopy().deref();
-        DBSPExpression eq = eq(minValue, unwrapped);
         DBSPSimpleOperator extend = new DBSPApplyOperator(operator.getRelNode(),
-                new DBSPTupleExpression(
-                        eq.not(),
-                        unwrapped.applyClone()).closure(var),
-                waterlineOutputPort, null);
+                unwrapped.applyClone().closure(var), waterlineOutputPort, null);
         extend.addAnnotation(Waterline.INSTANCE, DBSPSimpleOperator.class);
         this.addOperator(extend);
         OutputPort merged = extend.outputPort();
@@ -2171,7 +2112,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * The operator is not inserted in the circuit.
      * @param bounds  Bounds to combine. */
     public static OutputPort createMinBound(DBSPCompiler compiler, List<OutputPort> bounds) {
-        DBSPType type = bounds.get(0).outputType().to(DBSPTypeTupleBase.class).getFieldType(1);
+        DBSPType type = bounds.get(0).outputType();
         List<DBSPVariablePath> variables = Linq.map(bounds, b -> type.ref().var());
         List<DBSPExpression> values = Linq.map(variables, DBSPExpression::deref);
         DBSPVariablePath[] vars = variables.toArray(new DBSPVariablePath[0]);
@@ -2327,12 +2268,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     DBSPType tsType = dataType.getFieldType(monotoneFieldIndex);
                     DBSPExpression minimum = tsType.to(IsBoundedType.class).getMinValue();
 
-                    // boundSource has a type (boolean, TupN), extract the corresponding
-                    // value in the second tuple
+                    // boundSource has a type TupN; extract the field of the column
                     DBSPVariablePath var = boundSource.outputType().ref().var();
+                    DBSPExpression upper = var.deref().field(controlFieldIndex);
+                    // The bounds have the type of the keys; a waterline is never NULL
+                    if (tsType.mayBeNull)
+                        upper = upper.some();
                     DBSPExpression makePair = new DBSPRawTupleExpression(
                             DBSPTypeTypedBox.wrapTypedBox(minimum, false),
-                            DBSPTypeTypedBox.wrapTypedBox(var.deref().field(1).field(controlFieldIndex), false));
+                            DBSPTypeTypedBox.wrapTypedBox(upper, false));
                     DBSPApplyOperator apply = new DBSPApplyOperator(
                             operator.getRelNode(), makePair.closure(var.asParameter()), boundSource,null);
                     this.addOperator(apply);
@@ -2381,15 +2325,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             Linq.list(new MonotoneType(tsType)), false, false);
 
                     // The boundSource may have more than 1 monotone field, keep only the one we care about.
-                    DBSPTypeTuple monotoneFields = boundSource.outputType()
-                            .to(DBSPTypeTuple.class)
-                            .getFieldType(1)
-                            .to(DBSPTypeTuple.class);
+                    DBSPTypeTuple monotoneFields = boundSource.outputType().to(DBSPTypeTuple.class);
                     if (monotoneFields.size() > 1) {
                         DBSPVariablePath v = boundSource.outputType().ref().var();
                         DBSPExpression dropFields = new DBSPTupleExpression(
-                                v.deref().field(0),
-                                new DBSPTupleExpression(v.deref().field(1).field(controlFieldIndex)));
+                                v.deref().field(controlFieldIndex).applyCloneIfNeeded());
                         DBSPApplyOperator dropOp = new DBSPApplyOperator(
                                 operator.getRelNode(), dropFields.closure(v.asParameter()), boundSource, "");
                         this.addOperator(dropOp);

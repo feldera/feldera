@@ -6,8 +6,8 @@ import javax.annotation.Nullable;
 
 /** A function of one argument, e.g. EXP. */
 class UnaryMonotoneFunction extends MonotoneFunction {
-    UnaryMonotoneFunction(String prefix) {
-        super(prefix, 1);
+    UnaryMonotoneFunction(String names, boolean canFail) {
+        super(names, canFail);
     }
 
     @Override

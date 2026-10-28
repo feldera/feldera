@@ -40,6 +40,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
@@ -201,19 +202,33 @@ public final class DBSPCastExpression extends DBSPExpression {
         DBSPType to = this.type;
         if (from.sameTypeIgnoringNullability(to))
             return false;
-        boolean dateToTimestamp = from.is(DBSPTypeDate.class) && to.is(DBSPTypeTimestamp.class);
-        boolean timestampToDate = from.is(DBSPTypeTimestamp.class) && to.is(DBSPTypeDate.class);
-        if (dateToTimestamp || timestampToDate)
+        // The date and time types convert to TIMESTAMP, and a TIMESTAMP converts to a DATE,
+        // without leaving the legal range
+        boolean fromTimestamp = isTimestamp(from);
+        boolean toTimestamp = isTimestamp(to);
+        boolean fromDateOrTime = from.is(DBSPTypeDate.class) || from.is(DBSPTypeTime.class);
+        if (toTimestamp && (fromTimestamp || fromDateOrTime))
+            return false;
+        if (fromTimestamp && to.is(DBSPTypeDate.class))
+            return false;
+        // A cast between two units keeps the value of the interval
+        boolean shortIntervals = from.is(DBSPTypeShortInterval.class) && to.is(DBSPTypeShortInterval.class);
+        boolean longIntervals = from.is(DBSPTypeLongInterval.class) && to.is(DBSPTypeLongInterval.class);
+        if (shortIntervals || longIntervals)
             return false;
 
         DBSPTypeInteger fromInteger = from.as(DBSPTypeInteger.class);
         DBSPTypeDecimal fromDecimal = from.as(DBSPTypeDecimal.class);
-        if (to.is(DBSPTypeDouble.class))
-            return fromInteger == null && fromDecimal == null && !from.is(DBSPTypeReal.class);
-        if (to.is(DBSPTypeReal.class))
-            return fromInteger == null || fromInteger.getWidth() > 64;
-
         DBSPTypeInteger toInteger = to.as(DBSPTypeInteger.class);
+        // A TIMESTAMP converts to its number of milliseconds, a BIGINT
+        if (fromTimestamp && toInteger != null)
+            return !toInteger.signed || toInteger.getWidth() != 64;
+        // A conversion to DOUBLE or REAL rounds, and gives an infinity for a value out of range
+        boolean toFloat = to.is(DBSPTypeDouble.class) || to.is(DBSPTypeReal.class);
+        boolean fromFloat = from.is(DBSPTypeDouble.class) || from.is(DBSPTypeReal.class);
+        if (toFloat)
+            return fromInteger == null && fromDecimal == null && !fromFloat && !fromTimestamp;
+
         DBSPTypeDecimal toDecimal = to.as(DBSPTypeDecimal.class);
         if (fromInteger != null && toInteger != null)
             return toInteger.minimum().compareTo(fromInteger.minimum()) > 0 ||

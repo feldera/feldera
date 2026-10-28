@@ -7,8 +7,8 @@ import javax.annotation.Nullable;
 /** A function monotone in its first argument when the others are constant, e.g. ROUND(x, digits)
  * or the start of a TUMBLE window. */
 class FirstArgumentMonotoneFunction extends MonotoneFunction {
-    FirstArgumentMonotoneFunction(String prefix, int... arities) {
-        super(prefix, arities);
+    FirstArgumentMonotoneFunction(String names, boolean canFail) {
+        super(names, canFail);
     }
 
     @Override
