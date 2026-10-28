@@ -411,6 +411,19 @@ pub struct CommonConfig {
     )]
     pub https_client_key_path: Option<String>,
 
+    /// Whether the compiler and runner servers require callers to present a client
+    /// certificate that the private CA (`--private-ca-cert-path`) signed, and admit each
+    /// caller only to its own routes. The control plane (URI SAN `urn:feldera:control-plane`)
+    /// may use all routes. A pipeline (URI SAN `urn:feldera:pipeline:<id>`) may only download
+    /// its own binary and program info from the compiler. `/healthz` stays open to callers
+    /// without a certificate.
+    #[arg(
+        long,
+        default_value_t = false,
+        env = "FELDERA_REQUIRE_CLIENT_CERTIFICATES"
+    )]
+    pub require_client_certificates: bool,
+
     /// Number of monitor events that are retained for each pipeline.
     #[arg(long, default_value_t = default_pipeline_monitor_events_retention(), env = "FELDERA_PIPELINE_MONITOR_EVENTS_RETENTION")]
     pub pipeline_monitor_events_retention: u32,
@@ -835,6 +848,7 @@ impl CommonConfig {
             private_ca_cert_path: None,
             https_client_cert_path: None,
             https_client_key_path: None,
+            require_client_certificates: false,
             pipeline_monitor_events_retention: 720,
             disable_cluster_monitor_resources: false,
             allow_rust_udfs: true,
@@ -1766,19 +1780,6 @@ pub struct CompilerConfig {
     )]
     pub gen2_udf_sdk_version: Option<String>,
 
-    /// Whether the compiler server requires callers to present a client certificate that
-    /// the private CA (`--private-ca-cert-path`) signed, and admits each caller only to its
-    /// own routes. The control plane (URI SAN `urn:feldera:control-plane`) may use all
-    /// routes. A pipeline (URI SAN `urn:feldera:pipeline:<id>`) may only download its own
-    /// binary and program info. `/healthz` stays open to callers without a certificate.
-    #[serde(default)]
-    #[arg(
-        long,
-        default_value_t = false,
-        env = "FELDERA_COMPILER_REQUIRE_CLIENT_CERTIFICATES"
-    )]
-    pub require_client_certificates: bool,
-
     /// Precompile Rust dependencies in the working directory.
     ///
     /// Instructs the manager to download and compile all crates needed by
@@ -2252,7 +2253,6 @@ mod tests {
             gen2_udf_sdk_path,
             gen2_udf_sdk_version: None,
             precompile: false,
-            require_client_certificates: false,
         };
         let sdk_path = format!("{}/.", sdk_dir.path().display());
 
@@ -2292,7 +2292,6 @@ mod tests {
                 gen2_udf_sdk_path,
                 gen2_udf_sdk_version: Some(gen2_udf_sdk_version.to_string()),
                 precompile: false,
-                require_client_certificates: false,
             };
 
         for version in ["0.1.0", "1.2.3-rc.1"] {

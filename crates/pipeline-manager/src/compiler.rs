@@ -1,4 +1,3 @@
-pub mod client_auth;
 pub mod error;
 mod gen2_udf_compiler;
 pub mod main;
@@ -7,6 +6,6 @@ mod rustc_diagnostics;
 mod sql_compiler;
 #[cfg(test)]
 mod test;
-mod util;
+pub(crate) mod util;
 
 pub(crate) use sql_compiler::{ProgramValidationRequest, ValidateProgramResponse};
