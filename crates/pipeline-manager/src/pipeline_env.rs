@@ -1,22 +1,52 @@
 use std::collections::BTreeMap;
 
 /// Environment variable names that users cannot override in pipeline configuration.
-pub const ENV_VAR_BLOCKLIST: &[&str] = &["HOSTNAME", "RUST_LOG", "TOKIO_WORKER_THREADS"];
+pub const ENV_VAR_BLOCKLIST: &[&str] = &[
+    "HOSTNAME",
+    "RUST_LOG",
+    "TOKIO_WORKER_THREADS",
+    // The shell that starts the pipeline reads or runs these at startup.
+    "BASH_ENV",
+    "BASHOPTS",
+    "ENV",
+    "IFS",
+    "PATH",
+    "PS4",
+    "SHELLOPTS",
+    // The C library and OpenSSL load code from these paths.
+    "GCONV_PATH",
+    "GLIBC_TUNABLES",
+    "LOCPATH",
+    "NLSPATH",
+    "OPENSSL_CONF",
+    "OPENSSL_ENGINES",
+    "OPENSSL_MODULES",
+];
 
 /// Environment variable prefixes that users cannot override in pipeline configuration.
-pub const ENV_VAR_PREFIX_BLOCKLIST: &[&str] = &["FELDERA_", "KUBERNETES_", "TOKIO_"];
+pub const ENV_VAR_PREFIX_BLOCKLIST: &[&str] = &[
+    "FELDERA_",
+    "KUBERNETES_",
+    "TOKIO_",
+    // Shell functions that the shell imports from the environment.
+    "BASH_FUNC_",
+    // Dynamic loader settings such as `LD_PRELOAD`.
+    "LD_",
+];
 
 /// Validate user-provided pipeline environment variables and
 /// avoid overrides of certain ENV 'namespaces'.
 ///
-/// The 'blocked' names are often set by feldera itself and can cause
-/// unexpected behavior when overridden with this mechanism by the
+/// The 'blocked' names are often set by feldera itself, or change how the
+/// shell, the dynamic loader or the C library start the pipeline, and can
+/// cause unexpected behavior when overridden with this mechanism by the
 /// user.
 ///
 /// - Don't allow anything starting with `FELDERA_`
 /// - Don't allow anything starting with `KUBERNETES_`
 /// - Don't allow anything starting with `TOKIO_`
-/// - Don't allow explicit control variables such as `RUST_LOG`
+/// - Don't allow anything starting with `BASH_FUNC_` or `LD_`
+/// - Don't allow explicit control variables such as `RUST_LOG` or `BASH_ENV`
 pub fn validate_pipeline_env(env: &BTreeMap<String, String>) -> Result<(), String> {
     let forbidden: Vec<String> = env
         .keys()
@@ -69,5 +99,38 @@ mod tests {
     fn rejects_kubernetes_env_vars() {
         let env = BTreeMap::from([("KUBERNETES_SERVICE_HOST".to_string(), "x".to_string())]);
         assert!(validate_pipeline_env(&env).is_err());
+    }
+
+    /// Variables that change how the shell, the loader or the C library start the pipeline are reserved.
+    #[test]
+    fn rejects_process_startup_env_vars() {
+        for name in [
+            "BASH_ENV",
+            "SHELLOPTS",
+            "PS4",
+            "PATH",
+            "BASH_FUNC_wget%%",
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "GCONV_PATH",
+            "OPENSSL_CONF",
+        ] {
+            let env = BTreeMap::from([(name.to_string(), "x".to_string())]);
+            assert!(
+                validate_pipeline_env(&env).is_err(),
+                "{name} must be reserved"
+            );
+        }
+    }
+
+    /// Allocator and connector settings stay available.
+    #[test]
+    fn accepts_allocator_and_connector_env_vars() {
+        let env = BTreeMap::from([
+            ("MALLOC_CONF".to_string(), "prof:true".to_string()),
+            ("AWS_REGION".to_string(), "us-west-1".to_string()),
+            ("HTTPS_PROXY".to_string(), "http://proxy:3128".to_string()),
+        ]);
+        assert!(validate_pipeline_env(&env).is_ok());
     }
 }
