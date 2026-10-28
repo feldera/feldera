@@ -7,6 +7,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.Project;
+import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
@@ -23,13 +24,17 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
+
+import java.util.Locale;
 
 /** Rejects plans that the Calcite validator accepts but that Feldera does not support.
  *
  * <p>The rejected constructs are:
  * <ul>
- *   <li>equality comparisons applied to ROW values;</li>
+ *   <li>comparisons applied to ROW values, and ordering comparisons applied to ARRAY and
+ *   MAP values that contain ROW values;</li>
  *   <li>{@code MODE(DISTINCT value)};</li>
  *   <li>window aggregates with {@code DISTINCT}, such as {@code COUNT(DISTINCT x) OVER (...)};</li>
  *   <li>aggregate calls with a {@code WITHIN DISTINCT} clause;</li>
@@ -38,18 +43,25 @@ import org.dbsp.util.Utilities;
  * </ul>
  *
  * <p>The SQL standard gives ROW comparisons a meaning that may be surprising:
- * fields are compared pairwise using three-valued logic, so
- * {@code ROW(1, NULL) = ROW(1, NULL)} is {@code NULL} rather than {@code TRUE}.
+ * fields are compared using three-valued logic, so both
+ * {@code ROW(1, NULL) = ROW(1, NULL)} and {@code ROW(1, NULL) <= ROW(1, NULL)}
+ * are {@code NULL} rather than {@code TRUE}.
  * Feldera only implements {@code IS [NOT] DISTINCT FROM} instead, which treats
  * {@code NULL} values as equal.  A user-defined type is compiled a ROW type, so the
  * restriction covers user-defined types as well.
  *
  * <p>Row equality is implied in JOIN conditions, a NATURAL JOINs, a USING clause,
- * IN, CASE, and NULLIF.
+ * IN, CASE, and NULLIF.  Row ordering is implied in BETWEEN, GREATEST, LEAST,
+ * GREATEST_IGNORE_NULLS, and LEAST_IGNORE_NULLS.
  *
  * <p>Grouping constructs - GROUP BY, DISTINCT, PARTITION BY, UNION, INTERSECT,
  * EXCEPT - compare ROW values using IS NOT DISTINCT FROM, so they are
- * accepted.  So are the ordering comparisons '&lt;', '&lt;=', '&gt;' and '&gt;='.
+ * accepted.  Sorting constructs - ORDER BY, MIN, MAX - order ROW values with a
+ * NULL field before any other value, so they are accepted too.
+ *
+ * <p>ARRAY and MAP values compare their elements, keys, and values using
+ * IS NOT DISTINCT FROM, so equality is accepted on ARRAY and MAP values that contain
+ * ROW values; ordering comparisons are rejected, as they are on ROW values.
  */
 public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
     private static final String ERROR_KIND = "Unsupported comparison";
@@ -178,9 +190,20 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
         @Override
         public RexNode visitCall(RexCall call) {
             checkSimilar(call);
-            if (!call.operands.isEmpty() && call.operands.get(0).getType().isStruct())
-                this.checkEquality(call);
+            this.checkComparison(call);
             return super.visitCall(call);
+        }
+
+        /** True if 'type' is a ROW type, or an ARRAY or MAP type with a ROW type inside */
+        static boolean containsRow(RelDataType type) {
+            if (type.isStruct())
+                return true;
+            RelDataType element = type.getComponentType();
+            if (element != null)
+                return containsRow(element);
+            RelDataType key = type.getKeyType();
+            RelDataType value = type.getValueType();
+            return key != null && value != null && (containsRow(key) || containsRow(value));
         }
 
         /** Throw if 'call' is SIMILAR TO; Calcite would otherwise fold it when its operands are constant */
@@ -190,17 +213,26 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
                         + " not yet implemented", 1265, CalciteObject.create(call.getParserPosition()));
         }
 
-        /** Report an error if 'call' compares its ROW-typed operands for equality */
-        void checkEquality(RexCall call) {
+        /** Report an error if 'call' compares its ROW-typed operands, or orders operands
+         * that contain ROW values */
+        void checkComparison(RexCall call) {
+            // An operand that is a NULL literal does not have a ROW type
+            boolean isRow = Linq.any(call.operands, operand -> operand.getType().isStruct());
+            boolean hasRow = Linq.any(call.operands, operand -> containsRow(operand.getType()));
+            if (!hasRow)
+                return;
+            String operator = Utilities.singleQuote(call.op.getName().toUpperCase(Locale.ROOT));
             String message = switch (call.getKind()) {
-                case EQUALS -> "ROW values cannot be compared using " +
-                        Utilities.singleQuote(call.op.getName()) +
+                case EQUALS -> !isRow ? null : "ROW values cannot be compared using " + operator +
                         "; consider using 'IS NOT DISTINCT FROM' (or its shorthand '<=>') instead";
-                case NOT_EQUALS -> "ROW values cannot be compared using " +
-                        Utilities.singleQuote(call.op.getName()) +
+                case NOT_EQUALS -> !isRow ? null : "ROW values cannot be compared using " + operator +
                         "; consider using 'IS DISTINCT FROM' instead";
-                case NULLIF -> "'NULLIF' compares ROW values for equality; consider using " +
+                case NULLIF -> !isRow ? null : "'NULLIF' compares ROW values for equality; consider using " +
                         "'CASE WHEN x IS NOT DISTINCT FROM y THEN NULL ELSE x END' instead";
+                case LESS_THAN, LESS_THAN_OR_EQUAL, GREATER_THAN, GREATER_THAN_OR_EQUAL,
+                     GREATEST, LEAST, GREATEST_PG, LEAST_PG -> isRow ?
+                        "ROW values cannot be compared using " + operator + "; compare their fields instead" :
+                        "ARRAY and MAP values that contain ROW values cannot be compared using " + operator;
                 default -> null;
             };
             if (message == null)

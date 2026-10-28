@@ -1571,16 +1571,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
-    public void issue4877() {
-        this.getCC("""
-                CREATE TABLE tbl(roww ROW(i1 INT, v1 VARCHAR NULL));
-                
-                CREATE MATERIALIZED VIEW v AS SELECT
-                roww < ROW(3, 'cat') AS roww
-                FROM tbl;""");
-    }
-
-    @Test
     public void issue4880() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(roww ROW(i1 INT, v1 VARCHAR NULL));

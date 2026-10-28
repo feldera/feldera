@@ -147,15 +147,19 @@ example usage.  Dynamic `PIVOT` is not yet supported.
 
 The `MULTISET` data type is not currently supported.
 
-## Equality between `ROW` values
+## Comparisons between `ROW` values
 
-`=`, `<>`, and `!=` are rejected between `ROW` values, and so are the
-forms that imply such a comparison: a join condition, `NATURAL JOIN`,
-`USING`, `IN`, `CASE`, and `NULLIF`.  A user-defined structure type is
-a `ROW` type, so the restriction covers its values too.  Use `IS [NOT]
-DISTINCT FROM` instead, and see [comparing `ROW`
-values](comparisons.md#comparing-row-values) for the accepted rewrite
-of each form.
+`=`, `<>`, `!=`, `<`, `<=`, `>`, and `>=` are rejected between `ROW`
+values, and so are the forms that imply such a comparison: a join
+condition, `NATURAL JOIN`, `USING`, `IN`, `CASE`, `NULLIF`, `BETWEEN`,
+`GREATEST`, `LEAST`, `GREATEST_IGNORE_NULLS`, and `LEAST_IGNORE_NULLS`.
+A user-defined structure type is a `ROW` type, so the restriction
+covers its values too.  The ordering comparisons are also rejected
+between `ARRAY` and `MAP` values that contain `ROW` values.  Use
+`IS [NOT] DISTINCT FROM` in place of
+equality, compare the fields in place of an ordering, and see
+[comparing `ROW` values](comparisons.md#comparing-row-values) for the
+accepted rewrite of each form.
 
 ## `TIME` with timezone
 
