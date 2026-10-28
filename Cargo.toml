@@ -48,6 +48,7 @@ actix-codec = "0.5.0"
 actix-cors = "0.7.1"
 actix-files = "0.6.10"
 actix-http = "3.12.1"
+actix-tls = { version = "3.4.0", default-features = false, features = ["accept", "rustls-0_23"] }
 actix-test = "0.1.1"
 actix-web = "4.11.0"
 actix-web-httpauth = "0.8.0"
@@ -311,6 +312,7 @@ s2-sdk = "0.31.10"
 # See the `ensure_default_crypto_provider` function.
 rustls = "0.23.12"
 rustls-pemfile = "2.2.0"
+rustls-webpki = { version = "0.103.15", default-features = false }
 rustls-native-certs = "0.7.3"
 rustversion = "1.0"
 rustyline = "15.0"

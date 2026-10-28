@@ -7,8 +7,21 @@ use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display};
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 pub enum CompilerError {
-    PrecompilationError { error: String },
-    TaskFailed { error: String },
+    PrecompilationError {
+        error: String,
+    },
+    TaskFailed {
+        error: String,
+    },
+    ClientCertificateRequired {
+        method: String,
+        path: String,
+    },
+    CallerNotAllowed {
+        caller: String,
+        method: String,
+        path: String,
+    },
 }
 
 impl DetailedError for CompilerError {
@@ -16,6 +29,8 @@ impl DetailedError for CompilerError {
         match self {
             Self::PrecompilationError { .. } => Cow::from("PrecompilationError"),
             Self::TaskFailed { .. } => Cow::from("TaskFailed"),
+            Self::ClientCertificateRequired { .. } => Cow::from("ClientCertificateRequired"),
+            Self::CallerNotAllowed { .. } => Cow::from("CallerNotAllowed"),
         }
     }
 }
@@ -28,6 +43,22 @@ impl Display for CompilerError {
             }
             Self::TaskFailed { error } => {
                 write!(f, "Compiler failed due to a task failed: {error}")
+            }
+            Self::ClientCertificateRequired { method, path } => {
+                write!(
+                    f,
+                    "The compiler server requires a client certificate for {method} {path}: present a certificate that the private CA signed (control plane: --https-client-cert-path)"
+                )
+            }
+            Self::CallerNotAllowed {
+                caller,
+                method,
+                path,
+            } => {
+                write!(
+                    f,
+                    "{caller} may not send {method} {path} to the compiler server: a pipeline may only download its own binary and program info"
+                )
             }
         }
     }
@@ -46,6 +77,8 @@ impl ResponseError for CompilerError {
         match self {
             Self::PrecompilationError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::TaskFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::ClientCertificateRequired { .. } => StatusCode::UNAUTHORIZED,
+            Self::CallerNotAllowed { .. } => StatusCode::FORBIDDEN,
         }
     }
 
