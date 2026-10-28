@@ -182,24 +182,31 @@ impl ResponseError for ClientAuthError {
     }
 }
 
-/// Builds a client certificate verifier that trusts every certificate in `anchors`, so a
-/// client may send its leaf certificate without the chain. Clients without a certificate may
-/// connect, so that they get an actionable 401 or reach routes open to everyone.
-pub fn client_certificate_verifier(
-    anchors: impl IntoIterator<Item = CertificateDer<'static>>,
-) -> Result<Arc<dyn ClientCertVerifier>, String> {
-    let mut roots = RootCertStore::empty();
-    for anchor in anchors {
-        roots
-            .add(anchor)
-            .map_err(|e| format!("invalid CA certificate: {e}"))?;
-    }
-    // An explicit provider: with several rustls crypto features compiled in, rustls has no
-    // default unless the process installed one.
-    let provider = CryptoProvider::get_default()
+/// The rustls provider that the process installed, or the aws-lc-rs one that Feldera binaries
+/// install. With several rustls crypto features compiled in, rustls has no default unless the
+/// process installed one.
+pub fn crypto_provider() -> Arc<CryptoProvider> {
+    CryptoProvider::get_default()
         .cloned()
-        .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
-    WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider)
+        .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+}
+
+/// Builds a client certificate verifier that trusts only the first certificate of `ca_chain`,
+/// the private CA that issues client certificates, so a client may send its leaf certificate
+/// without the chain. The rest of the chain is not trusted, because other CAs under the same
+/// root could issue Feldera identities. Clients without a certificate may connect, so that
+/// they get an actionable 401 or reach routes open to everyone.
+pub fn client_certificate_verifier(
+    ca_chain: &[CertificateDer<'static>],
+) -> Result<Arc<dyn ClientCertVerifier>, String> {
+    let issuing_ca = ca_chain
+        .first()
+        .ok_or("the CA chain holds no certificate")?;
+    let mut roots = RootCertStore::empty();
+    roots
+        .add(issuing_ca.clone())
+        .map_err(|e| format!("invalid CA certificate: {e}"))?;
+    WebPkiClientVerifier::builder_with_provider(Arc::new(roots), crypto_provider())
         .allow_unauthenticated()
         .build()
         .map_err(|e| format!("client certificate verifier: {e}"))
@@ -231,7 +238,7 @@ impl PipelineClientAuth {
         }
         Ok(Self {
             own,
-            verifier: client_certificate_verifier(ca_chain.iter().cloned())?,
+            verifier: client_certificate_verifier(ca_chain)?,
         })
     }
 
@@ -245,23 +252,37 @@ impl PipelineClientAuth {
 #[cfg(test)]
 mod tests {
     use super::{
-        CONTROL_PLANE_CERTIFICATE_URI, Caller, PipelineClientAuth, pipeline_certificate_uri,
+        CONTROL_PLANE_CERTIFICATE_URI, Caller, PipelineClientAuth, client_certificate_verifier,
+        pipeline_certificate_uri,
     };
     use rcgen::{
-        BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair,
-        SanType,
+        BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, Issuer,
+        KeyPair, SanType,
     };
-    use rustls::pki_types::CertificateDer;
+    use rustls::pki_types::{CertificateDer, UnixTime};
     use uuid::Uuid;
 
     const PIPELINE_A: Uuid = Uuid::from_u128(0xa);
     const PIPELINE_B: Uuid = Uuid::from_u128(0xb);
 
     fn ca() -> (Issuer<'static, KeyPair>, CertificateDer<'static>) {
+        named_ca("ca", None)
+    }
+
+    /// A CA certificate signed by `parent`, or self-signed without one.
+    fn named_ca(
+        name: &str,
+        parent: Option<&Issuer<'static, KeyPair>>,
+    ) -> (Issuer<'static, KeyPair>, CertificateDer<'static>) {
         let mut params = CertificateParams::new(Vec::<String>::new()).unwrap();
+        params.distinguished_name.push(DnType::CommonName, name);
         params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         let key = KeyPair::generate().unwrap();
-        let cert = params.self_signed(&key).unwrap();
+        let cert = match parent {
+            Some(parent) => params.signed_by(&key, parent),
+            None => params.self_signed(&key),
+        }
+        .unwrap();
         (Issuer::new(params, key), cert.der().clone())
     }
 
@@ -318,5 +339,41 @@ mod tests {
         assert!(PipelineClientAuth::from_chain(&[own_leaf]).is_err());
         let server_leaf = leaf(&issuer, &[]);
         assert!(PipelineClientAuth::from_chain(&[server_leaf, ca_cert]).is_err());
+    }
+
+    /// Servers trust client certificates from the private CA, the first certificate of the CA
+    /// chain, and refuse ones from its root or from another CA under that root.
+    #[test]
+    fn verifier_trusts_only_private_ca() {
+        let (root, root_cert) = named_ca("root", None);
+        let (private_ca, private_ca_cert) = named_ca("private", Some(&root));
+        let (other_ca, other_ca_cert) = named_ca("other", Some(&root));
+        let own_leaf = leaf(&private_ca, &[pipeline_certificate_uri(PIPELINE_A)]);
+        let pipeline_chain = [own_leaf, private_ca_cert.clone(), root_cert.clone()];
+        let ca_chain = [private_ca_cert, root_cert];
+        let control_plane = [CONTROL_PLANE_CERTIFICATE_URI.to_string()];
+        let now = UnixTime::now();
+        for verifier in [
+            client_certificate_verifier(&ca_chain).unwrap(),
+            PipelineClientAuth::from_chain(&pipeline_chain)
+                .unwrap()
+                .verifier,
+        ] {
+            let from_private_ca = leaf(&private_ca, &control_plane);
+            assert!(
+                verifier
+                    .verify_client_cert(&from_private_ca, &[], now)
+                    .is_ok()
+            );
+            let from_root = leaf(&root, &control_plane);
+            assert!(verifier.verify_client_cert(&from_root, &[], now).is_err());
+            let from_other_ca = leaf(&other_ca, &control_plane);
+            let other_chain = std::slice::from_ref(&other_ca_cert);
+            assert!(
+                verifier
+                    .verify_client_cert(&from_other_ca, other_chain, now)
+                    .is_err()
+            );
+        }
     }
 }
