@@ -7,7 +7,6 @@ mod auth;
 
 pub mod all_in_one;
 pub mod api;
-pub mod client_auth;
 pub mod cluster_monitor;
 pub mod common_error;
 pub mod compiler;
