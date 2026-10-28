@@ -13,7 +13,7 @@ public class MonotoneType extends ScalarMonotoneType {
 
     @Override
     @Nullable public DBSPType getProjectedType() {
-        return this.type;
+        return this.type.withMayBeNull(false);
     }
 
     @Override

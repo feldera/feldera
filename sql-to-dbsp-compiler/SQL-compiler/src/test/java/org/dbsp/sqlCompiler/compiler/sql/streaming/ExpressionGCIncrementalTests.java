@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** GC of aggregates grouped by expressions of a column ts with LATENESS. */
@@ -67,10 +68,15 @@ public class ExpressionGCIncrementalTests extends StreamingTestBase {
                     Key.of("ts * CAST(2 AS TINYINT)"), Key.of("-2 * ts"), Key.of("2 / ts"),
                     Key.of("ts + 1"), Key.of("1 + ts"), Key.of("ts - 1"), Key.of("1 - ts"), Key.of("-ts"),
                     Key.of("CAST(ts AS BIGINT)"), Key.of("CAST(ts AS DECIMAL(12, 2))"),
-                    Key.of("CAST(ts AS DOUBLE)"), Key.of("CAST(ts AS VARCHAR)"),
+                    Key.of("CAST(ts AS DOUBLE)"), Key.of("CAST(ts AS REAL)"), Key.of("CAST(ts AS TIMESTAMP)"),
+                    new Key("ts hours after 2020", "TIMESTAMP '2020-01-01 00:00:00' + " +
+                            "CAST(CAST(ts AS BIGINT) AS INTERVAL HOUR)", "T"),
+                    Key.of("CAST(ts AS VARCHAR)"),
                     Key.of("ROUND(ts, -1)"), Key.of("TRUNCATE(ts, -1)"), Key.of("FLOOR(ts / 3)"),
                     Key.of("CEIL(ts / 3)"), Key.of("SIGN(ts - 150)"), Key.of("ABS(ts - 150)"),
                     Key.of("SQRT(ts)"), Key.of("LN(ts)"), Key.of("LOG10(ts)"),
+                    Key.of("LOG(ts)"), Key.of("LOG(ts, 10)"), Key.of("LOG(ts, 0.5)"),
+                    Key.of("POWER(2, ts / 100)"), Key.of("POWER(0.5, ts / 100)"),
                     Key.of("CBRT(ts)"), Key.of("EXP(ts / 100)"), Key.of("ATAN(ts)"), Key.of("SINH(ts / 100)"),
                     Key.of("ASINH(ts)"), Key.of("TANH(ts / 100)"), Key.of("DEGREES(ts)"), Key.of("RADIANS(ts)"),
                     Key.of("BROUND(ts, -1)"), Key.of("TRUNC(ts, -1)"),
@@ -86,7 +92,12 @@ public class ExpressionGCIncrementalTests extends StreamingTestBase {
             "LATENESS INTERVAL " + LATENESS + " MINUTES",
             List.of(Key.of("ts + INTERVAL 1 HOUR"), Key.of("INTERVAL 1 HOUR + ts"), Key.of("ts - INTERVAL 1 HOUR"),
                     Key.of("TIMESTAMP_TRUNC(ts, HOUR)"), Key.of("FLOOR(ts TO HOUR)"), Key.of("CEIL(ts TO HOUR)"),
-                    Key.of("CAST(ts AS DATE)"), Key.of("YEAR(ts)"), Key.of("EXTRACT(EPOCH FROM ts)"),
+                    Key.of("CAST(ts AS DATE)"), Key.of("CAST(ts AS TIMESTAMP WITH TIME ZONE)"),
+                    Key.of("CAST(ts AS BIGINT)"), Key.of("CAST(ts AS BIGINT UNSIGNED)"), Key.of("CAST(ts AS DOUBLE)"),
+                    Key.of("CAST(ts AS DECIMAL(20, 3))"),
+                    new Key("hours after 2020 as DECIMAL", "CAST((ts - TIMESTAMP '2020-01-01 00:00:00') " +
+                            "HOUR AS DECIMAL(20, 2))", "T"),
+                    Key.of("YEAR(ts)"), Key.of("EXTRACT(EPOCH FROM ts)"),
                     Key.of("EXTRACT(DECADE FROM ts)"), Key.of("EXTRACT(ISOYEAR FROM ts)"),
                     Key.of("TIMESTAMPDIFF(MINUTE, TIMESTAMP '2020-01-01 00:00:00', ts)"),
                     Key.of("GREATEST(ts, TIMESTAMP '2021-01-01 00:00:00')"),
@@ -127,6 +138,9 @@ public class ExpressionGCIncrementalTests extends StreamingTestBase {
             CAST(ts AS BIGINT)             | K      | K      | K      | K
             CAST(ts AS DECIMAL(12, 2))     | K      | K      | K      | K
             CAST(ts AS DOUBLE)             | K      | K      | K      | K
+            CAST(ts AS REAL)               | K      | K      | K      | K
+            CAST(ts AS TIMESTAMP)          | K      | K      | K      | K
+            ts hours after 2020            | K      | K      | K      | K
             CAST(ts AS VARCHAR)            | -      | -      | -      | -
             ROUND(ts, -1)                  | K      | K      | K      | K
             TRUNCATE(ts, -1)               | K      | K      | K      | K
@@ -134,9 +148,14 @@ public class ExpressionGCIncrementalTests extends StreamingTestBase {
             CEIL(ts / 3)                   | K      | K      | K      | K
             SIGN(ts - 150)                 | K      | K      | K      | K
             ABS(ts - 150)                  | -      | -      | -      | -
-            SQRT(ts)                       | -      | -      | -      | -
+            SQRT(ts)                       | K      | K      | K      | K
             LN(ts)                         | K      | K      | K      | K
             LOG10(ts)                      | K      | K      | K      | K
+            LOG(ts)                        | K      | K      | K      | K
+            LOG(ts, 10)                    | K      | K      | K      | K
+            LOG(ts, 0.5)                   | -      | -      | -      | -
+            POWER(2, ts / 100)             | K      | K      | K      | K
+            POWER(0.5, ts / 100)           | -      | -      | -      | -
             CBRT(ts)                       | K      | K      | K      | K
             EXP(ts / 100)                  | K      | K      | K      | K
             ATAN(ts)                       | K      | K      | K      | K
@@ -168,6 +187,12 @@ public class ExpressionGCIncrementalTests extends StreamingTestBase {
             FLOOR(ts TO HOUR)                                          | K
             CEIL(ts TO HOUR)                                           | K
             CAST(ts AS DATE)                                           | K
+            CAST(ts AS TIMESTAMP WITH TIME ZONE)                       | K
+            CAST(ts AS BIGINT)                                         | K
+            CAST(ts AS BIGINT UNSIGNED)                                | K
+            CAST(ts AS DOUBLE)                                         | K
+            CAST(ts AS DECIMAL(20, 3))                                 | K
+            hours after 2020 as DECIMAL                                | K
             YEAR(ts)                                                   | K
             EXTRACT(EPOCH FROM ts)                                     | K
             EXTRACT(DECADE FROM ts)                                    | K
@@ -237,6 +262,36 @@ public class ExpressionGCIncrementalTests extends StreamingTestBase {
         Assert.assertEquals(EXPECTED_NUMERIC_GC, this.gcTable(NUMERIC));
         Assert.assertEquals(EXPECTED_TIMESTAMP_GC, this.gcTable(TIMESTAMP));
         Assert.assertEquals(EXPECTED_DATE_GC, this.gcTable(DATE));
+    }
+
+    /** Check that only a division by a positive constant gets GC, so the bound of a key never
+     * divides by zero. */
+    @Test
+    public void gcOnlyForDivisionByPositiveConstant() {
+        Family numbers = new Family(
+                List.of("INT", "BIGINT", "DOUBLE", "DECIMAL(10, 2)"),
+                "LATENESS " + LATENESS,
+                List.of(Key.of("ts / 2"), Key.of("ts / 0"), Key.of("ts / -2"), Key.of("ts / x")));
+        Assert.assertEquals("""
+                key     | INT    | BIGINT | DOUBLE | DECIMAL(10, 2)
+                ts / 2  | K      | K      | K      | K
+                ts / 0  | -      | -      | -      | -
+                ts / -2 | -      | -      | -      | -
+                ts / x  | -      | -      | -      | -
+                """, this.gcTable(numbers));
+        String hours = "(ts - TIMESTAMP '2020-01-01 00:00:00') HOUR";
+        Family intervals = new Family(
+                List.of("TIMESTAMP"),
+                "LATENESS INTERVAL " + LATENESS + " MINUTES",
+                List.of(new Key("hours / 2", hours + " / 2", "T"),
+                        new Key("hours / 0", hours + " / 0", "T"),
+                        new Key("hours / -2", hours + " / -2", "T")));
+        Assert.assertEquals("""
+                key        | TIMESTAMP
+                hours / 2  | K
+                hours / 0  | -
+                hours / -2 | -
+                """, this.gcTable(intervals));
     }
 
     /** The first INT time of the inputs; TIMESTAMP_BASE plus t minutes and DATE_BASE plus t days are the
@@ -322,7 +377,8 @@ public class ExpressionGCIncrementalTests extends StreamingTestBase {
     }
 
     /** Check that an aggregate grouped by SQRT(ts) keeps its groups when the waterline of ts is
-     * negative: SQRT of a negative number is NaN, the largest value. */
+     * negative: SQRT of a negative number is NaN, the largest value, but the bound is the
+     * saturating form, -infinity. */
     @Test
     public void sqrtOfNegativeWaterline() {
         var ccs = this.getCCS("""
@@ -391,5 +447,279 @@ public class ExpressionGCIncrementalTests extends StreamingTestBase {
                 -------------------
                  NULL | 3 | -1
                  NULL | 7 | 1""");
+    }
+
+    /** CEIL of a TIME wraps around midnight, so it is not monotone. */
+    @Test
+    public void timeCeilingIsNotMonotone() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(t TIME NOT NULL LATENESS INTERVAL 1 HOUR, x INT NOT NULL);
+                CREATE VIEW V AS SELECT CEIL(t TO HOUR) AS g, SUM(x) AS s
+                FROM T GROUP BY CEIL(t TO HOUR);""")
+                .compactAfterEachStep();
+        ccs.step("INSERT INTO T VALUES ('22:30:00', 1);", """
+                 g        | s | weight
+                -----------------------
+                 23:00:00 | 1 | 1""");
+        // After this insert the waterline of t is 22:30, whose ceiling 23:00 is above the
+        // new group 00:00
+        ccs.step("INSERT INTO T VALUES ('23:30:00', 1);", """
+                 g        | s | weight
+                -----------------------
+                 00:00:00 | 1 | 1""");
+        ccs.step("INSERT INTO T VALUES ('23:30:00', 10);", """
+                 g        | s  | weight
+                ------------------------
+                 00:00:00 | 1  | -1
+                 00:00:00 | 11 | 1""");
+    }
+
+    /** Check that an aggregate grouped by the hour of a TIMESTAMP keeps its groups: the hour
+     * wraps every day, so it is not monotone. */
+    @Test
+    public void timestampHourIsNotMonotone() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, x INT NOT NULL);
+                CREATE VIEW V AS SELECT EXTRACT(HOUR FROM ts) AS h, SUM(x) AS s
+                FROM T GROUP BY EXTRACT(HOUR FROM ts);""")
+                .compactAfterEachStep();
+        ccs.step("INSERT INTO T VALUES ('2024-01-01 00:10:00', 1);", """
+                 h | s | weight
+                ----------------
+                 0 | 1 | 1""");
+        // After this insert the waterline of ts is 22:30, whose hour 22 is above the group 0
+        ccs.step("INSERT INTO T VALUES ('2024-01-01 23:30:00', 1);", """
+                 h  | s | weight
+                -----------------
+                 23 | 1 | 1""");
+        ccs.step("INSERT INTO T VALUES ('2024-01-02 00:20:00', 10);", """
+                 h | s  | weight
+                -----------------
+                 0 | 1  | -1
+                 0 | 11 | 1""");
+    }
+
+    /** Check that an aggregate grouped by LN(ts) works when the waterline of ts is negative and
+     * every row of ts is positive. */
+    @Test
+    public void lnOfNegativeWaterline() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts INT NOT NULL LATENESS 10, x INT NOT NULL);
+                CREATE VIEW V AS SELECT CAST(LN(ts) AS VARCHAR) AS g, SUM(x) AS s FROM T GROUP BY LN(ts);""")
+                .compactAfterEachStep().withStringTrim();
+        // The waterline moves to -9
+        ccs.step("INSERT INTO T VALUES (1, 1);", """
+                 g   | s | weight
+                ------------------
+                 0.0 | 1 | 1""");
+        ccs.step("INSERT INTO T VALUES (1, 10);", """
+                 g   | s  | weight
+                -------------------
+                 0.0 | 1  | -1
+                 0.0 | 11 | 1""");
+    }
+
+    /** Check that aggregates grouped by LOG(ts, 10) and LOG(ts) work when the waterline of ts is
+     * negative and every row of ts is positive. */
+    @Test
+    public void logOfNegativeWaterline() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts INT NOT NULL LATENESS 10, x INT NOT NULL);
+                CREATE VIEW V AS SELECT CAST(LOG(ts, 10) AS VARCHAR) AS g, SUM(x) AS s
+                FROM T GROUP BY LOG(ts, 10);
+                CREATE VIEW W AS SELECT CAST(LOG(ts) AS VARCHAR) AS g, SUM(x) AS s
+                FROM T GROUP BY LOG(ts);""")
+                .compactAfterEachStep().withStringTrim();
+        // The waterline moves to -9
+        String inserted = """
+                 g   | s | weight
+                ------------------
+                 0.0 | 1 | 1""";
+        ccs.stepMultiView("INSERT INTO T VALUES (1, 1);", Map.of("v", inserted, "w", inserted));
+        String updated = """
+                 g   | s  | weight
+                -------------------
+                 0.0 | 1  | -1
+                 0.0 | 11 | 1""";
+        ccs.stepMultiView("INSERT INTO T VALUES (1, 10);", Map.of("v", updated, "w", updated));
+    }
+
+    /** Check that an aggregate grouped by FLOOR(ts TO DECADE) works when the waterline of ts is in
+     * a decade that starts before year 1 and every row of ts is in a later decade. */
+    @Test
+    public void floorDecadeOfEarlyWaterline() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1000 DAYS, x INT NOT NULL);
+                CREATE VIEW V AS SELECT CAST(FLOOR(ts TO DECADE) AS VARCHAR) AS g, SUM(x) AS s
+                FROM T GROUP BY FLOOR(ts TO DECADE);""")
+                .compactAfterEachStep().withStringTrim();
+        // The waterline moves to year 9, whose decade starts in year 0
+        ccs.step("INSERT INTO T VALUES ('0012-01-01 00:00:00', 1);", """
+                 g                   | s | weight
+                ----------------------------------
+                 0010-01-01 00:00:00 | 1 | 1""");
+        ccs.step("INSERT INTO T VALUES ('0012-01-01 00:00:00', 10);", """
+                 g                   | s  | weight
+                -----------------------------------
+                 0010-01-01 00:00:00 | 1  | -1
+                 0010-01-01 00:00:00 | 11 | 1""");
+    }
+
+    /** Check that an aggregate grouped by the start of a weekly TUMBLE window works when the
+     * waterline of ts is in a window that starts before year 1 and every row of ts is in a later
+     * window.  Weekly windows start on Thursdays, like 1970-01-01; 0001-01-04 is a Thursday. */
+    @Test
+    public void tumbleOfEarlyWaterline() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 2 HOURS, x INT NOT NULL);
+                CREATE VIEW V AS SELECT CAST(window_start AS VARCHAR) AS w, SUM(x) AS s
+                FROM TABLE(TUMBLE(TABLE T, DESCRIPTOR(ts), INTERVAL 7 DAYS)) GROUP BY window_start;""")
+                .compactAfterEachStep().withStringTrim();
+        // The waterline moves to 0001-01-03 23:00:00, in the window that starts on 0000-12-28
+        ccs.step("INSERT INTO T VALUES ('0001-01-04 01:00:00', 1);", """
+                 w                   | s | weight
+                ----------------------------------
+                 0001-01-04 00:00:00 | 1 | 1""");
+        ccs.step("INSERT INTO T VALUES ('0001-01-04 01:00:00', 10);", """
+                 w                   | s  | weight
+                -----------------------------------
+                 0001-01-04 00:00:00 | 1  | -1
+                 0001-01-04 00:00:00 | 11 | 1""");
+    }
+
+    /** Check that an aggregate grouped by ROUND(ts, -1) works when rounding the waterline of ts
+     * needs more digits than its type has and rounding every row of ts does not. */
+    @Test
+    public void roundOfEarlyWaterline() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts DECIMAL(4, 2) NOT NULL LATENESS 1, x INT NOT NULL);
+                CREATE VIEW V AS SELECT CAST(ROUND(ts, -1) AS VARCHAR) AS g, SUM(x) AS s
+                FROM T GROUP BY ROUND(ts, -1);""")
+                .compactAfterEachStep().withStringTrim();
+        // The waterline moves to -95.00, which rounds to -100.00, outside DECIMAL(4, 2)
+        ccs.step("INSERT INTO T VALUES (-94.00, 1);", """
+                 g   | s | weight
+                ------------------
+                 -90 | 1 | 1""");
+        ccs.step("INSERT INTO T VALUES (-94.00, 10);", """
+                 g   | s  | weight
+                -------------------
+                 -90 | 1  | -1
+                 -90 | 11 | 1""");
+    }
+
+    /** Check that an aggregate grouped by ts - 20 works when the waterline of ts is below 20 and
+     * ts has type INT UNSIGNED. */
+    @Test
+    public void unsignedSubtractionOfEarlyWaterline() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts INT UNSIGNED NOT NULL LATENESS 10, x INT NOT NULL);
+                CREATE VIEW V AS SELECT ts - CAST(20 AS INT UNSIGNED) AS g, SUM(x) AS s
+                FROM T GROUP BY ts - CAST(20 AS INT UNSIGNED);""")
+                .compactAfterEachStep();
+        // The waterline moves to 15, and 15 - 20 is below the minimum INT UNSIGNED
+        ccs.step("INSERT INTO T VALUES (25, 1);", """
+                 g | s | weight
+                ----------------
+                 5 | 1 | 1""");
+        ccs.step("INSERT INTO T VALUES (25, 10);", """
+                 g | s  | weight
+                -----------------
+                 5 | 1  | -1
+                 5 | 11 | 1""");
+    }
+
+    /** Check that an aggregate grouped by d - 60 DAYS works when the waterline of d is less than
+     * 60 days after the first legal date. */
+    @Test
+    public void dateSubtractionOfEarlyWaterline() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(d DATE NOT NULL LATENESS INTERVAL 10 DAYS, x INT NOT NULL);
+                CREATE VIEW V AS SELECT d - INTERVAL 60 DAYS AS g, SUM(x) AS s
+                FROM T GROUP BY d - INTERVAL 60 DAYS;""")
+                .compactAfterEachStep();
+        // The waterline moves to 0001-02-23, and 60 days before it is before 0001-01-01
+        ccs.step("INSERT INTO T VALUES ('0001-03-05', 1);", """
+                 g          | s | weight
+                -------------------------
+                 0001-01-04 | 1 | 1""");
+        ccs.step("INSERT INTO T VALUES ('0001-03-05', 10);", """
+                 g          | s  | weight
+                --------------------------
+                 0001-01-04 | 1  | -1
+                 0001-01-04 | 11 | 1""");
+    }
+
+    /** Check that an aggregate grouped by a cast of ts to INT UNSIGNED works when the waterline
+     * of ts is negative and every row of ts is positive. */
+    @Test
+    public void unsignedCastOfNegativeWaterline() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts INT NOT NULL LATENESS 10, x INT NOT NULL);
+                CREATE VIEW V AS SELECT CAST(ts AS INT UNSIGNED) AS g, SUM(x) AS s
+                FROM T GROUP BY CAST(ts AS INT UNSIGNED);""")
+                .compactAfterEachStep();
+        // The waterline moves to -5, which is not an INT UNSIGNED
+        ccs.step("INSERT INTO T VALUES (5, 1);", """
+                 g | s | weight
+                ----------------
+                 5 | 1 | 1""");
+        ccs.step("INSERT INTO T VALUES (5, 10);", """
+                 g | s  | weight
+                -----------------
+                 5 | 1  | -1
+                 5 | 11 | 1""");
+    }
+
+    /** Check that aggregates grouped by casts of a number to TIMESTAMP and to an INTERVAL, and of
+     * a TIMESTAMP to INT, work when the waterline is outside the range of the cast and every row
+     * is inside it. */
+    @Test
+    public void castsOfEarlyWaterline() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts BIGINT NOT NULL LATENESS 9000000000000000000, x INT NOT NULL);
+                CREATE TABLE U(t TIMESTAMP NOT NULL LATENESS INTERVAL 30 DAYS, x INT NOT NULL);
+                CREATE VIEW ts AS SELECT CAST(ts AS TIMESTAMP) AS g, SUM(x) AS s
+                FROM T GROUP BY CAST(ts AS TIMESTAMP);
+                CREATE VIEW i AS SELECT SUM(x) AS s FROM T GROUP BY CAST(ts AS INTERVAL HOUR);
+                CREATE VIEW n AS SELECT CAST(t AS INT) AS g, SUM(x) AS s
+                FROM U GROUP BY CAST(t AS INT);""")
+                .compactAfterEachStep();
+        // The waterline of ts moves to -9e18 milliseconds, before the first legal TIMESTAMP and
+        // below the smallest INTERVAL in hours; the waterline of t moves to 30 days before 1970,
+        // which is below the smallest INT in milliseconds.
+        ccs.stepMultiView("""
+                INSERT INTO T VALUES (0, 1);
+                INSERT INTO U VALUES ('1970-01-01 00:00:00', 1);""", Map.of(
+                "ts", """
+                 g                   | s | weight
+                ----------------------------------
+                 1970-01-01 00:00:00 | 1 | 1""",
+                "i", """
+                 s | weight
+                ------------
+                 1 | 1""",
+                "n", """
+                 g | s | weight
+                ----------------
+                 0 | 1 | 1"""));
+        ccs.stepMultiView("""
+                INSERT INTO T VALUES (0, 10);
+                INSERT INTO U VALUES ('1970-01-01 00:00:00', 10);""", Map.of(
+                "ts", """
+                 g                   | s  | weight
+                -----------------------------------
+                 1970-01-01 00:00:00 | 1  | -1
+                 1970-01-01 00:00:00 | 11 | 1""",
+                "i", """
+                 s  | weight
+                -------------
+                 1  | -1
+                 11 | 1""",
+                "n", """
+                 g | s  | weight
+                -----------------
+                 0 | 1  | -1
+                 0 | 11 | 1"""));
     }
 }

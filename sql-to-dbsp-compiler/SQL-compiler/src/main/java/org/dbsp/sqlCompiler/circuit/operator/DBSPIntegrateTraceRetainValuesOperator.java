@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.circuit.operator;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -15,7 +14,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Utilities;
 
@@ -48,11 +46,6 @@ public final class DBSPIntegrateTraceRetainValuesOperator
     public static DBSPIntegrateTraceRetainValuesOperator create(
             CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control) {
         DBSPType controlType = control.outputType();
-        Utilities.enforce(controlType.is(DBSPTypeTupleBase.class),
-                () -> "Control type is not a tuple: " + controlType);
-        DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
-        Utilities.enforce(controlTuple.size() == 2);
-
         DBSPVariablePath controlArg = controlType.ref().var();
         Utilities.enforce(data.outputType().is(DBSPTypeIndexedZSet.class),
                 () -> "Data is not indexed: " + data.outputType());
@@ -63,11 +56,8 @@ public final class DBSPIntegrateTraceRetainValuesOperator
                 .to(PartiallyMonotoneTuple.class)
                 .getFieldType(1)
                 .projectExpression(dataArg.deref());
-        DBSPExpression compare0 = controlArg.deepCopy().deref().field(0).not();
         DBSPExpression compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
-                project, controlArg.deepCopy().deref().field(1), DBSPOpcode.CONTROLLED_FILTER_GTE);
-        compare = ExpressionCompiler.makeBinaryExpression(
-                node, compare.getType(), DBSPOpcode.OR, compare0, compare);
+                project, controlArg.deepCopy().deref(), DBSPOpcode.CONTROLLED_FILTER_GTE);
         DBSPExpression closure = compare.closure(param, controlArg.asParameter());
         return new DBSPIntegrateTraceRetainValuesOperator(node, closure, data, control);
     }

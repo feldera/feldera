@@ -67,9 +67,9 @@ public class PartiallyMonotoneTuple
         List<IMaybeMonotoneType> monotone = Linq.where(this.fields, IMaybeMonotoneType::mayBeMonotone);
         List<DBSPType> fields = Linq.map(monotone, IMaybeMonotoneType::getProjectedType);
         if (this.raw)
-            return new DBSPTypeRawTuple(CalciteObject.EMPTY, this.mayBeNull, fields);
+            return new DBSPTypeRawTuple(CalciteObject.EMPTY, false, fields);
         else
-            return new DBSPTypeTuple(CalciteObject.EMPTY, this.mayBeNull, fields);
+            return new DBSPTypeTuple(CalciteObject.EMPTY, false, fields);
     }
 
     @Override
