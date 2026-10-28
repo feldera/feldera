@@ -1,8 +1,6 @@
 use crate::api::error::ApiError;
+use crate::client_auth::{Caller, authorize_compiler_caller, https_server_config};
 use crate::common_error::CommonError;
-use crate::compiler::client_auth::{
-    CompilerCaller, authorize_compiler_caller, client_certificate_verifier,
-};
 use crate::compiler::error::CompilerError;
 use crate::compiler::rust_compiler::{
     CLEANUP_INTERVAL, RustCompilationError, RustCompilationResult, cleanup_pipeline_binaries,
@@ -1005,13 +1003,8 @@ async fn spawn_compiler_http_server(
     config: &CompilerConfig,
     db: &Arc<Mutex<StoragePostgres>>,
 ) -> JoinHandle<Result<(), std::io::Error>> {
-    let require_client_certificates = config.require_client_certificates;
-    let server_config = if require_client_certificates {
-        common_config
-            .https_server_config_with_client_verifier(client_certificate_verifier(common_config))
-    } else {
-        common_config.https_server_config()
-    };
+    let require_client_certificates = common_config.require_client_certificates;
+    let server_config = https_server_config(common_config);
     let config = web::Data::new(config.clone());
     let common_config_data = web::Data::new(common_config.clone());
     let probe = web::Data::new(DbProbe::new(db.clone()).await);
@@ -1032,7 +1025,7 @@ async fn spawn_compiler_http_server(
             .service(validate_program_endpoint)
             .service(healthz)
     })
-    .on_connect(CompilerCaller::record)
+    .on_connect(Caller::record)
     .workers(common_config.http_workers)
     .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
     let listener = TcpListener::bind((
@@ -1206,7 +1199,6 @@ mod test {
             gen2_udf_sdk_path: None,
             gen2_udf_sdk_version: None,
             precompile: false,
-            require_client_certificates: false,
         })
         .await
         .unwrap();
@@ -1229,7 +1221,6 @@ mod test {
             gen2_udf_sdk_path: None,
             gen2_udf_sdk_version: None,
             precompile: false,
-            require_client_certificates: false,
         })
         .await
         .unwrap();
@@ -1640,7 +1631,6 @@ mod test {
             gen2_udf_sdk_path: None,
             gen2_udf_sdk_version: None,
             precompile: false,
-            require_client_certificates: false,
         };
 
         (tempdir, config)
