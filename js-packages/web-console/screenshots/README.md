@@ -6,10 +6,10 @@ more than 0.5% of the pixels changed (`maxDiffPixelRatio` in `../playwright-scre
 
 ## Two kinds of shots
 
-| Project          | Files                   | Backend                                | Where the state comes from                                               |
-| ---------------- | ----------------------- | -------------------------------------- | ------------------------------------------------------------------------ |
-| `profile-viewer` | `*.shot.ts`             | None. Every `/v0/` request is refused. | `fixtures/fraud-detection-support-bundle.zip`                            |
-| `web-console`    | `*.web-console.shot.ts` | A real pipeline manager                | Pipelines that the test creates under its own names and deletes after it |
+| Project          | Files                   | Backend                                | Where the state comes from                                                                                                                                                                    |
+| ---------------- | ----------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profile-viewer` | `*.shot.ts`             | None. Every `/v0/` request is refused. | `fixtures/fraud-detection-support-bundle.zip`. The connector error shot loads `fixtures/connector-errors-support-bundle.zip`, which `fixtures/make-connector-errors-bundle.py` makes from it. |
+| `web-console`    | `*.web-console.shot.ts` | A real pipeline manager                | Pipelines that the test creates under its own names and deletes after it                                                                                                                      |
 
 ## Commands
 

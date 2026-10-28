@@ -6,10 +6,12 @@ import { annotate, type Box, boxOf, clearAnnotations, grow, union } from './anno
 import { docsImage, expectClip as expectDocsClip, waitForTransitions } from './capture'
 import {
   afterLayout,
+  CONNECTOR_ERRORS_BUNDLE_PATH,
   centerOn,
   chipBoxes,
   fitTo,
   nodeBox,
+  openProfile,
   test,
   waitForDiagram,
   waitForSqlScrollbarsToFade
@@ -69,8 +71,10 @@ const toggleBars = (analysis: Locator, metric: string) =>
 const expectAnalysis = async (page: Page, file: string) =>
   expectClip(page, file, await boxOf(panes(page).analysis))
 
+/** Clicks the tab `name`. It finds the tab by the value of its radio button, because the label of a
+ *  tab can end with a count, e.g. "Connectors 3". */
 const openAnalysisTab = (page: Page, name: string) =>
-  panes(page).analysis.getByRole('radiogroup').getByText(name, { exact: true }).click()
+  panes(page).analysis.locator(`label:has(input[type="radio"][value="${name}"])`).click()
 
 const metricsView = (page: Page, view: 'Overview' | 'Node' | 'Top nodes') =>
   panes(page).analysis.getByText(view, { exact: true }).click()
@@ -341,11 +345,41 @@ test.describe('The other tabs of the analysis panel', () => {
     // in a drawer.
     await analysis.locator('button:has(.line-clamp-1)').first().click()
     const close = analysis.getByRole('button', { name: 'Close event details' })
-    await expect(close).toBeVisible()
-    await waitForTransitions(analysis)
-    await parkPointer(page)
-    await expectAnalysis(page, 'health-tab.png')
-    // The next tests share the viewer, and expect the details closed.
-    await close.click()
+    try {
+      await expect(close).toBeVisible()
+      await waitForTransitions(analysis)
+      await parkPointer(page)
+      await expectAnalysis(page, 'health-tab.png')
+    } finally {
+      // The next tests share the viewer, and expect the details closed.
+      await close.click()
+    }
+  })
+})
+
+test.describe('The errors of a connector', () => {
+  test.use({ viewport: { width: 1920, height: 1000 } })
+
+  // The shared viewer has a bundle without connector errors, so this test opens its own viewer.
+  test('the connector errors', async ({ browser, viewport }) => {
+    const page = await browser.newPage({ viewport })
+    try {
+      await openProfile(page, CONNECTOR_ERRORS_BUNDLE_PATH)
+      await openAnalysisTab(page, 'Connectors')
+      const analysis = panes(page).analysis
+      await analysis.getByTestId('btn-parse-errors').click()
+      await expect(analysis.getByText('09:23:47 UTC', { exact: true })).toBeVisible()
+      await waitForTransitions(analysis)
+      // The error list narrows the table, and the click on the count scrolls the table to the right.
+      await analysis.evaluate((element) => {
+        for (const child of element.querySelectorAll('*')) {
+          child.scrollLeft = 0
+        }
+      })
+      await parkPointer(page)
+      await expectAnalysis(page, 'connector-errors.png')
+    } finally {
+      await page.close()
+    }
   })
 })
