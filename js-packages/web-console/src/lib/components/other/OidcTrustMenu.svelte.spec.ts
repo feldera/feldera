@@ -18,7 +18,11 @@ const trust = {
   role: 'write'
 }
 
-vi.mock('$app/state', () => ({ page: { data: { feldera: { tenantName: 'acme' } } } }))
+// superforms reads `navigating` too.
+vi.mock('$app/state', () => ({
+  page: { data: { feldera: { tenantName: 'acme' } } },
+  navigating: { to: null }
+}))
 vi.mock('$lib/services/pipelineManager', () => ({
   getOidcTrustList: vi.fn(async () => [trust]),
   deleteOidcTrust: vi.fn(),
