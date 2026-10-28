@@ -32,6 +32,16 @@ Source edition can be found on github.
   `kafka_output_commit_retries_total` and `kafka_output_replay_spool_bytes`.
   See [Exactly-once delivery and recovery](/connectors/sinks/kafka#exactly-once-delivery-and-recovery).
 
+- Enterprise (Kubernetes): `POST`, `PUT`, and `PATCH /v0/pipelines` refuse a
+  `runtime_config` with a `resources.storage_class` or
+  `resources.volume_attributes_class` that is not on the allowlist of the
+  installation, or a `resources.storage_min` or `resources.storage_max` above
+  `kubernetesRunner.upperLimitStorageMegabyte`, with a 400
+  `InvalidRuntimeConfig` error.  Before, the API accepted these values and the
+  next start failed.  On all installations, `storage_min` cannot be more than
+  `storage_max`.  A pipeline stored with such values still loads.  See
+  [Storage limits](/pipelines/configuration#storage-limits).
+
 ## v0.372.0
 
 - Behavior change (non-fault-tolerant Kafka output): temporary delivery
