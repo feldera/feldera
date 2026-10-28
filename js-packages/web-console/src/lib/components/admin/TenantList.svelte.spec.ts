@@ -17,9 +17,9 @@ const deleteTenant = vi.hoisted(() => vi.fn())
 
 vi.mock('$app/state', () => ({ page: { data: { feldera: { tenantId: 't-other' } } } }))
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn(async () => {}) }))
-vi.mock('$lib/compositions/configCache', () => ({ clearConfigCaches: vi.fn() }))
-vi.mock('$lib/services/auth', () => ({ setSelectedTenant: vi.fn() }))
-vi.mock('$lib/services/pipelineManager', () => ({
+vi.mock('#lib/compositions/configCache.ts', () => ({ clearConfigCaches: vi.fn() }))
+vi.mock('#lib/services/auth.ts', () => ({ setSelectedTenant: vi.fn() }))
+vi.mock('#lib/services/pipelineManager.ts', () => ({
   getTenants: vi.fn(async () => tenantsState.list),
   getAuthConfig: vi.fn(async () => undefined),
   createTenant: vi.fn(),
@@ -29,9 +29,9 @@ vi.mock('$lib/services/pipelineManager', () => ({
 
 // Imported AFTER vi.mock so the mocks take effect.
 import { asyncReadable } from '@square/svelte-store'
-import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
-import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-import { getTenants, type Tenant } from '$lib/services/pipelineManager'
+import GlobalModal from '#lib/components/dialogs/GlobalModal.svelte'
+import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+import { getTenants, type Tenant } from '#lib/services/pipelineManager.ts'
 import TenantList from './TenantList.svelte'
 
 let mounted: { unmount: () => Promise<void> } | undefined

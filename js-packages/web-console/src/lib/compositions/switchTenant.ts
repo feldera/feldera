@@ -1,6 +1,6 @@
-import { clearConfigCaches } from '$lib/compositions/configCache'
-import { resolve } from '$lib/functions/svelte'
-import { setSelectedTenant } from '$lib/services/auth'
+import { clearConfigCaches } from '#lib/compositions/configCache.ts'
+import { resolve } from '#lib/functions/svelte.ts'
+import { setSelectedTenant } from '#lib/services/auth.ts'
 
 /**
  * Persist the tenant selection (by tenant id) and restart the app.

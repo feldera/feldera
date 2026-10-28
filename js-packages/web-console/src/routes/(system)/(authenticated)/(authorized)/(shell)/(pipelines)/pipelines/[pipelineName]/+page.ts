@@ -1,7 +1,7 @@
 import type { LoadEvent } from '@sveltejs/kit'
+import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+import { resolve } from '#lib/functions/svelte.ts'
 import { goto } from '$app/navigation'
-import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte.js'
-import { resolve } from '$lib/functions/svelte'
 
 export const prerender = false
 

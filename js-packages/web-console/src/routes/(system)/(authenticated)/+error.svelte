@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state'
-  import AppHeader from '$lib/components/layout/AppHeader.svelte'
+  import AppHeader from '#lib/components/layout/AppHeader.svelte'
 </script>
 
 <AppHeader></AppHeader>

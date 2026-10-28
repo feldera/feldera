@@ -12,28 +12,28 @@
 <!-- svelte-ignore state_referenced_locally -->
 <script lang="ts">
   import { count } from 'common-lib/array'
-  import CompactSwitch from '$lib/components/common/CompactSwitch.svelte'
-  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-  import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
-  import PanelAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
-  import PanelChangeStream from '$lib/components/pipelines/editor/TabChangeStream.svelte'
-  import * as TabPerformance from '$lib/components/pipelines/editor/TabPerformance.svelte'
-  import PanelPipelineErrors from '$lib/components/pipelines/editor/TabPipelineErrors.svelte'
-  import * as TabSamplyProfile from '$lib/components/pipelines/editor/TabSamplyProfile.svelte'
-  import PanelHealth from '$lib/components/pipelines/editor/TabHealth.svelte'
-  import PanelLogs from '$lib/components/pipelines/editor/TabLogs.svelte'
-  import type { ExtendedPipeline } from '$lib/services/pipelineManager'
-  import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-  import { statusCounterClass, statusToneColors } from '$lib/functions/pipelineStatusColor'
+  import CompactSwitch from '#lib/components/common/CompactSwitch.svelte'
+  import { useLocalStorage } from '#lib/compositions/localStore.svelte.js'
+  import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
+  import PanelAdHocQuery from '#lib/components/pipelines/editor/TabAdHocQuery.svelte'
+  import PanelChangeStream from '#lib/components/pipelines/editor/TabChangeStream.svelte'
+  import * as TabPerformance from '#lib/components/pipelines/editor/TabPerformance.svelte'
+  import PanelPipelineErrors from '#lib/components/pipelines/editor/TabPipelineErrors.svelte'
+  import * as TabSamplyProfile from '#lib/components/pipelines/editor/TabSamplyProfile.svelte'
+  import PanelHealth from '#lib/components/pipelines/editor/TabHealth.svelte'
+  import PanelLogs from '#lib/components/pipelines/editor/TabLogs.svelte'
+  import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
+  import type { PipelineMetrics } from '#lib/functions/pipelineMetrics.ts'
+  import { statusCounterClass, statusToneColors } from '#lib/functions/pipelineStatusColor.ts'
   import { untrack } from 'svelte'
-  import { usePermission } from '$lib/compositions/usePermission.svelte'
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
+  import { usePipelineActionCallbacks } from '#lib/compositions/pipelines/usePipelineActionCallbacks.svelte.ts'
   import { ClipboardCopyButton, Tooltip } from 'common-ui'
-  import DownloadSupportBundle from '$lib/components/pipelines/editor/DownloadSupportBundle.svelte'
+  import DownloadSupportBundle from '#lib/components/pipelines/editor/DownloadSupportBundle.svelte'
   import {
     extractProgramErrors,
     numConnectorsWithProblems
-  } from '$lib/compositions/health/systemErrors'
+  } from '#lib/compositions/health/systemErrors.ts'
   import {
     TabsPanel,
     SearchBar,

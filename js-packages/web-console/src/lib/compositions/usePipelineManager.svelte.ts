@@ -1,5 +1,5 @@
-import { useToast } from '$lib/compositions/useToastNotification'
-import { triggerFileDownload } from '$lib/services/browser'
+import { useToast } from '#lib/compositions/useToastNotification.ts'
+import { triggerFileDownload } from '#lib/services/browser.ts'
 import {
   getPipelineSupportBundle as _getPipelineSupportBundle,
   adHocQuery,
@@ -39,7 +39,7 @@ import {
   relationIngress,
   type SupportBundleOptions,
   syncCheckpoint
-} from '$lib/services/pipelineManager'
+} from '#lib/services/pipelineManager.ts'
 
 const networkErrors = ['Failed to fetch', 'Network request failed', 'Timeout']
 const isNetworkError = (e: any): e is TypeError =>

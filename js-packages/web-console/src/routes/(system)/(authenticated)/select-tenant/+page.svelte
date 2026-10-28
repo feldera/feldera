@@ -1,6 +1,6 @@
 <script lang="ts">
-  import TenantPicker from '$lib/components/auth/TenantPicker.svelte'
-  import AppHeader from '$lib/components/layout/AppHeader.svelte'
+  import TenantPicker from '#lib/components/auth/TenantPicker.svelte'
+  import AppHeader from '#lib/components/layout/AppHeader.svelte'
   import type { PageData } from './$types'
 
   const { data }: { data: PageData } = $props()

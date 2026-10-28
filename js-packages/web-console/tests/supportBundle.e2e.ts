@@ -1,12 +1,12 @@
 import { type BrowserContext, expect, type Page, type Request, test } from '@playwright/test'
-import { putPipeline } from '$lib/services/pipelineManager'
+import { putPipeline } from '#lib/services/pipelineManager.ts'
 import {
   cleanupPipeline,
   configureTestClient,
   startPipelineAndWaitForRunning,
   TEST_COMPILATION_PROFILE,
   waitForCompilation
-} from '$lib/services/testPipelineHelpers'
+} from '#lib/services/testPipelineHelpers.ts'
 
 configureTestClient()
 

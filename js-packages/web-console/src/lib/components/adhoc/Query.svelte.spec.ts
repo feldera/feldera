@@ -48,10 +48,10 @@ import Dayjs, { isDayjs } from 'dayjs'
 import { describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import Query from '$lib/components/adhoc/Query.svelte'
-import { arrowIpcBatchToJS, arrowSchemaToFelderaFields } from '$lib/functions/apacheArrow'
-import type { Row } from '$lib/types/adhocQuery'
-import type { SQLValueJS } from '$lib/types/sql'
+import Query from '#lib/components/adhoc/Query.svelte'
+import { arrowIpcBatchToJS, arrowSchemaToFelderaFields } from '#lib/functions/apacheArrow.ts'
+import type { Row } from '#lib/types/adhocQuery.ts'
+import type { SQLValueJS } from '#lib/types/sql.ts'
 
 // Wraps a single value into a typed Arrow Vector.
 const buildVector = <T extends DataType>(type: T, value: unknown): Vector<T> => {

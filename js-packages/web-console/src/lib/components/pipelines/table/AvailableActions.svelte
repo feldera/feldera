@@ -1,17 +1,20 @@
 <script lang="ts">
   import { join } from 'array-join'
   import { match, P } from 'ts-pattern'
-  import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
-  import { duplicatePipeline, duplicatePipelineTooltip } from '$lib/compositions/duplicatePipeline'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import { useIsEnterprise } from '$lib/compositions/useEdition.svelte'
-  import { usePermission } from '$lib/compositions/usePermission.svelte'
-  import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { useToast } from '$lib/compositions/useToastNotification'
-  import { isPipelineCodeEditable } from '$lib/functions/pipelines/status'
-  import type { PipelineThumb } from '$lib/services/pipelineManager'
+  import DeleteDialog, { deleteDialogProps } from '#lib/components/dialogs/DeleteDialog.svelte'
+  import {
+    duplicatePipeline,
+    duplicatePipelineTooltip
+  } from '#lib/compositions/duplicatePipeline.ts'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import { useUpdatePipelineList } from '#lib/compositions/pipelines/usePipelineList.svelte.ts'
+  import { useIsEnterprise } from '#lib/compositions/useEdition.svelte.ts'
+  import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
+  import { getPipelineAction } from '#lib/compositions/usePipelineAction.svelte.ts'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { useToast } from '#lib/compositions/useToastNotification.ts'
+  import { isPipelineCodeEditable } from '#lib/functions/pipelines/status.ts'
+  import type { PipelineThumb } from '#lib/services/pipelineManager.ts'
 
   let {
     pipelines,

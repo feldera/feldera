@@ -1,8 +1,8 @@
 <script lang="ts">
   import { slide } from 'svelte/transition'
   import { match } from 'ts-pattern'
-  import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-  import { statusToneColors } from '$lib/functions/pipelineStatusColor'
+  import type { PipelineMetrics } from '#lib/functions/pipelineMetrics.ts'
+  import { statusToneColors } from '#lib/functions/pipelineStatusColor.ts'
   import CommitProgressRow from './CommitProgressRow.svelte'
 
   let { metrics, class: _class = '' }: { metrics: { current: PipelineMetrics }; class?: string } =

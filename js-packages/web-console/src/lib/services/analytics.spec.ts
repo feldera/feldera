@@ -8,14 +8,14 @@ const { capture, trackConceptualHq, trackConceptualHqSignup } = vi.hoisted(() =>
   trackConceptualHqSignup: vi.fn()
 }))
 vi.mock('posthog-js', () => ({ default: { capture } }))
-vi.mock('$lib/services/conceptualHq', () => ({
+vi.mock('#lib/services/conceptualHq.ts', () => ({
   isConceptualHqInitialized: () => true,
   trackConceptualHq,
   trackConceptualHqSignup
 }))
-vi.mock('$lib/services/posthog', () => ({ isPosthogInitialized: () => true }))
+vi.mock('#lib/services/posthog.ts', () => ({ isPosthogInitialized: () => true }))
 
-import type { UserProfile } from '$lib/types/auth'
+import type { UserProfile } from '#lib/types/auth.ts'
 
 import { captureEvent } from './analytics'
 

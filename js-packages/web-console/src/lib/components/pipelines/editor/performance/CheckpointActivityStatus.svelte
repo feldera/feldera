@@ -2,9 +2,9 @@
   import { formatServerTime } from 'common-lib/format'
   import { Tooltip } from 'common-ui'
   import Dayjs from 'dayjs'
-  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
-  import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-  import type { CheckpointStatus } from '$lib/services/manager'
+  import { useElapsedTime } from '#lib/compositions/common/useElapsedTime.ts'
+  import type { PipelineMetrics } from '#lib/functions/pipelineMetrics.ts'
+  import type { CheckpointStatus } from '#lib/services/manager/index.ts'
 
   const { formatElapsedTime } = useElapsedTime()
 

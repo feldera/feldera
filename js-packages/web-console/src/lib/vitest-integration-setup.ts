@@ -8,7 +8,7 @@
  * only the compilation-cache warmup needs the once-per-worker guard here.
  */
 
-import { configureTestClient, warmCompilationCache } from '$lib/services/testPipelineHelpers'
+import { configureTestClient, warmCompilationCache } from '#lib/services/testPipelineHelpers.ts'
 
 declare global {
   // eslint-disable-next-line no-var

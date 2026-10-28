@@ -1,14 +1,14 @@
 import { count, groupBy } from 'common-lib/array'
-import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-import { resolve } from '$lib/functions/svelte'
-import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
+import type { PipelineMetrics } from '#lib/functions/pipelineMetrics.ts'
+import { resolve } from '#lib/functions/svelte.ts'
+import { defaultGithubReportSections, type ReportDetails } from '#lib/services/githubReport.ts'
 import type {
   CompilerOutput,
   ExtendedPipeline,
   Pipeline,
   RustCompilerMessage,
   SqlCompilerMessage
-} from '$lib/services/pipelineManager'
+} from '#lib/services/pipelineManager.ts'
 
 export type SystemError<T = any, Report = ReportDetails> = Error & {
   message: string

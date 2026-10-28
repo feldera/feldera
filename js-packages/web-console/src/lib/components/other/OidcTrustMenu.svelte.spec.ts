@@ -23,14 +23,14 @@ vi.mock('$app/state', () => ({
   page: { data: { feldera: { tenantName: 'acme' } } },
   navigating: { to: null }
 }))
-vi.mock('$lib/services/pipelineManager', () => ({
+vi.mock('#lib/services/pipelineManager.ts', () => ({
   getOidcTrustList: vi.fn(async () => [trust]),
   deleteOidcTrust: vi.fn(),
   postOidcTrust: vi.fn(async () => {})
 }))
 
 // Imported AFTER vi.mock so the mocks take effect.
-import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
 import OidcTrustMenu from './OidcTrustMenu.svelte'
 
 let mounted: { unmount: () => Promise<void> } | undefined

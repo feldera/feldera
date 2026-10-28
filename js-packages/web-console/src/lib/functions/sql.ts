@@ -3,10 +3,10 @@ import { nonNull } from 'common-lib/function'
 import { Dayjs, isDayjs } from 'dayjs'
 import JSONbig from 'true-json-bigint'
 import { match } from 'ts-pattern'
-import type { QueryResult } from '$lib/components/adhoc/Query.svelte'
-import type { ColumnType, SqlType } from '$lib/services/manager'
-import { isDataRow } from '$lib/types/adhocQuery'
-import type { SQLValueJS } from '$lib/types/sql'
+import type { QueryResult } from '#lib/components/adhoc/Query.svelte'
+import type { ColumnType, SqlType } from '#lib/services/manager/index.ts'
+import { isDataRow } from '#lib/types/adhocQuery.ts'
+import type { SQLValueJS } from '#lib/types/sql.ts'
 
 /**
  * Render an `INTERVAL_*` wire value as its ISO SQL spelling, e.g.

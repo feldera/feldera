@@ -6,7 +6,7 @@ Svelte 5 component wrapper for the `profiler-lib` visualization library. Provide
 
 ```svelte
 <script lang="ts">
-  import ProfilerDiagram from '$lib/components/profiler/ProfilerDiagram.svelte'
+  import ProfilerDiagram from '#lib/components/profiler/ProfilerDiagram.svelte'
   import type { JsonProfiles, Dataflow } from 'profiler-lib'
 
   // Fetch profile data from pipeline manager API
@@ -137,7 +137,7 @@ Contains:
 ```svelte
 <script lang="ts">
   import { onMount } from 'svelte'
-  import ProfilerDiagram from '$lib/components/profiler/ProfilerDiagram.svelte'
+  import ProfilerDiagram from '#lib/components/profiler/ProfilerDiagram.svelte'
   import type { JsonProfiles, Dataflow } from 'profiler-lib'
 
   let profileData = $state<JsonProfiles | null>(null)

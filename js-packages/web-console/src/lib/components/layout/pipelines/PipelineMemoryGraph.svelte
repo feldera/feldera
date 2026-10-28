@@ -14,15 +14,15 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import type { ECMouseEvent } from 'svelte-echarts'
   import { Chart } from 'svelte-echarts'
-  import { ServerDate } from '$lib/compositions/serverTime'
+  import { ServerDate } from '#lib/compositions/serverTime.ts'
   import {
     multihostMemoryLimitBytes,
     resourceSizeBytes,
     timeSeriesAxisMax
-  } from '$lib/functions/pipelineMetrics'
-  import type { MemoryPressure } from '$lib/services/manager'
-  import type { Pipeline } from '$lib/services/pipelineManager'
-  import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
+  } from '#lib/functions/pipelineMetrics.ts'
+  import type { MemoryPressure } from '#lib/services/manager/index.ts'
+  import type { Pipeline } from '#lib/services/pipelineManager.ts'
+  import type { TimeSeriesEntry } from '#lib/types/pipelineManager.ts'
 
   const {
     pipeline,

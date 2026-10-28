@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { Configuration } from '$lib/services/manager'
-import type { UserProfile } from '$lib/types/auth'
+import type { Configuration } from '#lib/services/manager/index.ts'
+import type { UserProfile } from '#lib/types/auth.ts'
 
 // vi.mock is hoisted above imports, so its factory may only touch vars created
 // with vi.hoisted (also hoisted), not plain module-level consts.

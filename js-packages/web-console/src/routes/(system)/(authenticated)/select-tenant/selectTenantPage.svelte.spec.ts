@@ -24,16 +24,16 @@ vi.mock('$app/state', () => ({
   }
 }))
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }))
-vi.mock('$lib/compositions/switchTenant', () => ({ switchTenant: vi.fn() }))
+vi.mock('#lib/compositions/switchTenant.ts', () => ({ switchTenant: vi.fn() }))
 // Both exports: `auth.ts` reaches this module too, through the header.
-vi.mock('$lib/services/redirectTarget', () => ({
+vi.mock('#lib/services/redirectTarget.ts', () => ({
   takeRedirectTarget: vi.fn(),
   stashRedirectTarget: vi.fn()
 }))
 // Dialog bodies the profile menu can open; they fetch on import and none of them
 // is reachable in this state.
-vi.mock('$lib/components/other/ApiKeyMenu.svelte', () => ({ default: () => {} }))
-vi.mock('$lib/components/other/OidcTrustMenu.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/components/other/ApiKeyMenu.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/components/other/OidcTrustMenu.svelte', () => ({ default: () => {} }))
 
 // Imported AFTER vi.mock so the mocks take effect.
 import SelectTenantPage from './+page.svelte'

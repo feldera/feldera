@@ -1,6 +1,6 @@
 <script lang="ts">
   import './layout.css'
-  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
+  import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
   import '@fortawesome/fontawesome-free/css/brands.min.css'
 
   import posthog from 'posthog-js'
@@ -8,16 +8,16 @@
   import { browser } from '$app/environment'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
 
-  import '$assets/fonts/feldera-material-icons.css'
-  import '$assets/fonts/generic-icons.css'
+  import '#assets/fonts/feldera-material-icons.css'
+  import '#assets/fonts/generic-icons.css'
 
   import { page } from '$app/state'
-  import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
-  import { useInterval } from '$lib/compositions/common/useInterval.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { ServerDate } from '$lib/compositions/serverTime'
-  import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
-  import { getLicenseMessage } from '$lib/functions/license'
+  import GlobalModal from '#lib/components/dialogs/GlobalModal.svelte'
+  import { useInterval } from '#lib/compositions/common/useInterval.svelte.ts'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import { ServerDate } from '#lib/compositions/serverTime.ts'
+  import { useSystemMessages } from '#lib/compositions/useSystemMessages.svelte.ts'
+  import { getLicenseMessage } from '#lib/functions/license.ts'
   import { _markRouterReady } from './+layout'
 
   const { children } = $props()

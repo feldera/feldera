@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import type { Snippet } from '$lib/types/svelte'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   const { dialog }: { dialog: Snippet | null } = $props()
 

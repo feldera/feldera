@@ -46,8 +46,8 @@ vi.mock('$app/navigation', () => ({
   preloadCode: vi.fn(() => Promise.resolve())
 }))
 
-vi.mock('$lib/compositions/profileBundleHandoff', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/compositions/profileBundleHandoff')>()),
+vi.mock('#lib/compositions/profileBundleHandoff.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#lib/compositions/profileBundleHandoff.ts')>()),
   openStoredBundleTab,
   openUploadBundleTab
 }))
@@ -55,8 +55,8 @@ vi.mock('$lib/compositions/profileBundleHandoff', async (importOriginal) => ({
 // `addToBundleHistory` is a spy over the real one, so that one test can make it refuse
 // a file, which is how an archive too large to copy behaves without one being
 // allocated here.
-vi.mock('$lib/services/supportBundleHistory', async (importOriginal) => {
-  const original = await importOriginal<typeof import('$lib/services/supportBundleHistory')>()
+vi.mock('#lib/services/supportBundleHistory.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof import('#lib/services/supportBundleHistory.ts')>()
   addToBundleHistory.mockImplementation(original.addToBundleHistory)
   return { ...original, addToBundleHistory }
 })
@@ -65,8 +65,8 @@ vi.mock('$lib/services/supportBundleHistory', async (importOriginal) => {
 // method, so the real `requestPermission` always returns true. The spy returns what
 // each test sets. Entries stored as a copy still get no `requestPermission`, because
 // the component skips the permission check when that method is absent.
-vi.mock('$lib/services/supportBundleStorage', async (importOriginal) => {
-  const original = await importOriginal<typeof import('$lib/services/supportBundleStorage')>()
+vi.mock('#lib/services/supportBundleStorage.ts', async (importOriginal) => {
+  const original = await importOriginal<typeof import('#lib/services/supportBundleStorage.ts')>()
   return {
     ...original,
     bundleOps: (record: Parameters<typeof original.bundleOps>[0]) => {
@@ -77,11 +77,11 @@ vi.mock('$lib/services/supportBundleStorage', async (importOriginal) => {
 })
 
 // These imports come after the vi.mock calls above, so that the mocks are in place.
-import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
-import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-import { clearBundleHistory, listBundleHistory } from '$lib/services/supportBundleHistory'
-import { putBundleRecord } from '$lib/services/supportBundleStore'
-import { fakeHandle } from '$lib/services/testSupportBundleHelpers'
+import GlobalModal from '#lib/components/dialogs/GlobalModal.svelte'
+import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+import { clearBundleHistory, listBundleHistory } from '#lib/services/supportBundleHistory.ts'
+import { putBundleRecord } from '#lib/services/supportBundleStore.ts'
+import { fakeHandle } from '#lib/services/testSupportBundleHelpers.ts'
 import OpenSupportBundleDialog from './OpenSupportBundleDialog.svelte'
 
 const bundleName = (index: number) => `pipeline-alpha-support-bundle-2026-01-${index}.zip`
