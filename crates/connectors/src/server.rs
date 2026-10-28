@@ -798,6 +798,39 @@ pub fn server_main<E: Engine>(engine: E) -> Result<(), ControllerError> {
 /// The time limit for the server to receive the first request from a new client.
 const CLIENT_REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
 
+/// Accumulates log messages until logging can be initialized.
+///
+/// Logs the collected messages when dropped, so that they are not lost.
+#[derive(Default)]
+struct DeferredLogging(Vec<(Level, String)>);
+
+impl DeferredLogging {
+    fn push(&mut self, level: Level, message: impl Into<String>) {
+        self.0.push((level, message.into()));
+    }
+
+    /// Logs the queued messages, or writes them to `fallback` if there is no
+    /// logger (as on an early return before the logger is initialized).
+    fn flush(&mut self, fallback: &mut dyn std::io::Write) {
+        let has_logger = tracing::dispatcher::get_default(|dispatch| {
+            !dispatch.is::<tracing::subscriber::NoSubscriber>()
+        });
+        for (level, message) in self.0.drain(..) {
+            if has_logger {
+                dyn_event!(level, "{message}");
+            } else {
+                let _ = writeln!(fallback, "{message}");
+            }
+        }
+    }
+}
+
+impl Drop for DeferredLogging {
+    fn drop(&mut self) {
+        self.flush(&mut std::io::stderr());
+    }
+}
+
 // We pass the engine as trait objects to make sure that this function
 // doesn't have any generics and gets generated, along with the entire web server
 // as part of this crate. This reduces the size of the generated code for
@@ -808,6 +841,7 @@ pub fn run_server(
     open_storage: OpenStorageFn,
     program_loader: Option<Box<dyn ProgramLoader>>,
 ) -> Result<(), ControllerError> {
+    let mut deferred_logging = DeferredLogging::default();
     check_program_load_flag(&args, program_loader.is_some())?;
     ensure_default_crypto_provider();
     enable_counting_panics();
@@ -824,11 +858,8 @@ pub fn run_server(
         })?
         .port();
 
-    let config = parse_config(&args.config_file).inspect_err(|e| {
-        // Logging isn't initialized and we can't initialize it until we have
-        // the configuration, so just print the message to stderr for now.
-        eprintln!("{e}");
-    })?;
+    let config = parse_config_with_deferred_logging(&args.config_file, &mut deferred_logging)
+        .inspect_err(|e| deferred_logging.push(Level::ERROR, e.to_string()))?;
 
     // Initialize the logger by setting its filter and template.
     let pipeline_label = config
@@ -848,11 +879,16 @@ pub fn run_server(
         .as_ref()
         .and_then(|name| name.strip_prefix("pipeline-"))
         .map(|id| id.to_string());
-    init_pipeline_logging_with_id(pipeline_name, pipeline_id, get_env_filter(&config))
-        .unwrap_or_else(|e| {
-            // This happens in unit tests when another test has initialized logging.
-            eprintln!("Failed to initialize logging: {e}.")
-        });
+    init_pipeline_logging_with_id(
+        pipeline_name,
+        pipeline_id,
+        get_env_filter(&config, &mut deferred_logging),
+    )
+    .unwrap_or_else(|e| {
+        // This happens in unit tests when another test has initialized logging.
+        deferred_logging.push(Level::WARN, format!("Failed to initialize logging: {e}."));
+    });
+    drop(deferred_logging);
     if let Some(provider) = rustls::crypto::CryptoProvider::get_default() {
         observability::fips::log_rustls_provider_fips_status(
             "startup default provider",
@@ -1272,8 +1308,14 @@ fn check_program_load_flag(args: &ServerArgs, can_load: bool) -> Result<(), Cont
     Ok(())
 }
 
-fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, ControllerError> {
-    fn read_config_file_as_string(path: &Path) -> Result<String, ControllerError> {
+fn parse_config_with_deferred_logging(
+    config_file: impl AsRef<Path>,
+    deferred_logging: &mut DeferredLogging,
+) -> Result<PipelineConfig, ControllerError> {
+    fn read_config_file_as_string(
+        path: &Path,
+        deferred_logging: &mut DeferredLogging,
+    ) -> Result<String, ControllerError> {
         let string = std::fs::read(path).map_err(|e| {
             ControllerError::io_error(
                 format!("reading configuration file '{}'", path.display()),
@@ -1288,14 +1330,16 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
             ))
         })?;
 
-        // Still running without logger here.
-        eprintln!("Pipeline configuration read from {}.", path.display());
+        deferred_logging.push(
+            Level::INFO,
+            format!("Pipeline configuration read from {}.", path.display()),
+        );
 
         Ok(string)
     }
 
     let path = config_file.as_ref();
-    let string = read_config_file_as_string(path)?;
+    let string = read_config_file_as_string(path, deferred_logging)?;
     let mut config: PipelineConfig = serde_json::from_str(&string).map_err(|e| {
         ControllerError::pipeline_config_parse_error(&format!(
             "configuration file '{}' must be JSON (YAML is no longer read): {e}",
@@ -1305,10 +1349,12 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
 
     if let Ok(value) = serde_json::from_str(&string) {
         for setting in ignored_settings::<PipelineConfig>(&value) {
-            // The logger is not running yet.
-            eprintln!(
-                "Ignoring pipeline configuration setting '{setting}', which this version \
+            deferred_logging.push(
+                Level::WARN,
+                format!(
+                    "Ignoring pipeline configuration setting '{setting}', which this version \
 of the pipeline does not recognize (it may be misspelled, or newer than this pipeline)."
+                ),
             );
         }
     }
@@ -1319,20 +1365,33 @@ of the pipeline does not recognize (it may be misspelled, or newer than this pip
         && let Some(available_mb) = observability::system::total_memory_megabyte()
     {
         let available = ConfigSize::from_mb(available_mb);
-        // The logger is not running yet.
-        eprintln!(
-            "No memory limit configured ('max_rss' or 'resources.memory_max'); \
+        deferred_logging.push(
+            Level::INFO,
+            format!(
+                "No memory limit configured ('max_rss' or 'resources.memory_max'); \
 using this host's available memory: 'resources.memory_max' = {available}."
+            ),
         );
         config.global.resources.memory_max = Some(available);
     }
 
-    eprintln!(
-        "Pipeline configuration loaded successfully: {}",
-        config.display_summary()
+    deferred_logging.push(
+        Level::INFO,
+        format!(
+            "Pipeline configuration loaded successfully: {}",
+            config.display_summary()
+        ),
     );
 
     Ok(config)
+}
+
+#[cfg(any(test, feature = "testing"))]
+fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, ControllerError> {
+    let mut deferred_logging = DeferredLogging::default();
+    let result = parse_config_with_deferred_logging(config_file, &mut deferred_logging);
+    deferred_logging.0.clear();
+    result
 }
 
 // Initialization thread function.
@@ -1415,7 +1474,7 @@ fn error_handler(
 }
 
 /// Get the log filtering configuration.
-fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
+fn get_env_filter(config: &PipelineConfig, deferred_logging: &mut DeferredLogging) -> EnvFilter {
     // The `RUST_LOG` environment variable takes precedence.  It isn't usually
     // set.
     if let Ok(env_filter) = EnvFilter::try_from_default_env() {
@@ -1427,8 +1486,10 @@ fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
         match EnvFilter::try_new(dirs) {
             Ok(env_filter) => return env_filter,
             Err(error) => {
-                // Write directly to stderr because logging isn't set up yet.
-                eprintln!("Invalid pipeline `logging` configuration ({error}): {dirs}")
+                deferred_logging.push(
+                    Level::ERROR,
+                    format!("Invalid pipeline `logging` configuration ({error}): {dirs}"),
+                );
             }
         }
     }
@@ -5378,7 +5439,10 @@ fn is_false(value: &bool) -> bool {
 #[cfg(test)]
 mod test_status {
     use super::test_http_helpers::json_config_file;
-    use super::{ServerState, error_handler, get_status, parse_config, terminated_status};
+    use super::{
+        DeferredLogging, ServerState, error_handler, get_status, parse_config,
+        parse_config_with_deferred_logging, terminated_status,
+    };
     use crate::{
         ControllerError,
         server::{InitializationState, PipelinePhase},
@@ -5388,7 +5452,11 @@ mod test_status {
         BootstrapConfig, BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus,
     };
     use serde_json::json;
-    use std::{io::Write, sync::Arc};
+    use std::{
+        io::Write,
+        sync::{Arc, Mutex},
+    };
+    use tracing::{Level, subscriber::NoSubscriber};
     use uuid::Uuid;
 
     /// The configuration file is read as JSON whatever its name: the YAML
@@ -5409,6 +5477,101 @@ mod test_status {
         let json_file = json_config_file(&json!({"name": "test"}));
         let config = parse_config(json_file.path()).unwrap();
         assert_eq!(config.name.as_deref(), Some("test"));
+    }
+
+    /// A `Write` that tests can read back after a subscriber writes to it.
+    #[derive(Clone, Default)]
+    struct SharedBuffer(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for SharedBuffer {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().write(buf)
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl SharedBuffer {
+        fn contents(&self) -> String {
+            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+        }
+    }
+
+    /// With a logger, queued messages go to it, in order and at their levels,
+    /// and nothing goes to the fallback.
+    #[test]
+    fn deferred_logging_uses_logger() {
+        let log = SharedBuffer::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer({
+                let log = log.clone();
+                move || log.clone()
+            })
+            .with_ansi(false)
+            .with_max_level(Level::INFO)
+            .finish();
+        let mut fallback = Vec::new();
+        tracing::subscriber::with_default(subscriber, || {
+            let mut deferred_logging = DeferredLogging::default();
+            deferred_logging.push(Level::INFO, "first message");
+            deferred_logging.push(Level::WARN, "second message");
+            deferred_logging.push(Level::DEBUG, "filtered message");
+            deferred_logging.flush(&mut fallback);
+        });
+        let log = log.contents();
+        let lines = log.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 2, "{log}");
+        assert!(
+            lines[0].contains("INFO") && lines[0].contains("first message"),
+            "{log}"
+        );
+        assert!(
+            lines[1].contains("WARN") && lines[1].contains("second message"),
+            "{log}"
+        );
+        assert!(fallback.is_empty());
+    }
+
+    /// Without a logger, as on an early return from `run_server`, queued
+    /// messages go to the fallback instead of being lost.
+    #[test]
+    fn deferred_logging_falls_back_without_logger() {
+        let mut fallback = Vec::new();
+        tracing::subscriber::with_default(NoSubscriber::default(), || {
+            let mut deferred_logging = DeferredLogging::default();
+            deferred_logging.push(Level::INFO, "first message");
+            deferred_logging.push(Level::ERROR, "second message");
+            deferred_logging.flush(&mut fallback);
+        });
+        assert_eq!(
+            String::from_utf8(fallback).unwrap(),
+            "first message\nsecond message\n"
+        );
+    }
+
+    /// An unknown configuration setting queues a warning that names it.
+    #[test]
+    fn parse_config_warns_about_unknown_settings() {
+        let mut deferred_logging = DeferredLogging::default();
+        parse_config_with_deferred_logging(
+            json_config_file(&json!({"name": "test", "no_such_setting": 1})).path(),
+            &mut deferred_logging,
+        )
+        .unwrap();
+        let warnings = std::mem::take(&mut deferred_logging.0)
+            .into_iter()
+            .filter(|(level, _)| *level == Level::WARN)
+            .map(|(_, message)| message)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            warnings,
+            [
+                "Ignoring pipeline configuration setting 'no_such_setting', which this version \
+                 of the pipeline does not recognize (it may be misspelled, or newer than \
+                 this pipeline)."
+            ]
+        );
     }
 
     /// Without a memory limit, the pipeline sets `memory_max`, not `max_rss`,
