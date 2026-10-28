@@ -71,7 +71,6 @@ const testOptimizeDepsInclude = [
   'nprogress',
   'posthog-js',
   'strip-ansi',
-  'svelte-attr',
   'svelte-echarts',
   'sveltekit-superforms',
   'sveltekit-superforms/adapters',
