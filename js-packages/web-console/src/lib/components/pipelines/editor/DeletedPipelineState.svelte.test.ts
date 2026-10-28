@@ -37,7 +37,8 @@ vi.mock('$app/state', async () => {
           unstableFeatures: [],
           edition: 'Open Source',
           role,
-          permissions: permissionsOf(role)
+          permissions: permissionsOf(role),
+          config: { allow_rust_udfs: true }
         }
       },
       url: new URL('http://localhost/')
