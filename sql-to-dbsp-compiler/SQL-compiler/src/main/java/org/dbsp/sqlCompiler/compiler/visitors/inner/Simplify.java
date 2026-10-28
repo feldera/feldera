@@ -224,10 +224,12 @@ public class Simplify extends ExpressionTranslator {
             DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);
             BigDecimal decimal = new BigDecimal(value).setScale(decType.scale);
             if (decimal.precision() > decType.precision) {
-                // The runtime cast fails; keep the cast so the error surfaces at runtime
-                this.compiler.reportWarning(cast.getSourcePosition(), "Invalid DECIMAL",
-                        "cannot represent " + value + " as DECIMAL(" + decType.precision + ", " + decType.scale +
-                                "): precision of DECIMAL type too small to represent value");
+                // The runtime cast fails; keep the cast so the error surfaces at runtime.
+                // A saturating cast does not fail.
+                if (cast.safe != DBSPCastExpression.CastType.Saturating)
+                    this.compiler.reportWarning(cast.getSourcePosition(), "Invalid DECIMAL",
+                            "cannot represent " + value + " as DECIMAL(" + decType.precision + ", " + decType.scale +
+                                    "): precision of DECIMAL type too small to represent value");
                 return null;
             }
             return new DBSPDecimalLiteral(node, type, decimal);
@@ -453,12 +455,14 @@ public class Simplify extends ExpressionTranslator {
                     DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);
                     value = value.setScale(decType.scale, RoundingMode.DOWN);
                     if (value.precision() > decType.precision) {
-                        // The runtime cast fails; keep the cast so the error surfaces at runtime
-                        this.compiler.reportWarning(expression.getSourcePosition(),
-                                "Invalid DECIMAL",
-                                "cannot represent " + lit + " as DECIMAL(" + decType.precision + ", " + decType.scale +
-                                        "): precision of DECIMAL type too small to represent value"
-                        );
+                        // The runtime cast fails; keep the cast so the error surfaces at runtime.
+                        // A saturating cast does not fail.
+                        if (expression.safe != DBSPCastExpression.CastType.Saturating)
+                            this.compiler.reportWarning(expression.getSourcePosition(),
+                                    "Invalid DECIMAL",
+                                    "cannot represent " + lit + " as DECIMAL(" + decType.precision + ", " +
+                                            decType.scale + "): precision of DECIMAL type too small to represent value"
+                            );
                     } else {
                         result = new DBSPDecimalLiteral(source.getNode(), type, value);
                     }
