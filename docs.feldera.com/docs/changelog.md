@@ -25,6 +25,14 @@ Source edition can be found on github.
   environment variables that Kubernetes adds for each service in the
   namespace (`enableServiceLinks: false`).
 
+- Incompatible change: `env` in the runtime configuration reserves more
+  names: `BASH_ENV`, `BASHOPTS`, `ENV`, `IFS`, `PATH`, `PS4`, `SHELLOPTS`,
+  `GCONV_PATH`, `GLIBC_TUNABLES`, `LOCPATH`, `NLSPATH`, `OPENSSL_CONF`,
+  `OPENSSL_ENGINES`, `OPENSSL_MODULES`, and names that start with
+  `BASH_FUNC_` or `LD_`.  The API refuses a pipeline that sets one, and an
+  existing pipeline that sets one fails to start until the variable is
+  removed.
+
 - Experimental (Enterprise, Kubernetes): a resize of `memory_max` with
   `PATCH /v0/pipelines/{name}` also changes the memory budget of the
   running pipeline, unless `max_rss` is set.  A smaller budget applies at
