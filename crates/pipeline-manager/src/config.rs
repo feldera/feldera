@@ -12,7 +12,6 @@ use clap::Parser;
 use reqwest::Certificate;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::{ResolvesClientCert, WebPkiServerVerifier};
-use rustls::crypto::CryptoProvider;
 use rustls::pki_types::PrivateKeyDer;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
@@ -390,9 +389,9 @@ pub struct CommonConfig {
     #[arg(long, env = "FELDERA_CA_CERT_PATH")]
     pub private_ca_cert_path: Option<String>,
 
-    /// Path to the TLS x509 client certificate PEM file that the HTTPS clients present
-    /// to servers that request one (the compiler server with
-    /// `--require-client-certificates`). Requires `--enable-https`.
+    /// Path to the TLS x509 client certificate PEM file that the HTTPS clients present for
+    /// mutual TLS (mTLS) to servers that request one: the compiler and runner servers with
+    /// `--require-client-certificates`, and pipelines. Requires `--enable-https`.
     ///
     /// The clients read the file again at most once per minute, so a renewed certificate
     /// takes effect without a restart.
@@ -411,12 +410,9 @@ pub struct CommonConfig {
     )]
     pub https_client_key_path: Option<String>,
 
-    /// Whether the compiler and runner servers require callers to present a client
-    /// certificate that the private CA (`--private-ca-cert-path`) signed, and admit each
-    /// caller only to its own routes. The control plane (URI SAN `urn:feldera:control-plane`)
-    /// may use all routes. A pipeline (URI SAN `urn:feldera:pipeline:<id>`) may only download
-    /// its own binary and program info from the compiler. `/healthz` stays open to callers
-    /// without a certificate.
+    /// Whether the control plane services, except the API server, require callers to present
+    /// a client certificate that the private CA (the first certificate of
+    /// `--private-ca-cert-path`) signed, and admit each caller only to its own routes.
     #[arg(
         long,
         default_value_t = false,
@@ -664,9 +660,30 @@ impl CommonConfig {
         self.https_server_config_with_client_verifier(WebPkiClientVerifier::no_client_auth())
     }
 
+    /// Creates the `ServerConfig` of the compiler and runner servers: like
+    /// [`Self::https_server_config`], and with `--require-client-certificates` it also
+    /// verifies client certificates against the private CA.
+    pub(crate) fn internal_https_server_config(&self) -> Option<rustls::ServerConfig> {
+        if !self.require_client_certificates {
+            return self.https_server_config();
+        }
+        assert!(
+            self.enable_https,
+            "--require-client-certificates requires --enable-https"
+        );
+        let ca_path = self.private_ca_cert_path.as_ref().expect(
+            "--require-client-certificates requires --private-ca-cert-path, the CA that signs client certificates",
+        );
+        let ca_chain = read_certificate_chain(ca_path)
+            .unwrap_or_else(|e| panic!("private CA certificate: {e:#}"));
+        let verifier = feldera_mtls::client_certificate_verifier(&ca_chain)
+            .unwrap_or_else(|e| panic!("private CA certificate '{ca_path}': {e}"));
+        self.https_server_config_with_client_verifier(verifier)
+    }
+
     /// Like [`Self::https_server_config`], with `client_verifier` deciding which client
     /// certificates the server requests and accepts.
-    pub fn https_server_config_with_client_verifier(
+    fn https_server_config_with_client_verifier(
         &self,
         client_verifier: Arc<dyn ClientCertVerifier>,
     ) -> Option<rustls::ServerConfig> {
@@ -902,24 +919,28 @@ impl ResolvesClientCert for ClientCertificateFiles {
     }
 }
 
-/// Reads a certificate chain and its private key from PEM files, and checks that they match.
-fn read_certified_key(cert_path: &str, key_path: &str) -> AnyResult<Arc<CertifiedKey>> {
-    let cert_chain = CertificateDer::pem_file_iter(cert_path)
-        .with_context(|| format!("reading certificate '{cert_path}'"))?
+/// Reads the certificates of a PEM file, of which there must be at least one.
+fn read_certificate_chain(path: &str) -> AnyResult<Vec<CertificateDer<'static>>> {
+    let cert_chain = CertificateDer::pem_file_iter(path)
+        .with_context(|| format!("reading certificate '{path}'"))?
         .collect::<Result<Vec<_>, _>>()
-        .with_context(|| format!("parsing certificate '{cert_path}'"))?;
+        .with_context(|| format!("parsing certificate '{path}'"))?;
     if cert_chain.is_empty() {
         return Err(AnyError::msg(format!(
-            "certificate file '{cert_path}' holds no certificate"
+            "certificate file '{path}' holds no certificate"
         )));
     }
+    Ok(cert_chain)
+}
+
+/// Reads a certificate chain and its private key from PEM files, and checks that they match.
+fn read_certified_key(cert_path: &str, key_path: &str) -> AnyResult<Arc<CertifiedKey>> {
+    let cert_chain = read_certificate_chain(cert_path)?;
     let key_der = PrivateKeyDer::from_pem_file(key_path)
         .with_context(|| format!("reading private key '{key_path}'"))?;
-    let provider = CryptoProvider::get_default()
-        .cloned()
-        .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
-    let certified_key = CertifiedKey::from_der(cert_chain, key_der, &provider)
-        .with_context(|| format!("loading certificate '{cert_path}' with key '{key_path}'"))?;
+    let certified_key =
+        CertifiedKey::from_der(cert_chain, key_der, &feldera_mtls::crypto_provider())
+            .with_context(|| format!("loading certificate '{cert_path}' with key '{key_path}'"))?;
     Ok(Arc::new(certified_key))
 }
 
