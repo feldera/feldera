@@ -6409,6 +6409,12 @@ export type StartFromCheckpoint = 'latest' | string | null
  * Response to a `/start_transaction` request.
  */
 export type StartTransactionResponse = {
+  /**
+   * Pass back to `/commit_transaction` to detect pipeline restarts.
+   *
+   * Only `None` if sent by an older pipeline.
+   */
+  incarnation_uuid?: string | null
   transaction_id: number
 }
 
@@ -8298,13 +8304,41 @@ export type CommitTransactionData = {
      */
     pipeline_name: string
   }
-  query?: never
+  query?: {
+    /**
+     * The ID of the transaction to commit, which `/start_transaction`
+     * returned:
+     *
+     * - If this is the transaction that the API started and that is still
+     * open, the request commits it.
+     * - If this is the last transaction that `/commit_transaction`
+     * committed, the request succeeds and does nothing, so it is safe to
+     * retry.
+     * - Otherwise, the request fails with 409 Conflict, for example if no
+     * transaction with this ID has started yet.
+     *
+     * Without this parameter, the request commits the transaction that the
+     * API started.
+     */
+    transaction_id?: number | null
+    /**
+     * The `incarnation_uuid` that `/start_transaction` returned.  If the
+     * pipeline restarted since then, the request fails with 400 Bad Request
+     * and error code `IncarnationUuidMismatch`, because transaction IDs start
+     * again after a restart.
+     */
+    incarnation_uuid?: string | null
+  }
   url: '/v0/pipelines/{pipeline_name}/commit_transaction'
 }
 
 export type CommitTransactionErrors = {
   /**
-   * Another transaction is already in progress.
+   * The given `incarnation_uuid` does not match the pipeline's current incarnation (error code `IncarnationUuidMismatch`): the pipeline process has restarted since the transaction started
+   */
+  400: ErrorResponse
+  /**
+   * Another transaction is already in progress, or `transaction_id` is not the transaction that the API started.
    */
   409: ErrorResponse
   500: ErrorResponse

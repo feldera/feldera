@@ -73,8 +73,8 @@ use feldera_types::coordination::{
 use feldera_types::format::json::JsonEncoderConfig;
 use feldera_types::pipeline_diff::PipelineDiff;
 use feldera_types::query_params::{
-    ActivateParams, ApproveParameters, MetricsFormat, MetricsParameters, SamplyProfileGetParams,
-    SamplyProfileParams, StatsParams,
+    ActivateParams, ApproveParameters, CommitTransactionParams, MetricsFormat, MetricsParameters,
+    SamplyProfileGetParams, SamplyProfileParams, StatsParams,
 };
 use feldera_types::runtime_status::{
     BootstrapConfig, BootstrapPolicy, ConnectorStats, ExtendedRuntimeStatus,
@@ -4190,12 +4190,20 @@ async fn load_program(
 
 #[post("/start_transaction")]
 async fn start_transaction(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    Ok(HttpResponse::Ok().json(state.controller()?.start_transaction()?))
+    let mut response = state.controller()?.start_transaction()?;
+    response.incarnation_uuid = Some(state.incarnation_uuid);
+    Ok(HttpResponse::Ok().json(response))
 }
 
 #[post("/commit_transaction")]
-async fn commit_transaction(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    state.controller()?.start_commit_transaction()?;
+async fn commit_transaction(
+    state: WebData<ServerState>,
+    params: web::Query<CommitTransactionParams>,
+) -> Result<impl Responder, PipelineError> {
+    check_incarnation_uuid(&state, params.incarnation_uuid)?;
+    state
+        .controller()?
+        .start_commit_transaction(params.transaction_id)?;
     Ok(HttpResponse::Ok().json("Transaction commit initiated"))
 }
 
@@ -8070,6 +8078,45 @@ pub mod test_http {
             // Receive output first, otherwise the token never gets marked as complete.
             TestHttpReceiver::wait_for_output_unordered(&mut egress_resp, &data).await;
             wait_for_completion(&server, &token).await;
+        })
+    }
+
+    /// `/commit_transaction?transaction_id=N` commits transaction N only, and a retry of it
+    /// succeeds.  A commit that names another incarnation fails.
+    #[engine_test]
+    pub fn commit_transaction_by_id(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+
+            let config_json = json!({"name": "test", "inputs": {}, "outputs": {}});
+            let server = start_test_server(engine, &config_json, Uuid::default()).await;
+            start_pipeline(&server).await;
+
+            let mut resp = server.post("/start_transaction").send().await.unwrap();
+            assert!(resp.status().is_success());
+            let started = resp.json::<serde_json::Value>().await.unwrap();
+            let tid = started["transaction_id"].as_i64().unwrap();
+            let incarnation = started["incarnation_uuid"].as_str().unwrap().to_string();
+
+            let commit = |tid: i64, incarnation: &str| {
+                let request = server.post(format!(
+                    "/commit_transaction?transaction_id={tid}&incarnation_uuid={incarnation}"
+                ));
+                async move { request.send().await.unwrap() }
+            };
+
+            let mut resp = commit(tid + 1, &incarnation).await;
+            assert_eq!(resp.status(), StatusCode::CONFLICT);
+            let error = resp.json::<serde_json::Value>().await.unwrap();
+            assert_eq!(error["error_code"], "TransactionIdMismatch", "{error}");
+
+            let mut resp = commit(tid, &Uuid::now_v7().to_string()).await;
+            assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+            let error = resp.json::<serde_json::Value>().await.unwrap();
+            assert_eq!(error["error_code"], "IncarnationUuidMismatch", "{error}");
+
+            assert!(commit(tid, &incarnation).await.status().is_success());
+            assert!(commit(tid, &incarnation).await.status().is_success());
         })
     }
 

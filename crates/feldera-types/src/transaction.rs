@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter};
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 pub type TransactionId = i64;
 
@@ -9,11 +10,20 @@ pub type TransactionId = i64;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct StartTransactionResponse {
     pub transaction_id: i64,
+
+    /// Pass back to `/commit_transaction` to detect pipeline restarts.
+    ///
+    /// Only `None` if sent by an older pipeline.
+    #[serde(default)]
+    pub incarnation_uuid: Option<Uuid>,
 }
 
 impl StartTransactionResponse {
     pub fn new(transaction_id: TransactionId) -> Self {
-        Self { transaction_id }
+        Self {
+            transaction_id,
+            incarnation_uuid: None,
+        }
     }
 }
 

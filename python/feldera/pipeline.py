@@ -1046,12 +1046,28 @@ metrics"""
 
         return self.client.start_transaction(self.name)
 
+    def start_transaction_response(self) -> dict:
+        """
+        Start a new transaction, returning the full response.
+
+        :return: dict with `transaction_id` and `incarnation_uuid`; pass both
+            to `commit_transaction`.  Transaction IDs start again when the
+            pipeline restarts, so `incarnation_uuid` prevents a commit of
+            another transaction with the same ID.
+
+        :raises FelderaAPIError: If the pipeline fails to start a transaction, e.g., if the pipeline is not running or
+            there is already an active transaction.
+        """
+
+        return self.client.start_transaction_response(self.name)
+
     def commit_transaction(
         self,
         transaction_id: Optional[int] = None,
         wait: bool = True,
         timeout_s: Optional[float] = None,
         poll_interval_s: float = 0.5,
+        incarnation_uuid: Optional[str] = None,
     ):
         """
         Commit the currently active transaction.
@@ -1068,8 +1084,15 @@ metrics"""
         :param poll_interval_s: Polling interval at which to check while waiting for the
             transaction to commit (default is every 0.5 seconds). Not used if `wait=False`.
 
-        :raises RuntimeError: If there is currently no transaction in progress.
+        :param incarnation_uuid: The `incarnation_uuid` that `start_transaction_response` returned.
+            If the pipeline restarted since then, the commit fails with `IncarnationUuidMismatch`.
+            If not provided, the function uses the pipeline's incarnation when the call starts.
+
+        :raises RuntimeError: If `transaction_id` is not provided and there is currently no transaction in progress,
+            or if the pipeline restarts while the function waits for the commit.
         :raises ValueError: If the provided `transaction_id` does not match the current transaction.
+            If there is no current transaction, the pipeline checks `transaction_id`: if the last commit
+            request already committed it, the commit succeeds, so it is safe to call this again after a `TimeoutError`.
         :raises TimeoutError: If the transaction does not commit within the specified timeout (when `wait` is True).
         :raises FelderaAPIError: If the pipeline fails to commit a transaction.
         """
@@ -1080,6 +1103,7 @@ metrics"""
             wait,
             timeout_s,
             poll_interval_s=poll_interval_s,
+            incarnation_uuid=incarnation_uuid,
         )
 
     def transaction_status(self) -> TransactionStatus:
@@ -1095,7 +1119,14 @@ metrics"""
 
     def transaction_id(self) -> Optional[int]:
         """
-        Gets the ID of the currently active transaction or None if there is no active transaction.
+        Gets the ID of the transaction that the pipeline runs or commits now,
+        or None if there is no such transaction.  This is the transaction
+        that `transaction_status` describes.
+
+        This can be a different transaction than the one that
+        `start_transaction` started: an earlier transaction, for example one
+        that a connector started, can still be committing.  To commit a
+        transaction, use the ID that `start_transaction` returned.
 
         :return: The ID of the transaction.
         """

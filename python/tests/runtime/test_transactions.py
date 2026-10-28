@@ -1,6 +1,8 @@
 import unittest
+import uuid
 
 from feldera import PipelineBuilder
+from feldera.rest.errors import FelderaAPIError
 from tests import TEST_CLIENT
 from tests.platform.helper import PipelineTestCase, wait_for_records
 from feldera.runtime_config import RuntimeConfig
@@ -187,6 +189,49 @@ class TestTransactions(PipelineTestCase):
         # it every chance to receive the records its siblings already saw.
         output = out3.to_dict()
         assert output == []
+
+        pipeline.stop(force=True)
+
+    @unittest.skipIf(
+        FELDERA_TEST_NUM_HOSTS > 1,
+        "the multihost coordinator does not check the transaction ID yet",
+    )
+    def test_commit_transaction_by_id(self):
+        """A commit names its transaction and incarnation.  A retry of it
+        succeeds, and a commit of another transaction or incarnation fails."""
+
+        pipeline = PipelineBuilder(
+            TEST_CLIENT,
+            name=self.register_for_cleanup("test_commit_transaction_by_id"),
+            sql="CREATE TABLE t1 (id INT NOT NULL) WITH ('materialized' = 'true');",
+            runtime_config=RuntimeConfig(workers=FELDERA_TEST_NUM_WORKERS),
+        ).create_or_replace()
+        pipeline.start()
+
+        started = pipeline.start_transaction_response()
+        tid = started["transaction_id"]
+        incarnation = started["incarnation_uuid"]
+        assert incarnation == str(pipeline.stats().global_metrics.incarnation_uuid)
+        pipeline.execute("INSERT INTO t1 VALUES (1), (2), (3);")
+
+        with self.assertRaises(FelderaAPIError) as error:
+            pipeline.commit_transaction(tid, incarnation_uuid=str(uuid.uuid4()))
+        assert error.exception.error_code == "IncarnationUuidMismatch"
+
+        pipeline.commit_transaction(tid, incarnation_uuid=incarnation)
+        pipeline.commit_transaction(tid, incarnation_uuid=incarnation)
+        assert list(pipeline.query("SELECT COUNT(*) AS n FROM t1")) == [{"n": 3}]
+
+        with self.assertRaises(FelderaAPIError) as error:
+            pipeline.commit_transaction(tid + 1, incarnation_uuid=incarnation)
+        assert error.exception.error_code == "TransactionIdMismatch"
+
+        # Only the last commit can be retried.
+        second = pipeline.start_transaction()
+        pipeline.commit_transaction(second, incarnation_uuid=incarnation)
+        with self.assertRaises(FelderaAPIError) as error:
+            pipeline.commit_transaction(tid, incarnation_uuid=incarnation)
+        assert error.exception.error_code == "TransactionIdMismatch"
 
         pipeline.stop(force=True)
 
