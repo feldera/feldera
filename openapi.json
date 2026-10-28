@@ -9418,9 +9418,14 @@
           "runtime_revision",
           "changelog_url",
           "build_info",
-          "build_source"
+          "build_source",
+          "allow_rust_udfs"
         ],
         "properties": {
+          "allow_rust_udfs": {
+            "type": "boolean",
+            "description": "Whether pipelines may have Rust UDFs (`udf_rust` and `udf_toml`)."
+          },
           "build_info": {
             "$ref": "#/components/schemas/BuildInformation"
           },

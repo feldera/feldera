@@ -1,3 +1,4 @@
+use crate::db::types::program::RUST_UDFS_NOT_ALLOWED;
 use actix_web::{HttpResponse, ResponseError, body::BoxBody, http::StatusCode};
 use feldera_types::error::{DetailedError, ErrorResponse};
 use serde::Serialize;
@@ -34,6 +35,7 @@ pub enum ApiError {
     InvalidNewProgramSql { error: String },
     NewProgramCompilationFailed { error: String },
     BootstrapNotAllowed { error: String },
+    RustUdfsNotAllowed,
 }
 
 impl DetailedError for ApiError {
@@ -63,6 +65,7 @@ impl DetailedError for ApiError {
             Self::InvalidNewProgramSql { .. } => Cow::from("InvalidNewProgramSql"),
             Self::NewProgramCompilationFailed { .. } => Cow::from("NewProgramCompilationFailed"),
             Self::BootstrapNotAllowed { .. } => Cow::from("BootstrapNotAllowed"),
+            Self::RustUdfsNotAllowed => Cow::from("RustUdfsNotAllowed"),
         }
     }
 }
@@ -158,6 +161,7 @@ impl Display for ApiError {
             Self::BootstrapNotAllowed { error } => {
                 write!(f, "The requested change cannot be bootstrapped: {error}")
             }
+            Self::RustUdfsNotAllowed => write!(f, "{RUST_UDFS_NOT_ALLOWED}"),
         }
     }
 }
@@ -195,6 +199,7 @@ impl ResponseError for ApiError {
             Self::InvalidNewProgramSql { .. } => StatusCode::BAD_REQUEST,
             Self::NewProgramCompilationFailed { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::BootstrapNotAllowed { .. } => StatusCode::BAD_REQUEST,
+            Self::RustUdfsNotAllowed => StatusCode::BAD_REQUEST,
         }
     }
 

@@ -37,6 +37,11 @@ CREATE VIEW v0 AS SELECT contains_number(CAST('YES: 10 NO:5' AS VARCHAR), 5)
   by returning a `Result::Err()` ([see below](#return-types)). This ensures that errors are
   propagated in a controlled manner and can be handled by the calling code.
 
+* An operator can turn off Rust code in pipelines, which covers UDFs, UDAs, preprocessors and
+  postprocessors, with `--allow-rust-udfs=false` (in the Enterprise Helm chart:
+  `pipeline.allowRustUdfs: false`). The API then refuses pipelines that set `udf_rust` or
+  `udf_toml`, and existing ones fail to compile and to start.
+
 * The compiler assumes that the semantics of a user-defined function does not change between
   pipeline restarts.  Modifying the definition of a UDF before restarting a pipeline may lead to
   incorrect results.  When the semantics of a UDF changes, we also recommend changing the UDF

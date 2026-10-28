@@ -263,6 +263,16 @@ impl Display for RustCompilerMessage {
     }
 }
 
+/// Why a pipeline with Rust UDFs is refused when the instance does not allow them.
+pub const RUST_UDFS_NOT_ALLOWED: &str = "Rust UDFs are not allowed on this Feldera instance. \
+    Remove udf_rust and udf_toml from the pipeline, or ask an operator to allow Rust UDFs \
+    with `pipeline.allowRustUdfs: true` in the Helm chart.";
+
+/// Whether a pipeline has Rust UDF code or UDF dependencies; either compiles to native code.
+pub fn has_rust_udfs(udf_rust: &str, udf_toml: &str) -> bool {
+    !udf_rust.trim().is_empty() || !udf_toml.trim().is_empty()
+}
+
 /// Rust compilation information.
 #[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone, Default)]
 pub struct RustCompilationInfo {
@@ -994,7 +1004,9 @@ pub fn generate_pipeline_config(
 
 #[cfg(test)]
 mod tests {
-    use super::{RuntimeSelector, determine_connector_endpoint_names, generate_program_info};
+    use super::{
+        RuntimeSelector, determine_connector_endpoint_names, generate_program_info, has_rust_udfs,
+    };
     use crate::db::types::program::ConnectorGenerationError::RelationConnectorNameCollision;
     use feldera_types::config::{ConnectorConfig, TransportConfig};
     use feldera_types::program_schema::{
@@ -1235,5 +1247,14 @@ mod tests {
                 .input_connectors
                 .contains_key("events.unnamed-0")
         );
+    }
+
+    /// Rust code or dependencies count as Rust UDFs; whitespace does not.
+    #[test]
+    fn rust_udfs_detection() {
+        assert!(!has_rust_udfs("", ""));
+        assert!(!has_rust_udfs(" \n", "\t"));
+        assert!(has_rust_udfs("pub fn f() {}", ""));
+        assert!(has_rust_udfs("", "openssl-sys = \"0.9\""));
     }
 }

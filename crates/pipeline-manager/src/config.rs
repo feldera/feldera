@@ -397,6 +397,12 @@ pub struct CommonConfig {
         env = "FELDERA_DISABLE_CLUSTER_MONITOR_RESOURCES"
     )]
     pub disable_cluster_monitor_resources: bool,
+
+    /// Whether pipelines may have Rust UDFs (`udf_rust` and `udf_toml`).
+    /// Rust UDFs and their dependencies compile to native code, allow them
+    /// only when pipeline authors are trusted.
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = true, env = "FELDERA_ALLOW_RUST_UDFS")]
+    pub allow_rust_udfs: bool,
 }
 
 impl CommonConfig {
@@ -790,6 +796,7 @@ impl CommonConfig {
             private_ca_cert_path: None,
             pipeline_monitor_events_retention: 720,
             disable_cluster_monitor_resources: false,
+            allow_rust_udfs: true,
         }
     }
 }
