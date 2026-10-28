@@ -271,8 +271,10 @@ Environment variables can be overridden by setting them in the pipeline runtime 
 ```
 
 Some environment variable names are reserved and cannot be overridden through
-`runtime_config.env` (for example names in the `FELDERA_`, `KUBERNETES_`, and
-`TOKIO_` namespaces, plus control variables such as `RUST_LOG`).
+`runtime_config.env` (for example names in the `FELDERA_`, `KUBERNETES_`,
+`TOKIO_`, `BASH_FUNC_` and `LD_` namespaces, control variables such as
+`RUST_LOG`, and variables that change how the shell or the C library start the
+pipeline, such as `BASH_ENV` and `PATH`).
 
 Python SDK example:
 
