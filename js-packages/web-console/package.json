@@ -117,7 +117,7 @@
     "clean-install": "bun ci",
     "check-bun-version": "bun ../../scripts/check-bun-version.ts",
     "deps": "bun ../../scripts/check-bun-version.ts && bun run --filter common-lib --filter triage-types --filter profiler-lib --filter common-ui --filter profiler-layout --filter @feldera/vite-plugin-monaco-editor build:self",
-    "prepare": "svelte-kit sync",
+    "prepare": "bun run --filter @feldera/vite-plugin-monaco-editor build:self && svelte-kit sync",
     "dev": "bun run deps && vite dev --host",
     "build": "bun run deps && bun run build:self",
     "build:self": "bun run check-bun-version && vite build",
