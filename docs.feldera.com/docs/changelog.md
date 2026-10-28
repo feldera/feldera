@@ -56,6 +56,21 @@ Source edition can be found on github.
   value was accepted: for example, a timestamp of `253402300800000000`
   microseconds in an Avro or Parquet input became `10000-01-01 00:00:00`.
 
+- Incompatible change (SQL): `<`, `<=`, `>` and `>=` are no longer
+  allowed between `ROW` values, and neither are `BETWEEN`, `GREATEST`,
+  `LEAST`, `GREATEST_IGNORE_NULLS` and `LEAST_IGNORE_NULLS` with `ROW`
+  arguments, so some programs that used to compile are now rejected.
+  The same holds for `ARRAY` and `MAP` values that contain `ROW` values,
+  such as `ROW(x INT) ARRAY`; `=` and `<>` remain allowed on them.
+  These operations placed a `NULL` field before any other value, so
+  `ROW(1, NULL) < ROW(1, 2)` was `true`; standard SQL gives `NULL`.
+  Compare the fields instead, for example
+  `r.x < s.x OR (r.x = s.x AND r.y < s.y)`.  A user-defined type
+  declared with `CREATE TYPE ... AS (...)` is a `ROW` type, so the
+  restriction covers its values too.  `ORDER BY`, `MIN` and `MAX` still
+  accept `ROW` values.  See
+  [comparing `ROW` values](https://docs.feldera.com/sql/comparisons#comparing-row-values).
+
 ## v0.369.0
 
 - Python SDK: the new `reloadable_tables` argument of `Pipeline.start()`,

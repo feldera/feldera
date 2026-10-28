@@ -45,7 +45,8 @@ Comparison operations (`=`, `<>`, `!=`, `>`, `<`, `>=`, `<=`) can be applied to 
 On maps, `=` is equivalent to `IS NOT DISTINCT FROM` and `<>` is
 equivalent to `IS DISTINCT FROM`: two `NULL` values compare as equal,
 so `MAP['x', NULL] = MAP['x', NULL]` is `true`.  A `NULL` value is
-smaller than any other value.  See [comparing complex
+smaller than any other value.  `>`, `<`, `>=`, and `<=` are rejected
+on maps whose keys or values contain `ROW` values.  See [comparing complex
 values](comparisons.md#comparing-complex-values).
 
 

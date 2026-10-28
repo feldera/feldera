@@ -1159,17 +1159,20 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void issue4889() {
-        this.getCC("""
+        this.statementsFailingInCompilation("""
                 CREATE TABLE tbl(
                 roww ROW(i1 INT, v1 VARCHAR NULL));
 
                 CREATE MATERIALIZED VIEW v1 AS SELECT
                 GREATEST_IGNORE_NULLS(NULL, roww, ROW(5, NULL)) AS roww
-                FROM tbl;
+                FROM tbl;""", "ROW values cannot be compared using 'GREATEST_IGNORE_NULLS'");
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(
+                roww ROW(i1 INT, v1 VARCHAR NULL));
 
                 CREATE MATERIALIZED VIEW v2 AS SELECT
                 LEAST_IGNORE_NULLS(NULL, roww, ROW(5, NULL)) AS roww
-                FROM tbl;""");
+                FROM tbl;""", "ROW values cannot be compared using 'LEAST_IGNORE_NULLS'");
     }
 
     @Test
