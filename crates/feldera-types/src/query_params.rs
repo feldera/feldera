@@ -83,8 +83,9 @@ pub struct CommitTransactionParams {
     ///
     /// - If this is the transaction that the API started and that is still
     ///   open, the request commits it.
-    /// - If this transaction is already committing or committed, the request
-    ///   succeeds and does nothing, so it is safe to retry.
+    /// - If this is the last transaction that `/commit_transaction`
+    ///   committed, the request succeeds and does nothing, so it is safe to
+    ///   retry.
     /// - Otherwise, the request fails with 409 Conflict, for example if no
     ///   transaction with this ID has started yet.
     ///

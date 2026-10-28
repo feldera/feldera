@@ -860,7 +860,8 @@ pub enum ControllerError {
 
     /// `/commit_transaction?transaction_id=<requested>` failed because
     /// `requested` is not the open transaction that `/start_transaction`
-    /// started, and it is not committing or committed.  `open` is the ID of
+    /// started, and it is not the last transaction that `/commit_transaction`
+    /// committed, which a retry names.  `open` is the ID of
     /// the open transaction that `/start_transaction` started, if any.
     TransactionIdMismatch {
         requested: TransactionId,
