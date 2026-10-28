@@ -174,9 +174,8 @@ public final class DBSPCastExpression extends DBSPExpression {
 
     /** True if the runtime has a saturating cast from {@code source} to {@code target}.  These
      * casts are from a number to an integer or a DECIMAL, except from a 128-bit integer to a
-     * DECIMAL; between an interval in one unit and an integer of at most 64 bits or a DECIMAL;
-     * from a TIMESTAMP to an integer of at most 64 bits; and to a TIMESTAMP from an integer of at
-     * most 64 bits, a DECIMAL, a DOUBLE or a REAL. */
+     * DECIMAL; between an interval in one unit or a TIMESTAMP and an integer of at most 64 bits
+     * or a DECIMAL; and to a TIMESTAMP from a DOUBLE or a REAL. */
     public static boolean hasSaturatingForm(DBSPType source, DBSPType target) {
         boolean decimalSource = source.is(DBSPTypeDecimal.class);
         boolean floatSource = source.is(DBSPTypeDouble.class) || source.is(DBSPTypeReal.class);
@@ -185,7 +184,7 @@ public final class DBSPCastExpression extends DBSPExpression {
         if (isSingleUnitInterval(target))
             return isNarrowInteger(source) || decimalSource;
         if (isTimestamp(source))
-            return isNarrowInteger(target);
+            return isNarrowInteger(target) || target.is(DBSPTypeDecimal.class);
         if (isTimestamp(target))
             return isNarrowInteger(source) || decimalSource || floatSource;
         boolean integerSource = source.is(DBSPTypeInteger.class);
