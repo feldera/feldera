@@ -182,6 +182,15 @@ impl ResponseError for ClientAuthError {
     }
 }
 
+/// The rustls provider that the process installed, or the aws-lc-rs one that Feldera binaries
+/// install. With several rustls crypto features compiled in, rustls has no default unless the
+/// process installed one.
+pub fn crypto_provider() -> Arc<CryptoProvider> {
+    CryptoProvider::get_default()
+        .cloned()
+        .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()))
+}
+
 /// Builds a client certificate verifier that trusts every certificate in `anchors`, so a
 /// client may send its leaf certificate without the chain. Clients without a certificate may
 /// connect, so that they get an actionable 401 or reach routes open to everyone.
@@ -194,12 +203,7 @@ pub fn client_certificate_verifier(
             .add(anchor)
             .map_err(|e| format!("invalid CA certificate: {e}"))?;
     }
-    // An explicit provider: with several rustls crypto features compiled in, rustls has no
-    // default unless the process installed one.
-    let provider = CryptoProvider::get_default()
-        .cloned()
-        .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
-    WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider)
+    WebPkiClientVerifier::builder_with_provider(Arc::new(roots), crypto_provider())
         .allow_unauthenticated()
         .build()
         .map_err(|e| format!("client certificate verifier: {e}"))

@@ -1,5 +1,4 @@
 use crate::api::error::ApiError;
-use crate::client_auth::{Caller, authorize_runner_caller, https_server_config};
 use crate::config::CommonConfig;
 use crate::db::listen_table::{Operation, PIPELINE_NOTIFY_CHANNEL_CAPACITY};
 use crate::db::probe::DbProbe;
@@ -17,9 +16,13 @@ use crate::runner::pipeline_logs::{
 use actix_web::HttpResponse;
 use actix_web::HttpResponseBuilder;
 use actix_web::Responder;
-use actix_web::middleware::{Condition, from_fn};
+use actix_web::body::MessageBody;
+use actix_web::dev::{ServiceRequest, ServiceResponse};
+use actix_web::http::Method;
+use actix_web::middleware::{Condition, Next, from_fn};
 use actix_web::{HttpServer, get, web};
 use async_stream::try_stream;
+use feldera_mtls::{Caller, authorize};
 use std::collections::BTreeMap;
 use std::net::TcpListener;
 use std::str::FromStr;
@@ -60,6 +63,20 @@ const RESUME_POSITION_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Returns whether the runner is healthy.
 /// The health check consults the continuous probe of database reachability.
+/// Decides whether `caller` may send a `method` request for `path` to the runner server:
+/// the control plane may use every route, everyone else only `/healthz`.
+fn is_runner_request_allowed(caller: Caller, method: &Method, path: &str) -> bool {
+    caller == Caller::ControlPlane || (method == Method::GET && path == "/healthz")
+}
+
+/// Refuses the runner server requests that [`is_runner_request_allowed`] does not allow.
+async fn authorize_runner_caller(
+    req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
+    authorize("runner", is_runner_request_allowed, req, next).await
+}
+
 #[get("/healthz")]
 async fn get_healthz(data: web::Data<Arc<Mutex<DbProbe>>>) -> Result<impl Responder, ManagerError> {
     Ok(data.lock().await.as_http_response())
@@ -285,7 +302,7 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
         )
     });
     spawn(
-        if let Some(server_config) = https_server_config(&common_config) {
+        if let Some(server_config) = common_config.internal_https_server_config() {
             server
                 .listen_rustls_0_23(listener, server_config)
                 .expect("runner HTTPS server unable to listen")
@@ -482,12 +499,14 @@ mod test {
     use super::{
         FollowMode, FollowRequest, FollowerMessage, LOGS_EPOCH_HEADER, LOGS_GAP_HEADER,
         LOGS_SEQ_HEADER, LogMessage, PipelineId, PipelinesState, RESUME_POSITION_TIMEOUT,
-        ResumePosition, apply_resume_position, get_logs, logs_stream, resume_position,
+        ResumePosition, apply_resume_position, get_logs, is_runner_request_allowed, logs_stream,
+        resume_position,
     };
     use crate::runner::pipeline_logs::start_thread_pipeline_logs;
-    use actix_web::http::StatusCode;
+    use actix_web::http::{Method, StatusCode};
     use actix_web::{App, test as actix_test, web};
     use actix_web::{HttpResponse, HttpResponseBuilder, ResponseError};
+    use feldera_mtls::Caller;
     use futures_util::StreamExt;
     use std::collections::BTreeMap;
     use std::sync::Arc;
@@ -496,6 +515,34 @@ mod test {
     use tokio::sync::mpsc::{Receiver, Sender, channel};
     use tokio::sync::{Mutex, Notify, oneshot};
     use uuid::Uuid;
+
+    /// The runner admits only the control plane, apart from `/healthz`.
+    #[test]
+    fn runner_route_table() {
+        use Caller::{Anonymous, ControlPlane, Pipeline};
+        let pipeline_a = Uuid::from_u128(0xa);
+        let logs = format!("/logs/{pipeline_a}");
+        #[rustfmt::skip]
+        let table: Vec<(Method, &str, [bool; 3])> = vec![
+            //                         control plane, pipeline A, anonymous
+            (Method::GET, &logs,          [true, false, false]),
+            (Method::GET, "/healthz",     [true, true,  true]),
+            (Method::GET, "/health%7Az",  [true, false, false]),
+            (Method::GET, "/unknown",     [true, false, false]),
+        ];
+        for (method, path, expected) in table {
+            for (caller, allowed) in [ControlPlane, Pipeline(pipeline_a), Anonymous]
+                .into_iter()
+                .zip(expected)
+            {
+                assert_eq!(
+                    is_runner_request_allowed(caller, &method, path),
+                    allowed,
+                    "{caller:?} {method} {path}"
+                );
+            }
+        }
+    }
 
     /// Drains a logs stream fed by `lines`, returning the body it produced.
     async fn body_of(lines: &[&str], emit_end_notice: bool) -> String {

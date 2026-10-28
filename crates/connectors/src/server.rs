@@ -713,9 +713,8 @@ pub struct ServerArgs {
 
     /// Whether the HTTPS server requires client certificates, and admits only the control
     /// plane (URI SAN `urn:feldera:control-plane`) and this pipeline itself, which the
-    /// multihost coordinator presents. The CA chain after the leaf in `--https-tls-cert-path`
-    /// verifies them. Set through the environment, which pipeline binaries of older runtime
-    /// versions ignore.
+    /// multihost coordinator presents. The private CA verifies them: the runner appends its
+    /// chain after the leaf in `--https-tls-cert-path`.
     #[arg(
         long,
         default_value_t = false,

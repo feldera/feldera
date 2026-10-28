@@ -6,6 +6,6 @@ mod rustc_diagnostics;
 mod sql_compiler;
 #[cfg(test)]
 mod test;
-pub(crate) mod util;
+mod util;
 
 pub(crate) use sql_compiler::{ProgramValidationRequest, ValidateProgramResponse};
