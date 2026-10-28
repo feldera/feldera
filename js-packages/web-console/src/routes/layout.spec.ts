@@ -25,15 +25,15 @@ const m = vi.hoisted(() => {
 })
 
 vi.mock('posthog-js', () => ({ default: m.posthog }))
-vi.mock('$lib/services/conceptualHq', () => ({
+vi.mock('#lib/services/conceptualHq.ts', () => ({
   initConceptualHq: () => {},
   isConceptualHqInitialized: () => false,
   trackConceptualHq: () => {},
   trackConceptualHqSignup: () => {}
 }))
-vi.mock('$lib/services/productFruits', () => ({ initProductFruits: () => {} }))
+vi.mock('#lib/services/productFruits.ts', () => ({ initProductFruits: () => {} }))
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }))
-vi.mock('$lib/compositions/auth', () => ({
+vi.mock('#lib/compositions/auth.ts', () => ({
   loadAuthConfig: async () => ({ oidc: { redirect_uri: 'http://console/auth/callback' } })
 }))
 vi.mock('@axa-fr/oidc-client', () => ({
@@ -47,7 +47,7 @@ vi.mock('@axa-fr/oidc-client', () => ({
 })
   }
 }))
-vi.mock('$lib/compositions/configCache', () => (
+vi.mock('#lib/compositions/configCache.ts', () => (
 {
   clearConfigCaches: () => {}, configChanged
   : () => true,

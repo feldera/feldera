@@ -1,8 +1,8 @@
 <script lang="ts">
   import { clipboard } from '@svelte-bin/clipboard'
   import JSONbig from 'true-json-bigint'
-  import type { SystemError } from '$lib/compositions/health/systemErrors'
-  import type { Snippet } from '$lib/types/svelte'
+  import type { SystemError } from '#lib/compositions/health/systemErrors.ts'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   const { systemError, before }: { systemError: SystemError; before?: Snippet } = $props()
   const text = $derived(

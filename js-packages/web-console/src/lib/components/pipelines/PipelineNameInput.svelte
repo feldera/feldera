@@ -1,9 +1,9 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
-  import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { resolve } from '$lib/functions/svelte'
-  import type { Snippet } from '$lib/types/svelte'
+  import { useUpdatePipelineList } from '#lib/compositions/pipelines/usePipelineList.svelte.ts'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { resolve } from '#lib/functions/svelte.ts'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   const {
     onShowInput,

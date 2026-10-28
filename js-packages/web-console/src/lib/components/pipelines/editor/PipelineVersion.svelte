@@ -1,9 +1,9 @@
 <script lang="ts">
   import { ClipboardCopyButton } from 'common-ui'
   import { page } from '$app/state'
-  import PipelineVersionTooltip from '$lib/components/pipelines/table/PipelineVersionTooltip.svelte'
-  import { getRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
-  import type { ProgramStatus } from '$lib/services/pipelineManager'
+  import PipelineVersionTooltip from '#lib/components/pipelines/table/PipelineVersionTooltip.svelte'
+  import { getRuntimeVersion } from '#lib/functions/pipelines/runtimeVersion.ts'
+  import type { ProgramStatus } from '#lib/services/pipelineManager.ts'
 
   const {
     pipelineName,

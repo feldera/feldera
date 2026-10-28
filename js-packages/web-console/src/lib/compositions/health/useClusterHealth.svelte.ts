@@ -1,6 +1,6 @@
-import { useInterval } from '$lib/compositions/common/useInterval.svelte'
-import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-import { type ClusterEventType, toClusterStatus } from '$lib/functions/pipelines/health'
+import { useInterval } from '#lib/compositions/common/useInterval.svelte.ts'
+import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+import { type ClusterEventType, toClusterStatus } from '#lib/functions/pipelines/health.ts'
 
 /**
  * The newest cluster monitor event the console has seen, and whether the API server still

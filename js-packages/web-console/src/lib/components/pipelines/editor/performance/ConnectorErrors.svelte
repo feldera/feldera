@@ -9,8 +9,11 @@
     type ConnectorError,
     type InputEndpointStatus,
     type OutputEndpointStatus
-  } from '$lib/services/manager'
-  import { getInputConnectorStatus, getOutputConnectorStatus } from '$lib/services/pipelineManager'
+  } from '#lib/services/manager/index.ts'
+  import {
+    getInputConnectorStatus,
+    getOutputConnectorStatus
+  } from '#lib/services/pipelineManager.ts'
 
   const inputFilterOptions = ['all', 'parse', 'transport'] as const
   const outputFilterOptions = ['all', 'encode', 'transport'] as const

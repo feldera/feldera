@@ -1,19 +1,19 @@
+import { discreteDerivative } from 'common-lib/math'
+import { tuple } from 'common-lib/tuple'
 import {
   type AggregatedInputEndpointMetrics,
   type AggregatedOutputEndpointMetrics,
   aggregateConnectorMetrics
 } from 'common-ui/connectorMetrics'
-import { discreteDerivative } from 'common-lib/math'
-import { tuple } from 'common-lib/tuple'
-import { ServerDate } from '$lib/compositions/serverTime'
+import { ServerDate } from '#lib/compositions/serverTime.ts'
 import type {
   CheckpointActivity,
   ControllerStatus,
   InputEndpointStatus,
   OutputEndpointStatus,
   PermanentSuspendError
-} from '$lib/services/manager'
-import type { GlobalMetricsTimestamp, TimeSeriesEntry } from '$lib/types/pipelineManager'
+} from '#lib/services/manager/index.ts'
+import type { GlobalMetricsTimestamp, TimeSeriesEntry } from '#lib/types/pipelineManager.ts'
 
 export const emptyPipelineMetrics = {
   tables: new Map<string, AggregatedInputEndpointMetrics>(),

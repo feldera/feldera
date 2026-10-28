@@ -16,7 +16,7 @@
 <script lang="ts">
   import { binarySearchMax } from 'common-lib/array'
   import type { OnScroll, ScrollEvent } from './types'
-  import type { Snippet } from '$lib/types/svelte'
+  import type { Snippet } from '#lib/types/svelte.ts'
   let {
     item,
     emptyItem,

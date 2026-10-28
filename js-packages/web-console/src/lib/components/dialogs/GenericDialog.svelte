@@ -3,8 +3,8 @@
   import {
     type GlobalDialogContent,
     useGlobalDialog
-  } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import type { Snippet } from '$lib/types/svelte'
+  } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   const {
     content,

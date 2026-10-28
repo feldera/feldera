@@ -1,4 +1,4 @@
-import { loadDemos } from '$lib/compositions/useDemos.svelte'
+import { loadDemos } from '#lib/compositions/useDemos.svelte.ts'
 
 /**
  * The home page and /demos show demo tiles, so the shell starts the fetch. A page

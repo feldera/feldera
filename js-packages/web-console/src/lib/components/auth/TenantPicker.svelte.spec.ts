@@ -8,10 +8,10 @@ import { render } from 'vitest-browser-svelte'
 
 const switchTenant = vi.hoisted(() => vi.fn())
 const takeRedirectTarget = vi.hoisted(() => vi.fn())
-vi.mock('$lib/compositions/switchTenant', () => ({
+vi.mock('#lib/compositions/switchTenant.ts', () => ({
   switchTenant: (...args: unknown[]) => switchTenant(...args)
 }))
-vi.mock('$lib/services/redirectTarget', () => ({
+vi.mock('#lib/services/redirectTarget.ts', () => ({
   takeRedirectTarget: () => takeRedirectTarget()
 }))
 

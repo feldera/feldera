@@ -1,7 +1,7 @@
 <script lang="ts">
   import { beforeNavigate, goto } from '$app/navigation'
-  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+  import GenericDialog from '#lib/components/dialogs/GenericDialog.svelte'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
 
   const globalDialog = useGlobalDialog()
   let {

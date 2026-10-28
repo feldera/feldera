@@ -43,39 +43,42 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import { slide } from 'svelte/transition'
   import { match, P } from 'ts-pattern'
   import { goto } from '$app/navigation'
-  import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
-  import Popup from '$lib/components/common/Popup.svelte'
+  import IconLoader from '#assets/icons/generic/loader-alt.svg?component'
+  import Popup from '#lib/components/common/Popup.svelte'
   import SplitButton, {
     type SplitButtonSize,
     type SplitButtonVariant
-  } from '$lib/components/common/SplitButton.svelte'
-  import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
-  import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
-  import { duplicatePipeline, duplicatePipelineTooltip } from '$lib/compositions/duplicatePipeline'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  } from '#lib/components/common/SplitButton.svelte'
+  import DeleteDialog, { deleteDialogProps } from '#lib/components/dialogs/DeleteDialog.svelte'
+  import PipelineConfigurationsPopup from '#lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
+  import {
+    duplicatePipeline,
+    duplicatePipelineTooltip
+  } from '#lib/compositions/duplicatePipeline.ts'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import { usePipelineActionCallbacks } from '#lib/compositions/pipelines/usePipelineActionCallbacks.svelte.ts'
   import {
     usePipelineList,
     useUpdatePipelineList
-  } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import { useConceptualHq } from '$lib/compositions/useConceptualHq.svelte'
-  import { useIsEnterprise } from '$lib/compositions/useEdition.svelte'
-  import { usePermission } from '$lib/compositions/usePermission.svelte'
-  import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { useToast } from '$lib/compositions/useToastNotification'
-  import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
+  } from '#lib/compositions/pipelines/usePipelineList.svelte.ts'
+  import { useConceptualHq } from '#lib/compositions/useConceptualHq.svelte.ts'
+  import { useIsEnterprise } from '#lib/compositions/useEdition.svelte.ts'
+  import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
+  import { getPipelineAction } from '#lib/compositions/usePipelineAction.svelte.ts'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { useToast } from '#lib/compositions/useToastNotification.ts'
+  import type { WritablePipeline } from '#lib/compositions/useWritablePipeline.svelte.ts'
   import {
     deletePipelineDisabledReason,
     editSettingsDisabledReason,
     getDeploymentStatusLabel,
     isPipelineShutdown
-  } from '$lib/functions/pipelines/status'
-  import { resolve } from '$lib/functions/svelte'
-  import { captureEvent } from '$lib/services/analytics'
-  import { bookADemoUrl } from '$lib/services/calendly'
-  import type { PipelineAction } from '$lib/services/pipelineManager'
-  import type { Snippet } from '$lib/types/svelte'
+  } from '#lib/functions/pipelines/status.ts'
+  import { resolve } from '#lib/functions/svelte.ts'
+  import { captureEvent } from '#lib/services/analytics.ts'
+  import { bookADemoUrl } from '#lib/services/calendly.ts'
+  import type { PipelineAction } from '#lib/services/pipelineManager.ts'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   let {
     pipeline,

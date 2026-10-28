@@ -5,9 +5,9 @@
 // `invalidateAll()` after a warm-cache render.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Configuration, SessionInfo } from '$lib/services/manager'
+import type { Configuration, SessionInfo } from '#lib/services/manager/index.ts'
 
-vi.mock('$lib/services/pipelineManager', () => ({
+vi.mock('#lib/services/pipelineManager.ts', () => ({
   getConfig: vi.fn(),
   getConfigSession: vi.fn()
 }))
@@ -17,15 +17,15 @@ vi.mock('$lib/services/pipelineManager', () => ({
 vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn() }))
 
 const selection = vi.hoisted(() => ({ current: undefined as string | undefined }))
-vi.mock('$lib/services/auth', () => ({
+vi.mock('#lib/services/auth.ts', () => ({
   getSelectedTenant: vi.fn(() => selection.current),
   setSelectedTenant: vi.fn((tenant?: string) => {
     selection.current = tenant
   })
 }))
 
-import { requestTenantRecheck, resetTenantRecheck } from '$lib/compositions/tenantAccess'
-import { getConfig, getConfigSession } from '$lib/services/pipelineManager'
+import { requestTenantRecheck, resetTenantRecheck } from '#lib/compositions/tenantAccess.ts'
+import { getConfig, getConfigSession } from '#lib/services/pipelineManager.ts'
 import {
   clearConfigCaches,
   configChanged,

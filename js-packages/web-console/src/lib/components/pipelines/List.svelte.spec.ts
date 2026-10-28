@@ -2,7 +2,7 @@ import { tick } from 'svelte'
 import { describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import type { PipelineThumb } from '$lib/services/pipelineManager'
+import type { PipelineThumb } from '#lib/services/pipelineManager.ts'
 import List from './List.svelte'
 
 // List only reads `name` (for the label/filter) and `status` (for the status

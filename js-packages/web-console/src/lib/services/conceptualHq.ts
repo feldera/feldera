@@ -1,7 +1,7 @@
-import { ServerDate } from '$lib/compositions/serverTime'
-import { refreshConceptualHqDeviceId } from '$lib/compositions/useConceptualHq.svelte'
-import type { Configuration } from '$lib/services/manager'
-import type { UserProfile } from '$lib/types/auth'
+import { ServerDate } from '#lib/compositions/serverTime.ts'
+import { refreshConceptualHqDeviceId } from '#lib/compositions/useConceptualHq.svelte.ts'
+import type { Configuration } from '#lib/services/manager/index.ts'
+import type { UserProfile } from '#lib/types/auth.ts'
 
 /**
  * ConceptualHQ command queue. Before the loader script arrives, `window.ca`

@@ -1,6 +1,6 @@
 import * as va from 'valibot'
-import type { ExtendedPipeline } from '$lib/services/pipelineManager'
-import type { PipelineDiff } from '$lib/types/pipelineManager'
+import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
+import type { PipelineDiff } from '#lib/types/pipelineManager.ts'
 
 const programDiffSchema = va.object({
   added_tables: va.array(va.string()),

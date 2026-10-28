@@ -10,8 +10,8 @@ import BigNumber from 'bignumber.js'
 import Dayjs from 'dayjs'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
-import type { ColumnType, Field, SqlType } from '$lib/services/manager'
-import type { SQLValueJS } from '$lib/types/sql'
+import type { ColumnType, Field, SqlType } from '#lib/services/manager/index.ts'
+import type { SQLValueJS } from '#lib/types/sql.ts'
 
 function enumValue<const T>(
   value: T

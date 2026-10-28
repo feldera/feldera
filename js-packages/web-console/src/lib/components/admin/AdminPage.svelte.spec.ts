@@ -14,7 +14,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import { permissionsOf } from '$lib/services/rbac'
+import { permissionsOf } from '#lib/services/rbac.ts'
 
 type Role = 'read' | 'write' | 'admin' | 'owner'
 const roleState = vi.hoisted(() => ({ current: 'owner' as Role }))
@@ -36,9 +36,9 @@ vi.mock('$app/state', () => ({
   }
 }))
 // Stub the heavy child tables to empty components.
-vi.mock('$lib/components/admin/UserRoleTable.svelte', () => ({ default: () => {} }))
-vi.mock('$lib/components/admin/TenantList.svelte', () => ({ default: () => {} }))
-vi.mock('$lib/services/pipelineManager', () => ({
+vi.mock('#lib/components/admin/UserRoleTable.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/components/admin/TenantList.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/services/pipelineManager.ts', () => ({
   getTenants: vi.fn(async () => tenantsState.list),
   getConfiguredOwners: vi.fn(async () => undefined)
 }))

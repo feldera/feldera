@@ -10,27 +10,27 @@
     type TimelineGroup
   } from 'common-ui'
   import { match } from 'ts-pattern'
-  import AppHeader from '$lib/components/layout/AppHeader.svelte'
-  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
-  import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
-  import BookADemo from '$lib/components/other/BookADemo.svelte'
-  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
-  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
-  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
-  import { useClusterHealth } from '$lib/compositions/health/useClusterHealth.svelte'
-  import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
-  import { ServerDate } from '$lib/compositions/serverTime'
-  import { useIsEnterprise } from '$lib/compositions/useEdition.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import AppHeader from '#lib/components/layout/AppHeader.svelte'
+  import NavigationExtras from '#lib/components/layout/NavigationExtras.svelte'
+  import PipelineBreadcrumbs from '#lib/components/layout/PipelineBreadcrumbs.svelte'
+  import BookADemo from '#lib/components/other/BookADemo.svelte'
+  import CreatePipelineButton from '#lib/components/pipelines/CreatePipelineButton.svelte'
+  import WarningBanner from '#lib/components/pipelines/editor/WarningBanner.svelte'
+  import { useElapsedTime } from '#lib/compositions/common/useElapsedTime.ts'
+  import { useClusterHealth } from '#lib/compositions/health/useClusterHealth.svelte.ts'
+  import { useAdaptiveDrawer } from '#lib/compositions/layout/useAdaptiveDrawer.svelte.ts'
+  import { ServerDate } from '#lib/compositions/serverTime.ts'
+  import { useIsEnterprise } from '#lib/compositions/useEdition.svelte.ts'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
   import {
     type ClusterBucket,
     type ClusterEventType,
     groupHealthEvents,
     staleMonitoringMessage,
     unpackCombinedEvent
-  } from '$lib/functions/pipelines/health'
-  import { resolve } from '$lib/functions/svelte'
-  import type { ClusterMonitorEventSelectedInfo } from '$lib/services/manager'
+  } from '#lib/functions/pipelines/health.ts'
+  import { resolve } from '#lib/functions/svelte.ts'
+  import type { ClusterMonitorEventSelectedInfo } from '#lib/services/manager/index.ts'
 
   type EventTag = 'api' | 'compiler' | 'runner'
 

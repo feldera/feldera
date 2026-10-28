@@ -3,9 +3,8 @@ import Dayjs from 'dayjs'
 import duration from 'dayjs/plugin/duration'
 import equal from 'fast-deep-equal'
 import posthog from 'posthog-js'
-import { goto, invalidateAll } from '$app/navigation'
-import { authTimeOf, fromAxaUserInfo, toAxaOidcConfig } from '$lib/compositions/@axa-fr/auth'
-import { loadAuthConfig } from '$lib/compositions/auth'
+import { authTimeOf, fromAxaUserInfo, toAxaOidcConfig } from '#lib/compositions/@axa-fr/auth.ts'
+import { loadAuthConfig } from '#lib/compositions/auth.ts'
 import {
   clearConfigCaches,
   configChanged,
@@ -13,28 +12,29 @@ import {
   getCachedConfigsForRender,
   getConfigFromCache,
   getSessionConfigFromCache
-} from '$lib/compositions/configCache'
-import { initSystemMessages, type SystemMessage } from '$lib/compositions/initSystemMessages'
-import { ServerDate } from '$lib/compositions/serverTime'
-import { displayScheduleToDismissable, getLicenseMessage } from '$lib/functions/license'
-import { resolve } from '$lib/functions/svelte'
+} from '#lib/compositions/configCache.ts'
+import { initSystemMessages, type SystemMessage } from '#lib/compositions/initSystemMessages.ts'
+import { ServerDate } from '#lib/compositions/serverTime.ts'
+import { displayScheduleToDismissable, getLicenseMessage } from '#lib/functions/license.ts'
+import { resolve } from '#lib/functions/svelte.ts'
+import { reportLogin } from '#lib/services/analytics.ts'
 import {
   authRequestMiddleware,
   authResponseMiddleware,
   errorResponseMiddleware,
   setSelectedTenantUser,
   triggerOidcLogin
-} from '$lib/services/auth'
-import { reportLogin } from '$lib/services/analytics'
-import { initConceptualHq } from '$lib/services/conceptualHq'
-import { setInvalidateAll } from '$lib/services/invalidateAll'
-import type { Configuration, SessionInfo } from '$lib/services/manager'
-import { client } from '$lib/services/manager/client.gen'
-import { initPosthog } from '$lib/services/posthog'
-import { initProductFruits } from '$lib/services/productFruits'
-import { type Permission, permissionsOf, roleOf, type SessionRole } from '$lib/services/rbac'
-import { takeRedirectTarget } from '$lib/services/redirectTarget'
-import type { AuthDetails, TenantMembership } from '$lib/types/auth'
+} from '#lib/services/auth.ts'
+import { initConceptualHq } from '#lib/services/conceptualHq.ts'
+import { setInvalidateAll } from '#lib/services/invalidateAll.ts'
+import { client } from '#lib/services/manager/client.gen.ts'
+import type { Configuration, SessionInfo } from '#lib/services/manager/index.ts'
+import { initPosthog } from '#lib/services/posthog.ts'
+import { initProductFruits } from '#lib/services/productFruits.ts'
+import { type Permission, permissionsOf, roleOf, type SessionRole } from '#lib/services/rbac.ts'
+import { takeRedirectTarget } from '#lib/services/redirectTarget.ts'
+import type { AuthDetails, TenantMembership } from '#lib/types/auth.ts'
+import { goto, invalidateAll } from '$app/navigation'
 import type { LayoutLoad } from './$types'
 
 Dayjs.extend(duration)

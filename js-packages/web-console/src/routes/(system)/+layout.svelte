@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useToast } from '$lib/compositions/useToastNotification'
+  import { useToast } from '#lib/compositions/useToastNotification.ts'
 
   const { toastError } = useToast()
   window.addEventListener('error', (event) => {

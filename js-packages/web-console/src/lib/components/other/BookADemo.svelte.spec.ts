@@ -8,11 +8,11 @@ import { createRawSnippet } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import { refreshConceptualHqDeviceId } from '$lib/compositions/useConceptualHq.svelte'
+import { refreshConceptualHqDeviceId } from '#lib/compositions/useConceptualHq.svelte.ts'
 
 const captureEvent = vi.hoisted(() => vi.fn())
 
-vi.mock('$lib/services/analytics', () => ({ captureEvent }))
+vi.mock('#lib/services/analytics.ts', () => ({ captureEvent }))
 
 import BookADemo from './BookADemo.svelte'
 

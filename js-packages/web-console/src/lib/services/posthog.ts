@@ -1,7 +1,7 @@
 import posthog from 'posthog-js'
 
-import type { Configuration } from '$lib/services/manager'
-import type { UserProfile } from '$lib/types/auth'
+import type { Configuration } from '#lib/services/manager/index.ts'
+import type { UserProfile } from '#lib/types/auth.ts'
 
 let initialized = false
 

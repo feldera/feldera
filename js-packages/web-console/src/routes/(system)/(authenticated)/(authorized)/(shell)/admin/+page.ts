@@ -1,7 +1,7 @@
 import type { LoadEvent } from '@sveltejs/kit'
 import { redirect } from '@sveltejs/kit'
-import { resolve } from '$lib/functions/svelte'
-import { hasPermissions } from '$lib/services/rbac'
+import { resolve } from '#lib/functions/svelte.ts'
+import { hasPermissions } from '#lib/services/rbac.ts'
 
 // Gate the admin area on the lowest permission any admin section needs
 // (`write:tenant_member`); everyone below admin goes home.

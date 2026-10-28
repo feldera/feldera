@@ -288,7 +288,7 @@ snippet receives an `RBACState`).
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { page } from '$app/state'
-  import { hasPermissions, type Permission } from '$lib/services/rbac'
+  import { hasPermissions, type Permission } from '#lib/services/rbac.ts'
 
   let {
     require: permission,
@@ -360,7 +360,7 @@ generic capability flag.
 
 ```ts
 import { page } from '$app/state'
-import { hasPermissions, type Permission } from '$lib/services/rbac'
+import { hasPermissions, type Permission } from '#lib/services/rbac.ts'
 
 export const usePermission = (permission: Permission) => {
   const allowed = $derived(hasPermissions(page.data.feldera, permission))

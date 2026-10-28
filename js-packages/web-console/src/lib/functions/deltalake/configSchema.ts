@@ -1,4 +1,4 @@
-import type { FormFields } from '$lib/functions/forms'
+import type { FormFields } from '#lib/functions/forms.ts'
 
 export const deltaLakeAwsOptions: FormFields = {
   aws_access_key_id: { type: 'secret_string' },

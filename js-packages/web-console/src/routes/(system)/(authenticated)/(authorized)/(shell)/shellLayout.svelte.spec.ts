@@ -11,8 +11,8 @@ import { render } from 'vitest-browser-svelte'
 const toast = vi.hoisted(() => ({ toastMain: vi.fn(), dismissMain: vi.fn() }))
 const api = vi.hoisted(() => ({ isNetworkHealthy: true, isAuthHealthy: true }))
 
-vi.mock('$lib/compositions/useToastNotification', () => ({ useToast: () => toast }))
-vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
+vi.mock('#lib/compositions/useToastNotification.ts', () => ({ useToast: () => toast }))
+vi.mock('#lib/compositions/usePipelineManager.svelte.ts', () => ({
   usePipelineManager: () => ({
     get isNetworkHealthy() {
       return api.isNetworkHealthy
@@ -24,15 +24,15 @@ vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
 }))
 // The shell's pollers and the version check; each one talks to the manager, and none of them
 // is what this file is about.
-vi.mock('$lib/compositions/pipelines/usePipelineList.svelte', () => ({
+vi.mock('#lib/compositions/pipelines/usePipelineList.svelte.ts', () => ({
   useRefreshPipelineList: () => {}
 }))
-vi.mock('$lib/compositions/health/useClusterHealth.svelte', () => ({
+vi.mock('#lib/compositions/health/useClusterHealth.svelte.ts', () => ({
   useRefreshClusterHealth: () => {},
   useClusterHealth: () => ({ current: undefined })
 }))
-vi.mock('$lib/compositions/usePipelineAction.svelte', () => ({ usePipelineAction: () => {} }))
-vi.mock('$lib/compositions/configCache', () => ({ fetchConfigs: async () => ({}) }))
+vi.mock('#lib/compositions/usePipelineAction.svelte.ts', () => ({ usePipelineAction: () => {} }))
+vi.mock('#lib/compositions/configCache.ts', () => ({ fetchConfigs: async () => ({}) }))
 vi.mock('$app/navigation', () => ({
   invalidateAll: vi.fn(),
   afterNavigate: () => {},
@@ -40,9 +40,9 @@ vi.mock('$app/navigation', () => ({
 }))
 vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/'), data: {} } }))
 // Chrome that pulls in the API client or the editor bundle.
-vi.mock('$lib/components/pipelines/CreatePipelineButton.svelte', () => ({ default: () => {} }))
-vi.mock('$lib/components/layout/NavigationExtras.svelte', () => ({ default: () => {} }))
-vi.mock('$lib/components/other/BookADemo.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/components/pipelines/CreatePipelineButton.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/components/layout/NavigationExtras.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/components/other/BookADemo.svelte', () => ({ default: () => {} }))
 
 // Imported AFTER vi.mock so the mocks take effect.
 import ShellLayout from './+layout.svelte'

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { PipelineThumb } from '$lib/services/pipelineManager'
+import type { PipelineThumb } from '#lib/services/pipelineManager.ts'
 import {
   duplicatePipeline,
   MAX_DUPLICATE_ATTEMPTS,
