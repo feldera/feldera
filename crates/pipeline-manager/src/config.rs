@@ -416,7 +416,7 @@ pub struct CommonConfig {
     #[arg(
         long,
         default_value_t = false,
-        env = "FELDERA_REQUIRE_CLIENT_CERTIFICATES"
+        env = feldera_mtls::REQUIRE_CLIENT_CERTIFICATES_ENV
     )]
     pub require_client_certificates: bool,
 

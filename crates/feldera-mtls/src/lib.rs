@@ -27,6 +27,13 @@ use std::sync::Arc;
 use tracing::warn;
 use uuid::Uuid;
 
+/// Environment variable that makes the compiler, runner, pipeline and coordinator servers
+/// require client certificates.
+pub const REQUIRE_CLIENT_CERTIFICATES_ENV: &str = "FELDERA_REQUIRE_CLIENT_CERTIFICATES";
+
+/// Environment variable with the URI SANs of the extra clients that pipelines admit.
+pub const EXTRA_CLIENT_CERTIFICATE_URIS_ENV: &str = "FELDERA_EXTRA_CLIENT_CERTIFICATE_URIS";
+
 /// URI SAN of the control-plane client certificate (API server, runner, compiler replicas).
 pub const CONTROL_PLANE_CERTIFICATE_URI: &str = "urn:feldera:control-plane";
 

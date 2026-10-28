@@ -718,7 +718,7 @@ pub struct ServerArgs {
     #[arg(
         long,
         default_value_t = false,
-        env = "FELDERA_REQUIRE_CLIENT_CERTIFICATES"
+        env = feldera_mtls::REQUIRE_CLIENT_CERTIFICATES_ENV
     )]
     pub require_client_certificates: bool,
 
@@ -727,7 +727,7 @@ pub struct ServerArgs {
     /// refused.
     #[arg(
         long,
-        env = "FELDERA_EXTRA_CLIENT_CERTIFICATE_URIS",
+        env = feldera_mtls::EXTRA_CLIENT_CERTIFICATE_URIS_ENV,
         value_delimiter = ','
     )]
     pub extra_client_certificate_uris: Vec<String>,

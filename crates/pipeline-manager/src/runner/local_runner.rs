@@ -1330,6 +1330,10 @@ impl PipelineExecutor for LocalRunner {
             // - Stdout/stderr are piped to follow logs
             let mut command = Command::new(&executable);
             command
+                // Local pipelines share the manager's certificate, which names no pipeline, so
+                // they cannot require client certificates even if the manager does.
+                .env_remove(feldera_mtls::REQUIRE_CLIENT_CERTIFICATES_ENV)
+                .env_remove(feldera_mtls::EXTRA_CLIENT_CERTIFICATE_URIS_ENV)
                 .env(
                     "TOKIO_WORKER_THREADS",
                     deployment_config
