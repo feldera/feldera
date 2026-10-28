@@ -1,4 +1,4 @@
-use crate::api::demo::{Demo, read_demos_from_directories};
+use crate::api::demo::{Demo, demos_without_rust_udfs, read_demos_from_directories};
 use crate::api::endpoints;
 use crate::api::support_data_collector::SupportDataCollector;
 use crate::auth::{IssuerJwkCache, JwkCache};
@@ -1129,7 +1129,12 @@ impl ServerState {
     ) -> AnyResult<Self> {
         let runner = RunnerInteraction::new(common_config.clone(), db.clone());
         let db_copy = db.clone();
-        let demos = read_demos_from_directories(&config.demos_dir);
+        let all_demos = read_demos_from_directories(&config.demos_dir);
+        let demos = if common_config.allow_rust_udfs {
+            all_demos
+        } else {
+            demos_without_rust_udfs(all_demos)
+        };
         let oidc_root_certs = common_config.configured_root_certificates().await?;
         Ok(Self {
             db,

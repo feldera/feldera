@@ -1,3 +1,4 @@
+use crate::db::types::program::RUST_UDFS_NOT_ALLOWED;
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::utils::ValidationError;
 use actix_web::{HttpResponse, ResponseError, body::BoxBody, http::StatusCode};
@@ -57,6 +58,7 @@ pub enum RunnerError {
     AutomatonGen2MultihostUnsupported {
         hosts: usize,
     },
+    AutomatonRustUdfsNotAllowed,
 
     // The pipeline runner implementation encounters an error
     RunnerProvisionError {
@@ -174,6 +176,7 @@ impl DetailedError for RunnerError {
             RunnerError::AutomatonGen2MultihostUnsupported { .. } => {
                 Cow::from("AutomatonGen2MultihostUnsupported")
             }
+            RunnerError::AutomatonRustUdfsNotAllowed => Cow::from("AutomatonRustUdfsNotAllowed"),
             RunnerError::RunnerProvisionError { .. } => Cow::from("RunnerProvisionError"),
             RunnerError::RunnerCheckError { .. } => Cow::from("RunnerCheckError"),
             RunnerError::RunnerStopError { .. } => Cow::from("RunnerStopError"),
@@ -335,6 +338,7 @@ impl Display for RunnerError {
                     "
                 )
             }
+            Self::AutomatonRustUdfsNotAllowed => write!(f, "{RUST_UDFS_NOT_ALLOWED}"),
             Self::AutomatonGen2MultihostUnsupported { hosts } => {
                 write!(
                     f,
@@ -504,6 +508,7 @@ impl ResponseError for RunnerError {
             Self::AutomatonAfterInitializationBecameRunning => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonImpossibleDesiredStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonGen2MultihostUnsupported { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonRustUdfsNotAllowed => StatusCode::BAD_REQUEST,
             Self::RunnerProvisionError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerCheckError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerStopError { .. } => StatusCode::INTERNAL_SERVER_ERROR,

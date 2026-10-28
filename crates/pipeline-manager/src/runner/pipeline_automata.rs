@@ -7,7 +7,9 @@ use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineId,
     runtime_desired_status_to_string, runtime_status_to_string,
 };
-use crate::db::types::program::{ProgramStatus, RuntimeSelector, generate_pipeline_config};
+use crate::db::types::program::{
+    ProgramStatus, RuntimeSelector, generate_pipeline_config, has_rust_udfs,
+};
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
@@ -1157,6 +1159,15 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 };
             }
         };
+
+        // A binary compiled while Rust UDFs were allowed must not start once they are not.
+        if !self.common_config.allow_rust_udfs
+            && has_rust_udfs(&pipeline.udf_rust, &pipeline.udf_toml)
+        {
+            return Action::RemainStoppedUpdateError {
+                error: RunnerError::AutomatonRustUdfsNotAllowed.into(),
+            };
+        }
 
         // The Gen-2 engine does not support multihost pipelines yet; refuse before provisioning
         // rather than attempting a launch that cannot succeed. The multihost start path
@@ -2529,6 +2540,7 @@ mod test {
         deployment_location: String,
         runtime_config: serde_json::Value,
         program_config: serde_json::Value,
+        udf_rust: &str,
     ) -> AutomatonTest {
         // Create a pipeline and a corresponding automaton
         let tenant_id = TenantRecord::default().id;
@@ -2546,7 +2558,7 @@ mod test {
                     tags: vec![],
                     runtime_config,
                     program_code: "CREATE TABLE example1 ( col1 INT );".to_string(),
-                    udf_rust: "".to_string(),
+                    udf_rust: udf_rust.to_string(),
                     udf_toml: "".to_string(),
                     program_config,
                 },
@@ -2648,6 +2660,7 @@ mod test {
                 private_ca_cert_path: None,
                 pipeline_monitor_events_retention: 720,
                 disable_cluster_monitor_resources: false,
+                allow_rust_udfs: true,
             },
             pipeline_id,
             Some("test-pipeline".to_string()),
@@ -2740,7 +2753,7 @@ mod test {
         (
             mock_server,
             temp_dir,
-            setup(db.clone(), addr, runtime_config, program_config).await,
+            setup(db.clone(), addr, runtime_config, program_config, "").await,
         )
     }
 
@@ -2793,6 +2806,32 @@ mod test {
             error.message.contains("Gen-2 engine does not support multihost pipelines"),
             "unexpected error: {}", error.message
         );
+    }
+
+    /// A compiled pipeline with Rust UDFs stays stopped once the instance no longer allows them.
+    #[tokio::test]
+    #[rustfmt::skip]
+    async fn rust_udfs_refused_before_provisioning() {
+        logging::init_logging("foo".into());
+        let (db, _temp_dir) = crate::db::test::setup_pg().await;
+        let db = Arc::new(Mutex::new(db));
+        let mut server = MockServer::start().await;
+        let mut test = setup(
+            db, server.address().to_string(), json!({}),
+            json!({ "profile": "unoptimized", "cache": false }), "pub fn f() {}",
+        ).await;
+        test.automaton.common_config.allow_rust_udfs = false;
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(&mut server, vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))]).await;
+
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick().await;
+        test.tick().await;
+
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        assert!(test.provisioned_runtimes.lock().unwrap().is_empty());
+        let error = test.deployment_error().await.expect("a deployment error is set");
+        assert!(error.message.contains("Rust UDFs are not allowed"), "unexpected error: {}", error.message);
     }
 
     /// A program pinned to a Gen2 engine build hands that pin to the executor.

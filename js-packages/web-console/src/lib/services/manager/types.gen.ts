@@ -738,6 +738,10 @@ export type Condition = {
 }
 
 export type Configuration = {
+  /**
+   * Whether pipelines may have Rust UDFs (`udf_rust` and `udf_toml`).
+   */
+  allow_rust_udfs: boolean
   build_info: BuildInformation
   /**
    * Build source: "ci" for GitHub Actions builds, "source" for local builds

@@ -85,6 +85,8 @@
       markers?: Record<string, editor.IMarkerData[]>
       behaviorOnConflict?: 'auto-pull' | 'auto-push' | 'promt'
       placeholder?: string
+      // Why a file without a setter is read-only; defaults to the compiler-generated hint.
+      readOnlyMessage?: string
     }[]
     currentFileName: string
     editDisabled?: boolean
@@ -385,7 +387,7 @@
           options={{
             readOnlyMessage: {
               value: isReadOnlyFile
-                ? 'Cannot edit a compiler-generated file'
+                ? (file.readOnlyMessage ?? 'Cannot edit a compiler-generated file')
                 : (readOnlyMessage ??
                   'Cannot edit code while the pipeline is running or its storage is in use')
             },
