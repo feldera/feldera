@@ -17,7 +17,7 @@ use crate::db::types::pipeline::{
     PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{
-    ProgramConfig, ProgramError, ProgramInfo, ProgramStatus, RuntimeSelector,
+    ProgramConfig, ProgramError, ProgramInfo, ProgramStatus, RuntimeSelector, has_rust_udfs,
 };
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
@@ -738,6 +738,20 @@ pub struct PatchPipelineInternal {
     pub program_config: Option<serde_json::Value>,
 }
 
+/// Refuses a pipeline write with Rust UDFs when the instance does not allow them.
+fn check_rust_udfs_allowed(
+    common_config: &CommonConfig,
+    udf_rust: &Option<String>,
+    udf_toml: &Option<String>,
+) -> Result<(), ManagerError> {
+    let udf_rust = udf_rust.as_deref().unwrap_or_default();
+    let udf_toml = udf_toml.as_deref().unwrap_or_default();
+    if !common_config.allow_rust_udfs && has_rust_udfs(udf_rust, udf_toml) {
+        return Err(ApiError::RustUdfsNotAllowed.into());
+    }
+    Ok(())
+}
+
 /// Default for the `initial` query parameter when POST a pipeline start.
 fn default_pipeline_start_desired() -> String {
     "running".to_string()
@@ -1111,6 +1125,7 @@ pub(crate) async fn post_pipeline(
     body: web::Json<PostPutPipelineInternal>,
 ) -> Result<HttpResponse, ManagerError> {
     let body = body.into_inner();
+    check_rust_udfs_allowed(&state.common_config, &body.udf_rust, &body.udf_toml)?;
     if let Some(deployment_config) = &body.deployment_config {
         check_unchanged_deployment_config(None, deployment_config)?;
     }
@@ -1185,6 +1200,7 @@ pub(crate) async fn put_pipeline(
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
     let body = body.into_inner();
+    check_rust_udfs_allowed(&state.common_config, &body.udf_rust, &body.udf_toml)?;
     let db = state.db.lock().await;
     if let Some(deployment_config) = &body.deployment_config {
         let stored = match db.get_pipeline(*tenant_id, &pipeline_name).await {
@@ -1284,6 +1300,7 @@ pub(crate) async fn patch_pipeline(
     body: web::Json<PatchPipelineInternal>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
+    check_rust_udfs_allowed(&state.common_config, &body.udf_rust, &body.udf_toml)?;
     if let Some(deployment_config) = body.deployment_config.as_ref().filter(|v| !v.is_null()) {
         return patch_deployment_config(
             state,
@@ -2336,8 +2353,10 @@ pub(crate) async fn post_pipeline_testing(
 #[cfg(test)]
 mod tests {
     use crate::api::endpoints::pipeline_management::{
-        backward_compatible_runtime_status_details, remove_large_fields_from_program_info,
+        backward_compatible_runtime_status_details, check_rust_udfs_allowed,
+        remove_large_fields_from_program_info,
     };
+    use crate::config::CommonConfig;
     use feldera_types::runtime_status::{ConnectorStats, RuntimeStatusDetails};
     use serde_json::json;
 
@@ -2554,5 +2573,24 @@ mod tests {
         ] {
             assert_eq!(backward_compatible_runtime_status_details(input), expected);
         }
+    }
+
+    /// A pipeline write with Rust UDFs is refused only when the instance does not allow them.
+    #[test]
+    fn rust_udfs_need_permission() {
+        let udf_rust = Some("pub fn f() {}".to_string());
+        let udf_toml = Some("openssl-sys = \"0.9\"".to_string());
+        let mut config = CommonConfig::test_config();
+        assert!(check_rust_udfs_allowed(&config, &udf_rust, &udf_toml).is_ok());
+
+        config.allow_rust_udfs = false;
+        let error = check_rust_udfs_allowed(&config, &udf_rust, &None).unwrap_err();
+        assert!(
+            error.to_string().contains("Rust UDFs are not allowed"),
+            "{error}"
+        );
+        assert!(check_rust_udfs_allowed(&config, &None, &udf_toml).is_err());
+        assert!(check_rust_udfs_allowed(&config, &Some(String::new()), &None).is_ok());
+        assert!(check_rust_udfs_allowed(&config, &None, &None).is_ok());
     }
 }

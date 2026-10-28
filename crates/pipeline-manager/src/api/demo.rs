@@ -1,3 +1,4 @@
+use crate::db::types::program::has_rust_udfs;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -147,6 +148,15 @@ fn read_from_file_or_print_error(path: &Path) -> Option<String> {
     }
 }
 
+/// Leaves out the demos with Rust UDFs, which an instance that does not allow
+/// them cannot compile.
+pub fn demos_without_rust_udfs(demos: Vec<Demo>) -> Vec<Demo> {
+    demos
+        .into_iter()
+        .filter(|demo| !has_rust_udfs(&demo.udf_rust, &demo.udf_toml))
+        .collect()
+}
+
 /// Reads the demos from the demos directories.
 ///
 /// For each directory, the files are read sorted on the filename.
@@ -250,7 +260,9 @@ pub fn read_demos_from_directories(demos_dir: &Vec<String>) -> Vec<Demo> {
 
 #[cfg(test)]
 mod test {
-    use super::{Demo, DemoError, parse_demo, read_demos_from_directories};
+    use super::{
+        Demo, DemoError, demos_without_rust_udfs, parse_demo, read_demos_from_directories,
+    };
     use std::fs;
     use std::fs::File;
     use std::io::Write;
@@ -548,6 +560,20 @@ mod test {
         assert_eq!(
             read_demos_from_directories(&vec![dir_path.to_str().unwrap().to_string()]),
             vec![expectation]
+        );
+    }
+
+    /// Without Rust UDFs, only the demos that do not need them remain.
+    #[test]
+    fn demos_without_rust_udfs_drops_udf_demos() {
+        let plain = expected_demos()[0].clone();
+        let mut with_rust = plain.clone();
+        with_rust.udf_rust = "pub fn f() {}".to_string();
+        let mut with_toml = plain.clone();
+        with_toml.udf_toml = "example = \"1.0.0\"".to_string();
+        assert_eq!(
+            demos_without_rust_udfs(vec![with_rust, plain.clone(), with_toml]),
+            vec![plain]
         );
     }
 }

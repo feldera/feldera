@@ -16,8 +16,8 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::{
-    CompilationProfile, PipelineProgramArtifacts, ProgramStatus, RuntimeSelector,
-    RustCompilationInfo,
+    CompilationProfile, PipelineProgramArtifacts, ProgramStatus, RUST_UDFS_NOT_ALLOWED,
+    RuntimeSelector, RustCompilationInfo, has_rust_udfs,
 };
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{validate_program_config, validate_program_info};
@@ -1038,6 +1038,15 @@ pub async fn perform_rust_compilation(
             "Platform version {platform_version} is not equal to current {}",
             common_config.platform_version
         )));
+    }
+
+    // Checked before the binary cache, which could hold a binary built while UDFs were allowed.
+    if !common_config.allow_rust_udfs && has_rust_udfs(udf_rust, udf_toml) {
+        return Err(RustCompilationError::RustError(RustCompilationInfo {
+            exit_code: 1,
+            stderr: RUST_UDFS_NOT_ALLOWED.to_string(),
+            ..Default::default()
+        }));
     }
 
     // Program configuration
@@ -2581,6 +2590,7 @@ async fn cleanup_rust_compilation(
 mod test {
     use crate::auth::TenantRecord;
     use crate::compiler::rust_compiler::prepare_workspace;
+    use crate::compiler::rust_compiler::{RustCompilationError, perform_rust_compilation};
     use crate::compiler::rust_compiler::{
         STALE_TEMP_UPLOAD_MAX_AGE, calculate_source_checksum, decide_cleanup,
         decide_pipeline_binary_cleanup, is_permanent_upload_rejection, pipeline_binary_filename,
@@ -2593,12 +2603,38 @@ mod test {
     };
     use crate::db::types::pipeline::PipelineId;
     use crate::db::types::program::{
-        CompilationProfile, PipelineProgramArtifacts, ProgramStatus, RuntimeSelector,
-        RustCompilationInfo,
+        CompilationProfile, PipelineProgramArtifacts, ProgramStatus, RUST_UDFS_NOT_ALLOWED,
+        RuntimeSelector, RustCompilationInfo,
     };
     use crate::db::types::utils::validate_program_info;
     use crate::db::types::version::Version;
     use std::collections::HashSet;
+
+    /// A pipeline with Rust UDFs fails to compile when the instance does not allow them.
+    #[tokio::test]
+    async fn rust_udfs_refused_when_not_allowed() {
+        let mut test = CompilerTest::new().await;
+        test.common_config.allow_rust_udfs = false;
+        let result = perform_rust_compilation(
+            &test.common_config,
+            &test.compiler_config,
+            None,
+            TenantRecord::default().id,
+            PipelineId(uuid::Uuid::now_v7()),
+            None,
+            &test.common_config.platform_version,
+            Version(1),
+            &serde_json::json!({}),
+            &None,
+            "pub fn f() {}",
+            "",
+        )
+        .await;
+        let Err(RustCompilationError::RustError(info)) = result else {
+            panic!("expected a Rust compilation error");
+        };
+        assert_eq!(info.stderr, RUST_UDFS_NOT_ALLOWED);
+    }
 
     /// Tests that sccache's report is picked out of real `cargo build` output, that the
     /// diagnostics quoting the user's program are left out of it, and that a compilation

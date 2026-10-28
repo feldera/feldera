@@ -98,6 +98,8 @@ pub(crate) struct Configuration {
     pub build_info: BuildInformation,
     /// Build source: "ci" for GitHub Actions builds, "source" for local builds
     pub build_source: String,
+    /// Whether pipelines may have Rust UDFs (`udf_rust` and `udf_toml`).
+    pub allow_rust_udfs: bool,
 }
 
 impl Configuration {
@@ -131,6 +133,7 @@ impl Configuration {
             update_info: None,
             build_info: BuildInformation::from_env(),
             build_source: env!("FELDERA_BUILD_ORIGIN").to_string(),
+            allow_rust_udfs: state.common_config.allow_rust_udfs,
         }
     }
 }
