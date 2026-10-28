@@ -18,7 +18,6 @@ import org.apache.calcite.sql2rel.RelDecorrelator;
 import org.apache.calcite.tools.RelBuilder;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
-import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
@@ -208,10 +207,12 @@ public class CalciteOptimizer implements IWritesLogs {
             } catch (Throwable ex) {
                 if (step.abortOnError())
                     throw ex;
-                this.reporter.reportWarning(
-                        SourcePositionRange.INVALID, "Calcite optimizer exception caught",
-                        "Calcite optimizer failed during '" + step.getName() +
-                                "' with exception '" + ex.getMessage() + "'; skipping this optimization step.");
+                Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 1)
+                        .append("Skipping ")
+                        .appendSupplier(step::getName)
+                        .append(" after exception ")
+                        .appendSupplier(ex::getMessage)
+                        .newline();
             }
         }
         return rel;
