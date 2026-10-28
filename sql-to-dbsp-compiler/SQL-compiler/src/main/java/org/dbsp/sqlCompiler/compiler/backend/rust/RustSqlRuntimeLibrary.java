@@ -82,6 +82,10 @@ public class RustSqlRuntimeLibrary {
         this.arithmeticFunctions.put(DBSPOpcode.XOR, "bxor");
         this.arithmeticFunctions.put(DBSPOpcode.MUL_WEIGHT, "mul_by_ref");
         this.arithmeticFunctions.put(DBSPOpcode.DIV_NULL, DBSPOpcode.DIV_NULL.toString());
+        this.arithmeticFunctions.put(DBSPOpcode.ADD_SATURATING, DBSPOpcode.ADD_SATURATING.toString());
+        this.arithmeticFunctions.put(DBSPOpcode.SUB_SATURATING, DBSPOpcode.SUB_SATURATING.toString());
+        this.arithmeticFunctions.put(DBSPOpcode.MUL_SATURATING, DBSPOpcode.MUL_SATURATING.toString());
+        this.arithmeticFunctions.put(DBSPOpcode.DIV_SATURATING, DBSPOpcode.DIV_SATURATING.toString());
         this.arithmeticFunctions.put(DBSPOpcode.AGG_ADD, DBSPOpcode.AGG_ADD.toString());
         this.arithmeticFunctions.put(DBSPOpcode.AGG_ADD_NON_NULL, DBSPOpcode.AGG_ADD_NON_NULL.toString());
         this.arithmeticFunctions.put(DBSPOpcode.AGG_AND, DBSPOpcode.AGG_AND.toString());
@@ -93,6 +97,8 @@ public class RustSqlRuntimeLibrary {
         this.dateFunctions.put(DBSPOpcode.NEG, "neg");
         this.dateFunctions.put(DBSPOpcode.DIV_INTERVAL, "div");
         this.dateFunctions.put(DBSPOpcode.DIV_INTERVAL_NULL, "div_null");
+        this.dateFunctions.put(DBSPOpcode.MUL_INTERVAL_SATURATING, DBSPOpcode.MUL_INTERVAL_SATURATING.toString());
+        this.dateFunctions.put(DBSPOpcode.DIV_INTERVAL_SATURATING, DBSPOpcode.DIV_INTERVAL_SATURATING.toString());
         this.dateFunctions.put(DBSPOpcode.CONTROLLED_FILTER_GTE, DBSPOpcode.CONTROLLED_FILTER_GTE.toString());
 
         this.stringFunctions.put(DBSPOpcode.CONCAT, "concat");

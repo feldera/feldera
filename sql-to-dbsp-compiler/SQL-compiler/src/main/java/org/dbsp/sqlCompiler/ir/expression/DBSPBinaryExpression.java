@@ -51,7 +51,8 @@ public final class DBSPBinaryExpression extends DBSPExpression {
         this.opcode = opcode;
         this.left = left;
         this.right = right;
-        if (opcode == DBSPOpcode.ADD || opcode == DBSPOpcode.SUB) {
+        if (opcode == DBSPOpcode.ADD || opcode == DBSPOpcode.SUB ||
+                opcode == DBSPOpcode.ADD_SATURATING || opcode == DBSPOpcode.SUB_SATURATING) {
             // These should use DBSPTimeAddSub
             Utilities.enforce(!type.is(DBSPTypeShortInterval.class));
             Utilities.enforce(!type.is(DBSPTypeLongInterval.class));
