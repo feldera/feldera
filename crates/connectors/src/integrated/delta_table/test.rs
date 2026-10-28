@@ -4997,7 +4997,7 @@ fn paused_reader_holds_permit(engine: &dyn PipelineTestEngine, transaction_mode:
 
         // 6. The transaction can commit only after `light` reads its other files, which
         //    needs the permit.
-        pipeline.start_commit_transaction().unwrap();
+        pipeline.start_commit_transaction(None).unwrap();
         let committed = wait(
             || {
                 pipeline.api_status(false).global_metrics.transaction_id != transaction_id
