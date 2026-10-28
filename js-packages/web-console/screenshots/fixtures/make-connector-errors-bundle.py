@@ -36,7 +36,9 @@ ERRORS = [
 
 
 def add_errors(stats: dict) -> dict:
-    customer = next(i for i in stats["inputs"] if i["endpoint_name"] == "customer.customer")
+    customer = next(
+        i for i in stats["inputs"] if i["endpoint_name"] == "customer.customer"
+    )
     customer["parse_errors"] = [
         {"index": index, "message": message, "tag": None, "timestamp": timestamp}
         for index, (timestamp, message) in enumerate(ERRORS)
@@ -46,21 +48,33 @@ def add_errors(stats: dict) -> dict:
 
 
 def keep_snapshot(metadata: dict) -> dict:
-    metadata["collections"] = [c for c in metadata["collections"] if c["directory"] == SNAPSHOT]
+    metadata["collections"] = [
+        c for c in metadata["collections"] if c["directory"] == SNAPSHOT
+    ]
     return metadata
 
 
-with zipfile.ZipFile(SOURCE) as source, zipfile.ZipFile(TARGET, "w", zipfile.ZIP_DEFLATED) as target:
+with (
+    zipfile.ZipFile(SOURCE) as source,
+    zipfile.ZipFile(TARGET, "w", zipfile.ZIP_DEFLATED) as target,
+):
     for info in source.infolist():
         name = info.filename
         if name == "metadata.json":
-            data = json.dumps(keep_snapshot(json.loads(source.read(name))), indent=2).encode()
+            data = json.dumps(
+                keep_snapshot(json.loads(source.read(name))), indent=2
+            ).encode()
         elif name == f"{SNAPSHOT}/stats.json":
-            data = json.dumps(add_errors(json.loads(source.read(name))), indent=2).encode()
+            data = json.dumps(
+                add_errors(json.loads(source.read(name))), indent=2
+            ).encode()
         elif name.startswith(f"{SNAPSHOT}/") or name == "metadata.txt":
             data = source.read(name)
         else:
             continue
         # A fixed date keeps the zip the same from run to run.
-        target.writestr(zipfile.ZipInfo(name, date_time=(2026, 10, 2, 9, 23, 50)), data,
-                        zipfile.ZIP_DEFLATED)
+        target.writestr(
+            zipfile.ZipInfo(name, date_time=(2026, 10, 2, 9, 23, 50)),
+            data,
+            zipfile.ZIP_DEFLATED,
+        )
