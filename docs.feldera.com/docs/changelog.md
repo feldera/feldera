@@ -10,6 +10,24 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Behavior change (exactly-once Kafka output): the connector no longer limits
+  delivery retries to five, and a failed commit no longer leaves the connector
+  stuck while the pipeline runs. It keeps the records of the open transaction,
+  aborts the transaction after a delivery failure, sends the records again,
+  and commits, with a backoff of up to ten seconds, until the commit succeeds
+  or the pipeline stops. It reports unhealthy while it recovers. A fatal
+  producer error or an unclassified transaction error holds the output thread
+  until the pipeline is stopped instead of dropping later output. Fencing by
+  another instance or by the broker after a transaction timeout requires a
+  restart. Records the client refuses are reported once, even when first
+  discovered during replay. A refusal by the broker, a revoked permission, a
+  missing topic or a transaction longer than `transaction.timeout.ms` is
+  reported as a connector error after three aborts in a row, and no record is
+  dropped. Above 64 MiB the kept records spill to a file in
+  the pipeline's storage directory. New metrics `kafka_output_transaction_aborts_total`,
+  `kafka_output_commit_retries_total` and `kafka_output_replay_spool_bytes`.
+  See [Exactly-once delivery and recovery](/connectors/sinks/kafka#exactly-once-delivery-and-recovery).
+
 - Behavior change (non-fault-tolerant Kafka output): temporary delivery
   failures are retried without a deadline by default, replacing the former
   five-minute limit. When the broker is down the producer queue fills,

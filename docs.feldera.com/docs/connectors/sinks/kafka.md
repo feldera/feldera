@@ -76,12 +76,80 @@ during an outage are logged as warnings. They are not counted as connector
 errors, because the queued records are retained.
 
 These delivery defaults and health rules apply to the non-fault-tolerant sink.
-The exactly-once sink uses Kafka transactions and its own producer settings.
+The exactly-once sink uses Kafka transactions, described next.
+
+### Exactly-once delivery and recovery
+
+With [exactly-once fault tolerance](/pipelines/fault-tolerance), the connector
+writes each step's output in one Kafka transaction and commits it at the end
+of the step. The producer retries deliveries without a retry limit. A
+transaction that stays open longer than `transaction.timeout.ms` (60 seconds
+by default) fails on the broker side.
+
+The connector keeps a copy of every record of the open transaction until the
+commit succeeds, because a transaction cannot be retried as it is: librdkafka
+fails a transaction at its first failed delivery, and the broker aborts a
+transaction older than `transaction.max.timeout.ms` (15 minutes by default).
+When a delivery fails or the commit reports that the transaction must be
+aborted, the connector aborts it, begins a new one, sends the kept records
+again, and commits. It repeats this, with a growing backoff of up to 10
+seconds, until the commit succeeds or the pipeline shuts down. When only the
+commit call times out, the connector calls commit again and does not send the
+records again. Aborted attempts stay invisible to consumers that read with
+`isolation.level=read_committed`, so successfully committed records appear
+once.
+
+A record that the client refuses for its own sake, such as one larger than
+`message.max.bytes`, is dropped and reported as a connector error, including
+when a replay first discovers the refusal. Other records in the transaction
+can still commit. A refusal by the broker, for example a batch larger than the
+topic's `max.message.bytes`, fails every record of the batch, so the connector
+cannot single out a record and drops nothing: it aborts and replays as after
+any other failure. When three aborts in a row, over at least five seconds,
+fail for a reason other than a delivery timeout, the connector reports a
+connector error once per transaction that names the reason, and keeps
+retrying. Besides a refused batch, this covers a revoked topic permission, a
+deleted topic, and a transaction whose output takes longer than
+`transaction.timeout.ms` to send and commit. For large steps, such as the
+first output after a snapshot, raise that option in the producer options, up
+to the broker's `transaction.max.timeout.ms`.
+
+The kept records live in memory up to 64 MiB per connector and spill to an
+unnamed temporary file above that. The file is in the pipeline's storage
+directory when the pipeline has one on the local file system, and in the
+system temporary directory otherwise. It holds the output of the open
+transaction beyond the first 64 MiB, so plan for free space equal to the
+largest transaction's output, for example the first output after a snapshot
+or a backfill. The file goes away at commit. An I/O error on that file is
+fatal for the connector. A record refused by the client, such as an oversized
+message, is reported once and is not kept.
+
+The connector reports unhealthy while it retries, aborts, or replays, and
+while a push waits for room in a full producer queue for more than 5 seconds.
+It reports healthy again after the next successful commit.
+
+A fatal producer error, or a transaction error whose recovery action is unknown,
+is reported as a fatal connector error. One example is a fenced producer.
+Kafka fences a transactional producer when another producer starts with the
+same `transactional.id` (here the topic name): the broker then refuses all
+further writes from the older producer, so that only one instance can commit.
+The connector stops the pipeline's output thread and holds it until the
+pipeline is stopped: it never recreates a fenced producer,
+because that could fence the instance that owns the topic now. A broker can
+also fence a producer after its transaction expires during a long outage;
+that case requires a pipeline restart too. Fix the broker
+or deployment problem and restart the pipeline. On restart the connector reads
+the last committed position from the topic and skips the transactions that
+were already committed.
+
+Commit and abort calls wait at most 10 seconds at a time. Shutdown is checked
+between calls, during retry backoff, and before each record sent during replay.
+The replay spool is retained until commit or connector teardown.
 
 ### Output metrics
 
 The pipeline's `/metrics` endpoint exports the following metrics per output
-endpoint. Queue gauges and broker request counters refresh every
+endpoint, for both sinks. Queue gauges and broker request counters refresh every
 `statistics.interval.ms`, which defaults to 10 seconds. With that option set to
 `0`, those statistics are disabled and the corresponding metrics stay at their
 initial zero values. Delivery counters and health checks remain active. The
@@ -99,6 +167,14 @@ cancellation; its refresh delay is at most the retry polling interval (5 seconds
 | `kafka_output_delivered_messages_total` | counter | Successful delivery reports from librdkafka, according to the configured acknowledgement policy. |
 | `kafka_output_delivery_errors_total` | counter | Failed asynchronous deliveries. |
 | `kafka_output_queue_full_wait_seconds_total` | counter | Time spent waiting for producer queue space. |
+
+The exactly-once sink exports the same metrics, plus:
+
+| Metric | Type | Meaning |
+|---|---|---|
+| `kafka_output_transaction_aborts_total` | counter | Transactions aborted and sent again after a delivery failure. |
+| `kafka_output_commit_retries_total` | counter | Commits repeated after a retriable error or a timeout. |
+| `kafka_output_replay_spool_bytes` | gauge | Bytes of the open transaction kept for replay, in memory and on disk. |
 
 ## Example usage
 

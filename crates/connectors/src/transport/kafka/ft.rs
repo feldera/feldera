@@ -7,6 +7,7 @@
 //! for a step.
 mod input;
 mod output;
+mod spool;
 
 use anyhow::{Context, Result as AnyResult, bail};
 use feldera_types::transport::kafka::{KafkaLogLevel, default_redpanda_server};
@@ -169,7 +170,6 @@ impl CommonConfig {
             ("enable.idempotence", "true"),
             ("batch.size", "1"),
             ("batch.num.messages", "1"),
-            ("retries", "5"),
             ("socket.nagle.disable", "true"),
             ("linger.ms", "0"),
         ];
