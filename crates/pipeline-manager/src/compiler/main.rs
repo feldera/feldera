@@ -1,5 +1,8 @@
 use crate::api::error::ApiError;
 use crate::common_error::CommonError;
+use crate::compiler::client_auth::{
+    CompilerCaller, authorize_compiler_caller, client_certificate_verifier,
+};
 use crate::compiler::error::CompilerError;
 use crate::compiler::rust_compiler::{
     CLEANUP_INTERVAL, RustCompilationError, RustCompilationResult, cleanup_pipeline_binaries,
@@ -24,6 +27,7 @@ use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use actix_files::NamedFile;
 use actix_web::error::PayloadError;
+use actix_web::middleware::{Condition, from_fn};
 use actix_web::{HttpRequest, HttpResponse, HttpServer, Responder, get, post, web};
 use futures_util::{Stream, StreamExt};
 use std::net::TcpListener;
@@ -55,7 +59,7 @@ fn decode_url_encoded_parameter(
 #[get(
     "/artifacts/{pipeline_id}/{program_version}/{source_checksum}/{binary_integrity_checksum}/{program_info_integrity_checksum}"
 )]
-async fn check_compilation_artifacts(
+pub(crate) async fn check_compilation_artifacts(
     config: web::Data<CompilerConfig>,
     req: HttpRequest,
 ) -> Result<impl Responder, ManagerError> {
@@ -183,7 +187,7 @@ async fn check_compilation_artifacts(
 
 /// Retrieves the binary executable.
 #[get("/binary/{pipeline_id}/{program_version}/{source_checksum}/{integrity_checksum}")]
-async fn get_binary(
+pub(crate) async fn get_binary(
     config: web::Data<CompilerConfig>,
     req: HttpRequest,
 ) -> Result<impl Responder, ManagerError> {
@@ -310,7 +314,7 @@ async fn get_program_info(
 /// Uploads a compiled binary using streaming.
 /// Metadata is passed via path parameters and the binary is streamed directly to disk.
 #[post("/binary/{pipeline_id}/{program_version}/{source_checksum}/{integrity_checksum}")]
-async fn upload_binary(
+pub(crate) async fn upload_binary(
     config: web::Data<CompilerConfig>,
     req: HttpRequest,
     payload: web::Payload,
@@ -1001,11 +1005,22 @@ async fn spawn_compiler_http_server(
     config: &CompilerConfig,
     db: &Arc<Mutex<StoragePostgres>>,
 ) -> JoinHandle<Result<(), std::io::Error>> {
+    let require_client_certificates = config.require_client_certificates;
+    let server_config = if require_client_certificates {
+        common_config
+            .https_server_config_with_client_verifier(client_certificate_verifier(common_config))
+    } else {
+        common_config.https_server_config()
+    };
     let config = web::Data::new(config.clone());
     let common_config_data = web::Data::new(common_config.clone());
     let probe = web::Data::new(DbProbe::new(db.clone()).await);
     let server = HttpServer::new(move || {
         actix_web::App::new()
+            .wrap(Condition::new(
+                require_client_certificates,
+                from_fn(authorize_compiler_caller),
+            ))
             .app_data(config.clone())
             .app_data(common_config_data.clone())
             .app_data(probe.clone())
@@ -1017,6 +1032,7 @@ async fn spawn_compiler_http_server(
             .service(validate_program_endpoint)
             .service(healthz)
     })
+    .on_connect(CompilerCaller::record)
     .workers(common_config.http_workers)
     .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
     let listener = TcpListener::bind((
@@ -1029,21 +1045,19 @@ async fn spawn_compiler_http_server(
             common_config.bind_address, common_config.compiler_port
         )
     });
-    let http_server = spawn(
-        if let Some(server_config) = common_config.https_server_config() {
-            server
-                .listen_rustls_0_23(listener, server_config)
-                .expect("compiler HTTPS server unable to listen")
-                .run()
-        } else {
-            server
-                .listen(listener)
-                .expect("compiler HTTP server unable to listen")
-                .run()
-        },
-    );
+    let http_server = spawn(if let Some(server_config) = server_config {
+        server
+            .listen_rustls_0_23(listener, server_config)
+            .expect("compiler HTTPS server unable to listen")
+            .run()
+    } else {
+        server
+            .listen(listener)
+            .expect("compiler HTTP server unable to listen")
+            .run()
+    });
     info!(
-        "Compiler {} server: ready on port {} ({} workers)",
+        "Compiler {} server: ready on port {} ({} workers, client certificates {})",
         if common_config.enable_https {
             "HTTPS"
         } else {
@@ -1051,6 +1065,11 @@ async fn spawn_compiler_http_server(
         },
         common_config.compiler_port,
         common_config.http_workers,
+        if require_client_certificates {
+            "required"
+        } else {
+            "not required"
+        },
     );
     http_server
 }
@@ -1187,6 +1206,7 @@ mod test {
             gen2_udf_sdk_path: None,
             gen2_udf_sdk_version: None,
             precompile: false,
+            require_client_certificates: false,
         })
         .await
         .unwrap();
@@ -1209,6 +1229,7 @@ mod test {
             gen2_udf_sdk_path: None,
             gen2_udf_sdk_version: None,
             precompile: false,
+            require_client_certificates: false,
         })
         .await
         .unwrap();
@@ -1619,6 +1640,7 @@ mod test {
             gen2_udf_sdk_path: None,
             gen2_udf_sdk_version: None,
             precompile: false,
+            require_client_certificates: false,
         };
 
         (tempdir, config)

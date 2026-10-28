@@ -575,6 +575,7 @@ mod test {
             gen2_udf_sdk_path: None,
             gen2_udf_sdk_version: None,
             precompile: false,
+            require_client_certificates: false,
         }
     }
 
