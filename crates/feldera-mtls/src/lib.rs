@@ -14,6 +14,7 @@ use actix_web::rt::net::TcpStream;
 use actix_web::{HttpResponse, ResponseError};
 use feldera_types::error::{DetailedError, ErrorResponse};
 use rustls::RootCertStore;
+use rustls::crypto::CryptoProvider;
 use rustls::pki_types::CertificateDer;
 use rustls::server::WebPkiClientVerifier;
 use rustls::server::danger::ClientCertVerifier;
@@ -193,7 +194,12 @@ pub fn client_certificate_verifier(
             .add(anchor)
             .map_err(|e| format!("invalid CA certificate: {e}"))?;
     }
-    WebPkiClientVerifier::builder(Arc::new(roots))
+    // An explicit provider: with several rustls crypto features compiled in, rustls has no
+    // default unless the process installed one.
+    let provider = CryptoProvider::get_default()
+        .cloned()
+        .unwrap_or_else(|| Arc::new(rustls::crypto::aws_lc_rs::default_provider()));
+    WebPkiClientVerifier::builder_with_provider(Arc::new(roots), provider)
         .allow_unauthenticated()
         .build()
         .map_err(|e| format!("client certificate verifier: {e}"))
