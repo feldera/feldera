@@ -1,4 +1,4 @@
-import { useLocalStorage } from '$lib/compositions/localStore.svelte'
+import { useLocalStorage } from '#lib/compositions/localStore.svelte.js'
 
 export const useDarkMode = () => {
   const mode = useLocalStorage<'dark' | 'light'>('darkMode', 'light')

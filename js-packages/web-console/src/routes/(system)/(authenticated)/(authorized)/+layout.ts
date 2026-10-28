@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit'
-import { resolve } from '$lib/functions/svelte'
-import { stashRedirectTarget } from '$lib/services/redirectTarget'
+import { resolve } from '#lib/functions/svelte.ts'
+import { stashRedirectTarget } from '#lib/services/redirectTarget.ts'
 
 /**
  * Everything in this group needs an acting tenant: the `(shell)` group's layout

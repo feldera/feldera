@@ -2,19 +2,19 @@
   import { asyncReadable, type Loadable } from '@square/svelte-store'
   import { goto, invalidateAll } from '$app/navigation'
   import { page } from '$app/state'
-  import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
-  import DoubleClickInput from '$lib/components/input/DoubleClickInput.svelte'
-  import { clearConfigCaches } from '$lib/compositions/configCache'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { resolve } from '$lib/functions/svelte'
-  import { setSelectedTenant } from '$lib/services/auth'
+  import DeleteDialog, { deleteDialogProps } from '#lib/components/dialogs/DeleteDialog.svelte'
+  import DoubleClickInput from '#lib/components/input/DoubleClickInput.svelte'
+  import { clearConfigCaches } from '#lib/compositions/configCache.ts'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import { resolve } from '#lib/functions/svelte.ts'
+  import { setSelectedTenant } from '#lib/services/auth.ts'
   import {
     createTenant,
     deleteTenant,
     getAuthConfig,
     renameTenant,
     type Tenant
-  } from '$lib/services/pipelineManager'
+  } from '#lib/services/pipelineManager.ts'
 
   const { tenants }: { tenants: Loadable<Tenant[]> } = $props()
 

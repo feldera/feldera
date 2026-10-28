@@ -1,8 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state'
-  import FelderaLogoBlackDetail from '$assets/images/feldera-modern/Feldera Logo Black Detail.svg?component'
-  import FelderaLogoWhiteDetail from '$assets/images/feldera-modern/Feldera Logo White Detail.svg?component'
-  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
+  import FelderaLogoBlackDetail from '#assets/images/feldera-modern/Feldera Logo Black Detail.svg?component'
+  import FelderaLogoWhiteDetail from '#assets/images/feldera-modern/Feldera Logo White Detail.svg?component'
+  import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
   import BookADemo from '../other/BookADemo.svelte'
 
   const darkMode = useDarkMode()

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ClusterMonitorEventSelectedInfo } from '$lib/services/manager'
+import type { ClusterMonitorEventSelectedInfo } from '#lib/services/manager/index.ts'
 import {
   clusterHealthMessage,
   staleMonitoringMessage,

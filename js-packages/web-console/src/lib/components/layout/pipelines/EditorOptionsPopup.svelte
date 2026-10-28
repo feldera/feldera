@@ -1,9 +1,9 @@
 <script lang="ts">
   import { Input } from 'flowbite-svelte'
   import { fade } from 'svelte/transition'
-  import CompactSwitch from '$lib/components/common/CompactSwitch.svelte'
-  import Popup from '$lib/components/common/Popup.svelte'
-  import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
+  import CompactSwitch from '#lib/components/common/CompactSwitch.svelte'
+  import Popup from '#lib/components/common/Popup.svelte'
+  import { useCodeEditorSettings } from '#lib/compositions/pipelines/useCodeEditorSettings.svelte.ts'
 
   const { editorFontSize, autoSaveFiles, showMinimap, showStickyScroll } = useCodeEditorSettings()
 </script>

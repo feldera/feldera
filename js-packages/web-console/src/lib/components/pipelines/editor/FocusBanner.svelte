@@ -1,6 +1,6 @@
 <script lang="ts">
   import { slide } from 'svelte/transition'
-  import type { Snippet } from '$lib/types/svelte'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   const {
     show,

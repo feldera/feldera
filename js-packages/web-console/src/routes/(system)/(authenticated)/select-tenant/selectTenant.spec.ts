@@ -8,10 +8,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const takeRedirectTarget = vi.hoisted(() => vi.fn())
 
-vi.mock('$lib/services/redirectTarget', () => ({
+vi.mock('#lib/services/redirectTarget.ts', () => ({
   takeRedirectTarget: () => takeRedirectTarget()
 }))
-vi.mock('$lib/functions/svelte', () => ({ resolve: (path: string) => path }))
+vi.mock('#lib/functions/svelte.ts', () => ({ resolve: (path: string) => path }))
 
 import { load } from './+page'
 

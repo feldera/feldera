@@ -7,8 +7,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@axa-fr/oidc-client', () => ({ OidcClient: { get: vi.fn() } }))
 
-import { errorResponseMiddleware } from '$lib/services/auth'
-import { setInvalidateAll } from '$lib/services/invalidateAll'
+import { errorResponseMiddleware } from '#lib/services/auth.ts'
+import { setInvalidateAll } from '#lib/services/invalidateAll.ts'
 import { errorCodeOf, isTenantRecheckPending, resetTenantRecheck } from './tenantAccess'
 
 const rejection = (code: string) => new Error(code, { cause: { error_code: code } })

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { SegmentedControl, type SegmentedItem } from 'common-ui'
-  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
+  import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
 
   let { class: className = '' }: { class?: string } = $props()
 

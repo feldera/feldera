@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { configureTestClient } from '$lib/services/testPipelineHelpers'
+import { configureTestClient } from '#lib/services/testPipelineHelpers.ts'
 
 configureTestClient()
 

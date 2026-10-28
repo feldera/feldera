@@ -7,17 +7,17 @@
   import { Popover, Select, Tooltip } from 'common-ui'
   import { match } from 'ts-pattern'
   import { page } from '$app/state'
-  import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
-  import ThSort from '$lib/components/pipelines/table/ThSort.svelte'
-  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
-  import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { resolve } from '$lib/functions/svelte'
+  import PipelineStatus from '#lib/components/pipelines/list/PipelineStatus.svelte'
+  import ThSort from '#lib/components/pipelines/table/ThSort.svelte'
+  import { useElapsedTime } from '#lib/compositions/common/useElapsedTime.ts'
+  import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { resolve } from '#lib/functions/svelte.ts'
   import type {
     PipelineStatus as PipelineStatusType,
     PipelineThumb
-  } from '$lib/services/pipelineManager'
-  import type { Snippet } from '$lib/types/svelte'
+  } from '#lib/services/pipelineManager.ts'
+  import type { Snippet } from '#lib/types/svelte.ts'
   import PipelineVersion from './table/PipelineVersion.svelte'
   import Tags from './table/Tags.svelte'
 

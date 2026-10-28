@@ -1,6 +1,6 @@
 import Dayjs from 'dayjs'
-import { useInterval } from '$lib/compositions/common/useInterval.svelte'
-import { ServerDate } from '$lib/compositions/serverTime'
+import { useInterval } from '#lib/compositions/common/useInterval.svelte.ts'
+import { ServerDate } from '#lib/compositions/serverTime.ts'
 
 /**
  * A duration as ` 2d 3h 4m 5s`, leaving out the components that are zero; the empty string

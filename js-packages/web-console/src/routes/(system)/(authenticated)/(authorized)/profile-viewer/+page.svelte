@@ -14,25 +14,25 @@
   import type { Dataflow, JsonProfiles } from 'profiler-lib'
   import { fade } from 'svelte/transition'
   import { replaceState } from '$app/navigation'
-  import Popup from '$lib/components/common/Popup.svelte'
-  import AppHeader from '$lib/components/layout/AppHeader.svelte'
-  import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
-  import SupportBundleConfirm from '$lib/components/supportBundle/SupportBundleConfirm.svelte'
-  import SupportBundleMenu from '$lib/components/supportBundle/SupportBundleMenu.svelte'
-  import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
-  import { receiveUploadedBundle, storedBundleUrl } from '$lib/compositions/profileBundleHandoff'
-  import { type PickedBundle, useBundlePicker } from '$lib/compositions/useBundlePicker'
-  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
-  import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { useToast } from '$lib/compositions/useToastNotification'
-  import { resolve } from '$lib/functions/svelte'
+  import Popup from '#lib/components/common/Popup.svelte'
+  import AppHeader from '#lib/components/layout/AppHeader.svelte'
+  import PipelineBreadcrumbs from '#lib/components/layout/PipelineBreadcrumbs.svelte'
+  import SupportBundleConfirm from '#lib/components/supportBundle/SupportBundleConfirm.svelte'
+  import SupportBundleMenu from '#lib/components/supportBundle/SupportBundleMenu.svelte'
+  import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
+  import { receiveUploadedBundle, storedBundleUrl } from '#lib/compositions/profileBundleHandoff.ts'
+  import { type PickedBundle, useBundlePicker } from '#lib/compositions/useBundlePicker.ts'
+  import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
+  import { useDownloadProgress } from '#lib/compositions/useDownloadProgress.svelte.ts'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { useToast } from '#lib/compositions/useToastNotification.ts'
+  import { resolve } from '#lib/functions/svelte.ts'
   import {
     type BundleHistoryEntry,
     isPermissionRequired,
     markBundleOpenedNow,
     resolveStoredBundle
-  } from '$lib/services/supportBundleHistory'
+  } from '#lib/services/supportBundleHistory.ts'
 
   const { data } = $props()
   const { pipelineName, source, collect, channel, bundle: storedBundleId } = data

@@ -1,5 +1,5 @@
-import type { PipelineManagerApi } from '$lib/compositions/usePipelineManager.svelte'
-import type { PipelineThumb } from '$lib/services/pipelineManager'
+import type { PipelineManagerApi } from '#lib/compositions/usePipelineManager.svelte.ts'
+import type { PipelineThumb } from '#lib/services/pipelineManager.ts'
 import type { useUpdatePipelineList } from './pipelines/usePipelineList.svelte'
 
 export const duplicatePipelineTooltip =

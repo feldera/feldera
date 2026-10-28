@@ -4,7 +4,7 @@
  * from the `--color-status-<tone>` theme colours.
  */
 import { describe, expect, it } from 'vitest'
-import type { PipelineStatus } from '$lib/services/pipelineManager'
+import type { PipelineStatus } from '#lib/services/pipelineManager.ts'
 import {
   pipelineStatusColor,
   pipelineStatusTone,

@@ -24,9 +24,6 @@ const config = {
     paths: {
       base: process.env.WEBCONSOLE_BASE_PATH || ''
     },
-    alias: {
-      $assets: 'src/assets'
-    },
     output: {
       bundleStrategy: 'single'
     }

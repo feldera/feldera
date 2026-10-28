@@ -5,8 +5,8 @@
  * two blockers and their resolution order.
  */
 import { describe, expect, it } from 'vitest'
-import type { StorageStatus } from '$lib/services/manager'
-import type { PipelineStatus } from '$lib/services/pipelineManager'
+import type { StorageStatus } from '#lib/services/manager/index.ts'
+import type { PipelineStatus } from '#lib/services/pipelineManager.ts'
 import { deletePipelineDisabledReason, editSettingsDisabledReason } from './status'
 
 describe('deletePipelineDisabledReason', () => {

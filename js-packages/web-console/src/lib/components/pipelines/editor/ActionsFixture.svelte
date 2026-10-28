@@ -4,9 +4,9 @@
   Actions.svelte's logic.
 -->
 <script lang="ts">
-  import Actions from '$lib/components/pipelines/list/Actions.svelte'
-  import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
-  import type { ExtendedPipeline } from '$lib/services/pipelineManager'
+  import Actions from '#lib/components/pipelines/list/Actions.svelte'
+  import type { WritablePipeline } from '#lib/compositions/useWritablePipeline.svelte.ts'
+  import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
 
   let {
     pipeline: pipelineProp,

@@ -17,7 +17,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import { permissionsOf } from '$lib/services/rbac'
+import { permissionsOf } from '#lib/services/rbac.ts'
 
 // The Ad-Hoc Queries and Changes Stream tabs are gated on `exec:pipeline_data`.
 // Default the mocked role to `write` so the log-search tests (which already hide
@@ -48,7 +48,7 @@ type FakeLogsStream = {
 
 const pipelineLogsStreamMock = vi.fn<(...args: unknown[]) => Promise<FakeLogsStream>>()
 
-vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
+vi.mock('#lib/compositions/usePipelineManager.svelte.ts', () => ({
   usePipelineManager: () => ({ pipelineLogsStream: pipelineLogsStreamMock })
 }))
 

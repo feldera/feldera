@@ -1,5 +1,5 @@
 import type { editor } from 'monaco-editor'
-import { MonacoPlaceholderContentWidget } from '$lib/components/monacoEditor/ContentPlaceholderWidget'
+import { MonacoPlaceholderContentWidget } from '#lib/components/monacoEditor/ContentPlaceholderWidget.ts'
 
 export const effectMonacoContentPlaceholder = (
   editorRef: editor.IStandaloneCodeEditor,

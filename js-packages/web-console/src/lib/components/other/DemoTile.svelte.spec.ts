@@ -5,8 +5,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import type { Demo } from '$lib/services/pipelineManager'
-import { permissionsOf } from '$lib/services/rbac'
+import type { Demo } from '#lib/services/pipelineManager.ts'
+import { permissionsOf } from '#lib/services/rbac.ts'
 
 const roleState = vi.hoisted(() => ({ current: 'read' as 'read' | 'write' | 'admin' | 'owner' }))
 const listState = vi.hoisted(() => ({ current: [] as { name: string }[] }))
@@ -21,7 +21,7 @@ vi.mock('$app/state', () => ({
   }
 }))
 
-vi.mock('$lib/compositions/pipelines/usePipelineList.svelte', () => ({
+vi.mock('#lib/compositions/pipelines/usePipelineList.svelte.ts', () => ({
   usePipelineList: () => ({
     get pipelines() {
       return listState.current
@@ -31,7 +31,7 @@ vi.mock('$lib/compositions/pipelines/usePipelineList.svelte', () => ({
 
 const tryPipeline = vi.hoisted(() => vi.fn())
 
-vi.mock('$lib/compositions/pipelines/useTryPipeline', () => ({
+vi.mock('#lib/compositions/pipelines/useTryPipeline.ts', () => ({
   useTryPipeline: () => tryPipeline
 }))
 

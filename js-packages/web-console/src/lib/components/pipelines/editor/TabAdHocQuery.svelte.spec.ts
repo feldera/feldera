@@ -22,7 +22,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import type { ExtendedPipeline } from '$lib/services/pipelineManager'
+import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
 
 // One row, every rendered type, in the exact Arrow encoding the server emits.
 const ARROW_IPC_BASE64 =
@@ -47,7 +47,7 @@ const adHocQueryMock = vi.fn(async () => ({
   error: (): Error | undefined => undefined
 }))
 
-vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
+vi.mock('#lib/compositions/usePipelineManager.svelte.ts', () => ({
   usePipelineManager: () => ({ adHocQuery: adHocQueryMock })
 }))
 

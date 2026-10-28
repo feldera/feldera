@@ -1,12 +1,12 @@
 <script lang="ts">
   import { TabsPanel } from 'common-ui'
-  import PanelAdHocQuery from '$lib/components/pipelines/editor/TabAdHocQuery.svelte'
-  import * as TabSamplyProfile from '$lib/components/pipelines/editor/TabSamplyProfile.svelte'
-  import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
-  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-  import { usePermission } from '$lib/compositions/usePermission.svelte'
-  import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-  import type { ExtendedPipeline } from '$lib/services/pipelineManager'
+  import PanelAdHocQuery from '#lib/components/pipelines/editor/TabAdHocQuery.svelte'
+  import * as TabSamplyProfile from '#lib/components/pipelines/editor/TabSamplyProfile.svelte'
+  import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
+  import { useLocalStorage } from '#lib/compositions/localStore.svelte.js'
+  import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
+  import type { PipelineMetrics } from '#lib/functions/pipelineMetrics.ts'
+  import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
 
   let {
     pipeline,

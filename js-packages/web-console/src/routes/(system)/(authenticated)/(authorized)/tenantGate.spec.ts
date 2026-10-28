@@ -9,10 +9,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const stashRedirectTarget = vi.hoisted(() => vi.fn())
 
-vi.mock('$lib/services/redirectTarget', () => ({
+vi.mock('#lib/services/redirectTarget.ts', () => ({
   stashRedirectTarget: (href: string) => stashRedirectTarget(href)
 }))
-vi.mock('$lib/functions/svelte', () => ({ resolve: (path: string) => path }))
+vi.mock('#lib/functions/svelte.ts', () => ({ resolve: (path: string) => path }))
 
 import { load } from './+layout'
 

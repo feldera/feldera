@@ -2,12 +2,12 @@
   import { Listbox, useListCollection } from '@skeletonlabs/skeleton-svelte'
   import { asyncReadable } from '@square/svelte-store'
   import { page } from '$app/state'
-  import TenantList from '$lib/components/admin/TenantList.svelte'
-  import UserRoleTable from '$lib/components/admin/UserRoleTable.svelte'
-  import Popup from '$lib/components/common/Popup.svelte'
-  import { usePermission } from '$lib/compositions/usePermission.svelte'
-  import { getConfiguredOwners, getTenants, type Tenant } from '$lib/services/pipelineManager'
-  import type { Snippet } from '$lib/types/svelte'
+  import TenantList from '#lib/components/admin/TenantList.svelte'
+  import UserRoleTable from '#lib/components/admin/UserRoleTable.svelte'
+  import Popup from '#lib/components/common/Popup.svelte'
+  import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
+  import { getConfiguredOwners, getTenants, type Tenant } from '#lib/services/pipelineManager.ts'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   // Tenant management (switch/list/create) is owner-only; gate on the permission
   // rather than the role directly, in line with the rest of the RBAC surface.

@@ -32,7 +32,7 @@
   import { superForm } from 'sveltekit-superforms'
   import { valibot } from 'sveltekit-superforms/adapters'
 
-  import { type MemberRole, postOidcTrust } from '$lib/services/pipelineManager'
+  import { type MemberRole, postOidcTrust } from '#lib/services/pipelineManager.ts'
 
   const {
     onSubmit,

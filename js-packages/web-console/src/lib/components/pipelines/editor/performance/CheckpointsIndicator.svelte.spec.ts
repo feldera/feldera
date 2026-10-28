@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-import type { CheckpointMetadata } from '$lib/services/manager'
-import { permissionsOf } from '$lib/services/rbac'
+import type { PipelineMetrics } from '#lib/functions/pipelineMetrics.ts'
+import type { CheckpointMetadata } from '#lib/services/manager/index.ts'
+import { permissionsOf } from '#lib/services/rbac.ts'
 
 // The "create first checkpoint" affordance requires enterprise AND the
 // `exec:checkpoint` permission. Both are driven by hoisted vars so a test can
@@ -21,11 +21,11 @@ vi.mock('$app/state', () => ({
   }
 }))
 
-vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
+vi.mock('#lib/compositions/usePipelineManager.svelte.ts', () => ({
   usePipelineManager: () => ({ checkpointPipeline: vi.fn() })
 }))
 
-vi.mock('$lib/compositions/useEdition.svelte', () => ({
+vi.mock('#lib/compositions/useEdition.svelte.ts', () => ({
   useIsEnterprise: () => ({
     get value() {
       return editionState.isEnterprise
@@ -33,7 +33,7 @@ vi.mock('$lib/compositions/useEdition.svelte', () => ({
   })
 }))
 
-vi.mock('$lib/compositions/layout/useGlobalDialog.svelte', () => ({
+vi.mock('#lib/compositions/layout/useGlobalDialog.svelte.ts', () => ({
   useGlobalDialog: () => ({
     get dialog() {
       return null

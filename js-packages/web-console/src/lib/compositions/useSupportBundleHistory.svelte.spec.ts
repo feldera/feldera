@@ -14,16 +14,16 @@ const { observeBundleHistory } = vi.hoisted(() => ({
 
 // The history module is not replaced: these tests run against the real database.
 // Only the observable is wrapped, so that one test can make a read fail.
-vi.mock('$lib/services/supportBundleHistory', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/services/supportBundleHistory')>()),
+vi.mock('#lib/services/supportBundleHistory.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#lib/services/supportBundleHistory.ts')>()),
   observeBundleHistory
 }))
 
 // This import follows the vi.mock call above, so that the mock is in place.
 import { useSupportBundleHistory } from './useSupportBundleHistory.svelte'
 
-const actualHistory = await vi.importActual<typeof import('$lib/services/supportBundleHistory')>(
-  '$lib/services/supportBundleHistory'
+const actualHistory = await vi.importActual<typeof import('#lib/services/supportBundleHistory.ts')>(
+  '#lib/services/supportBundleHistory.ts'
 )
 
 /** Reads `current` in an effect, which is what starts the subscription. */

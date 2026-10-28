@@ -93,21 +93,21 @@ vi.mock('$app/state', () => ({
     }
   }
 }))
-vi.mock('$lib/components/other/ApiKeyMenu.svelte', () => ({ default: () => {} }))
-vi.mock('$lib/components/other/OidcTrustMenu.svelte', () => ({ default: () => {} }))
-vi.mock('$lib/services/redirectTarget', () => ({
+vi.mock('#lib/components/other/ApiKeyMenu.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/components/other/OidcTrustMenu.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/services/redirectTarget.ts', () => ({
   takeRedirectTarget: vi.fn(),
   stashRedirectTarget: vi.fn()
 }))
-vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
+vi.mock('#lib/compositions/usePipelineManager.svelte.ts', () => ({
   usePipelineManager: () => ({
     getPipelineSupportBundle: vi.fn(() => ({ dataPromise: new Promise(() => {}) }))
   })
 }))
 // `storedBundleUrl` is the real one, so that the URL these tests assert on is the URL
 // a new tab would be opened with.
-vi.mock('$lib/compositions/profileBundleHandoff', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/compositions/profileBundleHandoff')>()),
+vi.mock('#lib/compositions/profileBundleHandoff.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#lib/compositions/profileBundleHandoff.ts')>()),
   receiveUploadedBundle,
   openRemoteBundleTab: vi.fn(),
   openStoredBundleTab: vi.fn(),
@@ -115,8 +115,8 @@ vi.mock('$lib/compositions/profileBundleHandoff', async (importOriginal) => ({
 }))
 // Only the functions the page calls are replaced. `isPermissionRequired` is left as it
 // is, so that these tests fail if the page stops recognizing a refused read.
-vi.mock('$lib/services/supportBundleHistory', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('$lib/services/supportBundleHistory')>()),
+vi.mock('#lib/services/supportBundleHistory.ts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#lib/services/supportBundleHistory.ts')>()),
   addToBundleHistory,
   isBundlePickerSupported,
   markBundleOpenedNow,
@@ -124,7 +124,7 @@ vi.mock('$lib/services/supportBundleHistory', async (importOriginal) => ({
   resolveStoredBundle
 }))
 
-import { fakeHandle } from '$lib/services/testSupportBundleHelpers'
+import { fakeHandle } from '#lib/services/testSupportBundleHelpers.ts'
 // These imports come after the vi.mock calls above, so that the mocks are in place.
 import ProfileViewerPage from './+page.svelte'
 

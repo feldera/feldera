@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit'
-import { resolve } from '$lib/functions/svelte'
-import { takeRedirectTarget } from '$lib/services/redirectTarget'
+import { resolve } from '#lib/functions/svelte.ts'
+import { takeRedirectTarget } from '#lib/services/redirectTarget.ts'
 
 /**
  * The page the `(authorized)` gate redirects to. Reaching it with a tenant

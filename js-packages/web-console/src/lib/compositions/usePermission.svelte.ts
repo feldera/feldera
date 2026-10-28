@@ -1,5 +1,5 @@
+import { hasPermissions, type Permission } from '#lib/services/rbac.ts'
 import { page } from '$app/state'
-import { hasPermissions, type Permission } from '$lib/services/rbac'
 
 // Reactive single-permission check for gates that feed a boolean into existing
 // plumbing rather than wrapping markup, e.g. Monaco's `editDisabled`. Reads the

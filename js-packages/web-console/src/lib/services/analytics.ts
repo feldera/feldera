@@ -4,9 +4,9 @@ import {
   isConceptualHqInitialized,
   trackConceptualHq,
   trackConceptualHqSignup
-} from '$lib/services/conceptualHq'
-import { isPosthogInitialized } from '$lib/services/posthog'
-import type { UserProfile } from '$lib/types/auth'
+} from '#lib/services/conceptualHq.ts'
+import { isPosthogInitialized } from '#lib/services/posthog.ts'
+import type { UserProfile } from '#lib/types/auth.ts'
 
 // Holds the `auth_time` of the last reported login, one key per user.
 const SIGNIN_MARKER_PREFIX = 'analytics_signin:'

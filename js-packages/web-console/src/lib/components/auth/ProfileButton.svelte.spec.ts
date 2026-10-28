@@ -12,8 +12,8 @@
 import { statusToneColors } from 'common-ui/statusTone'
 import { describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-svelte'
-import type { ClusterHealthStatus } from '$lib/compositions/health/useClusterHealth.svelte'
-import { permissionsOf, roleOf } from '$lib/services/rbac'
+import type { ClusterHealthStatus } from '#lib/compositions/health/useClusterHealth.svelte.ts'
+import { permissionsOf, roleOf } from '#lib/services/rbac.ts'
 
 // Hoisted so the `$app/state` factory below can close over it: each test sets
 // `state.data` to the session shape it is about.
@@ -23,10 +23,10 @@ const state = vi.hoisted(() => ({
 }))
 vi.mock('$app/state', () => ({ page: state }))
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }))
-vi.mock('$lib/compositions/switchTenant', () => ({ switchTenant: vi.fn() }))
+vi.mock('#lib/compositions/switchTenant.ts', () => ({ switchTenant: vi.fn() }))
 // Dialog bodies the menu can open; they fetch on import.
-vi.mock('$lib/components/other/ApiKeyMenu.svelte', () => ({ default: () => {} }))
-vi.mock('$lib/components/other/OidcTrustMenu.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/components/other/ApiKeyMenu.svelte', () => ({ default: () => {} }))
+vi.mock('#lib/components/other/OidcTrustMenu.svelte', () => ({ default: () => {} }))
 
 // Imported AFTER vi.mock so the mocks take effect.
 import ProfileButton from './ProfileButton.svelte'

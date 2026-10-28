@@ -28,7 +28,7 @@ export default defineConfig({
   plugins: [
     {
       name: '@hey-api/client-fetch',
-      runtimeConfigPath: '$lib/compositions/setupHttpClient',
+      runtimeConfigPath: '#lib/compositions/setupHttpClient.ts',
       throwOnError: true
     },
     {

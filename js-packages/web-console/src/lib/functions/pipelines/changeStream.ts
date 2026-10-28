@@ -3,8 +3,8 @@ import { BigNumber } from 'bignumber.js'
 import { findIndex } from 'common-lib/array'
 import { tuple } from 'common-lib/tuple'
 import invariant from 'tiny-invariant'
-import type { ChangeStreamData, Row } from '$lib/components/pipelines/editor/ChangeStream.svelte'
-import type { XgressEntry } from '$lib/services/pipelineManager'
+import type { ChangeStreamData, Row } from '#lib/components/pipelines/editor/ChangeStream.svelte'
+import type { XgressEntry } from '#lib/services/pipelineManager.ts'
 
 class BigNumberTokenizer extends Tokenizer {
   parseNumber = BigNumber as any

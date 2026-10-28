@@ -1,8 +1,8 @@
 <script lang="ts">
   import { Tooltip } from 'common-ui'
-  import { pipelineStatusColor } from '$lib/functions/pipelineStatusColor'
-  import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
-  import type { PipelineStatus } from '$lib/services/pipelineManager'
+  import { pipelineStatusColor } from '#lib/functions/pipelineStatusColor.ts'
+  import { getPipelineStatusLabel } from '#lib/functions/pipelines/status.ts'
+  import type { PipelineStatus } from '#lib/services/pipelineManager.ts'
 
   const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
   const chipClass = $derived(pipelineStatusColor(status).dot)

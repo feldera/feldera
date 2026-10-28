@@ -1,6 +1,6 @@
 <script lang="ts" generics="K extends string">
   import { fly } from 'svelte/transition'
-  import type { Snippet } from '$lib/types/svelte'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   /**
    * Shows one "page" at a time and slides between them, like the panels of a phone
