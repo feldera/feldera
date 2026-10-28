@@ -10,6 +10,16 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Enterprise (Kubernetes): with the Helm value `mtls.enabled`, the compiler
+  server requires client certificates, and a pipeline may only download its
+  own binary and program info.  It requires `httpsSecretRef`, `caSecretRef`
+  and cert-manager.  Restart running pipelines after you turn it on.  See
+  [client certificates for the compiler server](/get-started/enterprise/https#client-certificates-for-the-compiler-server).
+
+- Enterprise (Kubernetes): with `caSecretRef` set, pipeline pods mount only
+  the certificate of `httpsSecretRef`, not its key, and the API server mounts
+  only the certificate of `caSecretRef`.
+
 - Incompatible change (Enterprise, Kubernetes): a pipeline can select a
   Kubernetes service account with `resources.service_account_name` only if
   the operator lists the account in the Helm value

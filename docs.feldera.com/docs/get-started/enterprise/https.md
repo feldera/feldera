@@ -24,8 +24,10 @@ external software.
 
 :::note
 
-Feldera does not support mTLS authentication.  The API server supports
-[API authentication](authentication/index.mdx).
+The API server does not accept client certificates; it supports
+[API authentication](authentication/index.mdx).  The compiler server can
+require [client certificates](#client-certificates-for-the-compiler-server)
+from the other Feldera components.
 
 :::
 
@@ -232,3 +234,33 @@ section below describes one way to generate these files.
    "localhost sent an invalid response" (Chrome) or
    "Received HTTP/0.9 when not allowed" (curl).
    Use `https://` as the protocol.
+
+## Client certificates for the compiler server
+
+With the Helm value `mtls.enabled: true`, the compiler server requires a
+client certificate that the private CA signed, and admits each caller only
+to its own routes:
+
+| Caller | Certificate | Routes |
+|---|---|---|
+| API server, runner, compiler replicas | control-plane certificate (URI SAN `urn:feldera:control-plane`), issued by cert-manager from the private CA | all |
+| Pipeline `<id>` | pipeline certificate (URI SAN `urn:feldera:pipeline:<id>`), issued by the runner from the private CA | download its own binary and program info |
+| No certificate | none | `/healthz` |
+
+Requirements:
+
+- `httpsSecretRef` and `caSecretRef` are set.
+- [cert-manager](https://cert-manager.io) runs in the cluster.  The chart
+  creates an `Issuer` for the private CA and a `Certificate` for the control
+  plane.  The components read a renewed certificate without a restart.
+
+```
+httpsSecretRef: "feldera-https-config"
+caSecretRef: "feldera-ca-config"
+mtls:
+  enabled: true
+```
+
+Pipelines get their certificate when they start, so restart pipelines that
+were running before you set `mtls.enabled`.  Otherwise a pipeline pod that
+Kubernetes moves to another node cannot download its binary.
