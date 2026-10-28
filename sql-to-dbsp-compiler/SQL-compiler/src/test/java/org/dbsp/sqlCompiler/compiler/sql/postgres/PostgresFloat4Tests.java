@@ -267,6 +267,20 @@ public class PostgresFloat4Tests extends SqlIoTest {
                  32767""");
     }
 
+    @Test
+    public void testTrunc() {
+        this.q("""
+                SELECT f.f1, trunc(f.f1) AS trunc_f1 FROM FLOAT4_TBL f;
+                          f1          |       trunc_f1
+                ----------------------+----------------------
+                                    0 |                    0
+                               1004.3 |                 1004
+                               -34.84 |                  -34
+                  1.2345678901234e+20 |  1.2345678901234e+20
+                  1.2345678901234e-20 |                    0"""
+        );
+    }
+
     // Taken from Postgres `float8.out` and converted to `float4` using Postgres 15.2
     // Note that the Postgres docs say `cbrt()` is implemented only for double
     @Test
