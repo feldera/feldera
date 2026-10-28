@@ -187,6 +187,8 @@ pub enum ValidationError {
     InvalidPipelineEnv(String),
     #[error("invalid dev_tweaks: {0}")]
     InvalidDevTweaks(String),
+    #[error("unsupported storage: {0}")]
+    UnsupportedStorage(String),
 }
 
 /// Deserializes generic JSON value into [`RuntimeConfig`] and performs any additional validation.

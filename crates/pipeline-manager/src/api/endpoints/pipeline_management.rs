@@ -22,6 +22,7 @@ use crate::db::types::program::{
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
+use crate::db::types::utils::ValidationError;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::has_unstable_feature;
@@ -1129,6 +1130,7 @@ pub(crate) async fn post_pipeline(
     if let Some(deployment_config) = &body.deployment_config {
         check_unchanged_deployment_config(None, deployment_config)?;
     }
+    check_runtime_config_storage(&state, body.runtime_config.as_ref())?;
     let pipeline_descr: PipelineDescr = body.into();
     let pipeline = state
         .db
@@ -1210,6 +1212,7 @@ pub(crate) async fn put_pipeline(
         };
         check_unchanged_deployment_config(stored.as_ref(), deployment_config)?;
     }
+    check_runtime_config_storage(&state, body.runtime_config.as_ref())?;
     let pipeline_descr: PipelineDescr = body.into();
     let (is_new, pipeline) = db
         .new_or_update_pipeline(
@@ -1311,6 +1314,7 @@ pub(crate) async fn patch_pipeline(
         )
         .await;
     }
+    check_runtime_config_storage(&state, body.runtime_config.as_ref())?;
     let pipeline = state
         .db
         .lock()
@@ -1342,6 +1346,28 @@ pub(crate) async fn patch_pipeline(
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(returned_pipeline))
+}
+
+/// Refuses a `runtime_config` with storage that the runner refuses at start, so that it fails
+/// now instead of at the next start. Only new values are checked: stored ones still load.
+fn check_runtime_config_storage(
+    state: &ServerState,
+    runtime_config: Option<&serde_json::Value>,
+) -> Result<(), DBError> {
+    let Some(value) = runtime_config else {
+        return Ok(());
+    };
+    // An invalid `runtime_config` is refused later, with its own error.
+    let Ok(runtime_config) = serde_json::from_value::<RuntimeConfig>(value.clone()) else {
+        return Ok(());
+    };
+    state
+        .config
+        .check_storage(&runtime_config.resources)
+        .map_err(|error| DBError::InvalidRuntimeConfig {
+            value: value.clone(),
+            error: ValidationError::UnsupportedStorage(error),
+        })
 }
 
 /// Handles a `PATCH` of `deployment_config`, which resizes a running pipeline.
@@ -2482,6 +2508,147 @@ mod tests {
                     response["deployment_config"],
                     json!(null),
                     "{method} {uri} {body}"
+                );
+            }
+        }
+    }
+
+    /// `POST`, `PUT`, and `PATCH` refuse a `runtime_config` with storage that the runner refuses at
+    /// start. A stored `runtime_config` still loads, and other fields can still be edited.
+    #[actix_web::test]
+    async fn runtime_config_storage_requests() {
+        use crate::api::main::ServerState;
+        use crate::db::test::setup_pg;
+        use crate::db::types::tenant::TenantId;
+        use actix_web::{App, HttpMessage, test, web};
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+        use uuid::Uuid;
+
+        crate::ensure_default_crypto_provider();
+        let (db, _temp) = setup_pg().await;
+        let db = Arc::new(Mutex::new(db));
+        let pipeline = |name: &str, resources: serde_json::Value| json!({"name": name, "program_code": "", "runtime_config": {"resources": resources}});
+        let patch =
+            |resources: serde_json::Value| json!({"runtime_config": {"resources": resources}});
+        let cases = [
+            // (limits set, method, uri, body, expected status)
+            // Stored before the limits were set.
+            (
+                false,
+                "POST",
+                "/pipelines",
+                pipeline("old", json!({"storage_class": "io2"})),
+                201,
+            ),
+            (true, "GET", "/pipelines/old", json!(null), 200),
+            (
+                true,
+                "PATCH",
+                "/pipelines/old",
+                json!({"description": "d"}),
+                200,
+            ),
+            (
+                true,
+                "POST",
+                "/pipelines",
+                pipeline("p", json!({"storage_class": "gp3"})),
+                201,
+            ),
+            (
+                true,
+                "POST",
+                "/pipelines",
+                pipeline("q", json!({"storage_class": "io2"})),
+                400,
+            ),
+            (
+                true,
+                "PUT",
+                "/pipelines/p",
+                pipeline("p", json!({"volume_attributes_class": "fast"})),
+                200,
+            ),
+            (
+                true,
+                "PUT",
+                "/pipelines/p",
+                pipeline("p", json!({"volume_attributes_class": "iops-4000"})),
+                400,
+            ),
+            (
+                true,
+                "PUT",
+                "/pipelines/r",
+                pipeline("r", json!({"storage_max": "2G"})),
+                400,
+            ),
+            (
+                true,
+                "PATCH",
+                "/pipelines/p",
+                patch(json!({"storage_max": "1G"})),
+                200,
+            ),
+            (
+                true,
+                "PATCH",
+                "/pipelines/p",
+                patch(json!({"storage_max": "2G"})),
+                400,
+            ),
+            (
+                true,
+                "PATCH",
+                "/pipelines/p",
+                patch(json!({"storage_min": "1G", "storage_max": "500M"})),
+                400,
+            ),
+            (
+                true,
+                "PATCH",
+                "/pipelines/old",
+                patch(json!({"storage_class": "io2"})),
+                400,
+            ),
+        ];
+        for (limits, method, uri, body, expected_status) in cases {
+            let mut state = ServerState::test_state(db.clone()).await;
+            if limits {
+                state.config.upper_limit_storage_megabyte = Some(1000.0);
+                state.config.enable_storage_classes_allowlist = true;
+                state.config.storage_classes = vec!["gp3".to_string()];
+                state.config.enable_volume_attributes_classes_allowlist = true;
+                state.config.volume_attributes_classes = vec!["fast".to_string()];
+            }
+            let app = test::init_service(
+                App::new()
+                    .app_data(web::Data::new(state))
+                    .service(super::get_pipeline)
+                    .service(super::patch_pipeline)
+                    .service(super::put_pipeline)
+                    .service(super::post_pipeline),
+            )
+            .await;
+            let mut req = test::TestRequest::default()
+                .method(method.parse().unwrap())
+                .uri(uri);
+            if !body.is_null() {
+                req = req.set_json(&body);
+            }
+            let req = req.to_request();
+            req.extensions_mut().insert(TenantId(Uuid::nil()));
+            let resp = test::call_service(&app, req).await;
+            let status = resp.status();
+            let response: serde_json::Value = test::read_body_json(resp).await;
+            assert_eq!(status, expected_status, "{method} {uri} {body}: {response}");
+            if expected_status == 400 {
+                assert_eq!(response["error_code"], "InvalidRuntimeConfig", "{response}");
+                let message = response["message"].as_str().unwrap();
+                assert!(
+                    message.contains("unsupported storage: resources."),
+                    "{message}"
                 );
             }
         }
