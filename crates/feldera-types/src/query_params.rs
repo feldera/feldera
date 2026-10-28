@@ -93,6 +93,12 @@ pub struct CommitTransactionParams {
     #[param(value_type = Option<i64>)]
     #[schema(value_type = Option<i64>)]
     pub transaction_id: Option<crate::transaction::TransactionId>,
+
+    /// The `incarnation_uuid` that `/start_transaction` returned.  If the
+    /// pipeline restarted since then, the request fails with 400 Bad Request
+    /// and error code `IncarnationUuidMismatch`, because transaction IDs start
+    /// again after a restart.
+    pub incarnation_uuid: Option<uuid::Uuid>,
 }
 
 /// Query parameters to the `/approve` endpoint.

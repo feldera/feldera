@@ -2776,10 +2776,14 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
 
             match format {
                 OutputFormat::Text => {
+                    let response = response.into_inner();
                     println!(
                         "Transaction started successfully with ID: {}",
-                        response.into_inner().transaction_id
+                        response.transaction_id
                     );
+                    if let Some(incarnation_uuid) = response.incarnation_uuid {
+                        println!("Pipeline incarnation UUID: {incarnation_uuid}");
+                    }
                 }
                 OutputFormat::Json => {
                     println!(
@@ -2804,6 +2808,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
         PipelineAction::CommitTransaction {
             name,
             transaction_id,
+            incarnation_uuid,
             no_wait,
         } => {
             // First, get the current transaction ID from stats
@@ -2818,8 +2823,19 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     1,
                 ))
                 .unwrap();
+            let metrics = stats.into_inner().global_metrics;
+            // Transaction IDs start again when the pipeline restarts, so the
+            // commit and the wait below must stay in this incarnation.
+            let incarnation_uuid = incarnation_uuid.unwrap_or(metrics.incarnation_uuid);
+            if incarnation_uuid != metrics.incarnation_uuid {
+                eprintln!(
+                    "Pipeline restarted since the transaction started (incarnation {incarnation_uuid}, now {}), so the transaction was lost",
+                    metrics.incarnation_uuid
+                );
+                std::process::exit(1);
+            }
             let current_transaction_id = transaction_to_commit(
-                &stats.into_inner().global_metrics.transaction_initiators,
+                &metrics.transaction_initiators,
                 transaction_id.map(|id| id as i64),
             )
             .unwrap_or_else(|error| {
@@ -2833,6 +2849,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .commit_transaction()
                 .pipeline_name(name.clone())
                 .transaction_id(current_transaction_id)
+                .incarnation_uuid(incarnation_uuid)
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
@@ -2858,6 +2875,12 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         .unwrap();
 
                     let metrics = stats.into_inner().global_metrics;
+                    if metrics.incarnation_uuid != incarnation_uuid {
+                        eprintln!(
+                            "Pipeline restarted while transaction {actual_transaction_id} was committing, so the transaction might not have committed"
+                        );
+                        std::process::exit(1);
+                    }
                     if !transaction_pending(
                         metrics.transaction_id,
                         &metrics.transaction_initiators,

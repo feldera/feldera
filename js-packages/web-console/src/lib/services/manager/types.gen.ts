@@ -6425,6 +6425,12 @@ export type StartFromCheckpoint = 'latest' | string | null
  * Response to a `/start_transaction` request.
  */
 export type StartTransactionResponse = {
+  /**
+   * Pass back to `/commit_transaction` to detect pipeline restarts.
+   *
+   * Only `None` if sent by an older pipeline.
+   */
+  incarnation_uuid?: string | null
   transaction_id: number
 }
 
@@ -8330,11 +8336,22 @@ export type CommitTransactionData = {
      * API started.
      */
     transaction_id?: number | null
+    /**
+     * The `incarnation_uuid` that `/start_transaction` returned.  If the
+     * pipeline restarted since then, the request fails with 400 Bad Request
+     * and error code `IncarnationUuidMismatch`, because transaction IDs start
+     * again after a restart.
+     */
+    incarnation_uuid?: string | null
   }
   url: '/v0/pipelines/{pipeline_name}/commit_transaction'
 }
 
 export type CommitTransactionErrors = {
+  /**
+   * The given `incarnation_uuid` does not match the pipeline's current incarnation (error code `IncarnationUuidMismatch`): the pipeline process has restarted since the transaction started
+   */
+  400: ErrorResponse
   /**
    * Another transaction is already in progress, or `transaction_id` is not the transaction that the API started.
    */
