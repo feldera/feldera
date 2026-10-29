@@ -2,13 +2,10 @@ import { type BrowserContext, expect, type Page, type Request, test } from '@pla
 import { putPipeline } from '#lib/services/pipelineManager.ts'
 import {
   cleanupPipeline,
-  configureTestClient,
   startPipelineAndWaitForRunning,
   TEST_COMPILATION_PROFILE,
   waitForCompilation
 } from '#lib/services/testPipelineHelpers.ts'
-
-configureTestClient()
 
 const PIPELINE_NAME = `test-support-bundle-${Date.now()}`
 

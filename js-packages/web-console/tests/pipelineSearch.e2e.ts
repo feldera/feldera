@@ -2,12 +2,9 @@ import { expect, test } from '@playwright/test'
 import { putPipeline } from '#lib/services/pipelineManager.ts'
 import {
   cleanupPipeline,
-  configureTestClient,
   TEST_COMPILATION_PROFILE,
   waitForPipeline
 } from '#lib/services/testPipelineHelpers.ts'
-
-configureTestClient()
 
 const PREFIX = `test-search-${Date.now()}`
 const PIPELINES = [`${PREFIX}-alpha`, `${PREFIX}-beta`, `${PREFIX}-gamma`] as const

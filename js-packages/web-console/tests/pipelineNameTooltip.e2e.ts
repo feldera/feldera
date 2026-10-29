@@ -3,15 +3,12 @@ import { putPipeline } from '#lib/services/pipelineManager.ts'
 import {
   cleanupPipeline,
   clearAndDeletePipeline,
-  configureTestClient,
   killPipelineAndWaitForStopped,
   startPipelineAndWaitForRunning,
   TEST_COMPILATION_PROFILE,
   waitForCompilation,
   waitForPipeline
 } from '#lib/services/testPipelineHelpers.ts'
-
-configureTestClient()
 
 // The status chip follows `usePipelineList`, which polls every 2 s, so the DOM
 // trails the API by up to one poll plus request latency.

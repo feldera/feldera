@@ -30,9 +30,11 @@ export const TEST_COMPILATION_PROFILE: CompilationProfile = 'unoptimized'
  *
  * Reads from `FELDERA_TEST_API_ORIGIN` (shared) or `PLAYWRIGHT_API_ORIGIN`
  * (Playwright-specific), falling back to `http://localhost:8080` for a local
- * run. Under CI the fallback throws instead: there `localhost` is the runner's
+ * run. Under CI every request fails instead: there `localhost` is the runner's
  * own loopback, so falling back means testing nothing, and a suite that talks
- * to no Feldera instance passes while proving nothing (#7167).
+ * to no Feldera instance passes while proving nothing (#7167). The requests
+ * fail, not this call, so that `vitest list` and `playwright test --list` can
+ * load the test files without a Feldera instance.
  */
 export function configureTestClient() {
   // In browser tests (vitest with browser mode), `process` is undefined — fall
@@ -44,13 +46,16 @@ export function configureTestClient() {
       : ((import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {})
   const configured = env.FELDERA_TEST_API_ORIGIN ?? env.PLAYWRIGHT_API_ORIGIN
   if (!configured && env.CI) {
-    throw new Error(
+    const message =
       'No Feldera origin configured: set FELDERA_TEST_API_ORIGIN or PLAYWRIGHT_API_ORIGIN'
-    )
+    const failingFetch = () => Promise.reject(new Error(message))
+    client.setConfig({
+      fetch: Object.assign(failingFetch, { preconnect: globalThis.fetch.preconnect })
+    })
+    return
   }
   const origin = (configured ?? 'http://localhost:8080').replace(/\/$/, '')
   client.setConfig({ baseUrl: origin })
-  return origin
 }
 
 /**
