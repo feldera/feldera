@@ -15,9 +15,6 @@
   "workspaces": ["js-packages/*"],
   "overrides": {
     "@opentelemetry/core": "^2.12.0",
-    "@tailwindcss/typography": {
-      "postcss-selector-parser": "^6.1.5"
-    },
     "dompurify": "^3.4.17",
     "follow-redirects": "^1.16.2",
     "js-yaml": "^4.3.2",
