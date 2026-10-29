@@ -163,6 +163,14 @@ impl DynamicDecimal {
         Self::new(self.sig.abs(), self.exponent)
     }
 
+    /// Returns `sig * 10**-exponent`.  Drops the fractional digits past the
+    /// largest exponent.
+    fn from_wide_exponent(sig: i128, exponent: usize) -> Self {
+        let excess = exponent.saturating_sub(u8::MAX.into());
+        let sig = if excess > 38 { 0 } else { sig / pow10(excess) };
+        Self::new(sig, (exponent - excess) as u8)
+    }
+
     /// Returns `value * 10**-exponent`, or `None` if the integer part does not
     /// fit in the significand.  Drops the trailing digits of `value` that do
     /// not fit in the significand, and the fractional digits past the largest
@@ -170,9 +178,38 @@ impl DynamicDecimal {
     fn checked_from_i256(value: I256, exponent: usize) -> Option<Self> {
         let (sig, dropped) = value.reduce_to_i128();
         let exponent = exponent.checked_sub(dropped)?;
-        let excess = exponent.saturating_sub(u8::MAX.into());
-        let sig = if excess > 38 { 0 } else { sig / pow10(excess) };
-        Some(Self::new(sig, (exponent - excess) as u8))
+        Some(Self::from_wide_exponent(sig, exponent))
+    }
+
+    /// Returns `coarse + fine`, truncated toward zero, or `None` if the integer
+    /// part does not fit in the significand.  `fine` has more than 38
+    /// fractional digits more than `coarse`.
+    fn add_distant_exponents(coarse: Self, fine: Self) -> Option<Self> {
+        if coarse.sig == 0 {
+            return Some(fine);
+        }
+        // Keep the digits of `fine` down to 37 places past the last digit of
+        // `coarse`, and replace the digits past them by one digit with their
+        // sign.  The exact sum and this sum lie between the same two multiples
+        // of 10 in units of that digit, so both truncate to the same value once
+        // that digit is dropped.
+        let dropped = (fine.exponent - coarse.exponent) as usize - 37;
+        let (kept, rest) = if dropped > 38 {
+            (0, fine.sig)
+        } else {
+            (fine.sig / pow10(dropped), fine.sig % pow10(dropped))
+        };
+        let fine_sig = kept * 10 + rest.signum();
+        let sum = I256::from_product(coarse.sig, pow10(38)) + I256::from(fine_sig);
+        let (sig, dropped) = sum.reduce_to_i128();
+        // The last digit of `sum` stands for the dropped digits of `fine`
+        let (sig, dropped) = if dropped == 0 {
+            (sig / 10, 1)
+        } else {
+            (sig, dropped)
+        };
+        let exponent = (coarse.exponent as usize + 38).checked_sub(dropped)?;
+        Some(Self::from_wide_exponent(sig, exponent))
     }
 
     /// Deserializes [DynamicDecimal] into `Fixed`.  If successful, returns the
@@ -214,6 +251,10 @@ impl Add<DynamicDecimal> for DynamicDecimal {
         } else {
             (other, self)
         };
+        if fine.exponent - coarse.exponent > 38 {
+            return DynamicDecimal::add_distant_exponents(coarse, fine)
+                .unwrap_or_else(|| panic!("Overflow adding {} + {}", self, other));
+        }
         let factor = pow10((fine.exponent - coarse.exponent) as usize);
         let sum = coarse
             .sig
@@ -843,6 +884,24 @@ mod test {
         // The sum of two significands with the same exponent does not fit in an `i128`.
         let half_max = DynamicDecimal::new(i128::MAX, 1);
         assert_eq!(half_max + half_max, DynamicDecimal::new(i128::MAX / 5, 0));
+    }
+
+    #[test]
+    fn add_distant_exponents() {
+        // The exponents differ by more than 38.
+        let one = DynamicDecimal::ONE;
+        let tiny = DynamicDecimal::new(1, 200);
+        assert_eq!(one + tiny, one);
+        assert_eq!(tiny + one, one);
+        assert_eq!(DynamicDecimal::ZERO + tiny, tiny);
+        // 1 - 10**-200 truncates to 37 nines after the decimal point.
+        let nines = DynamicDecimal::new(10i128.pow(37) - 1, 37);
+        assert_eq!(one - tiny, nines);
+        assert_eq!(-one + tiny, -nines);
+        // The leading digits of 1.23 * 10**-37 are kept: 1 + 10**-37 and 1 - 2 * 10**-37.
+        let small = DynamicDecimal::new(123, 39);
+        assert_eq!(one + small, DynamicDecimal::new(10i128.pow(37) + 1, 37));
+        assert_eq!(one - small, DynamicDecimal::new(10i128.pow(37) - 2, 37));
     }
 
     #[test]
