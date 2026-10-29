@@ -193,7 +193,8 @@ pub enum TestCircuit {
     /// rows, and a view `counts` with the columns of [`count_columns`]: for each key that
     /// [`skewed_key`] maps the `id` of a row of `passthrough` to, the number of such rows. The
     /// table and the views are materialized, and each has a persistent id: `input`,
-    /// `passthrough`, and `counts`.
+    /// `passthrough`, and `counts`. Every operator that keeps state has a persistent id as
+    /// well, so that the circuit can be checkpointed.
     Aggregate {
         /// The columns of the table and of `passthrough`, which include `id BIGINT NOT NULL`.
         relation: Relation,

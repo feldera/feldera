@@ -783,15 +783,18 @@ impl CircuitFactory for AggregateCircuit {
                 hinput,
                 &schema("test_input1", fields.clone()),
             );
-            let view = input.map(|row| row.clone());
+            let view = input
+                .map(|row| row.clone())
+                .set_persistent_id(Some("passthrough_map"));
             catalog.register_materialized_output_zset_persistent::<
                 OrdZSet<records::Basic>,
                 records::Basic,
             >(Some("passthrough"), view.clone(), &schema("passthrough", fields));
             let counts = view
                 .map_index(move |row| (skewed_key(row.id, n_keys), ()))
-                .weighted_count()
-                .map(|(key, n)| records::Count { key: *key, n: *n });
+                .weighted_count_persistent(Some("weighted_count"))
+                .map(|(key, n)| records::Count { key: *key, n: *n })
+                .set_persistent_id(Some("counts_map"));
             catalog.register_materialized_output_zset_persistent::<
                 OrdZSet<records::Count>,
                 records::Count,
