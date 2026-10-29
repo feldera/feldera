@@ -1464,3 +1464,140 @@ pub(super) fn expected_zset(relation: &Relation, rows: &[Value]) -> ZSet {
         .zset()
         .unwrap()
 }
+
+/// Tables written by `crates/iceberg/src/test/create_v3_tables.py`.
+#[derive(serde::Deserialize)]
+struct SparkTables {
+    v3: SparkTable,
+    v2: SparkTable,
+}
+
+#[derive(serde::Deserialize)]
+struct SparkTable {
+    table: String,
+    start_snapshot_id: i64,
+    #[serde(default)]
+    end_snapshot_id: i64,
+    /// Rows a follow from `start_snapshot_id` reads, from snapshot summaries.
+    #[serde(default)]
+    follow_records: u64,
+    /// `(id, name)` of every row in the final table.
+    #[serde(default)]
+    rows: Vec<(i64, String)>,
+}
+
+/// Build the Spark tables once per test run. Needs `uv` and a JDK.
+fn spark_tables() -> &'static SparkTables {
+    static TABLES: std::sync::OnceLock<SparkTables> = std::sync::OnceLock::new();
+    TABLES.get_or_init(|| {
+        let script = "../iceberg/src/test/create_v3_tables.py";
+        let namespace = env_or("FELDERA_ICEBERG_NAMESPACE", "follow_ns");
+        // Jar downloads from Maven Central fail now and then; retry like the
+        // Delta Spark fixtures.
+        let mut attempt = 1;
+        let output = loop {
+            let output = std::process::Command::new("uv")
+                .args(["run", "--no-project", "--with", "pyspark==4.0.1", "python"])
+                .arg(script)
+                .arg(format!("--namespace={namespace}"))
+                .output()
+                .unwrap_or_else(|e| panic!("failed to run '{script}' (is `uv` on PATH?): {e}"));
+            if output.status.success() || attempt == 3 {
+                break output;
+            }
+            eprintln!(
+                "'{script}' failed (attempt {attempt}/3), retrying:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            std::thread::sleep(std::time::Duration::from_secs(5 * attempt));
+            attempt += 1;
+        };
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "'{script}' failed (status {}):\nstdout: {stdout}\nstderr: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr),
+        );
+        let last = stdout.trim().lines().last().unwrap_or_default();
+        serde_json::from_str(last)
+            .unwrap_or_else(|e| panic!("'{script}' printed unexpected output {last:?}: {e}"))
+    })
+}
+
+/// The zset of `table`'s final rows.
+fn spark_table_zset(table: &SparkTable) -> ZSet {
+    let rows: Vec<Value> = table
+        .rows
+        .iter()
+        .map(|(id, name)| json!({"id": id, "name": name, "created_at": "2024-01-01 00:00:00"}))
+        .collect();
+    expected_zset(&s3tables_relation(), &rows)
+}
+
+/// Follow a V3 table through merge-on-read changes, a copy-on-write DELETE and
+/// a compaction. Checks the final rows, and that only changed rows are read.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
+pub fn rest_follow_v3_reads_only_changed_rows(engine: &dyn PipelineTestEngine) {
+    let v3 = &spark_tables().v3;
+    let mut config = rest_follow_config_with(
+        &v3.table,
+        "snapshot_and_follow",
+        "snapshot_id",
+        json!(v3.start_snapshot_id),
+    );
+    config["end_snapshot_id"] = json!(v3.end_snapshot_id);
+
+    let json_file = NamedTempFile::new().unwrap();
+    let (pipeline, err_receiver) = iceberg_input_pipeline(
+        engine,
+        &s3tables_relation(),
+        &[],
+        config,
+        &json_file.path().display().to_string(),
+    );
+    pipeline.start();
+    wait(
+        || pipeline.status().pipeline_complete() || !err_receiver.is_empty(),
+        120_000,
+    )
+    .expect("timed out following the table");
+    assert!(err_receiver.is_empty(), "{:?}", err_receiver.try_recv());
+
+    assert_eq!(
+        iceberg_metric(&pipeline, "input_connector_iceberg_follow_records_total") as u64,
+        v3.follow_records
+    );
+    assert_eq!(
+        output_zset(&s3tables_relation(), json_file.path()),
+        spark_table_zset(v3)
+    );
+    pipeline.stop().unwrap();
+}
+
+/// Follow mode rejects a table that still has a V2 delete file, even when a
+/// change does not touch the file it applies to.
+#[engine_test(cfg(feature = "iceberg-tests-follow"), services(S3))]
+pub fn rest_follow_rejects_v2_delete_files(engine: &dyn PipelineTestEngine) {
+    let v2 = &spark_tables().v2;
+    let json_file = NamedTempFile::new().unwrap();
+    let (pipeline, err_receiver) = iceberg_input_pipeline(
+        engine,
+        &s3tables_relation(),
+        &[],
+        rest_follow_config_with(
+            &v2.table,
+            "follow",
+            "snapshot_id",
+            json!(v2.start_snapshot_id),
+        ),
+        &json_file.path().display().to_string(),
+    );
+    pipeline.start();
+
+    let error = err_receiver
+        .recv_timeout(std::time::Duration::from_secs(120))
+        .expect("the connector should reject the V2 delete file");
+    assert!(error.contains("has a V2 position delete file"), "{error}");
+    pipeline.stop().unwrap();
+}
