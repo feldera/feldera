@@ -16,25 +16,25 @@ const { PLATFORM_VERSION } = vi.hoisted(() => ({ PLATFORM_VERSION: '1.0.0' }))
 const {
   addToBundleHistory,
   getSuitableProfiles,
+  goto,
   isBundlePickerSupported,
   markBundleOpenedNow,
   pickSupportBundle,
   processProfileFiles,
   readArchive,
   receiveUploadedBundle,
-  replaceState,
   requestPermission,
   resolveStoredBundle
 } = vi.hoisted(() => ({
   addToBundleHistory: vi.fn(),
   getSuitableProfiles: vi.fn(),
+  goto: vi.fn(),
   isBundlePickerSupported: vi.fn(() => true),
   markBundleOpenedNow: vi.fn(),
   pickSupportBundle: vi.fn(),
   processProfileFiles: vi.fn(),
   readArchive: vi.fn(),
   receiveUploadedBundle: vi.fn(),
-  replaceState: vi.fn(),
   requestPermission: vi.fn(),
   resolveStoredBundle: vi.fn()
 }))
@@ -67,9 +67,8 @@ vi.mock('virtual:feldera-triage-plugins', () => ({
   }
 }))
 vi.mock('$app/navigation', () => ({
-  replaceState,
-  goto: vi.fn(),
-  invalidateAll: vi.fn(),
+  goto,
+  refreshAll: vi.fn(),
   preloadCode: vi.fn(() => Promise.resolve())
 }))
 vi.mock('$app/state', () => ({
@@ -284,7 +283,7 @@ describe('profile viewer — uploaded bundles', () => {
     await new Promise((resolve) => setTimeout(resolve))
     expect(addToBundleHistory).not.toHaveBeenCalled()
     expect(processProfileFiles).not.toHaveBeenCalled()
-    expect(replaceState).not.toHaveBeenCalled()
+    expect(goto).not.toHaveBeenCalled()
   })
 
   it('asks for access when the browser dropped the read permission', async () => {
@@ -347,7 +346,10 @@ describe('profile viewer — uploaded bundles', () => {
     await expect.poll(() => processProfileFiles.mock.calls.length).toBe(1)
     // Picking a file remembers it in the history, and the URL then names that entry.
     expect(addToBundleHistory).toHaveBeenCalledWith(handle)
-    expect(replaceState).toHaveBeenCalledWith('/profile-viewer?source=upload&bundle=42', {})
+    expect(goto).toHaveBeenCalledWith('/profile-viewer?source=upload&bundle=42', {
+      shallow: true,
+      replace: true
+    })
   })
 
   it('remembers a bundle from the file input by keeping a copy of it', async () => {
@@ -370,7 +372,10 @@ describe('profile viewer — uploaded bundles', () => {
     expect(addToBundleHistory).toHaveBeenCalledOnce()
     expect(addToBundleHistory.mock.calls[0][0]).toBeInstanceOf(File)
     expect(pickSupportBundle).not.toHaveBeenCalled()
-    expect(replaceState).toHaveBeenCalledWith('/profile-viewer?source=upload&bundle=11', {})
+    expect(goto).toHaveBeenCalledWith('/profile-viewer?source=upload&bundle=11', {
+      shallow: true,
+      replace: true
+    })
   })
 
   it('keeps the URL unchanged when the history does not store the bundle', async () => {
@@ -387,6 +392,6 @@ describe('profile viewer — uploaded bundles', () => {
     // The bundle still opens, but nothing can open it a second time, so the URL names
     // no history entry.
     await expect.poll(() => processProfileFiles.mock.calls.length).toBe(1)
-    expect(replaceState).not.toHaveBeenCalled()
+    expect(goto).not.toHaveBeenCalled()
   })
 })

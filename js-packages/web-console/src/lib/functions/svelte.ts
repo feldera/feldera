@@ -4,6 +4,13 @@
 // Playwright's global setup, via testPipelineHelpers.ts, pipelineManager.ts
 // and auth.ts — so the import is dynamic and gated behind a browser check,
 // letting those non-browser callers skip it instead of failing to resolve it.
-const { base } = 'window' in globalThis ? await import('$app/paths') : { base: '' }
+// SvelteKit 3 no longer exports `base`. Resolving the home page's route ID gives
+// the base followed by `/`.
+export const base =
+  'window' in globalThis
+    ? (await import('$app/paths'))
+        .resolve('/(system)/(authenticated)/(authorized)/(shell)')
+        .slice(0, -1)
+    : ''
 
 export const resolve = (path: string) => `${base}${path}`

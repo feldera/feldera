@@ -22,7 +22,7 @@ const state = vi.hoisted(() => ({
   data: {} as Record<string, unknown>
 }))
 vi.mock('$app/state', () => ({ page: state }))
-vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }))
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), refreshAll: vi.fn() }))
 vi.mock('#lib/compositions/switchTenant.ts', () => ({ switchTenant: vi.fn() }))
 // Dialog bodies the menu can open; they fetch on import.
 vi.mock('#lib/components/other/ApiKeyMenu.svelte', () => ({ default: () => {} }))

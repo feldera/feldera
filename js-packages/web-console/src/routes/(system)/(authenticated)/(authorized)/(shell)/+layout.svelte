@@ -2,7 +2,7 @@
   import { closedIntervalAction } from 'common-lib/promise'
   import { OverlayDrawer } from 'common-ui'
   import Dayjs from 'dayjs'
-  import { invalidateAll } from '$app/navigation'
+  import { refreshAll } from '$app/navigation'
   import { page } from '$app/state'
   import SvelteKitTopLoader from '#lib/components/common/SvelteKitTopLoader.svelte'
   import LineBanner, { BannerButton } from '#lib/components/layout/LineBanner.svelte'
@@ -58,7 +58,7 @@
   // Check for backend version changes every 10 seconds, starting 10 seconds
   // after layout load (first tick is delayed by `periodMs`).
   // Calls `fetchConfigs()` to both get the latest config and update the cache,
-  // otherwise `invalidateAll()` would re-render the root layout from a stale cache
+  // otherwise `refreshAll()` would re-render the root layout from a stale cache
   // and trigger the version mismatch in a loop.
   let dismissTimeout: ReturnType<typeof setTimeout> | undefined
   $effect.pre(() =>
@@ -72,7 +72,7 @@
         const currentRevision = data.feldera!.revision
         if (config && (config.version !== currentVersion || config.revision !== currentRevision)) {
           // Automatically refresh the page data to get the new backend version
-          await invalidateAll()
+          await refreshAll()
 
           // Show a notification that the backend was updated
           const msgId = `backend_version_changed`

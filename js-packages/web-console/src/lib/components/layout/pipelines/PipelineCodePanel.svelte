@@ -287,7 +287,7 @@ example = "1.0"`,
    * 1. Simple: "line:column"
    * 2. Range(s): "startLine:startColumn-endLine:endColumn,startLine2:startColumn2-endLine2:endColumn2"
    */
-  function parseSourcePosition(url: URL):
+  function parseSourcePosition(url: { hash: string }):
     | {
         fileName: string
         selection:

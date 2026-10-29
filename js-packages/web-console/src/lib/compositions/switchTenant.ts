@@ -5,7 +5,7 @@ import { setSelectedTenant } from '#lib/services/auth.ts'
 /**
  * Persist the tenant selection (by tenant id) and restart the app.
  *
- * A full page load rather than `invalidateAll()`: layout components persist
+ * A full page load rather than `refreshAll()`: layout components persist
  * across invalidation, so module state and pollers initialized for the old
  * tenant would carry over. A fresh page start re-fetches /config/session under
  * the new `Feldera-Tenant` header from a clean slate.
