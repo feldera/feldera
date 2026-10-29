@@ -50,7 +50,7 @@ use clap::Parser;
 use colored::Colorize;
 use feldera_adapterlib::PipelineState;
 use feldera_adapterlib::errors::controller::ConfigError;
-use feldera_mtls::{Caller, PipelineClientAuth};
+use feldera_mtls::{Caller, PipelineClientAuth, PipelinePeerTls};
 use feldera_observability as observability;
 use feldera_observability::json_logging::init_pipeline_logging_with_id;
 use feldera_types::adapter_stats::{
@@ -951,7 +951,10 @@ pub fn run_server(
 
         // Initiate creating the controller so that we can get access to storage,
         // which is needed to determine the initial state.
-        let builder = ControllerBuilder::new(config, &open_storage)?;
+        let builder = ControllerBuilder::new(config, &open_storage)?.with_exchange_tls(
+            args.require_client_certificates
+                .then(|| pipeline_peer_tls(args)),
+        );
         info!(
             "Pipeline deployment identifier from arguments: {}",
             args.deployment_id
@@ -1701,6 +1704,33 @@ fn pipeline_client_auth(args: &ServerArgs) -> PipelineClientAuth {
         .collect();
     PipelineClientAuth::from_chain(&chain, &args.extra_client_certificate_uris)
         .unwrap_or_else(|e| panic!("client certificates with '{path}': {e}"))
+}
+
+/// Loads the TLS configurations for exchange with the other hosts from the pipeline
+/// certificate and key.
+fn pipeline_peer_tls(args: &ServerArgs) -> PipelinePeerTls {
+    assert!(
+        args.enable_https,
+        "FELDERA_REQUIRE_CLIENT_CERTIFICATES requires --enable-https"
+    );
+    let cert_path = args
+        .https_tls_cert_path
+        .as_ref()
+        .expect("CLI argument --https-tls-cert-path is required");
+    let key_path = args
+        .https_tls_key_path
+        .as_ref()
+        .expect("CLI argument --https-tls-key-path is required");
+    let chain = CertificateDer::pem_file_iter(cert_path)
+        .expect("HTTPS TLS certificate should be read")
+        .flatten()
+        .collect();
+    let key = PrivateKeyDer::from_pem_file(key_path).expect("HTTPS TLS key should be read");
+    let tls = PipelinePeerTls::from_chain(chain, key)
+        .unwrap_or_else(|e| panic!("exchange TLS with '{cert_path}': {e}"));
+    observability::fips::log_rustls_fips_status("exchange TLS server config", tls.server.fips());
+    observability::fips::log_rustls_fips_status("exchange TLS client config", tls.client.fips());
+    tls
 }
 
 /// Refuses requests from callers other than the control plane, this pipeline and the listed

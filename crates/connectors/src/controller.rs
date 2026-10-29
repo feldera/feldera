@@ -69,6 +69,7 @@ use feldera_adapterlib::transport::{
 };
 use feldera_adapterlib::utils::datafusion::{create_runtime_env, create_session_context};
 use feldera_ir::LirCircuit;
+use feldera_mtls::PipelinePeerTls;
 use feldera_observability::system::process_rss_bytes;
 use feldera_samply::{AnnotationOptions, CaptureOptions, Span};
 use feldera_storage::disk::DiskUsage;
@@ -267,6 +268,9 @@ pub struct ControllerBuilder {
 
     /// The pipeline's storage, if it has any.
     storage: Option<Arc<dyn PipelineStorage>>,
+
+    /// TLS for exchange with the other hosts of a multihost pipeline, if any.
+    exchange_tls: Option<PipelinePeerTls>,
 }
 
 /// Controller creation is a three-step process:
@@ -317,6 +321,7 @@ impl ControllerBuilder {
             input_choices: BTreeMap::new(),
             output_assignment: BTreeMap::new(),
             storage,
+            exchange_tls: None,
         })
     }
 
@@ -433,6 +438,14 @@ impl ControllerBuilder {
         }
     }
 
+    /// Sets TLS for exchange with the other hosts of a multihost pipeline.
+    pub(crate) fn with_exchange_tls(self, exchange_tls: Option<PipelinePeerTls>) -> Self {
+        Self {
+            exchange_tls,
+            ..self
+        }
+    }
+
     /// Creates a [ControllerInit] that will open the specific
     /// `checkpoint_uuid`.
     pub(crate) fn open_checkpoint(
@@ -441,26 +454,24 @@ impl ControllerBuilder {
     ) -> Result<ControllerInit, ControllerError> {
         self.take_bucket_ownership()?;
         ControllerInit::with_checkpoint(
-            self.layout,
+            self.layout.clone(),
             self.config.clone(),
             self.storage.clone().unwrap(),
             checkpoint_uuid,
         )
-        .map(|init| {
-            init.with_input_distribution(self.input_distribution, self.input_choices)
-                .with_output_assignment(self.output_assignment)
-        })
+        .map(|init| self.finish(init))
     }
 
     /// Creates a [ControllerInit] that will start fresh without using a
     /// checkpoint.
     pub(crate) fn open_without_checkpoint(self) -> Result<ControllerInit, ControllerError> {
         self.take_bucket_ownership()?;
-        ControllerInit::without_checkpoint(self.layout, self.config.clone(), self.storage.clone())
-            .map(|init| {
-                init.with_input_distribution(self.input_distribution, self.input_choices)
-                    .with_output_assignment(self.output_assignment)
-            })
+        ControllerInit::without_checkpoint(
+            self.layout.clone(),
+            self.config.clone(),
+            self.storage.clone(),
+        )
+        .map(|init| self.finish(init))
     }
 
     /// Creates a [ControllerInit] that will start from the latest checkpoint,
@@ -468,14 +479,19 @@ impl ControllerBuilder {
     pub(crate) fn open_latest_checkpoint(self) -> Result<ControllerInit, ControllerError> {
         self.take_bucket_ownership()?;
         ControllerInit::with_latest_checkpoint(
-            self.layout,
+            self.layout.clone(),
             self.config.clone(),
             self.storage.clone(),
         )
-        .map(|init| {
-            init.with_input_distribution(self.input_distribution, self.input_choices)
-                .with_output_assignment(self.output_assignment)
-        })
+        .map(|init| self.finish(init))
+    }
+
+    /// Passes the settings of this builder that `init` does not have yet to
+    /// `init`.  Every `open_*` method calls this, so that they cannot differ.
+    fn finish(self, init: ControllerInit) -> ControllerInit {
+        init.with_input_distribution(self.input_distribution, self.input_choices)
+            .with_output_assignment(self.output_assignment)
+            .with_exchange_tls(self.exchange_tls)
     }
 
     pub(crate) fn storage(&self) -> Option<Arc<dyn PipelineStorage>> {
@@ -6493,12 +6509,19 @@ impl ControllerInit {
             reserved_memory_bytes: datafusion_memory.map_or(0, ConfigSize::as_bytes),
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
             dev_tweaks,
+            exchange_tls: None,
         })
     }
 
     /// Sets the host that writes each output relation of a multihost pipeline.
     fn with_output_assignment(mut self, output_assignment: BTreeMap<String, usize>) -> Self {
         self.circuit_params.output_assignment = output_assignment;
+        self
+    }
+
+    /// Sets TLS for exchange with the other hosts of a multihost pipeline.
+    fn with_exchange_tls(mut self, exchange_tls: Option<PipelinePeerTls>) -> Self {
+        self.circuit_params.exchange_tls = exchange_tls;
         self
     }
 
@@ -10853,7 +10876,7 @@ impl CheckpointThread {
 
 #[cfg(test)]
 mod controller_init_tests {
-    use super::ControllerInit;
+    use super::{ControllerBuilder, ControllerInit};
     use crate::ControllerError;
     use feldera_adapterlib::errors::controller::ConfigError;
     use feldera_types::config::{DevTweaks, InputEndpointConfig, PipelineConfig, RuntimeConfig};
@@ -10873,6 +10896,59 @@ mod controller_init_tests {
             inputs: Default::default(),
             outputs: Default::default(),
             program_ir: None,
+        }
+    }
+
+    /// Exchange TLS for a pipeline, from a new CA.
+    fn peer_tls() -> feldera_mtls::PipelinePeerTls {
+        use rcgen::{
+            BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair,
+            SanType,
+        };
+        use rustls::pki_types::PrivatePkcs8KeyDer;
+
+        let ca_key = KeyPair::generate().unwrap();
+        let mut ca_params = CertificateParams::default();
+        ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+        let issuer = Issuer::new(ca_params, ca_key);
+
+        let key = KeyPair::generate().unwrap();
+        let mut params = CertificateParams::default();
+        let uri = feldera_mtls::pipeline_certificate_uri(uuid::Uuid::from_u128(1));
+        params.subject_alt_names = vec![SanType::URI(uri.as_str().try_into().unwrap())];
+        params.extended_key_usages = vec![
+            ExtendedKeyUsagePurpose::ServerAuth,
+            ExtendedKeyUsagePurpose::ClientAuth,
+        ];
+        let leaf = params.signed_by(&key, &issuer).unwrap();
+        feldera_mtls::PipelinePeerTls::from_chain(
+            vec![leaf.der().clone(), ca_cert.der().clone()],
+            PrivatePkcs8KeyDer::from(key.serialize_der()).into(),
+        )
+        .unwrap()
+    }
+
+    /// Opening a controller passes the builder's exchange TLS on to the
+    /// circuit.  Opening from a given checkpoint needs storage, but it shares
+    /// `ControllerBuilder::finish` with these.
+    #[test]
+    fn open_passes_exchange_tls() {
+        let open_storage: crate::engine::OpenStorageFn = std::sync::Arc::new(|_| Ok(None));
+        let config = pipeline_config(RuntimeConfig {
+            workers: 1,
+            ..Default::default()
+        });
+        let opens: [fn(ControllerBuilder) -> Result<ControllerInit, ControllerError>; 2] = [
+            ControllerBuilder::open_without_checkpoint,
+            ControllerBuilder::open_latest_checkpoint,
+        ];
+        for open in opens {
+            let builder = ControllerBuilder::new(&config, &open_storage)
+                .unwrap()
+                .with_exchange_tls(Some(peer_tls()));
+            let init = open(builder).unwrap();
+            assert!(init.circuit_params.exchange_tls.is_some());
         }
     }
 

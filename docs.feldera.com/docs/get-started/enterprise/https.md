@@ -252,6 +252,12 @@ Clients that reach a pipeline directly, instead of through the API server,
 are refused, except [external clients](#external-clients).  Pipelines on an older runtime version (`runtime_version`) do
 not check client certificates.
 
+The hosts of a multihost pipeline also use TLS to exchange data with each
+other.  Each host presents its pipeline certificate and admits only a host
+whose certificate names the same pipeline.  To exchange data in plaintext,
+set `dev_tweaks.tls_exchange` to `false` in the pipeline's runtime
+configuration.
+
 The servers trust only the private CA, the first certificate in `tls.crt` of
 the `caSecretRef` secret.  They refuse certificates from the root or from other
 CAs under the same root, so the root may also sign certificates for other uses.
