@@ -132,8 +132,12 @@ mod test {
     use crate::config::PipelineConfig;
     use serde_json::json;
 
+    /// Sorted, because the order follows `serde_json::Map`, which keeps
+    /// input order only with the `preserve_order` feature.
     fn ignored(input: serde_json::Value) -> Vec<String> {
-        ignored_settings::<PipelineConfig>(&input)
+        let mut settings = ignored_settings::<PipelineConfig>(&input);
+        settings.sort();
+        settings
     }
 
     #[test]
