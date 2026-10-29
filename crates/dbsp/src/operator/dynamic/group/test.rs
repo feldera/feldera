@@ -572,6 +572,12 @@ fn test_topk_custom_ord() {
             (1, Tup3("foo".to_string(), 7, 96), 1),
             (1, Tup3("baz".to_string(), 8, 96), 1),
         ],
+        // A row of weight 2 leads the second peer group. Four rows precede
+        // the group, so it ranks 5 and stays in the output.
+        vec![
+            (1, Tup3("foo".to_string(), 7, 96), 2),
+            (1, Tup3("bar".to_string(), 8, 96), 1),
+        ],
     ];
     let mut expected_output = vec![indexed_zset! {
         1 => {Tup3("foo".to_string(), 8, 98) => 1, Tup3("foo".to_string(), 8, 97) => 1, Tup3("foo".to_string(), 9, 99) => 1, Tup3("foo".to_string(), 9, 98) => 1, Tup3("foo".to_string(), 10, 100) => 1},
@@ -593,6 +599,9 @@ fn test_topk_custom_ord() {
     },
     indexed_zset! {
         1 => {Tup3("foo".to_string(), 7, 96) => 2, Tup3("bar".to_string(), 8, 96) => 1, Tup3("baz".to_string(), 8, 96) => 2, Tup3("buzz".to_string(), 8, 96) => 1, Tup3("foo".to_string(), 8, 96) => 1},
+    },
+    indexed_zset! {
+        1 => {Tup3("foo".to_string(), 7, 96) => 4, Tup3("bar".to_string(), 8, 96) => 2, Tup3("baz".to_string(), 8, 96) => 2, Tup3("buzz".to_string(), 8, 96) => 1, Tup3("foo".to_string(), 8, 96) => 1},
     }]
     .into_iter();
 
@@ -616,6 +625,9 @@ fn test_topk_custom_ord() {
     },
     indexed_zset! {
         1 => {Tup4(1, "foo".to_string(), 7, 96) => 2, Tup4(3, "bar".to_string(), 8, 96) => 1, Tup4(3, "baz".to_string(), 8, 96) => 2, Tup4(3, "buzz".to_string(), 8, 96) => 1, Tup4(3, "foo".to_string(), 8, 96) => 1, Tup4(3, "foobar".to_string(), 8, 96) => 1, Tup4(3, "fubar".to_string(), 8, 96) => 1},
+    },
+    indexed_zset! {
+        1 => {Tup4(1, "foo".to_string(), 7, 96) => 4, Tup4(5, "bar".to_string(), 8, 96) => 2, Tup4(5, "baz".to_string(), 8, 96) => 2, Tup4(5, "buzz".to_string(), 8, 96) => 1, Tup4(5, "foo".to_string(), 8, 96) => 1, Tup4(5, "foobar".to_string(), 8, 96) => 1, Tup4(5, "fubar".to_string(), 8, 96) => 1},
     }]
     .into_iter();
 
@@ -639,6 +651,9 @@ fn test_topk_custom_ord() {
     },
     indexed_zset! {
         1 => {Tup4(1, "foo".to_string(), 7, 96) => 2, Tup4(2, "bar".to_string(), 8, 96) => 1, Tup4(2, "baz".to_string(), 8, 96) => 2, Tup4(2, "buzz".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 96) => 1, Tup4(2, "foobar".to_string(), 8, 96) => 1, Tup4(2, "fubar".to_string(), 8, 96) => 1, Tup4(3, "foo".to_string(), 8, 95) => 1, Tup4(4, "foo".to_string(), 9, 97) => 1, Tup4(5, "foo".to_string(), 9, 96) => 1},
+    },
+    indexed_zset! {
+        1 => {Tup4(1, "foo".to_string(), 7, 96) => 4, Tup4(2, "bar".to_string(), 8, 96) => 2, Tup4(2, "baz".to_string(), 8, 96) => 2, Tup4(2, "buzz".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 96) => 1, Tup4(2, "foobar".to_string(), 8, 96) => 1, Tup4(2, "fubar".to_string(), 8, 96) => 1, Tup4(3, "foo".to_string(), 8, 95) => 1, Tup4(4, "foo".to_string(), 9, 97) => 1, Tup4(5, "foo".to_string(), 9, 96) => 1},
     }]
     .into_iter();
 
@@ -662,6 +677,9 @@ fn test_topk_custom_ord() {
     },
     indexed_zset! {
         1 => {Tup4(1, "foo".to_string(), 7, 96) => 1, Tup4(2, "foo".to_string(), 7, 96) => 1, Tup4(3, "bar".to_string(), 8, 96) => 1, Tup4(4, "baz".to_string(), 8, 96) => 1, Tup4(5, "baz".to_string(), 8, 96) => 1},
+    },
+    indexed_zset! {
+        1 => {Tup4(1, "foo".to_string(), 7, 96) => 1, Tup4(2, "foo".to_string(), 7, 96) => 1, Tup4(3, "foo".to_string(), 7, 96) => 1, Tup4(4, "foo".to_string(), 7, 96) => 1, Tup4(5, "bar".to_string(), 8, 96) => 1},
     }]
     .into_iter();
 

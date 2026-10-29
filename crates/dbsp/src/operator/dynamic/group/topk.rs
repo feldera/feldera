@@ -528,6 +528,8 @@ where
         C: ZCursor<I, DynUnit, ()>,
         CB: FnMut(&mut OV, &mut DynZWeight),
     {
+        // Number of rows before the current one; a row of weight `w` counts
+        // as `w` rows.
         let mut count = 0i64;
 
         let mut output_val = self.output_factory.default_box();
@@ -539,23 +541,23 @@ where
             debug_assert!(w != 0);
 
             if w > 0 {
-                count += w;
                 let key = cursor.key();
                 if let Some(prev_key) = &prev_key
                     && !(self.rank_eq_func)(key, prev_key.as_ref())
                 {
                     // Rank stays the same while iterating over equal-ranked elements,
                     // and then increases by one when computing dense ranking or skips
-                    // to `count` otherwise.
+                    // to `count + 1` otherwise.
                     if self.dense {
                         rank += 1;
                     } else {
-                        rank = count;
+                        rank = count + 1;
                     }
                     if rank as usize > self.k {
                         break;
                     }
                 };
+                count += w;
 
                 (self.output_func)(rank, key, &mut output_val);
                 output_cb(&mut output_val, w.erase_mut());
