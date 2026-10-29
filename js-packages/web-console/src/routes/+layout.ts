@@ -26,7 +26,7 @@ import {
   triggerOidcLogin
 } from '#lib/services/auth.ts'
 import { initConceptualHq } from '#lib/services/conceptualHq.ts'
-import { setInvalidateAll } from '#lib/services/invalidateAll.ts'
+import { setRefreshAll } from '#lib/services/refreshAll.ts'
 import { client } from '#lib/services/manager/client.gen.ts'
 import type { Configuration, SessionInfo } from '#lib/services/manager/index.ts'
 import { initPosthog } from '#lib/services/posthog.ts'
@@ -34,7 +34,7 @@ import { initProductFruits } from '#lib/services/productFruits.ts'
 import { type Permission, permissionsOf, roleOf, type SessionRole } from '#lib/services/rbac.ts'
 import { takeRedirectTarget } from '#lib/services/redirectTarget.ts'
 import type { AuthDetails, TenantMembership } from '#lib/types/auth.ts'
-import { goto, invalidateAll } from '$app/navigation'
+import { goto, refreshAll } from '$app/navigation'
 import type { LayoutLoad } from './$types'
 
 Dayjs.extend(duration)
@@ -65,7 +65,7 @@ export const trailingSlash = 'always'
  *      background. It fetches `/config` and `/config/session`, syncs server
  *      time, and compares the fresh payload against what was rendered.
  *   4. Configs match (the expected outcome on most visits)  →  the background
- *      fetch silently finishes. No `invalidateAll()`, no re-running of
+ *      fetch silently finishes. No `refreshAll()`, no re-running of
  *      descendant `load` functions, no duplicate page-level fetches.
  *
  * Divergent paths:
@@ -75,7 +75,7 @@ export const trailingSlash = 'always'
  *     the fresh payload. No background update is scheduled because there is
  *     nothing to reconcile.
  *   - Config actually changed server-side: `configChanged()` / `equal()`
- *     detect the diff and `lazyUpdateConfig()` calls `invalidateAll()`. Every
+ *     detect the diff and `lazyUpdateConfig()` calls `refreshAll()`. Every
  *     descendant `load` (including leaf `+page.ts` files) re-runs so views
  *     pick up the new values. The `lazyUpdateScheduled` guard ensures this
  *     does not re-enter `lazyUpdateConfig()`.
@@ -91,7 +91,7 @@ export const trailingSlash = 'always'
  *
  * The warm-cache short-circuit is what keeps repeat visits from
  * double-fetching page-level resources, so be careful when adding new
- * branches that call `invalidateAll()` unconditionally.
+ * branches that call `refreshAll()` unconditionally.
  */
 
 export type LayoutData = {
@@ -176,7 +176,7 @@ const syncServerTimeFromConfig = (config: Configuration) => {
 
 /**
  * Resolves once the SvelteKit client router has initialized (first
- * `afterNavigate` fires from the root layout). Guards `invalidateAll()` in
+ * `afterNavigate` fires from the root layout). Guards `refreshAll()` in
  * `lazyUpdateConfig`, which would otherwise throw when the background fetch
  * resolves before the initial navigation completes.
  */
@@ -192,7 +192,7 @@ let lazyUpdateScheduled = false
  * Delay before the warm-cache reconcile fires. Yields the origin's connection
  * pool and backend capacity to the page's critical path on slow links (e.g.
  * corporate VPN). The reconcile has no UI dependency on the warm-cache path,
- * so landing ~3s later only delays a rarely-needed `invalidateAll()` and re-initialization.
+ * so landing ~3s later only delays a rarely-needed `refreshAll()` and re-initialization.
  */
 const LAZY_UPDATE_DELAY_MS = 2000
 
@@ -208,19 +208,19 @@ const OPTIMISTIC_CONFIG_CACHE = true
 /**
  * Fetch fresh config, update the cache, and sync server time. If the server
  * config actually changed compared to what we rendered from cache, trigger
- * `invalidateAll()` so consumers of `page.data` pick up the new values.
+ * `refreshAll()` so consumers of `page.data` pick up the new values.
  *
  * Server time is always synced — even when config is unchanged — because the
  * cached timestamp is stale by definition and we need a live one.
  *
- * The identity check avoids a needless `invalidateAll()` on every navigation
- * that hits a warm cache: `invalidateAll()` cascades into every descendant
+ * The identity check avoids a needless `refreshAll()` on every navigation
+ * that hits a warm cache: `refreshAll()` cascades into every descendant
  * `load` function (root layout, group layouts, leaf `+page.ts`), so on a
  * page like `/pipelines/[pipelineName]` a blind re-invalidation turns every
  * initial load into a duplicate fetch of the page's resources.
  *
  * The module-level `lazyUpdateScheduled` guard, combined with `initAuth`'s
- * own promise memoization, ensures the `invalidateAll()` re-run (when it
+ * own promise memoization, ensures the `refreshAll()` re-run (when it
  * does fire) does not re-enter this path.
  */
 const lazyUpdateConfig = async (auth: AuthDetails) => {
@@ -243,14 +243,14 @@ const lazyUpdateConfig = async (auth: AuthDetails) => {
   // `config` may be undefined here: the session stopped resolving an acting
   // tenant mid-session (e.g. this user was removed from the selected tenant).
   // `configChanged` then reports a diff against the rendered cache, and the
-  // `invalidateAll()` re-runs `load()`, which lands in the unresolved-tenant
+  // `refreshAll()` re-runs `load()`, which lands in the unresolved-tenant
   // branch, from where the `(authorized)` gate redirects to `/select-tenant`.
   if (!configChanged(prevConfig, result.config) && equal(prevSessionConfig, result.sessionConfig)) {
     return
   }
 
   await routerReady
-  await invalidateAll()
+  await refreshAll()
 }
 
 type AuthInitResult = { auth: AuthDetails } | { error: Error }
@@ -259,7 +259,7 @@ type AuthInitResult = { auth: AuthDetails } | { error: Error }
  * One-shot OIDC initialization. Kicks off when this module is first imported
  * (in the browser — `ssr = false` means module-level code only runs client-side
  * during route setup). `load()` awaits this promise on every run, so repeated
- * load invocations (e.g. from `invalidateAll()`) reuse the same result instead
+ * load invocations (e.g. from `refreshAll()`) reuse the same result instead
  * of refetching `/auth-config` and re-running the OIDC handshake.
  */
 const initAuth = async (): Promise<AuthInitResult> => {
@@ -278,7 +278,8 @@ const initAuth = async (): Promise<AuthInitResult> => {
       if (!redirectTo) {
         return
       }
-      goto(redirectTo)
+      // SvelteKit 3 rejects a `goto` that matches no route, e.g. a stashed 404 page.
+      goto(redirectTo).catch(() => goto(resolve('/')))
     },
     onBeforeLogout() {
       // Config caches must not survive a logout/login cycle, since a different
@@ -292,7 +293,7 @@ const initAuth = async (): Promise<AuthInitResult> => {
 }
 
 if ('window' in globalThis) {
-  setInvalidateAll(invalidateAll)
+  setRefreshAll(refreshAll)
   // Register the error interceptor on the shared client up-front, independent of
   // the OIDC handshake. It has to be in place before the first SDK call so that
   // network failures and non-2xx responses both land in `errorResponseMiddleware`
@@ -324,7 +325,7 @@ const authInitPromise: Promise<AuthInitResult> = initAuth()
  *         messages), and kick off exactly one
  *         background `lazyUpdateConfig()` per session (guarded by
  *         `lazyUpdateScheduled`). The UI renders immediately with cached
- *         values; the background fetch only triggers an `invalidateAll()`
+ *         values; the background fetch only triggers an `refreshAll()`
  *         if the server's config differs from what we rendered, so repeat
  *         visits do not double-fetch page-level resources.
  *       - **Cold cache (first visit / after logout / after manual clear):**

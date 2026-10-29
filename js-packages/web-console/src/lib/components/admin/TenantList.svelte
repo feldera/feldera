@@ -1,6 +1,6 @@
 <script lang="ts">
   import { asyncReadable, type Loadable } from '@square/svelte-store'
-  import { goto, invalidateAll } from '$app/navigation'
+  import { goto, refreshAll } from '$app/navigation'
   import { page } from '$app/state'
   import DeleteDialog, { deleteDialogProps } from '#lib/components/dialogs/DeleteDialog.svelte'
   import DoubleClickInput from '#lib/components/input/DoubleClickInput.svelte'
@@ -85,7 +85,7 @@
       // The tenant indicator and any loader that resolved the old name still
       // hold it, so re-fetch once the rename lands.
       clearConfigCaches()
-      await invalidateAll()
+      await refreshAll()
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       if (/already exists|DuplicateName/i.test(message) && !displaceExisting) {
@@ -123,7 +123,7 @@
     setSelectedTenant(tenant.id)
     clearConfigCaches()
     await goto(resolve('/'))
-    await invalidateAll()
+    await refreshAll()
   }
 </script>
 

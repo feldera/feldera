@@ -42,7 +42,7 @@ vi.mock('svelte-french-toast', () => ({
 
 vi.mock('$app/navigation', () => ({
   goto,
-  invalidateAll: vi.fn(),
+  refreshAll: vi.fn(),
   preloadCode: vi.fn(() => Promise.resolve())
 }))
 

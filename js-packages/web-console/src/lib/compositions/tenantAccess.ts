@@ -1,4 +1,4 @@
-import { invalidateAll } from '#lib/services/invalidateAll.ts'
+import { refreshAll } from '#lib/services/refreshAll.ts'
 
 /** The `error_code` an SDK rejection carries, either directly or as its cause. */
 export const errorCodeOf = (reason: unknown): string | undefined => {
@@ -24,7 +24,7 @@ export const requestTenantRecheck = () => {
     return
   }
   recheckPending = true
-  invalidateAll()
+  refreshAll()
 }
 
 /**

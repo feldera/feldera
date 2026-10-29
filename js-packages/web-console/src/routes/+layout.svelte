@@ -5,7 +5,7 @@
 
   import posthog from 'posthog-js'
   import { Toaster } from 'svelte-french-toast'
-  import { browser } from '$app/environment'
+  import { browser } from '$app/env'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
 
   import '#assets/fonts/feldera-material-icons.css'
@@ -27,8 +27,18 @@
   const dialog = useGlobalDialog()
 
   if (browser) {
-    beforeNavigate(() => posthog.capture('$pageleave'))
-    afterNavigate(() => {
+    beforeNavigate(({ shallow, type }) => {
+      // Shallow routing (the former pushState/replaceState) is not a page change.
+      if (shallow && type === 'goto') {
+        return
+      }
+      posthog.capture('$pageleave')
+    })
+    afterNavigate(({ shallow, type }) => {
+      // Shallow routing (the former pushState/replaceState) is not a page change.
+      if (shallow && type === 'goto') {
+        return
+      }
       _markRouterReady()
       posthog.capture('$pageview')
     })

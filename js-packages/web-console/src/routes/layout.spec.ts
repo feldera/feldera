@@ -32,7 +32,7 @@ vi.mock('#lib/services/conceptualHq.ts', () => ({
   trackConceptualHqSignup: () => {}
 }))
 vi.mock('#lib/services/productFruits.ts', () => ({ initProductFruits: () => {} }))
-vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }))
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), refreshAll: vi.fn() }))
 vi.mock('#lib/compositions/auth.ts', () => ({
   loadAuthConfig: async () => ({ oidc: { redirect_uri: 'http://console/auth/callback' } })
 }))

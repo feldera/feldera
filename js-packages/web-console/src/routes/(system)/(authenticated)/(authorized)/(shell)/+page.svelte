@@ -27,7 +27,9 @@
   import { useDemos } from '#lib/compositions/useDemos.svelte.ts'
   import { resolve } from '#lib/functions/svelte.ts'
 
-  preloadCode(resolve(`/pipelines/*`)).then(() => preloadCode(resolve(`/demos/`)))
+  preloadCode(
+    '/(system)/(authenticated)/(authorized)/(shell)/(pipelines)/pipelines/[pipelineName]'
+  ).then(() => preloadCode('/(system)/(authenticated)/(authorized)/(shell)/demos'))
 
   const isTablet = useIsTablet()
 

@@ -16,7 +16,7 @@ const renameTenant = vi.hoisted(() => vi.fn())
 const deleteTenant = vi.hoisted(() => vi.fn())
 
 vi.mock('$app/state', () => ({ page: { data: { feldera: { tenantId: 't-other' } } } }))
-vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn(async () => {}) }))
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), refreshAll: vi.fn(async () => {}) }))
 vi.mock('#lib/compositions/configCache.ts', () => ({ clearConfigCaches: vi.fn() }))
 vi.mock('#lib/services/auth.ts', () => ({ setSelectedTenant: vi.fn() }))
 vi.mock('#lib/services/pipelineManager.ts', () => ({

@@ -5,16 +5,14 @@
 // SvelteKit payload the manager injects, so a single embedded bundle serves
 // any subpath.
 //
-// `$app/paths` is a SvelteKit virtual module, only resolvable when this file
-// is loaded through SvelteKit's Vite plugin. This module is also imported
-// from plain Node/bun scripts that never go through that plugin — Playwright's
-// global setup, via testPipelineHelpers.ts and pipelineManager.ts — so the
-// import is dynamic and gated behind the same `window` check as its only use,
-// letting those non-browser callers skip it instead of failing to resolve it.
+// `base` is empty outside the browser, so plain Node/bun scripts (Playwright's
+// global setup) can import this module too.
+import { base } from '#lib/functions/svelte.ts'
+
 export const felderaEndpoint =
   'window' in globalThis && window.location.origin
     ? // If we're running locally with `bun run dev`, we point to the
       // backend server running on port 8080
       // Otherwise the API and UI URL will be the same
-      window.location.origin.replace(/:([45]17[34])$/, ':8080') + (await import('$app/paths')).base
+      window.location.origin.replace(/:([45]17[34])$/, ':8080') + base
     : 'http://localhost:8080'
