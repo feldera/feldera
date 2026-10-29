@@ -1000,6 +1000,9 @@ export type ConnectorConfig = OutputBufferConfig & {
    * connector configuration or invoking the reset API triggers a fresh
    * snapshot when the connector supports reset (e.g., Delta Lake in
    * `truncate` mode and Postgres).
+   *
+   * A multihost pipeline does not support this setting, and refuses an
+   * output connector that sets it.
    */
   send_snapshot?: boolean
   /**
@@ -2164,6 +2167,7 @@ export type DevTweaks = {
    * merges for this reason.
    */
   top_level_negative_weight_fraction?: number | null
+  view_integrals?: ViewIntegralsLayout | null
   [key: string]: unknown
 }
 
@@ -4630,6 +4634,11 @@ export type PipelineDiff = {
   program_diff_error?: string | null
   removed_input_connectors: Array<string>
   removed_output_connectors: Array<string>
+  /**
+   * The checkpoint keeps the state of the materialized views in another
+   * layout, so the pipeline rebuilds it, although the views did not change.
+   */
+  view_integrals_moved?: boolean
 }
 
 /**
@@ -7392,6 +7401,12 @@ export type ValidateProgramResponse =
  * Version number.
  */
 export type Version = number
+
+/**
+ * Where a multihost pipeline keeps the state of its materialized views and
+ * indexes.
+ */
+export type ViewIntegralsLayout = 'auto' | 'one_host' | 'all_hosts'
 
 export type GetConfigAuthenticationData = {
   body?: never

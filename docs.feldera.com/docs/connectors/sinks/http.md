@@ -47,6 +47,9 @@ when the client connects, the snapshot is delivered from the most recent
 cached view state, even if the pipeline is paused and no new input is
 flowing.
 
+A multihost pipeline does not support `send_snapshot=true`, and refuses the
+request.  To read the whole view, use an ad hoc query instead.
+
 ## Response chunks
 
 The response body is a stream of JSON objects, one per line.  Each object

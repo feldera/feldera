@@ -2903,10 +2903,31 @@ pub mod test_http_helpers {
         /// Starts `n_hosts` hosts of `workers_per_host` workers each, with
         /// pipeline configuration `config`, which needs no `workers` or
         /// `multihost`.  Each output connector in `config` goes to the host
-        /// that `output_assignment` gives its stream, or host 0.  Each host
-        /// keeps its storage in its entry of `storage_dirs`, if there is one,
-        /// and starts from its entry of `checkpoints`, if that is given.
-        /// Returns an error if a host fails to start.
+        /// that `output_assignment` gives its stream, or host 0.
+        pub(crate) async fn start(
+            engine: &dyn PipelineTestEngine,
+            n_hosts: usize,
+            workers_per_host: usize,
+            config: &serde_json::Value,
+            output_assignment: &[(&str, usize)],
+        ) -> Self {
+            Self::start_with_storage(
+                engine,
+                n_hosts,
+                workers_per_host,
+                config,
+                output_assignment,
+                &[],
+                None,
+            )
+            .await
+            .unwrap_or_else(|error| panic!("{error}"))
+        }
+
+        /// Like [Self::start], but each host keeps its storage in its entry of
+        /// `storage_dirs`, if there is one, and starts from its entry of
+        /// `checkpoints`, if that is given.  Returns an error if a host fails
+        /// to start.
         ///
         /// The view's persistent id is the one that `config`'s `program_ir`
         /// gives it, as [test_program_ir] builds it, or `v0`.
@@ -7315,6 +7336,381 @@ pub mod test_http {
         })
     }
 
+    /// A multihost pipeline refuses `send_snapshot`, on a connector in its configuration and on
+    /// HTTP egress, because no host might have the whole view.
+    #[engine_test]
+    pub fn multihost_send_snapshot_is_refused(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+
+            let mut config = multihost_config();
+            config["outputs"]["snap"] = json!({
+                "stream": "test_output1",
+                "send_snapshot": true,
+                "transport": {"name": "null_output"},
+                "format": {"name": "csv"},
+            });
+            let error = match MultihostTestPipeline::start_with_storage(
+                engine,
+                2,
+                2,
+                &config,
+                &[("test_output1", 0)],
+                &[],
+                None,
+            )
+            .await
+            {
+                Ok(_) => panic!("the hosts started"),
+                Err(error) => error,
+            };
+            assert!(
+                error.contains("not supported in a multihost pipeline"),
+                "{error}"
+            );
+
+            let pipeline = MultihostTestPipeline::start(
+                engine,
+                2,
+                2,
+                &multihost_config(),
+                &[("test_output1", 0)],
+            )
+            .await;
+            let mut response = pipeline.servers[0]
+                .post("/egress/test_output1?format=csv&send_snapshot=true")
+                .send()
+                .await
+                .unwrap();
+            assert!(!response.status().is_success());
+            let body = String::from_utf8_lossy(&response.body().await.unwrap()).into_owned();
+            assert!(
+                body.contains("not supported in a multihost pipeline"),
+                "{body}"
+            );
+        });
+    }
+
+    /// Returns the version of the Delta Lake table at `table_uri` and the
+    /// sorted `id`s of its rows.
+    #[cfg(feature = "with-deltalake")]
+    async fn read_delta_table(table_uri: &std::path::Path) -> (Option<u64>, Vec<i64>) {
+        use arrow::array::{Array, Int64Array};
+        use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+        let table = deltalake::open_table(url::Url::from_file_path(table_uri).unwrap())
+            .await
+            .unwrap();
+        let mut ids = Vec::new();
+        for file in table.get_file_uris().unwrap() {
+            let file = std::fs::File::open(table_uri.join(&*file)).unwrap();
+            for batch in ParquetRecordBatchReaderBuilder::try_new(file)
+                .unwrap()
+                .build()
+                .unwrap()
+            {
+                let batch = batch.unwrap();
+                let column = arrow::compute::cast(
+                    batch.column_by_name("id").unwrap(),
+                    &arrow::datatypes::DataType::Int64,
+                )
+                .unwrap();
+                let column = column.as_any().downcast_ref::<Int64Array>().unwrap();
+                ids.extend((0..column.len()).map(|i| column.value(i)));
+            }
+        }
+        ids.sort();
+        (table.version(), ids)
+    }
+
+    /// A 2-host pipeline restarts from its checkpoint with its state: after the restart, the
+    /// hosts hold every row of the view from before it.
+    #[engine_test(requires(Storage, Checkpoints))]
+    pub fn multihost_restart_from_checkpoint(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let tempdir = TempDir::new().unwrap();
+            let dirs: Vec<_> = (0..2)
+                .map(|host| {
+                    let dir = tempdir.path().join(format!("host{host}"));
+                    std::fs::create_dir(&dir).unwrap();
+                    dir
+                })
+                .collect();
+            let assignment = [("test_output1", 0)];
+            let mut pipeline = MultihostTestPipeline::start_with_storage(
+                engine,
+                2,
+                2,
+                &multihost_config(),
+                &assignment,
+                &dirs,
+                None,
+            )
+            .await
+            .unwrap();
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+            let checkpoints = pipeline.checkpoint().await;
+            pipeline.stop(engine, &dirs).await;
+            // A new checkpoint records that the view's integral is spread, and the output
+            // assignment.
+            for (dir, checkpoint) in dirs.iter().zip(&checkpoints) {
+                let state = dir.join(checkpoint.to_string()).join("state.json");
+                let record: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(state).unwrap()).unwrap();
+                assert_eq!(record["view_integrals"], "all_hosts");
+                assert_eq!(record["output_assignment"], json!({"test_output1": 0}));
+            }
+
+            // Before the coordinator activates them, as it does, each host reports the
+            // assignment that its checkpoint recorded.
+            let hosts =
+                MultihostTestPipeline::serve(engine, 2, 2, &multihost_config(), &assignment, &dirs);
+            let recorded_assignment = Ok(Some(BTreeMap::from([("test_output1".to_string(), 0)])));
+            for (host, &checkpoint) in checkpoints.iter().enumerate() {
+                assert_eq!(
+                    recorded_output_assignment(&hosts.servers[host], checkpoint).await,
+                    recorded_assignment
+                );
+            }
+            let mut pipeline = hosts.activate(Some(&checkpoints)).await.unwrap();
+            pipeline.step().await;
+            let rows = multihost_view_rows(&pipeline).await;
+            assert_eq!(rows.iter().sum::<usize>(), data[0].len(), "{rows:?}");
+
+            // A running host reports the same.  It reports none for a checkpoint whose state
+            // file has no record, and an error for a checkpoint that it cannot find or whose
+            // state file it cannot read.
+            let recorded = |host: usize, checkpoint| {
+                recorded_output_assignment(&pipeline.servers[host], checkpoint)
+            };
+            for (host, &checkpoint) in checkpoints.iter().enumerate() {
+                assert_eq!(recorded(host, checkpoint).await, recorded_assignment);
+                assert_eq!(
+                    recorded(host, Uuid::new_v4()).await,
+                    Err(StatusCode::BAD_REQUEST)
+                );
+            }
+            let state = dirs[0].join(checkpoints[0].to_string()).join("state.json");
+            let mut record: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&state).unwrap()).unwrap();
+            record.as_object_mut().unwrap().remove("output_assignment");
+            std::fs::write(&state, serde_json::to_vec(&record).unwrap()).unwrap();
+            assert_eq!(recorded(0, checkpoints[0]).await, Ok(None));
+            std::fs::write(&state, b"{").unwrap();
+            assert_eq!(
+                recorded(0, checkpoints[0]).await,
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            );
+            std::fs::remove_file(&state).unwrap();
+            assert_eq!(
+                recorded(0, checkpoints[0]).await,
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            );
+        });
+    }
+
+    /// The worker ranges of the integral state in checkpoint `checkpoints[i]` in `dirs[i]`, for
+    /// each host `i`, as in `shard_accintegral-0-2`, and the layout of view integrals that each
+    /// checkpoint records.
+    #[cfg(feature = "with-deltalake")]
+    fn checkpoint_view_integrals(
+        dirs: &[std::path::PathBuf],
+        checkpoints: &[Uuid],
+    ) -> (
+        std::collections::BTreeSet<String>,
+        std::collections::BTreeSet<String>,
+    ) {
+        let mut ranges = std::collections::BTreeSet::new();
+        let mut layouts = std::collections::BTreeSet::new();
+        for (dir, checkpoint) in dirs.iter().zip(checkpoints) {
+            let dir = dir.join(checkpoint.to_string());
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let name = entry.unwrap().file_name().into_string().unwrap();
+                if let Some((_, rest)) = name.split_once("shard_accintegral-") {
+                    let range: String = rest
+                        .chars()
+                        .take_while(|c| c.is_ascii_digit() || *c == '-')
+                        .collect();
+                    ranges.insert(range.trim_end_matches('-').to_string());
+                }
+            }
+            let record: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(dir.join("state.json")).unwrap()).unwrap();
+            layouts.insert(record["view_integrals"].as_str().unwrap_or("").to_string());
+        }
+        (ranges, layouts)
+    }
+
+    /// Removes the layout of view integrals from the record of checkpoint `checkpoints[i]` in
+    /// `dirs[i]`, for each host `i`, as in a checkpoint from before the record had it.
+    #[cfg(feature = "with-deltalake")]
+    fn forget_view_integrals(dirs: &[std::path::PathBuf], checkpoints: &[Uuid]) {
+        for (dir, checkpoint) in dirs.iter().zip(checkpoints) {
+            let state = dir.join(checkpoint.to_string()).join("state.json");
+            let mut record: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&state).unwrap()).unwrap();
+            record.as_object_mut().unwrap().remove("view_integrals");
+            std::fs::write(&state, serde_json::to_vec(&record).unwrap()).unwrap();
+        }
+    }
+
+    /// A 2-host pipeline keeps the integral of its view where `dev_tweaks.view_integrals` says,
+    /// and with `auto`, where its checkpoint has it:
+    ///
+    /// 1. With `one_host`, the integral is on host 0, the view's host.
+    /// 2. From that checkpoint, without its record of the layout, as a checkpoint from before the
+    ///    record had it, `auto` keeps the integral on host 0 without rebuilding it.
+    /// 3. `all_hosts` moves it to all workers, which rebuilds it.
+    /// 4. `one_host` moves it back.
+    ///
+    /// Each time, the hosts hold every row of the view, where the layout says, and the view's
+    /// output connector gets no row a second time.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test(requires(Storage, Checkpoints))]
+    pub fn multihost_view_integrals_layout_follows_checkpoint_and_switch(
+        engine: &dyn PipelineTestEngine,
+    ) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let tempdir = TempDir::new().unwrap();
+            let dirs: Vec<_> = (0..2)
+                .map(|host| {
+                    let dir = tempdir.path().join(format!("host{host}"));
+                    std::fs::create_dir(&dir).unwrap();
+                    dir
+                })
+                .collect();
+            let table_uri = tempdir.path().join("table");
+            // The same program information every time, as a compiled program has, so that the
+            // restarts change nothing but the layout.
+            let config = |view_integrals: Option<&str>| {
+                let mut config = json!({
+                    "name": "test",
+                    "program_ir": test_program_ir("v0"),
+                    "inputs": {},
+                    "outputs": {
+                        "sink": {
+                            "stream": "test_output1",
+                            "transport": {"name": "delta_table_output", "config": {
+                                "uri": table_uri.display().to_string(),
+                                "mode": "append",
+                            }},
+                        },
+                    },
+                });
+                if let Some(view_integrals) = view_integrals {
+                    config["dev_tweaks"] = json!({ "view_integrals": view_integrals });
+                }
+                config
+            };
+            let assignment = [("test_output1", 0)];
+            let data = vec![for_ids(0..300)];
+            let one_host = (
+                std::collections::BTreeSet::from(["0-2".to_string()]),
+                std::collections::BTreeSet::from(["one_host".to_string()]),
+            );
+            let all_hosts = (
+                std::collections::BTreeSet::from(["0-4".to_string()]),
+                std::collections::BTreeSet::from(["all_hosts".to_string()]),
+            );
+
+            let mut pipeline = MultihostTestPipeline::start_with_storage(
+                engine,
+                2,
+                2,
+                &config(Some("one_host")),
+                &assignment,
+                &dirs,
+                None,
+            )
+            .await
+            .unwrap();
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+            let mut checkpoints = pipeline.checkpoint().await;
+            pipeline.stop(engine, &dirs).await;
+            assert_eq!(checkpoint_view_integrals(&dirs, &checkpoints), one_host);
+            assert_eq!(read_delta_table(&table_uri).await.1.len(), 300);
+            forget_view_integrals(&dirs, &checkpoints);
+
+            for (view_integrals, expected) in [
+                (None, &one_host),
+                (Some("all_hosts"), &all_hosts),
+                (Some("one_host"), &one_host),
+            ] {
+                let mut pipeline = MultihostTestPipeline::start_with_storage(
+                    engine,
+                    2,
+                    2,
+                    &config(view_integrals),
+                    &assignment,
+                    &dirs,
+                    Some(&checkpoints),
+                )
+                .await
+                .unwrap();
+                for _ in 0..5 {
+                    pipeline.step().await;
+                }
+                // With one host, host 0, the view's host, holds every row.
+                let rows = multihost_view_rows(&pipeline).await;
+                assert_eq!(
+                    rows.iter().sum::<usize>(),
+                    300,
+                    "{view_integrals:?}: {rows:?}"
+                );
+                if expected == &one_host {
+                    assert_eq!(rows, [300, 0], "{view_integrals:?}");
+                } else {
+                    assert!(rows.iter().all(|&n| n > 0), "{view_integrals:?}: {rows:?}");
+                }
+                checkpoints = pipeline.checkpoint().await;
+                pipeline.stop(engine, &dirs).await;
+                assert_eq!(
+                    &checkpoint_view_integrals(&dirs, &checkpoints),
+                    expected,
+                    "{view_integrals:?}"
+                );
+                let (_version, ids) = read_delta_table(&table_uri).await;
+                assert_eq!(ids, (0..300).collect::<Vec<i64>>(), "{view_integrals:?}");
+            }
+        });
+    }
+
+    /// The configuration of a multihost test pipeline with no connectors.
+    fn multihost_config() -> serde_json::Value {
+        json!({"name": "test", "inputs": {}, "outputs": {}})
+    }
+
+    /// Returns how many rows of `test_output1` each host holds in its latest snapshot, which is
+    /// what an ad hoc query of the view reads from each host.
+    async fn multihost_view_rows(pipeline: &MultihostTestPipeline) -> Vec<usize> {
+        let table = feldera_types::program_schema::SqlIdentifier::from("test_output1");
+        let mut rows = Vec::new();
+        for state in &pipeline.states {
+            let controller = state.controller().unwrap();
+            let step = *controller
+                .available_snapshot_steps()
+                .await
+                .last()
+                .expect("the host has a snapshot");
+            let snapshot = controller.consistent_snapshot(step).await.unwrap();
+            rows.push(snapshot.get(&table).map_or(0, |readers| {
+                readers.partitions.iter().map(|part| part.len()).sum()
+            }));
+        }
+        rows
+    }
+
     /// Verifies the `send_snapshot` HTTP egress mode:
     /// 1. Pushes initial data, connects with `send_snapshot=true`, and
     ///    verifies the snapshot chunks carry `snapshot: true`.
@@ -9195,11 +9591,11 @@ pub mod test_http {
         });
     }
 
-    /// A 2-host pipeline restarts from its checkpoint with its state: each
-    /// host's checkpoint records the output assignment, and the view's snapshot
-    /// after the restart has every row from before it.
+    /// With the integrals of its views on all hosts, a 2-host pipeline can restart from its
+    /// checkpoint with its view assigned to another host: the view's state does not depend on its
+    /// host, so nothing is rebuilt, and after the restart the hosts hold every row of the view.
     #[engine_test(requires(Storage, Checkpoints))]
-    pub fn multihost_restart_from_checkpoint(engine: &dyn PipelineTestEngine) {
+    pub fn multihost_restart_with_view_on_another_host(engine: &dyn PipelineTestEngine) {
         actix_web::rt::System::new().block_on(async {
             ensure_default_crypto_provider();
             let tempdir = TempDir::new().unwrap();
@@ -9210,20 +9606,28 @@ pub mod test_http {
                     dir
                 })
                 .collect();
-            let config = json!({"name": "test", "inputs": {}, "outputs": {}});
-            let assignment = [("test_output1", 1)];
+            // The same program information both times, as a compiled program has, so that
+            // the restart changes nothing but the assignment.
+            let config = json!({
+                "name": "test",
+                "program_ir": test_program_ir("v0"),
+                "inputs": {},
+                "outputs": {},
+                "dev_tweaks": {"view_integrals": "all_hosts"},
+            });
+            let data = vec![for_ids(0..300)];
+
             let mut pipeline = MultihostTestPipeline::start_with_storage(
                 engine,
                 2,
                 2,
                 &config,
-                &assignment,
+                &[("test_output1", 0)],
                 &dirs,
                 None,
             )
             .await
             .unwrap();
-            let data = vec![for_ids(0..300)];
             TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
                 .await;
             for _ in 0..3 {
@@ -9231,71 +9635,22 @@ pub mod test_http {
             }
             let checkpoints = pipeline.checkpoint().await;
             pipeline.stop(engine, &dirs).await;
-            // Each host's checkpoint records the output assignment.
-            for (dir, checkpoint) in dirs.iter().zip(&checkpoints) {
-                let state = dir.join(checkpoint.to_string()).join("state.json");
-                let record: serde_json::Value =
-                    serde_json::from_slice(&std::fs::read(state).unwrap()).unwrap();
-                assert_eq!(record["output_assignment"], json!({"test_output1": 1}));
-            }
 
-            // Before the coordinator activates them, as it does, each host reports the
-            // assignment that its checkpoint recorded.
-            let hosts = MultihostTestPipeline::serve(engine, 2, 2, &config, &assignment, &dirs);
-            let recorded_assignment = Ok(Some(BTreeMap::from([("test_output1".to_string(), 1)])));
-            for (host, &checkpoint) in checkpoints.iter().enumerate() {
-                assert_eq!(
-                    recorded_output_assignment(&hosts.servers[host], checkpoint).await,
-                    recorded_assignment
-                );
-            }
-            let mut pipeline = hosts.activate(Some(&checkpoints)).await.unwrap();
-            let mut response = pipeline.servers[1]
-                .post("/egress/test_output1?format=csv&backpressure=true&send_snapshot=true")
-                .send()
-                .await
-                .unwrap();
-            assert!(response.status().is_success());
-            for _ in 0..3 {
-                pipeline.step().await;
-            }
-            let (_chunks, records) = timeout(
-                Duration::from_secs(30),
-                collect_output_chunks(&mut response, 300),
+            // The view moves from host 0 to host 1.
+            let mut pipeline = MultihostTestPipeline::start_with_storage(
+                engine,
+                2,
+                2,
+                &config,
+                &[("test_output1", 1)],
+                &dirs,
+                Some(&checkpoints),
             )
             .await
-            .expect("timed out waiting for the snapshot");
-            assert_eq!(records, batches_zset(&data));
-
-            // A running host reports the same.  It reports none for a checkpoint whose state
-            // file has no record, and an error for a checkpoint that it cannot find or whose
-            // state file it cannot read.
-            let recorded = |host: usize, checkpoint| {
-                recorded_output_assignment(&pipeline.servers[host], checkpoint)
-            };
-            for (host, &checkpoint) in checkpoints.iter().enumerate() {
-                assert_eq!(recorded(host, checkpoint).await, recorded_assignment);
-                assert_eq!(
-                    recorded(host, Uuid::new_v4()).await,
-                    Err(StatusCode::BAD_REQUEST)
-                );
-            }
-            let state = dirs[0].join(checkpoints[0].to_string()).join("state.json");
-            let mut record: serde_json::Value =
-                serde_json::from_slice(&std::fs::read(&state).unwrap()).unwrap();
-            record.as_object_mut().unwrap().remove("output_assignment");
-            std::fs::write(&state, serde_json::to_vec(&record).unwrap()).unwrap();
-            assert_eq!(recorded(0, checkpoints[0]).await, Ok(None));
-            std::fs::write(&state, b"{").unwrap();
-            assert_eq!(
-                recorded(0, checkpoints[0]).await,
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
-            );
-            std::fs::remove_file(&state).unwrap();
-            assert_eq!(
-                recorded(0, checkpoints[0]).await,
-                Err(StatusCode::INTERNAL_SERVER_ERROR)
-            );
+            .unwrap();
+            pipeline.step().await;
+            let rows = multihost_view_rows(&pipeline).await;
+            assert_eq!(rows.iter().sum::<usize>(), data[0].len(), "{rows:?}");
             pipeline.stop(engine, &dirs).await;
         });
     }
