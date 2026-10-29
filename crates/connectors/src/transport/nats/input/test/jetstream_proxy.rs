@@ -36,8 +36,9 @@ pub struct ProxyFaults {
     /// Drops the server's reply to the nth consumer create. The server still
     /// creates the consumer.
     pub drop_create_reply: Option<usize>,
-    /// Holds the nth consumer create until a delete of the same consumer has
-    /// reached the server, then forwards the create.
+    /// Holds the nth consumer create until a delete of the same consumer, or
+    /// a listing of the stream's consumers, has reached the server, then
+    /// forwards the create.
     pub hold_create_until_delete: Option<usize>,
     /// Holds every consumer delete for this long before forwarding it.
     pub delay_deletes: Option<Duration>,
@@ -336,6 +337,14 @@ async fn proxy_connection(
                         state.dropped_replies.insert(reply.to_string());
                     }
                     to_server.push(frame.bytes());
+                    // The connector lists the stream's consumers before
+                    // deleting; a held create landing right after that
+                    // listing is the reordering the hold stands for.
+                    if subject.starts_with("$JS.API.CONSUMER.NAMES.")
+                        && let Some((_, create)) = state.held_create.take()
+                    {
+                        to_server.push(create);
+                    }
                 }
             }
             if let Some(gate) = request_gate {
