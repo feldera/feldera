@@ -267,7 +267,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.emitCompareField(nullable, collation.leftField(),
                     collation.rightField(), collation.ascending(), collation.nullsFirst());
         }
-        this.builder.append("ord").newline();
+        // Without comparisons all rows are equal
+        this.builder.append(comparator.comparisons.isEmpty() ? "Ordering::Equal" : "ord").newline();
         this.builder.decrease().append("}");
     }
 
