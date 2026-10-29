@@ -50,8 +50,8 @@ The connector configuration consists of three main sections:
 | `deliver_policy`  | variant                 | Yes      | Starting point for reading from the stream (see [Deliver Policy](#deliver-policy)) |
 | `max_waiting`     | integer                 | No       | Maximum outstanding pull requests. Default: 0 |
 | `metadata`        | map (string → string)   | No       | Consumer metadata key-value pairs |
-| `max_batch`       | integer                 | No       | Maximum messages per batch |
-| `max_bytes`       | integer                 | No       | Maximum bytes per batch |
+| `max_batch`       | integer                 | No       | Maximum messages per pull request. The server rejects larger pull requests, and the connector sizes its own accordingly |
+| `max_bytes`       | integer                 | No       | Maximum bytes per pull request |
 | `max_expiry` | duration | No | Maximum time a pull request stays parked on the server, for example `30s`. Replaces the deprecated `max_expires`. |
 
 #### Deliver Policy
@@ -145,14 +145,18 @@ or the table name if none is set. Characters that JetStream does not allow in
 consumer names are replaced with `_`. The unique suffix prevents "consumer
 already exists" errors on quick restarts, and the prefix identifies which
 connector owns a consumer when you inspect the stream with `nats consumer ls`.
-For example, to list the consumers of a connector whose prefix is `orders`:
+When the client library recreates a consumer after a gap, a lost heartbeat, or
+an external deletion, the replacement is named `<prefix>_<uuid>_<n>` and the
+replaced consumer is deleted. For example, to list the consumers of a
+connector whose prefix is `orders`:
 
 ```bash
 nats consumer ls <stream> --names | grep '^orders_'
 ```
 
-The connector deletes its consumer when it pauses, stops, abandons a failed
-reader before retrying, or finishes a replay. It also deletes the consumer
+The connector deletes its consumer, and any replacement the client library
+made for it, when it pauses, stops, abandons a failed reader before retrying,
+or finishes a replay. It also deletes the consumer
 after a create request that timed out, because an overloaded server may still
 create the consumer after the client has given up. Deletion is best-effort: if
 the server cannot be reached, the consumer expires on its own after 30 seconds

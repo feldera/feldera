@@ -113,6 +113,8 @@ awc = { workspace = true, features = [
     "rustls-0_23-webpki-roots",
 ] }
 async-nats = { workspace = true }
+# Only here to select aws-lc-rs for async-nats's websocket handshake.
+tokio-websockets = { workspace = true }
 async-stream = { workspace = true }
 data-encoding = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
@@ -264,7 +266,7 @@ z85 = { workspace = true, optional = true }
 etl = { workspace = true, optional = true }
 
 [package.metadata.cargo-machete]
-ignored = ["aws-sigv4", "deltalake-catalog-unity"]
+ignored = ["aws-sigv4", "deltalake-catalog-unity", "tokio-websockets"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Optional so the SQL test fixture (sql-to-dbsp-compiler/temp), which builds

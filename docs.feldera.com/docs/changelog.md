@@ -62,6 +62,14 @@ Source edition can be found on github.
   counts, and queue wait time. See
   [Kafka output delivery and metrics](/connectors/sinks/kafka#delivery-retries-and-backpressure).
 
+- NATS input connector: the client library is updated to async-nats 0.51.0,
+  which fixes spurious missing-heartbeat errors while messages are buffered
+  and pull consumers looping on `409 Exceeded MaxRequest*`. The `max_batch`,
+  `max_bytes` and `max_expiry` consumer settings now reach the server, where
+  earlier releases dropped them. A consumer that the library recreates is
+  named `<prefix>_<uuid>_<n>`, and the connector deletes it together with its
+  own. See [consumer lifecycle](/connectors/sources/nats#consumer-lifecycle).
+
 ## v0.371.0
 
 - Delta Lake input connector: `uc://` tables can use Databricks workload

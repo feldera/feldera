@@ -67,10 +67,11 @@ async-channel = "2.3.1"
 # Its default feature set selects ring; aws-lc-rs is the same choice made
 # elsewhere in this workspace. The rest of the list restates the defaults, so
 # revisit it when upgrading.
-async-nats = { version = "0.47.0", default-features = false, features = [
+async-nats = { version = "0.51.0", default-features = false, features = [
     "server_2_10",
     "server_2_11",
     "server_2_12",
+    "server_2_14",
     "service",
     "aws-lc-rs",
     "jetstream",
@@ -104,6 +105,11 @@ aws-lc-rs = "1.18.0"
 rsa = { version = "0.9.10", features = ["std"] }
 rcgen = { version = "0.14.8", default-features = false, features = ["pem", "aws_lc_rs"] }
 tokio-postgres-rustls = { version = "0.14.0", default-features = false, features = ["aws-lc-rs"] }
+# Pulled in by async-nats for ws:// server URLs. Its default hashes the
+# websocket handshake with sha1_smol; the feature keeps it on aws-lc-rs.
+# Keep the version in sync with the one async-nats depends on, or the
+# lockfile ends up with two copies and only async-nats's one is used.
+tokio-websockets = { version = "0.13.3", default-features = false, features = ["aws_lc_rs"] }
 base64 = "0.22.1"
 base58 = "0.2.0"
 binrw = "0.15.2"

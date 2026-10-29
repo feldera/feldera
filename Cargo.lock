@@ -1130,9 +1130,9 @@ dependencies = [
 
 [[package]]
 name = "async-nats"
-version = "0.47.0"
+version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07d6f157065c3461096d51aacde0c326fa49f3f6e0199e204c566842cdaa5299"
+checksum = "a4f92759f418774b78c36ef07885849150ce950c67d9bcdeff8a9c253f57d9a1"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -1143,7 +1143,7 @@ dependencies = [
  "nuid",
  "pin-project",
  "portable-atomic",
- "rand 0.8.6",
+ "rand 0.10.1",
  "regex",
  "rustls-native-certs 0.8.1",
  "rustls-pki-types",
@@ -1152,7 +1152,7 @@ dependencies = [
  "serde_json",
  "serde_nanos",
  "serde_repr",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "time",
  "tokio",
  "tokio-rustls",
@@ -4487,6 +4487,7 @@ dependencies = [
  "tokio-postgres-rustls",
  "tokio-stream",
  "tokio-util",
+ "tokio-websockets",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -13444,9 +13445,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-websockets"
-version = "0.10.1"
+version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f591660438b3038dd04d16c938271c79e7e06260ad2ea2885a4861bfb238605d"
+checksum = "d52efb639344a7c6adb8e62c6f3d2c19c001ff1b79a5041ba1c6ed42e19c6aa5"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -13455,12 +13456,13 @@ dependencies = [
  "futures-sink",
  "http 1.4.2",
  "httparse",
- "rand 0.8.6",
+ "rand 0.10.1",
  "rustls-pki-types",
+ "sha1_smol",
+ "simdutf8",
  "tokio",
  "tokio-rustls",
  "tokio-util",
- "webpki-roots 0.26.11",
 ]
 
 [[package]]
