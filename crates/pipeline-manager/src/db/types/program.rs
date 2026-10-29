@@ -10,6 +10,7 @@ use feldera_types::config::{
     ConnectorConfig, InputEndpointConfig, MultihostConfig, OutputEndpointConfig, PipelineConfig,
     PipelineConfigProgramInfo, ProgramIr, RuntimeConfig, TransportConfig,
 };
+use feldera_types::display_url::REDACTED;
 use feldera_types::program_schema::{
     ProgramSchemaPropertiesOnly, PropertyValue, SourcePosition, SqlIdentifier,
 };
@@ -648,6 +649,8 @@ pub enum ConnectorGenerationError {
         position: SourcePosition,
         relation: String,
         key: String,
+        /// `[REDACTED]` for the `connectors` property, which can hold inline
+        /// credentials.
         value: String,
         reason: Box<String>, // Put into a Box because else the error type becomes too large according to clippy
     },
@@ -702,9 +705,13 @@ fn parse_named_connectors(
                         position: value.value_position,
                         relation: relation.sql_name(),
                         key: "connectors".to_string(),
-                        value: value.value.clone(),
+                        // Both the value and serde's rejected token can hold credentials.
+                        value: REDACTED.to_string(),
                         reason: Box::new(format!(
-                            "deserialization failed: {e} (position is within the string itself)"
+                            "{} at line {}, column {} within the connectors property",
+                            feldera_types::config_diagnostics::deserialization_error(&e),
+                            e.line(),
+                            e.column(),
                         )),
                     }
                 })?;
@@ -715,7 +722,8 @@ fn parse_named_connectors(
                             position: value.value_position,
                             relation: relation.sql_name(),
                             key: "connectors".to_string(),
-                            value: value.value.clone(),
+                            // The value can hold inline credentials.
+                            value: REDACTED.to_string(),
                             reason: Box::new(format!("connector name '{name}' is not valid: {e}")),
                         }
                     })?;
@@ -1256,5 +1264,45 @@ mod tests {
         assert!(!has_rust_udfs(" \n", "\t"));
         assert!(has_rust_udfs("pub fn f() {}", ""));
         assert!(has_rust_udfs("", "openssl-sys = \"0.9\""));
+    }
+
+    /// A malformed `connectors` property is reported without its value,
+    /// which can hold inline credentials.
+    #[test]
+    fn malformed_connectors_property_error_omits_the_value() {
+        use feldera_types::program_schema::{PropertyValue, SourcePosition, SqlIdentifier};
+        let value = r#"[{"transport": {"name": "kafka_input", "config": {"kafka_options": {"sasl.password": "hunter2"}}}"#;
+        let properties = std::collections::BTreeMap::from([(
+            "connectors".to_string(),
+            PropertyValue {
+                value: value.to_string(),
+                key_position: SourcePosition::default(),
+                value_position: SourcePosition::default(),
+            },
+        )]);
+        let error = super::parse_named_connectors(SqlIdentifier::new("t", false), &properties)
+            .expect_err("the JSON is malformed");
+        let text = error.to_string();
+        assert!(!text.contains("hunter2"), "value in error: {text}");
+        assert!(text.contains("connectors"), "property missing: {text}");
+    }
+
+    #[test]
+    fn connectors_type_error_omits_rejected_scalar() {
+        let properties = BTreeMap::from([(
+            "connectors".to_string(),
+            PropertyValue {
+                value: "\"hunter2\"".to_string(),
+                key_position: SourcePosition::default(),
+                value_position: SourcePosition::default(),
+            },
+        )]);
+        let error = super::parse_named_connectors(SqlIdentifier::new("t", false), &properties)
+            .expect_err("a string is not a connector list");
+        for text in [error.to_string(), serde_json::to_string(&error).unwrap()] {
+            assert!(!text.contains("hunter2"), "{text}");
+            assert!(text.contains("wrong type"), "{text}");
+            assert!(text.contains("line 1"), "{text}");
+        }
     }
 }
