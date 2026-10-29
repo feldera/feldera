@@ -50,6 +50,12 @@ Source edition can be found on github.
   `commit_transaction()` takes `incarnation_uuid`. See
   [Transactions](/pipelines/transactions).
 
+- Enterprise (Kubernetes): with the Helm value `mtls.enabled`, the hosts of a
+  multihost pipeline exchange data over TLS.  Each host presents its pipeline
+  certificate and admits only hosts of the same pipeline.  Set
+  `dev_tweaks.tls_exchange` to `false` to exchange data in plaintext.  See
+  [Client certificates](/get-started/enterprise/https#client-certificates).
+
 ## v0.373.0
 
 - With `FELDERA_REFUSE_LOCAL_FILE_URIS=true`, Delta Lake and Iceberg connectors
