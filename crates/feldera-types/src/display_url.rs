@@ -37,16 +37,68 @@ pub fn url_without_credentials(url: &str) -> String {
 
 /// `text` with every copy of `url` replaced by [`url_without_credentials`],
 /// for the message of a library error that repeats the URL it was given.
+/// A library can also print the URL after parsing it, with the path
+/// normalized and the credentials kept, so the canonical form, the userinfo
+/// and the query string go on their own as well.
 pub fn text_without_url(text: &str, url: &str) -> String {
-    if url.is_empty() || !text.contains(url) {
+    if url.is_empty() {
         return text.to_string();
     }
-    text.replace(url, &url_without_credentials(url))
+    let safe = url_without_credentials(url);
+    let mut text = text.replace(url, &safe);
+    let Ok(parsed) = Url::parse(url) else {
+        return text;
+    };
+    text = text.replace(parsed.as_str(), &safe);
+    let mut parts = Vec::new();
+    if let Some(query) = parsed.query() {
+        parts.push(format!("?{query}"));
+    }
+    if let Some(fragment) = parsed.fragment() {
+        parts.push(format!("#{fragment}"));
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        parts.push(match parsed.password() {
+            Some(password) => format!("{}:{password}@", parsed.username()),
+            None => format!("{}@", parsed.username()),
+        });
+    }
+    // The text as written can differ from the parsed form in its encoding.
+    if let Some((_, rest)) = url.split_once("://") {
+        let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        if let Some(at) = rest[..authority_end].rfind('@') {
+            parts.push(rest[..=at].to_string());
+        }
+        if let Some(query) = rest.find('?') {
+            let end = rest[query..].find('#').map_or(rest.len(), |i| query + i);
+            parts.push(rest[query..end].to_string());
+        }
+    }
+    for part in parts {
+        if part.len() > 1 {
+            text = text.replace(&part, "");
+        }
+    }
+    text
 }
 
 #[cfg(test)]
 mod tests {
     use super::{REDACTED, text_without_url, url_without_credentials};
+
+    /// A library can print the URL after normalizing its path; the
+    /// credentials and the query string still go.
+    #[test]
+    fn a_normalized_copy_of_the_url_is_covered() {
+        let url = "s3://ak:secret-key@bucket/table?X-Amz-Signature=sig";
+        assert_eq!(
+            text_without_url(
+                "open s3://ak:secret-key@bucket/table/?X-Amz-Signature=sig failed",
+                url
+            ),
+            "open s3://bucket/table/ failed"
+        );
+    }
 
     #[test]
     fn credentials_and_query_string_are_left_out() {
