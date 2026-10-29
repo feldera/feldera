@@ -618,7 +618,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .starts_with("not valid JSON: invalid value: string \"1e40\", expected a decimal number at line 1 column "),
+                .starts_with("not valid JSON: invalid value: string \"1e+40\", expected a decimal number at line 1 column "),
             "{error}"
         );
 

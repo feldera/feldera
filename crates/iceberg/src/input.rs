@@ -8,7 +8,6 @@ use datafusion::arrow::datatypes::Schema as ArrowSchema;
 use datafusion::catalog::TableProvider;
 use datafusion::common::arrow::array::RecordBatch;
 use datafusion::prelude::{DataFrame, SQLOptions, SessionContext};
-use datafusion_iceberg::IcebergStaticTableProvider;
 use feldera_adapterlib::{
     catalog::{ArrowStream, InputCollectionHandle},
     errors::journal::ControllerError,
@@ -63,6 +62,7 @@ use iceberg_catalog_s3tables::{
     S3TablesCatalogBuilder, S3TABLES_CATALOG_PROP_ENDPOINT_URL,
     S3TABLES_CATALOG_PROP_TABLE_BUCKET_ARN,
 };
+use iceberg_datafusion::IcebergStaticTableProvider;
 use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
 use log::{debug, info, trace, warn};
 use serde::{Deserialize, Serialize};
@@ -3334,13 +3334,13 @@ mod variant_tests {
             "Reading variant columns is not supported yet",
         );
         assert!(super::is_permanent_read_error(&unsupported.to_string()));
-        // The snapshot path sees it wrapped by datafusion-iceberg and formatted with `{:?}`.
-        let wrapped = format!("{:?}", datafusion_iceberg::to_datafusion_error(unsupported));
+        // The snapshot path sees it wrapped by iceberg-datafusion and formatted with `{:?}`.
+        let wrapped = format!("{:?}", iceberg_datafusion::to_datafusion_error(unsupported));
         assert!(super::is_permanent_read_error(&wrapped), "{wrapped}");
 
         let transient = || iceberg::Error::new(iceberg::ErrorKind::Unexpected, "connection reset");
         assert!(!super::is_permanent_read_error(&transient().to_string()));
-        let wrapped = format!("{:?}", datafusion_iceberg::to_datafusion_error(transient()));
+        let wrapped = format!("{:?}", iceberg_datafusion::to_datafusion_error(transient()));
         assert!(!super::is_permanent_read_error(&wrapped), "{wrapped}");
     }
 

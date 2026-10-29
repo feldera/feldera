@@ -352,9 +352,9 @@ pub fn localfs_input_test_ordered_transactional(engine: &dyn PipelineTestEngine)
 }
 
 /// Create a local Iceberg table populated with `data` and return its metadata
-/// location. With `extra_columns`, the table gets columns that no test SQL
-/// schema declares (see `--extra-columns` in `create_test_table_s3.py`).
-fn create_localfs_table(data: &[Value], extra_columns: bool) -> String {
+/// location. `extra` holds flags of `create_test_table_s3.py`, such as
+/// `--extra-columns`.
+fn create_localfs_table(data: &[Value], extra: &[&str]) -> String {
     let table_dir = tempfile::TempDir::new().unwrap();
     let table_path = table_dir.path().display().to_string();
 
@@ -364,11 +364,7 @@ fn create_localfs_table(data: &[Value], extra_columns: bool) -> String {
     // Uncomment to inspect output parquet files produced by the test.
     std::mem::forget(table_dir);
 
-    let mut extra: Vec<&str> = Vec::new();
-    if extra_columns {
-        extra.push("--extra-columns");
-    }
-    run_table_script(&table_path, ndjson_file.path(), &extra)
+    run_table_script(&table_path, ndjson_file.path(), extra)
 }
 
 /// A `datetime` read must land on the snapshot current at that time.
@@ -473,7 +469,7 @@ fn iceberg_localfs_input_test(
 ) -> HashMap<String, f64> {
     let data = data(n_records);
 
-    let metadata_path = create_localfs_table(&data, false);
+    let metadata_path = create_localfs_table(&data, &[]);
 
     let mut config = json!({ "metadata_location": metadata_path });
     let config_obj = config.as_object_mut().unwrap();
@@ -522,7 +518,7 @@ fn iceberg_localfs_input_test(
 fn iceberg_localfs_input_subset_test(engine: &dyn PipelineTestEngine, skip_unused: bool) {
     let data = data(100_000);
 
-    let metadata_path = create_localfs_table(&data, true);
+    let metadata_path = create_localfs_table(&data, &["--extra-columns"]);
 
     let table_properties: &[(&str, &str)] = if skip_unused {
         &[("skip_unused_columns", "true")]
@@ -551,6 +547,56 @@ fn iceberg_localfs_input_subset_test(engine: &dyn PipelineTestEngine, skip_unuse
     let zset = output_zset(&subset_relation(), json_file.path());
 
     assert_eq!(zset, expected_zset);
+}
+
+/// A table migrated without field ids (`add_files`) reads its nested columns
+/// through the name mapping. iceberg-rust before 4dd8c946 read them as NULL.
+/// Its file has a page index, so the filters also check page pruning.
+#[engine_test(cfg(feature = "iceberg-tests-fs"))]
+pub fn localfs_input_test_add_files(engine: &dyn PipelineTestEngine) {
+    // `add_files` needs all rows of a file in one partition, i.e. one day.
+    let data = data(50_000);
+    let metadata_path = create_localfs_table(&data, &["--add-files"]);
+
+    let i = |x: &Value| x["i"].as_i64().unwrap();
+    type Keep<'a> = &'a dyn Fn(&Value) -> bool;
+    let filters: [(&str, Keep); 9] = [
+        ("true", &|_| true),
+        ("i >= 31337 AND i < 31400", &|x| {
+            (31337..31400).contains(&i(x))
+        }),
+        ("i IN (5, 20000, 49999)", &|x| {
+            [5, 20000, 49999].contains(&i(x))
+        }),
+        ("NOT (i < 40000)", &|x| i(x) >= 40000),
+        ("i < 100 OR i > 49900", &|x| i(x) < 100 || i(x) > 49900),
+        ("s LIKE 's4999%'", &|x| {
+            x["s"].as_str().unwrap().starts_with("s4999")
+        }),
+        (
+            "ts >= TIMESTAMP '2024-01-01 10:00:00' AND ts < TIMESTAMP '2024-01-01 10:01:00'",
+            &|x| (36000..36060).contains(&i(x)),
+        ),
+        ("b AND i < 1000", &|x| i(x) % 2 == 1 && i(x) < 1000),
+        // Pushdown must unescape `\9` to `9`, or it prunes the matching rows.
+        ("s LIKE 's4\\9%'", &|x| {
+            x["s"].as_str().unwrap().starts_with("s49")
+        }),
+    ];
+    for (filter, keep) in filters {
+        let (json_file, _) = iceberg_snapshot_to_json(
+            engine,
+            &relation(),
+            &[],
+            json!({ "metadata_location": metadata_path, "snapshot_filter": filter }),
+        );
+        let expected: Vec<Value> = data.iter().filter(|x| keep(x)).cloned().collect();
+        assert_eq!(
+            output_zset(&relation(), json_file.path()),
+            expected_zset(&relation(), &expected),
+            "snapshot_filter: {filter}"
+        );
+    }
 }
 
 /// The connector reads only the columns the SQL table declares.
@@ -648,7 +694,7 @@ fn suspend_and_stop(pipeline: Controller) {
 )]
 pub fn localfs_input_test_resume_completed_snapshot(engine: &dyn PipelineTestEngine) {
     let data = data(100_000);
-    let metadata_path = create_localfs_table(&data, false);
+    let metadata_path = create_localfs_table(&data, &[]);
     let storage_dir = tempfile::TempDir::new().unwrap();
 
     // Ordered snapshot so the read is resumable per lateness range.
