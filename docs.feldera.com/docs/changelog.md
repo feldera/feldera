@@ -10,6 +10,10 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- With `FELDERA_REFUSE_LOCAL_FILE_URIS=true`, Delta Lake and Iceberg connectors
+  refuse local paths, such as `file:///etc` or `/etc`, also when a secret or an
+  environment variable holds the path.
+
 - Behavior change (exactly-once Kafka output): the connector no longer limits
   delivery retries to five, and a failed commit no longer leaves the connector
   stuck while the pipeline runs. It keeps the records of the open transaction,

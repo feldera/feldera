@@ -733,6 +733,36 @@ fn bootstrapped_output_endpoints(
         .collect()
 }
 
+fn local_file_uris_refused() -> bool {
+    refused_by(std::env::var(feldera_types::config::REFUSE_LOCAL_FILE_URIS_ENV).ok())
+}
+
+/// Fails closed: only unset, empty, `false` or `0` allows local paths.
+fn refused_by(value: Option<String>) -> bool {
+    value.is_some_and(|v| !matches!(v.trim().to_ascii_lowercase().as_str(), "" | "0" | "false"))
+}
+
+/// Resolves secret references in `config`, then refuses local paths if `refuse_local`.
+/// The error names only the property, because the value can come from a secret.
+fn resolve_connector_config(
+    secrets_dir: &Path,
+    endpoint_name: &str,
+    config: &ConnectorConfig,
+    refuse_local: bool,
+) -> Result<ConnectorConfig, ControllerError> {
+    let resolved = resolve_secret_references_in_connector_config(secrets_dir, config)
+        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
+    if refuse_local && let Some((property, _)) = resolved.transport.local_file_uris(true).first() {
+        return Err(ControllerError::invalid_transport_configuration(
+            endpoint_name,
+            &format!(
+                "'{property}' is on the local filesystem of the pipeline, which is not allowed (use an object store URL, such as 's3://bucket/path')"
+            ),
+        ));
+    }
+    Ok(resolved)
+}
+
 /// Returns a copy of `input_handle` that ingests deletions as insertions.
 ///
 /// Fails if the table has a primary key: a deletion in such a table identifies
@@ -8321,11 +8351,12 @@ impl ControllerInner {
 
         debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
-        let resolved_connector_config = resolve_secret_references_in_connector_config(
+        let resolved_connector_config = resolve_connector_config(
             &self.secrets_dir,
+            endpoint_name,
             &endpoint_config.connector_config,
-        )
-        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
+            local_file_uris_refused(),
+        )?;
 
         // Create preprocessor if specified by the configuration
         let mut preprocessor = None;
@@ -8606,11 +8637,12 @@ impl ControllerInner {
         endpoint: Option<Box<dyn OutputEndpoint>>,
         initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Result<EndpointId, ControllerError> {
-        let resolved_connector_config = resolve_secret_references_in_connector_config(
+        let resolved_connector_config = resolve_connector_config(
             &self.secrets_dir,
+            endpoint_name,
             &endpoint_config.connector_config,
-        )
-        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
+            local_file_uris_refused(),
+        )?;
 
         if resolved_connector_config.soft_delete {
             return Err(ControllerError::invalid_soft_delete_configuration(
@@ -11199,5 +11231,48 @@ mod all_hosts_transaction_tests {
             TransactionInfo::new(false, sender).joined_transaction("c"),
             None
         );
+    }
+}
+
+#[cfg(test)]
+mod local_file_uri_tests {
+    use super::{refused_by, resolve_connector_config};
+    use serde_json::json;
+
+    #[test]
+    fn env_value() {
+        for value in [None, Some(""), Some("0"), Some("false"), Some("FALSE")] {
+            assert!(!refused_by(value.map(str::to_string)), "{value:?}");
+        }
+        for value in ["true", "TRUE", "1", "yes", "ture"] {
+            assert!(refused_by(Some(value.to_string())), "{value}");
+        }
+    }
+
+    /// A secret that holds a local path fails, also when the path looks like a reference.
+    #[test]
+    fn refuses_local_locations_after_resolution() {
+        let secrets = tempfile::tempdir().unwrap();
+        let dir = secrets.path().join("kubernetes").join("t");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("uri"), "/etc").unwrap();
+        std::fs::write(dir.join("ref"), "${env:a/../../etc}").unwrap();
+
+        let check = |uri: &str, refuse: bool| {
+            let config = serde_json::from_value(json!({"transport": {"name": "delta_table_output",
+                "config": {"uri": uri, "mode": "append"}}}))
+            .unwrap();
+            resolve_connector_config(secrets.path(), "c", &config, refuse)
+        };
+        for uri in ["${secret:kubernetes:t/uri}", "${secret:kubernetes:t/ref}"] {
+            let error = check(uri, true).unwrap_err().to_string();
+            assert!(
+                error.contains("'uri' is on the local filesystem"),
+                "{error}"
+            );
+            assert!(!error.contains("/etc"), "{error}");
+            assert!(check(uri, false).is_ok());
+        }
+        assert!(check("s3://b/t", true).is_ok());
     }
 }
