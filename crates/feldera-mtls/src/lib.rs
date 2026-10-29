@@ -14,11 +14,16 @@ use actix_web::middleware::Next;
 use actix_web::rt::net::TcpStream;
 use actix_web::{HttpResponse, ResponseError};
 use feldera_types::error::{DetailedError, ErrorResponse};
-use rustls::RootCertStore;
-use rustls::crypto::CryptoProvider;
-use rustls::pki_types::CertificateDer;
-use rustls::server::WebPkiClientVerifier;
-use rustls::server::danger::ClientCertVerifier;
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::client::verify_server_cert_signed_by_trust_anchor;
+use rustls::crypto::{CryptoProvider, verify_tls12_signature, verify_tls13_signature};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName, UnixTime};
+use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
+use rustls::server::{ParsedCertificate, WebPkiClientVerifier};
+use rustls::{
+    ClientConfig, DigitallySignedStruct, DistinguishedName, RootCertStore, ServerConfig,
+    SignatureScheme,
+};
 use serde::Serialize;
 use std::any::Any;
 use std::borrow::Cow;
@@ -292,17 +297,226 @@ impl PipelineClientAuth {
     }
 }
 
+/// TLS configurations for the connections between the hosts of a multihost pipeline.
+#[derive(Clone, Debug)]
+pub struct PipelinePeerTls {
+    pub client: Arc<ClientConfig>,
+    pub server: Arc<ServerConfig>,
+}
+
+impl PipelinePeerTls {
+    /// Builds the configurations from the pipeline certificate chain and its key. Both ends
+    /// present the pipeline certificate and admit only a peer whose certificate the private
+    /// CA signed for the same pipeline. Peers connect by IP address, so the server name is
+    /// not checked: the pipeline URI SAN is the identity.
+    pub fn from_chain(
+        chain: Vec<CertificateDer<'static>>,
+        key: PrivateKeyDer<'static>,
+    ) -> Result<Self, String> {
+        let verifier = Arc::new(PipelinePeerVerifier::from_chain(&chain)?);
+        let provider = verifier.provider.clone();
+        let server = ServerConfig::builder_with_provider(provider.clone())
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .map_err(|e| format!("peer TLS server: {e}"))?
+            .with_client_cert_verifier(verifier.clone())
+            .with_single_cert(chain.clone(), key.clone_key())
+            .map_err(|e| format!("peer TLS server: {e}"))?;
+        let client = ClientConfig::builder_with_provider(provider)
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .map_err(|e| format!("peer TLS client: {e}"))?
+            // rustls puts every custom server certificate verifier behind `dangerous()`,
+            // because a custom verifier can skip checks. This one is needed because the
+            // built-in verifier identifies a server only by its DNS name or IP address, and
+            // hosts connect by an IP address that no certificate names. It skips nothing
+            // but that name check, and checks the pipeline URI SAN instead (see
+            // `verify_server_cert` below).
+            .dangerous()
+            .with_custom_certificate_verifier(verifier)
+            .with_client_auth_cert(chain, key)
+            .map_err(|e| format!("peer TLS client: {e}"))?;
+        Ok(Self {
+            client: Arc::new(client),
+            server: Arc::new(server),
+        })
+    }
+}
+
+/// Verifies the certificate of another host of the same pipeline, on both ends of a
+/// connection.
+#[derive(Debug)]
+struct PipelinePeerVerifier {
+    own: Caller,
+    roots: Arc<RootCertStore>,
+    provider: Arc<CryptoProvider>,
+    client_verifier: Arc<dyn ClientCertVerifier>,
+}
+
+impl PipelinePeerVerifier {
+    /// Admits peers with the pipeline identity of the leaf of `chain`, signed by the private
+    /// CA, the first certificate after the leaf.
+    fn from_chain(chain: &[CertificateDer<'static>]) -> Result<Self, String> {
+        let (leaf, ca_chain) = chain
+            .split_first()
+            .ok_or("the certificate file holds no certificate")?;
+        let own @ Caller::Pipeline(_) = Caller::from_certificate(leaf) else {
+            return Err(format!(
+                "the certificate names no pipeline: peer certificates need the URI SAN {PIPELINE_CERTIFICATE_URI_PREFIX}<id>, which the runner adds"
+            ));
+        };
+        let issuing_ca = ca_chain
+            .first()
+            .ok_or("the certificate file holds no CA chain after the leaf to verify peers with")?;
+        let mut roots = RootCertStore::empty();
+        roots
+            .add(issuing_ca.clone())
+            .map_err(|e| format!("invalid CA certificate: {e}"))?;
+        let roots = Arc::new(roots);
+        let provider = crypto_provider();
+        Ok(Self {
+            own,
+            client_verifier: WebPkiClientVerifier::builder_with_provider(
+                roots.clone(),
+                provider.clone(),
+            )
+            .build()
+            .map_err(|e| format!("peer certificate verifier: {e}"))?,
+            roots,
+            provider,
+        })
+    }
+
+    fn check_identity(&self, end_entity: &CertificateDer<'_>) -> Result<(), rustls::Error> {
+        let caller = Caller::from_certificate(end_entity);
+        if caller == self.own {
+            Ok(())
+        } else {
+            Err(rustls::Error::General(format!(
+                "peer certificate identifies {caller:?}, not this pipeline ({:?})",
+                self.own
+            )))
+        }
+    }
+}
+
+impl ServerCertVerifier for PipelinePeerVerifier {
+    /// Does what rustls's `WebPkiServerVerifier` does, which checks the chain to the
+    /// private CA, the validity period and the server auth extended key usage, except
+    /// that it checks the pipeline identity instead of `server_name`. Like
+    /// `WebPkiServerVerifier` without CRLs, which Feldera does not use, it does not
+    /// check revocation, and it ignores OCSP responses.
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        verify_server_cert_signed_by_trust_anchor(
+            &ParsedCertificate::try_from(end_entity)?,
+            &self.roots,
+            intermediates,
+            now,
+            self.provider.signature_verification_algorithms.all,
+        )?;
+        self.check_identity(end_entity)?;
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        verify_tls12_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        verify_tls13_signature(
+            message,
+            cert,
+            dss,
+            &self.provider.signature_verification_algorithms,
+        )
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.provider
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}
+
+impl ClientCertVerifier for PipelinePeerVerifier {
+    fn root_hint_subjects(&self) -> &[DistinguishedName] {
+        self.client_verifier.root_hint_subjects()
+    }
+
+    fn verify_client_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        now: UnixTime,
+    ) -> Result<ClientCertVerified, rustls::Error> {
+        let verified = self
+            .client_verifier
+            .verify_client_cert(end_entity, intermediates, now)?;
+        self.check_identity(end_entity)?;
+        Ok(verified)
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.client_verifier
+            .verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        self.client_verifier
+            .verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.client_verifier.supported_verify_schemes()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::crypto_provider;
     use super::{
-        CONTROL_PLANE_CERTIFICATE_URI, Caller, PipelineClientAuth, client_certificate_verifier,
-        pipeline_certificate_uri,
+        CONTROL_PLANE_CERTIFICATE_URI, Caller, PipelineClientAuth, PipelinePeerTls,
+        PipelinePeerVerifier, client_certificate_verifier, pipeline_certificate_uri,
     };
     use rcgen::{
         BasicConstraints, CertificateParams, DnType, ExtendedKeyUsagePurpose, IsCa, Issuer,
         KeyPair, SanType,
     };
-    use rustls::pki_types::{CertificateDer, UnixTime};
+    use rustls::pki_types::{
+        CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer, ServerName, UnixTime,
+    };
+    use rustls::{ClientConfig, ClientConnection, ServerConfig, ServerConnection};
+    use std::sync::Arc;
     use uuid::Uuid;
 
     const PIPELINE_A: Uuid = Uuid::from_u128(0xa);
@@ -455,5 +669,148 @@ mod tests {
                     .is_err()
             );
         }
+    }
+
+    /// A pipeline certificate chain with server and client auth, as the runner issues it: the
+    /// leaf, then `ca_chain`.
+    fn peer_chain(
+        issuer: &Issuer<'static, KeyPair>,
+        ca_chain: &[CertificateDer<'static>],
+        uri: &str,
+    ) -> (Vec<CertificateDer<'static>>, PrivateKeyDer<'static>) {
+        let mut params = CertificateParams::default();
+        params.subject_alt_names = vec![SanType::URI(uri.try_into().unwrap())];
+        params.extended_key_usages = vec![
+            ExtendedKeyUsagePurpose::ServerAuth,
+            ExtendedKeyUsagePurpose::ClientAuth,
+        ];
+        let key = KeyPair::generate().unwrap();
+        let leaf = params.signed_by(&key, issuer).unwrap().der().clone();
+        let chain = std::iter::once(leaf)
+            .chain(ca_chain.iter().cloned())
+            .collect();
+        (chain, PrivatePkcs8KeyDer::from(key.serialize_der()).into())
+    }
+
+    fn peer_tls(
+        issuer: &Issuer<'static, KeyPair>,
+        ca_chain: &[CertificateDer<'static>],
+        uri: &str,
+    ) -> PipelinePeerTls {
+        let (chain, key) = peer_chain(issuer, ca_chain, uri);
+        PipelinePeerTls::from_chain(chain, key).unwrap()
+    }
+
+    /// Runs a TLS handshake between `client` and `server` in memory.
+    fn handshake(
+        client: Arc<ClientConfig>,
+        server: Arc<ServerConfig>,
+    ) -> Result<(), rustls::Error> {
+        let mut client = ClientConnection::new(client, ServerName::try_from("127.0.0.1").unwrap())?;
+        let mut server = ServerConnection::new(server)?;
+        for _ in 0..10 {
+            let mut buf = Vec::new();
+            while client.wants_write() {
+                client.write_tls(&mut buf).unwrap();
+            }
+            server.read_tls(&mut buf.as_slice()).unwrap();
+            server.process_new_packets()?;
+
+            let mut buf = Vec::new();
+            while server.wants_write() {
+                server.write_tls(&mut buf).unwrap();
+            }
+            client.read_tls(&mut buf.as_slice()).unwrap();
+            client.process_new_packets()?;
+
+            if !client.is_handshaking() && !server.is_handshaking() {
+                return Ok(());
+            }
+        }
+        panic!("handshake did not finish");
+    }
+
+    /// Hosts of one pipeline connect to each other. A host refuses a peer that is another
+    /// pipeline, the control plane, has no certificate, or has a certificate from a CA other
+    /// than the private CA, as client and as server.
+    #[test]
+    fn peer_tls_admits_only_own_pipeline() {
+        let (root, root_cert) = named_ca("root", None);
+        let (private_ca, private_ca_cert) = named_ca("private", Some(&root));
+        let (other_ca, other_ca_cert) = named_ca("other", Some(&root));
+        let ca_chain = [private_ca_cert, root_cert.clone()];
+        let a = pipeline_certificate_uri(PIPELINE_A);
+        let b = pipeline_certificate_uri(PIPELINE_B);
+
+        let host0 = peer_tls(&private_ca, &ca_chain, &a);
+        let host1 = peer_tls(&private_ca, &ca_chain, &a);
+        handshake(host0.client.clone(), host1.server.clone()).unwrap();
+        handshake(host1.client.clone(), host0.server.clone()).unwrap();
+
+        // A client that admits host 0 as its server, so that only host 0 can refuse. It
+        // needs `dangerous()` for the same reason as `PipelinePeerTls::from_chain`.
+        let verifier = Arc::new(
+            PipelinePeerVerifier::from_chain(&peer_chain(&private_ca, &ca_chain, &a).0).unwrap(),
+        );
+        let client_builder = || {
+            ClientConfig::builder_with_provider(crypto_provider())
+                .with_protocol_versions(&[&rustls::version::TLS13])
+                .unwrap()
+                .dangerous()
+                .with_custom_certificate_verifier(verifier.clone())
+        };
+        let anonymous = client_builder().with_no_client_auth();
+        assert!(
+            handshake(Arc::new(anonymous), host0.server.clone()).is_err(),
+            "server admitted a client without a certificate"
+        );
+
+        let refused = [
+            ("another pipeline", peer_chain(&private_ca, &ca_chain, &b)),
+            (
+                "the control plane",
+                peer_chain(&private_ca, &ca_chain, CONTROL_PLANE_CERTIFICATE_URI),
+            ),
+            (
+                "the same pipeline from a sibling CA",
+                peer_chain(&other_ca, &[other_ca_cert, root_cert.clone()], &a),
+            ),
+            (
+                "the same pipeline from the root CA",
+                peer_chain(&root, std::slice::from_ref(&root_cert), &a),
+            ),
+        ];
+        for (name, (chain, key)) in refused {
+            let client = client_builder()
+                .with_client_auth_cert(chain.clone(), key.clone_key())
+                .unwrap();
+            assert!(
+                handshake(Arc::new(client), host0.server.clone()).is_err(),
+                "server admitted {name}"
+            );
+
+            // A server that requires no client certificate, so that only host 0 can refuse.
+            let server = ServerConfig::builder_with_provider(crypto_provider())
+                .with_protocol_versions(&[&rustls::version::TLS13])
+                .unwrap()
+                .with_no_client_auth()
+                .with_single_cert(chain, key)
+                .unwrap();
+            assert!(
+                handshake(host0.client.clone(), Arc::new(server)).is_err(),
+                "client admitted {name}"
+            );
+        }
+    }
+
+    /// Peer configurations need a pipeline certificate followed by the CA chain.
+    #[test]
+    fn peer_tls_needs_pipeline_chain() {
+        let (issuer, ca_cert) = ca();
+        let a = pipeline_certificate_uri(PIPELINE_A);
+        let (chain, key) = peer_chain(&issuer, &[], &a);
+        assert!(PipelinePeerTls::from_chain(chain, key).is_err());
+        let (chain, key) = peer_chain(&issuer, &[ca_cert], CONTROL_PLANE_CERTIFICATE_URI);
+        assert!(PipelinePeerTls::from_chain(chain, key).is_err());
     }
 }
