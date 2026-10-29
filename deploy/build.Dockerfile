@@ -117,6 +117,13 @@ RUN arch=`dpkg --print-architecture`; \
     && mv dnscontrol /usr/local/bin/ \
     && rm dnscontrol_4.46.0_linux_$arch.tar.gz
 
+# syft generates SBOMs of the source tree and the release images
+RUN arch=`dpkg --print-architecture`; \
+    curl -LO https://github.com/anchore/syft/releases/download/v1.55.0/syft_1.55.0_linux_$arch.tar.gz \
+    && tar -xzf syft_1.55.0_linux_$arch.tar.gz syft \
+    && mv syft /usr/local/bin/ \
+    && rm syft_1.55.0_linux_$arch.tar.gz
+
 FROM install-pkgs AS base
 
 # Modify ubuntu user UID/GID to 1001 and create docker group with GID 123
@@ -161,7 +168,8 @@ ENV RUSTUP_HOME=/home/ubuntu/.rustup
 ENV CARGO_HOME=/home/ubuntu/.cargo
 COPY rust-toolchain.toml /tmp/rust-toolchain.toml
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile default --default-toolchain $(sed -n 's/^channel *= *"\(.*\)"/\1/p' /tmp/rust-toolchain.toml)
-RUN cargo install --locked cargo-machete@0.9.2 cargo-edit@0.13.13 just@1.58.0
+# cargo-auditable embeds the dependency list in release binaries for SBOMs
+RUN cargo install --locked cargo-machete@0.9.2 cargo-edit@0.13.13 just@1.58.0 cargo-auditable@0.7.7
 
 # Install uv
 RUN curl -LsSf https://astral.sh/uv/0.12.5/install.sh | sh
