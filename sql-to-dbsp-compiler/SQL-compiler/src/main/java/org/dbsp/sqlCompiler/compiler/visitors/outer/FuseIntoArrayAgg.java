@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Expensive;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.FreshenParameters;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ReferenceMap;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
@@ -440,7 +441,9 @@ public class FuseIntoArrayAgg extends Repeat {
         }
 
         /** Computes {@code g(array)} for the ARRAY_AGG at index {@code i}: its column, called on
-         * {@code array} alone */
+         * {@code array} alone.  The closures in the result, such as the lambda of a TRANSFORM,
+         * have fresh parameters: the fused aggregate holds two results, its postprocessing and
+         * its empty-set result, and a parameter must belong to one closure of the aggregate. */
         DBSPExpression g(DBSPCompiler compiler, int i, DBSPExpression array) {
             // Example: g = CARDINALITY(ARRAY_DISTINCT(p.1.1)) at index 1 of a map reader, array = to_array(acc)
             //   value:     &Tup2(_, to_array(acc))
@@ -448,7 +451,8 @@ public class FuseIntoArrayAgg extends Repeat {
             //   result:    CARDINALITY(ARRAY_DISTINCT(to_array(acc)))
             DBSPExpression value = this.value(Map.of(i, array));
             DBSPExpression[] arguments = this.reader.argumentsWithValue(value);
-            return this.call(compiler, Utilities.getExists(this.g, i), arguments);
+            DBSPExpression result = this.call(compiler, Utilities.getExists(this.g, i), arguments);
+            return FreshenParameters.freshenNested(compiler, result);
         }
     }
 
