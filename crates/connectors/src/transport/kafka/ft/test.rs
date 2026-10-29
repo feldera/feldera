@@ -37,7 +37,8 @@ use feldera_adapterlib::{
     catalog::StagedBuffers,
     format::{BufferSize, flatten_nested},
     test::{
-        Capability, ConnectorTestEngine, InputOptions, MockOutputCallbacks, Updates, wait_for_rows,
+        Capability, ConnectorTestEngine, InputOptions, MockOutputCallbacks, Updates,
+        default_timeout_ms, wait_for_rows,
     },
     transport::{OutputBatchType, Resume, Watermark},
 };
@@ -2429,6 +2430,95 @@ pub fn buffer(engine: &dyn PipelineTestEngine) {
     drop(consumer);
     controller.stop().unwrap();
     running.store(false, Ordering::Release);
+}
+
+/// Returns the `end` of each partition's offsets in `metadata`, the metadata of
+/// a Kafka connector's frontier, in partition order, or nothing if there is no
+/// frontier.  `end` is the next offset to read in the partition.
+fn frontier_ends(metadata: Option<JsonValue>) -> Vec<i64> {
+    metadata.map_or_else(Vec::new, |metadata| {
+        metadata["offsets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|offsets| offsets["end"].as_i64().unwrap())
+            .collect()
+    })
+}
+
+/// In a transaction, the circuit input frontier of a Kafka connector follows
+/// each round of messages to the end of every partition, while the completed
+/// frontier waits for the commit.
+#[engine_test(services(Kafka))]
+pub fn circuit_input_frontier_moves_in_a_transaction(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+    let topic = "circuit_input_frontier_test_topic";
+    let partitions = 2;
+    let rounds = 2;
+    let messages = 10;
+    let _kafka_resources = KafkaResources::create_topics(&[(topic, partitions)]);
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "kafka_input",
+                    "config": {
+                        "auto.offset.reset": "earliest",
+                        "topics": [topic],
+                    }
+                },
+                "format": { "name": "csv" }
+            }
+        }
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &TestCircuit::identity(relation()),
+            &config,
+            Box::new(|error, _| panic!("circuit_input_frontier_moves_in_a_transaction: {error}")),
+        )
+        .unwrap();
+    let status = || controller.input_endpoint_status("test_input1").unwrap();
+    controller.start();
+    controller.start_transaction().unwrap();
+
+    // Each round sends `messages` messages to each partition.  The second round
+    // starts after the circuit has taken in the first, so the transaction
+    // takes its input in more than one step.
+    let producer = TestProducer::new();
+    let ends_after = |rounds: usize| vec![(rounds * messages) as i64; partitions as usize];
+    for round in 0..rounds {
+        for partition in 0..partitions {
+            let first = (round * partitions as usize + partition as usize) * messages;
+            let batch = for_ids(first..first + messages);
+            producer.send_to_topic_partition(&csv(&singletons(&[batch])), topic, partition);
+        }
+        let ends = ends_after(round + 1);
+        wait(
+            || frontier_ends(status().circuit_input_frontier.map(|f| f.metadata)) == ends,
+            default_timeout_ms(),
+        )
+        .unwrap_or_else(|()| panic!("the circuit input frontier did not reach {ends:?}"));
+        let completed = frontier_ends(status().completed_frontier.map(|f| f.metadata));
+        assert!(
+            completed.iter().all(|&end| end == 0),
+            "the completed frontier moved in the transaction: {completed:?}"
+        );
+    }
+
+    controller.start_commit_transaction().unwrap();
+    let ends = ends_after(rounds);
+    wait(
+        || frontier_ends(status().completed_frontier.map(|f| f.metadata)) == ends,
+        default_timeout_ms(),
+    )
+    .expect("the completed frontier did not reach the end of the partitions after the commit");
+    controller.stop().unwrap();
 }
 
 /// Checks a pipeline that reads CSV `data` from an input topic and writes it in `format`

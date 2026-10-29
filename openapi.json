@@ -8968,6 +8968,31 @@
           }
         }
       },
+      "CircuitInputWatermark": {
+        "type": "object",
+        "description": "A watermark that the circuit has taken in.\n\nThe outputs computed from the input may not be complete yet: in a\ntransaction, they wait for the commit.",
+        "required": [
+          "metadata",
+          "ingested_at",
+          "processed_at"
+        ],
+        "properties": {
+          "ingested_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the data was ingested from the wire."
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Metadata that describes the position in the input stream (e.g., Kafka partition/offset pairs)."
+          },
+          "processed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the circuit finished the step that took the data in."
+          }
+        }
+      },
       "ClientMetadata": {
         "type": "object",
         "description": "Client-generated data stored alongside a pipeline.\n\nThe fields are stored together as a single JSON object in the\n`client_metadata` text column, so adding a field needs no migration.\nDeserialization is lenient: missing keys take their default and unknown\nkeys are ignored. [`PatchClientMetadata`] is the optional, per-field form\nused by `PATCH` request bodies.",
@@ -11754,6 +11779,14 @@
           "barrier": {
             "type": "boolean",
             "description": "Endpoint is currently a barrier to checkpointing and suspend."
+          },
+          "circuit_input_frontier": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CircuitInputWatermark"
+              }
+            ],
+            "nullable": true
           },
           "completed_frontier": {
             "allOf": [

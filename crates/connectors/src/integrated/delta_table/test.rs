@@ -146,7 +146,7 @@ fn completed_frontier_metadata(pipeline: &Controller) -> Option<Value> {
         .input_status()
         .values()
         .next()
-        .and_then(|s| s.completed_frontier.completed_watermark())
+        .and_then(|s| s.watermarks.completed_watermark())
         .map(|w| w.metadata)
 }
 
@@ -2370,7 +2370,7 @@ pub(super) async fn test_follow(
                         .values()
                         .next()
                         .unwrap()
-                        .completed_frontier
+                        .watermarks
                         .debug()
                 );
                 version == expected
@@ -2480,7 +2480,7 @@ pub(super) async fn test_follow(
                         } else {
                             input_table.version().unwrap() as i64
                         };
-                        debug!("pipeline completed version {version}, expected {expected}, waterlines: {:?}", pipeline.status().input_status().values().next().unwrap().completed_frontier.debug());
+                        debug!("pipeline completed version {version}, expected {expected}, waterlines: {:?}", pipeline.status().input_status().values().next().unwrap().watermarks.debug());
                         version == expected
                     } else {
                         debug!("pipeline completed version: None");

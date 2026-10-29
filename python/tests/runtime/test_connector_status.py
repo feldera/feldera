@@ -61,6 +61,10 @@ def _assert_input_status_fields(status, expected_stream: str) -> None:
         assert isinstance(status.completed_frontier.ingested_at, datetime)
         assert isinstance(status.completed_frontier.processed_at, datetime)
         assert isinstance(status.completed_frontier.completed_at, datetime)
+    if status.circuit_input_frontier is not None:
+        assert isinstance(status.circuit_input_frontier.metadata, object)
+        assert isinstance(status.circuit_input_frontier.ingested_at, datetime)
+        assert isinstance(status.circuit_input_frontier.processed_at, datetime)
 
 
 def _assert_output_status_fields(status, expected_stream: str) -> None:

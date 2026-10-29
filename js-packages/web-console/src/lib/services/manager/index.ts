@@ -117,6 +117,7 @@ export type {
   CheckpointSyncResponse,
   CheckpointSyncStatus,
   Chunk,
+  CircuitInputWatermark,
   ClientMetadata,
   ClientOptions,
   ClockAdvanceData,
