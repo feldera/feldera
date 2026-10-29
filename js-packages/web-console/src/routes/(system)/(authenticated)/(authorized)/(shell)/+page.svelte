@@ -2,7 +2,6 @@
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { InlineDropdown, useIsScreenMd, useIsTablet } from 'common-ui'
   import { slide } from 'svelte/transition'
-  import { preloadCode } from '$app/navigation'
   import IconBookOpen from '#assets/icons/feldera-material-icons/book-open.svg?component'
   import IconDiscord from '#assets/icons/vendors/discord-logomark-color.svg?component'
   import IconSlack from '#assets/icons/vendors/slack-logomark-color.svg?component'
@@ -26,6 +25,7 @@
   import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
   import { useDemos } from '#lib/compositions/useDemos.svelte.ts'
   import { resolve } from '#lib/functions/svelte.ts'
+  import { preloadCode } from '$app/navigation'
 
   preloadCode(
     '/(system)/(authenticated)/(authorized)/(shell)/(pipelines)/pipelines/[pipelineName]'

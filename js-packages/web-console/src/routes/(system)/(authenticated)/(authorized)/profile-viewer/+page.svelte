@@ -1,8 +1,8 @@
 <script lang="ts">
   import triagePlugins, { createBundle, TriageResults } from 'virtual:feldera-triage-plugins'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
-  import type { ConnectorMetrics } from 'common-ui/connectorMetrics'
   import { enclosure, nonNull } from 'common-lib/function'
+  import type { ConnectorMetrics } from 'common-ui/connectorMetrics'
   import {
     createLoadGuard,
     type GlobalMetrics,
@@ -13,7 +13,6 @@
   } from 'profiler-layout'
   import type { Dataflow, JsonProfiles } from 'profiler-lib'
   import { fade } from 'svelte/transition'
-  import { goto } from '$app/navigation'
   import Popup from '#lib/components/common/Popup.svelte'
   import AppHeader from '#lib/components/layout/AppHeader.svelte'
   import PipelineBreadcrumbs from '#lib/components/layout/PipelineBreadcrumbs.svelte'
@@ -33,6 +32,7 @@
     markBundleOpenedNow,
     resolveStoredBundle
   } from '#lib/services/supportBundleHistory.ts'
+  import { goto } from '$app/navigation'
 
   const { data } = $props()
   const { pipelineName, source, collect, channel, bundle: storedBundleId } = data

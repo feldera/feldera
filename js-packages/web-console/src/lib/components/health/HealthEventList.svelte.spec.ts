@@ -3,8 +3,8 @@
  * with the dot color of its status tone. The first row opens on mount and loads its details.
  */
 
-import type { HealthEventBucket, HealthStatus } from 'common-ui/healthEvents'
 import { HealthEventList } from 'common-ui'
+import type { HealthEventBucket, HealthStatus } from 'common-ui/healthEvents'
 import { statusToneColors } from 'common-ui/statusTone'
 import { describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
