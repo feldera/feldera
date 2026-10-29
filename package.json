@@ -12,5 +12,11 @@
     "build:libs": "bun scripts/check-bun-version.ts && bun run --filter common-lib --filter triage-types --filter profiler-lib --filter common-ui --filter profiler-layout --filter @feldera/vite-plugin-monaco-editor build:self",
     "check": "bun run build:libs && bun run --filter '*' check:self"
   },
-  "workspaces": ["js-packages/*"]
+  "workspaces": ["js-packages/*"],
+  "overrides": {
+    "@opentelemetry/core": "^2.12.0",
+    "dompurify": "^3.4.17",
+    "follow-redirects": "^1.16.2",
+    "js-yaml": "^4.3.2"
+  }
 }
