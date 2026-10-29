@@ -391,7 +391,7 @@ impl AvroEncoder {
         topic: Option<String>,
         is_index: bool,
     ) -> Result<Self, ControllerError> {
-        debug!("Creating Avro encoder; config: {config:#?}");
+        debug!("Creating Avro encoder for endpoint '{endpoint_name}'");
         match config.update_format {
             AvroUpdateFormat::Raw | AvroUpdateFormat::ConfluentJdbc => (),
             AvroUpdateFormat::Debezium => {

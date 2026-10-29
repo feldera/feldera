@@ -966,7 +966,10 @@ impl Controller {
         config: &InputEndpointConfig,
         resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
-        debug!("Connecting input endpoint '{endpoint_name}'; config: {config:?}");
+        debug!(
+            "Connecting input endpoint '{endpoint_name}' with transport '{}'",
+            config.connector_config.transport.name()
+        );
         self.inner.fail_if_bootstrapping_or_restoring()?;
         self.inner
             .connect_input(endpoint_name, config, resume_info, None)
@@ -1043,7 +1046,10 @@ impl Controller {
         endpoint: Box<dyn OutputEndpoint>,
         initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Result<EndpointId, ControllerError> {
-        debug!("Adding output endpoint '{endpoint_name}'; config: {endpoint_config:?}");
+        debug!(
+            "Adding output endpoint '{endpoint_name}' with transport '{}'",
+            endpoint_config.connector_config.transport.name()
+        );
         self.inner.fail_if_restoring()?;
 
         self.inner.add_output_endpoint(
@@ -8286,7 +8292,10 @@ impl ControllerInner {
     ) -> Result<EndpointId, ControllerError> {
         let (seek, initial_statistics) = resume_info.unzip();
 
-        debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
+        debug!(
+            "Adding input endpoint '{endpoint_name}' with transport '{}'",
+            endpoint_config.connector_config.transport.name()
+        );
 
         let resolved_connector_config = resolve_secret_references_in_connector_config(
             &self.secrets_dir,

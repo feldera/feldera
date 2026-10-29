@@ -1,3 +1,4 @@
+use crate::display_url::{REDACTED, url_without_credentials};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Display};
 use utoipa::ToSchema;
@@ -85,7 +86,7 @@ impl Display for AvroUpdateFormat {
 }
 
 /// Schema registry configuration.
-#[derive(Clone, Serialize, Deserialize, Debug, Default, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, Default, ToSchema)]
 pub struct AvroSchemaRegistryConfig {
     /// List of schema registry URLs.
     ///
@@ -339,9 +340,71 @@ fn default_encoder_threads() -> usize {
     4
 }
 
+impl std::fmt::Debug for AvroSchemaRegistryConfig {
+    /// Shows the URLs without credentials, the header names without values,
+    /// and the credential fields as present or absent.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Every field is named, so a new one is classified before it compiles.
+        let Self {
+            registry_urls,
+            registry_headers,
+            registry_proxy,
+            registry_timeout,
+            registry_username,
+            registry_password,
+            registry_authorization_token,
+        } = self;
+        let present = |value: &Option<String>| value.as_ref().map(|_| REDACTED);
+        let urls: Vec<String> = registry_urls
+            .iter()
+            .map(|url| url_without_credentials(url))
+            .collect();
+        let header_names: Vec<&str> = registry_headers.keys().map(String::as_str).collect();
+        f.debug_struct("AvroSchemaRegistryConfig")
+            .field("registry_urls", &urls)
+            .field("registry_headers", &header_names)
+            .field(
+                "registry_proxy",
+                &registry_proxy.as_deref().map(url_without_credentials),
+            )
+            .field("registry_timeout", registry_timeout)
+            .field("registry_username", registry_username)
+            .field("registry_password", &present(registry_password))
+            .field(
+                "registry_authorization_token",
+                &present(registry_authorization_token),
+            )
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Debug output of the registry config holds no credential.
+    #[test]
+    fn registry_debug_omits_credentials() {
+        let config = AvroSchemaRegistryConfig {
+            registry_urls: vec!["http://u:pw-url@registry:8081/v1".to_string()],
+            registry_headers: HashMap::from([(
+                "Authorization".to_string(),
+                "pw-header".to_string(),
+            )]),
+            registry_proxy: Some("http://u:pw-proxy@proxy:3128".to_string()),
+            registry_username: Some("u".to_string()),
+            registry_password: Some("pw-pass".to_string()),
+            registry_authorization_token: Some("pw-token".to_string()),
+            ..Default::default()
+        };
+        let text = format!("{config:?}");
+        for secret in ["pw-url", "pw-header", "pw-proxy", "pw-pass", "pw-token"] {
+            assert!(!text.contains(secret), "{secret} in Debug: {text}");
+        }
+        for name in ["registry:8081/v1", "Authorization", "proxy:3128"] {
+            assert!(text.contains(name), "{name} missing: {text}");
+        }
+    }
 
     /// The schema registry timeout has no default of its own: with neither
     /// field set the accessor yields `None`, which leaves the HTTP client's own

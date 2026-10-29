@@ -27,7 +27,7 @@ duration_setting!(
 );
 
 /// Configuration for reading data from Kafka topics with `InputTransport`.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, ToSchema)]
+#[derive(Clone, Eq, PartialEq, Serialize, ToSchema)]
 pub struct KafkaInputConfig {
     /// Options passed directly to `rdkafka`.
     ///
@@ -769,7 +769,7 @@ pub struct KafkaHeader {
 }
 
 /// Configuration for writing data to a Kafka topic with `OutputTransport`.
-#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct KafkaOutputConfig {
     /// Options passed directly to `rdkafka`.
     ///
@@ -821,7 +821,7 @@ pub struct KafkaOutputConfig {
 }
 
 /// Fault tolerance configuration for Kafka output connector.
-#[derive(Debug, Clone, Default, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[derive(Clone, Default, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 #[serde(default)]
 pub struct KafkaOutputFtConfig {
     /// Options passed to `rdkafka` for consumers only, as documented at
@@ -1053,6 +1053,101 @@ mod compat {
                 header_filter: compat.header_filter,
             })
         }
+    }
+}
+
+/// The option names without their values, which can be credentials such as
+/// `sasl.password`.
+fn option_names(options: &BTreeMap<String, String>) -> Vec<&str> {
+    options.keys().map(String::as_str).collect()
+}
+
+impl std::fmt::Debug for KafkaInputConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // Every field is named, so a new one is classified before it compiles.
+        let Self {
+            kafka_options,
+            topic,
+            log_level,
+            group_join_timeout,
+            poller_threads,
+            start_from,
+            region,
+            oauth_provider,
+            partitions,
+            resume_earliest_if_data_expires,
+            include_headers,
+            include_timestamp,
+            include_partition,
+            include_offset,
+            include_topic,
+            synchronize_partitions,
+            header_filter,
+        } = self;
+        f.debug_struct("KafkaInputConfig")
+            .field("kafka_options", &option_names(kafka_options))
+            .field("topic", topic)
+            .field("log_level", log_level)
+            .field("group_join_timeout", group_join_timeout)
+            .field("poller_threads", poller_threads)
+            .field("start_from", start_from)
+            .field("region", region)
+            .field("oauth_provider", oauth_provider)
+            .field("partitions", partitions)
+            .field(
+                "resume_earliest_if_data_expires",
+                resume_earliest_if_data_expires,
+            )
+            .field("include_headers", include_headers)
+            .field("include_timestamp", include_timestamp)
+            .field("include_partition", include_partition)
+            .field("include_offset", include_offset)
+            .field("include_topic", include_topic)
+            .field("synchronize_partitions", synchronize_partitions)
+            .field("header_filter", header_filter)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for KafkaOutputConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            kafka_options,
+            topic,
+            headers,
+            log_level,
+            initialization_timeout,
+            fault_tolerance,
+            kafka_service,
+            region,
+            oauth_provider,
+        } = self;
+        // Header values are user data and can be credentials too.
+        let header_keys: Vec<&str> = headers.iter().map(|h| h.key.as_str()).collect();
+        f.debug_struct("KafkaOutputConfig")
+            .field("kafka_options", &option_names(kafka_options))
+            .field("topic", topic)
+            .field("headers", &header_keys)
+            .field("log_level", log_level)
+            .field("initialization_timeout", initialization_timeout)
+            .field("fault_tolerance", fault_tolerance)
+            .field("kafka_service", kafka_service)
+            .field("region", region)
+            .field("oauth_provider", oauth_provider)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for KafkaOutputFtConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let Self {
+            consumer_options,
+            producer_options,
+        } = self;
+        f.debug_struct("KafkaOutputFtConfig")
+            .field("consumer_options", &option_names(consumer_options))
+            .field("producer_options", &option_names(producer_options))
+            .finish()
     }
 }
 
@@ -1385,6 +1480,42 @@ mod timeout_tests {
             let json = config_json(fields);
             let config: KafkaOutputConfig = serde_json::from_str(&json).unwrap();
             assert_eq!(config.initialization_timeout(), expected, "parsing {json}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod debug_tests {
+    use super::{KafkaInputConfig, KafkaOutputConfig};
+    use serde_json::json;
+
+    /// The Debug output names the options and headers, and hides their
+    /// values.
+    #[test]
+    fn debug_omits_option_values() {
+        let input: KafkaInputConfig = serde_json::from_value(json!({
+            "topic": "t",
+            "sasl.password": "pw-input"
+        }))
+        .unwrap();
+        let text = format!("{input:?}");
+        assert!(!text.contains("pw-input"), "value in Debug: {text}");
+        assert!(text.contains("sasl.password"), "option missing: {text}");
+        assert!(text.contains("\"t\""), "topic missing: {text}");
+
+        let output: KafkaOutputConfig = serde_json::from_value(json!({
+            "topic": "t",
+            "sasl.password": "pw-output",
+            "headers": [{"key": "Authorization", "value": "pw-header"}],
+            "fault_tolerance": {"producer_options": {"sasl.password": "pw-ft"}}
+        }))
+        .unwrap();
+        let text = format!("{output:?}");
+        for secret in ["pw-output", "pw-header", "pw-ft"] {
+            assert!(!text.contains(secret), "{secret} in Debug: {text}");
+        }
+        for name in ["sasl.password", "Authorization", "producer_options"] {
+            assert!(text.contains(name), "{name} missing: {text}");
         }
     }
 }

@@ -143,7 +143,10 @@ impl KafkaOutputEndpoint {
         let _guard = span(&config.topic);
         // Create Kafka producer configuration.
         config.validate()?;
-        debug!("Starting Kafka output endpoint: {config:?}");
+        debug!(
+            "Starting Kafka output endpoint for topic '{}'",
+            config.topic
+        );
 
         let mut client_config = ClientConfig::new();
 

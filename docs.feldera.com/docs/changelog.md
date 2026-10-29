@@ -10,6 +10,12 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Security: connector errors, debug log lines, and compile errors that
+  printed a whole configuration, URI, or option value now name the endpoint
+  and the option only, so a resolved secret reference does not reach the
+  pipeline log or `deployment_error` through them. See
+  [secret references](/connectors/secret-references#diagnostics).
+
 - Delta Lake input connector: `uc://` tables can use Databricks workload
   identity federation. Set `unity_client_id`, `databricks_host` and
   `unity_federated_token_file` (for example a Kubernetes service account
