@@ -5,6 +5,18 @@ use url::Url;
 /// Stands in for a value that can hold a credential.
 pub const REDACTED: &str = "[REDACTED]";
 
+/// Debug output of named values as `{name: "[REDACTED]"}`: it shows that each
+/// value exists, and hides it.
+pub struct HiddenValues<'a>(pub Vec<&'a str>);
+
+impl std::fmt::Debug for HiddenValues<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map()
+            .entries(self.0.iter().map(|name| (name, REDACTED)))
+            .finish()
+    }
+}
+
 /// Schemes whose username is a container name, not a credential.
 const SCHEMES_WITH_CONTAINER_USERNAME: [&str; 4] = ["abfs", "abfss", "wasb", "wasbs"];
 
