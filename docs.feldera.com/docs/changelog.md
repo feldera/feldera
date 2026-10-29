@@ -30,6 +30,16 @@ Source edition can be found on github.
   more than `resources.memory_max`, with a 400 `InvalidRuntimeConfig` error.
   A pipeline stored with such values still loads.
 
+- Iceberg input connector: follow mode reads V3 deletion vectors, so
+  merge-on-read `DELETE`, `UPDATE` and `MERGE` stream as changes.
+
+- Behavior change (Iceberg input connector): follow mode stops with an error
+  when a snapshot deletes rows and the table still has V2 delete files. Before,
+  it could emit rows that were already deleted.
+
+- Behavior change (Iceberg input connector): a read that a retry cannot fix,
+  such as a read of a missing file in follow mode, now fails at once.
+
 ## v0.377.0
 
 - Experimental (Enterprise, Kubernetes): `deployment_config` in

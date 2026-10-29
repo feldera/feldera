@@ -23,9 +23,10 @@ mod kafka_tests;
 mod parquet_tests;
 
 pub use data::{
-    DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergSubsetTestStruct, IcebergTestStruct,
-    KeyStruct, S3TablesTestStruct, TestStruct, TestStruct2, TestStructSoftDelete,
-    generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
+    DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergSparkTestStruct,
+    IcebergSubsetTestStruct, IcebergTestStruct, KeyStruct, S3TablesTestStruct, TestStruct,
+    TestStruct2, TestStructSoftDelete, generate_test_batch, generate_test_batches,
+    generate_test_batches_with_weights,
 };
 pub use engine::records::KafkaRawMetadata;
 pub use engine::{StaticTestEngine, TypedCollection};
