@@ -30,6 +30,42 @@ use std::sync::{Arc, Mutex};
 pub use feldera_adapterlib::catalog::*;
 
 /// Circuit catalog implementation.
+///
+/// # Where output data lives
+///
+/// Every table, view, and index is also an output stream.  The catalog gives each one a delta
+/// stream, which output connectors read, and, if it is materialized, an integral, which ad hoc
+/// queries and `send_snapshot` read.
+///
+/// On a single host, every delta stream and every integral is on all workers.  On multihost,
+/// every delta stream is gathered to host H, the host that the coordinator assigned to the
+/// stream in `OUTPUT_MAPPING`, because an output connector runs on one host and reads the whole
+/// stream there.  A stream that no output connector reads is gathered only while an HTTP client
+/// reads it.  On multihost, the integral of each kind of materialized relation is on these
+/// workers, where "all workers" means every worker on every host:
+///
+/// | Materialized relation | Registered by | Integral on multihost | Integral shard key |
+/// |---|---|---|---|
+/// | Table | [register_materialized_input_zset] | Each worker's own input, not sharded | |
+/// | Table with primary key | [register_materialized_input_map] | All workers, shared with the upsert operator | Primary key |
+/// | Lazy table with primary key | [register_lazy_materialized_input_map] | All workers | Primary key |
+/// | View | [register_materialized_output_zset] | Host H | Whole row |
+/// | View as an indexed Z-set | [register_materialized_output_map] | Host H | Key |
+/// | Index | [register_materialized_index] | Host H | Index key |
+///
+/// An integral is gathered to host H only so that a `send_snapshot` connector on host H can read
+/// the whole relation locally.  Ad hoc queries do not need it: the coordinator reads every
+/// worker's part of the integral on that worker's host.  Tables never gather their integrals,
+/// because a connector cannot take a snapshot of a table.  A view's integral is sharded, not only
+/// accumulated, so that a record with weight +1 on one worker and -1 on another cancels: ad hoc
+/// queries treat each worker's integral as a partition and cannot handle negative weights.
+///
+/// [register_materialized_input_zset]: Catalog::register_materialized_input_zset
+/// [register_materialized_input_map]: Catalog::register_materialized_input_map
+/// [register_lazy_materialized_input_map]: Catalog::register_lazy_materialized_input_map
+/// [register_materialized_output_zset]: Catalog::register_materialized_output_zset
+/// [register_materialized_output_map]: Catalog::register_materialized_output_map
+/// [register_materialized_index]: Catalog::register_materialized_index
 pub struct Catalog {
     input_collection_handles: BTreeMap<SqlIdentifier, InputCollectionHandle>,
     output_batch_handles: BTreeMap<SqlIdentifier, OutputCollectionHandles>,
