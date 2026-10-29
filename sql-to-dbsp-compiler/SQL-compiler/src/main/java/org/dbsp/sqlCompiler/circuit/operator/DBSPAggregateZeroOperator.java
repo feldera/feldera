@@ -51,8 +51,7 @@ public class DBSPAggregateZeroOperator extends DBSPUnaryOperator implements ILin
      */
     public DBSPAggregateZeroOperator(
             CalciteRelNode node, DBSPExpression zero, OutputPort source) {
-        super(node, "aggregate_zero", zero, TypeCompiler.makeZSet(zero.getType()),
-                false, source);
+        super(node, "aggregate_zero", zero, TypeCompiler.makeZSet(zero.getType()), source);
     }
 
     @Override

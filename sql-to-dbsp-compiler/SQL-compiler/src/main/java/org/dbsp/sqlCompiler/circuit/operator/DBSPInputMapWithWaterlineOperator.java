@@ -108,11 +108,6 @@ public class DBSPInputMapWithWaterlineOperator
     }
 
     @Override
-    public boolean isMultiset(int outputNumber) {
-        return false;
-    }
-
-    @Override
     public int outputCount() {
         return 3;
     }

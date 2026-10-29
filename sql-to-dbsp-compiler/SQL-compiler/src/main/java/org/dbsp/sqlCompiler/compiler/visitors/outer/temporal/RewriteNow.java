@@ -213,7 +213,7 @@ public class RewriteNow extends CircuitCloneVisitor {
         CalciteRelNode joinNode = operator.getRelNode().copy();
         joinNode.addSourcePositions(List.of(nowCall.getSourcePosition()));
         DBSPSimpleOperator result = new DBSPStreamJoinOperator(joinNode, joinType,
-                joinFunction, operator.isMultiset, index.outputPort(), nowIndexed.outputPort(), false);
+                joinFunction, index.outputPort(), nowIndexed.outputPort(), false);
         this.addOperator(result);
         return result;
     }
@@ -388,7 +388,7 @@ public class RewriteNow extends CircuitCloneVisitor {
                 windowKeyType,
                 value.getType());
         DBSPMapIndexOperator index = new DBSPMapIndexOperator(operator.getRelNode(),
-                indexFunction, ix, operator.isMultiset, source.outputPort());
+                indexFunction, ix, source.outputPort());
         this.addOperator(index);
 
         // Apply window function.  Operator is incremental, so add D & I around it

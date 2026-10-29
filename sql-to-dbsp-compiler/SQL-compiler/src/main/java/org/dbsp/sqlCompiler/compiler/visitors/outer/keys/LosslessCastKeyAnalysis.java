@@ -13,6 +13,6 @@ public class LosslessCastKeyAnalysis extends KeyAnalysis {
 
     @Override
     Lineage.InnerLineage interpreter() {
-        return new LosslessCastLineage(this.compiler());
+        return new LosslessCastLineage(this.compiler(), true);
     }
 }

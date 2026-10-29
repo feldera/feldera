@@ -40,7 +40,7 @@ import java.util.Objects;
 
 public final class DBSPFilterOperator extends DBSPUnaryOperator implements ILinear {
     public DBSPFilterOperator(CalciteRelNode node, DBSPExpression condition, OutputPort input) {
-        super(node, "filter", condition, input.outputType(), input.isMultiset(), input);
+        super(node, "filter", condition, input.outputType(), input);
         this.checkResultType(condition, new DBSPTypeBool(CalciteEmptyRel.INSTANCE, false));
         checkArgumentFunctionType(condition, input);
     }

@@ -73,7 +73,7 @@ public class MergeSums extends CircuitCloneVisitor {
             } else {
                 value = new DBSPIndexedZSetExpression(CalciteObject.EMPTY, operator.getOutputIndexedZSetType());
             }
-            DBSPConstantOperator constant = new DBSPConstantOperator(operator.getRelNode(), value, false);
+            DBSPConstantOperator constant = new DBSPConstantOperator(operator.getRelNode(), value);
             this.map(operator, constant);
             return;
         }

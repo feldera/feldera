@@ -28,7 +28,7 @@ public final class DBSPAggregateLinearPostprocessOperator
             DBSPTypeIndexedZSet outputType,
             DBSPExpression function,
             DBSPClosureExpression postProcess, OutputPort input) {
-        super(node, "aggregate_linear_postprocess", function, outputType, false, input);
+        super(node, "aggregate_linear_postprocess", function, outputType, input);
         this.postProcess = postProcess;
         Utilities.enforce(outputType.elementType.sameType(postProcess.getResultType()));
     }

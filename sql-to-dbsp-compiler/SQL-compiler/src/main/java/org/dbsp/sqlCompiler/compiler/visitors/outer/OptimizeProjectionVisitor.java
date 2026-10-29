@@ -158,7 +158,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                     DBSPIndexedZSetExpression empty = new DBSPIndexedZSetExpression(
                             c.getNode(), operator.getOutputIndexedZSetType());
                     DBSPConstantOperator result = new DBSPConstantOperator(
-                            operator.getRelNode(), empty, false);
+                            operator.getRelNode(), empty);
                     this.map(operator, result);
                     return;
                 }
@@ -193,21 +193,21 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         if (source.is(DBSPJoinIndexOperator.class)) {
             Utilities.enforce(join != null);
             return new DBSPJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
-                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced)
+                    newFunction, join.left(), join.right(), join.balanced)
                     .copyAnnotations(source);
         } else if (source.is(DBSPLeftJoinIndexOperator.class)) {
             Utilities.enforce(join != null);
             return new DBSPLeftJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
-                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced)
+                    newFunction, join.left(), join.right(), join.balanced)
                     .copyAnnotations(source);
         } else if (source.is(DBSPStreamJoinIndexOperator.class)) {
             Utilities.enforce(join != null);
             return new DBSPStreamJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
-                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced)
+                    newFunction, join.left(), join.right(), join.balanced)
                     .copyAnnotations(source);
         } else if (source.is(DBSPStarJoinIndexOperator.class)) {
             return new DBSPStarJoinOperator(source.getRelNode(), operator.getOutputZSetType(), newFunction,
-                    operator.isMultiset, source.inputs)
+                    source.inputs)
                     .copyAnnotations(source);
         }
         throw new InternalCompilerError("Unexpected join operator " + source);
@@ -225,21 +225,21 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         if (source.is(DBSPJoinOperator.class)) {
             Utilities.enforce(join != null);
             return new DBSPJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced)
+                    newFunction, join.left(), join.right(), join.balanced)
                     .copyAnnotations(source);
         } else if (source.is(DBSPStreamJoinOperator.class)) {
             Utilities.enforce(join != null);
             return new DBSPStreamJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced)
+                    newFunction, join.left(), join.right(), join.balanced)
                     .copyAnnotations(source);
         } else if (source.is(DBSPLeftJoinOperator.class)) {
             Utilities.enforce(join != null);
             return new DBSPLeftJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced)
+                    newFunction, join.left(), join.right(), join.balanced)
                     .copyAnnotations(source);
         } else if (source.is(DBSPStarJoinOperator.class)) {
             return new DBSPStarJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, source.inputs)
+                    newFunction, source.inputs)
                     .copyAnnotations(source);
         } else {
             return source.withFunction(newFunction, operator.outputType).to(DBSPSimpleOperator.class);
@@ -263,21 +263,21 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         if (source.is(DBSPJoinIndexOperator.class)) {
             Utilities.enforce(join != null);
             return new DBSPJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced)
+                    newFunction, join.left(), join.right(), join.balanced)
                     .copyAnnotations(join);
         } else if (source.is(DBSPLeftJoinIndexOperator.class)) {
             Utilities.enforce(join != null);
             return new DBSPLeftJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced)
+                    newFunction, join.left(), join.right(), join.balanced)
                     .copyAnnotations(join);
         } else if (source.is(DBSPStarJoinIndexOperator.class)) {
             return new DBSPStarJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, source.inputs)
+                    newFunction, source.inputs)
                     .copyAnnotations(source);
         } else if (source.is(DBSPStreamJoinIndexOperator.class)) {
             Utilities.enforce(join != null);
             return new DBSPStreamJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
-                    newFunction, operator.isMultiset, join.left(), join.right(), join.balanced)
+                    newFunction, join.left(), join.right(), join.balanced)
                     .copyAnnotations(source);
         }
         throw new InternalCompilerError("Unexpected join " + source);

@@ -94,10 +94,10 @@ public class RemoveStarJoins extends Repeat {
             DBSPType closureResultType = closure.getResultType();
             if (closureResultType.is(DBSPTypeRawTuple.class)) {
                 DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(closureResultType.to(DBSPTypeRawTuple.class));
-                this.join = new DBSPStarJoinIndexOperator(operator.getRelNode(), ix, closure, operator.isMultiset, inputs);
+                this.join = new DBSPStarJoinIndexOperator(operator.getRelNode(), ix, closure, inputs);
             } else {
                 DBSPTypeZSet outputType = new DBSPTypeZSet(closureResultType);
-                this.join = new DBSPStarJoinOperator(operator.getRelNode(), outputType, closure, operator.isMultiset, inputs);
+                this.join = new DBSPStarJoinOperator(operator.getRelNode(), outputType, closure, inputs);
             }
 
             this.filter = new DBSPFilterOperator(operator.getRelNode(), operator.filter, this.join.outputPort());
@@ -176,10 +176,10 @@ public class RemoveStarJoins extends Repeat {
             final DBSPJoinBaseOperator result;
             if (!this.delta) {
                 result = new DBSPJoinIndexOperator(
-                        node, joinOutputType, appendFields, false, left, right, false);
+                        node, joinOutputType, appendFields, left, right, false);
             } else {
                 result = new DBSPStreamJoinIndexOperator(
-                        node, joinOutputType, appendFields, false, left, right, false);
+                        node, joinOutputType, appendFields, left, right, false);
             }
             this.addOperator(result);
             return result;

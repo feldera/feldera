@@ -51,7 +51,7 @@ public class ImplementJoins extends CircuitCloneVisitor {
         }
         DBSPJoinIndexOperator join = new DBSPJoinIndexOperator(
                 operator.getRelNode().intermediate(), operator.getOutputIndexedZSetType(), operator.getFunction(),
-                operator.isMultiset, diffs.get(0), diffs.get(1), operator.balanced);
+                diffs.get(0), diffs.get(1), operator.balanced);
         this.addOperator(join);
         DBSPIntegrateOperator integrator = new DBSPIntegrateOperator(operator.getRelNode(), join.outputPort());
         this.map(operator, integrator);

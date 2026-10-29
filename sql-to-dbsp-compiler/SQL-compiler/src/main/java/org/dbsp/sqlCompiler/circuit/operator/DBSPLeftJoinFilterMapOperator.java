@@ -35,9 +35,8 @@ public final class DBSPLeftJoinFilterMapOperator extends DBSPJoinBaseOperator im
     public DBSPLeftJoinFilterMapOperator(
             CalciteRelNode node, DBSPTypeZSet outputType,
             DBSPExpression function, @Nullable DBSPClosureExpression filter, @Nullable DBSPClosureExpression map,
-            boolean isMultiset,
             OutputPort left, OutputPort right, boolean balanced) {
-        super(node, joinOperationName("left_join_flatmap", balanced), function, outputType, isMultiset, left, right, balanced);
+        super(node, joinOperationName("left_join_flatmap", balanced), function, outputType, left, right, balanced);
         this.filter = filter;
         this.map = map;
         Utilities.enforce(left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType));
@@ -56,7 +55,7 @@ public final class DBSPLeftJoinFilterMapOperator extends DBSPJoinBaseOperator im
             return new DBSPLeftJoinFilterMapOperator(
                     this.getRelNode(), outputType.to(DBSPTypeZSet.class),
                     Objects.requireNonNull(function), this.filter, this.map,
-                    this.isMultiset, newInputs.get(0), newInputs.get(1), this.balanced).copyAnnotations(this);
+                    newInputs.get(0), newInputs.get(1), this.balanced).copyAnnotations(this);
         }
         return this;
     }
@@ -107,7 +106,7 @@ public final class DBSPLeftJoinFilterMapOperator extends DBSPJoinBaseOperator im
         return new DBSPLeftJoinFilterMapOperator(
                 CalciteEmptyRel.INSTANCE, info.getZsetType(), info.getFunction(),
                 filter, map,
-                info.isMultiset(), info.getInput(0), info.getInput(1), balanced)
+                info.getInput(0), info.getInput(1), balanced)
                 .addAnnotations(info.annotations(), DBSPLeftJoinFilterMapOperator.class);
     }
 }

@@ -47,7 +47,7 @@ public final class DBSPViewDeclarationOperator
             CalciteRelNode relNode, CalciteObject node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
             TableMetadata metadata, ProgramIdentifier name, StreamKind kind) {
-        super(relNode, "Z", sourceName, outputType, originalRowType, true,
+        super(relNode, "Z", sourceName, outputType, originalRowType,
                 metadata, name, kind, null);
         Utilities.enforce(metadata.getColumnCount() == originalRowType.fields.size());
         Utilities.enforce(metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size());

@@ -34,7 +34,7 @@ public final class DBSPNowOperator extends DBSPSimpleOperator implements ILinear
 
     public DBSPNowOperator(CalciteRelNode node) {
         super(node, "now", createFunction(node),
-                new DBSPTypeZSet(new DBSPTypeTuple(DBSPTypeTimestamp.create(node, false))), false);
+                new DBSPTypeZSet(new DBSPTypeTuple(DBSPTypeTimestamp.create(node, false))));
     }
 
     @Override

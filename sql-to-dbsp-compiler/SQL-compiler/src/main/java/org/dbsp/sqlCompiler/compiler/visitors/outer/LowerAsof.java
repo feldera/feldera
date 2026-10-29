@@ -226,8 +226,7 @@ public class LowerAsof implements CircuitTransform {
                             .closure(l);
             DBSPMapIndexOperator leftIndex = new DBSPMapIndexOperator(
                     node, toLeftKey,
-                    TypeCompiler.makeIndexedZSet(keyType, wrapper.getType()),
-                    false, this.mapped(join.left()));
+                    TypeCompiler.makeIndexedZSet(keyType, wrapper.getType()), this.mapped(join.left()));
             this.addOperator(leftIndex);
 
             DBSPComparatorExpression rightComparator =
@@ -241,8 +240,7 @@ public class LowerAsof implements CircuitTransform {
                             .closure(r);
             DBSPMapIndexOperator rightIndex = new DBSPMapIndexOperator(
                     node, toRightKey,
-                    TypeCompiler.makeIndexedZSet(keyType, wrapper.getType()),
-                    false, this.mapped(join.right()));
+                    TypeCompiler.makeIndexedZSet(keyType, wrapper.getType()), this.mapped(join.right()));
             this.addOperator(rightIndex);
 
             DBSPType wrappedLeftType = new DBSPTypeWithCustomOrd(node, leftElementType, leftComparatorType);
@@ -290,7 +288,7 @@ public class LowerAsof implements CircuitTransform {
 
             DBSPConcreteAsofJoinOperator result = new DBSPConcreteAsofJoinOperator(node, join.getOutputZSetType(),
                     function, leftTimestamp, rightTimestamp, join.comparator,
-                    join.isMultiset, join.isLeft,
+                    join.isLeft,
                     leftIndex.outputPort(), rightIndex.outputPort())
                     .copyAnnotations(join)
                     .to(DBSPConcreteAsofJoinOperator.class);

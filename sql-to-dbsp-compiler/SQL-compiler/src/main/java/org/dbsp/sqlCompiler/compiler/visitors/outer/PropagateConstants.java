@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
@@ -20,8 +21,11 @@ import java.util.Map;
 
 /** Try to optimize operators applied to constant inputs */
 public class PropagateConstants extends CircuitCloneVisitor {
-    public PropagateConstants(DBSPCompiler compiler) {
+    final MultisetAnalysis multisets;
+
+    public PropagateConstants(DBSPCompiler compiler, MultisetAnalysis multisets) {
         super(compiler, false);
+        this.multisets = multisets;
     }
 
     boolean inputIsConstant(OutputPort port) {
@@ -59,8 +63,7 @@ public class PropagateConstants extends CircuitCloneVisitor {
             }
             if (evaluated) {
                 DBSPZSetExpression zset = new DBSPZSetExpression(result, set.elementType);
-                boolean isDistinct = !constant.isMultiset || zset.isCertainlyDistinct();
-                return new DBSPConstantOperator(constant.getRelNode(), zset, !isDistinct);
+                return new DBSPConstantOperator(constant.getRelNode(), zset);
             }
         }
         return null;
@@ -87,7 +90,7 @@ public class PropagateConstants extends CircuitCloneVisitor {
                 }
             }
             if (evaluated) {
-                return new DBSPConstantOperator(constant.getRelNode(), result, !result.isCertainlyDistinct());
+                return new DBSPConstantOperator(constant.getRelNode(), result);
             }
         }
         return null;
@@ -112,7 +115,7 @@ public class PropagateConstants extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPDistinctOperator operator) {
         OutputPort source = this.mapped(operator.input());
-        if (source.isSimpleNode() && !source.simpleNode().isMultiset) {
+        if (source.isSimpleNode() && !this.multisets.isMultiset(source)) {
             // This includes constants
             this.map(operator, source.simpleNode(), false);
             return;
@@ -131,14 +134,14 @@ public class PropagateConstants extends CircuitCloneVisitor {
         DBSPZSetExpression value = constant.getFunction().as(DBSPZSetExpression.class);
         if (value != null) {
             value = value.negate();
-            DBSPConstantOperator result = new DBSPConstantOperator(operator.getRelNode(), value, !value.isCertainlyDistinct());
+            DBSPConstantOperator result = new DBSPConstantOperator(operator.getRelNode(), value);
             this.map(operator, result);
             return;
         }
         DBSPIndexedZSetExpression ix = constant.getFunction().as(DBSPIndexedZSetExpression.class);
         if (ix != null) {
             ix = ix.negate();
-            DBSPConstantOperator result = new DBSPConstantOperator(operator.getRelNode(), ix, !ix.isEmpty());
+            DBSPConstantOperator result = new DBSPConstantOperator(operator.getRelNode(), ix);
             this.map(operator, result);
             return;
         }

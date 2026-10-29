@@ -49,14 +49,13 @@ public abstract class DBSPSourceBaseOperator
      *                   that this node is created from.
      * @param outputType The output type of the table.
      * @param operation  Type of table.
-     * @param isMultiset True if the source data can be a multiset.
      * @param tableName  The name of the table that this operator is created from.
      * @param kind       Whether the source produces collections or deltas.
      * @param comment    A comment describing the operator. */
     protected DBSPSourceBaseOperator(
-            CalciteRelNode node, String operation, DBSPType outputType, boolean isMultiset,
+            CalciteRelNode node, String operation, DBSPType outputType,
             ProgramIdentifier tableName, TableMetadata metadata, StreamKind kind, @Nullable String comment) {
-        super(node, operation, null, outputType, isMultiset, comment);
+        super(node, operation, null, outputType, comment);
         this.tableName = tableName;
         this.metadata = metadata;
         this.kind = kind;

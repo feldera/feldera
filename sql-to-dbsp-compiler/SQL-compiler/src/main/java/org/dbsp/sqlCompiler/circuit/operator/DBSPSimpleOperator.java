@@ -47,21 +47,17 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     public final DBSPExpression function;
     /** Type of output produced. */
     public final DBSPType outputType;
-    /** True if the output of the operator is a multiset.  Conservative approximation;
-     * if this is 'false', it is surely false.  If it is true, the output may still be a set. */
-    public final boolean isMultiset;
     /** Kind of the output stream, derived from the inputs (cached here). */
     @Nullable
     private StreamKind outputKind = null;
 
     protected DBSPSimpleOperator(CalciteRelNode node, String operation,
                                  @Nullable DBSPExpression function, DBSPType outputType,
-                                 boolean isMultiset, @Nullable String comment) {
+                                 @Nullable String comment) {
         super(node, comment);
         this.operation = operation;
         this.function = function;
         this.outputType = outputType;
-        this.isMultiset = isMultiset;
         if (!operation.startsWith("waterline") &&
                 !operation.startsWith("apply") &&
                 !operation.startsWith("transaction_delay") &&
@@ -125,8 +121,8 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
 
     public DBSPSimpleOperator(CalciteRelNode node, String operation,
                               @Nullable DBSPExpression function,
-                              DBSPType outputType, boolean isMultiset) {
-        this(node, operation, function, outputType, isMultiset, null);
+                              DBSPType outputType) {
+        this(node, operation, function, outputType, null);
     }
 
     public DBSPSimpleOperator copyAnnotations(DBSPSimpleOperator source) {
@@ -327,12 +323,6 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     }
 
     @Override
-    public boolean isMultiset(int outputNo) {
-        Utilities.enforce(outputNo == 0);
-        return this.isMultiset;
-    }
-
-    @Override
     public int outputCount() {
         return 1;
     }
@@ -340,7 +330,6 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     record CommonInfo(
             @Nullable DBSPExpression function,
             DBSPType outputType,
-            boolean isMultiset,
             List<OutputPort> inputs,
             Annotations annotations) {
         public DBSPExpression getFunction() {
@@ -369,11 +358,10 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
         DBSPExpression function = null;
         if (node.has("function"))
             function = fromJsonInner(node, "function", decoder, DBSPExpression.class);
-        boolean isMultiset = Utilities.getBooleanProperty(node, "isMultiset");
         List<OutputPort> inputs = Linq.list(Linq.map(
                 Utilities.getProperty(node, "inputs").elements(),
                 e -> OutputPort.fromJson(e, decoder)));
         Annotations annotations = Annotations.fromJson(Utilities.getProperty(node, "annotations"));
-        return new CommonInfo(function, outputType, isMultiset, inputs, annotations);
+        return new CommonInfo(function, outputType, inputs, annotations);
     }
 }

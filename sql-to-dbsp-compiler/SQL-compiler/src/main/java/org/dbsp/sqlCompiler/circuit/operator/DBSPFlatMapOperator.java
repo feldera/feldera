@@ -40,21 +40,9 @@ import java.util.Objects;
 
 public final class DBSPFlatMapOperator extends DBSPUnaryOperator implements ILinear {
     public DBSPFlatMapOperator(CalciteRelNode node, DBSPExpression expression,
-                               DBSPTypeZSet outputType, boolean isMultiset, OutputPort input) {
-        super(node, "flat_map", expression, outputType, isMultiset, input);
-        checkArgumentFunctionType(expression, input);
-    }
-
-    // When implementing UNNEST, initially the expression is DBSPFlatmap, but later it is lowered
-    // into a lambda of the form
-    // |x| -> {
-    //   let array: &Vec<i32> = &(*x).A;
-    //   let array_clone: Vec<i32> = (*array).clone();
-    //   array_clone.clone().into_iter().map(move |e: X| ... )
-    // }
-    public DBSPFlatMapOperator(CalciteRelNode node, DBSPExpression expression,
                                DBSPTypeZSet outputType, OutputPort input) {
-        this(node, expression, outputType, true, input);
+        super(node, "flat_map", expression, outputType, input);
+        checkArgumentFunctionType(expression, input);
     }
 
     @Override
@@ -83,7 +71,7 @@ public final class DBSPFlatMapOperator extends DBSPUnaryOperator implements ILin
     public static DBSPFlatMapOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         return new DBSPFlatMapOperator(CalciteEmptyRel.INSTANCE, info.getFunction(),
-                info.getZsetType(), info.isMultiset(), info.getInput(0))
+                info.getZsetType(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPFlatMapOperator.class);
     }
 }

@@ -42,9 +42,9 @@ import java.util.Objects;
 public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator implements INonIncremental {
     public DBSPStreamJoinOperator(CalciteRelNode node, DBSPTypeZSet outputType,
                                   // Closure from key, valueLeft, valueRight to result type
-                                  DBSPExpression function, boolean isMultiset,
+                                  DBSPExpression function,
                                   OutputPort left, OutputPort right, boolean balanced) {
-        super(node, "stream_join", function, outputType, isMultiset, left, right, balanced);
+        super(node, "stream_join", function, outputType, left, right, balanced);
         Utilities.enforce(!balanced);
         DBSPType elementResultType = this.getOutputZSetElementType();
         this.checkResultType(function, elementResultType);
@@ -67,7 +67,7 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator implement
             return new DBSPStreamJoinOperator(
                     this.getRelNode(), outputType.to(DBSPTypeZSet.class),
                     Objects.requireNonNull(function),
-                    this.isMultiset, newInputs.get(0), newInputs.get(1), this.balanced).copyAnnotations(this);
+                    newInputs.get(0), newInputs.get(1), this.balanced).copyAnnotations(this);
         }
         return this;
     }
@@ -79,7 +79,7 @@ public final class DBSPStreamJoinOperator extends DBSPJoinBaseOperator implement
         CommonInfo info = commonInfoFromJson(node, decoder);
         boolean balanced = Utilities.getBooleanProperty(node, "balanced");
         return new DBSPStreamJoinOperator(CalciteEmptyRel.INSTANCE, info.getZsetType(),
-                info.getFunction(), info.isMultiset(), info.getInput(0), info.getInput(1), balanced)
+                info.getFunction(), info.getInput(0), info.getInput(1), balanced)
                 .addAnnotations(info.annotations(), DBSPStreamJoinOperator.class);
     }
 }

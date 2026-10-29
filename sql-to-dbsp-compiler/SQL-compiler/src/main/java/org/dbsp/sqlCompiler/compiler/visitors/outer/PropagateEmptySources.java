@@ -93,7 +93,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
      * the constant in that case; the caller maps 'operator' to the result. */
     static DBSPSimpleOperator emptyStream(CircuitCloneVisitor visitor, DBSPSimpleOperator operator) {
         DBSPSimpleOperator constant = new DBSPConstantOperator(
-                operator.getRelNode(), emptySet(operator.getType()), operator.isMultiset);
+                operator.getRelNode(), emptySet(operator.getType()));
         if (operator.outputKind(0) != StreamKind.DELTA)
             return constant;
         visitor.addOperator(constant);

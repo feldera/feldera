@@ -150,6 +150,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.SetOptionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
@@ -259,6 +260,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
     final ProgramMetadata metadata;
     /** Recursive views, indexed by actual view name (not rewritten name) */
     final Map<ProgramIdentifier, DeclareViewStatement> recursiveViews = new HashMap<>();
+    /** Finds which operators of the circuit under construction may produce multisets.\
+     * This is a visitor which will be used on an incomplete circuit.
+     * However, the visitor is read-only and is safe to be used, 
+     * since operators are created in topological order, and whenever
+     * this visitor is invoked it will produce a result for a 
+     * "prefix" of the final circuit. */
+    final MultisetAnalysis multisets;
 
     /**
      * Create a compiler that translated from calcite to DBSP circuits.
@@ -274,6 +282,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         this.options = options;
         this.ancestors = new ArrayList<>();
         this.metadata = metadata;
+        this.multisets = new MultisetAnalysis(compiler);
     }
 
     private DBSPCircuit getCircuit() {
@@ -313,7 +322,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
      * a distinct operator is introduced in the circuit. */
     private DBSPSimpleOperator getInputAs(RelNode input, boolean asMultiset) {
         DBSPSimpleOperator op = this.getOperator(input);
-        if (op.isMultiset && !asMultiset) {
+        if (!asMultiset && this.multisets.isMultiset(op.outputPort())) {
             op = new DBSPStreamDistinctOperator(CalciteObject.create(input), op.outputPort());
             this.addOperator(op);
         }
@@ -847,15 +856,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
 
             DBSPSimpleOperator join = new DBSPStarJoinIndexOperator(
-                    node, resultType, function,
-                    false, differentiators);
+                    node, resultType, function, differentiators);
             addOperator.accept(join);
             result = new DBSPIntegrateOperator(node, join.outputPort());
         } else {
             Utilities.enforce(aggregates.size() == 2);
             // use a standard binary join
             result = new DBSPStreamJoinIndexOperator(
-                    node, resultType, function, false,
+                    node, resultType, function,
                     aggregates.get(0).outputPort(), aggregates.get(1).outputPort(), false);
         }
         addOperator.accept(result);
@@ -1112,21 +1120,17 @@ public class CalciteToDBSPCompiler extends RelVisitor
      *
      * @param source            Output of this operator is converted.
      * @param outputElementType Type to convert to.
-     * @param preservesDistinct If true and input is not a multiset, the output is not a multiset either.
      * @return                  The operator inserting the cast.
      */
-    @SuppressWarnings("SameParameterValue")
     DBSPSimpleOperator castOutput(CalciteRelNode node, DBSPSimpleOperator source,
-                                  DBSPType outputElementType, boolean preservesDistinct) {
+                                  DBSPType outputElementType) {
         DBSPType inputElementType = source.getOutputZSetElementType();
         if (inputElementType.sameType(outputElementType))
             return source;
         DBSPClosureExpression caster = inputElementType.caster(outputElementType, DBSPCastExpression.CastType.SqlUnsafe);
         DBSPExpression function = caster.reduce(this.compiler);
         DBSPSimpleOperator map = new DBSPMapOperator(
-                node, function, TypeCompiler.makeZSet(outputElementType),
-                source.isMultiset || !preservesDistinct,
-                source.outputPort());
+                node, function, TypeCompiler.makeZSet(outputElementType), source.outputPort());
         this.addOperator(map);
         return map;
     }
@@ -1201,7 +1205,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         // input type nullability may not match
         List<OutputPort> ports = Linq.map(inputs,
-                o -> this.castOutput(node, o, outputType, true).outputPort());
+                o -> this.castOutput(node, o, outputType).outputPort());
         if (union.all) {
             DBSPSumOperator sum = new DBSPSumOperator(node.getFinal(), ports);
             Utilities.enforce(sum.getOutputZSetElementType().sameType(outputType));
@@ -1237,10 +1241,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
                 DBSPSimpleOperator filter =
                         this.filterNonNullFields(node, CalciteObject.EMPTY, filterIndexes, neg, false);
-                neg = this.castOutput(node, filter, outputType, true);
+                neg = this.castOutput(node, filter, outputType);
                 inputs.add(neg.outputPort());
             } else {
-                opInput = this.castOutput(node, opInput, outputType, true);
+                opInput = this.castOutput(node, opInput, outputType);
                 inputs.add(opInput.outputPort());
             }
             first = false;
@@ -1301,7 +1305,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             else {
                 // result is empty
                 var constant = new DBSPConstantOperator(
-                        relNode, DBSPZSetExpression.emptyWithElementType(rowType), false);
+                        relNode, DBSPZSetExpression.emptyWithElementType(rowType));
                 this.addOperator(constant);
                 return constant;
             }
@@ -1541,7 +1545,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     .closure(l);
             leftNonNullIndex = new DBSPMapIndexOperator(
                     node, toLeftKey,
-                    makeIndexedZSet(leftKey.getType(), leftTuple.getType()), false, filteredLeft.outputPort());
+                    makeIndexedZSet(leftKey.getType(), leftTuple.getType()), filteredLeft.outputPort());
             this.addOperator(leftNonNullIndex);
 
             final DBSPExpression rightKey = new DBSPTupleExpression(node, rightKeyFields);
@@ -1549,7 +1553,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     .closure(r);
             rightNonNullIndex = new DBSPMapIndexOperator(
                     node, toRightKey,
-                    makeIndexedZSet(rightKey.getType(), rightTuple.getType()), false, filteredRight.outputPort());
+                    makeIndexedZSet(rightKey.getType(), rightTuple.getType()), filteredRight.outputPort());
             this.addOperator(rightNonNullIndex);
         }
 
@@ -1591,8 +1595,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             final DBSPClosureExpression makeTuple = lr.closure(k, l0, r0);
             joinResult = new DBSPStreamJoinOperator(node, TypeCompiler.makeZSet(lr.getType()),
-                    makeTuple, left.isMultiset || right.isMultiset,
-                    leftNonNullIndex.outputPort(), rightNonNullIndex.outputPort(), false);
+                    makeTuple, leftNonNullIndex.outputPort(), rightNonNullIndex.outputPort(), false);
             joinResult.addAnnotations(strategies, DBSPSimpleOperator.class);
             inner = joinResult;
 
@@ -1636,8 +1639,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
                 final DBSPLeftJoinOperator lj = new DBSPLeftJoinOperator(
                         node, TypeCompiler.makeZSet(makeLeftTuple.getResultType()),
-                        makeLeftTuple, left.isMultiset || right.isMultiset,
-                        leftDiff.outputPort(), rightDiff.outputPort(), false);
+                        makeLeftTuple, leftDiff.outputPort(), rightDiff.outputPort(), false);
                 lj.addAnnotations(strategies, DBSPSimpleOperator.class);
                 this.addOperator(lj);
                 final DBSPIntegrateOperator integrate = new DBSPIntegrateOperator(node, lj.outputPort());
@@ -2063,7 +2065,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     .closure(l);
             leftIndex = new DBSPMapIndexOperator(
                     node, toLeftKey,
-                    makeIndexedZSet(leftKey.getType(), tuple.getType()), false, left.outputPort());
+                    makeIndexedZSet(leftKey.getType(), tuple.getType()), left.outputPort());
             this.addOperator(leftIndex);
 
             // Index right input
@@ -2072,8 +2074,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     .closure(r);
             rightIndex = new DBSPMapIndexOperator(
                     node, toRightKey,
-                    makeIndexedZSet(rightKey.getType(), tuple.getType()),
-                    false, filteredRight.outputPort());
+                    makeIndexedZSet(rightKey.getType(), tuple.getType()), filteredRight.outputPort());
             this.addOperator(rightIndex);
 
             // ASOF joins are only incremental, so need to differentiate the inputs
@@ -2120,7 +2121,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPClosureExpression makeTuple = lr.closure(k, l0, r0);
         DBSPSimpleOperator result = new DBSPAsofJoinOperator(node, TypeCompiler.makeZSet(resultType),
                 makeTuple, leftTsIndex, rightTsIndex, comparator,
-                left.isMultiset || right.isMultiset, isLeft,
+                isLeft,
                 leftIndex.outputPort(), rightIndex.outputPort());
         this.addOperator(result);
 
@@ -2294,7 +2295,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (this.modifyTableTranslation != null) {
             this.modifyTableTranslation.setResult(result);
         } else {
-            DBSPSimpleOperator constant = new DBSPConstantOperator(node.getFinal(), result, !result.isCertainlyDistinct());
+            DBSPSimpleOperator constant = new DBSPConstantOperator(node.getFinal(), result);
             this.assignOperator(values, constant);
         }
     }
@@ -2349,7 +2350,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             DBSPSimpleOperator filter =
                     this.filterNonNullFields(node, CalciteObject.EMPTY, filterIndexes, opInput, false);
-            DBSPSimpleOperator next = this.castOutput(node, filter, outputType, true);
+            DBSPSimpleOperator next = this.castOutput(node, filter, outputType);
             if (current == null)
                 current = next;
             else {

@@ -23,7 +23,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 public final class DBSPApply2Operator extends DBSPBinaryOperator implements ILinear {
     public DBSPApply2Operator(CalciteRelNode node, DBSPClosureExpression function,
                               OutputPort left, OutputPort right) {
-        super(node, "apply2", function, function.getResultType(), false, left, right);
+        super(node, "apply2", function, function.getResultType(), left, right);
         Utilities.enforce(function.parameters.length == 2,
                 () -> "Expected 2 parameters for function " + function);
         DBSPType param0Type = function.parameters[0].getType().deref();

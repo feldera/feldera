@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.util.IndentStreamBuilder;
 
 /**
@@ -42,9 +43,11 @@ public class CompilerCircuit {
 
     public String getRustSources() {
         IndentStreamBuilder builder = new IndentStreamBuilder();
+        MultisetAnalysis multisets = new MultisetAnalysis(this.compiler);
+        multisets.apply(this.getCircuit());
         ToRustVisitor visitor = new ToRustVisitor(
                 this.compiler, builder, this.getCircuit().getMetadata(),
-                new ProjectDeclarations(), new CircuitPostfix(this.compiler));
+                new ProjectDeclarations(), new CircuitPostfix(this.compiler), multisets);
         visitor.apply(this.getCircuit());
         return builder.toString();
     }

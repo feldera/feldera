@@ -389,8 +389,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPExpression newFunction = lowerJoinFilterMapFunctions(this.compiler(),
                 node.getClosureFunction(), node.filter, node.map);
         DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
-                newFunction, null, null, node.isMultiset,
-                this.mapped(node.left()), this.mapped(node.right()), node.balanced)
+                newFunction, null, null, this.mapped(node.left()), this.mapped(node.right()), node.balanced)
                 .copyAnnotations(node);
         this.map(node, result);
     }
@@ -405,8 +404,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPClosureExpression newFunction = lowerJoinFilterMapFunctions(this.compiler(),
                 node.getClosureFunction(), node.filter, node.map);
         DBSPSimpleOperator result = new DBSPStarJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
-                newFunction, null, null, node.isMultiset,
-                Linq.map(node.inputs, this::mapped))
+                newFunction, null, null, Linq.map(node.inputs, this::mapped))
                 .copyAnnotations(node);
         this.map(node, result);
     }
@@ -421,8 +419,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         DBSPExpression newFunction = lowerJoinFilterMapFunctions(this.compiler(), node.getClosureFunction(),
                 node.filter, node.map);
         DBSPSimpleOperator result = new DBSPLeftJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
-                newFunction, null, null, node.isMultiset,
-                this.mapped(node.left()), this.mapped(node.right()), node.balanced)
+                newFunction, null, null, this.mapped(node.left()), this.mapped(node.right()), node.balanced)
                 .copyAnnotations(node);
         this.map(node, result);
     }

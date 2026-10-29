@@ -19,7 +19,7 @@ import java.util.List;
  * different: it guarantees that successors will not see partial results within a transaction sub-step */
 public final class DBSPAtomicSumOperator extends DBSPSimpleOperator implements ILinear {
     public DBSPAtomicSumOperator(CalciteRelNode node, List<OutputPort> inputs) {
-        super(node, "atomic_sum", null, inputs.get(0).outputType(), true);
+        super(node, "atomic_sum", null, inputs.get(0).outputType());
         for (OutputPort op: inputs) {
             this.addInput(op);
             if (!op.outputType().sameType(this.outputType)) {

@@ -46,10 +46,6 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         this.details = details;
     }
 
-    static String isMultiset(DBSPSimpleOperator operator) {
-        return operator.isMultiset ? "" : "*";
-    }
-
     static String annotations(DBSPOperator operator) {
         return operator.annotations.toDotString();
     }
@@ -74,7 +70,6 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         this.stream.append(node.getNodeName(false))
                 .append(" [ shape=box " + color + " label=\"")
                 .append(node.getIdString())
-                .append(isMultiset(node))
                 .append(annotations(node))
                 .append(" ")
                 .append(name)
@@ -88,7 +83,6 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         this.stream.append(node.getNodeName(false))
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
-                .append(isMultiset(node))
                 .append(annotations(node))
                 .append(" ");
         if (this.details >= 2)
@@ -105,7 +99,6 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         this.stream.append(node.getNodeName(false))
                 .append(" [ shape=box,label=\"")
                 .append(node.getIdString())
-                .append(isMultiset(node))
                 .append(annotations(node))
                 .append(this.details > 0 ? " " + node.viewName.name() : "")
                 .append("\"")
@@ -275,7 +268,6 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .append(this.getColor(node))
                 .append(" label=\"")
                 .append(node.getIdString())
-                .append(isMultiset(node))
                 .append(annotations(node))
                 .append(" ")
                 .append(shorten(node.operation))
@@ -298,7 +290,6 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .append(this.getColor(node))
                 .append(" label=\"")
                 .append(node.getIdString())
-                .append(isMultiset(node))
                 .append(annotations(node))
                 .append(" ")
                 .append(shorten(node.operation))
@@ -383,7 +374,6 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .append(this.getColor(node))
                 .append(" label=\"")
                 .append(node.getIdString())
-                .append(isMultiset(node))
                 .append(annotations(node))
                 .append(" ")
                 .append(shorten(node.operation))

@@ -283,7 +283,7 @@ public class CreateStarJoins extends Passes {
                         diffs.add(diff.outputPort());
                     }
                     DBSPStarJoinOperator star = new DBSPStarJoinOperator(
-                            operator.getRelNode(), operator.outputType, tree.closure, operator.isMultiset, diffs);
+                            operator.getRelNode(), operator.outputType, tree.closure, diffs);
                     this.addOperator(star);
                     DBSPIntegrateOperator integrate = new DBSPIntegrateOperator(operator.getRelNode(), star.outputPort());
                     this.map(operator, integrate);
@@ -301,7 +301,7 @@ public class CreateStarJoins extends Passes {
                 if (tree.size() > 1) {
                     List<OutputPort> newInputs = Linq.map(tree.inputs, this::mapped);
                     DBSPStarJoinIndexOperator star = new DBSPStarJoinIndexOperator(
-                            operator.getRelNode(), operator.outputType, tree.closure, operator.isMultiset, newInputs);
+                            operator.getRelNode(), operator.outputType, tree.closure, newInputs);
                     this.map(operator, star);
                     return;
                 }

@@ -43,9 +43,9 @@ import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
-import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 /** At the end of the visit the set 'keep' contains all
@@ -97,10 +97,10 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     }
 
     VisitDecision keepInverseReachable(OutputPort destination) {
-        List<OutputPort> r = new ArrayList<>();
+        Deque<OutputPort> r = new ArrayDeque<>();
         r.add(destination);
         while (!r.isEmpty()) {
-            OutputPort op = r.remove(0);
+            OutputPort op = r.removeFirst();
             this.reachable.add(op.node());
             if (op.node().is(DBSPNestedOperator.class)) {
                 DBSPNestedOperator nested = op.node().to(DBSPNestedOperator.class);

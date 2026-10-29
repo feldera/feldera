@@ -79,20 +79,15 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator
      * @param limit           Max number of records output in each group.
      * @param equalityComparator Another representation of the comparator; see above.
      * @param outputProducer  Optional function with signature (rank, tuple) which produces the output.
-     * @param isMultiset      True if the output may contain a value more than once within a group.
-     *                        A set requires {@link #emitsDistinctRows}.
      * @param source          Input operator.
      */
     public DBSPIndexedTopKOperator(CalciteRelNode node, Numbering numbering,
                                    DBSPExpression comparator, DBSPExpression limit,
                                    DBSPEqualityComparatorExpression equalityComparator,
-                                   DBSPClosureExpression outputProducer, boolean isMultiset,
+                                   DBSPClosureExpression outputProducer,
                                    OutputPort source) {
         super(node, "topK", comparator,
-                outputType(source.getOutputIndexedZSetType(), outputProducer),
-                isMultiset, source);
-        Utilities.enforce(isMultiset || emitsDistinctRows(numbering, limit, outputProducer),
-                () -> "TopK declared to produce a set, but its rows may repeat: " + outputProducer);
+                outputType(source.getOutputIndexedZSetType(), outputProducer), source);
         Utilities.enforce(comparator.is(DBSPComparatorExpression.class) ||
                 comparator.is(DBSPPathExpression.class));
         this.limit = limit;
@@ -102,15 +97,6 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator
         Utilities.enforce(this.limit.getType().is(DBSPTypeUSize.class));
         Utilities.enforce(this.outputType.is(DBSPTypeIndexedZSet.class),
                 () -> "Expected the input to be an IndexedZSet type" + source.outputType());
-    }
-
-    /** Create a TopK operator that is a set exactly when {@link #emitsDistinctRows}. */
-    public DBSPIndexedTopKOperator(CalciteRelNode node, Numbering numbering,
-                                   DBSPExpression comparator, DBSPExpression limit,
-                                   DBSPEqualityComparatorExpression equalityComparator,
-                                   DBSPClosureExpression outputProducer, OutputPort source) {
-        this(node, numbering, comparator, limit, equalityComparator, outputProducer,
-                !emitsDistinctRows(numbering, limit, outputProducer), source);
     }
 
     /** True if the output producer emits the rank parameter as one of its fields. */
@@ -179,7 +165,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator
         if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPIndexedTopKOperator(this.getRelNode(), this.numbering,
                     Objects.requireNonNull(function).to(DBSPComparatorExpression.class),
-                    this.limit, this.equalityComparator, this.outputProducer, this.isMultiset,
+                    this.limit, this.equalityComparator, this.outputProducer,
                     newInputs.get(0)).copyAnnotations(this);
         }
         return this;
@@ -204,7 +190,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator
                 fromJsonInner(node, "equalityComparator", decoder, DBSPEqualityComparatorExpression.class);
         return new DBSPIndexedTopKOperator(CalciteEmptyRel.INSTANCE, numbering,
                 info.getFunction(),
-                limit, equalityComparator, outputProducer, info.isMultiset(), info.getInput(0))
+                limit, equalityComparator, outputProducer, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPIndexedTopKOperator.class);
     }
 }

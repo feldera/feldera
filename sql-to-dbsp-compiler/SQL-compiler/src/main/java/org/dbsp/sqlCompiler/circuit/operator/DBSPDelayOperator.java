@@ -20,7 +20,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 public final class DBSPDelayOperator extends DBSPUnaryOperator implements IStateful, ILinear {
     public DBSPDelayOperator(CalciteRelNode node, @Nullable DBSPExpression initial, OutputPort source) {
         super(node, initial == null ? "transaction_delay" : "transaction_delay_with_initial_value",
-                initial, source.outputType(), source.isMultiset(), source);
+                initial, source.outputType(), source);
         if (initial != null && !initial.getType().sameType(source.outputType()))
             throw new InternalCompilerError("Delay input has type " + source.outputType() +
                     " but initial value has type " + initial.getType());

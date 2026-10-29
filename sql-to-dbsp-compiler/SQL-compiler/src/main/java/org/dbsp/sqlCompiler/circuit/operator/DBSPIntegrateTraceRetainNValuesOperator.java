@@ -54,7 +54,7 @@ public final class DBSPIntegrateTraceRetainNValuesOperator
             CalciteRelNode node, DBSPExpression function,
             OutputPort data, OutputPort control, int n, WhichN which) {
         super(node, "accumulate_integrate_trace_retain_values_" + which.which,
-                function, data.outputType(), data.isMultiset(), data, control);
+                function, data.outputType(), data, control);
         Utilities.enforce(n > 0);
         this.n = n;
         this.which = which;
