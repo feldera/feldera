@@ -42,7 +42,9 @@ vi.mock('$app/state', async () => {
         }
       },
       url: new URL('http://localhost/')
-    }
+    },
+    // superforms (reached via AppHeader > ProfileButton) imports `navigating`.
+    navigating: { to: null }
   }
 })
 

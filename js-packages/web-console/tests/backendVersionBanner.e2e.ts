@@ -1,7 +1,4 @@
 import { expect, test } from '@playwright/test'
-import { configureTestClient } from '#lib/services/testPipelineHelpers.ts'
-
-configureTestClient()
 
 test.describe('Backend version banner', () => {
   test.setTimeout(60_000)

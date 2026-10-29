@@ -2,12 +2,9 @@ import { expect, test } from '@playwright/test'
 import { deletePipeline, putPipeline } from '#lib/services/pipelineManager.ts'
 import {
   cleanupPipeline,
-  configureTestClient,
   TEST_COMPILATION_PROFILE,
   waitForPipeline
 } from '#lib/services/testPipelineHelpers.ts'
-
-configureTestClient()
 
 const PREFIX = `test-deleted-${Date.now()}`
 const PIPELINE_A = `${PREFIX}-a`

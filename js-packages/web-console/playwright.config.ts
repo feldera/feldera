@@ -1,4 +1,9 @@
 import type { PlaywrightTestConfig } from '@playwright/test'
+import { configureTestClient } from '#lib/services/testPipelineHelpers.ts'
+
+// Playwright loads this file in the runner and in each worker process, so this
+// configures the API client for `globalSetup` and for the specs.
+configureTestClient()
 
 const appOrigin = process.env.PLAYWRIGHT_APP_ORIGIN
 

@@ -2,13 +2,10 @@ import { expect, test } from '@playwright/test'
 import { putPipeline } from '#lib/services/pipelineManager.ts'
 import {
   cleanupPipeline,
-  configureTestClient,
   startPipelineAndWaitForRunning,
   TEST_COMPILATION_PROFILE,
   waitForCompilation
 } from '#lib/services/testPipelineHelpers.ts'
-
-configureTestClient()
 
 const PIPELINE = `test-changestream-${Date.now()}`
 // The relation name as keyed in the UI: unquoted SQL identifiers are

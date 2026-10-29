@@ -6,9 +6,8 @@
  * the test suite keeps individual test timeouts tight.
  */
 
-import { configureTestClient, warmCompilationCache } from '#lib/services/testPipelineHelpers.ts'
+import { warmCompilationCache } from '#lib/services/testPipelineHelpers.ts'
 
 export default async function globalSetup() {
-  configureTestClient()
   await warmCompilationCache()
 }
