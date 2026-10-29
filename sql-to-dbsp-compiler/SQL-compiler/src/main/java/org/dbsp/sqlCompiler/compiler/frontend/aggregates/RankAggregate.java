@@ -41,6 +41,9 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
  * If followed by a filter on the rank it is implemented as a TopK aggregate in DBSP,
  * otherwise it is implemented using a primitive Rank DBSP aggregate. */
 public class RankAggregate extends WindowAggregates {
+    /** Name of the warning; silenced by {@code SET FELDERA_IGNORE_WARNING_CONSTANT_RANK = ON} */
+    public static final String WARNING = "Constant rank";
+
     public final AggregateCall call;
 
     /**
@@ -56,6 +59,15 @@ public class RankAggregate extends WindowAggregates {
                   int windowFieldIndex, AggregateCall call) {
         super(compiler, window, group, windowFieldIndex);
         this.call = call;
+        // The validator requires an ORDER BY, so an empty one means that Calcite
+        // removed every key, since each key is constant within a partition
+        SqlKind kind = call.getAggregation().kind;
+        if ((kind == SqlKind.RANK || kind == SqlKind.DENSE_RANK) && group.orderKeys.getFieldCollations().isEmpty()) {
+            String function = call.getAggregation().getName();
+            compiler.compiler().reportWarning(new SourcePositionRange(call.getParserPosition()), WARNING,
+                    "The ORDER BY keys of " + function + " are constant in each partition, so " +
+                            function + " is 1 for each row.");
+        }
     }
 
     @Override

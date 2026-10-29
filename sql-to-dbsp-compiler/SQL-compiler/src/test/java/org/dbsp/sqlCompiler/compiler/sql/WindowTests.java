@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.quidem.ScottBaseTests;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
@@ -901,4 +902,65 @@ public class WindowTests extends ScottBaseTests {
                 FROM T
                 WINDOW w AS (PARTITION BY p ORDER BY ts ROWS BETWEEN 2 PRECEDING AND CURRENT ROW);""");
     }
+
+    /** RANK and DENSE_RANK are 1 for each row when their ORDER BY keys are constant in each partition. */
+    @Test
+    public void issue7677() {
+        String sql = """
+                CREATE TABLE t(id INT, p INT);
+                CREATE VIEW v AS SELECT id,
+                    RANK() OVER (ORDER BY NULL) AS r,
+                    DENSE_RANK() OVER (PARTITION BY p ORDER BY 1) AS d,
+                    RANK() OVER (PARTITION BY p ORDER BY p DESC) AS rp
+                FROM t;""";
+        DBSPCompiler compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation(sql);
+        compiler.getFinalCircuit(true);
+        TestUtil.assertMessagesContain(compiler.messages,
+                "3:5: warning: Constant rank: The ORDER BY keys of RANK are constant in each partition, " +
+                        "so RANK is 1 for each row.");
+        TestUtil.assertMessagesContain(compiler.messages,
+                "4:5: warning: Constant rank: The ORDER BY keys of DENSE_RANK are constant in each partition, " +
+                        "so DENSE_RANK is 1 for each row.");
+        TestUtil.assertMessagesContain(compiler.messages,
+                "5:5: warning: Constant rank: The ORDER BY keys of RANK are constant in each partition, " +
+                        "so RANK is 1 for each row.");
+
+        // Validated on Postgres
+        var ccs = this.getCCS(sql);
+        ccs.stepWeightOne("INSERT INTO t VALUES (1, 10), (2, 10), (3, 20);", """
+                 id | r | d | rp
+                -----------------
+                 1  | 1 | 1 | 1
+                 2  | 1 | 1 | 1
+                 3  | 1 | 1 | 1""");
+        ccs.stepWeightOne("INSERT INTO t VALUES (4, 20), (5, NULL);", """
+                 id | r | d | rp
+                -----------------
+                 4  | 1 | 1 | 1
+                 5  | 1 | 1 | 1""");
+        ccs.step("REMOVE FROM t VALUES (1, 10);", """
+                 id | r | d | rp | weight
+                --------------------------
+                 1  | 1 | 1 | 1  | -1""");
+
+        // A TopK keeps all rows, since they all tie
+        sql = """
+                CREATE TABLE t(id INT, p INT);
+                CREATE VIEW v AS SELECT * FROM (
+                    SELECT id, RANK() OVER (ORDER BY NULL) AS r FROM t) WHERE r <= 1;""";
+        compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation(sql);
+        compiler.getFinalCircuit(true);
+        TestUtil.assertMessagesContain(compiler.messages,
+                "3:16: warning: Constant rank: The ORDER BY keys of RANK are constant in each partition, " +
+                        "so RANK is 1 for each row.");
+        ccs = this.getCCS(sql);
+        ccs.stepWeightOne("INSERT INTO t VALUES (1, 10), (2, 10), (3, 20);", """
+                 id | r
+                --------
+                 1  | 1
+                 2  | 1
+                 3  | 1""");
     }
+}
