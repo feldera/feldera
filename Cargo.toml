@@ -209,19 +209,18 @@ hdrhist = "0.5"
 hex = "0.4.3"
 home = "=0.5.9"
 http = "1.3.1"
-# Feldera fork of iceberg-rust: upstream `main` + 1 commit, "keep unpolled
-# metadata reads from stalling a scan". Main, because delta-rs needs
-# DataFusion 55 and the 0.10 releases use DataFusion 53.
-iceberg = { git = "https://github.com/feldera/iceberg-rust", rev = "ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16" }
-iceberg-catalog-glue = { git = "https://github.com/feldera/iceberg-rust", rev = "ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16" }
-iceberg-catalog-rest = { git = "https://github.com/feldera/iceberg-rust", rev = "ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16" }
-iceberg-catalog-s3tables = { git = "https://github.com/feldera/iceberg-rust", rev = "ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16" }
-iceberg-storage-opendal = { git = "https://github.com/feldera/iceberg-rust", rev = "ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16", features = ["opendal-s3", "opendal-gcs", "opendal-fs", "opendal-memory"] }
-# Fork that points `iceberg` at our fork above, or its `Table` is a different
+# Feldera fork of iceberg-rust, at upstream `main` with no patches. Main,
+# because delta-rs needs DataFusion 55 and the 0.10 releases use DataFusion 53.
+iceberg = { git = "https://github.com/feldera/iceberg-rust", rev = "4dd8c946432f5e56a3ccc88e5b438a356ba28287" }
+iceberg-catalog-glue = { git = "https://github.com/feldera/iceberg-rust", rev = "4dd8c946432f5e56a3ccc88e5b438a356ba28287" }
+iceberg-catalog-rest = { git = "https://github.com/feldera/iceberg-rust", rev = "4dd8c946432f5e56a3ccc88e5b438a356ba28287" }
+iceberg-catalog-s3tables = { git = "https://github.com/feldera/iceberg-rust", rev = "4dd8c946432f5e56a3ccc88e5b438a356ba28287" }
+iceberg-storage-opendal = { git = "https://github.com/feldera/iceberg-rust", rev = "4dd8c946432f5e56a3ccc88e5b438a356ba28287", features = ["opendal-s3", "opendal-gcs", "opendal-fs", "opendal-memory"] }
+# Fork that pins `iceberg` to the rev above, or its `Table` is a different
 # type from ours. A `[patch]` cannot do this: generated pipeline workspaces do
 # not apply it. TODO: drop it when `iceberg` and `iceberg-datafusion` 0.12 both
-# come from crates.io (crates.io `datafusion-iceberg` is an unrelated project).
-datafusion-iceberg = { git = "https://github.com/feldera/datafusion-iceberg.git", rev = "577ba62a99ab8522e29a955d20929ab29585c70d" }
+# come from crates.io.
+iceberg-datafusion = { git = "https://github.com/feldera/datafusion-iceberg.git", rev = "6b8cc8e589ce316b07e7183d08fbac37b260999d" }
 impl-trait-for-tuples = "0.2"
 indexmap = "2.7.1"
 indicatif = "0.17.0-rc.11"

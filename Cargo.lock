@@ -647,8 +647,8 @@ dependencies = [
  "bon",
  "digest 0.10.7",
  "log",
- "miniz_oxide",
- "num-bigint 0.4.6",
+ "miniz_oxide 0.8.9",
+ "num-bigint 0.4.8",
  "quad-rand",
  "rand 0.9.4",
  "regex-lite",
@@ -663,26 +663,26 @@ dependencies = [
 
 [[package]]
 name = "apache-avro"
-version = "0.21.0"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36fa98bc79671c7981272d91a8753a928ff6a1cd8e4f20a44c45bd5d313840bf"
+checksum = "312c1ea69e5fe9966e0029fb95aca8790100b85aff4f0d3b00a9337c74069a9c"
 dependencies = [
  "bigdecimal",
  "bon",
  "crc32fast",
- "digest 0.10.7",
+ "digest 0.11.3",
  "log",
- "miniz_oxide",
- "num-bigint 0.4.6",
+ "miniz_oxide 0.9.1",
+ "num-bigint 0.4.8",
+ "ouroboros",
  "quad-rand",
- "rand 0.9.4",
+ "rand 0.10.1",
  "regex-lite",
  "serde",
  "serde_bytes",
  "serde_json",
  "snap",
- "strum 0.27.2",
- "strum_macros 0.27.2",
+ "strum 0.28.0",
  "thiserror 2.0.18",
  "uuid",
  "zstd 0.13.3",
@@ -1929,7 +1929,7 @@ dependencies = [
  "addr2line",
  "cfg-if",
  "libc",
- "miniz_oxide",
+ "miniz_oxide 0.8.9",
  "object",
  "rustc-demangle",
  "windows-targets 0.52.6",
@@ -1989,7 +1989,7 @@ checksum = "4d6867f1565b3aad85681f1015055b087fcfd840d6aeee6eee7f2da317603695"
 dependencies = [
  "autocfg",
  "libm",
- "num-bigint 0.4.6",
+ "num-bigint 0.4.8",
  "num-integer",
  "num-traits",
  "serde",
@@ -2040,7 +2040,7 @@ dependencies = [
  "clang-sys",
  "itertools 0.13.0",
  "log",
- "prettyplease",
+ "prettyplease 0.2.32",
  "proc-macro2",
  "quote",
  "regex",
@@ -2199,27 +2199,25 @@ dependencies = [
 
 [[package]]
 name = "bon"
-version = "3.9.0"
+version = "3.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d13a61f2963b88eef9c1be03df65d42f6996dfeac1054870d950fcf66686f83"
+checksum = "a05442cd7005532d0cfedec676b5b9333d2b4c7c3afabe2b1a9ce2742fbe2ee6"
 dependencies = [
  "bon-macros",
- "rustversion",
 ]
 
 [[package]]
 name = "bon-macros"
-version = "3.9.0"
+version = "3.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d314cc62af2b6b0c65780555abb4d02a03dd3b799cd42419044f0c38d99738c0"
+checksum = "93833e97ac7c46ba97045afcf247238c27057538fcf2f06344662ddd5f567be6"
 dependencies = [
- "darling 0.23.0",
+ "darling 0.24.1",
  "ident_case",
- "prettyplease",
+ "prettyplease 0.3.0",
  "proc-macro2",
  "quote",
- "rustversion",
- "syn 2.0.117",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -3380,6 +3378,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "darling"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed17f5901b6630b993ca003def43f2f8ef4014fc13b047b57aad617ff32bc2ec"
+dependencies = [
+ "darling_core 0.24.1",
+ "darling_macro 0.24.1",
+]
+
+[[package]]
 name = "darling_core"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3434,6 +3442,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "darling_core"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6837e2cf7485aaae18f86181d2f0e9a7ed297a025e220aeabf63fdebd3a2ddff"
+dependencies = [
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "strsim 0.11.1",
+ "syn 3.0.3",
+]
+
+[[package]]
 name = "darling_macro"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3475,6 +3496,17 @@ dependencies = [
  "darling_core 0.23.0",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "darling_macro"
+version = "0.24.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ac7135c3ef02b2f7833bbeb1be5ba7f966dcde8a87c6b87f65a778d71a02785"
+dependencies = [
+ "darling_core 0.24.1",
+ "quote",
+ "syn 3.0.3",
 ]
 
 [[package]]
@@ -4010,21 +4042,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "datafusion-iceberg"
-version = "0.10.1"
-source = "git+https://github.com/feldera/datafusion-iceberg.git?rev=577ba62a99ab8522e29a955d20929ab29585c70d#577ba62a99ab8522e29a955d20929ab29585c70d"
-dependencies = [
- "async-trait",
- "dashmap 6.2.1",
- "datafusion",
- "futures",
- "iceberg",
- "parquet",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "datafusion-macros"
 version = "55.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4444,7 +4461,7 @@ dependencies = [
  "nix 0.29.0",
  "nkeys",
  "nonzero_ext",
- "num-bigint 0.4.6",
+ "num-bigint 0.4.8",
  "once_cell",
  "parking_lot 0.12.4",
  "parquet",
@@ -4803,7 +4820,7 @@ dependencies = [
  "asn1-rs",
  "displaydoc",
  "nom",
- "num-bigint 0.4.6",
+ "num-bigint 0.4.8",
  "num-traits",
  "rusticata-macros",
 ]
@@ -4940,9 +4957,9 @@ dependencies = [
 
 [[package]]
 name = "digest"
-version = "0.11.2"
+version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4850db49bf08e663084f7fb5c87d202ef91a3907271aff24a94eb97ff039153c"
+checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
 dependencies = [
  "block-buffer 0.12.0",
  "const-oid 0.10.2",
@@ -5655,7 +5672,7 @@ dependencies = [
  "feldera-size-of",
  "feldera-types",
  "itertools 0.14.0",
- "num-bigint 0.4.6",
+ "num-bigint 0.4.8",
  "num-traits",
  "rand 0.8.6",
  "rkyv",
@@ -5676,7 +5693,6 @@ dependencies = [
  "bytemuck",
  "chrono",
  "datafusion",
- "datafusion-iceberg",
  "feldera-adapterlib",
  "feldera-sqllib",
  "feldera-storage",
@@ -5686,6 +5702,7 @@ dependencies = [
  "iceberg-catalog-glue",
  "iceberg-catalog-rest",
  "iceberg-catalog-s3tables",
+ "iceberg-datafusion",
  "iceberg-storage-opendal",
  "log",
  "parquet-variant",
@@ -5713,7 +5730,7 @@ dependencies = [
 name = "feldera-macros"
 version = "0.372.0"
 dependencies = [
- "prettyplease",
+ "prettyplease 0.2.32",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5766,7 +5783,7 @@ dependencies = [
  "feldera-types",
  "http 1.4.2",
  "log",
- "prettyplease",
+ "prettyplease 0.2.32",
  "progenitor",
  "progenitor-client",
  "reqwest 0.12.24",
@@ -6010,7 +6027,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
 dependencies = [
  "crc32fast",
- "miniz_oxide",
+ "miniz_oxide 0.8.9",
  "zlib-rs",
 ]
 
@@ -6312,6 +6329,15 @@ dependencies = [
  "num-traits",
  "robust",
  "rstar",
+]
+
+[[package]]
+name = "geo-traits"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e7c353d12a704ccfab1ba8bfb1a7fe6cb18b665bf89d37f4f7890edcd260206"
+dependencies = [
+ "geo-types",
 ]
 
 [[package]]
@@ -6672,7 +6698,7 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f"
 dependencies = [
- "digest 0.11.2",
+ "digest 0.11.3",
 ]
 
 [[package]]
@@ -6878,11 +6904,11 @@ dependencies = [
 [[package]]
 name = "iceberg"
 version = "0.10.1"
-source = "git+https://github.com/feldera/iceberg-rust?rev=ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16#ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16"
+source = "git+https://github.com/feldera/iceberg-rust?rev=4dd8c946432f5e56a3ccc88e5b438a356ba28287#4dd8c946432f5e56a3ccc88e5b438a356ba28287"
 dependencies = [
  "aes-gcm",
  "anyhow",
- "apache-avro 0.21.0",
+ "apache-avro 0.22.0",
  "array-init",
  "arrow-arith",
  "arrow-array",
@@ -6913,6 +6939,7 @@ dependencies = [
  "once_cell",
  "ordered-float 4.6.0",
  "parquet",
+ "parquet-geospatial",
  "rand 0.9.4",
  "reqwest 0.12.24",
  "roaring",
@@ -6936,13 +6963,14 @@ dependencies = [
 [[package]]
 name = "iceberg-catalog-glue"
 version = "0.10.1"
-source = "git+https://github.com/feldera/iceberg-rust?rev=ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16#ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16"
+source = "git+https://github.com/feldera/iceberg-rust?rev=4dd8c946432f5e56a3ccc88e5b438a356ba28287#4dd8c946432f5e56a3ccc88e5b438a356ba28287"
 dependencies = [
  "anyhow",
  "async-trait",
  "aws-config",
  "aws-sdk-glue",
  "iceberg",
+ "iceberg-property-macro",
  "iceberg-storage-opendal",
  "serde_json",
  "tokio",
@@ -6951,13 +6979,14 @@ dependencies = [
 [[package]]
 name = "iceberg-catalog-rest"
 version = "0.10.1"
-source = "git+https://github.com/feldera/iceberg-rust?rev=ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16#ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16"
+source = "git+https://github.com/feldera/iceberg-rust?rev=4dd8c946432f5e56a3ccc88e5b438a356ba28287#4dd8c946432f5e56a3ccc88e5b438a356ba28287"
 dependencies = [
  "async-trait",
  "chrono",
  "http 1.4.2",
  "iceberg",
  "itertools 0.13.0",
+ "moka",
  "reqwest 0.12.24",
  "serde",
  "serde_derive",
@@ -6971,9 +7000,8 @@ dependencies = [
 [[package]]
 name = "iceberg-catalog-s3tables"
 version = "0.10.1"
-source = "git+https://github.com/feldera/iceberg-rust?rev=ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16#ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16"
+source = "git+https://github.com/feldera/iceberg-rust?rev=4dd8c946432f5e56a3ccc88e5b438a356ba28287#4dd8c946432f5e56a3ccc88e5b438a356ba28287"
 dependencies = [
- "anyhow",
  "async-trait",
  "aws-config",
  "aws-sdk-s3tables",
@@ -6982,9 +7010,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "iceberg-datafusion"
+version = "0.12.0"
+source = "git+https://github.com/feldera/datafusion-iceberg.git?rev=6b8cc8e589ce316b07e7183d08fbac37b260999d#6b8cc8e589ce316b07e7183d08fbac37b260999d"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "dashmap 6.2.1",
+ "datafusion",
+ "futures",
+ "iceberg",
+ "parquet",
+ "serde",
+ "tokio",
+ "typetag",
+ "uuid",
+]
+
+[[package]]
 name = "iceberg-property-macro"
 version = "0.10.1"
-source = "git+https://github.com/feldera/iceberg-rust?rev=ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16#ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16"
+source = "git+https://github.com/feldera/iceberg-rust?rev=4dd8c946432f5e56a3ccc88e5b438a356ba28287#4dd8c946432f5e56a3ccc88e5b438a356ba28287"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6994,7 +7040,7 @@ dependencies = [
 [[package]]
 name = "iceberg-storage-opendal"
 version = "0.10.1"
-source = "git+https://github.com/feldera/iceberg-rust?rev=ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16#ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16"
+source = "git+https://github.com/feldera/iceberg-rust?rev=4dd8c946432f5e56a3ccc88e5b438a356ba28287#4dd8c946432f5e56a3ccc88e5b438a356ba28287"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7412,7 +7458,7 @@ dependencies = [
  "ahash 0.8.12",
  "bitvec",
  "lexical-parse-float",
- "num-bigint 0.4.6",
+ "num-bigint 0.4.8",
  "num-traits",
  "pyo3",
  "smallvec",
@@ -7909,7 +7955,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98"
 dependencies = [
  "cfg-if",
- "digest 0.11.2",
+ "digest 0.11.3",
 ]
 
 [[package]]
@@ -8002,6 +8048,15 @@ checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
  "simd-adler32",
+]
+
+[[package]]
+name = "miniz_oxide"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
+dependencies = [
+ "adler2",
 ]
 
 [[package]]
@@ -8196,7 +8251,7 @@ version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35bd024e8b2ff75562e5f34e7f4905839deb4b22955ef5e73d2fea1b9813cb23"
 dependencies = [
- "num-bigint 0.4.6",
+ "num-bigint 0.4.8",
  "num-complex",
  "num-integer",
  "num-iter",
@@ -8206,9 +8261,9 @@ dependencies = [
 
 [[package]]
 name = "num-bigint"
-version = "0.4.6"
+version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5e44f723f1133c9deac646763579fdb3ac745e418f2a7af9cd0c431da1f20b9"
+checksum = "c89e69e7e0f03bea5ef08013795c25018e101932225a656383bd384495ecc367"
 dependencies = [
  "num-integer",
  "num-traits",
@@ -8303,7 +8358,7 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f83d14da390562dca69fc84082e73e548e1ad308d24accdedd2720017cb37824"
 dependencies = [
- "num-bigint 0.4.6",
+ "num-bigint 0.4.8",
  "num-integer",
  "num-traits",
 ]
@@ -8958,6 +9013,7 @@ dependencies = [
  "num-integer",
  "num-traits",
  "object_store 0.13.2",
+ "parquet-geospatial",
  "ring",
  "seq-macro",
  "serde_json",
@@ -8966,6 +9022,19 @@ dependencies = [
  "tokio",
  "twox-hash",
  "zstd 0.13.3",
+]
+
+[[package]]
+name = "parquet-geospatial"
+version = "59.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "634827365851180ca26bf54c76e970dc1c14c075684c0580ee97d8d0c953faf1"
+dependencies = [
+ "arrow-schema",
+ "geo-traits",
+ "serde",
+ "serde_json",
+ "wkb",
 ]
 
 [[package]]
@@ -9058,7 +9127,7 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112d82ceb8c5bf524d9af484d4e4970c9fd5a0cc15ba14ad93dccd28873b0629"
 dependencies = [
- "digest 0.11.2",
+ "digest 0.11.3",
  "hmac 0.13.0",
 ]
 
@@ -9742,6 +9811,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prettyplease"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bfe0f4c752e450fc2faf62654f1c134747922825d5b04ca717b8874f41a40c0"
+dependencies = [
+ "proc-macro2",
+ "syn 3.0.3",
+]
+
+[[package]]
 name = "primeorder"
 version = "0.13.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10066,7 +10145,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "700d18fa267b73b9b521fd7e13580e2f446916f176cacee1ab63fcc8191f1655"
 dependencies = [
  "libc",
- "num-bigint 0.4.6",
+ "num-bigint 0.4.8",
  "num-traits",
  "once_cell",
  "portable-atomic",
@@ -10540,7 +10619,7 @@ dependencies = [
  "arc-swap",
  "combine",
  "itoa",
- "num-bigint 0.4.6",
+ "num-bigint 0.4.8",
  "percent-encoding",
  "r2d2",
  "ryu",
@@ -10691,9 +10770,9 @@ dependencies = [
 
 [[package]]
 name = "regex-lite"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d942b98df5e658f56f20d592c7f868833fe38115e65c33003d8cd224b0155da"
+checksum = "cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973"
 
 [[package]]
 name = "regex-syntax"
@@ -11837,16 +11916,17 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.145"
+version = "1.0.154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "402a6f66d8c709116cf22f558eab210f5a50187f702eb4d7e5ef38d9a7f1c79c"
+checksum = "e7e9cc8b1b85264074fbcc02a88680c4096b1e47df8f739dceb03bf482f04bd6"
 dependencies = [
+ "foldhash 0.2.0",
  "indexmap 2.14.2",
  "itoa",
  "memchr",
- "ryu",
  "serde",
  "serde_core",
+ "zmij",
 ]
 
 [[package]]
@@ -12003,7 +12083,7 @@ checksum = "aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
- "digest 0.11.2",
+ "digest 0.11.3",
 ]
 
 [[package]]
@@ -12031,7 +12111,7 @@ checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
- "digest 0.11.2",
+ "digest 0.11.3",
 ]
 
 [[package]]
@@ -12139,7 +12219,7 @@ version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "297f631f50729c8c99b84667867963997ec0b50f32b2a7dbcab828ef0541e8bb"
 dependencies = [
- "num-bigint 0.4.6",
+ "num-bigint 0.4.8",
  "num-traits",
  "thiserror 2.0.18",
  "time",
@@ -12466,7 +12546,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "crc",
- "digest 0.11.2",
+ "digest 0.11.3",
  "dotenvy",
  "either",
  "futures-core",
@@ -12629,7 +12709,7 @@ dependencies = [
  "feldera-types",
  "inventory",
  "itertools 0.14.0",
- "num-bigint 0.4.6",
+ "num-bigint 0.4.8",
  "parquet",
  "parquet-variant",
  "parquet-variant-compute",
@@ -15015,7 +15095,7 @@ dependencies = [
  "anyhow",
  "heck 0.5.0",
  "indexmap 2.14.2",
- "prettyplease",
+ "prettyplease 0.2.32",
  "syn 2.0.117",
  "wasm-metadata",
  "wit-bindgen-core",
@@ -15029,7 +15109,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c0f9bfd77e6a48eccf51359e3ae77140a7f50b1e2ebfe62422d8afdaffab17a"
 dependencies = [
  "anyhow",
- "prettyplease",
+ "prettyplease 0.2.32",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -15072,6 +15152,18 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser",
+]
+
+[[package]]
+name = "wkb"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04ab2f2845abe967a213998446345a1a6fc9a8f318cd88f668a8e507861d13bc"
+dependencies = [
+ "byteorder",
+ "geo-traits",
+ "num_enum",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
@@ -15325,6 +15417,12 @@ name = "zlib-rs"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c745c48e1007337ed136dc99df34128b9faa6ed542d80a1c673cf55a6d7236c8"
+
+[[package]]
+name = "zmij"
+version = "1.0.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
 
 [[package]]
 name = "zopfli"
