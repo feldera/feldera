@@ -28,6 +28,7 @@ use tracing::span::EnteredSpan;
 use tracing::{debug, info, info_span, warn};
 
 use super::{CommonConfig, Ctp, count_partitions_in_topic};
+use crate::transport::kafka::{client_creation_error, producer_creation_error};
 
 const DEFAULT_MAX_MESSAGE_SIZE: usize = 1_000_000;
 
@@ -148,7 +149,7 @@ impl KafkaOutputEndpoint {
         let context = DataProducerContext::new(&config)?;
         let kafka_producer =
             ThreadedProducer::from_config_and_context(&common.producer_config, context)
-                .map_err(|e| anyhow!("error creating Kafka producer: {e}"))?;
+                .map_err(producer_creation_error)?;
         kafka_producer
             .context()
             .deferred_logging
@@ -183,7 +184,8 @@ impl KafkaOutputEndpoint {
     ) -> AnyResult<(usize, u64)> {
         let topic = &kafka_config.topic;
         let context = DataConsumerContext::new(|error| warn!("{error}"), kafka_config)?;
-        let consumer = BaseConsumer::from_config_and_context(seekable_consumer_config, context)?;
+        let consumer = BaseConsumer::from_config_and_context(seekable_consumer_config, context)
+            .map_err(client_creation_error)?;
         let n_partitions = count_partitions_in_topic(&consumer, topic)?;
         let mut next_transaction = 0;
         for partition in 0..n_partitions {
