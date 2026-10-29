@@ -25,7 +25,6 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.google.common.base.Charsets;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.config.CalciteConnectionConfigImpl;
@@ -202,6 +201,7 @@ import javax.annotation.Nullable;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -496,7 +496,7 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         @Override
         public Charset getDefaultCharset() {
-            return Charsets.UTF_8;
+            return StandardCharsets.UTF_8;
         }
 
         @Override
