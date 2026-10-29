@@ -63,7 +63,7 @@
     "jsdom": "29.1.1",
     "typescript": "^5.9.3",
     "valibot": "1.4.2",
-    "vitest": "^4.1.8",
+    "vitest": "^4.1.12",
     "worker-timers": "8.0.31"
   }
 }

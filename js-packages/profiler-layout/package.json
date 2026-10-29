@@ -57,7 +57,7 @@
     "@sveltejs/package": "^2.5.7",
     "@sveltejs/vite-plugin-svelte": "7.0.0",
     "@tailwindcss/vite": "^4.1.17",
-    "@vitest/browser-playwright": "^4.1.8",
+    "@vitest/browser-playwright": "^4.1.12",
     "d3-format": "3.1.2",
     "dayjs": "1.11.19",
     "feldera-theme": "workspace:*",
@@ -70,7 +70,7 @@
     "ts-pattern": "5.9.0",
     "typescript": "^5.9.3",
     "vite": "8.2.4",
-    "vitest": "^4.1.8",
+    "vitest": "^4.1.12",
     "vitest-browser-svelte": "^2.1.1"
   },
   "overrides": {
