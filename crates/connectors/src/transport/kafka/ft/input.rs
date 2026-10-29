@@ -1,5 +1,6 @@
 use crate::transport::InputCommandReceiver;
 use crate::transport::kafka::buffered_bytes;
+use crate::transport::kafka::client_creation_error;
 use crate::transport::kafka::ft::count_partitions_in_topic;
 use crate::transport::kafka::{
     OauthbearerAuth, generate_oauthbearer_token, resolve_oauthbearer_auth,
@@ -1001,7 +1002,8 @@ impl KafkaFtInputReader {
         // This has the desirable side effect of ensuring that we can reach the
         // broker and failing with an error if we cannot.
         let context = KafkaFtInputContext::new(&config)?;
-        let kafka_consumer = BaseConsumer::from_config_and_context(&client_config, context)?;
+        let kafka_consumer = BaseConsumer::from_config_and_context(&client_config, context)
+            .map_err(client_creation_error)?;
 
         // IMPORTANT: Poll before trying to fetch metadata. Necessary so that OAUTHBREAKER token
         // is set.
