@@ -13,7 +13,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
@@ -193,16 +192,6 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         return VisitDecision.CONTINUE;
     }
 
-    @Override
-    public VisitDecision preorder(DBSPSimpleOperator operator) {
-        VisitDecision decision = this.preorder(operator.to(DBSPOperator.class));
-        if (decision.stop())
-            return VisitDecision.STOP;
-        this.property("isMultiset");
-        this.stream.append(operator.isMultiset);
-        return VisitDecision.CONTINUE;
-    }
-
     protected void asJsonInner(IJson value) {
         value.asJson(this.innerVisitor);
     }
@@ -297,16 +286,6 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
             return VisitDecision.STOP;
         this.property("offset");
         this.stream.append(operator.offset);
-        return VisitDecision.CONTINUE;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPOperatorWithError operator) {
-        if (this.preorder(operator.to(DBSPOperator.class)).stop())
-            return VisitDecision.STOP;
-        this.property("isMultiset");
-        // This is not really used, but makes reading it back simpler
-        this.stream.append(false);
         return VisitDecision.CONTINUE;
     }
 

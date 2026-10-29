@@ -17,7 +17,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 /** Represents a delta operator (called delta0 in DBSP) */
 public class DBSPDeltaOperator extends DBSPUnaryOperator implements ILinear {
     public DBSPDeltaOperator(CalciteRelNode node, OutputPort source) {
-        super(node, "delta0", null, source.outputType(), source.isMultiset(), source);
+        super(node, "delta0", null, source.outputType(), source);
     }
 
     @Override

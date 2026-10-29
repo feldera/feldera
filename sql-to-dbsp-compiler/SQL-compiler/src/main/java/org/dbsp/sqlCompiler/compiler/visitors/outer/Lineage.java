@@ -68,6 +68,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
@@ -842,6 +843,7 @@ public class Lineage extends CircuitVisitor {
             if (expression.lastExpression == null) {
                 this.setUnknown(expression);
             } else {
+                expression.lastExpression.accept(this);
                 ValueSource result = this.get(expression.lastExpression);
                 this.set(expression, result);
             }
@@ -853,11 +855,15 @@ public class Lineage extends CircuitVisitor {
          * comment), because other casts may change the values or their comparison: a cast to
          * or from {@code CHAR(n)} pads or trims, and {@code CHAR} comparisons ignore trailing
          * spaces; a cast to a narrower {@code VARCHAR(n)} truncates; {@code DECIMAL} and
-         * {@code TIMESTAMP} casts round or truncate when the scale or precision shrinks. */
+         * {@code TIMESTAMP} casts round or truncate when the scale or precision shrinks.
+         * A cast from a nullable {@code VARIANT} to a non-null {@code VARIANT} does not preserve
+         * lineage either: it maps SQL NULL to the VARIANT null value. */
         @Override
         public void postorder(DBSPCastExpression expression) {
             DBSPType type = expression.getType();
-            if (!expression.source.getType().sameTypeIgnoringNullability(type)) {
+            DBSPType sourceType = expression.source.getType();
+            if (!sourceType.sameTypeIgnoringNullability(type)
+                    || (type.is(DBSPTypeVariant.class) && sourceType.mayBeNull && !type.mayBeNull)) {
                 this.setUnknown(expression);
                 return;
             }

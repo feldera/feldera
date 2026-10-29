@@ -39,7 +39,7 @@ import java.util.List;
 public final class DBSPDistinctOperator extends DBSPUnaryOperator
         implements IHasInputIntegrator, IIncremental {
     public DBSPDistinctOperator(CalciteRelNode node, OutputPort input) {
-        super(node, "distinct", null, input.outputType(), false, input);
+        super(node, "distinct", null, input.outputType(), input);
     }
 
     @Override

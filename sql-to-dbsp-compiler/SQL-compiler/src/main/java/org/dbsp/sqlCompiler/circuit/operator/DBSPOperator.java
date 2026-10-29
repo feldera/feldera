@@ -182,9 +182,6 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
         return kind;
     }
 
-    /** True if the specified output is a multiset */
-    public abstract boolean isMultiset(int outputNumber);
-
     public String getNodeName(boolean preferHash) {
         if (preferHash) {
             HashString name = OperatorHash.getHash(this, false);

@@ -32,20 +32,20 @@ public class ImplementChains extends CircuitCloneVisitor {
             if (containsFilter)
                 result = new DBSPFlatMapOperator(
                         node.getRelNode(), function, node.getOutputZSetType(),
-                        node.isMultiset, this.mapped(node.input()));
+                        this.mapped(node.input()));
             else
                 result = new DBSPMapOperator(
                         node.getRelNode(), function, node.getOutputZSetType(),
-                        node.isMultiset, this.mapped(node.input()));
+                        this.mapped(node.input()));
         } else {
             if (containsFilter)
                 result = new DBSPFlatMapIndexOperator(
                         node.getRelNode(), function, node.getOutputIndexedZSetType(),
-                        node.isMultiset, this.mapped(node.input()));
+                        this.mapped(node.input()));
             else
                 result = new DBSPMapIndexOperator(
                         node.getRelNode(), function, node.getOutputIndexedZSetType(),
-                        node.isMultiset, this.mapped(node.input()));
+                        this.mapped(node.input()));
         }
         this.map(node, result);
     }

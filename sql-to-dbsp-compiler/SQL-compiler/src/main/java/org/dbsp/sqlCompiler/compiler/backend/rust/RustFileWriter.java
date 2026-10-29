@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -137,8 +138,10 @@ public class RustFileWriter extends RustWriter {
             } else {
                 this.materializations.clearRegions();
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
-                ToRustVisitor visitor = new ToRustVisitor(
-                        compiler, this.builder(), outer.metadata, declarationsDone, this.materializations);
+                MultisetAnalysis multisets = new MultisetAnalysis(compiler);
+                multisets.apply(outer);
+                ToRustVisitor visitor = new ToRustVisitor(compiler, this.builder(), outer.metadata,
+                        declarationsDone, this.materializations, multisets);
                 visitor.apply(outer);
             }
             this.builder().newline();

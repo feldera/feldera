@@ -57,7 +57,7 @@ class CollapseSharedChains extends CircuitCloneVisitor {
         DBSPClosureExpression function = cc.collapse(this.compiler);
         var result = new DBSPMapIndexOperator(
                 operator.getRelNode(), function, operator.getOutputIndexedZSetType(),
-                operator.isMultiset, this.mapped(input));
+                this.mapped(input));
         this.map(operator, result);
     }
 

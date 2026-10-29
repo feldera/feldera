@@ -49,6 +49,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CollectSourcePositions;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.DeclareComparators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
@@ -112,6 +113,7 @@ public class ToRustVisitor extends CircuitVisitor {
     final Set<String> perCircuitDeclarations;
     final SourcePositionResource sourcePositionResource;
     final CircuitPostfix postfix;
+    final MultisetAnalysis multisets;
 
     /* Example output generated when 'useHandles' is false:
      * pub fn circuit0(workers: usize) -> (DBSPHandle, Catalog) {
@@ -136,9 +138,11 @@ public class ToRustVisitor extends CircuitVisitor {
      * @param metadata  Program metadata for the program compiled.
      * @param projectDeclarations Information about global per-circuit structures.
      * @param postfix   Data structures that generate code after the circuit scanning is done.
+     * @param multisets Finds the outputs that are sets, which the generated code marks as distinct.
      */
     public ToRustVisitor(DBSPCompiler compiler, IIndentStream builder, ProgramMetadata metadata,
-                         ProjectDeclarations projectDeclarations, CircuitPostfix postfix) {
+                         ProjectDeclarations projectDeclarations, CircuitPostfix postfix,
+                         MultisetAnalysis multisets) {
         super(compiler);
         this.options = compiler.options;
         this.builder = builder;
@@ -149,6 +153,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.innerVisitor = this.createInnerVisitor(builder);
         this.sourcePositionResource = new SourcePositionResource();
         this.postfix = postfix;
+        this.multisets = multisets;
     }
 
     ToRustInnerVisitor createInnerVisitor(IIndentStream builder) {
@@ -1602,7 +1607,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     String markDistinct(DBSPOperator operator, @SuppressWarnings("SameParameterValue") int outputNo) {
-        if (!operator.isMultiset(outputNo))
+        if (!this.multisets.isMultiset(operator.getOutput(outputNo)))
             return ".mark_distinct()";
         return "";
     }

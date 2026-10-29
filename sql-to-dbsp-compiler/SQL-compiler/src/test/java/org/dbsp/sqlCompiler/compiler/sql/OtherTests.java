@@ -29,6 +29,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
@@ -53,6 +55,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.MerkleOuter;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -638,6 +641,13 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 ), primaryKeys=[]]""", set);
     }
 
+    /** The multiset analysis applied to the circuit of {@code cc} */
+    static MultisetAnalysis multisetsOf(CompilerCircuit cc) {
+        MultisetAnalysis multisets = new MultisetAnalysis(cc.compiler);
+        multisets.apply(cc.getCircuit());
+        return multisets;
+    }
+
     @Test
     public void merkleTest() {
         // Compile two programs that have some query in common and check that the circuits produced
@@ -646,7 +656,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 CREATE TABLE tab0(pk INTEGER, col0 INTEGER, col1 REAL, col2 TEXT, col3 INTEGER);
                 CREATE VIEW V AS SELECT pk FROM tab0
                 WHERE (col3 < 73 AND col3 IN (SELECT col0 FROM tab0 WHERE col0 = 3)) OR col1 > 8.64""");
-        MerkleOuter visitor0 = new MerkleOuter(cc0.compiler, false);
+        MerkleOuter visitor0 = new MerkleOuter(cc0.compiler, multisetsOf(cc0), false);
         visitor0.apply(cc0.getCircuit());
 
         var cc1 = this.getCC("""
@@ -654,7 +664,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 CREATE VIEW W AS SELECT pk + col0 FROM tab0;
                 CREATE VIEW V AS SELECT pk FROM tab0
                 WHERE (col3 < 73 AND col3 IN (SELECT col0 FROM tab0 WHERE col0 = 3)) OR col1 > 8.64""");
-        MerkleOuter visitor1 = new MerkleOuter(cc1.compiler, false);
+        MerkleOuter visitor1 = new MerkleOuter(cc1.compiler, multisetsOf(cc1), false);
         visitor1.apply(cc1.getCircuit());
         Set<HashString> c0 = new HashSet<>(visitor0.operatorHash.values());
         Set<HashString> c1 = new HashSet<>(visitor1.operatorHash.values());
@@ -664,10 +674,43 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Assert.assertEquals(common.size(), c0.size());
     }
 
+    /** The first map on the path from {@code view} to the sources, through the first input of each operator */
+    static DBSPMapOperator mapOfView(DBSPCircuit circuit, String view) {
+        DBSPOperator operator = Objects.requireNonNull(circuit.getSink(new ProgramIdentifier(view)));
+        while (!operator.is(DBSPMapOperator.class)) {
+            Assert.assertFalse(view + " has no map", operator.inputs.isEmpty());
+            operator = operator.inputs.get(0).node();
+        }
+        return operator.to(DBSPMapOperator.class);
+    }
+
+    /** The local hash names the crate that holds the code of an operator.
+     * The two maps that swap the columns have equal functions and input types.
+     * Only the map that reads a set calls mark_distinct(), so the two crates need different names. */
+    @Test
+    public void localHashIncludesMultiset() {
+        var cc = this.getCC("""
+                CREATE TABLE t1 (a INT, b INT);
+                CREATE TABLE t2 (a INT, b INT);
+                CREATE LOCAL VIEW d1 AS SELECT DISTINCT a, b FROM t1;
+                CREATE VIEW v1 AS SELECT b, a FROM d1;
+                CREATE VIEW v2 AS SELECT b, a FROM t2;""");
+        DBSPCircuit circuit = cc.getCircuit();
+        DBSPMapOperator swapSet = mapOfView(circuit, "v1");
+        DBSPMapOperator swapMultiset = mapOfView(circuit, "v2");
+        Assert.assertTrue(swapSet.getFunction().equivalent(swapMultiset.getFunction()));
+        Assert.assertTrue(swapSet.input().outputType().sameType(swapMultiset.input().outputType()));
+
+        MultisetAnalysis multisets = multisetsOf(cc);
+        Assert.assertFalse(multisets.isMultiset(swapSet.outputPort()));
+        Assert.assertTrue(multisets.isMultiset(swapMultiset.outputPort()));
+        Assert.assertNotEquals(OperatorHash.getHash(swapSet, false), OperatorHash.getHash(swapMultiset, false));
+    }
+
     /** Persistent id of each operator of the circuit of {@code cc}, computed as if the
      * runtime stored the state of a recursive circuit in format {@code stateVersion}. */
     static Map<DBSPOperator, HashString> persistentIds(CompilerCircuit cc, String stateVersion) {
-        MerkleOuter visitor = new MerkleOuter(cc.compiler, true, stateVersion);
+        MerkleOuter visitor = new MerkleOuter(cc.compiler, multisetsOf(cc), true, stateVersion);
         visitor.apply(cc.getCircuit());
         return visitor.operatorHash;
     }

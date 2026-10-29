@@ -30,8 +30,7 @@ public final class DBSPWaterlineOperator extends DBSPUnaryOperator implements IS
     public DBSPWaterlineOperator(CalciteRelNode node, DBSPClosureExpression init,
                                  DBSPClosureExpression extractTs,
                                  DBSPClosureExpression function, OutputPort input) {
-        super(node, "waterline", function, function.getResultType(),
-                false, input);
+        super(node, "waterline", function, function.getResultType(), input);
         this.init = init;
         this.extractTs = extractTs;
         Utilities.enforce(init.parameters.length == 0);

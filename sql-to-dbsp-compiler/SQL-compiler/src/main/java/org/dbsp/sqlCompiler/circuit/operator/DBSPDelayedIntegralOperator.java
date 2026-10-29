@@ -20,7 +20,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 @NonCoreIR
 public final class DBSPDelayedIntegralOperator extends DBSPUnaryOperator implements IContainsIntegrator {
     public DBSPDelayedIntegralOperator(CalciteRelNode node, OutputPort source) {
-        super(node, "accumulate_delay_trace", null, source.outputType(), source.isMultiset(), source);
+        super(node, "accumulate_delay_trace", null, source.outputType(), source);
     }
 
     @Override

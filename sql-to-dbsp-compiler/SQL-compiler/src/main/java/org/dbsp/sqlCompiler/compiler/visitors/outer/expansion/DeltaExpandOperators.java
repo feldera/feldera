@@ -278,10 +278,10 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
         DBSPJoinBaseOperator result;
         if (operator.outputType.is(DBSPTypeIndexedZSet.class))
             result = new DBSPStreamJoinIndexOperator(operator.getRelNode(), operator.getOutputIndexedZSetType(),
-                    operator.getFunction(), operator.isMultiset, left, right, operator.balanced);
+                    operator.getFunction(), left, right, operator.balanced);
         else
             result = new DBSPStreamJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
-                    operator.getFunction(), operator.isMultiset, left, right, operator.balanced);
+                    operator.getFunction(), left, right, operator.balanced);
         this.addOperator(result);
         return result;
     }
@@ -438,7 +438,7 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
         leftIntegrator.copyAnnotations(operator.left().node());
         this.addOperator(leftIntegrator);
         DBSPStreamJoinOperator rightJoin = new DBSPStreamJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
-                operator.getFunction(), operator.isMultiset, leftIntegrator.outputPort(), inputs.get(1),
+                operator.getFunction(), leftIntegrator.outputPort(), inputs.get(1),
                 operator.balanced);
         this.addOperator(rightJoin);
         sumInputs.add(rightJoin.outputPort());
@@ -447,12 +447,12 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
         rightIntegrator.copyAnnotations(operator.right().node());
         this.addOperator(rightIntegrator);
         DBSPStreamJoinOperator leftJoin = new DBSPStreamJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
-                operator.getFunction(), operator.isMultiset, inputs.get(0), rightIntegrator.outputPort(),
+                operator.getFunction(), inputs.get(0), rightIntegrator.outputPort(),
                 operator.balanced);
         this.addOperator(leftJoin);
         sumInputs.add(leftJoin.outputPort());
         DBSPStreamJoinOperator deltaJoin = new DBSPStreamJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
-                operator.getFunction(), operator.isMultiset, inputs.get(0), inputs.get(1), operator.balanced);
+                operator.getFunction(), inputs.get(0), inputs.get(1), operator.balanced);
         this.addOperator(deltaJoin);
         sumInputs.add(deltaJoin.outputPort());
 
@@ -475,7 +475,7 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
 
         DBSPStreamJoinIndexOperator rightJoin = new DBSPStreamJoinIndexOperator(operator.getRelNode(),
                 operator.getOutputIndexedZSetType(),
-                operator.getFunction(), operator.isMultiset, leftIntegrator.outputPort(), inputs.get(1),
+                operator.getFunction(), leftIntegrator.outputPort(), inputs.get(1),
                 operator.balanced);
         this.addOperator(rightJoin);
         sumInputs.add(rightJoin.outputPort());
@@ -485,13 +485,13 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
 
         DBSPStreamJoinIndexOperator leftJoin = new DBSPStreamJoinIndexOperator(operator.getRelNode(),
                 operator.getOutputIndexedZSetType(),
-                operator.getFunction(), operator.isMultiset, inputs.get(0), rightIntegrator.outputPort(),
+                operator.getFunction(), inputs.get(0), rightIntegrator.outputPort(),
                 operator.balanced);
         this.addOperator(leftJoin);
         sumInputs.add(leftJoin.outputPort());
         DBSPStreamJoinIndexOperator deltaJoin = new DBSPStreamJoinIndexOperator(operator.getRelNode(),
                 operator.getOutputIndexedZSetType(),
-                operator.getFunction(), operator.isMultiset, inputs.get(0), inputs.get(1), operator.balanced);
+                operator.getFunction(), inputs.get(0), inputs.get(1), operator.balanced);
         this.addOperator(deltaJoin);
         sumInputs.add(deltaJoin.outputPort());
 
@@ -513,7 +513,7 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
         this.addOperator(rightIntegrator);
         rightIntegrator.copyAnnotations(operator.right().node());
         DBSPStreamJoinOperator leftJoin = new DBSPStreamJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
-                operator.getFunction(), operator.isMultiset, inputs.get(0), rightIntegrator.outputPort(),
+                operator.getFunction(), inputs.get(0), rightIntegrator.outputPort(),
                 operator.balanced);
         this.addOperator(leftJoin);
         DBSPFilterOperator leftFilter = new DBSPFilterOperator(operator.getRelNode(), operator.getFilter(), leftJoin.outputPort());
@@ -522,7 +522,7 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
 
         DBSPTypeZSet type = operator.getOutputZSetType();
         DBSPStreamJoinOperator deltaJoin = new DBSPStreamJoinOperator(operator.getRelNode(), type,
-                operator.getFunction(), operator.isMultiset, inputs.get(0), inputs.get(1), operator.balanced);
+                operator.getFunction(), inputs.get(0), inputs.get(1), operator.balanced);
         this.addOperator(deltaJoin);
         DBSPFilterOperator filter = new DBSPFilterOperator(operator.getRelNode(), operator.getFilter(), deltaJoin.outputPort());
         this.addOperator(filter);
@@ -532,7 +532,7 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
         this.addOperator(leftIntegrator);
         leftIntegrator.copyAnnotations(operator.left().node());
         DBSPStreamJoinOperator rightJoin = new DBSPStreamJoinOperator(operator.getRelNode(), operator.getOutputZSetType(),
-                operator.getFunction(), operator.isMultiset, leftIntegrator.outputPort(), inputs.get(1),
+                operator.getFunction(), leftIntegrator.outputPort(), inputs.get(1),
                 operator.balanced);
         this.addOperator(rightJoin);
         DBSPFilterOperator rightFilter = new DBSPFilterOperator(operator.getRelNode(), operator.getFilter(), rightJoin.outputPort());

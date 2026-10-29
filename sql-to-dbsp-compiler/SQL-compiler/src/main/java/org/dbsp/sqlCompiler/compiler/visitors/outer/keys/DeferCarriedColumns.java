@@ -149,14 +149,12 @@ public class DeferCarriedColumns extends CircuitCloneVisitor {
                     new DBSPTupleExpression(joinOutputFields, false));
             join = new DBSPStreamJoinIndexOperator(endNode.getRelNode(),
                     endNode.outputPort().getOutputIndexedZSetType(),
-                    body.closure(keyVar, leftVar, rightVar), endNode.isMultiset,
-                    leftInput, rightInput, false);
+                    body.closure(keyVar, leftVar, rightVar), leftInput, rightInput, false);
         } else {
             DBSPExpression body = new DBSPTupleExpression(joinOutputFields, false);
             join = new DBSPStreamJoinOperator(endNode.getRelNode(),
                     endNode.outputPort().getOutputZSetType(),
-                    body.closure(keyVar, leftVar, rightVar), endNode.isMultiset,
-                    leftInput, rightInput, false);
+                    body.closure(keyVar, leftVar, rightVar), leftInput, rightInput, false);
         }
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("Deferred ")

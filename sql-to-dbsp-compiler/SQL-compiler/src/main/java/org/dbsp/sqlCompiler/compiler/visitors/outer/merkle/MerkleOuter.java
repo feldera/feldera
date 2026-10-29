@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceLazyMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
@@ -14,6 +15,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToJsonOuterVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.util.HashString;
 import org.dbsp.util.IndentStreamBuilder;
@@ -62,18 +64,22 @@ public class MerkleOuter extends CircuitVisitor {
     final Set<Long> recursiveOutputs;
     /** Maps an operator to a prefix that its hash includes; most operators have none. */
     final Map<DBSPOperator, String> prefixes;
+    /** Code generation marks the outputs that are sets as distinct, so the hash includes this property */
+    final MultisetAnalysis multisets;
 
-    public MerkleOuter(DBSPCompiler compiler, boolean includeInputs) {
-        this(compiler, includeInputs, RECURSIVE_STATE_VERSION);
+    public MerkleOuter(DBSPCompiler compiler, MultisetAnalysis multisets, boolean includeInputs) {
+        this(compiler, multisets, includeInputs, RECURSIVE_STATE_VERSION);
     }
 
-    public MerkleOuter(DBSPCompiler compiler, boolean includeInputs, String recursiveStateVersion) {
-        this(compiler, includeInputs, recursiveStateVersion, Map.of());
+    public MerkleOuter(DBSPCompiler compiler, MultisetAnalysis multisets, boolean includeInputs,
+                       String recursiveStateVersion) {
+        this(compiler, multisets, includeInputs, recursiveStateVersion, Map.of());
     }
 
-    public MerkleOuter(DBSPCompiler compiler, boolean includeInputs, String recursiveStateVersion,
-                       Map<DBSPOperator, String> prefixes) {
+    public MerkleOuter(DBSPCompiler compiler, MultisetAnalysis multisets, boolean includeInputs,
+                       String recursiveStateVersion, Map<DBSPOperator, String> prefixes) {
         super(compiler);
+        this.multisets = multisets;
         this.includeInputs = includeInputs;
         this.recursiveStateVersion = recursiveStateVersion;
         this.prefixes = prefixes;
@@ -191,6 +197,19 @@ public class MerkleOuter extends CircuitVisitor {
             // For gen2 we don't care about preserving compatibility.
             boolean legacyHash = !this.compiler.options.ioOptions.gen2;
             operator.metadata.asJson(this.innerVisitor, legacyHash);
+            return VisitDecision.CONTINUE;
+        }
+
+        @Override
+        public VisitDecision preorder(DBSPSimpleOperator operator) {
+            if (super.preorder(operator).stop())
+                return VisitDecision.STOP;
+            // The local hash names the crate that holds the code of the operator.
+            // That code calls mark_distinct() when the output is a set.
+            // The local hash does not include the inputs, so two operators with
+            // equal functions and input types can differ only in this flag.
+            this.property("isMultiset");
+            this.stream.append(MerkleOuter.this.multisets.isMultiset(operator.outputPort()));
             return VisitDecision.CONTINUE;
         }
 

@@ -58,7 +58,7 @@ public class DBSPSourceMapOperator
             CalciteRelNode node, String operation, CalciteObject sourceName, List<Integer> keyFields,
             DBSPTypeIndexedZSet outputType, DBSPTypeStruct originalRowType,
             TableMetadata metadata, ProgramIdentifier name, StreamKind kind, @Nullable String comment) {
-        super(node, operation, sourceName, outputType, originalRowType, false,
+        super(node, operation, sourceName, outputType, originalRowType,
                 metadata, name, kind, comment);
         this.keyFields = keyFields;
     }

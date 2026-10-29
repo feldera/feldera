@@ -36,7 +36,7 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator implements ILinea
 
     public DBSPApplyOperator(CalciteRelNode node, DBSPClosureExpression function,
                              DBSPType outputType, OutputPort input, @Nullable String comment) {
-        super(node, "apply", function, outputType, false, input, comment);
+        super(node, "apply", function, outputType, input, comment);
         Utilities.enforce(function.parameters.length == 1,
                 () -> "Expected 1 parameter for function " + function);
         DBSPType paramType = function.parameters[0].getType().deref();

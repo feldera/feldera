@@ -24,7 +24,7 @@ public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator
     public DBSPPrimitiveAggregateOperator(
             CalciteRelNode node, @Nullable DBSPExpression function, DBSPType outputType,
             OutputPort delta, OutputPort integral) {
-        super(node, "AggregateIncremental", function, outputType, false, delta, integral);
+        super(node, "AggregateIncremental", function, outputType, delta, integral);
         Utilities.enforce(delta.getOutputIndexedZSetType().sameType(integral.getOutputIndexedZSetType()));
     }
 

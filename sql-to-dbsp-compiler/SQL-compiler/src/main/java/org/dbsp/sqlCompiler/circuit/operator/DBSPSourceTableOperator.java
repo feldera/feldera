@@ -34,15 +34,14 @@ public abstract class DBSPSourceTableOperator
      *                   that this node is created from.
      * @param sourceName Calcite node for the identifier naming the table.
      * @param outputType Type of table.
-     * @param isMultiset True if the source can produce multiset values.
      * @param name       The name of the table that this operator is created from.
      * @param comment    A comment describing the operator.
      */
     protected DBSPSourceTableOperator(
             CalciteRelNode node, String operation, CalciteObject sourceName,
-            DBSPType outputType, DBSPTypeStruct originalRowType, boolean isMultiset,
+            DBSPType outputType, DBSPTypeStruct originalRowType,
             TableMetadata metadata, ProgramIdentifier name, StreamKind kind, @Nullable String comment) {
-        super(node, operation, outputType, isMultiset, name, metadata, kind, comment);
+        super(node, operation, outputType, name, metadata, kind, comment);
         Utilities.enforce(node.is(RelAnd.class) || node.is(CalciteEmptyRel.class));
         this.originalRowType = originalRowType;
         this.sourceName = sourceName;

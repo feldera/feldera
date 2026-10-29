@@ -21,9 +21,9 @@ import java.util.Objects;
 public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator implements INonIncremental {
     public DBSPStreamJoinIndexOperator(
             CalciteRelNode node, DBSPTypeIndexedZSet outputType,
-            DBSPExpression function, boolean isMultiset,
+            DBSPExpression function,
             OutputPort left, OutputPort right, boolean balanced) {
-        super(node, "stream_join_index", function, outputType, isMultiset, left, right, balanced);
+        super(node, "stream_join_index", function, outputType, left, right, balanced);
         Utilities.enforce(!balanced);
         Utilities.enforce(left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType));
     }
@@ -36,7 +36,7 @@ public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator impl
             return new DBSPStreamJoinIndexOperator(
                     this.getRelNode(), outputType.to(DBSPTypeIndexedZSet.class),
                     Objects.requireNonNull(function),
-                    this.isMultiset, newInputs.get(0), newInputs.get(1), this.balanced).copyAnnotations(this);
+                    newInputs.get(0), newInputs.get(1), this.balanced).copyAnnotations(this);
         }
         return this;
     }
@@ -58,7 +58,7 @@ public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator impl
         boolean balanced = Utilities.getBooleanProperty(node, "balanced");
         DBSPExpression function = info.getFunction();
         return new DBSPStreamJoinIndexOperator(CalciteEmptyRel.INSTANCE, info.getIndexedZsetType(),
-                function, info.isMultiset(), info.getInput(0), info.getInput(1), balanced)
+                function, info.getInput(0), info.getInput(1), balanced)
                 .addAnnotations(info.annotations(), DBSPStreamJoinIndexOperator.class);
     }
 }

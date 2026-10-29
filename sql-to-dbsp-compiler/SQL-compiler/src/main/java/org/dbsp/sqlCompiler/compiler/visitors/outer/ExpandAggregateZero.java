@@ -85,7 +85,7 @@ public class ExpandAggregateZero extends Passes {
                 DBSPAggregateZeroOperator agg = entry.getKey();
                 CalciteRelNode node = agg.getRelNode();
                 DBSPConstantOperator op = new DBSPConstantOperator(
-                        node.intermediate(), entry.getValue(), false);
+                        node.intermediate(), entry.getValue());
                 this.addOperator(op);
                 Utilities.putNew(this.zeroOperators, agg, op);
             }
@@ -118,7 +118,7 @@ public class ExpandAggregateZero extends Passes {
                         .addAnnotation(ga, DBSPSimpleOperator.class);
             } else {
                 constant = new DBSPConstantOperator(
-                        node.intermediate(), new DBSPZSetExpression(emptySetResult), false)
+                        node.intermediate(), new DBSPZSetExpression(emptySetResult))
                         .addAnnotation(ga, DBSPSimpleOperator.class);
             }
             this.addOperator(constant);

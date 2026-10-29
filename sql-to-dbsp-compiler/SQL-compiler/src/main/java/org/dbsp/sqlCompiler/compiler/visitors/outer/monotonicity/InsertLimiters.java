@@ -2243,7 +2243,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             OutputPort collected;
             if (this.errorStreams.isEmpty()) {
                 DBSPSimpleOperator c = new DBSPConstantOperator(operator.getRelNode(),
-                        DBSPZSetExpression.emptyWithElementType(operator.getOutputZSetElementType()), false);
+                        DBSPZSetExpression.emptyWithElementType(operator.getOutputZSetElementType()));
                 this.addOperator(c);
                 collected = c.outputPort();
             } else if (this.errorStreams.size() > 1) {
@@ -2358,7 +2358,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                                     field.applyCloneIfNeeded(),
                                     t.deref().applyCloneIfNeeded()).closure(t.asParameter()),
                             new DBSPTypeIndexedZSet(operator.getRelNode(),
-                                    field.getType(), dataType), true,
+                                    field.getType(), dataType),
                             data);
                     this.addOperator(ix);
                     // The upper bound must be exclusive; -infinity lower bound.

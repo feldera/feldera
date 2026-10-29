@@ -20,8 +20,8 @@ import java.util.List;
  * the output is an IndexedZSet.  This operator is incremental-only. */
 public class DBSPStarJoinIndexOperator extends DBSPStarJoinBaseOperator implements IIncremental {
     public DBSPStarJoinIndexOperator(CalciteRelNode node, DBSPType outputType, DBSPClosureExpression function,
-                                     boolean isMultiset, List<OutputPort> inputs) {
-        super(node, "inner_star_join_index", outputType, function, isMultiset, inputs);
+                                     List<OutputPort> inputs) {
+        super(node, "inner_star_join_index", outputType, function, inputs);
         DBSPTypeIndexedZSet ix = outputType.to(DBSPTypeIndexedZSet.class);
         Utilities.enforce(function.getResultType().sameType(ix.getKVType()),
                 () -> "Function result type " + function.getResultType() + "\nOperator result type" + ix.getKVType());
@@ -32,7 +32,7 @@ public class DBSPStarJoinIndexOperator extends DBSPStarJoinBaseOperator implemen
         Utilities.enforce(function != null);
         if (this.mustReplace(force, function, inputs, outputType)) {
             return new DBSPStarJoinIndexOperator(this.getRelNode(), outputType, function.to(DBSPClosureExpression.class),
-                    this.isMultiset, inputs).copyAnnotations(this);
+                    inputs).copyAnnotations(this);
         }
         return this;
     }
@@ -51,7 +51,7 @@ public class DBSPStarJoinIndexOperator extends DBSPStarJoinBaseOperator implemen
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         return new DBSPStarJoinIndexOperator(
                 CalciteEmptyRel.INSTANCE, info.getIndexedZsetType(), info.getClosureFunction(),
-                info.isMultiset(), info.inputs())
+                info.inputs())
                 .addAnnotations(info.annotations(), DBSPStarJoinIndexOperator.class);
     }
 }

@@ -18,6 +18,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.HashString;
 import org.dbsp.util.Utilities;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -28,14 +29,16 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
     final DBSPNestedOperator operator;
     final DBSPCircuit circuit;
     final CircuitPostfix materializations;
+    final MultisetAnalysis multisets;
     /** Names of the region variables that the generated function declares */
     final Set<String> regionsDeclared;
 
     public NestedOperatorWriter(DBSPNestedOperator operator, DBSPCircuit circuit,
-                                CircuitPostfix materializations) {
+                                CircuitPostfix materializations, MultisetAnalysis multisets) {
         this.circuit = circuit;
         this.operator = operator;
         this.materializations = materializations;
+        this.multisets = multisets;
         this.regionsDeclared = new HashSet<>();
     }
 
@@ -168,7 +171,8 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         if (!useHandles)
             this.builder().append(RustWriter.CATALOG_PREAMBLE);
         ToRustVisitor visitor = new ToRustVisitor(
-                compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations(), this.materializations)
+                compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations(),
+                this.materializations, this.multisets)
                 .withPreferHash(true);
         final String hash = this.operator.getNodeName(true);
         this.builder().newline();

@@ -39,7 +39,7 @@ import java.util.List;
 
 public final class DBSPSubtractOperator extends DBSPBinaryOperator implements ILinear {
     public DBSPSubtractOperator(CalciteRelNode node, OutputPort left, OutputPort right) {
-        super(node, "minus", null, left.outputType(), false, left, right);
+        super(node, "minus", null, left.outputType(), left, right);
         if (!left.outputType().sameType(right.outputType()))
             throw new InternalCompilerError("Inputs do not have the same type " + left.outputType() +
                     " and " + right.outputType(), this);

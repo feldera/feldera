@@ -16,8 +16,8 @@ public abstract class DBSPStarJoinBaseOperator extends DBSPSimpleOperator implem
     protected DBSPStarJoinBaseOperator(
             CalciteRelNode node, String operation,
             DBSPType outputType, DBSPClosureExpression function,
-            boolean isMultiset, List<OutputPort> inputs) {
-        super(node, operation, function, outputType, isMultiset);
+            List<OutputPort> inputs) {
+        super(node, operation, function, outputType);
         Utilities.enforce(inputs.size() > 1);
         Utilities.enforce(inputs.size() == function.parameters.length - 1);
         DBSPType keyType = inputs.get(0).outputType().to(DBSPTypeIndexedZSet.class).keyType;

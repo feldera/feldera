@@ -43,6 +43,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareOutputIntegrators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.Intern;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChains;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.merkle.MerkleHashes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.RecursiveComponents;
@@ -56,6 +57,7 @@ import org.dbsp.util.Utilities;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Function;
 
 /** All optimizations applied to circuits. */
 public class CircuitOptimizer extends Passes {
@@ -95,6 +97,13 @@ public class CircuitOptimizer extends Passes {
         }
     }
 
+    /** Add a pass created ny {@code create} preceded by {@link MultisetAnalysis}. */
+    void addWithMultisets(Function<MultisetAnalysis, CircuitTransform> create) {
+        MultisetAnalysis multisets = new MultisetAnalysis(this.compiler);
+        CircuitTransform pass = create.apply(multisets);
+        this.add(new Passes(pass.getName(), this.compiler, multisets, pass));
+    }
+
     static class StopOnError extends CircuitVisitor {
         public StopOnError(DBSPCompiler compiler) {
             super(compiler);
@@ -125,8 +134,8 @@ public class CircuitOptimizer extends Passes {
         this.add(new RecursiveComponents(compiler));
         this.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable));
         if (options.languageOptions.outputsAreSets)
-            this.add(new EnsureDistinctOutputs(compiler));
-        this.add(new PropagateConstants(compiler));
+            this.addWithMultisets(multisets -> new EnsureDistinctOutputs(compiler, multisets));
+        this.addWithMultisets(multisets -> new PropagateConstants(compiler, multisets));
         this.add(new PropagateEmptySources(compiler));
         this.add(new MergeSums(compiler));
         this.add(new Conditional(compiler, new CreateStarJoins(compiler), () -> !this.compiler.metadata.noStarJoins()));
@@ -148,7 +157,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new Conditional(compiler, new RemoveStarJoins(compiler), this.compiler.metadata::noStarJoins));
         this.add(new DeadCode(compiler, true));
         this.add(new PropagateEmptySources(compiler));
-        this.add(new OptimizeDistinctVisitor(compiler));
+        this.addWithMultisets(multisets -> new OptimizeDistinctVisitor(compiler, multisets));
         // This is useful even without incrementalization if we have recursion
         this.add(new OptimizeIncrementalVisitor(compiler));
         this.add(new DeadCode(compiler, true));

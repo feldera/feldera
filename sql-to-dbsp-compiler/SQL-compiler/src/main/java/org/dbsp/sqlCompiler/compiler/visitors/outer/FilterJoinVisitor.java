@@ -156,7 +156,7 @@ public class FilterJoinVisitor extends CircuitCloneWithGraphsVisitor {
             DBSPSimpleOperator result =
                     new DBSPJoinFilterMapOperator(node, source.getOutputZSetType(),
                             join.getFunction(), operator.getClosureFunction(), null,
-                            join.isMultiset, join.inputs.get(0), join.inputs.get(1), join.balanced)
+                            join.inputs.get(0), join.inputs.get(1), join.balanced)
                             .copyAnnotations(operator);
             this.map(operator, result);
             return;
@@ -170,7 +170,7 @@ public class FilterJoinVisitor extends CircuitCloneWithGraphsVisitor {
             DBSPSimpleOperator result =
                     new DBSPLeftJoinFilterMapOperator(node, source.getOutputZSetType(),
                             join.getFunction(), operator.getClosureFunction(), null,
-                            join.isMultiset, join.inputs.get(0), join.inputs.get(1), join.balanced)
+                            join.inputs.get(0), join.inputs.get(1), join.balanced)
                             .copyAnnotations(operator);
             this.map(operator, result);
             return;
@@ -180,7 +180,7 @@ public class FilterJoinVisitor extends CircuitCloneWithGraphsVisitor {
             DBSPSimpleOperator result =
                     new DBSPStarJoinFilterMapOperator(node, source.getOutputZSetType(),
                             join.getClosureFunction(), operator.getClosureFunction(), null,
-                            join.isMultiset, join.inputs)
+                            join.inputs)
                             .copyAnnotations(operator);
             this.map(operator, result);
             return;

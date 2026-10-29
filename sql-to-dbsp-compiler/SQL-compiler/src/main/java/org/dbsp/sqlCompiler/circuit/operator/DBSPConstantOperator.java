@@ -39,10 +39,10 @@ import java.util.Objects;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 public final class DBSPConstantOperator extends DBSPSimpleOperator {
-    public DBSPConstantOperator(CalciteRelNode node, DBSPExpression value, boolean isMultiset) {
+    public DBSPConstantOperator(CalciteRelNode node, DBSPExpression value) {
         // Notice that we use the 'this.function' field to represent
         // the constant value.  Constants are not ClosureExpressions.
-        super(node, "constant", value, value.getType(), isMultiset);
+        super(node, "constant", value, value.getType());
     }
 
     @Override
@@ -59,7 +59,7 @@ public final class DBSPConstantOperator extends DBSPSimpleOperator {
             @Nullable DBSPExpression function, DBSPType outputType,
             List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, function, newInputs, outputType)) {
-            return new DBSPConstantOperator(this.getRelNode(), Objects.requireNonNull(function), this.isMultiset)
+            return new DBSPConstantOperator(this.getRelNode(), Objects.requireNonNull(function))
                     .copyAnnotations(this);
         }
         return this;
@@ -69,7 +69,7 @@ public final class DBSPConstantOperator extends DBSPSimpleOperator {
     public static DBSPConstantOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         return new DBSPConstantOperator(
-                CalciteEmptyRel.INSTANCE, info.getFunction(), info.isMultiset())
+                CalciteEmptyRel.INSTANCE, info.getFunction())
                 .addAnnotations(info.annotations(), DBSPConstantOperator.class);
     }
 

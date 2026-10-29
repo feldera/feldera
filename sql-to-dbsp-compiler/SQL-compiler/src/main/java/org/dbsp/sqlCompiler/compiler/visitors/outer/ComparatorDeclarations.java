@@ -73,7 +73,7 @@ public class ComparatorDeclarations extends CircuitCloneVisitor {
         DBSPExpression function = transformed.to(DBSPExpression.class);
         OutputPort input = this.mapped(operator.input());
         DBSPSimpleOperator repl = new DBSPFlatMapIndexOperator(
-                operator.getRelNode(), function, operator.getOutputIndexedZSetType(), operator.isMultiset, input);
+                operator.getRelNode(), function, operator.getOutputIndexedZSetType(), input);
         this.map(operator, repl);
     }
 

@@ -141,7 +141,7 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
                         null, // ordinalityIndexType
                         new IdShuffle(1));
                 unnest = new DBSPFlatMapOperator(node, function,
-                        new DBSPTypeZSet(outputType), this.internConstants(), unnest.outputPort());
+                        new DBSPTypeZSet(outputType), unnest.outputPort());
                 this.addOperator(unnest);
             }
         }
@@ -258,7 +258,6 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
                 operator.getRelNode(),
                 function,
                 new DBSPTypeZSet(function.getType().to(DBSPTypeFunction.class).resultType),
-                operator.isMultiset,
                 input);
         this.allStringLiterals.addAll(interner.globalStrings);
         this.map(operator, replacement);
@@ -857,8 +856,7 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
                 result.append(new DBSPTupleExpression(
                         lit.cast(lit.getNode(), InternInner.nullableString, DBSPCastExpression.CastType.SqlUnsafe)));
             }
-            DBSPConstantOperator constant = new DBSPConstantOperator(
-                    CalciteEmptyRel.INSTANCE, result, false);
+            DBSPConstantOperator constant = new DBSPConstantOperator(CalciteEmptyRel.INSTANCE, result);
             this.addOperator(constant);
             this.dynamicStrings.add(constant.outputPort());
         }

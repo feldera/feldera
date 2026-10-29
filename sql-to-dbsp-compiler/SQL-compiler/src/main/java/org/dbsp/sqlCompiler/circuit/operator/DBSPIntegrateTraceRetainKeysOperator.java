@@ -36,7 +36,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
             CalciteRelNode node, DBSPExpression expression,
             OutputPort data, OutputPort control, boolean accumulate) {
         super(node, accumulate ? "accumulate_integrate_trace_retain_keys" : "integrate_trace_retain_keys",
-                expression, data.outputType(), data.isMultiset(), data, control);
+                expression, data.outputType(), data, control);
         this.accumulate = accumulate;
     }
 

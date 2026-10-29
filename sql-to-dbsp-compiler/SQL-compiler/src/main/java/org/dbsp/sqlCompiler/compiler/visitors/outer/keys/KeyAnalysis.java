@@ -158,7 +158,7 @@ public class KeyAnalysis extends CircuitVisitor {
     }
 
     /** The symbolic values the interpreter starts from: one per closure parameter. */
-    private static Map<DBSPParameter, Lineage.ValueSource> initialValues(DBSPClosureExpression closure) {
+    static Map<DBSPParameter, Lineage.ValueSource> initialValues(DBSPClosureExpression closure) {
         Map<DBSPParameter, Lineage.ValueSource> initial = new HashMap<>();
         for (int i = 0; i < closure.parameters.length; i++)
             initial.put(closure.parameters[i], initialValue(closure.parameters[i].getType(), i, Part.NONE));

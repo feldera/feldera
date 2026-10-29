@@ -65,7 +65,7 @@ public class RemoveUselessLeftJoinsVisitor extends CircuitCloneVisitor {
             return;
         }
         this.replace(join, new DBSPMapOperator(join.getRelNode(), function,
-                join.getOutputZSetType(), join.isMultiset, this.mapped(join.left())));
+                join.getOutputZSetType(), this.mapped(join.left())));
     }
 
     @Override
@@ -76,6 +76,6 @@ public class RemoveUselessLeftJoinsVisitor extends CircuitCloneVisitor {
             return;
         }
         this.replace(join, new DBSPMapIndexOperator(join.getRelNode(), function,
-                join.getOutputIndexedZSetType(), join.isMultiset, this.mapped(join.left())));
+                join.getOutputIndexedZSetType(), this.mapped(join.left())));
     }
 }

@@ -26,6 +26,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.util.Utilities;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 
 import javax.annotation.Nullable;
 import java.io.File;
@@ -123,9 +124,11 @@ public class MultiCrates {
         this.main.addDependency(this.globals);
     }
 
-    CrateGenerator createOperatorCrate(DBSPCircuit circuit, DBSPOperator operator, ICircuit parent, boolean enterprise) {
+    /** @param multisets The multiset analysis applied to {@code circuit} */
+    CrateGenerator createOperatorCrate(DBSPCircuit circuit, DBSPOperator operator, ICircuit parent,
+                                       boolean enterprise, MultisetAnalysis multisets) {
         String name = FILE_PREFIX + operator.getNodeName(true);
-        SingleOperatorWriter single = new SingleOperatorWriter(operator, circuit, parent, this.materializations);
+        SingleOperatorWriter single = new SingleOperatorWriter(operator, circuit, parent, this.materializations, multisets);
         return new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, name, single,
                 enterprise, true, compiler.options.ioOptions.testing);
     }
@@ -239,11 +242,13 @@ public class MultiCrates {
                     }
                 }
                 this.declarationMap = circuit.declarationMap;
+                MultisetAnalysis multisets = new MultisetAnalysis(this.compiler);
+                multisets.apply(circuit);
                 for (DBSPOperator operator: circuit.allOperators) {
                     CrateGenerator op;
                     if (operator.is(DBSPNestedOperator.class)) {
                         DBSPNestedOperator nested = operator.to(DBSPNestedOperator.class);
-                        NestedOperatorWriter writer = new NestedOperatorWriter(nested, circuit, this.materializations);
+                        NestedOperatorWriter writer = new NestedOperatorWriter(nested, circuit, this.materializations, multisets);
                         String name = FILE_PREFIX + operator.getNodeName(true);
                         op = new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, name, writer,
                                 this.enterprise(), true, compiler.options.ioOptions.testing);
@@ -252,13 +257,13 @@ public class MultiCrates {
                             if (inside.is(DBSPViewDeclarationOperator.class))
                                 continue;
                             CrateGenerator insideOp = this.createOperatorCrate(
-                                    circuit, inside.to(DBSPSimpleOperator.class), nested, this.enterprise());
+                                    circuit, inside.to(DBSPSimpleOperator.class), nested, this.enterprise(), multisets);
                             this.addDependencies(insideOp, inside);
                             op.addDependency(insideOp);
                             this.generators.add(insideOp);
                         }
                     } else {
-                        op = this.createOperatorCrate(circuit, operator, circuit, this.enterprise());
+                        op = this.createOperatorCrate(circuit, operator, circuit, this.enterprise(), multisets);
                     }
 
                     if (this.compiler.options.ioOptions.emitHandles &&

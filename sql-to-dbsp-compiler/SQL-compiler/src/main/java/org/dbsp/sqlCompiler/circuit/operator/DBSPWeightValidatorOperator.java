@@ -22,7 +22,7 @@ public final class DBSPWeightValidatorOperator extends DBSPUnaryOperator {
     public final String message;
 
     public DBSPWeightValidatorOperator(CalciteRelNode node, OutputPort source, String message) {
-        super(node, "integral_weight_validator", null, source.outputType(), source.isMultiset(), source);
+        super(node, "integral_weight_validator", null, source.outputType(), source);
         this.message = message;
     }
 
