@@ -367,4 +367,29 @@ public class ExpressionGCIncrementalTests extends StreamingTestBase {
                  00:30:00 | 1  | -1
                  00:30:00 | 11 | 1""");
     }
+
+    /** Check that an aggregate grouped by an expression of ts that is always NULL keeps its only group. */
+    @Test
+    public void issue7685() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts INT NOT NULL LATENESS 10, x INT NOT NULL);
+                CREATE VIEW V AS SELECT ts + CAST(NULL AS INT) AS g, SUM(x) AS s
+                FROM T GROUP BY ts + CAST(NULL AS INT);""")
+                .compactAfterEachStep();
+        ccs.step("INSERT INTO T VALUES (100, 1);", """
+                 g    | s | weight
+                -------------------
+                 NULL | 1 | 1""");
+        // The waterline moves to 190
+        ccs.step("INSERT INTO T VALUES (200, 2);", """
+                 g    | s | weight
+                -------------------
+                 NULL | 1 | -1
+                 NULL | 3 | 1""");
+        ccs.step("INSERT INTO T VALUES (195, 4);", """
+                 g    | s | weight
+                -------------------
+                 NULL | 3 | -1
+                 NULL | 7 | 1""");
+    }
 }

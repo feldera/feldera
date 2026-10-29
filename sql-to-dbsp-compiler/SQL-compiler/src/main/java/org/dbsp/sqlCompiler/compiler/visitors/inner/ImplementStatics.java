@@ -5,7 +5,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
@@ -15,6 +14,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -103,12 +106,6 @@ public class ImplementStatics extends ExpressionTranslator {
     }
 
     @Override
-    public VisitDecision preorder(DBSPBorrowExpression literal) {
-        // Do not convert into a static
-        return VisitDecision.CONTINUE;
-    }
-
-    @Override
     public VisitDecision preorder(DBSPBaseTupleExpression expression) {
         if (expression.fields == null)
             return VisitDecision.CONTINUE;
@@ -122,9 +119,19 @@ public class ImplementStatics extends ExpressionTranslator {
         return super.preorder(expression);
     }
 
+    /** True if {@code type} is a reference or a tuple with a reference field. */
+    static boolean hasReference(DBSPType type) {
+        if (type.is(DBSPTypeRef.class))
+            return true;
+        DBSPTypeTupleBase tuple = type.as(DBSPTypeTupleBase.class);
+        return tuple != null && Linq.any(tuple.tupFields, ImplementStatics::hasReference);
+    }
+
     @Override
     public VisitDecision preorder(DBSPExpression expression) {
-        if (this.constants == null || !this.constants.isConstant(expression)) {
+        // A static cannot hold a reference to a temporary value
+        if (this.constants == null || !this.constants.isConstant(expression) ||
+                hasReference(expression.getType())) {
             return VisitDecision.CONTINUE;
         }
 
