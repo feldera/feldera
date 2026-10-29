@@ -2255,20 +2255,12 @@ impl WatermarkTrackerInner {
     fn update_processed(&mut self, processed_records: u64, ts: DateTime<Utc>) {
         self.total_processed_records = processed_records;
 
-        for entry in self.watermark_list.iter_mut() {
-            if entry.global_offset <= processed_records && entry.processed_at.is_none() {
-                entry.processed_at = Some(ts);
-            } else {
-                break;
-            }
-        }
-        for entry in self.watermark_with_metadata_list.iter_mut() {
-            if entry.global_offset <= processed_records && entry.processed_at.is_none() {
-                entry.processed_at = Some(ts);
-            } else {
-                break;
-            }
-        }
+        mark_processed(&mut self.watermark_list, processed_records, ts);
+        mark_processed(
+            &mut self.watermark_with_metadata_list,
+            processed_records,
+            ts,
+        );
     }
 
     fn update_completed(
@@ -2345,6 +2337,29 @@ struct WatermarkListEntry {
     watermark: Watermark,
     global_offset: u64,
     processed_at: Option<DateTime<Utc>>,
+}
+
+/// Sets `processed_at` to `ts` in the entries of `list` that `processed_records` covers and that
+/// are not yet processed.
+///
+/// # Arguments
+///
+/// * `list` - not-yet-completed watermarks, in the order they were added.
+/// * `processed_records` - the new value of `total_processed_records`.
+/// * `ts` - the time when the circuit finished processing the records.
+fn mark_processed(
+    list: &mut VecDeque<WatermarkListEntry>,
+    processed_records: u64,
+    ts: DateTime<Utc>,
+) {
+    // The processed entries come first, because entries are marked in the order they were added.
+    let first_unprocessed = list.partition_point(|entry| entry.processed_at.is_some());
+    for entry in list.range_mut(first_unprocessed..) {
+        if entry.global_offset > processed_records {
+            break;
+        }
+        entry.processed_at = Some(ts);
+    }
 }
 
 /// Input endpoint status information.
