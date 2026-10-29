@@ -35,10 +35,13 @@ describe('/select-tenant', () => {
   })
 
   it('returns to the interrupted page when a tenant is already resolved', async () => {
-    takeRedirectTarget.mockReturnValue('http://localhost/pipelines/foo/')
+    // The app stashes a full same-origin href, which `redirect` accepts in the
+    // browser. Here in Node SvelteKit has no origin to compare against and
+    // rejects every absolute URL, so the test stashes a path instead.
+    takeRedirectTarget.mockReturnValue('/pipelines/foo/')
     const thrown: any = await run({ feldera: { tenantId: 't-acme' } }).catch((e: any) => e)
     expect(thrown.status).toBe(307)
-    expect(thrown.location).toBe('http://localhost/pipelines/foo/')
+    expect(thrown.location).toBe('/pipelines/foo/')
   })
 
   it('goes home when a tenant is resolved and nothing was interrupted', async () => {

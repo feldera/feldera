@@ -24,7 +24,7 @@ vi.mock('$app/state', () => ({
 }))
 vi.mock('$app/navigation', () => ({
   goto: vi.fn(),
-  invalidateAll: vi.fn(),
+  refreshAll: vi.fn(),
   preloadCode: vi.fn(() => Promise.resolve()),
   // The layout's top loader subscribes to navigation, and nothing navigates here.
   afterNavigate: vi.fn(),

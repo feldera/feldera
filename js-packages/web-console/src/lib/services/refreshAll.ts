@@ -1,5 +1,5 @@
 /**
- * A proxy for SvelteKit's `invalidateAll`, re-running every `load()`. The root
+ * A proxy for SvelteKit's `refreshAll`, re-running every `load()`. The root
  * layout registers the real function at startup.
  *
  * The indirection keeps `$app/navigation` out of the import tree of
@@ -12,19 +12,17 @@
  */
 let registered: (() => Promise<void>) | undefined
 
-export const setInvalidateAll = (invalidateAll: () => Promise<void>) => {
-  registered = invalidateAll
+export const setRefreshAll = (refreshAll: () => Promise<void>) => {
+  registered = refreshAll
 }
 
-/** Resolves once every `load()` has re-run, as SvelteKit's `invalidateAll` does. */
-export const invalidateAll = () => {
+/** Resolves once every `load()` has re-run, as SvelteKit's `refreshAll` does. */
+export const refreshAll = () => {
   if (!registered) {
     // Losing the registration is silent otherwise: a revoked tenant membership
     // would never re-run `load()` and the app would stay up with every request
     // failing.
-    console.warn(
-      'invalidateAll called before the root layout registered it; loaders will not re-run'
-    )
+    console.warn('refreshAll called before the root layout registered it; loaders will not re-run')
     return Promise.resolve()
   }
   return registered()

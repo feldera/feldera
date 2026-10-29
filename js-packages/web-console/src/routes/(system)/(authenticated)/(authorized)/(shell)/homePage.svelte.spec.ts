@@ -73,7 +73,7 @@ vi.mock('$app/state', () => ({
 }))
 vi.mock('$app/navigation', () => ({
   goto: vi.fn(),
-  invalidateAll: vi.fn(),
+  refreshAll: vi.fn(),
   preloadCode: vi.fn(() => Promise.resolve())
 }))
 vi.mock('#lib/services/redirectTarget.ts', () => ({

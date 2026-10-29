@@ -2,7 +2,7 @@
 // boot-up flow: cached reads (hit/miss/corrupt), writes, the lazy-load
 // `fetchConfigs` orchestrator (success, failure, unresolved-tenant session,
 // invalid-selection retry), and `configChanged` reconcile semantics that gate
-// `invalidateAll()` after a warm-cache render.
+// `refreshAll()` after a warm-cache render.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Configuration, SessionInfo } from '#lib/services/manager/index.ts'
@@ -13,8 +13,8 @@ vi.mock('#lib/services/pipelineManager.ts', () => ({
 }))
 
 // The tenant re-check latch is real here (it gates the warm-cache read); only
-// its `invalidateAll()` side effect is stubbed.
-vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn() }))
+// its `refreshAll()` side effect is stubbed.
+vi.mock('$app/navigation', () => ({ refreshAll: vi.fn() }))
 
 const selection = vi.hoisted(() => ({ current: undefined as string | undefined }))
 vi.mock('#lib/services/auth.ts', () => ({
@@ -281,7 +281,7 @@ describe('fetchConfigs', () => {
 
 describe('configChanged (cache reconcile)', () => {
   // The `+layout.ts` warm-cache reconcile uses this predicate to decide
-  // whether to call `invalidateAll()` after the lazy refresh. False positives
+  // whether to call `refreshAll()` after the lazy refresh. False positives
   // here turn every warm visit into a duplicate descendant load, so the
   // identity-on-equal contract is load-bearing.
 
@@ -305,7 +305,7 @@ describe('configChanged (cache reconcile)', () => {
 
   it('returns false when only the volatile `license.current` timestamp differs', () => {
     // The server stamps every /config response with a fresh `current` time —
-    // without volatile-stripping this would force `invalidateAll()` on every
+    // without volatile-stripping this would force `refreshAll()` on every
     // warm visit and undo the whole point of the optimistic cache.
     const a = withLicense('2026-01-01T00:00:00Z')
     const b = withLicense('2026-01-01T00:00:05Z')
