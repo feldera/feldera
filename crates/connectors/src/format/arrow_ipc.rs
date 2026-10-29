@@ -69,9 +69,8 @@ impl InputFormat for ArrowIpcInputFormat {
         config: &serde_json::Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
         if !config.is_null() {
-            ArrowIpcConfig::deserialize(config).map_err(|e| {
-                ControllerError::parser_config_parse_error(endpoint_name, &e, &config.to_string())
-            })?;
+            ArrowIpcConfig::deserialize(config)
+                .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?;
         }
         let stream = input_stream
             .handle
@@ -237,13 +236,8 @@ impl OutputFormat for ArrowIpcOutputFormat {
         if let Some(format) = &config.format
             && !format.config.is_null()
         {
-            ArrowIpcConfig::deserialize(&format.config).map_err(|e| {
-                ControllerError::encoder_config_parse_error(
-                    endpoint_name,
-                    &e,
-                    &serde_json::to_string(config).unwrap_or_default(),
-                )
-            })?;
+            ArrowIpcConfig::deserialize(&format.config)
+                .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?;
         }
         let row_schema = Arc::new(Schema::new(relation_to_arrow_fields(
             &value_schema.fields,

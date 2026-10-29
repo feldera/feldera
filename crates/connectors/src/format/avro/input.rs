@@ -70,9 +70,8 @@ impl InputFormat for AvroInputFormat {
         input_handle: &InputCollectionHandle,
         config: &serde_json::Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
-        let config = AvroParserConfig::deserialize(config).map_err(|e| {
-            ControllerError::parser_config_parse_error(endpoint_name, &e, &config.to_string())
-        })?;
+        let config = AvroParserConfig::deserialize(config)
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?;
 
         let parser = AvroParser::create(
             endpoint_name,
@@ -93,7 +92,7 @@ impl InputFormat for AvroInputFormat {
             AvroParserConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
                 query.as_bytes(),
             )))
-            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, query))?,
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?,
         ))
     }
 }

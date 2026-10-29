@@ -35,7 +35,7 @@ impl InputFormat for RawInputFormat {
             RawParserConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
                 query.as_bytes(),
             )))
-            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, query))?,
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?,
         ))
     }
 
@@ -46,9 +46,8 @@ impl InputFormat for RawInputFormat {
         config: &serde_json::Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
         let config = if config.is_null() { &json!({}) } else { config };
-        let config = RawParserConfig::deserialize(config).map_err(|e| {
-            ControllerError::parser_config_parse_error(endpoint_name, &e, &config.to_string())
-        })?;
+        let config = RawParserConfig::deserialize(config)
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?;
 
         let num_columns = input_stream.schema.fields.len();
 

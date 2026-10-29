@@ -36,7 +36,7 @@ impl OutputFormat for JsonOutputFormat {
         let mut config = JsonEncoderConfig::deserialize(UrlDeserializer::new(
             form_urlencoded::parse(query.as_bytes()),
         ))
-        .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, query))?;
+        .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?;
 
         // We currently always break output into chunks, which requires encoding
         // JSON data as a valid JSON document (can't use ND-JSON), so we set `array`
@@ -63,13 +63,8 @@ impl OutputFormat for JsonOutputFormat {
         } else {
             format_config
         };
-        let mut json_config = JsonEncoderConfig::deserialize(format_config).map_err(|e| {
-            ControllerError::encoder_config_parse_error(
-                endpoint_name,
-                &e,
-                &serde_json::to_string(config).unwrap_or_default(),
-            )
-        })?;
+        let mut json_config = JsonEncoderConfig::deserialize(format_config)
+            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?;
 
         if matches!(&config.transport, TransportConfig::RedisOutput(_)) {
             json_config.update_format = JsonUpdateFormat::Redis;
@@ -912,5 +907,28 @@ pub mod test {
                 ),
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod config_error_tests {
+    use super::JsonOutputFormat;
+    use crate::format::OutputFormat;
+
+    /// A format config that fails to parse is not echoed in the error: it
+    /// can hold credentials, such as schema registry headers.
+    #[test]
+    fn config_parse_error_omits_the_config() {
+        let error = JsonOutputFormat
+            .config_from_http_query(
+                "ep",
+                "update_format=bogus&registry_headers[Authorization]=hunter2",
+            )
+            .err()
+            .expect("the update format is invalid");
+        for text in [error.to_string(), serde_json::to_string(&error).unwrap()] {
+            assert!(!text.contains("hunter2"), "config in error: {text}");
+            assert!(text.contains("ep"), "endpoint missing: {text}");
+        }
     }
 }

@@ -178,9 +178,8 @@ impl InputFormat for JsonInputFormat {
         config: &serde_json::Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
         let config = if config.is_null() { &json!({}) } else { config };
-        let config = JsonParserConfig::deserialize(config).map_err(|e| {
-            ControllerError::parser_config_parse_error(endpoint_name, &e, &config.to_string())
-        })?;
+        let config = JsonParserConfig::deserialize(config)
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?;
         validate_parser_config(&config, endpoint_name)?;
         let input_stream = input_handle
             .handle
@@ -197,7 +196,7 @@ impl InputFormat for JsonInputFormat {
             JsonParserConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
                 query.as_bytes(),
             )))
-            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, query))?,
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?,
         ))
     }
 }

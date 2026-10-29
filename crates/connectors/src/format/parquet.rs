@@ -187,7 +187,7 @@ impl OutputFormat for ParquetOutputFormat {
             ParquetEncoderConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
                 query.as_bytes(),
             )))
-            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, query))?,
+            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?,
         ))
     }
 
@@ -223,13 +223,8 @@ impl OutputFormat for ParquetOutputFormat {
         } else {
             format_config
         };
-        let config = ParquetEncoderConfig::deserialize(format_config).map_err(|e| {
-            ControllerError::encoder_config_parse_error(
-                endpoint_name,
-                &e,
-                &serde_json::to_string(&config).unwrap_or_default(),
-            )
-        })?;
+        let config = ParquetEncoderConfig::deserialize(format_config)
+            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?;
         Ok(Box::new(ParquetEncoder::new(
             consumer,
             config,

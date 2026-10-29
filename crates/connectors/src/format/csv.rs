@@ -80,13 +80,8 @@ impl InputFormat for CsvInputFormat {
         config: &serde_json::Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
         let config = if config.is_null() { &json!({}) } else { config };
-        let config = CsvFormatConfig::deserialize(config).map_err(|e| {
-            ControllerError::parser_config_parse_error(
-                endpoint_name,
-                &e,
-                &serde_json::to_string(config).unwrap_or_default(),
-            )
-        })?;
+        let config = CsvFormatConfig::deserialize(config)
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?;
 
         let input_stream = input_stream
             .handle
@@ -305,7 +300,7 @@ impl OutputFormat for CsvOutputFormat {
             CsvEncoderConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
                 query.as_bytes(),
             )))
-            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, query))?,
+            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?,
         ))
     }
 
@@ -324,13 +319,8 @@ impl OutputFormat for CsvOutputFormat {
         } else {
             format_config
         };
-        let csv_config = CsvEncoderConfig::deserialize(format_config).map_err(|e| {
-            ControllerError::encoder_config_parse_error(
-                endpoint_name,
-                &e,
-                &serde_json::to_string(&config).unwrap_or_default(),
-            )
-        })?;
+        let csv_config = CsvEncoderConfig::deserialize(format_config)
+            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?;
 
         if matches!(
             config.transport,

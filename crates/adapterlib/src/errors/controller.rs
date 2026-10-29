@@ -24,6 +24,7 @@ use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 use super::journal::StepError;
 use crate::{format::ParseError, transport::Step};
+pub use feldera_types::display_url::REDACTED;
 
 /// Controller configuration error.
 #[derive(Debug, Serialize)]
@@ -38,6 +39,9 @@ pub enum ConfigError {
     ParserConfigParseError {
         endpoint_name: String,
         error: String,
+        /// Always `[REDACTED]`. A format config can hold credentials, so
+        /// the error no longer carries it. The field stays for the
+        /// serialized shape.
         config: String,
     },
 
@@ -45,6 +49,7 @@ pub enum ConfigError {
     EncoderConfigParseError {
         endpoint_name: String,
         error: String,
+        /// Always `[REDACTED]`, see `ParserConfigParseError`.
         config: String,
     },
 
@@ -239,21 +244,21 @@ impl Display for ConfigError {
             Self::ParserConfigParseError {
                 endpoint_name,
                 error,
-                config,
+                config: _,
             } => {
                 write!(
                     f,
-                    "Error parsing format configuration for input endpoint '{endpoint_name}': {error}\nInvalid configuration: {config}"
+                    "Error parsing format configuration for input endpoint '{endpoint_name}': {error}"
                 )
             }
             Self::EncoderConfigParseError {
                 endpoint_name,
                 error,
-                config,
+                config: _,
             } => {
                 write!(
                     f,
-                    "Error parsing format configuration for output endpoint '{endpoint_name}': {error}\nInvalid configuration: {config}"
+                    "Error parsing format configuration for output endpoint '{endpoint_name}': {error}"
                 )
             }
             Self::DuplicateInputEndpoint { endpoint_name } => {
@@ -471,25 +476,27 @@ impl ConfigError {
         }
     }
 
-    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E, config: &str) -> Self
+    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
     where
         E: ToString,
     {
         Self::ParserConfigParseError {
             endpoint_name: endpoint_name.to_owned(),
-            error: error.to_string(),
-            config: config.to_string(),
+            error: feldera_types::config_diagnostics::deserialization_error(&error.to_string())
+                .to_string(),
+            config: REDACTED.to_owned(),
         }
     }
 
-    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E, config: &str) -> Self
+    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
     where
         E: ToString,
     {
         Self::EncoderConfigParseError {
             endpoint_name: endpoint_name.to_owned(),
-            error: error.to_string(),
-            config: config.to_string(),
+            error: feldera_types::config_diagnostics::deserialization_error(&error.to_string())
+                .to_string(),
+            config: REDACTED.to_owned(),
         }
     }
 
@@ -1378,20 +1385,16 @@ impl ControllerError {
         }
     }
 
-    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E, config: &str) -> Self
+    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
     where
         E: ToString,
     {
         Self::Config {
-            config_error: Box::new(ConfigError::parser_config_parse_error(
-                endpoint_name,
-                error,
-                config,
-            )),
+            config_error: Box::new(ConfigError::parser_config_parse_error(endpoint_name, error)),
         }
     }
 
-    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E, config: &str) -> Self
+    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
     where
         E: ToString,
     {
@@ -1399,7 +1402,6 @@ impl ControllerError {
             config_error: Box::new(ConfigError::encoder_config_parse_error(
                 endpoint_name,
                 error,
-                config,
             )),
         }
     }
@@ -1740,6 +1742,29 @@ mod test {
     use serde_json::json;
 
     use super::ControllerError;
+
+    #[test]
+    fn format_errors_do_not_echo_rejected_secret_values() {
+        use feldera_types::format::avro::AvroEncoderConfig;
+        for config in [
+            json!("hunter2"),
+            json!({"registry_urls": "hunter2"}),
+            json!({"update_format": "hunter2"}),
+            json!({"hunter2": true}),
+        ] {
+            let cause = serde_json::from_value::<AvroEncoderConfig>(config).unwrap_err();
+            for error in [
+                ControllerError::parser_config_parse_error("avro_in", &cause),
+                ControllerError::encoder_config_parse_error("avro_out", &cause),
+            ] {
+                for text in [error.to_string(), serde_json::to_string(&error).unwrap()] {
+                    assert!(!text.contains("hunter2"), "{text}");
+                    assert!(text.contains("avro_"), "{text}");
+                    assert!(text.contains("check"), "{text}");
+                }
+            }
+        }
+    }
 
     #[derive(Debug, Serialize)]
     struct StalledEngine {
