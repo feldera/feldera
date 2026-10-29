@@ -1,4 +1,4 @@
-//! Distributed input connectors.
+//! Distributed input and output connectors.
 //!
 //! A distributed input connector runs on every host of a multihost pipeline,
 //! and each host reads a different part of its input.  The coordinator decides
@@ -78,6 +78,25 @@ pub fn validate_distribution(
     Ok(())
 }
 
+/// Returns an error if output connector `config` sets `distributed` but its
+/// transport does not support it (see
+/// `TransportConfig::supports_output_distribution`).
+pub fn validate_output_distribution(
+    endpoint_name: &str,
+    config: &ConnectorConfig,
+) -> Result<(), ConfigError> {
+    if config.distributed && !config.transport.supports_output_distribution() {
+        return Err(ConfigError::invalid_transport_configuration(
+            endpoint_name,
+            &format!(
+                "the '{}' output transport does not support the 'distributed' property (only 'null_output', and 'delta_table_output' with 'mode: append' and 'update_mode: cdc', do)",
+                config.transport.name()
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Returns the part of the input that this host reads for input connector
 /// `endpoint_name`, or `None` if this host reads all of it as an ordinary
 /// connector.
@@ -140,7 +159,9 @@ mod tests {
 
     use std::collections::BTreeMap;
 
-    use super::{input_shard, resume_distribution, validate_distribution};
+    use super::{
+        input_shard, resume_distribution, validate_distribution, validate_output_distribution,
+    };
 
     fn kafka(distributed: bool) -> ConnectorConfig {
         let config: KafkaInputConfig = serde_json::from_value(serde_json::json!({
@@ -248,5 +269,58 @@ mod tests {
             resume_distribution(current, &checkpointed),
             BTreeMap::from([("a".to_string(), home(2)), ("new".to_string(), home(1))])
         );
+    }
+
+    /// An output connector with `config` as its transport config.
+    fn output(transport: TransportConfig) -> ConnectorConfig {
+        ConnectorConfig {
+            distributed: true,
+            ..ConnectorConfig::new(transport, None)
+        }
+    }
+
+    /// A Delta Lake output connector config with `config` added to its URI.
+    fn delta(config: serde_json::Value) -> TransportConfig {
+        let mut json = serde_json::json!({"uri": "memory://"});
+        json.as_object_mut()
+            .unwrap()
+            .extend(config.as_object().unwrap().clone());
+        TransportConfig::DeltaTableOutput(serde_json::from_value(json).unwrap())
+    }
+
+    /// Only the null output, and the Delta Lake output that appends a change log, accept
+    /// `distributed`, so that each can later run on every host.
+    #[test]
+    fn output_distribution_depends_on_the_transport() {
+        let accepted = [
+            TransportConfig::NullOutput,
+            delta(serde_json::json!({"mode": "append"})),
+            delta(serde_json::json!({"mode": "append", "update_mode": "cdc"})),
+        ];
+        for transport in accepted {
+            validate_output_distribution("c", &output(transport)).unwrap();
+        }
+
+        let refused = [
+            delta(serde_json::json!({"mode": "truncate"})),
+            delta(serde_json::json!({"mode": "error_if_exists"})),
+            delta(serde_json::json!({"mode": "append", "update_mode": "merge"})),
+            TransportConfig::KafkaOutput(
+                serde_json::from_value(serde_json::json!({
+                    "topic": "t",
+                    "bootstrap.servers": "localhost:9092",
+                }))
+                .unwrap(),
+            ),
+        ];
+        for transport in refused {
+            let error = validate_output_distribution("c", &output(transport)).unwrap_err();
+            assert!(error.to_string().contains("'distributed'"), "{error}");
+        }
+
+        // Without `distributed`, any transport will do.
+        let mut truncate = output(delta(serde_json::json!({"mode": "truncate"})));
+        truncate.distributed = false;
+        validate_output_distribution("c", &truncate).unwrap();
     }
 }

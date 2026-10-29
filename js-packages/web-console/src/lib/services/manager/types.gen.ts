@@ -843,13 +843,23 @@ export type ConnectOptions = {
 
 export type ConnectorConfig = OutputBufferConfig & {
   /**
-   * Divide the input of this connector among the hosts of a multihost
-   * pipeline. Valid for input connectors only.
+   * Divide the work of this connector among the hosts of a multihost
+   * pipeline.
    *
-   * When `false` (the default), the connector runs on one host, which
-   * reads all of its input. When `true`, the connector runs on every host,
-   * and each host reads a different part of the input. Only the Kafka,
-   * Delta Lake, and Iceberg input transports support this setting.
+   * For an input connector: when `false` (the default), the connector runs
+   * on one host, which reads all of its input. When `true`, the connector
+   * runs on every host, and each host reads a different part of the input.
+   * Only the Kafka, Delta Lake, and Iceberg input transports support this
+   * setting.
+   *
+   * For an output connector: when `true` on any output connector, the
+   * pipeline keeps the integral of each materialized view on all of its
+   * hosts, instead of on the one host that writes the view's output
+   * connectors.  The connector itself still runs on one host.  Only the
+   * null output transport, and the Delta Lake output transport with
+   * `mode: append` and `update_mode: cdc`, support this setting.  In a
+   * multihost pipeline with such a connector, no output connector may set
+   * `send_snapshot`.
    *
    * In a single-host pipeline, this setting has no effect.
    *

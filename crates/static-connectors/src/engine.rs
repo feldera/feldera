@@ -32,7 +32,7 @@ use uuid::Uuid;
 
 use crate::ControllerError;
 use crate::bootstrap::{self, InputOperators};
-use crate::catalog::OUTPUT_MAPPING;
+use crate::catalog::{DISTRIBUTED_OUTPUTS, OUTPUT_MAPPING};
 use crate::storage::{StaticStorage, publish_with_state};
 use dbsp::Error as DbspError;
 use dbsp_connectors::engine::{
@@ -120,6 +120,7 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
         let CircuitParams {
             layout,
             output_assignment,
+            distributed_outputs,
             storage,
             init_checkpoint,
             defer_restore,
@@ -136,6 +137,7 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
                 .expect("the static engine runs only on the storage that it opens")
         });
         *OUTPUT_MAPPING.lock().unwrap() = output_assignment;
+        DISTRIBUTED_OUTPUTS.store(distributed_outputs, Ordering::Relaxed);
         let config = CircuitConfig::from(layout)
             .with_max_rss_bytes(max_rss_bytes)
             .with_reserved_memory_bytes(reserved_memory_bytes)

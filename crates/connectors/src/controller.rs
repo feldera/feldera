@@ -266,6 +266,11 @@ pub struct ControllerBuilder {
     /// assigns them.  This is empty without a coordinator.
     output_assignment: BTreeMap<String, usize>,
 
+    /// See [CircuitParams::distributed_outputs].  The builder computes it from the full
+    /// configuration, because activation later replaces a host's output connectors with only
+    /// its own.
+    distributed_outputs: bool,
+
     /// The pipeline's storage, if it has any.
     storage: Option<Arc<dyn PipelineStorage>>,
 
@@ -320,6 +325,7 @@ impl ControllerBuilder {
             input_distribution: BTreeMap::new(),
             input_choices: BTreeMap::new(),
             output_assignment: BTreeMap::new(),
+            distributed_outputs: config.has_distributed_outputs(),
             storage,
             exchange_tls: None,
         })
@@ -492,6 +498,7 @@ impl ControllerBuilder {
         init.with_input_distribution(self.input_distribution, self.input_choices)
             .with_output_assignment(self.output_assignment)
             .with_exchange_tls(self.exchange_tls)
+            .with_distributed_outputs(self.distributed_outputs)
     }
 
     pub(crate) fn storage(&self) -> Option<Arc<dyn PipelineStorage>> {
@@ -3233,6 +3240,7 @@ impl CircuitThread {
         }
 
         let layout = circuit_params.layout.clone();
+        let distributed_outputs = circuit_params.distributed_outputs && !layout.is_solo();
         let EngineCircuit {
             driver: mut circuit,
             runtime,
@@ -3423,6 +3431,7 @@ impl CircuitThread {
             incarnation_uuid,
             input_distribution,
             input_choices,
+            distributed_outputs,
             storage
                 .as_ref()
                 .and_then(|storage| storage.local_path())
@@ -6565,6 +6574,7 @@ impl ControllerInit {
         Ok(CircuitParams {
             layout,
             output_assignment: BTreeMap::new(),
+            distributed_outputs: false,
             storage,
             init_checkpoint: None,
             defer_restore: false,
@@ -6585,6 +6595,12 @@ impl ControllerInit {
     /// Sets TLS for exchange with the other hosts of a multihost pipeline.
     fn with_exchange_tls(mut self, exchange_tls: Option<PipelinePeerTls>) -> Self {
         self.circuit_params.exchange_tls = exchange_tls;
+        self
+    }
+
+    /// Sets [CircuitParams::distributed_outputs].
+    fn with_distributed_outputs(mut self, distributed_outputs: bool) -> Self {
+        self.circuit_params.distributed_outputs = distributed_outputs;
         self
     }
 
@@ -7928,6 +7944,11 @@ pub struct ControllerInner {
     /// Layout of the circuit's workers.
     layout: Layout,
 
+    /// Whether this multihost pipeline keeps the integrals of its materialized views on all
+    /// hosts (see [CircuitParams::distributed_outputs]).  Each host then holds only part of an
+    /// integral, so it cannot send a snapshot of it.
+    distributed_outputs: bool,
+
     /// The input distribution that this host used at activation, which each
     /// checkpoint records.  Only connector initialization applies it (see
     /// [ControllerInner::connect_input]).
@@ -8039,6 +8060,7 @@ impl ControllerInner {
         incarnation_uuid: Uuid,
         input_distribution: BTreeMap<String, InputDistribution>,
         input_choices: BTreeMap<String, JsonValue>,
+        distributed_outputs: bool,
         storage_path: Option<PathBuf>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(
@@ -8074,6 +8096,7 @@ impl ControllerInner {
                 outputs: ShardedLock::new(outputs),
                 next_output_id: Atomic::new(0),
                 layout,
+                distributed_outputs,
                 input_distribution: input_distribution.clone(),
                 shutdown: runtime.shutdown_token().child_token(),
                 runtime,
@@ -8803,6 +8826,12 @@ impl ControllerInner {
             return Err(ControllerError::invalid_transport_configuration(
                 endpoint_name,
                 "'send_snapshot: true' requires a materialized output view",
+            ));
+        }
+        if endpoint_config.connector_config.send_snapshot && self.distributed_outputs {
+            return Err(ControllerError::invalid_transport_configuration(
+                endpoint_name,
+                "'send_snapshot: true' is not supported in a multihost pipeline with an output connector that sets 'distributed: true'",
             ));
         }
 
