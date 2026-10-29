@@ -184,6 +184,31 @@ class CompletedWatermark:
         return watermark
 
 
+class CircuitInputWatermark:
+    """Latest watermark that the circuit has taken in, reported by input
+    connector status.  Unlike a completed watermark, it moves during a
+    transaction too."""
+
+    def __init__(self):
+        self.metadata: Any = None
+        self.ingested_at: datetime = datetime.fromtimestamp(0)
+        self.processed_at: datetime = datetime.fromtimestamp(0)
+
+    @classmethod
+    def from_dict(cls, d: Mapping[str, Any]):
+        watermark = cls()
+        if "metadata" not in d:
+            raise ValueError("missing required field 'metadata'")
+        watermark.metadata = d.get("metadata")
+        watermark.ingested_at = parse_datetime(
+            expect_str(d, "ingested_at"), "ingested_at"
+        )
+        watermark.processed_at = parse_datetime(
+            expect_str(d, "processed_at"), "processed_at"
+        )
+        return watermark
+
+
 class InputEndpointStatus:
     """Represents one member of the "inputs" array within the
     pipeline's "/stats" endpoint reply.
@@ -201,6 +226,7 @@ class InputEndpointStatus:
         self.paused: Optional[bool] = None
         self.barrier: Optional[bool] = None
         self.completed_frontier: Optional[CompletedWatermark] = None
+        self.circuit_input_frontier: Optional[CircuitInputWatermark] = None
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):
@@ -236,6 +262,12 @@ class InputEndpointStatus:
         status.completed_frontier = (
             CompletedWatermark.from_dict(completed_frontier)
             if isinstance(completed_frontier, dict)
+            else None
+        )
+        circuit_input_frontier = d.get("circuit_input_frontier")
+        status.circuit_input_frontier = (
+            CircuitInputWatermark.from_dict(circuit_input_frontier)
+            if isinstance(circuit_input_frontier, dict)
             else None
         )
         return status

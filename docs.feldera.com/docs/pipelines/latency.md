@@ -192,6 +192,31 @@ which produces output similar to this:
 This means that the outputs written by the pipeline to its data sinks reflect the contents of the Delta table
 as of 5 seconds ago.
 
+### Circuit input frontier
+
+The `.inputs[<connector_index>].circuit_input_frontier` field describes the
+latest position in the input stream that the circuit has taken in.  While a
+[transaction](/pipelines/transactions) is open, the circuit keeps taking in
+input, and the commit includes all of it.  This frontier moves during the
+transaction, while the completed frontier waits for the commit.  It does not
+mean that the outputs are computed.
+
+| Stage of an input record                                    | In `circuit_input_frontier` | In `completed_frontier` |
+|-------------------------------------------------------------|-----------------------------|-------------------------|
+| Read by the connector, in its buffer                        | No                          | No                      |
+| Taken into the circuit by a step, also in a transaction     | Yes                         | No                      |
+| Outputs computed and sent to all sinks                      | Yes                         | Yes                     |
+
+The circuit input frontier has the `metadata`, `ingested_at`, and
+`processed_at` fields of the completed frontier.  Its `processed_at` is the
+time when the circuit finished the step that took in the input.  The
+connectors that report a completed frontier also report this one, in the same
+metadata formats, and `/stats` combines the hosts' frontiers of a distributed
+connector in the same way.
+
+See [Commit at known input offsets](/pipelines/transactions#commit-at-known-input-offsets)
+for a use of this frontier.
+
 ## Related topics
 
 * [Completion tokens](/connectors/completion-tokens)
