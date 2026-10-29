@@ -10624,6 +10624,12 @@
             "default": null,
             "nullable": true
           },
+          "tls_exchange": {
+            "type": "boolean",
+            "description": "Exchange data between the hosts of a multihost pipeline over TLS.\n\nThis applies only when the pipeline has client certificates for TLS\n(with `mtls.enabled` in the Helm chart).  Set it to `false` to exchange\ndata in plaintext even then.  The default is `true`.",
+            "default": null,
+            "nullable": true
+          },
           "top_level_negative_weight_fraction": {
             "type": "number",
             "format": "double",

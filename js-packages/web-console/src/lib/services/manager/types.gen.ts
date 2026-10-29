@@ -2097,6 +2097,14 @@ export type DevTweaks = {
    */
   streaming_exchange?: boolean | null
   /**
+   * Exchange data between the hosts of a multihost pipeline over TLS.
+   *
+   * This applies only when the pipeline has client certificates for TLS
+   * (with `mtls.enabled` in the Helm chart).  Set it to `false` to exchange
+   * data in plaintext even then.  The default is `true`.
+   */
+  tls_exchange?: boolean | null
+  /**
    * The share of the records at a spine's highest level with negative
    * weights above which the level merges its batches.
    *

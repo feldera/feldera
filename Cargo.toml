@@ -361,6 +361,8 @@ tikv-jemallocator = "0.6.0"
 time = { version = "0.3.47", features = ["serde", "serde-well-known"] }
 tokio = "1.50.0"
 tokio-postgres = "0.7"
+# The rustls crypto provider comes from the `rustls` dependency.
+tokio-rustls = { version = "0.26.2", default-features = false }
 tokio-stream = "0.1.18"
 tokio-util = "0.7.11"
 tracing = "0.1.40"
