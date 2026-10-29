@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.371.0
+
 - Delta Lake input connector: `uc://` tables can use Databricks workload
   identity federation. Set `unity_client_id`, `databricks_host` and
   `unity_federated_token_file` (for example a Kubernetes service account
