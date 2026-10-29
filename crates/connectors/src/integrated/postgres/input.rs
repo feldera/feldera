@@ -15,11 +15,13 @@ use super::tls::make_tls_connector;
 use chrono::{TimeZone, Utc};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::thread;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::sync::watch::{Receiver, Sender, channel};
+use tokio_postgres::config::Host;
 use tokio_postgres::types::Type;
 use tokio_postgres::{Client, NoTls};
 use tracing::{debug, error, info};
@@ -417,63 +419,92 @@ impl PostgresInputEndpointInner {
 
     /// Open a postgres connection, optionally with TLS.
     async fn connect_to_postgres(&self) -> Result<Client, ControllerError> {
-        debug!(
-            "postgres {}: opening connection to '{}'",
-            &self.endpoint_name, &self.config.uri
-        );
-
-        let endpoint_name = self.endpoint_name.clone();
-        let connector = make_tls_connector(&self.config.tls, &self.endpoint_name).map_err(|e| {
-            ControllerError::invalid_transport_configuration(
-                &self.endpoint_name,
-                &format!("failed to configure TLS: {e}"),
-            )
-        })?;
-
-        let make_conn_err = |e: tokio_postgres::Error| {
-            ControllerError::invalid_transport_configuration(
-                &endpoint_name,
-                &format!(
-                    "Unable to connect to postgres instance '{}': {e}",
-                    self.config.uri
-                ),
-            )
-        };
-
-        fn spawn_pg_connection_monitor(
-            name: String,
-            conn: impl Future<Output = Result<(), tokio_postgres::Error>> + Send + 'static,
-        ) {
-            tokio::spawn(async move {
-                if let Err(e) = conn.await {
-                    error!("postgres {name}: connection error: {e}");
-                }
-            });
-        }
-
-        let client = if let Some(connector) = connector {
-            debug!("postgres {endpoint_name}: CA certificate provided, connecting with TLS");
-            let (client, connection) = tokio_postgres::connect(self.config.uri.as_str(), connector)
-                .await
-                .map_err(make_conn_err)?;
-            spawn_pg_connection_monitor(endpoint_name.clone(), connection);
-            client
-        } else {
-            debug!("postgres {endpoint_name}: no CA certificates provided, connecting without TLS");
-            let (client, connection) = tokio_postgres::connect(self.config.uri.as_str(), NoTls)
-                .await
-                .map_err(make_conn_err)?;
-            spawn_pg_connection_monitor(endpoint_name.clone(), connection);
-            client
-        };
-
-        info!(
-            "postgres {}: opened connection to '{}'",
-            &self.endpoint_name, &self.config.uri,
-        );
-
-        Ok(client)
+        connect(&self.endpoint_name, &self.config).await
     }
+}
+
+/// The hosts, ports and database of a Postgres URI, for logs and errors.
+///
+/// The URI can hold a password, so the URI itself never goes into a log or an
+/// error. `None` when the URI does not parse; the connection attempt then
+/// reports the parse error on its own.
+fn connection_target(uri: &str) -> Option<String> {
+    let config = tokio_postgres::Config::from_str(uri).ok()?;
+    let hosts = config
+        .get_hosts()
+        .iter()
+        .map(|host| match host {
+            Host::Tcp(host) => host.clone(),
+            #[cfg(unix)]
+            Host::Unix(path) => path.display().to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let ports = config
+        .get_ports()
+        .iter()
+        .map(|port| port.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let dbname = config.get_dbname().unwrap_or_default();
+    Some(format!("{hosts}:{ports}/{dbname}"))
+}
+
+/// Open a postgres connection for `config`, optionally with TLS.
+async fn connect(
+    endpoint_name: &str,
+    config: &PostgresReaderConfig,
+) -> Result<Client, ControllerError> {
+    // Shown instead of the URI, which can hold the password.
+    let target = connection_target(&config.uri)
+        .map(|target| format!(" at '{target}'"))
+        .unwrap_or_default();
+    debug!("postgres {endpoint_name}: opening connection{target}");
+
+    let connector = make_tls_connector(&config.tls, endpoint_name).map_err(|e| {
+        ControllerError::invalid_transport_configuration(
+            endpoint_name,
+            &format!("failed to configure TLS: {e}"),
+        )
+    })?;
+
+    let make_conn_err = |e: tokio_postgres::Error| {
+        ControllerError::invalid_transport_configuration(
+            endpoint_name,
+            &format!("Unable to connect to postgres instance{target}: {e}"),
+        )
+    };
+
+    fn spawn_pg_connection_monitor(
+        name: String,
+        conn: impl Future<Output = Result<(), tokio_postgres::Error>> + Send + 'static,
+    ) {
+        tokio::spawn(async move {
+            if let Err(e) = conn.await {
+                error!("postgres {name}: connection error: {e}");
+            }
+        });
+    }
+
+    let client = if let Some(connector) = connector {
+        debug!("postgres {endpoint_name}: CA certificate provided, connecting with TLS");
+        let (client, connection) = tokio_postgres::connect(config.uri.as_str(), connector)
+            .await
+            .map_err(make_conn_err)?;
+        spawn_pg_connection_monitor(endpoint_name.to_string(), connection);
+        client
+    } else {
+        debug!("postgres {endpoint_name}: no CA certificates provided, connecting without TLS");
+        let (client, connection) = tokio_postgres::connect(config.uri.as_str(), NoTls)
+            .await
+            .map_err(make_conn_err)?;
+        spawn_pg_connection_monitor(endpoint_name.to_string(), connection);
+        client
+    };
+
+    info!("postgres {endpoint_name}: opened connection{target}");
+
+    Ok(client)
 }
 
 /// Block until the state is `Running`.
@@ -484,4 +515,64 @@ async fn wait_running(receiver: &mut Receiver<PipelineState>) {
     let _ = receiver
         .wait_for(|state| state == &PipelineState::Running)
         .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use feldera_types::transport::postgres::PostgresTlsConfig;
+
+    const PASSWORD: &str = "hunter2-do-not-print";
+
+    /// A Unix socket directory that does not exist, so a connection through
+    /// it fails at once. No port is involved, so no other test can take it.
+    const NO_SOCKET_DIR: &str = "/nonexistent-feldera-2136/pg";
+
+    fn config(uri: &str) -> PostgresReaderConfig {
+        PostgresReaderConfig {
+            uri: uri.to_string(),
+            query: "SELECT 1".to_string(),
+            tls: PostgresTlsConfig::default(),
+        }
+    }
+
+    /// A failed connection names the endpoint and the host but not the
+    /// password, in the message and in the serialized error alike.
+    #[test]
+    fn connect_error_omits_the_password() {
+        let uri = format!("postgresql://alice:{PASSWORD}@/orders?host={NO_SOCKET_DIR}");
+        let error = TOKIO
+            .block_on(connect("pg_in", &config(&uri)))
+            .expect_err("the connection is refused");
+
+        for text in [error.to_string(), serde_json::to_string(&error).unwrap()] {
+            assert!(!text.contains(PASSWORD), "password in error: {text}");
+            assert!(!text.contains(&uri), "URI in error: {text}");
+            assert!(text.contains("pg_in"), "endpoint missing: {text}");
+            assert!(text.contains(NO_SOCKET_DIR), "host missing: {text}");
+            assert!(text.contains("orders"), "database missing: {text}");
+        }
+    }
+
+    /// The target summary never holds the password, for either URI syntax.
+    #[test]
+    fn connection_target_omits_the_password() {
+        let url = format!("postgresql://alice:{PASSWORD}@db.example:5433/orders");
+        assert_eq!(
+            connection_target(&url).as_deref(),
+            Some("db.example:5433/orders")
+        );
+        let keywords =
+            format!("host=db.example port=5433 user=alice password={PASSWORD} dbname=orders");
+        assert_eq!(
+            connection_target(&keywords).as_deref(),
+            Some("db.example:5433/orders")
+        );
+        // A URI without a port names the default one.
+        assert_eq!(
+            connection_target("postgresql://alice@db.example/orders").as_deref(),
+            Some("db.example:5432/orders")
+        );
+        assert_eq!(connection_target("not a uri at all ="), None);
+    }
 }
