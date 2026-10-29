@@ -47,6 +47,11 @@ pub struct CircuitParams {
     /// The host that writes each output relation of a multihost pipeline.
     pub output_assignment: BTreeMap<String, usize>,
 
+    /// Whether the pipeline has a distributed output connector (see
+    /// `PipelineConfig::has_distributed_outputs`), so that a multihost
+    /// pipeline keeps the integrals of its materialized views on all hosts.
+    pub distributed_outputs: bool,
+
     /// The pipeline's storage, if it has any.
     pub storage: Option<Arc<dyn PipelineStorage>>,
 

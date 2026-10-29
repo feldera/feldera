@@ -14,7 +14,9 @@ use crate::size::{ConfigSize, LegacySizeUnit};
 use crate::transport::adhoc::AdHocInputConfig;
 use crate::transport::clock::{ClockConfig, ClockTimezoneOffset};
 use crate::transport::datagen::DatagenInputConfig;
-use crate::transport::delta_table::{DeltaTableReaderConfig, DeltaTableWriterConfig};
+use crate::transport::delta_table::{
+    DeltaTableReaderConfig, DeltaTableUpdateMode, DeltaTableWriteMode, DeltaTableWriterConfig,
+};
 use crate::transport::dynamodb::DynamoDBWriterConfig;
 use crate::transport::file::{FileInputConfig, FileOutputConfig};
 use crate::transport::http::{HttpInputConfig, HttpOutputConfig};
@@ -261,6 +263,20 @@ pub struct PipelineConfig {
 }
 
 impl PipelineConfig {
+    /// Returns true if some output connector sets
+    /// [`ConnectorConfig::distributed`] and its transport supports it.  A
+    /// multihost pipeline then keeps the integrals of its materialized views
+    /// on all of its hosts.
+    pub fn has_distributed_outputs(&self) -> bool {
+        self.outputs.values().any(|output| {
+            output.connector_config.distributed
+                && output
+                    .connector_config
+                    .transport
+                    .supports_output_distribution()
+        })
+    }
+
     pub fn max_parallel_connector_init(&self) -> u64 {
         max(
             self.global
@@ -2788,6 +2804,34 @@ mod test {
         );
     }
 
+    /// A pipeline has distributed outputs only if an output connector sets
+    /// `distributed` on a transport that supports it.  `distributed` on an
+    /// input connector does not count.
+    #[test]
+    fn has_distributed_outputs() {
+        let config = |outputs: serde_json::Value| -> PipelineConfig {
+            serde_json::from_value(serde_json::json!({
+                "name": "p",
+                "inputs": {"t.kafka": {"stream": "t", "distributed": true,
+                    "transport": {"name": "kafka_input", "config": {
+                        "topic": "t", "bootstrap.servers": "localhost:9092"}}}},
+                "outputs": outputs,
+            }))
+            .unwrap()
+        };
+        let delta = |mode: &str, distributed: bool| {
+            serde_json::json!({"v.delta": {"stream": "v", "distributed": distributed,
+                "transport": {"name": "delta_table_output", "config": {
+                    "uri": "memory://", "mode": mode}}}})
+        };
+
+        assert!(!config(serde_json::json!({})).has_distributed_outputs());
+        assert!(!config(delta("append", false)).has_distributed_outputs());
+        assert!(config(delta("append", true)).has_distributed_outputs());
+        // A transport that does not support it, which validation refuses.
+        assert!(!config(delta("truncate", true)).has_distributed_outputs());
+    }
+
     /// The older size spelling means the same settings to this release, so a
     /// configuration survives the trip out to a pinned runtime and back.
     #[test]
@@ -3637,13 +3681,23 @@ pub struct ConnectorConfig {
     #[serde(default)]
     pub start_after: Option<Vec<String>>,
 
-    /// Divide the input of this connector among the hosts of a multihost
-    /// pipeline. Valid for input connectors only.
+    /// Divide the work of this connector among the hosts of a multihost
+    /// pipeline.
     ///
-    /// When `false` (the default), the connector runs on one host, which
-    /// reads all of its input. When `true`, the connector runs on every host,
-    /// and each host reads a different part of the input. Only the Kafka,
-    /// Delta Lake, and Iceberg input transports support this setting.
+    /// For an input connector: when `false` (the default), the connector runs
+    /// on one host, which reads all of its input. When `true`, the connector
+    /// runs on every host, and each host reads a different part of the input.
+    /// Only the Kafka, Delta Lake, and Iceberg input transports support this
+    /// setting.
+    ///
+    /// For an output connector: when `true` on any output connector, the
+    /// pipeline keeps the integral of each materialized view on all of its
+    /// hosts, instead of on the one host that writes the view's output
+    /// connectors.  The connector itself still runs on one host.  Only the
+    /// null output transport, and the Delta Lake output transport with
+    /// `mode: append` and `update_mode: cdc`, support this setting.  On other
+    /// output transports, it has no effect.  In a multihost pipeline with such
+    /// a connector, no output connector may set `send_snapshot`.
     ///
     /// In a single-host pipeline, this setting has no effect.
     ///
@@ -4051,6 +4105,19 @@ impl TransportConfig {
                 | TransportConfig::DeltaTableInput(_)
                 | TransportConfig::IcebergInput(_)
         )
+    }
+
+    /// Returns true if an output connector with this transport accepts
+    /// [`ConnectorConfig::distributed`].
+    pub fn supports_output_distribution(&self) -> bool {
+        match self {
+            TransportConfig::NullOutput => true,
+            TransportConfig::DeltaTableOutput(config) => {
+                config.mode == DeltaTableWriteMode::Append
+                    && config.update_mode == DeltaTableUpdateMode::Cdc
+            }
+            _ => false,
+        }
     }
 
     /// Returns true if host 0 of a distributed input connector with this

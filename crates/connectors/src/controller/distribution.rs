@@ -1,4 +1,4 @@
-//! Distributed input connectors.
+//! Distributed input and output connectors.
 //!
 //! A distributed input connector runs on every host of a multihost pipeline,
 //! and each host reads a different part of its input.  The coordinator decides
