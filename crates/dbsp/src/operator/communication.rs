@@ -7,5 +7,6 @@ pub(crate) use exchange::{
     pop_flushed,
 };
 pub use exchange::{
-    ExchangeActivity, ExchangeReceiver, ExchangeSender, Mailbox, new_exchange_operators,
+    ExchangeActivity, ExchangeReceiver, ExchangeSender, ExchangeTls, Mailbox,
+    new_exchange_operators,
 };
