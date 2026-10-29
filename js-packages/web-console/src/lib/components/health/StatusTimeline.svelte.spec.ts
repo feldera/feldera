@@ -9,8 +9,8 @@
  * the tests compare them with `statusToneColors` instead of with literal classes.
  */
 
-import type { HealthStatus } from 'common-ui/healthEvents'
 import { StatusTimeline, type TimelineEvent } from 'common-ui'
+import type { HealthStatus } from 'common-ui/healthEvents'
 import { statusToneColors } from 'common-ui/statusTone'
 import { describe, expect, it } from 'vitest'
 import { render } from 'vitest-browser-svelte'

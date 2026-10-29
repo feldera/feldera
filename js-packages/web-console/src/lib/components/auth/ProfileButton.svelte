@@ -1,7 +1,6 @@
 <script lang="ts">
   import { healthStatusColors } from 'common-ui'
   import { fade } from 'svelte/transition'
-  import { page } from '$app/state'
   import CurrentTenant from '#lib/components/auth/CurrentTenant.svelte'
   import RBAC from '#lib/components/auth/RBAC.svelte'
   import Popup from '#lib/components/common/Popup.svelte'
@@ -15,6 +14,7 @@
   import { resolve } from '#lib/functions/svelte.ts'
   import type { AuthDetails } from '#lib/types/auth.ts'
   import type { Snippet } from '#lib/types/svelte.ts'
+  import { page } from '$app/state'
 
   const {
     compactBreakpoint = '',

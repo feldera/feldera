@@ -6,7 +6,6 @@
   import { type NamesInUnion, unionName } from 'common-lib/union'
   import { Popover, Select, Tooltip } from 'common-ui'
   import { match } from 'ts-pattern'
-  import { page } from '$app/state'
   import PipelineStatus from '#lib/components/pipelines/list/PipelineStatus.svelte'
   import ThSort from '#lib/components/pipelines/table/ThSort.svelte'
   import { useElapsedTime } from '#lib/compositions/common/useElapsedTime.ts'
@@ -18,6 +17,7 @@
     PipelineThumb
   } from '#lib/services/pipelineManager.ts'
   import type { Snippet } from '#lib/types/svelte.ts'
+  import { page } from '$app/state'
   import PipelineVersion from './table/PipelineVersion.svelte'
   import Tags from './table/Tags.svelte'
 

@@ -26,8 +26,7 @@ export const outputBufferConfigValidation = () =>
   va.forward(
     va.partialCheck(
       [['max_output_buffer_time'], ['max_output_buffer_size_records']],
-      (input: any) =>
-        !!input.max_output_buffer_time || !!input.max_output_buffer_size_records,
+      (input: any) => !!input.max_output_buffer_time || !!input.max_output_buffer_size_records,
       'Specify either max_output_buffer_time or max_output_buffer_size_records'
     ),
     ['max_output_buffer_time']

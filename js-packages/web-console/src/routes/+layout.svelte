@@ -11,13 +11,13 @@
   import '#assets/fonts/feldera-material-icons.css'
   import '#assets/fonts/generic-icons.css'
 
-  import { page } from '$app/state'
   import GlobalModal from '#lib/components/dialogs/GlobalModal.svelte'
   import { useInterval } from '#lib/compositions/common/useInterval.svelte.ts'
   import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
   import { ServerDate } from '#lib/compositions/serverTime.ts'
   import { useSystemMessages } from '#lib/compositions/useSystemMessages.svelte.ts'
   import { getLicenseMessage } from '#lib/functions/license.ts'
+  import { page } from '$app/state'
   import { _markRouterReady } from './+layout'
 
   const { children } = $props()

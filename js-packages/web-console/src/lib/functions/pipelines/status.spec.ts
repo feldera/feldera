@@ -81,12 +81,12 @@ describe('editSettingsDisabledReason', () => {
   // A stopped pipeline, or one that failed to compile, is only locked by a
   // pending runtime update while its storage is in use, so stopping it again
   // would not help.
-  it.each(['Stopped', 'SqlError'] as const)(
-    'asks to update the runtime or clear storage when %s',
-    (status) => {
-      expect(editSettingsDisabledReason(status)).toBe(
-        'Update the runtime or clear storage to edit settings'
-      )
-    }
-  )
+  it.each([
+    'Stopped',
+    'SqlError'
+  ] as const)('asks to update the runtime or clear storage when %s', (status) => {
+    expect(editSettingsDisabledReason(status)).toBe(
+      'Update the runtime or clear storage to edit settings'
+    )
+  })
 })

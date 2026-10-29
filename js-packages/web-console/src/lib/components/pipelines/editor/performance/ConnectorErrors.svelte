@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { ConnectorErrorFilter } from 'common-ui/connectorMetrics'
-  import { getCaseDependentName } from 'common-ui/felderaRelation'
   import { formatDateTime, formatServerTime } from 'common-lib/format'
   import { InlineDropdown, SegmentedControl, Tooltip } from 'common-ui'
+  import type { ConnectorErrorFilter } from 'common-ui/connectorMetrics'
+  import { getCaseDependentName } from 'common-ui/felderaRelation'
   import Dayjs from 'dayjs'
   import { fade, slide } from 'svelte/transition'
   import {

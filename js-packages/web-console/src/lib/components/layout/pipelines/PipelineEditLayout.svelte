@@ -5,8 +5,6 @@
   import { Tooltip, useIsScreenLg, useIsTablet } from 'common-ui'
   import { Pane, type PaneAPI, PaneGroup, PaneResizer } from 'paneforge'
   import { untrack } from 'svelte'
-  import { goto } from '$app/navigation'
-  import { page } from '$app/state'
   import DoubleClickInput from '#lib/components/input/DoubleClickInput.svelte'
   import AppHeader from '#lib/components/layout/AppHeader.svelte'
   import NavigationExtras from '#lib/components/layout/NavigationExtras.svelte'
@@ -44,6 +42,8 @@
     type PipelineThumb,
     programStatusOf
   } from '#lib/services/pipelineManager.ts'
+  import { goto } from '$app/navigation'
+  import { page } from '$app/state'
   import EditorOptionsPopup from './EditorOptionsPopup.svelte'
   import PipelineCodePanel from './PipelineCodePanel.svelte'
 
