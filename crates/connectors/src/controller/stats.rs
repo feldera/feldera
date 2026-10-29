@@ -2204,6 +2204,8 @@ struct WatermarkTrackerInner {
     /// We keep these watermarks separate so that a large number of watermarks without
     /// metadata doesn't cause us to lose all watermarks with metadata, which are necessary
     /// to implement frontier tracking.
+    ///
+    /// When the list is full, a new watermark replaces the newest one.
     watermark_with_metadata_list: VecDeque<WatermarkListEntry>,
 
     /// The latest completed watermark with non-empty metadata, if any.
@@ -2224,11 +2226,11 @@ impl WatermarkTrackerInner {
     fn append(&mut self, watermarks: Vec<Watermark>, global_offset: u64) {
         for watermark in watermarks {
             if watermark.metadata.is_some() {
-                // Keep the queue bounded. This gives older watermarks
-                // a chance to complete; otherwise we risk always evicting all watermarks before the complete
-                // and never reporting any completed watermarks.
+                // Keep the queue bounded. When it is full, the new watermark replaces the newest
+                // one, so that older watermarks keep their chance to complete and the queue keeps
+                // the latest position in the input stream.
                 if self.watermark_with_metadata_list.len() >= MAX_TRACKED_WATERMARKS {
-                    continue;
+                    self.watermark_with_metadata_list.pop_back();
                 }
 
                 self.watermark_with_metadata_list
@@ -3397,8 +3399,8 @@ impl OutputEndpointStatus {
 mod test {
     use super::{
         ConnectorError, ConnectorErrorList, ControllerStatus, GlobalControllerMetrics,
-        InputEndpointMetrics, InputEndpointStatus, MAX_CONNECTOR_ERROR_LEN, StepResults,
-        bound_error_message,
+        InputEndpointMetrics, InputEndpointStatus, MAX_CONNECTOR_ERROR_LEN, MAX_TRACKED_WATERMARKS,
+        StepResults, Watermark, WatermarkTracker, bound_error_message,
     };
     use crate::format::BufferSize;
     use anyhow::anyhow;
@@ -3681,6 +3683,35 @@ mod test {
         assert!(!starts_after_local_eoi(
             json!({"name": "test", "multihost": {"hosts": 2}})
         ));
+    }
+
+    /// A watermark with metadata that arrives when the tracker already holds
+    /// `MAX_TRACKED_WATERMARKS` of them replaces the newest one.  The older
+    /// watermarks still complete one by one, and the completed frontier
+    /// reaches the newest watermark once all of the input completes.
+    #[test]
+    fn full_watermark_list_keeps_the_newest_watermark() {
+        let tracker = WatermarkTracker::new();
+        let metrics = InputEndpointMetrics::default();
+
+        // Watermark `i` covers the input up to record `i`.
+        let newest = MAX_TRACKED_WATERMARKS as u64 + 5;
+        for i in 1..=newest {
+            tracker.append(vec![Watermark::new(Utc::now(), Some(json!(i)))], i);
+        }
+        assert_eq!(
+            tracker.0.lock().unwrap().watermark_with_metadata_list.len(),
+            MAX_TRACKED_WATERMARKS
+        );
+
+        let complete = |records| {
+            tracker.update_completed(records, Utc::now(), &metrics);
+            tracker
+                .completed_watermark()
+                .map(|watermark| watermark.metadata)
+        };
+        assert_eq!(complete(10), Some(json!(10)));
+        assert_eq!(complete(newest), Some(json!(newest)));
     }
 
     #[test]
