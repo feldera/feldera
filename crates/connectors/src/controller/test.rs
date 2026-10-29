@@ -1777,7 +1777,12 @@ fn ingress_rows(controller: &Controller, name: &str, ids: Range<u32>) -> Complet
 /// Waits until the input that `token` identifies completes.
 fn wait_for_completion(controller: &Controller, token: &CompletionToken) {
     wait(
-        || matches!(controller.completion_status(token), Ok(Some(_))),
+        || {
+            matches!(
+                controller.completion_status(token),
+                Ok(Some(step)) if controller.status().global_metrics.total_completed_steps() >= step
+            )
+        },
         default_timeout_ms(),
     )
     .expect("the /ingress input never completed");
