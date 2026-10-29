@@ -7,7 +7,7 @@ use crate::integrated::delta_table::merge::flush::MergeWriter;
 use crate::integrated::delta_table::merge::metrics::MergeMetrics;
 use crate::integrated::delta_table::merge::startup;
 use crate::integrated::delta_table::merge::transient;
-use crate::integrated::delta_table::{WriteError, register_storage_handlers};
+use crate::integrated::delta_table::{WriteError, register_storage_handlers, table_error_text};
 use crate::transport::Step;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 use crate::{
@@ -418,8 +418,12 @@ impl DeltaTableWriter {
                     endpoint_name,
                     true,
                     anyhow!(
-                        "error creating or opening delta table '{}': {e}",
-                        config.uri
+                        "{}",
+                        table_error_text(
+                            "error creating or opening delta table",
+                            &config.uri,
+                            &e.to_string()
+                        )
                     ),
                 )
             })?;
@@ -642,7 +646,7 @@ impl WriterTask {
             } else {
                 "opening or creating"
             },
-            &inner.config.uri,
+            inner.config.display_uri(),
         );
 
         let delta_table = {
@@ -703,15 +707,24 @@ impl WriterTask {
                             retry_count += 1;
                             let backoff_ms = min(1000 * (1 << (retry_count - 1)), 10_000);
                             warn!(
-                                "delta_table {}: error creating or opening delta table '{}' after {retry_count} attempts (retrying in {backoff_ms} ms): {e:?}",
-                                &inner.endpoint_name, &inner.config.uri,
+                                "delta_table {}: {} after {retry_count} attempts (retrying in {backoff_ms} ms)",
+                                &inner.endpoint_name,
+                                table_error_text(
+                                    "error creating or opening delta table",
+                                    &inner.config.uri,
+                                    &format!("{e:?}")
+                                ),
                             );
 
                             sleep(Duration::from_millis(backoff_ms)).await;
                         } else {
                             return Err(anyhow!(
-                                "error creating or opening delta table '{}': {e:?}",
-                                inner.config.uri
+                                "{}",
+                                table_error_text(
+                                    "error creating or opening delta table",
+                                    &inner.config.uri,
+                                    &format!("{e:?}")
+                                )
                             ));
                         }
                     }
@@ -719,12 +732,13 @@ impl WriterTask {
                         if retry_count >= MAX_RETRIES {
                             return Err(anyhow!(
                                 "timeout creating or opening delta table '{}' after {retry_count} attempts",
-                                inner.config.uri,
+                                inner.config.display_uri(),
                             ));
                         } else {
                             warn!(
                                 "delta_table {}: timeout creating or opening delta table '{}' after {retry_count} attempts, retrying",
-                                &inner.endpoint_name, &inner.config.uri,
+                                &inner.endpoint_name,
+                                inner.config.display_uri(),
                             );
                             retry_count += 1;
                             if operation_timeout < Duration::from_secs(240) {
@@ -750,7 +764,7 @@ impl WriterTask {
         info!(
             "delta_table {}: opened delta table '{}' (current table version {})",
             &inner.endpoint_name,
-            &inner.config.uri,
+            inner.config.display_uri(),
             if let Some(version) = delta_table.version() {
                 version.to_string()
             } else {
@@ -1013,7 +1027,7 @@ fn warn_about_table_property_discrepancies(
             This usually indicates the table was created with different settings or modified externally. \
             Conflicting connector properties not applied: {}",
             &inner.endpoint_name,
-            &inner.config.uri,
+            inner.config.display_uri(),
             discrepancies.join("; "),
         );
     }
@@ -1281,7 +1295,7 @@ impl OutputConsumer for DeltaTableWriter {
         let _span = info_span!(
             "delta_output",
             endpoint = &*self.inner.endpoint_name,
-            table = &*self.inner.config.uri,
+            table = %self.inner.config.display_uri(),
         )
         .entered();
 
@@ -1373,7 +1387,7 @@ impl DeltaTableWriter {
         let span = info_span!(
             "delta_output_merge",
             endpoint = &*inner.endpoint_name,
-            table = &*inner.config.uri,
+            table = %inner.config.display_uri(),
         );
         let format =
             RecordFormat::Parquet(delta_output_serde_config(inner.config.variant_encoding));
@@ -1482,7 +1496,7 @@ impl DeltaTableWriter {
                         metrics.table_live_rows,
                         metrics.table_superseded_rows,
                         &inner.endpoint_name,
-                        &inner.config.uri,
+                        &inner.config.display_uri(),
                     );
                     if let Some(controller) = inner.controller.upgrade() {
                         controller.update_output_connector_health(
@@ -1596,7 +1610,7 @@ impl Encoder for DeltaTableWriter {
         let span = info_span!(
             "delta_output",
             endpoint = &*self.inner.endpoint_name,
-            table = &*self.inner.config.uri,
+            table = %self.inner.config.display_uri(),
         );
 
         // Panic safety: block_on() panics if called from a tokio async context.

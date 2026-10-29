@@ -13,6 +13,7 @@ pub mod test;
 use arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, FieldRef, Schema as ArrowSchema, SchemaRef,
 };
+use feldera_types::display_url::{text_without_url, url_without_credentials};
 use feldera_types::serde_with_context::serde_config::{DecimalFormat, UuidFormat};
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimestampFormat};
 pub use input::DeltaTableInputEndpoint;
@@ -199,4 +200,33 @@ pub fn delta_input_serde_config() -> SqlSerdeConfig {
         // will have to deserialize into VARBINARY first. Alternatively, we can make
         // this configurable.
         .with_uuid_format(UuidFormat::String)
+}
+
+/// `what` for the table at `uri`, with the error `error` of a library call.
+/// Both are shown without credentials: the library repeats the URI it was
+/// given in its own message.
+pub(crate) fn table_error_text(what: &str, uri: &str, error: &str) -> String {
+    format!(
+        "{what} '{}': {}",
+        url_without_credentials(uri),
+        text_without_url(error, uri)
+    )
+}
+
+#[cfg(test)]
+mod table_error_tests {
+    use super::table_error_text;
+    use deltalake::table::builder::ensure_table_uri;
+
+    /// The error of a rejected URI repeats the URI; neither copy keeps the
+    /// credentials.
+    #[test]
+    fn rejected_uri_error_omits_the_credentials() {
+        let uri = "s3://ak:secret-key@bucket:not-a-port/table?X-Amz-Signature=sig";
+        let error = ensure_table_uri(uri).expect_err("the port is not a number");
+        let text = table_error_text("invalid Delta table uri", uri, &error.to_string());
+        assert!(!text.contains("secret-key"), "credentials in error: {text}");
+        assert!(!text.contains("sig"), "signature in error: {text}");
+        assert!(text.starts_with("invalid Delta table uri '"), "{text}");
+    }
 }

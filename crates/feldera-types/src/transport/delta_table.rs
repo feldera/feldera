@@ -1,3 +1,4 @@
+use crate::display_url::url_without_credentials;
 use crate::size::ConfigSize;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -1299,5 +1300,19 @@ mod writer_config_tests {
         ] {
             assert!(serialized.contains(value), "{value} was lost: {serialized}");
         }
+    }
+}
+
+impl DeltaTableWriterConfig {
+    /// The table URI for logs and errors, without credentials.
+    pub fn display_uri(&self) -> String {
+        url_without_credentials(&self.uri)
+    }
+}
+
+impl DeltaTableReaderConfig {
+    /// The table URI for logs and errors, without credentials.
+    pub fn display_uri(&self) -> String {
+        url_without_credentials(&self.uri)
     }
 }

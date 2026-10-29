@@ -5,6 +5,7 @@ use crate::integrated::delta_table::deletion_vector::{
     MaskedFile, ReadMode, filtered_parquet_table, read_deletion_vector,
 };
 use crate::integrated::delta_table::field_id_adapter::FieldIdAdapterFactory;
+use crate::integrated::delta_table::table_error_text;
 use crate::integrated::delta_table::{
     ReadSchema, delta_input_serde_config, register_storage_handlers,
 };
@@ -3004,14 +3005,15 @@ impl DeltaTableInputEndpointInner {
     async fn open_table(&self) -> Result<DeltaTable, ControllerError> {
         debug!(
             "delta_table {}: opening delta table '{}'",
-            &self.endpoint_name, &self.config.uri
+            &self.endpoint_name,
+            self.config.display_uri()
         );
 
         // DeltaTableBuilder::from_uri panics on error, so we use `from_valid_uri` instead.
         let url = ensure_table_uri(&self.config.uri).map_err(|e| {
             ControllerError::invalid_transport_configuration(
                 &self.endpoint_name,
-                &format!("invalid Delta table uri '{}': {e}", self.config.uri),
+                &table_error_text("invalid Delta table uri", &self.config.uri, &e.to_string()),
             )
         })?;
 
@@ -3096,15 +3098,24 @@ impl DeltaTableInputEndpointInner {
                             retry_count += 1;
                             let backoff_ms = min(1000 * (1 << (retry_count - 1)), 10_000);
                             warn!(
-                                "delta_table {}: error loading delta table '{}' after {retry_count} attempts (retrying in {backoff_ms} ms): {e:?}",
-                                &self.endpoint_name, &self.config.uri,
+                                "delta_table {}: {} after {retry_count} attempts (retrying in {backoff_ms} ms)",
+                                &self.endpoint_name,
+                                table_error_text(
+                                    "error loading delta table",
+                                    &self.config.uri,
+                                    &format!("{e:?}")
+                                ),
                             );
 
                             sleep(Duration::from_millis(backoff_ms)).await;
                         } else {
                             return Err(ControllerError::invalid_transport_configuration(
                                 &self.endpoint_name,
-                                &format!("error opening delta table '{}': {e:?}", self.config.uri),
+                                &table_error_text(
+                                    "error opening delta table",
+                                    &self.config.uri,
+                                    &format!("{e:?}"),
+                                ),
                             ));
                         }
                     }
@@ -3114,13 +3125,14 @@ impl DeltaTableInputEndpointInner {
                                 &self.endpoint_name,
                                 &format!(
                                     "timeout loading delta table '{}' after {retry_count} attempts",
-                                    self.config.uri,
+                                    self.config.display_uri(),
                                 ),
                             ));
                         } else {
                             warn!(
                                 "delta_table {}: timeout loading delta table '{}' after {retry_count} attempts, retrying",
-                                &self.endpoint_name, &self.config.uri,
+                                &self.endpoint_name,
+                                self.config.display_uri(),
                             );
                             retry_count += 1;
                             if operation_timeout < Duration::from_secs(240) {
@@ -3165,7 +3177,9 @@ impl DeltaTableInputEndpointInner {
 
         info!(
             "delta_table {}: opened delta table '{}' (current table version {})",
-            &self.endpoint_name, &self.config.uri, version
+            &self.endpoint_name,
+            self.config.display_uri(),
+            version
         );
 
         // TODO: Validate that table schema matches relation schema
@@ -3450,7 +3464,7 @@ impl DeltaTableInputEndpointInner {
                      the '{ENABLE_CHANGE_DATA_FEED}' property set to 'true', so it records no \
                      change data. Set the property on the table (changes committed before it is set \
                      are not recorded), or set 'change_feed' to 'auto'.",
-                    self.config.uri,
+                    self.config.display_uri(),
                 )))
             } else {
                 Ok(())
@@ -3466,7 +3480,7 @@ impl DeltaTableInputEndpointInner {
                  '{column}', which the feed reserves under the name \
                  '{CHANGE_TYPE_COLUMN}'; set 'change_feed' to 'off' to read this table from its \
                  file actions instead.",
-                self.config.uri,
+                self.config.display_uri(),
             )));
         }
 
@@ -4530,8 +4544,12 @@ impl DeltaTableInputEndpointInner {
         if self.schema_snapshot().version() == Some(version) {
             return Ok(());
         }
-        let url = ensure_table_uri(&self.config.uri)
-            .map_err(|e| anyhow!("invalid Delta table uri '{}': {e}", self.config.uri))?;
+        let url = ensure_table_uri(&self.config.uri).map_err(|e| {
+            anyhow!(
+                "{}",
+                table_error_text("invalid Delta table uri", &self.config.uri, &e.to_string())
+            )
+        })?;
         let table = self
             .retry(
                 &format!("error loading Delta table schema at version {version}"),
