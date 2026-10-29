@@ -26,6 +26,8 @@ import {
 
 // Mock SvelteKit's $app/state for components that read `page.data.feldera`
 // and `page.url` (the CodeEditor parses positions from the URL hash).
+// superforms reads `navigating` too (PipelineEditLayout pulls in
+// NewApiKeyForm/NewOidcTrustForm via AppHeader).
 vi.mock('$app/state', async () => {
   const { permissionsOf, roleOf } = await import('#lib/services/rbac.ts')
   const role = roleOf('write')
@@ -42,7 +44,8 @@ vi.mock('$app/state', async () => {
         }
       },
       url: new URL('http://localhost/')
-    }
+    },
+    navigating: { to: null }
   }
 })
 
