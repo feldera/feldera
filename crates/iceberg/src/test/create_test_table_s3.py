@@ -22,6 +22,7 @@ import pyarrow as pa
 import pandas as pd
 import numpy as np
 import argparse
+import os
 
 parser = argparse.ArgumentParser(
     description="Create an Iceberg table populated with random data"
@@ -57,6 +58,12 @@ parser.add_argument(
     action="store_true",
     help="Add columns that the Feldera SQL test schemas do not declare "
     "(a 'uuid' and a string column), which the connector must not read",
+)
+parser.add_argument(
+    "--add-files",
+    action="store_true",
+    help="Write the data as a Parquet file without field ids and register it "
+    "with add_files, as a migrated table has; all rows must fall on one day",
 )
 
 
@@ -231,7 +238,23 @@ arrow_table = pa.Table.from_pandas(pandas_df, schema=arrow_schema)
 
 print("Writing data to Iceberg table")
 
-table.append(arrow_table)
+if args.add_files:
+    import pyarrow.parquet as pq
+
+    data_file = f"{location}/data/added.parquet"
+    os.makedirs(os.path.dirname(data_file), exist_ok=True)
+    # Small pages with a page index, so that filters can prune pages.
+    pq.write_table(
+        arrow_table,
+        data_file,
+        write_page_index=True,
+        data_page_size=512,
+        write_batch_size=64,
+    )
+    # add_files also sets the default name mapping, since the file has no field ids.
+    table.add_files([data_file])
+else:
+    table.append(arrow_table)
 
 # Extract and print metadata location.
 print(table.inspect.metadata_log_entries().column("file")[-1].as_py())

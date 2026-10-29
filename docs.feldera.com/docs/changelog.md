@@ -28,6 +28,12 @@ Source edition can be found on github.
   `dev_tweaks.tls_exchange` to `false` to exchange data in plaintext.  See
   [Client certificates](/get-started/enterprise/https#client-certificates).
 
+- Bug fix (Iceberg input connector): nested columns in data files without
+  field ids, such as files added with `add_files`, now read their real values
+  instead of NULL. If the table has no name mapping, these columns now read as
+  NULL instead of values matched by position. A follow pipeline that read such
+  a file before the upgrade can show wrong rows when the file is deleted later.
+
 ## v0.376.0
 
 - Behavior change (Python SDK): a request that is not idempotent, such as
