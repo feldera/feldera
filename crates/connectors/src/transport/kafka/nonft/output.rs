@@ -1,4 +1,5 @@
 use crate::transport::kafka::metrics::KafkaOutputMetrics;
+use crate::transport::kafka::producer_creation_error;
 use crate::transport::kafka::{
     DeferredLogging, OauthbearerAuth, PemToLocation, buffered_bytes, build_headers,
     generate_oauthbearer_token, kafka_send, rdkafka_loglevel_from, resolve_oauthbearer_auth,
@@ -328,7 +329,7 @@ impl KafkaOutputEndpoint {
 
         // Create Kafka producer.
         let kafka_producer = ThreadedProducer::from_config_and_context(&client_config, context)
-            .map_err(|e| anyhow!("error creating Kafka producer: {e}"))?;
+            .map_err(producer_creation_error)?;
 
         let context = Arc::downgrade(kafka_producer.context());
         let stopping = shutdown.clone();

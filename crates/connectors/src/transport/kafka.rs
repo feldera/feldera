@@ -2,6 +2,7 @@ use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use aws_msk_iam_sasl_signer::generate_auth_token;
 use base64::{Engine as _, prelude::BASE64_URL_SAFE_NO_PAD};
 use feldera_storage::tokio::TOKIO;
+use feldera_types::display_url::REDACTED;
 use feldera_types::transport::kafka::{KafkaHeader, KafkaLogLevel, KafkaOauthProvider};
 use google_cloud_auth::project::{
     Config as GcpAuthConfig, Project as GcpProject, create_token_source_from_project,
@@ -40,6 +41,38 @@ pub use nonft::KafkaOutputEndpoint;
 pub(crate) mod ft;
 pub(crate) mod metrics;
 mod nonft;
+
+/// Describes a client creation error without `value`, the rejected option's
+/// value, which can be a credential such as `sasl.password`. librdkafka
+/// repeats the value in its description, so the description is masked as
+/// well.
+pub(crate) fn client_creation_error(error: KafkaError) -> AnyError {
+    match error {
+        KafkaError::ClientConfig(_, description, key, value) => {
+            // Only the rejected option's value is replaced; no other option
+            // is in this error. librdkafka quotes the value, so the quoted
+            // copy is always replaced. A bare copy is replaced only from 4
+            // bytes: replacing every bare `on` would mangle `configuration`.
+            let description = description.replace(&format!("\"{value}\""), REDACTED);
+            let description = if value.len() < 4 {
+                description
+            } else {
+                description.replace(&value, REDACTED)
+            };
+            anyhow!("invalid Kafka client option '{key}': {description}")
+        }
+        other => other.into(),
+    }
+}
+
+/// The error of a failed producer creation, with its cause in the message:
+/// a serialized error keeps the outermost text only.
+pub(crate) fn producer_creation_error(error: KafkaError) -> AnyError {
+    anyhow!(
+        "error creating Kafka producer: {:#}",
+        client_creation_error(error)
+    )
+}
 
 const MAX_POLLING_INTERVAL: Duration = Duration::from_millis(5000);
 
@@ -951,5 +984,57 @@ mod oauthbearer_tests {
 
         clear_gcp_principal_env();
         assert_eq!(principal, "svc@proj.iam.gserviceaccount.com");
+    }
+}
+
+#[cfg(test)]
+mod client_creation_error_tests {
+    use super::{client_creation_error, producer_creation_error};
+    use rdkafka::ClientConfig;
+    use rdkafka::consumer::BaseConsumer;
+
+    /// A rejected option is named, its value is not: it can be a credential.
+    #[test]
+    fn rejected_option_value_stays_out_of_the_error() {
+        let error = ClientConfig::new()
+            .set("security.protocol", "hunter2-not-a-protocol")
+            .create::<BaseConsumer>()
+            .err()
+            .expect("librdkafka rejects the value");
+        let text = client_creation_error(error).to_string();
+        assert!(!text.contains("hunter2"), "value in error: {text}");
+        assert!(text.contains("security.protocol"), "option missing: {text}");
+    }
+
+    /// A rejected value of a few bytes, common in development setups, is
+    /// quoted by librdkafka and stays out as well.
+    #[test]
+    fn short_rejected_value_stays_out_of_the_error() {
+        let error = ClientConfig::new()
+            .set("security.protocol", "pw")
+            .create::<BaseConsumer>()
+            .err()
+            .expect("librdkafka rejects the value");
+        let text = client_creation_error(error).to_string();
+        assert!(!text.contains("\"pw\""), "value in error: {text}");
+        assert!(text.contains("security.protocol"), "option missing: {text}");
+    }
+
+    /// The producer error keeps its cause in its own text, which is what a
+    /// serialized error carries.
+    #[test]
+    fn producer_error_keeps_the_rejected_option_name() {
+        let error = ClientConfig::new()
+            .set("security.protocol", "hunter2-not-a-protocol")
+            .create::<BaseConsumer>()
+            .err()
+            .expect("librdkafka rejects the value");
+        let text = producer_creation_error(error).to_string();
+        assert!(
+            text.starts_with("error creating Kafka producer: "),
+            "{text}"
+        );
+        assert!(text.contains("security.protocol"), "option missing: {text}");
+        assert!(!text.contains("hunter2"), "value in error: {text}");
     }
 }
