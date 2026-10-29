@@ -985,7 +985,7 @@ impl KafkaFtInputReader {
         let _guard = span(&config.topic);
 
         // Create Kafka consumer configuration.
-        debug!("Starting Kafka input endpoint: {:?}", config);
+        debug!("Starting Kafka input endpoint for topic '{}'", config.topic);
 
         let mut client_config = ClientConfig::new();
 
