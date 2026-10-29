@@ -25,6 +25,7 @@ use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 use super::journal::StepError;
 use crate::{format::ParseError, transport::Step};
+pub use feldera_types::display_url::REDACTED;
 
 /// Controller configuration error.
 #[derive(Debug, Serialize)]
@@ -35,18 +36,19 @@ pub enum ConfigError {
         error: String,
     },
 
-    /// Failed to parse parser configuration for an endpoint.
+    /// Failed to parse parser configuration for an endpoint. The error
+    /// names the category, the expected values and the field, never the
+    /// configuration, which can hold credentials.
     ParserConfigParseError {
         endpoint_name: String,
         error: String,
-        config: String,
     },
 
-    /// Failed to parse encoder configuration for an endpoint.
+    /// Failed to parse encoder configuration for an endpoint, see
+    /// `ParserConfigParseError`.
     EncoderConfigParseError {
         endpoint_name: String,
         error: String,
-        config: String,
     },
 
     /// Input endpoint with this name already exists.
@@ -240,21 +242,19 @@ impl Display for ConfigError {
             Self::ParserConfigParseError {
                 endpoint_name,
                 error,
-                config,
             } => {
                 write!(
                     f,
-                    "Error parsing format configuration for input endpoint '{endpoint_name}': {error}\nInvalid configuration: {config}"
+                    "Error parsing format configuration for input endpoint '{endpoint_name}': {error}"
                 )
             }
             Self::EncoderConfigParseError {
                 endpoint_name,
                 error,
-                config,
             } => {
                 write!(
                     f,
-                    "Error parsing format configuration for output endpoint '{endpoint_name}': {error}\nInvalid configuration: {config}"
+                    "Error parsing format configuration for output endpoint '{endpoint_name}': {error}"
                 )
             }
             Self::DuplicateInputEndpoint { endpoint_name } => {
@@ -472,25 +472,49 @@ impl ConfigError {
         }
     }
 
-    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E, config: &str) -> Self
+    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
     where
         E: ToString,
     {
         Self::ParserConfigParseError {
             endpoint_name: endpoint_name.to_owned(),
-            error: error.to_string(),
-            config: config.to_string(),
+            error: feldera_types::config_diagnostics::deserialization_error(&error.to_string())
+                .to_string(),
         }
     }
 
-    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E, config: &str) -> Self
+    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
     where
         E: ToString,
     {
         Self::EncoderConfigParseError {
             endpoint_name: endpoint_name.to_owned(),
-            error: error.to_string(),
-            config: config.to_string(),
+            error: feldera_types::config_diagnostics::deserialization_error(&error.to_string())
+                .to_string(),
+        }
+    }
+
+    /// [`Self::parser_config_parse_error`] for an error that carries the
+    /// path of the field, which is schema-defined and names what to fix.
+    pub fn parser_config_field_error(
+        endpoint_name: &str,
+        error: &serde_json_path_to_error::Error,
+    ) -> Self {
+        Self::ParserConfigParseError {
+            endpoint_name: endpoint_name.to_owned(),
+            error: field_error_text(error),
+        }
+    }
+
+    /// [`Self::encoder_config_parse_error`] for an error that carries the
+    /// path of the field.
+    pub fn encoder_config_field_error(
+        endpoint_name: &str,
+        error: &serde_json_path_to_error::Error,
+    ) -> Self {
+        Self::EncoderConfigParseError {
+            endpoint_name: endpoint_name.to_owned(),
+            error: field_error_text(error),
         }
     }
 
@@ -1401,20 +1425,16 @@ impl ControllerError {
         }
     }
 
-    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E, config: &str) -> Self
+    pub fn parser_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
     where
         E: ToString,
     {
         Self::Config {
-            config_error: Box::new(ConfigError::parser_config_parse_error(
-                endpoint_name,
-                error,
-                config,
-            )),
+            config_error: Box::new(ConfigError::parser_config_parse_error(endpoint_name, error)),
         }
     }
 
-    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E, config: &str) -> Self
+    pub fn encoder_config_parse_error<E>(endpoint_name: &str, error: &E) -> Self
     where
         E: ToString,
     {
@@ -1422,7 +1442,27 @@ impl ControllerError {
             config_error: Box::new(ConfigError::encoder_config_parse_error(
                 endpoint_name,
                 error,
-                config,
+            )),
+        }
+    }
+
+    pub fn parser_config_field_error(
+        endpoint_name: &str,
+        error: &serde_json_path_to_error::Error,
+    ) -> Self {
+        Self::Config {
+            config_error: Box::new(ConfigError::parser_config_field_error(endpoint_name, error)),
+        }
+    }
+
+    pub fn encoder_config_field_error(
+        endpoint_name: &str,
+        error: &serde_json_path_to_error::Error,
+    ) -> Self {
+        Self::Config {
+            config_error: Box::new(ConfigError::encoder_config_field_error(
+                endpoint_name,
+                error,
             )),
         }
     }
@@ -1765,6 +1805,35 @@ mod test {
 
     use super::ControllerError;
 
+    #[test]
+    fn format_errors_do_not_echo_rejected_secret_values() {
+        use feldera_types::format::avro::AvroEncoderConfig;
+        for config in [
+            json!("hunter2"),
+            json!({"registry_urls": "hunter2"}),
+            json!({"update_format": "hunter2"}),
+            // An unknown field is named; the value under it is not echoed.
+            json!({"regitry_urls": "hunter2"}),
+        ] {
+            let cause = serde_json::from_value::<AvroEncoderConfig>(config).unwrap_err();
+            for error in [
+                ControllerError::parser_config_parse_error("avro_in", &cause),
+                ControllerError::encoder_config_parse_error("avro_out", &cause),
+            ] {
+                for text in [error.to_string(), serde_json::to_string(&error).unwrap()] {
+                    assert!(!text.contains("hunter2"), "{text}");
+                    assert!(!text.contains("\"config\""), "{text}");
+                    assert!(text.contains("avro_"), "{text}");
+                    // The category stays, with serde's expected part when it has one.
+                    assert!(
+                        text.contains("expected") || text.contains("documented"),
+                        "{text}"
+                    );
+                }
+            }
+        }
+    }
+
     #[derive(Debug, Serialize)]
     struct StalledEngine {
         reason: &'static str,
@@ -1834,5 +1903,40 @@ mod test {
             serde_json::to_value(&error).unwrap(),
             json!({"error": {"reason": "stalled"}})
         );
+    }
+}
+
+/// Describes `error` by its category, serde's expected part and the field
+/// path, which all come from the schema. The rejected value is never copied:
+/// it can be a credential.
+fn field_error_text(error: &serde_json_path_to_error::Error) -> String {
+    let text = feldera_types::config_diagnostics::deserialization_error(error.inner());
+    let path = error.path().to_string();
+    if path == "." {
+        text
+    } else {
+        format!("{text} (field `{path}`)")
+    }
+}
+
+#[cfg(test)]
+mod field_error_tests {
+    use super::ControllerError;
+    use serde_json::json;
+
+    /// The field is named, the rejected value is not.
+    #[test]
+    fn the_failing_field_is_named_and_its_value_is_not() {
+        #[derive(Debug, serde::Deserialize)]
+        #[allow(dead_code)]
+        struct Options {
+            threads: Option<usize>,
+        }
+        let error = serde_json_path_to_error::from_value::<Options>(json!({"threads": "hunter2"}))
+            .unwrap_err();
+        let text = ControllerError::parser_config_field_error("ep", &error).to_string();
+        assert!(text.contains("(field `threads`)"), "{text}");
+        assert!(text.contains("expected usize"), "{text}");
+        assert!(!text.contains("hunter2"), "{text}");
     }
 }
