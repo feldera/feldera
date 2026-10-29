@@ -5137,7 +5137,7 @@ pub fn parser_config_from_http_request(
     Ok(FormatConfig {
         name: Cow::from(format_name.to_string()),
         config: serde_json::to_value(config)
-            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, ""))?,
+            .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e))?,
     })
 }
 
@@ -5161,7 +5161,7 @@ pub fn encoder_config_from_http_request(
     Ok(FormatConfig {
         name: format.name(),
         config: serde_json::to_value(config)
-            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, ""))?,
+            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e))?,
     })
 }
 
