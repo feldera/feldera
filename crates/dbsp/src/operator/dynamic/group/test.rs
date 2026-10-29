@@ -212,6 +212,7 @@ fn topk_test_circuit(
 
 fn topk_custom_ord_test_circuit(
     circuit: &mut RootCircuit,
+    k: usize,
 ) -> AnyResult<(
     IndexedZSetHandle<i32, Tup3<String, i32, i32>>,
     OutputHandle<OrdIndexedZSet<i32, Tup3<String, i32, i32>>>,
@@ -246,13 +247,13 @@ fn topk_custom_ord_test_circuit(
     }
 
     let topk_handle = input_stream
-        .topk_custom_order::<AscDesc>(5)
+        .topk_custom_order::<AscDesc>(k)
         .integrate()
         .output();
 
     let topk_rank_handle = input_stream
         .topk_rank_custom_order::<AscDesc, _, _, _>(
-            5,
+            k,
             |Tup3(_, x1, y1), Tup3(_, x2, y2)| x1 == x2 && y1 == y2,
             |rank, Tup3(s, x, y)| Tup4(rank, s.clone(), *x, *y),
         )
@@ -261,7 +262,7 @@ fn topk_custom_ord_test_circuit(
 
     let topk_dense_rank_handle = input_stream
         .topk_dense_rank_custom_order::<AscDesc, _, _, _>(
-            5,
+            k,
             |Tup3(_, x1, y1), Tup3(_, x2, y2)| x1 == x2 && y1 == y2,
             |rank, Tup3(s, x, y)| Tup4(rank, s.clone(), *x, *y),
         )
@@ -269,7 +270,7 @@ fn topk_custom_ord_test_circuit(
         .output();
 
     let topk_row_number_handle = input_stream
-        .topk_row_number_custom_order::<AscDesc, _, _>(5, |rank, Tup3(s, x, y)| {
+        .topk_row_number_custom_order::<AscDesc, _, _>(k, |rank, Tup3(s, x, y)| {
             Tup4(rank, s.clone(), *x, *y)
         })
         .integrate()
@@ -532,7 +533,7 @@ fn test_topk_custom_ord() {
             topk_dense_rank_handle,
             topk_row_number_handle,
         ),
-    ) = Runtime::init_circuit(4, topk_custom_ord_test_circuit).unwrap();
+    ) = Runtime::init_circuit(4, |circuit| topk_custom_ord_test_circuit(circuit, 5)).unwrap();
 
     let trace = vec![
         vec![
@@ -711,6 +712,30 @@ fn test_topk_custom_ord() {
             &expected_row_number_output.next().unwrap(),
         );
     }
+}
+
+#[test]
+fn test_topk_custom_ord_zero() {
+    let (
+        mut dbsp,
+        (
+            input_handle,
+            topk_handle,
+            topk_rank_handle,
+            topk_dense_rank_handle,
+            topk_row_number_handle,
+        ),
+    ) = Runtime::init_circuit(4, |circuit| topk_custom_ord_test_circuit(circuit, 0)).unwrap();
+
+    input_handle.push(1, (Tup3("foo".to_string(), 10, 100), 1));
+    input_handle.push(1, (Tup3("foo".to_string(), 9, 99), 2));
+    dbsp.transaction().unwrap();
+
+    // Ranks and row numbers start at 1, so no row qualifies.
+    assert!(topk_handle.consolidate().is_empty());
+    assert!(topk_rank_handle.consolidate().is_empty());
+    assert!(topk_dense_rank_handle.consolidate().is_empty());
+    assert!(topk_row_number_handle.consolidate().is_empty());
 }
 
 #[test]

@@ -553,10 +553,11 @@ where
                     } else {
                         rank = count + 1;
                     }
-                    if rank as usize > self.k {
-                        break;
-                    }
                 };
+                // Checked for every row, so that `k = 0` drops the first group too.
+                if rank as usize > self.k {
+                    break;
+                }
                 count += w;
 
                 (self.output_func)(rank, key, &mut output_val);
