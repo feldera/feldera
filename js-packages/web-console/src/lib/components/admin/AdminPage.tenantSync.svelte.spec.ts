@@ -27,7 +27,7 @@ vi.mock('$app/state', () => ({
     }
   }
 }))
-vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn(async () => {}) }))
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), refreshAll: vi.fn(async () => {}) }))
 vi.mock('#lib/compositions/configCache.ts', () => ({ clearConfigCaches: vi.fn() }))
 vi.mock('#lib/services/auth.ts', () => ({ setSelectedTenant: vi.fn() }))
 // Only the members table is stubbed: it fetches on mount and has no part in

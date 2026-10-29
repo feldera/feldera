@@ -20,6 +20,10 @@
   let suppressNavigationGuard = false
 
   beforeNavigate((navigation) => {
+    // Shallow routing (the former pushState/replaceState) is not a page change.
+    if (navigation.shallow && navigation.type === 'goto') {
+      return
+    }
     if (!unsavedChanges || navigationResolve || suppressNavigationGuard) {
       return
     }
@@ -62,12 +66,16 @@
       // push() above mutates pipelineCache, which re-derives `files` with a
       // new identity, and the CodeEditor effects that re-run will crash
       // dereferencing the just-disposed `openFiles[filePath]`.
-      goto(navigation.to.url.pathname + navigation.to.url.search + navigation.to.url.hash).then(
-        () => {
-          navigationResolve = null
-          suppressNavigationGuard = false
-        }
-      )
+      const to = navigation.to.url
+      if (to.origin !== window.location.origin) {
+        // `goto` only reaches routes of this app.
+        window.location.href = to.href
+        return
+      }
+      goto(to.pathname + to.search + to.hash).then(() => {
+        navigationResolve = null
+        suppressNavigationGuard = false
+      })
     })
   })
 

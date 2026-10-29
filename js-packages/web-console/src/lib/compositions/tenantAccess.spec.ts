@@ -8,17 +8,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@axa-fr/oidc-client', () => ({ OidcClient: { get: vi.fn() } }))
 
 import { errorResponseMiddleware } from '#lib/services/auth.ts'
-import { setInvalidateAll } from '#lib/services/invalidateAll.ts'
+import { setRefreshAll } from '#lib/services/refreshAll.ts'
 import { errorCodeOf, isTenantRecheckPending, resetTenantRecheck } from './tenantAccess'
 
 const rejection = (code: string) => new Error(code, { cause: { error_code: code } })
 
-const invalidateAll = vi.fn(async () => {})
+const refreshAll = vi.fn(async () => {})
 
 beforeEach(() => {
   resetTenantRecheck()
-  invalidateAll.mockReset()
-  setInvalidateAll(invalidateAll)
+  refreshAll.mockReset()
+  setRefreshAll(refreshAll)
 })
 
 describe('errorCodeOf', () => {
@@ -43,7 +43,7 @@ describe('tenant re-check', () => {
 
   it('re-runs the loaders when a response reports no memberships', () => {
     errorResponseMiddleware(rejection('NoTenantMemberships'), undefined)
-    expect(invalidateAll).toHaveBeenCalledOnce()
+    expect(refreshAll).toHaveBeenCalledOnce()
     expect(isTenantRecheckPending()).toBe(true)
   })
 
@@ -53,7 +53,7 @@ describe('tenant re-check', () => {
     errorResponseMiddleware(rejection('NoTenantMemberships'), undefined)
     errorResponseMiddleware(rejection('NoTenantMemberships'), undefined)
     errorResponseMiddleware(rejection('NoTenantMemberships'), undefined)
-    expect(invalidateAll).toHaveBeenCalledOnce()
+    expect(refreshAll).toHaveBeenCalledOnce()
   })
 
   it('ignores codes that a retry or a reload can still recover from', () => {
@@ -61,14 +61,14 @@ describe('tenant re-check', () => {
       errorResponseMiddleware(rejection(code), undefined)
       expect(isTenantRecheckPending(), code).toBe(false)
     }
-    expect(invalidateAll).not.toHaveBeenCalled()
+    expect(refreshAll).not.toHaveBeenCalled()
   })
 
   it('ignores ordinary failures, including network errors with no response', () => {
     errorResponseMiddleware(new TypeError('Failed to fetch'), undefined)
     errorResponseMiddleware({ message: 'nope' }, { status: 500 } as Response)
     expect(isTenantRecheckPending()).toBe(false)
-    expect(invalidateAll).not.toHaveBeenCalled()
+    expect(refreshAll).not.toHaveBeenCalled()
   })
 
   it('still tags the error with status, as before', () => {
@@ -83,6 +83,6 @@ describe('tenant re-check', () => {
     resetTenantRecheck()
     expect(isTenantRecheckPending()).toBe(false)
     errorResponseMiddleware(rejection('NoTenantMemberships'), undefined)
-    expect(invalidateAll).toHaveBeenCalledTimes(2)
+    expect(refreshAll).toHaveBeenCalledTimes(2)
   })
 })

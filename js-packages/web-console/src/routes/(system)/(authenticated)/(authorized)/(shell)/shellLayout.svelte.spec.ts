@@ -34,7 +34,7 @@ vi.mock('#lib/compositions/health/useClusterHealth.svelte.ts', () => ({
 vi.mock('#lib/compositions/usePipelineAction.svelte.ts', () => ({ usePipelineAction: () => {} }))
 vi.mock('#lib/compositions/configCache.ts', () => ({ fetchConfigs: async () => ({}) }))
 vi.mock('$app/navigation', () => ({
-  invalidateAll: vi.fn(),
+  refreshAll: vi.fn(),
   afterNavigate: () => {},
   beforeNavigate: () => {}
 }))

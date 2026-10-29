@@ -257,7 +257,7 @@
                 }
                 const newUrl = resolve(`/pipelines/${encodeURIComponent(name)}/`)
                 return pipeline.patch({ name }).then(() => {
-                  goto(newUrl, { replaceState: true })
+                  goto(newUrl, { replace: true })
                 })
               }}
               disabled={editNameDisabled}

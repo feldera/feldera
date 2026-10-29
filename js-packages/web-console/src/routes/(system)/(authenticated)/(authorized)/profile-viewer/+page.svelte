@@ -13,7 +13,7 @@
   } from 'profiler-layout'
   import type { Dataflow, JsonProfiles } from 'profiler-lib'
   import { fade } from 'svelte/transition'
-  import { replaceState } from '$app/navigation'
+  import { goto } from '$app/navigation'
   import Popup from '#lib/components/common/Popup.svelte'
   import AppHeader from '#lib/components/layout/AppHeader.svelte'
   import PipelineBreadcrumbs from '#lib/components/layout/PipelineBreadcrumbs.svelte'
@@ -224,7 +224,7 @@
     errorMessage = ''
     pendingBundle = null
     if (bundle.bundleId !== undefined) {
-      replaceState(storedBundleUrl(bundle.bundleId), {})
+      goto(storedBundleUrl(bundle.bundleId), { shallow: true, replace: true })
     }
     await withLoadGuard(async () => {
       downloadProgress.onProgress(0, 1)
