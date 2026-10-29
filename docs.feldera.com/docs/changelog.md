@@ -10,6 +10,12 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Security: connector errors, debug log lines, and compile errors that
+  printed a whole configuration, URI, or option value now name the endpoint
+  and the option only, so a resolved secret reference does not reach the
+  pipeline log or `deployment_error` through them. See
+  [secret references](/connectors/secret-references#diagnostics).
+
 ## v0.384.0
 
 - Incompatible change (REST API, fda): the endpoint
