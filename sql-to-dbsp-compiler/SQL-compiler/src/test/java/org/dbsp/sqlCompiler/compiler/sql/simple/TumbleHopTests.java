@@ -43,6 +43,31 @@ public class TumbleHopTests extends SqlIoTest {
     }
 
     @Test
+    public void windowSizeExpressions() {
+        // Each TUMBLE size is one hour: INTERVAL 1.5 HOUR is an INTERVAL HOUR.
+        // The HOP has a slide of one hour and a size of two hours.
+        for (boolean optimize : new boolean[] { true, false }) {
+            this.setOptimize(optimize);
+            var ccs = this.getCCS("""
+                    CREATE TABLE T (ts TIMESTAMP NOT NULL);
+                    CREATE VIEW V AS
+                    SELECT window_start FROM TABLE(TUMBLE(TABLE T, DESCRIPTOR(ts), INTERVAL 1.5 HOUR))
+                    UNION ALL
+                    SELECT window_start FROM TABLE(TUMBLE(TABLE T, DESCRIPTOR(ts), INTERVAL '2' HOUR / 2))
+                    UNION ALL
+                    SELECT window_start FROM TABLE(TUMBLE(TABLE T, DESCRIPTOR(ts), INTERVAL '1' HOUR * 1))
+                    UNION ALL
+                    SELECT window_start FROM TABLE(
+                      HOP(TABLE T, DESCRIPTOR(ts), INTERVAL '2' HOUR / 2, INTERVAL 2 HOURS));""");
+            ccs.step("INSERT INTO T VALUES ('1970-01-01 01:30:00');", """
+                     window_start        | weight
+                    ------------------------------
+                     1970-01-01 00:00:00 | 1
+                     1970-01-01 01:00:00 | 4""");
+        }
+    }
+
+    @Test
     public void hopBefore1970() {
         var ccs = this.getCCS("""
                 CREATE TABLE T (ts TIMESTAMP NOT NULL);

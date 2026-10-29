@@ -1531,8 +1531,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
         if ((sourceType.is(DBSPTypeLongInterval.class) && code == DBSPTypeCode.INTERVAL_LONG) ||
             (sourceType.is(DBSPTypeShortInterval.class) && code == DBSPTypeCode.INTERVAL_SHORT)) {
+            // The function depends on the units of the destination only
             DBSPTypeBaseType t = destType.to(DBSPTypeBaseType.class);
-            functionName = "cast_to_" + t.shortName() + destType.nullableSuffix() +
+            functionName = "cast_to_" + destType.baseTypeWithSuffix() +
                     "_" + t.shortName() + sourceType.nullableSuffix();
         }
         this.builder.append(functionName);

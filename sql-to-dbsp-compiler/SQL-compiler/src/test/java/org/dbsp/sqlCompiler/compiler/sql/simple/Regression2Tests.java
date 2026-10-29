@@ -1214,10 +1214,11 @@ public class Regression2Tests extends SqlIoTest {
         var ccs = this.getCCS("""
                CREATE TABLE T(x INT);
                CREATE VIEW V AS SELECT DIV_NULL(INTERVAL '+1' HOURS, x) FROM T;""");
+        // The quotient is an INTERVAL HOUR, truncated toward zero to whole hours
         ccs.stepWeightOne("INSERT INTO T VALUES (5);", """
                  r
                 ---
-                 12 mins""");
+                 0 secs""");
         ccs.stepWeightOne("INSERT INTO T VALUES (0);", """
                  r
                 ---
@@ -1226,7 +1227,7 @@ public class Regression2Tests extends SqlIoTest {
                SELECT INTERVAL '+1' HOURS / 5;
                 r
                ---
-                12 mins
+                0 secs
                (1 row)
                
                SELECT DIV_NULL(1, 0);
@@ -1274,7 +1275,7 @@ public class Regression2Tests extends SqlIoTest {
                SELECT DIV_NULL(INTERVAL '1' YEAR, 2.0);
                 r
                ---
-               6 month
+               0 months
                (1 row)
                
                SELECT DIV_NULL(1e0, 0);
