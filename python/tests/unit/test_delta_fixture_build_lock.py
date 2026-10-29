@@ -185,6 +185,55 @@ def test_half_placed_fixture_is_rebuilt(monkeypatch, fixture_subpath):
     )
 
 
+def test_hung_builder_is_timed_out_and_retried(monkeypatch, tmp_path, fixture_subpath):
+    """A builder that hangs (e.g. in Ivy resolution) must be killed and retried.
+
+    Without a timeout it would hold the test until pytest-timeout fires.
+    """
+    if shutil.which("uv") is None:
+        pytest.skip("ensure_delta_spark_fixture requires `uv` on PATH")
+
+    monkeypatch.delenv("CI", raising=False)
+
+    from tests import utils
+
+    monkeypatch.setattr(utils.time, "sleep", lambda _: None)
+    calls = []
+
+    def fake_builder_run(cmd, check=False, timeout=None, **kwargs):
+        calls.append(timeout)
+        if timeout is None:
+            pytest.fail("the builder subprocess must be run with a timeout")
+        if len(calls) == 1:
+            raise subprocess.TimeoutExpired(cmd, timeout)
+        _write_fake_delta_tree(pathlib.Path(cmd[-1]), seed=len(calls))
+        return subprocess.CompletedProcess(cmd, 0, stdout="done")
+
+    monkeypatch.setattr(
+        utils,
+        "subprocess",
+        types.SimpleNamespace(
+            run=fake_builder_run,
+            CalledProcessError=subprocess.CalledProcessError,
+            TimeoutExpired=subprocess.TimeoutExpired,
+        ),
+    )
+
+    loc = utils.DeltaTestLocation.create(
+        "fixture_lock_test", stable_subpath=fixture_subpath
+    )
+    utils.ensure_delta_spark_fixture(loc, "stub_builder.py")
+
+    assert len(calls) == 2, "a timed-out build must be retried once"
+    assert (
+        LOCAL_FIXTURE_ROOT / fixture_subpath / DeltaTestLocation.READY_MARKER
+    ).is_file()
+
+    calls.clear()
+    assert utils.run_delta_spark("stub_script.py", [tmp_path]) == "done"
+    assert len(calls) == 2, "run_delta_spark must retry a timed-out run"
+
+
 @pytest.mark.parametrize(
     ("tag", "expected"), [("multihost", "suite-multihost"), ("", "suite")]
 )
