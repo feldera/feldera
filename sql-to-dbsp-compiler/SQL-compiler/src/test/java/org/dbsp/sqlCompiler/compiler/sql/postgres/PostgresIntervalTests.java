@@ -397,16 +397,16 @@ public class PostgresIntervalTests extends SqlIoTest {
 
     @Test
     public void testCast() {
-        // Have to check the spec for the expected result
+        // The cast truncates the value toward zero to whole years
         this.qst("""
                 SELECT CAST(i AS INTERVAL YEAR) FROM LONG_INTERVAL_TBL;
                  i
                 ---
-                 5 months ago
-                 3 months
+                 0 months
+                 0 months
                  72 months
                  408 months
-                 125 months ago
+                 120 months ago
                 (5 rows)""");
     }
 
@@ -751,13 +751,13 @@ public class PostgresIntervalTests extends SqlIoTest {
                 SELECT CAST(INTERVAL 22 MONTHS AS INTERVAL YEARS);
                  x
                 ---
-                 22 months
+                 1 years
                 (1 row)
-                
+
                 SELECT CAST(INTERVAL '1-10' YEAR TO MONTH AS INTERVAL YEARS);
                  x
                 ---
-                 22 months
+                 1 years
                 (1 row)""");
     }
 }

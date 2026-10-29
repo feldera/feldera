@@ -67,6 +67,14 @@ public class DBSPTypeShortInterval
     }
 
     @Override
+    public DBSPTypeShortInterval finestType() {
+        return switch (this.units) {
+            case SECONDS, DAYS_TO_SECONDS, HOURS_TO_SECONDS, MINUTES_TO_SECONDS -> this;
+            default -> new DBSPTypeShortInterval(this.getNode(), Units.SECONDS, this.mayBeNull);
+        };
+    }
+
+    @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;

@@ -19,15 +19,15 @@ class arithtst_atimestamp_minus_timestamp(TstView):
 
 class arithtst_timestamp_minus_timestamp_str(TstView):
     def __init__(self):
-        # Validated on MySQL
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "sec_str": "+160342920.000000",
                 "min_str": "+2672382",
-                "hrs_str": "+44539",
-                "days_str": "+1855",
-                "mths_str": "+60",
+                "hrs_str": "+44540",
+                "days_str": "+1856",
+                "mths_str": "+61",
                 "yrs_str": "+5",
             },
             {
@@ -37,7 +37,7 @@ class arithtst_timestamp_minus_timestamp_str(TstView):
                 "hrs_str": "-23524",
                 "days_str": "-980",
                 "mths_str": "-32",
-                "yrs_str": "-2",
+                "yrs_str": "-3",
             },
             {
                 "id": 2,
@@ -46,7 +46,7 @@ class arithtst_timestamp_minus_timestamp_str(TstView):
                 "hrs_str": "+92474",
                 "days_str": "+3853",
                 "mths_str": "+126",
-                "yrs_str": "+10",
+                "yrs_str": "+11",
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_minus_timestamp_str AS SELECT
@@ -75,29 +75,28 @@ class arithtst_timestamp_minus_timestamp_str(TstView):
 # Using explicit interval types for subtraction and addition
 class arithtst_timestamp_minus_sinterval(TstView):
     def __init__(self):
-        # Validated on MySQL
-        # The subtraction of all interval types produce the same result as subtracting MINUTE type in MySQL
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "seconds": datetime.datetime(2014, 11, 5, 12, 45, 0),
                 "minutes": datetime.datetime(2014, 11, 5, 12, 45, 0),
-                "hours": datetime.datetime(2014, 11, 5, 12, 45, 0),
-                "days": datetime.datetime(2014, 11, 5, 12, 45, 0),
+                "hours": datetime.datetime(2014, 11, 5, 12, 27),
+                "days": datetime.datetime(2014, 11, 5, 8, 27),
             },
             {
                 "id": 1,
                 "seconds": datetime.datetime(2023, 2, 26, 18, 0, 0),
                 "minutes": datetime.datetime(2023, 2, 26, 18, 0, 0),
                 "hours": datetime.datetime(2023, 2, 26, 18, 0, 0),
-                "days": datetime.datetime(2023, 2, 26, 18, 0, 0),
+                "days": datetime.datetime(2023, 2, 26, 14, 0),
             },
             {
                 "id": 2,
                 "seconds": datetime.datetime(1948, 12, 2, 9, 15, 0),
                 "minutes": datetime.datetime(1948, 12, 2, 9, 15, 0),
-                "hours": datetime.datetime(1948, 12, 2, 9, 15, 0),
-                "days": datetime.datetime(1948, 12, 2, 9, 15, 0),
+                "hours": datetime.datetime(1948, 12, 2, 9, 32),
+                "days": datetime.datetime(1948, 12, 2, 11, 32),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_minus_sinterval AS SELECT
@@ -112,24 +111,22 @@ class arithtst_timestamp_minus_sinterval(TstView):
 
 class arithtst_timestamp_minus_linterval(TstView):
     def __init__(self):
-        # Validated on MySQL
-        # The result of subtracting MONTH type interval matches with MySQL
-        # whereas YEARS behaves similarly as MONTHS in terms of accuracy
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "months": datetime.datetime(2014, 12, 5, 8, 27, 0),
+                "months": datetime.datetime(2014, 11, 5, 8, 27),
                 "years": datetime.datetime(2014, 12, 5, 8, 27, 0),
             },
             {
                 "id": 1,
                 "months": datetime.datetime(2023, 2, 21, 14, 0, 0),
-                "years": datetime.datetime(2023, 2, 21, 14, 0, 0),
+                "years": datetime.datetime(2023, 6, 21, 14, 0),
             },
             {
                 "id": 2,
                 "months": datetime.datetime(1948, 12, 21, 11, 32, 0),
-                "years": datetime.datetime(1948, 12, 21, 11, 32, 0),
+                "years": datetime.datetime(1948, 6, 21, 11, 32),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_minus_linterval AS SELECT
@@ -142,29 +139,28 @@ class arithtst_timestamp_minus_linterval(TstView):
 
 class arithtst_timestamp_plus_sinterval(TstView):
     def __init__(self):
-        # Validated on MySQL
-        # The addition of all interval types produce the same result as adding MINUTE type in MySQL
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "seconds": datetime.datetime(2025, 1, 3, 4, 9, 0),
                 "minutes": datetime.datetime(2025, 1, 3, 4, 9, 0),
-                "hours": datetime.datetime(2025, 1, 3, 4, 9, 0),
-                "days": datetime.datetime(2025, 1, 3, 4, 9, 0),
+                "hours": datetime.datetime(2025, 1, 3, 4, 27),
+                "days": datetime.datetime(2025, 1, 3, 8, 27),
             },
             {
                 "id": 1,
                 "seconds": datetime.datetime(2017, 10, 15, 10, 0, 0),
                 "minutes": datetime.datetime(2017, 10, 15, 10, 0, 0),
                 "hours": datetime.datetime(2017, 10, 15, 10, 0, 0),
-                "days": datetime.datetime(2017, 10, 15, 10, 0, 0),
+                "days": datetime.datetime(2017, 10, 15, 14, 0),
             },
             {
                 "id": 2,
                 "seconds": datetime.datetime(1970, 1, 7, 13, 49, 0),
                 "minutes": datetime.datetime(1970, 1, 7, 13, 49, 0),
-                "hours": datetime.datetime(1970, 1, 7, 13, 49, 0),
-                "days": datetime.datetime(1970, 1, 7, 13, 49, 0),
+                "hours": datetime.datetime(1970, 1, 7, 13, 32),
+                "days": datetime.datetime(1970, 1, 7, 11, 32),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_plus_sinterval AS SELECT
@@ -179,24 +175,22 @@ class arithtst_timestamp_plus_sinterval(TstView):
 
 class arithtst_timestamp_plus_linterval(TstView):
     def __init__(self):
-        # Validated on MySQL
-        # The result of adding MONTH type interval matches with MySQL
-        # whereas YEARS behaves similarly as MONTHS in terms of accuracy
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "months": datetime.datetime(2024, 12, 5, 8, 27, 0),
+                "months": datetime.datetime(2025, 1, 5, 8, 27),
                 "years": datetime.datetime(2024, 12, 5, 8, 27, 0),
             },
             {
                 "id": 1,
                 "months": datetime.datetime(2017, 10, 21, 14, 0, 0),
-                "years": datetime.datetime(2017, 10, 21, 14, 0, 0),
+                "years": datetime.datetime(2017, 6, 21, 14, 0),
             },
             {
                 "id": 2,
                 "months": datetime.datetime(1969, 12, 21, 11, 32, 0),
-                "years": datetime.datetime(1969, 12, 21, 11, 32, 0),
+                "years": datetime.datetime(1970, 6, 21, 11, 32),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_plus_linterval AS SELECT
@@ -210,14 +204,14 @@ class arithtst_timestamp_plus_linterval(TstView):
 # Using interval type cast as VARCHAR for subtraction and addition
 class arithtst_ts_sub_sinterval(TstView):
     def __init__(self):
-        # Validated on MySQL
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "sec_str": datetime.datetime(2014, 11, 5, 12, 45, 0),
                 "min_str": datetime.datetime(2014, 11, 5, 12, 45, 0),
-                "hrs_str": datetime.datetime(2014, 11, 5, 13, 27, 0),
-                "day_str": datetime.datetime(2014, 11, 6, 8, 27, 0),
+                "hrs_str": datetime.datetime(2014, 11, 5, 12, 27),
+                "day_str": datetime.datetime(2014, 11, 5, 8, 27),
             },
             {
                 "id": 1,
@@ -246,22 +240,22 @@ class arithtst_ts_sub_sinterval(TstView):
 
 class arithtst_ts_sub_linterval(TstView):
     def __init__(self):
-        # Validated on MySQL
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "mths_str": datetime.datetime(2014, 12, 5, 8, 27, 0),
+                "mths_str": datetime.datetime(2014, 11, 5, 8, 27),
                 "yrs_str": datetime.datetime(2014, 12, 5, 8, 27, 0),
             },
             {
                 "id": 1,
                 "mths_str": datetime.datetime(2023, 2, 21, 14, 0, 0),
-                "yrs_str": datetime.datetime(2022, 6, 21, 14, 0, 0),
+                "yrs_str": datetime.datetime(2023, 6, 21, 14, 0),
             },
             {
                 "id": 2,
                 "mths_str": datetime.datetime(1948, 12, 21, 11, 32, 0),
-                "yrs_str": datetime.datetime(1949, 6, 21, 11, 32, 0),
+                "yrs_str": datetime.datetime(1948, 6, 21, 11, 32),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW ts_sub_linterval AS SELECT
@@ -274,14 +268,14 @@ class arithtst_ts_sub_linterval(TstView):
 
 class arithtst_ts_add_sinterval(TstView):
     def __init__(self):
-        # Validated on MySQL
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "sec_str": datetime.datetime(2025, 1, 3, 4, 9, 0),
                 "min_str": datetime.datetime(2025, 1, 3, 4, 9, 0),
-                "hrs_str": datetime.datetime(2025, 1, 3, 3, 27, 0),
-                "day_str": datetime.datetime(2025, 1, 2, 8, 27, 0),
+                "hrs_str": datetime.datetime(2025, 1, 3, 4, 27),
+                "day_str": datetime.datetime(2025, 1, 3, 8, 27),
             },
             {
                 "id": 1,
@@ -310,22 +304,22 @@ class arithtst_ts_add_sinterval(TstView):
 
 class arithtst_ts_add_linterval(TstView):
     def __init__(self):
-        # Validated on MySQL
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "mths_str": datetime.datetime(2024, 12, 5, 8, 27, 0),
+                "mths_str": datetime.datetime(2025, 1, 5, 8, 27),
                 "yrs_str": datetime.datetime(2024, 12, 5, 8, 27, 0),
             },
             {
                 "id": 1,
                 "mths_str": datetime.datetime(2017, 10, 21, 14, 0, 0),
-                "yrs_str": datetime.datetime(2018, 6, 21, 14, 0, 0),
+                "yrs_str": datetime.datetime(2017, 6, 21, 14, 0),
             },
             {
                 "id": 2,
                 "mths_str": datetime.datetime(1969, 12, 21, 11, 32, 0),
-                "yrs_str": datetime.datetime(1969, 6, 21, 11, 32, 0),
+                "yrs_str": datetime.datetime(1970, 6, 21, 11, 32),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW ts_add_linterval AS SELECT
@@ -378,12 +372,12 @@ class arithtst_ats_minus_ts(TstView):
 
 class arithtst_ats_minus_ts_str(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "ytm_str": "+5-00",
-                "dth_str": "+1855 19",
+                "ytm_str": "+5-01",
+                "dth_str": "+1855 20",
                 "dtm_str": "+1855 19:42",
                 "dts_str": "+1855 19:42:00",
                 "htm_str": "+44539:42",
@@ -442,14 +436,12 @@ class arithtst_ats_minus_ts_str(TstView):
 # Using explicit interval types for subtraction and addition
 class arithtst_ts_minus_interval(TstView):
     def __init__(self):
-        # Validated on Postgres
-        # The result of subtraction with all interval types matches with Postgres except DAY TO HOUR
-        # DAY to HOUR behaves similarly as DAY to MONTH/SECOND, HOUR TO MINUTE/SECOND, MINUTE TO SECOND) in terms of accuracy
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "ytm": datetime.datetime(2014, 12, 5, 8, 27, 0),
-                "dth": datetime.datetime(2014, 11, 5, 12, 45, 0),
+                "ytm": datetime.datetime(2014, 11, 5, 8, 27),
+                "dth": datetime.datetime(2014, 11, 5, 12, 27),
                 "dtm": datetime.datetime(2014, 11, 5, 12, 45, 0),
                 "dts": datetime.datetime(2014, 11, 5, 12, 45, 0),
                 "htm": datetime.datetime(2014, 11, 5, 12, 45, 0),
@@ -469,7 +461,7 @@ class arithtst_ts_minus_interval(TstView):
             {
                 "id": 2,
                 "ytm": datetime.datetime(1948, 12, 21, 11, 32, 0),
-                "dth": datetime.datetime(1948, 12, 2, 9, 15, 0),
+                "dth": datetime.datetime(1948, 12, 2, 9, 32),
                 "dtm": datetime.datetime(1948, 12, 2, 9, 15, 0),
                 "dts": datetime.datetime(1948, 12, 2, 9, 15, 0),
                 "htm": datetime.datetime(1948, 12, 2, 9, 15, 0),
@@ -492,14 +484,12 @@ class arithtst_ts_minus_interval(TstView):
 
 class arithtst_ts_plus_interval(TstView):
     def __init__(self):
-        # Validated on Postgres
-        # The result of addition with all interval types matches with Postgres except DAY TO HOUR
-        # DAY to HOUR behaves similarly as DAY to MONTH/SECOND, HOUR TO MINUTE/SECOND, MINUTE TO SECOND in terms of accuracy
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "ytm": datetime.datetime(2024, 12, 5, 8, 27, 0),
-                "dth": datetime.datetime(2025, 1, 3, 4, 9, 0),
+                "ytm": datetime.datetime(2025, 1, 5, 8, 27),
+                "dth": datetime.datetime(2025, 1, 3, 4, 27),
                 "dtm": datetime.datetime(2025, 1, 3, 4, 9, 0),
                 "dts": datetime.datetime(2025, 1, 3, 4, 9, 0),
                 "htm": datetime.datetime(2025, 1, 3, 4, 9, 0),
@@ -519,7 +509,7 @@ class arithtst_ts_plus_interval(TstView):
             {
                 "id": 2,
                 "ytm": datetime.datetime(1969, 12, 21, 11, 32, 0),
-                "dth": datetime.datetime(1970, 1, 7, 13, 49, 0),
+                "dth": datetime.datetime(1970, 1, 7, 13, 32),
                 "dtm": datetime.datetime(1970, 1, 7, 13, 49, 0),
                 "dts": datetime.datetime(1970, 1, 7, 13, 49, 0),
                 "htm": datetime.datetime(1970, 1, 7, 13, 49, 0),
@@ -543,12 +533,12 @@ class arithtst_ts_plus_interval(TstView):
 # Using interval type cast as VARCHAR for subtraction and addition
 class arithtst_ts_minus_tssinterval(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "ytm_str": datetime.datetime(2014, 12, 5, 8, 27, 0),
-                "dth_str": datetime.datetime(2014, 11, 5, 13, 27, 0),
+                "ytm_str": datetime.datetime(2014, 11, 5, 8, 27),
+                "dth_str": datetime.datetime(2014, 11, 5, 12, 27),
                 "dtm_str": datetime.datetime(2014, 11, 5, 12, 45, 0),
                 "dts_str": datetime.datetime(2014, 11, 5, 12, 45, 0),
                 "htm_str": datetime.datetime(2014, 11, 5, 12, 45, 0),
@@ -591,12 +581,12 @@ class arithtst_ts_minus_tssinterval(TstView):
 
 class arithtst_ts_plus_tssinterval(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "ytm_str": datetime.datetime(2024, 12, 5, 8, 27, 0),
-                "dth_str": datetime.datetime(2025, 1, 3, 3, 27, 0),
+                "ytm_str": datetime.datetime(2025, 1, 5, 8, 27),
+                "dth_str": datetime.datetime(2025, 1, 3, 4, 27),
                 "dtm_str": datetime.datetime(2025, 1, 3, 4, 9, 0),
                 "dts_str": datetime.datetime(2025, 1, 3, 4, 9, 0),
                 "htm_str": datetime.datetime(2025, 1, 3, 4, 9, 0),
@@ -649,15 +639,15 @@ class arithtst_ts_plus_tssinterval(TstView):
 
 class arithtst_bneg_timestamp(TstView):
     def __init__(self):
-        # checked manually
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "seconds_neg": -160342920,
                 "minutes_neg": -2672382,
-                "hours_neg": -44539,
-                "days_neg": -1855,
-                "months_neg": -60,
+                "hours_neg": -44540,
+                "days_neg": -1856,
+                "months_neg": -61,
                 "years_neg": -5,
             },
             {
@@ -667,7 +657,7 @@ class arithtst_bneg_timestamp(TstView):
                 "hours_neg": 23524,
                 "days_neg": 980,
                 "months_neg": 32,
-                "years_neg": 2,
+                "years_neg": 3,
             },
             {
                 "id": 2,
@@ -676,7 +666,7 @@ class arithtst_bneg_timestamp(TstView):
                 "hours_neg": -92474,
                 "days_neg": -3853,
                 "months_neg": -126,
-                "years_neg": -10,
+                "years_neg": -11,
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW bneg_timestamp AS SELECT

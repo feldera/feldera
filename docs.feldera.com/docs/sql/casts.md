@@ -37,6 +37,10 @@ interval expressed in the interval's unit.  For example, `CAST(INTERVAL
 '10' DAY AS BIGINT)` returns 10, and `CAST(INTERVAL '10.6' SECONDS AS
 INTEGER)` returns 10.  Long intervals use years or months as the unit;
 short intervals use days, hours, minutes, or seconds.
+A cast of a number to an interval type other than `SECOND` truncates
+the number to an integer first: `CAST(1.5 AS INTERVAL YEAR)` is
+`INTERVAL '1' YEAR`, and `CAST(-1.5 AS INTERVAL DAY)` is `INTERVAL
+'-1' DAY`.
 
 Casts of strings to numeric types, `BOOLEAN`, `DATE`, `TIME`,
 `TIMESTAMP`, and `TIMESTAMP WITH TIME ZONE` first remove the

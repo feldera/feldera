@@ -585,7 +585,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         right = right.cast(node, new DBSPTypeDouble(rightType.getNode(), rightType.mayBeNull),
                                 DBSPCastExpression.CastType.SqlUnsafe);
                     }
-                    return new DBSPBinaryExpression(node, type, opcode, left, right);
+                    // The result has the type of the interval: compute it in the finest type and cast it,
+                    // which truncates it toward zero to the last field of the type
+                    DBSPType finest = type.to(IsIntervalType.class).finestType();
+                    DBSPExpression result = new DBSPBinaryExpression(node, finest, opcode, left, right);
+                    return result.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
                 }
             }
             if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.ADD) {
