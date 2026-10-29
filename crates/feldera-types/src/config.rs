@@ -317,16 +317,37 @@ impl PipelineConfig {
     }
 
     /// Abbreviated config that can be printed in the log on pipeline startup.
+    ///
+    /// Connector configs, environment values and storage credentials can hold
+    /// secrets, so they stay out. An endpoint shows its stream, transport and
+    /// format names only, and the runtime config shows reviewed fields only.
     pub fn display_summary(&self) -> String {
-        // TODO: we may want to further abbreviate connector config.
+        let endpoint = |stream: &str, connector: &ConnectorConfig| {
+            serde_json::json!({
+                "stream": stream,
+                "transport": connector.transport.name(),
+                "format": connector.format.as_ref().map(|format| format.name.as_ref()),
+            })
+        };
+        let inputs: BTreeMap<_, _> = self
+            .inputs
+            .iter()
+            .map(|(name, input)| (name, endpoint(&input.stream, &input.connector_config)))
+            .collect();
+        let outputs: BTreeMap<_, _> = self
+            .outputs
+            .iter()
+            .map(|(name, output)| (name, endpoint(&output.stream, &output.connector_config)))
+            .collect();
+
         let summary = serde_json::json!({
             "name": self.name,
             "given_name": self.given_name,
-            "global": self.global,
+            "global": self.global.display_summary(),
             "storage_config": self.storage_config,
             "secrets_dir": self.secrets_dir,
-            "inputs": self.inputs,
-            "outputs": self.outputs
+            "inputs": inputs,
+            "outputs": outputs
         });
 
         serde_json::to_string_pretty(&summary).unwrap_or_else(|_| "{}".to_string())
@@ -1513,6 +1534,63 @@ where
     deserializer.deserialize_any(StringOrStruct)
 }
 
+/// The `RuntimeConfig` fields that the startup log shows. A field missing
+/// here stays out of the log, so a new field holding a secret is safe by
+/// default.
+const RUNTIME_CONFIG_SUMMARY_FIELDS: &[&str] = &[
+    "workers",
+    "hosts",
+    "max_rss",
+    "datafusion_memory",
+    "fault_tolerance",
+    "cpu_profiler",
+    "tracing",
+    "min_batch_size_records",
+    "max_buffering_delay",
+    "resources",
+    "clock_resolution",
+    "clock_timezone_offset",
+    "pin_cpus",
+    "provisioning_timeout",
+    "max_parallel_connector_init",
+    "checkpoint_during_suspend",
+    "http_workers",
+    "io_workers",
+    "dev_tweaks",
+    "logging",
+];
+
+impl RuntimeConfig {
+    /// The reviewed fields of the config, for the startup log.
+    ///
+    /// Storage shows its backend name only, since a backend config can hold
+    /// access keys. `env` shows variable names only.
+    pub fn display_summary(&self) -> serde_json::Value {
+        let mut summary = serde_json::Map::new();
+        if let Ok(serde_json::Value::Object(fields)) = serde_json::to_value(self) {
+            for (name, value) in fields {
+                if RUNTIME_CONFIG_SUMMARY_FIELDS.contains(&name.as_str()) {
+                    summary.insert(name, value);
+                }
+            }
+        }
+        summary.insert(
+            "storage".to_string(),
+            serde_json::json!(self.storage.as_ref().map(|storage| {
+                serde_json::json!({
+                    "backend": storage.backend.to_string(),
+                    "min_spill_size": storage.min_spill_size,
+                })
+            })),
+        );
+        summary.insert(
+            "env".to_string(),
+            serde_json::json!(self.env.keys().collect::<Vec<_>>()),
+        );
+        serde_json::Value::Object(summary)
+    }
+}
+
 impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
@@ -2137,6 +2215,7 @@ pub fn to_legacy_size_spelling(config: &mut serde_json::Value) {
 #[cfg(test)]
 mod test {
     use super::deserialize_fault_tolerance;
+
     use crate::config::{
         ConnectorConfig, DEFAULT_CLOCK_RESOLUTION, DEFAULT_DATAFUSION_MEMORY_CEILING,
         DEFAULT_PULL_INTERVAL, DEFAULT_RETENTION_MIN_AGE, FileBackendConfig, FtConfig, FtModel,
@@ -3236,6 +3315,91 @@ mod test {
             pc3.global.storage.unwrap().bloom_false_positive_rate,
             Some(0.01)
         );
+    }
+
+    /// The startup summary names the endpoints and the transports but holds
+    /// no connector option, environment value or storage credential.
+    #[test]
+    fn display_summary_omits_secrets() {
+        let config: PipelineConfig = serde_json::from_value(json!({
+            "env": {"PGPASSWORD": "env-secret"},
+            "storage": {"backend": {"name": "file", "config": {
+                "sync": {"bucket": "b", "access_key": "ak", "secret_key": "storage-secret"}
+            }}},
+            "inputs": {"pg_in": {
+                "stream": "t",
+                "transport": {"name": "kafka_input", "config": {
+                    "topic": "t",
+                    "sasl.password": "kafka-secret"
+                }},
+                "format": {"name": "json", "config": {}}
+            }},
+            "outputs": {"pg_out": {
+                "stream": "v",
+                "transport": {"name": "postgres_output", "config": {
+                    "uri": "postgresql://u:pg-secret@h/db", "table": "v"
+                }}
+            }}
+        }))
+        .unwrap();
+
+        let summary = config.display_summary();
+        for secret in [
+            "env-secret",
+            "storage-secret",
+            "kafka-secret",
+            "pg-secret",
+            "sasl",
+        ] {
+            assert!(!summary.contains(secret), "{secret} in summary: {summary}");
+        }
+        for expected in [
+            "pg_in",
+            "kafka_input",
+            "json",
+            "pg_out",
+            "postgres_output",
+            "PGPASSWORD",
+            "file",
+        ] {
+            assert!(summary.contains(expected), "{expected} missing: {summary}");
+        }
+    }
+
+    /// Every name in the startup summary allowlist is a `RuntimeConfig`
+    /// field, and every field is either listed or deliberately left out, so
+    /// a new field forces a decision.
+    #[test]
+    fn summary_allowlist_matches_runtime_config() {
+        use std::collections::BTreeSet;
+
+        // The optional fields serialize only when set.
+        let config: RuntimeConfig = serde_json::from_value(json!({
+            "max_rss": "1Gi",
+            "datafusion_memory": "1Gi",
+            "max_buffering_delay": "1s",
+            "clock_resolution": "1s",
+            "provisioning_timeout": "1s",
+        }))
+        .unwrap();
+        let fields: BTreeSet<String> = match serde_json::to_value(&config).unwrap() {
+            serde_json::Value::Object(fields) => fields.keys().cloned().collect(),
+            other => panic!("not an object: {other}"),
+        };
+        // Storage and env hold credentials; the others name cluster objects.
+        let left_out = [
+            "storage",
+            "env",
+            "tracing_endpoint_jaeger",
+            "init_containers",
+            "pipeline_template_configmap",
+        ];
+        let decided: BTreeSet<String> = super::RUNTIME_CONFIG_SUMMARY_FIELDS
+            .iter()
+            .chain(left_out.iter())
+            .map(|name| name.to_string())
+            .collect();
+        assert_eq!(decided, fields);
     }
 }
 
