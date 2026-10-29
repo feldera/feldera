@@ -160,7 +160,9 @@ pub enum TestCircuit {
 
     /// A table `test_input1` with the columns of `relation` and no primary key, a view
     /// `test_output1` that holds its rows, and an index `index` on the view, keyed by the
-    /// columns of `key`. The index can hold several rows under one key.
+    /// columns of `key`. The index can hold several rows under one key. The table has the
+    /// persistent id `input`, the view the persistent id `output`, and the index the persistent
+    /// id `output.idx`.
     IndexedView {
         /// The key columns. The engine serves the index by the name of `key`.
         key: Relation,

@@ -1269,7 +1269,7 @@ fn start_exactly_once_controller(engine: &dyn PipelineTestEngine, tempdir: &Temp
 
     let controller = engine
         .controller(
-            &identity(&[None]),
+            &identity(&[Some("output")]),
             &config,
             Box::new(|e, _| panic!("error: {e}")),
         )
@@ -1667,7 +1667,7 @@ pub fn adhoc_insert_removed_before_journaling_replays(engine: &dyn PipelineTestE
         "clock_resolution_usecs": null,
     }))
     .unwrap();
-    let circuit = identity(&[None]);
+    let circuit = identity(&[Some("output")]);
     let is_adhoc = |name: &str| name.starts_with("adhoc-ingress-");
 
     let controller = engine

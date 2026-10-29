@@ -1212,6 +1212,7 @@ fn indexed_view_circuit<K: CompiledRecord, V: CompiledRecord>(
     let (circuit, catalog) = Runtime::init_circuit(config, move |circuit| {
         let mut catalog = Catalog::new();
         let (input, hinput) = circuit.add_input_zset::<V>();
+        input.set_persistent_mir_id("input");
         let schema = |name: &str| {
             serde_json::to_string(&Relation::new(
                 name.into(),
@@ -1222,10 +1223,15 @@ fn indexed_view_circuit<K: CompiledRecord, V: CompiledRecord>(
             .unwrap()
         };
         catalog.register_materialized_input_zset(input.clone(), hinput, &schema("test_input1"));
-        catalog.register_materialized_output_zset::<_, V>(input.clone(), &schema("test_output1"));
+        catalog.register_materialized_output_zset_persistent::<_, V>(
+            Some("output"),
+            input.clone(),
+            &schema("test_output1"),
+        );
         let indexed = input.map_index(move |value| (key_of(value), value.clone()));
         catalog
-            .register_index::<K, K, V, V>(
+            .register_index_persistent::<K, K, V, V>(
+                Some("output.idx"),
                 indexed,
                 &index,
                 &SqlIdentifier::from("test_output1"),
