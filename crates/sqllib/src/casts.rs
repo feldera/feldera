@@ -2081,12 +2081,19 @@ pub fn cast_to_ShortInterval_DAYS_i64(value: i64) -> SqlResult<ShortInterval> {
     }
 }
 
+/// Converts `value` units of `multiplier` microseconds to a `ShortInterval`.  A unit other than the
+/// second holds no fraction, so `value` is truncated toward zero first.
 fn convert_to_ShortInterval_SqlDecimal<const P: usize, const S: usize>(
     value: SqlDecimal<P, S>,
     multiplier: i64,
     kind: &'static str,
 ) -> SqlResult<ShortInterval> {
-    let dd = DynamicDecimal::from(value);
+    let units = if multiplier == MICROS_PER_SECOND as i64 {
+        value
+    } else {
+        value.trunc()
+    };
+    let dd = DynamicDecimal::from(units);
     let mul = DynamicDecimal::from(multiplier);
     dd.checked_mul(&mul)
         .and_then(|val| i64::try_from(val).ok())
@@ -2138,7 +2145,7 @@ pub fn cast_to_ShortInterval_HOURS_i64(value: i64) -> SqlResult<ShortInterval> {
 pub fn cast_to_ShortInterval_HOURS_SqlDecimal<const P: usize, const S: usize>(
     value: SqlDecimal<P, S>,
 ) -> SqlResult<ShortInterval> {
-    convert_to_ShortInterval_SqlDecimal::<P, S>(value, 3600i64 * 1000 * 1000, "DAYS")
+    convert_to_ShortInterval_SqlDecimal::<P, S>(value, 3600i64 * 1000 * 1000, "HOURS")
 }
 
 #[doc(hidden)]
@@ -2646,20 +2653,72 @@ cast_function!(LongInterval_YEARS, LongInterval, s, SqlString);
 cast_function!(LongInterval_YEARS_TO_MONTHS, LongInterval, s, SqlString);
 cast_function!(LongInterval_MONTHS, LongInterval, s, SqlString);
 
+// A cast between interval types truncates the value toward zero to the last field of the
+// target type.
+
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_LongInterval_LongInterval(value: LongInterval) -> SqlResult<LongInterval> {
+pub fn cast_to_LongInterval_YEARS_LongInterval(value: LongInterval) -> SqlResult<LongInterval> {
+    Ok(LongInterval::from_months(value.months() / 12 * 12))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_MONTHS_LongInterval(value: LongInterval) -> SqlResult<LongInterval> {
     Ok(value)
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_ShortInterval_ShortInterval(value: ShortInterval) -> SqlResult<ShortInterval> {
+pub fn cast_to_LongInterval_YEARS_TO_MONTHS_LongInterval(
+    value: LongInterval,
+) -> SqlResult<LongInterval> {
     Ok(value)
 }
 
-cast_function!(LongInterval, LongInterval, LongInterval, LongInterval);
-cast_function!(ShortInterval, ShortInterval, ShortInterval, ShortInterval);
+cast_function!(LongInterval_YEARS, LongInterval, LongInterval, LongInterval);
+cast_function!(
+    LongInterval_MONTHS,
+    LongInterval,
+    LongInterval,
+    LongInterval
+);
+cast_function!(
+    LongInterval_YEARS_TO_MONTHS,
+    LongInterval,
+    LongInterval,
+    LongInterval
+);
+
+/// Defines the cast of a short interval to the type with `units`, whose last field is `unit`
+/// microseconds long.
+macro_rules! cast_to_short_interval {
+    ($units: ident, $unit: expr) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            #[inline]
+            pub fn [<cast_to_ShortInterval_ $units _ShortInterval>](
+                value: ShortInterval,
+            ) -> SqlResult<ShortInterval> {
+                let unit = $unit as i64;
+                Ok(ShortInterval::from_microseconds(value.microseconds() / unit * unit))
+            }
+
+            cast_function!([<ShortInterval_ $units>], ShortInterval, ShortInterval, ShortInterval);
+        }
+    };
+}
+
+cast_to_short_interval!(DAYS, MICROS_PER_DAY);
+cast_to_short_interval!(HOURS, MICROS_PER_HOUR);
+cast_to_short_interval!(DAYS_TO_HOURS, MICROS_PER_HOUR);
+cast_to_short_interval!(MINUTES, MICROS_PER_MINUTE);
+cast_to_short_interval!(HOURS_TO_MINUTES, MICROS_PER_MINUTE);
+cast_to_short_interval!(DAYS_TO_MINUTES, MICROS_PER_MINUTE);
+cast_to_short_interval!(SECONDS, 1);
+cast_to_short_interval!(DAYS_TO_SECONDS, 1);
+cast_to_short_interval!(HOURS_TO_SECONDS, 1);
+cast_to_short_interval!(MINUTES_TO_SECONDS, 1);
 
 // Saturating forms of the casts from numbers to an interval in one unit: a number whose
 // interval is below the range converts to the minimum interval, and one above it to the
@@ -4412,6 +4471,67 @@ mod tests {
         interval::{LongInterval, ShortInterval},
         limit_or_size_string,
     };
+
+    #[test]
+    fn interval_casts_truncate() {
+        use crate::{
+            cast_to_LongInterval_MONTHS_LongInterval, cast_to_LongInterval_YEARS_LongInterval,
+            cast_to_ShortInterval_DAYS_ShortInterval,
+            cast_to_ShortInterval_HOURS_TO_MINUTES_ShortInterval,
+            cast_to_ShortInterval_SECONDS_ShortInterval,
+        };
+
+        let months = LongInterval::from_months;
+        assert_eq!(
+            cast_to_LongInterval_YEARS_LongInterval(months(19)).unwrap(),
+            months(12)
+        );
+        assert_eq!(
+            cast_to_LongInterval_YEARS_LongInterval(months(-19)).unwrap(),
+            months(-12)
+        );
+        assert_eq!(
+            cast_to_LongInterval_YEARS_LongInterval(months(i32::MIN)).unwrap(),
+            months(-178956970 * 12)
+        );
+        assert_eq!(
+            cast_to_LongInterval_MONTHS_LongInterval(months(19)).unwrap(),
+            months(19)
+        );
+
+        let hours = |h: i64| ShortInterval::from_microseconds(h * 3_600_000_000);
+        let micros = ShortInterval::from_microseconds;
+        assert_eq!(
+            cast_to_ShortInterval_DAYS_ShortInterval(hours(-25)).unwrap(),
+            hours(-24)
+        );
+        assert_eq!(
+            cast_to_ShortInterval_HOURS_TO_MINUTES_ShortInterval(micros(90_500_000)).unwrap(),
+            micros(60_000_000)
+        );
+        assert_eq!(
+            cast_to_ShortInterval_SECONDS_ShortInterval(micros(1_500_001)).unwrap(),
+            micros(1_500_001)
+        );
+    }
+
+    #[test]
+    fn decimal_to_short_interval_truncates() {
+        use crate::{
+            cast_to_ShortInterval_DAYS_SqlDecimal, cast_to_ShortInterval_SECONDS_SqlDecimal,
+        };
+
+        let value = SqlDecimal::<5, 2>::new(-150, 2).unwrap();
+        // A day holds no fraction; a second does
+        assert_eq!(
+            cast_to_ShortInterval_DAYS_SqlDecimal(value).unwrap(),
+            ShortInterval::from_microseconds(-86_400_000_000)
+        );
+        assert_eq!(
+            cast_to_ShortInterval_SECONDS_SqlDecimal(value).unwrap(),
+            ShortInterval::from_microseconds(-1_500_000)
+        );
+    }
 
     #[test]
     fn date_casts_out_of_range() {

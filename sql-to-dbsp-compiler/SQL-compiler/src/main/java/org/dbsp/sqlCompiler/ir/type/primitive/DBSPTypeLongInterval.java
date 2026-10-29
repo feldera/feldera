@@ -59,6 +59,13 @@ public class DBSPTypeLongInterval
     }
 
     @Override
+    public DBSPTypeLongInterval finestType() {
+        if (this.units != Units.YEARS)
+            return this;
+        return new DBSPTypeLongInterval(this.getNode(), Units.MONTHS, this.mayBeNull);
+    }
+
+    @Override
     public IIndentStream toString(IIndentStream builder) {
         return super.toString(builder)
                 .append("(")

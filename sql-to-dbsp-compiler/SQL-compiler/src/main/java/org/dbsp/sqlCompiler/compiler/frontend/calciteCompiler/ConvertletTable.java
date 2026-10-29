@@ -18,6 +18,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
 import org.apache.calcite.avatica.util.DateTimeUtils;
 import org.apache.calcite.avatica.util.TimeUnit;
+import org.apache.calcite.avatica.util.TimeUnitRange;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
@@ -784,22 +785,29 @@ public class ConvertletTable extends ReflectiveConvertletTable {
         if (right instanceof SqlIntervalQualifier) {
             final SqlIntervalQualifier intervalQualifier =
                     (SqlIntervalQualifier) right;
-            if (left instanceof SqlIntervalLiteral) {
-                RexLiteral sourceInterval =
-                        (RexLiteral) cx.convertExpression(left);
-                BigDecimal sourceValue =
-                        (BigDecimal) sourceInterval.getValue();
-                RexLiteral castedInterval =
-                        rexBuilder.makeIntervalLiteral(sourceValue,
-                                intervalQualifier);
-                return castToValidatedType(
-                        call.getParserPosition(), call, castedInterval, validator, rexBuilder, safe);
-            } else if (left instanceof SqlNumericLiteral) {
+            // Calcite converts a cast of an interval literal into a literal with the same value,
+            // the runtime truncates the value to the last field of the target type
+            // if (left instanceof SqlIntervalLiteral) {
+            //     RexLiteral sourceInterval =
+            //             (RexLiteral) cx.convertExpression(left);
+            //     BigDecimal sourceValue =
+            //             (BigDecimal) sourceInterval.getValue();
+            //     RexLiteral castedInterval =
+            //             rexBuilder.makeIntervalLiteral(sourceValue,
+            //                     intervalQualifier);
+            //     return castToValidatedType(
+            //             call.getParserPosition(), call, castedInterval, validator, rexBuilder, safe);
+            // } else if (left instanceof SqlNumericLiteral) {
+            if (left instanceof SqlNumericLiteral) {
                 RexLiteral sourceInterval =
                         (RexLiteral) cx.convertExpression(left);
                 BigDecimal sourceValue =
                         requireNonNull(sourceInterval.getValueAs(BigDecimal.class),
                                 "sourceValue");
+                if (intervalQualifier.getUnit() != TimeUnit.SECOND)
+                    // A unit other than the second holds no fraction: the runtime truncates the
+                    // number toward zero first
+                    sourceValue = sourceValue.setScale(0, RoundingMode.DOWN);
                 final BigDecimal multiplier = intervalQualifier.getUnit().multiplier;
                 RexLiteral castedInterval =
                         rexBuilder.makeIntervalLiteral(
@@ -982,6 +990,20 @@ public class ConvertletTable extends ReflectiveConvertletTable {
         return divide(pos, rexBuilder, res, rexBuilder.makeExactLiteral(val));
     }
 
+    /** Floors the DATE, TIME or TIMESTAMP {@code value} to the last field of the interval type
+     * {@code interval}.  Seconds keep their fractions, and a DATE holds whole days. */
+    static RexNode floorToLastField(RexBuilder rexBuilder, RexNode value, RelDataType interval) {
+        if (!SqlTypeUtil.isInterval(interval))
+            return value;
+        TimeUnit last = Objects.requireNonNull(interval.getSqlTypeName().getEndUnit());
+        if (last == TimeUnit.SECOND)
+            return value;
+        if (value.getType().getSqlTypeName() == SqlTypeName.DATE && last != TimeUnit.YEAR && last != TimeUnit.MONTH)
+            return value;
+        return rexBuilder.makeCall(value.getType(), SqlStdOperatorTable.FLOOR,
+                ImmutableList.of(value, rexBuilder.makeFlag(TimeUnitRange.of(last, null))));
+    }
+
     public RexNode convertDatetimeMinus(
             @UnknownInitialization ConvertletTable this,
             SqlRexContext cx,
@@ -994,7 +1016,12 @@ public class ConvertletTable extends ReflectiveConvertletTable {
 
         final RelDataType resType =
                 cx.getValidator().getValidatedNodeType(call);
-        return rexBuilder.makeCall(call.getParserPosition(), resType, op, exprs.subList(0, 2));
+        // (a - b) unit converts a and b to whole units of the last field of the interval
+        // qualifier before subtracting them
+        final List<RexNode> operands = ImmutableList.of(
+                floorToLastField(rexBuilder, exprs.get(0), resType),
+                floorToLastField(rexBuilder, exprs.get(1), resType));
+        return rexBuilder.makeCall(call.getParserPosition(), resType, op, operands);
     }
 
     public RexNode convertFunction(

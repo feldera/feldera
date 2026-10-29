@@ -379,25 +379,22 @@ public class MiscTests extends ScottBaseTests {
 
     @Test
     public void intervalTests() {
-        // Added tests with decimal and FP
         this.qst("""
                 -- [CALCITE-922] Value of INTERVAL literal
                 select deptno * interval '2' day as d2,
                  deptno * interval -'3' hour as h3,
                  deptno * interval -'-4' hour as h4,
                  deptno * interval -'4:30' hour to minute as h4_5,
-                 deptno * interval -'-1-3' year to month as y1_25,
-                 CAST(deptno AS DECIMAL(6, 2)) / 10 * interval 1 minutes as m,
-                 CAST(deptno AS REAL) / 15 * interval 1 day as d
+                 deptno * interval -'-1-3' year to month as y1_25
                 from dept;
-                +---------+------------+-----------+------------+--------------------+--------+--------------------+
-                | D2      | H3         | H4        | H4_5       | Y1_25              | M      | D                  |
-                +---------+------------+-----------+------------+--------------------+--------+--------------------+
-                | 20 days |  -30 hours |  40 hours |  -45 hours | 12 years 06 months | 1 mins |  57600.001716 secs |
-                | 40 days |  -60 hours |  80 hours |  -90 hours | 25 years 00 months | 2 mins | 115200.003433 secs |
-                | 60 days |  -90 hours | 120 hours | -135 hours | 37 years 06 months | 3 mins | 172800 secs        |
-                | 80 days | -120 hours | 160 hours | -180 hours | 50 years 00 months | 4 mins | 230400.006866 secs |
-                +---------+------------+-----------+------------+--------------------+--------+--------------------+
+                +---------+------------+-----------+------------+--------------------+
+                | D2      | H3         | H4        | H4_5       | Y1_25              |
+                +---------+------------+-----------+------------+--------------------+
+                | 20 days |  -30 hours |  40 hours |  -45 hours | 12 years 06 months |
+                | 40 days |  -60 hours |  80 hours |  -90 hours | 25 years 00 months |
+                | 60 days |  -90 hours | 120 hours | -135 hours | 37 years 06 months |
+                | 80 days | -120 hours | 160 hours | -180 hours | 50 years 00 months |
+                +---------+------------+-----------+------------+--------------------+
                 (4 rows)
                 
                 -- [CALCITE-4091] Interval expressions
@@ -435,27 +432,5 @@ public class MiscTests extends ScottBaseTests {
                 +---------------------+---------------------+
                 (1 row)
                 """);
-    }
-
-    @Test
-    public void intervalDivision() {
-        // Tested on Postgres, the long interval results differ, since postgres computes on days
-        this.qst("""
-                select interval '2' day / deptno as d2,
-                 interval -'3' hour / deptno as h3,
-                 interval -'-4' hour / deptno as h4,
-                 interval -'4:30' hour to minute / deptno as h4_5,
-                 interval -'-1-3' year to month / deptno as y1_25,
-                 interval 1 minutes / CAST(deptno AS DECIMAL(6, 2)) as m
-                from dept;
-                +-----------------+-----------------+---------+-------------------+----------+----------+
-                | D2              | H3              | H4      | H4_5              | Y1_25    | M        |
-                +-----------------+-----------------+---------+-------------------+----------+----------+
-                | 4 hours 48 mins |        -18 mins | 24 mins |          -27 mins | 1 months |   6 secs |
-                | 2 hours 24 mins |         -9 mins | 12 mins |  -13 mins 30 secs | 0 months |   3 secs |
-                | 1 hour 36 mins  |         -6 mins |  8 mins |           -9 mins | 0 months |   2 secs |
-                | 1 hour 12 mins  | -4 mins 30 secs |  6 mins |   -6 mins 45 secs | 0 months | 1.5 secs |
-                +-----------------+-----------------+---------+-------------------+----------+----------+
-                (4 rows)""");
     }
 }

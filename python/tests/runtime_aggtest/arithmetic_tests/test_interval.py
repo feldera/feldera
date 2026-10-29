@@ -5,34 +5,33 @@ from tests.runtime_aggtest.aggtst_base import TstView
 # Using Calculated Intervals and Declared Intervals for Subtraction and Addition
 class arithtst_linterval_minus_linterval(TstView):
     def __init__(self):
-        # Validated on Postgres
-        # ytm and yr_ytm, behave the same as mth_ytm
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "yr": "-5",
-                "mth": "-68",
+                "mth": "-67",
                 "ytm": "-5-08",
-                "mty": "-5-00",
+                "mty": "-4-11",
                 "yr_ytm": "-5-08",
-                "mth_ytm": "-5-08",
+                "mth_ytm": "-5-07",
             },
             {
                 "id": 1,
-                "yr": "-12",
+                "yr": "-13",
                 "mth": "-160",
-                "ytm": "-13-04",
+                "ytm": "-13-08",
                 "mty": "-12-08",
-                "yr_ytm": "-13-04",
+                "yr_ytm": "-13-08",
                 "mth_ytm": "-13-04",
             },
             {
                 "id": 2,
-                "yr": "+0",
+                "yr": "+1",
                 "mth": "-2",
-                "ytm": "-0-02",
+                "ytm": "+0-04",
                 "mty": "+0-06",
-                "yr_ytm": "-0-02",
+                "yr_ytm": "+0-04",
                 "mth_ytm": "-0-02",
             },
         ]
@@ -49,33 +48,33 @@ class arithtst_linterval_minus_linterval(TstView):
 
 class arithtst_linterval_plus_linterval(TstView):
     def __init__(self):
-        # checked manually
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "yr": "+15",
-                "mth": "+188",
+                "mth": "+189",
                 "ytm": "+15-08",
-                "mty": "+15-00",
+                "mty": "+15-01",
                 "yr_ytm": "+15-08",
-                "mth_ytm": "+15-08",
+                "mth_ytm": "+15-09",
             },
             {
                 "id": 1,
                 "yr": "+7",
                 "mth": "+96",
-                "ytm": "+8-00",
+                "ytm": "+7-08",
                 "mty": "+7-04",
-                "yr_ytm": "+8-00",
+                "yr_ytm": "+7-08",
                 "mth_ytm": "+8-00",
             },
             {
                 "id": 2,
-                "yr": "+20",
+                "yr": "+21",
                 "mth": "+254",
-                "ytm": "+21-02",
+                "ytm": "+21-08",
                 "mty": "+20-06",
-                "yr_ytm": "+21-02",
+                "yr_ytm": "+21-08",
                 "mth_ytm": "+21-02",
             },
         ]
@@ -93,33 +92,33 @@ class arithtst_linterval_plus_linterval(TstView):
 # Using Calculated Intervals cast as VARCHAR and Declared Intervals for Subtraction and Addition
 class arithtst_linterval_minus_linterval_str(TstView):
     def __init__(self):
-        # Validated in Postgres
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "yr_str": "-5",
-                "mth_str": "-68",
+                "mth_str": "-67",
                 "ytm_str": "-5-08",
-                "mty_str": "-5-00",
+                "mty_str": "-4-11",
                 "yr_ytm_str": "-5-08",
-                "mth_ytm_str": "-5-08",
+                "mth_ytm_str": "-5-07",
             },
             {
                 "id": 1,
-                "yr_str": "-12",
+                "yr_str": "-13",
                 "mth_str": "-160",
-                "ytm_str": "-12-08",
+                "ytm_str": "-13-08",
                 "mty_str": "-12-08",
-                "yr_ytm_str": "-12-08",
+                "yr_ytm_str": "-13-08",
                 "mth_ytm_str": "-13-04",
             },
             {
                 "id": 2,
-                "yr_str": "+0",
+                "yr_str": "+1",
                 "mth_str": "-2",
-                "ytm_str": "-0-08",
+                "ytm_str": "+0-04",
                 "mty_str": "+0-06",
-                "yr_ytm_str": "-0-08",
+                "yr_ytm_str": "+0-04",
                 "mth_ytm_str": "-0-02",
             },
         ]
@@ -136,33 +135,33 @@ class arithtst_linterval_minus_linterval_str(TstView):
 
 class arithtst_linterval_plus_linterval_str(TstView):
     def __init__(self):
-        # Validated in Postgres
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "yr_str": "+15",
-                "mth_str": "+188",
+                "mth_str": "+189",
                 "ytm_str": "+15-08",
-                "mty_str": "+15-00",
+                "mty_str": "+15-01",
                 "yr_ytm_str": "+15-08",
-                "mth_ytm_str": "+15-08",
+                "mth_ytm_str": "+15-09",
             },
             {
                 "id": 1,
-                "yr_str": "+8",
+                "yr_str": "+7",
                 "mth_str": "+96",
-                "ytm_str": "+8-08",
+                "ytm_str": "+7-08",
                 "mty_str": "+7-04",
-                "yr_ytm_str": "+8-08",
+                "yr_ytm_str": "+7-08",
                 "mth_ytm_str": "+8-00",
             },
             {
                 "id": 2,
-                "yr_str": "+20",
+                "yr_str": "+21",
                 "mth_str": "+254",
-                "ytm_str": "+20-08",
+                "ytm_str": "+21-08",
                 "mty_str": "+20-06",
-                "yr_ytm_str": "+20-08",
+                "yr_ytm_str": "+21-08",
                 "mth_ytm_str": "+21-02",
             },
         ]
@@ -192,14 +191,14 @@ class arithtst_linterval_plus_linterval_str(TstView):
 # Using Calculated Intervals and Declared Intervals for Subtraction and Addition
 class arithtst_sinterval_minus_sinterval(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "days": "+1705",
-                "hours": "+40939",
+                "days": "+1706",
+                "hours": "+40940",
                 "minute": "+2456382",
-                "seconds": "+40939:42:00.000000",
+                "seconds": "+40940:00:00.000000",
             },
             {
                 "id": 1,
@@ -213,7 +212,7 @@ class arithtst_sinterval_minus_sinterval(TstView):
                 "days": "+3703",
                 "hours": "+88874",
                 "minute": "+5332457",
-                "seconds": "+88874:17:00.000000",
+                "seconds": "+88874:00:00.000000",
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW sinterval_minus_sinterval AS SELECT
@@ -227,14 +226,14 @@ class arithtst_sinterval_minus_sinterval(TstView):
 
 class arithtst_sinterval_plus_sinterval(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "days": "+2005",
-                "hours": "+48139",
+                "days": "+2006",
+                "hours": "+48140",
                 "minute": "+2888382",
-                "seconds": "+48139:42:00.000000",
+                "seconds": "+48140:00:00.000000",
             },
             {
                 "id": 1,
@@ -248,7 +247,7 @@ class arithtst_sinterval_plus_sinterval(TstView):
                 "days": "+4003",
                 "hours": "+96074",
                 "minute": "+5764457",
-                "seconds": "+96074:17:00.000000",
+                "seconds": "+96074:00:00.000000",
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW sinterval_plus_sinterval AS SELECT
@@ -269,12 +268,12 @@ class arithtst_sinterval_plus_sinterval(TstView):
 # Using Calculated Intervals cast as VARCHAR and Declared Intervals for Subtraction and Addition
 class arithtst_sinterval_minus_sinterval_str(TstView):
     def __init__(self):
-        # Validated in Postgres
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "days_str": "+1705",
-                "hours_str": "+40939",
+                "days_str": "+1706",
+                "hours_str": "+40940",
                 "minute_str": "+2456382",
                 "seconds_str": "+147382920.000000",
             },
@@ -304,12 +303,12 @@ class arithtst_sinterval_minus_sinterval_str(TstView):
 
 class arithtst_sinterval_plus_sinterval_str(TstView):
     def __init__(self):
-        # Validated in Postgres
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "days_str": "+2005",
-                "hours_str": "+48139",
+                "days_str": "+2006",
+                "hours_str": "+48140",
                 "minute_str": "+2888382",
                 "seconds_str": "+173302920.000000",
             },
@@ -341,14 +340,14 @@ class arithtst_sinterval_plus_sinterval_str(TstView):
 # Using Calculated Intervals and Declared Intervals for Subtraction and Addition
 class arithtst_iinterval_minus_iinterval(TstView):
     def __init__(self):
-        # Validated in Postgres
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "ytm_yr": "-5-00",
-                "ytm_ytm": "-5-08",
-                "dth_days": "+1705 19",
-                "dth_dth": "+1704 21",
+                "ytm_yr": "-4-11",
+                "ytm_ytm": "-5-07",
+                "dth_days": "+1705 20",
+                "dth_dth": "+1704 22",
                 "dtm_dtm": "+1704 20:47",
                 "dts_dts": "+1704 20:46:46",
                 "htm_hr": "+40939:42",
@@ -404,14 +403,14 @@ class arithtst_iinterval_minus_iinterval(TstView):
 
 class arithtst_iinterval_plus_iinterval(TstView):
     def __init__(self):
-        # Validated in Postgres
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "ytm_yr": "+15-00",
-                "ytm_ytm": "+15-08",
-                "dth_days": "+2005 19",
-                "dth_dth": "+2006 17",
+                "ytm_yr": "+15-01",
+                "ytm_ytm": "+15-09",
+                "dth_days": "+2005 20",
+                "dth_dth": "+2006 18",
                 "dtm_dtm": "+2006 18:37",
                 "dts_dts": "+2006 18:37:14",
                 "htm_hr": "+48139:42",
@@ -550,15 +549,15 @@ class arithtst_interval_plus_interval_constant(TstView):
 # Using Calculated Intervals for Negation, Scalar Multiplication and Division
 class arithtst_interval_negation(TstView):
     def __init__(self):
-        # checked manually
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "seconds": -160342920,
                 "minutes": -2672382,
-                "hours": -44539,
-                "days": -1855,
-                "months": -60,
+                "hours": -44540,
+                "days": -1856,
+                "months": -61,
                 "year": -5,
             },
             {
@@ -568,7 +567,7 @@ class arithtst_interval_negation(TstView):
                 "hours": 23524,
                 "days": 980,
                 "months": 32,
-                "year": 2,
+                "year": 3,
             },
             {
                 "id": 2,
@@ -577,7 +576,7 @@ class arithtst_interval_negation(TstView):
                 "hours": -92474,
                 "days": -3853,
                 "months": -126,
-                "year": -10,
+                "year": -11,
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW interval_negation AS SELECT
@@ -593,15 +592,15 @@ class arithtst_interval_negation(TstView):
 
 class arithtst_interval_mul_double(TstView):
     def __init__(self):
-        # checked manually
+        # Validated on HSQLDB; negative fractional seconds on Postgres
         self.data = [
             {
                 "id": 0,
                 "seconds": "+414165762.360000",
                 "minutes": "+6902762",
                 "hours": "+115046",
-                "days": "+4793",
-                "months": "+154",
+                "days": "+4794",
+                "months": "+157",
                 "year": "+12",
             },
             {
@@ -611,16 +610,16 @@ class arithtst_interval_mul_double(TstView):
                 "hours": "-60762",
                 "days": "-2531",
                 "months": "-82",
-                "year": "-6",
+                "year": "-7",
             },
             {
                 "id": 2,
                 "seconds": "+859899865.860000",
                 "minutes": "+14331664",
-                "hours": "+238861",
+                "hours": "+238860",
                 "days": "+9952",
                 "months": "+325",
-                "year": "+27",
+                "year": "+28",
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW interval_mul_double AS SELECT
@@ -680,15 +679,15 @@ class arithtst_interval_div_double(TstView):
 # Using Calculated Intervals cast as VARCHAR for Negation, Scalar Multiplication and Division
 class arithtst_interval_negation_str(TstView):
     def __init__(self):
-        # checked manually
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "sec_str": "-160342920",
                 "min_str": "-2672382",
-                "hrs_str": "-44539",
-                "days_str": "-1855",
-                "mths_str": "-60",
+                "hrs_str": "-44540",
+                "days_str": "-1856",
+                "mths_str": "-61",
                 "yrs_str": "-5",
             },
             {
@@ -698,7 +697,7 @@ class arithtst_interval_negation_str(TstView):
                 "hrs_str": "23524",
                 "days_str": "980",
                 "mths_str": "32",
-                "yrs_str": "2",
+                "yrs_str": "3",
             },
             {
                 "id": 2,
@@ -707,7 +706,7 @@ class arithtst_interval_negation_str(TstView):
                 "hrs_str": "-92474",
                 "days_str": "-3853",
                 "mths_str": "-126",
-                "yrs_str": "-10",
+                "yrs_str": "-11",
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW interval_negation_str AS SELECT
@@ -723,15 +722,15 @@ class arithtst_interval_negation_str(TstView):
 
 class arithtst_interval_mul_double_str(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Validated on HSQLDB; negative fractional seconds on Postgres
         self.data = [
             {
                 "id": 0,
                 "sec_str": "+414165762.360000",
                 "min_str": "+6902762",
-                "hrs_str": "+115044",
-                "days_str": "+4791",
-                "mths_str": "+154",
+                "hrs_str": "+115046",
+                "days_str": "+4794",
+                "mths_str": "+157",
                 "yrs_str": "+12",
             },
             {
@@ -741,7 +740,7 @@ class arithtst_interval_mul_double_str(TstView):
                 "hrs_str": "-60762",
                 "days_str": "-2531",
                 "mths_str": "-82",
-                "yrs_str": "-5",
+                "yrs_str": "-7",
             },
             {
                 "id": 2,
@@ -750,7 +749,7 @@ class arithtst_interval_mul_double_str(TstView):
                 "hrs_str": "+238860",
                 "days_str": "+9952",
                 "mths_str": "+325",
-                "yrs_str": "+25",
+                "yrs_str": "+28",
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW linterval_mul_double_str AS SELECT
@@ -766,7 +765,7 @@ class arithtst_interval_mul_double_str(TstView):
 
 class arithtst_interval_div_double_str(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Validated on HSQLDB; negative fractional seconds on Postgres
         self.data = [
             {
                 "id": 0,
@@ -784,7 +783,7 @@ class arithtst_interval_div_double_str(TstView):
                 "hrs_str": "-9107",
                 "days_str": "-379",
                 "mths_str": "-12",
-                "yrs_str": "+0",
+                "yrs_str": "-1",
             },
             {
                 "id": 2,
@@ -793,7 +792,7 @@ class arithtst_interval_div_double_str(TstView):
                 "hrs_str": "+35801",
                 "days_str": "+1491",
                 "mths_str": "+48",
-                "yrs_str": "+3",
+                "yrs_str": "+4",
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW interval_div_double_str AS SELECT
@@ -822,12 +821,12 @@ class arithtst_interval_div_double_str(TstView):
 # Using Calculated Intervals for Negation, Scalar Multiplication and Division
 class arithtst_iinterval_negation(TstView):
     def __init__(self):
-        # checked manually
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
-                "ytm_neg": "-5-00",
-                "dth_neg": "-1855 19",
+                "ytm_neg": "-5-01",
+                "dth_neg": "-1855 20",
                 "dtm_neg": "-1855 19:42",
                 "dts_neg": "-1855 19:42:00",
                 "htm_neg": "-44539:42",
@@ -869,11 +868,11 @@ class arithtst_iinterval_negation(TstView):
 
 class arithtst_iinterval_mul_double(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Validated on HSQLDB; negative fractional seconds on Postgres
         self.data = [
             {
                 "id": 0,
-                "ytm": "+12-10",
+                "ytm": "+13-01",
                 "dth": "+4793 14",
                 "dtm": "+4793 14:02",
                 "dts": "+4793 14:02:42.360000",
@@ -894,7 +893,7 @@ class arithtst_iinterval_mul_double(TstView):
             {
                 "id": 2,
                 "ytm": "+27-01",
-                "dth": "+9952 13",
+                "dth": "+9952 12",
                 "dtm": "+9952 13:04",
                 "dts": "+9952 13:04:25.860000",
                 "htm": "+238861:04",
@@ -1030,16 +1029,16 @@ class arithtst_const_interval_mul_double(TstView):
 
 class arithtst_const_interval_div_double(TstView):
     def __init__(self):
-        # Validated on Postgres
+        # Validated on HSQLDB; negative fractional seconds on Postgres
         self.data = [
             {
                 "const_ytm": "-1-00",
                 "const_dth": "-379 11",
                 "const_dtm": "-379 11:14",
-                "const_dts": "-379 11:14:22.717771",
+                "const_dts": "-379 11:14:22.717770",
                 "const_htm": "-9107:14",
-                "const_hts": "-9107:14:22.717771",
-                "const_mts": "-546434:22.717771",
+                "const_hts": "-9107:14:22.717770",
+                "const_mts": "-546434:22.717770",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW const_interval_div_double AS SELECT

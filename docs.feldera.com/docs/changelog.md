@@ -44,6 +44,33 @@ Source edition can be found on github.
   `storage_max`.  A pipeline stored with such values still loads.  See
   [Storage limits](/pipelines/configuration#storage-limits).
 
+- Incompatible change (SQL): date arithmetic now matches the SQL
+  standard.  An interval holds whole numbers in every field except
+  `SECOND`, and an operation that produces an interval truncates the value
+  toward zero to the last field of its type (see
+  [the interval types](/sql/datetime#the-interval-types)):
+  - A cast between interval types:
+    `CAST(INTERVAL '19' MONTH AS INTERVAL YEAR)` is now `INTERVAL '1' YEAR`
+    instead of 19 months, so `DATE '2020-01-01' + CAST(INTERVAL '19' MONTH
+    AS INTERVAL YEAR)` is now 2021-01-01 instead of 2021-08-01.
+    `CAST(INTERVAL '25' HOUR AS INTERVAL DAY)` is now `INTERVAL '1' DAY`
+    instead of 25 hours.
+  - A cast of a number with a fraction: `CAST(1.5 AS INTERVAL YEAR)` is
+    now `INTERVAL '1' YEAR` instead of 18 months, and
+    `CAST(-1.5 AS INTERVAL DAY)` is now `INTERVAL '-1' DAY` instead of
+    -36 hours.
+  - The product or the quotient of an interval and a number, which has
+    the type of the interval: `INTERVAL '1' YEAR * 1.5` is now
+    `INTERVAL '1' YEAR` instead of 18 months, and `INTERVAL '1' DAY / 2`
+    is now `INTERVAL '0' DAY` instead of 12 hours.
+  - The difference of two dates, times or timestamps, which has the type
+    of its qualifier and counts the boundaries of its last field between
+    the two values: `(DATE '2021-01-01' - DATE '2020-12-31') YEAR` is now
+    `INTERVAL '1' YEAR` instead of 0 months, and
+    `(DATE '2021-03-01' - DATE '2020-01-01') YEAR` is now
+    `INTERVAL '1' YEAR` instead of 14 months.  `TIMESTAMPDIFF` does not
+    change.
+
 ## v0.372.0
 
 - Behavior change (non-fault-tolerant Kafka output): temporary delivery

@@ -291,6 +291,31 @@ most about 106 million days (about 292,000 years), positive or
 negative.  A long interval can be at most about 179 million years,
 positive or negative.
 
+As the SQL standard specifies, an interval value holds whole numbers
+in every field except `SECOND`: an `INTERVAL YEAR` holds a whole number of years, and an `INTERVAL DAY
+TO HOUR` holds whole days and hours.  An operation that produces an
+interval truncates the value toward zero to the last field of the
+result type:
+
+- a cast between interval types: `CAST(INTERVAL '19' MONTH AS INTERVAL
+  YEAR)` is `INTERVAL '1' YEAR`, and `CAST(INTERVAL '-25' HOUR AS
+  INTERVAL DAY)` is `INTERVAL '-1' DAY`;
+- the product or the quotient of an interval and a number, which has
+  the type of the interval: `INTERVAL '1' YEAR * 1.5` is `INTERVAL '1'
+  YEAR`, and `INTERVAL '1' DAY / 2` is `INTERVAL '0' DAY`;
+- the difference of two dates, times or timestamps, which has the type
+  of its qualifier, and counts the boundaries of its last field between
+  the two values: `(DATE '2021-01-01' - DATE '2020-12-31') YEAR` is
+  `INTERVAL '1' YEAR`, and `(TIMESTAMP '2020-01-02 01:00:00' - TIMESTAMP
+  '2020-01-01 23:00:00') DAY` is `INTERVAL '1' DAY`.  `TIMESTAMPDIFF`
+  counts the elapsed units instead: `TIMESTAMPDIFF(YEAR, DATE
+  '2020-12-31', DATE '2021-01-01')` is 0;
+- a cast of a number: `CAST(-1.5 AS INTERVAL DAY)` is `INTERVAL '-1'
+  DAY`.
+
+Seconds can have fractions, with the standard's default precision of
+microseconds: `INTERVAL '1' SECOND * 1.5` is `INTERVAL '1.5' SECOND`.
+
 ### Interval literals
 
 Interval literals (constant values) can be written using the following

@@ -878,6 +878,47 @@ public class CastTests extends SqlIoTest {
     }
 
     @Test
+    public void castFractionToYearMonthInterval() {
+        // A literal and a column give the same interval: the number is truncated to an integer
+        var ccs = this.getCCS("""
+                CREATE TABLE F(d DECIMAL(5, 2));
+                CREATE VIEW V AS SELECT
+                    CAST(CAST(CAST(1.5 AS INTERVAL YEAR) AS INTERVAL MONTH) AS INT) AS yl,
+                    CAST(CAST(CAST(d AS INTERVAL YEAR) AS INTERVAL MONTH) AS INT) AS yc,
+                    CAST(CAST(-1.5 AS INTERVAL MONTH) AS INT) AS ml,
+                    CAST(CAST(-d AS INTERVAL MONTH) AS INT) AS mc
+                FROM F;""");
+        ccs.stepWeightOne("INSERT INTO F VALUES (1.5);", """
+                 yl | yc | ml | mc
+                -------------------
+                 12 | 12 | -1 | -1""");
+    }
+
+    @Test
+    public void castBetweenIntervalTypesTruncates() {
+        // A cast truncates the value toward zero to the last field of the target type,
+        // for columns and for literals
+        var ccs = this.getCCS("""
+                CREATE TABLE I(m INT, h INT);
+                CREATE VIEW V AS SELECT
+                    CAST(CAST(CAST(INTERVAL '1' MONTH * m AS INTERVAL YEAR) AS INTERVAL MONTH) AS INT) AS ym,
+                    CAST(CAST(CAST(INTERVAL '-19' MONTH AS INTERVAL YEAR) AS INTERVAL MONTH) AS INT) AS yl,
+                    CAST(CAST(CAST(INTERVAL '1' HOUR * h AS INTERVAL DAY) AS INTERVAL HOUR) AS INT) AS dh,
+                    CAST(CAST(CAST(INTERVAL '-25' HOUR AS INTERVAL DAY) AS INTERVAL HOUR) AS INT) AS dl,
+                    CAST(CAST(CAST(INTERVAL '25' HOUR AS INTERVAL DAY) AS INTERVAL HOUR) AS INT) AS dp,
+                    DATE '2020-01-01' + CAST(INTERVAL '1' MONTH * m AS INTERVAL YEAR) AS dm,
+                    DATE '2020-01-01' + CAST(INTERVAL '19' MONTH AS INTERVAL YEAR) AS dlit,
+                    CAST(INTERVAL '19' MONTH AS INTERVAL YEAR) = INTERVAL '1' YEAR AS eq,
+                    CAST(INTERVAL '1' YEAR * -1.5 AS INTEGER) AS y15,
+                    CAST(INTERVAL '1' YEAR * -1.5 AS VARCHAR) AS s15
+                FROM I;""");
+        ccs.stepWeightOne("INSERT INTO I VALUES (-19, -25);", """
+                 ym  | yl  | dh  | dl  | dp | dm         | dlit       | eq   | y15 | s15
+                --------------------------------------------------------------------------
+                 -12 | -12 | -24 | -24 | 24 | 2019-01-01 | 2021-01-01 | true | -1  | -1""");
+    }
+
+    @Test
     public void issue7395() {
         // A cast from DOUBLE or REAL to DECIMAL follows Calcite: it uses the shortest decimal
         // form of the value, and truncates it to the scale.  REAL is converted to DOUBLE first.
