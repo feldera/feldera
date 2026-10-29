@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { page } from '$app/state'
   import RBAC from '#lib/components/auth/RBAC.svelte'
   import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { page } from '$app/state'
 
   const {
     pipelineName,

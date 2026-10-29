@@ -1,7 +1,5 @@
 <script lang="ts">
   import { asyncReadable, type Loadable } from '@square/svelte-store'
-  import { goto, refreshAll } from '$app/navigation'
-  import { page } from '$app/state'
   import DeleteDialog, { deleteDialogProps } from '#lib/components/dialogs/DeleteDialog.svelte'
   import DoubleClickInput from '#lib/components/input/DoubleClickInput.svelte'
   import { clearConfigCaches } from '#lib/compositions/configCache.ts'
@@ -15,6 +13,8 @@
     renameTenant,
     type Tenant
   } from '#lib/services/pipelineManager.ts'
+  import { goto, refreshAll } from '$app/navigation'
+  import { page } from '$app/state'
 
   const { tenants }: { tenants: Loadable<Tenant[]> } = $props()
 

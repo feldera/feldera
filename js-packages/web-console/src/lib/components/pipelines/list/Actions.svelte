@@ -42,7 +42,6 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import { Popover, Tooltip, useIsMobile } from 'common-ui'
   import { slide } from 'svelte/transition'
   import { match, P } from 'ts-pattern'
-  import { goto } from '$app/navigation'
   import IconLoader from '#assets/icons/generic/loader-alt.svg?component'
   import Popup from '#lib/components/common/Popup.svelte'
   import SplitButton, {
@@ -79,6 +78,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import { bookADemoUrl } from '#lib/services/calendly.ts'
   import type { PipelineAction } from '#lib/services/pipelineManager.ts'
   import type { Snippet } from '#lib/types/svelte.ts'
+  import { goto } from '$app/navigation'
 
   let {
     pipeline,

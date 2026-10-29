@@ -2,8 +2,6 @@
   import { closedIntervalAction } from 'common-lib/promise'
   import { OverlayDrawer } from 'common-ui'
   import Dayjs from 'dayjs'
-  import { refreshAll } from '$app/navigation'
-  import { page } from '$app/state'
   import SvelteKitTopLoader from '#lib/components/common/SvelteKitTopLoader.svelte'
   import LineBanner, { BannerButton } from '#lib/components/layout/LineBanner.svelte'
   import NavigationExtras from '#lib/components/layout/NavigationExtras.svelte'
@@ -29,6 +27,8 @@
   import { clusterHealthMessage } from '#lib/functions/pipelines/health.ts'
   import { resolve } from '#lib/functions/svelte.ts'
   import type { Snippet } from '#lib/types/svelte.ts'
+  import { refreshAll } from '$app/navigation'
+  import { page } from '$app/state'
   import type { LayoutData } from './$types'
 
   const { children, data }: { children: Snippet; data: LayoutData } = $props()
