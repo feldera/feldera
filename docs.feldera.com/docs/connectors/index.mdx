@@ -178,6 +178,9 @@ The following attributes are common to all connectors:
   re-send it. Modifying the connector configuration causes a fresh
   snapshot to be replayed on the next start.
 
+  A multihost pipeline does not support `send_snapshot`, and fails to start
+  with an output connector that sets it.
+
 * <a name="soft_delete">`soft_delete`</a> – *(Input connectors only)* When `true`, the connector
   ingests deletions as insertions and reports the original polarity of each
   record in the `is_delete` metadata attribute. The default is `false`.

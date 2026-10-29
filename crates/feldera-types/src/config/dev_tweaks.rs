@@ -407,6 +407,14 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tls_exchange: Option<bool>,
 
+    /// Where a multihost pipeline keeps the state of its materialized views
+    /// and indexes.  See [ViewIntegralsLayout].  The default is `auto`.
+    ///
+    /// A pipeline that restarts from a checkpoint with another layout moves
+    /// that state, which is a bootstrap of those views.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view_integrals: Option<ViewIntegralsLayout>,
+
     /// Options not understood by this particular version.
     ///
     /// This allows the pipeline manager to take options that a custom or old
@@ -588,6 +596,10 @@ impl DevTweaks {
     pub fn tls_exchange(&self) -> bool {
         self.tls_exchange.unwrap_or(true)
     }
+
+    pub fn view_integrals(&self) -> ViewIntegralsLayout {
+        self.view_integrals.unwrap_or_default()
+    }
 }
 
 /// Selects which eviction strategy backs a cache instance.
@@ -615,6 +627,26 @@ pub enum BufferCacheAllocationStrategy {
 
     /// Share one cache across all foreground/background threads.
     Global,
+}
+
+/// Where a multihost pipeline keeps the state of its materialized views and
+/// indexes.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewIntegralsLayout {
+    /// `one_host` for a pipeline that restarts from a checkpoint with that
+    /// layout, which includes every checkpoint written before this setting
+    /// existed, and otherwise `all_hosts`.
+    #[default]
+    Auto,
+
+    /// Each view's state on the host that runs its output connectors.  That
+    /// host does all of the view's work.
+    OneHost,
+
+    /// Each view's state sharded over all of the workers of all of the hosts,
+    /// so that a large view's work spreads over all of them.
+    AllHosts,
 }
 
 /// Which merger to use.

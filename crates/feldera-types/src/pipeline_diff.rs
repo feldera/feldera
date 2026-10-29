@@ -157,12 +157,23 @@ pub struct PipelineDiff {
     added_output_connectors: Vec<String>,
     modified_output_connectors: Vec<String>,
     removed_output_connectors: Vec<String>,
+    /// The checkpoint keeps the state of the materialized views in another
+    /// layout, so the pipeline rebuilds it, although the views did not change.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    view_integrals_moved: bool,
 }
 
 impl Display for PipelineDiff {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(err) = &self.program_diff_error {
             writeln!(f, "Could not compute program diff: {err}")?;
+        }
+
+        if self.view_integrals_moved {
+            writeln!(
+                f,
+                "The checkpoint keeps the state of materialized views in another layout than the pipeline uses (see `dev_tweaks.view_integrals`), so the pipeline rebuilds it."
+            )?;
         }
 
         if let Some(diff) = &self.program_diff
@@ -244,6 +255,7 @@ impl PipelineDiff {
             added_output_connectors: Vec::new(),
             modified_output_connectors: Vec::new(),
             removed_output_connectors: Vec::new(),
+            view_integrals_moved: false,
         }
     }
 
@@ -257,6 +269,7 @@ impl PipelineDiff {
             added_output_connectors: Vec::new(),
             modified_output_connectors: Vec::new(),
             removed_output_connectors: Vec::new(),
+            view_integrals_moved: false,
         }
     }
 
@@ -296,6 +309,20 @@ impl PipelineDiff {
         self
     }
 
+    /// Marks that the state of the materialized views moves to another layout,
+    /// so that the pipeline rebuilds it.  This does not make any relation or
+    /// connector count as affected.
+    pub fn with_view_integrals_moved(mut self) -> Self {
+        self.view_integrals_moved = true;
+        self
+    }
+
+    /// Returns true if the state of the materialized views moves to another
+    /// layout (see [Self::with_view_integrals_moved]).
+    pub fn view_integrals_moved(&self) -> bool {
+        self.view_integrals_moved
+    }
+
     pub fn is_empty(&self) -> bool {
         self.program_diff
             .as_ref()
@@ -307,6 +334,7 @@ impl PipelineDiff {
             && self.added_output_connectors.is_empty()
             && self.removed_output_connectors.is_empty()
             && self.modified_output_connectors.is_empty()
+            && !self.view_integrals_moved
     }
 
     pub fn clear_program_diff(&mut self) {

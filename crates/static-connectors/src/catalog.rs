@@ -25,6 +25,7 @@ use feldera_types::serde_with_context::{
 };
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 pub use feldera_adapterlib::catalog::*;
@@ -35,7 +36,7 @@ pub use feldera_adapterlib::catalog::*;
 ///
 /// Every table, view, and index is also an output stream.  The catalog gives each one a delta
 /// stream, which output connectors read, and, if it is materialized, an integral, which ad hoc
-/// queries and `send_snapshot` read.
+/// queries read, and on a single host, `send_snapshot` too.
 ///
 /// On a single host, every delta stream and every integral is on all workers.  On multihost,
 /// every delta stream is gathered to host H, the host that the coordinator assigned to the
@@ -49,14 +50,16 @@ pub use feldera_adapterlib::catalog::*;
 /// | Table | [register_materialized_input_zset] | Each worker's own input, not sharded | |
 /// | Table with primary key | [register_materialized_input_map] | All workers, shared with the upsert operator | Primary key |
 /// | Lazy table with primary key | [register_lazy_materialized_input_map] | All workers | Primary key |
-/// | View | [register_materialized_output_zset] | Host H | Whole row |
-/// | View as an indexed Z-set | [register_materialized_output_map] | Host H | Key |
-/// | Index | [register_materialized_index] | Host H | Index key |
+/// | View | [register_materialized_output_zset] | All workers, or host H | Whole row |
+/// | View as an indexed Z-set | [register_materialized_output_map] | All workers, or host H | Key |
+/// | Index | [register_materialized_index] | All workers, or host H | Index key |
 ///
-/// An integral is gathered to host H only so that a `send_snapshot` connector on host H can read
-/// the whole relation locally.  Ad hoc queries do not need it: the coordinator reads every
-/// worker's part of the integral on that worker's host.  Tables never gather their integrals,
-/// because a connector cannot take a snapshot of a table.  A view's integral is sharded, not only
+/// The integrals of views and indexes spread over all workers, so that a large view's state
+/// spreads over all hosts, unless `SPREAD_VIEW_INTEGRALS` is off, which keeps each on host H as
+/// before.  The controller chooses from `dev_tweaks.view_integrals` and the layout of the
+/// checkpoint that the pipeline restarts from.  Either way, ad hoc queries read each worker's part
+/// of an integral on that worker's host.  No host has the whole of a spread integral, so a
+/// multihost pipeline refuses `send_snapshot`.  A view's integral is sharded, not only
 /// accumulated, so that a record with weight +1 on one worker and -1 on another cancels: ad hoc
 /// queries treat each worker's integral as a partition and cannot handle negative weights.
 ///
@@ -200,6 +203,10 @@ pub type OutputMapping = BTreeMap<String, usize>;
 /// a global.
 pub static OUTPUT_MAPPING: Mutex<OutputMapping> = Mutex::new(BTreeMap::new());
 
+/// Whether a multihost pipeline shards the integrals of its materialized views and indexes over
+/// all workers of all hosts (`true`) or keeps each on host H, the host that writes its output
+/// (`false`).  See `CircuitParams::spread_view_integrals`.
+pub static SPREAD_VIEW_INTEGRALS: AtomicBool = AtomicBool::new(true);
 impl Catalog {
     fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {
         serde_json_path_to_error::from_str(schema).map_err(|e| {
@@ -218,7 +225,8 @@ impl Catalog {
     }
 
     /// Gather output stream (table or view) to the host that it is assigned to.
-    /// Returns the accumulated stream and, optionally, its integral.
+    /// Returns the accumulated stream and, optionally, its integral, which on
+    /// multihost is sharded over all workers of all hosts instead.
     ///
     /// # Arguments
     ///
@@ -264,10 +272,14 @@ impl Catalog {
                 .shard_workers_accumulate(hosts[ordinal].workers.clone())
                 .into_parts();
 
+            // The integral spreads over all workers, or stays on host H's.
             let integral = if integrate {
-                Some(
-                    stream.shard_workers_accumulate_integrate_trace(hosts[ordinal].workers.clone()),
-                )
+                let workers = if SPREAD_VIEW_INTEGRALS.load(Ordering::Relaxed) {
+                    0..Runtime::num_workers()
+                } else {
+                    hosts[ordinal].workers.clone()
+                };
+                Some(stream.shard_workers_accumulate_integrate_trace(workers))
             } else {
                 None
             };
@@ -1531,6 +1543,105 @@ mod test {
         let readers = output_stream_handles.delta_handle.take_readers();
         assert_eq!(batch_to_json(readers.whole.deref()), "");
         assert!(readers.partitions.is_empty());
+    }
+
+    /// Counts the rows of materialized view `v` that each of two hosts holds in its integral,
+    /// after host 0 ingests 16 rows into table `t`.
+    fn view_integral_rows_per_host() -> Vec<usize> {
+        use dbsp::circuit::{CircuitConfig, Layout};
+        use std::net::TcpListener;
+
+        const SCHEMA: &str = r#"{
+            "name": "NAME",
+            "case_sensitive": false,
+            "fields": [
+                {"name":"id","case_sensitive":false,"columntype":{"nullable":false,"type":"BIGINT"},"unused":false},
+                {"name":"b","case_sensitive":false,"columntype":{"nullable":true,"type":"BOOLEAN"},"unused":false},
+                {"name":"i","case_sensitive":false,"columntype":{"nullable":true,"type":"BIGINT"},"unused":false},
+                {"name":"s","case_sensitive":false,"columntype":{"nullable":true,"precision":-1,"type":"VARCHAR"},"unused":false}]}"#;
+
+        // Two hosts with two workers each, which exchange data over localhost.
+        let listeners: Vec<TcpListener> = (0..2)
+            .map(|_| TcpListener::bind("127.0.0.1:0").unwrap())
+            .collect();
+        let params: Vec<_> = listeners
+            .iter()
+            .map(|listener| (listener.local_addr().unwrap(), 2))
+            .collect();
+        let mut hosts: Vec<_> = listeners
+            .into_iter()
+            .map(|listener| {
+                let address = listener.local_addr().unwrap();
+                let config = CircuitConfig::from(Layout::new_multihost(&params, address).unwrap())
+                    .with_exchange_listener(listener);
+                Runtime::init_circuit(config, |circuit| {
+                    let mut catalog = Catalog::new();
+                    let (table, handle) = circuit.add_input_zset::<TestStruct>();
+                    catalog.register_input_zset::<_, TestStruct>(
+                        table.clone(),
+                        handle,
+                        &SCHEMA.replace("NAME", "t"),
+                    );
+                    catalog.register_materialized_output_zset::<_, TestStruct>(
+                        table.map(|row| row.clone()),
+                        &SCHEMA.replace("NAME", "v"),
+                    );
+                    Ok(catalog)
+                })
+                .unwrap()
+            })
+            .collect();
+
+        let mut input = hosts[0]
+            .1
+            .input_collection_handle(&("t".into()))
+            .unwrap()
+            .handle
+            .configure_deserializer(RECORD_FORMAT.clone())
+            .unwrap();
+        for id in 0..16 {
+            input
+                .insert(
+                    format!(r#"{{"id": {id}, "b": true, "s": "{id}"}}"#).as_bytes(),
+                    &None,
+                )
+                .unwrap();
+        }
+        input.flush().unwrap();
+
+        // A step on one host waits for the same step on the other.
+        std::thread::scope(|scope| {
+            for (circuit, _) in hosts.iter_mut() {
+                scope.spawn(|| circuit.transaction().unwrap());
+            }
+        });
+
+        let rows = hosts
+            .iter()
+            .map(|(_, catalog)| {
+                let integral = catalog
+                    .output_handles(&("v".into()))
+                    .unwrap()
+                    .integrate_handle
+                    .as_ref()
+                    .unwrap()
+                    .take_readers();
+                batch_to_json(integral.whole.deref()).lines().count()
+            })
+            .collect();
+        for (circuit, _) in hosts {
+            circuit.kill().unwrap();
+        }
+        rows
+    }
+
+    /// A multihost pipeline keeps part of a materialized view's integral on every host, not
+    /// the whole of it on the host that writes the view.
+    #[test]
+    fn multihost_spreads_view_integrals() {
+        let spread = view_integral_rows_per_host();
+        assert_eq!(spread.iter().sum::<usize>(), 16);
+        assert!(spread.iter().all(|&rows| rows > 0), "{spread:?}");
     }
 
     /// The connectors' enable count of an output is dbsp's enable count of its accumulator.

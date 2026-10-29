@@ -19,7 +19,7 @@
 
 use crate::catalog::{InputCollectionHandle, OutputCollectionHandles};
 use crate::controller::checkpoint::{
-    CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics,
+    CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics, ViewIntegrals,
 };
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, ProcessedRecords};
 use crate::controller::sync::{
@@ -86,6 +86,7 @@ use feldera_types::adapter_stats::{
 };
 use feldera_types::checkpoint::{CheckpointActivity, HostInfo};
 use feldera_types::circuit::Layout;
+use feldera_types::config::dev_tweaks::ViewIntegralsLayout;
 use feldera_types::coordination::{
     self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, InputDistribution,
     StepAction, StepInputs, StepRequest, StepStatus, TransactionCoordination,
@@ -3338,6 +3339,7 @@ impl CircuitThread {
             checkpointed_input_distribution: _,
             checkpointed_output_assignment: _,
             input_choices,
+            view_integrals,
         } = controller_init;
 
         let storage = circuit_params.storage.clone();
@@ -3549,6 +3551,7 @@ impl CircuitThread {
             incarnation_uuid,
             input_distribution,
             output_assignment,
+            view_integrals,
             input_choices,
             storage
                 .as_ref()
@@ -5633,6 +5636,7 @@ impl FtState {
             output_statistics: HashMap::new(),
             input_distribution: controller.input_distribution.clone(),
             output_assignment: controller.output_assignment.clone(),
+            view_integrals: controller.view_integrals,
         };
         let journal = storage.open_journal(JournalMode::Create(&checkpoint))?;
 
@@ -6353,6 +6357,21 @@ impl StepTrigger {
     }
 }
 
+/// Returns where a pipeline keeps the integrals of its materialized views, from
+/// `dev_tweaks.view_integrals` in `config` and, for `auto`, from `checkpoint`, the layout of the
+/// checkpoint that the pipeline restarts from, if any.  With `auto`, a pipeline keeps the layout
+/// of its checkpoint, so that an upgrade does not move its state, and a new pipeline spreads them.
+fn choose_view_integrals(
+    config: &PipelineConfig,
+    checkpoint: Option<ViewIntegrals>,
+) -> ViewIntegrals {
+    match config.global.dev_tweaks.view_integrals() {
+        ViewIntegralsLayout::OneHost => ViewIntegrals::OneHost,
+        ViewIntegralsLayout::AllHosts => ViewIntegrals::AllHosts,
+        ViewIntegralsLayout::Auto => checkpoint.unwrap_or(ViewIntegrals::AllHosts),
+    }
+}
+
 /// Controller initialization.
 ///
 /// When we start a controller, we do one of:
@@ -6416,6 +6435,10 @@ pub struct ControllerInit {
     /// current pipeline config computed using `compute_pipeline_diff`
     pub pipeline_diff: Option<PipelineDiff>,
 
+    /// Where a multihost pipeline keeps the integrals of its materialized views (see
+    /// [choose_view_integrals]).
+    view_integrals: ViewIntegrals,
+
     /// The incarnation UUID to report in controller statistics.
     pub incarnation_uuid: Uuid,
 
@@ -6456,8 +6479,13 @@ impl ControllerInit {
         config: PipelineConfig,
         storage: Option<Arc<dyn PipelineStorage>>,
     ) -> Result<Self, ControllerError> {
+        let view_integrals = choose_view_integrals(&config, None);
         Ok(Self {
-            circuit_params: Self::circuit_params(layout, &config, storage)?,
+            circuit_params: CircuitParams {
+                spread_view_integrals: view_integrals == ViewIntegrals::AllHosts,
+                ..Self::circuit_params(layout, &config, storage)?
+            },
+            view_integrals,
             pipeline_config: config,
             processed_records: 0,
             transaction_number: 0,
@@ -6527,15 +6555,29 @@ impl ControllerInit {
             output_statistics,
             input_distribution: checkpointed_input_distribution,
             output_assignment: checkpointed_output_assignment,
+            view_integrals,
         } = checkpoint;
         info!("Resuming from checkpoint:\n{checkpoint_summary}");
 
         let init_checkpoint = circuit.map(|circuit| circuit.uuid);
 
-        let pipeline_diff = compute_pipeline_diff(
+        let mut pipeline_diff = compute_pipeline_diff(
             &checkpoint_config.program_info_subset(),
             &config.program_info_subset(),
         )?;
+        // The circuit stores each view's integral under a name that includes its workers, so a
+        // pipeline that keeps it elsewhere than the checkpoint finds no state for it and rebuilds
+        // it, which the diff must report.
+        let checkpoint_view_integrals = view_integrals;
+        let view_integrals = choose_view_integrals(&config, Some(checkpoint_view_integrals));
+        if layout.as_ref().is_some_and(Layout::is_multihost)
+            && view_integrals != checkpoint_view_integrals
+        {
+            info!(
+                "the checkpoint keeps the state of materialized views {checkpoint_view_integrals:?}, but the pipeline keeps it {view_integrals:?}, so it rebuilds that state"
+            );
+            pipeline_diff = pipeline_diff.with_view_integrals_moved();
+        }
 
         // Record which surviving output connectors changed across the
         // restart. The cumulative `transmitted_records` counter is preserved
@@ -6694,8 +6736,10 @@ impl ControllerInit {
         Ok(Self {
             circuit_params: CircuitParams {
                 init_checkpoint,
+                spread_view_integrals: view_integrals == ViewIntegrals::AllHosts,
                 ..Self::circuit_params(layout, &config, Some(storage))?
             },
+            view_integrals,
             pipeline_config: config,
             step,
             input_metadata: Some(input_metadata.0),
@@ -6842,6 +6886,7 @@ impl ControllerInit {
             exchange_tls: None,
             exchange_uuid: Uuid::nil(),
             exchange_listener: None,
+            spread_view_integrals: true,
         })
     }
 
@@ -8288,6 +8333,10 @@ pub struct ControllerInner {
     /// `None` if the pipeline is not multihost.
     output_assignment: Option<BTreeMap<String, usize>>,
 
+    /// Where this pipeline keeps the integrals of its materialized views, which each checkpoint
+    /// records (see [choose_view_integrals]).
+    view_integrals: ViewIntegrals,
+
     /// Current transaction number.
     ///
     /// This is not the same as transaction ID. We increment this counter
@@ -8399,6 +8448,7 @@ impl ControllerInner {
         incarnation_uuid: Uuid,
         input_distribution: BTreeMap<String, InputDistribution>,
         output_assignment: Option<BTreeMap<String, usize>>,
+        view_integrals: ViewIntegrals,
         input_choices: BTreeMap<String, JsonValue>,
         storage_path: Option<PathBuf>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
@@ -8437,6 +8487,7 @@ impl ControllerInner {
                 layout,
                 input_distribution: input_distribution.clone(),
                 output_assignment,
+                view_integrals,
                 shutdown: runtime.shutdown_token().child_token(),
                 runtime,
                 memory_max: Mutex::new(config.global.resources.memory_max),
@@ -9206,7 +9257,14 @@ impl ControllerInner {
                 "'send_snapshot: true' requires a materialized output view",
             ));
         }
-
+        // A multihost pipeline may spread a view's state over all of its hosts, so that no host has
+        // a whole snapshot of it.
+        if endpoint_config.connector_config.send_snapshot && self.layout.is_multihost() {
+            return Err(ControllerError::invalid_transport_configuration(
+                endpoint_name,
+                "'send_snapshot: true' is not supported in a multihost pipeline",
+            ));
+        }
         let endpoint_id = self.next_output_id.fetch_add(1, Ordering::AcqRel);
         let endpoint_name_str = endpoint_name.to_string();
 
@@ -11262,6 +11320,7 @@ impl RunningCheckpoint {
             output_statistics,
             input_distribution: circuit.controller.input_distribution.clone(),
             output_assignment: circuit.controller.output_assignment.clone(),
+            view_integrals: circuit.controller.view_integrals,
         };
         Span::new("blocking")
             .with_category("Checkpoint")

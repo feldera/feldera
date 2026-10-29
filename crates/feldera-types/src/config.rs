@@ -3506,6 +3506,9 @@ pub struct ConnectorConfig {
     /// connector configuration or invoking the reset API triggers a fresh
     /// snapshot when the connector supports reset (e.g., Delta Lake in
     /// `truncate` mode and Postgres).
+    ///
+    /// A multihost pipeline does not support this setting, and refuses an
+    /// output connector that sets it.
     #[serde(default)]
     pub send_snapshot: bool,
 

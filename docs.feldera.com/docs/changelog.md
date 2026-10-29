@@ -45,6 +45,23 @@ Source edition can be found on github.
   storage again as the pipeline's state.  A multihost pipeline deletes
   the older checkpoint when every host has written the newest one.
 
+- Incompatible change (multihost): a multihost pipeline no longer supports
+  `send_snapshot`.  A pipeline with an output connector that sets it fails to
+  start, and HTTP egress refuses `send_snapshot=true`.  To read the whole of a
+  view, use an ad hoc query.
+
+- Behavior change (multihost): a new multihost pipeline keeps the state of
+  each materialized view on all of its hosts, instead of on the one host that
+  runs the view's output connectors, so that a large view's work spreads over
+  all hosts.  A pipeline that restarts from a checkpoint keeps the layout of
+  its checkpoint, so the upgrade does not move the state of existing
+  pipelines.  The runtime setting `dev_tweaks.view_integrals` chooses the
+  layout: `all_hosts` spreads the state of an existing pipeline, and
+  `one_host` keeps it on one host.  A change of layout rebuilds the state of
+  the views, as a bootstrap, which by default waits for approval (see
+  [Modifying a pipeline](/pipelines/modifying)) and needs the tables that the
+  views read to be materialized.
+
 ## v0.380.0
 
 - Incompatible change (SQL): the compiler no longer supports the `INTERNED`

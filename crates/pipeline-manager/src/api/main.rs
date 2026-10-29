@@ -442,6 +442,7 @@ It contains the following fields:
         feldera_types::config::dev_tweaks::BufferCacheStrategy,
         feldera_types::config::dev_tweaks::BufferCacheAllocationStrategy,
         feldera_types::config::dev_tweaks::MergerType,
+        feldera_types::config::dev_tweaks::ViewIntegralsLayout,
         feldera_types::transport::adhoc::AdHocInputConfig,
         feldera_types::transport::clock::ClockConfig,
         feldera_types::transport::file::FileInputConfig,

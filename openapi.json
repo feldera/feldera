@@ -10113,7 +10113,7 @@
               },
               "send_snapshot": {
                 "type": "boolean",
-                "description": "Send a full snapshot of a materialized view when the connector first\nstarts. Valid for output connectors only.\n\nWhen `true`, the pipeline emits the current contents of the view as the\ninitial batch the first time the connector runs. The view must be\nmaterialized (declared with `CREATE MATERIALIZED VIEW`).\n\nThe snapshot is sent exactly once per connector lifetime: it does not\nfire again when the pipeline resumes from a checkpoint. Modifying the\nconnector configuration or invoking the reset API triggers a fresh\nsnapshot when the connector supports reset (e.g., Delta Lake in\n`truncate` mode and Postgres)."
+                "description": "Send a full snapshot of a materialized view when the connector first\nstarts. Valid for output connectors only.\n\nWhen `true`, the pipeline emits the current contents of the view as the\ninitial batch the first time the connector runs. The view must be\nmaterialized (declared with `CREATE MATERIALIZED VIEW`).\n\nThe snapshot is sent exactly once per connector lifetime: it does not\nfire again when the pipeline resumes from a checkpoint. Modifying the\nconnector configuration or invoking the reset API triggers a fresh\nsnapshot when the connector supports reset (e.g., Delta Lake in\n`truncate` mode and Postgres).\n\nA multihost pipeline does not support this setting, and refuses an\noutput connector that sets it."
               },
               "soft_delete": {
                 "type": "boolean",
@@ -11176,6 +11176,15 @@
             "type": "number",
             "format": "double",
             "description": "The share of the records at a spine's highest level with negative\nweights above which the level merges its batches.\n\nA spine keeps most of its records at its highest level.  When many of\nthem are retractions, merging the level's batches cancels them against\nthe records they retract, which shrinks the spine's storage.\n\nA fraction from 0 through 1; the default is 0.2.  At 1 the level never\nmerges for this reason.",
+            "default": null,
+            "nullable": true
+          },
+          "view_integrals": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ViewIntegralsLayout"
+              }
+            ],
             "default": null,
             "nullable": true
           }
@@ -14088,6 +14097,10 @@
             "items": {
               "type": "string"
             }
+          },
+          "view_integrals_moved": {
+            "type": "boolean",
+            "description": "The checkpoint keeps the state of the materialized views in another\nlayout, so the pipeline rebuilds it, although the views did not change."
           }
         }
       },
@@ -18064,6 +18077,15 @@
         "type": "integer",
         "format": "int64",
         "description": "Version number."
+      },
+      "ViewIntegralsLayout": {
+        "type": "string",
+        "description": "Where a multihost pipeline keeps the state of its materialized views and\nindexes.",
+        "enum": [
+          "auto",
+          "one_host",
+          "all_hosts"
+        ]
       }
     },
     "securitySchemes": {
