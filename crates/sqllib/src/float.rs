@@ -107,6 +107,23 @@ pub fn truncate_f_i32(left: F32, right: i32) -> F32 {
 
 some_polymorphic_function2!(truncate, f, F32, i32, i32, F32);
 
+// The compiler names TRUNC and TRUNCATE by their SQL spelling.
+#[doc(hidden)]
+#[inline(always)]
+pub fn trunc_d_i32(left: F64, right: i32) -> F64 {
+    truncate_d_i32(left, right)
+}
+
+some_polymorphic_function2!(trunc, d, F64, i32, i32, F64);
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn trunc_f_i32(left: F32, right: i32) -> F32 {
+    truncate_f_i32(left, right)
+}
+
+some_polymorphic_function2!(trunc, f, F32, i32, i32, F32);
+
 #[doc(hidden)]
 #[inline(always)]
 pub fn round_d_i32(left: F64, right: i32) -> F64 {
@@ -528,7 +545,7 @@ some_polymorphic_null_function1!(finite_or_null, f, F32, F32);
 
 #[cfg(test)]
 mod test {
-    use super::{round_d_i32, round_f_i32, truncate_d_i32};
+    use super::{round_d_i32, round_f_i32, trunc_d_i32, trunc_f_i32, truncate_d_i32};
     use dbsp::algebra::{F32, F64};
 
     #[test]
@@ -540,5 +557,11 @@ mod test {
         assert_eq!(round_d_i32(F64::new(1e300), 20), F64::new(1e300));
         assert_eq!(round_f_i32(F32::new(1.5), 50), F32::new(1.5));
         assert_eq!(round_d_i32(F64::new(1.25), 1), F64::new(1.3));
+    }
+
+    #[test]
+    fn trunc_is_truncate() {
+        assert_eq!(trunc_d_i32(F64::new(1.29), 1), F64::new(1.2));
+        assert_eq!(trunc_f_i32(F32::new(-1.29), 1), F32::new(-1.2));
     }
 }
