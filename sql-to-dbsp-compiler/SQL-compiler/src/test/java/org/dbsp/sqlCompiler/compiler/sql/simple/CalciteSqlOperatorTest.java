@@ -332,6 +332,30 @@ public class CalciteSqlOperatorTest extends SqlIoTest {
                  t
                 (1 row)
 
+                select map_contains_key(map[array[array(1)], 1], array[array[nullif(1, 0)]]);
+                 r
+                ---
+                 t
+                (1 row)
+
+                select map_contains_key(map[row(1, 2), 1], row(1, nullif(2, 0)));
+                 r
+                ---
+                 t
+                (1 row)
+
+                select map_contains_key(map[row(1, 2), 1], row(1, nullif(2, 2)));
+                 r
+                ---
+                 f
+                (1 row)
+
+                select map_contains_key(map[row(1, nullif(2, 0)), 1], row(1, 2));
+                 r
+                ---
+                 t
+                (1 row)
+
                 select map_contains_key(cast(null as map<int, varchar>), 1);
                  r
                 ---
@@ -353,5 +377,26 @@ public class CalciteSqlOperatorTest extends SqlIoTest {
                 "is not comparable to INTEGER");
         this.statementsFailingInCompilation("create view v as select map_contains_key(map[1, 1], 'foo')",
                 "INTEGER is not comparable to CHAR");
+    }
+
+    @Test
+    public void testMapContainsKeyTable() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(a INT ARRAY, r ROW(x INT, y INT NULL) NOT NULL);
+                CREATE VIEW V AS SELECT map_contains_key(map[array[1], 1], a) AS a,
+                       map_contains_key(map[row(1, 2), 1], r) AS r
+                FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[1], ROW(1, 2))", """
+                  a    | r
+                 -------------
+                  true | true""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[1, NULL], ROW(1, NULL))", """
+                  a     | r
+                 ---------------
+                  false | false""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(NULL, ROW(2, 2))", """
+                  a    | r
+                 --------------
+                 NULL  | false""");
     }
 }
