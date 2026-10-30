@@ -51,6 +51,7 @@ use casts::type_string;
 use dbsp::algebra::{F32, F64};
 use feldera_fxp::DynamicDecimal;
 use feldera_macros::IsNone;
+use feldera_types::format::json::to_json_string;
 use feldera_types::serde_with_context::serde_config::VariantFormat;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -328,7 +329,7 @@ impl FlatVariant {
     /// assert_eq!(doc.to_json_string().unwrap(), r#"{"a":[true],"b":1}"#);
     /// ```
     pub fn to_json_string(&self) -> Result<String, Box<dyn std::error::Error>> {
-        Ok(serde_json::to_string(self)?)
+        Ok(to_json_string(self)?)
     }
 }
 
