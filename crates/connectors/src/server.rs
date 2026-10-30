@@ -1727,7 +1727,11 @@ fn pipeline_peer_tls(args: &ServerArgs) -> PipelinePeerTls {
         .collect();
     let key = PrivateKeyDer::from_pem_file(key_path).expect("HTTPS TLS key should be read");
     let tls = PipelinePeerTls::from_chain(chain, key)
-        .unwrap_or_else(|e| panic!("exchange TLS with '{cert_path}': {e}"));
+        .unwrap_or_else(|e| {
+            panic!(
+                "exchange TLS with certificate '{cert_path}' and key '{key_path}': {e}. The runner writes both files from the pipeline certificate, which it signs with the private CA (Helm value `caSecretRef`)"
+            )
+        });
     observability::fips::log_rustls_fips_status("exchange TLS server config", tls.server.fips());
     observability::fips::log_rustls_fips_status("exchange TLS client config", tls.client.fips());
     tls
