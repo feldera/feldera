@@ -48,6 +48,7 @@ with-avro = [
 with-dynamodb = [
     "aws-sdk-dynamodb",
     "dep:aws-credential-types",
+    "dep:aws-runtime",
     "dep:aws-smithy-runtime-api",
     "dep:aws-smithy-types",
     "feldera-adapterlib/with-dynamodb",
@@ -145,6 +146,7 @@ rdkafka = { workspace = true, features = [
 aws-config = { workspace = true }
 aws-sdk-dynamodb = { workspace = true, optional = true }
 aws-credential-types = { workspace = true, optional = true }
+aws-runtime = { workspace = true, optional = true }
 aws-smithy-runtime-api = { workspace = true, optional = true }
 aws-smithy-types = { workspace = true, optional = true }
 aws-sdk-s3 = { workspace = true }
