@@ -97,8 +97,9 @@ struct ExchangeHeader {
     /// receiver uses it to drop retransmissions and to acknowledge.
     sequence: u64,
     /// In synchronous exchange, the sender's round: how many messages the
-    /// sender sent to this host for this exchange before this one.  Zero for
-    /// streaming messages and pings.
+    /// sender sent to this host for this exchange before this one.  In
+    /// streaming exchange, the step in which the sender sent a flush or a lag
+    /// notice (see `ShardedAccumulator`), and otherwise zero.  Zero for pings.
     ///
     /// The receiver must deliver each sender's rounds of an exchange in
     /// order, and `sequence` cannot ensure that.  Big and small messages
@@ -669,7 +670,8 @@ impl ExchangeClient {
     }
 
     /// Queues a message.  `round` is the sender's round in synchronous
-    /// exchange (see [ExchangeHeader::round]), otherwise 0.
+    /// exchange, or the step of a flush or a lag notice in streaming exchange
+    /// (see [ExchangeHeader::round]).
     pub fn send(
         &self,
         global_node_id: Arc<String>,
@@ -701,7 +703,8 @@ pub trait ExchangeDelivery: Send + Sync {
     fn name(&self) -> Arc<String>;
 
     /// Delivers `data` from `sender`.  `round` is the sender's round in
-    /// synchronous exchange (see [ExchangeHeader::round]), otherwise 0.
+    /// synchronous exchange, or the step of a flush or a lag notice in
+    /// streaming exchange (see [ExchangeHeader::round]).
     fn received(
         self: Arc<Self>,
         sender: usize,

@@ -77,6 +77,7 @@ pub const CONFLICTING_UPDATES_COUNT: MetricId =
     MetricId(Cow::Borrowed("conflicting_updates_count"));
 pub const EXCHANGE_WAIT_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("exchange_wait_time_seconds"));
+pub const LAG_NOTICES_COUNT: MetricId = MetricId(Cow::Borrowed("lag_notices_count"));
 pub const EXCHANGE_SERIALIZATION_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("exchange_serialization_time_seconds"));
 pub const EXCHANGE_SERIALIZED_BYTES: MetricId =
@@ -199,7 +200,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 86] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 87] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -557,6 +558,12 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 86] = [
         category: CircuitMetricCategory::Time,
         advanced: true,
         description: "Total time the exchange operator spent waiting for data from other workers. This includes the time between the operator sent local data to its peers and the time it received data from all peers. Other operators in the circuit may be running during this time.",
+    },
+    CircuitMetric {
+        name: LAG_NOTICES_COUNT,
+        category: CircuitMetricCategory::Time,
+        advanced: true,
+        description: "Number of steps of a commit in which this worker had not finished sending its data to the exchange operator while another worker had, so that this worker told the other workers not to wait for it in that step.",
     },
     CircuitMetric {
         name: MERGE_BACKPRESSURE_WAIT_TIME_SECONDS,
