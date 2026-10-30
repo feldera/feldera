@@ -1107,4 +1107,27 @@ public class Regression3Tests extends SqlIoTest {
                      yd | sc | aa | rr | mm | ny
                     -----------------------------""");
     }
+
+    @Test
+    public void viewReadsSortedView() {
+        // A view reading a view with ORDER BY reads its rows, not its sorted output
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.ignoreOrderBy = false;
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE t(u INT, ts BIGINT);
+                CREATE LOCAL VIEW a AS SELECT u, ts FROM t ORDER BY ts;
+                CREATE VIEW b AS SELECT u + 1 AS v FROM a;""");
+        this.getCCS(compiler).stepWeightOne("INSERT INTO t VALUES(1, 10), (2, 5)", """
+                 v
+                ---
+                 2
+                 3""");
+        compiler = this.testCompiler();
+        compiler.options.languageOptions.ignoreOrderBy = false;
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE t(u INT, ts BIGINT);
+                CREATE VIEW a AS SELECT ts, u FROM t ORDER BY u;
+                CREATE VIEW b AS SELECT u FROM a;""");
+        Assert.assertNotNull(compiler.getFinalCircuit(false));
+    }
 }

@@ -259,6 +259,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
     final ProgramMetadata metadata;
     /** Recursive views, indexed by actual view name (not rewritten name) */
     final Map<ProgramIdentifier, DeclareViewStatement> recursiveViews = new HashMap<>();
+    /** For a view whose ORDER BY makes its output one sorted array, the operator producing its
+     * rows; a query that reads the view reads these rows. */
+    final Map<ProgramIdentifier, DBSPSimpleOperator> sortedViewRows = new HashMap<>();
 
     /**
      * Create a compiler that translated from calcite to DBSP circuits.
@@ -1051,7 +1054,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             " has an 'emit_final' property, so it cannot be used as a source for a query. " +
                             "Define an additional view without 'emit_final' instead.",
                             node.getPositionRange());
-                Utilities.putNew(this.nodeOperator, scan, sourceView);
+                DBSPSimpleOperator rows = this.sortedViewRows.get(tableName);
+                Utilities.putNew(this.nodeOperator, scan, rows != null ? rows : sourceView);
             } else {
                 if (!create)
                     throw new InternalCompilerError("Could not find operator for table " + tableName, node);
@@ -2932,6 +2936,21 @@ public class CalciteToDBSPCompiler extends RelVisitor
             tuple = elemType.to(DBSPTypeTupleBase.class);
         }
         IntermediateRel node = CalciteObject.create(root.rel, new SourcePositionRange(view.getParserPosition()));
+        if (isVector && rel instanceof LogicalSort sort && sort.fetch == null && sort.offset == null
+                && this.recursiveViews.get(view.relationName) == null) {
+            // The sorted array is the view's output; a query reading the view reads the rows.
+            DBSPSimpleOperator rows = this.getOperator(sort.getInput());
+            if (root.fields.size() != tuple.size()) {
+                DBSPVariablePath t = tuple.ref().var();
+                List<DBSPExpression> resultFields = new ArrayList<>();
+                for (Map.Entry<Integer, String> field: root.fields)
+                    resultFields.add(t.deref().field(field.getKey()).applyCloneIfNeeded());
+                rows = new DBSPMapOperator(node, new DBSPTupleExpression(resultFields, false).closure(t),
+                        rows.outputPort());
+                this.addOperator(rows);
+            }
+            this.sortedViewRows.put(view.relationName, rows);
+        }
         if (root.fields.size() != tuple.size()) {
             DBSPVariablePath t = tuple.ref().var();
             List<DBSPExpression> resultFields = new ArrayList<>();
