@@ -34,11 +34,32 @@ pipeline therefore keeps resolved values out of what it reports:
 
 | Output | What is shown instead of a resolved value |
 |---|---|
+| Pipeline log | `[REDACTED ${secret:...}]`, the reference |
+| `deployment_error`, pipeline events, `/status` | the reference, from a pipeline on a runtime with this fix |
+| Connector errors in `/stats` and in the support bundle | the reference, from a pipeline on a runtime with this fix |
 | Connection errors and debug log lines of the Postgres input, Delta Lake and Kafka connectors, and of the Avro format | the endpoint name and option names only, never the URI, option value, or configuration |
 | Format and connector configuration errors, and the pipeline startup summary | the error category, the expected values and field names from the schema, the endpoint, transport and format names; never a rejected value or a configuration dump |
 
 The following limits apply:
 
+- The pipeline replaces values of 8 bytes or more, where they stand as a
+  whole word or token. A shorter value is not replaced.
+- A secret whose value is a common word or a non-sensitive value, such as a
+  user name or a broker address, is replaced by its reference in every
+  diagnostic that uses the word on its own. Keep such values out of secrets,
+  or expect them to read as references.
+- A value that a connector transforms before printing it, other than trimming,
+  percent-encoding, or escaping, may not be recognized.
+- An environment variable reference is not protected. Its value is
+  non-sensitive configuration by contract, and a common word in it would be
+  replaced in every diagnostic that uses the word.
+- Pipelines started on a runtime from before this fix (see the
+  [changelog](/changelog)) do not apply these rules. Restart such pipelines
+  after an upgrade.
+- A connector error message written to a checkpoint by an older runtime can
+  contain the resolved value. After the upgrade, the restored message shows the
+  reference if the secret still has that value. A rotated value is not
+  recognized.
 - A value that is part of SQL, UDF code, an endpoint name, or table data is
   shown as written.
 - A value written inline in the `connectors` property is SQL text, not a

@@ -45,10 +45,12 @@ Source edition can be found on github.
   storage again as the pipeline's state.  A multihost pipeline deletes
   the older checkpoint when every host has written the newest one.
 
-- Security: connector errors, debug log lines, and compile errors that
-  printed a whole configuration, URI, or option value now name the endpoint
-  and the option only, so a resolved secret reference does not reach the
-  pipeline log or `deployment_error` through them. See
+- Security: a resolved secret value no longer appears in pipeline
+  diagnostics. The pipeline shows the value as its reference in its log, in
+  `/status`, and in the connector errors of `/stats`. Connector errors, debug
+  log lines, and compile errors that printed a whole configuration, URI, or
+  option value now name the endpoint and the option only. Restart running
+  pipelines so that they run on the fixed runtime. See
   [secret references](/connectors/secret-references#diagnostics).
 
 ## v0.380.0
