@@ -212,6 +212,12 @@ pub struct JsonEncoderConfig {
     ///
     /// This option is only valid with the `debezium` update format.
     pub key_fields: Option<Vec<String>>,
+
+    /// When this option is `true`, a `d` event is followed by a tombstone: a message with the
+    /// same key and a null value. Log compaction in Kafka uses tombstones to remove deleted keys.
+    ///
+    /// This option is only valid with an `index`. The default is `true`.
+    pub tombstones_on_delete: Option<bool>,
 }
 
 impl Default for JsonEncoderConfig {
@@ -222,6 +228,7 @@ impl Default for JsonEncoderConfig {
             buffer_size_records: 10_000,
             array: false,
             key_fields: None,
+            tombstones_on_delete: None,
         }
     }
 }

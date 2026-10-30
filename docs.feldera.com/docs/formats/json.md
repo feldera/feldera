@@ -190,8 +190,9 @@ Arrays are encoded as JSON arrays.
 
 Feldera operates over streams of **data change events**.
 A data change event represents an insertion, deletion, or modification of a
-single row in a SQL table or view.  We currently support two
-data change event formats in JSON: (1) the raw format and (2) the insert/delete format.
+single row in a SQL table or view.  This section describes three
+data change event formats in JSON: the insert/delete format, the raw format, and
+the Debezium format for output.
 
 ### The insert/delete format
 
@@ -233,6 +234,40 @@ is equivalent to
 ```json
 {"insert": {"part": 1, "vendor": 2, "price": 30000}}
 ```
+
+### The Debezium format
+
+An output connector with `"update_format": "debezium"` writes each change as a
+Debezium change event, one event in each message. The `payload` of the event
+holds the operation `op` and the row:
+
+| Change | `op` | Row fields |
+|---|---|---|
+| Insert | `c` | `after` |
+| Delete | `d` | `before` |
+| Update, only with an `index` | `u` | `before` and `after` |
+
+Example update event:
+
+```json
+{"payload": {"op": "u", "before": {"id": 1, "s": "old"}, "after": {"id": 1, "s": "new"}}}
+```
+
+Without an `index`, the connector writes an update as a delete and an insert,
+and the message key holds the whole row, or only the columns in `key_fields`.
+With an `index`, the connector writes one event for each key that a step
+changes, and the message key holds the columns of the index. See
+[Views with Unique Keys](/connectors/unique_keys#views-with-unique-keys).
+
+With an `index`, the connector also writes a tombstone after each `d` event: a
+message with the same key and a null value. Kafka log compaction uses
+tombstones to remove deleted keys from a topic. If the consumer cannot read a
+message with a null value, set `"tombstones_on_delete": false` in the format
+configuration. This option is valid only with an `index`.
+
+The default [JSON flavor](#configuring-json-flavors) of this format is
+`kafka_connect_json_converter`, which also puts a `schema` field in the key and
+the value of each message.
 
 ## Encoding multiple changes
 

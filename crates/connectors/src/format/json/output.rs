@@ -4,14 +4,14 @@ use crate::format::{MAX_DUPLICATES, MAX_RECORD_LEN_IN_ERRMSG};
 use crate::{
     ControllerError, Encoder, OutputConsumer, OutputFormat,
     catalog::{CursorWithPolarity, RecordFormat, SerCursor},
-    util::truncate_ellipse,
+    util::{IndexedOperationType, indexed_operation_type, truncate_ellipse},
 };
-use anyhow::{Result as AnyResult, bail};
+use anyhow::{Result as AnyResult, anyhow, bail};
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::catalog::SerCursorFlattened;
 use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat};
-use feldera_types::program_schema::{Relation, canonical_identifier};
+use feldera_types::program_schema::{Relation, SqlIdentifier, canonical_identifier};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use serde::Deserialize;
 use serde_json::json;
@@ -95,7 +95,8 @@ impl OutputFormat for JsonOutputFormat {
             json_config,
             value_schema,
             key_separator,
-            key_schema.is_some(),
+            key_schema.as_ref(),
+            is_index,
         )))
     }
 }
@@ -107,9 +108,22 @@ fn validate(
     value_schema: &Relation,
 ) -> Result<(), ControllerError> {
     if is_index {
+        if !matches!(config.update_format, JsonUpdateFormat::Debezium) {
+            return Err(ControllerError::invalid_encoder_configuration(
+                endpoint_name,
+                "JSON encoder supports 'index' only with the 'debezium' update format",
+            ));
+        }
+        if config.key_fields.is_some() {
+            return Err(ControllerError::invalid_encoder_configuration(
+                endpoint_name,
+                "'key_fields' cannot be used with 'index': the columns of the index are the key",
+            ));
+        }
+    } else if config.tombstones_on_delete.is_some() {
         return Err(ControllerError::invalid_encoder_configuration(
             endpoint_name,
-            "JSON encoder cannot be attached to an index",
+            "'tombstones_on_delete' is only valid with 'index'",
         ));
     }
 
@@ -159,11 +173,30 @@ fn validate(
     Ok(())
 }
 
+/// The error for the encoded `record`, which needs `required` bytes and does not fit in a
+/// buffer of `max_buffer_size` bytes. `required` includes the key of a keyed message.
+fn record_too_long(max_buffer_size: usize, required: usize, record: &[u8]) -> anyhow::Error {
+    anyhow!(
+        "JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the following record requires {} bytes: '{}'.",
+        max_buffer_size,
+        required,
+        truncate_ellipse(
+            std::str::from_utf8(record).unwrap_or_default(),
+            MAX_RECORD_LEN_IN_ERRMSG,
+            "..."
+        )
+    )
+}
+
 pub(crate) struct JsonEncoder {
     /// Input handle to push serialized data to.
     output_consumer: Box<dyn OutputConsumer>,
     config: JsonEncoderConfig,
     input_is_indexed: bool,
+    /// The key relation of the index that the connector's `index` property names. With an
+    /// index, the encoder writes one Debezium record for each key.
+    index: Option<Relation>,
+    view_name: SqlIdentifier,
     value_schema_str: Option<String>,
     key_schema_str: Option<String>,
     buffer: Vec<u8>,
@@ -186,7 +219,8 @@ impl JsonEncoder {
         mut config: JsonEncoderConfig,
         schema: &Relation,
         key_separator: Option<String>,
-        input_is_indexed: bool,
+        key_schema: Option<&Relation>,
+        is_index: bool,
     ) -> Self {
         let max_buffer_size = output_consumer.max_buffer_size_bytes();
 
@@ -198,8 +232,9 @@ impl JsonEncoder {
             });
         }
 
-        let value_schema_str = build_value_schema(&config, schema);
-        let key_schema_str = build_key_schema(&config, schema);
+        let index = key_schema.filter(|_| is_index).cloned();
+        let value_schema_str = build_value_schema(&config, schema, index.is_some());
+        let key_schema_str = build_key_schema(&config, index.as_ref().unwrap_or(schema));
 
         let canonical_key_fields = config
             .key_fields
@@ -212,7 +247,9 @@ impl JsonEncoder {
         Self {
             output_consumer,
             config,
-            input_is_indexed,
+            input_is_indexed: key_schema.is_some(),
+            index,
+            view_name: schema.name.clone(),
             value_schema_str,
             key_schema_str,
             buffer: Vec::new(),
@@ -227,6 +264,85 @@ impl JsonEncoder {
             key_separator,
         }
     }
+
+    /// Encodes each key of the indexed `batch` as one Debezium record, keyed by the index
+    /// columns: `c` with `after` for an insert, `d` with `before` for a delete, and `u` with
+    /// both for an update. A `d` record is followed by a tombstone, unless
+    /// `tombstones_on_delete` is `false`.
+    fn encode_indexed(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
+        let index_name = &self.index.as_ref().unwrap().name;
+        let tombstones = self.config.tombstones_on_delete.unwrap_or(true);
+        let mut cursor =
+            batch.cursor(RecordFormat::Json(self.config.json_flavor.clone().unwrap()))?;
+
+        while cursor.key_valid() {
+            let Some(operation) =
+                indexed_operation_type(&self.view_name, index_name, cursor.as_mut())?
+            else {
+                cursor.step_key()?;
+                continue;
+            };
+
+            let key = &mut self.key_buffer;
+            key.clear();
+            match &self.key_schema_str {
+                Some(schema) => write!(key, r#"{{"schema":{schema},"payload":"#)?,
+                None => key.extend_from_slice(br#"{"payload":"#),
+            }
+            cursor.serialize_key(key)?;
+            key.push(b'}');
+
+            let value = &mut self.buffer;
+            value.clear();
+            if self.config.array {
+                value.push(b'[');
+            }
+            let start = value.len();
+            let op = match operation {
+                IndexedOperationType::Insert => "c",
+                IndexedOperationType::Delete => "d",
+                IndexedOperationType::Upsert => "u",
+            };
+            match &self.value_schema_str {
+                Some(schema) => write!(value, r#"{{"schema":{schema},"payload":{{"op":"{op}""#)?,
+                None => write!(value, r#"{{"payload":{{"op":"{op}""#)?,
+            }
+            // `indexed_operation_type` leaves at most one value of each weight.
+            for (field, weight) in [("before", -1), ("after", 1)] {
+                cursor.rewind_vals();
+                while cursor.val_valid() {
+                    if cursor.weight() == weight {
+                        write!(value, r#","{field}":"#)?;
+                        cursor.serialize_val(value)?;
+                    }
+                    cursor.step_val();
+                }
+            }
+            value.extend_from_slice(b"}}");
+
+            // The message holds the key and the value with its closing `]` or `\n`.
+            let required = self.key_buffer.len() + value.len() + 1;
+            if required > self.max_buffer_size {
+                return Err(record_too_long(
+                    self.max_buffer_size,
+                    required,
+                    &value[start..],
+                ));
+            }
+            value.push(if self.config.array { b']' } else { b'\n' });
+
+            self.output_consumer
+                .push_key(Some(&self.key_buffer), Some(&self.buffer), &[], 1);
+            if tombstones && matches!(operation, IndexedOperationType::Delete) {
+                // A tombstone counts as 0 records in the output statistics.
+                self.output_consumer
+                    .push_key(Some(&self.key_buffer), None, &[], 0);
+            }
+            cursor.step_key()?;
+        }
+
+        Ok(())
+    }
 }
 
 impl Encoder for JsonEncoder {
@@ -235,6 +351,10 @@ impl Encoder for JsonEncoder {
     }
 
     fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
+        if self.index.is_some() {
+            return self.encode_indexed(batch);
+        }
+
         let mut buffer = take(&mut self.buffer);
         let mut key_buffer = take(&mut self.key_buffer);
 
@@ -362,8 +482,8 @@ impl Encoder for JsonEncoder {
                         // with either 'd'elete of 'c'reate operation. When `op` is
                         // 'c'reate, only the `after` component (no `before`) containing the
                         // second copy of the record is present. The value also contains a
-                        // schema for the entire payload.  If `op` is 'd'elete, neither
-                        // `before` nor `after` is present.
+                        // schema for the entire payload.  If `op` is 'd'elete, only `before`
+                        // is present, and the schema does not declare it.
                         //
                         // This encoding is redundant and expensive, but is necessary due
                         // to several limitations:
@@ -437,15 +557,9 @@ impl Encoder for JsonEncoder {
                 let buffer_full = buffer.len() > max_buffer_size;
                 if buffer_full {
                     if num_records == 0 {
-                        let record = std::str::from_utf8(&buffer[prev_len..buffer.len()])
-                            .unwrap_or_default();
                         // We should be able to fit at least one record in the buffer.
-                        bail!(
-                            "JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is {} bytes, but the following record requires {} bytes: '{}'.",
-                            self.max_buffer_size,
-                            buffer.len() - prev_len,
-                            truncate_ellipse(record, MAX_RECORD_LEN_IN_ERRMSG, "...")
-                        );
+                        let record = &buffer[prev_len..];
+                        return Err(record_too_long(self.max_buffer_size, record.len(), record));
                     }
                     buffer.truncate(prev_len);
                 } else {
@@ -518,24 +632,30 @@ impl Encoder for JsonEncoder {
 #[cfg(any(test, feature = "testing"))]
 pub mod test {
     use crate::{
-        format::json::output::JsonEncoder,
-        test::{engine_test, published_schema, read, relations, rows},
+        OutputFormat,
+        format::json::output::{JsonEncoder, JsonOutputFormat},
+        test::{engine_test, parser, published_schema, read, relations, rows},
     };
     use JsonUpdateFormat::{Debezium, InsertDelete, Redis, Snowflake};
+    use anyhow::Result as AnyResult;
     use arrow::datatypes::SchemaRef;
     use feldera_adapterlib::{
         catalog::SerBatchReader,
-        format::Encoder,
-        test::{ConnectorTestEngine, MockOutputConsumer, Updates},
+        format::{Encoder, InputBuffer, Parser},
+        test::{ConnectorTestEngine, InputOptions, MockOutputConsumer, Updates},
         transport::OutputBatchType,
     };
     use feldera_types::{
+        config::{ConnectorConfig, FormatConfig},
         format::json::{JsonEncoderConfig, JsonUpdateFormat},
         program_schema::Relation,
     };
     use proptest::prelude::*;
     use serde_json::{Value, json};
-    use std::sync::{Arc, Mutex};
+    use std::{
+        borrow::Cow,
+        sync::{Arc, Mutex},
+    };
 
     /// The view that the cases encode.
     pub fn relation() -> Relation {
@@ -573,7 +693,7 @@ pub mod test {
 
     fn encoder(config: JsonEncoderConfig, consumer: MockOutputConsumer) -> (JsonEncoder, Output) {
         let output = consumer.data.clone();
-        let encoder = JsonEncoder::new(Box::new(consumer), config, &relation(), None, false);
+        let encoder = JsonEncoder::new(Box::new(consumer), config, &relation(), None, None, false);
         (encoder, output)
     }
 
@@ -609,6 +729,7 @@ pub mod test {
             buffer_size_records: 3,
             array,
             key_fields: None,
+            tombstones_on_delete: None,
         };
         let (mut encoder, output) = encoder(config, MockOutputConsumer::new());
         let schema = published_schema(&relation());
@@ -823,6 +944,7 @@ pub mod test {
             buffer_size_records: 3,
             array: false,
             key_fields: None,
+            tombstones_on_delete: None,
         };
         let (mut encoder, _output) =
             encoder(config, MockOutputConsumer::with_max_buffer_size_bytes(32));
@@ -843,6 +965,7 @@ pub mod test {
             buffer_size_records: 1,
             array: false,
             key_fields: Some(vec!["id".to_string(), "s".to_string()]),
+            tombstones_on_delete: None,
         };
         let (mut encoder, output) = encoder(config, MockOutputConsumer::new());
         encoder.encode(batch(engine, &batches()[0])).unwrap();
@@ -875,6 +998,328 @@ pub mod test {
         );
     }
 
+    /// The key of the index on [`relation`].
+    pub fn key_relation() -> Relation {
+        relations::basic_key("json_output_key")
+    }
+
+    /// Returns the error of a JSON encoder with `format_config` on [`relation`], if any. With
+    /// `is_index`, the encoder is attached to the index [`key_relation`].
+    fn encoder_error(format_config: Value, is_index: bool) -> Option<String> {
+        let mut connector = json!({
+            "transport": { "name": "file_output", "config": { "path": "/dev/null" } },
+            "format": { "name": "json", "config": format_config },
+        });
+        if is_index {
+            connector["index"] = json!("json_output_key");
+        }
+        let connector: ConnectorConfig = serde_json::from_value(connector).unwrap();
+        JsonOutputFormat
+            .new_encoder(
+                "test_output",
+                &connector,
+                &is_index.then(key_relation),
+                &relation(),
+                Box::new(MockOutputConsumer::new()),
+                is_index,
+            )
+            .err()
+            .map(|error| error.to_string())
+    }
+
+    /// With an index, the encoder takes only the Debezium format, without `key_fields`.
+    #[engine_test]
+    pub fn index_requires_debezium_without_key_fields(_engine: &dyn ConnectorTestEngine) {
+        let indexed_encoder_error = |format_config| encoder_error(format_config, true);
+        assert_eq!(
+            indexed_encoder_error(json!({"update_format": "insert_delete"})).as_deref(),
+            Some(
+                "invalid controller configuration: invalid format configuration for output \
+                 endpoint 'test_output': JSON encoder supports 'index' only with the 'debezium' \
+                 update format"
+            )
+        );
+        assert_eq!(
+            indexed_encoder_error(json!({"update_format": "debezium", "key_fields": ["id"]}))
+                .as_deref(),
+            Some(
+                "invalid controller configuration: invalid format configuration for output \
+                 endpoint 'test_output': 'key_fields' cannot be used with 'index': the columns \
+                 of the index are the key"
+            )
+        );
+        assert_eq!(
+            indexed_encoder_error(json!({"update_format": "debezium"})),
+            None
+        );
+    }
+
+    /// `tombstones_on_delete` is valid only with an index.
+    #[engine_test]
+    pub fn tombstones_on_delete_requires_an_index(_engine: &dyn ConnectorTestEngine) {
+        let config = json!({"update_format": "debezium", "tombstones_on_delete": false});
+        assert_eq!(
+            encoder_error(config.clone(), false).as_deref(),
+            Some(
+                "invalid controller configuration: invalid format configuration for output \
+                 endpoint 'test_output': 'tombstones_on_delete' is only valid with 'index'"
+            )
+        );
+        assert_eq!(encoder_error(config, true), None);
+    }
+
+    /// A keyed message: the key, and the value, which a tombstone does not have.
+    type Message = (Vec<u8>, Option<Vec<u8>>);
+
+    /// Encodes `rows` as one indexed batch of the index [`key_relation`] with `encoder`, and
+    /// returns the messages that it writes.
+    fn encode_indexed(
+        engine: &dyn ConnectorTestEngine,
+        encoder: &mut JsonEncoder,
+        output: &Output,
+        rows: &[(i64, &str)],
+    ) -> AnyResult<Vec<Message>> {
+        let rows = Updates::from_json(published_schema(&relation()), rows).unwrap();
+        let batch = engine
+            .indexed_output_batch(&key_relation(), &relation(), rows.rows(), rows.weights())
+            .unwrap();
+        encoder.consumer().batch_start(0, OutputBatchType::Delta);
+        encoder.encode(batch)?;
+        encoder.consumer().batch_end();
+        let messages = output
+            .lock()
+            .unwrap()
+            .drain(..)
+            .map(|(key, value, _headers)| (key.unwrap(), value))
+            .collect();
+        Ok(messages)
+    }
+
+    /// Returns the key and the value of each of `messages` as JSON. The value of a tombstone
+    /// is `null`.
+    fn messages_json(messages: &[Message]) -> Vec<(Value, Value)> {
+        messages
+            .iter()
+            .map(|(key, value)| {
+                let value = value.as_ref();
+                (
+                    serde_json::from_slice(key).unwrap(),
+                    value.map_or(Value::Null, |value| serde_json::from_slice(value).unwrap()),
+                )
+            })
+            .collect()
+    }
+
+    /// Returns the updates that the Debezium JSON parser reads from the values of `messages`,
+    /// without the tombstones, as the Kafka input transport skips them.
+    fn parse_debezium(engine: &dyn ConnectorTestEngine, messages: &[Message]) -> Updates {
+        let collection = engine
+            .input_collection(&relation(), &InputOptions::default())
+            .unwrap();
+        let format = FormatConfig {
+            name: Cow::from("json"),
+            config: json!({
+                "update_format": "debezium",
+                "json_flavor": "kafka_connect_json_converter",
+            }),
+        };
+        let mut parser = parser(collection.as_ref(), &format);
+        for value in messages.iter().filter_map(|(_key, value)| value.as_ref()) {
+            let (mut buffer, errors) = parser.parse(value, None);
+            assert_eq!(errors, []);
+            buffer.flush().unwrap();
+        }
+        collection.updates().unwrap()
+    }
+
+    /// Returns a Debezium encoder of the index [`key_relation`] on [`relation`] that writes to
+    /// `consumer`, and the messages that it writes.
+    fn indexed_encoder(
+        tombstones_on_delete: Option<bool>,
+        consumer: MockOutputConsumer,
+    ) -> (JsonEncoder, Output) {
+        let config = JsonEncoderConfig {
+            update_format: Debezium,
+            json_flavor: None,
+            buffer_size_records: 1,
+            array: false,
+            key_fields: None,
+            tombstones_on_delete,
+        };
+        let output = consumer.data.clone();
+        let encoder = JsonEncoder::new(
+            Box::new(consumer),
+            config,
+            &relation(),
+            None,
+            Some(&key_relation()),
+            true,
+        );
+        (encoder, output)
+    }
+
+    /// With an index, each key that a step changes is one Debezium record keyed by the index
+    /// columns: `c` for an insert, `u` for a delete and an insert, and `d` for a delete, followed
+    /// by a tombstone. The value schema declares `before`. The Debezium JSON parser reads the
+    /// messages back as the changes of the step.
+    #[engine_test]
+    pub fn debezium_indexed(engine: &dyn ConnectorTestEngine) {
+        let (mut encoder, output) = indexed_encoder(None, MockOutputConsumer::new());
+        let key_schema = json!({"type":"struct","fields":[{"field":"id","optional":false,"type":"int64"}],"name":"Key"});
+        let row_schema = json!({"type":"struct","fields":[{"field":"id","type":"int64","optional":false},{"field":"b","type":"boolean","optional":false},{"field":"i","type":"int64","optional":true},{"field":"s","type":"string","optional":false}],"optional":true});
+        let mut before_schema = row_schema.clone();
+        before_schema["field"] = json!("before");
+        let mut after_schema = row_schema;
+        after_schema["field"] = json!("after");
+        let value_schema = json!({"type":"struct","fields":[before_schema, after_schema, {"field":"op","type":"string","optional":false}],"name":"Envelope"});
+        let key = |id: i64| json!({"schema": key_schema, "payload": {"id": id}});
+        let value = |payload: Value| json!({"schema": value_schema, "payload": payload});
+
+        let old_0 = r#"{"id": 0, "b": true, "i": null, "s": "foo"}"#;
+        let new_0 = r#"{"id": 0, "b": false, "i": 5, "s": "foo"}"#;
+        let old_1 = r#"{"id": 1, "b": false, "i": 10, "s": "bar"}"#;
+        let row = |row: &str| serde_json::from_str::<Value>(row).unwrap();
+
+        let steps = [
+            (
+                vec![(1, old_0), (1, old_1)],
+                vec![
+                    (key(0), value(json!({"op": "c", "after": row(old_0)}))),
+                    (key(1), value(json!({"op": "c", "after": row(old_1)}))),
+                ],
+            ),
+            (
+                vec![(-1, old_0), (1, new_0), (-1, old_1)],
+                vec![
+                    (
+                        key(0),
+                        value(json!({"op": "u", "before": row(old_0), "after": row(new_0)})),
+                    ),
+                    (key(1), value(json!({"op": "d", "before": row(old_1)}))),
+                    (key(1), Value::Null),
+                ],
+            ),
+            (
+                vec![(-1, new_0)],
+                vec![
+                    (key(0), value(json!({"op": "d", "before": row(new_0)}))),
+                    (key(0), Value::Null),
+                ],
+            ),
+        ];
+        for (step, (rows, expected)) in steps.into_iter().enumerate() {
+            let messages = encode_indexed(engine, &mut encoder, &output, &rows).unwrap();
+            assert_eq!(messages_json(&messages), expected, "step {step}");
+
+            let parsed = parse_debezium(engine, &messages);
+            let changes = Updates::from_json(parsed.rows().schema(), &rows).unwrap();
+            assert_eq!(
+                parsed.zset().unwrap(),
+                changes.zset().unwrap(),
+                "step {step}"
+            );
+        }
+    }
+
+    /// With `tombstones_on_delete` set to `false`, no tombstone follows a `d` record.
+    #[engine_test]
+    pub fn debezium_indexed_without_tombstones(engine: &dyn ConnectorTestEngine) {
+        let (mut encoder, output) = indexed_encoder(Some(false), MockOutputConsumer::new());
+        let row = r#"{"id": 0, "b": true, "i": null, "s": "foo"}"#;
+        encode_indexed(engine, &mut encoder, &output, &[(1, row)]).unwrap();
+        let messages = encode_indexed(engine, &mut encoder, &output, &[(-1, row)]).unwrap();
+        let messages = messages_json(&messages);
+        let ops: Vec<&Value> = messages
+            .iter()
+            .map(|(_key, value)| &value["payload"]["op"])
+            .collect();
+        assert_eq!(ops, [&json!("d")]);
+    }
+
+    /// With `array`, the value of each indexed message is an array of one event, and a tombstone
+    /// follows a `d` event.
+    #[engine_test]
+    pub fn debezium_indexed_array(engine: &dyn ConnectorTestEngine) {
+        let config = JsonEncoderConfig {
+            update_format: Debezium,
+            json_flavor: None,
+            buffer_size_records: 1,
+            array: true,
+            key_fields: None,
+            tombstones_on_delete: None,
+        };
+        let consumer = MockOutputConsumer::new();
+        let output = consumer.data.clone();
+        let mut encoder = JsonEncoder::new(
+            Box::new(consumer),
+            config,
+            &relation(),
+            None,
+            Some(&key_relation()),
+            true,
+        );
+        let row = r#"{"id": 0, "b": true, "i": null, "s": "foo"}"#;
+        for (weight, op, message_count) in [(1, "c", 1), (-1, "d", 2)] {
+            let messages = encode_indexed(engine, &mut encoder, &output, &[(weight, row)]).unwrap();
+            assert_eq!(messages.len(), message_count, "{op}");
+            let tombstones = &messages[1..];
+            assert!(tombstones.iter().all(|(_key, value)| value.is_none()));
+            let value = messages[0].1.as_ref().unwrap();
+            assert_eq!(value.last(), Some(&b']'), "{op}");
+            let events: Vec<Value> = serde_json::from_slice(value).unwrap();
+            assert_eq!(events.len(), 1, "{op}");
+            assert_eq!(events[0]["payload"]["op"], json!(op));
+        }
+    }
+
+    /// With an index, a message fits in the transport's buffer when its key, its value, and the
+    /// closing `\n` of the value fit.
+    #[engine_test]
+    pub fn debezium_indexed_record_too_long(engine: &dyn ConnectorTestEngine) {
+        let rows = [(1, r#"{"id": 0, "b": true, "i": null, "s": "foo"}"#)];
+        let (mut encoder, output) = indexed_encoder(None, MockOutputConsumer::new());
+        let messages = encode_indexed(engine, &mut encoder, &output, &rows).unwrap();
+        let (key, value) = &messages[0];
+        let size = key.len() + value.as_ref().unwrap().len();
+
+        let consumer = MockOutputConsumer::with_max_buffer_size_bytes(size);
+        let (mut encoder, output) = indexed_encoder(None, consumer);
+        let fitting = encode_indexed(engine, &mut encoder, &output, &rows).unwrap();
+        assert_eq!(fitting, messages);
+
+        let consumer = MockOutputConsumer::with_max_buffer_size_bytes(size - 1);
+        let (mut encoder, output) = indexed_encoder(None, consumer);
+        let error = encode_indexed(engine, &mut encoder, &output, &rows).unwrap_err();
+        let expected = format!(
+            "JSON record exceeds maximum buffer size supported by the output transport. Max \
+             supported buffer size is {} bytes, but the following record requires {size} bytes: ",
+            size - 1
+        );
+        assert!(error.to_string().starts_with(&expected), "{error}");
+    }
+
+    /// With an index, a key with two new values is an error.
+    #[engine_test]
+    pub fn debezium_indexed_non_unique_key(engine: &dyn ConnectorTestEngine) {
+        let (mut encoder, output) = indexed_encoder(None, MockOutputConsumer::new());
+        let error = encode_indexed(
+            engine,
+            &mut encoder,
+            &output,
+            &[
+                (1, r#"{"id": 0, "b": true, "i": null, "s": "foo"}"#),
+                (1, r#"{"id": 0, "b": false, "i": null, "s": "foo"}"#),
+            ],
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Error description: Multiple new values for the same key."),
+            "{error}"
+        );
+    }
+
     /// Redis output keys a record by its key fields: a delete has no value, and an insert's
     /// value is the whole record.
     #[engine_test]
@@ -885,6 +1330,7 @@ pub mod test {
             buffer_size_records: 1,
             array: false,
             key_fields: Some(vec!["id".to_string(), "s".to_string()]),
+            tombstones_on_delete: None,
         };
         let (mut encoder, output) = encoder(config, MockOutputConsumer::new());
         encoder.encode(batch(engine, &batches()[0])).unwrap();
