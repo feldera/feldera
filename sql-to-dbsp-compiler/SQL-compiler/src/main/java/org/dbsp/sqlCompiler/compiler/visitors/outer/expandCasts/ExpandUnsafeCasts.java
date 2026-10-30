@@ -59,7 +59,9 @@ public class ExpandUnsafeCasts extends ExpressionTranslator {
     DBSPClosureExpression converterFunction(CalciteObject node, DBSPType source, DBSPType dest) {
         DBSPVariablePath var = source.ref().var();
         DBSPExpression convertValue = var.deref();
-        if (convertValue.getType().is(DBSPTypeBaseType.class))
+        // The conversion takes the element by value; an array or a map element too
+        DBSPType elementType = convertValue.getType();
+        if (elementType.is(DBSPTypeBaseType.class) || elementType.is(DBSPTypeArray.class) || elementType.is(DBSPTypeMap.class))
             convertValue = convertValue.applyCloneIfNeeded();
         var cast = convertValue.cast(node, dest, UNSAFE);
         // Recursively apply the translation to the produced cast
