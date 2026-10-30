@@ -6160,7 +6160,7 @@ pub fn change_feed_always_transaction_test(engine: &dyn PipelineTestEngine) {
 ///
 /// Read over [`relation`], whose 21 columns carry the types the change
 /// data path handles with machinery of its own: `change_data_read_schema`,
-/// `project_physical_to_logical` with `relabel_nested_columns`, and
+/// `project_physical_to_logical` with `RelabelNestedUdf`, and
 /// `add_partition_columns`. Binary, decimal, arrays, nested rows, maps of rows,
 /// `VARIANT` and `UUID` are where that machinery breaks, and none of them is
 /// reached by four scalar columns. The oracle is the follow-mode connector
@@ -8410,6 +8410,147 @@ pub fn follow_id_mapped_filter_test(engine: &dyn PipelineTestEngine) {
                 ]
             ),
             "the filter must drop row 1 and keep the rest"
+        );
+    })
+}
+
+/// The rows of a column-mapped table with three distinct nested `after.status`
+/// values, for the tests that filter on a nested field.
+fn nested_filter_rows() -> [Value; 3] {
+    [
+        uniform_row(1, "alpha", "Coffee Shop", "settled"),
+        uniform_row(2, "beta", "Gas Station", "pending"),
+        uniform_row(3, "gamma", "Book Store", "reversed"),
+    ]
+}
+
+/// `filter` can name a field nested in a column-mapped struct when following
+/// the table. The data file names the nested field `col-<id>`, so the filter
+/// resolves only if the read restores logical names before it filters (#7657).
+#[engine_test]
+pub fn follow_id_mapped_nested_filter_test(engine: &dyn PipelineTestEngine) {
+    run_async_on(2, async {
+        let table_dir = TempDir::new().unwrap();
+        let rows = nested_filter_rows();
+        write_id_mapped_table_physical_names(table_dir.path(), &uniform_relation(), &[&rows]);
+        let table_uri = table_dir.path().display().to_string();
+
+        let read = off_runtime(move || {
+            read_uniform_table(
+                engine,
+                &table_uri,
+                1,
+                &[
+                    ("mode", json!("follow")),
+                    ("filter", json!("after.status <> 'pending'")),
+                ],
+            )
+        });
+
+        assert_eq!(
+            read,
+            rows_zset(&uniform_relation(), &[rows[0].clone(), rows[2].clone()]),
+            "the nested filter must drop row 2 and keep the rest"
+        );
+    })
+}
+
+/// `filter`, `cdc_delete_filter`, and `cdc_order_by` can name fields nested in
+/// a column-mapped struct in CDC mode. CDC reads files through the same
+/// `files_dataframe` as the snapshot of a distributed connector (#7657).
+#[engine_test]
+pub fn cdc_id_mapped_nested_filter_test(engine: &dyn PipelineTestEngine) {
+    run_async_on(2, async {
+        let table_dir = TempDir::new().unwrap();
+        let rows = nested_filter_rows();
+        write_id_mapped_table_physical_names(table_dir.path(), &uniform_relation(), &[&rows]);
+        let table_uri = table_dir.path().display().to_string();
+
+        let read = off_runtime(move || {
+            read_uniform_table(
+                engine,
+                &table_uri,
+                1,
+                &[
+                    ("mode", json!("cdc")),
+                    ("filter", json!("after.merchant <> 'Coffee Shop'")),
+                    // Matches no row: the table has no key, so a delete of a row
+                    // never inserted would count -1.
+                    ("cdc_delete_filter", json!("after.status = 'none'")),
+                    ("cdc_order_by", json!("after.merchant")),
+                ],
+            )
+        });
+
+        assert_eq!(
+            read,
+            rows_zset(&uniform_relation(), &[rows[1].clone(), rows[2].clone()]),
+            "the nested filter must drop row 1 and keep the rest"
+        );
+    })
+}
+
+/// `filter` can name a field nested in a column-mapped struct in a commit read
+/// from its change data file (#7657).
+#[engine_test]
+pub fn follow_id_mapped_change_data_nested_filter_test(engine: &dyn PipelineTestEngine) {
+    run_async_on(2, async {
+        let table_dir = TempDir::new().unwrap();
+        let rows = [
+            uniform_cdc_row(1, "alpha", "Coffee Shop", "settled", "c", 1),
+            uniform_cdc_row(2, "beta", "Gas Station", "pending", "c", 2),
+        ];
+        // The change data commit inserts a settled row, a pending row, and
+        // deletes row 1.
+        let changes = [
+            (
+                uniform_cdc_row(3, "gamma", "Book Store", "settled", "c", 3),
+                "insert",
+            ),
+            (
+                uniform_cdc_row(4, "delta", "Bakery", "pending", "c", 4),
+                "insert",
+            ),
+            (
+                uniform_cdc_row(1, "alpha", "Coffee Shop", "settled", "d", 5),
+                "delete",
+            ),
+        ];
+        write_id_mapped_change_data_table(
+            table_dir.path(),
+            &uniform_cdc_relation(),
+            &rows,
+            &changes,
+            true,
+        );
+        let table_uri = table_dir.path().display().to_string();
+
+        let (read, change_data_commits) = off_runtime(move || {
+            let mut commits = 0;
+            let read = read_id_mapped_table_counting(
+                engine,
+                &table_uri,
+                &uniform_relation(),
+                2,
+                &[
+                    ("mode", json!("follow")),
+                    ("change_feed", json!("require")),
+                    ("filter", json!("after.status = 'settled'")),
+                ],
+                &mut commits,
+            );
+            (read, commits)
+        });
+
+        assert_eq!(change_data_commits, 1);
+        assert_eq!(
+            read,
+            rows_zset(
+                &uniform_relation(),
+                &[uniform_row(3, "gamma", "Book Store", "settled")]
+            ),
+            "the nested filter must keep only settled rows, and the delete must \
+             cancel row 1"
         );
     })
 }

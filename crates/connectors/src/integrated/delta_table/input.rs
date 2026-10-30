@@ -29,6 +29,10 @@ use datafusion::datasource::listing::{
 };
 use datafusion::execution::memory_pool::MemoryLimit;
 use datafusion::logical_expr::physical_planning_context::PhysicalPlanningContext;
+use datafusion::logical_expr::{
+    ColumnarValue, ReturnFieldArgs, ScalarFunctionArgs, ScalarUDF, ScalarUDFImpl, Signature,
+    Volatility,
+};
 use datafusion::optimizer::analyzer::type_coercion::TypeCoercionRewriter;
 use datafusion::physical_plan::{
     ExecutionPlan, ExecutionPlanProperties, PhysicalExpr, SendableRecordBatchStream,
@@ -80,6 +84,7 @@ use std::cmp::min;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Display;
 use std::future::Future;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
@@ -545,7 +550,9 @@ fn relabel_data_type(data_type: &ArrowDataType, map: &HashMap<String, String>) -
 
 /// Translate a batch's nested field names physical-to-logical. Top-level names
 /// are left as-is (already logical); only names nested inside a struct, list, or
-/// map are rewritten.
+/// map are rewritten. Only tests use it: queries relabel through
+/// [`RelabelNestedUdf`].
+#[cfg(test)]
 fn relabel_nested_columns(
     batch: &RecordBatch,
     map: &HashMap<String, String>,
@@ -572,6 +579,57 @@ fn relabel_nested_columns(
         columns,
     )
     .map_err(|e| anyhow!("relabeling column-mapped field names failed: {e}"))
+}
+
+/// Scalar function that applies [`relabel_array`] to its one argument, so that
+/// a query can name nested fields by their logical names (see
+/// [`DeltaTableInputEndpointInner::project_physical_to_logical`]).
+#[derive(Debug, PartialEq, Eq)]
+struct RelabelNestedUdf {
+    signature: Signature,
+    map: HashMap<String, String>,
+}
+
+impl Hash for RelabelNestedUdf {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // `HashMap` is not `Hash`. Equal values still hash equal.
+        self.name().hash(state);
+    }
+}
+
+impl ScalarUDFImpl for RelabelNestedUdf {
+    fn name(&self) -> &str {
+        "feldera_relabel_nested"
+    }
+
+    fn signature(&self) -> &Signature {
+        &self.signature
+    }
+
+    fn return_type(&self, arg_types: &[ArrowDataType]) -> Result<ArrowDataType, DataFusionError> {
+        Ok(relabel_data_type(&arg_types[0], &self.map))
+    }
+
+    fn return_field_from_args(&self, args: ReturnFieldArgs) -> Result<FieldRef, DataFusionError> {
+        let arg = &args.arg_fields[0];
+        Ok(Arc::new(ArrowField::new(
+            self.name(),
+            relabel_data_type(arg.data_type(), &self.map),
+            arg.is_nullable(),
+        )))
+    }
+
+    fn invoke_with_args(&self, args: ScalarFunctionArgs) -> Result<ColumnarValue, DataFusionError> {
+        let relabel = |array: &ArrayRef| {
+            relabel_array(array, &self.map).map_err(|e| DataFusionError::External(e.into()))
+        };
+        match &args.args[0] {
+            ColumnarValue::Array(array) => Ok(ColumnarValue::Array(relabel(array)?)),
+            ColumnarValue::Scalar(scalar) => Ok(ColumnarValue::Scalar(
+                ScalarValue::try_from_array(&relabel(&scalar.to_array()?)?, 0)?,
+            )),
+        }
+    }
 }
 
 /// Apply the connector's optional `filter` to `df`, or return `df` unchanged.
@@ -3733,18 +3791,6 @@ impl DeltaTableInputEndpointInner {
         self.consumer
             .update_connector_health(ConnectorHealth::healthy());
 
-        // Nested struct fields are read under physical names; restore their
-        // logical names per batch (top-level names are already logical). Empty,
-        // a no-op, unless the table nests column-mapped fields.
-        let nested_map = nested_physical_to_logical(
-            self.schema_snapshot()
-                .snapshot()
-                .map_err(|e| format!("error accessing Delta table snapshot: {e}"))?
-                .snapshot()
-                .arrow_schema()
-                .as_ref(),
-        );
-
         let mut num_batches = 0;
         let mut total_records = 0usize;
 
@@ -3823,11 +3869,6 @@ impl DeltaTableInputEndpointInner {
                         &e,
                     ));
                 }
-            };
-            let batch = if nested_map.is_empty() {
-                batch
-            } else {
-                relabel_nested_columns(&batch, &nested_map).map_err(|e| e.to_string())?
             };
             num_batches += 1;
             total_records += batch.num_rows();
@@ -4768,8 +4809,8 @@ impl DeltaTableInputEndpointInner {
     /// the logical schema restricted to columns `keep` accepts (in schema order,
     /// so read sides line up), with each column-mapped field renamed to its
     /// physical (`col-<uuid>`) name so DataFusion matches by name. It recurses
-    /// into nested struct, list, and map fields. Logical names are restored afterwards:
-    /// top level in `project_physical_to_logical`, nested in `relabel_nested_columns`.
+    /// into nested struct, list, and map fields. Logical names are restored afterwards,
+    /// at every level, in `project_physical_to_logical`.
     /// With column mapping off this is just the kept logical schema.
     ///
     /// Partition columns are always excluded: Delta never stores them in the data
@@ -4799,6 +4840,9 @@ impl DeltaTableInputEndpointInner {
     /// (already logical, or Delta metadata like `__feldera_op`) pass through.
     /// This function is a no-op when column mapping is off.
     ///
+    /// Nested field names are restored too, through [`RelabelNestedUdf`], so
+    /// that a filter or ordering that follows can name them (#7657).
+    ///
     /// Names are taken verbatim, with `ident`, for the reason
     /// [`partition_projection`](Self::partition_projection) gives.
     fn project_physical_to_logical(&self, df: DataFrame) -> AnyResult<DataFrame> {
@@ -4810,13 +4854,28 @@ impl DeltaTableInputEndpointInner {
             .iter()
             .map(|(l, p)| (p.as_str(), l.as_str()))
             .collect();
+        let nested_map = nested_physical_to_logical(self.logical_schema()?.as_ref());
+        let has_nested =
+            |f: &ArrowField| relabel_data_type(f.data_type(), &nested_map) != *f.data_type();
+        let relabel = ScalarUDF::new_from_impl(RelabelNestedUdf {
+            signature: Signature::any(1, Volatility::Immutable),
+            map: nested_map.clone(),
+        });
         let exprs: Vec<Expr> = df
             .schema()
             .fields()
             .iter()
-            .map(|f| match to_logical.get(f.name().as_str()) {
-                Some(logical) => ident(f.name()).alias(*logical),
-                None => ident(f.name()),
+            .map(|f| {
+                let logical = to_logical.get(f.name().as_str()).copied();
+                if has_nested(f) {
+                    relabel
+                        .call(vec![ident(f.name())])
+                        .alias(logical.unwrap_or(f.name()))
+                } else if let Some(logical) = logical {
+                    ident(f.name()).alias(logical)
+                } else {
+                    ident(f.name())
+                }
             })
             .collect();
         df.select(exprs)
