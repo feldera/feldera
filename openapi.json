@@ -1860,7 +1860,7 @@
           "Pipeline CRUD"
         ],
         "summary": "Patch Pipeline",
-        "description": "Required role: `write` or higher.\n\nPartially update a pipeline.\n\nA `deployment_config` resizes the CPU and memory of a running pipeline in place (experimental,\nenabled by `--enable-pipeline-resize`). It cannot be combined with other fields.",
+        "description": "Required role: `write` or higher.\n\nPartially update a pipeline.\n\nA `deployment_config` changes the CPU, memory, storage, and volume attributes class of a\nrunning pipeline in place (experimental, enabled by `--enable-pipeline-resize`). It cannot be\ncombined with other fields.",
         "operationId": "patch_pipeline",
         "parameters": [
           {
@@ -10696,7 +10696,7 @@
       },
       "DynamicResources": {
         "type": "object",
-        "description": "CPU and memory, the only fields that can change while the pipeline runs.",
+        "description": "CPU, memory, storage, and the volume attributes class, the only fields that can change while\nthe pipeline runs.",
         "properties": {
           "cpu_cores_max": {
             "type": "number",
@@ -10716,6 +10716,21 @@
           "memory_min": {
             "type": "string",
             "description": "The minimum memory, such as `\"4Gi\"`. `memory_mb_min`, a number of\nmegabytes, is a deprecated alias.",
+            "nullable": true
+          },
+          "storage_max": {
+            "type": "string",
+            "description": "The maximum storage, such as `\"400Gi\"`. `storage_mb_max`, a number of megabytes, is a\ndeprecated alias.",
+            "nullable": true
+          },
+          "storage_min": {
+            "type": "string",
+            "description": "Storage grows to `storage_min`, else `storage_max`, and cannot shrink. With both set,\nstorage autoscaling expands it up to `storage_max`. A change cannot turn storage\nautoscaling on or off. `storage_mb_min`, a number of megabytes, is a deprecated alias.\nNot serialized when unset, so that a pipeline on an older runtime accepts a memory update.",
+            "nullable": true
+          },
+          "volume_attributes_class": {
+            "type": "string",
+            "description": "The Kubernetes volume attributes class of the storage, which sets its IOPS and\nthroughput. A change cannot remove it.",
             "nullable": true
           }
         },
@@ -15026,7 +15041,7 @@
           },
           "volume_attributes_class": {
             "type": "string",
-            "description": "Kubernetes volume attributes class to use for the storage of an\ninstance of this pipeline. The class sets mutable storage parameters\nsuch as IOPS and throughput. Requires Kubernetes 1.34 or later (or\nthe `VolumeAttributesClass` feature gate) and CSI driver support.\nA change takes effect on the next start, also for existing storage.",
+            "description": "Kubernetes volume attributes class to use for the storage of an\ninstance of this pipeline. The class sets mutable storage parameters\nsuch as IOPS and throughput. Requires Kubernetes 1.34 or later (or\nthe `VolumeAttributesClass` feature gate) and CSI driver support.\nA change takes effect on the next start, also for existing storage, or\nwhile the pipeline runs through a `PATCH` of its `deployment_config`.",
             "default": null,
             "nullable": true
           }

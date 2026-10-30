@@ -4092,7 +4092,8 @@ pub struct DynamicConfig {
     pub resources: DynamicResources,
 }
 
-/// CPU and memory, the only fields that can change while the pipeline runs.
+/// CPU, memory, storage, and the volume attributes class, the only fields that can change while
+/// the pipeline runs.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DynamicResources {
@@ -4108,6 +4109,32 @@ pub struct DynamicResources {
     #[serde(default, alias = "memory_mb_max", deserialize_with = "size_memory_max")]
     #[schema(value_type = Option<String>)]
     pub memory_max: Option<ConfigSize>,
+    /// Storage grows to `storage_min`, else `storage_max`, and cannot shrink. With both set,
+    /// storage autoscaling expands it up to `storage_max`. A change cannot turn storage
+    /// autoscaling on or off. `storage_mb_min`, a number of megabytes, is a deprecated alias.
+    /// Not serialized when unset, so that a pipeline on an older runtime accepts a memory update.
+    #[serde(
+        default,
+        alias = "storage_mb_min",
+        deserialize_with = "size_storage_min",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub storage_min: Option<ConfigSize>,
+    /// The maximum storage, such as `"400Gi"`. `storage_mb_max`, a number of megabytes, is a
+    /// deprecated alias.
+    #[serde(
+        default,
+        alias = "storage_mb_max",
+        deserialize_with = "size_storage_max",
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[schema(value_type = Option<String>)]
+    pub storage_max: Option<ConfigSize>,
+    /// The Kubernetes volume attributes class of the storage, which sets its IOPS and
+    /// throughput. A change cannot remove it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub volume_attributes_class: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ToSchema)]
@@ -4193,7 +4220,8 @@ pub struct ResourceConfig {
     /// instance of this pipeline. The class sets mutable storage parameters
     /// such as IOPS and throughput. Requires Kubernetes 1.34 or later (or
     /// the `VolumeAttributesClass` feature gate) and CSI driver support.
-    /// A change takes effect on the next start, also for existing storage.
+    /// A change takes effect on the next start, also for existing storage, or
+    /// while the pipeline runs through a `PATCH` of its `deployment_config`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub volume_attributes_class: Option<String>,
 
@@ -4256,9 +4284,41 @@ pub struct StorageAutoscalingConfig {
 
 #[cfg(test)]
 mod resource_config_tests {
-    use super::{AutoscalingConfig, ResourceConfig, StorageAutoscalingConfig};
+    use super::{
+        AutoscalingConfig, DynamicConfig, DynamicResources, ResourceConfig,
+        StorageAutoscalingConfig,
+    };
     use crate::size::ConfigSize;
     use serde_json::json;
+
+    /// The memory update a pipeline gets leaves out unset storage, which an older runtime
+    /// refuses as an unknown field.
+    #[test]
+    fn dynamic_config_leaves_out_unset_storage() {
+        let update = DynamicConfig {
+            resources: DynamicResources {
+                memory_max: Some(ConfigSize::from_mb(1000)),
+                ..Default::default()
+            },
+        };
+        assert_eq!(
+            serde_json::to_value(&update).unwrap(),
+            json!({"resources": {
+                "cpu_cores_min": null, "cpu_cores_max": null,
+                "memory_min": null, "memory_max": "1G",
+            }})
+        );
+        let resize = json!({"resources": {"storage_mb_min": 1000, "storage_max": "8G"}});
+        let resize: DynamicConfig = serde_json::from_value(resize).unwrap();
+        assert_eq!(
+            resize.resources.storage_min,
+            Some(ConfigSize::from_mb(1000))
+        );
+        assert_eq!(
+            resize.resources.storage_max,
+            Some(ConfigSize::from_mb(8000))
+        );
+    }
 
     #[test]
     fn storage_autoscaling_round_trips_through_json() {

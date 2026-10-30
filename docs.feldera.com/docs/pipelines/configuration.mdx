@@ -117,7 +117,8 @@ runtime configuration fields cannot be edited:
 Resizing a running pipeline is an experimental feature and may change.
 :::
 
-On Kubernetes, the CPU and memory of a running pipeline can be changed without a restart:
+On Kubernetes, the CPU, memory, storage, and volume attributes class of a running pipeline can
+be changed without a restart:
 
 ```bash
 curl -X PATCH "http://localhost:8080/v0/pipelines/example" \
@@ -129,13 +130,31 @@ curl -X PATCH "http://localhost:8080/v0/pipelines/example" \
 
 - `deployment_config` cannot be combined with other fields in the same `PATCH`. `PUT` accepts it
   only unchanged, so a pipeline read with `GET` can be written back.
-- Only `cpu_cores_min`, `cpu_cores_max`, `memory_min` and `memory_max` can be changed.
+- Only `cpu_cores_min`, `cpu_cores_max`, `memory_min`, `memory_max`, `storage_min`,
+  `storage_max`, and `volume_attributes_class` can be changed.
+- Storage grows to `storage_min`, else `storage_max`, the size new storage starts at. It cannot
+  shrink. With both set, storage autoscaling expands it further, up to `storage_max`. Growing
+  storage requires a StorageClass with `allowVolumeExpansion: true`.
+- The API compares a new size with the configured one, not with the volume. A volume that is
+  already larger, because it has the runner's default size or autoscaling grew it, keeps its
+  size, and the pipeline log says so.
+- A storage size or volume attributes class change applies also while the pipeline is not ready,
+  for example when a full disk stops it. A change that fails is tried again every 30 seconds.
+- Storage autoscaling cannot be turned on or off: a pipeline with both `storage_min` and
+  `storage_max` keeps both, and one with a fixed size can change only the field it is set by.
+  To change this, set them in the runtime configuration and restart the pipeline.
+- A `volume_attributes_class` change applies to the existing storage, which changes its IOPS and
+  throughput without a restart. The CSI driver must support volume modification. Kubernetes
+  cannot remove a class from storage, so a change cannot remove it. Unlike
+  `volume_attributes_class`, `storage_class` cannot change after storage is created.
 - Kubernetes cannot change the QoS class of a running pod. A change that it cannot apply while the
   pipeline runs, such as making a request equal to its limit, is written to the pipeline log, and
   the next start uses it.
 - Only single-host pipelines can be resized.
-- The runtime configuration does not change. The resize lasts across restarts until storage is
-  cleared or CPU or memory is changed in the runtime configuration.
+- The runtime configuration does not change. The change lasts across restarts until storage is
+  cleared, or until CPU and memory, or the volume attributes class, are changed in the runtime
+  configuration. Storage can only be changed in the runtime configuration after storage is
+  cleared, which also resets a resize.
 - A change to `memory_max` also changes the pipeline's memory limit, unless `max_rss` is set. A
   smaller limit applies at once, so the pipeline moves state to storage before the pod shrinks. A
   larger limit applies when the pod has grown.
