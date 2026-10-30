@@ -2303,13 +2303,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 }
 
                 String method = getArrayOrMapCallName(call, arg0, arg1);
+                // Calcite's result is nullable if a ROW key has a nullable field,
+                // but the Rust function returns NULL only for a NULL map or key
+                DBSPType resultType = type.withMayBeNull(arg0.type.mayBeNull || arg1.type.mayBeNull);
                 // the rust code has signature: (Vec<T>, T)
                 // so if elements of the vector are nullable and T is an Option type
                 // therefore we need to wrap arg1 in Some
                 if (keyType.mayBeNull) {
                     arg1 = new DBSPApplyExpression(arg1.getNode(), "Some", arg1.type.withMayBeNull(true), arg1);
                 }
-                return new DBSPApplyExpression(node, method, type, arg0, arg1);
+                DBSPExpression exp = new DBSPApplyExpression(node, method, resultType, arg0, arg1);
+                return exp.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
             }
             case ARRAY_DISTINCT: {
                 DBSPExpression arg0 = ops.get(0);
