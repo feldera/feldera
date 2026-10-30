@@ -145,6 +145,11 @@ example.
     <td><code>CONCAT_WS(',', 'Post', 'greSQL', NULL, '1')</code> => <code>Post,greSQL,1</code></td>
   </tr>
   <tr>
+    <td><a id="endswith"></a><code>ENDSWITH(string, suffix)</code></td>
+    <td>Returns <code>TRUE</code> if <code>string</code> ends with <code>suffix</code>.  The comparison is exact: it is case-sensitive and it does not normalize Unicode characters.  An empty <code>suffix</code> gives <code>TRUE</code>.  If any argument is <code>NULL</code>, returns <code>NULL</code>.</td>
+    <td><code>ENDSWITH('Feldera', 'era')</code> => <code>TRUE</code></td>
+  </tr>
+  <tr>
     <td><a id="initcap"></a><code>INITCAP ( string )</code></td>
     <td>Converts the first letter of each word in <code>string</code> to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.</td>
     <td><code>initcap('hi THOMAS')</code> => <code>Hi Thomas</code></td>
@@ -242,6 +247,11 @@ example.
         <code>SPLIT_PART('a|b|c|', '|', -2)</code> => <code>c</code><br></br>
         <code>SPLIT_PART('a|b|c|', '|', 5)</code> => <code>''</code>
     </td>
+  </tr>
+  <tr>
+    <td><a id="startswith"></a><code>STARTSWITH(string, prefix)</code></td>
+    <td>Returns <code>TRUE</code> if <code>string</code> starts with <code>prefix</code>.  The comparison is exact: it is case-sensitive and it does not normalize Unicode characters.  An empty <code>prefix</code> gives <code>TRUE</code>.  If any argument is <code>NULL</code>, returns <code>NULL</code>.</td>
+    <td><code>STARTSWITH('Feldera', 'Fel')</code> => <code>TRUE</code></td>
   </tr>
   <tr>
     <td><a id="substr"></a><code>SUBSTR (</code> string, start <code> [ ,</code> length <code>] )</code></td>

@@ -384,6 +384,20 @@ pub fn position__(needle: SqlString, haystack: SqlString) -> i32 {
 some_function2!(position, SqlString, SqlString, i32);
 
 #[doc(hidden)]
+pub fn starts_with__(value: SqlString, prefix: SqlString) -> bool {
+    value.str().starts_with(prefix.str())
+}
+
+some_function2!(starts_with, SqlString, SqlString, bool);
+
+#[doc(hidden)]
+pub fn ends_with__(value: SqlString, suffix: SqlString) -> bool {
+    value.str().ends_with(suffix.str())
+}
+
+some_function2!(ends_with, SqlString, SqlString, bool);
+
+#[doc(hidden)]
 pub fn char_length_(value: SqlString) -> i32 {
     value.str().chars().count() as i32
 }

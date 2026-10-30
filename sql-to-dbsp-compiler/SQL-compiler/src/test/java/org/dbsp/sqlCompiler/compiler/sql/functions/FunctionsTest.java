@@ -2071,6 +2071,76 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void testStartsEndsWith() {
+        // The optimized circuit folds the calls without characters above U+FFFF in Calcite,
+        // the unoptimized one evaluates all of them in Rust.
+        // Validated with Calcite's SqlFunctions.startsWith and endsWith.
+        this.qs("""
+                SELECT STARTSWITH('', ''), STARTSWITH('abc', ''), STARTSWITH('', 'a'), STARTSWITH('ab', 'abc'),
+                       STARTSWITH('Abc', 'a'), STARTSWITH('abc ', 'abc'), STARTSWITH('abc', 'abc ');
+                 a    | b    | c     | d     | e     | f    | g
+                ---------------------------------------------------
+                 true | true | false | false | false | true | false
+                (1 row)
+
+                SELECT ENDSWITH('', ''), ENDSWITH('abc', ''), ENDSWITH('', 'a'), ENDSWITH('bc', 'abc'),
+                       ENDSWITH('abC', 'c'), ENDSWITH(' abc', 'abc'), ENDSWITH('abc', ' abc');
+                 a    | b    | c     | d     | e     | f    | g
+                ---------------------------------------------------
+                 true | true | false | false | false | true | false
+                (1 row)
+
+                SELECT STARTSWITH('🐍x', '🐍'), ENDSWITH('x🐍', '🐍'), STARTSWITH(U&'e\\0301', 'e'),
+                       ENDSWITH(U&'e\\0301', U&'\\0301'), STARTSWITH(U&'\\00E9', 'e'),
+                       STARTSWITH(U&'a\\0000b', U&'a\\0000'), ENDSWITH(U&'a\\0000b', U&'\\0000b');
+                 a    | b    | c    | d    | e     | f    | g
+                -------------------------------------------------
+                 true | true | true | true | false | true | true
+                (1 row)
+
+                SELECT STARTSWITH(CAST('ab' AS CHAR(3)), 'ab '), ENDSWITH(CAST('ab' AS CHAR(3)), 'ab'),
+                       ENDSWITH(CAST('ab' AS CHAR(3)), 'b ');
+                 a    | b     | c
+                -------------------
+                 true | false | true
+                (1 row)
+
+                SELECT STARTSWITH(x'', x''), STARTSWITH(x'01', x''), STARTSWITH(x'', x'01'), ENDSWITH(x'01', x'0102'),
+                       ENDSWITH(CAST(x'01' AS BINARY(3)), x'00'), STARTSWITH(CAST(x'01' AS BINARY(3)), x'0100');
+                 a    | b    | c     | d     | e    | f
+                --------------------------------------------
+                 true | true | false | false | true | true
+                (1 row)
+
+                SELECT STARTSWITH(NULL, 'a'), ENDSWITH('a', NULL), STARTSWITH(x'01', NULL), ENDSWITH(NULL, x'01');
+                 a    | b    | c    | d
+                -------------------------
+                 NULL | NULL | NULL | NULL
+                (1 row)""");
+        var ccs = this.getCCS("""
+                CREATE TABLE T(s VARCHAR, p VARCHAR, b VARBINARY, q VARBINARY);
+                CREATE VIEW V AS SELECT STARTSWITH(s, p), ENDSWITH(s, p), STARTSWITH(b, q), ENDSWITH(b, q),
+                                        STARTSWITH(b, NULL) FROM T;""");
+        ccs.step("INSERT INTO T VALUES(NULL, 'a', NULL, x'01'), ('ab', 'a', x'0102', x'01')", """
+                 a    | b     | c    | d     | e    | weight
+                ---------------------------------------------
+                 NULL | NULL  | NULL | NULL  | NULL | 1
+                 true | false | true | false | NULL | 1""");
+    }
+
+    @Test
+    public void testPositionNullLiteral() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(s VARCHAR, b VARBINARY);
+                CREATE VIEW V AS SELECT POSITION(s IN NULL), POSITION(NULL IN s), POSITION(b IN NULL),
+                                        POSITION(NULL IN b), POSITION(s IN 'abc'), POSITION(b IN x'0102') FROM T;""");
+        ccs.step("INSERT INTO T VALUES('b', x'02')", """
+                 a    | b    | c    | d    | e | f | weight
+                ---------------------------------------------
+                 NULL | NULL | NULL | NULL | 2 | 2 | 1""");
+    }
+
+    @Test
     public void testSequence() {
         this.qst("""
                 SELECT SEQUENCE(1, 10);

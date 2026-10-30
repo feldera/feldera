@@ -784,13 +784,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
      * @param  expectedArgCount A list containing all known possible argument counts.
      */
     static DBSPExpression compileStrictFunction(
-            boolean adjustNullability, RexCall call, CalciteObject node, DBSPType resultType,
+            boolean adjustNullability, String baseName, CalciteObject node, DBSPType resultType,
             List<DBSPExpression> ops, Integer... expectedArgCount) {
         for (DBSPExpression op: ops) {
             if (op.is(DBSPLiteral.class) && op.to(DBSPLiteral.class).isNull())
                 return resultType.none();
         }
-        return compileFunction(adjustNullability, call, node, resultType, ops, expectedArgCount);
+        return compileFunction(adjustNullability, baseName, node, resultType, ops, expectedArgCount);
+    }
+
+    static DBSPExpression compileStrictFunction(
+            boolean adjustNullability, RexCall call, CalciteObject node, DBSPType resultType,
+            List<DBSPExpression> ops, Integer... expectedArgCount) {
+        return compileStrictFunction(adjustNullability, getCallName(call), node, resultType, ops, expectedArgCount);
     }
 
     static DBSPExpression compileStrictFunction(
@@ -1974,15 +1980,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 ops.set(1, this.makeRegex(node, ops.get(1)));
                 return compileFunction(call, node, type, ops, 2);
             }
-            case POSITION: {
+            case POSITION:
+            case STARTS_WITH:
+            case ENDS_WITH: {
+                // Also called for STARTSWITH and ENDSWITH
                 validateArgCount(node, operationName, ops.size(), 2);
                 String module_prefix = "";
-                if (ops.get(0).type.is(DBSPTypeBinary.class)) {
+                if (Linq.any(ops, op -> op.type.is(DBSPTypeBinary.class))) {
                     module_prefix = "binary_";
                 } else {
                     this.ensureString(ops, 0);
+                    this.ensureString(ops, 1);
                 }
-                return compileFunction(module_prefix + getCallName(call), node, type, ops, 2);
+                return compileStrictFunction(true, module_prefix + getCallName(call), node, type, ops, 2);
             }
             case ARRAY_JOIN:
             case ARRAY_TO_STRING: {
