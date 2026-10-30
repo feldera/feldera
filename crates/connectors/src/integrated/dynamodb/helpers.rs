@@ -9,9 +9,7 @@ use anyhow::{Result as AnyResult, anyhow, bail};
 use aws_credential_types::provider::error::CredentialsError;
 use aws_runtime::retries::classifiers::{THROTTLING_ERRORS, TRANSIENT_ERRORS};
 use aws_sdk_dynamodb::Client;
-use aws_sdk_dynamodb::error::{
-    ConnectorError, DisplayErrorContext, ProvideErrorMetadata, SdkError,
-};
+use aws_sdk_dynamodb::error::{ConnectorError, ProvideErrorMetadata, SdkError};
 use aws_sdk_dynamodb::operation::RequestId;
 use aws_sdk_dynamodb::operation::batch_write_item::BatchWriteItemError;
 use aws_sdk_dynamodb::operation::transact_write_items::TransactWriteItemsError;
@@ -134,11 +132,15 @@ fn has_invalid_credentials_configuration(error: &(dyn StdError + 'static)) -> bo
     false
 }
 
-/// The write operation errors, with the throttling reasons some of them carry.
+/// The write operation errors, with their throttling and cancellation reasons.
 pub(crate) trait WriteOperationError:
     ProvideErrorMetadata + ProvideErrorKind + RequestId + StdError + 'static
 {
     fn throttling_reasons(&self) -> &[ThrottlingReason];
+
+    fn cancellation_reasons(&self) -> &[CancellationReason] {
+        &[]
+    }
 }
 
 impl WriteOperationError for BatchWriteItemError {
@@ -161,17 +163,39 @@ impl WriteOperationError for TransactWriteItemsError {
             _ => &[],
         }
     }
+
+    fn cancellation_reasons(&self) -> &[CancellationReason] {
+        match self {
+            Self::TransactionCanceledException(error) => error.cancellation_reasons(),
+            _ => &[],
+        }
+    }
 }
 
 /// One line about a failed request: the service's code, message, throttling
-/// reasons and request id, without the raw HTTP response that
-/// [`DisplayErrorContext`] prints for a service error. A failure with no
-/// response keeps its source chain, which is all it has.
+/// and cancellation reasons, and request id. Other errors keep their source
+/// chains and, if available, HTTP status and request id. Raw responses and
+/// item data are omitted.
 pub(crate) fn describe_sdk_error<E: WriteOperationError>(
     error: &SdkError<E, HttpResponse>,
 ) -> String {
     let SdkError::ServiceError(service) = error else {
-        return DisplayErrorContext(error).to_string();
+        // DisplayErrorContext appends Debug, which includes the raw HTTP
+        // response for ResponseError as well as for ServiceError.
+        let mut text = error.to_string();
+        let mut source = error.source();
+        while let Some(cause) = source {
+            text.push_str(": ");
+            text.push_str(&cause.to_string());
+            source = cause.source();
+        }
+        if let Some(response) = error.raw_response() {
+            text.push_str(&format!(" (HTTP {})", response.status().as_u16()));
+            if let Some(request_id) = response.headers().get("x-amzn-requestid") {
+                text.push_str(&format!(" (request id {request_id})"));
+            }
+        }
+        return text;
     };
     let error = service.err();
     let mut text = ProvideErrorMetadata::code(error)
@@ -195,6 +219,33 @@ pub(crate) fn describe_sdk_error<E: WriteOperationError>(
     if !reasons.is_empty() {
         text.push_str(" (throttling reasons: ");
         text.push_str(&reasons.join(", "));
+        text.push(')');
+    }
+    let cancellations = error
+        .cancellation_reasons()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, reason)| {
+            if reason.code() == Some(NO_ERROR)
+                || (reason.code().is_none() && reason.message().is_none())
+            {
+                return None;
+            }
+            let mut description = format!(
+                "item {}: {}",
+                index + 1,
+                reason.code().unwrap_or("unknown reason")
+            );
+            if let Some(message) = reason.message() {
+                description.push_str(": ");
+                description.push_str(message);
+            }
+            Some(description)
+        })
+        .collect::<Vec<_>>();
+    if !cancellations.is_empty() {
+        text.push_str(" (cancellation reasons: ");
+        text.push_str(&cancellations.join("; "));
         text.push(')');
     }
     if let Some(request_id) = error.request_id() {
@@ -1205,6 +1256,65 @@ mod tests {
         let text = describe_sdk_error(&error);
         assert!(text.contains("wrapped"), "{text}");
         assert!(text.contains("STS is down"), "{text}");
+    }
+
+    #[test]
+    fn a_response_error_keeps_its_cause_and_request_id_without_raw_data() {
+        let mut raw = Response::new(
+            StatusCode::try_from(502).unwrap(),
+            SdkBody::from("<html>RAW_BODY_SENTINEL</html>"),
+        );
+        raw.headers_mut().insert("x-amzn-requestid", "req-parse");
+        raw.headers_mut()
+            .insert("x-proxy-detail", "RAW_HEADER_SENTINEL");
+        let error: SdkError<BatchWriteItemError, HttpResponse> =
+            SdkError::response_error(boxed("invalid JSON from upstream"), raw);
+
+        let text = describe_sdk_error(&error);
+        assert_eq!(
+            text,
+            "response error: invalid JSON from upstream (HTTP 502) (request id req-parse)"
+        );
+    }
+
+    #[test]
+    fn a_cancelled_transaction_keeps_item_reasons_without_item_data() {
+        let error = SdkError::service_error(
+            TransactWriteItemsError::TransactionCanceledException(
+                TransactionCanceledException::builder()
+                    .cancellation_reasons(reason(NO_ERROR))
+                    .cancellation_reasons(
+                        CancellationReason::builder()
+                            .code("ValidationError")
+                            .message("The secondary index key has an unsupported type.")
+                            .item("secret", AttributeValue::S("ITEM_DATA_SENTINEL".into()))
+                            .build(),
+                    )
+                    .cancellation_reasons(
+                        CancellationReason::builder()
+                            .code("ItemCollectionSizeLimitExceeded")
+                            .message("Collection size exceeded.")
+                            .build(),
+                    )
+                    .meta(
+                        ErrorMetadata::builder()
+                            .code("TransactionCanceledException")
+                            .message("Transaction cancelled; see cancellation reasons.")
+                            .custom("aws_request_id", "req-cancelled")
+                            .build(),
+                    )
+                    .build(),
+            ),
+            response(400),
+        );
+
+        assert_eq!(
+            describe_sdk_error(&error),
+            "TransactionCanceledException: Transaction cancelled; see cancellation reasons. \
+             (cancellation reasons: item 2: ValidationError: The secondary index key has an \
+             unsupported type.; item 3: ItemCollectionSizeLimitExceeded: Collection size \
+             exceeded.) (request id req-cancelled)"
+        );
     }
 
     #[test]

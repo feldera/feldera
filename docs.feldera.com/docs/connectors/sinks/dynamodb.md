@@ -100,6 +100,10 @@ The connector reports its health in the pipeline's connector statistics:
 
 A pipeline stop ends every retry loop without a health report.
 
+Error and health descriptions retain DynamoDB's error code, message, request
+ID, and throttling or per-item cancellation reasons. They omit raw HTTP
+responses and item data returned with cancellation reasons.
+
 Metrics prefixed `dynamodb_output_` show the retries: `retries_total` counts
 each retry as it starts, `retrying_chunks` is the number of chunks in a retry
 loop right now, `throttled_items_total` counts items returned as unprocessed,
