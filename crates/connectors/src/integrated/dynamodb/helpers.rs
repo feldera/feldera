@@ -1,14 +1,24 @@
 use std::collections::HashMap;
+use std::error::Error as StdError;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Result as AnyResult, anyhow, bail};
+use aws_credential_types::provider::error::CredentialsError;
+use aws_runtime::retries::classifiers::{THROTTLING_ERRORS, TRANSIENT_ERRORS};
 use aws_sdk_dynamodb::Client;
-use aws_sdk_dynamodb::error::DisplayErrorContext;
+use aws_sdk_dynamodb::error::{ConnectorError, ProvideErrorMetadata, SdkError};
+use aws_sdk_dynamodb::operation::RequestId;
+use aws_sdk_dynamodb::operation::batch_write_item::BatchWriteItemError;
 use aws_sdk_dynamodb::operation::transact_write_items::TransactWriteItemsError;
 use aws_sdk_dynamodb::types::{
-    AttributeValue, CancellationReason, Delete, DeleteRequest, Put, PutRequest, TransactWriteItem,
-    WriteRequest,
+    AttributeValue, CancellationReason, Delete, DeleteRequest, Put, PutRequest, ThrottlingReason,
+    TransactWriteItem, WriteRequest,
 };
+use aws_smithy_runtime_api::client::orchestrator::HttpResponse;
+use aws_smithy_types::retry::ProvideErrorKind;
 use aws_types::region::Region;
 use feldera_storage::tokio::TOKIO;
 use feldera_types::transport::dynamodb::DynamoDBWriterConfig;
@@ -16,75 +26,438 @@ use rand::Rng;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
+use super::health::{ChunkGuard, RetryHealth};
 use super::metrics::DynamoDBOutputMetrics;
 
-/// Sends one pre-chunked `BatchWriteItem` request, retrying unprocessed items with backoff.
+/// Whether a failed DynamoDB request is worth sending again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WriteErrorKind {
+    /// The condition can pass: throttling, a timeout, a network failure, a
+    /// server error, or a failure the connector cannot tell apart from one.
+    Retryable,
+    /// A retry sends the same request to the same answer: a validation error,
+    /// a missing table, denied access, or an invalid configuration.
+    Permanent,
+}
+
+/// DynamoDB error codes that the AWS error-handling guide labels retryable
+/// and that the SDK's own lists omit. An item collection over its size limit
+/// can shrink through deletes, smaller updates or TTL expiry, so its code is
+/// retryable too, with the configured retry budget as the bound.
+const DYNAMODB_RETRYABLE_CODES: &[&str] = &[
+    "ReplicatedWriteConflictException",
+    "InternalServerError",
+    "TransactionConflictException",
+    "ItemCollectionSizeLimitExceededException",
+    // Retryable as a whole; the transactional writer reads the per-item
+    // reasons first and gives up on a permanent one.
+    "TransactionCanceledException",
+];
+
+/// HTTP statuses the SDK's default classifier retries.
+const RETRYABLE_HTTP_STATUSES: &[u16] = &[500, 502, 503, 504];
+
+fn is_retryable_error_code(code: &str) -> bool {
+    THROTTLING_ERRORS.contains(&code)
+        || TRANSIENT_ERRORS.contains(&code)
+        || DYNAMODB_RETRYABLE_CODES.contains(&code)
+}
+
+/// Classifies a failed DynamoDB request.
+pub(crate) fn classify_sdk_error<E>(error: &SdkError<E, HttpResponse>) -> WriteErrorKind
+where
+    E: ProvideErrorMetadata + ProvideErrorKind,
+{
+    use WriteErrorKind::*;
+    match error {
+        SdkError::TimeoutError(_) | SdkError::ResponseError(_) => Retryable,
+        SdkError::ConstructionFailure(_) => Permanent,
+        SdkError::DispatchFailure(failure) => match failure.as_connector_error() {
+            Some(error) => classify_connector_error(error),
+            None => Retryable,
+        },
+        SdkError::ServiceError(service) => {
+            if RETRYABLE_HTTP_STATUSES.contains(&service.raw().status().as_u16()) {
+                return Retryable;
+            }
+            let error = service.err();
+            if ProvideErrorMetadata::code(error).is_some_and(is_retryable_error_code) {
+                return Retryable;
+            }
+            // The SDK retries every error its model marks retryable, whatever
+            // the kind; `ReplicatedWriteConflictException` is a `ClientError`.
+            match error.retryable_error_kind() {
+                Some(_) => Retryable,
+                None => Permanent,
+            }
+        }
+        // `SdkError` is `non_exhaustive`. An unknown failure is not known to be permanent.
+        _ => Retryable,
+    }
+}
+
+/// Classifies a request that never got a response.
 ///
-/// Gives up on `shutdown`: the loop is unbounded when `max_retries` is `None`,
-/// and `DynamoDBWorker::drain_pending_writes` blocks the controller's output
-/// thread on these tasks, a DBSP aux thread that `RuntimeHandle::kill` joins.
-/// The loop itself is shutdown-unaware; dropping it is what ends it.
+/// The SDK marks I/O and timeouts; it leaves a credential-provider failure as
+/// `other` with no retry kind. A temporary STS outage during a credential
+/// refresh looks the same as an invalid configuration there, so the source
+/// chain decides: only a positively identified configuration error is permanent.
+fn classify_connector_error(error: &ConnectorError) -> WriteErrorKind {
+    use WriteErrorKind::*;
+    if error.is_timeout() || error.is_io() {
+        return Retryable;
+    }
+    if error.is_user() || has_invalid_credentials_configuration(error) {
+        return Permanent;
+    }
+    // The SDK retries any kind the connector error names, and the connector
+    // retries an unnamed one too: it is not known to be permanent.
+    Retryable
+}
+
+/// Whether `error` or a cause of it is `CredentialsError::InvalidConfiguration`.
+/// The identity cache wraps the provider's error before the SDK boxes it, so
+/// the immediate source is not enough.
+fn has_invalid_credentials_configuration(error: &(dyn StdError + 'static)) -> bool {
+    let mut current: Option<&(dyn StdError + 'static)> = Some(error);
+    while let Some(error) = current {
+        if matches!(
+            error.downcast_ref::<CredentialsError>(),
+            Some(CredentialsError::InvalidConfiguration(_))
+        ) {
+            return true;
+        }
+        current = error.source();
+    }
+    false
+}
+
+/// The write operation errors, with their throttling and cancellation reasons.
+pub(crate) trait WriteOperationError:
+    ProvideErrorMetadata + ProvideErrorKind + RequestId + StdError + 'static
+{
+    fn throttling_reasons(&self) -> &[ThrottlingReason];
+
+    fn cancellation_reasons(&self) -> &[CancellationReason] {
+        &[]
+    }
+}
+
+impl WriteOperationError for BatchWriteItemError {
+    fn throttling_reasons(&self) -> &[ThrottlingReason] {
+        match self {
+            Self::ThrottlingException(error) => error.throttling_reasons(),
+            Self::ProvisionedThroughputExceededException(error) => error.throttling_reasons(),
+            Self::RequestLimitExceeded(error) => error.throttling_reasons(),
+            _ => &[],
+        }
+    }
+}
+
+impl WriteOperationError for TransactWriteItemsError {
+    fn throttling_reasons(&self) -> &[ThrottlingReason] {
+        match self {
+            Self::ThrottlingException(error) => error.throttling_reasons(),
+            Self::ProvisionedThroughputExceededException(error) => error.throttling_reasons(),
+            Self::RequestLimitExceeded(error) => error.throttling_reasons(),
+            _ => &[],
+        }
+    }
+
+    fn cancellation_reasons(&self) -> &[CancellationReason] {
+        match self {
+            Self::TransactionCanceledException(error) => error.cancellation_reasons(),
+            _ => &[],
+        }
+    }
+}
+
+/// One line about a failed request: the service's code, message, throttling
+/// and cancellation reasons, and request id. Other errors keep their source
+/// chains and, if available, HTTP status and request id. Raw responses and
+/// item data are omitted.
+pub(crate) fn describe_sdk_error<E: WriteOperationError>(
+    error: &SdkError<E, HttpResponse>,
+) -> String {
+    let SdkError::ServiceError(service) = error else {
+        // DisplayErrorContext appends Debug, which includes the raw HTTP
+        // response for ResponseError as well as for ServiceError.
+        let mut text = error.to_string();
+        let mut source = error.source();
+        while let Some(cause) = source {
+            text.push_str(": ");
+            text.push_str(&cause.to_string());
+            source = cause.source();
+        }
+        if let Some(response) = error.raw_response() {
+            text.push_str(&format!(" (HTTP {})", response.status().as_u16()));
+            if let Some(request_id) = response.headers().get("x-amzn-requestid") {
+                text.push_str(&format!(" (request id {request_id})"));
+            }
+        }
+        return text;
+    };
+    let error = service.err();
+    let mut text = ProvideErrorMetadata::code(error)
+        .unwrap_or("unknown service error")
+        .to_string();
+    if let Some(message) = error.message() {
+        text.push_str(": ");
+        text.push_str(message);
+    }
+    let reasons = error
+        .throttling_reasons()
+        .iter()
+        .map(|reason| {
+            format!(
+                "{} on {}",
+                reason.reason().unwrap_or("unknown reason"),
+                reason.resource().unwrap_or("unknown resource")
+            )
+        })
+        .collect::<Vec<_>>();
+    if !reasons.is_empty() {
+        text.push_str(" (throttling reasons: ");
+        text.push_str(&reasons.join(", "));
+        text.push(')');
+    }
+    let cancellations = error
+        .cancellation_reasons()
+        .iter()
+        .enumerate()
+        .filter_map(|(index, reason)| {
+            if reason.code() == Some(NO_ERROR)
+                || (reason.code().is_none() && reason.message().is_none())
+            {
+                return None;
+            }
+            let mut description = format!(
+                "item {}: {}",
+                index + 1,
+                reason.code().unwrap_or("unknown reason")
+            );
+            if let Some(message) = reason.message() {
+                description.push_str(": ");
+                description.push_str(message);
+            }
+            Some(description)
+        })
+        .collect::<Vec<_>>();
+    if !cancellations.is_empty() {
+        text.push_str(" (cancellation reasons: ");
+        text.push_str(&cancellations.join("; "));
+        text.push(')');
+    }
+    if let Some(request_id) = error.request_id() {
+        text.push_str(" (request id ");
+        text.push_str(request_id);
+        text.push(')');
+    }
+    text
+}
+
+/// How a chunk writer waits before retry number `retry`.
+pub(crate) type RetryDelay =
+    Arc<dyn Fn(usize) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+
+/// The retry budget of a chunk writer and how it waits between retries.
+#[derive(Clone)]
+pub(crate) struct RetryPolicy {
+    /// Retries after the first request. `None` is unbounded.
+    pub(crate) max_retries: Option<usize>,
+    pub(crate) delay: RetryDelay,
+}
+
+impl RetryPolicy {
+    /// The production policy: exponential backoff with full jitter.
+    pub(crate) fn new(max_retries: Option<u8>) -> Self {
+        Self::with_delay(
+            max_retries,
+            Arc::new(|retry| Box::pin(tokio::time::sleep(backoff_delay(retry)))),
+        )
+    }
+
+    pub(crate) fn with_delay(max_retries: Option<u8>, delay: RetryDelay) -> Self {
+        Self {
+            max_retries: max_retries.map(usize::from),
+            delay,
+        }
+    }
+
+    fn exhausted(&self, retries: usize) -> bool {
+        self.max_retries.is_some_and(|max| retries >= max)
+    }
+
+    fn budget(&self) -> String {
+        match self.max_retries {
+            Some(max) => format!(" of {max}"),
+            None => String::new(),
+        }
+    }
+}
+
+/// The retries of one chunk: its budget, its count, and its health and metrics.
+struct ChunkRetries<'a> {
+    policy: &'a RetryPolicy,
+    metrics: &'a DynamoDBOutputMetrics,
+    guard: ChunkGuard<'a>,
+    /// `BatchWriteItem` or `TransactWriteItems`, for the diagnostics.
+    operation: &'static str,
+    endpoint_name: &'a str,
+    /// Retries so far.
+    retries: usize,
+}
+
+impl<'a> ChunkRetries<'a> {
+    fn new(
+        policy: &'a RetryPolicy,
+        metrics: &'a DynamoDBOutputMetrics,
+        health: &'a RetryHealth,
+        operation: &'static str,
+        endpoint_name: &'a str,
+    ) -> Self {
+        Self {
+            policy,
+            metrics,
+            guard: health.chunk(),
+            operation,
+            endpoint_name,
+            retries: 0,
+        }
+    }
+
+    /// Waits for the next retry and counts it, or returns the error of a
+    /// chunk that must give up now. `cause` is why the request did not land
+    /// and `outstanding` how many items it still carries.
+    async fn retry_or_give_up(
+        &mut self,
+        outstanding: usize,
+        cause: &str,
+    ) -> Result<(), anyhow::Error> {
+        if self.policy.exhausted(self.retries) {
+            self.metrics.record_failed_items(outstanding as u64);
+            let error = anyhow!(
+                "dynamodb output connector '{}' dropped {outstanding} item(s) after {} {} \
+                 retries; raise `max_retries`, or set it to null to retry until DynamoDB \
+                 recovers: {cause}",
+                self.endpoint_name,
+                self.retries,
+                self.operation,
+            );
+            warn!("{error:#}");
+            return Err(error);
+        }
+        self.retries += 1;
+        let description = format!(
+            "retrying {} for {outstanding} item(s) (retry {}{}): {cause}",
+            self.operation,
+            self.retries,
+            self.policy.budget()
+        );
+        warn!(
+            "dynamodb output connector '{}' {description}",
+            self.endpoint_name
+        );
+        self.guard.retrying(&description);
+        (self.policy.delay)(self.retries).await;
+        // A retry that the shutdown cancelled during the wait never started.
+        self.metrics.record_retries(1);
+        Ok(())
+    }
+
+    /// Returns the error of a chunk whose request failed in a way a retry cannot fix.
+    fn give_up_now(&self, outstanding: usize, cause: &str) -> anyhow::Error {
+        self.metrics.record_failed_items(outstanding as u64);
+        let error = anyhow!(
+            "dynamodb output connector '{}' dropped {outstanding} item(s): {} failed with an \
+             error that a retry cannot fix, check the connector configuration and the table: \
+             {cause}",
+            self.endpoint_name,
+            self.operation,
+        );
+        warn!("{error:#}");
+        error
+    }
+
+    fn succeeded(self) -> u64 {
+        self.guard.succeeded();
+        self.retries as u64
+    }
+
+    fn failed(self, error: anyhow::Error) -> anyhow::Error {
+        self.guard.failed(&error.to_string());
+        error
+    }
+}
+
+/// Sends one pre-chunked `BatchWriteItem` request, retrying unprocessed items
+/// and retryable errors with backoff.
+///
+/// The request set shrinks to the unprocessed items after a partial success
+/// and stays that way through later failures, so a retry never resends an
+/// item that landed. A response lost to the network may still have been
+/// applied: this is not exactly-once delivery.
+///
+/// Gives up on `shutdown`: the loop is unbounded when the policy has no
+/// retry limit, and `DynamoDBWorker::drain_pending_writes` blocks the
+/// controller's output thread on these tasks, a DBSP aux thread that
+/// `RuntimeHandle::kill` joins. The loop itself is shutdown-unaware;
+/// dropping it is what ends it.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn write_batch_chunk(
     client: Client,
     endpoint_name: String,
     table: String,
     requests: Vec<WriteRequest>,
-    max_retries: Option<usize>,
+    policy: &RetryPolicy,
     shutdown: &CancellationToken,
     metrics: &DynamoDBOutputMetrics,
+    health: &RetryHealth,
 ) -> AnyResult<u64> {
     let item_count = requests.len();
     let attempts = async {
+        let mut retries =
+            ChunkRetries::new(policy, metrics, health, "BatchWriteItem", &endpoint_name);
         let mut request_items = HashMap::from([(table, requests)]);
-        let mut retry = 0usize;
 
         loop {
+            let outstanding = request_items.values().map(Vec::len).sum::<usize>();
             let call_start = Instant::now();
-            let output_result = client
+            let result = client
                 .batch_write_item()
                 .set_request_items(Some(request_items.clone()))
                 .send()
                 .await;
             metrics.record_write_call_latency(call_start.elapsed());
 
-            let output = output_result
-                .map_err(|error| {
-                    // `SdkError` display can hide the underlying DynamoDB service error.
-                    anyhow!(
-                        "dynamodb output connector '{endpoint_name}' failed to write batch \
-                         chunk: {}",
-                        DisplayErrorContext(&error)
-                    )
-                })
-                .inspect_err(|error| warn!("{error:#}"))?;
-
-            let Some(unprocessed) = output.unprocessed_items() else {
-                return Ok(retry as u64);
+            let cause = match result {
+                Ok(output) => {
+                    let unprocessed = output
+                        .unprocessed_items()
+                        .filter(|unprocessed| !unprocessed.is_empty());
+                    let Some(unprocessed) = unprocessed else {
+                        return Ok(retries.succeeded());
+                    };
+                    let count = unprocessed.values().map(Vec::len).sum::<usize>();
+                    // Unprocessed items are writes DynamoDB rejected for lack of capacity.
+                    metrics.record_throttled_items(count as u64);
+                    request_items = unprocessed.clone();
+                    format!("DynamoDB returned {count} of {outstanding} item(s) unprocessed")
+                }
+                Err(error) => {
+                    let cause = describe_sdk_error(&error);
+                    if classify_sdk_error(&error) == WriteErrorKind::Permanent {
+                        let error = retries.give_up_now(outstanding, &cause);
+                        return Err(retries.failed(error));
+                    }
+                    cause
+                }
             };
-            if unprocessed.is_empty() {
-                return Ok(retry as u64);
+
+            let outstanding = request_items.values().map(Vec::len).sum::<usize>();
+            if let Err(error) = retries.retry_or_give_up(outstanding, &cause).await {
+                return Err(retries.failed(error));
             }
-
-            let count = unprocessed.values().map(Vec::len).sum::<usize>();
-            // Unprocessed items are writes DynamoDB rejected for lack of capacity.
-            metrics.record_throttled_items(count as u64);
-            if max_retries.is_some_and(|max| retry >= max) {
-                metrics.record_failed_items(count as u64);
-                bail!(
-                    "dynamodb output connector '{endpoint_name}' failed to write \
-                     {count} unprocessed item(s) after {retry} retries"
-                );
-            }
-
-            request_items = unprocessed.clone();
-            warn!(
-                "dynamodb output connector '{endpoint_name}' retrying \
-                 {count} unprocessed batch item(s) (attempt {})",
-                retry + 1,
-            );
-
-            retry += 1;
-            tokio::time::sleep(backoff_delay(retry)).await;
         }
     };
 
@@ -218,12 +591,16 @@ fn partition_by_cancellation_reason(
 fn is_retryable_cancellation_code(code: &str) -> bool {
     matches!(
         code,
-        "TransactionConflict" | "ThrottlingError" | "ProvisionedThroughputExceeded"
+        "TransactionConflict"
+            | "ThrottlingError"
+            | "ProvisionedThroughputExceeded"
+            | "ItemCollectionSizeLimitExceeded"
     )
 }
 
 /// Outcome of a transactional chunk that DynamoDB accepted (possibly after
 /// dropping items that failed their condition).
+#[derive(Debug)]
 pub(crate) struct TransactChunkOutcome {
     /// Number of retry attempts the chunk cost.
     pub retries: u64,
@@ -246,24 +623,37 @@ pub(crate) fn written_totals(rows: usize, bytes: usize, suppressed: u64) -> (u64
     };
     (written as u64, written_bytes)
 }
-
 /// Sends one pre-chunked `TransactWriteItems` request, retrying on failure with backoff.
 ///
 /// On cancellation, items that failed their condition are dropped and the rest
-/// are resubmitted. Only transient failures back off and count toward
-/// `max_retries`. The returned [`TransactChunkOutcome`] reports how many items
-/// the condition suppressed so the caller can avoid counting them as written.
+/// are resubmitted at once. A transient item error, a cancellation without
+/// usable per-item reasons, and every other retryable error back off and count
+/// toward the retry budget. A permanent item error, and every other permanent
+/// error, drops the whole transaction at once. The returned
+/// [`TransactChunkOutcome`] reports how many items the condition suppressed so
+/// the caller can avoid counting them as written.
+///
+/// Each request gets a fresh `ClientRequestToken` from the SDK, so a retry is a
+/// new transaction to DynamoDB, not an idempotent repeat.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn write_transact_chunk(
     client: Client,
     endpoint_name: String,
     mut transact_items: Vec<TransactWriteItem>,
-    max_retries: Option<usize>,
+    policy: &RetryPolicy,
     shutdown: &CancellationToken,
     metrics: &DynamoDBOutputMetrics,
+    health: &RetryHealth,
 ) -> AnyResult<TransactChunkOutcome> {
     let item_count = transact_items.len();
     let attempts = async {
-        let mut retry = 0usize;
+        let mut retries = ChunkRetries::new(
+            policy,
+            metrics,
+            health,
+            "TransactWriteItems",
+            &endpoint_name,
+        );
         let mut suppressed = 0u64;
 
         loop {
@@ -278,116 +668,108 @@ pub(crate) async fn write_transact_chunk(
             let error = match result {
                 Ok(_) => {
                     return Ok(TransactChunkOutcome {
-                        retries: retry as u64,
+                        retries: retries.succeeded(),
                         suppressed,
                     });
                 }
                 Err(error) => error,
             };
+            let description = describe_sdk_error(&error);
 
-            // A cancelled transaction carries a per-item reason list. Use it to drop
-            // items whose condition was not met and retry only the rest. Any other
-            // error (or a cancellation without reasons) falls through to the
-            // whole-transaction retry below.
-            if let Some(TransactWriteItemsError::TransactionCanceledException(cancelled)) =
-                error.as_service_error()
-            {
-                let reasons = cancelled.cancellation_reasons();
-                if !reasons.is_empty()
-                    && let Some(outcome) =
-                        partition_by_cancellation_reason(&mut transact_items, reasons)
-                {
-                    if !outcome.hard_failures.is_empty() {
-                        // A permanent, non-condition failure (for example a
-                        // validation error) cancels the transaction.
-                        // Every item is dropped, including those whose condition happened
-                        // to fail.
-                        let failed = outcome.kept.len()
-                            + outcome.hard_failures.len()
-                            + outcome.condition_failed;
-                        metrics.record_transact_write_failure();
-                        metrics.record_failed_items(failed as u64);
-                        bail!(
-                            "dynamodb output connector '{endpoint_name}' TransactWriteItems request \
-                             cancelled by unrecoverable item error(s) [{}], dropping {failed} item(s): \
-                             {}",
-                            outcome.hard_failures.join(", "),
-                            DisplayErrorContext(&error),
-                        );
-                    }
-
-                    // Past the unrecoverable check the surviving items will be
-                    // written, so the condition failures are genuine suppressions.
-                    if outcome.condition_failed > 0 {
-                        suppressed += outcome.condition_failed as u64;
-                        metrics.record_condition_check_failures(outcome.condition_failed as u64);
-                    }
-
-                    if outcome.kept.is_empty() {
-                        // Every remaining item failed its condition: nothing left to write.
-                        return Ok(TransactChunkOutcome {
-                            retries: retry as u64,
-                            suppressed,
-                        });
-                    }
-
-                    let dropped_any = outcome.condition_failed > 0;
-                    transact_items = outcome.kept;
-
-                    if outcome.has_retryable {
-                        // Transient contention on a kept item; back off, retry and count it.
-                        metrics.record_transact_write_failure();
-                        if max_retries.is_some_and(|max| retry >= max) {
-                            metrics.record_failed_items(transact_items.len() as u64);
-                            bail!(
-                                "dynamodb output connector '{endpoint_name}' gave up on {} \
-                                 transaction item(s) after {retry} retries: {}",
-                                transact_items.len(),
-                                DisplayErrorContext(&error),
-                            );
-                        }
-                        retry += 1;
-                        warn!(
-                            "dynamodb output connector '{endpoint_name}' retrying {} transaction \
-                             item(s) after transient cancellation (attempt {retry})",
-                            transact_items.len(),
-                        );
-                        tokio::time::sleep(backoff_delay(retry)).await;
-                        continue;
-                    }
-
-                    if dropped_any {
-                        // Sibling items were dropped for failing their condition;  so resubmit
-                        // the now-smaller set immediately.
-                        continue;
-                    }
+            // A cancelled transaction carries a per-item reason list. Use it to
+            // drop items whose condition was not met and retry only the rest.
+            // Any other error, and a cancellation without usable reasons, goes
+            // through the whole-transaction retry below.
+            let cancelled = match error.as_service_error() {
+                Some(TransactWriteItemsError::TransactionCanceledException(cancelled)) => {
+                    Some(cancelled)
                 }
-            }
+                _ => None,
+            };
+            let cause = 'classify: {
+                let Some(cancelled) = cancelled else {
+                    metrics.record_transact_write_failure();
+                    if classify_sdk_error(&error) == WriteErrorKind::Permanent {
+                        let error = retries.give_up_now(transact_items.len(), &description);
+                        return Err(retries.failed(error));
+                    }
+                    break 'classify Some(description);
+                };
 
-            // Whole-transaction failure: no usable per-item reasons, so retry the
-            // entire request with backoff.
-            metrics.record_transact_write_failure();
-            let exhausted = max_retries.is_some_and(|max| retry >= max);
-            // Render the underlying DynamoDB error into the message via
-            // `DisplayErrorContext`; the bare `SdkError` `Display` would otherwise
-            // hide the real cause when shown with `{}`.
-            let error = anyhow!(
-                "dynamodb output connector '{endpoint_name}' TransactWriteItems request \
-                 with {} item(s) failed (attempt {}), {}: {}",
-                transact_items.len(),
-                retry + 1,
-                if exhausted { "giving up" } else { "retrying" },
-                DisplayErrorContext(&error),
-            );
-            warn!("{error:#}");
-            if exhausted {
-                // A transaction is all-or-nothing, so every item is dropped.
-                metrics.record_failed_items(transact_items.len() as u64);
-                return Err(error);
-            }
+                let reasons = cancelled.cancellation_reasons();
+                let outcome = if reasons.is_empty() {
+                    None
+                } else {
+                    partition_by_cancellation_reason(&mut transact_items, reasons)
+                };
+                let Some(outcome) = outcome else {
+                    metrics.record_transact_write_failure();
+                    break 'classify Some(format!(
+                        "transaction cancelled without usable per-item reasons: {description}"
+                    ));
+                };
 
-            retry += 1;
-            tokio::time::sleep(backoff_delay(retry)).await;
+                if !outcome.hard_failures.is_empty() {
+                    // A permanent, non-condition failure (for example a
+                    // validation error) cancels the transaction. Every item is
+                    // dropped, including those whose condition happened to fail.
+                    let failed =
+                        outcome.kept.len() + outcome.hard_failures.len() + outcome.condition_failed;
+                    metrics.record_transact_write_failure();
+                    let error = retries.give_up_now(
+                        failed,
+                        &format!(
+                            "transaction cancelled by item error(s) [{}]: {description}",
+                            outcome.hard_failures.join(", ")
+                        ),
+                    );
+                    return Err(retries.failed(error));
+                }
+
+                // Past the unrecoverable check the surviving items will be
+                // written, so the condition failures are genuine suppressions.
+                if outcome.condition_failed > 0 {
+                    suppressed += outcome.condition_failed as u64;
+                    metrics.record_condition_check_failures(outcome.condition_failed as u64);
+                }
+
+                if outcome.kept.is_empty() {
+                    // Every remaining item failed its condition: nothing left to write.
+                    return Ok(TransactChunkOutcome {
+                        retries: retries.succeeded(),
+                        suppressed,
+                    });
+                }
+
+                let dropped_any = outcome.condition_failed > 0;
+                let has_retryable = outcome.has_retryable;
+                transact_items = outcome.kept;
+
+                if has_retryable {
+                    // Transient contention on a kept item: back off, retry and count it.
+                    metrics.record_transact_write_failure();
+                    break 'classify Some(format!(
+                        "transaction cancelled by transient item error(s): {description}"
+                    ));
+                }
+                if dropped_any {
+                    // Sibling items were dropped for failing their condition, so
+                    // resubmit the now-smaller set at once. That is no retry.
+                    break 'classify None;
+                }
+                // Every item was rolled back with no error of its own.
+                metrics.record_transact_write_failure();
+                Some(format!(
+                    "transaction cancelled with no item error: {description}"
+                ))
+            };
+            let Some(cause) = cause else {
+                continue;
+            };
+
+            if let Err(error) = retries.retry_or_give_up(transact_items.len(), &cause).await {
+                return Err(retries.failed(error));
+            }
         }
     };
 
@@ -444,6 +826,11 @@ fn attribute_value_size(value: &AttributeValue) -> usize {
 }
 
 pub(crate) fn make_client(config: &DynamoDBWriterConfig) -> Client {
+    Client::from_conf(client_config(config).build())
+}
+
+/// The SDK configuration for `config`: region, endpoint and credentials.
+pub(crate) fn client_config(config: &DynamoDBWriterConfig) -> aws_sdk_dynamodb::config::Builder {
     let mut config_builder =
         aws_sdk_dynamodb::Config::builder().region(Region::new(config.region.clone()));
 
@@ -461,19 +848,28 @@ pub(crate) fn make_client(config: &DynamoDBWriterConfig) -> Client {
             None,
             "credential-provider",
         );
-        Client::from_conf(config_builder.credentials_provider(credentials).build())
+        config_builder.credentials_provider(credentials)
     } else {
         let provider = TOKIO.block_on(async {
             aws_config::default_provider::credentials::default_provider().await
         });
-        Client::from_conf(config_builder.credentials_provider(provider).build())
+        config_builder.credentials_provider(provider)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aws_sdk_dynamodb::error::ErrorMetadata;
     use aws_sdk_dynamodb::types::Put;
+    use aws_sdk_dynamodb::types::error::{
+        ReplicatedWriteConflictException, ResourceNotFoundException, ThrottlingException,
+        TransactionCanceledException,
+    };
+    use aws_smithy_runtime_api::http::{Response, StatusCode};
+    use aws_smithy_types::body::SdkBody;
+    use aws_smithy_types::retry::ErrorKind;
+    use std::fmt;
 
     /// A throwaway transact item; the partition logic never inspects its contents.
     fn put_item(id: &str) -> TransactWriteItem {
@@ -562,5 +958,386 @@ mod tests {
         assert_eq!(written_totals(2, 100, 3), (0, 0));
         // Empty chunk: no division by zero.
         assert_eq!(written_totals(0, 0, 0), (0, 0));
+    }
+
+    fn response(status: u16) -> HttpResponse {
+        Response::new(StatusCode::try_from(status).unwrap(), SdkBody::empty())
+    }
+
+    /// A service error whose metadata carries only `code`, as the SDK builds
+    /// one for a code it does not model.
+    fn generic(code: Option<&str>, status: u16) -> SdkError<BatchWriteItemError, HttpResponse> {
+        let mut meta = ErrorMetadata::builder();
+        if let Some(code) = code {
+            meta = meta.code(code);
+        }
+        SdkError::service_error(BatchWriteItemError::generic(meta.build()), response(status))
+    }
+
+    fn dispatch(error: ConnectorError) -> SdkError<BatchWriteItemError, HttpResponse> {
+        SdkError::dispatch_failure(error)
+    }
+
+    fn boxed(text: &str) -> aws_sdk_dynamodb::error::BoxError {
+        text.into()
+    }
+
+    /// An error with a source, to put a `CredentialsError` one level down.
+    #[derive(Debug)]
+    struct Wrapped(CredentialsError);
+
+    impl fmt::Display for Wrapped {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "wrapped")
+        }
+    }
+
+    impl StdError for Wrapped {
+        fn source(&self) -> Option<&(dyn StdError + 'static)> {
+            Some(&self.0)
+        }
+    }
+
+    #[test]
+    fn every_listed_code_is_retryable_on_a_400() {
+        for code in THROTTLING_ERRORS
+            .iter()
+            .chain(TRANSIENT_ERRORS)
+            .chain(DYNAMODB_RETRYABLE_CODES)
+        {
+            assert_eq!(
+                classify_sdk_error(&generic(Some(code), 400)),
+                WriteErrorKind::Retryable,
+                "{code}"
+            );
+        }
+    }
+
+    #[test]
+    fn unlisted_codes_are_permanent_on_a_400() {
+        for code in [
+            "ValidationException",
+            "ResourceNotFoundException",
+            "AccessDeniedException",
+            "ConditionalCheckFailedException",
+            "IdempotentParameterMismatchException",
+        ] {
+            assert_eq!(
+                classify_sdk_error(&generic(Some(code), 400)),
+                WriteErrorKind::Permanent,
+                "{code}"
+            );
+        }
+    }
+
+    #[test]
+    fn server_statuses_are_retryable_whatever_the_code() {
+        for status in RETRYABLE_HTTP_STATUSES {
+            assert_eq!(
+                classify_sdk_error(&generic(Some("ValidationException"), *status)),
+                WriteErrorKind::Retryable,
+                "{status}"
+            );
+            assert_eq!(
+                classify_sdk_error(&generic(None, *status)),
+                WriteErrorKind::Retryable,
+                "{status}"
+            );
+        }
+        for status in [400, 403, 499, 501, 505] {
+            assert_eq!(
+                classify_sdk_error(&generic(Some("ValidationException"), status)),
+                WriteErrorKind::Permanent,
+                "{status}"
+            );
+        }
+    }
+
+    #[test]
+    fn absent_metadata_is_permanent() {
+        assert_eq!(
+            classify_sdk_error(&generic(None, 400)),
+            WriteErrorKind::Permanent
+        );
+    }
+
+    #[test]
+    fn modeled_errors_classify_by_code_and_retry_kind() {
+        // The variant the SDK models as retryable, with no code in its metadata.
+        let conflict = SdkError::service_error(
+            BatchWriteItemError::ReplicatedWriteConflictException(
+                ReplicatedWriteConflictException::builder().build(),
+            ),
+            response(400),
+        );
+        assert_eq!(classify_sdk_error(&conflict), WriteErrorKind::Retryable);
+
+        let throttled = SdkError::service_error(
+            BatchWriteItemError::ThrottlingException(
+                ThrottlingException::builder()
+                    .meta(ErrorMetadata::builder().code("ThrottlingException").build())
+                    .build(),
+            ),
+            response(400),
+        );
+        assert_eq!(classify_sdk_error(&throttled), WriteErrorKind::Retryable);
+
+        let missing = SdkError::service_error(
+            BatchWriteItemError::ResourceNotFoundException(
+                ResourceNotFoundException::builder()
+                    .meta(
+                        ErrorMetadata::builder()
+                            .code("ResourceNotFoundException")
+                            .build(),
+                    )
+                    .build(),
+            ),
+            response(400),
+        );
+        assert_eq!(classify_sdk_error(&missing), WriteErrorKind::Permanent);
+
+        let cancelled = SdkError::service_error(
+            TransactWriteItemsError::TransactionCanceledException(
+                TransactionCanceledException::builder()
+                    .meta(
+                        ErrorMetadata::builder()
+                            .code("TransactionCanceledException")
+                            .build(),
+                    )
+                    .build(),
+            ),
+            response(400),
+        );
+        assert_eq!(classify_sdk_error(&cancelled), WriteErrorKind::Retryable);
+    }
+
+    #[test]
+    fn requests_without_a_response_classify_by_their_cause() {
+        use WriteErrorKind::*;
+        let cases: Vec<(
+            &str,
+            SdkError<BatchWriteItemError, HttpResponse>,
+            WriteErrorKind,
+        )> = vec![
+            (
+                "timeout",
+                SdkError::timeout_error(boxed("timed out")),
+                Retryable,
+            ),
+            (
+                "response",
+                SdkError::response_error(boxed("bad response"), response(200)),
+                Retryable,
+            ),
+            (
+                "construction",
+                SdkError::construction_failure(boxed("bad input")),
+                Permanent,
+            ),
+            (
+                "io",
+                dispatch(ConnectorError::io(boxed("connection reset"))),
+                Retryable,
+            ),
+            (
+                "connect timeout",
+                dispatch(ConnectorError::timeout(boxed("connect timeout"))),
+                Retryable,
+            ),
+            (
+                "user",
+                dispatch(ConnectorError::user(boxed("bad uri"))),
+                Permanent,
+            ),
+            (
+                "other transient",
+                dispatch(ConnectorError::other(
+                    boxed("x"),
+                    Some(ErrorKind::TransientError),
+                )),
+                Retryable,
+            ),
+            (
+                "other client",
+                dispatch(ConnectorError::other(
+                    boxed("x"),
+                    Some(ErrorKind::ClientError),
+                )),
+                Retryable,
+            ),
+            (
+                "other unknown",
+                dispatch(ConnectorError::other(boxed("x"), None)),
+                Retryable,
+            ),
+        ];
+        for (name, error, expected) in cases {
+            assert_eq!(classify_sdk_error(&error), expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn credential_failures_are_permanent_only_when_the_configuration_is_invalid() {
+        use WriteErrorKind::*;
+        let invalid = || CredentialsError::invalid_configuration("no region");
+        let cases: Vec<(&str, CredentialsError, WriteErrorKind)> = vec![
+            ("invalid configuration", invalid(), Permanent),
+            (
+                "provider error",
+                CredentialsError::provider_error("STS is down"),
+                Retryable,
+            ),
+            (
+                "provider timed out",
+                CredentialsError::provider_timed_out(Duration::from_secs(1)),
+                Retryable,
+            ),
+            (
+                "not loaded",
+                CredentialsError::not_loaded("no provider answered"),
+                Retryable,
+            ),
+        ];
+        for (name, error, expected) in cases {
+            let error = dispatch(ConnectorError::other(Box::new(error), None));
+            assert_eq!(classify_sdk_error(&error), expected, "{name}");
+        }
+        // The identity cache wraps the provider's error: the chain is walked.
+        let wrapped = dispatch(ConnectorError::other(Box::new(Wrapped(invalid())), None));
+        assert_eq!(classify_sdk_error(&wrapped), Permanent);
+        let wrapped = dispatch(ConnectorError::other(
+            Box::new(Wrapped(CredentialsError::provider_error("STS is down"))),
+            None,
+        ));
+        assert_eq!(classify_sdk_error(&wrapped), Retryable);
+    }
+
+    #[test]
+    fn a_service_error_is_described_without_its_raw_response() {
+        let throttled = SdkError::service_error(
+            BatchWriteItemError::ThrottlingException(
+                ThrottlingException::builder()
+                    .message("Throughput exceeds the current capacity")
+                    .throttling_reasons(
+                        ThrottlingReason::builder()
+                            .reason("TableWriteKeyRangeThroughputExceeded")
+                            .resource("arn:aws:dynamodb:us-east-1:1:table/t")
+                            .build(),
+                    )
+                    .meta(
+                        ErrorMetadata::builder()
+                            .code("ThrottlingException")
+                            .message("Throughput exceeds the current capacity")
+                            .custom("aws_request_id", "req-1")
+                            .build(),
+                    )
+                    .build(),
+            ),
+            response(400),
+        );
+        assert_eq!(
+            describe_sdk_error(&throttled),
+            "ThrottlingException: Throughput exceeds the current capacity (throttling reasons: \
+             TableWriteKeyRangeThroughputExceeded on arn:aws:dynamodb:us-east-1:1:table/t) \
+             (request id req-1)"
+        );
+        assert_eq!(
+            describe_sdk_error(&generic(None, 400)),
+            "unknown service error"
+        );
+    }
+
+    #[test]
+    fn a_failure_without_a_response_keeps_its_source_chain() {
+        let error = dispatch(ConnectorError::other(
+            Box::new(Wrapped(CredentialsError::provider_error("STS is down"))),
+            None,
+        ));
+        let text = describe_sdk_error(&error);
+        assert!(text.contains("wrapped"), "{text}");
+        assert!(text.contains("STS is down"), "{text}");
+    }
+
+    #[test]
+    fn a_response_error_keeps_its_cause_and_request_id_without_raw_data() {
+        let mut raw = Response::new(
+            StatusCode::try_from(502).unwrap(),
+            SdkBody::from("<html>RAW_BODY_SENTINEL</html>"),
+        );
+        raw.headers_mut().insert("x-amzn-requestid", "req-parse");
+        raw.headers_mut()
+            .insert("x-proxy-detail", "RAW_HEADER_SENTINEL");
+        let error: SdkError<BatchWriteItemError, HttpResponse> =
+            SdkError::response_error(boxed("invalid JSON from upstream"), raw);
+
+        let text = describe_sdk_error(&error);
+        assert_eq!(
+            text,
+            "response error: invalid JSON from upstream (HTTP 502) (request id req-parse)"
+        );
+    }
+
+    #[test]
+    fn a_cancelled_transaction_keeps_item_reasons_without_item_data() {
+        let error = SdkError::service_error(
+            TransactWriteItemsError::TransactionCanceledException(
+                TransactionCanceledException::builder()
+                    .cancellation_reasons(reason(NO_ERROR))
+                    .cancellation_reasons(
+                        CancellationReason::builder()
+                            .code("ValidationError")
+                            .message("The secondary index key has an unsupported type.")
+                            .item("secret", AttributeValue::S("ITEM_DATA_SENTINEL".into()))
+                            .build(),
+                    )
+                    .cancellation_reasons(
+                        CancellationReason::builder()
+                            .code("ItemCollectionSizeLimitExceeded")
+                            .message("Collection size exceeded.")
+                            .build(),
+                    )
+                    .meta(
+                        ErrorMetadata::builder()
+                            .code("TransactionCanceledException")
+                            .message("Transaction cancelled; see cancellation reasons.")
+                            .custom("aws_request_id", "req-cancelled")
+                            .build(),
+                    )
+                    .build(),
+            ),
+            response(400),
+        );
+
+        assert_eq!(
+            describe_sdk_error(&error),
+            "TransactionCanceledException: Transaction cancelled; see cancellation reasons. \
+             (cancellation reasons: item 2: ValidationError: The secondary index key has an \
+             unsupported type.; item 3: ItemCollectionSizeLimitExceeded: Collection size \
+             exceeded.) (request id req-cancelled)"
+        );
+    }
+
+    #[test]
+    fn the_retry_budget_counts_retries_after_the_first_request() {
+        let none = RetryPolicy::new(Some(0));
+        assert!(none.exhausted(0));
+        let two = RetryPolicy::new(Some(2));
+        assert!(!two.exhausted(0));
+        assert!(!two.exhausted(1));
+        assert!(two.exhausted(2));
+        assert_eq!(two.budget(), " of 2");
+        let unbounded = RetryPolicy::new(None);
+        assert!(!unbounded.exhausted(1_000_000));
+        assert_eq!(unbounded.budget(), "");
+    }
+
+    #[test]
+    fn backoff_grows_to_its_ceiling_with_jitter() {
+        for retry in 1..=12 {
+            let ceiling = Duration::from_millis(50 * (1 << retry.min(8)));
+            for _ in 0..20 {
+                assert!(backoff_delay(retry) <= ceiling, "retry {retry}");
+            }
+        }
     }
 }

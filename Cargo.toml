@@ -99,6 +99,11 @@ aws-sdk-s3 = { version = "1.122.0", default-features = false, features = [
   "behavior-version-latest"
 ] }
 aws-types = "1.1.7"
+# The DynamoDB sink classifies and describes SDK errors with these.
+aws-credential-types = "1.2.14"
+aws-runtime = "1.7.2"
+aws-smithy-runtime-api = "1.12.3"
+aws-smithy-types = "1.5.0"
 backoff = "0.4.0"
 aws-lc-rs = "1.18.0"
 rsa = { version = "0.9.10", features = ["std"] }

@@ -23,7 +23,10 @@ use crate::format::{Encoder, OutputConsumer};
 use crate::transport::OutputEndpoint;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 
-use super::helpers;
+#[cfg(any(test, feature = "testing"))]
+use super::health::NoHealthPublisher;
+use super::health::{ControllerHealthPublisher, HealthPublisher, RetryHealth};
+use super::helpers::{self, RetryPolicy};
 use super::metrics::DynamoDBOutputMetrics;
 
 /// DynamoDB rejects any item larger than 400 KB (name plus value bytes). A
@@ -77,7 +80,10 @@ pub(crate) struct DynamoDBWorker {
     table: String,
     write_mode: DynamoDBWriteMode,
     batch_size: usize,
-    max_retries: Option<u8>,
+    /// The retry budget of the chunk writers and how they wait.
+    policy: RetryPolicy,
+    /// The health of the endpoint, which the chunk writers of every worker share.
+    health: Arc<RetryHealth>,
     /// `ControllerInner::shutdown_token`, which ends the retry loops in
     /// [helpers::write_batch_chunk] and [helpers::write_transact_chunk].
     /// Those are unbounded when `max_retries` is `None`.
@@ -117,6 +123,36 @@ impl DynamoDBWorker {
         value_schema: &Relation,
     ) -> Self {
         let metrics = Arc::new(DynamoDBOutputMetrics::default());
+        let health = Arc::new(RetryHealth::new(
+            Box::new(NoHealthPublisher),
+            metrics.clone(),
+        ));
+        Self::with_client_and_policy(
+            client,
+            endpoint_name,
+            config,
+            key_schema,
+            value_schema,
+            metrics,
+            RetryPolicy::new(config.max_retries),
+            health,
+        )
+    }
+
+    /// A worker without a controller, with the retry policy and health of the
+    /// caller's choice.
+    #[cfg(any(test, feature = "testing"))]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn with_client_and_policy(
+        client: Client,
+        endpoint_name: &str,
+        config: &DynamoDBWriterConfig,
+        key_schema: &Relation,
+        value_schema: &Relation,
+        metrics: Arc<DynamoDBOutputMetrics>,
+        policy: RetryPolicy,
+        health: Arc<RetryHealth>,
+    ) -> Self {
         Self::with_client_and_controller(
             client,
             EndpointId::default(),
@@ -129,6 +165,8 @@ impl DynamoDBWorker {
             Arc::new(AtomicU64::new(0)),
             metrics,
             CancellationToken::new(),
+            policy,
+            health,
         )
     }
 
@@ -145,6 +183,8 @@ impl DynamoDBWorker {
         bytes_written: Arc<AtomicU64>,
         metrics: Arc<DynamoDBOutputMetrics>,
         shutdown: CancellationToken,
+        policy: RetryPolicy,
+        health: Arc<RetryHealth>,
     ) -> Self {
         Self {
             endpoint_id,
@@ -153,7 +193,8 @@ impl DynamoDBWorker {
             table: config.table.clone(),
             write_mode: config.write_mode,
             batch_size: config.effective_batch_size(),
-            max_retries: config.max_retries,
+            policy,
+            health,
             shutdown,
             put_condition: config.put_condition_expression.clone(),
             delete_condition: config.delete_condition_expression.clone(),
@@ -282,7 +323,8 @@ impl DynamoDBWorker {
         let write_mode = self.write_mode;
         let put_condition = self.put_condition.clone();
         let delete_condition = self.delete_condition.clone();
-        let max_retries: Option<usize> = self.max_retries.map(|n| n as usize);
+        let policy = self.policy.clone();
+        let health = self.health.clone();
         let shutdown = self.shutdown.clone();
         self.metrics.record_write_chunk();
         let task_metrics = self.metrics.clone();
@@ -298,9 +340,10 @@ impl DynamoDBWorker {
                         endpoint_name.clone(),
                         table,
                         requests,
-                        max_retries,
+                        &policy,
                         &shutdown,
                         &task_metrics,
+                        &health,
                     )
                     .await
                     .map(|retries| helpers::TransactChunkOutcome {
@@ -323,9 +366,10 @@ impl DynamoDBWorker {
                             client,
                             endpoint_name.clone(),
                             transact_items,
-                            max_retries,
+                            &policy,
                             &shutdown,
                             &task_metrics,
+                            &health,
                         )
                         .await
                     }
@@ -350,7 +394,6 @@ impl DynamoDBWorker {
                             helpers::written_totals(rows, bytes, outcome.suppressed);
                         task_records_written.fetch_add(written, Ordering::Relaxed);
                         task_bytes_written.fetch_add(written_bytes, Ordering::Relaxed);
-                        task_metrics.record_retries(outcome.retries);
                         Ok(outcome.retries)
                     }
                     Err(error) => Err(error),
@@ -606,6 +649,42 @@ impl DynamoDBOutputEndpoint {
         is_index: bool,
         metrics: Arc<DynamoDBOutputMetrics>,
     ) -> Result<Self, ControllerError> {
+        let publisher = Box::new(ControllerHealthPublisher {
+            controller: controller.clone(),
+            endpoint_id,
+        });
+        Self::new_with_options(
+            endpoint_id,
+            endpoint_name,
+            config,
+            key_schema,
+            value_schema,
+            controller,
+            shutdown,
+            is_index,
+            metrics,
+            RetryPolicy::new(config.max_retries),
+            publisher,
+        )
+    }
+
+    /// Constructs the endpoint with the retry policy of the chunk writers and
+    /// the publisher of its health chosen by the caller. Tests use a policy
+    /// that waits on them and a publisher that records.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_with_options(
+        endpoint_id: EndpointId,
+        endpoint_name: &str,
+        config: &DynamoDBWriterConfig,
+        key_schema: &Option<Relation>,
+        value_schema: &Relation,
+        controller: Weak<ControllerInner>,
+        shutdown: CancellationToken,
+        is_index: bool,
+        metrics: Arc<DynamoDBOutputMetrics>,
+        policy: RetryPolicy,
+        publisher: Box<dyn HealthPublisher>,
+    ) -> Result<Self, ControllerError> {
         config
             .validate()
             .map_err(|e| ControllerError::invalid_transport_configuration(endpoint_name, &e))?;
@@ -629,6 +708,7 @@ impl DynamoDBOutputEndpoint {
         }
 
         let client = helpers::make_client(config);
+        let health = Arc::new(RetryHealth::new(publisher, metrics.clone()));
         let mut handles = Vec::with_capacity(config.threads);
         for i in 0..config.threads {
             let worker = DynamoDBWorker::with_client_and_controller(
@@ -643,6 +723,8 @@ impl DynamoDBOutputEndpoint {
                 bytes_written.clone(),
                 metrics.clone(),
                 shutdown.clone(),
+                policy.clone(),
+                health.clone(),
             );
 
             let (cmd_tx, cmd_rx) = crossbeam::channel::bounded(1);

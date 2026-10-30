@@ -29,7 +29,7 @@ the index must include both columns.
 | `max_buffer_size`                | string  | `"1Mi"`   | Maximum size of the data buffered by each worker thread before flushing to DynamoDB, such as `"1Mi"`. `max_buffer_size_bytes`, a number of bytes, is a deprecated alias.                                                                                                                                                                                                                                                                                 |
 | `max_concurrent_requests`        | integer | `64`      | Maximum number of DynamoDB write requests in flight per worker thread at any one time. The connector blocks the encoding thread when this limit is reached, applying backpressure to the pipeline.                                                                                                                                                                                                      |
 | `threads`                        | integer | `1`       | Number of parallel worker threads used to encode and write disjoint key ranges. Each thread makes its own DynamoDB API calls. Increasing this value can improve throughput for large batches.                                                                                                                                                                                                           |
-| `max_retries`                    | integer | `10`      | Maximum number of retries for a failed or partially-applied DynamoDB write. For `batch` mode, retries apply to items returned as unprocessed in a successful response. For `transactional` mode, retries apply to failed `TransactWriteItems` calls. Set to `null` to retry indefinitely. Transient errors such as throttling are handled separately by the AWS SDK and do not count toward this limit. |
+| `max_retries`                    | integer | `10`      | Maximum number of retries of a write chunk after its first request. One budget covers items returned as unprocessed in `batch` mode, `TransactWriteItems` calls cancelled by transient contention in `transactional` mode, and requests that fail with a retryable error such as throttling. The AWS SDK makes its own few attempts first; only the retries this connector starts count. `0` permits no retry. Set to `null` to retry indefinitely. See [Retries and health](#retries-and-health). |
 | `put_condition_expression`       | string  |           | Optional [condition expression](#conditional-writes) evaluated before every put. Available only in `transactional` mode.                                                                                                                                                                                                                                                                               |
 | `delete_condition_expression`    | string  |           | Optional [condition expression](#conditional-writes) evaluated before every delete. Available only in `transactional` mode.                                                                                                                                                                                                                                                                            |
 
@@ -56,6 +56,59 @@ API. This mode:
 
 - Guarantees atomicity for each transaction chunk of up to 100 items
 - Is substantially slower than batch mode due to the overhead of ACID transactions
+
+## Retries and health
+
+A write chunk that does not land is sent again after an exponential backoff
+with random jitter, up to a ceiling of about 13 seconds, until it lands or the
+`max_retries` budget runs out. The budget counts every retry of the chunk,
+whatever the cause:
+
+| Cause                                                                   | Mode            | Retried                                   |
+| ----------------------------------------------------------------------- | --------------- | ----------------------------------------- |
+| Items returned as unprocessed in a successful response                  | `batch`         | Those items only                          |
+| Transient contention on an item (`TransactionConflict`, throttling)     | `transactional` | The items that did not fail their condition |
+| A request that fails with a retryable error: throttling, a timeout, a network failure, a server error, a temporary failure to obtain credentials, or an item collection over its size limit | both | The remaining items of the chunk |
+
+The AWS SDK makes its own few attempts before an error reaches the connector.
+Only the retries the connector starts after that count against the budget.
+
+A request that fails with an error a retry cannot fix, such as a validation
+error, a missing table, denied access, or an invalid credential configuration,
+discards the chunk at once, whatever the budget. In `transactional` mode, a
+cancellation caused by a permanent item error discards the whole transaction,
+while items that fail their condition expression are dropped and the rest is
+resubmitted without a retry. A cancellation without usable per-item reasons is
+retried as a whole.
+
+With the default budget of `10`, the connector gives up after about a minute
+of continuous failure and discards the remaining records of the chunk. They
+are counted in the `dynamodb_output_failed_items_total` metric and the error
+is reported on the connector. To keep records through a longer outage, set
+`max_retries` to `null`: the connector then retries until DynamoDB recovers
+or the pipeline stops, and the pipeline waits behind it. A healthy status
+after a later success does not restore records that an earlier chunk
+discarded.
+
+The connector reports its health in the pipeline's connector statistics:
+
+| State                                        | Health                                  |
+| -------------------------------------------- | --------------------------------------- |
+| A chunk waits for a retry                    | Unhealthy, with the cause of the retry  |
+| A chunk gave up                              | Unhealthy, with the error, until a later chunk lands |
+| No chunk retries and the last chunk landed   | Healthy                                 |
+
+A pipeline stop ends every retry loop without a health report.
+
+Error and health descriptions retain DynamoDB's error code, message, request
+ID, and throttling or per-item cancellation reasons. They omit raw HTTP
+responses and item data returned with cancellation reasons.
+
+Metrics prefixed `dynamodb_output_` show the retries: `retries_total` counts
+each retry as it starts, `retrying_chunks` is the number of chunks in a retry
+loop right now, `throttled_items_total` counts items returned as unprocessed,
+`transact_write_failures_total` counts failed `TransactWriteItems` calls, and
+`failed_items_total` counts the records discarded.
 
 ## Conditional writes
 

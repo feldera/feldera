@@ -1,3 +1,4 @@
+pub(crate) mod health;
 mod helpers;
 pub(crate) mod metrics;
 pub(crate) mod output;
