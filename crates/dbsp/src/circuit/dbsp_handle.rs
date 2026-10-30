@@ -5,6 +5,7 @@ use crate::circuit::operator_traits::OperatorCheckpoint;
 use crate::circuit::schedule::CommitProgress;
 use crate::circuit::{bootstrap::ConcurrentRestoreOutcome, circuit_builder::CircuitHandle};
 use crate::monitor::visual_graph::Graph;
+use crate::operator::communication::ExchangeTls;
 use crate::operator::dynamic::balance::{BalancerHint, PartitioningPolicy};
 use crate::storage::backend::StorageError;
 use crate::trace::spine_async::MAX_LEVEL0_BATCH_SIZE_RECORDS;
@@ -148,6 +149,10 @@ pub struct CircuitConfig {
     /// socket must be listening on the port indicated for this host in
     /// `layout`.
     pub exchange_listener: Option<TcpListener>,
+
+    /// Optionally, TLS for exchange.  This is relevant only if `layout` is
+    /// multihost.  If it is provided, then every host must use TLS.
+    pub exchange_tls: Option<ExchangeTls>,
 }
 
 /// Returns the chunk size for splitter operators, in records.
@@ -394,6 +399,7 @@ impl CircuitConfig {
             storage: None,
             dev_tweaks: DevTweaks::default(),
             exchange_listener: None,
+            exchange_tls: None,
         }
     }
 
@@ -521,6 +527,11 @@ impl CircuitConfig {
 
     pub fn with_exchange_listener(mut self, exchange_listener: TcpListener) -> Self {
         self.exchange_listener = Some(exchange_listener);
+        self
+    }
+
+    pub fn with_exchange_tls(mut self, exchange_tls: Option<ExchangeTls>) -> Self {
+        self.exchange_tls = exchange_tls;
         self
     }
 }

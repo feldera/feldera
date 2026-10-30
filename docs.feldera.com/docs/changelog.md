@@ -28,6 +28,12 @@ Source edition can be found on github.
   `kafka_output_commit_retries_total` and `kafka_output_replay_spool_bytes`.
   See [Exactly-once delivery and recovery](/connectors/sinks/kafka#exactly-once-delivery-and-recovery).
 
+- Enterprise (Kubernetes): with the Helm value `mtls.enabled`, the hosts of a
+  multihost pipeline exchange data over TLS.  Each host presents its pipeline
+  certificate and admits only hosts of the same pipeline.  Set
+  `dev_tweaks.tls_exchange` to `false` to exchange data in plaintext.  See
+  [Client certificates](/get-started/enterprise/https#client-certificates).
+
 ## v0.372.0
 
 - Behavior change (non-fault-tolerant Kafka output): temporary delivery

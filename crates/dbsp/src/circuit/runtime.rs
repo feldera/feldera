@@ -7,7 +7,7 @@ use crate::SchedulerError;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::dbsp_handle::StepSize;
 use crate::error::Error as DbspError;
-use crate::operator::communication::{Exchange, ExchangeActivity};
+use crate::operator::communication::{Exchange, ExchangeActivity, ExchangeTls};
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
@@ -399,6 +399,9 @@ struct RuntimeInner {
     /// hosts before we start the circuit, so without this feature we couldn't
     /// be sure that we'd have a set of available ports.
     exchange_listener: Mutex<Option<TcpListener>>,
+
+    /// TLS for exchange, if any.
+    exchange_tls: Option<ExchangeTls>,
 }
 
 impl Drop for RuntimeInner {
@@ -676,6 +679,14 @@ impl RuntimeInner {
             info!("dev_tweaks.streaming_exchange disabled");
         }
 
+        let exchange_tls = config.exchange_tls.filter(|_| {
+            let enabled = config.dev_tweaks.tls_exchange();
+            if !enabled {
+                info!("dev_tweaks.tls_exchange disabled: exchanging data in plaintext");
+            }
+            enabled
+        });
+
         Ok(Self {
             pin_cpus_fg,
             pin_cpus_bg,
@@ -706,6 +717,7 @@ impl RuntimeInner {
             panic_signal: PanicSignal::new(),
             tokio_merger_runtime: Mutex::new(None),
             exchange_listener: Mutex::new(config.exchange_listener),
+            exchange_tls,
         })
     }
 
@@ -1728,6 +1740,13 @@ impl Runtime {
     /// [CircuitConfig]: crate::circuit::dbsp_handle::CircuitConfig
     pub(crate) fn take_exchange_listener(&self) -> Option<TcpListener> {
         self.inner().exchange_listener.lock().unwrap().take()
+    }
+
+    /// Returns the exchange TLS configuration from [CircuitConfig], if any.
+    ///
+    /// [CircuitConfig]: crate::circuit::dbsp_handle::CircuitConfig
+    pub(crate) fn exchange_tls(&self) -> Option<ExchangeTls> {
+        self.inner().exchange_tls.clone()
     }
 
     /// Returns [DevTweaks] for this `Runtime`.

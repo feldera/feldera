@@ -399,6 +399,14 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub optimize_input_during_commit: Option<bool>,
 
+    /// Exchange data between the hosts of a multihost pipeline over TLS.
+    ///
+    /// This applies only when the pipeline has client certificates for TLS
+    /// (with `mtls.enabled` in the Helm chart).  Set it to `false` to exchange
+    /// data in plaintext even then.  The default is `true`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tls_exchange: Option<bool>,
+
     /// Options not understood by this particular version.
     ///
     /// This allows the pipeline manager to take options that a custom or old
@@ -573,6 +581,10 @@ impl DevTweaks {
 
     pub fn optimize_input_during_commit(&self) -> bool {
         self.optimize_input_during_commit.unwrap_or(true)
+    }
+
+    pub fn tls_exchange(&self) -> bool {
+        self.tls_exchange.unwrap_or(true)
     }
 }
 

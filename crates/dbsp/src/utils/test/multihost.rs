@@ -9,11 +9,14 @@
 use std::{
     iter::zip,
     mem,
-    net::TcpListener,
+    net::{Ipv4Addr, TcpListener},
     ops::Range,
     panic::{AssertUnwindSafe, catch_unwind, resume_unwind},
     path::Path,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -21,12 +24,108 @@ use std::{
 use anyhow::Result as AnyResult;
 use crossbeam::channel::{Select, unbounded};
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
+use rcgen::{
+    BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair, SanType,
+};
+use tokio_rustls::rustls::{
+    ClientConfig, KeyLog, RootCertStore, ServerConfig, crypto::aws_lc_rs,
+    pki_types::PrivatePkcs8KeyDer, server::WebPkiClientVerifier,
+};
 use uuid::Uuid;
 
 use crate::{
     DBSPHandle, RootCircuit, Runtime,
     circuit::{CircuitConfig, CircuitStorageConfig, Layout, RuntimeHandle},
+    operator::communication::ExchangeTls,
 };
+
+/// Counts the TLS handshakes of servers that use [test_exchange_tls], which log
+/// each handshake's secrets here.
+#[derive(Debug, Default)]
+pub(crate) struct HandshakeCounter(AtomicUsize);
+
+impl HandshakeCounter {
+    /// Returns true if a server finished at least one TLS handshake.
+    pub(crate) fn any(&self) -> bool {
+        self.0.load(Ordering::Relaxed) > 0
+    }
+}
+
+impl KeyLog for HandshakeCounter {
+    fn log(&self, _label: &str, _client_random: &[u8], _secret: &[u8]) {
+        self.0.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn will_log(&self, _label: &str) -> bool {
+        true
+    }
+}
+
+/// TLS for exchange in tests, from [test_exchange_tls].
+pub(crate) struct TestExchangeTls {
+    /// Configurations that trust a new CA and present a certificate for
+    /// 127.0.0.1 from that CA, which all of the hosts share.  The server
+    /// requires a client certificate from the CA.
+    pub(crate) tls: ExchangeTls,
+
+    /// Counts the handshakes of servers that use `tls`.
+    pub(crate) handshakes: Arc<HandshakeCounter>,
+
+    /// A client that trusts the CA but presents no certificate.
+    pub(crate) anonymous_client: Arc<ClientConfig>,
+}
+
+/// Returns TLS for exchange in tests.
+pub(crate) fn test_exchange_tls() -> TestExchangeTls {
+    let ca_key = KeyPair::generate().unwrap();
+    let mut ca_params = CertificateParams::default();
+    ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+    let issuer = Issuer::new(ca_params, ca_key);
+
+    let key = KeyPair::generate().unwrap();
+    let mut params = CertificateParams::default();
+    params.subject_alt_names = vec![SanType::IpAddress(Ipv4Addr::LOCALHOST.into())];
+    params.extended_key_usages = vec![
+        ExtendedKeyUsagePurpose::ServerAuth,
+        ExtendedKeyUsagePurpose::ClientAuth,
+    ];
+    let chain = vec![params.signed_by(&key, &issuer).unwrap().der().clone()];
+    let key = PrivatePkcs8KeyDer::from(key.serialize_der());
+
+    let mut roots = RootCertStore::empty();
+    roots.add(ca_cert.der().clone()).unwrap();
+    let roots = Arc::new(roots);
+    let provider = Arc::new(aws_lc_rs::default_provider());
+    let verifier = WebPkiClientVerifier::builder_with_provider(roots.clone(), provider.clone())
+        .build()
+        .unwrap();
+    let mut server = ServerConfig::builder_with_provider(provider.clone())
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_client_cert_verifier(verifier)
+        .with_single_cert(chain.clone(), key.clone_key().into())
+        .unwrap();
+    let handshakes = Arc::new(HandshakeCounter::default());
+    server.key_log = handshakes.clone();
+    let client_builder = || {
+        ClientConfig::builder_with_provider(provider.clone())
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(roots.clone())
+    };
+    let client = client_builder()
+        .with_client_auth_cert(chain, key.into())
+        .unwrap();
+    TestExchangeTls {
+        tls: ExchangeTls {
+            client: Arc::new(client),
+            server: Arc::new(server),
+        },
+        handshakes,
+        anonymous_client: Arc::new(client_builder().with_no_client_auth()),
+    }
+}
 
 /// Returns a configuration for each of `hosts` hosts that run `workers`
 /// workers in total.
@@ -89,8 +188,22 @@ pub(crate) fn run_on_hosts<F>(workers: usize, hosts: usize, worker: F)
 where
     F: FnOnce() + Clone + Send + 'static,
 {
+    run_on_hosts_with(workers, hosts, |config| config, worker)
+}
+
+/// Like [run_on_hosts], but `configure` changes the configuration of each host
+/// before the host starts.
+pub(crate) fn run_on_hosts_with<F>(
+    workers: usize,
+    hosts: usize,
+    configure: impl Fn(CircuitConfig) -> CircuitConfig,
+    worker: F,
+) where
+    F: FnOnce() + Clone + Send + 'static,
+{
     let runtimes: Vec<_> = host_configs(workers, hosts)
         .into_iter()
+        .map(configure)
         .map(|config| {
             let worker = worker.clone();
             Runtime::run(config, move |_parker| worker()).expect("cannot start a host")
