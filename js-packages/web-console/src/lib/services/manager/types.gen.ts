@@ -2221,20 +2221,30 @@ export type DynamoDbWriterConfig = {
    */
   max_concurrent_requests?: number
   /**
-   * Maximum number of retries for a failed or partially-applied DynamoDB write chunk.
+   * Maximum number of retries of a DynamoDB write chunk after its first request.
    *
-   * For `batch` writes, `BatchWriteItem` may return some items as "unprocessed" in a
-   * successful 200 response; those are re-submitted and counted as retries. For
-   * `transactional` writes, a failed `TransactWriteItems` call is retried in full.
+   * One budget covers every reason a chunk is sent again: items that a successful
+   * `BatchWriteItem` response returns as unprocessed, a `TransactWriteItems` call cancelled by
+   * transient contention, and a request that fails with a retryable error, such as
+   * throttling, a timeout, a network failure, a server error, or a temporary failure to
+   * obtain credentials. The AWS SDK makes its own few attempts first; only a retry that this
+   * connector starts after the SDK gave up counts here. Each retry waits longer than the
+   * previous one (exponential backoff with random jitter), up to a ceiling of roughly 13
+   * seconds.
    *
-   * Transient errors (throttling, network failures) are first handled transparently by the
-   * AWS SDK. Only attempts that reach this connector's retry loop count against this limit.
-   * Each retry waits longer than the previous one (exponential backoff), up to a ceiling
-   * of roughly 13 seconds.
+   * `0` permits no retry. Set to `null` to retry indefinitely: the connector keeps retrying
+   * at the ceiling interval, and the pipeline waits behind it, until DynamoDB recovers or
+   * the pipeline stops. When a bounded budget runs out, the chunk's remaining records are
+   * discarded and counted in `dynamodb_output_failed_items_total`.
    *
-   * Set to `null` to retry indefinitely. After the backoff ceiling is reached the connector
-   * keeps retrying at that interval, providing backpressure until DynamoDB recovers.
-   * Defaults to `10`.
+   * An error that a retry cannot fix, such as a validation error, a missing table, denied
+   * access, or an invalid credential configuration, discards the chunk at once, whatever
+   * the budget. Items of a transaction that fail their condition expression are dropped
+   * without a retry, which costs nothing here.
+   *
+   * While a chunk retries, the connector reports itself unhealthy in the pipeline's
+   * statistics, with the cause; it reports healthy again once no chunk retries and a
+   * chunk has landed. Defaults to `10`.
    */
   max_retries?: number | null
   /**

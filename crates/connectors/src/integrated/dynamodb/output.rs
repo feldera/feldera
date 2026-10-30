@@ -23,7 +23,7 @@ use crate::format::{Encoder, OutputConsumer};
 use crate::transport::OutputEndpoint;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 
-use super::health::{ControllerHealthPublisher, HealthPublisher, NoHealthPublisher, RetryHealth};
+use super::health::{ControllerHealthPublisher, HealthPublisher, RetryHealth};
 use super::helpers::{self, RetryPolicy};
 use super::metrics::DynamoDBOutputMetrics;
 
