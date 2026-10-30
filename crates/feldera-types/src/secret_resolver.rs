@@ -1,4 +1,5 @@
 use crate::config::ConnectorConfig;
+use crate::secret_redaction::secret_redactor;
 use crate::secret_ref::{MaybeSecretRef, MaybeSecretRefParseError, SecretRef};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -184,77 +185,98 @@ fn resolve_potential_secret_reference_string(
     match MaybeSecretRef::new(s) {
         Ok(maybe_secret_ref) => match maybe_secret_ref {
             MaybeSecretRef::String(plain_str) => Ok(plain_str),
-            MaybeSecretRef::SecretRef(secret_ref) => match secret_ref {
-                SecretRef::Kubernetes {
-                    ref name,
-                    ref data_key,
-                } => {
-                    // Secret reference: `${secret:kubernetes:<name>/<data key>}`
-                    // File location: `<secrets dir>/kubernetes/<name>/<data key>`
-                    let path = Path::new(secrets_dir)
-                        .join("kubernetes")
-                        .join(name)
-                        .join(data_key);
+            MaybeSecretRef::SecretRef(secret_ref) => {
+                let reference = secret_ref.to_string();
+                // A secret value is registered, so a diagnostic that copies it
+                // shows the reference instead. An environment variable is
+                // non-sensitive configuration by contract and is not: its
+                // value can be a word that diagnostics use on purpose.
+                let is_secret = matches!(secret_ref, SecretRef::Kubernetes { .. });
+                let value = resolve_secret_reference(secrets_dir, secret_ref)?;
+                if is_secret {
+                    secret_redactor().register(&reference, &value);
+                }
+                Ok(value)
+            }
+        },
+        Err(e) => Err(SecretRefResolutionError::MaybeSecretRefParseFailed { e }),
+    }
+}
 
-                    // If the file does not exist or is not a regular file, produce a custom error
-                    // informing of this fact rather than generically stating we are unable to read.
-                    if path.is_file() {
-                        match fs::read_to_string(&path) {
-                            Ok(content) => Ok(content),
-                            Err(e) => {
-                                Err(SecretRefResolutionError::CannotReadSecretFile {
-                                    secret_ref,
-                                    path: path.display().to_string(),
-                                    error_kind: e.kind(), // Only error kind to prevent displaying any of the secret content
-                                })
-                            }
-                        }
-                    } else {
-                        match path.try_exists() {
-                            Ok(exists) => {
-                                if exists {
-                                    Err(SecretRefResolutionError::SecretPathIsNotRegularFile {
-                                        secret_ref,
-                                        path: path.display().to_string(),
-                                    })
-                                } else {
-                                    Err(SecretRefResolutionError::SecretFileDoesNotExist {
-                                        secret_ref,
-                                        path: path.display().to_string(),
-                                    })
-                                }
-                            }
-                            Err(e) => Err(SecretRefResolutionError::SecretFileExistenceUnknown {
-                                secret_ref,
-                                path: path.display().to_string(),
-                                error_kind: e.kind(), // Only error kind to prevent displaying any of the secret content
-                            }),
-                        }
+/// Reads the value of `secret_ref`.
+fn resolve_secret_reference(
+    secrets_dir: &Path,
+    secret_ref: SecretRef,
+) -> Result<String, SecretRefResolutionError> {
+    match secret_ref {
+        SecretRef::Kubernetes {
+            ref name,
+            ref data_key,
+        } => {
+            // Secret reference: `${secret:kubernetes:<name>/<data key>}`
+            // File location: `<secrets dir>/kubernetes/<name>/<data key>`
+            let path = Path::new(secrets_dir)
+                .join("kubernetes")
+                .join(name)
+                .join(data_key);
+
+            // If the file does not exist or is not a regular file, produce a custom error
+            // informing of this fact rather than generically stating we are unable to read.
+            if path.is_file() {
+                match fs::read_to_string(&path) {
+                    Ok(content) => Ok(content),
+                    Err(e) => {
+                        Err(SecretRefResolutionError::CannotReadSecretFile {
+                            secret_ref,
+                            path: path.display().to_string(),
+                            error_kind: e.kind(), // Only error kind to prevent displaying any of the secret content
+                        })
                     }
                 }
-                SecretRef::EnvVar { ref name } => {
-                    // Environment variable reference: `${env:<name>}`
-                    // Resolved by reading the named environment variable from the process.
-                    let name = name.clone();
-                    match env::var(&name) {
-                        Ok(value) => Ok(value),
-                        Err(env::VarError::NotPresent) | Err(env::VarError::NotUnicode(_)) => {
-                            Err(SecretRefResolutionError::EnvVarNotSet {
-                                env_ref: secret_ref,
-                                name,
+            } else {
+                match path.try_exists() {
+                    Ok(exists) => {
+                        if exists {
+                            Err(SecretRefResolutionError::SecretPathIsNotRegularFile {
+                                secret_ref,
+                                path: path.display().to_string(),
+                            })
+                        } else {
+                            Err(SecretRefResolutionError::SecretFileDoesNotExist {
+                                secret_ref,
+                                path: path.display().to_string(),
                             })
                         }
                     }
+                    Err(e) => Err(SecretRefResolutionError::SecretFileExistenceUnknown {
+                        secret_ref,
+                        path: path.display().to_string(),
+                        error_kind: e.kind(), // Only error kind to prevent displaying any of the secret content
+                    }),
                 }
-            },
-        },
-        Err(e) => Err(SecretRefResolutionError::MaybeSecretRefParseFailed { e }),
+            }
+        }
+        SecretRef::EnvVar { ref name } => {
+            // Environment variable reference: `${env:<name>}`
+            // Resolved by reading the named environment variable from the process.
+            let name = name.clone();
+            match env::var(&name) {
+                Ok(value) => Ok(value),
+                Err(env::VarError::NotPresent) | Err(env::VarError::NotUnicode(_)) => {
+                    Err(SecretRefResolutionError::EnvVarNotSet {
+                        env_ref: secret_ref,
+                        name,
+                    })
+                }
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::config::{ConnectorConfig, TransportConfig};
+    use crate::secret_redaction::secret_redactor;
     use crate::secret_ref::{MaybeSecretRef, SecretRef};
     use crate::secret_resolver::{
         SecretRefResolutionError, discover_secret_references_in_connector_config,
@@ -285,6 +307,32 @@ mod tests {
             )
             .unwrap(),
             "example"
+        );
+    }
+
+    /// A resolved value is registered, so a diagnostic shows its reference.
+    #[test]
+    fn resolved_value_is_registered_for_redaction() {
+        let dir = tempfile::tempdir().unwrap();
+        let name_dir = dir.path().join("kubernetes").join("registered");
+        create_dir_all(&name_dir).unwrap();
+        let value = "registered-secret-value-2136";
+        File::create(name_dir.join("key"))
+            .unwrap()
+            .write_all(value.as_bytes())
+            .unwrap();
+
+        assert_eq!(
+            resolve_potential_secret_reference_string(
+                dir.path(),
+                "${secret:kubernetes:registered/key}".to_string()
+            )
+            .unwrap(),
+            value
+        );
+        assert_eq!(
+            secret_redactor().redact(&format!("connect {value} failed")),
+            "connect ${secret:kubernetes:registered/key} failed"
         );
     }
 
@@ -411,12 +459,12 @@ mod tests {
         create_dir_all(name_dir).unwrap();
         let data_key_file_path = &name_dir.join("b");
         let mut file = File::create(data_key_file_path).unwrap();
-        file.write_all(b"example1").unwrap();
+        file.write_all(b"secret-value-1").unwrap();
         let name_dir = &dir_path.join("kubernetes").join("c");
         create_dir_all(name_dir).unwrap();
         let data_key_file_path = &name_dir.join("d");
         let mut file = File::create(data_key_file_path).unwrap();
-        file.write_all(b"example2").unwrap();
+        file.write_all(b"secret-value-2").unwrap();
 
         // Resolve secrets in JSON
         let input = json!({
@@ -465,18 +513,18 @@ mod tests {
             "g": "val3",
             "${secret:kubernetes:a/b}": 123,
             "${secret:kubernetes:e/f}": 456,
-            "s1": "example1",
+            "s1": "secret-value-1",
             "s2": [
-                "example1"
+                "secret-value-1"
             ],
             "s3": {
-                "s31": "example1",
+                "s31": "secret-value-1",
                 "s32": [
-                    "example1",
-                    "example2"
+                    "secret-value-1",
+                    "secret-value-2"
                 ]
             },
-            "s4": "example2"
+            "s4": "secret-value-2"
         });
         assert_eq!(
             resolve_secret_references_in_json(dir_path, input.clone()).unwrap(),
@@ -512,12 +560,12 @@ mod tests {
         create_dir_all(name_dir).unwrap();
         let data_key_file_path = &name_dir.join("b");
         let mut file = File::create(data_key_file_path).unwrap();
-        file.write_all(b"example1").unwrap();
+        file.write_all(b"secret-value-1").unwrap();
         let name_dir = &dir_path.join("kubernetes").join("c");
         create_dir_all(name_dir).unwrap();
         let data_key_file_path = &name_dir.join("d");
         let mut file = File::create(data_key_file_path).unwrap();
-        file.write_all(b"example2").unwrap();
+        file.write_all(b"secret-value-2").unwrap();
 
         // Resolve a connector configuration
         let connector_config_json = json!({
@@ -572,19 +620,52 @@ mod tests {
                 .values
                 .as_ref()
                 .unwrap(),
-            &vec![json!("example1"), json!("example2")]
+            &vec![json!("secret-value-1"), json!("secret-value-2")]
         );
 
         // Format configuration resolution
         let Some(format_config) = connector_config_secrets_resolved.format else {
             unreachable!();
         };
-        assert_eq!(format_config.config, json!({"example": "example1"}));
+        assert_eq!(format_config.config, json!({"example": "secret-value-1"}));
 
         // Other fields should not be resolved
         assert_eq!(
             connector_config.index,
             Some("${secret:kubernetes:e/f}".to_string())
+        );
+    }
+
+    /// An environment variable value is not registered.
+    #[test]
+    fn env_var_value_is_not_registered_for_redaction() {
+        const VARIABLE: &str = "FELDERA_TEST_ENV_NOT_REGISTERED";
+        // Set the environment before starting a child, without mutating the
+        // process environment shared with the other tests and library threads.
+        if std::env::var(VARIABLE).as_deref() != Ok("env-word-not-redacted") {
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "secret_resolver::tests::env_var_value_is_not_registered_for_redaction",
+                ])
+                .env(VARIABLE, "env-word-not-redacted")
+                .status()
+                .unwrap();
+            assert!(status.success());
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            resolve_potential_secret_reference_string(
+                dir.path(),
+                "${env:FELDERA_TEST_ENV_NOT_REGISTERED}".to_string()
+            )
+            .unwrap(),
+            "env-word-not-redacted"
+        );
+        assert_eq!(
+            secret_redactor().redact("a env-word-not-redacted b"),
+            "a env-word-not-redacted b"
         );
     }
 
