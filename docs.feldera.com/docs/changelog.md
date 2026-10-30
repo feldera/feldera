@@ -34,6 +34,11 @@ Source edition can be found on github.
   NULL instead of values matched by position. A follow pipeline that read such
   a file before the upgrade can show wrong rows when the file is deleted later.
 
+- Behavior change (CSV output): a connector with the `index` property fails at
+  startup. Before, the connector ignored the index and wrote each update as a
+  delete and an insert. Remove `index` from the connector to get the same
+  output as before.
+
 ## v0.376.0
 
 - Behavior change (Python SDK): a request that is not idempotent, such as
