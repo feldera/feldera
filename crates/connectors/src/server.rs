@@ -52,7 +52,7 @@ use feldera_adapterlib::PipelineState;
 use feldera_adapterlib::errors::controller::ConfigError;
 use feldera_mtls::{Caller, PipelineClientAuth};
 use feldera_observability as observability;
-use feldera_observability::json_logging::init_pipeline_logging_with_id;
+use feldera_observability::json_logging::{LineRedactor, init_pipeline_logging_with_redaction};
 use feldera_types::adapter_stats::{
     EndpointErrorStats, InputEndpointErrorMetrics, OutputEndpointErrorMetrics,
     PipelineStatsErrorsResponse,
@@ -82,6 +82,7 @@ use feldera_types::runtime_status::{
     ExtendedRuntimeStatusError, RuntimeDesiredStatus, RuntimeStatus, RuntimeStatusDetails,
     StorageStatusDetails,
 };
+use feldera_types::secret_redaction::secret_redactor;
 use feldera_types::size::ConfigSize;
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
@@ -818,6 +819,15 @@ pub fn server_main<E: Engine>(engine: E) -> Result<(), ControllerError> {
 /// The time limit for the server to receive the first request from a new client.
 const CLIENT_REQUEST_TIMEOUT: Duration = Duration::from_secs(180);
 
+/// Shows a resolved secret value in a log line as its reference.
+struct SecretLineRedactor;
+
+impl LineRedactor for SecretLineRedactor {
+    fn redact<'a>(&self, line: &'a [u8]) -> Cow<'a, [u8]> {
+        secret_redactor().redact_bytes(line)
+    }
+}
+
 // We pass the engine as trait objects to make sure that this function
 // doesn't have any generics and gets generated, along with the entire web server
 // as part of this crate. This reduces the size of the generated code for
@@ -868,11 +878,16 @@ pub fn run_server(
         .as_ref()
         .and_then(|name| name.strip_prefix("pipeline-"))
         .map(|id| id.to_string());
-    init_pipeline_logging_with_id(pipeline_name, pipeline_id, get_env_filter(&config))
-        .unwrap_or_else(|e| {
-            // This happens in unit tests when another test has initialized logging.
-            eprintln!("Failed to initialize logging: {e}.")
-        });
+    init_pipeline_logging_with_redaction(
+        pipeline_name,
+        pipeline_id,
+        get_env_filter(&config),
+        SecretLineRedactor,
+    )
+    .unwrap_or_else(|e| {
+        // This happens in unit tests when another test has initialized logging.
+        eprintln!("Failed to initialize logging: {e}.")
+    });
     if let Some(provider) = rustls::crypto::CryptoProvider::get_default() {
         observability::fips::log_rustls_provider_fips_status(
             "startup default provider",
@@ -7350,6 +7365,148 @@ pub mod test_http {
          bootstrapping: 'test_input1'. We recommend materializing all tables in the program to \
          avoid such errors in the future."
         );
+    }
+
+    /// `/status` shows a resolved secret as its reference, not as its value.
+    ///
+    /// The Postgres input takes its URI from a Kubernetes secret, and the
+    /// connection is refused, so the pipeline fails to initialize. The URI
+    /// holds the password, and the error response must not.
+    #[engine_test]
+    pub fn status_error_shows_the_secret_reference_not_the_value(engine: &dyn PipelineTestEngine) {
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let secret_dir = tempdir.path().join("kubernetes").join("pg");
+        std::fs::create_dir_all(&secret_dir).unwrap();
+        // A Unix socket directory that does not exist: the connection fails
+        // at once, and no port is involved that another test could take.
+        let no_socket_dir = tempdir.path().join("nosock").display().to_string();
+        let password = "status-test-secret-2136";
+        let uri = format!("postgres://feldera:{password}@/app?host={no_socket_dir}");
+        std::fs::write(secret_dir.join("uri"), &uri).unwrap();
+
+        let config_json = json!({
+            "name": "test",
+            "workers": 2,
+            "clock_resolution_usecs": null,
+            "secrets_dir": tempdir.path(),
+            "inputs": {
+                "pg_in": {
+                    "stream": "test_input1",
+                    "transport": {
+                        "name": "postgres_input",
+                        "config": {
+                            "uri": "${secret:kubernetes:pg/uri}",
+                            "query": "SELECT * FROM t",
+                        },
+                    },
+                },
+            },
+            "outputs": {},
+        });
+        let config_file = json_config_file(&config_json);
+        let config = parse_config(config_file.path().display().to_string()).unwrap();
+        let builder = ControllerBuilder::new(&config, &engine.open_storage()).unwrap();
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing(InitializationState::Starting),
+            String::default(),
+            RuntimeDesiredStatus::Paused,
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            Uuid::now_v7(),
+            None,
+            None,
+            None,
+            None,
+        ));
+        {
+            let state = state.clone();
+            let factory = engine.circuit_factory(&identity(&[None]), None).unwrap();
+            thread::spawn(move || bootstrap(builder, factory, state))
+        }
+        .join()
+        .unwrap();
+
+        let PipelinePhase::InitializationError(_) = state.phase() else {
+            panic!("the refused connection did not fail the initialization");
+        };
+        let status = get_status(&state, false).expect_err("the status does not report the failure");
+        let body = serde_json::to_string(&status.error).unwrap();
+        assert!(body.contains("pg_in"), "{body}");
+        assert!(
+            body.contains("Unable to connect to postgres instance"),
+            "not the connection failure: {body}"
+        );
+        assert!(!body.contains(password), "{body}");
+    }
+
+    /// Format type errors must omit short secrets at their source, because
+    /// the runtime registry deliberately ignores values shorter than 8 bytes.
+    #[engine_test]
+    pub fn status_format_error_omits_short_secret(engine: &dyn PipelineTestEngine) {
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let secret_dir = tempdir.path().join("kubernetes").join("pg");
+        std::fs::create_dir_all(&secret_dir).unwrap();
+        let password = "hunter2";
+        std::fs::write(secret_dir.join("uri"), password).unwrap();
+        let input_path = tempdir.path().join("input.json");
+        std::fs::write(&input_path, b"").unwrap();
+
+        let config_json = json!({
+            "name": "test",
+            "workers": 2,
+            "clock_resolution_usecs": null,
+            "secrets_dir": tempdir.path(),
+            "inputs": {
+                "pg_in": {
+                    "stream": "test_input1",
+                    "transport": {
+                        "name": "file_input",
+                        "config": {"path": input_path},
+                    },
+                    "format": {
+                        "name": "json",
+                        "config": {"update_format": "${secret:kubernetes:pg/uri}"},
+                    },
+                },
+            },
+            "outputs": {},
+        });
+        let config_file = json_config_file(&config_json);
+        let config = parse_config(config_file.path().display().to_string()).unwrap();
+        let builder = ControllerBuilder::new(&config, &engine.open_storage()).unwrap();
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing(InitializationState::Starting),
+            String::default(),
+            RuntimeDesiredStatus::Paused,
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            Uuid::now_v7(),
+            None,
+            None,
+            None,
+            None,
+        ));
+        {
+            let state = state.clone();
+            let factory = engine.circuit_factory(&identity(&[None]), None).unwrap();
+            thread::spawn(move || bootstrap(builder, factory, state))
+        }
+        .join()
+        .unwrap();
+
+        let PipelinePhase::InitializationError(_) = state.phase() else {
+            panic!("the invalid format did not fail the initialization");
+        };
+        let status = get_status(&state, false).expect_err("the status does not report the failure");
+        let body = serde_json::to_string(&status.error).unwrap();
+        assert!(body.contains("pg_in"), "{body}");
+        assert!(
+            body.contains("a configuration value is not supported"),
+            "not the format failure: {body}"
+        );
+        assert!(!body.contains(password), "{body}");
     }
 
     /// Regression test for the fault-tolerant replay path, the analogue of

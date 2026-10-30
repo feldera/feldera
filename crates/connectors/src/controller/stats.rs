@@ -58,6 +58,7 @@ use feldera_observability::system::process_rss_bytes;
 use feldera_samply::Event;
 use feldera_storage::disk::DiskUsage;
 use feldera_storage::histogram::SlidingHistogram;
+use feldera_types::secret_redaction::secret_redactor;
 use feldera_types::{
     adapter_stats::{
         CompletedWatermark, ConnectorError, ConnectorHealth, ConnectorHealthStatus,
@@ -2584,7 +2585,7 @@ impl InputEndpointStatus {
         if fatal {
             let mut fatal_error = self.fatal_error.lock().unwrap();
             if fatal_error.is_none() {
-                *fatal_error = Some(bound_error_message(&error.to_string()));
+                *fatal_error = Some(stored_error_message(&error.to_string()));
             }
         }
     }
@@ -2907,6 +2908,12 @@ pub(crate) fn bound_error_message(message: &str) -> String {
     truncate_ellipse_middle(message, MAX_CONNECTOR_ERROR_LEN).into_owned()
 }
 
+/// Prepares an error message for the endpoint status: a resolved secret value
+/// becomes its reference, then the message is capped.
+pub(crate) fn stored_error_message(message: &str) -> String {
+    bound_error_message(&secret_redactor().redact(message))
+}
+
 /// Recent connector errors.
 ///
 /// Stores up to MAX_CONNECTOR_ERRORS most recent errors for each tag.
@@ -2937,7 +2944,7 @@ impl ConnectorErrorList {
             timestamp: Utc::now(),
             tag,
             index,
-            message: bound_error_message(&error.to_string()),
+            message: stored_error_message(&error.to_string()),
         });
         if entry.len() > MAX_CONNECTOR_ERRORS {
             entry.pop_front();
@@ -2977,7 +2984,7 @@ impl ConnectorErrorList {
         for mut error in errors {
             let entry: &mut VecDeque<ConnectorError> =
                 list.errors.entry(error.tag.clone()).or_default();
-            error.message = bound_error_message(&error.message);
+            error.message = stored_error_message(&error.message);
             entry.push_back(error);
             if entry.len() > MAX_CONNECTOR_ERRORS {
                 entry.pop_front();
@@ -3319,7 +3326,7 @@ impl OutputEndpointStatus {
         if fatal {
             let mut fatal_error = self.fatal_error.lock().unwrap();
             if fatal_error.is_none() {
-                *fatal_error = Some(bound_error_message(&error.to_string()));
+                *fatal_error = Some(stored_error_message(&error.to_string()));
             }
         }
     }
@@ -3344,7 +3351,7 @@ mod test {
     use super::{
         ConnectorError, ConnectorErrorList, ControllerStatus, GlobalControllerMetrics,
         InputEndpointMetrics, InputEndpointStatus, MAX_CONNECTOR_ERROR_LEN, StepResults,
-        bound_error_message,
+        bound_error_message, secret_redactor,
     };
     use crate::format::BufferSize;
     use anyhow::anyhow;
@@ -3601,6 +3608,21 @@ mod test {
             stored[0].message.len() <= MAX_CONNECTOR_ERROR_LEN + 64,
             "stored message is {} bytes",
             stored[0].message.len()
+        );
+    }
+
+    /// A stored connector error shows a resolved secret as its reference.
+    #[test]
+    fn stored_error_shows_the_secret_reference_not_the_value() {
+        secret_redactor().register("${secret:kubernetes:pg/uri}", "stats-test-secret-value");
+
+        let mut errors = ConnectorErrorList::new();
+        errors.add_error(None, "connect to stats-test-secret-value refused", 1);
+
+        let stored = errors.to_api_type();
+        assert_eq!(
+            stored[0].message,
+            "connect to ${secret:kubernetes:pg/uri} refused"
         );
     }
 

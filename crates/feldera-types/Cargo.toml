@@ -39,6 +39,8 @@ time = { workspace = true }
 bytemuck = { workspace = true }
 clap = { workspace = true }
 url = { workspace = true }
+urlencoding = { workspace = true }
+aho-corasick = { workspace = true }
 
 [dev-dependencies]
 csv = { workspace = true }

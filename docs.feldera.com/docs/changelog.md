@@ -10,10 +10,12 @@ Source edition can be found on github.
 
 ## Unreleased
 
-- Security: connector errors, debug log lines, and compile errors that
-  printed a whole configuration, URI, or option value now name the endpoint
-  and the option only, so a resolved secret reference does not reach the
-  pipeline log or `deployment_error` through them. See
+- Security: a resolved secret reference no longer appears in pipeline
+  diagnostics. The pipeline shows the value as its reference in its log, in
+  `/status`, and in the connector errors of `/stats`. Connector errors, debug
+  log lines, and compile errors that printed a whole configuration, URI, or
+  option value now name the endpoint and the option only. Restart running
+  pipelines so that they run on the fixed runtime. See
   [secret references](/connectors/secret-references#diagnostics).
 
 - Delta Lake input connector: `uc://` tables can use Databricks workload

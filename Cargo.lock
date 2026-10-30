@@ -5886,6 +5886,7 @@ name = "feldera-types"
 version = "0.371.0"
 dependencies = [
  "actix-web",
+ "aho-corasick",
  "anyhow",
  "arrow-schema",
  "bytemuck",
@@ -5908,6 +5909,7 @@ dependencies = [
  "time",
  "tracing",
  "url",
+ "urlencoding",
  "utoipa",
  "uuid",
 ]

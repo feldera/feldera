@@ -1,10 +1,12 @@
 use chrono::Utc;
 use colored::{ColoredString, Colorize};
 use serde_json::{Map, Value};
+use std::borrow::Cow;
+use std::io;
 use tracing::Subscriber;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::format::{self, Format, Writer};
-use tracing_subscriber::fmt::{FormatEvent, FormatFields};
+use tracing_subscriber::fmt::{FormatEvent, FormatFields, MakeWriter};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -54,11 +56,21 @@ pub enum LogIdentity {
 /// Shared JSON formatter that injects pipeline/service name and structured fields.
 pub struct JsonPipelineFormat {
     identity: LogIdentity,
+    redactor: Option<Box<dyn LineRedactor>>,
 }
 
 impl JsonPipelineFormat {
     pub fn new(identity: LogIdentity) -> Self {
-        Self { identity }
+        Self {
+            identity,
+            redactor: None,
+        }
+    }
+
+    /// Redact the structured fields before JSON adds another escaping layer.
+    pub fn with_redaction(mut self, redactor: impl LineRedactor) -> Self {
+        self.redactor = Some(Box::new(redactor));
+        self
     }
 }
 
@@ -152,7 +164,10 @@ where
             obj.insert("span".to_string(), Value::String(span.name().to_string()));
         }
 
-        let json = Value::Object(obj);
+        let mut json = Value::Object(obj);
+        if let Some(redactor) = &self.redactor {
+            redactor.redact_json(&mut json);
+        }
         writeln!(writer, "{}", json)
     }
 }
@@ -240,23 +255,44 @@ pub fn init_pipeline_logging(
     pipeline_name: ColoredString,
     env_filter: EnvFilter,
 ) -> Result<(), tracing_subscriber::util::TryInitError> {
-    init_pipeline_logging_with_id(pipeline_name, None, env_filter)
-}
-
-/// Initialize logging with either the JSON or text pipeline format, optionally attaching a pipeline id.
-pub fn init_pipeline_logging_with_id(
-    pipeline_name: ColoredString,
-    pipeline_id: Option<String>,
-    env_filter: EnvFilter,
-) -> Result<(), tracing_subscriber::util::TryInitError> {
     init_logging(
         pipeline_name,
         LogIdentity::Pipeline {
             pipeline_name: None,
-            pipeline_id,
+            pipeline_id: None,
         },
         env_filter,
     )
+}
+
+/// Redact text events as lines and JSON events before serializing their fields.
+pub fn init_pipeline_logging_with_redaction<R: LineRedactor>(
+    pipeline_name: ColoredString,
+    pipeline_id: Option<String>,
+    env_filter: EnvFilter,
+    redactor: R,
+) -> Result<(), tracing_subscriber::util::TryInitError> {
+    let identity = LogIdentity::Pipeline {
+        pipeline_name: None,
+        pipeline_id,
+    };
+    if use_json_log_format() {
+        init_logging_with_writer(
+            pipeline_name,
+            identity,
+            env_filter,
+            io::stdout,
+            Some(Box::new(redactor)),
+        )
+    } else {
+        init_logging_with_writer(
+            pipeline_name,
+            identity,
+            env_filter,
+            RedactingMakeWriter::new(redactor, io::stdout),
+            None,
+        )
+    }
 }
 
 /// Initialize logging for a control-plane service (manager | runner | compiler-server | control-plane).
@@ -274,11 +310,89 @@ pub fn init_service_logging(
     )
 }
 
+/// Rewrites a formatted log line before it is written.
+pub trait LineRedactor: Send + Sync + 'static {
+    fn redact<'a>(&self, line: &'a [u8]) -> Cow<'a, [u8]>;
+
+    /// Redact strings before a structured formatter escapes them.
+    fn redact_json(&self, value: &mut Value) {
+        match value {
+            Value::String(text) => {
+                if let Cow::Owned(bytes) = self.redact(text.as_bytes()) {
+                    *text = String::from_utf8_lossy(&bytes).into_owned();
+                }
+            }
+            Value::Array(items) => items.iter_mut().for_each(|item| self.redact_json(item)),
+            Value::Object(fields) => {
+                for (key, mut value) in std::mem::take(fields) {
+                    self.redact_json(&mut value);
+                    let key = String::from_utf8_lossy(&self.redact(key.as_bytes())).into_owned();
+                    fields.insert(key, value);
+                }
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) => {}
+        }
+    }
+}
+
+/// Makes writers that pass every line through a [`LineRedactor`].
+pub struct RedactingMakeWriter<R, W> {
+    redactor: R,
+    inner: W,
+}
+
+impl<R, W> RedactingMakeWriter<R, W> {
+    pub fn new(redactor: R, inner: W) -> Self {
+        Self { redactor, inner }
+    }
+}
+
+impl<'a, R: LineRedactor, W: MakeWriter<'a>> MakeWriter<'a> for RedactingMakeWriter<R, W> {
+    type Writer = RedactingWriter<'a, R, W::Writer>;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        RedactingWriter {
+            redactor: &self.redactor,
+            inner: self.inner.make_writer(),
+        }
+    }
+}
+
+pub struct RedactingWriter<'a, R, W> {
+    redactor: &'a R,
+    inner: W,
+}
+
+impl<R: LineRedactor, W: io::Write> io::Write for RedactingWriter<'_, R, W> {
+    // The fmt layer hands over one formatted event per call, so a line is redacted whole.
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.write_all(&self.redactor.redact(buf))?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 fn init_logging(
     prefix: ColoredString,
     identity: LogIdentity,
     env_filter: EnvFilter,
 ) -> Result<(), tracing_subscriber::util::TryInitError> {
+    init_logging_with_writer(prefix, identity, env_filter, io::stdout, None)
+}
+
+fn init_logging_with_writer<W>(
+    prefix: ColoredString,
+    identity: LogIdentity,
+    env_filter: EnvFilter,
+    writer: W,
+    json_redactor: Option<Box<dyn LineRedactor>>,
+) -> Result<(), tracing_subscriber::util::TryInitError>
+where
+    W: for<'a> MakeWriter<'a> + Send + Sync + 'static,
+{
     let identity = match identity {
         LogIdentity::Service { service_name } => LogIdentity::Service {
             service_name: service_name.or(Some(ServiceName::ControlPlane)),
@@ -299,8 +413,12 @@ fn init_logging(
         tracing_subscriber::registry()
             .with(
                 tracing_subscriber::fmt::layer()
-                    .event_format(JsonPipelineFormat::new(identity))
-                    .with_ansi(false),
+                    .event_format(JsonPipelineFormat {
+                        identity,
+                        redactor: json_redactor,
+                    })
+                    .with_ansi(false)
+                    .with_writer(writer),
             )
             .with(env_filter)
             .try_init()
@@ -309,7 +427,8 @@ fn init_logging(
             .with(
                 tracing_subscriber::fmt::layer()
                     .event_format(FormatWithPrefix::new(prefix))
-                    .fmt_fields(plain_text_fields()),
+                    .fmt_fields(plain_text_fields())
+                    .with_writer(writer),
             )
             .with(env_filter)
             .try_init()
@@ -379,4 +498,79 @@ fn plain_text_fields() -> impl for<'writer> tracing_subscriber::fmt::FormatField
         }
         Ok(())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LineRedactor, RedactingMakeWriter};
+    use std::borrow::Cow;
+    use std::io;
+    use std::sync::{Arc, Mutex};
+    use tracing::error;
+    use tracing_subscriber::fmt::MakeWriter;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    struct Replace {
+        value: &'static str,
+        replacement: &'static str,
+    }
+
+    impl LineRedactor for Replace {
+        fn redact<'a>(&self, line: &'a [u8]) -> Cow<'a, [u8]> {
+            let text = String::from_utf8_lossy(line);
+            if text.contains(self.value) {
+                Cow::Owned(text.replace(self.value, self.replacement).into_bytes())
+            } else {
+                Cow::Borrowed(line)
+            }
+        }
+    }
+
+    #[derive(Clone, Default)]
+    struct SharedBuffer(Arc<Mutex<Vec<u8>>>);
+
+    impl io::Write for SharedBuffer {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl MakeWriter<'_> for SharedBuffer {
+        type Writer = SharedBuffer;
+
+        fn make_writer(&self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    /// A value in a log event reaches the output as its replacement.
+    #[test]
+    fn logged_value_is_replaced() {
+        let buffer = SharedBuffer::default();
+        let redactor = Replace {
+            value: "logged-secret-value",
+            replacement: "${secret:kubernetes:pg/uri}",
+        };
+        let subscriber = tracing_subscriber::registry().with(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(RedactingMakeWriter::new(redactor, buffer.clone())),
+        );
+
+        tracing::subscriber::with_default(subscriber, || {
+            error!("connection to logged-secret-value refused");
+        });
+
+        let log = String::from_utf8(buffer.0.lock().unwrap().clone()).unwrap();
+        assert!(!log.contains("logged-secret-value"), "{log}");
+        assert!(
+            log.contains("connection to ${secret:kubernetes:pg/uri} refused"),
+            "{log}"
+        );
+    }
 }
