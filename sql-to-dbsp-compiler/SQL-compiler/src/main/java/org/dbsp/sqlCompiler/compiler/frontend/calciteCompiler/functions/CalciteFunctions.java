@@ -635,7 +635,6 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "runtime_aggtest/illarg_tests2/test_date_time_fn.py", false),
             new Func(SqlLibraryOperators.TIMESTAMP_TRUNC, "TIMESTAMP_TRUNC", SqlLibrary.BIG_QUERY, "datetime#timestamp_trunc",
                     "runtime_aggtest/illarg_tests2/test_date_time_fn.py", false),
-            new Func(SqlLibraryOperators.CHR, "CHR", SqlLibrary.POSTGRESQL, "string#chr", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.TANH, "TANH", SqlLibrary.ALL, "float#tanh",
                     "runtime_aggtest/illarg_tests2/test_numeric_type_fn.py", false),
             new Func(SqlLibraryOperators.COTH, "COTH", SqlLibrary.ALL, "float#coth",
