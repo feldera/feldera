@@ -2290,6 +2290,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     return this.warnAlwaysNull(node, type);
                 }
 
+                // The key and the map's keys can differ inside, such as an INT ARRAY against
+                // INT NOT NULL ARRAY keys; both are compared in a common type
+                DBSPType argKeyType = arg1.type.withMayBeNull(keyType.mayBeNull);
+                if (!keyType.sameType(argKeyType)) {
+                    keyType = TypeCompiler.reduceType(node, keyType, argKeyType,
+                            "Cannot find common type between key and map", true);
+                    arg0 = arg0.cast(node, new DBSPTypeMap(keyType, map.getValueType(), arg0.type.mayBeNull),
+                            DBSPCastExpression.CastType.SqlUnsafe);
+                    arg1 = arg1.cast(node, keyType.withMayBeNull(arg1.type.mayBeNull),
+                            DBSPCastExpression.CastType.SqlUnsafe);
+                }
+
                 String method = getArrayOrMapCallName(call, arg0, arg1);
                 // the rust code has signature: (Vec<T>, T)
                 // so if elements of the vector are nullable and T is an Option type

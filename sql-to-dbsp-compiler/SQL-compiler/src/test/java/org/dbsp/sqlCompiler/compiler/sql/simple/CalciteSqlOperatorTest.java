@@ -314,6 +314,18 @@ public class CalciteSqlOperatorTest extends SqlIoTest {
                  t
                 (1 row)
 
+                select map_contains_key(map[array(1), array(2)], array[nullif(1, 0)]);
+                 r
+                ---
+                 t
+                (1 row)
+
+                select map_contains_key(map[array(1), array(2)], array[1, null]);
+                 r
+                ---
+                 f
+                (1 row)
+
                 select map_contains_key(map[array(1), array(2)], array(1));
                  r
                 ---
