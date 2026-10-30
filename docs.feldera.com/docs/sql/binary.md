@@ -52,6 +52,11 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <td><code>x'ab' || x'cd'</code> => <code>x'ABCD'</code></td>
   </tr>
   <tr>
+    <td><a id="endswith"></a><code>ENDSWITH</code>(binary, suffix)</td>
+    <td>Returns <code>TRUE</code> if the bytes of <code>binary</code> end with the bytes of <code>suffix</code>.  An empty <code>suffix</code> gives <code>TRUE</code>.  If any argument is <code>NULL</code>, returns <code>NULL</code>.</td>
+    <td><code>ENDSWITH(x'abcdef', x'ef')</code> => <code>TRUE</code></td>
+  </tr>
+  <tr>
     <td><a id="gunzip"></a><code>GUNZIP</code>(binary)</td>
     <td>
         Decompresses a binary string using the GZIP algorithm.
@@ -98,6 +103,11 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
     <td><a id="right"></a><code>RIGHT ( binary, count )</code></td>
     <td>Returns last <code>count</code> bytes in the byte array.  If any argument is <code>NULL</code>, return <code>NULL</code>.</td>
     <td><code>right(x'abcdef', 2)</code> => <code>cdef</code></td>
+  </tr>
+  <tr>
+    <td><a id="startswith"></a><code>STARTSWITH</code>(binary, prefix)</td>
+    <td>Returns <code>TRUE</code> if the bytes of <code>binary</code> start with the bytes of <code>prefix</code>.  An empty <code>prefix</code> gives <code>TRUE</code>.  If any argument is <code>NULL</code>, returns <code>NULL</code>.</td>
+    <td><code>STARTSWITH(x'abcdef', x'ab')</code> => <code>TRUE</code></td>
   </tr>
   <tr>
     <td><a id="substring"></a><code>SUBSTRING</code>(binary FROM integer)</td>

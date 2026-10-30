@@ -510,6 +510,20 @@ pub fn binary_position__(needle: ByteArray, haystack: ByteArray) -> i32 {
 some_function2!(binary_position, ByteArray, ByteArray, i32);
 
 #[doc(hidden)]
+pub fn binary_starts_with__(value: ByteArray, prefix: ByteArray) -> bool {
+    value.as_slice().starts_with(prefix.as_slice())
+}
+
+some_function2!(binary_starts_with, ByteArray, ByteArray, bool);
+
+#[doc(hidden)]
+pub fn binary_ends_with__(value: ByteArray, suffix: ByteArray) -> bool {
+    value.as_slice().ends_with(suffix.as_slice())
+}
+
+some_function2!(binary_ends_with, ByteArray, ByteArray, bool);
+
+#[doc(hidden)]
 pub fn binary_substring2__(source: ByteArray, left: i32) -> ByteArray {
     // SQL indexing starts at 1
     let start = if left < 1 { 0 } else { left - 1 };
