@@ -13,6 +13,7 @@ use crate::{
 use dbsp::algebra::{F32, F64};
 use feldera_fxp::DynamicDecimal;
 use feldera_macros::{IsNone, OrdRepr};
+use feldera_types::format::json::to_json_string;
 use feldera_types::serde_with_context::serde_config::VariantFormat;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -600,7 +601,7 @@ impl Variant {
     /// Convert a Variant to a String representing a JSON encoding of
     /// the Variant value.
     pub fn to_json_string(&self) -> Result<String, Box<dyn std::error::Error>> {
-        Ok(serde_json::to_string(self)?)
+        Ok(to_json_string(self)?)
     }
 }
 
@@ -1850,6 +1851,14 @@ mod test {
         assert_eq!(
             "-1e-20",
             &serde_json::to_string(&Variant::Double(F64::new(-1E-20))).unwrap()
+        );
+
+        // TO_JSON text must not change with `serde_json` updates.
+        let double = Variant::Double(F64::new(1E20));
+        assert_eq!(double.to_json_string().unwrap(), "1e20");
+        assert_eq!(
+            crate::FlatVariant::from(&double).to_json_string().unwrap(),
+            "1e20"
         );
     }
 

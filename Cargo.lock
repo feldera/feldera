@@ -5902,6 +5902,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "regex",
+ "ryu",
  "serde",
  "serde_json",
  "tempfile",
