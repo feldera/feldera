@@ -1965,7 +1965,7 @@ pub mod parallel {
         },
     };
     use feldera_adapterlib::{
-        test::{ConnectorTestEngine, Updates, ZSet},
+        test::{ConnectorTestEngine, Updates, ZSet, default_timeout_ms},
         transport::OutputBatchType,
     };
     use feldera_storage::tokio::TOKIO;
@@ -4175,15 +4175,23 @@ pub mod parallel {
         // Commit on a thread of its own, so that a regression fails this test
         // rather than hanging the whole run.
         let shutdown = endpoint.inner.shutdown.clone();
+        let (written, write_returned) = std::sync::mpsc::channel();
         let (done, batch_ended) = std::sync::mpsc::channel();
         let committer = std::thread::spawn(move || {
             endpoint.consumer().batch_start(0, OutputBatchType::Delta);
             endpoint
                 .encode(batch)
                 .expect("the write itself must succeed");
+            let _ = written.send(());
             endpoint.consumer().batch_end();
             let _ = done.send(());
         });
+
+        // Cancel only once the write is in: a shutdown during `encode` aborts
+        // the write itself, and this test is about the commit.
+        write_returned
+            .recv_timeout(std::time::Duration::from_millis(default_timeout_ms()))
+            .expect("the write must finish");
 
         // Long enough for the first commit attempt to fail and the retry to
         // reach the one-second backoff.
