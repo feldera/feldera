@@ -57,6 +57,8 @@ Source edition can be found on github.
   and after a chunk gives up, and healthy again once the writes land. The
   metric `dynamodb_output_retries_total` counts retries as they start, and
   the gauge `dynamodb_output_retrying_chunks` shows the chunks retrying now.
+  Diagnostics retain cancellation causes without dumping raw HTTP responses
+  or returned item data.
   See [Retries and health](/connectors/sinks/dynamodb#retries-and-health).
 
 - Bug fix (Python SDK, fda): `commit_transaction(transaction_id=N)` and
