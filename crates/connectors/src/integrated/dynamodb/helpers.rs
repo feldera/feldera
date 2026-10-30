@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Result as AnyResult, anyhow, bail};
 use aws_credential_types::provider::error::CredentialsError;
+use aws_runtime::retries::classifiers::{THROTTLING_ERRORS, TRANSIENT_ERRORS};
 use aws_sdk_dynamodb::Client;
 use aws_sdk_dynamodb::error::{
     ConnectorError, DisplayErrorContext, ProvideErrorMetadata, SdkError,
@@ -41,32 +42,8 @@ pub(crate) enum WriteErrorKind {
     Permanent,
 }
 
-/// AWS error codes the SDK retries as throttling. Copied from
-/// `aws-runtime` 1.7.2, `src/retries/classifiers.rs`, `THROTTLING_ERRORS`,
-/// which is not a direct dependency of this crate.
-const THROTTLING_ERROR_CODES: &[&str] = &[
-    "Throttling",
-    "ThrottlingException",
-    "ThrottledException",
-    "RequestThrottledException",
-    "TooManyRequestsException",
-    "ProvisionedThroughputExceededException",
-    "TransactionInProgressException",
-    "RequestLimitExceeded",
-    "BandwidthLimitExceeded",
-    "LimitExceededException",
-    "RequestThrottled",
-    "SlowDown",
-    "PriorRequestNotComplete",
-    "EC2ThrottledException",
-];
-
-/// AWS error codes the SDK retries as transient. Same source as
-/// [`THROTTLING_ERROR_CODES`], `TRANSIENT_ERRORS`.
-const TRANSIENT_ERROR_CODES: &[&str] = &["RequestTimeout", "RequestTimeoutException"];
-
 /// DynamoDB error codes that the AWS error-handling guide labels retryable
-/// and that the SDK lists above omit. An item collection over its size limit
+/// and that the SDK's own lists omit. An item collection over its size limit
 /// can shrink through deletes, smaller updates or TTL expiry, so its code is
 /// retryable too, with the configured retry budget as the bound.
 const DYNAMODB_RETRYABLE_CODES: &[&str] = &[
@@ -83,8 +60,8 @@ const DYNAMODB_RETRYABLE_CODES: &[&str] = &[
 const RETRYABLE_HTTP_STATUSES: &[u16] = &[500, 502, 503, 504];
 
 fn is_retryable_error_code(code: &str) -> bool {
-    THROTTLING_ERROR_CODES.contains(&code)
-        || TRANSIENT_ERROR_CODES.contains(&code)
+    THROTTLING_ERRORS.contains(&code)
+        || TRANSIENT_ERRORS.contains(&code)
         || DYNAMODB_RETRYABLE_CODES.contains(&code)
 }
 
@@ -972,9 +949,9 @@ mod tests {
 
     #[test]
     fn every_listed_code_is_retryable_on_a_400() {
-        for code in THROTTLING_ERROR_CODES
+        for code in THROTTLING_ERRORS
             .iter()
-            .chain(TRANSIENT_ERROR_CODES)
+            .chain(TRANSIENT_ERRORS)
             .chain(DYNAMODB_RETRYABLE_CODES)
         {
             assert_eq!(
