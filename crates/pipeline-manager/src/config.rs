@@ -1507,8 +1507,9 @@ pub struct ApiServerConfig {
     #[arg(long, default_value = "", env = "FELDERA_HTTP_BASE_PATH")]
     pub http_base_path: String,
 
-    /// Allow a `PATCH` of `deployment_config` to resize a running pipeline's CPU and memory in
-    /// place, without a restart. Enable only when the runner supports it.
+    /// Allow a `PATCH` of `deployment_config` to change a running pipeline's CPU, memory,
+    /// storage, and volume attributes class in place, without a restart. Enable only when the
+    /// runner supports it.
     #[serde(default)]
     #[arg(long, action = clap::ArgAction::Set, default_value_t = false, env = "FELDERA_ENABLE_PIPELINE_RESIZE")]
     pub enable_pipeline_resize: bool,

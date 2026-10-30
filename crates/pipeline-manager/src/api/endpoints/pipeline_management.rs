@@ -105,8 +105,9 @@ pub struct PipelineInfo {
     pub version: Version,
     pub platform_version: String,
     pub runtime_config: RuntimeConfig,
-    /// The CPU and memory of the pipeline's current or last deployment, or `null` before its
-    /// first start. Can differ from `runtime_config` after a `PATCH` of `deployment_config`.
+    /// The CPU, memory, storage, and volume attributes class of the pipeline's current or last
+    /// deployment, or `null` before its first start. Can differ from `runtime_config` after a `PATCH` of
+    /// `deployment_config`.
     pub deployment_config: Option<DynamicConfig>,
     pub program_code: String,
     pub udf_rust: String,
@@ -274,8 +275,9 @@ pub struct PipelineSelectedInfo {
     pub platform_version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_config: Option<RuntimeConfig>,
-    /// The CPU and memory of the pipeline's current or last deployment, or `null` before its
-    /// first start. Can differ from `runtime_config` after a `PATCH` of `deployment_config`.
+    /// The CPU, memory, storage, and volume attributes class of the pipeline's current or last
+    /// deployment, or `null` before its first start. Can differ from `runtime_config` after a `PATCH` of
+    /// `deployment_config`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deployment_config: Option<Option<DynamicConfig>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -710,9 +712,10 @@ pub struct PatchPipeline {
     #[serde(flatten)]
     pub client_metadata: PatchClientMetadata,
     pub runtime_config: Option<RuntimeConfig>,
-    /// Changes the CPU and memory of a running pipeline in place (experimental). Cannot be
-    /// combined with other fields. The change lasts across restarts until storage is cleared
-    /// or CPU or memory is changed in `runtime_config`.
+    /// Changes the CPU, memory, storage, and volume attributes class of a running pipeline in
+    /// place (experimental). Cannot be combined with other fields. Storage can only grow. The
+    /// change lasts across restarts until storage is cleared or the same resource is changed in
+    /// `runtime_config`.
     pub deployment_config: Option<DynamicConfig>,
     pub program_code: Option<String>,
     pub udf_rust: Option<String>,
@@ -1251,8 +1254,9 @@ pub(crate) async fn put_pipeline(
 ///
 /// Partially update a pipeline.
 ///
-/// A `deployment_config` resizes the CPU and memory of a running pipeline in place (experimental,
-/// enabled by `--enable-pipeline-resize`). It cannot be combined with other fields.
+/// A `deployment_config` changes the CPU, memory, storage, and volume attributes class of a
+/// running pipeline in place (experimental, enabled by `--enable-pipeline-resize`). It cannot be
+/// combined with other fields.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),

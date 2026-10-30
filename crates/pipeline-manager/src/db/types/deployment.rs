@@ -13,9 +13,9 @@ pub use feldera_types::config::{DynamicConfig, DynamicResources};
 
 /// The API view of a stored deployment config.
 ///
-/// A config stored before the size rename holds its memory under
-/// `memory_mb_min` and `memory_mb_max`, as numbers of megabytes; the view
-/// shows them under the current names, as sizes.
+/// A config stored before the size rename holds its memory and storage under
+/// `memory_mb_min`, `memory_mb_max`, `storage_mb_min`, and `storage_mb_max`, as numbers of
+/// megabytes; the view shows them under the current names, as sizes.
 pub fn deployment_config_view(deployment_config: &Value) -> Value {
     let resources = deployment_config.get("resources");
     let field = |name: &str| {
@@ -41,6 +41,9 @@ pub fn deployment_config_view(deployment_config: &Value) -> Value {
         "cpu_cores_max": field("cpu_cores_max"),
         "memory_min": size("memory_min", "memory_mb_min"),
         "memory_max": size("memory_max", "memory_mb_max"),
+        "storage_min": size("storage_min", "storage_mb_min"),
+        "storage_max": size("storage_max", "storage_mb_max"),
+        "volume_attributes_class": field("volume_attributes_class"),
     }})
 }
 
@@ -64,7 +67,11 @@ pub fn check_unchanged_deployment_config(
     let changed = (given.cpu_cores_min.is_some() && given.cpu_cores_min != stored.cpu_cores_min)
         || (given.cpu_cores_max.is_some() && given.cpu_cores_max != stored.cpu_cores_max)
         || (given.memory_min.is_some() && given.memory_min != stored.memory_min)
-        || (given.memory_max.is_some() && given.memory_max != stored.memory_max);
+        || (given.memory_max.is_some() && given.memory_max != stored.memory_max)
+        || (given.storage_min.is_some() && given.storage_min != stored.storage_min)
+        || (given.storage_max.is_some() && given.storage_max != stored.storage_max)
+        || (given.volume_attributes_class.is_some()
+            && given.volume_attributes_class != stored.volume_attributes_class);
     if changed {
         return Err(invalid(
             "`deployment_config` can only be changed with PATCH while the pipeline is running"
@@ -138,7 +145,8 @@ fn apply_patch(
     if resize == &DynamicResources::default() {
         return Err(
             "specify at least one of resources.cpu_cores_min, resources.cpu_cores_max, \
-             resources.memory_min, resources.memory_max"
+             resources.memory_min, resources.memory_max, resources.storage_min, \
+             resources.storage_max, resources.volume_attributes_class"
                 .to_string(),
         );
     }
@@ -147,13 +155,24 @@ fn apply_patch(
     }
     check_cpu("cpu_cores_min", resize.cpu_cores_min)?;
     check_cpu("cpu_cores_max", resize.cpu_cores_max)?;
-    check_memory("memory_min", resize.memory_min)?;
-    check_memory("memory_max", resize.memory_max)?;
+    check_size("memory_min", resize.memory_min)?;
+    check_size("memory_max", resize.memory_max)?;
+    check_size("storage_min", resize.storage_min)?;
+    check_size("storage_max", resize.storage_max)?;
+    if resize.volume_attributes_class.as_deref() == Some("") {
+        return Err("volume_attributes_class must not be empty".to_string());
+    }
     let mut new = current.clone();
     new.cpu_cores_min = resize.cpu_cores_min.or(current.cpu_cores_min);
     new.cpu_cores_max = resize.cpu_cores_max.or(current.cpu_cores_max);
     new.memory_min = resize.memory_min.or(current.memory_min);
     new.memory_max = resize.memory_max.or(current.memory_max);
+    new.storage_min = resize.storage_min.or(current.storage_min);
+    new.storage_max = resize.storage_max.or(current.storage_max);
+    new.volume_attributes_class = resize
+        .volume_attributes_class
+        .clone()
+        .or(current.volume_attributes_class.clone());
     if let (Some(min), Some(max)) = (new.cpu_cores_min, new.cpu_cores_max)
         && min > max
     {
@@ -166,20 +185,70 @@ fn apply_patch(
     {
         return Err(format!("memory_min ({min}) exceeds memory_max ({max})"));
     }
+    // A patch cannot unset a field, so this also keeps a fixed size on the field it is set by.
+    if storage_autoscaling(&new) != storage_autoscaling(&current) {
+        return Err(
+            "storage autoscaling cannot be turned on or off while the pipeline runs: set \
+             storage_min and storage_max in the runtime configuration"
+                .to_string(),
+        );
+    }
+    if let (Some(min), Some(max)) = (new.storage_min, new.storage_max)
+        && min > max
+    {
+        return Err(format!("storage_min ({min}) exceeds storage_max ({max})"));
+    }
+    if let (Some(old), Some(new)) = (storage_size(&current), storage_size(&new))
+        && new < old
+    {
+        return Err(format!(
+            "storage cannot shrink from {old} to {new} (the size is storage_min, else storage_max)"
+        ));
+    }
 
     Ok(new)
 }
 
-/// Copies CPU and memory from `from` into `into`.
-pub fn merge_deployment_config(into: &mut PipelineConfig, from: &RuntimeConfig) {
-    into.global.resources.cpu_cores_min = from.resources.cpu_cores_min;
-    into.global.resources.cpu_cores_max = from.resources.cpu_cores_max;
-    into.global.resources.memory_min = from.resources.memory_min;
-    into.global.resources.memory_max = from.resources.memory_max;
+/// Whether storage autoscales: both `storage_min` and `storage_max` are set.
+fn storage_autoscaling(resources: &ResourceConfig) -> bool {
+    resources.storage_min.is_some() && resources.storage_max.is_some()
 }
 
-/// The stored deployment config with CPU and memory from an edited runtime config, or `None` if
-/// they did not change.
+/// The size storage starts at and grows to: `storage_min`, else `storage_max`.
+fn storage_size(resources: &ResourceConfig) -> Option<ConfigSize> {
+    resources.storage_min.or(resources.storage_max)
+}
+
+/// Copies CPU and memory from `from` into `into`.
+fn merge_cpu_memory(into: &mut ResourceConfig, from: &ResourceConfig) {
+    into.cpu_cores_min = from.cpu_cores_min;
+    into.cpu_cores_max = from.cpu_cores_max;
+    into.memory_min = from.memory_min;
+    into.memory_max = from.memory_max;
+}
+
+/// Copies storage from `from` into `into`.
+fn merge_storage(into: &mut ResourceConfig, from: &ResourceConfig) {
+    into.storage_min = from.storage_min;
+    into.storage_max = from.storage_max;
+}
+
+/// Copies the volume attributes class from `from` into `into`.
+fn merge_volume_attributes_class(into: &mut ResourceConfig, from: &ResourceConfig) {
+    into.volume_attributes_class = from.volume_attributes_class.clone();
+}
+
+/// Copies CPU, memory, storage, and the volume attributes class from `from` into `into`.
+pub fn merge_deployment_config(into: &mut PipelineConfig, from: &RuntimeConfig) {
+    merge_cpu_memory(&mut into.global.resources, &from.resources);
+    merge_storage(&mut into.global.resources, &from.resources);
+    merge_volume_attributes_class(&mut into.global.resources, &from.resources);
+}
+
+/// The stored deployment config with CPU and memory, or the volume attributes class, from an
+/// edited runtime config, or `None` if neither changed. Each is copied only when edited, so a CPU
+/// edit keeps a class change. Storage is not copied: it can only be edited with storage cleared,
+/// and a start with storage cleared takes it from the runtime config.
 pub fn merge_deployment_config_on_edit(
     deployment_config: &Value,
     old_runtime_config: &Value,
@@ -187,8 +256,7 @@ pub fn merge_deployment_config_on_edit(
 ) -> Option<Value> {
     let old: RuntimeConfig = serde_json::from_value(old_runtime_config.clone()).ok()?;
     let new: RuntimeConfig = serde_json::from_value(new_runtime_config.clone()).ok()?;
-    // Only an edit of a runtime modifiable field replaces a runtime change.
-    let live = |config: &RuntimeConfig| {
+    let cpu_memory = |config: &RuntimeConfig| {
         (
             config.resources.cpu_cores_min,
             config.resources.cpu_cores_max,
@@ -196,11 +264,19 @@ pub fn merge_deployment_config_on_edit(
             config.resources.memory_max,
         )
     };
-    if live(&old) == live(&new) {
+    let cpu_memory_edited = cpu_memory(&old) != cpu_memory(&new);
+    let class_edited =
+        old.resources.volume_attributes_class != new.resources.volume_attributes_class;
+    if !cpu_memory_edited && !class_edited {
         return None;
     }
     let mut stored: PipelineConfig = serde_json::from_value(deployment_config.clone()).ok()?;
-    merge_deployment_config(&mut stored, &new);
+    if cpu_memory_edited {
+        merge_cpu_memory(&mut stored.global.resources, &new.resources);
+    }
+    if class_edited {
+        merge_volume_attributes_class(&mut stored.global.resources, &new.resources);
+    }
     serde_json::to_value(stored).ok()
 }
 
@@ -221,8 +297,8 @@ fn check_cpu(name: &str, value: Option<f64>) -> Result<(), String> {
     }
 }
 
-/// Checks a memory value from a patch.
-fn check_memory(name: &str, value: Option<ConfigSize>) -> Result<(), String> {
+/// Checks a memory or storage value from a patch.
+fn check_size(name: &str, value: Option<ConfigSize>) -> Result<(), String> {
     match value {
         Some(size) if size.is_zero() => Err(format!("{name} must be greater than 0")),
         _ => Ok(()),
@@ -232,6 +308,7 @@ fn check_memory(name: &str, value: Option<ConfigSize>) -> Result<(), String> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use utoipa::ToSchema;
 
     fn deployment() -> Value {
         json!({
@@ -327,6 +404,9 @@ mod test {
         assert_refused(json!({"cpu_cores_min": 0.0}), "greater than 0");
         assert_refused(json!({"memory_max": "0M"}), "greater than 0");
         assert_refused(json!({"memory_min": "17G"}), "exceeds");
+        assert_refused(json!({"storage_max": "0M"}), "greater than 0");
+        assert_refused(json!({"storage_min": "2G"}), "cannot be turned on or off");
+        assert_refused(json!({"volume_attributes_class": ""}), "must not be empty");
         assert_refused(json!({"memory_min": "17 GB"}), "unknown unit");
         assert_refused(json!({"cpu_cores_min": 9.0}), "exceeds");
         let mut multihost = deployment();
@@ -345,8 +425,8 @@ mod test {
             ),
             // Refused even when it repeats the current value.
             (
-                json!({"resources": {"storage_mb_max": 1000}}),
-                "unknown field `storage_mb_max`",
+                json!({"resources": {"namespace": null}}),
+                "unknown field `namespace`",
             ),
             (
                 json!({"resources": {"cpu_cores_min": "two"}}),
@@ -372,6 +452,170 @@ mod test {
         assert_eq!(new["resources"]["cpu_cores_min"], json!(null));
         let new = try_patch(&config, &resize(json!({"cpu_cores_min": 1.0}))).unwrap();
         assert_eq!(new["resources"]["cpu_cores_min"], json!(1.0));
+    }
+
+    /// Storage grows to `storage_min`, else `storage_max`, and never shrinks. The maximum alone
+    /// is the autoscaling ceiling once the minimum is set.
+    #[test]
+    fn storage_grows_but_never_shrinks() {
+        let storage = |config: &Value| {
+            let resources = &config["resources"];
+            (
+                resources["storage_min"].as_str().map(str::to_string),
+                resources["storage_max"].as_str().map(str::to_string),
+            )
+        };
+        let size = |s: &str| Some(s.to_string());
+        // Fixed size from `storage_max`.
+        let fixed = deployment();
+        let mut autoscaling = deployment();
+        autoscaling["resources"]["storage_min"] = json!("1G");
+        autoscaling["resources"]["storage_max"] = json!("8G");
+        for (config, patch, expected) in [
+            (&fixed, json!({"storage_max": "2G"}), (None, size("2G"))),
+            (&fixed, json!({"storage_max": "1000M"}), (None, size("1G"))),
+            // The deprecated spelling means the same.
+            (&fixed, json!({"storage_mb_max": 2000}), (None, size("2G"))),
+            (
+                &autoscaling,
+                json!({"storage_min": "4G"}),
+                (size("4G"), size("8G")),
+            ),
+            // A lower ceiling leaves the size alone.
+            (
+                &autoscaling,
+                json!({"storage_max": "2G"}),
+                (size("1G"), size("2G")),
+            ),
+        ] {
+            let new = try_patch(config, &resize(patch.clone())).unwrap();
+            assert_eq!(storage(&new), expected, "{patch}");
+        }
+        for (config, patch, expected) in [
+            (
+                &fixed,
+                json!({"storage_max": "999M"}),
+                "storage cannot shrink",
+            ),
+            (
+                &autoscaling,
+                json!({"storage_min": "500M"}),
+                "storage cannot shrink",
+            ),
+            (&autoscaling, json!({"storage_min": "9G"}), "exceeds"),
+        ] {
+            let error = try_patch(config, &resize(patch.clone())).unwrap_err();
+            assert!(error.contains(expected), "{patch}: {error}");
+        }
+        // Without a size, the runner's default applies and any size is accepted.
+        let mut default = deployment();
+        default["resources"]["storage_max"] = json!(null);
+        let new = try_patch(&default, &resize(json!({"storage_max": "10M"}))).unwrap();
+        assert_eq!(storage(&new), (None, size("10M")));
+    }
+
+    /// A patch compares with a size stored in the deprecated spelling or another unit, and both
+    /// spellings of one setting are refused.
+    #[test]
+    fn storage_patch_reads_the_deprecated_spelling() {
+        let mut legacy = deployment();
+        let resources = legacy["resources"].as_object_mut().unwrap();
+        resources.remove("storage_max");
+        resources.insert("storage_mb_max".to_string(), json!(1000));
+        let error = try_patch(&legacy, &resize(json!({"storage_max": "500M"}))).unwrap_err();
+        assert!(error.contains("cannot shrink"), "{error}");
+        let new = try_patch(&legacy, &resize(json!({"storage_max": "2G"}))).unwrap();
+        assert_eq!(new["resources"]["storage_max"], json!("2G"));
+        assert_eq!(new["resources"].get("storage_mb_max"), None);
+        let both = resize(json!({"storage_min": "2G", "storage_mb_min": 1000}));
+        assert!(parse_deployment_config_patch(&both).is_err());
+        // Sizes in different units compare by bytes: 1G is less than 1Gi.
+        let mut gi = deployment();
+        gi["resources"]["storage_max"] = json!("1Gi");
+        let error = try_patch(&gi, &resize(json!({"storage_max": "1G"}))).unwrap_err();
+        assert!(error.contains("cannot shrink"), "{error}");
+        try_patch(&gi, &resize(json!({"storage_max": "1024Mi"}))).unwrap();
+    }
+
+    /// A patch keeps storage fixed, on the field it is set by, or autoscaling. Without a size,
+    /// a patch can set a fixed one.
+    #[test]
+    fn storage_autoscaling_cannot_be_turned_on_or_off() {
+        let with_storage = |min: Option<&str>, max: Option<&str>| {
+            let mut config = deployment();
+            config["resources"]["storage_min"] = json!(min);
+            config["resources"]["storage_max"] = json!(max);
+            config
+        };
+        let fixed_max = with_storage(None, Some("1G"));
+        let fixed_min = with_storage(Some("1G"), None);
+        let autoscaling = with_storage(Some("1G"), Some("8G"));
+        let default = with_storage(None, None);
+        for (config, patch) in [
+            (&fixed_max, json!({"storage_min": "1G"})),
+            (
+                &fixed_max,
+                json!({"storage_min": "1G", "storage_max": "8G"}),
+            ),
+            (&fixed_min, json!({"storage_max": "8G"})),
+            (&default, json!({"storage_min": "1G", "storage_max": "8G"})),
+        ] {
+            let error = try_patch(config, &resize(patch.clone())).unwrap_err();
+            assert!(
+                error.contains("cannot be turned on or off"),
+                "{config} {patch}: {error}"
+            );
+        }
+        for (config, patch, expected) in [
+            (&default, json!({"storage_min": "1G"}), (Some("1G"), None)),
+            (&default, json!({"storage_max": "1G"}), (None, Some("1G"))),
+            (&fixed_min, json!({"storage_min": "2G"}), (Some("2G"), None)),
+            (
+                &autoscaling,
+                json!({"storage_min": "2G", "storage_max": "9G"}),
+                (Some("2G"), Some("9G")),
+            ),
+            // `null` leaves a field unchanged, so it cannot turn autoscaling off.
+            (
+                &autoscaling,
+                json!({"storage_min": null, "storage_max": "9G"}),
+                (Some("1G"), Some("9G")),
+            ),
+        ] {
+            let new = try_patch(config, &resize(patch.clone())).unwrap();
+            let resources = &new["resources"];
+            assert_eq!(
+                (
+                    resources["storage_min"].as_str(),
+                    resources["storage_max"].as_str()
+                ),
+                expected,
+                "{config} {patch}"
+            );
+        }
+    }
+
+    /// A patch changes the volume attributes class, and `null` leaves it unchanged.
+    #[test]
+    fn volume_attributes_class_changes_but_is_not_removed() {
+        let class = |config: &Value| config["resources"]["volume_attributes_class"].clone();
+        let set = try_patch(
+            &deployment(),
+            &resize(json!({"volume_attributes_class": "fast"})),
+        )
+        .unwrap();
+        assert_eq!(class(&set), json!("fast"));
+        for (patch, expected) in [
+            (json!({"volume_attributes_class": "slow"}), json!("slow")),
+            (
+                json!({"volume_attributes_class": null, "cpu_cores_min": 1.0}),
+                json!("fast"),
+            ),
+            (json!({"cpu_cores_min": 1.0}), json!("fast")),
+        ] {
+            let new = try_patch(&set, &resize(patch.clone())).unwrap();
+            assert_eq!(class(&new), expected, "{patch}");
+        }
     }
 
     #[test]
@@ -429,14 +673,20 @@ mod test {
             json!({"resources": {
                 "cpu_cores_min": 4.0, "cpu_cores_max": 8.0,
                 "memory_min": "16G", "memory_max": "16G",
+                "storage_min": null, "storage_max": "1G",
+                "volume_attributes_class": null,
             }})
         );
-        // A config stored before the size rename shows its memory as sizes.
+        // A config stored before the size rename shows its memory and storage as sizes.
         assert_eq!(
-            deployment_config_view(&json!({"resources": {"memory_mb_max": 16000}})),
+            deployment_config_view(
+                &json!({"resources": {"memory_mb_max": 16000, "storage_mb_max": 2000}})
+            ),
             json!({"resources": {
                 "cpu_cores_min": null, "cpu_cores_max": null,
                 "memory_min": null, "memory_max": "16G",
+                "storage_min": null, "storage_max": "2G",
+                "volume_attributes_class": null,
             }})
         );
         // A zero megabyte count has no unit as a size, so it is written as
@@ -451,6 +701,8 @@ mod test {
             json!({"resources": {
                 "cpu_cores_min": "one", "cpu_cores_max": null,
                 "memory_min": null, "memory_max": null,
+                "storage_min": null, "storage_max": null,
+                "volume_attributes_class": null,
             }})
         );
     }
@@ -483,6 +735,9 @@ mod test {
         let changed = [
             json!({"resources": {"cpu_cores_min": 2.0}}),
             json!({"resources": {"memory_max": "1M"}}),
+            json!({"resources": {"storage_min": "1G"}}),
+            json!({"resources": {"storage_max": "2G"}}),
+            json!({"resources": {"volume_attributes_class": "fast"}}),
             json!({"resources": {"workers": 4}}),
             json!({"workers": 4}),
             json!(1),
@@ -508,35 +763,41 @@ mod test {
         let mut from = into.global.clone();
         from.resources.cpu_cores_min = Some(1.0);
         from.resources.storage_max = Some(ConfigSize::from_mb(5000));
+        from.resources.storage_class = Some("fast".to_string());
         from.workers = 9;
         merge_deployment_config(&mut into, &from);
         assert_eq!(into.global.resources.cpu_cores_min, Some(1.0));
         assert_eq!(
             into.global.resources.storage_max,
-            Some(ConfigSize::from_mb(1000))
+            Some(ConfigSize::from_mb(5000))
         );
+        assert_eq!(into.global.resources.storage_class, None);
         assert_eq!(into.global.workers, 4);
     }
 
-    /// Each runtime modifiable field is detected as changed and copied by the merge, so the three
-    /// stay in step when one is added.
+    /// Each runtime modifiable field is copied by the merge, and detected as edited unless it is
+    /// storage, so the three stay in step when one is added.
     #[test]
     fn every_live_setting_is_merged_and_detected() {
         let base = deployment();
-        let fields = serde_json::to_value(DynamicResources::default()).unwrap();
-        for field in fields.as_object().unwrap().keys() {
+        // From the schema: serializing skips unset fields.
+        let schema = serde_json::to_value(DynamicResources::schema().1).unwrap();
+        for field in schema["properties"].as_object().unwrap().keys() {
             let path = format!("resources.{field}");
             let pointer = format!("/resources/{field}");
-            // A memory field holds a size, written back as it was given.
-            let value = if field.starts_with("memory") {
+            // A memory or storage field holds a size, written back as it was given.
+            let value = if field.starts_with("memory") || field.starts_with("storage") {
                 json!("12345M")
+            } else if field == "volume_attributes_class" {
+                json!("class-12345")
             } else {
                 json!(12345.0)
             };
             let mut changed = base.clone();
-            *changed.pointer_mut(&pointer).unwrap() = value.clone();
-            assert!(
+            changed["resources"][field] = value.clone();
+            assert_eq!(
                 merge_deployment_config_on_edit(&base, &base, &changed).is_some(),
+                !field.starts_with("storage"),
                 "{path}"
             );
             let new: RuntimeConfig = serde_json::from_value(changed.clone()).unwrap();
@@ -548,13 +809,14 @@ mod test {
     }
 
     #[test]
-    fn only_a_cpu_or_memory_edit_updates_the_deployment_config() {
+    fn only_a_cpu_memory_or_class_edit_updates_the_deployment_config() {
         let runtime = json!({"workers": 4, "resources": {"cpu_cores_min": 4, "cpu_cores_max": 8}});
         let mut resized = deployment();
         resized["resources"]["cpu_cores_min"] = json!(1.0);
-        // The same values written differently, and other fields, are not a CPU or memory edit.
-        let mut same =
-            json!({"workers": 8, "resources": {"cpu_cores_min": 4.0, "cpu_cores_max": 8.0}});
+        // The same values written differently, storage, and other fields are not such an edit.
+        let mut same = json!({"workers": 8, "resources": {
+            "cpu_cores_min": 4.0, "cpu_cores_max": 8.0, "storage_max": "2G"
+        }});
         assert_eq!(
             merge_deployment_config_on_edit(&resized, &runtime, &same),
             None
@@ -565,5 +827,39 @@ mod test {
         expected["resources"]["memory_min"] = json!(null);
         expected["resources"]["memory_max"] = json!("20G");
         assert_eq!(edited, normalized(expected));
+    }
+
+    /// An edit of CPU and memory, or the volume attributes class, keeps a change of the other and
+    /// a storage resize.
+    #[test]
+    fn cpu_memory_and_class_edits_are_merged_separately() {
+        let runtime = json!({"resources": {"cpu_cores_min": 4, "storage_max": "1G"}});
+        let mut resized = deployment();
+        resized["resources"]["cpu_cores_min"] = json!(1.0);
+        resized["resources"]["storage_max"] = json!("5G");
+        resized["resources"]["volume_attributes_class"] = json!("fast");
+        let live = |config: &Value| {
+            let resources = &config["resources"];
+            (
+                resources["cpu_cores_min"].clone(),
+                resources["storage_max"].clone(),
+                resources["volume_attributes_class"].clone(),
+            )
+        };
+        for (edit, expected) in [
+            (
+                json!({"resources": {"cpu_cores_min": 2, "storage_max": "1G"}}),
+                (json!(2.0), json!("5G"), json!("fast")),
+            ),
+            (
+                json!({"resources": {
+                    "cpu_cores_min": 4, "storage_max": "1G", "volume_attributes_class": "slow"
+                }}),
+                (json!(1.0), json!("5G"), json!("slow")),
+            ),
+        ] {
+            let edited = merge_deployment_config_on_edit(&resized, &runtime, &edit).unwrap();
+            assert_eq!(live(&edited), expected, "{edit}");
+        }
     }
 }

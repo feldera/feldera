@@ -667,17 +667,40 @@ fn limited_option_program_config() -> impl Strategy<Value = Option<serde_json::V
 /// Generates different deployment patches, valid and invalid.
 fn limited_patch_pipeline_deployment() -> impl Strategy<Value = DynamicConfig> {
     let cpu = proptest::option::of(prop_oneof![Just(-1.0), Just(0.5), Just(1.0), Just(2.0)]);
-    let memory = proptest::option::of(prop_oneof![Just(0u64), Just(1000), Just(2000)]);
-    (cpu.clone(), cpu, memory.clone(), memory).prop_map(
-        |(cpu_cores_min, cpu_cores_max, memory_mb_min, memory_mb_max)| DynamicConfig {
-            resources: DynamicResources {
+    let megabytes = proptest::option::of(prop_oneof![Just(0u64), Just(1000), Just(2000)]);
+    let class = proptest::option::of(prop_oneof![Just(""), Just("fast"), Just("slow")]);
+    (
+        cpu.clone(),
+        cpu,
+        megabytes.clone(),
+        megabytes.clone(),
+        megabytes.clone(),
+        megabytes,
+        class,
+    )
+        .prop_map(
+            |(
                 cpu_cores_min,
                 cpu_cores_max,
-                memory_min: memory_mb_min.map(ConfigSize::from_mb),
-                memory_max: memory_mb_max.map(ConfigSize::from_mb),
+                memory_mb_min,
+                memory_mb_max,
+                storage_mb_min,
+                storage_mb_max,
+                class,
+            )| {
+                DynamicConfig {
+                    resources: DynamicResources {
+                        cpu_cores_min,
+                        cpu_cores_max,
+                        memory_min: memory_mb_min.map(ConfigSize::from_mb),
+                        memory_max: memory_mb_max.map(ConfigSize::from_mb),
+                        storage_min: storage_mb_min.map(ConfigSize::from_mb),
+                        storage_max: storage_mb_max.map(ConfigSize::from_mb),
+                        volume_attributes_class: class.map(str::to_string),
+                    },
+                }
             },
-        },
-    )
+        )
 }
 
 /// Generates different SQL compilation information.
@@ -1211,6 +1234,78 @@ async fn stopped_deployment_resources_are_synced_once() {
         Some(json!({"resources": {"cpu_cores_min": 2.0}}))
     );
     assert_eq!(deployment_config(3).await, None);
+    client
+        .batch_execute("DROP TABLE pg_temp.pipeline;")
+        .await
+        .unwrap();
+}
+
+/// `V38` copies the volume attributes class of the runtime config into the stored deployment
+/// config of stopped pipelines only, leaving every other field alone.
+#[tokio::test]
+async fn stopped_deployment_volume_attributes_class_is_synced_once() {
+    let handle = test_setup().await;
+    let client = handle.db.pool.get().await.unwrap();
+    // Temp tables shadow the real one, so the migration runs unmodified.
+    client
+        .batch_execute(
+            r#"CREATE TEMP TABLE pipeline (id int PRIMARY KEY, deployment_resources_status varchar,
+                 runtime_config varchar, deployment_config varchar);
+               INSERT INTO pipeline VALUES
+                 (1, 'stopped', '{"resources": {"storage_max": "8G", "volume_attributes_class": "fast"}}',
+                  '{"workers": 4, "resources": {"cpu_cores_min": 4.0, "storage_mb_max": 100}}'),
+                 (2, 'stopped', '{"resources": {"storage_mb_max": 8000}}',
+                  '{"resources": {"storage_max": "100M", "volume_attributes_class": "slow"}}'),
+                 (3, 'provisioned', '{"resources": {"volume_attributes_class": "fast"}}',
+                  '{"resources": {"volume_attributes_class": "slow"}}'),
+                 (4, 'stopped', '{"resources": null}',
+                  '{"resources": {"storage_max": "1G", "volume_attributes_class": "slow"}}'),
+                 (5, 'stopped', '{}', NULL),
+                 (6, 'stopped', '{"resources": {"volume_attributes_class": null}}',
+                  '{"resources": {"volume_attributes_class": "slow"}}');"#,
+        )
+        .await
+        .unwrap();
+    client
+        .batch_execute(include_str!(
+            "../../migrations/V38__sync_stopped_deployment_volume_attributes_class.sql"
+        ))
+        .await
+        .unwrap();
+    let deployment_config = |id: i32| {
+        let client = &client;
+        async move {
+            client
+                .query_one(
+                    "SELECT deployment_config FROM pipeline WHERE id = $1",
+                    &[&id],
+                )
+                .await
+                .unwrap()
+                .get::<_, Option<String>>(0)
+                .map(|config| serde_json::from_str::<serde_json::Value>(&config).unwrap())
+        }
+    };
+    assert_eq!(
+        deployment_config(1).await,
+        Some(json!({"workers": 4, "resources": {
+            "cpu_cores_min": 4.0, "storage_mb_max": 100, "volume_attributes_class": "fast"
+        }}))
+    );
+    assert_eq!(
+        deployment_config(2).await,
+        Some(json!({"resources": {"storage_max": "100M"}}))
+    );
+    assert_eq!(
+        deployment_config(3).await,
+        Some(json!({"resources": {"volume_attributes_class": "slow"}}))
+    );
+    assert_eq!(
+        deployment_config(4).await,
+        Some(json!({"resources": {"storage_max": "1G"}}))
+    );
+    assert_eq!(deployment_config(5).await, None);
+    assert_eq!(deployment_config(6).await, Some(json!({"resources": {}})));
     client
         .batch_execute("DROP TABLE pg_temp.pipeline;")
         .await

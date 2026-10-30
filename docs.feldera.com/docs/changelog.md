@@ -10,6 +10,13 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Experimental (Enterprise, Kubernetes): `deployment_config` in
+  `PATCH /v0/pipelines/{name}` can also grow the storage of a running pipeline,
+  through `storage_min` and `storage_max`, and change its volume attributes
+  class, through `volume_attributes_class`.  Storage cannot shrink, and storage
+  autoscaling cannot be turned on or off.  See
+  [Resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline).
+
 - Behavior change (exactly-once Kafka output): the connector no longer limits
   delivery retries to five, and a failed commit no longer leaves the connector
   stuck while the pipeline runs. It keeps the records of the open transaction,

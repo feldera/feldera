@@ -2132,7 +2132,8 @@ export type DynamicConfig = {
 }
 
 /**
- * CPU and memory, the only fields that can change while the pipeline runs.
+ * CPU, memory, storage, and the volume attributes class, the only fields that can change while
+ * the pipeline runs.
  */
 export type DynamicResources = {
   cpu_cores_max?: number | null
@@ -2147,6 +2148,23 @@ export type DynamicResources = {
    * megabytes, is a deprecated alias.
    */
   memory_min?: string | null
+  /**
+   * The maximum storage, such as `"400Gi"`. `storage_mb_max`, a number of megabytes, is a
+   * deprecated alias.
+   */
+  storage_max?: string | null
+  /**
+   * Storage grows to `storage_min`, else `storage_max`, and cannot shrink. With both set,
+   * storage autoscaling expands it up to `storage_max`. A change cannot turn storage
+   * autoscaling on or off. `storage_mb_min`, a number of megabytes, is a deprecated alias.
+   * Not serialized when unset, so that a pipeline on an older runtime accepts a memory update.
+   */
+  storage_min?: string | null
+  /**
+   * The Kubernetes volume attributes class of the storage, which sets its IOPS and
+   * throughput. A change cannot remove it.
+   */
+  volume_attributes_class?: string | null
 }
 
 /**
@@ -5560,7 +5578,8 @@ export type ResourceConfig = {
    * instance of this pipeline. The class sets mutable storage parameters
    * such as IOPS and throughput. Requires Kubernetes 1.34 or later (or
    * the `VolumeAttributesClass` feature gate) and CSI driver support.
-   * A change takes effect on the next start, also for existing storage.
+   * A change takes effect on the next start, also for existing storage, or
+   * while the pipeline runs through a `PATCH` of its `deployment_config`.
    */
   volume_attributes_class?: string | null
 }

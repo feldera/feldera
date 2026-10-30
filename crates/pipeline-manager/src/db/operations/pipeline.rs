@@ -787,7 +787,8 @@ pub(crate) async fn update_pipeline(
         assert_eq!(rows_affected, 1); // The row must exist as it has been retrieved before
     }
 
-    // A CPU or memory edit replaces a resize, which otherwise lasts across restarts.
+    // A CPU, memory, or volume attributes class edit replaces a change by `PATCH`, which
+    // otherwise lasts across restarts.
     if let Some(runtime_config) = &runtime_config
         && let Some(deployment_config) = &current.deployment_config
         && let Some(edited) = merge_deployment_config_on_edit(
