@@ -138,6 +138,17 @@ public class Gen2JsonTests extends SqlIoTest {
         Assert.assertFalse(json.contains("\"DBSPAssignmentExpression\""));
     }
 
+    /** A TRANSFORM of an ARRAY_AGG fuses into the aggregate, which then holds the lambda in its
+     * post-processing and in its empty-set result. */
+    @Test
+    public void gen2AggregateHoldsAFusedLambdaTwice() {
+        String json = this.circuitJson("""
+                CREATE TABLE s(id INT, a INT, b INT);
+                CREATE LOCAL VIEW v AS SELECT id, ARRAY_AGG(ROW(a, b)) AS arr FROM s GROUP BY id;
+                CREATE VIEW w AS SELECT id, TRANSFORM(arr, x -> x[1]) AS first FROM v;""", true);
+        Assert.assertEquals(1, occurrences(json, "\"DBSPAggregateList\""));
+    }
+
     /** Every aggregate operator keeps its list, and the circuit decodes from the JSON it writes. */
     @Test
     public void gen2AggregateOperatorsKeepTheList() {

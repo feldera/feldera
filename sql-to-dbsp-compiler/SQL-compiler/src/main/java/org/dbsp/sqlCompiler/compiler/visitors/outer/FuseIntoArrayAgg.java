@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Expensive;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.FreshenParameters;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ReferenceMap;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
@@ -448,7 +449,10 @@ public class FuseIntoArrayAgg extends Repeat {
             //   result:    CARDINALITY(ARRAY_DISTINCT(to_array(acc)))
             DBSPExpression value = this.value(Map.of(i, array));
             DBSPExpression[] arguments = this.reader.argumentsWithValue(value);
-            return this.call(compiler, Utilities.getExists(this.g, i), arguments);
+            // The fused aggregate holds g twice, in its postprocessing and in its empty-set result;
+            // each copy needs its own parameters for a lambda inside g, such as TRANSFORM's
+            return FreshenParameters.freshenNested(
+                    compiler, this.call(compiler, Utilities.getExists(this.g, i), arguments));
         }
     }
 
