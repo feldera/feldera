@@ -161,6 +161,17 @@ public class Gen2JsonTests extends SqlIoTest {
         }
     }
 
+    /** A window reads the whole row of a table with a primary key. */
+    @Test
+    public void gen2WindowReadsTheWholeKeyedRow() {
+        String json = this.circuitJson(this.compile("""
+                CREATE TABLE t(id VARCHAR NOT NULL PRIMARY KEY, a INT, ts INT, x INT);
+                CREATE VIEW v AS SELECT *, SUM(x) OVER (
+                    PARTITION BY a ORDER BY ts RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS s FROM t;""",
+                true, true, true));
+        Assert.assertTrue(json.contains("\"DBSPSourceMapOperator\""));
+    }
+
     /** The persistent ids of the aggregate operators in a Gen-2 circuit. */
     List<String> aggregateHashes(String program) {
         DBSPCompiler compiler = this.compile(program, true, false);
