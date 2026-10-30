@@ -7293,7 +7293,8 @@ pub mod test_http {
             std::fs::create_dir(&storage_dir).unwrap();
 
             // A one-record replay chunk stretches the backfill over many steps, so
-            // the transaction opens before the backfill commits.
+            // the transaction opens before the backfill commits.  The backfill takes
+            // about 20 times as long as opening the transaction.
             let config_json = json!({
                 "name": "test",
                 "workers": 4,
@@ -7323,7 +7324,7 @@ pub mod test_http {
                 },
             });
 
-            let first_batch = test_batches(0, 2_000);
+            let first_batch = test_batches(0, 20_000);
             let (server, _) = start_test_server_with_state(
                 engine,
                 &config_json,
@@ -7380,7 +7381,7 @@ pub mod test_http {
             // stays queued.  (`force` gets it past the pause.)
             let _: CompletionTokenResponse = TestHttpSender::send_stream_deserialize_resp(
                 server.post("/ingress/test_input1?force=true"),
-                &test_batches(10_000, 10),
+                &test_batches(100_000, 10),
             )
             .await;
             commit_transaction(&server).await;
@@ -7409,7 +7410,7 @@ pub mod test_http {
             async_wait(
                 || async {
                     adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await
-                        == 2_010
+                        == 20_010
                 },
                 20_000,
             )
