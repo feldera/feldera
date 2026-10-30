@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.util.IJson;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utf8String;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -134,8 +135,9 @@ public class ProgramMetadata implements IJson {
         } else if (expression.is(DBSPStringLiteral.class)) {
             // Quoted SET values: 'off', 'false', and '0' disable a feature,
             // matching the unquoted keywords.
-            String value = expression.to(DBSPStringLiteral.class).value;
-            if (value == null) return true;
+            Utf8String text = expression.to(DBSPStringLiteral.class).value;
+            if (text == null) return true;
+            String value = text.toJavaString();
             return value.equalsIgnoreCase("off") || value.equalsIgnoreCase("false")
                     || value.equals("0") || value.isEmpty();
         } else {
@@ -155,14 +157,8 @@ public class ProgramMetadata implements IJson {
             }
         }
         if (expression.is(DBSPStringLiteral.class)) {
-            String value = expression.to(DBSPStringLiteral.class).value;
-            if (value == null)
-                return null;
-            try {
-                return Integer.parseInt(value.trim());
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
+            Utf8String value = expression.to(DBSPStringLiteral.class).value;
+            return value == null ? null : value.asInt();
         }
         return null;
     }
@@ -231,10 +227,10 @@ public class ProgramMetadata implements IJson {
         DBSPExpression expression = Utilities.getExists(this.variables, canonicalVariableName(DISABLE_OPTIMIZATIONS));
         if (!expression.is(DBSPStringLiteral.class))
             return List.of();
-        String value = expression.to(DBSPStringLiteral.class).value;
+        Utf8String value = expression.to(DBSPStringLiteral.class).value;
         if (value == null)
             return List.of();
-        List<String> names = Linq.map(Arrays.asList(value.split(",")), String::trim);
+        List<String> names = Linq.map(Arrays.asList(value.toJavaString().split(",")), String::trim);
         return Linq.where(names, name -> !name.isEmpty());
     }
 

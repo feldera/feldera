@@ -27,7 +27,6 @@ import org.apache.calcite.runtime.SqlFunctions;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
-import org.apache.commons.lang3.StringUtils;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -58,10 +57,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -91,6 +86,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Utf8String;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -284,9 +280,13 @@ public class Simplify extends ExpressionTranslator {
                 // Constant folding string values
                 // This is mostly useful for testing code, to fold various literals.
                 DBSPStringLiteral str = lit.to(DBSPStringLiteral.class);
-                Objects.requireNonNull(str.value);
+                Utf8String utf8 = Objects.requireNonNull(str.value);
+                String text = utf8.toJavaString();
+                // Java parsers accept digits outside ASCII, which the runtime rejects.
+                // Such text becomes empty, which no parser accepts, so the cast stays.
+                String ascii = Objects.requireNonNullElse(utf8.asciiText(), "");
                 // The runtime casts to these types remove the characters that Java's trim removes
-                String trimmed = str.value.trim();
+                String trimmed = ascii.trim();
                 if (type.is(DBSPTypeBool.class)) {
                     String normalized = trimmed.toLowerCase(Locale.ENGLISH);
                     Boolean value = null;
@@ -296,7 +296,7 @@ public class Simplify extends ExpressionTranslator {
                         value = true;
                     if (value == null) {
                         this.compiler.reportWarning(expression.getSourcePosition(), "Suspicious argument",
-                                "String " + Utilities.singleQuote(str.value) +
+                                "String " + Utilities.singleQuote(text) +
                                         " cannot be interpreted as a BOOLEAN");
                     } else {
                         result = new DBSPBoolLiteral(lit.getNode(), type, value);
@@ -311,7 +311,7 @@ public class Simplify extends ExpressionTranslator {
                         result = new DBSPDateLiteral(lit.getNode(), type, new DateString(trimmed));
                     } catch (DateTimeParseException ex) {
                         this.compiler.reportWarning(expression.getSourcePosition(), "Suspicious argument",
-                                "String " + Utilities.singleQuote(str.value) +
+                                "String " + Utilities.singleQuote(text) +
                                         " cannot be interpreted as a DATE");
                     }
                 } else if (type.is(DBSPTypeTime.class)) {
@@ -320,7 +320,7 @@ public class Simplify extends ExpressionTranslator {
                         result = new DBSPTimeLiteral(lit.getNode(), type, ts);
                     } catch (DateTimeParseException | IllegalArgumentException ex) {
                         this.compiler.reportWarning(expression.getSourcePosition(), "Not a TIME",
-                                " String " + Utilities.singleQuote(str.value) +
+                                " String " + Utilities.singleQuote(text) +
                                         " cannot be interpreted as a time");
                     }
                 } else if (type.is(DBSPTypeTimestamp.class)
@@ -331,7 +331,7 @@ public class Simplify extends ExpressionTranslator {
                         result = new DBSPTimestampLiteral(lit.getNode(), type, ts);
                     } catch (DateTimeParseException | IllegalArgumentException ex) {
                         this.compiler.reportWarning(expression.getSourcePosition(), "Not a TIMESTAMP",
-                                " String " + Utilities.singleQuote(str.value) +
+                                " String " + Utilities.singleQuote(text) +
                                         " cannot be interpreted as a timestamp");
                     }
                 } else if (type.is(DBSPTypeDecimal.class)) {
@@ -343,7 +343,7 @@ public class Simplify extends ExpressionTranslator {
                         if (value.precision() > decType.precision) {
                             // The runtime cast fails; keep the cast so the error surfaces at runtime
                             this.compiler.reportWarning(expression.getSourcePosition(), "Invalid DECIMAL",
-                                    "cannot represent " + Utilities.singleQuote(str.value) +
+                                    "cannot represent " + Utilities.singleQuote(text) +
                                             " as DECIMAL(" + decType.precision + ", " + decType.scale +
                                             "): precision of DECIMAL type too small to represent value");
                         } else {
@@ -352,92 +352,44 @@ public class Simplify extends ExpressionTranslator {
                     } catch (NumberFormatException ex) {
                         // Keep the cast; the runtime reports a parse error
                         this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
-                                " String " + Utilities.singleQuote(str.value) +
+                                " String " + Utilities.singleQuote(text) +
                                         " cannot be interpreted as a DECIMAL");
                     }
                 } else if (type.is(DBSPTypeUuid.class)) {
                     try {
-                        UUID value = SqlFunctions.stringToUuid(str.value);
+                        UUID value = SqlFunctions.stringToUuid(ascii);
                         result = new DBSPUuidLiteral(value, expression.type.mayBeNull);
                     } catch (IllegalArgumentException ex) {
                         // Keep the cast; the runtime reports a parse error
                         this.compiler.reportWarning(expression.getSourcePosition(), "Not a UUID",
-                                " String " + Utilities.singleQuote(str.value) +
+                                " String " + Utilities.singleQuote(text) +
                                         " cannot be interpreted as a UUID");
                     }
                 } else if (type.is(DBSPTypeString.class)) {
                     DBSPTypeString typeString = type.to(DBSPTypeString.class);
                     if (typeString.precision == DBSPTypeString.UNLIMITED_PRECISION) {
-                        result = new DBSPStringLiteral(str.value, str.charset, type);
+                        result = new DBSPStringLiteral(CalciteObject.EMPTY, type, utf8);
                     } else {
-                        String value = str.value;
-                        if (typeString.fixed) {
-                            if (str.value.length() < typeString.precision) {
-                                value = StringUtils.rightPad(str.value, typeString.precision);
-                            } else {
-                                value = str.value.substring(0, typeString.precision);
-                            }
-                        } else {
-                            // Not fixed, but limited precision; truncate if necessary
-                            if (str.value.length() > typeString.precision) {
-                                value = str.value.substring(0, typeString.precision);
-                            }
-                        }
-                        result = new DBSPStringLiteral(expression.getNode(), type, value, str.charset);
+                        Utf8String value = utf8.prefix(typeString.precision);
+                        if (typeString.fixed)
+                            value = value.padRight(typeString.precision);
+                        result = new DBSPStringLiteral(expression.getNode(), type, value);
                     }
                 } else if (type.is(DBSPTypeInteger.class)) {
-                    DBSPTypeInteger ti = type.to(DBSPTypeInteger.class);
-                    switch (ti.getWidth()) {
-                        case 8: {
-                            byte value;
-                            try {
-                                value = Byte.parseByte(str.value);
-                                result = new DBSPI8Literal(lit.getNode(), type, value);
-                            } catch (NumberFormatException ex) {
-                                // Keep the cast; the runtime reports a parse error
-                                this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
-                                        " String " + Utilities.singleQuote(str.value) +
-                                                " cannot be interpreted as a number");
-                            }
-                            break;
-                        }
-                        case 16: {
-                            short value;
-                            try {
-                                value = Short.parseShort(str.value);
-                                result = new DBSPI16Literal(lit.getNode(), type, value);
-                            } catch (NumberFormatException ex) {
-                                this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
-                                        " String " + Utilities.singleQuote(str.value) +
-                                                " cannot be interpreted as a number");
-                            }
-                            break;
-                        }
-                        case 32: {
-                            int value;
-                            try {
-                                value = Integer.parseInt(str.value);
-                                result = new DBSPI32Literal(lit.getNode(), type, value);
-                            } catch (NumberFormatException ex) {
-                                this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
-                                        " String " + Utilities.singleQuote(str.value) +
-                                                " cannot be interpreted as a number");
-                            }
-                            break;
-                        }
-                        case 64: {
-                            long value;
-                            try {
-                                value = Long.parseLong(str.value);
-                                result = new DBSPI64Literal(lit.getNode(), type, value);
-                            } catch (Exception ex) {
-                                this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
-                                        " String " + Utilities.singleQuote(str.value) +
-                                                " cannot be interpreted as a number");
-                            }
-                            break;
-                        }
-                    }
+                    DBSPTypeInteger integerType = type.to(DBSPTypeInteger.class);
+                    Long value = utf8.asLong();
+                    // The runtime rejects a minus sign for an unsigned type, even in '-0'
+                    if (!integerType.signed && trimmed.startsWith("-"))
+                        value = null;
+                    DBSPLiteral folded = value == null ? null :
+                            integerType.getLiteral(lit.getNode(), BigInteger.valueOf(value));
+                    if (folded != null)
+                        result = folded;
+                    else
+                        // Keep the cast; the runtime reports a parse error
+                        this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
+                                " String " + Utilities.singleQuote(text) +
+                                        " cannot be interpreted as a number");
                 }
             } else if (lit.is(DBSPIntLiteral.class)) {
                 BigInteger value = Objects.requireNonNull(lit.to(DBSPIntLiteral.class).getValue());

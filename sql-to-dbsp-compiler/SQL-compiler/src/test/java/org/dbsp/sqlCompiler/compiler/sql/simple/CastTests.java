@@ -93,6 +93,24 @@ public class CastTests extends SqlIoTest {
     }
 
     @Test
+    public void castStringToInteger() {
+        // A constant cast must give the runtime's result: the runtime trims spaces,
+        // accepts only ASCII digits, and checks the range of unsigned types.
+        this.qs("""
+                SELECT CAST(' 12 ' AS INT), CAST('200' AS TINYINT UNSIGNED);
+                 i  | u
+                ----------
+                 12 | 200
+                (1 row)""");
+        this.runtimeConstantFail("SELECT CAST('٣' AS INT)",
+                "Error converting '٣' to INTEGER: invalid digit found in string");
+        this.runtimeConstantFail("SELECT CAST('-1' AS TINYINT UNSIGNED)",
+                "Error converting '-1' to TINYINT UNSIGNED: invalid digit found in string");
+        this.runtimeConstantFail("SELECT CAST('-0' AS TINYINT UNSIGNED)",
+                "Error converting '-0' to TINYINT UNSIGNED: invalid digit found in string");
+    }
+
+    @Test
     public void castFailPosition() {
         // use bround to inhibit compile-time optimization;
         // line numbers include the 2 lines of DDL from prepareInputs

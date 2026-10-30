@@ -17,9 +17,9 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utf8String;
 import org.junit.Test;
 
-import java.nio.charset.Charset;
 
 public class MapTests extends SqlIoTest {
     public DBSPCompiler compileQuery(String statements, String query) {
@@ -79,7 +79,7 @@ public class MapTests extends SqlIoTest {
                                 str,
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true, false),
                                 false),
-                        Linq.list(new DBSPStringLiteral(CalciteObject.EMPTY, str, "hi", Charset.defaultCharset()),
+                        Linq.list(new DBSPStringLiteral(CalciteObject.EMPTY, str, Utf8String.fromJava("hi")),
                                 new DBSPI32Literal(2))))));
     }
 

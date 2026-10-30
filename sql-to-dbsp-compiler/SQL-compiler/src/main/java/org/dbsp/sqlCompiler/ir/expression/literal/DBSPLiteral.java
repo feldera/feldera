@@ -48,7 +48,6 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 
 import javax.annotation.Nullable;
-import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 public abstract class DBSPLiteral extends DBSPExpression
@@ -90,7 +89,7 @@ public abstract class DBSPLiteral extends DBSPExpression
             case GEOPOINT -> new DBSPGeoPointConstructor();
             case INTERVAL_SHORT -> new DBSPShortIntervalLiteral(type.getNode(), type, null);
             case INTERVAL_LONG -> new DBSPLongIntervalLiteral(type.getNode(), type, null);
-            case STRING -> new DBSPStringLiteral(CalciteObject.EMPTY, type, null, StandardCharsets.UTF_8);
+            case STRING -> new DBSPStringLiteral(CalciteObject.EMPTY, type, null);
             case TIME -> new DBSPTimeLiteral();
             case ARRAY -> new DBSPArrayExpression(type.to(DBSPTypeArray.class), true);
             case MAP -> new DBSPMapExpression(type.to(DBSPTypeMap.class), null, null);
