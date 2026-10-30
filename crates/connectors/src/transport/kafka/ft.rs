@@ -167,11 +167,8 @@ impl CommonConfig {
         const PRODUCER_SETTINGS: &[(&str, &str)] = &[
             ("acks", "all"),
             ("enable.idempotence", "true"),
-            ("batch.size", "1"),
-            ("batch.num.messages", "1"),
             ("retries", "5"),
             ("socket.nagle.disable", "true"),
-            ("linger.ms", "0"),
         ];
         let mut producer_config = kafka_config(
             kafka_options,
