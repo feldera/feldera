@@ -1302,12 +1302,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (literal.isNull())
             return this.doNull(literal);
         this.push(literal);
-        Objects.requireNonNull(literal.value);
-        byte[] bytes = literal.value.getBytes(literal.charset);
-        String decoded = new String(bytes, literal.charset);
-        decoded = Utilities.doubleQuote(decoded, true);
+        String quoted = Utilities.doubleQuote(Objects.requireNonNull(literal.value).toJavaString(), true);
         this.builder.append(literal.wrapSome(
-        DBSPTypeCode.STRING.rustName + "::from(arcstr::literal!(" + decoded + "))"));
+        DBSPTypeCode.STRING.rustName + "::from(arcstr::literal!(" + quoted + "))"));
         this.pop(literal);
         return VisitDecision.STOP;
     }

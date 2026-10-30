@@ -42,10 +42,10 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.util.Utf8String;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -139,7 +139,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                         if (s == null)
                             exp = DBSPLiteral.none(DBSPTypeString.varchar(true));
                         else
-                            exp = new DBSPStringLiteral(s, StandardCharsets.UTF_8, type);
+                            exp = new DBSPStringLiteral(CalciteObject.EMPTY, type, Utf8String.fromJava(s));
                     }
                     cols[i] = exp;
                 }

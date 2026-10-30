@@ -136,13 +136,13 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Utf8String;
 import org.dbsp.util.Utilities;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Point;
 
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -317,10 +317,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 case REAL:
                     return new DBSPRealLiteral(Objects.requireNonNull(literal.getValueAs(Float.class)));
                 case STRING:
-                    String str = literal.getValueAs(String.class);
-                    RelDataType litType = literal.getType();
-                    Charset charset = litType.getCharset();
-                    return new DBSPStringLiteral(Objects.requireNonNull(str), Objects.requireNonNull(charset), type);
+                    String str = Objects.requireNonNull(literal.getValueAs(String.class));
+                    return new DBSPStringLiteral(CalciteObject.EMPTY, type, Utf8String.fromJava(str));
                 case BOOL:
                     return new DBSPBoolLiteral(Objects.requireNonNull(literal.getValueAs(Boolean.class)));
                 case DECIMAL:
@@ -864,7 +862,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (arg.getType().sameType(DBSPTypeKeyword.INSTANCE))
             return;
         if (arg.is(DBSPStringLiteral.class)) {
-            ops.set(argument, new DBSPKeywordLiteral(node, Objects.requireNonNull(arg.to(DBSPStringLiteral.class).value)));
+            Utf8String keyword = Objects.requireNonNull(arg.to(DBSPStringLiteral.class).value);
+            ops.set(argument, new DBSPKeywordLiteral(node, keyword.toJavaString()));
             return;
         }
         throw new CompilationError("Unknown keyword", node);
@@ -944,9 +943,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     void checkRegexLiteral(CalciteObject call, DBSPExpression arg) {
         if (!arg.is(DBSPStringLiteral.class))
             return;
-        String pattern = arg.to(DBSPStringLiteral.class).value;
-        if (pattern == null)
+        Utf8String value = arg.to(DBSPStringLiteral.class).value;
+        if (value == null)
             return;
+        String pattern = value.toJavaString();
         String construct = RustRegexChecker.unsupportedConstruct(pattern);
         if (construct != null)
             this.compiler.reportWarning(call.getPositionRange(), RustRegexChecker.WARNING,
@@ -1066,14 +1066,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             return;
         }
         if (formatArg.is(DBSPStringLiteral.class)) {
-            String str = formatArg.to(DBSPStringLiteral.class).value;
+            Utf8String str = formatArg.to(DBSPStringLiteral.class).value;
             if (str == null) {
                 this.compiler.reportWarning(formatArgPosition,
                         "Suspicious argument",
                         "Format argument is NULL.");
                 return;
             }
-            if (!str.contains("%")) {
+            if (!str.toJavaString().contains("%")) {
                 this.compiler.reportWarning(formatArgPosition,
                         "Suspicious argument",
                         "Format argument does not look like a format string.");
@@ -1092,8 +1092,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (args.size() == 2) {
             DBSPExpression otherArg = args.get(1 - formatPosition);
             if (otherArg.is(DBSPStringLiteral.class)) {
-                String strData = otherArg.to(DBSPStringLiteral.class).value;
-                if (strData != null && strData.contains("%")) {
+                Utf8String strData = otherArg.to(DBSPStringLiteral.class).value;
+                if (strData != null && strData.toJavaString().contains("%")) {
                     this.compiler.reportWarning(argumentPosition(call, otherArg),
                             "Suspicious argument",
                             "Are the two arguments swapped?");
@@ -2086,7 +2086,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     Utilities.enforce(index.is(DBSPStringLiteral.class));
                     DBSPStringLiteral lit = index.to(DBSPStringLiteral.class);
                     Utilities.enforce(lit.value != null);
-                    String fieldName = lit.value;
+                    String fieldName = lit.value.toJavaString();
                     Utilities.enforce(tuple.originalStruct != null);
                     DBSPTypeStruct.Field field = tuple.originalStruct.getField(
                             new ProgramIdentifier(fieldName));
