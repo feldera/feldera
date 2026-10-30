@@ -27,7 +27,10 @@
   import { useContextDrawer } from '#lib/compositions/layout/useContextDrawer.svelte.ts'
   import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
   import { usePipelineActionCallbacks } from '#lib/compositions/pipelines/usePipelineActionCallbacks.svelte.ts'
-  import { useAggregatePipelineStats } from '#lib/compositions/useAggregatePipelineStats.svelte.ts'
+  import {
+    PIPELINE_STATS_POLL_MS,
+    useAggregatePipelineStats
+  } from '#lib/compositions/useAggregatePipelineStats.svelte.ts'
   import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
   import { getPipelineAction } from '#lib/compositions/usePipelineAction.svelte.ts'
   import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
@@ -77,7 +80,7 @@
   const api = usePipelineManager()
   const pipelineAction = getPipelineAction()
   const pipelineActionCallbacks = usePipelineActionCallbacks()
-  let metrics = useAggregatePipelineStats(pipeline, 2000, 63000, {
+  let metrics = useAggregatePipelineStats(pipeline, PIPELINE_STATS_POLL_MS, 63000, {
     getDeleted: () => deleted
   })
 
