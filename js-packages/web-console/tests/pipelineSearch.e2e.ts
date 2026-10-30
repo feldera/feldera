@@ -7,8 +7,6 @@ import {
   waitForPipeline
 } from '#lib/services/testPipelineHelpers.ts'
 
-configureTestClient()
-
 const PREFIX = `test-search-${Date.now()}`
 const PIPELINES = [`${PREFIX}-alpha`, `${PREFIX}-beta`, `${PREFIX}-gamma`] as const
 
@@ -31,6 +29,7 @@ test.describe('Pipeline search', () => {
 
   test.beforeAll(async ({}, testInfo) => {
     testInfo.setTimeout(240_000)
+    configureTestClient()
     await cleanupPipelines()
     for (const name of PIPELINES) {
       await putPipeline(name, {

@@ -1,10 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { configureTestClient } from '#lib/services/testPipelineHelpers.ts'
 
-configureTestClient()
-
 test.describe('Backend version banner', () => {
   test.setTimeout(60_000)
+  test.beforeAll(() => configureTestClient())
 
   test('polling refreshes feldera_config_cache when backend version changes', async ({ page }) => {
     // Intercept /v0/config and overwrite version/revision. Direct localStorage

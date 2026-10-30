@@ -8,8 +8,6 @@ import {
   waitForCompilation
 } from '#lib/services/testPipelineHelpers.ts'
 
-configureTestClient()
-
 const PIPELINE = `test-changestream-${Date.now()}`
 // The relation name as keyed in the UI: unquoted SQL identifiers are
 // case-independent and normalize to lowercase (see `normalizeCaseIndependentName`).
@@ -58,6 +56,7 @@ test.describe('Change Stream', () => {
 
   test.beforeAll(async ({}, testInfo) => {
     testInfo.setTimeout(600_000)
+    configureTestClient()
     await putPipeline(PIPELINE, {
       name: PIPELINE,
       description: 'E2E smoke test for the Change Stream tab',

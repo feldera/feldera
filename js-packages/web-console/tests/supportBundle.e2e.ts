@@ -8,8 +8,6 @@ import {
   waitForCompilation
 } from '#lib/services/testPipelineHelpers.ts'
 
-configureTestClient()
-
 const PIPELINE_NAME = `test-support-bundle-${Date.now()}`
 
 /**
@@ -36,6 +34,7 @@ test.describe('Profile viewer', () => {
 
   test.beforeAll(async ({ browser }, testInfo) => {
     testInfo.setTimeout(300_000)
+    configureTestClient()
     await putPipeline(PIPELINE_NAME, {
       name: PIPELINE_NAME,
       description: 'E2E test pipeline for the profile viewer',

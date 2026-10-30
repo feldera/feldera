@@ -7,8 +7,6 @@ import {
   waitForPipeline
 } from '#lib/services/testPipelineHelpers.ts'
 
-configureTestClient()
-
 const PREFIX = `test-deleted-${Date.now()}`
 const PIPELINE_A = `${PREFIX}-a`
 const PIPELINE_B = `${PREFIX}-b`
@@ -18,6 +16,7 @@ test.describe('Pipeline deleted state', () => {
 
   test.beforeAll(async ({}, testInfo) => {
     testInfo.setTimeout(240_000)
+    configureTestClient()
     for (const name of [PIPELINE_A, PIPELINE_B]) {
       await putPipeline(name, {
         name,

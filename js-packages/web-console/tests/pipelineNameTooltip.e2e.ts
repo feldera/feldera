@@ -11,8 +11,6 @@ import {
   waitForPipeline
 } from '#lib/services/testPipelineHelpers.ts'
 
-configureTestClient()
-
 // The status chip follows `usePipelineList`, which polls every 2 s, so the DOM
 // trails the API by up to one poll plus request latency.
 const STATUS_CHIP_TIMEOUT_MS = 6_000
@@ -25,6 +23,7 @@ test.describe('Pipeline name edit tooltip', () => {
 
   test.beforeAll(async ({}, testInfo) => {
     testInfo.setTimeout(60_000)
+    configureTestClient()
     await putPipeline(PIPELINE_NAME, {
       name: PIPELINE_NAME,
       description: 'E2E test pipeline for name-edit tooltip',

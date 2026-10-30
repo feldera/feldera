@@ -16,11 +16,12 @@ declare global {
   var __feldera_warmup: Promise<void> | undefined
 }
 
-configureTestClient()
-// A hook, so that `vitest list` loads the test files
-// without a Feldera instance. The timeout exceeds the 10 minutes that
-// `waitForCompilation` waits.
+// A hook, so that `vitest list` loads the test files without a Feldera
+// instance: `configureTestClient()` throws in CI when no origin is
+// configured, and `vitest list` runs no hooks. The timeout exceeds the 10
+// minutes that `waitForCompilation` waits.
 beforeAll(async () => {
+  configureTestClient()
   globalThis.__feldera_warmup ??= warmCompilationCache()
   await globalThis.__feldera_warmup
 }, 11 * 60_000)

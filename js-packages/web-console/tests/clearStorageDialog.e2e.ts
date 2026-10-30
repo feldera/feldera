@@ -7,8 +7,6 @@ import {
   waitForPipeline
 } from '#lib/services/testPipelineHelpers.ts'
 
-configureTestClient()
-
 const PIPELINE_NAME = `test-clear-storage-${Date.now()}`
 
 async function createPipelineWithStorage() {
@@ -76,6 +74,7 @@ test.describe('Clear storage dialog', () => {
 
   test.beforeAll(async ({}, testInfo) => {
     testInfo.setTimeout(180_000)
+    configureTestClient()
     await cleanupPipeline(PIPELINE_NAME)
     await createPipelineWithStorage()
     await startAndStopToCreateStorage()
