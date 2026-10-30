@@ -75,6 +75,28 @@ pub struct Checkpoint {
     /// a coordinator and in checkpoints that predate distributed connectors.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub input_distribution: BTreeMap<String, InputDistribution>,
+
+    /// Where a multihost pipeline kept the integrals of its materialized views
+    /// when it wrote this checkpoint.
+    ///
+    /// The integrals' state is stored under names that include their workers,
+    /// so a pipeline that keeps them elsewhere finds no state for them and
+    /// rebuilds them, which the pipeline diff must then report.
+    #[serde(default)]
+    pub view_integrals: ViewIntegrals,
+}
+
+/// Where a multihost pipeline keeps the integrals of its materialized views.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewIntegrals {
+    /// Each one on the host that writes the view's output connectors.  This is
+    /// the layout of checkpoints that predate [Checkpoint::view_integrals].
+    #[default]
+    OneHost,
+
+    /// Sharded over all of the workers of all of the hosts.
+    AllHosts,
 }
 
 impl Checkpoint {

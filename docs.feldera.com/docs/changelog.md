@@ -28,6 +28,18 @@ Source edition can be found on github.
   `dev_tweaks.tls_exchange` to `false` to exchange data in plaintext.  See
   [Client certificates](/get-started/enterprise/https#client-certificates).
 
+- Behavior change (multihost): a multihost pipeline keeps the state of each
+  materialized view on all of its hosts, instead of on one host.  A
+  `send_snapshot` connector, including HTTP egress, gets its snapshot from all
+  of the hosts.  When a multihost pipeline with materialized views restarts
+  from a checkpoint written before the upgrade, it rebuilds the state of those
+  views, as a bootstrap.  With the default bootstrap policy,
+  `await_approval`, it waits for approval, and the pipeline diff says why.  See
+  [Modifying a pipeline](/pipelines/modifying).  The bootstrap needs the
+  tables that the views read to be materialized.  If one is not, the pipeline
+  cannot start from its checkpoint, and you must start it without the
+  checkpoint.
+
 ## v0.376.0
 
 - Behavior change (Python SDK): a request that is not idempotent, such as

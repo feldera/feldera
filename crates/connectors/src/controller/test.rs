@@ -10948,3 +10948,131 @@ pub fn paused_connector_holds_transaction(engine: &dyn PipelineTestEngine) {
     assert!(paused().is_empty());
     controller.stop().unwrap();
 }
+
+/// A part of a snapshot that cannot be encoded costs only its own records, as
+/// for a delta batch: the snapshot goes on and ends its batch.  A part that
+/// does not arrive ends the snapshot without ending its batch.
+#[test]
+fn snapshot_parts_encode_errors() {
+    use feldera_adapterlib::catalog::{
+        RecordFormat, SerBatch, SerBatchReader, SerCursor, SerKeyRange,
+    };
+    use feldera_adapterlib::format::{Encoder, OutputConsumer};
+    use feldera_adapterlib::transport::{OutputBatchType, Step};
+    use tokio_util::sync::CancellationToken;
+
+    /// A part with `self.0` records, which only the fake encoder reads.
+    struct Part(usize);
+    impl SerBatchReader for Part {
+        fn key_count(&self) -> usize {
+            self.0
+        }
+        fn len(&self) -> usize {
+            self.0
+        }
+        fn cursor<'a>(
+            &'a self,
+            _record_format: RecordFormat,
+        ) -> Result<Box<dyn SerCursor + Send + 'a>, ControllerError> {
+            unimplemented!()
+        }
+        fn batches(&self) -> Vec<Arc<dyn SerBatch>> {
+            unimplemented!()
+        }
+        fn serialize_chunks(
+            &self,
+            _chunk_bytes: usize,
+            _emit: &mut dyn FnMut(&[u8]) -> anyhow::Result<()>,
+        ) -> anyhow::Result<()> {
+            unimplemented!()
+        }
+        fn snapshot(&self) -> Arc<dyn SerBatchReader> {
+            unimplemented!()
+        }
+        fn split(
+            self: Arc<Self>,
+            _num_ranges: usize,
+            _record_format: RecordFormat,
+        ) -> anyhow::Result<Vec<Box<dyn SerKeyRange>>> {
+            unimplemented!()
+        }
+    }
+
+    /// An encoder, and its own consumer, that records what happens to it and
+    /// fails to encode a part of 2 records.
+    #[derive(Default)]
+    struct FakeEncoder(Vec<String>);
+    impl OutputConsumer for FakeEncoder {
+        fn max_buffer_size_bytes(&self) -> usize {
+            usize::MAX
+        }
+        fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) {
+            self.0.push("start".into());
+        }
+        fn push_buffer(&mut self, _buffer: &[u8], _num_records: usize) {}
+        fn push_key(
+            &mut self,
+            _key: Option<&[u8]>,
+            _val: Option<&[u8]>,
+            _headers: &[(&str, Option<&[u8]>)],
+            _num_records: usize,
+        ) {
+        }
+        fn batch_end(&mut self) {
+            self.0.push("end".into());
+        }
+    }
+    impl Encoder for FakeEncoder {
+        fn consumer(&mut self) -> &mut dyn OutputConsumer {
+            self
+        }
+        fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> anyhow::Result<()> {
+            if batch.len() == 2 {
+                self.0.push("fail 2".into());
+                return Err(anyhow!("cannot encode"));
+            }
+            self.0.push(format!("encode {}", batch.len()));
+            Ok(())
+        }
+    }
+
+    /// Sends `parts` to the snapshot and returns its result, what happened to
+    /// the encoder, and the number of encode errors reported.
+    fn run(parts: Vec<anyhow::Result<usize>>) -> (Result<usize, String>, Vec<String>, usize) {
+        let (sender, receiver) = tokio::sync::mpsc::channel(parts.len() + 1);
+        for part in parts {
+            sender
+                .try_send(part.map(|n| Arc::new(Part(n)) as Arc<dyn SerBatchReader>))
+                .unwrap();
+        }
+        drop(sender);
+        let mut encoder = FakeEncoder::default();
+        let mut errors = 0;
+        let result = super::ControllerInner::encode_snapshot_parts(
+            receiver,
+            &mut encoder,
+            1,
+            &CancellationToken::new(),
+            |_| {},
+            |_| errors += 1,
+        );
+        (result.map_err(|error| error.to_string()), encoder.0, errors)
+    }
+
+    assert_eq!(
+        run(vec![Ok(1), Ok(2), Ok(3)]),
+        (
+            Ok(6),
+            vec!["start", "encode 1", "fail 2", "encode 3", "end"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            1
+        )
+    );
+
+    let (result, events, errors) = run(vec![Ok(1), Err(anyhow!("fetch failed")), Ok(3)]);
+    assert_eq!(result, Err("fetch failed".into()));
+    assert_eq!(events, ["start", "encode 1"]);
+    assert_eq!(errors, 0);
+}

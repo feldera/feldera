@@ -1749,8 +1749,14 @@ impl IndexedWSetSerializer {
         });
     }
 
-    fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.n_keys == 0 && self.n_values == 0
+    }
+
+    /// Returns the number of bytes of data serialized so far, not counting the
+    /// offsets that [Self::done] appends.
+    pub fn data_len(&self) -> usize {
+        self.fbuf.len()
     }
 
     /// Returns the serialized form as an [FBuf].

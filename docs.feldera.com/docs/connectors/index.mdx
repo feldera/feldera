@@ -195,15 +195,10 @@ The following attributes are common to all connectors:
   [Iceberg](/connectors/sources/iceberg#distributed-connectors) input
   connectors support this setting.
 
-  For an output connector, the pipeline keeps the state of its materialized
-  views on all of its hosts, instead of on the one host that writes each
-  view's output connectors.  This spreads the memory and storage that a large
-  materialized view needs.  The connector itself still runs on one host.  It
-  is enough for one output connector in the pipeline to set it.  A multihost
-  pipeline with such a connector cannot use `send_snapshot` on any output
-  connector.  Only the null output connector, and the
+  For an output connector, this setting has no effect yet: the connector
+  runs on one host.  Only the null output connector, and the
   [Delta Lake](/connectors/sinks/delta) output connector with `mode` set to
-  `append` and `update_mode` set to `cdc`, support this setting.
+  `append` and `update_mode` set to `cdc`, accept this setting.
 
   For other connectors, a pipeline with `distributed` set to `true` fails to
   start.

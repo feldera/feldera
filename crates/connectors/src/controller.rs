@@ -19,7 +19,7 @@
 
 use crate::catalog::{InputCollectionHandle, OutputCollectionHandles};
 use crate::controller::checkpoint::{
-    CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics,
+    CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics, ViewIntegrals,
 };
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, ProcessedRecords};
 use crate::controller::sync::{
@@ -151,6 +151,8 @@ mod journal;
 mod preprocessor_stalls;
 #[cfg(target_os = "macos")]
 mod samply_spawn;
+pub(crate) mod snapshot_parts;
+use snapshot_parts::{PeerClient, SnapshotParts};
 mod stats;
 pub(crate) mod sync;
 mod validate;
@@ -262,14 +264,18 @@ pub struct ControllerBuilder {
     /// [coordination::CoordinationActivate::input_choices]).
     input_choices: BTreeMap<String, JsonValue>,
 
+    /// The base URL of each host of a multihost pipeline, in host order (see
+    /// [coordination::CoordinationActivate::host_urls]).  This is empty without a coordinator,
+    /// or with a coordinator that predates it.
+    host_urls: Vec<String>,
+
+    /// The root CA that the other hosts' HTTPS certificates chain to, for a pipeline that
+    /// serves HTTPS without requiring client certificates (otherwise, see `exchange_tls`).
+    peer_root_certificate: Option<reqwest::Certificate>,
+
     /// The host that writes each output relation of a multihost pipeline, as the coordinator
     /// assigns them.  This is empty without a coordinator.
     output_assignment: BTreeMap<String, usize>,
-
-    /// See [CircuitParams::distributed_outputs].  The builder computes it from the full
-    /// configuration, because activation later replaces a host's output connectors with only
-    /// its own.
-    distributed_outputs: bool,
 
     /// The pipeline's storage, if it has any.
     storage: Option<Arc<dyn PipelineStorage>>,
@@ -324,8 +330,9 @@ impl ControllerBuilder {
             layout: None,
             input_distribution: BTreeMap::new(),
             input_choices: BTreeMap::new(),
+            host_urls: Vec::new(),
+            peer_root_certificate: None,
             output_assignment: BTreeMap::new(),
-            distributed_outputs: config.has_distributed_outputs(),
             storage,
             exchange_tls: None,
         })
@@ -444,6 +451,22 @@ impl ControllerBuilder {
         }
     }
 
+    /// Sets the base URL of each host of a multihost pipeline.
+    pub(crate) fn with_host_urls(self, host_urls: Vec<String>) -> Self {
+        Self { host_urls, ..self }
+    }
+
+    /// Sets the root CA that the other hosts' HTTPS certificates chain to.
+    pub(crate) fn with_peer_root_certificate(
+        self,
+        peer_root_certificate: Option<reqwest::Certificate>,
+    ) -> Self {
+        Self {
+            peer_root_certificate,
+            ..self
+        }
+    }
+
     /// Sets TLS for exchange with the other hosts of a multihost pipeline.
     pub(crate) fn with_exchange_tls(self, exchange_tls: Option<PipelinePeerTls>) -> Self {
         Self {
@@ -498,7 +521,8 @@ impl ControllerBuilder {
         init.with_input_distribution(self.input_distribution, self.input_choices)
             .with_output_assignment(self.output_assignment)
             .with_exchange_tls(self.exchange_tls)
-            .with_distributed_outputs(self.distributed_outputs)
+            .with_host_urls(self.host_urls)
+            .with_peer_root_certificate(self.peer_root_certificate)
     }
 
     pub(crate) fn storage(&self) -> Option<Arc<dyn PipelineStorage>> {
@@ -3222,6 +3246,8 @@ impl CircuitThread {
             input_distribution,
             checkpointed_input_distribution: _,
             input_choices,
+            host_urls,
+            peer_root_certificate,
         } = controller_init;
 
         let storage = circuit_params.storage.clone();
@@ -3240,7 +3266,23 @@ impl CircuitThread {
         }
 
         let layout = circuit_params.layout.clone();
-        let distributed_outputs = circuit_params.distributed_outputs && !layout.is_solo();
+        let peer_client = if layout.is_multihost() && !host_urls.is_empty() {
+            Some(
+                PeerClient::new(
+                    &host_urls,
+                    circuit_params.exchange_tls.as_ref(),
+                    peer_root_certificate,
+                )
+                .map_err(|error| {
+                    ControllerError::invalid_transport_configuration(
+                        "host URLs",
+                        &format!("cannot reach the other hosts for snapshots: {error:#}"),
+                    )
+                })?,
+            )
+        } else {
+            None
+        };
         let EngineCircuit {
             driver: mut circuit,
             runtime,
@@ -3431,7 +3473,7 @@ impl CircuitThread {
             incarnation_uuid,
             input_distribution,
             input_choices,
-            distributed_outputs,
+            peer_client,
             storage
                 .as_ref()
                 .and_then(|storage| storage.local_path())
@@ -5109,6 +5151,19 @@ impl CircuitThread {
                         processed_records.or_else(|| Some(self.controller.status.committed()))
                     };
 
+                    if self.controller.layout.is_multihost() {
+                        self.controller.enqueue_multihost_snapshot(
+                            *endpoint_id,
+                            &endpoint.endpoint_name,
+                            &endpoint.stream_name,
+                            &endpoint.queue,
+                            &endpoint.control,
+                            &endpoint.unparker,
+                            processed_records,
+                            Some(self.step),
+                        );
+                        continue;
+                    }
                     self.controller.enqueue_latest_snapshot(
                         *endpoint_id,
                         &endpoint.stream_name,
@@ -5137,6 +5192,7 @@ impl CircuitThread {
                     batch_type: OutputBatchType::Delta,
                     data: Some(batch),
                     processed_records,
+                    snapshot_parts: None,
                 });
 
                 // Wake up the output thread.  We're not trying to be smart here and
@@ -5403,6 +5459,7 @@ impl FtState {
             input_statistics: HashMap::new(),
             output_statistics: HashMap::new(),
             input_distribution: controller.input_distribution.clone(),
+            view_integrals: ViewIntegrals::AllHosts,
         };
         let journal = storage.open_journal(JournalMode::Create(&checkpoint))?;
 
@@ -6168,6 +6225,12 @@ pub struct ControllerInit {
 
     /// See [ControllerBuilder::input_choices].
     input_choices: BTreeMap<String, JsonValue>,
+
+    /// See [ControllerBuilder::host_urls].
+    host_urls: Vec<String>,
+
+    /// See [ControllerBuilder::peer_root_certificate].
+    peer_root_certificate: Option<reqwest::Certificate>,
 }
 
 impl ControllerInit {
@@ -6185,6 +6248,22 @@ impl ControllerInit {
                 &self.checkpointed_input_distribution,
             ),
             input_choices,
+            ..self
+        }
+    }
+
+    /// Sets the base URL of each host of a multihost pipeline.
+    fn with_host_urls(self, host_urls: Vec<String>) -> Self {
+        Self { host_urls, ..self }
+    }
+
+    /// Sets the root CA that the other hosts' HTTPS certificates chain to.
+    fn with_peer_root_certificate(
+        self,
+        peer_root_certificate: Option<reqwest::Certificate>,
+    ) -> Self {
+        Self {
+            peer_root_certificate,
             ..self
         }
     }
@@ -6210,6 +6289,8 @@ impl ControllerInit {
             input_distribution: BTreeMap::new(),
             checkpointed_input_distribution: BTreeMap::new(),
             input_choices: BTreeMap::new(),
+            host_urls: Vec::new(),
+            peer_root_certificate: None,
         })
     }
 
@@ -6263,15 +6344,27 @@ impl ControllerInit {
             input_statistics,
             output_statistics,
             input_distribution: checkpointed_input_distribution,
+            view_integrals,
         } = checkpoint;
         info!("Resuming from checkpoint:\n{checkpoint_summary}");
 
         let init_checkpoint = circuit.map(|circuit| circuit.uuid);
 
-        let pipeline_diff = compute_pipeline_diff(
+        let mut pipeline_diff = compute_pipeline_diff(
             &checkpoint_config.program_info_subset(),
             &config.program_info_subset(),
         )?;
+        // A multihost pipeline now spreads each view's integral over all
+        // workers.  From a checkpoint that kept it on one host, the circuit
+        // finds no state for it and rebuilds it, which the diff must report.
+        if layout.as_ref().is_some_and(Layout::is_multihost)
+            && view_integrals == ViewIntegrals::OneHost
+        {
+            info!(
+                "the checkpoint keeps each materialized view's state on one host, so the pipeline rebuilds that state over all hosts"
+            );
+            pipeline_diff = pipeline_diff.with_view_integrals_moved();
+        }
 
         // Record which surviving output connectors changed across the
         // restart. The cumulative `transmitted_records` counter is preserved
@@ -6446,6 +6539,8 @@ impl ControllerInit {
             input_distribution: BTreeMap::new(),
             checkpointed_input_distribution,
             input_choices: BTreeMap::new(),
+            host_urls: Vec::new(),
+            peer_root_certificate: None,
         })
     }
 
@@ -6574,7 +6669,6 @@ impl ControllerInit {
         Ok(CircuitParams {
             layout,
             output_assignment: BTreeMap::new(),
-            distributed_outputs: false,
             storage,
             init_checkpoint: None,
             defer_restore: false,
@@ -6583,6 +6677,7 @@ impl ControllerInit {
             pin_cpus: pipeline_config.global.pin_cpus.clone(),
             dev_tweaks,
             exchange_tls: None,
+            exchange_listener: None,
         })
     }
 
@@ -6595,12 +6690,6 @@ impl ControllerInit {
     /// Sets TLS for exchange with the other hosts of a multihost pipeline.
     fn with_exchange_tls(mut self, exchange_tls: Option<PipelinePeerTls>) -> Self {
         self.circuit_params.exchange_tls = exchange_tls;
-        self
-    }
-
-    /// Sets [CircuitParams::distributed_outputs].
-    fn with_distributed_outputs(mut self, distributed_outputs: bool) -> Self {
-        self.circuit_params.distributed_outputs = distributed_outputs;
         self
     }
 
@@ -6904,6 +6993,11 @@ struct BatchQueueEntry {
     /// This is `None` if the step produced no output.  We still create an entry
     /// to allow for progress tracking.
     data: Option<Arc<dyn SerBatchReader>>,
+
+    /// For a snapshot that a multihost pipeline builds from the parts on all
+    /// of its hosts, the parts, which arrive while the output thread encodes
+    /// them.  `data` is then `None`.
+    snapshot_parts: Option<SnapshotParts>,
 
     /// The records processed by the pipeline *before* this step.
     ///
@@ -7944,10 +8038,11 @@ pub struct ControllerInner {
     /// Layout of the circuit's workers.
     layout: Layout,
 
-    /// Whether this multihost pipeline keeps the integrals of its materialized views on all
-    /// hosts (see [CircuitParams::distributed_outputs]).  Each host then holds only part of an
-    /// integral, so it cannot send a snapshot of it.
-    distributed_outputs: bool,
+    /// The client for the other hosts' snapshot endpoints, in a multihost pipeline whose
+    /// coordinator sent each host's URL (see [ControllerBuilder::host_urls]).  A multihost
+    /// pipeline spreads each materialized view's integral over all of its hosts, so a snapshot
+    /// needs the other hosts' parts.
+    peer_client: Option<PeerClient>,
 
     /// The input distribution that this host used at activation, which each
     /// checkpoint records.  Only connector initialization applies it (see
@@ -8060,7 +8155,7 @@ impl ControllerInner {
         incarnation_uuid: Uuid,
         input_distribution: BTreeMap<String, InputDistribution>,
         input_choices: BTreeMap<String, JsonValue>,
-        distributed_outputs: bool,
+        peer_client: Option<PeerClient>,
         storage_path: Option<PathBuf>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(
@@ -8096,7 +8191,7 @@ impl ControllerInner {
                 outputs: ShardedLock::new(outputs),
                 next_output_id: Atomic::new(0),
                 layout,
-                distributed_outputs,
+                peer_client,
                 input_distribution: input_distribution.clone(),
                 shutdown: runtime.shutdown_token().child_token(),
                 runtime,
@@ -8828,10 +8923,13 @@ impl ControllerInner {
                 "'send_snapshot: true' requires a materialized output view",
             ));
         }
-        if endpoint_config.connector_config.send_snapshot && self.distributed_outputs {
+        if endpoint_config.connector_config.send_snapshot
+            && self.layout.is_multihost()
+            && self.peer_client.is_none()
+        {
             return Err(ControllerError::invalid_transport_configuration(
                 endpoint_name,
-                "'send_snapshot: true' is not supported in a multihost pipeline with an output connector that sets 'distributed: true'",
+                "'send_snapshot: true' in this multihost pipeline needs the URL of each host from the coordinator, which this coordinator does not send",
             ));
         }
 
@@ -9161,6 +9259,7 @@ impl ControllerInner {
                 batch_type: OutputBatchType::Snapshot,
                 data: None,
                 processed_records,
+                snapshot_parts: None,
             });
         } else {
             let merged = snapshot_readers.whole;
@@ -9171,11 +9270,129 @@ impl ControllerInner {
                 batch_type: OutputBatchType::Snapshot,
                 data: Some(merged),
                 processed_records,
+                snapshot_parts: None,
             });
         }
 
         // Wake the output thread so it drains the newly enqueued snapshot batches.
         unparker.unpark();
+        true
+    }
+
+    /// Like [Self::enqueue_latest_snapshot], for a multihost pipeline that spreads integrals
+    /// over all hosts, where no host has a whole snapshot.
+    ///
+    /// It does two things:
+    ///
+    /// 1. It leases the step of the latest snapshot on each other host.  This happens here, on
+    ///    the circuit thread, before the circuit moves on.  All hosts run each step together, so
+    ///    no host can drop the step before this host leases it.
+    ///
+    /// 2. It queues one snapshot for the endpoint.  A background task sends the snapshot's parts
+    ///    to the queue: first this host's parts, then the parts of each other host, in host
+    ///    order (see [snapshot_parts::send_snapshot_parts]).  The output thread encodes each
+    ///    part when it arrives.
+    ///
+    /// Returns `false`, so that the next step tries again, if there is no snapshot yet or a
+    /// lease fails.
+    #[allow(clippy::too_many_arguments)]
+    fn enqueue_multihost_snapshot(
+        &self,
+        endpoint_id: EndpointId,
+        endpoint_name: &str,
+        stream_name: &str,
+        queue: &Arc<BatchQueue>,
+        control: &Arc<OutputEndpointControl>,
+        unparker: &Unparker,
+        processed_records: Option<ProcessedRecords>,
+        step: Option<Step>,
+    ) -> bool {
+        let peer_client = self
+            .peer_client
+            .clone()
+            .expect("`add_output_endpoint` refuses `send_snapshot` without a peer client");
+        let table = SqlIdentifier::from(stream_name);
+        let Some((snapshot_step, local_parts)) = self
+            .trace_snapshots
+            .blocking_lock()
+            .last_key_value()
+            .and_then(|(step, snapshot)| Some((*step, snapshot.get(&table)?.partitions.clone())))
+        else {
+            return false;
+        };
+        let handle = self
+            .catalog
+            .output_handles(&table)
+            .and_then(|handles| handles.integrate_handle.clone())
+            .expect("a snapshot's relation is materialized");
+        let hosts: Vec<_> = self.layout.all_hosts().collect();
+        let local_host = self.layout.local_host_idx();
+
+        let leases = TOKIO.block_on(async {
+            let mut leases = Vec::new();
+            for host in (0..hosts.len()).filter(|&host| host != local_host) {
+                match peer_client.lease(host, snapshot_step, &table).await {
+                    Ok(id) => leases.push((host, id)),
+                    Err(error) => {
+                        for (host, id) in leases {
+                            peer_client.release(host, id).await;
+                        }
+                        return Err(error);
+                    }
+                }
+            }
+            Ok(leases)
+        });
+        let leases = match leases {
+            Ok(leases) => leases,
+            Err(error) => {
+                warn!(
+                    "{endpoint_name}: leasing step {snapshot_step} on the other hosts for a snapshot failed; trying again at the next step: {error:#}"
+                );
+                return false;
+            }
+        };
+
+        let step = step.unwrap_or_else(|| {
+            processed_records
+                .as_ref()
+                .map(|processed| processed.total_processed_steps)
+                .unwrap_or_default()
+        });
+        let transaction = self.get_transaction_number();
+        control.mark_snapshot_delivered();
+        let (sender, parts) = tokio::sync::mpsc::channel(snapshot_parts::QUEUED_CHUNKS);
+        self.status.enqueue_batch(endpoint_id, 0);
+        queue.push(BatchQueueEntry {
+            step,
+            transaction,
+            batch_type: OutputBatchType::Snapshot,
+            data: None,
+            snapshot_parts: Some(parts),
+            processed_records,
+        });
+        unparker.unpark();
+
+        TOKIO.spawn(async move {
+            let result = snapshot_parts::send_snapshot_parts(
+                &peer_client,
+                snapshot_step,
+                &table,
+                handle.as_ref(),
+                local_parts,
+                &hosts,
+                &leases,
+                &sender,
+            )
+            .await;
+            if let Err(error) = result {
+                let _ = sender.send(Err(error)).await;
+            }
+            drop(sender);
+            for (host, id) in leases {
+                peer_client.release(host, id).await;
+            }
+        });
         true
     }
 
@@ -9205,6 +9422,7 @@ impl ControllerInner {
             batch_type: OutputBatchType::Delta,
             data: None,
             processed_records,
+            snapshot_parts: None,
         });
         endpoint.unparker.unpark();
     }
@@ -9232,6 +9450,87 @@ impl ControllerInner {
             }
         });
         encoder.consumer().batch_end();
+    }
+
+    /// Encodes the parts of a snapshot as they arrive from `parts`, as one
+    /// output batch, and returns the number of records, as
+    /// [Self::encode_snapshot_parts] does for this endpoint.
+    fn push_snapshot_parts(
+        parts: SnapshotParts,
+        endpoint_id: EndpointId,
+        endpoint_name: &str,
+        encoder: &mut dyn Encoder,
+        transaction: u64,
+        controller: &ControllerInner,
+    ) -> anyhow::Result<usize> {
+        Self::encode_snapshot_parts(
+            parts,
+            encoder,
+            transaction,
+            controller.shutdown_token(),
+            // The entry was queued before its size was known, so count each
+            // part as queued now, to match the `output_batch` that reports the
+            // whole snapshot.
+            |num_records| controller.status.enqueue_batch(endpoint_id, num_records),
+            |error| {
+                controller.encode_error(endpoint_id, endpoint_name, error, Some("encoder_error"))
+            },
+        )
+    }
+
+    /// Encodes the parts of a snapshot as they arrive from `parts`, as one
+    /// output batch, and returns the number of records.  `on_part` gets the
+    /// number of records of each part before it is encoded.
+    ///
+    /// A part that cannot be encoded costs only its own records, as for a
+    /// delta batch (see [Self::push_batch_to_encoder]): `on_encode_error`
+    /// reports the error, and the snapshot goes on.
+    ///
+    /// A part that does not arrive, because the fetch from another host failed,
+    /// or a shutdown, ends the snapshot.  This returns the error without ending
+    /// the batch, so that the encoder commits nothing of the partial snapshot.
+    /// The caller must then stop the endpoint, because the transport may still
+    /// hold the partial batch.
+    fn encode_snapshot_parts(
+        mut parts: SnapshotParts,
+        encoder: &mut dyn Encoder,
+        transaction: u64,
+        shutdown: &CancellationToken,
+        mut on_part: impl FnMut(usize),
+        mut on_encode_error: impl FnMut(anyhow::Error),
+    ) -> anyhow::Result<usize> {
+        encoder
+            .consumer()
+            .batch_start(transaction, OutputBatchType::Snapshot);
+        let mut num_records = 0;
+        loop {
+            if shutdown.is_cancelled() {
+                return Err(anyhow!("the pipeline is shutting down"));
+            }
+            // Wait in short slices, to notice a shutdown.
+            // The timeout's timer needs the runtime, so create it inside.
+            match TOKIO.block_on(async {
+                tokio::time::timeout(Duration::from_secs(1), parts.recv()).await
+            }) {
+                Err(_elapsed) => continue,
+                Ok(None) => break,
+                Ok(Some(part)) => {
+                    let part = part?;
+                    on_part(part.len());
+                    num_records += part.len();
+                    if let Err(error) = encoder.encode(part) {
+                        // An encoder that a shutdown cut short gives up on the
+                        // snapshot, which the shutdown ends anyway.
+                        if shutdown.is_cancelled() {
+                            return Err(error);
+                        }
+                        on_encode_error(error);
+                    }
+                }
+            }
+        }
+        encoder.consumer().batch_end();
+        Ok(num_records)
     }
 
     /// Main loop for the output thread. Drains batches from the endpoint's
@@ -9318,6 +9617,7 @@ impl ControllerInner {
                 transaction,
                 batch_type,
                 data,
+                snapshot_parts,
                 processed_records,
             }) = queue.pop()
             {
@@ -9357,7 +9657,36 @@ impl ControllerInner {
                     // output batch, because fault-tolerant output dedup keys on
                     // the transaction and requires strictly increasing ids. Empty
                     // in-progress steps of a transaction produce no output.
-                    if let Some(data) = data
+                    let mut num_records = num_records;
+                    if let Some(parts) = snapshot_parts {
+                        match Self::push_snapshot_parts(
+                            parts,
+                            endpoint_id,
+                            &endpoint_name,
+                            encoder.as_mut(),
+                            transaction,
+                            &controller,
+                        ) {
+                            Ok(n) => num_records = n,
+                            Err(error) => {
+                                // A shutdown cuts the snapshot short; that is
+                                // not the endpoint's fault.
+                                if !controller.shutdown_token().is_cancelled() {
+                                    controller.output_transport_error(
+                                        endpoint_id,
+                                        &endpoint_name,
+                                        true,
+                                        error.context("sending the snapshot failed, so this output connector stops"),
+                                        Some("snapshot"),
+                                    );
+                                    // Without `batch_end`, the encoder commits
+                                    // nothing of the partial snapshot.
+                                    controller.disconnect_output(&endpoint_id);
+                                }
+                                return;
+                            }
+                        }
+                    } else if let Some(data) = data
                         && num_records > 0
                     {
                         Self::push_batch_to_encoder(
@@ -10893,6 +11222,7 @@ impl RunningCheckpoint {
             input_statistics,
             output_statistics,
             input_distribution: circuit.controller.input_distribution.clone(),
+            view_integrals: ViewIntegrals::AllHosts,
         };
         Span::new("blocking")
             .with_category("Checkpoint")
