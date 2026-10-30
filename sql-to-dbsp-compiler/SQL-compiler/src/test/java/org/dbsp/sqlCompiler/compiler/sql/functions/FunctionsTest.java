@@ -77,6 +77,17 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void truncFloat() {
+        this.qs("""
+                SELECT TRUNC(1.29e0, 1) = 1.2e0, TRUNC(CAST(-1.29 AS REAL), 1) = CAST(-1.2 AS REAL),
+                       TRUNC(1.5e0, 400) = 1.5e0;
+                 a    | b    | c
+                --------------------
+                 true | true | true
+                (1 row)""");
+    }
+
+    @Test
     public void roundFloatManyDigits() {
         // 10^digits is infinity or 0, or the value times 10^digits is not finite.
         this.qs("""
