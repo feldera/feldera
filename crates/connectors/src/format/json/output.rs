@@ -358,12 +358,8 @@ impl Encoder for JsonEncoder {
         let mut buffer = take(&mut self.buffer);
         let mut key_buffer = take(&mut self.key_buffer);
 
-        // Reserve one extra byte for the closing bracket `]`.
-        let max_buffer_size = if self.config.array {
-            self.max_buffer_size - 1
-        } else {
-            self.max_buffer_size
-        };
+        // Room for the end of a buffer: `]\n` after an array, or `\n` after the last record.
+        let terminator_len = if self.config.array { 2 } else { 1 };
 
         let mut num_records = 0;
         let mut cursor = if self.input_is_indexed {
@@ -552,14 +548,16 @@ impl Encoder for JsonEncoder {
                     }
                 }
 
-                // Drop the last encoded record if it exceeds max_buffer_size.
+                // Drop the last encoded record if the message, with its key and the end of
+                // the buffer, exceeds max_buffer_size.
                 // The record will be included in the next buffer.
-                let buffer_full = buffer.len() > max_buffer_size;
+                let required = key_buffer.len() + buffer.len() + terminator_len;
+                let buffer_full = required > self.max_buffer_size;
                 if buffer_full {
                     if num_records == 0 {
                         // We should be able to fit at least one record in the buffer.
                         let record = &buffer[prev_len..];
-                        return Err(record_too_long(self.max_buffer_size, record.len(), record));
+                        return Err(record_too_long(self.max_buffer_size, required, record));
                     }
                     buffer.truncate(prev_len);
                 } else {
@@ -570,9 +568,9 @@ impl Encoder for JsonEncoder {
                     }
                     num_records += 1;
                     self.seq_number += 1;
-                }
-                if !self.config.array {
-                    buffer.push(b'\n');
+                    if !self.config.array {
+                        buffer.push(b'\n');
+                    }
                 }
 
                 if num_records >= self.config.buffer_size_records || buffer_full {
@@ -647,7 +645,7 @@ pub mod test {
     };
     use feldera_types::{
         config::{ConnectorConfig, FormatConfig},
-        format::json::{JsonEncoderConfig, JsonUpdateFormat},
+        format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateFormat},
         program_schema::Relation,
     };
     use proptest::prelude::*;
@@ -951,8 +949,76 @@ pub mod test {
         let error = encoder.encode(batch(engine, &batches()[0])).unwrap_err();
         assert_eq!(
             error.to_string(),
-            "JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is 32 bytes, but the following record requires 46 bytes: '{\"delete\":{\"id\":1,\"b\":false,\"i\":10,\"s\":\"bar\"}}'."
+            "JSON record exceeds maximum buffer size supported by the output transport. Max supported buffer size is 32 bytes, but the following record requires 47 bytes: '{\"delete\":{\"id\":1,\"b\":false,\"i\":10,\"s\":\"bar\"}}'."
         );
+    }
+
+    /// For each transport buffer size, each message fits in the buffer with its key and has no
+    /// empty line, or the batch fails with a record that does not fit. The messages hold the
+    /// changes of the batch.
+    #[engine_test]
+    pub fn messages_fit_the_buffer(engine: &dyn ConnectorTestEngine) {
+        let schema = published_schema(&relation());
+        for (update_format, array) in [
+            (InsertDelete, false),
+            (InsertDelete, true),
+            (Debezium, false),
+        ] {
+            // Debezium writes one record per message.
+            let buffer_size_records = if matches!(update_format, Debezium) {
+                1
+            } else {
+                3
+            };
+            for max_buffer_size in 40..=300 {
+                let config = JsonEncoderConfig {
+                    update_format: update_format.clone(),
+                    json_flavor: Some(JsonFlavor::Default),
+                    buffer_size_records,
+                    array,
+                    key_fields: None,
+                    tombstones_on_delete: None,
+                };
+                let consumer = MockOutputConsumer::with_max_buffer_size_bytes(max_buffer_size);
+                let (mut encoder, output) = encoder(config, consumer);
+                let case = format!("{update_format:?}, array {array}, buffer {max_buffer_size}");
+                let mut next_sequence_number = 0;
+                for (step, rows) in fixed_batches().iter().enumerate() {
+                    let batch = engine
+                        .output_batch(&relation(), rows.rows(), rows.weights())
+                        .unwrap();
+                    encoder
+                        .consumer()
+                        .batch_start(step as u64, OutputBatchType::Delta);
+                    if let Err(error) = encoder.encode(batch) {
+                        let error = error.to_string();
+                        assert!(
+                            error.starts_with("JSON record exceeds maximum buffer size"),
+                            "{case}: {error}"
+                        );
+                        break;
+                    }
+                    encoder.consumer().batch_end();
+
+                    let mut bytes = Vec::new();
+                    for (key, value, _headers) in output.lock().unwrap().drain(..) {
+                        let (key, value) = (key.unwrap_or_default(), value.unwrap_or_default());
+                        assert!(key.len() + value.len() <= max_buffer_size, "{case}");
+                        assert!(!value.windows(2).any(|pair| pair == b"\n\n"), "{case}");
+                        bytes.extend(value);
+                    }
+                    let encoded = decode(
+                        &update_format,
+                        array,
+                        &bytes,
+                        schema.clone(),
+                        encoder.stream_id,
+                        &mut next_sequence_number,
+                    );
+                    assert_eq!(encoded.zset().unwrap(), rows.zset().unwrap(), "{case}");
+                }
+            }
+        }
     }
 
     /// With `key_fields`, a Debezium record carries a key of those fields, both with their
