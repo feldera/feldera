@@ -30,11 +30,22 @@ public class JsonEncoderConfig implements IValidateConfig {
     @JsonProperty("key_fields")
     public List<String> keyFields = null;
 
+    /** When true, a Debezium delete is followed by a tombstone.
+     * Valid only with {@code update_format = "debezium"} and an index. */
+    @Nullable
+    @JsonProperty("tombstones_on_delete")
+    public Boolean tombstonesOnDelete = null;
+
     @Override
     public boolean validate(ConfigReporter reporter) {
         if (keyFields != null && updateFormat != JsonUpdateFormat.Debezium) {
             reporter.warnPath("key_fields", "Invalid configuration",
                     "\"key_fields\" is only valid with \"update_format\": \"debezium\"");
+            return false;
+        }
+        if (tombstonesOnDelete != null && updateFormat != JsonUpdateFormat.Debezium) {
+            reporter.warnPath("tombstones_on_delete", "Invalid configuration",
+                    "\"tombstones_on_delete\" is only valid with \"update_format\": \"debezium\"");
             return false;
         }
         return true;

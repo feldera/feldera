@@ -126,6 +126,11 @@ impl StaticTestEngine {
         engine.serve::<records::DatagenBytes>(datagen::bytes_relation(), BTreeMap::new());
         engine.serve::<records::DatagenTime>(datagen::time_relation(), BTreeMap::new());
         engine.serve::<records::Basic>(json_encoder::relation(), BTreeMap::new());
+        engine.serve_index::<records::BasicKey, records::Basic>(
+            json_encoder::key_relation(),
+            json_encoder::relation(),
+            |row| records::BasicKey { id: row.id },
+        );
         engine.serve::<records::JsonInput>(json_parser::relation(), BTreeMap::new());
         engine.serve::<records::EveryType>(json_parser::every_type_relation(), BTreeMap::new());
         engine.serve::<TestStructMetadata>(

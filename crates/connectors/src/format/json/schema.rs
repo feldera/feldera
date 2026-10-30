@@ -7,12 +7,22 @@ use feldera_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateForma
 use feldera_types::program_schema::Relation;
 
 /// Build a schema for the value component of the payload.
-pub fn build_value_schema(config: &JsonEncoderConfig, schema: &Relation) -> Option<String> {
+///
+/// `with_before` adds the `before` field to the Debezium schema. `before` holds the old row
+/// of a `u` event and the row of a `d` event. A Kafka Connect JsonConverter drops the payload
+/// fields that the schema does not declare, so a consumer reads `before` only when the schema
+/// declares it.
+pub fn build_value_schema(
+    config: &JsonEncoderConfig,
+    schema: &Relation,
+    with_before: bool,
+) -> Option<String> {
     match config.json_flavor {
         Some(JsonFlavor::KafkaConnectJsonConverter) => {
             if matches!(config.update_format, JsonUpdateFormat::Debezium) {
                 Some(kafka_connect_json_converter::debezium_value_schema_str(
                     schema,
+                    with_before,
                 ))
             } else {
                 None
@@ -119,8 +129,10 @@ mod kafka_connect_json_converter {
         schema: TypeSchema,
     }
 
-    pub fn debezium_value_schema_str(schema: &Relation) -> String {
-        serde_json::to_string(&debezium_value_schema(schema)).unwrap()
+    /// Generate JSON schema for the Debezium value: `before` when `with_before` is set,
+    /// then `after` and `op`.
+    pub fn debezium_value_schema_str(schema: &Relation, with_before: bool) -> String {
+        serde_json::to_string(&debezium_value_schema(schema, with_before)).unwrap()
     }
 
     /// Generate JSON schema for the Debezium key field.
@@ -130,29 +142,31 @@ mod kafka_connect_json_converter {
         serde_json::to_string(&debezium_key_schema(schema, key_fields)).unwrap()
     }
 
-    fn debezium_value_schema(schema: &Relation) -> Type {
-        Type {
-            representation_type: RepresentationType::Struct {
-                fields: vec![
-                    JsonField {
-                        field: "after".to_string(),
-                        schema: TypeSchema {
-                            typ: relation_schema(schema, None),
-                            optional: true,
-                        },
-                    },
-                    JsonField {
-                        field: "op".to_string(),
-                        schema: TypeSchema {
-                            typ: Type {
-                                representation_type: RepresentationType::String,
-                                logical_type: None,
-                            },
-                            optional: false,
-                        },
-                    },
-                ],
+    fn debezium_value_schema(schema: &Relation, with_before: bool) -> Type {
+        let row = |field: &str| JsonField {
+            field: field.to_string(),
+            schema: TypeSchema {
+                typ: relation_schema(schema, None),
+                optional: true,
             },
+        };
+        let mut fields = Vec::new();
+        if with_before {
+            fields.push(row("before"));
+        }
+        fields.push(row("after"));
+        fields.push(JsonField {
+            field: "op".to_string(),
+            schema: TypeSchema {
+                typ: Type {
+                    representation_type: RepresentationType::String,
+                    logical_type: None,
+                },
+                optional: false,
+            },
+        });
+        Type {
+            representation_type: RepresentationType::Struct { fields },
             logical_type: Some(LogicalType {
                 name: "Envelope".to_string(),
                 parameters: Default::default(),
@@ -401,7 +415,7 @@ mod kafka_connect_json_converter {
 }"#,
             )
             .unwrap();
-            let connect_schema = debezium_value_schema_str(&schema);
+            let connect_schema = debezium_value_schema_str(&schema, false);
             let connect_schema_value: serde_json::Value =
                 serde_json::from_str(&connect_schema).unwrap();
             let expected_value: serde_json::Value = serde_json::from_str(
