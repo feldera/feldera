@@ -3184,12 +3184,18 @@ where
         {
             continue;
         }
-        file.stats
-            .record(CacheAccess::Prefetch, Duration::ZERO, node.location);
         let claim = Claim {
             in_flight: file.in_flight.clone(),
             offset: node.location.offset,
         };
+        // A read-ahead puts its block in the cache before it gives up its
+        // claim, so one that finished between the look above and the claim
+        // left the block there.
+        if cache.get(&*file.file_handle, node.location).is_some() {
+            continue;
+        }
+        file.stats
+            .record(CacheAccess::Prefetch, Duration::ZERO, node.location);
         let cache = cache.clone();
         let (file_id, version, compression) =
             (file.file_handle.file_id(), file.version, file.compression);
