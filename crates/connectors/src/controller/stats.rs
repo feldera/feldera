@@ -569,23 +569,18 @@ pub struct ControllerStatus {
     ///
     /// An endpoint hands records to the circuit with [`Self::extended`], which
     /// parks their size in the endpoint's own status entry for the circuit
-    /// thread to pick up and count as processed. Removing the endpoint takes
-    /// that entry with it, and an endpoint can be removed at any point: an ad
-    /// hoc `INSERT` disconnects its endpoint as soon as the queue drains. The
-    /// records are in the circuit either way, so their size is stashed here (or
-    /// their results in `orphaned_results`) instead and credited by the next
-    /// step. Otherwise
+    /// thread to pick up and count as processed. The circuit thread removes a
+    /// disconnected endpoint only between steps, after it has collected that
+    /// entry, and a step waits for every endpoint that it asked for input, so
+    /// an endpoint that keeps to the `InputReader` contract never reports
+    /// after its removal. Only `stop`, which removes every endpoint during a
+    /// step, or a reader that breaks the contract, reports to an endpoint that
+    /// is gone. The records are in the circuit either way, so their size is
+    /// stashed here instead and credited by the next step. Otherwise
     /// `total_processed_records` would stay permanently below
     /// `total_input_records`, and a client waiting for the pipeline to catch up
     /// with an ad hoc write would wait forever.
     orphaned_input: Mutex<BufferSize>,
-
-    /// Results that a removed endpoint reported but the circuit thread had not
-    /// collected, by endpoint.  The step that waits for the endpoint claims
-    /// them with [`Self::take_orphaned_results`], so that its journal entry
-    /// records the input; otherwise a restart from the journal would lose it.
-    /// [`Self::take_orphaned_input`] credits unclaimed results by size only.
-    orphaned_results: Mutex<HashMap<EndpointId, StepResults>>,
 
     /// Notified when an input endpoint finishes (see
     /// [InputEndpointStatus::finished]), so that the labels that
@@ -636,7 +631,6 @@ impl ControllerStatus {
             inputs: RwLock::new(BTreeMap::new()),
             outputs: RwLock::new(BTreeMap::new()),
             orphaned_input: Mutex::new(BufferSize::empty()),
-            orphaned_results: Mutex::new(HashMap::new()),
             input_completion_notify: Arc::new(Notify::new()),
         }
     }
@@ -834,32 +828,36 @@ impl ControllerStatus {
         endpoint_id: &EndpointId,
         circuit_thread_unparker: &Unparker,
     ) -> Option<InputEndpointStatus> {
-        let mut inputs = self.inputs.write();
-        let endpoint = inputs.remove(endpoint_id)?;
+        let endpoint = self.inputs.write().remove(endpoint_id)?;
 
         // The endpoint may have handed records to the circuit that the circuit
-        // thread has not collected yet. That result dies with the endpoint, so
-        // keep it for the step that collects it and request that step; see
-        // `orphaned_results`. Stash it before releasing `inputs`, so that the
-        // circuit thread cannot see the endpoint gone without its results.
-        if let Some(results) = endpoint.progress.lock().unwrap().take()
-            && !results.amt.is_empty()
-        {
-            self.orphaned_results
-                .lock()
-                .unwrap()
-                .insert(*endpoint_id, results);
-            drop(inputs);
-            self.request_step(circuit_thread_unparker);
+        // thread has not counted yet. That result dies with the endpoint, so
+        // keep its size and request the step that credits it; see
+        // `orphaned_input`.
+        if let Some(results) = endpoint.progress.lock().unwrap().take() {
+            self.orphan_input(results.amt, circuit_thread_unparker);
         }
 
         Some(endpoint)
     }
 
-    /// Takes the results that `endpoint_id` reported before it was removed,
-    /// if the circuit thread did not collect them; see `orphaned_results`.
-    pub(super) fn take_orphaned_results(&self, endpoint_id: &EndpointId) -> Option<StepResults> {
-        self.orphaned_results.lock().unwrap().remove(endpoint_id)
+    /// Removes the input endpoints whose removal was requested and that hold
+    /// no input that the circuit thread has not collected, and returns them.
+    /// Checking and removing under one lock keeps an endpoint from reporting
+    /// input in between.
+    pub(super) fn remove_requested_inputs(&self) -> Vec<InputEndpointStatus> {
+        let mut inputs = self.inputs.write();
+        let removable = inputs
+            .iter()
+            .filter(|(_, status)| {
+                status.is_removal_requested() && status.progress.lock().unwrap().is_none()
+            })
+            .map(|(endpoint_id, _)| *endpoint_id)
+            .collect::<Vec<_>>();
+        removable
+            .iter()
+            .filter_map(|endpoint_id| inputs.remove(endpoint_id))
+            .collect()
     }
 
     /// Stashes input that the circuit received from an endpoint that is no
@@ -873,14 +871,10 @@ impl ControllerStatus {
         self.request_step(circuit_thread_unparker);
     }
 
-    /// Takes the input stashed by [`Self::orphan_input`], and the size of the
-    /// results that no step claimed, for the caller to count as processed by
-    /// the step it is about to run.
+    /// Takes the input stashed by [`Self::orphan_input`], for the caller to
+    /// count as processed by the step it is about to run.
     pub(super) fn take_orphaned_input(&self) -> BufferSize {
-        let unclaimed = std::mem::take(&mut *self.orphaned_results.lock().unwrap())
-            .into_values()
-            .fold(BufferSize::empty(), |total, results| total + results.amt);
-        std::mem::take(&mut *self.orphaned_input.lock().unwrap()) + unclaimed
+        std::mem::take(&mut *self.orphaned_input.lock().unwrap())
     }
 
     pub fn remove_output(&self, endpoint_id: &EndpointId) {
@@ -1398,9 +1392,19 @@ impl ControllerStatus {
                 self.global_metrics.total_completed_steps(),
             );
             finished = endpoint_stats.finished();
+            if endpoint_stats.is_removal_requested() {
+                // Collect this input, so that the endpoint can be removed.
+                self.request_step(circuit_thread_unparker);
+            }
         } else {
-            // The endpoint was removed before it reported this input: the step
-            // that would have counted these records has already moved on.
+            // The endpoint was removed before it reported this input. Outside
+            // `stop`, that means its reader broke the `InputReader` contract.
+            if self.state() != PipelineState::Terminated {
+                warn!(
+                    "Input endpoint {endpoint_id} reported {} records after its removal",
+                    amt.records
+                );
+            }
             self.orphan_input(amt, circuit_thread_unparker);
         }
 
@@ -2443,6 +2447,11 @@ pub struct InputEndpointStatus {
     /// endpoint or endpoints advance beyond the barriers.
     pub barrier: AtomicBool,
 
+    /// The endpoint has been disconnected and waits for the circuit thread to
+    /// remove it, which it does between steps once it has collected the
+    /// endpoint's last input.  See `ControllerInner::disconnect_input`.
+    removal_requested: AtomicBool,
+
     /// Connector-specific metrics for Prometheus export, registered via
     /// [`InputConsumer::set_custom_metrics`].
     pub custom_metrics: Option<Arc<dyn ConnectorMetrics>>,
@@ -2558,6 +2567,7 @@ impl InputEndpointStatus {
             progress: Mutex::new(None),
             paused: AtomicBool::new(paused_by_user),
             barrier: AtomicBool::new(false),
+            removal_requested: AtomicBool::new(false),
             reader: None,
             fault_tolerance,
             custom_metrics: None,
@@ -2805,6 +2815,16 @@ impl InputEndpointStatus {
 
     pub fn set_barrier(&self, barrier: bool) {
         self.barrier.store(barrier, Ordering::Relaxed);
+    }
+
+    pub fn is_removal_requested(&self) -> bool {
+        self.removal_requested.load(Ordering::Acquire)
+    }
+
+    /// Marks the endpoint for removal and returns whether it was already
+    /// marked.
+    pub fn request_removal(&self) -> bool {
+        self.removal_requested.swap(true, Ordering::AcqRel)
     }
 
     pub fn fatal_error(&self) -> Option<String> {

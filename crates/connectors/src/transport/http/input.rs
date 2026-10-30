@@ -442,7 +442,8 @@ impl InputReader for HttpInputEndpoint {
     }
 
     fn is_closed(&self) -> bool {
-        false
+        // The background task exits only if it panics.
+        self.sender.is_closed()
     }
 }
 
@@ -488,7 +489,7 @@ mod test {
     use super::{Data, HttpInputEndpoint, RequestMetadata};
     use crate::TransportInputEndpoint;
     use crate::test::{MockInputConsumer, wait};
-    use crate::transport::InputReaderCommand;
+    use crate::transport::{InputReader, InputReaderCommand};
 
     /// Returns what the VARIANT JSON parser of `feldera-sqllib` reads from
     /// `json`, with the errors that `RequestMetadata::parse` reports: the
@@ -603,6 +604,23 @@ mod test {
                 VariantValue::Null
             )])))
         );
+    }
+
+    /// An endpoint whose background task died is closed, so that the
+    /// controller stops waiting for it to answer a command.
+    #[test]
+    fn endpoint_is_closed_after_its_task_dies() {
+        let endpoint = HttpInputEndpoint::new(HttpInputConfig {
+            name: "closed".into(),
+        });
+        assert!(!endpoint.is_closed());
+
+        // Replay data that does not decode makes the task panic.
+        endpoint.request(InputReaderCommand::Replay {
+            metadata: serde_json::Value::Null,
+            data: rmpv::Value::Nil,
+        });
+        wait(|| endpoint.is_closed(), 10_000).expect("the endpoint never closed");
     }
 
     /// Of two fields with one name, the last one counts, as in a JSON object.

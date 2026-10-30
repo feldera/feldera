@@ -2954,7 +2954,7 @@ struct CircuitThread {
 
     /// The name, configuration, and paused state of each input endpoint that
     /// `input_step` polled and that the journal has not recorded yet, so that
-    /// the step's journal entry can add it even if it is removed in the
+    /// the step's journal entry can add it even if `stop` removes it in the
     /// meantime.
     pending_new_inputs: HashMap<EndpointId, (String, InputEndpointConfig, bool)>,
 
@@ -3535,6 +3535,8 @@ impl CircuitThread {
         let mut output_backpressure_warning: Option<LongOperationWarning> = None;
 
         loop {
+            self.remove_requested_inputs();
+
             // Run received commands.  Commands can initiate checkpoint
             // requests, so attempt to execute those afterward.  Executing a
             // checkpoint request can then terminate the pipeline, so check for
@@ -4198,6 +4200,23 @@ impl CircuitThread {
         });
     }
 
+    /// Removes the input endpoints that [ControllerInner::disconnect_input]
+    /// disconnected, except one that still holds input that no step has
+    /// collected yet.  The next step collects that input, so that its journal
+    /// entry records it, and a later call removes the endpoint.
+    ///
+    /// Called only between steps, so that the input endpoints do not change
+    /// while a step runs.
+    fn remove_requested_inputs(&mut self) {
+        let removed = self.controller.status.remove_requested_inputs();
+        if !removed.is_empty() {
+            for endpoint in &removed {
+                debug!("Removed input endpoint '{}'", endpoint.endpoint_name);
+            }
+            self.controller.unpark_backpressure();
+        }
+    }
+
     fn checkpoint_requested(&self) -> bool {
         !self.checkpoint_requests.is_empty()
     }
@@ -4275,6 +4294,12 @@ impl CircuitThread {
             // other status below if the checkpoint is delayed e.g. due to a
             // barrier.
             self.set_checkpoint_coordination(Some(CheckpointCoordination::InProgress));
+
+            // Leave disconnected endpoints out of the checkpoint where we can.
+            // One that still holds input that a step has not collected, or that
+            // is disconnected from now on, is in the checkpoint, and the journal
+            // entry of the first step after its removal records the removal.
+            self.remove_requested_inputs();
 
             // Start the checkpoint.
             //
@@ -4631,6 +4656,13 @@ impl CircuitThread {
                 // entry, even if one closed without answering. Other readers
                 // consumed no input in the recorded step and owe no response.
                 step_metadata.contains_key(&endpoint_id)
+            } else if status.is_removal_requested() {
+                // Don't ask a disconnected endpoint for more input, but collect
+                // what it already handed to the circuit.
+                if status.progress.lock().unwrap().is_some() {
+                    waiting.insert(endpoint_id, status.endpoint_name.clone());
+                }
+                continue;
             } else {
                 selection.polls(status)
             };
@@ -4692,17 +4724,9 @@ impl CircuitThread {
             let statuses = self.controller.status.input_status();
             let mut failed = Vec::new();
             let mut failed_replay = None;
-            waiting.retain(|&endpoint_id, endpoint_name| {
+            waiting.retain(|&endpoint_id, _| {
                 let Some(status) = statuses.get(&endpoint_id) else {
-                    // Input adapter was deleted. Its input is in the circuit,
-                    // so this step processes it and must journal it. See
-                    // `ControllerStatus::orphaned_results`.
-                    if let Some(results) =
-                        self.controller.status.take_orphaned_results(&endpoint_id)
-                    {
-                        total_consumed += results.amt;
-                        step_metadata.insert(endpoint_id, (endpoint_name.clone(), results));
-                    }
+                    // Only `stop` removes an endpoint while a step runs.
                     return false;
                 };
                 let Some(results) = mem::take(&mut *status.progress.lock().unwrap()) else {
@@ -4728,6 +4752,10 @@ impl CircuitThread {
                             ));
                             return false;
                         }
+                        if status.is_removal_requested() {
+                            failed.push(endpoint_id);
+                            return false;
+                        }
                         if status.metrics.end_of_input.load(Ordering::Acquire) {
                             warn!("Input endpoint {} exited", status.endpoint_name);
                         } else {
@@ -4749,6 +4777,9 @@ impl CircuitThread {
                         }
                         return false;
                     } else {
+                        // Keep waiting even if the endpoint was disconnected
+                        // since we asked it for input: it acts on our `Queue`
+                        // before the `Disconnect`, so it answers or closes.
                         return true;
                     }
                 };
@@ -4763,7 +4794,7 @@ impl CircuitThread {
                 return Err(error);
             }
             for endpoint_id in failed {
-                self.controller.disconnect_input(&endpoint_id);
+                self.controller.remove_input_endpoint(&endpoint_id);
             }
 
             // Are we done?
@@ -5404,7 +5435,7 @@ impl FtState {
             // checkpoint, but the journal records its removal in the next
             // step, which is the first step that replay runs.  Ignore it.
             if let Ok(endpoint_id) = controller.input_endpoint_id_by_name(endpoint_name) {
-                controller.disconnect_input(&endpoint_id);
+                controller.remove_input_endpoint(&endpoint_id);
             }
         }
         for (endpoint_name, config) in &metadata.add_inputs {
@@ -5496,8 +5527,9 @@ impl FtState {
 
                 // Replay feeds each endpoint its logged input after it applies
                 // the entry's endpoint additions and removals, so every
-                // endpoint whose input this entry logs must exist then, even
-                // one removed after this step took its input.
+                // endpoint whose input this entry logs must exist then.  The
+                // circuit thread removes endpoints only between steps, so
+                // they are all still in `inputs`, unless we are stopping.
                 let logged = step_metadata.keys().copied().collect::<HashSet<_>>();
 
                 // Compute the endpoint lifecycle diff (added/removed/paused since
@@ -5519,10 +5551,6 @@ impl FtState {
                                     *paused = now_paused;
                                 }
                                 true
-                            } else if logged.contains(endpoint_id) {
-                                // Removed after this step took its input.  The
-                                // next entry records the removal.
-                                true
                             } else {
                                 remove_inputs.insert(endpoint_name.clone());
                                 false
@@ -5537,8 +5565,7 @@ impl FtState {
                 }
                 drop(inputs);
 
-                // An endpoint added and removed within this step, or added
-                // while stopping, is not in the diff above.
+                // An endpoint added while stopping is not in the diff above.
                 for (endpoint_id, (endpoint_name, config, paused)) in new_inputs {
                     if logged.contains(&endpoint_id) {
                         self.input_endpoints.entry(endpoint_id).or_insert_with(|| {
@@ -6607,6 +6634,9 @@ impl BackpressureThread {
                 let Some(reader) = ep.reader.as_ref() else {
                     continue;
                 };
+                if ep.is_removal_requested() {
+                    continue;
+                }
                 let should_run = globally_running
                     && !bootstrap_in_progress
                     && !concurrent_synchronize
@@ -8270,12 +8300,46 @@ impl ControllerInner {
             .collect::<Vec<_>>();
         for (endpoint_id, endpoint_name) in endpoints {
             info!("disconnecting restored ad hoc input endpoint '{endpoint_name}'");
-            self.disconnect_input(&endpoint_id);
+            self.remove_input_endpoint(&endpoint_id);
         }
     }
 
+    /// Disconnects an input endpoint, and has the circuit thread remove it.
+    ///
+    /// Only the circuit thread changes which input endpoints exist, between
+    /// steps, so that a step's journal entry always records the endpoints that
+    /// supplied its input.  The endpoint stays in the input status until the
+    /// circuit thread has collected its last input (see
+    /// `CircuitThread::remove_requested_inputs`).
     pub fn disconnect_input(self: &Arc<Self>, endpoint_id: &EndpointId) {
         debug!("Disconnecting input endpoint {endpoint_id}");
+
+        let statuses = self.status.input_status();
+        let Some(ep) = statuses.get(endpoint_id) else {
+            return;
+        };
+        if ep.request_removal() {
+            return;
+        }
+        if let Some(reader) = ep.reader.as_ref() {
+            reader.disconnect();
+        }
+        if ep.progress.lock().unwrap().is_some() {
+            // Collect the input it already reported, so that it can be removed.
+            self.status.request_step(&self.circuit_thread_unparker);
+        }
+        let endpoint_name = ep.endpoint_name.clone();
+        drop(statuses);
+        self.end_transaction_for_stopped_connector(&endpoint_name, "was disconnected");
+        self.unpark_circuit();
+        self.unpark_backpressure();
+    }
+
+    /// Disconnects and removes an input endpoint at once.  Only the circuit
+    /// thread may call this, between steps or for an endpoint that supplied no
+    /// input to the current step.
+    fn remove_input_endpoint(self: &Arc<Self>, endpoint_id: &EndpointId) {
+        debug!("Removing input endpoint {endpoint_id}");
 
         if let Some(ep) = self
             .status
@@ -8284,8 +8348,10 @@ impl ControllerInner {
             if let Some(reader) = ep.reader.as_ref() {
                 reader.disconnect();
             }
-            self.end_transaction_for_stopped_connector(&ep.endpoint_name, "was disconnected");
-            self.unpark_circuit();
+            // `disconnect_input` already ended a requested removal's transaction.
+            if !ep.is_removal_requested() {
+                self.end_transaction_for_stopped_connector(&ep.endpoint_name, "was disconnected");
+            }
             self.unpark_backpressure();
         }
     }

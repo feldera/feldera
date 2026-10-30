@@ -1404,6 +1404,106 @@ impl TransportInputEndpoint for GatedHttpEndpoint {
     }
 }
 
+/// An HTTP input endpoint that acts on its commands in order on a thread of
+/// its own, as many transports do, and holds each `Queue` until the test opens
+/// `gate`.
+#[derive(Clone)]
+struct QueueGatedEndpoint {
+    inner: HttpInputEndpoint,
+    gate: Arc<AtomicBool>,
+    /// The commands that the controller sent, in order.
+    commands: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl QueueGatedEndpoint {
+    fn new(name: &str) -> Self {
+        Self {
+            inner: HttpInputEndpoint::new(HttpInputConfig { name: name.into() }),
+            gate: Arc::new(AtomicBool::new(false)),
+            commands: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+}
+
+impl InputEndpoint for QueueGatedEndpoint {
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        self.inner.fault_tolerance()
+    }
+}
+
+impl TransportInputEndpoint for QueueGatedEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        schema: Relation,
+        resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn InputReader>> {
+        let inner: Arc<dyn InputReader> =
+            Arc::from(self.inner.open(consumer, parser, schema, resume_info)?);
+        let (sender, receiver) = mpsc::channel::<InputReaderCommand>();
+        let closed = Arc::new(AtomicBool::new(false));
+        thread::spawn({
+            let inner = inner.clone();
+            let gate = self.gate.clone();
+            let closed = closed.clone();
+            move || {
+                for command in receiver {
+                    if matches!(command, InputReaderCommand::Queue { .. }) {
+                        while !gate.load(Ordering::Acquire) {
+                            sleep(Duration::from_millis(1));
+                        }
+                    }
+                    let disconnect = matches!(command, InputReaderCommand::Disconnect);
+                    inner.request(command);
+                    if disconnect {
+                        break;
+                    }
+                }
+                closed.store(true, Ordering::Release);
+            }
+        });
+        Ok(Box::new(QueueGatedReader {
+            inner,
+            sender: Mutex::new(sender),
+            closed,
+            commands: self.commands.clone(),
+        }))
+    }
+}
+
+struct QueueGatedReader {
+    inner: Arc<dyn InputReader>,
+    sender: Mutex<mpsc::Sender<InputReaderCommand>>,
+    closed: Arc<AtomicBool>,
+    commands: Arc<Mutex<Vec<&'static str>>>,
+}
+
+impl InputReader for QueueGatedReader {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn request(&self, command: InputReaderCommand) {
+        self.commands.lock().unwrap().push(match command {
+            InputReaderCommand::Replay { .. } => "Replay",
+            InputReaderCommand::Extend => "Extend",
+            InputReaderCommand::Pause => "Pause",
+            InputReaderCommand::Queue { .. } => "Queue",
+            InputReaderCommand::Disconnect => "Disconnect",
+        });
+        let _ = self.sender.lock().unwrap().send(command);
+    }
+
+    fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Acquire)
+    }
+
+    fn take_completion(&self) -> Option<futures::future::BoxFuture<'static, ()>> {
+        self.inner.take_completion()
+    }
+}
+
 /// A connector rejected by the fault-tolerance check must never be opened.
 ///
 /// Opening a connector can connect to external systems, start threads, and
@@ -1677,7 +1777,7 @@ pub fn adhoc_insert_removed_before_journaling_replays(engine: &dyn PipelineTestE
     wait(|| !controller.is_replaying(), 10_000).unwrap();
 
     // Hold the journal write of the step that consumes the INSERT until the
-    // INSERT has removed its endpoint.
+    // INSERT has disconnected its endpoint.
     let held = Arc::new(AtomicBool::new(false));
     *controller.inner.journal_step_hook.lock().unwrap() = Some(Box::new({
         let held = held.clone();
@@ -1687,11 +1787,12 @@ pub fn adhoc_insert_removed_before_journaling_replays(engine: &dyn PipelineTestE
             }
             let removed = wait(
                 || {
-                    !inner
+                    inner
                         .status
                         .input_status()
                         .values()
-                        .any(|status| is_adhoc(&status.endpoint_name))
+                        .filter(|status| is_adhoc(&status.endpoint_name))
+                        .all(|status| status.is_removal_requested())
                 },
                 10_000,
             );
@@ -1707,7 +1808,7 @@ pub fn adhoc_insert_removed_before_journaling_replays(engine: &dyn PipelineTestE
     // The INSERT returns once its step has taken its input, which is before
     // the step is journaled.
     wait(|| held.load(Ordering::Acquire), 10_000)
-        .expect("the INSERT did not remove its endpoint before its step was journaled");
+        .expect("the INSERT did not disconnect its endpoint before its step was journaled");
     controller.stop().unwrap();
 
     // Restart from the journal.
@@ -1757,7 +1858,7 @@ pub fn adhoc_insert_removed_before_collection_replays(engine: &dyn PipelineTestE
     let is_adhoc = |name: &str| name.starts_with("adhoc-ingress-");
 
     // Hold the step that asked the INSERT's endpoint for input until the
-    // INSERT has removed the endpoint.
+    // INSERT has disconnected the endpoint.
     let held = Arc::new(AtomicBool::new(false));
     *controller.inner.collect_input_hook.lock().unwrap() = Some(Box::new({
         let held = held.clone();
@@ -1767,11 +1868,12 @@ pub fn adhoc_insert_removed_before_collection_replays(engine: &dyn PipelineTestE
             }
             let removed = wait(
                 || {
-                    !inner
+                    inner
                         .status
                         .input_status()
                         .values()
-                        .any(|status| is_adhoc(&status.endpoint_name))
+                        .filter(|status| is_adhoc(&status.endpoint_name))
+                        .all(|status| status.is_removal_requested())
                 },
                 10_000,
             );
@@ -1781,7 +1883,7 @@ pub fn adhoc_insert_removed_before_collection_replays(engine: &dyn PipelineTestE
     }));
     insert_row(&controller, 1).unwrap();
     wait(|| held.load(Ordering::Acquire), 10_000)
-        .expect("the INSERT did not remove its endpoint before the step collected its input");
+        .expect("the INSERT did not disconnect its endpoint before the step collected its input");
     let _ = wait(|| count_rows(&controller, "test_input1") >= 1, 10_000);
     assert_eq!(count_rows(&controller, "test_input1"), 1);
     controller.stop().unwrap();
@@ -1814,6 +1916,467 @@ pub fn adhoc_insert_removed_before_collection_replays(engine: &dyn PipelineTestE
     controller.stop().unwrap();
 }
 
+/// An input endpoint disconnected after a step collected its input, but before
+/// the step was journaled, must still exist when replay feeds it that input,
+/// even though an earlier journal entry already added it.
+#[engine_test(requires(Storage, FaultTolerance))]
+pub fn input_disconnected_before_journaling_replays(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let controller = start_exactly_once_controller(engine, &tempdir);
+    let config = controller.inner.status.pipeline_config.clone();
+
+    // The first request's step journals the endpoint's addition.
+    let name = "http";
+    let endpoint = HttpInputEndpoint::new(HttpInputConfig { name: name.into() });
+    let endpoint_id = controller
+        .add_input_endpoint(
+            name,
+            http_input_config(name),
+            Box::new(endpoint.clone()),
+            None,
+        )
+        .unwrap();
+    send_ingress(&endpoint, 0..2);
+    wait_for_completion(&controller, &controller.completion_token(name).unwrap());
+
+    // Hold the journal write of the step that consumes the second request's
+    // last row until the endpoint is disconnected.
+    let reached = Arc::new(AtomicBool::new(false));
+    let released = Arc::new(AtomicBool::new(false));
+    *controller.inner.journal_step_hook.lock().unwrap() = Some(Box::new({
+        let reached = reached.clone();
+        let released = released.clone();
+        move |inner, names| {
+            if !names.contains(&name) || inner.status.num_total_circuit_input_records() < 4 {
+                return false;
+            }
+            reached.store(true, Ordering::Release);
+            let _ = wait(|| released.load(Ordering::Acquire), 10_000);
+            true
+        }
+    }));
+    send_ingress(&endpoint, 2..4);
+    wait(|| reached.load(Ordering::Acquire), 10_000)
+        .expect("the second request's step was never journaled");
+    controller.disconnect_input(&endpoint_id);
+    released.store(true, Ordering::Release);
+    wait(|| count_rows(&controller, "test_input1") == 4, 10_000)
+        .expect("the second request's rows never arrived");
+    controller.stop().unwrap();
+
+    // Restart from the journal.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new({
+                let errors = errors.clone();
+                move |e, _| errors.lock().unwrap().push(e.to_string())
+            }),
+        )
+        .unwrap_or_else(|e| panic!("restart failed: {e}"));
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        10_000,
+    );
+    let errors = errors.lock().unwrap().clone();
+    assert!(errors.is_empty(), "replay failed: {errors:?}");
+    replayed.expect("replay never finished");
+    assert_eq!(count_rows(&controller, "test_input1"), 4);
+    controller.stop().unwrap();
+}
+
+/// Input that an endpoint reports after it is disconnected, in reply to a
+/// `Queue` sent before, must be journaled.
+///
+/// A transport that acts on its commands on a thread of its own answers the
+/// step's `Queue` before it acts on the `Disconnect` that follows, so the step
+/// must keep waiting for that answer, and the endpoint must still exist when
+/// the step journals it.
+#[engine_test(requires(Storage, FaultTolerance))]
+pub fn input_reported_after_disconnect_replays(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let controller = start_exactly_once_controller(engine, &tempdir);
+    let config = controller.inner.status.pipeline_config.clone();
+
+    let name = "gated";
+    let endpoint = QueueGatedEndpoint::new(name);
+    let endpoint_id = controller
+        .add_input_endpoint(
+            name,
+            http_input_config(name),
+            Box::new(endpoint.clone()),
+            None,
+        )
+        .unwrap();
+
+    // Note when a step has asked the endpoint for input.
+    let asked = Arc::new(AtomicBool::new(false));
+    *controller.inner.collect_input_hook.lock().unwrap() = Some(Box::new({
+        let asked = asked.clone();
+        move |_inner, names| {
+            if !names.contains(&name) {
+                return false;
+            }
+            asked.store(true, Ordering::Release);
+            true
+        }
+    }));
+    let request = thread::spawn({
+        let inner = endpoint.inner.clone();
+        move || send_ingress(&inner, 0..2)
+    });
+    wait(|| asked.load(Ordering::Acquire), 10_000).expect("no step asked the endpoint for input");
+
+    // Disconnect the endpoint, and only then let it answer.  A controller that
+    // stopped waiting for the answer would remove the endpoint meanwhile, so
+    // give it the time to.
+    controller.disconnect_input(&endpoint_id);
+    let _ = wait(
+        || {
+            !controller
+                .status()
+                .input_status()
+                .contains_key(&endpoint_id)
+        },
+        500,
+    );
+    endpoint.gate.store(true, Ordering::Release);
+    request.join().unwrap();
+    wait(|| count_rows(&controller, "test_input1") == 2, 10_000)
+        .expect("the endpoint's rows never arrived");
+    controller.stop().unwrap();
+
+    // Restart from the journal.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new({
+                let errors = errors.clone();
+                move |e, _| errors.lock().unwrap().push(e.to_string())
+            }),
+        )
+        .unwrap_or_else(|e| panic!("restart failed: {e}"));
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        10_000,
+    );
+    let errors = errors.lock().unwrap().clone();
+    assert!(errors.is_empty(), "replay failed: {errors:?}");
+    replayed.expect("replay never finished");
+    assert_eq!(
+        count_rows(&controller, "test_input1"),
+        2,
+        "the restart lost the rows reported after the disconnect"
+    );
+    controller.stop().unwrap();
+}
+
+/// Input that a step collects from a new endpoint while the pipeline stops
+/// must be journaled with the endpoint's addition.
+///
+/// `stop` removes every input endpoint at once, and the step's journal entry
+/// then skips the comparison that would add the endpoint, so the entry must
+/// add it from what the step polled.
+#[engine_test(requires(Storage, FaultTolerance))]
+pub fn input_collected_while_stopping_replays(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let controller = start_exactly_once_controller(engine, &tempdir);
+    let config = controller.inner.status.pipeline_config.clone();
+
+    // Hold the journal write of the step that consumes the new endpoint's
+    // last row until `stop` has removed the endpoint.
+    let name = "late";
+    let held = Arc::new(AtomicBool::new(false));
+    *controller.inner.journal_step_hook.lock().unwrap() = Some(Box::new({
+        let held = held.clone();
+        move |inner, names| {
+            if !names.contains(&name) || inner.status.num_total_circuit_input_records() < 2 {
+                return false;
+            }
+            held.store(true, Ordering::Release);
+            let _ = wait(|| inner.status.input_status().is_empty(), 10_000);
+            true
+        }
+    }));
+    let request = thread::spawn({
+        let controller = controller.clone();
+        move || {
+            let endpoint = HttpInputEndpoint::new(HttpInputConfig { name: name.into() });
+            controller
+                .add_input_endpoint(
+                    name,
+                    http_input_config(name),
+                    Box::new(endpoint.clone()),
+                    None,
+                )
+                .unwrap();
+            send_ingress(&endpoint, 0..2);
+        }
+    });
+    wait(|| held.load(Ordering::Acquire), 10_000)
+        .expect("the new endpoint's step was never journaled");
+    controller.stop().unwrap();
+    request.join().unwrap();
+
+    // Restart from the journal.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new({
+                let errors = errors.clone();
+                move |e, _| errors.lock().unwrap().push(e.to_string())
+            }),
+        )
+        .unwrap_or_else(|e| panic!("restart failed: {e}"));
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        10_000,
+    );
+    let errors = errors.lock().unwrap().clone();
+    assert!(errors.is_empty(), "replay failed: {errors:?}");
+    replayed.expect("replay never finished");
+    assert_eq!(count_rows(&controller, "test_input1"), 2);
+    controller.stop().unwrap();
+}
+
+/// An input endpoint disconnected while the pipeline is paused goes away
+/// without waiting for a step.
+#[engine_test]
+pub fn input_disconnected_while_paused_is_removed_without_step(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+    controller.pause();
+
+    let name = "http";
+    let endpoint = HttpInputEndpoint::new(HttpInputConfig { name: name.into() });
+    let endpoint_id = controller
+        .add_input_endpoint(
+            name,
+            http_input_config(name),
+            Box::new(endpoint.clone()),
+            None,
+        )
+        .unwrap();
+    let steps = controller.status().global_metrics.total_completed_steps();
+
+    controller.disconnect_input(&endpoint_id);
+    wait(
+        || {
+            !controller
+                .status()
+                .input_status()
+                .contains_key(&endpoint_id)
+        },
+        10_000,
+    )
+    .expect("the paused pipeline never removed the disconnected endpoint");
+    assert_eq!(
+        controller.status().global_metrics.total_completed_steps(),
+        steps
+    );
+    controller.stop().unwrap();
+}
+
+/// A checkpoint taken after an input endpoint is disconnected must not bring
+/// the endpoint back on restart.
+#[engine_test(requires(Storage, Checkpoints, FaultTolerance))]
+pub fn input_disconnected_before_checkpoint_is_not_restored(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let mut config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+
+    // The same program information in both runs tells the restart that the
+    // program is unchanged, which is the case that restores the checkpoint's
+    // input endpoints.
+    config.program_ir = Some(feldera_types::config::ProgramIr {
+        mir: serde_json::from_value(json!({
+            "0": { "operation": "source", "table": "test_input1", "persistent_id": "test_input1" },
+            "1": { "operation": "sink", "view": "test_output1", "persistent_id": "output" },
+        }))
+        .unwrap(),
+        program_schema: json!({ "inputs": [], "outputs": [] }),
+        circuit_ir: None,
+        udf_library: None,
+    });
+
+    let controller = engine
+        .controller(
+            &identity(&[Some("output")]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+    wait(|| !controller.is_replaying(), 10_000).unwrap();
+
+    // A step journals the endpoint and its input.
+    let name = "http";
+    let endpoint = HttpInputEndpoint::new(HttpInputConfig { name: name.into() });
+    let endpoint_id = controller
+        .add_input_endpoint(
+            name,
+            http_input_config(name),
+            Box::new(endpoint.clone()),
+            None,
+        )
+        .unwrap();
+    send_ingress(&endpoint, 0..2);
+    wait_for_completion(&controller, &controller.completion_token(name).unwrap());
+
+    // Disconnect it while no step runs, and checkpoint at once.
+    controller.pause();
+    controller.disconnect_input(&endpoint_id);
+    controller.checkpoint().unwrap();
+    controller.stop().unwrap();
+
+    // Restart from the checkpoint.
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let controller = engine
+        .controller(
+            &identity(&[Some("output")]),
+            &config,
+            Box::new({
+                let errors = errors.clone();
+                move |e, _| errors.lock().unwrap().push(e.to_string())
+            }),
+        )
+        .unwrap_or_else(|e| panic!("restart failed: {e}"));
+    controller.start();
+    let replayed = wait(
+        || !controller.is_replaying() || !errors.lock().unwrap().is_empty(),
+        10_000,
+    );
+    let errors = errors.lock().unwrap().clone();
+    assert!(errors.is_empty(), "restart failed: {errors:?}");
+    replayed.expect("replay never finished");
+    assert!(
+        controller.input_endpoint_id_by_name(name).is_err(),
+        "the restart brought back the disconnected endpoint"
+    );
+    let _ = wait(|| count_rows(&controller, "test_input1") >= 2, 10_000);
+    assert_eq!(count_rows(&controller, "test_input1"), 2);
+    controller.stop().unwrap();
+}
+
+/// The backpressure thread must not restart a disconnected input endpoint,
+/// even after the endpoint is started.
+#[engine_test(requires(Storage, FaultTolerance))]
+pub fn disconnected_input_is_not_restarted(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let controller = start_exactly_once_controller(engine, &tempdir);
+
+    // `gated` holds a step until the test is done with it.  The backpressure
+    // thread visits endpoints in order of id, so once it starts `witness`, it
+    // has also seen `gated` started.
+    let gated = QueueGatedEndpoint::new("gated");
+    let witness = QueueGatedEndpoint::new("witness");
+    witness.gate.store(true, Ordering::Release);
+    let mut ids = Vec::new();
+    for (name, endpoint) in [("gated", &gated), ("witness", &witness)] {
+        ids.push(
+            controller
+                .add_input_endpoint(
+                    name,
+                    http_input_config(name),
+                    Box::new(endpoint.clone()),
+                    None,
+                )
+                .unwrap(),
+        );
+    }
+    assert!(ids[0] < ids[1]);
+    let asked = Arc::new(AtomicBool::new(false));
+    *controller.inner.collect_input_hook.lock().unwrap() = Some(Box::new({
+        let asked = asked.clone();
+        move |_inner, names| {
+            if !names.contains(&"gated") {
+                return false;
+            }
+            asked.store(true, Ordering::Release);
+            true
+        }
+    }));
+
+    // Once both have started, pause both, which also runs a step that asks
+    // `gated` for input.
+    let sent = |endpoint: &QueueGatedEndpoint, command| {
+        endpoint.commands.lock().unwrap().contains(&command)
+    };
+    wait(
+        || sent(&gated, "Extend") && sent(&witness, "Extend"),
+        10_000,
+    )
+    .expect("the endpoints never started");
+    let paused = |endpoint: &QueueGatedEndpoint| sent(endpoint, "Pause");
+    controller.pause_input_endpoint("gated").unwrap();
+    controller.pause_input_endpoint("witness").unwrap();
+    wait(|| paused(&gated) && paused(&witness), 10_000).expect("the endpoints never paused");
+    wait(|| asked.load(Ordering::Acquire), 10_000).expect("no step asked `gated` for input");
+
+    controller.disconnect_input(&ids[0]);
+    controller.start_input_endpoint("gated").unwrap();
+    controller.start_input_endpoint("witness").unwrap();
+    wait(
+        || witness.commands.lock().unwrap().last() == Some(&"Extend"),
+        10_000,
+    )
+    .expect("the backpressure thread never restarted `witness`");
+    let commands = gated.commands.lock().unwrap().clone();
+    let disconnect = commands
+        .iter()
+        .position(|command| *command == "Disconnect")
+        .unwrap();
+    assert!(
+        !commands[disconnect..].contains(&"Extend"),
+        "a disconnected endpoint was restarted: {commands:?}"
+    );
+
+    gated.gate.store(true, Ordering::Release);
+    controller.stop().unwrap();
+}
+
 /// Makes one `/ingress` request for rows with `ids` to `test_input1` through a
 /// new HTTP input endpoint named `name`, the way the server does.  Returns the
 /// request's completion token.
@@ -1827,6 +2390,12 @@ fn ingress_rows(controller: &Controller, name: &str, ids: Range<u32>) -> Complet
             None,
         )
         .unwrap();
+    send_ingress(&endpoint, ids);
+    controller.completion_token(name).unwrap()
+}
+
+/// Sends one `/ingress` request for rows with `ids` to `endpoint`.
+fn send_ingress(endpoint: &HttpInputEndpoint, ids: Range<u32>) {
     TOKIO.block_on(async {
         let (request, mut payload) = actix_web::test::TestRequest::default()
             .set_payload(
@@ -1846,7 +2415,6 @@ fn ingress_rows(controller: &Controller, name: &str, ids: Range<u32>) -> Complet
             .await
             .unwrap();
     });
-    controller.completion_token(name).unwrap()
 }
 
 /// Waits until the input that `token` identifies completes.
@@ -2928,9 +3496,10 @@ impl InputReader for ManualInputEndpoint {
 ///
 /// The endpoint reports its input with `extended`, which stores the result in
 /// the endpoint's status entry for the circuit thread to count as processed.
-/// A `disconnect_input` removes the endpoint, losing this count.  The records
-/// reach the circuit either way, so losing their count would leave
-/// `total_processed_records` permanently below `total_input_records`.
+/// After a `disconnect_input`, a step must still collect that result before
+/// the endpoint goes away.  The records reach the circuit either way, so
+/// losing their count would leave `total_processed_records` permanently below
+/// `total_input_records`.
 #[engine_test]
 pub fn removed_input_endpoint_input_is_still_counted(engine: &dyn PipelineTestEngine) {
     init_test_logger();
@@ -2987,9 +3556,19 @@ pub fn removed_input_endpoint_input_is_still_counted(engine: &dyn PipelineTestEn
         .expect("the input of a removed endpoint was never counted as processed");
     assert_eq!(controller.status().num_total_processed_records(), 3);
 
-    // Same again, except that the endpoint reports the input only after it has
-    // been removed, which is the window an endpoint that replies on its own
-    // thread has between `remove_input` and losing its reader.
+    // Same again, except that the endpoint reports the input only after it is
+    // gone.  An endpoint that keeps to the `InputReader` contract cannot, but
+    // the count must survive one that does not.
+    wait(
+        || {
+            !controller
+                .status()
+                .input_status()
+                .contains_key(&endpoint_id)
+        },
+        10_000,
+    )
+    .expect("the disconnected endpoint was never removed");
     endpoint.push("4,true,,foo\n5,true,,foo\n6,true,,foo\n");
     endpoint.release();
     wait(|| controller.pipeline_complete(), 10_000)
