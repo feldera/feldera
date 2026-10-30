@@ -39,6 +39,13 @@ Source edition can be found on github.
   delete and an insert. Remove `index` from the connector to get the same
   output as before.
 
+- Behavior change (JSON output with `"update_format": "debezium"` and the
+  default `kafka_connect_json_converter` flavor): the schema in the value of
+  each message now declares `before`. Before, it declared only `after` and
+  `op`, so a Kafka Connect consumer got each `d` event without the deleted
+  row. Messages are larger, because the schema of the row is in each message
+  twice.
+
 ## v0.376.0
 
 - Behavior change (Python SDK): a request that is not idempotent, such as
