@@ -2818,22 +2818,40 @@ mod retry_tests {
         assert_eq!(item_count(&requests[1]), 2, "both items are retried");
         assert_eq!(harness.metric("dynamodb_output_failed_items_total"), 0.0);
 
-        // Exhaustion names the limit and counts the outstanding items.
-        let server = mock_server();
-        mount_rest(&server, TRANSACT_TARGET, limit());
-        let harness = Harness::new();
-        let error = finish(harness.write_transact(
-            single_attempt_client(&server),
-            transact_puts(&[1, 2]),
-            policy(Some(1)),
-        ))
-        .unwrap_err()
-        .to_string();
-        assert!(
-            error.contains("ItemCollectionSizeLimitExceededException"),
-            "{error}"
-        );
-        assert_eq!(harness.metric("dynamodb_output_failed_items_total"), 2.0);
+        // Both forms preserve the actionable cause while retrying and on exhaustion.
+        for (code, message, response) in [
+            (
+                "ItemCollectionSizeLimitExceededException",
+                "Collection size exceeded.",
+                limit(),
+            ),
+            (
+                "ItemCollectionSizeLimitExceeded",
+                "ItemCollectionSizeLimitExceeded message",
+                cancelled(&["None", "ItemCollectionSizeLimitExceeded"]),
+            ),
+        ] {
+            let server = mock_server();
+            mount_rest(&server, TRANSACT_TARGET, response);
+            let harness = Harness::new();
+            let error = finish(harness.write_transact(
+                single_attempt_client(&server),
+                transact_puts(&[1, 2]),
+                policy(Some(1)),
+            ))
+            .unwrap_err()
+            .to_string();
+            assert!(error.contains(code) && error.contains(message), "{error}");
+            assert_eq!(harness.metric("dynamodb_output_failed_items_total"), 2.0);
+            let reports = harness.publisher.reports();
+            assert!(
+                reports[0]
+                    .as_ref()
+                    .is_err_and(|cause| cause.contains(code) && cause.contains(message)),
+                "{reports:?}"
+            );
+            assert_eq!(reports.last(), Some(&Err(error)));
+        }
     }
 
     #[test]
@@ -2935,7 +2953,8 @@ mod retry_tests {
         assert!(
             harness.publisher.reports()[0]
                 .as_ref()
-                .is_err_and(|cause| cause.contains("transient item error")),
+                .is_err_and(|cause| cause.contains("transient item error")
+                    && cause.contains("TransactionConflict message")),
             "{:?}",
             harness.publisher.reports()
         );
@@ -2960,10 +2979,13 @@ mod retry_tests {
         .to_string();
         assert_eq!(received(&server, TRANSACT_TARGET).len(), 1);
         assert!(
-            error.contains("[ValidationError]") && error.contains("dropped 2 item(s)"),
+            error.contains("[ValidationError]")
+                && error.contains("ValidationError message")
+                && error.contains("dropped 2 item(s)"),
             "{error}"
         );
         assert_eq!(harness.metric("dynamodb_output_failed_items_total"), 2.0);
+        assert_eq!(harness.publisher.reports(), vec![Err(error)]);
 
         // Condition failures alone resubmit the rest at once: no retry, no health report.
         let server = mock_server();
@@ -3375,17 +3397,24 @@ fn connector_metric(metrics: &dyn ConnectorMetrics, name: &str) -> f64 {
 #[engine_test(requires(DynamoDbItems))]
 pub fn dynamodb_output_reports_health_through_a_throttling_outage(engine: &dyn PipelineTestEngine) {
     use mock_dynamodb::*;
+    use std::sync::atomic::AtomicBool;
 
     let server = server();
-    // More throttles than two SDK calls of three attempts: the connector
-    // retries at least twice, and stays unhealthy through the SDK's backoff.
+    // Recovery starts only after the test has observed the retry loop and
+    // checked its health and metrics, regardless of thread scheduling.
+    let recovered = Arc::new(AtomicBool::new(false));
+    let response_recovered = recovered.clone();
     TOKIO.block_on(
         on(BATCH_TARGET)
-            .respond_with(throttled())
-            .up_to_n_times(7)
+            .respond_with(move |_: &wiremock::Request| {
+                if response_recovered.load(Ordering::Acquire) {
+                    ok()
+                } else {
+                    throttled()
+                }
+            })
             .mount(&server),
     );
-    TOKIO.block_on(on(BATCH_TARGET).respond_with(ok()).mount(&server));
     let input_file = write_raw_json_input(&[
         record(1, "a", Some(10), "one"),
         record(2, "b", None, "two"),
@@ -3405,19 +3434,23 @@ pub fn dynamodb_output_reports_health_through_a_throttling_outage(engine: &dyn P
     controller.start();
     wait(|| output_health(&controller) == Some(false), 60_000)
         .expect("the sink never reported itself unhealthy");
+    let metrics = output_metrics(&controller);
+    wait(
+        || connector_metric(&*metrics, "dynamodb_output_retries_total") >= 2.0,
+        60_000,
+    )
+    .expect("the connector did not retry twice");
+    assert_eq!(output_health(&controller), Some(false));
     assert_eq!(
-        connector_metric(
-            &*output_metrics(&controller),
-            "dynamodb_output_retrying_chunks"
-        ),
+        connector_metric(&*metrics, "dynamodb_output_retrying_chunks"),
         1.0
     );
+    recovered.store(true, Ordering::Release);
     wait(|| output_health(&controller) == Some(true), 120_000).expect("the sink never recovered");
 
     let requests = requests(&server, BATCH_TARGET);
-    assert!(requests.len() >= 8, "{}", requests.len());
+    assert!(requests.len() >= 3, "{}", requests.len());
     assert!(requests.iter().all(|request| item_count(request) == 3));
-    let metrics = output_metrics(&controller);
     assert!(connector_metric(&*metrics, "dynamodb_output_retries_total") >= 2.0);
     assert_eq!(
         connector_metric(&*metrics, "dynamodb_output_failed_items_total"),

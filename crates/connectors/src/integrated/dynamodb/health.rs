@@ -43,8 +43,10 @@ impl HealthPublisher for ControllerHealthPublisher {
 }
 
 /// A publisher that drops every report, for workers that run without a controller.
+#[cfg(any(test, feature = "testing"))]
 pub(crate) struct NoHealthPublisher;
 
+#[cfg(any(test, feature = "testing"))]
 impl HealthPublisher for NoHealthPublisher {
     fn publish(&self, _health: ConnectorHealth) {}
 }

@@ -23,6 +23,8 @@ use crate::format::{Encoder, OutputConsumer};
 use crate::transport::OutputEndpoint;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 
+#[cfg(any(test, feature = "testing"))]
+use super::health::NoHealthPublisher;
 use super::health::{ControllerHealthPublisher, HealthPublisher, RetryHealth};
 use super::helpers::{self, RetryPolicy};
 use super::metrics::DynamoDBOutputMetrics;
