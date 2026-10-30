@@ -45,12 +45,23 @@ Source edition can be found on github.
   storage again as the pipeline's state.  A multihost pipeline deletes
   the older checkpoint when every host has written the newest one.
 
-- Security: a resolved secret value no longer appears in pipeline
-  diagnostics. The pipeline shows the value as its reference in its log, in
+- Security: pipeline diagnostics replace registered Secret values with their
+  references in the pipeline log, in
   `/status`, and in the connector errors of `/stats`. Connector errors, debug
   log lines, and compile errors that printed a whole configuration, URI, or
-  option value now name the endpoint and the option only. Restart running
-  pipelines so that they run on the fixed runtime. See
+  option value now name the endpoint and the option only. The API server
+  removes connection credentials from stored deployment errors, returned
+  status details, pipeline events, and support bundle collections, including
+  those stored before this release. URL and Postgres keyword passwords become
+  `[REDACTED]`, including escaped and multiline keyword values. Where the
+  end of a credential cannot be established, the diagnostic is cut off at
+  the credential. Collections stored before this release are sanitized at export. Bundle metadata failure reasons are also sanitized. Format configuration
+  errors no longer echo rejected scalars, and their `details` no longer carry a `config` key, and JSON logging redacts fields
+  before encoding them. A stored collection item that cannot be decoded is
+  left out of the bundle with a
+  reason. Restart running pipelines so that they run on the fixed runtime.
+  Inline credentials in SQL and connector configuration are still exported
+  in the support bundle's `pipeline_config.json`. See
   [secret references](/connectors/secret-references#diagnostics).
 
 ## v0.380.0
