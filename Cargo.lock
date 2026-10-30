@@ -5907,6 +5907,7 @@ dependencies = [
  "thiserror 2.0.18",
  "time",
  "tracing",
+ "url",
  "utoipa",
  "uuid",
 ]
