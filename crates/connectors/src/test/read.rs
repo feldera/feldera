@@ -77,6 +77,31 @@ pub fn insert_delete_updates(relation: &Relation, bytes: &[u8]) -> AnyResult<Upd
     updates(relation, &rows)
 }
 
+/// Returns the rows of `bytes`, JSON that the JSON encoder wrote for `relation` in the Debezium
+/// format: change events, alone or in arrays, each with a `payload` that holds `before`, with
+/// weight -1, and `after`, with weight 1.
+pub fn debezium_updates(relation: &Relation, bytes: &[u8]) -> AnyResult<Updates> {
+    let mut rows = Vec::new();
+    for value in serde_json::Deserializer::from_slice(bytes).into_iter::<Value>() {
+        let events = match value? {
+            Value::Array(events) => events,
+            event => vec![event],
+        };
+        for event in events {
+            let Some(Value::Object(mut payload)) = event.get("payload").cloned() else {
+                bail!("not a Debezium change event: {event}");
+            };
+            for (field, weight) in [("before", -1), ("after", 1)] {
+                match payload.remove(field) {
+                    None | Some(Value::Null) => (),
+                    Some(row) => rows.push((weight, arrow_form(relation, row)?.to_string())),
+                }
+            }
+        }
+    }
+    updates(relation, &rows)
+}
+
 /// Returns the rows of the Parquet file `bytes`, written for `relation`, each with weight 1.
 ///
 /// Columns whose Parquet type reads back as another Arrow type than the published one are

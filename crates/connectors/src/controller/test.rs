@@ -4909,30 +4909,98 @@ const ALIASED_VIEW: &str = "test_output1";
 /// name, as in feldera/feldera#7281; the second sorts before it.
 const ALIASED_INDEXES: [&str; 2] = ["test_output1_idx", "idx1"];
 
-/// Configuration of a CSV file connector writing to `path`.
-///
-/// # Arguments
-///
-/// * `path` - File the connector writes to.
-/// * `index` - Index the connector reads from, or `None` to read from
-///   [`ALIASED_VIEW`] itself.
-///
-/// # Returns
-///
-/// The connector configuration as JSON.
-fn aliased_index_output(path: &Path, index: Option<&str>) -> serde_json::Value {
-    let mut config = json!({
+/// Configuration of a CSV file connector on [`ALIASED_VIEW`] writing to `path`.
+fn aliased_view_output(path: &Path) -> serde_json::Value {
+    json!({
         "stream": ALIASED_VIEW,
         "transport": {
             "name": "file_output",
             "config": { "path": path.display().to_string() },
         },
         "format": { "name": "csv", "config": {} },
-    });
-    if let Some(index) = index {
-        config["index"] = json!(index);
+    })
+}
+
+/// An output endpoint that keeps the value of each keyed message and skips tombstones,
+/// standing in for a transport that writes keys, such as Kafka.
+struct KeyedOutputEndpoint(Arc<Mutex<Vec<u8>>>);
+
+impl OutputEndpoint for KeyedOutputEndpoint {
+    fn connect(
+        &mut self,
+        _callbacks: Arc<dyn OutputEndpointCallbacks>,
+    ) -> Result<(), anyhow::Error> {
+        Ok(())
     }
-    config
+
+    fn max_buffer_size_bytes(&self) -> usize {
+        usize::MAX
+    }
+
+    fn push_buffer(&mut self, _buffer: &[u8]) -> Result<(), anyhow::Error> {
+        unreachable!("the test uses a format that pushes keys, not buffers")
+    }
+
+    fn push_key(
+        &mut self,
+        _key: Option<&[u8]>,
+        val: Option<&[u8]>,
+        _headers: &[(&str, Option<&[u8]>)],
+    ) -> Result<(), anyhow::Error> {
+        if let Some(val) = val {
+            self.0.lock().unwrap().extend_from_slice(val);
+        }
+        Ok(())
+    }
+
+    fn is_fault_tolerant(&self) -> bool {
+        false
+    }
+}
+
+/// Attaches the connector `index_output` on `index`, an index of [`ALIASED_VIEW`], to
+/// `controller`. The connector writes Debezium JSON.
+///
+/// # Returns
+///
+/// The values of the messages that the connector writes.
+fn attach_aliased_index_output(
+    controller: &Controller,
+    index: &str,
+    send_snapshot: bool,
+) -> Arc<Mutex<Vec<u8>>> {
+    let config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": ALIASED_VIEW,
+        "index": index,
+        "send_snapshot": send_snapshot,
+        "transport": { "name": "null_output" },
+        "format": {
+            "name": "json",
+            "config": { "update_format": "debezium", "json_flavor": "default" },
+        },
+    }))
+    .unwrap();
+    let output = Arc::new(Mutex::new(Vec::new()));
+    controller
+        .add_output_endpoint(
+            "index_output",
+            &config,
+            Box::new(KeyedOutputEndpoint(output.clone())),
+            None,
+        )
+        .unwrap();
+    output
+}
+
+/// Ensures that `output`, Debezium JSON, holds exactly the rows of [`for_ids`] with the ids
+/// in `expect`, each inserted once.
+#[track_caller]
+fn check_debezium_ids(output: &Mutex<Vec<u8>>, expect: Range<usize>) {
+    let actual = read::debezium_updates(&relation(), &output.lock().unwrap()).unwrap();
+    assert!(actual.weights().iter().all(|weight| *weight == 1));
+    let expect = for_ids(expect);
+    assert_eq!(actual.len(), expect.len());
+    assert_eq!(actual.zset().unwrap(), expect.zset().unwrap());
 }
 
 /// Starts a controller for [`TestCircuit::AliasedIndex`].
@@ -5029,25 +5097,22 @@ pub fn view_and_aliased_index_connectors_receive_the_same_output(engine: &dyn Pi
         let tempdir = TempDir::new().unwrap();
         let input_path = tempdir.path().join("input.csv");
         let view_path = tempdir.path().join("view.csv");
-        let index_path = tempdir.path().join("index.csv");
         File::create_new(&input_path).unwrap();
 
         let controller = start_aliased_index_controller(
             engine,
             &input_path,
             index,
-            json!({
-                "view_output": aliased_index_output(&view_path, None),
-                "index_output": aliased_index_output(&index_path, Some(index)),
-            }),
+            json!({ "view_output": aliased_view_output(&view_path) }),
         );
+        let index_output = attach_aliased_index_output(&controller, index, false);
         append_input(&input_path, 0..100);
         check_endpoint_transmitted(&controller, "view_output", 100);
         check_endpoint_transmitted(&controller, "index_output", 100);
         controller.stop().unwrap();
 
         check_file_contents(&view_path, 0..100);
-        check_file_contents(&index_path, 0..100);
+        check_debezium_ids(&index_output, 0..100);
     }
 }
 
@@ -5066,20 +5131,15 @@ pub fn closing_a_view_connector_does_not_starve_its_aliased_index(engine: &dyn P
         let tempdir = TempDir::new().unwrap();
         let input_path = tempdir.path().join("input.csv");
         let view_path = tempdir.path().join("view.csv");
-        let index_path = tempdir.path().join("index.csv");
         File::create_new(&input_path).unwrap();
 
-        let controller = start_aliased_index_controller(
-            engine,
-            &input_path,
-            index,
-            json!({ "index_output": aliased_index_output(&index_path, Some(index)) }),
-        );
+        let controller = start_aliased_index_controller(engine, &input_path, index, json!({}));
+        let index_output = attach_aliased_index_output(&controller, index, false);
 
         // Connect a connector to the view and disconnect it, as an `/egress`
         // request does when its client goes away.
         let view_config: OutputEndpointConfig =
-            serde_json::from_value(aliased_index_output(&view_path, None)).unwrap();
+            serde_json::from_value(aliased_view_output(&view_path)).unwrap();
         let view_endpoint = controller
             .inner
             .connect_output("view_output", &view_config, None)
@@ -5090,7 +5150,7 @@ pub fn closing_a_view_connector_does_not_starve_its_aliased_index(engine: &dyn P
         check_endpoint_transmitted(&controller, "index_output", 100);
         controller.stop().unwrap();
 
-        check_file_contents(&index_path, 0..100);
+        check_debezium_ids(&index_output, 0..100);
     }
 }
 
@@ -5107,7 +5167,6 @@ pub fn aliased_index_connector_receives_the_snapshot(engine: &dyn PipelineTestEn
     for index in ALIASED_INDEXES {
         let tempdir = TempDir::new().unwrap();
         let input_path = tempdir.path().join("input.csv");
-        let index_path = tempdir.path().join("index.csv");
         File::create_new(&input_path).unwrap();
 
         let controller = start_aliased_index_controller(engine, &input_path, index, json!({}));
@@ -5126,13 +5185,7 @@ pub fn aliased_index_connector_receives_the_snapshot(engine: &dyn PipelineTestEn
 
         // Attach the connector after the view holds every record, so that
         // only the snapshot can deliver them.
-        let mut index_config = aliased_index_output(&index_path, Some(index));
-        index_config["send_snapshot"] = json!(true);
-        let index_config: OutputEndpointConfig = serde_json::from_value(index_config).unwrap();
-        controller
-            .inner
-            .connect_output("index_output", &index_config, None)
-            .unwrap();
+        let index_output = attach_aliased_index_output(&controller, index, true);
 
         wait(
             || output_endpoint_metrics(&controller, "index_output").transmitted_records >= 100,
@@ -5141,7 +5194,7 @@ pub fn aliased_index_connector_receives_the_snapshot(engine: &dyn PipelineTestEn
         .unwrap_or_else(|()| panic!("the connector on '{index}' received no snapshot"));
         controller.stop().unwrap();
 
-        check_file_contents(&index_path, 0..100);
+        check_debezium_ids(&index_output, 0..100);
     }
 }
 

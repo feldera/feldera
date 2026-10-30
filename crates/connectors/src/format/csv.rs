@@ -316,8 +316,14 @@ impl OutputFormat for CsvOutputFormat {
         key_schema: &Option<Relation>,
         _value_schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
-        _is_index: bool,
+        is_index: bool,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
+        if is_index {
+            return Err(ControllerError::invalid_encoder_configuration(
+                endpoint_name,
+                "CSV encoder cannot be attached to an index",
+            ));
+        }
         let format_config = &config.format.as_ref().unwrap().config;
         let format_config = if format_config.is_null() {
             &json!({})
@@ -462,21 +468,26 @@ impl Encoder for CsvEncoder {
 
 #[cfg(any(test, feature = "testing"))]
 pub mod test {
+    use super::CsvOutputFormat;
     #[cfg(test)]
     use super::CsvSplitter;
     #[cfg(test)]
     use crate::format::Splitter;
-    use crate::test::{engine_test, parser, relations, render, rows};
+    use crate::{
+        OutputFormat,
+        test::{engine_test, parser, relations, render, rows},
+    };
     use feldera_adapterlib::{
         format::{InputBuffer, ParseError, Parser},
-        test::{ConnectorTestEngine, InputOptions, Updates},
+        test::{ConnectorTestEngine, InputOptions, MockOutputConsumer, Updates},
     };
     use feldera_types::{
-        config::FormatConfig,
+        config::{ConnectorConfig, FormatConfig},
         format::csv::{CsvFormatConfig, CsvTrim},
         program_schema::{ColumnType, Field, Relation},
     };
     use proptest::prelude::*;
+    use serde_json::json;
     use std::{borrow::Cow, collections::BTreeMap};
 
     // ---- CsvSplitter option tests ----
@@ -788,5 +799,32 @@ pub mod test {
             prop_assert_eq!(errors, vec![]);
             prop_assert_eq!(&updates, rows);
         });
+    }
+
+    /// The encoder refuses an index.
+    #[engine_test]
+    pub fn encoder_refuses_an_index(_engine: &dyn ConnectorTestEngine) {
+        let connector: ConnectorConfig = serde_json::from_value(json!({
+            "transport": { "name": "file_output", "config": { "path": "/dev/null" } },
+            "format": { "name": "csv" },
+            "index": "csv_basic_key",
+        }))
+        .unwrap();
+        let error = CsvOutputFormat
+            .new_encoder(
+                "test_output",
+                &connector,
+                &Some(relations::basic_key("csv_basic_key")),
+                &basic_relation(),
+                Box::new(MockOutputConsumer::new()),
+                true,
+            )
+            .err()
+            .unwrap();
+        assert_eq!(
+            error.to_string(),
+            "invalid controller configuration: invalid format configuration for output endpoint \
+             'test_output': CSV encoder cannot be attached to an index"
+        );
     }
 }

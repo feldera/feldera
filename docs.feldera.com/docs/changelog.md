@@ -32,6 +32,11 @@ Source edition can be found on github.
   `kafka_output_commit_retries_total` and `kafka_output_replay_spool_bytes`.
   See [Exactly-once delivery and recovery](/connectors/sinks/kafka#exactly-once-delivery-and-recovery).
 
+- Behavior change (CSV output): a connector with the `index` property fails at
+  startup. Before, the connector ignored the index and wrote each update as a
+  delete and an insert. Remove `index` from the connector to get the same
+  output as before.
+
 ## v0.372.0
 
 - Behavior change (non-fault-tolerant Kafka output): temporary delivery
