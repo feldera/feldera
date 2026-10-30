@@ -408,6 +408,29 @@ export type Chunk = {
 }
 
 /**
+ * A watermark that the circuit has taken in.
+ *
+ * The outputs computed from the input may not be complete yet: in a
+ * transaction, they wait for the commit.
+ */
+export type CircuitInputWatermark = {
+  /**
+   * Timestamp when the data was ingested from the wire.
+   */
+  ingested_at: string
+  /**
+   * Metadata that describes the position in the input stream (e.g., Kafka partition/offset pairs).
+   */
+  metadata: {
+    [key: string]: unknown
+  }
+  /**
+   * Timestamp when the circuit finished the step that took the data in.
+   */
+  processed_at: string
+}
+
+/**
  * Client-generated data stored alongside a pipeline.
  *
  * The fields are stored together as a single JSON object in the
@@ -3153,6 +3176,7 @@ export type InputEndpointStatus = {
    * Endpoint is currently a barrier to checkpointing and suspend.
    */
   barrier: boolean
+  circuit_input_frontier?: CircuitInputWatermark | null
   completed_frontier?: CompletedWatermark | null
   config: ShortEndpointConfig
   /**

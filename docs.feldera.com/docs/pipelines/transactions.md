@@ -178,6 +178,50 @@ Transaction status is also available through [metrics](/operations/metrics.md#tr
     </TabItem>
 </Tabs>
 
+### Commit at known input offsets
+
+To commit a transaction once an input connector has taken in its input up to
+known offsets, watch the connector's
+[circuit input frontier](/pipelines/latency#circuit-input-frontier).  Unlike
+the completed frontier, it moves while the transaction is open, as the circuit
+takes in input that the commit will include.
+
+For example, a pipeline backfills a table from a lakehouse snapshot, then
+continues from a Kafka topic whose messages overlap the snapshot.  While the
+pipeline replays the overlap, the table goes back to older values for a short
+time.  To hide this, start a transaction before the pipeline reads any input,
+and commit it once the Kafka connector has taken in every message up to each
+partition's high watermark at start.  The topic's latest messages at start
+are newer than the snapshot, so once the transaction includes them, the
+committed state has no older values.
+
+In the Kafka connector's frontier, `end` is the next offset to read in each
+partition, so `end` at or past a partition's high watermark means that the
+transaction includes the partition's last message at start.  A connector that
+is not [distributed](/connectors#distributed) lists its partitions in order:
+
+```python
+import time
+
+# The high watermark of each partition when the pipeline starts, for example
+# from `confluent_kafka.Consumer.get_watermark_offsets`.
+targets = [high_watermark(topic, partition) for partition in sorted(partitions)]
+
+pipeline.start_paused()
+transaction_id = pipeline.start_transaction()
+pipeline.resume()
+while True:
+    status = pipeline.input_connector_stats("my_table", "kafka_cdc")
+    frontier = status.circuit_input_frontier
+    if frontier is not None and all(
+        offsets["end"] >= target
+        for offsets, target in zip(frontier.metadata["offsets"], targets)
+    ):
+        break
+    time.sleep(0.5)
+pipeline.commit_transaction(transaction_id, wait=True)
+```
+
 ## Automatic Transaction Orchestration
 
 In addition to initiating transactions programmatically via the API, certain input connectors can also be configured to initiate transactions automatically.

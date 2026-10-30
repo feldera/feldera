@@ -60,9 +60,9 @@ use feldera_storage::disk::DiskUsage;
 use feldera_storage::histogram::SlidingHistogram;
 use feldera_types::{
     adapter_stats::{
-        CompletedWatermark, ConnectorError, ConnectorHealth, ConnectorHealthStatus,
-        ExternalInputEndpointMetrics, ExternalInputEndpointStatus, ExternalOutputEndpointMetrics,
-        ExternalOutputEndpointStatus, ShortEndpointConfig,
+        CircuitInputWatermark, CompletedWatermark, ConnectorError, ConnectorHealth,
+        ConnectorHealthStatus, ExternalInputEndpointMetrics, ExternalInputEndpointStatus,
+        ExternalOutputEndpointMetrics, ExternalOutputEndpointStatus, ShortEndpointConfig,
     },
     checkpoint::CheckpointActivity,
     config::{FtModel, PipelineConfig},
@@ -996,9 +996,7 @@ impl ControllerStatus {
         let new_processed_records = self.global_metrics.processed_data(amt);
         let ts = Utc::now();
         self.inputs.read().values().for_each(|input| {
-            input
-                .completed_frontier
-                .update_processed(new_processed_records, ts);
+            input.watermarks.update_processed(new_processed_records, ts);
         });
         new_processed_records
     }
@@ -1238,7 +1236,7 @@ impl ControllerStatus {
         let ts = Utc::now();
         self.inputs.read().values().for_each(|input| {
             input
-                .completed_frontier
+                .watermarks
                 .update_completed(total_completed_records, ts, &input.metrics);
         })
     }
@@ -2163,9 +2161,10 @@ impl TokenList {
 /// the controller marks these watermarks as completed and updates two histograms: processing latency
 /// and completion latency.
 ///
-/// In addition, the controller keeps track of the latest watermark whose metadata is not `None`
-/// and reports it via the `/status` API. This allows clients to track how far their input data
-/// has been processed by the pipeline.
+/// In addition, the controller keeps track of two watermarks whose metadata is not `None` and
+/// reports them via the `/status` API: the latest watermark that the circuit has taken in, which
+/// moves during a transaction too, and the latest completed watermark. These allow clients to
+/// track how far their input data has been processed by the pipeline.
 #[repr(transparent)]
 pub(crate) struct WatermarkTracker(Mutex<WatermarkTrackerInner>);
 
@@ -2178,7 +2177,8 @@ impl WatermarkTracker {
         self.0.lock().unwrap().append(watermarks, global_offset);
     }
 
-    /// Called when `total_processed_records` changes. Updates processed_at timestamps.
+    /// Called when `total_processed_records` changes. Updates processed_at timestamps and
+    /// `circuit_input_watermark`.
     fn update_processed(&self, processed_records: u64, ts: DateTime<Utc>) {
         self.0
             .lock()
@@ -2208,6 +2208,11 @@ impl WatermarkTracker {
     pub fn completed_watermark(&self) -> Option<CompletedWatermark> {
         self.0.lock().unwrap().completed_watermark.clone()
     }
+
+    /// Returns the latest watermark with metadata that the circuit has taken in, if any.
+    pub fn circuit_input_watermark(&self) -> Option<CircuitInputWatermark> {
+        self.0.lock().unwrap().circuit_input_watermark.clone()
+    }
 }
 
 /// Bound the number of tracked watermarks to avoid unbounded memory growth.
@@ -2232,10 +2237,15 @@ struct WatermarkTrackerInner {
     /// We keep these watermarks separate so that a large number of watermarks without
     /// metadata doesn't cause us to lose all watermarks with metadata, which are necessary
     /// to implement frontier tracking.
+    ///
+    /// When the list is full, a new watermark replaces the newest one.
     watermark_with_metadata_list: VecDeque<WatermarkListEntry>,
 
     /// The latest completed watermark with non-empty metadata, if any.
     completed_watermark: Option<CompletedWatermark>,
+
+    /// The latest watermark with non-empty metadata that the circuit has taken in, if any.
+    circuit_input_watermark: Option<CircuitInputWatermark>,
 }
 
 impl WatermarkTrackerInner {
@@ -2246,17 +2256,18 @@ impl WatermarkTrackerInner {
             watermark_list: VecDeque::new(),
             watermark_with_metadata_list: VecDeque::new(),
             completed_watermark: None,
+            circuit_input_watermark: None,
         }
     }
 
     fn append(&mut self, watermarks: Vec<Watermark>, global_offset: u64) {
         for watermark in watermarks {
             if watermark.metadata.is_some() {
-                // Keep the queue bounded. This gives older watermarks
-                // a chance to complete; otherwise we risk always evicting all watermarks before the complete
-                // and never reporting any completed watermarks.
+                // Keep the queue bounded. When it is full, the new watermark replaces the newest
+                // one, so that older watermarks keep their chance to complete and the queue keeps
+                // the latest position in the input stream.
                 if self.watermark_with_metadata_list.len() >= MAX_TRACKED_WATERMARKS {
-                    continue;
+                    self.watermark_with_metadata_list.pop_back();
                 }
 
                 self.watermark_with_metadata_list
@@ -2281,19 +2292,18 @@ impl WatermarkTrackerInner {
     fn update_processed(&mut self, processed_records: u64, ts: DateTime<Utc>) {
         self.total_processed_records = processed_records;
 
-        for entry in self.watermark_list.iter_mut() {
-            if entry.global_offset <= processed_records && entry.processed_at.is_none() {
-                entry.processed_at = Some(ts);
-            } else {
-                break;
-            }
-        }
-        for entry in self.watermark_with_metadata_list.iter_mut() {
-            if entry.global_offset <= processed_records && entry.processed_at.is_none() {
-                entry.processed_at = Some(ts);
-            } else {
-                break;
-            }
+        mark_processed(&mut self.watermark_list, processed_records, ts);
+        if let Some(entry) = mark_processed(
+            &mut self.watermark_with_metadata_list,
+            processed_records,
+            ts,
+        ) && let Some(metadata) = &entry.watermark.metadata
+        {
+            self.circuit_input_watermark = Some(CircuitInputWatermark {
+                metadata: metadata.clone(),
+                ingested_at: entry.watermark.timestamp,
+                processed_at: ts,
+            });
         }
     }
 
@@ -2373,6 +2383,36 @@ struct WatermarkListEntry {
     processed_at: Option<DateTime<Utc>>,
 }
 
+/// Sets `processed_at` to `ts` in the entries of `list` that `processed_records` covers and that
+/// are not yet processed.
+///
+/// # Arguments
+///
+/// * `list` - not-yet-completed watermarks, in the order they were added.
+/// * `processed_records` - the new value of `total_processed_records`.
+/// * `ts` - the time when the circuit finished processing the records.
+///
+/// # Returns
+///
+/// The newest entry that this call marks, or `None` if it marks none.
+fn mark_processed(
+    list: &mut VecDeque<WatermarkListEntry>,
+    processed_records: u64,
+    ts: DateTime<Utc>,
+) -> Option<&WatermarkListEntry> {
+    // The processed entries come first, because entries are marked in the order they were added.
+    let first_unprocessed = list.partition_point(|entry| entry.processed_at.is_some());
+    let mut newest = None;
+    for entry in list.range_mut(first_unprocessed..) {
+        if entry.global_offset > processed_records {
+            break;
+        }
+        entry.processed_at = Some(ts);
+        newest = Some(&*entry);
+    }
+    newest
+}
+
 /// Input endpoint status information.
 ///
 /// Keep in sync with [feldera_types::adapter_stats::ExternalInputEndpointStatus]
@@ -2450,7 +2490,8 @@ pub struct InputEndpointStatus {
     /// Completion tokens associated with the endpoint.
     completion_tokens: TokenList,
 
-    pub(crate) completed_frontier: WatermarkTracker,
+    /// Tracks the endpoint's watermarks, and its completed and circuit input frontiers.
+    pub(crate) watermarks: WatermarkTracker,
 
     /// Runs inside [Self::completion_token] just before the token is added.
     #[cfg(test)]
@@ -2491,7 +2532,8 @@ impl InputEndpointStatus {
             health: self.health(),
             paused: self.is_paused_by_user(),
             barrier: self.is_barrier(),
-            completed_frontier: self.completed_frontier.completed_watermark(),
+            completed_frontier: self.watermarks.completed_watermark(),
+            circuit_input_frontier: self.watermarks.circuit_input_watermark(),
         }
     }
 
@@ -2562,7 +2604,7 @@ impl InputEndpointStatus {
             fault_tolerance,
             custom_metrics: None,
             completion_tokens: TokenList::new(),
-            completed_frontier: WatermarkTracker::new(),
+            watermarks: WatermarkTracker::new(),
             #[cfg(test)]
             completion_token_hook: Mutex::new(None),
         }
@@ -2756,7 +2798,7 @@ impl InputEndpointStatus {
             total_initiated_steps,
             total_completed_steps,
         );
-        self.completed_frontier
+        self.watermarks
             .append(watermarks, total_circuit_input_records);
     }
 
@@ -3425,12 +3467,12 @@ impl OutputEndpointStatus {
 mod test {
     use super::{
         ConnectorError, ConnectorErrorList, ControllerStatus, GlobalControllerMetrics,
-        InputEndpointMetrics, InputEndpointStatus, MAX_CONNECTOR_ERROR_LEN, StepResults,
-        bound_error_message,
+        InputEndpointMetrics, InputEndpointStatus, MAX_CONNECTOR_ERROR_LEN, MAX_TRACKED_WATERMARKS,
+        StepResults, Watermark, WatermarkTracker, bound_error_message,
     };
     use crate::format::BufferSize;
     use anyhow::anyhow;
-    use chrono::Utc;
+    use chrono::{DateTime, Utc};
     use crossbeam::sync::Parker;
     use feldera_types::config::InputEndpointConfig;
     use feldera_types::config::PipelineConfig;
@@ -3709,6 +3751,76 @@ mod test {
         assert!(!starts_after_local_eoi(
             json!({"name": "test", "multihost": {"hosts": 2}})
         ));
+    }
+
+    /// A watermark with metadata that arrives when the tracker already holds
+    /// `MAX_TRACKED_WATERMARKS` of them replaces the newest one.  The older
+    /// watermarks still complete one by one, and the completed frontier
+    /// reaches the newest watermark once all of the input completes.
+    #[test]
+    fn full_watermark_list_keeps_the_newest_watermark() {
+        let tracker = WatermarkTracker::new();
+        let metrics = InputEndpointMetrics::default();
+
+        // Watermark `i` covers the input up to record `i`.
+        let newest = MAX_TRACKED_WATERMARKS as u64 + 5;
+        for i in 1..=newest {
+            tracker.append(vec![Watermark::new(Utc::now(), Some(json!(i)))], i);
+        }
+        assert_eq!(
+            tracker.0.lock().unwrap().watermark_with_metadata_list.len(),
+            MAX_TRACKED_WATERMARKS
+        );
+
+        let complete = |records| {
+            tracker.update_completed(records, Utc::now(), &metrics);
+            tracker
+                .completed_watermark()
+                .map(|watermark| watermark.metadata)
+        };
+        assert_eq!(complete(10), Some(json!(10)));
+        assert_eq!(complete(newest), Some(json!(newest)));
+    }
+
+    /// In a transaction, each step takes input into the circuit, but nothing
+    /// completes until the commit.  The circuit input frontier moves with every
+    /// step, also once the tracker is full.  The commit completes the newest
+    /// watermark, which keeps the time of the step that took it in.
+    #[test]
+    fn circuit_input_frontier_moves_in_a_transaction() {
+        let tracker = WatermarkTracker::new();
+        let metrics = InputEndpointMetrics::default();
+        let time = |secs| DateTime::from_timestamp(secs, 0).unwrap();
+        let circuit_input = || {
+            tracker
+                .circuit_input_watermark()
+                .map(|watermark| (watermark.metadata, watermark.processed_at))
+        };
+        let completed = || {
+            tracker
+                .completed_watermark()
+                .map(|watermark| (watermark.metadata, watermark.processed_at))
+        };
+
+        // Step `i` takes in watermark `i`, which covers the input up to record
+        // `i`, and finishes at time `i`.
+        let steps = MAX_TRACKED_WATERMARKS as i64 + 5;
+        for i in 1..=steps {
+            tracker.append(vec![Watermark::new(time(0), Some(json!(i)))], i as u64);
+            assert_eq!(
+                circuit_input(),
+                (i > 1).then(|| (json!(i - 1), time(i - 1)))
+            );
+
+            tracker.update_processed(i as u64, time(i));
+            tracker.update_completed(0, time(i), &metrics);
+            assert_eq!(circuit_input(), Some((json!(i), time(i))));
+            assert_eq!(completed(), None);
+        }
+
+        tracker.update_completed(steps as u64, time(steps + 1), &metrics);
+        assert_eq!(completed(), Some((json!(steps), time(steps))));
+        assert_eq!(circuit_input(), Some((json!(steps), time(steps))));
     }
 
     #[test]

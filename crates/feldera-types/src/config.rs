@@ -4023,8 +4023,8 @@ impl TransportConfig {
         )
     }
 
-    /// Returns how to combine the completed frontiers' metadata that the hosts
-    /// of a distributed input connector with this transport report.
+    /// Returns how to combine the frontiers' metadata that the hosts of a
+    /// distributed input connector with this transport report.
     pub fn frontier_merge(&self) -> crate::adapter_stats::FrontierMerge {
         use crate::adapter_stats::FrontierMerge;
         match self {
