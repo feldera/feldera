@@ -2110,8 +2110,14 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     RelRoot sqlToRel(SqlNode node) {
         SqlToRelConverter converter = this.getConverter();
+        // Wrap the string literals with characters above U+FFFF in calls to a
+        // fictitious function, to prevent Calcite from computing with Java
+        // Strings, which count each such character as two UTF-16 code units.
+        SqlNode wrappedStringLiterals = Objects.requireNonNull(
+                node.accept(new NonBmpLiterals(this.sourcePositionRemap)));
         // Phase names with a "Calcite." prefix measure parts of the "Calcite" phase
-        SqlNode validated = DBSPCompiler.timed("Calcite.validate", () -> this.getValidator().validate(node));
+        SqlNode validated = DBSPCompiler.timed("Calcite.validate",
+                () -> this.getValidator().validate(wrappedStringLiterals));
         validated.accept(new WarnFloatingPointEquality(
                 this.getValidator(), this.errorReporter, this.sourcePositionRemap));
         return DBSPCompiler.timed("Calcite.toRel", () -> converter.convertQuery(validated, false, true));

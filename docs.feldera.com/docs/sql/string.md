@@ -61,7 +61,9 @@ A string literal prefixed with the `U&` can contain Unicode characters
 described using their numeric code: `U&'hello\0041'` includes the
 Unicode character with code U+0041, which is the uppercase letter 'A'.
 A Unicode character is described by an escape character followed by
-four hexadecimal digits.
+four hexadecimal digits.  A character above U+FFFF is described by two
+escapes, the UTF-16 surrogate pair of the character: `U&'\D83D\DC0D'`
+is the character U+1F40D, which is 🐍.
 
 The default escape character is backslash, but it can be changed using
 the following syntax: `U&'hello!0041' UESCAPE '!'`.  The `UESCAPE`

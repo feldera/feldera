@@ -53,6 +53,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.ExternalFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.NonBmpLiterals;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.WarnFloatingPointEquality;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -1117,6 +1118,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 .append(" ")
                 .appendSupplier(() -> finalCall.getType().toString());
         List<DBSPExpression> ops = Linq.map(call.operands, e -> e.accept(this));
+        if (call.op == NonBmpLiterals.Wrapper.INSTANCE) {
+            DBSPStringLiteral literal = ops.get(0).to(DBSPStringLiteral.class);
+            return new DBSPStringLiteral(node, type, literal.value);
+        }
         String operationName = call.op.kind.sql;
         switch (call.op.kind) {
             case CHECKED_TIMES:
