@@ -155,6 +155,10 @@ public final class ConnectorValidator {
                 case "json":
                     validateConfig(formatConfig, outerJson, configPointer,
                             outerStart, JsonEncoderConfig.class, reporter);
+                    if (formatConfig.has("tombstones_on_delete") && !connector.has("index"))
+                        warnAt(outerJson, configPointer + "/tombstones_on_delete", outerStart,
+                                reporter, "Invalid configuration",
+                                "\"tombstones_on_delete\" is only valid with \"index\"");
                     break;
                 case "parquet":
                     validateConfig(formatConfig, outerJson, configPointer,
