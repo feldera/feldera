@@ -47,6 +47,9 @@ with-avro = [
 ]
 with-dynamodb = [
     "aws-sdk-dynamodb",
+    "dep:aws-credential-types",
+    "dep:aws-smithy-runtime-api",
+    "dep:aws-smithy-types",
     "feldera-adapterlib/with-dynamodb",
 ]
 with-redis = ["redis", "r2d2"]
@@ -66,6 +69,7 @@ testing = [
     "dep:google-cloud-googleapis",
     "dep:feldera-macros",
     "dep:libtest-mimic",
+    "dep:wiremock",
 ]
 with-s2 = ["s2-sdk"]
 # Run delta table tests against an S3 bucket.  Requires S3 authentication key
@@ -140,6 +144,9 @@ rdkafka = { workspace = true, features = [
 ], optional = true }
 aws-config = { workspace = true }
 aws-sdk-dynamodb = { workspace = true, optional = true }
+aws-credential-types = { workspace = true, optional = true }
+aws-smithy-runtime-api = { workspace = true, optional = true }
+aws-smithy-types = { workspace = true, optional = true }
 aws-sdk-s3 = { workspace = true }
 aws-types = { workspace = true }
 actix = { workspace = true }
@@ -160,6 +167,7 @@ parquet-variant = { workspace = true, optional = true }
 parquet-variant-compute = { workspace = true, optional = true }
 parquet-variant-json = { workspace = true, optional = true }
 mockall = { workspace = true, optional = true }
+wiremock = { workspace = true, optional = true }
 actix-test = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
 postgres-types = { version = "0.2.9", features = ["derive"], optional = true }
@@ -309,6 +317,7 @@ serial_test = { workspace = true }
 feldera-macros = { workspace = true }
 libtest-mimic = { workspace = true }
 mockall = { workspace = true }
+wiremock = { workspace = true }
 pretty_assertions = { workspace = true }
 google-cloud-googleapis = { workspace = true }
 postgres-types = { version = "0.2.9", features = ["derive"] }

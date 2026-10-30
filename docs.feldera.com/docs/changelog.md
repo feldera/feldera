@@ -28,6 +28,20 @@ Source edition can be found on github.
   `kafka_output_commit_retries_total` and `kafka_output_replay_spool_bytes`.
   See [Exactly-once delivery and recovery](/connectors/sinks/kafka#exactly-once-delivery-and-recovery).
 
+- Behavior change (DynamoDB output): a `BatchWriteItem` request that fails
+  with a retryable error, throttling included, is retried with backoff
+  against the `max_retries` budget instead of dropping the chunk once the
+  AWS SDK's own attempts run out. One budget now covers unprocessed items,
+  transient transaction cancellations, retryable request errors, temporary
+  credential failures, and item collections over their size limit. An error
+  that a retry cannot fix, such as a validation error or a missing table,
+  drops the chunk at once in both write modes, where transactional mode used
+  to retry it. The connector reports itself unhealthy while a chunk retries
+  and after a chunk gives up, and healthy again once the writes land. The
+  metric `dynamodb_output_retries_total` counts retries as they start, and
+  the gauge `dynamodb_output_retrying_chunks` shows the chunks retrying now.
+  See [Retries and health](/connectors/sinks/dynamodb#retries-and-health).
+
 ## v0.372.0
 
 - Behavior change (non-fault-tolerant Kafka output): temporary delivery
