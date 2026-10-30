@@ -1,3 +1,4 @@
+use crate::secret_redaction::secret_redactor;
 use actix_web::ResponseError;
 use actix_web::http::StatusCode;
 use log::{error, info};
@@ -128,16 +129,62 @@ impl ErrorResponse {
     where
         E: DetailedError,
     {
-        let message = error.to_string();
+        // A resolved secret value that the error copied shows as its reference.
+        let redactor = secret_redactor();
+        let message = redactor.redact(&error.to_string()).into_owned();
         let error_code = error.error_code();
-        let details = serde_json::to_value(error).unwrap_or_else(|e| {
+        let mut details = serde_json::to_value(error).unwrap_or_else(|e| {
             JsonValue::String(format!("Failed to serialize error. Details: '{e}'"))
         });
+        redactor.redact_json(&mut details);
 
         Self {
             message,
             error_code,
             details,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DetailedError, ErrorResponse};
+    use crate::secret_redaction::secret_redactor;
+    use serde::Serialize;
+    use serde_json::json;
+    use std::borrow::Cow;
+    use thiserror::Error as ThisError;
+
+    #[derive(Debug, Serialize, ThisError)]
+    #[error("connection to {uri} refused")]
+    struct ConnectError {
+        uri: String,
+    }
+
+    impl DetailedError for ConnectError {
+        fn error_code(&self) -> Cow<'static, str> {
+            Cow::from("ConnectError")
+        }
+    }
+
+    /// The message and the details of a response show a resolved secret as
+    /// its reference.
+    #[test]
+    fn response_shows_the_secret_reference_not_the_value() {
+        let uri = "postgres://feldera:response-test-secret@db:5432/app";
+        secret_redactor().register("${secret:kubernetes:pg/uri}", uri);
+
+        let response = ErrorResponse::from_error_nolog(&ConnectError {
+            uri: uri.to_string(),
+        });
+
+        assert_eq!(
+            response.message,
+            "connection to ${secret:kubernetes:pg/uri} refused"
+        );
+        assert_eq!(
+            response.details,
+            json!({"uri": "${secret:kubernetes:pg/uri}"})
+        );
     }
 }
