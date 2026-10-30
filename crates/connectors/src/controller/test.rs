@@ -1550,6 +1550,70 @@ pub fn step_does_not_wait_for_endpoint_without_reader(engine: &dyn PipelineTestE
     );
 }
 
+/// Stopping the pipeline while a new input endpoint is in `open()` must make
+/// adding the endpoint fail, not panic.
+///
+/// `stop` removes every input endpoint, including one that is registered but
+/// whose reader is not set yet.
+#[engine_test]
+pub fn stop_during_input_endpoint_open(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+    let adder = {
+        let controller = controller.clone();
+        thread::spawn(move || {
+            controller.add_input_endpoint(
+                "gated",
+                endpoint_config,
+                Box::new(GatedOpenEndpoint {
+                    entered: entered_tx,
+                    release: Mutex::new(release_rx),
+                    inner: TransactionalInputEndpoint::new(),
+                }),
+                None,
+            )
+        })
+    };
+
+    // Stop while the endpoint is registered without a reader.
+    entered_rx.recv().unwrap();
+    controller.initiate_stop();
+    release_tx.send(()).unwrap();
+    let result = adder.join();
+    controller.stop().unwrap();
+    assert!(
+        result.is_ok(),
+        "adding an input endpoint panicked when the pipeline stopped during open()"
+    );
+    assert!(
+        result.unwrap().is_err(),
+        "adding an input endpoint succeeded although the pipeline stopped"
+    );
+}
+
 /// A commit that takes several steps must finish even if a client starts a
 /// new API transaction while it runs.
 ///

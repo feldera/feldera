@@ -1800,8 +1800,22 @@ impl ControllerStatus {
 
         match open() {
             Ok(reader) => {
-                self.inputs.write().get_mut(&endpoint_id).unwrap().reader = Some(Arc::from(reader));
-                Ok(())
+                let reader: Arc<dyn InputReader> = Arc::from(reader);
+                match self.inputs.write().get_mut(&endpoint_id) {
+                    Some(endpoint) => {
+                        endpoint.reader = Some(reader);
+                        Ok(())
+                    }
+                    None => {
+                        // `stop` removed the endpoint while `open` ran.
+                        reader.disconnect();
+                        Err(ControllerError::input_transport_error(
+                            &endpoint_name,
+                            true,
+                            anyhow!("the pipeline stopped while the endpoint was being opened"),
+                        ))
+                    }
+                }
             }
             Err(e) => {
                 self.inputs.write().remove(&endpoint_id);
