@@ -639,7 +639,6 @@ where
         // flight -- is what the duration is there to measure.
         let mut first_miss: Option<Instant> = None;
         let entry = loop {
-            #[allow(clippy::borrow_deref_ref)]
             if let Some(entry) = cache.get(&*file.file_handle, node.location) {
                 let entry = Self::from_cache_entry(entry, node.location)?;
                 match first_miss {
@@ -673,7 +672,6 @@ where
                 // the claim left the block there.  Look again rather than read
                 // the block a second time; the look at the top of the loop
                 // counts it as a wait.
-                #[allow(clippy::borrow_deref_ref)]
                 if cache.get(&*file.file_handle, node.location).is_some() {
                     continue;
                 }
@@ -1142,7 +1140,6 @@ where
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         let cache = file.cache();
         let first_row = node.rows.start;
-        #[allow(clippy::borrow_deref_ref)]
         let entry = match cache.get(&*file.file_handle, node.location) {
             Some(entry) => {
                 file.stats.record_hit(node.location);
@@ -1446,8 +1443,7 @@ impl FileTrailer {
     ) -> Result<Arc<FileTrailer>, Error> {
         let start = Instant::now();
         let cache = cache().expect("Should have a buffer cache");
-        #[allow(clippy::borrow_deref_ref)]
-        let (access, entry) = match cache.get(&*file_handle, location) {
+        let (access, entry) = match cache.get(file_handle, location) {
             Some(entry) => {
                 let entry = entry
                     .downcast()
@@ -3178,7 +3174,6 @@ where
         let Ok(node) = index.get_child(next) else {
             return;
         };
-        #[allow(clippy::borrow_deref_ref)]
         if cache.get(&*file.file_handle, node.location).is_some()
             || !file.in_flight.claim(node.location.offset)
         {
