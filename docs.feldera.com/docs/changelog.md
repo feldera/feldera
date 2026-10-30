@@ -14,8 +14,18 @@ Source edition can be found on github.
   diagnostics. The pipeline shows the value as its reference in its log, in
   `/status`, and in the connector errors of `/stats`. Connector errors, debug
   log lines, and compile errors that printed a whole configuration, URI, or
-  option value now name the endpoint and the option only. Restart running
-  pipelines so that they run on the fixed runtime. See
+  option value now name the endpoint and the option only. The API server
+  removes connection credentials from stored deployment errors, returned
+  status details, pipeline events, and support bundle collections, including
+  those stored before this release. URL passwords become `[REDACTED]`. Postgres query
+  and keyword passwords cause the whole diagnostic string to be omitted.
+  Bundle metadata failure reasons are also sanitized. Format configuration
+  errors no longer echo rejected scalars, and JSON logging redacts fields
+  before encoding them. A stored collection item that cannot be decoded is
+  left out of the bundle with a
+  reason. Restart running pipelines so that they run on the fixed runtime.
+  Inline credentials in SQL and connector configuration are still exported
+  in the support bundle's `pipeline_config.json`. See
   [secret references](/connectors/secret-references#diagnostics).
 
 - Delta Lake input connector: `uc://` tables can use Databricks workload

@@ -15,6 +15,9 @@ use crate::db::types::utils::{
     validate_runtime_config, validate_storage_status_details,
 };
 use crate::db::types::version::Version;
+use crate::diagnostic_redaction::{
+    redact_connection_credentials, redact_connection_credentials_in_json,
+};
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus, RuntimeStatus};
@@ -356,7 +359,7 @@ fn parse_from_row_storage_status_details(row: &Row) -> Result<Option<serde_json:
     // Storage status details: StorageStatusDetails
     let storage_status_details = match row.get::<_, Option<String>>("storage_status_details") {
         None => None,
-        Some(s) => Some(deserialize_json_value(&s)?),
+        Some(s) => Some(deserialize_diagnostic_json(&s)?),
     };
     if let Some(value) = &storage_status_details {
         let _ = validate_storage_status_details(value); // Prints to log if validation failed
@@ -387,7 +390,7 @@ fn parse_from_row_deployment_resources_status_details(
     Ok(
         match row.get::<_, Option<String>>("deployment_resources_status_details") {
             None => None,
-            Some(s) => Some(deserialize_json_value(&s)?),
+            Some(s) => Some(deserialize_diagnostic_json(&s)?),
         },
     )
 }
@@ -422,7 +425,7 @@ fn parse_from_row_deployment_runtime_status_details(
     Ok(
         match row.get::<_, Option<String>>("deployment_runtime_status_details") {
             None => None,
-            Some(s) => Some(deserialize_json_value(&s)?),
+            Some(s) => Some(deserialize_diagnostic_json(&s)?),
         },
     )
 }
@@ -466,6 +469,14 @@ fn parse_from_row_deployment_has_error(row: &Row) -> bool {
 }
 
 /// Parses string as a JSON value.
+/// A stored diagnostic as JSON, with URL passwords replaced: a row written
+/// before the secret fix, or by a pipeline on an older runtime, can hold one.
+fn deserialize_diagnostic_json(s: &str) -> Result<serde_json::Value, DBError> {
+    let mut value = deserialize_json_value(s)?;
+    redact_connection_credentials_in_json(&mut value);
+    Ok(value)
+}
+
 fn deserialize_json_value(s: &str) -> Result<serde_json::Value, DBError> {
     serde_json::from_str::<serde_json::Value>(s).map_err(|e| DBError::InvalidJsonData {
         data: s.to_string(),
@@ -481,15 +492,25 @@ pub fn serialize_program_error(program_error: &ProgramError) -> Result<String, D
 }
 
 /// Serializes the [`ErrorResponse`] as a string of JSON.
+///
+/// A URL password in the message or the details is stored as `[REDACTED]`:
+/// a pipeline on a runtime from before the secret fix still reports one.
 pub(crate) fn serialize_error_response(error_response: &ErrorResponse) -> Result<String, DBError> {
-    serde_json::to_string(error_response).map_err(|e| DBError::FailedToSerializeErrorResponse {
+    let mut details = error_response.details.clone();
+    redact_connection_credentials_in_json(&mut details);
+    let error_response = ErrorResponse {
+        message: redact_connection_credentials(&error_response.message).into_owned(),
+        error_code: error_response.error_code.clone(),
+        details,
+    };
+    serde_json::to_string(&error_response).map_err(|e| DBError::FailedToSerializeErrorResponse {
         error: e.to_string(),
     })
 }
 
 /// Deserializes the string of JSON as an [`ErrorResponse`].
 pub fn deserialize_error_response(s: &str) -> Result<ErrorResponse, DBError> {
-    let json_value = deserialize_json_value(s)?;
+    let json_value = deserialize_diagnostic_json(s)?;
     let error_response: ErrorResponse =
         serde_json::from_value(json_value.clone()).map_err(|e| DBError::InvalidErrorResponse {
             value: json_value,
@@ -524,6 +545,7 @@ fn deserialize_program_error_with_default(s: &str) -> ProgramError {
 
 #[cfg(test)]
 mod tests {
+    use super::deserialize_diagnostic_json;
     use super::{
         PIPELINE_COLUMNS_ALL, PIPELINE_COLUMNS_EVENT_INFO, PIPELINE_COLUMNS_MONITORING,
         PIPELINE_EVENT_COLUMNS_ALL, PIPELINE_EVENT_COLUMNS_SHORT, deserialize_error_response,
@@ -895,6 +917,43 @@ mod tests {
             deserialize_error_response("{}"),
             Err(DBError::InvalidErrorResponse { value: _, error: _ })
         ));
+    }
+
+    /// A deployment error from a pipeline on an unfixed runtime can carry a
+    /// connection URI with its password; the stored copy must not.
+    #[test]
+    fn error_response_is_stored_without_url_passwords() {
+        let uri = "postgres://feldera:stored-secret-2136@db.internal:5432/app";
+        let error_response = ErrorResponse {
+            message: format!("Failed to connect to {uri}"),
+            error_code: Cow::from("InitializationError"),
+            details: json!({"error": format!("Failed to connect to {uri}")}),
+        };
+        let stored = serialize_error_response(&error_response).unwrap();
+        assert!(!stored.contains("stored-secret-2136"), "{stored}");
+        // A row written before the fix is read without the password too.
+        let old_row = format!(
+            r#"{{"message": "Failed to connect to {uri}", "error_code": "InitializationError", "details": {{}}}}"#
+        );
+        assert_eq!(
+            deserialize_error_response(&old_row).unwrap().message,
+            "Failed to connect to postgres://feldera:[REDACTED]@db.internal:5432/app"
+        );
+        assert_eq!(
+            deserialize_diagnostic_json(&format!(r#"{{"reason": "status body: {uri}"}}"#)).unwrap(),
+            json!({"reason": "status body: postgres://feldera:[REDACTED]@db.internal:5432/app"})
+        );
+        assert_eq!(
+            deserialize_error_response(&stored).unwrap(),
+            ErrorResponse {
+                message: "Failed to connect to postgres://feldera:[REDACTED]@db.internal:5432/app"
+                    .to_string(),
+                error_code: Cow::from("InitializationError"),
+                details: json!({
+                    "error": "Failed to connect to postgres://feldera:[REDACTED]@db.internal:5432/app"
+                }),
+            }
+        );
     }
 
     #[test]

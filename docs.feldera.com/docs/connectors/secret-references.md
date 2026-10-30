@@ -23,6 +23,8 @@ configuration with their values. We currently only support a single secret provi
 When the pipeline initializes, it replaces all references in the connector configuration
 with their resolved values. Feldera resolves references when a pipeline starts, as well as
 each time it resumes. Feldera does not write resolved values to checkpoints or journals.
+Connector error messages are written to checkpoints; see [Diagnostics](#diagnostics)
+for how resolved values are kept out of them.
 
 Use environment variables for non-sensitive deployment configuration only.
 Storing secrets in environment variables is generally discouraged; use a dedicated secret manager or secret store instead.
@@ -38,6 +40,19 @@ pipeline therefore keeps resolved values out of what it reports:
 | `deployment_error`, pipeline events, `/status` | the reference, from a pipeline on a runtime with this fix |
 | Connector errors in `/stats` and in the support bundle | the reference, from a pipeline on a runtime with this fix |
 | Connection errors and debug log lines of connectors | the endpoint name and option names only, never the URI, option value, or configuration |
+
+The API server does not resolve secret references, but an older runtime can
+send it an error containing a resolved value. The server replaces URL
+passwords in stored deployment errors, returned status details, and exported
+diagnostics with `[REDACTED]`. For Postgres query or keyword passwords, or
+ambiguous connection-string boundaries, it replaces the whole diagnostic
+string. This also covers failure reasons in support bundle metadata and
+collections stored before the fix. Error codes and endpoint identities in
+separate fields are preserved.
+
+Format configuration errors report a safe error category and a corrective
+action instead of quoting the rejected value, including for short secrets.
+JSON log fields are redacted before serialization adds JSON escaping.
 
 The following limits apply:
 
@@ -56,6 +71,9 @@ The following limits apply:
   recognized.
 - A value that is part of SQL, UDF code, an endpoint name, or table data is
   shown as written.
+- An inline credential in the connector configuration is part of the pipeline
+  configuration. The support bundle exports the pipeline configuration as
+  supplied.
 
 ## Kubernetes
 

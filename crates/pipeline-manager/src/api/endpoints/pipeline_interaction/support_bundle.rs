@@ -121,6 +121,17 @@ impl SupportBundleZip {
         let mut collection_meta = Vec::with_capacity(bundles.len());
         let mut used_dirs: HashSet<String> = HashSet::with_capacity(bundles.len());
 
+        // Collections stored before the secret fix are exported as stored.
+        let bundles: Vec<SupportBundleData> = bundles
+            .into_iter()
+            .map(|data| {
+                if data.version >= SupportBundleData::REDACTED_SINCE_VERSION {
+                    data
+                } else {
+                    data.redact_diagnostics()
+                }
+            })
+            .collect();
         for data in bundles.iter() {
             let directory = unique_directory(&timestamp_dir(&data.time), &mut used_dirs);
             let dir_prefix = directory.clone();
@@ -554,5 +565,128 @@ mod tests {
         assert!(text.contains("Pipeline: supportbundle-test"));
         assert!(text.contains("Collection 0"));
         assert!(text.contains("Directory:"));
+    }
+
+    /// A collection stored before the secret fix holds the resolved Postgres
+    /// URI in the record's error, the events, the stats, and the logs. The
+    /// exported files must show the URI without its password, while the SQL
+    /// is exported as supplied.
+    #[tokio::test]
+    async fn stored_collections_are_exported_without_url_passwords() {
+        let uri = "postgres://feldera:export-secret-2136@db.internal:5432/app";
+        let error = format!("Failed to connect to {uri}");
+        let record = serde_json::json!({
+            "name": "p1",
+            "program_code": "CREATE TABLE t (uri VARCHAR) WITH ('connectors' = '[{\"uri\": \"postgres://u:inline-2136@h/db\"}]');",
+            "deployment_error": {"message": error, "error_code": "InitializationError", "details": {"error": error}},
+        });
+        let mut data = SupportBundleData::test_data();
+        data.version = 4;
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gz.write_all(&serde_json::to_vec(&record).unwrap()).unwrap();
+        data.pipeline_config = Ok(gz.finish().unwrap());
+        data.pipeline_events = Ok(serde_json::to_vec(
+            &serde_json::json!([{"deployment_error": {"message": error}}]),
+        )
+        .unwrap());
+        data.stats = Ok(serde_json::to_vec(
+            &serde_json::json!({"inputs": [{"endpoint_name": "pg_in", "errors": [{"message": error}]}]}),
+        )
+        .unwrap());
+        data.logs = Ok(format!("ERROR pg_in: {error}\n"));
+
+        let bundle = SupportBundleZip::create(
+            &fake_pipeline("p1"),
+            vec![data],
+            &SupportBundleParameters::default(),
+        )
+        .await
+        .unwrap();
+        let mut archive = read_zip(&bundle.buffer);
+        let names: Vec<String> = (0..archive.len())
+            .map(|i| archive.by_index(i).unwrap().name().unwrap().to_string())
+            .collect();
+        for file in [
+            "pipeline_config.json",
+            "pipeline_events.json",
+            "stats.json",
+            "logs.txt",
+        ] {
+            let name = names.iter().find(|n| n.ends_with(file)).expect(file);
+            let mut text = String::new();
+            archive
+                .by_name(name)
+                .unwrap()
+                .read_to_string(&mut text)
+                .unwrap();
+            assert!(!text.contains("export-secret-2136"), "{file}: {text}");
+            assert!(
+                text.contains("postgres://feldera:[REDACTED]@db.internal:5432/app"),
+                "{file}: {text}"
+            );
+            if file == "pipeline_config.json" {
+                assert!(
+                    text.contains("inline-2136"),
+                    "SQL must be exported as supplied: {text}"
+                );
+            }
+        }
+    }
+
+    /// Failed requests have no file payload: their error goes into both
+    /// manifests. Cover stored MessagePack collections and fresh collections.
+    #[tokio::test]
+    async fn collection_failures_are_redacted_in_both_manifests() {
+        for version in [5, 6, SupportBundleData::current_version()] {
+            for uri in [
+                "postgres://u:metadata-secret-2136@host/db",
+                "postgres://u@host/db?password=metadata-secret-2136",
+                "host=host password='metadata-secret-2136' dbname=db",
+            ] {
+                let error =
+                    format!("HTTP 500: pg_in: Unable to connect to postgres instance '{uri}'");
+                let mut data = SupportBundleData::test_data();
+                data.version = version;
+                data.circuit_profile = Err(error.clone());
+                data.json_circuit_profile = Err(error.clone());
+                data.heap_profile = Err(error.clone());
+                data.metrics = Err(error.clone());
+                data.logs = Err(error.clone());
+                data.stats = Err(error.clone());
+                data.pipeline_config = Err(error.clone());
+                data.system_config = Err(error.clone());
+                data.dataflow_graph = Err(error.clone());
+                data.pipeline_events = Err(error);
+                if version == SupportBundleData::current_version() {
+                    data = data.redact_diagnostics();
+                    assert!(
+                        !serde_json::to_string(&data)
+                            .unwrap()
+                            .contains("metadata-secret-2136")
+                    );
+                }
+                let stored = rmp_serde::to_vec(&data).unwrap();
+                let data = rmp_serde::from_slice(&stored).unwrap();
+                let bundle = SupportBundleZip::create(
+                    &fake_pipeline("p1"),
+                    vec![data],
+                    &SupportBundleParameters::default(),
+                )
+                .await
+                .unwrap();
+                let mut archive = read_zip(&bundle.buffer);
+                for file in ["metadata.json", "metadata.txt"] {
+                    let mut text = String::new();
+                    archive
+                        .by_name(file)
+                        .unwrap()
+                        .read_to_string(&mut text)
+                        .unwrap();
+                    assert!(!text.contains("metadata-secret-2136"), "{text}");
+                    assert!(text.contains("[REDACTED]"), "{text}");
+                    assert!(text.contains("stats.json"), "{text}");
+                }
+            }
+        }
     }
 }

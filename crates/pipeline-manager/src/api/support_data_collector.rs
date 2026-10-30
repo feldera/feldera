@@ -9,8 +9,11 @@ use crate::db::operations::pipeline::{
 use crate::db::storage::Storage;
 use crate::db::transaction;
 use crate::db::types::combined_status::CombinedStatus;
-use crate::db::types::pipeline::PipelineId;
+use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
 use crate::db::types::tenant::TenantId;
+use crate::diagnostic_redaction::{
+    redact_connection_credentials, redact_connection_credentials_in_json,
+};
 use crate::error::ManagerError;
 use crate::runner::pipeline_logs::FollowMode;
 use actix_web::HttpResponse;
@@ -21,6 +24,7 @@ use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
 use serde::Deserialize;
+use std::borrow::Cow;
 use std::cmp::min;
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -382,8 +386,9 @@ impl CollectionSummary {
 /// Support bundle data collected from various sources at a single point in time.
 #[derive(Debug, serde::Serialize, Eq, PartialEq)]
 pub struct SupportBundleData {
-    /// Version of the support bundle data format
-    #[serde(default = "SupportBundleData::current_version")]
+    /// Version of the stored collection. Missing versions are unproven legacy
+    /// data and must pass through export redaction.
+    #[serde(default)]
     pub version: u32,
     pub time: DateTime<Utc>,
     pub circuit_profile: BundleResult<Vec<u8>>,
@@ -399,10 +404,14 @@ pub struct SupportBundleData {
 }
 
 impl SupportBundleData {
-    /// Current version of the support bundle data format
+    /// Current stored collection version; the exported file schemas stay the same.
     pub const fn current_version() -> u32 {
-        5
+        7
     }
+
+    /// Collections at this version or later also redact failed requests and
+    /// Postgres keyword/query passwords when collected.
+    pub const REDACTED_SINCE_VERSION: u32 = 7;
 
     #[cfg(test)]
     pub(crate) fn test_data() -> Self {
@@ -414,11 +423,12 @@ impl SupportBundleData {
             heap_profile: Ok(vec![4, 5, 6]),
             metrics: Ok(vec![7, 8, 9]),
             logs: Ok("test logs".to_string()),
-            stats: Ok(vec![10, 11, 12]),
-            pipeline_config: Ok(vec![13, 14, 15]),
+            // Diagnostics are decoded for redaction, so they hold JSON.
+            stats: Ok(b"{}".to_vec()),
+            pipeline_config: gz_compress(b"{}".to_vec()),
             system_config: Ok(vec![16, 17, 18]),
             dataflow_graph: Ok(vec![19, 20, 21]),
-            pipeline_events: Ok(vec![22, 23, 24]),
+            pipeline_events: Ok(b"[]".to_vec()),
         }
     }
 }
@@ -435,7 +445,7 @@ impl<'de> serde::Deserialize<'de> for SupportBundleData {
 
         #[derive(serde::Deserialize)]
         struct Helper {
-            #[serde(default = "SupportBundleData::current_version")]
+            #[serde(default)]
             version: u32,
             time: DateTime<Utc>,
             #[serde(default)]
@@ -589,7 +599,48 @@ impl SupportBundleData {
             system_config,
             dataflow_graph,
             pipeline_events,
-        })
+        }
+        .redact_diagnostics())
+    }
+
+    /// Removes URL passwords from the diagnostics of this collection: the
+    /// error and status detail fields of the pipeline record, the monitor
+    /// events, `/stats`, and the logs. The pipeline on a fixed runtime does
+    /// not emit them; this covers a pipeline on an older runtime and the
+    /// collections stored before [`Self::REDACTED_SINCE_VERSION`]. SQL,
+    /// UDFs, and configuration are kept as supplied.
+    pub(crate) fn redact_diagnostics(mut self) -> Self {
+        // Failed endpoint requests carry the runtime error in the metadata,
+        // even when there is no successful file payload to redact.
+        for result in [
+            &mut self.circuit_profile,
+            &mut self.json_circuit_profile,
+            &mut self.heap_profile,
+            &mut self.metrics,
+            &mut self.stats,
+            &mut self.pipeline_config,
+            &mut self.system_config,
+            &mut self.dataflow_graph,
+            &mut self.pipeline_events,
+        ] {
+            redact_collection_failure(result);
+        }
+        redact_collection_failure(&mut self.logs);
+        if let Ok(content) = &self.pipeline_config {
+            self.pipeline_config = redact_pipeline_record(content);
+        }
+        if let Ok(content) = &self.pipeline_events {
+            self.pipeline_events = redact_json_document(content, "pipeline events");
+        }
+        if let Ok(content) = &self.stats {
+            self.stats = redact_json_document(content, "stats");
+        }
+        if let Ok(content) = &self.logs
+            && let Cow::Owned(redacted) = redact_connection_credentials(content)
+        {
+            self.logs = Ok(redacted);
+        }
+        self
     }
 
     async fn collect_circuit_profile(
@@ -1005,7 +1056,7 @@ impl SupportBundleData {
             .get_pipeline(tenant_id, pipeline_name)
             .await?;
 
-        serde_json::to_vec_pretty(&pipeline).map_err(|e| {
+        serde_json::to_vec_pretty(&pipeline_record(&pipeline)).map_err(|e| {
             ManagerError::from(ApiError::UnableToCreateSupportBundle {
                 reason: format!("Failed to serialize pipeline config: {}", e),
             })
@@ -1039,6 +1090,142 @@ impl SupportBundleData {
             })
         })
     }
+}
+
+/// Explicit projection of the existing support-bundle record. New database
+/// fields must be classified here before they can be exported.
+fn pipeline_record(pipeline: &ExtendedPipelineDescr) -> serde_json::Value {
+    let ExtendedPipelineDescr {
+        id,
+        name,
+        description,
+        tags,
+        created_at,
+        version,
+        platform_version,
+        runtime_config,
+        program_code,
+        udf_rust,
+        udf_toml,
+        program_config,
+        program_version,
+        program_status,
+        program_status_since,
+        program_error,
+        program_info,
+        program_binary_source_checksum,
+        program_binary_integrity_checksum,
+        program_info_integrity_checksum,
+        deployment_error,
+        deployment_config,
+        deployment_location,
+        refresh_version,
+        storage_status,
+        storage_status_details,
+        deployment_id,
+        deployment_initial,
+        bootstrap_policy,
+        deployment_resources_status,
+        deployment_resources_status_since,
+        deployment_resources_status_details,
+        deployment_resources_desired_status,
+        deployment_resources_desired_status_since,
+        deployment_runtime_status,
+        deployment_runtime_status_details,
+        deployment_runtime_status_since,
+        deployment_runtime_desired_status,
+        deployment_runtime_desired_status_since,
+    } = pipeline;
+    serde_json::json!({
+        "id": id,
+        "name": name,
+        "description": description,
+        "tags": tags,
+        "created_at": created_at,
+        "version": version,
+        "platform_version": platform_version,
+        "runtime_config": runtime_config,
+        "program_code": program_code,
+        "udf_rust": udf_rust,
+        "udf_toml": udf_toml,
+        "program_config": program_config,
+        "program_version": program_version,
+        "program_status": program_status,
+        "program_status_since": program_status_since,
+        "program_error": program_error,
+        "program_info": program_info,
+        "program_binary_source_checksum": program_binary_source_checksum,
+        "program_binary_integrity_checksum": program_binary_integrity_checksum,
+        "program_info_integrity_checksum": program_info_integrity_checksum,
+        "deployment_error": deployment_error,
+        "deployment_config": deployment_config,
+        "deployment_location": deployment_location,
+        "refresh_version": refresh_version,
+        "storage_status": storage_status,
+        "storage_status_details": storage_status_details,
+        "deployment_id": deployment_id,
+        "deployment_initial": deployment_initial,
+        "bootstrap_policy": bootstrap_policy,
+        "deployment_resources_status": deployment_resources_status,
+        "deployment_resources_status_since": deployment_resources_status_since,
+        "deployment_resources_status_details": deployment_resources_status_details,
+        "deployment_resources_desired_status": deployment_resources_desired_status,
+        "deployment_resources_desired_status_since": deployment_resources_desired_status_since,
+        "deployment_runtime_status": deployment_runtime_status,
+        "deployment_runtime_status_details": deployment_runtime_status_details,
+        "deployment_runtime_status_since": deployment_runtime_status_since,
+        "deployment_runtime_desired_status": deployment_runtime_desired_status,
+        "deployment_runtime_desired_status_since": deployment_runtime_desired_status_since,
+    })
+}
+
+fn redact_collection_failure<T>(result: &mut BundleResult<T>) {
+    if let Err(reason) = result {
+        *reason = redact_connection_credentials(reason).into_owned();
+    }
+}
+
+/// The diagnostic fields of the stored pipeline record. Every other field
+/// is configuration or source and is exported as supplied.
+const PIPELINE_RECORD_DIAGNOSTIC_FIELDS: [&str; 5] = [
+    "deployment_error",
+    "program_error",
+    "deployment_resources_status_details",
+    "deployment_runtime_status_details",
+    "storage_status_details",
+];
+
+/// Why a stored item is left out of a bundle instead of exported unredacted.
+fn undecodable(what: &str, error: impl std::fmt::Display) -> String {
+    format!(
+        "Omitted: the stored {what} could not be decoded for redaction ({error}); \
+         request a new bundle with collect=true"
+    )
+}
+
+/// Redacts the diagnostic fields of the stored pipeline record, which is
+/// gzip-compressed JSON, and returns it compressed again.
+fn redact_pipeline_record(content: &[u8]) -> BundleResult<Vec<u8>> {
+    let json = gz_decompress(content).map_err(|e| undecodable("pipeline configuration", e))?;
+    let mut record: serde_json::Value =
+        serde_json::from_slice(&json).map_err(|e| undecodable("pipeline configuration", e))?;
+    if let Some(fields) = record.as_object_mut() {
+        for name in PIPELINE_RECORD_DIAGNOSTIC_FIELDS {
+            if let Some(field) = fields.get_mut(name) {
+                redact_connection_credentials_in_json(field);
+            }
+        }
+    }
+    let json = serde_json::to_vec_pretty(&record).map_err(|e| e.to_string())?;
+    gz_compress(json)
+}
+
+/// Redacts every string of a stored JSON document.
+fn redact_json_document(content: &[u8], what: &str) -> BundleResult<Vec<u8>> {
+    let mut document: serde_json::Value =
+        serde_json::from_slice(content).map_err(|e| undecodable(what, e))?;
+    redact_connection_credentials_in_json(&mut document);
+    serde_json::to_vec_pretty(&document).map_err(|e| e.to_string())
 }
 
 /// Entry in the collection schedule
@@ -1443,6 +1630,29 @@ mod tests {
     }
 
     #[test]
+    fn missing_collection_version_is_unproven() {
+        #[derive(serde::Serialize)]
+        struct WithoutVersion {
+            time: DateTime<Utc>,
+            logs: BundleResult<String>,
+        }
+        let data = WithoutVersion {
+            time: Utc::now(),
+            logs: Ok("postgres://u:unversioned-secret-2136@host/db".to_string()),
+        };
+        let stored = rmp_serde::to_vec_named(&data).unwrap();
+        let legacy: SupportBundleData = rmp_serde::from_slice(&stored).unwrap();
+        assert_eq!(legacy.version, 0);
+        assert!(
+            !legacy
+                .redact_diagnostics()
+                .logs
+                .unwrap()
+                .contains("unversioned-secret-2136")
+        );
+    }
+
+    #[test]
     fn missing_fields_handling() {
         #[derive(Debug, serde::Serialize)]
         struct LossySupportBundleData {
@@ -1497,6 +1707,27 @@ mod tests {
             deserialized.pipeline_events,
             Err("Missing from data source (field was added in newer version)".to_string())
         );
+    }
+
+    /// A stored item that cannot be decoded is left out with a reason
+    /// instead of being exported unredacted.
+    #[test]
+    fn undecodable_stored_diagnostics_are_omitted() {
+        let mut data = SupportBundleData::test_data();
+        data.pipeline_config = Ok(b"not json, not gzip".to_vec());
+        data.pipeline_events = Ok(b"[".to_vec());
+        data.stats = Ok(b"{".to_vec());
+        let data = data.redact_diagnostics();
+        for reason in [
+            data.pipeline_config.unwrap_err(),
+            data.pipeline_events.unwrap_err(),
+            data.stats.unwrap_err(),
+        ] {
+            assert!(reason.starts_with("Omitted:"), "{reason}");
+            assert!(reason.contains("collect=true"), "{reason}");
+        }
+        // Items that are not diagnostics are untouched.
+        assert_eq!(data.metrics, Ok(vec![7, 8, 9]));
     }
 
     /// Older managers serialized `SupportBundleData` without a `pipeline_events`
@@ -2574,6 +2805,117 @@ mod tests {
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
         assert!(err_msg.contains("Dataflow graph is missing from pipeline"));
+    }
+
+    /// A pipeline on a runtime from before the secret fix reports a
+    /// deployment error with the resolved URI. Rows written by an older
+    /// manager hold it as well. A new collection must not carry the password.
+    #[actix_web::test]
+    async fn collected_record_and_events_carry_no_url_password() {
+        crate::ensure_default_crypto_provider();
+        let (db, _temp_dir) = setup_pg().await;
+        let db: Arc<Mutex<crate::db::storage_postgres::StoragePostgres>> = Arc::new(Mutex::new(db));
+        let state: Arc<ServerState> = Arc::new(ServerState::test_state(db.clone()).await);
+        let tenant_id = TenantRecord::default().id;
+        let pipeline_id = PipelineId(Uuid::now_v7());
+        let mut descr = PipelineDescr::test_descr();
+        descr.name = "collect_redaction".to_string();
+        descr.runtime_config = json!({"env": {"INLINE_PASSWORD": "inline-config-kept"}});
+        descr.udf_rust = "pub fn udf_example() {}".to_string();
+        descr.udf_toml = "[dependencies]".to_string();
+        db.lock()
+            .await
+            .new_pipeline(tenant_id, pipeline_id.0, "v0", descr)
+            .await
+            .unwrap();
+
+        // Written as an older manager would: the stored error keeps the URI.
+        let uri = "postgres://feldera:collect-secret-2136@db.internal:5432/app";
+        let stored_error = json!({
+            "message": format!("Failed to connect to {uri}"),
+            "error_code": "InitializationError",
+            "details": {"error": format!("Failed to connect to {uri}")}
+        })
+        .to_string();
+        {
+            let mut client = db.lock().await.pool.get().await.unwrap();
+            let txn = transaction::begin(&mut client).await.unwrap();
+            crate::db::operations::pipeline_monitor::new_pipeline_monitor_event(
+                &txn,
+                tenant_id,
+                pipeline_id,
+                Uuid::now_v7(),
+            )
+            .await
+            .unwrap();
+            for (table, key) in [
+                ("pipeline", "id"),
+                ("pipeline_monitor_event", "pipeline_id"),
+            ] {
+                let updated = txn
+                    .execute(
+                        &format!("UPDATE {table} SET deployment_error = $1 WHERE {key} = $2"),
+                        &[&stored_error, &pipeline_id.0],
+                    )
+                    .await
+                    .unwrap();
+                // Creating the pipeline may have recorded an event already.
+                assert!(updated >= 1, "{table}");
+            }
+            txn.commit().await.unwrap();
+        }
+
+        let params = SupportBundleParameters {
+            collect: true,
+            limit: None,
+            circuit_profile: false,
+            heap_profile: false,
+            metrics: false,
+            logs: false,
+            stats: false,
+            pipeline_config: true,
+            system_config: false,
+            dataflow_graph: false,
+            pipeline_events: true,
+        };
+        let bundle = SupportBundleData::collect(
+            &state,
+            &awc::Client::default(),
+            tenant_id,
+            "collect_redaction",
+            &params,
+        )
+        .await
+        .unwrap();
+
+        let pipeline = db
+            .lock()
+            .await
+            .get_pipeline(tenant_id, "collect_redaction")
+            .await
+            .unwrap();
+        assert_eq!(
+            pipeline_record(&pipeline),
+            serde_json::to_value(&pipeline).unwrap()
+        );
+        let record = gz_decompress(&bundle.pipeline_config.unwrap()).unwrap();
+        let record = std::str::from_utf8(&record).unwrap();
+        assert!(!record.contains("collect-secret-2136"), "{record}");
+        assert!(
+            record.contains("postgres://feldera:[REDACTED]@db.internal:5432/app"),
+            "{record}"
+        );
+        assert!(record.contains("CREATE TABLE test (col1 INT);"), "{record}");
+        assert!(record.contains("inline-config-kept"), "{record}");
+        assert!(record.contains("pub fn udf_example() {}"), "{record}");
+        assert!(record.contains("[dependencies]"), "{record}");
+        let events = bundle.pipeline_events.unwrap();
+        let events = std::str::from_utf8(&events).unwrap();
+        assert!(!events.contains("collect-secret-2136"), "{events}");
+        assert!(
+            events.contains("postgres://feldera:[REDACTED]@db.internal:5432/app"),
+            "{events}"
+        );
     }
 
     #[actix_web::test]

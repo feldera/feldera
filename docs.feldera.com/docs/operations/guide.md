@@ -64,6 +64,10 @@ The support bundle has the following content:
 1. **Pipeline Logs**: for warnings and errors from the [logs](/api/stream-pipeline-logs) endpoint.
 
 2. **Pipeline Configuration**: the [pipeline configuration](/api/get-pipeline), including the SQL code and connector settings.
+   The SQL code and connector settings are included as supplied, including inline credentials.
+   A URL password in the error fields of the record is replaced with `[REDACTED]`.
+   Diagnostics with Postgres query or keyword passwords are replaced in full.
+   These rules also apply to collection failure reasons in the bundle metadata.
 
 3. **Pipeline Metrics**: from the [pipeline metrics](/api/get-pipeline-metrics) endpoint.
 
