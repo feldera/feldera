@@ -179,6 +179,11 @@ pub const CIRCUIT_WAIT_BY_REASON_SECONDS: MetricId =
 pub const CIRCUIT_WAIT_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("circuit_wait_time_seconds"));
 pub const STEPS_COUNT: MetricId = MetricId(Cow::Borrowed("steps_count"));
+pub const SUBCIRCUIT_RUNS_COUNT: MetricId = MetricId(Cow::Borrowed("subcircuit_runs_count"));
+pub const SUBCIRCUIT_RUNS_WITH_INPUT_COUNT: MetricId =
+    MetricId(Cow::Borrowed("subcircuit_runs_with_input_count"));
+pub const SUBCIRCUIT_RUNS_INPUT_UNKNOWN_COUNT: MetricId =
+    MetricId(Cow::Borrowed("subcircuit_runs_input_unknown_count"));
 pub const CIRCUIT_RUNTIME_SECONDS: MetricId = MetricId(Cow::Borrowed("circuit_runtime_seconds"));
 
 /// CPU time the worker thread used while evaluating steps.
@@ -199,7 +204,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 86] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 89] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -521,6 +526,24 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 86] = [
         category: CircuitMetricCategory::Time,
         advanced: false,
         description: "Number of steps performed by the circuit.",
+    },
+    CircuitMetric {
+        name: SUBCIRCUIT_RUNS_COUNT,
+        category: CircuitMetricCategory::Time,
+        advanced: true,
+        description: "Number of times the parent circuit ran this nested circuit to a fixed point. The parent runs it once in each of its own steps.",
+    },
+    CircuitMetric {
+        name: SUBCIRCUIT_RUNS_WITH_INPUT_COUNT,
+        category: CircuitMetricCategory::Time,
+        advanced: true,
+        description: "Number of runs of this nested circuit in which at least one of its imported streams was not empty on this worker. A run in which no worker gets input does no useful work.",
+    },
+    CircuitMetric {
+        name: SUBCIRCUIT_RUNS_INPUT_UNKNOWN_COUNT,
+        category: CircuitMetricCategory::Time,
+        advanced: true,
+        description: "Number of runs of this nested circuit in which no imported stream was known to be not empty on this worker, but at least one imported stream could not tell if it was empty.",
     },
     CircuitMetric {
         name: CIRCUIT_RUNTIME_SECONDS,
