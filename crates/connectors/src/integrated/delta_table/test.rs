@@ -1869,7 +1869,8 @@ pub(super) fn delta_table_output_test(
 
     controller.start();
 
-    wait(|| controller.pipeline_complete(), 100_000).unwrap();
+    wait(|| controller.pipeline_complete(), default_timeout_ms())
+        .expect("timeout waiting for the pipeline to complete");
 
     if verify {
         let parquet_files: Vec<PathBuf> = delta::parquet_files(Path::new(table_uri))
