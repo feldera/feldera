@@ -269,12 +269,11 @@ mod test {
         vec,
     };
 
-    /// Measures how often a recursive sub-circuit runs, and how often it gets
-    /// input, in transactions that change, or do not change, its input.
+    /// Measures how often a nested circuit runs, and how often it gets input,
+    /// in transactions that change, or do not change, its input.
     ///
     /// The circuit has two parts that share no input:
-    /// - `edges` feeds a transitive closure, which is the recursive
-    ///   sub-circuit;
+    /// - `edges` feeds the nested circuit (see [`Nested`]);
     /// - `facts` feeds a chain of joins in the root circuit, so that one commit
     ///   takes more than one root step.
     ///
@@ -283,19 +282,72 @@ mod test {
         use super::*;
         use crate::{
             DBSPHandle, ZSetHandle,
+            algebra::HasZero,
             circuit::{
+                OwnershipPreference, Scope,
                 metadata::{
                     MetaItem, MetricId, SUBCIRCUIT_RUNS_COUNT, SUBCIRCUIT_RUNS_INPUT_UNKNOWN_COUNT,
                     SUBCIRCUIT_RUNS_WITH_INPUT_COUNT,
                 },
+                operator_traits::{Data, ImportOperator, Operator},
                 trace::SchedulerEvent,
             },
+            operator::Delta0,
             profile::DbspProfile,
         };
-        use std::sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering::Relaxed},
+        use std::{
+            borrow::Cow,
+            sync::{
+                Arc,
+                atomic::{AtomicUsize, Ordering::Relaxed},
+            },
         };
+
+        /// The nested circuit that `edges` feeds.
+        #[derive(Clone, Copy, Debug)]
+        enum Nested {
+            /// A transitive closure, imported with `delta0`.
+            Recursive,
+            /// The same transitive closure, imported with [`OpaqueDelta0`].
+            RecursiveOpaque,
+            /// A non-incremental circuit, which imports with an accumulator.
+            NonIncremental,
+        }
+
+        /// `Delta0` that does not say if its input was empty: it keeps the
+        /// default [`ImportOperator::imported_empty`].
+        struct OpaqueDelta0<D>(Delta0<D>);
+
+        impl<D: Data> Operator for OpaqueDelta0<D> {
+            fn name(&self) -> Cow<'static, str> {
+                Cow::from("OpaqueDelta0")
+            }
+
+            fn fixedpoint(&self, scope: Scope) -> bool {
+                self.0.fixedpoint(scope)
+            }
+        }
+
+        impl<D> ImportOperator<D, D> for OpaqueDelta0<D>
+        where
+            D: HasZero + Clone + 'static,
+        {
+            async fn import(&mut self, val: &D) {
+                self.0.import(val).await
+            }
+
+            async fn import_owned(&mut self, val: D) {
+                self.0.import_owned(val).await
+            }
+
+            async fn eval(&mut self) -> D {
+                self.0.eval().await
+            }
+
+            fn input_preference(&self) -> OwnershipPreference {
+                self.0.input_preference()
+            }
+        }
 
         /// Number of joins in the root chain.
         const CHAIN: u64 = 8;
@@ -323,7 +375,7 @@ mod test {
             steps: StepCounts,
         }
 
-        fn build(workers: usize) -> Pipeline {
+        fn build(workers: usize, nested: Nested) -> Pipeline {
             let steps = StepCounts::default();
             let worker_steps = steps.clone();
             let (handle, (edges, facts, dim)) = Runtime::init_circuit(workers, move |circuit| {
@@ -344,18 +396,32 @@ mod test {
                 let (facts, facts_handle) = circuit.add_input_zset::<Pair>();
                 let (dim, dim_handle) = circuit.add_input_zset::<Pair>();
 
-                // Transitive closure over `edges`.
-                let paths = circuit
-                    .recursive(|child, paths: Stream<_, OrdZSet<Pair>>| {
-                        let edges = edges.delta0(child);
-                        let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
-                        let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
-                        Ok(edges.plus(
-                            &paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
-                        ))
-                    })
-                    .unwrap();
-                paths.output();
+                match nested {
+                    // Transitive closure over `edges`.
+                    Nested::Recursive | Nested::RecursiveOpaque => {
+                        let paths = circuit
+                            .recursive(|child, paths: Stream<_, OrdZSet<Pair>>| {
+                                let edges = match nested {
+                                    Nested::Recursive => edges.delta0(child),
+                                    _ => child.import_stream(OpaqueDelta0(Delta0::new()), &edges),
+                                };
+                                let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
+                                let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+                                Ok(edges.plus(
+                                    &paths_indexed
+                                        .join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
+                                ))
+                            })
+                            .unwrap();
+                        paths.output();
+                    }
+                    Nested::NonIncremental => {
+                        circuit
+                            .non_incremental(&edges, |_child, edges| Ok(edges.differentiate()))
+                            .unwrap()
+                            .output();
+                    }
+                }
 
                 // Chain of joins over `facts`.  Each join keys its input again,
                 // and keeps the number of rows.
@@ -480,17 +546,14 @@ mod test {
             }
         }
 
-        /// A recursive sub-circuit runs once at every root step of a commit,
-        /// also when no worker has input for it.  Each run costs at least one
-        /// inner step.
+        /// Runs the same transactions with 1 and 4 workers, prints what each
+        /// one cost, and checks what all kinds of nested circuit share.
         ///
-        /// This is the behavior that a skip of runs without input would
-        /// change: the assertion `runs == root_steps` would then fail for the
-        /// "facts only" and "empty" transactions.
-        #[test]
-        fn recursion_runs_at_every_root_step() {
+        /// Returns the measurements for each worker count.
+        fn run(nested: Nested) -> Vec<(usize, Vec<(&'static str, Measurement)>)> {
+            let mut results = Vec::new();
             for workers in [1, 4] {
-                let mut p = build(workers);
+                let mut p = build(workers, nested);
 
                 // Load the path graph, the dimension table and some facts.
                 let edges = (0..NODES).map(|i| Tup2(Tup2(i, i + 1), 1)).collect();
@@ -514,7 +577,7 @@ mod test {
                 }
 
                 println!(
-                    "\nworkers={workers}\n{:<11} {:>10} {:>11} {:>5} {:>11} {:>11} {:>7} {:>9} {:>8}",
+                    "\n{nested:?}, workers={workers}\n{:<11} {:>10} {:>11} {:>5} {:>11} {:>11} {:>7} {:>9} {:>8}",
                     "transaction",
                     "root steps",
                     "inner steps",
@@ -545,14 +608,57 @@ mod test {
                     assert_eq!(m.root_steps, m.root_step_events, "{name}");
                     // The nested circuit runs once per root step.
                     assert_eq!(m.runs, m.root_steps, "{name}");
+                }
+                results.push((workers, rows));
+            }
+            results
+        }
+
+        /// Whether the transaction changed the input of the nested circuit.
+        fn changes_input(name: &str) -> bool {
+            matches!(name, "load" | "edges only")
+        }
+
+        /// A recursive sub-circuit runs once at every root step of a commit,
+        /// also when no worker has input for it.  Each run costs at least one
+        /// inner step.
+        ///
+        /// This is the behavior that a skip of runs without input would
+        /// change: the assertion `runs == root_steps` in [`run`] would then
+        /// fail for the "facts only" and "empty" transactions.
+        #[test]
+        fn recursion_runs_at_every_root_step() {
+            for (_workers, rows) in run(Nested::Recursive) {
+                for (name, m) in &rows {
                     // Each run takes at least one inner step.
                     assert!(m.inner_steps >= m.runs, "{name}");
                     // `Delta0` always knows if its input was empty.
                     assert_eq!(m.runs_input_unknown, 0, "{name}");
-                    match *name {
-                        "facts only" | "empty" => assert_eq!(m.runs_with_input_max, 0, "{name}"),
-                        _ => assert!(m.runs_with_input_max > 0, "{name}"),
-                    }
+                    assert_eq!(m.runs_with_input_max > 0, changes_input(name), "{name}");
+                }
+            }
+        }
+
+        /// An import that cannot tell if its input was empty makes each run
+        /// count as a run with unknown input, never as a run with input.
+        #[test]
+        fn opaque_import_counts_runs_as_unknown() {
+            for (workers, rows) in run(Nested::RecursiveOpaque) {
+                for (name, m) in &rows {
+                    assert_eq!(m.runs_with_input_max, 0, "{name}");
+                    assert_eq!(m.runs_input_unknown, m.runs * workers, "{name}");
+                }
+            }
+        }
+
+        /// A non-incremental circuit also runs once per root step, and its
+        /// accumulating import knows if its input was empty.
+        #[test]
+        fn non_incremental_runs_at_every_root_step() {
+            for (_workers, rows) in run(Nested::NonIncremental) {
+                for (name, m) in &rows {
+                    assert_eq!(m.runs_input_unknown, 0, "{name}");
+                    assert_eq!(m.runs_with_input_max > 0, changes_input(name), "{name}");
                 }
             }
         }

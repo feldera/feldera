@@ -531,13 +531,13 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 89] = [
         name: SUBCIRCUIT_RUNS_COUNT,
         category: CircuitMetricCategory::Time,
         advanced: true,
-        description: "Number of times the parent circuit ran this nested circuit to a fixed point. The parent runs it once in each of its own steps.",
+        description: "Number of times the parent circuit ran this nested circuit, once in each of its own steps. A recursive circuit iterates to a fixed point in each run. A non-incremental circuit only collects its input until the step in which the input is complete.",
     },
     CircuitMetric {
         name: SUBCIRCUIT_RUNS_WITH_INPUT_COUNT,
         category: CircuitMetricCategory::Time,
         advanced: true,
-        description: "Number of runs of this nested circuit in which at least one of its imported streams was not empty on this worker. A run in which no worker gets input does no useful work.",
+        description: "Number of runs of this nested circuit in which at least one of its imported streams was not empty on this worker. A run of a recursive circuit in which no worker gets input does no useful work.",
     },
     CircuitMetric {
         name: SUBCIRCUIT_RUNS_INPUT_UNKNOWN_COUNT,
