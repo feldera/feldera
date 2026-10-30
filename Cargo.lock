@@ -5939,6 +5939,7 @@ dependencies = [
  "time",
  "tracing",
  "typeid",
+ "url",
  "utoipa",
  "uuid",
 ]
