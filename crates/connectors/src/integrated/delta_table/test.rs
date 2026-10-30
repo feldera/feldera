@@ -13,7 +13,7 @@ use crate::{
     },
 };
 use arrow::{
-    array::{AsArray, RecordBatch},
+    array::{ArrayRef, AsArray, BooleanArray, Int64Array, RecordBatch, StringArray},
     compute::cast,
     datatypes::{DataType as ArrowDataType, FieldRef, Int64Type, Schema as ArrowSchema},
 };
@@ -35,6 +35,7 @@ use feldera_adapterlib::{
 #[cfg(feature = "delta-unity-test")]
 use feldera_storage::tokio::TOKIO;
 use feldera_types::{
+    adapter_stats::ExternalTransactionPhase,
     config::{PipelineConfig, TransportConfig},
     constants::DATAFUSION_TEMP_DIR,
     program_schema::{ColumnType, Field, Relation, SqlIdentifier},
@@ -232,8 +233,13 @@ fn assert_read_change_data(pipeline: &Controller) {
 }
 
 fn delta_connector_gauge(pipeline: &Controller, metric_name: &str) -> f64 {
+    delta_endpoint_gauge(pipeline, DELTA_TEST_INPUT_ENDPOINT, metric_name)
+}
+
+/// [`delta_connector_gauge`] of the input endpoint named `endpoint`.
+fn delta_endpoint_gauge(pipeline: &Controller, endpoint: &str, metric_name: &str) -> f64 {
     let endpoint_id = pipeline
-        .input_endpoint_id_by_name(DELTA_TEST_INPUT_ENDPOINT)
+        .input_endpoint_id_by_name(endpoint)
         .expect("delta input endpoint must exist");
     let custom_metrics = pipeline
         .status()
@@ -4783,6 +4789,248 @@ pub fn catchup_end_version_caps_window_test(engine: &dyn PipelineTestEngine) {
             result.follow_transactions_per_round,
             vec![1],
             "catchup with end_version must still batch versions 1..=end_version in one transaction"
+        );
+    })
+}
+
+/// Appends one Delta commit of `count` rows of [`basic_relation`], with ids from `first`.
+/// With `split`, the commit has many small files instead of one.
+///
+/// Builds the columns directly, since JSON rows are too slow for commits of a million rows.
+async fn append_basic_rows(table: DeltaTable, first: i64, count: i64, split: bool) -> DeltaTable {
+    let relation = basic_relation();
+    let schema = published_schema(&relation);
+    let ids = first..first + count;
+    let columns: [ArrayRef; 4] = [
+        Arc::new(Int64Array::from_iter_values(ids.clone())),
+        Arc::new(BooleanArray::from_iter(
+            ids.clone().map(|id| Some(id % 2 == 0)),
+        )),
+        Arc::new(Int64Array::from_iter(ids.clone().map(Some))),
+        Arc::new(StringArray::from_iter_values(
+            ids.map(|id| format!("row {id}")),
+        )),
+    ];
+    let columns = columns
+        .iter()
+        .zip(schema.fields())
+        .map(|(column, field)| cast(column, field.data_type()).unwrap())
+        .collect();
+    let rows = RecordBatch::try_new(schema, columns).unwrap();
+    let write = table
+        .write(vec![delta::table_batch(&relation, &rows).unwrap()])
+        .with_save_mode(SaveMode::Append);
+    // A one-byte target closes a file after each batch that the writer writes.
+    let write = if split {
+        write.with_target_file_size(std::num::NonZeroU64::new(1))
+    } else {
+        write
+    };
+    write.await.unwrap()
+}
+
+/// The phase of `endpoint` in the open transaction, or `None` if it takes no part in it.
+fn transaction_phase(pipeline: &Controller, endpoint: &str) -> Option<ExternalTransactionPhase> {
+    pipeline
+        .api_status(false)
+        .global_metrics
+        .transaction_initiators
+        .initiated_by_connectors
+        .get(endpoint)
+        .map(|connector| connector.phase)
+}
+
+/// Regression test for #7746: a paused reader must not keep its reader permit.
+///
+/// With one permit:
+///
+/// 1. A transaction that the API opens stays open while the connectors read.
+/// 2. `heavy` votes to commit, then reads a large file and pauses in the middle of it,
+///    because the controller does not drain a connector that has voted.
+/// 3. `light` joined the transaction with the first file of a commit and needs the permit
+///    for the next file. If `heavy` keeps the permit, the transaction never commits.
+#[engine_test(requires(Storage))]
+pub fn catchup_paused_reader_holds_permit_test(engine: &dyn PipelineTestEngine) {
+    paused_reader_holds_permit(engine, "catchup");
+}
+
+/// [`catchup_paused_reader_holds_permit_test`] in `always` mode.
+#[engine_test(requires(Storage))]
+pub fn always_paused_reader_holds_permit_test(engine: &dyn PipelineTestEngine) {
+    paused_reader_holds_permit(engine, "always");
+}
+
+fn paused_reader_holds_permit(engine: &dyn PipelineTestEngine, transaction_mode: &str) {
+    run_async_on(4, async {
+        const HEAVY: &str = "heavy";
+        const LIGHT: &str = "light";
+        // Far more rows than the batches in flight between the scan and the buffer, so
+        // that `heavy` sees its pause in the middle of the file.
+        const HEAVY_FILE_ROWS: i64 = 500_000;
+        // Enough rows that `light` still reads them when `heavy` gets the permit.
+        const LIGHT_ROWS: i64 = 1_000_000;
+        const STEP_TIMEOUT_MS: u64 = 300_000;
+        const COMMIT_TIMEOUT_MS: u64 = 60_000;
+        const PHASE: &str = "input_connector_delta_phase";
+        const LAST_INGESTED: &str = "input_connector_delta_last_ingested_version";
+        const CATCHUP_TARGET: &str = "input_connector_delta_catchup_target_version";
+        init_logging();
+
+        let relation = basic_relation();
+        let arrow_schema = ArrowSchema::new(relation_to_arrow_fields(
+            &relation.fields,
+            delta_schema_options(),
+        ));
+        let struct_fields: Vec<StructField> = arrow_schema
+            .fields
+            .iter()
+            .map(|f| {
+                let data_type = DataType::try_from_arrow(f.data_type()).unwrap();
+                StructField::new(f.name(), data_type, f.is_nullable())
+            })
+            .collect();
+        let heavy_dir = TempDir::new().unwrap();
+        let light_dir = TempDir::new().unwrap();
+        let storage_dir = TempDir::new().unwrap();
+        let heavy_uri = heavy_dir.path().display().to_string();
+        let light_uri = light_dir.path().display().to_string();
+        let mut heavy = create_table(&heavy_uri, &HashMap::new(), &struct_fields).await;
+        let light = create_table(&light_uri, &HashMap::new(), &struct_fields).await;
+
+        let input = |uri: &str| {
+            json!({
+                "stream": "test_input1",
+                "transport": {
+                    "name": "delta_table_input",
+                    "config": {
+                        "uri": uri,
+                        "mode": "follow",
+                        "transaction_mode": transaction_mode,
+                        "max_concurrent_readers": 1,
+                    }
+                }
+            })
+        };
+        let mut heavy_input = input(&heavy_uri);
+        heavy_input["max_queued_records"] = 1.into();
+        let mut inputs = Map::new();
+        inputs.insert(HEAVY.to_string(), heavy_input);
+        inputs.insert(LIGHT.to_string(), input(&light_uri));
+        let pipeline_config: PipelineConfig = serde_json::from_value(json!({
+            "name": "test",
+            "workers": 4,
+            "storage_config": { "path": storage_dir.path() },
+            "inputs": inputs,
+        }))
+        .unwrap();
+
+        let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let pipeline = {
+            let errors = errors.clone();
+            off_runtime(|| {
+                engine.controller(
+                    &identity(&relation, &[Some("output")]),
+                    &pipeline_config,
+                    Box::new(move |e, _| errors.lock().unwrap().push(e.to_string())),
+                )
+            })
+            .unwrap()
+        };
+        pipeline.start();
+        for endpoint in [HEAVY, LIGHT] {
+            wait(
+                || delta_endpoint_gauge(&pipeline, endpoint, PHASE) == 1.0,
+                STEP_TIMEOUT_MS,
+            )
+            .unwrap_or_else(|_| panic!("{endpoint} did not start to follow its table"));
+        }
+
+        // 1. Open a transaction from the API, so that it stays open while the connectors read.
+        let transaction_id = pipeline.start_transaction().unwrap().transaction_id;
+
+        // 2. `heavy` reads one row and votes to commit it.
+        heavy = append_basic_rows(heavy, 0, 1, false).await;
+        wait(
+            || transaction_phase(&pipeline, HEAVY) == Some(ExternalTransactionPhase::Committed),
+            STEP_TIMEOUT_MS,
+        )
+        .expect("heavy did not vote to commit");
+
+        // 3. Write the next commits while both connectors are paused.
+        pipeline.pause_input_endpoint(HEAVY).unwrap();
+        pipeline.pause_input_endpoint(LIGHT).unwrap();
+        append_basic_rows(heavy, 1_000_000_000, HEAVY_FILE_ROWS, false).await;
+        // Follow mode reads each file in its own query, so `light` needs the permit again
+        // after each file.
+        let light = append_basic_rows(light, 2_000_000_000, LIGHT_ROWS, true).await;
+        let light_target = light.version().unwrap() as i64;
+        assert!(light.get_file_uris().unwrap().count() > 10);
+
+        // 4. `light` joins the transaction with its first file, and holds the only permit
+        //    while it reads it.
+        pipeline.start_input_endpoint(LIGHT).unwrap();
+        wait(
+            || transaction_phase(&pipeline, LIGHT) == Some(ExternalTransactionPhase::Started),
+            STEP_TIMEOUT_MS,
+        )
+        .expect("light did not join the transaction");
+
+        // 5. `heavy` waits for the permit and gets it between two of `light`'s files. Its
+        //    buffer then fills, and the controller does not drain it, because `heavy` has
+        //    voted to commit.
+        pipeline.start_input_endpoint(HEAVY).unwrap();
+        wait(
+            || {
+                pipeline
+                    .input_endpoint_status(HEAVY)
+                    .is_ok_and(|status| status.metrics.buffered_records > 0)
+            },
+            STEP_TIMEOUT_MS,
+        )
+        .expect("heavy did not read its second commit");
+        let light_last = delta_endpoint_gauge(&pipeline, LIGHT, LAST_INGESTED) as i64;
+        assert!(
+            light_last < light_target,
+            "light read all its files before heavy got the permit, so the case did not set \
+             up the deadlock; raise LIGHT_ROWS"
+        );
+
+        // 6. The transaction can commit only after `light` reads its other files, which
+        //    needs the permit.
+        pipeline.start_commit_transaction().unwrap();
+        let committed = wait(
+            || {
+                pipeline.api_status(false).global_metrics.transaction_id != transaction_id
+                    && delta_endpoint_gauge(&pipeline, LIGHT, LAST_INGESTED) as i64 == light_target
+            },
+            COMMIT_TIMEOUT_MS,
+        )
+        .is_ok();
+
+        let state = [HEAVY, LIGHT]
+            .iter()
+            .map(|endpoint| {
+                let metrics = pipeline.input_endpoint_status(endpoint).unwrap().metrics;
+                format!(
+                    "{endpoint}: phase {:?}, buffered {}, total {}, last ingested {}, \
+                     catchup target {}",
+                    transaction_phase(&pipeline, endpoint),
+                    metrics.buffered_records,
+                    metrics.total_records,
+                    delta_endpoint_gauge(&pipeline, endpoint, LAST_INGESTED),
+                    delta_endpoint_gauge(&pipeline, endpoint, CATCHUP_TARGET),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        pipeline.stop().unwrap();
+
+        let errors = errors.lock().unwrap();
+        assert!(errors.is_empty(), "connector errors: {errors:?}");
+        assert!(
+            committed,
+            "transaction {transaction_id} did not commit within {COMMIT_TIMEOUT_MS} ms; \
+             light needs version {light_target}:\n{state}"
         );
     })
 }
