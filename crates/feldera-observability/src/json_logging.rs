@@ -1,10 +1,12 @@
+use crate::log_redaction::{LineRedactor, RedactingMakeWriter};
 use chrono::Utc;
 use colored::{ColoredString, Colorize};
 use serde_json::{Map, Value};
+use std::io;
 use tracing::Subscriber;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::format::{self, Format, Writer};
-use tracing_subscriber::fmt::{FormatEvent, FormatFields};
+use tracing_subscriber::fmt::{FormatEvent, FormatFields, MakeWriter};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -54,11 +56,21 @@ pub enum LogIdentity {
 /// Shared JSON formatter that injects pipeline/service name and structured fields.
 pub struct JsonPipelineFormat {
     identity: LogIdentity,
+    redactor: Option<Box<dyn LineRedactor>>,
 }
 
 impl JsonPipelineFormat {
     pub fn new(identity: LogIdentity) -> Self {
-        Self { identity }
+        Self {
+            identity,
+            redactor: None,
+        }
+    }
+
+    /// Redact the structured fields before JSON adds another escaping layer.
+    pub fn with_redaction(mut self, redactor: impl LineRedactor) -> Self {
+        self.redactor = Some(Box::new(redactor));
+        self
     }
 }
 
@@ -152,7 +164,10 @@ where
             obj.insert("span".to_string(), Value::String(span.name().to_string()));
         }
 
-        let json = Value::Object(obj);
+        let mut json = Value::Object(obj);
+        if let Some(redactor) = &self.redactor {
+            redactor.redact_json(&mut json);
+        }
         writeln!(writer, "{}", json)
     }
 }
@@ -240,23 +255,44 @@ pub fn init_pipeline_logging(
     pipeline_name: ColoredString,
     env_filter: EnvFilter,
 ) -> Result<(), tracing_subscriber::util::TryInitError> {
-    init_pipeline_logging_with_id(pipeline_name, None, env_filter)
-}
-
-/// Initialize logging with either the JSON or text pipeline format, optionally attaching a pipeline id.
-pub fn init_pipeline_logging_with_id(
-    pipeline_name: ColoredString,
-    pipeline_id: Option<String>,
-    env_filter: EnvFilter,
-) -> Result<(), tracing_subscriber::util::TryInitError> {
     init_logging(
         pipeline_name,
         LogIdentity::Pipeline {
             pipeline_name: None,
-            pipeline_id,
+            pipeline_id: None,
         },
         env_filter,
     )
+}
+
+/// Redact text events as lines and JSON events before serializing their fields.
+pub fn init_pipeline_logging_with_redaction<R: LineRedactor>(
+    pipeline_name: ColoredString,
+    pipeline_id: Option<String>,
+    env_filter: EnvFilter,
+    redactor: R,
+) -> Result<(), tracing_subscriber::util::TryInitError> {
+    let identity = LogIdentity::Pipeline {
+        pipeline_name: None,
+        pipeline_id,
+    };
+    if use_json_log_format() {
+        init_logging_with_writer(
+            pipeline_name,
+            identity,
+            env_filter,
+            io::stdout,
+            Some(Box::new(redactor)),
+        )
+    } else {
+        init_logging_with_writer(
+            pipeline_name,
+            identity,
+            env_filter,
+            RedactingMakeWriter::new(redactor, io::stdout),
+            None,
+        )
+    }
 }
 
 /// Initialize logging for a control-plane service (manager | runner | compiler-server | control-plane).
@@ -279,6 +315,19 @@ fn init_logging(
     identity: LogIdentity,
     env_filter: EnvFilter,
 ) -> Result<(), tracing_subscriber::util::TryInitError> {
+    init_logging_with_writer(prefix, identity, env_filter, io::stdout, None)
+}
+
+fn init_logging_with_writer<W>(
+    prefix: ColoredString,
+    identity: LogIdentity,
+    env_filter: EnvFilter,
+    writer: W,
+    json_redactor: Option<Box<dyn LineRedactor>>,
+) -> Result<(), tracing_subscriber::util::TryInitError>
+where
+    W: for<'a> MakeWriter<'a> + Send + Sync + 'static,
+{
     let identity = match identity {
         LogIdentity::Service { service_name } => LogIdentity::Service {
             service_name: service_name.or(Some(ServiceName::ControlPlane)),
@@ -299,8 +348,12 @@ fn init_logging(
         tracing_subscriber::registry()
             .with(
                 tracing_subscriber::fmt::layer()
-                    .event_format(JsonPipelineFormat::new(identity))
-                    .with_ansi(false),
+                    .event_format(JsonPipelineFormat {
+                        identity,
+                        redactor: json_redactor,
+                    })
+                    .with_ansi(false)
+                    .with_writer(writer),
             )
             .with(env_filter)
             .try_init()
@@ -309,7 +362,8 @@ fn init_logging(
             .with(
                 tracing_subscriber::fmt::layer()
                     .event_format(FormatWithPrefix::new(prefix))
-                    .fmt_fields(plain_text_fields()),
+                    .fmt_fields(plain_text_fields())
+                    .with_writer(writer),
             )
             .with(env_filter)
             .try_init()
