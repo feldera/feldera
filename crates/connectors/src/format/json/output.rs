@@ -233,7 +233,7 @@ impl JsonEncoder {
         }
 
         let index = key_schema.filter(|_| is_index).cloned();
-        let value_schema_str = build_value_schema(&config, schema, index.is_some());
+        let value_schema_str = build_value_schema(&config, schema);
         let key_schema_str = build_key_schema(&config, index.as_ref().unwrap_or(schema));
 
         let canonical_key_fields = config
@@ -479,7 +479,7 @@ impl Encoder for JsonEncoder {
                         // 'c'reate, only the `after` component (no `before`) containing the
                         // second copy of the record is present. The value also contains a
                         // schema for the entire payload.  If `op` is 'd'elete, only `before`
-                        // is present, and the schema does not declare it.
+                        // is present.
                         //
                         // This encoding is redundant and expensive, but is necessary due
                         // to several limitations:
@@ -1037,7 +1037,12 @@ pub mod test {
         encoder.encode(batch(engine, &batches()[0])).unwrap();
 
         let key_schema = json!({"type":"struct","fields":[{"field":"id","optional":false,"type":"int64"},{"field":"s","optional":false,"type":"string"}],"name":"Key"});
-        let value_schema = json!({"type":"struct","fields":[{"field":"after","type":"struct","fields":[{"field":"id","type":"int64","optional":false},{"field":"b","type":"boolean","optional":false},{"field":"i","type":"int64","optional":true},{"field":"s","type":"string","optional":false}],"optional":true},{"field":"op","type":"string","optional":false}],"name":"Envelope"});
+        let row_schema = json!({"type":"struct","fields":[{"field":"id","type":"int64","optional":false},{"field":"b","type":"boolean","optional":false},{"field":"i","type":"int64","optional":true},{"field":"s","type":"string","optional":false}],"optional":true});
+        let mut before_schema = row_schema.clone();
+        before_schema["field"] = json!("before");
+        let mut after_schema = row_schema;
+        after_schema["field"] = json!("after");
+        let value_schema = json!({"type":"struct","fields":[before_schema, after_schema, {"field":"op","type":"string","optional":false}],"name":"Envelope"});
         let records: Vec<(Option<Value>, Value)> = output
             .lock()
             .unwrap()
