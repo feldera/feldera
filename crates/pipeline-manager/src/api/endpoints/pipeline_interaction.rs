@@ -19,7 +19,7 @@ use actix_web::{
 use feldera_types::checkpoint::RemoteCheckpoint;
 use feldera_types::query_params::{
     ApproveParameters, MetricsFormat, MetricsParameters, SamplyProfileGetParams,
-    SamplyProfileParams,
+    SamplyProfileParams, StatsParams,
 };
 use feldera_types::runtime_status::BootstrapConfig;
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
@@ -661,6 +661,7 @@ pub(crate) async fn post_pipeline_output_connector_command(
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        StatsParams,
     ),
     responses(
         (status = OK
