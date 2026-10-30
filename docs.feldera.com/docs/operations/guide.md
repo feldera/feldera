@@ -59,11 +59,25 @@ button on the home page to upload and vie the bundle in the profile viewer, whic
 pipeline's logs, metrics and circuit profile. The same button lists the bundles opened
 before, so that a bundle can be reopened without picking the file again.
 
+:::warning
+A support bundle includes the SQL code and the connector settings as
+supplied. A credential written inline in a connector configuration is
+therefore in the bundle. Use [secret references](/connectors/secret-references)
+for credentials, and check a bundle before you share it.
+:::
+
 The support bundle has the following content:
 
 1. **Pipeline Logs**: for warnings and errors from the [logs](/api/stream-pipeline-logs) endpoint.
 
 2. **Pipeline Configuration**: the [pipeline configuration](/api/get-pipeline), including the SQL code and connector settings.
+   The SQL code and connector settings are included as supplied, including inline credentials.
+   A URL password or a `password=` value in the error fields of the record is
+   replaced with `[REDACTED]`. Where the end of a credential cannot be
+   established, the diagnostic is cut off at the credential. Retained
+   collections pass through the current sanitization policy when their
+   recorded policy is older.
+   These rules also apply to collection failure reasons in the bundle metadata.
    To remove the source code from it, use `fda support-bundle --no-source-code`,
    `source_code=False` in the Python SDK, `source_code=false` in the REST API, or
    clear **Source code** in the web console. The configuration then has no SQL
