@@ -28,6 +28,8 @@ Source edition can be found on github.
   `kafka_output_commit_retries_total` and `kafka_output_replay_spool_bytes`.
   See [Exactly-once delivery and recovery](/connectors/sinks/kafka#exactly-once-delivery-and-recovery).
 
+## v0.372.0
+
 - Behavior change (non-fault-tolerant Kafka output): temporary delivery
   failures are retried without a deadline by default, replacing the former
   five-minute limit. When the broker is down the producer queue fills,
