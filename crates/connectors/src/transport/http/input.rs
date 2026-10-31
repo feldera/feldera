@@ -145,8 +145,14 @@ impl HttpInputEndpointInner {
             input_span.in_scope(|| match message {
                 InputReaderCommand::Replay { data, .. } => {
                     #[cfg(any(test, feature = "testing"))]
-                    if let Some(gate) = REPLAY_GATES.lock().unwrap().remove(&self.name) {
-                        gate();
+                    {
+                        // Release the lock, and this worker thread, before the
+                        // gate waits, so that other endpoints can replay
+                        // meanwhile.
+                        let gate = REPLAY_GATES.lock().unwrap().remove(&self.name);
+                        if let Some(gate) = gate {
+                            tokio::task::block_in_place(gate);
+                        }
                     }
                     let Data {
                         chunks,
@@ -473,6 +479,7 @@ impl From<Vec<JournaledChunk>> for Data {
 #[cfg(test)]
 mod test {
     use std::collections::BTreeMap;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
 
     use feldera_adapterlib::ConnectorMetadata;
@@ -485,7 +492,7 @@ mod test {
     use proptest::prelude::*;
     use serde_bytes::ByteBuf;
 
-    use super::{Data, HttpInputEndpoint, RequestMetadata};
+    use super::{Data, HttpInputEndpoint, REPLAY_GATES, RequestMetadata};
     use crate::TransportInputEndpoint;
     use crate::test::{MockInputConsumer, wait};
     use crate::transport::InputReaderCommand;
@@ -663,10 +670,10 @@ mod test {
         }
     }
 
-    /// A replay of a journal that holds connector metadata this version refuses, as a journal
-    /// of an older version can, fails the endpoint instead of panicking.
-    #[test]
-    fn replay_of_refused_metadata_fails_the_endpoint() {
+    /// Opens an HTTP input endpoint named `name` and has it replay a request
+    /// whose connector metadata it refuses.  Returns the errors that the
+    /// replay reports.
+    fn replay_refused_metadata(name: &str) -> Arc<Mutex<Vec<(bool, String)>>> {
         let consumer = MockInputConsumer::new();
         let errors = Arc::new(Mutex::new(Vec::new()));
         consumer.on_error(Some(Box::new({
@@ -674,7 +681,7 @@ mod test {
             move |fatal, error| errors.lock().unwrap().push((fatal, error.to_string()))
         })));
         let endpoint = HttpInputEndpoint::new(HttpInputConfig {
-            name: "replay".to_string(),
+            name: name.to_string(),
         });
         let reader = endpoint
             .open(
@@ -694,6 +701,54 @@ mod test {
             metadata: serde_json::Value::Null,
             data: rmpv::ext::to_value(data).unwrap(),
         });
+        errors
+    }
+
+    /// A replay gate that waits for another endpoint's replay must not keep
+    /// that replay from running.
+    #[test]
+    fn replay_gate_does_not_block_other_endpoints() {
+        let entered = Arc::new(AtomicBool::new(false));
+        let other_replayed = Arc::new(AtomicBool::new(false));
+        let other_errors = Arc::new(Mutex::new(None::<Arc<Mutex<Vec<(bool, String)>>>>));
+        REPLAY_GATES.lock().unwrap().insert(
+            "gated-replay".into(),
+            Box::new({
+                let entered = entered.clone();
+                let other_replayed = other_replayed.clone();
+                let other_errors = other_errors.clone();
+                move || {
+                    entered.store(true, Ordering::Release);
+                    let replayed = wait(
+                        || {
+                            other_errors
+                                .lock()
+                                .unwrap()
+                                .as_ref()
+                                .is_some_and(|errors| !errors.lock().unwrap().is_empty())
+                        },
+                        10_000,
+                    );
+                    other_replayed.store(replayed.is_ok(), Ordering::Release);
+                }
+            }),
+        );
+        let gated_errors = replay_refused_metadata("gated-replay");
+        wait(|| entered.load(Ordering::Acquire), 10_000).expect("the gate never ran");
+        *other_errors.lock().unwrap() = Some(replay_refused_metadata("other-replay"));
+        wait(|| !gated_errors.lock().unwrap().is_empty(), 20_000)
+            .expect("the gated replay never finished");
+        assert!(
+            other_replayed.load(Ordering::Acquire),
+            "the other endpoint could not replay while the gate waited"
+        );
+    }
+
+    /// A replay of a journal that holds connector metadata this version refuses, as a journal
+    /// of an older version can, fails the endpoint instead of panicking.
+    #[test]
+    fn replay_of_refused_metadata_fails_the_endpoint() {
+        let errors = replay_refused_metadata("replay");
 
         wait(|| !errors.lock().unwrap().is_empty(), 10_000).unwrap();
         let errors = errors.lock().unwrap();
