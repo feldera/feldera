@@ -147,9 +147,11 @@ public enum DBSPOpcode {
 
     public boolean isComparison() {
         // Some things like AGG_GTE are not listed as comparisons, since
-        // their return type follows different rules
+        // their return type follows different rules.
+        // IS_DISTINCT is a comparison whose result is never NULL.
         return this.equals(LT) || this.equals(GT) || this.equals(LTE)
-                || this.equals(GTE) || this.equals(EQ) || this.equals(NEQ);
+                || this.equals(GTE) || this.equals(EQ) || this.equals(NEQ)
+                || this.equals(IS_DISTINCT);
     }
 
     /** True when applied to any null value the operator produces null.

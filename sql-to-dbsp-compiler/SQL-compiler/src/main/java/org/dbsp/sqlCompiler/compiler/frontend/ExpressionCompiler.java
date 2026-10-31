@@ -426,9 +426,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (left.is(DBSPTypeTimestampTz.class) || right.is(DBSPTypeTimestampTz.class))
             // This is illegal, will report an error later
             return false;
-        // A comparison with a date or time value needs a common type
-        if (opcode.isComparison() && (left.is(IsDateType.class) || right.is(IsDateType.class)))
-            return true;
+        if (opcode.isComparison()) {
+            // A comparison with a date or time value needs a common type
+            if (left.is(IsDateType.class) || right.is(IsDateType.class))
+                return true;
+            // A comparison between a string and an interval needs a common type;
+            // intervals with different units are compared without casts
+            if (left.is(DBSPTypeString.class) && right.is(IsIntervalType.class) ||
+                    left.is(IsIntervalType.class) && right.is(DBSPTypeString.class))
+                return true;
+        }
         // Dates can be mixed with interval types in a binary operation
         if (left.is(IsTimeRelatedType.class)) return false;
         if (right.is(IsTimeRelatedType.class)) return false;
@@ -519,11 +526,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 commonBase = typeWithNull;
                 expressionResultType = commonBase;
             }
-            if (opcode.isComparison()) {
-                expressionResultType = DBSPTypeBool.create(anyNull);
-            } else if (opcode == DBSPOpcode.IS_DISTINCT)
+            if (opcode == DBSPOpcode.IS_DISTINCT)
                 // Never null
                 expressionResultType = DBSPTypeBool.create(false);
+            else if (opcode.isComparison())
+                expressionResultType = DBSPTypeBool.create(anyNull);
             if (commonBase.is(DBSPTypeNull.class)) {
                 // Result is always NULL - evaluate to the NULL literal directly
                 return DBSPLiteral.none(type);
@@ -622,13 +629,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             else
                 throw new UnsupportedException("Operation " + opcode + " on " +
                         left.getType().asSqlString() + " and " + right.getType().asSqlString(), node);
-            if (opcode.isComparison()) {
-                expressionResultType = DBSPTypeBool.create(anyNull);
-            }
-            if (opcode == DBSPOpcode.IS_DISTINCT) {
+            if (opcode == DBSPOpcode.IS_DISTINCT)
                 // Never null
                 expressionResultType = DBSPTypeBool.create(false);
-            }
+            else if (opcode.isComparison())
+                expressionResultType = DBSPTypeBool.create(anyNull);
         }
         DBSPExpression call = new DBSPBinaryExpression(node, expressionResultType, opcode, left, right);
         return call.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
