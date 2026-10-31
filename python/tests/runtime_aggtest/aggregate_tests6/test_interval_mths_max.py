@@ -21,10 +21,10 @@ class aggtst_interval_mths_max_res(TstView):
         self.data = [
             {
                 "f_c1": "+605",
-                "f_c2": "+557",
-                "f_c3": "+87",
+                "f_c2": "+558",
+                "f_c3": "+88",
                 "f_c4": "+217",
-                "f_c5": "+340",
+                "f_c5": "+341",
                 "f_c6": "+639",
             }
         ]
@@ -62,18 +62,18 @@ class aggtst_interval_mths_max_res_gby(TstView):
                 "id": 0,
                 "f_c1": "+605",
                 "f_c2": "+121",
-                "f_c3": "-33",
+                "f_c3": "-34",
                 "f_c4": "+64",
-                "f_c5": "+56",
+                "f_c5": "+57",
                 "f_c6": "+639",
             },
             {
                 "id": 1,
                 "f_c1": "+605",
-                "f_c2": "+557",
-                "f_c3": "+87",
+                "f_c2": "+558",
+                "f_c3": "+88",
                 "f_c4": "+217",
-                "f_c5": "+340",
+                "f_c5": "+341",
                 "f_c6": "+622",
             },
         ]
@@ -108,10 +108,10 @@ class aggtst_interval_max_distinct_mths_res(TstView):
         self.data = [
             {
                 "f_c1": "+605",
-                "f_c2": "+557",
-                "f_c3": "+87",
+                "f_c2": "+558",
+                "f_c3": "+88",
                 "f_c4": "+217",
-                "f_c5": "+340",
+                "f_c5": "+341",
                 "f_c6": "+639",
             }
         ]
@@ -149,18 +149,18 @@ class aggtst_interval_max_distinct_mths_gby_res(TstView):
                 "id": 0,
                 "f_c1": "+605",
                 "f_c2": "+121",
-                "f_c3": "-33",
+                "f_c3": "-34",
                 "f_c4": "+64",
-                "f_c5": "+56",
+                "f_c5": "+57",
                 "f_c6": "+639",
             },
             {
                 "id": 1,
                 "f_c1": "+605",
-                "f_c2": "+557",
-                "f_c3": "+87",
+                "f_c2": "+558",
+                "f_c3": "+88",
                 "f_c4": "+217",
-                "f_c5": "+340",
+                "f_c5": "+341",
                 "f_c6": "+622",
             },
         ]
@@ -195,11 +195,11 @@ class aggtst_interval_max_where_mths_res(TstView):
         self.data = [
             {
                 "f_c1": "+605",
-                "f_c2": "-120",
-                "f_c3": "+87",
-                "f_c4": "-87",
-                "f_c5": "+340",
-                "f_c6": "-56",
+                "f_c2": "-121",
+                "f_c3": "+88",
+                "f_c4": "-88",
+                "f_c5": "+341",
+                "f_c6": "-57",
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW interval_max_where_mths_res AS SELECT
@@ -238,17 +238,17 @@ class aggtst_interval_max_where_mths_res_gby(TstView):
                 "f_c2": "-605",
                 "f_c3": None,
                 "f_c4": None,
-                "f_c5": "+56",
-                "f_c6": "-56",
+                "f_c5": "+57",
+                "f_c6": "-57",
             },
             {
                 "id": 1,
                 "f_c1": "+605",
-                "f_c2": "-120",
-                "f_c3": "+87",
-                "f_c4": "-87",
-                "f_c5": "+340",
-                "f_c6": "-340",
+                "f_c2": "-121",
+                "f_c3": "+88",
+                "f_c4": "-88",
+                "f_c5": "+341",
+                "f_c6": "-341",
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW interval_max_where_mths_res_gby AS SELECT
