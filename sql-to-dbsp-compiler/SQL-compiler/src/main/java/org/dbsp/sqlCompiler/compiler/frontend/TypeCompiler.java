@@ -41,6 +41,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
@@ -159,10 +160,11 @@ public class TypeCompiler implements ICompilerComponent {
         }
 
         if (acceptStrings) {
-            // Like Calcite, compare a string with a date or time value as a date or time value
-            if (left.code == DBSPTypeCode.STRING && right.is(IsDateType.class))
+            // Like Calcite, compare a string with a date, time, or interval value
+            // as a value of the date, time, or interval type
+            if (left.code == DBSPTypeCode.STRING && right.is(IsTimeRelatedType.class))
                 return right.withMayBeNull(anyNull);
-            if (right.code == DBSPTypeCode.STRING && left.is(IsDateType.class))
+            if (right.code == DBSPTypeCode.STRING && left.is(IsTimeRelatedType.class))
                 return left.withMayBeNull(anyNull);
             if (left.code == DBSPTypeCode.STRING && right.code == DBSPTypeCode.STRING) {
                 DBSPTypeString ls = left.to(DBSPTypeString.class);

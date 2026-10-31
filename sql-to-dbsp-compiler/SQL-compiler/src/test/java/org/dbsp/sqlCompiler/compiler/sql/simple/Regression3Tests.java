@@ -1129,4 +1129,22 @@ public class Regression3Tests extends SqlIoTest {
                  2023-10-01 12:00:00 | 2023-10-02 00:00:00 | 2023-10-01 | 13:00:00
                  2023-10-01 12:00:00 | 2023-10-03 00:00:00 | 2023-10-01 |NULL""");
     }
+
+    /** Equality between a string and an interval casts the string to the interval type */
+    @Test
+    public void stringIntervalEquality() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(s VARCHAR, i INT);
+                CREATE VIEW V AS SELECT
+                  s = INTERVAL '1' DAY * i AS eq,
+                  s IS DISTINCT FROM INTERVAL '1' DAY * i AS dist,
+                  NULLIF(INTERVAL '1' MONTH * i, s) IS NULL AS n
+                FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES('2', 2), ('3', 2), (NULL, 2);", """
+                 eq    | dist  | n
+                ----------------------
+                 true  | false | true
+                 false | true  | false
+                NULL   | true  | false""");
+    }
 }
