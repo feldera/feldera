@@ -1,11 +1,44 @@
 .features {
-  display: flex;
-  align-items: center;
-  padding: 2rem 0;
+  padding: 3rem 0;
   width: 100%;
 }
 
-.featureSvg {
-  height: 200px;
-  width: 200px;
+/* A row of white cards on Paper */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  background: var(--color-card);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 1.5rem;
+}
+
+/* Mono instrument label above the card title */
+.label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-3xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-surface-500);
+  margin-bottom: 0.75rem;
+}
+
+.title {
+  font-size: var(--text-lg);
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.5rem;
+}
+
+.body {
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--color-surface-600);
+  margin: 0;
 }
