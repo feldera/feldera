@@ -1147,4 +1147,51 @@ public class Regression3Tests extends SqlIoTest {
                  false | true  | false
                 NULL   | true  | false""");
     }
+
+    /** NULLIF compares a string with a value of another type as '=' does */
+    @Test
+    public void nullifStringComparisons() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(si VARCHAR, i INT, sd VARCHAR, d DECIMAL(10, 2),
+                               sb VARCHAR, b BOOLEAN, sz VARCHAR, z TIMESTAMP WITH TIME ZONE);
+                CREATE VIEW V AS SELECT
+                  NULLIF(si, i) AS a,
+                  NULLIF(i, si) AS a2,
+                  NULLIF(sd, d) AS c,
+                  NULLIF(sb, b) AS e,
+                  NULLIF(sz, z) AS f
+                FROM T;""").withStringTrim();
+        ccs.stepWeightOne("""
+                INSERT INTO T VALUES
+                ('5', 5, '1.5', 1.50, 'true', true, '2020-06-21 16:23:44 +02:00',
+                 TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44 +00:00'),
+                ('6', 5, '1.234', 1.23, 'false', true, '2020-06-21 14:23:44 +02:00',
+                 TIMESTAMP WITH TIME ZONE '2020-06-21 14:23:44 +00:00');""", """
+                 a    | a2   | c     | e     | f
+                ------------------------------------------------------
+                NULL  |NULL  |NULL   |NULL   |NULL
+                 6    | 5    | 1.234 | false | 2020-06-21 14:23:44 +02:00""");
+    }
+
+    /** A TIMESTAMP is compared with a TIMESTAMP WITH TIME ZONE as a UTC time */
+    @Test
+    public void timestampTzComparisons() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts TIMESTAMP, tz TIMESTAMP WITH TIME ZONE);
+                CREATE VIEW V AS SELECT
+                  ts < tz AS lt,
+                  tz = ts AS eq,
+                  NULLIF(tz, ts) AS n1,
+                  NULLIF(ts, tz) AS n2,
+                  TIMESTAMP '2020-01-01 10:00:00' < TIMESTAMP WITH TIME ZONE '2020-01-01 10:00:00 UTC' AS lit
+                FROM T;""");
+        ccs.stepWeightOne("""
+                INSERT INTO T VALUES
+                (TIMESTAMP '2020-01-01 10:00:00', TIMESTAMP WITH TIME ZONE '2020-01-01 10:00:00 +00:00'),
+                (TIMESTAMP '2020-01-01 07:00:00', TIMESTAMP WITH TIME ZONE '2020-01-01 10:00:00 +02:00');""", """
+                 lt    | eq    | n1                      | n2                  | lit
+                -------------------------------------------------------------------------
+                 false | true  |NULL                     |NULL                 | false
+                 true  | false | 2020-01-01 08:00:00 UTC | 2020-01-01 07:00:00 | false""");
+    }
 }

@@ -112,7 +112,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeKeyword;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.IHasPrecision;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -423,9 +422,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (opcode == DBSPOpcode.CONCAT) return false;
         if (opcode == DBSPOpcode.SUB && left.is(IsDateType.class) && right.is(IsDateType.class))
             return true;
-        if (left.is(DBSPTypeTimestampTz.class) || right.is(DBSPTypeTimestampTz.class))
-            // This is illegal, will report an error later
-            return false;
         if (opcode.isComparison()) {
             // A comparison with a date or time value needs a common type
             if (left.is(IsDateType.class) || right.is(IsDateType.class))
@@ -551,12 +547,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             if (leftType.is(DBSPTypeNull.class) || rightType.is(DBSPTypeNull.class)) {
                 // Result is always NULL - evaluate to the NULL literal directly
                 return DBSPLiteral.none(type);
-            }
-            if (opcode.isComparison() &&
-                    ((leftType.is(DBSPTypeTimestampTz.class) && !rightType.is(DBSPTypeTimestampTz.class)) ||
-                     (!leftType.is(DBSPTypeTimestampTz.class) && rightType.is(DBSPTypeTimestampTz.class)))) {
-                throw new CompilationError("Operation " + opcode + " between " + leftType.asSqlString() +
-                        " and " + rightType.asSqlString() + " not supported", node);
             }
             if (opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.DIV || opcode == DBSPOpcode.DIV_INTERVAL_NULL) {
                 // Multiplication between an interval and a numeric value.
