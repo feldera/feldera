@@ -73,6 +73,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.FreshName;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -93,6 +94,19 @@ public class TypeCompiler implements ICompilerComponent {
     public static DBSPTypeIndexedZSet makeIndexedZSet(
             DBSPType keyType, DBSPType elementType) {
         return new DBSPTypeIndexedZSet(elementType.getNode(), keyType, elementType);
+    }
+
+    /** The type in which Calcite's '=' compares a string with a value of type 'other';
+     * null if there is none. */
+    @Nullable
+    static DBSPType stringComparisonType(DBSPType other, boolean mayBeNull) {
+        if (other.is(DBSPTypeDecimal.class))
+            // The DECIMAL type with the largest precision, and half of it as scale
+            return new DBSPTypeDecimal(other.getNode(), DBSPTypeDecimal.MAX_PRECISION,
+                    Math.min(DBSPTypeDecimal.MAX_PRECISION / 2, DBSPTypeDecimal.MAX_SCALE), mayBeNull);
+        if (other.is(IsNumericType.class) || other.is(DBSPTypeBool.class) || other.is(IsTimeRelatedType.class))
+            return other.withMayBeNull(mayBeNull);
+        return null;
     }
 
     /**
@@ -160,12 +174,13 @@ public class TypeCompiler implements ICompilerComponent {
         }
 
         if (acceptStrings) {
-            // Like Calcite, compare a string with a date, time, or interval value
-            // as a value of the date, time, or interval type
-            if (left.code == DBSPTypeCode.STRING && right.is(IsTimeRelatedType.class))
-                return right.withMayBeNull(anyNull);
-            if (right.code == DBSPTypeCode.STRING && left.is(IsTimeRelatedType.class))
-                return left.withMayBeNull(anyNull);
+            DBSPType stringComparison = null;
+            if (left.code == DBSPTypeCode.STRING && right.code != DBSPTypeCode.STRING)
+                stringComparison = stringComparisonType(right, anyNull);
+            else if (right.code == DBSPTypeCode.STRING && left.code != DBSPTypeCode.STRING)
+                stringComparison = stringComparisonType(left, anyNull);
+            if (stringComparison != null)
+                return stringComparison;
             if (left.code == DBSPTypeCode.STRING && right.code == DBSPTypeCode.STRING) {
                 DBSPTypeString ls = left.to(DBSPTypeString.class);
                 DBSPTypeString rs = right.to(DBSPTypeString.class);
