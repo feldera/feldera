@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.373.0
+
 - With `FELDERA_REFUSE_LOCAL_FILE_URIS=true`, Delta Lake and Iceberg connectors
   refuse local paths, such as `file:///etc` or `/etc`, also when a secret or an
   environment variable holds the path.
