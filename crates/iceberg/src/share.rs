@@ -25,7 +25,6 @@ use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, Partitioning, PlanProperties,
 };
 use datafusion::prelude::Expr;
-use datafusion_iceberg::physical_plan::convert_filters_to_predicate;
 use feldera_types::coordination::InputShard;
 use futures_util::stream::BoxStream;
 use futures_util::{stream, StreamExt, TryStreamExt};
@@ -34,6 +33,7 @@ use iceberg::expr::Predicate;
 use iceberg::scan::FileScanTask;
 use iceberg::table::Table;
 use iceberg::Runtime;
+use iceberg_datafusion::read::convert_filters_to_predicate;
 use log::info;
 
 /// Returns the items that `shard` owns, out of `items`, which every host of
