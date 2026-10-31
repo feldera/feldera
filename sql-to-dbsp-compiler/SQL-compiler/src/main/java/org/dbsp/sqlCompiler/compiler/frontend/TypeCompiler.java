@@ -159,6 +159,11 @@ public class TypeCompiler implements ICompilerComponent {
         }
 
         if (acceptStrings) {
+            // Like Calcite, compare a string with a date or time value as a date or time value
+            if (left.code == DBSPTypeCode.STRING && right.is(IsDateType.class))
+                return right.withMayBeNull(anyNull);
+            if (right.code == DBSPTypeCode.STRING && left.is(IsDateType.class))
+                return left.withMayBeNull(anyNull);
             if (left.code == DBSPTypeCode.STRING && right.code == DBSPTypeCode.STRING) {
                 DBSPTypeString ls = left.to(DBSPTypeString.class);
                 DBSPTypeString rs = right.to(DBSPTypeString.class);

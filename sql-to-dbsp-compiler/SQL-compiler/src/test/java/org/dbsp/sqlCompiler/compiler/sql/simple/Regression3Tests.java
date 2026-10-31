@@ -1107,4 +1107,26 @@ public class Regression3Tests extends SqlIoTest {
                      yd | sc | aa | rr | mm | ny
                     -----------------------------""");
     }
+
+    /** NULLIF compares a string with a date or time value after casting the string */
+    @Test
+    public void issue7758() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL, d DATE, t TIME);
+                CREATE VIEW V AS SELECT
+                  NULLIF('2023-10-01 12:00:00', ts) AS sts,
+                  NULLIF(ts, '2023-10-01 12:00:00') AS tss,
+                  NULLIF(CAST('2023-10-01' AS VARCHAR), d) AS sd,
+                  NULLIF(t, '12:00:00') AS ts2
+                FROM T;""").withStringTrim();
+        ccs.stepWeightOne("""
+                INSERT INTO T VALUES('2023-10-01 12:00:00', '2023-10-01', '12:00:00'),
+                                    ('2023-10-02 00:00:00', '2023-10-02', '13:00:00'),
+                                    ('2023-10-03 00:00:00', NULL, NULL);""", """
+                 sts                 | tss                 | sd         | ts2
+                ----------------------------------------------------------------
+                NULL                 |NULL                 |NULL        |NULL
+                 2023-10-01 12:00:00 | 2023-10-02 00:00:00 | 2023-10-01 | 13:00:00
+                 2023-10-01 12:00:00 | 2023-10-03 00:00:00 | 2023-10-01 |NULL""");
+    }
 }
