@@ -1092,6 +1092,16 @@ export class Measurement {
      * across workers like the steps.  Named "invocations" in legacy profiles. */
     public static readonly INVOCATIONS_COUNT = "invocations_count";
 
+    /** Metrics counting the runs of a nested circuit, once per step of its parent, so the
+     * total repeats across workers like the steps.  The counts of runs with input, or with
+     * input of unknown size, are kept per worker; their largest reading stays comparable with
+     * the runs, while their sum can exceed them. */
+    public static readonly SUBCIRCUIT_RUN_COUNTS: ReadonlySet<string> = new Set([
+        "subcircuit_runs_count",
+        "subcircuit_runs_with_input_count",
+        "subcircuit_runs_input_unknown_count",
+    ]);
+
     constructor(
         readonly property: string,
         readonly value: Option<PropertyValue>,
@@ -1142,9 +1152,10 @@ export class Measurement {
             case "count": {
                 let m = metric.value as CountMetricValue;
                 let count = CountValue.fromCountMetric(m);
-                // Counts add up, except the counts of steps, which every worker repeats.
+                // Counts add up, except the counts of steps and runs, which every worker repeats.
                 const mode = metric.metric_id === Measurement.STEPS_COUNT
                     || metric.metric_id === Measurement.INVOCATIONS_COUNT
+                    || Measurement.SUBCIRCUIT_RUN_COUNTS.has(metric.metric_id)
                     ? AggregationMode.Max
                     : AggregationMode.Sum;
                 return [new Measurement(metric_id, Option.some(count), mode)];

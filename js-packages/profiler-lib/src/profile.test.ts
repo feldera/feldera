@@ -773,6 +773,10 @@ describe('Measurement.parseValues tags the new-format metrics', () => {
         }).get(id)!.aggregation
         expect(mode('steps_count', 'int')).toBe(AggregationMode.Max)
         expect(mode('invocations_count', 'count')).toBe(AggregationMode.Max)
+        // A nested circuit runs once per step of its parent, on every worker.
+        expect(mode('subcircuit_runs_count', 'count')).toBe(AggregationMode.Max)
+        expect(mode('subcircuit_runs_with_input_count', 'count')).toBe(AggregationMode.Max)
+        expect(mode('subcircuit_runs_input_unknown_count', 'count')).toBe(AggregationMode.Max)
         // A count of records is each worker's own, and adds up.
         expect(mode('state_records_count', 'count')).toBe(AggregationMode.Sum)
     })
