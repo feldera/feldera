@@ -32,6 +32,13 @@ dependencies = [
     "pyarrow>=24.0",
 ]
 
+[project.optional-dependencies]
+dataflow = [
+    "matplotlib>=3.7",
+    "networkx>=3.0",
+    "pygraphviz>=1.11",
+]
+
 [project.urls]
 Homepage = "https://www.feldera.com"
 Documentation = "https://docs.feldera.com/python"

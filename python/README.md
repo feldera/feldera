@@ -143,3 +143,51 @@ Different branch (replace `BRANCH_NAME`):
 ```bash
 uv pip install git+https://github.com/feldera/feldera@BRANCH_NAME#subdirectory=python
 ```
+
+## Dataflow Graph Visualizer
+
+A script to visualize and diff Feldera dataflow graphs produced by the SQL
+compiler's `--dataflow` flag.
+
+### Installation
+
+```bash
+# macOS
+brew install graphviz
+pip install "feldera[dataflow]"
+
+# Linux (Debian/Ubuntu)
+sudo apt-get install graphviz libgraphviz-dev
+pip install "feldera[dataflow]"
+```
+
+### Generating a dataflow JSON
+
+Compile any SQL file with the `--dataflow` flag:
+
+```bash
+sql-to-dbsp --dataflow output.json --noRust your_program.sql
+```
+
+### Visualize a graph
+
+```bash
+python -m feldera.tools.dataflow_graph output.json
+python -m feldera.tools.dataflow_graph output.json --output graph.png
+```
+
+### Diff two graphs
+
+Useful for checking whether bootstrapping will be needed after a compiler
+or program upgrade. If all nodes are blue (shared), no bootstrapping needed.
+
+```bash
+python -m feldera.tools.dataflow_graph before.json after.json --diff
+python -m feldera.tools.dataflow_graph before.json after.json --diff --output diff.png
+```
+
+| Color | Meaning                       |
+|-------|-------------------------------|
+| Blue  | Shared — node unchanged       |
+| Red   | Only in first graph (removed) |
+| Green | Only in second graph (added)  |
