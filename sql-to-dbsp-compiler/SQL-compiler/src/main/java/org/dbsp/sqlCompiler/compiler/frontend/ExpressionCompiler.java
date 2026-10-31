@@ -426,6 +426,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (left.is(DBSPTypeTimestampTz.class) || right.is(DBSPTypeTimestampTz.class))
             // This is illegal, will report an error later
             return false;
+        // A comparison with a date or time value needs a common type
+        if (opcode.isComparison() && (left.is(IsDateType.class) || right.is(IsDateType.class)))
+            return true;
         // Dates can be mixed with interval types in a binary operation
         if (left.is(IsTimeRelatedType.class)) return false;
         if (right.is(IsTimeRelatedType.class)) return false;
