@@ -3,21 +3,27 @@
  * and scoped locally.
  */
 
+/* Lab look: left-aligned hero on Paper, no banner fill */
 .heroBanner {
-  padding: 4rem 0;
-  text-align: center;
+  padding: 4rem 0 3rem;
+  text-align: left;
   position: relative;
   overflow: hidden;
+  background: var(--color-paper);
+  border-bottom: 1px solid var(--hair-06);
 }
 
 @media screen and (max-width: 996px) {
   .heroBanner {
-    padding: 2rem;
+    padding: 2.5rem 1rem 2rem;
   }
 }
 
+/* Square buttons in a wrapping row */
 .buttons {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: 0.75rem;
 }
