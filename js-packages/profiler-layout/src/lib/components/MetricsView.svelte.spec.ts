@@ -1,6 +1,6 @@
-import { CountValue, type NodeAttributes, type TooltipRow } from 'profiler-lib'
+import { CountValue, MetricDescriptions, type NodeAttributes, type TooltipRow } from 'profiler-lib'
 import { tick } from 'svelte'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { render } from 'vitest-browser-svelte'
 import { createLookupCoordinator } from '../functions/lookup'
 import { setCollapsed } from './metrics/collapsedBlocks.svelte'
@@ -26,20 +26,36 @@ const nodeAttributes: NodeAttributes = {
   attributes: new Map()
 }
 
-// Legacy metric names, whose categories `profiler-lib` knows without loaded descriptions, so the
-// view renders one block per category: CPU, memory, storage, cache in that order. The match below
-// sits in the third, with a fourth block beneath it, so the panel can bring it to the very top.
+// Metrics of four categories, so the view renders one block per category: Time, Inputs, State,
+// Cache in that order. The match below sits in the third, with a fourth block beneath it, so the
+// panel can bring it to the very top.
 const manyCategories: NodeAttributes = {
   ...nodeAttributes,
   nodeId: 'many',
   rows: [
-    row('time'),
-    row('invocations'),
-    row('total size'),
-    row('merging size'),
-    row('foreground cache hit')
+    row('runtime_seconds'),
+    row('invocations_count'),
+    row('input_records_count'),
+    row('merging_size_bytes'),
+    row('foreground_cache_occupancy')
   ]
 }
+
+beforeAll(() => {
+  const metric = (name: string, category: string) => ({
+    name,
+    category,
+    advanced: false,
+    description: ''
+  })
+  MetricDescriptions.setMetricDescriptions([
+    metric('runtime_seconds', 'Time'),
+    metric('invocations_count', 'Time'),
+    metric('input_records_count', 'Inputs'),
+    metric('merging_size_bytes', 'State'),
+    metric('foreground_cache_occupancy', 'Cache')
+  ])
+})
 
 describe('MetricsView search', () => {
   it('expands a collapsed block that holds the match', async () => {

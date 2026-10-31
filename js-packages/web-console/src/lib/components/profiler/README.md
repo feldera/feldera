@@ -62,7 +62,7 @@ The component provides a complete UI layout:
 
 **Sidebar** (left):
 
-- Metric selector dropdown (time%, memory, etc.)
+- Metric selector dropdown (runtime_percent, memory, etc.)
 - Worker thread checkboxes
 - Navigator minimap
 
