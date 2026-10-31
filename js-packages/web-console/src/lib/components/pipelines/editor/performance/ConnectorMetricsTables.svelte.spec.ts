@@ -132,7 +132,7 @@ describe('ConnectorMetricsTables.svelte', () => {
       // Input tables section with headers
       const inputSection = page.getByTestId('box-input-tables')
       await expect.element(inputSection).toBeInTheDocument()
-      const inputHtml = inputSection.element().innerHTML
+      const inputHtml = inputSection.element().textContent ?? ''
       expect(inputHtml).toContain('Table')
       expect(inputHtml).toContain('Connectors')
       expect(inputHtml).toContain('Ingested')
@@ -142,7 +142,7 @@ describe('ConnectorMetricsTables.svelte', () => {
       // Output views section with headers
       const outputSection = page.getByTestId('box-output-views')
       await expect.element(outputSection).toBeInTheDocument()
-      const outputHtml = outputSection.element().innerHTML
+      const outputHtml = outputSection.element().textContent ?? ''
       expect(outputHtml).toContain('View')
       expect(outputHtml).toContain('Transmitted')
       expect(outputHtml).toContain('batch')
@@ -887,7 +887,7 @@ describe('ConnectorMetricsTables.svelte', () => {
 
     it('places the column header between Buffered and Parse errors', async () => {
       await renderComponent(buildMetrics(makeStatus([], [makeInputStatus('orders')])))
-      const html = page.getByTestId('box-input-tables').element().innerHTML
+      const html = page.getByTestId('box-input-tables').element().textContent ?? ''
       expect(html).toContain('Latency p99')
       expect(html.indexOf('Latency p99')).toBeGreaterThan(html.indexOf('Buffered'))
       expect(html.indexOf('Latency p99')).toBeLessThan(html.indexOf('Parse errors'))
