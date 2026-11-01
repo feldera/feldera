@@ -191,6 +191,10 @@ name = "window_min"
 harness = false
 
 [[bench]]
+name = "commit_steps"
+harness = false
+
+[[bench]]
 name = "seek_key_exact"
 harness = false
 
