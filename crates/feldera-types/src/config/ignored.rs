@@ -121,7 +121,9 @@ fn format_path(path: &[Segment]) -> String {
                 }
                 s.push_str(key);
             }
-            Segment::Index(index) => { let _ = write!(&mut s, "[{index}]"); },
+            Segment::Index(index) => {
+                let _ = write!(&mut s, "[{index}]");
+            }
         }
     }
     s
