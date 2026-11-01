@@ -110,7 +110,7 @@
                             <!-- Metric rows for this category -->
                             {#if !collapsedCategories.has(category)}
                                 {#each rows as row}
-                                    {#if !MetricDescriptions.describe(row.metric).advanced || showAdvanced}
+                                    {#if MetricDescriptions.isShown(row.metric, showAdvanced)}
                                         <tr>
                                             <td
                                                 class:current-metric={row.isCurrentMetric}

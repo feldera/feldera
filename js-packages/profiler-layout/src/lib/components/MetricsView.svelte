@@ -3,8 +3,14 @@
 
   export type MetricsMode = 'overview' | 'node' | 'top-nodes'
 
-  /** Node identity attributes shown beside the node title, in display order. `hint` is shown on hover. */
-  const idAttributes: { key: string; label: string; hint?: (isRegion: boolean) => string }[] = [
+  /** Node identity attributes shown beside the node title, in display order. `hint` is shown on hover.
+   *  The attributes with `advanced` are shown only with the advanced metrics. */
+  const idAttributes: {
+    key: string
+    label: string
+    hint?: (isRegion: boolean) => string
+    advanced?: boolean
+  }[] = [
     {
       key: 'consumers',
       label: 'consumers',
@@ -14,7 +20,7 @@
           : 'Count of edges to the operators consuming this operator\'s output.'
     },
     { key: 'parent', label: 'parent ID' },
-    { key: 'persistentId', label: 'persistent ID' }
+    { key: 'persistentId', label: 'persistent ID', advanced: true }
   ]
 
   /** The toplevel node represents the whole circuit (the overview) rather than a single operator.
@@ -53,7 +59,7 @@
     rootNodeId: string | undefined
     /** Pipeline-wide metrics from `stats.json`. The overview shows them in a tile at the top. */
     globalMetrics?: GlobalMetrics
-    /** When true, metrics flagged `advanced` in the profile metadata are included. */
+    /** When false, only the basic metrics are shown. */
     showAdvanced: boolean
     /** Lookup coordinator; the view registers an imperative handler so each Enter on the
      *  panel's search input re-runs the search even when the query string is unchanged. */
@@ -89,6 +95,9 @@
   const identityRows = $derived(
     nodeAttributes && isNodeView
       ? idAttributes.flatMap((r) => {
+          if (r.advanced && !showAdvanced) {
+            return []
+          }
           const value = nodeAttributes.attributes.get(r.key)
           return value ? [{ ...r, value, hint: r.hint?.(nodeAttributes.isRegion) }] : []
         })
@@ -223,6 +232,11 @@
         </div>
       {/each}
     </div>
+    {#if nodeAttributes && blocks.length === 0}
+      <div class="text-sm text-surface-600-400">
+        No {showAdvanced ? '' : 'basic '}metrics associated with this node.
+      </div>
+    {/if}
   {/if}
 {/snippet}
 

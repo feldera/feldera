@@ -23,7 +23,7 @@ describe('buildBlocks', () => {
   it('orders metrics lexicographically inside each block (case-insensitive)', () => {
     // Metric IDs span categories; the order is intentionally scrambled to confirm the sort.
     const attrs = makeAttrs(['zeta_seconds', 'Alpha_count', 'gamma_size', 'alpha_total'])
-    const blocks = buildBlocks(attrs, /* showAdvanced */ true)
+    const blocks = buildBlocks(attrs, true)
     // All metrics fall into the same "Other" bucket (no descriptions registered),
     // so we expect a single block whose entries are alphabetised by label.
     const all = blocks.flatMap((b) => b.entries.map((e) => e.label))
@@ -45,6 +45,51 @@ describe('buildBlocks', () => {
   })
 })
 
+describe('buildBlocks detail levels', () => {
+  const metrics = [
+    'runtime_seconds',
+    'steps_count',
+    'input_batches_stats.count',
+    'input_batches_stats.record_count',
+    'spine_storage_size_bytes',
+    'allocated_memory_bytes'
+  ]
+  const shown = (showAdvanced: boolean) =>
+    buildBlocks(makeAttrs(metrics), showAdvanced).flatMap((b) => b.entries.map((e) => e.row.metric))
+
+  it('shows only runtime, input records, storage and memory at the basic level', () => {
+    expect(shown(false).sort()).toEqual([
+      'allocated_memory_bytes',
+      'input_batches_stats.record_count',
+      'runtime_seconds',
+      'spine_storage_size_bytes'
+    ])
+  })
+
+  it('shows the basic metrics and the rest at the advanced level', () => {
+    expect(shown(true).sort()).toEqual([...metrics].sort())
+  })
+
+  it('puts the basic metrics in one block, whatever their categories', () => {
+    const metric = (name: string, category: string) => ({
+      name,
+      category,
+      description: ''
+    })
+    MetricDescriptions.setMetricDescriptions([
+      metric('runtime_seconds', 'Time'),
+      metric('steps_count', 'Time'),
+      metric('input_batches_stats', 'Inputs'),
+      metric('spine_storage_size_bytes', 'State'),
+      metric('allocated_memory_bytes', 'State')
+    ])
+    const titles = (showAdvanced: boolean) =>
+      buildBlocks(makeAttrs(metrics), showAdvanced).map((b) => b.title)
+    expect(titles(false)).toEqual(['Basic metrics'])
+    expect(titles(true)).toEqual(['Time', 'Inputs', 'State'])
+  })
+})
+
 // Issue 6990: the metric the diagram is colored by was buried in an alphabetical list
 describe('buildBlocks puts the selected metric first', () => {
   it('leads its block, ahead of labels that sort before it', () => {
@@ -63,7 +108,6 @@ describe('buildBlocks puts the selected metric first', () => {
     const metric = (name: string, category: string) => ({
       name,
       category,
-      advanced: false,
       description: ''
     })
     MetricDescriptions.setMetricDescriptions([
