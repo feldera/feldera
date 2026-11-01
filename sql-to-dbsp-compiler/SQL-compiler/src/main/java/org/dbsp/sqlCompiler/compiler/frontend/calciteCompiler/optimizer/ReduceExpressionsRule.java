@@ -31,6 +31,7 @@ import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.Window;
+import org.apache.calcite.rel.logical.LogicalAsofJoin;
 import org.apache.calcite.rel.logical.LogicalWindow;
 import org.apache.calcite.rel.metadata.RelMetadataQuery;
 import org.apache.calcite.rel.rules.CoreRules;
@@ -282,6 +283,12 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
 
         @Override public void onMatch(RelOptRuleCall call) {
             final Join join = call.rel(0);
+            if (join instanceof LogicalAsofJoin) {
+                // Currently ASOF JOINs are restricted by the validator to use very specific
+                // conditions, so there isn't much to simplify about them.
+                // Moreover, calling join.copy() below for an ASOF JOIN will throw.
+                return;
+            }
             final List<RexNode> expList = Lists.newArrayList(join.getCondition());
             final int fieldCount = join.getLeft().getRowType().getFieldCount();
             final RelMetadataQuery mq = call.getMetadataQuery();

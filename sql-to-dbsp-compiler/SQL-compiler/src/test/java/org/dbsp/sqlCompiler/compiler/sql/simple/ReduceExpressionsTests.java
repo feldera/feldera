@@ -1,7 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.dbsp.util.Logger;
+import org.junit.Assert;
 import org.junit.Test;
+
+import java.util.Map;
 
 /** Tests for the constant folding performed by ReduceExpressionsRule. */
 public class ReduceExpressionsTests extends SqlIoTest {
@@ -104,5 +109,64 @@ public class ReduceExpressionsTests extends SqlIoTest {
                  i | weight
                 ------------
                  1 | 1""");
+    }
+
+    @Test
+    public void correlatedFilterOverValues() {
+        // A filter over VALUES that reads a correlation variable cannot be folded (CALCITE-7450).
+        // Folding it to FALSE dropped the VALUES row, and these views failed to compile.
+        // Results validated using postgres
+        var ccs = this.getCCS("""
+                CREATE TABLE t(x INT);
+                CREATE VIEW e AS SELECT x FROM t
+                WHERE EXISTS (SELECT 1 FROM (VALUES 4) AS d(w) WHERE d.w > t.x);
+                CREATE VIEW s AS SELECT x, (SELECT MAX(w) FROM (VALUES 4) AS d(w) WHERE d.w > t.x) AS m FROM t;
+                CREATE VIEW l AS SELECT x, z FROM t, LATERAL (
+                    SELECT * FROM (VALUES 3) AS c(z)
+                    WHERE c.z > t.x AND EXISTS (SELECT 1 FROM (VALUES 4) AS d(w) WHERE d.w > t.x)) AS l;""");
+        ccs.stepMultiView("INSERT INTO t VALUES (1), (4), (NULL);", Map.of(
+                "e", """
+                 x | weight
+                ------------
+                 1 | 1""",
+                "s", """
+                 x    | m    | weight
+                ---------------------
+                 1    | 4    | 1
+                 4    | NULL | 1
+                 NULL | NULL | 1""",
+                "l", """
+                 x | z | weight
+                ----------------
+                 1 | 3 | 1"""));
+    }
+
+    @Test
+    public void asofJoinConstantFold() {
+        // JOIN_REDUCE_EXPRESSIONS must skip an ASOF JOIN: its copy() throws (CALCITE-7273),
+        // and the exception made the optimizer skip all constant folding for the view.
+        StringBuilder builder = new StringBuilder();
+        Appendable save = Logger.INSTANCE.setDebugStream(builder);
+        Logger.INSTANCE.setLoggingLevel(CalciteOptimizer.class, 1);
+        try {
+            // The filter k = 1 lets the rule replace a.k by 1 in the join condition
+            var ccs = this.getCCS("""
+                    CREATE TABLE t1(k INT, t INT);
+                    CREATE TABLE t2(k INT, t INT);
+                    CREATE VIEW v AS SELECT a.k, a.t, b.t AS bt, a.t + (1 + 2) AS c
+                    FROM (SELECT * FROM t1 WHERE k = 1) a
+                    LEFT ASOF JOIN t2 b MATCH_CONDITION (a.t >= b.t) ON a.k = b.k;""");
+            String log = builder.toString();
+            Assert.assertFalse(log, log.contains("Skipping Constant fold"));
+            ccs.step("""
+                    INSERT INTO t1 VALUES (1, 10), (2, 10);
+                    INSERT INTO t2 VALUES (1, 5), (1, 8), (1, 12);""", """
+                     k | t  | bt | c  | weight
+                    ---------------------------
+                     1 | 10 | 8  | 13 | 1""");
+        } finally {
+            Logger.INSTANCE.setLoggingLevel(CalciteOptimizer.class, 0);
+            Logger.INSTANCE.setDebugStream(save);
+        }
     }
 }
