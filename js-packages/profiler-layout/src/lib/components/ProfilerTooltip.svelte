@@ -1,11 +1,6 @@
 <script lang="ts" module>
   import type { NodeAttributes, TooltipRow } from 'profiler-lib'
-  import {
-    measurementCategory,
-    measurementDescription,
-    measurementLabel,
-    shadeOfRed
-  } from 'profiler-lib'
+  import { MetricDescriptions, shadeOfRed } from 'profiler-lib'
   import { SvelteSet } from 'svelte/reactivity'
   import { groupBy } from '../functions/array'
 
@@ -89,7 +84,7 @@
 
                     <!-- Metric rows grouped by category -->
                     <tbody>
-                        {#each groupBy( nodeAttributes.rows, (row: TooltipRow) => measurementCategory(row.metric), ) as [category, rows]}
+                        {#each groupBy( nodeAttributes.rows, (row: TooltipRow) => MetricDescriptions.category(row.metric), ) as [category, rows]}
                             <!-- Category header row -->
                             <tr
                                 class="category-header"
@@ -115,13 +110,13 @@
                             <!-- Metric rows for this category -->
                             {#if !collapsedCategories.has(category)}
                                 {#each rows as row}
-                                    {#if !measurementDescription(row.metric).advanced || showAdvanced}
+                                    {#if !MetricDescriptions.describe(row.metric).advanced || showAdvanced}
                                         <tr>
                                             <td
                                                 class:current-metric={row.isCurrentMetric}
-                                                title={measurementDescription(
+                                                title={MetricDescriptions.describe(
                                                     row.metric,
-                                                ).description}>{measurementLabel(
+                                                ).description}>{MetricDescriptions.label(
                                                     row.metric,
                                                 )}</td
                                             >
