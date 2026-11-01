@@ -72,6 +72,23 @@ RUN ARCH=`dpkg --print-architecture`; \
    && rpk version \
    && rm $HOME/rpk-linux-$ARCH.zip
 
+## Install rclone for cloud's sync-checkpoint crate
+
+# The Ubuntu package (1.60) does not have flags that sync-checkpoint uses,
+# for example --max-buffer-memory and --gcs-env-auth.
+ARG RCLONE_VERSION=1.75.2
+RUN ARCH=`dpkg --print-architecture`; \
+   case $ARCH in \
+     amd64) SHA256=efbfe852181f7191eb3c9043ed1ab49c9b2d0ba045c61c926a5da111c939ec5c ;; \
+     arm64) SHA256=b8ba161d5c837206fad79ff1aabf0a81aa02a5fb164cdbc0ff5db4160aecd278 ;; \
+     *) echo "error: no rclone checksum for $ARCH" >&2; exit 1 ;; \
+   esac \
+   && curl -fsSL -o /tmp/rclone.deb https://downloads.rclone.org/v$RCLONE_VERSION/rclone-v$RCLONE_VERSION-linux-$ARCH.deb \
+   && echo "$SHA256  /tmp/rclone.deb" | sha256sum -c - \
+   && dpkg -i /tmp/rclone.deb \
+   && rm /tmp/rclone.deb \
+   && rclone version
+
 ## Install python dependencies for the demos
 
 RUN pip3 install --break-system-packages gdown kafka-python-ng
