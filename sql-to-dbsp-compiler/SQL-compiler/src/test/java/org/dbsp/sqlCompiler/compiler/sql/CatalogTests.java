@@ -521,6 +521,23 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void identifierEscaping() {
+        // Quoted names that end a Rust string literal when the compiler does not escape them.
+        // The name of index x injects a statement into the circuit.
+        String sql = """
+                CREATE TABLE T("a""#b" INT, "c\\{}" INT);
+                CREATE MATERIALIZED VIEW "m""#" AS SELECT * FROM T;
+                CREATE INDEX "x"")),{println!(""INJECTED"");""\""},&[]);let _=(r#" ON "m""#"("a""#b");
+                CREATE INDEX "i""2" ON "m""#"("c\\{}");
+                CREATE VIEW "v""\" AS SELECT * FROM T;
+                CREATE INDEX "i""3" ON "v""\"("a""#b");""";
+        var ccs = this.getCCS(sql);
+        String sources = ccs.getRustSources();
+        Assert.assertTrue(sources.contains("""
+                Some(SqlIdentifier::from("x\\")),{println!(\\"INJECTED\\");\\"\\"},&[]);let _=(r#")),"""));
+    }
+
+    @Test
     public void issue2028() {
         String sql = """
                 CREATE TABLE varchar_pk (

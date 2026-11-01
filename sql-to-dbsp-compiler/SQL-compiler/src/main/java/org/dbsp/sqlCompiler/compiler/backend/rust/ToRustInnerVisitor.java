@@ -1323,8 +1323,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(literal);
         Objects.requireNonNull(literal.value);
         if (literal.raw) {
-            String contents = "r#\"" + literal.value + "\"#";
-            this.builder.append(literal.wrapSome(contents));
+            this.builder.append(literal.wrapSome(Utilities.rustRawString(literal.value)));
         } else {
             this.builder.append(literal.wrapSome(Utilities.doubleQuote(literal.value, true)));
         }
