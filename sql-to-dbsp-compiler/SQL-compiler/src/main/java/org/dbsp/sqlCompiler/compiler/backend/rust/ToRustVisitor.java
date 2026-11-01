@@ -1264,9 +1264,8 @@ public class ToRustVisitor extends CircuitVisitor {
             if (!first)
                 this.builder.append(",");
             first = false;
-            this.builder.append("\"")
-                    .append(field.toString())
-                    .append("\".to_string()");
+            this.builder.append(Utilities.doubleQuote(field.toString(), true))
+                    .append(".to_string()");
         }
         this.builder.append("]");
     }
@@ -1322,9 +1321,9 @@ public class ToRustVisitor extends CircuitVisitor {
                         .append(this.getInputName(operator, 0))
                         .append(".clone(),").newline();
                 if (registerAsMap) {
-                    this.builder.append("Some(SqlIdentifier::from(\"");
-                    this.builder.append(operator.viewName.toString())
-                            .append("\")),").newline();
+                    this.builder.append("Some(SqlIdentifier::from(")
+                            .append(Utilities.doubleQuote(operator.viewName.toString(), true))
+                            .append(")),").newline();
                     // schema
                     IHasSchema description = this.metadata.getViewDescription(indexes.getView().viewName);
                     JsonNode j = description.asJson(true);
@@ -1334,12 +1333,12 @@ public class ToRustVisitor extends CircuitVisitor {
                     schemaJson.accept(this.innerVisitor);
                     this.builder.append(",").newline();
                 } else {
-                    this.builder.append("&SqlIdentifier::from(\"");
-                    this.builder.append(operator.viewName.toString())
-                            .append("\"),").newline();
-                    this.builder.append("& SqlIdentifier::from(\"")
-                            .append(operator.query)
-                            .append("\"),")
+                    this.builder.append("&SqlIdentifier::from(")
+                            .append(Utilities.doubleQuote(operator.viewName.toString(), true))
+                            .append("),").newline();
+                    this.builder.append("& SqlIdentifier::from(")
+                            .append(Utilities.doubleQuote(operator.query, true))
+                            .append("),")
                             .newline();
                 }
                 this.appendIndexKeys(operator);

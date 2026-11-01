@@ -259,6 +259,20 @@ public class Utilities {
          return "\"" + escape(value, unicodeBraces) + "\"";
     }
 
+    /** Rust raw string literal for value.  The # delimiter is longer than every
+     * run of # that follows a quote in value, so value cannot end the literal.
+     * Returns an escaped literal when a raw string cannot hold value. */
+    public static String rustRawString(String value) {
+        // Rust allows at most 255 # and no bare CR in a raw string
+        final int maxHashes = 255;
+        String hashes = "#";
+        while (hashes.length() <= maxHashes && value.contains("\"" + hashes))
+            hashes += "#";
+        if (hashes.length() > maxHashes || value.indexOf('\r') >= 0)
+            return doubleQuote(value, true);
+        return "r" + hashes + "\"" + value + "\"" + hashes;
+    }
+
     /** Parse and validate a JSON text string, returning either the parsed object or an error to show to the user */
     public static Result<JsonNode> validateJson(String body) {
         try {
