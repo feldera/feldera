@@ -33,7 +33,7 @@
     SourcePositionRange,
     WorkerOption
   } from 'profiler-lib'
-  import { measurementLabel } from 'profiler-lib'
+  import { MetricDescriptions } from 'profiler-lib'
   import { createRawSnippet, type Snippet, untrack } from 'svelte'
   import type { TriageResults } from 'triage-types'
   import type { GlobalMetrics } from '../functions/globalMetrics'
@@ -222,7 +222,7 @@
       tooltipData = data.match({
         some: (topNodes) => ({
           genericTable: {
-            header: `Nodes with highest values for "${measurementLabel(selectedMetricId)}"`,
+            header: `Nodes with highest values for "${MetricDescriptions.label(selectedMetricId)}"`,
             columns: ['Node', 'Value', 'Operation'],
             rows: topNodes.map((n) => ({
               stub: { text: n.nodeId, onclick: () => profilerDiagram?.search(n.nodeId) },
