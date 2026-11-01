@@ -209,11 +209,11 @@ async function assertLogsPanelPopulates(viewer: Page) {
 }
 
 /**
- * Switch to the Metrics tab, click a leaf operator in the dataflow diagram, and
- * verify the metrics panel surfaces a `persistent ID` row beside the node title
- * (issue #6409). The diagram is canvas-rendered, so we reach into cytoscape via
- * the container's private `_cyreg.cy` field and emit a synthetic `click` on the
- * first leaf — the same event the user's mouse would fire.
+ * Switch to the Metrics tab, click a leaf operator in the dataflow diagram, turn on
+ * "Show advanced", and verify the metrics panel surfaces a `persistent ID` row beside
+ * the node title (issue #6409). The diagram is canvas-rendered, so we reach into
+ * cytoscape via the container's private `_cyreg.cy` field and emit a synthetic `click`
+ * on the first leaf — the same event the user's mouse would fire.
  */
 async function assertNodeMetricsShowPersistentId(viewer: Page) {
   await viewer.getByText('Metrics', { exact: true }).first().click()
@@ -252,5 +252,7 @@ async function assertNodeMetricsShowPersistentId(viewer: Page) {
     leaf.emit('click')
   })
 
+  // The persistent ID is shown only with the advanced metrics.
+  await viewer.getByText('Show advanced', { exact: true }).click()
   await expect(viewer.getByText(/persistent ID:/i)).toBeVisible({ timeout: 10_000 })
 }
