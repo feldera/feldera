@@ -1,6 +1,7 @@
 <script lang="ts" module>
   import type { ConnectorMetrics, ConnectorStatus } from 'common-ui/connectorMetrics'
   import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
+  import type { MetricLevel } from 'profiler-lib'
   import type { TriageResults } from 'triage-types'
   import type { GlobalMetrics } from '../../functions/globalMetrics'
   import type { LookupCoordinator } from '../../functions/lookup'
@@ -33,8 +34,8 @@
     /** The time when the support bundle collected the selected profile. The Health tab uses it
      *  as the end of the observed period. */
     collectedAt: Date | null
-    /** When true, metrics flagged `advanced` in the profile metadata are shown too. */
-    showAdvancedMetrics: boolean
+    /** The detail level of the Metrics tab blocks. */
+    metricLevel: MetricLevel
     lookup: LookupCoordinator
     logText: string | undefined
     triageResults: TriageResults
@@ -54,7 +55,7 @@
     tooltipData,
     rootNodeId,
     globalMetrics,
-    showAdvancedMetrics,
+    metricLevel,
     lookup,
     onSearchNode
   }: AnalysisTabProps = $props()
@@ -65,7 +66,7 @@
   {tooltipData}
   {rootNodeId}
   {globalMetrics}
-  showAdvanced={showAdvancedMetrics}
+  {metricLevel}
   {lookup}
   {onSearchNode}
 />

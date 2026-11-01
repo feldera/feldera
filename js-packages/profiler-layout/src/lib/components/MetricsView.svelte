@@ -1,10 +1,16 @@
 <script lang="ts" module>
-  import type { NodeAttributes } from 'profiler-lib'
+  import type { MetricLevel, NodeAttributes } from 'profiler-lib'
 
   export type MetricsMode = 'overview' | 'node' | 'top-nodes'
 
-  /** Node identity attributes shown beside the node title, in display order. `hint` is shown on hover. */
-  const idAttributes: { key: string; label: string; hint?: (isRegion: boolean) => string }[] = [
+  /** Node identity attributes shown beside the node title, in display order. `hint` is shown on hover.
+   *  The basic metric level omits the attributes with `notBasic`. */
+  const idAttributes: {
+    key: string
+    label: string
+    hint?: (isRegion: boolean) => string
+    notBasic?: boolean
+  }[] = [
     {
       key: 'consumers',
       label: 'consumers',
@@ -14,7 +20,7 @@
           : 'Count of edges to the operators consuming this operator\'s output.'
     },
     { key: 'parent', label: 'parent ID' },
-    { key: 'persistentId', label: 'persistent ID' }
+    { key: 'persistentId', label: 'persistent ID', notBasic: true }
   ]
 
   /** The toplevel node represents the whole circuit (the overview) rather than a single operator.
@@ -53,8 +59,8 @@
     rootNodeId: string | undefined
     /** Pipeline-wide metrics from `stats.json`. The overview shows them in a tile at the top. */
     globalMetrics?: GlobalMetrics
-    /** When true, metrics flagged `advanced` in the profile metadata are included. */
-    showAdvanced: boolean
+    /** The detail level of the metric blocks. */
+    metricLevel: MetricLevel
     /** Lookup coordinator; the view registers an imperative handler so each Enter on the
      *  panel's search input re-runs the search even when the query string is unchanged. */
     lookup?: LookupCoordinator
@@ -68,7 +74,7 @@
     tooltipData,
     rootNodeId,
     globalMetrics,
-    showAdvanced,
+    metricLevel,
     lookup,
     onSearchNode
   }: Props = $props()
@@ -89,13 +95,16 @@
   const identityRows = $derived(
     nodeAttributes && isNodeView
       ? idAttributes.flatMap((r) => {
+          if (r.notBasic && metricLevel === 'basic') {
+            return []
+          }
           const value = nodeAttributes.attributes.get(r.key)
           return value ? [{ ...r, value, hint: r.hint?.(nodeAttributes.isRegion) }] : []
         })
       : []
   )
   const blocks = $derived<RenderableBlock[]>(
-    nodeAttributes ? buildBlocks(nodeAttributes, showAdvanced) : []
+    nodeAttributes ? buildBlocks(nodeAttributes, metricLevel) : []
   )
   const showAttributesView = $derived(mode === 'overview' || mode === 'node')
 
@@ -223,6 +232,11 @@
         </div>
       {/each}
     </div>
+    {#if nodeAttributes && blocks.length === 0}
+      <div class="text-sm text-surface-600-400">
+        No {metricLevel} metrics associated with this node.
+      </div>
+    {/if}
   {/if}
 {/snippet}
 

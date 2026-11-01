@@ -24,6 +24,7 @@
   export type SegmentedItem<V extends string = string> = {
     value: V
     label?: string
+    title?: string
     disabled?: boolean
     testid?: string
   }
@@ -85,6 +86,7 @@
       <SC.Item
         value={item.value}
         disabled={item.disabled}
+        title={item.title}
         data-testid={item.testid}
         class="relative z-1 inline-flex h-full cursor-pointer items-center justify-center font-normal whitespace-nowrap data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40 data-[state=checked]:font-medium {sized.item} {sized.radius}"
       >

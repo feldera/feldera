@@ -258,8 +258,15 @@ important the measurement is, relative to the highest values of that
 measurement in the whole dataflow graph.
 
 Each node has only some of the measurements. For example, a node that
-keeps no state has no **State** section. Turn on **Show advanced** to show
-more measurements.
+keeps no state has no **State** section. The **Basic**, **Standard** and
+**Advanced** control sets how many measurements to show. Each level
+also shows the measurements of the levels before it:
+
+| Level | Measurements |
+|---|---|
+| Basic (default) | **Runtime seconds**, **Input batches stats record count** and **Spine storage size bytes** |
+| Standard | The measurements for usual performance analysis |
+| Advanced | All the measurements |
 
 ### The current metric
 

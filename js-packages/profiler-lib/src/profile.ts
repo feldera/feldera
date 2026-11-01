@@ -184,20 +184,6 @@ export type JsonProfiles = {
 
 ///////////////// Parsing code to decode measurements
 
-function formatValue(val: number, base: number, prefixes: Array<string>): string {
-    let index = 0;
-    while ((Math.abs(val) >= base) && (index < (prefixes.length - 1))) {
-        val = val / base;
-        index++;
-    }
-    // For sub-unit values, `maximumFractionDigits: 2` rounds non-zero numbers down to "0".
-    // Switch to `maximumSignificantDigits: 2` in that range so e.g. 0.004 -> "0.004" instead of "0".
-    const opts: Intl.NumberFormatOptions = (val !== 0 && Math.abs(val) < 1)
-        ? { maximumSignificantDigits: 2 }
-        : { minimumFractionDigits: 0, maximumFractionDigits: 2 };
-    return val.toLocaleString('en-US', opts) + prefixes[index];
-}
-
 /** How multiple metric measurements are combined for a node from the children measurements. */
 export enum AggregationMode {
     /** Magnitudes add: counts, bytes, durations. */
@@ -219,6 +205,61 @@ export enum AggregationMode {
 /** Base class for (numeric) property values; representation which abstracts away from the
  * JSON Serialization. */
 export abstract class PropertyValue implements Comparable<PropertyValue> {
+    protected static formatValue(val: number, base: number, prefixes: Array<string>): string {
+        let index = 0;
+        while ((Math.abs(val) >= base) && (index < (prefixes.length - 1))) {
+            val = val / base;
+            index++;
+        }
+        // For sub-unit values, `maximumFractionDigits: 2` rounds non-zero numbers down to "0".
+        // Switch to `maximumSignificantDigits: 2` in that range so e.g. 0.004 -> "0.004" instead of "0".
+        const opts: Intl.NumberFormatOptions = (val !== 0 && Math.abs(val) < 1)
+            ? { maximumSignificantDigits: 2 }
+            : { minimumFractionDigits: 0, maximumFractionDigits: 2 };
+        return val.toLocaleString('en-US', opts) + prefixes[index];
+    }
+
+    protected static isFiniteNumber(raw: unknown): raw is number {
+        return typeof raw === "number" && Number.isFinite(raw);
+    }
+
+    /** A total as a percentage of the largest total on display, clamped to [0, 100]: 100 for the
+     * node holding the most, near zero for one holding a negligible share.  Zero when there is
+     * nothing on display to compare against. */
+    static totalShare(total: PropertyValue, largest: number | undefined): number {
+        const value = total.getNumericValue();
+        if (largest === undefined || largest <= 0 || value.isNone()) {
+            return 0;
+        }
+        return Math.max(0, Math.min(100, 100 * value.unwrap() / largest));
+    }
+
+    /** Shares for the totals of the toplevel node, which stands for the whole circuit.  It holds
+     * the largest total of every metric by construction, so `totalShare` would place all of them
+     * at 100.  These place each total against the others of its category -- the group it is
+     * displayed alongside -- on a log scale, since a category's totals routinely span a byte count
+     * in the billions beside a batch count in the hundreds. */
+    static categoryShares(totals: Map<string, PropertyValue>): Map<string, number> {
+        const magnitudes = new Map<string, number>();
+        const largest = new Map<string, number>();
+        for (const [metric, total] of totals) {
+            const value = total.getNumericValue();
+            if (value.isNone()) {
+                continue;
+            }
+            const magnitude = Math.max(0, value.unwrap());
+            magnitudes.set(metric, magnitude);
+            const category = MetricDescriptions.category(metric);
+            largest.set(category, Math.max(largest.get(category) ?? 0, magnitude));
+        }
+        const shares = new Map<string, number>();
+        for (const [metric, magnitude] of magnitudes) {
+            const top = largest.get(MetricDescriptions.category(metric))!;
+            shares.set(metric, top > 0 ? 100 * Math.log1p(magnitude) / Math.log1p(top) : 0);
+        }
+        return shares;
+    }
+
     abstract getNumericValue(): Option<number>;
 
     getStringValue(): string {
@@ -282,7 +323,7 @@ export abstract class PropertyValue implements Comparable<PropertyValue> {
         if (v.isSome()) {
             let value = v.unwrap();
             let prefixes = ["", "K", "M", "B"];
-            return formatValue(value, 1000, prefixes);
+            return PropertyValue.formatValue(value, 1000, prefixes);
         } else {
             return "N/A";
         }
@@ -316,10 +357,6 @@ export abstract class PropertyValue implements Comparable<PropertyValue> {
 export interface PropertyValueParser {
     /** Returns `undefined` when `raw` has the wrong JSON type for this parser. */
     fromJson(raw: unknown): PropertyValue | undefined;
-}
-
-function isFiniteNumber(raw: unknown): raw is number {
-    return typeof raw === "number" && Number.isFinite(raw);
 }
 
 /** A property value represented as a numerator and denominator, which are supposed to represent a percentage. */
@@ -431,7 +468,7 @@ export class CountValue extends PropertyValue {
     }
 
     static fromJson(raw: unknown): CountValue | undefined {
-        return isFiniteNumber(raw) ? new CountValue(raw) : undefined;
+        return PropertyValue.isFiniteNumber(raw) ? new CountValue(raw) : undefined;
     }
 
     getNumericValue(): Option<number> {
@@ -483,7 +520,7 @@ export class BytesValue extends PropertyValue {
     }
 
     static fromJson(raw: unknown): BytesValue | undefined {
-        return isFiniteNumber(raw) ? new BytesValue(raw) : undefined;
+        return PropertyValue.isFiniteNumber(raw) ? new BytesValue(raw) : undefined;
     }
 
     getNumericValue(): Option<number> {
@@ -519,7 +556,7 @@ export class BytesValue extends PropertyValue {
 
     override toString(): string {
         let prefixes = ["B", "KiB", "MiB", "GiB", "TiB"];
-        return formatValue(this.value, 1024, prefixes);
+        return PropertyValue.formatValue(this.value, 1024, prefixes);
     }
 }
 
@@ -873,9 +910,27 @@ export class RatioValue extends PropertyValue {
     }
 }
 
+/** The detail levels of the metric tables, from least to most detailed.  Each level shows the
+ * metrics of the levels before it. */
+const METRIC_LEVELS = ["basic", "standard", "advanced"] as const;
+export type MetricLevel = typeof METRIC_LEVELS[number];
+
 export class MetricDescriptions {
     private static KEY_ORDER: Map<string, number> = new Map();
     private static METRIC_DESCRIPTIONS: Map<string, ProfileMetricDescription> = new Map();
+
+    /** Compares the names a reader sees, with digit runs read as numbers so "Slot 2" comes
+     * before "Slot 10", and case ignored. */
+    private static readonly COLLATOR =
+        new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
+    /** The measurements of the "basic" level: operator runtime, records received, and storage
+     * size. */
+    private static readonly BASIC_MEASUREMENTS: ReadonlySet<string> = new Set([
+        "runtime_seconds",
+        "input_batches_stats.record_count",
+        "spine_storage_size_bytes",
+    ]);
 
     static known(): boolean {
         return MetricDescriptions.METRIC_DESCRIPTIONS.size > 0;
@@ -911,58 +966,70 @@ export class MetricDescriptions {
     static getMetricDescription(metric: string): string | undefined {
         return MetricDescriptions.getMetricInfo(metric)?.description;
     }
-}
 
-function stripSuffix(prop: string): string {
-    let dot = prop.indexOf(".");
-    if (dot >= 0) {
-        // Dot is used when appending measurements for a metric with multiple values
-        prop = prop.substring(0, dot);
-    }
-    return prop;
-}
-
-/** Which category does a measurement belong to?  Empty for a metric without a description. */
-export function measurementCategory(prop: string): string {
-    let info = MetricDescriptions.getMetricInfo(stripSuffix(prop));
-    if (info !== undefined) {
-        return info.category;
-    }
-    return "";
-}
-
-/** The name of a measurement as shown to a user: the metric id with its separators turned into
- * spaces and the first letter capitalized, so `spine_storage_size_bytes` reads "Spine storage
- * size bytes".  Every place that names a metric on screen uses this, so the metric selector and
- * the tables agree. */
-export function measurementLabel(prop: string): string {
-    const spelled = prop.replace(/[_.]/g, " ").replace(/\s+/g, " ").trim();
-    if (spelled.length === 0) {
+    private static stripSuffix(prop: string): string {
+        let dot = prop.indexOf(".");
+        if (dot >= 0) {
+            // Dot is used when appending measurements for a metric with multiple values
+            prop = prop.substring(0, dot);
+        }
         return prop;
     }
-    return spelled.charAt(0).toUpperCase() + spelled.slice(1);
-}
 
-/** Compares the names a reader sees, with digit runs read as numbers so "Slot 2" comes before
- * "Slot 10", and case ignored. */
-const metricCollator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
-
-/** Order two metrics the way every list of them is ordered.  The id breaks a tie: two ids can
- * spell one label, since `measurementLabel` turns both `_` and `.` into spaces. */
-export function compareMetrics(
-    a: { id: string, label: string },
-    b: { id: string, label: string }): number {
-    return metricCollator.compare(a.label, b.label) || metricCollator.compare(a.id, b.id);
-}
-
-/** Return a description of the measurement and a boolean indicating whether the measurements is "advanced" */
-export function measurementDescription(prop: string): { description: string, advanced: boolean } {
-    let info = MetricDescriptions.getMetricInfo(stripSuffix(prop));
-    if (info !== undefined) {
-        return { description: info.description, advanced: info.advanced };
+    /** Which category does a measurement belong to?  Empty for a metric without a description. */
+    static category(prop: string): string {
+        let info = MetricDescriptions.getMetricInfo(MetricDescriptions.stripSuffix(prop));
+        if (info !== undefined) {
+            return info.category;
+        }
+        return "";
     }
 
-    return { description: "", advanced: false };
+    /** The name of a measurement as shown to a user: the metric id with its separators turned
+     * into spaces and the first letter capitalized, so `spine_storage_size_bytes` reads "Spine
+     * storage size bytes".  Every place that names a metric on screen uses this, so the metric
+     * selector and the tables agree. */
+    static label(prop: string): string {
+        const spelled = prop.replace(/[_.]/g, " ").replace(/\s+/g, " ").trim();
+        if (spelled.length === 0) {
+            return prop;
+        }
+        return spelled.charAt(0).toUpperCase() + spelled.slice(1);
+    }
+
+    /** Order two metrics the way every list of them is ordered.  The id breaks a tie: two ids
+     * can spell one label, since `label` turns both `_` and `.` into spaces. */
+    static compare(
+        a: { id: string, label: string },
+        b: { id: string, label: string }): number {
+        return MetricDescriptions.COLLATOR.compare(a.label, b.label)
+            || MetricDescriptions.COLLATOR.compare(a.id, b.id);
+    }
+
+    /** Return a description of the measurement and a boolean indicating whether the measurements is "advanced" */
+    static describe(prop: string): { description: string, advanced: boolean } {
+        let info = MetricDescriptions.getMetricInfo(MetricDescriptions.stripSuffix(prop));
+        if (info !== undefined) {
+            return { description: info.description, advanced: info.advanced };
+        }
+
+        return { description: "", advanced: false };
+    }
+
+    /** The least detailed level that shows a measurement.  The profile metadata only tells
+     * "advanced" from "standard"; the "basic" measurements are a fixed set. */
+    static level(prop: string): MetricLevel {
+        if (MetricDescriptions.BASIC_MEASUREMENTS.has(prop)) {
+            return "basic";
+        }
+        return MetricDescriptions.describe(prop).advanced ? "advanced" : "standard";
+    }
+
+    /** True when the metric tables show a measurement at the given level. */
+    static isShown(prop: string, level: MetricLevel): boolean {
+        const least = MetricDescriptions.level(prop);
+        return METRIC_LEVELS.indexOf(least) <= METRIC_LEVELS.indexOf(level);
+    }
 }
 
 // Decoded measurement value.
@@ -982,6 +1049,18 @@ export class Measurement {
     /** Metric counting how many times a node ran, once per step of its circuit, so it repeats
      * across workers like the steps. */
     public static readonly INVOCATIONS_COUNT = "invocations_count";
+
+    /** True for a part of the statistics of an operator's input batches, such as
+     * `input_batches_stats.record_count`. */
+    static isInputBatchStatistic(metric: string): boolean {
+        return metric.startsWith("input_batches_stats.");
+    }
+
+    /** True for a part of the statistics of an operator's output batches, such as
+     * `output_batches_stats.record_count`. */
+    static isOutputBatchStatistic(metric: string): boolean {
+        return metric.startsWith("output_batches_stats.");
+    }
 
     constructor(
         readonly property: string,
@@ -1186,43 +1265,6 @@ export interface MetricScale {
 /** The scales the rendering colors against, by metric, over the nodes currently drawn. */
 export type DisplayScales = Map<string, MetricScale>;
 
-/** A total as a percentage of the largest total on display, clamped to [0, 100]: 100 for the
- * node holding the most, near zero for one holding a negligible share.  Zero when there is
- * nothing on display to compare against. */
-export function totalShare(total: PropertyValue, largest: number | undefined): number {
-    const value = total.getNumericValue();
-    if (largest === undefined || largest <= 0 || value.isNone()) {
-        return 0;
-    }
-    return Math.max(0, Math.min(100, 100 * value.unwrap() / largest));
-}
-
-/** Shares for the totals of the toplevel node, which stands for the whole circuit.  It holds the
- * largest total of every metric by construction, so `totalShare` would place all of them at 100.
- * These place each total against the others of its category -- the group it is displayed
- * alongside -- on a log scale, since a category's totals routinely span a byte count in the
- * billions beside a batch count in the hundreds. */
-export function categoryShares(totals: Map<string, PropertyValue>): Map<string, number> {
-    const magnitudes = new Map<string, number>();
-    const largest = new Map<string, number>();
-    for (const [metric, total] of totals) {
-        const value = total.getNumericValue();
-        if (value.isNone()) {
-            continue;
-        }
-        const magnitude = Math.max(0, value.unwrap());
-        magnitudes.set(metric, magnitude);
-        const category = measurementCategory(metric);
-        largest.set(category, Math.max(largest.get(category) ?? 0, magnitude));
-    }
-    const shares = new Map<string, number>();
-    for (const [metric, magnitude] of magnitudes) {
-        const top = largest.get(measurementCategory(metric))!;
-        shares.set(metric, top > 0 ? 100 * Math.log1p(magnitude) / Math.log1p(top) : 0);
-    }
-    return shares;
-}
-
 /** A node, its operation, and the (maximum) value of a metric for that node.  The actual metric
  * represented is not part of this data structure */
 export class NodeAndMetric {
@@ -1286,9 +1328,12 @@ class Measurements {
         return mode.unwrap();
     }
 
-    /** Add all of `other`'s values to this set. */
-    append(other: Measurements) {
+    /** Add `other`'s values of the metrics that `include` accepts to this set. */
+    append(other: Measurements, include: (metric: string) => boolean = () => true) {
         for (const [key, values] of other.measurements.entries()) {
+            if (!include(key)) {
+                continue;
+            }
             let existing = this.measurements.get(key);
             if (existing.isNone()) {
                 this.measurements.set(key, [...values]);
@@ -1415,8 +1460,9 @@ export class ComplexNode extends SimpleNode {
         this.children.push(node.id);
     }
 
-    appendMeasurements(node: SimpleNode) {
-        this.measurements.append(node.measurements);
+    /** Add `node`'s values of the metrics that `include` accepts to this region's values. */
+    appendMeasurements(node: SimpleNode, include: (metric: string) => boolean = () => true) {
+        this.measurements.append(node.measurements, include);
     }
 
     setDepth(depth: number) {
@@ -1611,6 +1657,53 @@ export class CircuitProfile {
                 this.consumers.set(ancestor, this.consumerCount(ancestor) + 1);
             }
         }
+    }
+
+    /** Gives each region the input batch statistics of the operators inside it that an edge
+     * from outside enters, and the output batch statistics of the operators inside it that an
+     * edge to outside leaves.  A region whose boundary operators report none has none. */
+    private appendBoundaryStatistics() {
+        // Region id -> the operators inside the region that an edge from outside enters.
+        const entries = new Map<NodeId, Set<NodeId>>();
+        // Region id -> the operators inside the region that an edge to outside leaves.
+        const exits = new Map<NodeId, Set<NodeId>>();
+        const add = (boundary: Map<NodeId, Set<NodeId>>, region: NodeId, node: NodeId) => {
+            let nodes = boundary.get(region);
+            if (nodes === undefined) {
+                nodes = new Set();
+                boundary.set(region, nodes);
+            }
+            nodes.add(node);
+        };
+        for (const edge of this.edges) {
+            // `enclosing` lists the node itself first, then the regions around it.
+            const sourceRegions = this.enclosing(edge.source).slice(1);
+            const targetRegions = this.enclosing(edge.target).slice(1);
+            for (const region of targetRegions) {
+                if (!sourceRegions.includes(region)) {
+                    add(entries, region, edge.target);
+                }
+            }
+            for (const region of sourceRegions) {
+                if (!targetRegions.includes(region)) {
+                    add(exits, region, edge.source);
+                }
+            }
+        }
+        const append = (boundary: Map<NodeId, Set<NodeId>>, include: (metric: string) => boolean) => {
+            for (const [regionId, nodes] of boundary) {
+                const region = this.complexNodes.get(regionId).unwrap();
+                for (const nodeId of nodes) {
+                    // An edge can end at a region; only operators report statistics.
+                    const node = this.simpleNodes.get(nodeId);
+                    if (node.isSome()) {
+                        region.appendMeasurements(node.unwrap(), include);
+                    }
+                }
+            }
+        };
+        append(entries, Measurement.isInputBatchStatistic);
+        append(exits, Measurement.isOutputBatchStatistic);
     }
 
     // Get the topmost parent of a node which is not the toplevel graph node.
@@ -1898,19 +1991,24 @@ export class CircuitProfile {
             node.setDepth(result.computeDepth(node.id));
         }
 
-        // Assign to every complex node the "sum" of the children's measurements,
-        // and the number of primitive operators inside it.
+        // Assign to every complex node the number of primitive operators inside it, and the
+        // "sum" of the children's measurements except the input and output batch statistics.
         // `depth` is the height above the leaves, so increasing depth visits a
         // region after its subregions, and their counts are final when it reads them.
+        const notBatchStatistic = (metric: string) =>
+            !Measurement.isInputBatchStatistic(metric)
+            && !Measurement.isOutputBatchStatistic(metric);
         for (const complex of result.getSortedComplexNodes()) {
             let leaves = 0;
             for (const child of complex.children) {
                 const node = result.getNode(child).unwrap();
-                complex.appendMeasurements(node);
+                complex.appendMeasurements(node, notBatchStatistic);
                 leaves += node instanceof ComplexNode ? node.leafCount : 1;
             }
             complex.setLeafCount(leaves);
         }
+        // A region's input and output batch statistics are those of its boundary operators.
+        result.appendBoundaryStatistics();
 
         return {
             profile: result,

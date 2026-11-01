@@ -3,9 +3,7 @@ import {
     AggregationMode,
     BooleanValue,
     BytesValue,
-    categoryShares,
     CircuitProfile,
-    measurementCategory,
     ComplexNode,
     CountValue,
     Measurement,
@@ -18,9 +16,6 @@ import {
     SimpleNode,
     StringValue,
     TimeValue,
-    compareMetrics,
-    measurementLabel,
-    totalShare,
     type JsonProfiles
 } from './profile.js'
 import type { Dataflow } from './dataflow.js'
@@ -29,44 +24,44 @@ import { displaysNodeInformation, NumericRange, Option } from './util.js'
 
 // Issue 6991: the metric selector showed `spine_storage_size_bytes` while the table of values
 // showed "Spine storage size bytes". One helper now names a metric for every place on screen.
-describe('measurementLabel', () => {
+describe('MetricDescriptions.label', () => {
     it('spells out a metric id', () => {
-        expect(measurementLabel('spine_storage_size_bytes')).toBe('Spine storage size bytes')
-        expect(measurementLabel('runtime_percent')).toBe('Runtime percent')
+        expect(MetricDescriptions.label('spine_storage_size_bytes')).toBe('Spine storage size bytes')
+        expect(MetricDescriptions.label('runtime_percent')).toBe('Runtime percent')
     })
 
     it('spells out the parts of a composite metric', () => {
         // Suffixes are joined with a dot, and labels the runtime attaches carry a colon.
-        expect(measurementLabel('input_batches_stats.min_size')).toBe('Input batches stats min size')
-        expect(measurementLabel('completed_merges.slot:0.steps')).toBe('Completed merges slot:0 steps')
+        expect(MetricDescriptions.label('input_batches_stats.min_size')).toBe('Input batches stats min size')
+        expect(MetricDescriptions.label('completed_merges.slot:0.steps')).toBe('Completed merges slot:0 steps')
     })
 
     it('returns the id when there is nothing to spell out', () => {
-        expect(measurementLabel('')).toBe('')
-        expect(measurementLabel('_')).toBe('_')
+        expect(MetricDescriptions.label('')).toBe('')
+        expect(MetricDescriptions.label('_')).toBe('_')
     })
 })
 
 // What the transformation cannot know, pinned so a change to it is deliberate. The runtime
 // attaches labels as `key:value` pairs joined with dots (`slot` and `input` today, both numeric),
 // and the label spells every `_` and `.` as a space.
-describe('measurementLabel on names it cannot parse', () => {
+describe('MetricDescriptions.label on names it cannot parse', () => {
     it('spells out an underscore inside a label value too', () => {
         // Nothing in the id says which underscores separate words and which belong to a value.
-        expect(measurementLabel('completed_merges.endpoint:kafka_input.steps'))
+        expect(MetricDescriptions.label('completed_merges.endpoint:kafka_input.steps'))
             .toBe('Completed merges endpoint:kafka input steps')
     })
 
     it('spells two different ids the same way', () => {
         // `_` and `.` both become spaces, so ids that differ only in their separator collide.
         // Selection travels by id, so the two stay distinct everywhere but on screen.
-        expect(measurementLabel('a_b')).toBe(measurementLabel('a.b'))
+        expect(MetricDescriptions.label('a_b')).toBe(MetricDescriptions.label('a.b'))
     })
 })
 
-describe('compareMetrics', () => {
-    const metric = (id: string) => ({ id, label: measurementLabel(id) })
-    const order = (ids: string[]) => ids.map(metric).sort(compareMetrics).map((m) => m.id)
+describe('MetricDescriptions.compare', () => {
+    const metric = (id: string) => ({ id, label: MetricDescriptions.label(id) })
+    const order = (ids: string[]) => ids.map(metric).sort(MetricDescriptions.compare).map((m) => m.id)
 
     it('reads digit runs as numbers', () => {
         expect(order([
@@ -852,25 +847,32 @@ describe('region aggregation', () => {
         { metric_id: 'used_memory_bytes', value: { type: 'bytes', value: leaf.memory } }
     ]
 
-    // Region r1 holds two operators and a nested region r2 holding a third.
+    const edge = (from: string, to: string) =>
+        ({ from_node: from, to_node: to, from_cluster: false, to_cluster: false })
+
+    // Region r1 holds two operators and a nested region r2 holding a third. The operator `s`
+    // outside feeds all three, so all three are entries of r1, and n3 is the entry of r2.
     const graph = {
         nodes: {
-            id: 'n', label: 'root', nodes: [{
-                Cluster: {
-                    id: 'r1', label: 'region', nodes: [
-                        { Simple: { id: 'n1', label: 'op1' } },
-                        { Simple: { id: 'n2', label: 'op2' } },
-                        {
-                            Cluster: {
-                                id: 'r2', label: 'subregion',
-                                nodes: [{ Simple: { id: 'n3', label: 'op3' } }]
+            id: 'n', label: 'root', nodes: [
+                { Simple: { id: 's', label: 'source' } },
+                {
+                    Cluster: {
+                        id: 'r1', label: 'region', nodes: [
+                            { Simple: { id: 'n1', label: 'op1' } },
+                            { Simple: { id: 'n2', label: 'op2' } },
+                            {
+                                Cluster: {
+                                    id: 'r2', label: 'subregion',
+                                    nodes: [{ Simple: { id: 'n3', label: 'op3' } }]
+                                }
                             }
-                        }
-                    ]
+                        ]
+                    }
                 }
-            }]
+            ]
         },
-        edges: []
+        edges: [edge('s', 'n1'), edge('s', 'n2'), edge('s', 'n3')]
     }
 
     const leaves: Record<string, Leaf> = {
@@ -961,6 +963,94 @@ describe('region aggregation', () => {
     })
 })
 
+// A region's input and output batch statistics are those of the operators that edges cross its
+// boundary at, not the totals of all the operators inside it.
+describe('region batch statistics', () => {
+    const count = (value: number) => ({ type: 'count', value })
+    // One batch of `records` records.
+    const stats = (metric_id: string, records: number) => ({
+        metric_id,
+        value: {
+            batches_count: count(1),
+            min_records_count: count(records),
+            max_records_count: count(records),
+            avg_records_count: count(records),
+            total_records_count: count(records)
+        }
+    })
+    const both = (input: number, output: number) =>
+        [stats('input_batches_stats', input), stats('output_batches_stats', output)]
+    const edge = (from: string, to: string) =>
+        ({ from_node: from, to_node: to, from_cluster: false, to_cluster: false })
+    const op = (id: string) => ({ Simple: { id, label: id } })
+
+    //   src => r [ a -> b -> r2 [ c ] -> d ] -> out
+    //   src2 -> r3 [ e -> f -> g ] -> out2
+    // `src` feeds `a` twice. In r3 only `f` reports statistics, and no edge crosses the boundary
+    // of r3 at `f`.
+    const profile = (() => {
+        const json = {
+            metrics: [],
+            worker_profiles: [{
+                metadata: {
+                    a: both(10, 20),
+                    b: both(100, 200),
+                    c: both(1000, 2000),
+                    d: both(10000, 20000),
+                    f: both(5, 5)
+                }
+            }],
+            graph: {
+                nodes: {
+                    id: 'n', label: 'root', nodes: [
+                        op('src'),
+                        {
+                            Cluster: {
+                                id: 'r', label: 'region', nodes: [
+                                    op('a'),
+                                    op('b'),
+                                    { Cluster: { id: 'r2', label: 'nested', nodes: [op('c')] } },
+                                    op('d')
+                                ]
+                            }
+                        },
+                        op('out'),
+                        op('src2'),
+                        { Cluster: { id: 'r3', label: 'silent', nodes: [op('e'), op('f'), op('g')] } },
+                        op('out2')
+                    ]
+                },
+                edges: [
+                    edge('src', 'a'), edge('src', 'a'), edge('a', 'b'), edge('b', 'c'),
+                    edge('c', 'd'), edge('d', 'out'),
+                    edge('src2', 'e'), edge('e', 'f'), edge('f', 'g'), edge('g', 'out2')
+                ]
+            }
+        }
+        return CircuitProfile.fromJson(json as unknown as JsonProfiles).profile
+    })()
+
+    const records = (region: string, metric: string) =>
+        profile.complexNodes.get(region).unwrap().getMeasurements(`${metric}.record_count`)
+            .map((value) => value.getNumericValue().unwrap())
+
+    it('takes the input statistics of the operators that edges enter the region at', () => {
+        // `a` only, once, although two edges enter at `a`.
+        expect(records('r', 'input_batches_stats')).toEqual([10])
+        expect(records('r2', 'input_batches_stats')).toEqual([1000])
+    })
+
+    it('takes the output statistics of the operators that edges leave the region from', () => {
+        expect(records('r', 'output_batches_stats')).toEqual([20000])
+        expect(records('r2', 'output_batches_stats')).toEqual([2000])
+    })
+
+    it('has no batch statistics when no boundary operator reports them', () => {
+        expect(records('r3', 'input_batches_stats')).toEqual([])
+        expect(records('r3', 'output_batches_stats')).toEqual([])
+    })
+})
+
 // A node's readings for one metric add up across workers only when the metric adds up. Totalling
 // a rate, a reported minimum or a flag would print a number with no meaning, so those have none.
 describe('SimpleNode.totalOf', () => {
@@ -1035,9 +1125,9 @@ describe('SimpleNode.totalOf', () => {
 // maximum: a total is larger than any single worker reading, and a region holds more than any
 // node inside it, so a scale built from leaf worker readings pins every region at full red.
 // The toplevel node holds the whole circuit, so it reports the largest total of every metric and
-// `totalShare` would place all of them at 100 -- the bug where the overview came out uniformly
+// `PropertyValue.totalShare` would place all of them at 100 -- the bug where the overview came out uniformly
 // red. Its totals are placed against the others of their category instead.
-describe('categoryShares', () => {
+describe('PropertyValue.categoryShares', () => {
     // The first three metrics are in the State category; 'runtime_seconds' is in Time, so it is
     // scaled on its own.
     beforeAll(() => {
@@ -1059,7 +1149,7 @@ describe('categoryShares', () => {
     ])
 
     it('spreads totals that span orders of magnitude', () => {
-        const shares = categoryShares(totals)
+        const shares = PropertyValue.categoryShares(totals)
         // Log scale: the largest saturates and the smallest stays well clear of it, where a
         // linear scale would put 366 out of 13 billion at 0.
         expect(shares.get('spine_storage_size_bytes')).toBe(100)
@@ -1071,13 +1161,13 @@ describe('categoryShares', () => {
     it('scales each category on its own', () => {
         // The only Time total, so it is that category's maximum however small it looks beside
         // the byte counts.
-        expect(measurementCategory('runtime_seconds'))
-            .not.toBe(measurementCategory('spine_storage_size_bytes'))
-        expect(categoryShares(totals).get('runtime_seconds')).toBe(100)
+        expect(MetricDescriptions.category('runtime_seconds'))
+            .not.toBe(MetricDescriptions.category('spine_storage_size_bytes'))
+        expect(PropertyValue.categoryShares(totals).get('runtime_seconds')).toBe(100)
     })
 
     it('shades nothing when a category measured nothing', () => {
-        const shares = categoryShares(new Map([['spine_storage_size_bytes', new BytesValue(0)]]))
+        const shares = PropertyValue.categoryShares(new Map([['spine_storage_size_bytes', new BytesValue(0)]]))
         expect(shares.get('spine_storage_size_bytes')).toBe(0)
     })
 })
@@ -1162,23 +1252,23 @@ describe('CircuitProfile.displayScales', () => {
     })
 })
 
-describe('totalShare', () => {
+describe('PropertyValue.totalShare', () => {
     it('is the total as a percentage of the largest on display', () => {
-        expect(totalShare(new BytesValue(100), 100)).toBe(100)
-        expect(totalShare(new BytesValue(50), 100)).toBe(50)
-        expect(totalShare(new BytesValue(2), 100)).toBe(2)
-        expect(totalShare(new BytesValue(0), 100)).toBe(0)
+        expect(PropertyValue.totalShare(new BytesValue(100), 100)).toBe(100)
+        expect(PropertyValue.totalShare(new BytesValue(50), 100)).toBe(50)
+        expect(PropertyValue.totalShare(new BytesValue(2), 100)).toBe(2)
+        expect(PropertyValue.totalShare(new BytesValue(0), 100)).toBe(0)
     })
 
     it('shades nothing when there is nothing to compare against', () => {
-        expect(totalShare(new BytesValue(10), undefined)).toBe(0)
-        expect(totalShare(new BytesValue(10), 0)).toBe(0)
-        expect(totalShare(MissingValue.INSTANCE, 100)).toBe(0)
+        expect(PropertyValue.totalShare(new BytesValue(10), undefined)).toBe(0)
+        expect(PropertyValue.totalShare(new BytesValue(10), 0)).toBe(0)
+        expect(PropertyValue.totalShare(MissingValue.INSTANCE, 100)).toBe(0)
     })
 
     it('clamps a total that exceeds the largest on display', () => {
         // An expanded region is left out of the scale, yet its own row still has to render.
-        expect(totalShare(new BytesValue(500), 100)).toBe(100)
+        expect(PropertyValue.totalShare(new BytesValue(500), 100)).toBe(100)
     })
 })
 

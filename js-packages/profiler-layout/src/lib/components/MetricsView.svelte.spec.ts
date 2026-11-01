@@ -65,7 +65,7 @@ describe('MetricsView search', () => {
         mode: 'node',
         tooltipData: { nodeAttributes },
         rootNodeId: 'root',
-        showAdvanced: true,
+        metricLevel: 'advanced',
         lookup
       }
     })
@@ -90,7 +90,7 @@ describe('MetricsView search', () => {
         mode: 'node',
         tooltipData: { nodeAttributes: manyCategories },
         rootNodeId: 'root',
-        showAdvanced: true,
+        metricLevel: 'advanced',
         lookup
       }
     })
@@ -111,6 +111,50 @@ describe('MetricsView search', () => {
     await expect
       .poll(() => Math.abs(match.getBoundingClientRect().top - panel.getBoundingClientRect().top))
       .toBeLessThan(4)
+  })
+})
+
+describe('MetricsView detail levels', () => {
+  it('says so when the node has no metrics at the level', async () => {
+    const { container } = render(MetricsView, {
+      props: {
+        mode: 'node',
+        tooltipData: { nodeAttributes },
+        rootNodeId: 'root',
+        metricLevel: 'basic'
+      }
+    })
+    await tick()
+    expect(container.querySelector('.metrics-block')).toBeNull()
+    expect(container.textContent).toContain('No basic metrics associated with this node.')
+  })
+
+  it('shows the persistent ID only above the basic level', async () => {
+    const withId: NodeAttributes = {
+      ...nodeAttributes,
+      attributes: new Map([
+        ['parent', 'r1'],
+        ['persistentId', 'abc123']
+      ])
+    }
+    const text = async (metricLevel: 'basic' | 'standard') => {
+      const { container, unmount } = render(MetricsView, {
+        props: {
+          mode: 'node',
+          tooltipData: { nodeAttributes: withId },
+          rootNodeId: 'root',
+          metricLevel
+        }
+      })
+      await tick()
+      const result = container.textContent ?? ''
+      unmount()
+      return result
+    }
+    const basic = await text('basic')
+    expect(basic).toContain('parent ID')
+    expect(basic).not.toContain('persistent ID')
+    expect(await text('standard')).toContain('persistent ID')
   })
 })
 
@@ -138,7 +182,7 @@ describe('MetricsView global stats', () => {
         tooltipData: null,
         rootNodeId: 'root',
         globalMetrics,
-        showAdvanced: false
+        metricLevel: 'standard'
       }
     })
     await tick()
@@ -158,7 +202,7 @@ describe('MetricsView global stats', () => {
         tooltipData: null,
         rootNodeId: 'root',
         globalMetrics,
-        showAdvanced: false,
+        metricLevel: 'standard',
         lookup
       }
     })
@@ -173,7 +217,7 @@ describe('MetricsView global stats', () => {
         tooltipData: { nodeAttributes },
         rootNodeId: 'root',
         globalMetrics,
-        showAdvanced: false
+        metricLevel: 'standard'
       }
     })
     await tick()

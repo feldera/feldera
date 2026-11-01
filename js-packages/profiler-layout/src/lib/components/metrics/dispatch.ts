@@ -3,13 +3,8 @@
 // Blocks are grouped by the metric's category, retrieved from the profile metadata
 // (`ProfileMetricDescription::category`). Every block renders as a distribution.
 
-import type { NodeAttributes, TooltipRow } from 'profiler-lib'
-import {
-  compareMetrics,
-  measurementCategory,
-  measurementDescription,
-  measurementLabel
-} from 'profiler-lib'
+import type { MetricLevel, NodeAttributes, TooltipRow } from 'profiler-lib'
+import { MetricDescriptions } from 'profiler-lib'
 
 export type RenderableMetric = {
   row: TooltipRow
@@ -23,17 +18,20 @@ export type RenderableBlock = {
 }
 
 const UNCATEGORIZED = 'Other'
+// The basic level puts its few metrics in one block, not one block for each category.
+const BASIC_BLOCK = 'Basic metrics'
 
 const slugify = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 
-export function buildBlocks(attrs: NodeAttributes, showAdvanced: boolean): RenderableBlock[] {
+export function buildBlocks(attrs: NodeAttributes, level: MetricLevel): RenderableBlock[] {
   // Preserve first-seen category order from the rows.
   const byCategory = new Map<string, RenderableMetric[]>()
   for (const row of attrs.rows) {
-    if (!showAdvanced && measurementDescription(row.metric).advanced) {
+    if (!MetricDescriptions.isShown(row.metric, level)) {
       continue
     }
-    const category = measurementCategory(row.metric) || UNCATEGORIZED
+    const category =
+      level === 'basic' ? BASIC_BLOCK : MetricDescriptions.category(row.metric) || UNCATEGORIZED
     let bucket = byCategory.get(category)
     if (!bucket) {
       bucket = []
@@ -41,18 +39,21 @@ export function buildBlocks(attrs: NodeAttributes, showAdvanced: boolean): Rende
     }
     bucket.push({
       row,
-      label: measurementLabel(row.metric)
+      label: MetricDescriptions.label(row.metric)
     })
   }
 
   // Sort metrics inside each block by their displayed label, placing the current metric first.
-  // `compareMetrics` is the order the metric selector uses as well, so a metric sits in the same
+  // `MetricDescriptions.compare` is the order the metric selector uses as well, so a metric sits in the same
   // relative position in both.
   for (const entries of byCategory.values()) {
     entries.sort(
       (a, b) =>
         Number(b.row.isCurrentMetric) - Number(a.row.isCurrentMetric) ||
-        compareMetrics({ id: a.row.metric, label: a.label }, { id: b.row.metric, label: b.label })
+        MetricDescriptions.compare(
+          { id: a.row.metric, label: a.label },
+          { id: b.row.metric, label: b.label }
+        )
     )
   }
 

@@ -61,8 +61,15 @@
       <!-- The positioner copies its z-index from the content (`z-2`). -->
       <Combobox.Content class="scrollbar z-2 max-h-96 gap-0 overflow-y-auto p-1 text-[14px]">
         {#each matching as metric (metric.id)}
-          <Combobox.Item item={metric} class="py-0.5">
+          <!-- The selected metric has a tint and a check mark, highlighted or not. -->
+          <Combobox.Item
+            item={metric}
+            class="py-0.5 data-highlighted:bg-surface-950-50/10 data-[state=checked]:bg-primary-50-950 data-[state=checked]:font-medium data-[state=checked]:text-surface-950-50 data-[state=checked]:data-highlighted:bg-primary-100-900"
+          >
             <Combobox.ItemText>{metric.label}</Combobox.ItemText>
+            <Combobox.ItemIndicator>
+              <span aria-hidden="true">✓</span>
+            </Combobox.ItemIndicator>
           </Combobox.Item>
         {:else}
           <li class="px-2 py-0.5 text-surface-600-400">No matching metrics</li>
