@@ -2152,6 +2152,32 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void testPositionEmptyNeedle() {
+        // Validated on Postgres
+        var ccs = this.getCCS("""
+                CREATE TABLE T(s VARCHAR, t VARCHAR, b VARBINARY, c VARBINARY);
+                CREATE VIEW V AS SELECT POSITION(s IN t), POSITION(b IN c) FROM T;""");
+        ccs.step("INSERT INTO T VALUES('', '', x'', x''), ('', 'abc', x'', x'010203')", """
+                 a | b | weight
+                ----------------
+                 1 | 1 | 2""");
+    }
+
+    @Test
+    public void testReplaceEmptyNeedle() {
+        // Validated on Postgres
+        var ccs = this.getCCS("""
+                CREATE TABLE T(h VARCHAR, n VARCHAR);
+                CREATE VIEW V AS SELECT REPLACE(h, n, 'x'), REPLACE('abc', '', 'x') FROM T;""").withStringTrim();
+        ccs.step("INSERT INTO T VALUES('', ''), ('abc', ''), ('abc', 'b')", """
+                 a   | b   | weight
+                --------------------
+                     | abc | 1
+                 abc | abc | 1
+                 axc | abc | 1""");
+    }
+
+    @Test
     public void testSequence() {
         this.qst("""
                 SELECT SEQUENCE(1, 10);

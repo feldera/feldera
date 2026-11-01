@@ -499,6 +499,10 @@ some_function1!(octet_length, ByteArray, i32);
 
 #[doc(hidden)]
 pub fn binary_position__(needle: ByteArray, haystack: ByteArray) -> i32 {
+    // An empty needle matches at position 1
+    if needle.data.is_empty() {
+        return 1;
+    }
     haystack
         .data
         .windows(needle.data.len())
