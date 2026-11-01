@@ -16,6 +16,11 @@ export const useLayoutSettings = () => {
     'layout/pipelines/table/sort',
     { column: 'name', direction: 'asc' }
   )
+  /** Widths in px of the pipelines table columns the user has resized, by column. */
+  const pipelinesTableColumnWidths = useLocalStorage<Record<string, number>>(
+    'layout/pipelines/table/columnWidths',
+    {}
+  )
 
   return {
     showPipelinesPanel,
@@ -24,6 +29,7 @@ export const useLayoutSettings = () => {
     hideWarnings,
     verbatimErrors,
     sqlPanelFullHeight,
-    pipelinesTableSort
+    pipelinesTableSort,
+    pipelinesTableColumnWidths
   }
 }

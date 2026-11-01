@@ -15,7 +15,7 @@
     <FelderaLogoBlackDetail class="h-8 pl-4 opacity-40"></FelderaLogoBlackDetail>
   {/if}
   <div class="flex flex-col gap-1 md:flex-row">
-    <BookADemo class="btn justify-start px-4 hover:bg-surface-50-950" placement="footer">
+    <BookADemo class="btn justify-start px-4 hover:bg-row-hover" placement="footer">
       <!-- svelte-ignore block_empty -->
       {#snippet icon()}{/snippet}
       Book a demo
@@ -26,7 +26,7 @@
         target="_blank"
         rel="noreferrer"
         href={page.data.feldera.changelog}
-        class="btn justify-start px-4 hover:bg-surface-50-950"
+        class="btn justify-start px-4 hover:bg-row-hover"
         >{page.data.feldera.edition} {page.data.feldera.version} Changelog</a
       >
     {/if}

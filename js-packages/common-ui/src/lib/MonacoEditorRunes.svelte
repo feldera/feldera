@@ -163,9 +163,11 @@
 ></div>
 
 <style>
+  /* A read-only editor stays white in light mode, like an editable one, rather than taking
+     a grey fill. */
   .monaco-readonly {
     :global(.sticky-line-content, .sticky-widget-line-numbers, .margin, .monaco-editor-background) {
-      background-color: var(--color-surface-50);
+      background-color: #ffffff;
     }
   }
   .monaco-readonly-dark {

@@ -330,4 +330,4 @@
   </div>
 {/snippet}
 
-<TabsPanel {tabs} bind:currentTab={currentTab!} {tabProps} />
+<TabsPanel {tabs} bind:currentTab={currentTab!} {tabProps} tabLabelVariant="cell" />

@@ -139,7 +139,7 @@
       {#snippet loadProfileControl()}
         <FelderaModernLogoColorDark class="h-8 px-2" />
         <button
-          class="rounded-base bg-primary-500 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-600"
+          class="rounded-base bg-primary-500 px-4 py-1.5 text-sm font-medium text-primary-contrast-500 transition-colors hover:bg-primary-500/85"
           onclick={() => fileInput?.click()}
         >
           Load Bundle
@@ -166,13 +166,13 @@
         {#if isLoading}
           <div class="flex items-center justify-center gap-3 py-4">
             <div
-              class="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"
+              class="h-6 w-6 animate-spin rounded-full border-2 border-secondary-500 border-t-transparent"
             ></div>
             <span class="text-sm text-surface-600">Processing bundle…</span>
           </div>
         {:else}
           <button
-            class="w-full rounded-base bg-primary-500 px-6 py-2 font-medium text-white transition-colors hover:bg-primary-600"
+            class="w-full rounded-base bg-primary-500 px-6 py-2 font-medium text-primary-contrast-500 transition-colors hover:bg-primary-500/85"
             onclick={() => fileInput?.click()}
           >
             Load Bundle

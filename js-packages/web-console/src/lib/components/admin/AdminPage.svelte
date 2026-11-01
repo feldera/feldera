@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Listbox, useListCollection } from '@skeletonlabs/skeleton-svelte'
   import { asyncReadable } from '@square/svelte-store'
+  import { fade } from 'svelte/transition'
   import TenantList from '#lib/components/admin/TenantList.svelte'
   import UserRoleTable from '#lib/components/admin/UserRoleTable.svelte'
   import Popup from '#lib/components/common/Popup.svelte'
@@ -78,14 +79,15 @@
           <button type="button" onclick={toggle} class="group inline-flex items-baseline gap-2">
             <span class="group-hover:underline">{tenantLabel}</span>
 
-            <span class="text-base font-normal text-primary-500 group-hover:underline"
+            <span class="text-base font-normal text-secondary-600-400 group-hover:underline"
               >select a different tenant</span
             >
           </button>
         {/snippet}
         {#snippet content(close)}
           <div
-            class="bg-white-dark absolute top-full -left-5 z-30 mt-1 max-h-64 w-64 overflow-auto rounded-container shadow-md"
+            transition:fade={{ duration: 100 }}
+            class="bg-white-dark absolute top-full -left-5 z-30 mt-1 max-h-64 w-64 overflow-auto rounded p-1 shadow-md dark:border dark:border-surface-950-50/10"
           >
             <Listbox
               collection={tenantCollection}
@@ -99,7 +101,7 @@
                 {#each tenantCollection.items as t (t.id)}
                   <Listbox.Item
                     item={t}
-                    class="cursor-pointer px-3 py-1.5 hover:preset-tonal-surface"
+                    class="flex h-9 cursor-pointer items-center gap-2 rounded px-3 hover:preset-tonal-surface"
                   >
                     <Listbox.ItemText>{t.name}</Listbox.ItemText>
                   </Listbox.Item>

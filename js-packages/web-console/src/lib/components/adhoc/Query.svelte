@@ -172,7 +172,7 @@
             {#if progress}
               <Progress class="h-1 max-w-[1000px]" value={null}>
                 <Progress.Track>
-                  <Progress.Range class="bg-primary-500" />
+                  <Progress.Range class="bg-secondary-500" />
                 </Progress.Track>
               </Progress>
             {/if}

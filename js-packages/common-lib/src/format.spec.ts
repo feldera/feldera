@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { microseconds } from './duration.ts'
-import { formatDuration, formatQty, formatServerTime } from './format.ts'
+import { formatDuration, formatQty, formatServerTime, formatTimeAgo } from './format.ts'
 
 describe('formatQty', () => {
   it('returns em dash for null', () => {
@@ -111,5 +111,39 @@ describe('formatServerTime', () => {
   it('accepts a Date', () => {
     vi.stubEnv('TZ', 'UTC')
     expect(formatServerTime(new Date('2026-10-15T08:39:53Z'))).toBe('08:39:53 UTC')
+  })
+})
+
+describe('formatTimeAgo', () => {
+  const now = new Date('2026-10-08T12:00:00Z')
+  const ago = (ms: number) => formatTimeAgo(new Date(now.valueOf() - ms), now)
+  const minute = 60_000
+  const hour = 60 * minute
+  const day = 24 * hour
+
+  it('reads under a minute, and a future timestamp, as just now', () => {
+    expect(ago(59_999)).toBe('just now')
+    expect(ago(-5 * minute)).toBe('just now')
+  })
+
+  it('shows only the largest unit, floored', () => {
+    expect(ago(34 * minute + 59_000)).toBe('34 minutes ago')
+    expect(ago(9 * hour + 34 * minute)).toBe('9 hours ago')
+    expect(ago(2 * day + 8 * hour + 29 * minute)).toBe('2 days ago')
+    expect(ago(6 * day + 23 * hour)).toBe('6 days ago')
+  })
+
+  it('keeps a count of one numeric rather than saying yesterday', () => {
+    expect(ago(minute)).toBe('1 minute ago')
+    expect(ago(day)).toBe('1 day ago')
+  })
+
+  it('rolls over into weeks, calendar months and years', () => {
+    expect(ago(7 * day + 9 * hour)).toBe('1 week ago')
+    expect(ago(29 * day)).toBe('4 weeks ago')
+    expect(ago(30 * day)).toBe('1 month ago')
+    expect(formatTimeAgo(new Date('2026-08-07T12:00:00Z'), now)).toBe('2 months ago')
+    expect(formatTimeAgo(new Date('2025-10-09T12:00:00Z'), now)).toBe('11 months ago')
+    expect(formatTimeAgo(new Date('2024-10-08T12:00:00Z'), now)).toBe('2 years ago')
   })
 })

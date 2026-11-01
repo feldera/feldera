@@ -14,8 +14,8 @@
   --heading-font-weight: bold;
   --heading-font-style: normal;
   --heading-letter-spacing: inherit;
-  --anchor-font-color: var(--color-primary-500);
-  --anchor-font-color-dark: var(--color-primary-400);
+  --anchor-font-color: var(--color-secondary-600);
+  --anchor-font-color-dark: var(--color-secondary-300);
   --anchor-font-family: inherit;
   --anchor-font-size: inherit;
   --anchor-line-height: inherit;
@@ -37,44 +37,49 @@
   --default-border-width: 2px;
   --default-divide-width: 1px;
   --default-ring-width: 1px;
-  --body-background-color: rgb(255 255 255);
+  --body-background-color: var(--color-page);
   --body-background-color-dark: var(--color-dark);
   --color-dark: rgb(24 24 24);
-  --color-primary-50: oklch(90.8% 0.05 328.17deg);
-  --color-primary-100: oklch(83.61% 0.09 328.86deg);
-  --color-primary-200: oklch(76.82% 0.13 329.53deg);
-  --color-primary-300: oklch(70.1% 0.17 330.23deg);
-  --color-primary-400: oklch(64.27% 0.2 330.96deg);
-  --color-primary-500: oklch(59.22% 0.23 331.72deg);
-  --color-primary-600: oklch(53.65% 0.2 331.87deg);
-  --color-primary-700: oklch(47.91% 0.18 331.66deg);
-  --color-primary-800: oklch(41.87% 0.16 331.38deg);
-  --color-primary-900: oklch(35.74% 0.13 330.95deg);
-  --color-primary-950: oklch(29.4% 0.1 331.06deg);
-  --color-primary-contrast-dark: var(--color-primary-950);
-  --color-primary-contrast-light: var(--color-surface-50);
+  /* Primary is ink: buttons and form fields are #050505. The scale stops at that black
+     from 500 up, and its light steps are greys for tints. Dark mode flips 500 to near
+     white; see "Call to action" below. */
+  --color-primary-50: #f7f7f7;
+  --color-primary-100: #ededed;
+  --color-primary-200: #d9d9d9;
+  --color-primary-300: #a6a6a6;
+  --color-primary-400: #4d4d4d;
+  --color-primary-500: #050505;
+  --color-primary-600: #050505;
+  --color-primary-700: #050505;
+  --color-primary-800: #050505;
+  --color-primary-900: #050505;
+  --color-primary-950: #050505;
+  --color-primary-contrast-dark: #050505;
+  --color-primary-contrast-light: #ffffff;
   --color-primary-contrast-50: var(--color-primary-contrast-dark);
   --color-primary-contrast-100: var(--color-primary-contrast-dark);
   --color-primary-contrast-200: var(--color-primary-contrast-dark);
   --color-primary-contrast-300: var(--color-primary-contrast-dark);
-  --color-primary-contrast-400: var(--color-primary-contrast-dark);
+  --color-primary-contrast-400: var(--color-primary-contrast-light);
   --color-primary-contrast-500: var(--color-primary-contrast-light);
   --color-primary-contrast-600: var(--color-primary-contrast-light);
   --color-primary-contrast-700: var(--color-primary-contrast-light);
   --color-primary-contrast-800: var(--color-primary-contrast-light);
   --color-primary-contrast-900: var(--color-primary-contrast-light);
   --color-primary-contrast-950: var(--color-primary-contrast-light);
-  --color-secondary-50: oklch(98.35% 0.02 84.56deg);
-  --color-secondary-100: oklch(94.57% 0.04 77.22deg);
-  --color-secondary-200: oklch(90.99% 0.07 73.71deg);
-  --color-secondary-300: oklch(87.63% 0.1 73.57deg);
-  --color-secondary-400: oklch(84.33% 0.12 71.18deg);
-  --color-secondary-500: oklch(81.09% 0.14 69.14deg);
-  --color-secondary-600: oklch(73.19% 0.13 67.29deg);
-  --color-secondary-700: oklch(65.18% 0.12 64.75deg);
-  --color-secondary-800: oklch(57.01% 0.11 62.59deg);
-  --color-secondary-900: oklch(48.48% 0.09 58.43deg);
-  --color-secondary-950: oklch(39.46% 0.08 52.84deg);
+  /* Secondary is the lavender accent: links, progress, charts, loaders, highlights and
+     the welcome banner's glow. */
+  --color-secondary-50: oklch(97.6% 0.014 293deg);
+  --color-secondary-100: oklch(94.6% 0.03 293deg);
+  --color-secondary-200: oklch(89.4% 0.06 293deg);
+  --color-secondary-300: oklch(82.4% 0.1 293deg);
+  --color-secondary-400: oklch(74% 0.14 293deg);
+  --color-secondary-500: oklch(65.4% 0.17 293deg);
+  --color-secondary-600: oklch(57.4% 0.18 293deg);
+  --color-secondary-700: oklch(49.8% 0.17 293deg);
+  --color-secondary-800: oklch(42% 0.145 293deg);
+  --color-secondary-900: oklch(34.6% 0.115 293deg);
+  --color-secondary-950: oklch(26.8% 0.085 293deg);
   --color-secondary-contrast-dark: var(--color-secondary-950);
   --color-secondary-contrast-light: var(--color-secondary-50);
   --color-secondary-contrast-50: var(--color-secondary-contrast-dark);
@@ -82,8 +87,8 @@
   --color-secondary-contrast-200: var(--color-secondary-contrast-dark);
   --color-secondary-contrast-300: var(--color-secondary-contrast-dark);
   --color-secondary-contrast-400: var(--color-secondary-contrast-dark);
-  --color-secondary-contrast-500: var(--color-secondary-contrast-dark);
-  --color-secondary-contrast-600: var(--color-secondary-contrast-dark);
+  --color-secondary-contrast-500: var(--color-secondary-contrast-light);
+  --color-secondary-contrast-600: var(--color-secondary-contrast-light);
   --color-secondary-contrast-700: var(--color-secondary-contrast-light);
   --color-secondary-contrast-800: var(--color-secondary-contrast-light);
   --color-secondary-contrast-900: var(--color-secondary-contrast-light);
@@ -184,7 +189,9 @@
   --color-error-contrast-800: var(--color-error-contrast-light);
   --color-error-contrast-900: var(--color-error-contrast-light);
   --color-error-contrast-950: var(--color-error-contrast-light);
-  --color-surface-50: oklch(97.31% 0 none);
+  /* Warm grey 50 from the Feldera branding: a warm off-white for grey fills such as
+     secondary buttons and selects, on the white page. */
+  --color-surface-50: #f4f2ee;
   --color-surface-100: oklch(90.06% 0 none);
   --color-surface-200: oklch(82.66% 0 none);
   --color-surface-300: oklch(75.08% 0 none);
@@ -226,6 +233,67 @@
   background-color: #ffffff;
 }
 
+/* ── Panels ──────────────────────────────────────────────────────────────────
+   The content panels, such as the pipeline editor and its tabbed panels. In dark
+   mode they sit close to the near-black page (#2a2a2a is the Radix dark grey step 4,
+   the scale of the status tones) rather than at surface-950, which light mode uses for
+   text. Their corners are a little tighter than `rounded-container`. In light mode they
+   are white with a 1px line, so they stand out from the tinted page. */
+.panel {
+  border-radius: 8px;
+  border: 1px solid var(--color-line);
+  background-color: #ffffff;
+}
+.panel:where(.dark, .dark *) {
+  background-color: #2a2a2a;
+}
+
+/* ── Call to action ──────────────────────────────────────────────────────────
+   A #050505 button would vanish on the near-black dark page, so dark mode turns
+   primary-500 (filled buttons, checkboxes, switches and focus rings) near white with
+   black text. Only step 500 flips: the paired tokens such as `primary-50-950` already
+   switch sides on their own. */
+.dark {
+  --color-primary-500: #fafafa;
+  --color-primary-contrast-500: #050505;
+}
+
+/* Skeleton brightens a button on hover, which leaves black unchanged. A filled primary
+   button instead mixes towards its text colour: grey over black, and the reverse in
+   dark mode. */
+.btn[class*="preset-filled-primary-500"]:not(:disabled):hover {
+  filter: none;
+  background-color: color-mix(
+    in oklab,
+    var(--color-primary-500) 84%,
+    var(--color-primary-contrast-500)
+  );
+}
+
+.btn[class*="preset-filled-primary-500"]:not(:disabled):active {
+  filter: none;
+  background-color: color-mix(
+    in oklab,
+    var(--color-primary-500) 72%,
+    var(--color-primary-contrast-500)
+  );
+}
+
+/* Skeleton's switch thumb is always white, which disappears on the near-white checked
+   track in dark mode. A checked thumb takes the track's text colour instead. */
+[data-scope="switch"][data-part="thumb"][data-state="checked"] {
+  background-color: var(--color-primary-contrast-500);
+}
+
+/* Text selection uses the lavender accent rather than Skeleton's primary tint. */
+::selection {
+  background-color: color-mix(
+    in oklab,
+    var(--color-secondary-300) 60%,
+    transparent
+  );
+}
+
 /* ── Status tones ────────────────────────────────────────────────────────────
    Colours for status chips, dots and counters in web-console and profiler-app
    (Figma: Feldera-UI, node 3554:18690). Tailwind turns them into utilities
@@ -233,23 +301,35 @@
 
 @theme {
   /* Each tone has a strong colour for text and dots and a subtle colour for the
-     chip background. The light values are Radix alpha steps 11 and 3; the dark
-     overrides follow. A `-dot` colour replaces the strong colour for dots where
+     chip background. The light values start from Radix steps 11 and 3 (Figma) and are
+     toned down, with less saturation, to sit calmly on the near-white page; the dark
+     overrides follow. A `-dot` colour replaces the strong colour for dots and bars where
      the strong colour reads too dark. */
   --color-status-neutral: #0007149f;
   --color-status-neutral-subtle: #0000330f;
   --color-status-neutral-dot: #8b8d98;
-  --color-status-blue: #006dcbf2;
-  --color-status-blue-subtle: #008ff519;
-  --color-status-blue-dot: #0090ff;
-  --color-status-jade: #007152df;
-  --color-status-jade-subtle: #00a83829;
-  --color-status-jade-dot: #29a383;
-  --color-status-warning: #ab6400;
-  --color-status-warning-subtle: #ffde003d;
-  --color-status-warning-dot: #ffc53d;
-  --color-status-error: #c40006d3;
-  --color-status-error-subtle: #f3000d14;
+  --color-status-blue: #2f5f8f;
+  --color-status-blue-subtle: #e8eff6;
+  --color-status-blue-dot: #5b8fc7;
+  --color-status-jade: #2f6b55;
+  --color-status-jade-subtle: #e4f0ea;
+  --color-status-jade-dot: #4f9a7c;
+  --color-status-warning: #8a5a12;
+  --color-status-warning-subtle: #f8eed8;
+  --color-status-warning-dot: #e0b04a;
+  --color-status-error: #a33a3a;
+  --color-status-error-subtle: #f7e6e4;
+  --color-status-error-dot: #d0605c;
+
+  /* Neutrals for the tinted page: an almost white, neutral grey page, white
+     tables, editors, panels and form controls on it, a plain grey for tab bars and
+     toolbars, a plain grey without the tint for hover on rows and cards, and the 1px line
+     of borders and dividers. Tailwind turns them into utilities such as `bg-page`,
+     `bg-toolbar`, `bg-row-hover` and `border-line`. */
+  --color-page: #f9f9f9;
+  --color-toolbar: #f5f5f5;
+  --color-row-hover: #f5f5f5;
+  --color-line: #e2e5de;
 }
 
 /* Dark counterparts of the status tones (Radix dark steps 11 and 3). */
@@ -268,6 +348,11 @@
   --color-status-warning-dot: #ffca16;
   --color-status-error: #ff9592;
   --color-status-error-subtle: #f4121227;
+  --color-status-error-dot: #e5484d;
+  --color-page: var(--color-dark);
+  --color-toolbar: #222222;
+  --color-row-hover: var(--color-surface-950);
+  --color-line: rgb(255 255 255 / 0.1);
 }
 
 /* ── Tabs ────────────────────────────────────────────────────────────────────
@@ -351,7 +436,7 @@
 
 .pane-divider-horizontal:hover,
 .pane-divider-horizontal:active {
-  background-color: var(--color-primary-500);
+  background-color: var(--color-secondary-500);
 }
 
 .pane-divider-vertical {
@@ -372,5 +457,5 @@
 
 .pane-divider-vertical:hover,
 .pane-divider-vertical:active {
-  background-color: var(--color-primary-500);
+  background-color: var(--color-secondary-500);
 }

@@ -1,7 +1,8 @@
 /**
  * Tests for the pipelines `Table`: the left-to-right column order, mouse
  * interaction with column sorting, the sort affordances each header paints, the
- * borders that close off the last row, the sticky header, and a clean teardown.
+ * borders that close off the last row, the sticky header, column resizing, and a clean
+ * teardown.
  *
  * The real pipelines `Table` is mounted with a handful of pipeline thumbs whose name order
  * and "status changed" order deliberately disagree, so every assertion about row
@@ -182,9 +183,7 @@ describe('Table — column order', () => {
   it('renders the columns left to right in the expected order', async () => {
     mountTable()
 
-    // The leading cell is the select-all checkbox and carries no label. "Runtime
-    // errors" holds both the short ("Errors") and long ("Runtime errors") span,
-    // so its collapsed text is the concatenation of the two.
+    // The leading cell is the select-all checkbox and carries no label.
     await expect
       .poll(columnHeaders)
       .toEqual([
@@ -194,8 +193,8 @@ describe('Table — column order', () => {
         'Status',
         'Message',
         'Tags',
-        'Runtime version',
-        'Errors Runtime errors',
+        'Runtime',
+        'Errors',
         'Status changed',
         'Deployed on'
       ])
@@ -212,36 +211,32 @@ describe('Table — row borders', () => {
     localStorage.clear()
   })
 
-  // Every cell draws a top border; only the last row draws a bottom one, so the
-  // widths below are read off the rendered CSS rather than off the class strings.
+  // Every cell draws the line above it, and the table's own border closes off the last
+  // row, so no row draws a bottom border. Widths are read off the rendered CSS.
   const bottomBorderWidths = () =>
-    Array.from(document.querySelectorAll('tbody tr[data-testid^="box-row-"]')).map((tr) =>
+    Array.from(document.querySelectorAll('tbody tr')).flatMap((tr) =>
       Array.from(tr.querySelectorAll('td')).map((td) => getComputedStyle(td).borderBottomWidth)
     )
 
-  it('closes off the table with a bottom border on the last row only', async () => {
+  it('closes off the table with its own border rather than a last-row border', async () => {
     mountTable()
     await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
 
-    const widths = bottomBorderWidths()
+    expect(bottomBorderWidths().every((width) => parseFloat(width) === 0)).toBe(true)
     expect(
-      widths
-        .slice(0, -1)
-        .flat()
-        .every((width) => parseFloat(width) === 0)
-    ).toBe(true)
-    expect(widths.at(-1)!.every((width) => parseFloat(width) > 0)).toBe(true)
+      parseFloat(getComputedStyle(document.querySelector('table')!).borderBottomWidth)
+    ).toBeGreaterThan(0)
   })
 
-  // The placeholder row is no `group`, so the `group-last:` variant that closes
-  // off a populated table cannot reach it and Table spells its border out.
-  it('closes off the placeholder row with a bottom border', async () => {
+  it('closes off the placeholder row the same way', async () => {
     render(Table, { props: { pipelines: [], selectedPipelines: [] } } as any)
     await expect.element(page.getByText('No pipelines found')).toBeVisible()
 
-    const cells = Array.from(document.querySelectorAll('tbody tr td'))
-    expect(cells.length).toBeGreaterThan(0)
-    expect(cells.every((td) => parseFloat(getComputedStyle(td).borderBottomWidth) > 0)).toBe(true)
+    expect(bottomBorderWidths().length).toBeGreaterThan(0)
+    expect(bottomBorderWidths().every((width) => parseFloat(width) === 0)).toBe(true)
+    expect(
+      parseFloat(getComputedStyle(document.querySelector('table')!).borderBottomWidth)
+    ).toBeGreaterThan(0)
   })
 })
 
@@ -272,12 +267,12 @@ describe('Table — sort affordances', () => {
     expect(painted(sortPill('Deployed on'))).toBe(true)
   })
 
-  it('shows the arrow and the pill on the sorted column without a hover', async () => {
+  it('shows only the arrow on the sorted column without a hover', async () => {
     mountTable()
     await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
 
     expect(showsSortArrow('Pipeline name')).toBe(true)
-    expect(painted(sortPill('Pipeline name'))).toBe(true)
+    expect(painted(sortPill('Pipeline name'))).toBe(false)
   })
 
   it('points the arrow the way the column is sorted', async () => {
@@ -319,9 +314,9 @@ describe('Table — header alignment', () => {
     mountTable()
     await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
 
-    // Status and Runtime errors are left-aligned so their values line up with the labels above them.
+    // Status and Errors are left-aligned so their values line up with the labels above them.
     expect(justifyOf('Status')).toBe('normal')
-    expect(justifyOf('Errors Runtime errors')).toBe('normal')
+    expect(justifyOf('Errors')).toBe('normal')
     expect(justifyOf('Pipeline name')).toBe('normal')
   })
 })
@@ -388,5 +383,143 @@ describe('Table — teardown', () => {
     } finally {
       window.removeEventListener('error', recordError)
     }
+  })
+})
+
+describe('Table — column resizing', () => {
+  const WIDTHS_KEY = 'layout/pipelines/table/columnWidths'
+
+  beforeEach(() => {
+    localStorage.clear()
+    useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
+    useLayoutSettings().pipelinesTableColumnWidths.value = {}
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+    useLayoutSettings().pipelinesTableColumnWidths.value = {}
+  })
+
+  const handle = (column: string) =>
+    page.getByRole('separator', { name: `Resize ${column} column` }).element() as HTMLElement
+  const widthOf = (column: string) => headerCell(column).getBoundingClientRect().width
+
+  // A mouse drag of the handle by `dx` px: down, one move, up.
+  const drag = (column: string, dx: number) => {
+    const target = handle(column)
+    const { left } = target.getBoundingClientRect()
+    const pointer = { pointerId: 1, button: 0, bubbles: true }
+    target.dispatchEvent(new PointerEvent('pointerdown', { ...pointer, clientX: left }))
+    target.dispatchEvent(new PointerEvent('pointermove', { ...pointer, clientX: left + dx }))
+    target.dispatchEvent(new PointerEvent('pointerup', { ...pointer, clientX: left + dx }))
+    target.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  }
+
+  it('widens a column by the distance dragged, without sorting it', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+    const before = widthOf('Status changed')
+
+    drag('Status changed', 60)
+
+    await expect.poll(() => widthOf('Status changed')).toBeCloseTo(before + 60, 0)
+    expect(rowOrder()).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+    expect(persistedSort()).toEqual({ column: 'name', direction: 'asc' })
+  })
+
+  it('keeps a resized width across a remount', async () => {
+    const { unmount } = mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+    const resized = widthOf('Pipeline name') + 40
+    drag('Pipeline name', 40)
+    await expect.poll(() => widthOf('Pipeline name')).toBeCloseTo(resized, 0)
+    expect(JSON.parse(localStorage.getItem(WIDTHS_KEY)!)).toEqual({ name: resized })
+
+    unmount()
+    mountTable()
+    await expect.poll(() => widthOf('Pipeline name')).toBeCloseTo(resized, 0)
+  })
+
+  it('stops at the minimum width', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+
+    drag('Tags', -1000)
+
+    await expect.poll(() => widthOf('Tags')).toBeCloseTo(64, 0)
+  })
+
+  it('returns a column to its default width on double-click', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+    const initial = widthOf('Runtime')
+    drag('Runtime', 50)
+    await expect.poll(() => widthOf('Runtime')).toBeCloseTo(initial + 50, 0)
+
+    handle('Runtime').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+
+    await expect.poll(() => widthOf('Runtime')).toBeCloseTo(initial, 0)
+    expect(JSON.parse(localStorage.getItem(WIDTHS_KEY)!)).toEqual({})
+  })
+
+  it('gives every column but the checkbox one a resize handle', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+
+    expect(
+      Array.from(document.querySelectorAll('[role="separator"]')).map((el) =>
+        el.getAttribute('aria-label')
+      )
+    ).toEqual(
+      [
+        'Pipeline name',
+        'Storage',
+        'Status',
+        'Message',
+        'Tags',
+        'Runtime',
+        'Errors',
+        'Status changed',
+        'Deployed on'
+      ].map((column) => `Resize ${column} column`)
+    )
+  })
+
+  it('lets Message fill the leftover room until it is resized, then keeps its width', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+    const table = document.querySelector('table')!
+    const fillingTable = table.getBoundingClientRect().width
+    const filled = widthOf('Message')
+    const others = () =>
+      Array.from(document.querySelectorAll('thead th'))
+        .map((th) => th.getBoundingClientRect().width)
+        .filter((_, i) => i !== 4)
+    const othersBefore = others()
+
+    // Narrower than the "Message" label, which then truncates rather than holding the column open.
+    drag('Message', -50)
+
+    await expect.poll(() => widthOf('Message')).toBeCloseTo(filled - 50, 0)
+    // The other columns keep their widths; the room Message gave up is left empty.
+    expect(others()).toEqual(othersBefore)
+    expect(table.getBoundingClientRect().width).toBeCloseTo(fillingTable - 50, 0)
+
+    handle('Message').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await expect.poll(() => widthOf('Message')).toBeCloseTo(filled, 0)
+  })
+
+  it('resizes with the arrow keys', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+    const initial = widthOf('Errors')
+    const separator = handle('Errors')
+    separator.focus()
+
+    separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    await expect.poll(() => widthOf('Errors')).toBeCloseTo(initial + 16, 0)
+    separator.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    await expect.poll(() => widthOf('Errors')).toBeCloseTo(initial, 0)
+    expect(separator.getAttribute('aria-valuenow')).toBe(String(initial))
   })
 })

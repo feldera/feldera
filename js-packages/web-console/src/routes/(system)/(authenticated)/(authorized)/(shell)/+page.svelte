@@ -7,7 +7,7 @@
   import IconSlack from '#assets/icons/vendors/slack-logomark-color.svg?component'
   import FelderaLogomarkLight from '#assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
   import FelderaLogomarkDark from '#assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
-  import ImageBox from '#assets/images/generic/package.svg?component'
+  import NoPipelinesIllustration from '#assets/images/generic/no-pipelines.svg?component'
   import AppHeader from '#lib/components/layout/AppHeader.svelte'
   import Footer from '#lib/components/layout/Footer.svelte'
   import NavigationExtras from '#lib/components/layout/NavigationExtras.svelte'
@@ -55,6 +55,9 @@
 
   const pipelines = usePipelineList()
   const welcomed = useLocalStorage('home/welcomed', false)
+  // The welcome banner is hidden in the redesign. Set to true to show it again; its
+  // close button still records the dismissal in `welcomed`.
+  const showWelcomeBanner = false
   const showSuggestedDemos = useLocalStorage('home/hideSuggestedDemos', true)
   const darkMode = useDarkMode()
   let selectedPipelines = $state([]) as string[]
@@ -110,7 +113,7 @@
 >
   <div class="@container">
     <div class="flex flex-col gap-8 pb-2 md:pb-8" style="width: max-content; min-width: 100%;">
-      {#if !welcomed.value}
+      {#if showWelcomeBanner && !welcomed.value}
         <!-- The right padding gives back the reserved scrollbar gutter, so the banner ends
              where the header's buttons do (as the pipelines toolbar does). -->
         <div
@@ -129,7 +132,7 @@
             {/if}
             <div class="flex w-full flex-col justify-center gap-y-4">
               <div class="flex flex-nowrap justify-between">
-                <div class="text-xl font-semibold">Explore our communities and documentation</div>
+                <div class="text-xl font-medium">Explore our communities and documentation</div>
                 <!-- The negative margins keep the title row's height and the ×'s position. -->
                 <button
                   class="fd fd-x -my-0.5 -mr-2 btn-icon text-[16px] hover:preset-tonal-surface"
@@ -153,20 +156,22 @@
           </div>
         </div>
       {/if}
-      <!-- Without the banner, pad the section so it starts 40px below the header logo. -->
-      <div class="flex flex-col" class:pt-4={welcomed.value} data-testid="box-pipelines-section">
+      <!-- Without the banner, pad the section so it starts 60px below the header logo. -->
+      <div
+        class="flex flex-col"
+        class:pt-9={!showWelcomeBanner || welcomed.value}
+        data-testid="box-pipelines-section"
+      >
         {#snippet header()}
           <!-- Raised 2px so its baseline (and lowercase letters) line up with the labels of
                the controls beside it; box-centred, the mostly lowercase title reads low. -->
-          <div class="relative -top-0.5 text-xl font-semibold whitespace-nowrap">
-            Your pipelines
-          </div>
+          <div class="relative -top-0.5 text-xl font-medium whitespace-nowrap">Your pipelines</div>
         {/snippet}
         {#if !pipelines.pipelines}
           <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
             <Progress class="" value={null}>
               <Progress.Track>
-                <Progress.Range class="bg-primary-500" />
+                <Progress.Range class="bg-secondary-500" />
               </Progress.Track>
             </Progress>
             <div class="">Loading pipelines...</div>
@@ -189,8 +194,8 @@
           <div class="px-2 md:px-5">
             {@render header()}
           </div>
-          <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
-            <ImageBox class="h-9 fill-surface-200-800"></ImageBox>
+          <div class="flex w-full flex-col items-center gap-4 pt-8 pb-6 sm:pt-16">
+            <NoPipelinesIllustration class="h-[180px] w-[240px]"></NoPipelinesIllustration>
             <div class="">Your pipelines will appear here</div>
             <div class="relative flex gap-5">
               <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
@@ -226,8 +231,8 @@
                   ></div>
 
                   <div class="flex flex-nowrap items-center gap-4">
-                    <div class="text-xl font-semibold">Explore use cases and tutorials</div>
-                    <a class="whitespace-nowrap text-primary-500" href={resolve('/demos/')}
+                    <div class="text-xl font-medium">Explore use cases and tutorials</div>
+                    <a class="btn preset-filled-surface-50-950" href={resolve('/demos/')}
                       >View all</a
                     >
                   </div>
@@ -236,14 +241,14 @@
               {#snippet content()}
                 <div
                   transition:slide={{ duration: 150 }}
-                  class="grid grid-cols-1 gap-x-6 gap-y-5 py-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
+                  class="grid grid-cols-1 gap-4 py-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
                 >
                   {#each demos.current.slice(0, maxShownDemos) as demo}
                     <DemoTile {demo} placement="home"></DemoTile>
                   {/each}
                   <div class="flex flex-col card p-4">
                     <div class="text-sm text-surface-500"></div>
-                    <a class="text-left text-primary-500" href={resolve('/demos/')}>
+                    <a class="text-left text-secondary-600-400" href={resolve('/demos/')}>
                       <span class="py-2">Discover More Examples and Tutorials</span>
                     </a>
                   </div>

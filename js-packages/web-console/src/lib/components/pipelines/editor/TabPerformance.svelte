@@ -243,7 +243,7 @@
     >
       {#snippet main()}
         <div
-          class="-mr-2 scrollbar flex h-full min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto pr-2"
+          class="-mr-2 scrollbar flex h-full min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto pr-2 pb-10"
         >
           <div class="flex w-full flex-col gap-4">
             {#if pipeline.current.status === 'Unavailable'}
@@ -261,27 +261,27 @@
               </WarningBanner>
             {/if}
             <div class="flex flex-wrap gap-4">
-              <div class="mt-2.5 flex flex-wrap items-center gap-4">
+              <div class="mt-4.5 flex flex-wrap items-center gap-4">
                 <div class="flex flex-col">
                   <div class="text-start text-sm text-nowrap">Records Ingested</div>
-                  <div class="pt-2">
+                  <div class="pt-1 max-xl:text-[12px]">
                     {formatQty(global.total_input_records)}
                   </div>
                 </div>
                 <div class="flex flex-col">
                   <div class="text-start text-sm text-nowrap">Records Processed</div>
-                  <div class="pt-2">
+                  <div class="pt-1 max-xl:text-[12px]">
                     {formatQty(global.total_processed_records)}
                   </div>
                 </div>
                 <div class="flex flex-col">
                   <div class="text-start text-sm text-nowrap">Records Buffered</div>
-                  <div class="pt-2">
+                  <div class="pt-1 max-xl:text-[12px]">
                     {formatQty(global.buffered_input_records)}
                   </div>
                 </div>
                 {#snippet age()}
-                  <div class="w-52 pt-2">
+                  <div class="w-52 pt-1 max-xl:text-[12px]">
                     {#if global.start_time > 0}
                       On {formatDateTime({ ms: global.start_time * 1000 })}
                     {:else}
@@ -290,7 +290,7 @@
                   </div>
                 {/snippet}
                 {#snippet updated()}
-                  <div class="w-64 pt-2 text-nowrap">
+                  <div class="w-64 pt-1 text-nowrap max-xl:text-[12px]">
                     {getDeploymentStatusLabel(pipeline.current.status)} since {Dayjs(
                       pipeline.current.deploymentStatusSince
                     ).format('MMM D, YYYY h:mm A')}
@@ -336,7 +336,7 @@
                 {/if}
               </div>
             </div>
-            <div class="flex w-full flex-col gap-4 xl:flex-row">
+            <div class="flex w-full flex-col gap-2 xl:flex-row">
               <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
                 <PipelineThroughputGraph
                   {pipeline}
@@ -370,7 +370,10 @@
               {checkpointStatus}
               onShowCheckpoints={() => (openDrawer = { kind: 'checkpoints' })}
             />
-            <CommitProgressIndicator {metrics} class="w-full"></CommitProgressIndicator>
+            <CommitProgressIndicator
+              {metrics}
+              class="bg-white-dark w-full max-w-[1540px] rounded p-2"
+            ></CommitProgressIndicator>
           </div>
           {#if metrics.current.views.size || metrics.current.tables.size}
             <div class="flex flex-wrap gap-4">

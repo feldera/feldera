@@ -1,3 +1,4 @@
+import { formatTimeAgo as formatTimeAgoAt } from 'common-lib/format'
 import Dayjs from 'dayjs'
 import { useInterval } from '#lib/compositions/common/useInterval.svelte.ts'
 import { ServerDate } from '#lib/compositions/serverTime.ts'
@@ -40,5 +41,6 @@ export const useElapsedTime = () => {
     formatDuration(now.current.valueOf() - timestamp.valueOf(), precision)
   const formatUpdatedAgo = (timestamp: Date | null | undefined, stepMs?: number): string | null =>
     timestamp ? formatAge(now.current.valueOf() - timestamp.valueOf(), stepMs) : null
-  return { formatElapsedTime, formatUpdatedAgo }
+  const formatTimeAgo = (timestamp: Date) => formatTimeAgoAt(timestamp, now.current)
+  return { formatElapsedTime, formatUpdatedAgo, formatTimeAgo }
 }

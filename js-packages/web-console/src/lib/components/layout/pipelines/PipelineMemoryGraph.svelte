@@ -74,7 +74,7 @@
     )
   )
 
-  const primaryColor = getThemeColor('--color-primary-500').format('hex')
+  const primaryColor = getThemeColor('--color-secondary-500').format('hex')
 
   let ref: EChartsType | undefined = $state()
 
@@ -125,11 +125,15 @@
     animationDuration: 0,
     animationDurationUpdate: 0,
     animationEasingUpdate: 'linear' as const,
+    // 8px from the card's edges; the axis labels are fitted inside that box rather than given
+    // fixed gutters, so they sit 8px from the edge too. The title's own 8px sits above.
     grid: {
-      top: 10,
-      left: 64,
-      right: 50,
-      bottom: 48
+      top: 0,
+      left: 8,
+      right: 8,
+      bottom: 8,
+      outerBoundsMode: 'same',
+      outerBoundsContain: 'axisLabel'
     },
     xAxis: {
       animationDuration: 0,
@@ -223,16 +227,19 @@
   })
 </script>
 
-<div class="absolute h-full w-full py-4">
-  <div class="flex items-center justify-between gap-2 px-4 pb-2">
-    <span>Used memory: {humanSize(metrics.at(-1)?.m ?? 0)}</span>
+<div class="absolute flex h-full w-full flex-col pt-2">
+  <div class="flex items-center justify-between gap-2 px-2 pb-2">
+    <span class="text-[12px] leading-[18px]">Used memory: {humanSize(metrics.at(-1)?.m ?? 0)}</span>
     {#if pressureChip}
       <div class="pointer-events-none flex h-5 rounded px-2 text-sm {pressureChip.class}">
         {pressureChip.label}
       </div>
     {/if}
   </div>
-  {#key pipelineName}
-    <Chart init={(dom, theme, opts) => (ref = init(dom, theme, opts))} {options} />
-  {/key}
+  <!-- The chart takes only the height left under the title, so its axis labels stay inside the card. -->
+  <div class="min-h-0 flex-1">
+    {#key pipelineName}
+      <Chart init={(dom, theme, opts) => (ref = init(dom, theme, opts))} {options} />
+    {/key}
+  </div>
 </div>

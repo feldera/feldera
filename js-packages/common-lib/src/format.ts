@@ -9,6 +9,44 @@ export const formatDateTime = (
   return Dayjs('ms' in timestamp ? timestamp.ms : timestamp).format(format)
 }
 
+const relativeTime = new Intl.RelativeTimeFormat('en', { style: 'long', numeric: 'always' })
+
+/**
+ * How long ago `timestamp` was, in its single largest unit — `just now`, `34 minutes ago`,
+ * `9 hours ago`, `2 days ago`, `3 weeks ago`, `2 months ago`, `1 year ago`. Every age reads
+ * the same way so that a column of them can be compared at a glance. Units are floored, so
+ * a label never claims more time has passed than has.
+ */
+export const formatTimeAgo = (timestamp: Date, now: Date) => {
+  // A timestamp ahead of the clock ages to nothing rather than to a negative duration.
+  const elapsed = Math.max(now.valueOf() - timestamp.valueOf(), 0)
+  const minutes = Math.floor(elapsed / 60_000)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  if (minutes < 1) {
+    return 'just now'
+  }
+  if (hours < 1) {
+    return relativeTime.format(-minutes, 'minute')
+  }
+  if (days < 1) {
+    return relativeTime.format(-hours, 'hour')
+  }
+  if (days < 7) {
+    return relativeTime.format(-days, 'day')
+  }
+  if (days < 30) {
+    return relativeTime.format(-Math.floor(days / 7), 'week')
+  }
+  // Months and years are calendar ones; 30 days is not always a whole month, but the
+  // label still never drops below one.
+  const months = Math.max(Dayjs(now).diff(timestamp, 'month'), 1)
+  if (months < 12) {
+    return relativeTime.format(-months, 'month')
+  }
+  return relativeTime.format(-Math.floor(months / 12), 'year')
+}
+
 /**
  * Format the time of day of a timestamp in the browser's time zone, followed by
  * the zone's short name (e.g. `18:39:53 PDT`), so it's clear which zone it's in.

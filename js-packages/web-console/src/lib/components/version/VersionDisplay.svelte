@@ -19,7 +19,7 @@
       <span class="break-all">rev. {page.data.feldera.revision}</span>
       <!-- Hidden until hover, but still reachable by keyboard -->
       <ClipboardCopyButton
-        class="-my-1 mr-1.5 btn-icon-sm text-[16px] opacity-0 group-hover:opacity-100 hover:bg-surface-50-950 focus-visible:opacity-100"
+        class="-my-1 mr-1.5 btn-icon-sm text-[16px] opacity-0 group-hover:opacity-100 hover:bg-row-hover focus-visible:opacity-100"
         value={`${versionText ?? ''}${revisionText ?? ''}`}
       ></ClipboardCopyButton>
     </span>

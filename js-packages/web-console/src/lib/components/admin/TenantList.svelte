@@ -195,7 +195,7 @@
             Act as this tenant
           </button>
           <button
-            class="fd fd-trash-2 btn-icon text-[20px] hover:bg-surface-50-950"
+            class="fd fd-trash-2 btn-icon text-[20px] hover:bg-row-hover"
             disabled={tenant.id === currentTenantId}
             onclick={() => (globalDialog.dialog = deleteDialog)}
             aria-label="Delete tenant {tenant.name}"

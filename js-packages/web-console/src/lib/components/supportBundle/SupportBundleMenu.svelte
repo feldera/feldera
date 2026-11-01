@@ -35,7 +35,7 @@
 
 {#if onDownload}
   <button
-    class="px-4 py-2 text-left hover:preset-tonal-surface"
+    class="flex h-9 items-center gap-2 rounded px-3 text-left hover:preset-tonal-surface"
     onclick={onDownload}
     {disabled}
     data-testid="btn-download-support-bundle"
@@ -44,17 +44,17 @@
   </button>
 
   <label
-    class="flex cursor-pointer items-center justify-between gap-3 px-4 py-2 hover:preset-tonal-surface"
+    class="flex h-9 cursor-pointer items-center justify-between gap-2 rounded px-3 hover:preset-tonal-surface"
   >
     <span>Collect new data</span>
     <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
   </label>
 
-  <div class="hr"></div>
+  <div class="my-1 hr"></div>
 {/if}
 
 <button
-  class="px-4 py-2 text-left hover:preset-tonal-surface"
+  class="flex h-9 items-center gap-2 rounded px-3 text-left hover:preset-tonal-surface"
   onclick={onPickBundle}
   {disabled}
   data-testid="btn-upload-support-bundle"

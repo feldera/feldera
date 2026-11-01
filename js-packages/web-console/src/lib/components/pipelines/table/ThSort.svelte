@@ -37,16 +37,17 @@
   class="{_class} group/sort cursor-pointer bg-inherit whitespace-nowrap select-none"
 >
   <!-- A `justify-*` passed in through `_class` lands on the th, a table cell that
-    ignores it; `[justify-content:inherit]` hands that value to the flex row. -->
-  <div class="flex h-full items-center [justify-content:inherit]">
+    ignores it; `[justify-content:inherit]` hands that value to the flex row. The row claims no
+    width of its own (`w-0 min-w-full`), so a fixed-layout table can make the column narrower
+    than its label, which then truncates. -->
+  <div class="flex h-full w-0 min-w-full items-center [justify-content:inherit]">
     <div
-      class="-mx-3 -my-1 flex items-center gap-1 rounded-full px-3 py-1 {sort.isActive
-        ? 'bg-surface-50-950'
-        : 'group-hover/sort:bg-surface-50-950'}"
+      class="-mx-3 -my-1 flex min-w-0 items-center gap-1 rounded-full px-3 py-1 group-hover/sort:bg-row-hover"
     >
       {@render children()}
       <span
-        class="align-middle text-[14px] text-surface-500 {sort.isActive && sort.direction === 'desc'
+        class="shrink-0 align-middle text-[14px] text-surface-500 {sort.isActive &&
+        sort.direction === 'desc'
           ? 'fd fd-arrow-down'
           : 'fd fd-arrow-up'} {sort.isActive ? '' : 'invisible group-hover/sort:visible'}"
       ></span>

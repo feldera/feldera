@@ -16,7 +16,7 @@
    * A picked bundle goes into the bundle history, so that the viewer tab can read it
    * again.
    */
-  import { slide } from 'svelte/transition'
+  import { fade } from 'svelte/transition'
   import Popup from '#lib/components/common/Popup.svelte'
   import SlidingPanels from '#lib/components/common/SlidingPanels.svelte'
   import {
@@ -196,11 +196,11 @@
 
 {#snippet dropdown(close: () => void)}
   <div
-    transition:slide={{ duration: 100 }}
-    class="bg-white-dark absolute z-30 flex min-w-[220px] flex-col overflow-hidden rounded shadow-md {align ===
+    transition:fade={{ duration: 100 }}
+    class="bg-white-dark absolute z-30 flex min-w-[220px] flex-col overflow-hidden rounded p-1 shadow-md dark:border dark:border-surface-950-50/10 {align ===
     'right'
       ? 'right-0'
-      : 'left-0'} {drop === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'}"
+      : 'left-0'} {drop === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'}"
     data-testid="box-support-bundle-menu"
   >
     {#if mode === 'pick'}
@@ -217,19 +217,21 @@
   </div>
 
   {#snippet menuPage()}
-    <SupportBundleMenu
-      bind:collectNewData
-      onDownload={onDownload &&
-        (() => {
-          // Downloading opens a dialog, so the dropdown closes.
-          close()
-          onDownload()
-        })}
-      onPickBundle={pickBundle}
-      {disabled}
-      {downloadLabel}
-      {pickLabel}
-    />
+    <div class="flex flex-col">
+      <SupportBundleMenu
+        bind:collectNewData
+        onDownload={onDownload &&
+          (() => {
+            // Downloading opens a dialog, so the dropdown closes.
+            close()
+            onDownload()
+          })}
+        onPickBundle={pickBundle}
+        {disabled}
+        {downloadLabel}
+        {pickLabel}
+      />
+    </div>
   {/snippet}
 
   <!-- The confirmation opens the viewer tab from the click on it, which is what the

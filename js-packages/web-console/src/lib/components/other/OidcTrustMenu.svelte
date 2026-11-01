@@ -119,13 +119,13 @@
             {/if}
           </div>
           <button
-            class="fd fd-copy-plus btn-icon text-[20px] hover:bg-surface-50-950"
+            class="fd fd-copy-plus btn-icon text-[20px] hover:bg-row-hover"
             aria-label="Duplicate {trust.name} trust relationship"
             title="Copy these fields into the form below to create a similar trust"
             onclick={() => duplicate(trust)}
           ></button>
           <button
-            class="fd fd-trash-2 btn-icon text-[20px] hover:bg-surface-50-950"
+            class="fd fd-trash-2 btn-icon text-[20px] hover:bg-row-hover"
             aria-label="Delete {trust.name} trust relationship"
             onclick={() => {
               globalDialog.dialog = deleteDialog

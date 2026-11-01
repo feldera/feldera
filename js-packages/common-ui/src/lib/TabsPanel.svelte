@@ -25,8 +25,11 @@
   /** Visual style of the tab strip:
    *  - `'tab'`     – default; underlined triggers with a sliding bottom indicator.
    *  - `'segment'` – pill-style strip driven by `SegmentedControl`. Use when the tabs
-   *                  feel more like a view selector than a primary navigation. */
-  export type TabLabelVariant = 'tab' | 'segment'
+   *                  feel more like a view selector than a primary navigation.
+   *  - `'cell'`    – a grey tab bar of cells divided by 1px lines; the selected tab is
+   *                  white with a 2px line on top and covers the bar's bottom line, so it
+   *                  joins the content below. Matches the pipeline editor's file tabs. */
+  export type TabLabelVariant = 'tab' | 'segment' | 'cell'
 </script>
 
 <script lang="ts" generics="T extends Record<string, unknown>  ">
@@ -55,6 +58,7 @@
     visited.add(currentTab)
   })
   const activeTabBarEnd = $derived(tabs.find((t) => t.id === currentTab)?.tabBarEnd)
+  const isCell = $derived(tabLabelVariant === 'cell')
   // Segment items only need a `value`; the visual label is rendered via the `segmentLabel`
   // snippet, which dispatches back to each TabSpec's own `label` snippet so a tab definition
   // stays the single source of truth regardless of the chosen variant.
@@ -97,7 +101,7 @@
        skeleton `<Tabs>` machine is bypassed entirely — it only contributed ARIA roles and
        keyboard nav that the SegmentedControl already provides for its own machine. The
        content area below is rendered manually (it never relied on Tabs.Content). -->
-  <div class="bg-surface-50-950 rounded-lg flex h-full flex-col space-y-0! px-2 pt-4 pb-2">
+  <div class="panel flex h-full flex-col space-y-0! px-2 pt-4 pb-2">
     <div class="flex w-full min-w-0 flex-wrap items-center gap-2 mb-0 {headerClass}">
       <SegmentedControl
         value={currentTab}
@@ -113,7 +117,7 @@
   <Tabs
     value={currentTab}
     onValueChange={(e) => (currentTab = e.value)}
-    class="bg-surface-50-950 rounded-lg flex h-full flex-col space-y-0! px-2 pt-0 pb-2"
+    class="panel flex h-full flex-col space-y-0! px-2 pt-0 pb-2"
   >
     <!-- Header. `flex-wrap` lets the active tabBarEnd contents (selectors, controls, inputs)
          drop to subsequent rows when the panel is narrowed, instead of forcing a horizontal
@@ -125,10 +129,19 @@
          as tall (`min-h-12`), so when it wraps onto a row of its own its controls centre
          there too; a bare 32px button takes 8px margins (`my-2`) to fill the same row. -->
     <Tabs.List
-      class="flex w-full min-w-0 flex-wrap items-center gap-0 pb-0 mb-0 [&>:not([role=tab],button)]:min-h-12 [&>button:not([role=tab])]:my-2 {headerClass}"
+      class="flex w-full min-w-0 flex-wrap items-center gap-0 pb-0 mb-0 [&>:not([role=tab],button)]:min-h-12 [&>button:not([role=tab])]:my-2 {isCell
+        ? 'bg-toolbar pr-2'
+        : ''} {headerClass}"
     >
       {#each tabs as { id, label, title, disabled }}
-        <Tabs.Trigger value={id} {disabled} {title} class="tab">
+        <Tabs.Trigger
+          value={id}
+          {disabled}
+          {title}
+          class={isCell
+            ? 'flex h-12 items-center gap-2 self-start rounded-none border-r border-line px-4 text-base font-medium whitespace-nowrap text-surface-600-400 hover:bg-white/60 hover:text-surface-950-50 dark:hover:bg-white/5 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40 data-[selected]:-mb-px data-[selected]:h-[49px] data-[selected]:bg-white data-[selected]:text-surface-950-50 data-[selected]:shadow-[inset_0_2px_0_var(--color-surface-950)] dark:data-[selected]:bg-dark dark:data-[selected]:shadow-[inset_0_2px_0_var(--color-surface-50)]'
+            : 'tab'}
+        >
           {@render label()}
         </Tabs.Trigger>
       {/each}

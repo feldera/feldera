@@ -374,7 +374,7 @@
     <div class=" px-4 {visible ? '' : 'h-0 opacity-0'} transition-opacity">
       <Progress class="-mt-1 h-1" value={percent} max={100}>
         <Progress.Track>
-          <Progress.Range class="bg-primary-500" />
+          <Progress.Range class="bg-secondary-500" />
         </Progress.Track>
       </Progress>
     </div>
@@ -400,7 +400,7 @@
       {:else}
         <div class="flex items-center gap-3">
           <div
-            class="h-6 w-6 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"
+            class="h-6 w-6 animate-spin rounded-full border-2 border-secondary-500 border-t-transparent"
           ></div>
           <span class="text-surface-600-400">Loading profile bundle…</span>
         </div>
@@ -447,9 +447,11 @@
             {#snippet content(close)}
               <div
                 transition:fade={{ duration: 100 }}
-                class="absolute top-full left-0 z-30 mt-2 w-max min-w-[200px]"
+                class="absolute top-full left-0 z-30 mt-1 w-max min-w-[200px]"
               >
-                <div class="bg-white-dark flex flex-col overflow-hidden rounded shadow-md">
+                <div
+                  class="bg-white-dark flex flex-col overflow-hidden rounded p-1 shadow-md dark:border dark:border-surface-950-50/10"
+                >
                   <SupportBundleMenu
                     bind:collectNewData
                     onDownload={() => {
