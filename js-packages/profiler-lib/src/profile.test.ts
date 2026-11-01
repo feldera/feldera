@@ -847,25 +847,32 @@ describe('region aggregation', () => {
         { metric_id: 'used_memory_bytes', value: { type: 'bytes', value: leaf.memory } }
     ]
 
-    // Region r1 holds two operators and a nested region r2 holding a third.
+    const edge = (from: string, to: string) =>
+        ({ from_node: from, to_node: to, from_cluster: false, to_cluster: false })
+
+    // Region r1 holds two operators and a nested region r2 holding a third. The operator `s`
+    // outside feeds all three, so all three are entries of r1, and n3 is the entry of r2.
     const graph = {
         nodes: {
-            id: 'n', label: 'root', nodes: [{
-                Cluster: {
-                    id: 'r1', label: 'region', nodes: [
-                        { Simple: { id: 'n1', label: 'op1' } },
-                        { Simple: { id: 'n2', label: 'op2' } },
-                        {
-                            Cluster: {
-                                id: 'r2', label: 'subregion',
-                                nodes: [{ Simple: { id: 'n3', label: 'op3' } }]
+            id: 'n', label: 'root', nodes: [
+                { Simple: { id: 's', label: 'source' } },
+                {
+                    Cluster: {
+                        id: 'r1', label: 'region', nodes: [
+                            { Simple: { id: 'n1', label: 'op1' } },
+                            { Simple: { id: 'n2', label: 'op2' } },
+                            {
+                                Cluster: {
+                                    id: 'r2', label: 'subregion',
+                                    nodes: [{ Simple: { id: 'n3', label: 'op3' } }]
+                                }
                             }
-                        }
-                    ]
+                        ]
+                    }
                 }
-            }]
+            ]
         },
-        edges: []
+        edges: [edge('s', 'n1'), edge('s', 'n2'), edge('s', 'n3')]
     }
 
     const leaves: Record<string, Leaf> = {
@@ -953,6 +960,94 @@ describe('region aggregation', () => {
         const profile = parse([leaves, swapped])
         expect(numeric(profile, 'r1', 'input_batches_stats.min_size', 0)).toBe(1)
         expect(numeric(profile, 'r1', 'input_batches_stats.min_size', 1)).toBe(3)
+    })
+})
+
+// A region's input and output batch statistics are those of the operators that edges cross its
+// boundary at, not the totals of all the operators inside it.
+describe('region batch statistics', () => {
+    const count = (value: number) => ({ type: 'count', value })
+    // One batch of `records` records.
+    const stats = (metric_id: string, records: number) => ({
+        metric_id,
+        value: {
+            batches_count: count(1),
+            min_records_count: count(records),
+            max_records_count: count(records),
+            avg_records_count: count(records),
+            total_records_count: count(records)
+        }
+    })
+    const both = (input: number, output: number) =>
+        [stats('input_batches_stats', input), stats('output_batches_stats', output)]
+    const edge = (from: string, to: string) =>
+        ({ from_node: from, to_node: to, from_cluster: false, to_cluster: false })
+    const op = (id: string) => ({ Simple: { id, label: id } })
+
+    //   src => r [ a -> b -> r2 [ c ] -> d ] -> out
+    //   src2 -> r3 [ e -> f -> g ] -> out2
+    // `src` feeds `a` twice. In r3 only `f` reports statistics, and no edge crosses the boundary
+    // of r3 at `f`.
+    const profile = (() => {
+        const json = {
+            metrics: [],
+            worker_profiles: [{
+                metadata: {
+                    a: both(10, 20),
+                    b: both(100, 200),
+                    c: both(1000, 2000),
+                    d: both(10000, 20000),
+                    f: both(5, 5)
+                }
+            }],
+            graph: {
+                nodes: {
+                    id: 'n', label: 'root', nodes: [
+                        op('src'),
+                        {
+                            Cluster: {
+                                id: 'r', label: 'region', nodes: [
+                                    op('a'),
+                                    op('b'),
+                                    { Cluster: { id: 'r2', label: 'nested', nodes: [op('c')] } },
+                                    op('d')
+                                ]
+                            }
+                        },
+                        op('out'),
+                        op('src2'),
+                        { Cluster: { id: 'r3', label: 'silent', nodes: [op('e'), op('f'), op('g')] } },
+                        op('out2')
+                    ]
+                },
+                edges: [
+                    edge('src', 'a'), edge('src', 'a'), edge('a', 'b'), edge('b', 'c'),
+                    edge('c', 'd'), edge('d', 'out'),
+                    edge('src2', 'e'), edge('e', 'f'), edge('f', 'g'), edge('g', 'out2')
+                ]
+            }
+        }
+        return CircuitProfile.fromJson(json as unknown as JsonProfiles).profile
+    })()
+
+    const records = (region: string, metric: string) =>
+        profile.complexNodes.get(region).unwrap().getMeasurements(`${metric}.record_count`)
+            .map((value) => value.getNumericValue().unwrap())
+
+    it('takes the input statistics of the operators that edges enter the region at', () => {
+        // `a` only, once, although two edges enter at `a`.
+        expect(records('r', 'input_batches_stats')).toEqual([10])
+        expect(records('r2', 'input_batches_stats')).toEqual([1000])
+    })
+
+    it('takes the output statistics of the operators that edges leave the region from', () => {
+        expect(records('r', 'output_batches_stats')).toEqual([20000])
+        expect(records('r2', 'output_batches_stats')).toEqual([2000])
+    })
+
+    it('has no batch statistics when no boundary operator reports them', () => {
+        expect(records('r3', 'input_batches_stats')).toEqual([])
+        expect(records('r3', 'output_batches_stats')).toEqual([])
     })
 })
 

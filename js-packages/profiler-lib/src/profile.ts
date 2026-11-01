@@ -1022,6 +1022,18 @@ export class Measurement {
      * across workers like the steps. */
     public static readonly INVOCATIONS_COUNT = "invocations_count";
 
+    /** True for a part of the statistics of an operator's input batches, such as
+     * `input_batches_stats.record_count`. */
+    static isInputBatchStatistic(metric: string): boolean {
+        return metric.startsWith("input_batches_stats.");
+    }
+
+    /** True for a part of the statistics of an operator's output batches, such as
+     * `output_batches_stats.record_count`. */
+    static isOutputBatchStatistic(metric: string): boolean {
+        return metric.startsWith("output_batches_stats.");
+    }
+
     constructor(
         readonly property: string,
         readonly value: Option<PropertyValue>,
@@ -1288,9 +1300,12 @@ class Measurements {
         return mode.unwrap();
     }
 
-    /** Add all of `other`'s values to this set. */
-    append(other: Measurements) {
+    /** Add `other`'s values of the metrics that `include` accepts to this set. */
+    append(other: Measurements, include: (metric: string) => boolean = () => true) {
         for (const [key, values] of other.measurements.entries()) {
+            if (!include(key)) {
+                continue;
+            }
             let existing = this.measurements.get(key);
             if (existing.isNone()) {
                 this.measurements.set(key, [...values]);
@@ -1417,8 +1432,9 @@ export class ComplexNode extends SimpleNode {
         this.children.push(node.id);
     }
 
-    appendMeasurements(node: SimpleNode) {
-        this.measurements.append(node.measurements);
+    /** Add `node`'s values of the metrics that `include` accepts to this region's values. */
+    appendMeasurements(node: SimpleNode, include: (metric: string) => boolean = () => true) {
+        this.measurements.append(node.measurements, include);
     }
 
     setDepth(depth: number) {
@@ -1613,6 +1629,53 @@ export class CircuitProfile {
                 this.consumers.set(ancestor, this.consumerCount(ancestor) + 1);
             }
         }
+    }
+
+    /** Gives each region the input batch statistics of the operators inside it that an edge
+     * from outside enters, and the output batch statistics of the operators inside it that an
+     * edge to outside leaves.  A region whose boundary operators report none has none. */
+    private appendBoundaryStatistics() {
+        // Region id -> the operators inside the region that an edge from outside enters.
+        const entries = new Map<NodeId, Set<NodeId>>();
+        // Region id -> the operators inside the region that an edge to outside leaves.
+        const exits = new Map<NodeId, Set<NodeId>>();
+        const add = (boundary: Map<NodeId, Set<NodeId>>, region: NodeId, node: NodeId) => {
+            let nodes = boundary.get(region);
+            if (nodes === undefined) {
+                nodes = new Set();
+                boundary.set(region, nodes);
+            }
+            nodes.add(node);
+        };
+        for (const edge of this.edges) {
+            // `enclosing` lists the node itself first, then the regions around it.
+            const sourceRegions = this.enclosing(edge.source).slice(1);
+            const targetRegions = this.enclosing(edge.target).slice(1);
+            for (const region of targetRegions) {
+                if (!sourceRegions.includes(region)) {
+                    add(entries, region, edge.target);
+                }
+            }
+            for (const region of sourceRegions) {
+                if (!targetRegions.includes(region)) {
+                    add(exits, region, edge.source);
+                }
+            }
+        }
+        const append = (boundary: Map<NodeId, Set<NodeId>>, include: (metric: string) => boolean) => {
+            for (const [regionId, nodes] of boundary) {
+                const region = this.complexNodes.get(regionId).unwrap();
+                for (const nodeId of nodes) {
+                    // An edge can end at a region; only operators report statistics.
+                    const node = this.simpleNodes.get(nodeId);
+                    if (node.isSome()) {
+                        region.appendMeasurements(node.unwrap(), include);
+                    }
+                }
+            }
+        };
+        append(entries, Measurement.isInputBatchStatistic);
+        append(exits, Measurement.isOutputBatchStatistic);
     }
 
     // Get the topmost parent of a node which is not the toplevel graph node.
@@ -1900,19 +1963,24 @@ export class CircuitProfile {
             node.setDepth(result.computeDepth(node.id));
         }
 
-        // Assign to every complex node the "sum" of the children's measurements,
-        // and the number of primitive operators inside it.
+        // Assign to every complex node the number of primitive operators inside it, and the
+        // "sum" of the children's measurements except the input and output batch statistics.
         // `depth` is the height above the leaves, so increasing depth visits a
         // region after its subregions, and their counts are final when it reads them.
+        const notBatchStatistic = (metric: string) =>
+            !Measurement.isInputBatchStatistic(metric)
+            && !Measurement.isOutputBatchStatistic(metric);
         for (const complex of result.getSortedComplexNodes()) {
             let leaves = 0;
             for (const child of complex.children) {
                 const node = result.getNode(child).unwrap();
-                complex.appendMeasurements(node);
+                complex.appendMeasurements(node, notBatchStatistic);
                 leaves += node instanceof ComplexNode ? node.leafCount : 1;
             }
             complex.setLeafCount(leaves);
         }
+        // A region's input and output batch statistics are those of its boundary operators.
+        result.appendBoundaryStatistics();
 
         return {
             profile: result,
