@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { Switch } from '@skeletonlabs/skeleton-svelte'
   import type { ZipItem } from 'but-unzip'
   import {
     isFindShortcut,
@@ -27,6 +26,7 @@
     Dataflow,
     DiagramTheme,
     JsonProfiles,
+    MetricLevel,
     MetricOption,
     NodeAttributes,
     ProfilerCallbacks,
@@ -38,6 +38,7 @@
   import type { TriageResults } from 'triage-types'
   import type { GlobalMetrics } from '../functions/globalMetrics'
   import { createLookupCoordinator, type SearchProgress } from '../functions/lookup'
+  import { levelMetrics, metricToSelect } from '../functions/metricLevel'
   import { type AnalysisView, isNodeView, metricsModeOf } from '../functions/metricsMode'
   import type { SourceFile } from '../functions/processZipBundle'
   import { severityLabel, uniqueCategories, uniqueSeverities } from '../functions/triage'
@@ -141,7 +142,12 @@
   // title heuristic on `tooltipData`.
   let analysisView = $state<AnalysisView>('overview')
   const metricsMode = $derived<MetricsMode>(metricsModeOf(analysisView))
-  let showAdvancedMetrics = $state(false)
+  let metricLevel = $state<MetricLevel>('basic')
+  // The metric selector lists only the metrics of the selected level.
+  const levelMetricOptions = $derived(levelMetrics(metrics, metricLevel))
+  // The metric that colors the diagram: `selectedMetricId` when the level lists it, or else a
+  // metric of the level. The selector then never holds a metric that it does not list.
+  const shownMetricId = $derived(metricToSelect(selectedMetricId, levelMetricOptions))
   let issueSeverityFilter = $state<'all' | 'error' | 'warning' | 'info'>('all')
   let issueCategoryFilter = $state<string>('all')
   const issueCategories = $derived(uniqueCategories(triageResults.results))
@@ -222,7 +228,7 @@
       tooltipData = data.match({
         some: (topNodes) => ({
           genericTable: {
-            header: `Nodes with highest values for "${MetricDescriptions.label(selectedMetricId)}"`,
+            header: `Nodes with highest values for "${MetricDescriptions.label(shownMetricId)}"`,
             columns: ['Node', 'Value', 'Operation'],
             rows: topNodes.map((n) => ({
               stub: { text: n.nodeId, onclick: () => profilerDiagram?.search(n.nodeId) },
@@ -266,7 +272,7 @@
   // the current sticky tooltip via the callbacks above, but those only touch tooltipData — so
   // this does not feed back into any effect (no loop).
   $effect(() => {
-    profilerDiagram?.selectMetric(selectedMetricId)
+    profilerDiagram?.selectMetric(shownMetricId)
   })
 
   // Reset to the overview whenever the loaded bundle changes. `analysisView` is reset first so the
@@ -367,7 +373,7 @@
     runtimeConfig,
     pipelineEvents,
     collectedAt: selectedTimestamp,
-    showAdvancedMetrics,
+    metricLevel,
     lookup,
     logText,
     triageResults,
@@ -527,8 +533,13 @@
 
 {#snippet commonTabBarEnd()}
   <div class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
-    {#if metrics.length > 0}
-      <MetricSelect bind:value={selectedMetricId} {metrics} class="w-42" title="Select metric" />
+    {#if levelMetricOptions.length > 0}
+      <MetricSelect
+        bind:value={() => shownMetricId, (id) => (selectedMetricId = id)}
+        metrics={levelMetricOptions}
+        class="w-42"
+        title="Select metric"
+      />
     {/if}
     <SearchBar
       bind:this={searchBar}
@@ -599,21 +610,25 @@
     ]}
     class="px-2"
   />
-  {#if metricsMode !== 'top-nodes'}
-    <label class="flex h-6 cursor-pointer items-center gap-2 text-sm">
-      <Switch
-        name="showAdvancedMetrics"
-        checked={showAdvancedMetrics}
-        onCheckedChange={(e) => (showAdvancedMetrics = e.checked)}
-      >
-        <Switch.Control class="h-5 w-9">
-          <Switch.Thumb />
-        </Switch.Control>
-        <Switch.HiddenInput />
-      </Switch>
-      Show advanced
-    </label>
-  {/if}
+  <!-- Also in Top nodes: the level picks the metrics that the metric selector lists. -->
+  <SegmentedControl
+    value={metricLevel}
+    onValueChange={(level) => (metricLevel = level)}
+    items={[
+      {
+        value: 'basic',
+        label: 'Basic',
+        title: 'Show only the operator runtime, input record count and storage size'
+      },
+      {
+        value: 'standard',
+        label: 'Standard',
+        title: 'Show the metrics for usual performance analysis'
+      },
+      { value: 'advanced', label: 'Advanced', title: 'Show all the metrics' }
+    ]}
+    class="px-2"
+  />
   {@render commonTabBarEnd()}
 {/snippet}
 

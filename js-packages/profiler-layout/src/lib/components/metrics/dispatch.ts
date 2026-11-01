@@ -3,7 +3,7 @@
 // Blocks are grouped by the metric's category, retrieved from the profile metadata
 // (`ProfileMetricDescription::category`). Every block renders as a distribution.
 
-import type { NodeAttributes, TooltipRow } from 'profiler-lib'
+import type { MetricLevel, NodeAttributes, TooltipRow } from 'profiler-lib'
 import { MetricDescriptions } from 'profiler-lib'
 
 export type RenderableMetric = {
@@ -18,17 +18,20 @@ export type RenderableBlock = {
 }
 
 const UNCATEGORIZED = 'Other'
+// The basic level puts its few metrics in one block, not one block for each category.
+const BASIC_BLOCK = 'Basic metrics'
 
 const slugify = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '-')
 
-export function buildBlocks(attrs: NodeAttributes, showAdvanced: boolean): RenderableBlock[] {
+export function buildBlocks(attrs: NodeAttributes, level: MetricLevel): RenderableBlock[] {
   // Preserve first-seen category order from the rows.
   const byCategory = new Map<string, RenderableMetric[]>()
   for (const row of attrs.rows) {
-    if (!showAdvanced && MetricDescriptions.describe(row.metric).advanced) {
+    if (!MetricDescriptions.isShown(row.metric, level)) {
       continue
     }
-    const category = MetricDescriptions.category(row.metric) || UNCATEGORIZED
+    const category =
+      level === 'basic' ? BASIC_BLOCK : MetricDescriptions.category(row.metric) || UNCATEGORIZED
     let bucket = byCategory.get(category)
     if (!bucket) {
       bucket = []

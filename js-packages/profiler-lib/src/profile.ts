@@ -910,6 +910,11 @@ export class RatioValue extends PropertyValue {
     }
 }
 
+/** The detail levels of the metric tables, from least to most detailed.  Each level shows the
+ * metrics of the levels before it. */
+const METRIC_LEVELS = ["basic", "standard", "advanced"] as const;
+export type MetricLevel = typeof METRIC_LEVELS[number];
+
 export class MetricDescriptions {
     private static KEY_ORDER: Map<string, number> = new Map();
     private static METRIC_DESCRIPTIONS: Map<string, ProfileMetricDescription> = new Map();
@@ -918,6 +923,14 @@ export class MetricDescriptions {
      * before "Slot 10", and case ignored. */
     private static readonly COLLATOR =
         new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
+    /** The measurements of the "basic" level: operator runtime, records received, and storage
+     * size. */
+    private static readonly BASIC_MEASUREMENTS: ReadonlySet<string> = new Set([
+        "runtime_seconds",
+        "input_batches_stats.record_count",
+        "spine_storage_size_bytes",
+    ]);
 
     static known(): boolean {
         return MetricDescriptions.METRIC_DESCRIPTIONS.size > 0;
@@ -1001,6 +1014,21 @@ export class MetricDescriptions {
         }
 
         return { description: "", advanced: false };
+    }
+
+    /** The least detailed level that shows a measurement.  The profile metadata only tells
+     * "advanced" from "standard"; the "basic" measurements are a fixed set. */
+    static level(prop: string): MetricLevel {
+        if (MetricDescriptions.BASIC_MEASUREMENTS.has(prop)) {
+            return "basic";
+        }
+        return MetricDescriptions.describe(prop).advanced ? "advanced" : "standard";
+    }
+
+    /** True when the metric tables show a measurement at the given level. */
+    static isShown(prop: string, level: MetricLevel): boolean {
+        const least = MetricDescriptions.level(prop);
+        return METRIC_LEVELS.indexOf(least) <= METRIC_LEVELS.indexOf(level);
     }
 }
 

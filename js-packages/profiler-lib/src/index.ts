@@ -14,6 +14,7 @@ export {
 } from './profiler.js';
 export { type DiagramTheme, type DiagramPalette, DIAGRAM_PALETTES } from './diagramTheme.js';
 export {
+    type MetricLevel,
     CircuitProfile,
     MetricDescriptions,
     PropertyValue,
