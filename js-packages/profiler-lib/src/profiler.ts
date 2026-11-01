@@ -3,10 +3,10 @@
 
 import { CircuitProfile, NodeAndMetric, PropertyValue } from "./profile.js";
 import { Cytograph, CytographRendering } from "./cytograph.js";
-import { CircuitSelector } from "./selection.js";
+import { CircuitSelection, CircuitSelector } from "./selection.js";
 import { MetadataSelector } from './metadataSelection.js';
 import type { DiagramTheme } from './diagramTheme.js';
-import { Option, shadeOfRed } from "./util.js";
+import { afterNextPaint, Option, shadeOfRed } from "./util.js";
 
 export { NodeAndMetric, shadeOfRed };
 
@@ -148,6 +148,20 @@ export class Visualizer {
         this.config.callbacks.displayMessage(Option.none());
     }
 
+    /** Rebuild the graph after the expanded regions change. Show the layout message and wait for a
+     *  paint first, so that the message is on screen while the rebuild and the layout run. */
+    private async rebuildGraph(profile: CircuitProfile, selection: CircuitSelection): Promise<void> {
+        this.message(CytographRendering.LAYOUT_MESSAGE);
+        await afterNextPaint();
+        if (this.rendering === null || this.metadataSelector === null) {
+            // `dispose()` ran during the wait.
+            return;
+        }
+        const graph = Cytograph.fromProfile(profile, selection);
+        this.rendering.updateGraph(graph);
+        this.rendering.updateMetadata(profile, this.metadataSelector.getSelection());
+    }
+
     /**
      * Display a circuit profile using interactive visualization.
      * This is the main entry point for displaying the profile data.
@@ -193,14 +207,8 @@ export class Visualizer {
             });
 
             // Wire up event handlers
-            this.circuitSelector.setOnChange(() => {
-                // Called when the circuit has been modified to display changes
-                this.message("Recomputing profile graph")
-                const graph = Cytograph.fromProfile(profile, selection);
-                this.message("Computing graph changes")
-                this.rendering!.updateGraph(graph);
-                this.rendering!.updateMetadata(profile, this.metadataSelector!.getSelection());
-            });
+            // Called when the circuit has been modified to display changes
+            this.circuitSelector.setOnChange(() => void this.rebuildGraph(profile, selection));
 
             this.metadataSelector.setOnChange(() => {
                 this.rendering!.updateMetadata(profile, this.metadataSelector!.getSelection());

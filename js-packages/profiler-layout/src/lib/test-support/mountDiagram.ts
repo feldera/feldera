@@ -172,7 +172,9 @@ export async function mountDiagram(
     nodeClicks: [] as string[],
     doubleClicks: [] as Array<{ nodeId: string, type: 'group' | 'leaf' }>,
     /** One entry per `displayNodeAttributes`, the node it carried or `null` for a dismissal. */
-    attributes: [] as Array<{ nodeId: string | null, isSticky: boolean }>
+    attributes: [] as Array<{ nodeId: string | null, isSticky: boolean }>,
+    /** One entry per `displayMessage`, the message or `null` when it is cleared. */
+    messages: [] as Array<string | null>
   }
   const callbacks = {
     displayNodeAttributes: (data: Option<NodeAttributes>, isSticky: boolean) => {
@@ -184,7 +186,9 @@ export async function mountDiagram(
     displayTopNodes: () => {},
     onMetricsChanged: () => {},
     onWorkersChanged: () => {},
-    displayMessage: () => {},
+    displayMessage: (message: Option<string>) => {
+      reported.messages.push(message.match({ some: (text) => text, none: () => null }))
+    },
     onNodeClick: (nodeId: string) => reported.nodeClicks.push(nodeId),
     onNodeDoubleClick: (nodeId: string, type: 'group' | 'leaf') => {
       reported.doubleClicks.push({ nodeId, type })
