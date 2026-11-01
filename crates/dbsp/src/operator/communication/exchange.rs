@@ -27,7 +27,7 @@ use crossbeam_utils::CachePadded;
 use enum_map::{Enum, EnumMap};
 use feldera_samply::Span;
 use feldera_storage::fbuf::FBuf;
-use futures::future::select;
+use futures::{FutureExt as _, future::select};
 use itertools::Itertools;
 use rkyv::AlignedVec;
 use size_of::HumanBytes;
@@ -42,6 +42,7 @@ use std::{
     mem::MaybeUninit,
     net::SocketAddr,
     ops::Range,
+    panic::{AssertUnwindSafe, resume_unwind},
     pin::{Pin, pin},
     sync::{
         Arc, Mutex, MutexGuard, RwLock, Weak,
@@ -1242,6 +1243,7 @@ impl ExchangeClients {
                         runtime.take_exchange_listener(),
                         directory.downgrade(),
                         self.layout.clone(),
+                        runtime.downgrade(),
                     ))
                 } else {
                     None
@@ -1504,11 +1506,22 @@ pub(crate) struct Exchange<T> {
 struct ExchangeListener(DropGuard);
 
 impl ExchangeListener {
+    /// Listens on `local_address`, or on `exchange_listener` if given, and
+    /// serves each connection from another host in a task of its own.
+    ///
+    /// # Arguments
+    ///
+    /// * `local_address` - the address to listen on.
+    /// * `exchange_listener` - a socket already bound to the address.
+    /// * `directory` - the exchanges that receive the messages.
+    /// * `layout` - the layout of the runtime's hosts.
+    /// * `runtime` - the runtime, to report a panic in a task to.
     fn new(
         local_address: SocketAddr,
         exchange_listener: Option<std::net::TcpListener>,
         directory: WeakExchangeDirectory,
         layout: Layout,
+        runtime: WeakRuntime,
     ) -> Self {
         let token = CancellationToken::new();
         let drop = token.clone().drop_guard();
@@ -1532,6 +1545,7 @@ impl ExchangeListener {
                     Ok((stream, address)) => {
                         let layout = layout.clone();
                         let directory = directory.clone();
+                        let runtime = runtime.clone();
                         // `ExchangeServer` needs its own join handle to
                         // register itself with the `ConnectionRegistry` (see
                         // `ExchangeServer::serve`), which isn't available
@@ -1543,15 +1557,30 @@ impl ExchangeListener {
                         let (tx, rx) = tokio::sync::oneshot::channel();
                         let handle = tokio::spawn(async move {
                             let self_handle = rx.await.ok();
-                            let result = ExchangeServer {
+                            let server = ExchangeServer {
                                 layout,
                                 directory,
                                 stream,
                                 cancel,
                                 self_handle,
-                            }
-                            .serve()
-                            .await;
+                            };
+                            // The panic hook reports only panics on the
+                            // runtime's threads.  Report a panic here too, or
+                            // the workers could wait forever for the message
+                            // that this task was delivering.
+                            let result = match AssertUnwindSafe(server.serve()).catch_unwind().await
+                            {
+                                Ok(result) => result,
+                                Err(payload) => {
+                                    if let Some(runtime) = runtime.upgrade() {
+                                        runtime.report_task_panic(
+                                            &format!("receiving exchange messages from {address}"),
+                                            &*payload,
+                                        );
+                                    }
+                                    resume_unwind(payload);
+                                }
+                            };
                             // Other errors are dropped connections, which the
                             // sending side reports.  Only the receiving side
                             // sees bad data, so it reports it here.
@@ -2992,6 +3021,95 @@ mod tests {
 
         // Fails unless every host drops its runtime.
         hosts.kill();
+    }
+
+    /// A panic in the task that delivers another host's messages fails the
+    /// receiving host, whose workers could otherwise wait forever for what
+    /// the message carried.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    #[should_panic(expected = "injected delivery panic")]
+    fn delivery_panic_fails_the_receiving_host() {
+        use super::{
+            ExchangeClients, ExchangeDelivery, ExchangeDirectory, ExchangeId, MessageType,
+        };
+        use crate::circuit::operator_traits::{Operator, SourceOperator};
+        use feldera_storage::fbuf::FBuf;
+        use rkyv::AlignedVec;
+        use std::{
+            borrow::Cow,
+            pin::Pin,
+            time::{Duration, Instant},
+        };
+
+        /// An exchange that panics on every message it receives.
+        struct PanickingDelivery;
+
+        impl ExchangeDelivery for PanickingDelivery {
+            fn name(&self) -> Arc<String> {
+                Arc::new(String::from("PanickingDelivery"))
+            }
+
+            fn received(
+                self: Arc<Self>,
+                _sender: usize,
+                _round: u64,
+                _data: Vec<AlignedVec>,
+            ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+                Box::pin(async { panic!("injected delivery panic") })
+            }
+        }
+
+        /// Sends a message from worker 0 to the [PanickingDelivery] of
+        /// worker 1, on the other host, in each step.
+        struct SendToOtherHost {
+            clients: Arc<ExchangeClients>,
+            exchange_id: ExchangeId,
+        }
+
+        impl Operator for SendToOtherHost {
+            fn name(&self) -> Cow<'static, str> {
+                Cow::Borrowed("SendToOtherHost")
+            }
+
+            fn fixedpoint(&self, _scope: crate::circuit::Scope) -> bool {
+                true
+            }
+        }
+
+        impl SourceOperator<()> for SendToOtherHost {
+            async fn eval(&mut self) {
+                if Runtime::worker_index() == 0 {
+                    let _drained = self.clients.connect(1, MessageType::Streaming).await.send(
+                        Arc::new(String::from("SendToOtherHost")),
+                        self.exchange_id,
+                        0,
+                        0,
+                        vec![FBuf::new()],
+                    );
+                }
+            }
+        }
+
+        init_test_logger();
+        let mut hosts = TestHosts::start(2, 2, |circuit| {
+            let runtime = Runtime::runtime().unwrap();
+            let exchange_id = runtime.sequence_next().try_into().unwrap();
+            ExchangeDirectory::for_runtime(&runtime)
+                .insert(exchange_id, Arc::new(PanickingDelivery));
+            circuit.add_source(SendToOtherHost {
+                clients: ExchangeClients::for_runtime(&runtime),
+                exchange_id,
+            });
+            Ok(())
+        });
+
+        // A transaction of the second host fails once the first message
+        // reaches it.
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while Instant::now() < deadline {
+            hosts.transaction();
+        }
     }
 
     /// Disables the random `inject_fault` failures used by the round-based
