@@ -49,6 +49,7 @@ use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize};
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 use std::{
+    any::Any,
     backtrace::Backtrace,
     borrow::Cow,
     cell::{Cell, RefCell},
@@ -290,6 +291,27 @@ impl WorkerPanicInfo {
             message,
             location,
             backtrace,
+        }
+    }
+
+    /// Describes the panic of a task outside the runtime's threads (see
+    /// [Runtime::report_task_panic]) by its payload alone.  The panic hook has
+    /// already logged the panic's location.
+    ///
+    /// # Arguments
+    ///
+    /// * `task` - what the task was doing.
+    /// * `payload` - the payload of the task's panic.
+    fn from_task_panic(task: &str, payload: &(dyn Any + Send)) -> Self {
+        let message = payload
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| payload.downcast_ref::<&str>().copied())
+            .unwrap_or("(none)");
+        Self {
+            message: Some(format!("{task}: {message}")),
+            location: None,
+            backtrace: String::from("unavailable"),
         }
     }
 }
@@ -1704,6 +1726,28 @@ impl Runtime {
         let _ = self.inner().panic_info[local_worker_offset][thread_type]
             .write()
             .map(|mut guard| *guard = Some(panic_info));
+        self.inner().panic_signal.raise();
+    }
+
+    /// Records the panic of a task that works for this runtime outside its
+    /// threads, and raises the panic signal, so that the runtime's handle
+    /// fails instead of waiting for work that the task left undone.
+    ///
+    /// The panic hook records only panics on the runtime's own threads, so a
+    /// task on a shared Tokio runtime, such as one that receives exchange
+    /// messages from another host, must catch its panic and report it here.
+    /// The panic counts as one of the first local worker's background thread,
+    /// unless that thread has already panicked.
+    ///
+    /// # Arguments
+    ///
+    /// * `task` - what the task was doing, for the panic message.
+    /// * `payload` - the payload of the task's panic.
+    pub(crate) fn report_task_panic(&self, task: &str, payload: &(dyn Any + Send)) {
+        let panic_info = WorkerPanicInfo::from_task_panic(task, payload);
+        if let Ok(mut guard) = self.inner().panic_info[0][ThreadType::Background].write() {
+            guard.get_or_insert(panic_info);
+        }
         self.inner().panic_signal.raise();
     }
 
