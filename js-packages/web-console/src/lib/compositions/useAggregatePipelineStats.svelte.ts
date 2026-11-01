@@ -9,6 +9,9 @@ import {
 import { isMetricsAvailable } from '#lib/functions/pipelines/status.ts'
 import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
 
+/** The time between two polls of the pipeline statistics. The views that animate the statistics use it too. */
+export const PIPELINE_STATS_POLL_MS = 2000
+
 const metrics: Record<string, PipelineMetrics> = {} // Disable reactivity for metrics data for better performance
 let getMetrics = $state<() => typeof metrics>(() => metrics)
 
