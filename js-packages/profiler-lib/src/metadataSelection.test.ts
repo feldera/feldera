@@ -1,12 +1,12 @@
 /**
  * The metric selector lists the metrics a profile carries. Issue 6991: it listed the raw ids
  * (`spine_storage_size_bytes`) while the table of values spelled them out ("Spine storage size
- * bytes"), so the same metric appeared under two names. Both now go through `measurementLabel`.
+ * bytes"), so the same metric appeared under two names. Both now go through `MetricDescriptions.label`.
  */
 
 import { describe, expect, it } from 'vitest'
 import { MetadataSelector, optionLabel } from './metadataSelection.js'
-import { CircuitProfile, compareMetrics, type JsonProfiles } from './profile.js'
+import { CircuitProfile, MetricDescriptions, type JsonProfiles } from './profile.js'
 import type { MetricOption, ProfilerCallbacks } from './profiler.js'
 
 // One operator carrying a byte metric, a percentage, and a composite batch-size summary.
@@ -67,7 +67,7 @@ describe('MetadataSelector metric options', () => {
 
     it('lists the metrics in the order the tables use', () => {
         const listed = options().map((o) => ({ id: o.id, label: o.label }))
-        expect(listed).toEqual([...listed].sort(compareMetrics))
+        expect(listed).toEqual([...listed].sort(MetricDescriptions.compare))
     })
 })
 

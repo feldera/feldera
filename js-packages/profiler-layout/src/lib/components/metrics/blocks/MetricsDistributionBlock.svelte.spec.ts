@@ -114,7 +114,7 @@ describe('MetricsDistributionBlock total column', () => {
     doesNotAdd
   ]
 
-  // The standing itself is `profiler-lib`'s business (see `totalShare` and `categoryShares`
+  // The standing itself is `profiler-lib`'s business (see `PropertyValue.totalShare` and `PropertyValue.categoryShares`
   // there); the block's job is to paint it and to leave a row without a total unpainted.
   it('paints each total at the standing it was given', async () => {
     const { container } = render(MetricsDistributionBlock, {

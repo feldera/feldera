@@ -184,20 +184,6 @@ export type JsonProfiles = {
 
 ///////////////// Parsing code to decode measurements
 
-function formatValue(val: number, base: number, prefixes: Array<string>): string {
-    let index = 0;
-    while ((Math.abs(val) >= base) && (index < (prefixes.length - 1))) {
-        val = val / base;
-        index++;
-    }
-    // For sub-unit values, `maximumFractionDigits: 2` rounds non-zero numbers down to "0".
-    // Switch to `maximumSignificantDigits: 2` in that range so e.g. 0.004 -> "0.004" instead of "0".
-    const opts: Intl.NumberFormatOptions = (val !== 0 && Math.abs(val) < 1)
-        ? { maximumSignificantDigits: 2 }
-        : { minimumFractionDigits: 0, maximumFractionDigits: 2 };
-    return val.toLocaleString('en-US', opts) + prefixes[index];
-}
-
 /** How multiple metric measurements are combined for a node from the children measurements. */
 export enum AggregationMode {
     /** Magnitudes add: counts, bytes, durations. */
@@ -219,6 +205,61 @@ export enum AggregationMode {
 /** Base class for (numeric) property values; representation which abstracts away from the
  * JSON Serialization. */
 export abstract class PropertyValue implements Comparable<PropertyValue> {
+    protected static formatValue(val: number, base: number, prefixes: Array<string>): string {
+        let index = 0;
+        while ((Math.abs(val) >= base) && (index < (prefixes.length - 1))) {
+            val = val / base;
+            index++;
+        }
+        // For sub-unit values, `maximumFractionDigits: 2` rounds non-zero numbers down to "0".
+        // Switch to `maximumSignificantDigits: 2` in that range so e.g. 0.004 -> "0.004" instead of "0".
+        const opts: Intl.NumberFormatOptions = (val !== 0 && Math.abs(val) < 1)
+            ? { maximumSignificantDigits: 2 }
+            : { minimumFractionDigits: 0, maximumFractionDigits: 2 };
+        return val.toLocaleString('en-US', opts) + prefixes[index];
+    }
+
+    protected static isFiniteNumber(raw: unknown): raw is number {
+        return typeof raw === "number" && Number.isFinite(raw);
+    }
+
+    /** A total as a percentage of the largest total on display, clamped to [0, 100]: 100 for the
+     * node holding the most, near zero for one holding a negligible share.  Zero when there is
+     * nothing on display to compare against. */
+    static totalShare(total: PropertyValue, largest: number | undefined): number {
+        const value = total.getNumericValue();
+        if (largest === undefined || largest <= 0 || value.isNone()) {
+            return 0;
+        }
+        return Math.max(0, Math.min(100, 100 * value.unwrap() / largest));
+    }
+
+    /** Shares for the totals of the toplevel node, which stands for the whole circuit.  It holds
+     * the largest total of every metric by construction, so `totalShare` would place all of them
+     * at 100.  These place each total against the others of its category -- the group it is
+     * displayed alongside -- on a log scale, since a category's totals routinely span a byte count
+     * in the billions beside a batch count in the hundreds. */
+    static categoryShares(totals: Map<string, PropertyValue>): Map<string, number> {
+        const magnitudes = new Map<string, number>();
+        const largest = new Map<string, number>();
+        for (const [metric, total] of totals) {
+            const value = total.getNumericValue();
+            if (value.isNone()) {
+                continue;
+            }
+            const magnitude = Math.max(0, value.unwrap());
+            magnitudes.set(metric, magnitude);
+            const category = MetricDescriptions.category(metric);
+            largest.set(category, Math.max(largest.get(category) ?? 0, magnitude));
+        }
+        const shares = new Map<string, number>();
+        for (const [metric, magnitude] of magnitudes) {
+            const top = largest.get(MetricDescriptions.category(metric))!;
+            shares.set(metric, top > 0 ? 100 * Math.log1p(magnitude) / Math.log1p(top) : 0);
+        }
+        return shares;
+    }
+
     abstract getNumericValue(): Option<number>;
 
     getStringValue(): string {
@@ -282,7 +323,7 @@ export abstract class PropertyValue implements Comparable<PropertyValue> {
         if (v.isSome()) {
             let value = v.unwrap();
             let prefixes = ["", "K", "M", "B"];
-            return formatValue(value, 1000, prefixes);
+            return PropertyValue.formatValue(value, 1000, prefixes);
         } else {
             return "N/A";
         }
@@ -316,10 +357,6 @@ export abstract class PropertyValue implements Comparable<PropertyValue> {
 export interface PropertyValueParser {
     /** Returns `undefined` when `raw` has the wrong JSON type for this parser. */
     fromJson(raw: unknown): PropertyValue | undefined;
-}
-
-function isFiniteNumber(raw: unknown): raw is number {
-    return typeof raw === "number" && Number.isFinite(raw);
 }
 
 /** A property value represented as a numerator and denominator, which are supposed to represent a percentage. */
@@ -431,7 +468,7 @@ export class CountValue extends PropertyValue {
     }
 
     static fromJson(raw: unknown): CountValue | undefined {
-        return isFiniteNumber(raw) ? new CountValue(raw) : undefined;
+        return PropertyValue.isFiniteNumber(raw) ? new CountValue(raw) : undefined;
     }
 
     getNumericValue(): Option<number> {
@@ -483,7 +520,7 @@ export class BytesValue extends PropertyValue {
     }
 
     static fromJson(raw: unknown): BytesValue | undefined {
-        return isFiniteNumber(raw) ? new BytesValue(raw) : undefined;
+        return PropertyValue.isFiniteNumber(raw) ? new BytesValue(raw) : undefined;
     }
 
     getNumericValue(): Option<number> {
@@ -519,7 +556,7 @@ export class BytesValue extends PropertyValue {
 
     override toString(): string {
         let prefixes = ["B", "KiB", "MiB", "GiB", "TiB"];
-        return formatValue(this.value, 1024, prefixes);
+        return PropertyValue.formatValue(this.value, 1024, prefixes);
     }
 }
 
@@ -877,6 +914,11 @@ export class MetricDescriptions {
     private static KEY_ORDER: Map<string, number> = new Map();
     private static METRIC_DESCRIPTIONS: Map<string, ProfileMetricDescription> = new Map();
 
+    /** Compares the names a reader sees, with digit runs read as numbers so "Slot 2" comes
+     * before "Slot 10", and case ignored. */
+    private static readonly COLLATOR =
+        new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
     static known(): boolean {
         return MetricDescriptions.METRIC_DESCRIPTIONS.size > 0;
     }
@@ -911,58 +953,55 @@ export class MetricDescriptions {
     static getMetricDescription(metric: string): string | undefined {
         return MetricDescriptions.getMetricInfo(metric)?.description;
     }
-}
 
-function stripSuffix(prop: string): string {
-    let dot = prop.indexOf(".");
-    if (dot >= 0) {
-        // Dot is used when appending measurements for a metric with multiple values
-        prop = prop.substring(0, dot);
-    }
-    return prop;
-}
-
-/** Which category does a measurement belong to?  Empty for a metric without a description. */
-export function measurementCategory(prop: string): string {
-    let info = MetricDescriptions.getMetricInfo(stripSuffix(prop));
-    if (info !== undefined) {
-        return info.category;
-    }
-    return "";
-}
-
-/** The name of a measurement as shown to a user: the metric id with its separators turned into
- * spaces and the first letter capitalized, so `spine_storage_size_bytes` reads "Spine storage
- * size bytes".  Every place that names a metric on screen uses this, so the metric selector and
- * the tables agree. */
-export function measurementLabel(prop: string): string {
-    const spelled = prop.replace(/[_.]/g, " ").replace(/\s+/g, " ").trim();
-    if (spelled.length === 0) {
+    private static stripSuffix(prop: string): string {
+        let dot = prop.indexOf(".");
+        if (dot >= 0) {
+            // Dot is used when appending measurements for a metric with multiple values
+            prop = prop.substring(0, dot);
+        }
         return prop;
     }
-    return spelled.charAt(0).toUpperCase() + spelled.slice(1);
-}
 
-/** Compares the names a reader sees, with digit runs read as numbers so "Slot 2" comes before
- * "Slot 10", and case ignored. */
-const metricCollator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
-
-/** Order two metrics the way every list of them is ordered.  The id breaks a tie: two ids can
- * spell one label, since `measurementLabel` turns both `_` and `.` into spaces. */
-export function compareMetrics(
-    a: { id: string, label: string },
-    b: { id: string, label: string }): number {
-    return metricCollator.compare(a.label, b.label) || metricCollator.compare(a.id, b.id);
-}
-
-/** Return a description of the measurement and a boolean indicating whether the measurements is "advanced" */
-export function measurementDescription(prop: string): { description: string, advanced: boolean } {
-    let info = MetricDescriptions.getMetricInfo(stripSuffix(prop));
-    if (info !== undefined) {
-        return { description: info.description, advanced: info.advanced };
+    /** Which category does a measurement belong to?  Empty for a metric without a description. */
+    static category(prop: string): string {
+        let info = MetricDescriptions.getMetricInfo(MetricDescriptions.stripSuffix(prop));
+        if (info !== undefined) {
+            return info.category;
+        }
+        return "";
     }
 
-    return { description: "", advanced: false };
+    /** The name of a measurement as shown to a user: the metric id with its separators turned
+     * into spaces and the first letter capitalized, so `spine_storage_size_bytes` reads "Spine
+     * storage size bytes".  Every place that names a metric on screen uses this, so the metric
+     * selector and the tables agree. */
+    static label(prop: string): string {
+        const spelled = prop.replace(/[_.]/g, " ").replace(/\s+/g, " ").trim();
+        if (spelled.length === 0) {
+            return prop;
+        }
+        return spelled.charAt(0).toUpperCase() + spelled.slice(1);
+    }
+
+    /** Order two metrics the way every list of them is ordered.  The id breaks a tie: two ids
+     * can spell one label, since `label` turns both `_` and `.` into spaces. */
+    static compare(
+        a: { id: string, label: string },
+        b: { id: string, label: string }): number {
+        return MetricDescriptions.COLLATOR.compare(a.label, b.label)
+            || MetricDescriptions.COLLATOR.compare(a.id, b.id);
+    }
+
+    /** Return a description of the measurement and a boolean indicating whether the measurements is "advanced" */
+    static describe(prop: string): { description: string, advanced: boolean } {
+        let info = MetricDescriptions.getMetricInfo(MetricDescriptions.stripSuffix(prop));
+        if (info !== undefined) {
+            return { description: info.description, advanced: info.advanced };
+        }
+
+        return { description: "", advanced: false };
+    }
 }
 
 // Decoded measurement value.
@@ -1185,43 +1224,6 @@ export interface MetricScale {
 
 /** The scales the rendering colors against, by metric, over the nodes currently drawn. */
 export type DisplayScales = Map<string, MetricScale>;
-
-/** A total as a percentage of the largest total on display, clamped to [0, 100]: 100 for the
- * node holding the most, near zero for one holding a negligible share.  Zero when there is
- * nothing on display to compare against. */
-export function totalShare(total: PropertyValue, largest: number | undefined): number {
-    const value = total.getNumericValue();
-    if (largest === undefined || largest <= 0 || value.isNone()) {
-        return 0;
-    }
-    return Math.max(0, Math.min(100, 100 * value.unwrap() / largest));
-}
-
-/** Shares for the totals of the toplevel node, which stands for the whole circuit.  It holds the
- * largest total of every metric by construction, so `totalShare` would place all of them at 100.
- * These place each total against the others of its category -- the group it is displayed
- * alongside -- on a log scale, since a category's totals routinely span a byte count in the
- * billions beside a batch count in the hundreds. */
-export function categoryShares(totals: Map<string, PropertyValue>): Map<string, number> {
-    const magnitudes = new Map<string, number>();
-    const largest = new Map<string, number>();
-    for (const [metric, total] of totals) {
-        const value = total.getNumericValue();
-        if (value.isNone()) {
-            continue;
-        }
-        const magnitude = Math.max(0, value.unwrap());
-        magnitudes.set(metric, magnitude);
-        const category = measurementCategory(metric);
-        largest.set(category, Math.max(largest.get(category) ?? 0, magnitude));
-    }
-    const shares = new Map<string, number>();
-    for (const [metric, magnitude] of magnitudes) {
-        const top = largest.get(measurementCategory(metric))!;
-        shares.set(metric, top > 0 ? 100 * Math.log1p(magnitude) / Math.log1p(top) : 0);
-    }
-    return shares;
-}
 
 /** A node, its operation, and the (maximum) value of a metric for that node.  The actual metric
  * represented is not part of this data structure */

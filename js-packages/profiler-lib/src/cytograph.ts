@@ -3,7 +3,7 @@
 import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeCollection, type NodeDefinition, type NodeSingular } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
 import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
-import { categoryShares, CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, totalShare, type DisplayScales, type NodeId } from './profile.js';
+import { CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, type DisplayScales, type NodeId } from './profile.js';
 import { CircuitSelection } from './selection.js';
 import elk from 'cytoscape-elk';
 import { Sources } from './dataflow.js';
@@ -610,12 +610,12 @@ export class CytographRendering {
             // The toplevel node stands for the whole circuit, so it holds the largest total of
             // every metric and has to be shaded against the metrics beside it instead.
             const overview = node.getId() === this.rootNodeId;
-            const shares = overview ? categoryShares(values) : undefined;
+            const shares = overview ? PropertyValue.categoryShares(values) : undefined;
             let totals = new Map<string, SerializedMeasurement>();
             for (const [metric, total] of values) {
                 const share = overview
                     ? shares!.get(metric) ?? 0
-                    : totalShare(total, scales.get(metric)?.maximum);
+                    : PropertyValue.totalShare(total, scales.get(metric)?.maximum);
                 totals.set(metric, new SerializedMeasurement(total, share));
             }
             // additional key-value per node attributes
