@@ -1,7 +1,7 @@
 // Selector tool to decide which circuit metadata to use for visualizations
 
 import { SubList } from "./util.js";
-import { CircuitProfile, compareMetrics, measurementLabel } from "./profile.js";
+import { CircuitProfile, MetricDescriptions } from "./profile.js";
 import type { ProfilerCallbacks, MetricOption, WorkerOption } from "./profiler.js";
 
 /** Describes which metadata from a circuit to display. */
@@ -20,7 +20,7 @@ export class MetadataSelection {
 export function optionLabel(metric: string): string {
     const parts = metric.split(".");
     const firstLabel = parts.findIndex(part => part.includes(":"));
-    return measurementLabel(firstLabel > 0 ? parts.slice(firstLabel).join(".") : metric);
+    return MetricDescriptions.label(firstLabel > 0 ? parts.slice(firstLabel).join(".") : metric);
 }
 
 export class MetadataSelector {
@@ -72,7 +72,7 @@ export class MetadataSelector {
         // where two ids spell the same name.
         const metrics: MetricOption[] = Array.from(this.allMetrics)
             .map(metric => ({ id: metric, label: optionLabel(metric) }))
-            .sort(compareMetrics);
+            .sort(MetricDescriptions.compare);
         this.callbacks.onMetricsChanged(metrics, this.selectedMetric);
     }
 
