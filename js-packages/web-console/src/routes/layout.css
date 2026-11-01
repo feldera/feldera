@@ -198,11 +198,35 @@
   }
 }
 
-/* Outlined buttons follow the Figma "Button" outline variant: a 1px neutral border and
-   no fill. Their icon and label use the main text colour, like the other icon buttons.
-   Skeleton's preset sets only the border colour, so the text colour is added here. */
+/* Outlined buttons follow the Figma "Button" outline variant: a 1px neutral border. Their
+   icon and label use the main text colour, like the other icon buttons. Skeleton's preset
+   sets only the border colour, so the text colour is added here. Outlined controls are
+   white, so they stand out on grey tab bars and toolbars too. */
 :is(.btn, .btn-icon).preset-outlined-surface-200-800 {
   color: var(--color-surface-950-50);
+}
+.preset-outlined-surface-200-800 {
+  background-color: #ffffff;
+  &:where(.dark, .dark *) {
+    background-color: var(--color-dark);
+  }
+}
+
+/* On the tinted page, neutral (secondary) buttons, icon buttons, selects and inputs are
+   white with a 1px line, like the tables and panels. This sits outside the layers on
+   purpose: it wins over Skeleton's tonal fill and the fill `Select` gives every select.
+   A focused field still takes the primary ring. */
+:is(.btn, .btn-icon):is(.preset-filled-surface-50-950, .preset-tonal-surface),
+.select,
+.input:not([type="range"], [type="file"]) {
+  background-color: #ffffff;
+  box-shadow: inset 0 0 0 1px var(--color-line);
+  &:where(.dark, .dark *) {
+    background-color: var(--color-dark);
+  }
+  &:focus-visible {
+    box-shadow: inset 0 0 0 1px var(--color-primary-500);
+  }
 }
 
 /* Selects share the buttons' hover, so a select next to a button reacts the same way. */
@@ -305,7 +329,7 @@ input:focus {
 }
 
 /* Checkboxes follow the Figma "Checkbox" component at its 16px size: an outlined box when
-   unchecked, and the primary fill with a white check mark when checked. */
+   unchecked, and the primary fill with a contrasting check mark when checked. */
 .checkbox {
   @apply border border-surface-950-50/20 bg-white dark:bg-dark;
   appearance: none;
@@ -322,17 +346,22 @@ input:focus {
     border-color: transparent;
     background-color: var(--color-primary-500);
     background-image: url("../assets/icons/generic/checkbox-check.svg");
+
+    /* The dark-mode fill is near white, so the check mark turns black. */
+    &:where(.dark, .dark *) {
+      background-image: url("../assets/icons/generic/checkbox-check-dark.svg");
+    }
   }
 }
 
 /* The home page's welcome banner: one continuous background instead of two gradient
-   halves, which met in a visible seam. A soft primary glow fans out from the top-left
+   halves, which met in a visible seam. A soft lavender glow fans out from the top-left
    corner and a faint warm yellow glow rises from the bottom, over a smooth base. */
 .welcome-banner-bg {
   background:
     radial-gradient(
       55% 140% at 0% 0%,
-      color-mix(in oklab, var(--color-primary-300) 60%, transparent),
+      color-mix(in oklab, var(--color-secondary-300) 60%, transparent),
       transparent 70%
     ),
     radial-gradient(45% 120% at 55% 130%, oklch(92.4% 0.12 95.75 / 0.6), transparent 70%),
@@ -342,7 +371,7 @@ input:focus {
     background:
       radial-gradient(
         55% 140% at 0% 0%,
-        color-mix(in oklab, var(--color-primary-500) 50%, transparent),
+        color-mix(in oklab, var(--color-secondary-500) 50%, transparent),
         transparent 70%
       ),
       radial-gradient(45% 120% at 55% 130%, oklch(82.8% 0.189 84.43 / 0.22), transparent 70%),

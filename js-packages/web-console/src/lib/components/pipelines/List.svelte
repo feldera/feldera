@@ -41,7 +41,7 @@
   style="overflow-y: overlay;"
   use:bindScrollY={{ scrollY }}
 >
-  <div class="bg-white-dark sticky top-0 -mr-1 flex items-center gap-2 pb-2 pl-2">
+  <div class="sticky top-0 -mr-1 flex items-center gap-2 bg-page pb-2 pl-2">
     <input
       class="input min-w-0 flex-1"
       type="search"
@@ -56,8 +56,8 @@
       <a
         class="flex h-9 flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {pipelineName ===
         pipeline.name
-          ? 'bg-surface-50-950'
-          : 'hover:bg-surface-50-950'}"
+          ? 'bg-row-hover'
+          : 'hover:bg-row-hover'}"
         onclick={onaction}
         href={resolve(`/pipelines/${encodeURI(pipeline.name)}/`)}
       >

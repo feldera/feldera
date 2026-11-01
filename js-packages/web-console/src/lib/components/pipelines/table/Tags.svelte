@@ -2,7 +2,7 @@
   import { partition } from 'common-lib/array'
   import { promisePool } from 'common-lib/promise'
   import { Tooltip } from 'common-ui'
-  import { slide } from 'svelte/transition'
+  import { fade } from 'svelte/transition'
   import Popup from '#lib/components/common/Popup.svelte'
   import SlidingPanels from '#lib/components/common/SlidingPanels.svelte'
   import {
@@ -306,8 +306,8 @@
            "Create new tag" button) is truncated. `grid-cols-1` lets the panels shrink
            below their content width so the truncation can happen. -->
       <div
-        transition:slide={{ duration: 100 }}
-        class="bg-white-dark absolute top-8 left-0 z-30 flex w-max max-w-[380px] min-w-[304px] flex-col overflow-hidden rounded shadow-md"
+        transition:fade={{ duration: 100 }}
+        class="bg-white-dark absolute top-full left-0 z-30 mt-1 flex w-max max-w-[380px] min-w-[304px] flex-col overflow-hidden rounded p-1 shadow-md dark:border dark:border-surface-950-50/10"
       >
         <SlidingPanels
           class="grid-cols-1"
@@ -324,7 +324,7 @@
 
       {#snippet listPage()}
         {#if knownTags.size > 0}
-          <div class="p-2">
+          <div class="p-1">
             <input
               class="input w-full"
               type="search"
@@ -333,7 +333,7 @@
             />
           </div>
         {/if}
-        <div class="scrollbar flex max-h-[280px] flex-col overflow-y-auto pb-1">
+        <div class="scrollbar flex max-h-[280px] flex-col overflow-y-auto">
           {#each selectedTags as tag (tag)}
             {@render tagRow(tag, true)}
           {/each}
@@ -341,15 +341,17 @@
             {@render tagRow(tag, false)}
           {/each}
         </div>
-        <button
-          class="flex items-center gap-2 border-t border-surface-100-900 px-3 py-2 text-left text-sm hover:bg-surface-50-950"
-          onclick={() => openCreate(search)}
-        >
-          <span class="fd fd-plus text-[16px]"></span>
-          <span class="min-w-0 truncate">
-            {searchedNewTagName ? `Create new tag: “${searchedNewTagName}”` : 'Create a new tag'}
-          </span>
-        </button>
+        <div class="mt-1 border-t border-surface-100-900 pt-1">
+          <button
+            class="flex h-9 w-full min-w-0 items-center gap-2 rounded px-3 text-left text-sm hover:preset-tonal-surface"
+            onclick={() => openCreate(search)}
+          >
+            <span class="fd fd-plus text-[16px]"></span>
+            <span class="min-w-0 truncate">
+              {searchedNewTagName ? `Create new tag: “${searchedNewTagName}”` : 'Create a new tag'}
+            </span>
+          </button>
+        </div>
       {/snippet}
 
       {#snippet createPage()}
@@ -415,7 +417,7 @@
   the editing affordances (chips, the "+N" overflow, and the empty-state add
   button all open the popup); without it the row is static display only. -->
 {#snippet inlineTagRow(open?: () => void)}
-  <div class="flex flex-nowrap items-center gap-1">
+  <div class="flex flex-nowrap items-center gap-1 overflow-hidden">
     {#each inlineTags as tag (tag)}
       {@render chip(tag, open)}
     {/each}
@@ -436,12 +438,14 @@
       {/if}
     {/if}
     {#if open && tags.length === 0}
+      <!-- A quiet ghost button, so a column of untagged pipelines doesn't read as a column
+        of boxes; it firms up while its row is hovered. -->
       <button
-        class="flex h-5 items-center gap-1 rounded border border-dashed border-surface-500 px-2 text-sm text-surface-800-200 hover:border-surface-950-50 hover:text-surface-950-50"
+        class="-ml-1.5 flex h-6 items-center gap-1 rounded px-1.5 text-sm whitespace-nowrap text-surface-500 transition-colors group-hover:text-surface-800-200 hover:bg-surface-100-900 hover:text-surface-950-50"
         onclick={open}
       >
-        <span class="fd fd-plus text-[16px]"></span>
-        Tag
+        <span class="fd fd-plus text-[14px]"></span>
+        Add tag
       </button>
     {/if}
   </div>
@@ -453,7 +457,7 @@
   {@const base =
     'flex h-5 items-center gap-1.5 rounded border border-surface-200-800 px-2 text-sm whitespace-nowrap'}
   {#if open}
-    <button class="{base} hover:bg-surface-50-950" onclick={open}>
+    <button class="{base} hover:bg-row-hover" onclick={open}>
       {@render chipContent(tag)}
     </button>
   {:else}
@@ -469,9 +473,9 @@
 {/snippet}
 
 {#snippet tagRow(tag: string, selected: boolean)}
-  <div class="group/row flex items-center hover:bg-surface-50-950">
+  <div class="group/row flex h-9 items-center rounded hover:preset-tonal-surface">
     <button
-      class="flex flex-1 items-center gap-2 py-1.5 pl-3 text-left text-sm"
+      class="flex h-full flex-1 items-center gap-2 pl-3 text-left text-sm"
       onclick={() => toggleTag(tag)}
     >
       <input

@@ -11,7 +11,7 @@
 <Popup wrapperClass="flex">
   {#snippet trigger(toggle)}
     <button
-      class="fd fd-more_horiz btn-icon btn-icon-sm text-[16px] hover:bg-surface-50-950 hover:text-surface-950-50"
+      class="fd fd-more_horiz btn-icon btn-icon-sm text-[16px] hover:bg-row-hover hover:text-surface-950-50"
       onclick={toggle}
       aria-label="Editor settings"
     ></button>
@@ -19,10 +19,14 @@
   {#snippet content(close)}
     <div
       transition:fade={{ duration: 100 }}
-      class="absolute right-0 bottom-14 z-30 max-h-[400px] w-[calc(100vw-100px)] max-w-[300px]"
+      class="absolute right-0 bottom-full z-30 mb-1 max-h-[400px] w-[calc(100vw-100px)] max-w-[300px]"
     >
-      <div class="bg-white-dark flex flex-col justify-center gap-2 rounded-container p-2 shadow-md">
-        <label class="flex cursor-pointer justify-between rounded p-2 hover:preset-tonal-surface">
+      <div
+        class="bg-white-dark flex flex-col justify-center rounded p-1 shadow-md dark:border dark:border-surface-950-50/10"
+      >
+        <label
+          class="flex h-9 cursor-pointer items-center justify-between gap-2 rounded px-3 hover:preset-tonal-surface"
+        >
           Autosave
           <CompactSwitch
             size="md"
@@ -31,7 +35,9 @@
             onCheckedChange={(e) => (autoSaveFiles.value = e.checked)}
           />
         </label>
-        <label class="flex cursor-pointer justify-between rounded p-2 hover:preset-tonal-surface">
+        <label
+          class="flex h-9 cursor-pointer items-center justify-between gap-2 rounded px-3 hover:preset-tonal-surface"
+        >
           Show minimap
           <CompactSwitch
             size="md"
@@ -40,7 +46,9 @@
             onCheckedChange={(e) => (showMinimap.value = e.checked)}
           />
         </label>
-        <label class="flex cursor-pointer justify-between rounded p-2 hover:preset-tonal-surface">
+        <label
+          class="flex h-9 cursor-pointer items-center justify-between gap-2 rounded px-3 hover:preset-tonal-surface"
+        >
           Show sticky scroll
           <CompactSwitch
             size="md"
@@ -51,12 +59,12 @@
         </label>
         <label
           id="editorFontSize"
-          class="flex flex-nowrap items-center justify-between gap-2 p-2 whitespace-nowrap"
+          class="flex h-9 flex-nowrap items-center justify-between gap-2 px-3 whitespace-nowrap"
         >
           Font size
           <Input
             type="number"
-            class="-m-2 input w-fit!"
+            class="input h-7 w-fit! py-0"
             bind:value={editorFontSize.value}
             min={12}
             max={20}

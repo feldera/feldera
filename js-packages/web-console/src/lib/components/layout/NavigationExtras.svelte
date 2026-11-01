@@ -49,7 +49,7 @@
        so a dropdown header gets a neutral fill on hover instead. -->
   <button
     onclick={toggle}
-    class="btn px-2! {toggle ? 'hover:bg-surface-50-950' : 'cursor-default'}"
+    class="btn px-2! {toggle ? 'hover:bg-row-hover' : 'cursor-default'}"
   >
     {#if inline}
       {full}
@@ -75,7 +75,7 @@
       href={doc.href}
       target="_blank"
       rel="noreferrer"
-      class="rounded p-2 hover:preset-tonal-surface">{doc.title}</a
+      class="flex h-9 items-center gap-2 rounded px-3 hover:preset-tonal-surface">{doc.title}</a
     >
   {/each}
 {/snippet}
@@ -86,10 +86,10 @@
       href={Array.isArray(item.path) ? item.path[0] : item.path}
       target="_blank"
       rel="noreferrer"
-      class="flex h-10 flex-nowrap items-center gap-4 rounded p-2 hover:preset-tonal-surface"
+      class="flex h-9 flex-nowrap items-center gap-2 rounded px-3 hover:preset-tonal-surface"
       {...item.openInNewTab ? { target: '_blank', rel: 'noreferrer' } : undefined}
     >
-      <item.icon class="{item.class} text-[20px]" />
+      <item.icon class="{item.class} text-[16px]" />
       <!-- <div class="{item.class} text-[20px]"></div> -->
       <span class="">{item.title}</span>
     </a>
@@ -110,7 +110,7 @@
     {#snippet content(close)}
       <div
         transition:fade={{ duration: 100 }}
-        class="bg-white-dark absolute left-0 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end gap-2 overflow-y-auto rounded-container p-2 shadow-md"
+        class="bg-white-dark absolute top-full left-0 z-30 mt-1 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col overflow-y-auto rounded p-1 shadow-md dark:border dark:border-surface-950-50/10"
       >
         {@render docsItems()}
       </div>
@@ -120,7 +120,7 @@
     {#snippet content(close)}
       <div
         transition:fade={{ duration: 100 }}
-        class="bg-white-dark absolute right-0 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col justify-end gap-2 overflow-y-auto rounded-container p-2 shadow-md"
+        class="bg-white-dark absolute top-full right-0 z-30 mt-1 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[200px] flex-col overflow-y-auto rounded p-1 shadow-md dark:border dark:border-surface-950-50/10"
       >
         {@render communityItems()}
       </div>

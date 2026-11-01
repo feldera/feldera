@@ -65,7 +65,7 @@
 </div>
 <div class="scrollbar flex h-full flex-col justify-between overflow-y-auto">
   <div
-    class="grid grid-cols-1 gap-x-6 gap-y-5 px-2 sm:grid-cols-2 md:px-8 lg:grid-cols-3 2xl:grid-cols-5"
+    class="grid grid-cols-1 gap-4 px-2 sm:grid-cols-2 md:px-8 lg:grid-cols-3 2xl:grid-cols-5"
   >
     {#each demos.current.filter((demo) => {
       return !demo || demosType === 'All' || demo.type === demosType

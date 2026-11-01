@@ -44,13 +44,16 @@
     deleted,
     children,
     statusBarCenter,
-    statusBarEnd
+    statusBarEnd,
+    toolBarStart
   }: {
     pipeline: WritablePipeline<true>
     deleted: boolean
     children?: Snippet<[editor: Snippet]>
     statusBarCenter: Snippet
     statusBarEnd: Snippet
+    /** Rendered before the file tabs, such as the pipelines list toggle. */
+    toolBarStart?: Snippet
   } = $props()
 
   let runtimeVersion = $derived(
@@ -424,6 +427,7 @@ example = "1.0"`,
   bind:saveFile
   {statusBarCenter}
   {statusBarEnd}
+  {toolBarStart}
   bind:isFocused={isEditorFocused}
 >
   {#snippet beforeTextArea()}
@@ -435,13 +439,12 @@ example = "1.0"`,
   {/snippet}
   {#snippet codeEditor(textEditor, statusBar)}
     {#snippet editor()}
-      <!-- No top padding: the file tabs' 12px margins centre the header row, as in the
-           tabbed panels below (`TabsPanel`). -->
-      <div class="flex h-full flex-col rounded-lg bg-surface-50-950 px-2 pt-0 pb-0">
+      <!-- No padding: the tab row's and status bar's lines run to the panel's edges, and
+           each row pads its own content instead. The file tabs' 12px margins centre the
+           header row, as in the tabbed panels below (`TabsPanel`). -->
+      <div class="panel flex h-full flex-col p-0">
         {@render textEditor()}
-        <div
-          class="flex flex-wrap items-center gap-x-8 border-t border-surface-200-800 px-2 py-2 pl-4"
-        >
+        <div class="flex flex-wrap items-center gap-x-8 border-t border-line py-2 pr-4 pl-6">
           {@render statusBar()}
         </div>
       </div>
@@ -453,9 +456,15 @@ example = "1.0"`,
     {/if}
   {/snippet}
   {#snippet fileTab(text, onClick, isCurrent, isSaved)}
-    <!-- The shared `.tab` (see feldera-modern.css), as in the tabbed panels (`TabsPanel`).
-         An unsaved file gets a dot after its name, centred by the tab's flex row. -->
-    <button class="tab {isCurrent ? 'tab-active' : ''}" onclick={onClick}>
+    <!-- A cell of the grey tab bar. The open file's tab is white with a 2px line on top
+         and 1px taller, so it covers the bar's bottom line. An unsaved file gets a dot
+         after its name, centred by the tab's flex row. -->
+    <button
+      class="flex h-12 items-center gap-2 border-r border-line px-4 text-base font-medium whitespace-nowrap {isCurrent
+        ? 'bg-white-dark -mb-px h-[49px] text-surface-950-50 shadow-[inset_0_2px_0_var(--color-surface-950)] dark:shadow-[inset_0_2px_0_var(--color-surface-50)]'
+        : 'text-surface-600-400 hover:bg-white/60 hover:text-surface-950-50 dark:hover:bg-white/5'}"
+      onclick={onClick}
+    >
       {text}
       {#if !isSaved}
         <span class="size-1.5 shrink-0 rounded-full bg-current" title="Unsaved changes"></span>
@@ -465,7 +474,7 @@ example = "1.0"`,
   {#snippet toolBarEnd()}
     <!-- As tall as the file-tab row, so the 24px buttons centre in it, also when they wrap
          onto a row of their own. -->
-    <div class="flex min-h-12 items-center justify-end gap-4">
+    <div class="flex min-h-12 items-center justify-end gap-4 pr-2">
       <PipelineActions
         class=""
         {pipeline}

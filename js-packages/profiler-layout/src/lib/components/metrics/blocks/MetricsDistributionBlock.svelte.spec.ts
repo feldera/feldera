@@ -334,7 +334,7 @@ describe('MetricsDistributionBlock selected metric', () => {
   it('paints the current row in the theme blue and leaves the rest unpainted', async () => {
     const { container } = await themed('light')
     const [selected, other] = rowElements(container)
-    // tertiary-50, the palette's palest blue; primary is pink in this theme.
+    // tertiary-50, the palette's palest blue; primary is black ink in this theme.
     expect(getComputedStyle(selected!).backgroundColor).toBe('oklch(0.9535 0.02 274.08)')
     expect(getComputedStyle(other!).backgroundColor).toBe('rgba(0, 0, 0, 0)')
   })

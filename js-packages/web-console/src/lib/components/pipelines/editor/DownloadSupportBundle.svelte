@@ -95,7 +95,7 @@
         title="Open profile viewer in a new tab"
         data-testid="btn-view-profile"
       >
-        <span class="fd fd-file-search text-primary-500"></span>
+        <span class="fd fd-file-search text-secondary-500"></span>
         <span class="hidden sm:inline">View profile</span>
         <span class="inline sm:hidden">Profile</span>
       </button>

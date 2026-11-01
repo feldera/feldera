@@ -125,8 +125,8 @@
   // The colors of a bar with no events. The bar color is too faint for text, so the "No data"
   // label in the header uses `text-surface-600-300`.
   const noDataLabel = 'No data'
-  const noDataSwatch = 'bg-surface-300-700'
-  const noDataBar = 'fill-surface-300-700'
+  const noDataSwatch = 'bg-surface-100-900'
+  const noDataBar = 'fill-surface-100-900'
 
   const latestStatus = $derived(events.at(0)?.type)
   const healthStatus = $derived(stale ? undefined : latestStatus)

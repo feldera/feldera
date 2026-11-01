@@ -28,7 +28,7 @@
                 ></div>
                 <a
                   href={systemError.cause.source}
-                  class="text-primary-500"
+                  class="text-secondary-600-400"
                   onclick={(e) => {
                     close?.()
                   }}

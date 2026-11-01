@@ -205,7 +205,7 @@
       {#if loading}
         <Progress class="h-1" value={null} max={100}>
           <Progress.Track>
-            <Progress.Range class="bg-primary-500" />
+            <Progress.Range class="bg-secondary-500" />
           </Progress.Track>
         </Progress>
       {/if}

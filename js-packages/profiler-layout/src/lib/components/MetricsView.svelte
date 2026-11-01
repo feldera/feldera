@@ -201,7 +201,7 @@
         <button
           type="button"
           title="Show this node in the diagram"
-          class="cursor-pointer text-left font-semibold text-primary-600-400 hover:underline"
+          class="cursor-pointer text-left font-semibold text-secondary-600-400 hover:underline"
           onclick={() => onSearchNode?.(nodeSearchQuery(nodeAttributes))}
         >{nodeAttributes.title}</button>
         {#each identityRows as row (row.key)}
@@ -262,7 +262,7 @@
               <td class="px-2 py-1">
                 <button
                   type="button"
-                  class="cursor-pointer text-primary-600-400 hover:underline"
+                  class="cursor-pointer text-secondary-600-400 hover:underline"
                   onclick={() => row.stub.onclick?.()}
                 >{row.stub.text}</button>
               </td>

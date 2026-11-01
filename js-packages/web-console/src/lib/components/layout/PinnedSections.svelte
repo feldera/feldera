@@ -107,10 +107,10 @@
   }
 </script>
 
-<!-- `bg-white-dark` is opaque, so the content the wrapper is pinned over does not show
-     through it. -->
+<!-- `bg-page` is opaque and the page's own tint, so the content the wrapper is pinned
+     over does not show through it. -->
 <div
-  class="bg-white-dark sticky left-0 z-10 flex flex-col {className}"
+  class="sticky left-0 z-10 flex flex-col bg-page {className}"
   style:bottom={stickyBottom}
   bind:offsetHeight={wrapperHeight}
   bind:this={wrapperNode}

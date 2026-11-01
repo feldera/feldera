@@ -126,8 +126,8 @@
         <div
           bind:this={rowElements[i]}
           class="p-2"
-          class:bg-primary-50={i === lastMatchIndex}
-          class:dark:bg-primary-950={i === lastMatchIndex}
+          class:bg-secondary-50={i === lastMatchIndex}
+          class:dark:bg-secondary-950={i === lastMatchIndex}
         >
           <div class="flex flex-wrap items-center gap-2">
             <span
@@ -147,7 +147,7 @@
           <p class="mt-2 font-semibold">{result.message}</p>
           {#if hasDetails}
             <button
-              class="mt-1 text-primary-600-400 hover:underline"
+              class="mt-1 text-secondary-600-400 hover:underline"
               onclick={() => toggleRow(rowId)}
             >
               {isExpanded ? 'Hide details' : 'Show details'}

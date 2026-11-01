@@ -47,7 +47,7 @@
 )}
   <svelte:element
     this={'onclick' in action ? 'button' : 'a'}
-    class="-mx-2 flex flex-nowrap items-center justify-start gap-1.5 rounded px-2 font-medium hover:bg-surface-50-950"
+    class="-mx-2 flex flex-nowrap items-center justify-start gap-1.5 rounded px-2 font-medium hover:preset-tonal-surface"
     {...action}
   >
     <div class="flex w-7 shrink-0 justify-center">{@render icon()}</div>
@@ -84,7 +84,7 @@
   {#snippet content(close)}
     <div
       transition:fade={{ duration: 100 }}
-      class="bg-white-dark absolute right-0 z-30 scrollbar w-[calc(100vw-100px)] max-w-[400px] justify-end rounded-container shadow-md dark:border dark:border-surface-950-50/10"
+      class="bg-white-dark absolute top-full right-0 z-30 mt-1 scrollbar w-[calc(100vw-100px)] max-w-[400px] justify-end rounded shadow-md dark:border dark:border-surface-950-50/10"
     >
       <div class="flex flex-col gap-3 p-4">
         {#snippet apiKeysIcon()}
@@ -140,7 +140,7 @@
         <div class="-mt-1 flex flex-col gap-1">
           {#if typeof auth === 'object' && 'logout' in auth}
             <button
-              class="-mx-2 flex h-9 items-center gap-1.5 rounded px-2 font-medium hover:bg-surface-50-950 disabled:cursor-wait disabled:opacity-70"
+              class="-mx-2 flex h-9 items-center gap-1.5 rounded px-2 font-medium hover:preset-tonal-surface disabled:cursor-wait disabled:opacity-70"
               data-testid="btn-sign-out"
               disabled={isSigningOut}
               onclick={async () => {

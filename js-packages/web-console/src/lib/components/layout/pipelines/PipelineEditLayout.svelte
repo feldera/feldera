@@ -192,7 +192,6 @@
   })
 
   let layoutControls = $derived([
-    { icon: 'fd fd-panel-left', text: 'Pipelines', value: showPipelinesPanel },
     { icon: 'fd fd-panel-bottom', text: 'Monitoring', value: showMonitoringPanel },
     {
       icon: 'fd fd-panel-right',
@@ -323,8 +322,14 @@
       {/if}
     {/snippet}
   </AppHeader>
-  <!-- From xl the pipelines list pane's resizer adds 16px on the left, hence the 4px. -->
-  <PaneGroup direction="horizontal" class="!overflow-visible {sideGutters} pb-2 xl:pl-1">
+  <!-- The areas sit flush against each other, with no gaps, card corners or card borders:
+       the header's bottom line and the 1px pane dividers are the only separators. `!` beats
+       the `.panel` corners and border, which other pages keep. The tabbed panels drop their
+       side padding so the tab bar runs edge to edge, and pad the tab content instead. -->
+  <PaneGroup
+    direction="horizontal"
+    class="!overflow-visible [&_.panel]:rounded-none! [&_.panel]:border-0! [&_.panel>[role=tablist]]:border-line [&_.panel>[role=tablist]+div]:mx-2 [&_.panel[data-scope=tabs]]:px-0!"
+  >
     <Pane
       defaultSize={15}
       minSize={10}
@@ -345,7 +350,7 @@
         }
       }}
     >
-      <div class="absolute flex h-full w-full flex-col">
+      <div class="absolute flex h-full w-full flex-col pt-3 pl-2 md:pl-3">
         <PipelineList
           {pipelineName}
           pipelines={pipelineList.pipelines}
@@ -357,7 +362,7 @@
     </Pane>
     {#if !isTablet.current}
       <PaneResizer
-        class="pane-divider-vertical mr-2 ml-1.5"
+        class="pane-divider-vertical w-px! bg-line"
         onDraggingChange={(isDragging: boolean) => {
           isDraggingPipelineListResizer = isDragging
         }}
@@ -371,7 +376,7 @@
         autoSaveId="layout/pipelines/monitoringPanel/size"
       >
         {#if pipelineBannerMessage}
-          <div class="pb-2 md:pb-4">
+          <div class="p-2 md:p-4">
             <PipelineBanner {...pipelineBannerMessage}></PipelineBanner>
           </div>
         {/if}
@@ -389,6 +394,7 @@
                   {deleted}
                   {statusBarCenter}
                   {statusBarEnd}
+                  toolBarStart={pipelinesPanelToggle}
                 ></PipelineCodePanel>
               {:else}
                 <div
@@ -397,7 +403,7 @@
                   <div class="-mx-8 -mt-2 flex flex-1 flex-col items-center gap-4">
                     <Progress class="h-1 w-full px-4" value={null} max={100}>
                       <Progress.Track>
-                        <Progress.Range class="bg-primary-500" />
+                        <Progress.Range class="bg-secondary-500" />
                       </Progress.Track>
                     </Progress>
                     <p class="text-surface-600-400">Loading pipeline...</p>
@@ -416,7 +422,7 @@
               {/if}
             </Pane>
             {#if showInteractionPanel.value}
-              <PaneResizer class="pane-divider-vertical mx-2"></PaneResizer>
+              <PaneResizer class="pane-divider-vertical w-px! bg-line"></PaneResizer>
               <Pane defaultSize={40} minSize={20} class="flex flex-col !overflow-visible">
                 {#if pipeline.current && metrics.current}
                   <InteractionPanel
@@ -434,7 +440,7 @@
         </Pane>
 
         {#if showMonitoringPanel.value}
-          <PaneResizer class="pane-divider-horizontal my-[5px]" />
+          <PaneResizer class="pane-divider-horizontal h-px! bg-line" />
           <Pane minSize={15} class="flex flex-col !overflow-visible">
             {#if pipeline.current && metrics.current}
               <MonitoringPanel
@@ -469,18 +475,31 @@
     </div>
   {/if}
 {/snippet}
+<!-- Opens and collapses the pipelines list from its own cell at the start of the file tabs. -->
+{#snippet pipelinesPanelToggle()}
+  <div class="flex h-12 w-12 shrink-0 items-center justify-center border-r border-line">
+    <button
+      class="fd fd-panel-left btn-icon btn-icon-sm text-[16px] hover:bg-row-hover {showPipelinesPanel.value
+        ? 'text-secondary-500'
+        : 'text-surface-700-300'}"
+      aria-label={showPipelinesPanel.value ? 'Collapse pipelines' : 'Open pipelines'}
+      aria-pressed={showPipelinesPanel.value}
+      onclick={() => (showPipelinesPanel.value = !showPipelinesPanel.value)}
+    ></button>
+  </div>
+{/snippet}
 {#snippet statusBarEnd()}
   <div class="ml-auto flex flex-nowrap items-center gap-1">
     {#each layoutControls as { icon, text, value, show }}
       {#if show !== false}
         <button
-          class="btn btn-sm text-surface-700-300 hover:bg-surface-50-950 hover:text-surface-950-50"
+          class="btn btn-sm text-surface-700-300 hover:bg-row-hover hover:text-surface-950-50"
           onclick={() => (value.value = !value.value)}
         >
           <span class="hidden sm:inline">
             {text}
           </span>
-          <div class="{icon} {value.value ? 'text-primary-500' : ''}"></div>
+          <div class="{icon} {value.value ? 'text-secondary-500' : ''}"></div>
         </button>
         <div class="pointer-events-none w-0 -translate-x-0.5">|</div>
       {/if}

@@ -40,7 +40,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 
 <script lang="ts">
   import { Popover, Tooltip, useIsMobile } from 'common-ui'
-  import { slide } from 'svelte/transition'
+  import { fade } from 'svelte/transition'
   import { match, P } from 'ts-pattern'
   import IconLoader from '#assets/icons/generic/loader-alt.svg?component'
   import Popup from '#lib/components/common/Popup.svelte'
@@ -680,24 +680,24 @@ groups related actions into multi-action dropdowns when multiple options are ava
         }
       })}
       <div
-        transition:slide={{ duration: 100 }}
-        class="bg-white-dark absolute top-full right-0 z-30 mt-2 scrollbar flex max-h-[400px] w-[calc(100vw-36px)] max-w-[300px] flex-col justify-stretch rounded shadow-md sm:max-w-[380px]"
+        transition:fade={{ duration: 100 }}
+        class="bg-white-dark absolute top-full right-0 z-30 mt-1 scrollbar flex max-h-[400px] w-[calc(100vw-36px)] max-w-[300px] flex-col justify-stretch rounded p-1 shadow-md sm:max-w-[380px] dark:border dark:border-surface-950-50/10"
       >
         {#each buttons as button}
           <button
-            class="flex flex-col gap-1 px-4 py-3 text-left hover:bg-surface-50-950 {button.disabled
-              ? 'pointer-events-none opacity-80'
+            class="flex flex-col gap-0.5 rounded px-3 py-2 text-left hover:preset-tonal-surface {button.disabled
+              ? 'pointer-events-none opacity-50'
               : ''}"
             onclick={button.onclick}
           >
-            <div class="flex justify-between text-lg">
+            <div class="flex justify-between gap-2">
               <span class="">{button.label}</span>
 
               {#if button.disabled}
                 <span class="text-sm">{button.disabledText}</span>
               {/if}
             </div>
-            <div class="text-base text-surface-700-300">
+            <div class="text-sm text-surface-700-300">
               {button.description}
             </div>
           </button>
@@ -752,11 +752,11 @@ groups related actions into multi-action dropdowns when multiple options are ava
     {/snippet}
     {#snippet content(close)}
       <div
-        transition:slide={{ duration: 100 }}
-        class="bg-white-dark absolute top-full right-0 z-30 mt-2 flex w-44 flex-col justify-stretch rounded shadow-md"
+        transition:fade={{ duration: 100 }}
+        class="bg-white-dark absolute top-full right-0 z-30 mt-1 flex w-44 flex-col justify-stretch rounded p-1 shadow-md dark:border dark:border-surface-950-50/10"
       >
         <button
-          class="flex items-center gap-2 px-4 py-3 text-left hover:bg-surface-50-950 disabled:opacity-50"
+          class="flex h-9 items-center gap-2 rounded px-3 text-left hover:preset-tonal-surface disabled:opacity-50"
           disabled={!pipelineList.pipelines || unsavedChanges}
           onclick={() => {
             close()
@@ -774,7 +774,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
           {/if}
         </Tooltip>
         <button
-          class="flex items-center gap-2 px-4 py-3 text-left hover:bg-surface-50-950 disabled:opacity-50"
+          class="flex h-9 items-center gap-2 rounded px-3 text-left hover:preset-tonal-surface disabled:opacity-50"
           disabled={!!deleteDisabledReason}
           onclick={() => {
             close()

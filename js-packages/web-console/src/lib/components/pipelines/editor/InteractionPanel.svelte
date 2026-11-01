@@ -84,4 +84,9 @@
   ></button>
 {/snippet}
 
-<TabsPanel {tabs} bind:currentTab={currentTab.value} tabProps={{ pipeline, deleted }} />
+<TabsPanel
+  {tabs}
+  bind:currentTab={currentTab.value}
+  tabProps={{ pipeline, deleted }}
+  tabLabelVariant="cell"
+/>

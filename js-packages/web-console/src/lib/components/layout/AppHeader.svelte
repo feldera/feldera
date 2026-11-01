@@ -1,8 +1,8 @@
 <script lang="ts">
-  import FelderaModernLogoColorDark from '#assets/images/feldera-modern/Feldera Logo Color Dark.svg?component'
-  import FelderaModernLogoColorLight from '#assets/images/feldera-modern/Feldera Logo Color Light.svg?component'
-  import FelderaModernLogomarkColorDark from '#assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
-  import FelderaModernLogomarkColorLight from '#assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
+  import FelderaModernLogoBlack from '#assets/images/feldera-modern/Feldera Logo Black Solid.svg?component'
+  import FelderaModernLogoWhite from '#assets/images/feldera-modern/Feldera Logo White Solid.svg?component'
+  import FelderaModernLogomarkBlack from '#assets/images/feldera-modern/Feldera Logomark Black.svg?component'
+  import FelderaModernLogomarkWhite from '#assets/images/feldera-modern/Feldera Logomark White.svg?component'
   import ProfileButton from '#lib/components/auth/ProfileButton.svelte'
   import { useClusterHealth } from '#lib/compositions/health/useClusterHealth.svelte.ts'
   import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
@@ -23,20 +23,20 @@
   const healthStatus = useClusterHealth()
 </script>
 
-<div class="flex flex-row items-center justify-between gap-2 py-1.5 {class_}">
+<div class="flex flex-row items-center justify-between gap-2 border-b border-line py-1 {class_}">
   <a class="flex h-12 items-center lg:items-start lg:pr-2.5" href={resolve('/')}>
     <span class="hidden lg:flex">
       {#if darkMode.current === 'dark'}
-        <FelderaModernLogoColorLight class="h-[30px]"></FelderaModernLogoColorLight>
+        <FelderaModernLogoWhite class="h-[30px]"></FelderaModernLogoWhite>
       {:else}
-        <FelderaModernLogoColorDark class="h-[30px]"></FelderaModernLogoColorDark>
+        <FelderaModernLogoBlack class="h-[30px] fill-[#050505]"></FelderaModernLogoBlack>
       {/if}
     </span>
     <span class="flex lg:hidden">
       {#if darkMode.current === 'dark'}
-        <FelderaModernLogomarkColorLight class="h-8"></FelderaModernLogomarkColorLight>
+        <FelderaModernLogomarkWhite class="h-8"></FelderaModernLogomarkWhite>
       {:else}
-        <FelderaModernLogomarkColorDark class="h-8"></FelderaModernLogomarkColorDark>
+        <FelderaModernLogomarkBlack class="h-8 fill-[#050505]"></FelderaModernLogomarkBlack>
       {/if}
     </span>
   </a>

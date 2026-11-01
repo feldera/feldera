@@ -27,7 +27,8 @@
     inherit: true,
     rules: [{ token: 'string.sql', foreground: '#7a3d00' }],
     colors: {
-      'editor.background': getThemeColor('--body-background-color').format('hex'),
+      // White, like the panel it sits in, rather than the tinted page behind the panel.
+      'editor.background': '#ffffff',
       'editor.inactiveSelectionBackground': '#add6ff90' // More visible selection when editor is not focused
     }
   })
@@ -70,6 +71,7 @@
     codeEditor,
     statusBarCenter,
     statusBarEnd,
+    toolBarStart,
     toolBarEnd,
     fileTab,
     beforeTextArea,
@@ -100,6 +102,8 @@
     codeEditor: Snippet<[textEditor: Snippet, statusBar: Snippet, isReadOnly: boolean]>
     statusBarCenter?: Snippet
     statusBarEnd?: Snippet<[downstreamChanged: boolean]>
+    /** Rendered before the file tabs, at the start of the tab row. */
+    toolBarStart?: Snippet
     toolBarEnd?: Snippet<[{ saveFile: () => void }]>
     fileTab: Snippet<[text: string, onclick: () => void, isCurrent: boolean, isSaved: boolean]>
     beforeTextArea?: Snippet
@@ -376,9 +380,12 @@
 {@render codeEditor(textEditor, statusBar, isReadOnly)}
 {#snippet textEditor()}
   <div class="flex h-full flex-col">
-    <div class="flex flex-row-reverse flex-wrap items-center border-b border-surface-200-800">
+    <!-- A grey tab bar: the file tabs are cells divided by 1px lines, and the open one is
+         white and covers the bar's bottom line, so it joins the editor below. -->
+    <div class="flex flex-row-reverse flex-wrap items-center border-b border-line bg-toolbar">
       {@render toolBarEnd?.({ saveFile: _saveFile })}
-      <div class="mr-auto flex flex-nowrap items-center justify-end">
+      <div class="mr-auto flex flex-nowrap items-start self-start">
+        {@render toolBarStart?.()}
         {#each files as file}
           {@render fileTab(
             file.name,

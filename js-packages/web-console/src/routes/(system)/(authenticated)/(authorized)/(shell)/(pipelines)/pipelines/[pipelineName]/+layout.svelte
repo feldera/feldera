@@ -20,7 +20,7 @@
     bind:open={leftDrawer.value}
     side="left"
     modal={true}
-    class="bg-white-dark flex flex-col gap-2 pt-8 pr-1 pl-4"
+    class="flex flex-col gap-2 bg-page pt-8 pr-1 pl-4"
   >
     <PipelineList
       pipelineName={params.pipelineName}

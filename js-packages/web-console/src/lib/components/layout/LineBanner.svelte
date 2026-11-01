@@ -6,7 +6,7 @@
   import type { Snippet } from '#lib/types/svelte.ts'
 
   const variants = {
-    formal: 'bg-primary-900 dark:bg-primary-600 text-surface-50 justify-between',
+    formal: 'bg-secondary-800 dark:bg-secondary-700 text-surface-50 justify-between',
     aether:
       'bg-gradient-to-r from-orange-100 to-purple-100 dark:from-orange-800 dark:to-purple-900 justify-between',
     error: 'preset-tonal-error justify-center'

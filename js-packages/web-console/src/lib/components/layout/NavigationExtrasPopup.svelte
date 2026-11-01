@@ -16,7 +16,7 @@
   {#snippet content()}
     <div
       transition:fade={{ duration: 100 }}
-      class="bg-white-dark absolute right-0 z-30 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[260px] flex-col rounded p-2 shadow-md"
+      class="bg-white-dark absolute top-full right-0 z-30 mt-1 flex max-h-[400px] w-[calc(100vw-100px)] max-w-[260px] flex-col overflow-y-auto rounded p-1 shadow-md dark:border dark:border-surface-950-50/10"
     >
       <NavigationExtras inline></NavigationExtras>
     </div>
