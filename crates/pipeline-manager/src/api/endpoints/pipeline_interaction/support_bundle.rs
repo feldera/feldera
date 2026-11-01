@@ -1,5 +1,6 @@
 //! Endpoint to retrieve a support bundles for pipeline.
 
+use std::fmt::Write as _;
 use std::io::Write;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -206,43 +207,46 @@ impl SupportBundleZip {
 fn render_metadata_text(meta: &BundleMetadata<'_>) -> String {
     let mut out = String::with_capacity(8 * 1024);
     out.push_str("\n# Support Bundle Table of Contents\n\n");
-    out.push_str(&format!("Pipeline: {}\n", meta.pipeline.name));
-    out.push_str(&format!(
+    let _ = write!(&mut out, "Pipeline: {}\n", meta.pipeline.name);
+    let _ = write!(
+        &mut out,
         "Requested at: {}\n",
         meta.requested_at.to_rfc3339()
-    ));
-    out.push_str(&format!(
+    );
+    let _ = write!(
+        &mut out,
         "Pipeline Status: {} (since {})\n",
         meta.pipeline.status,
         meta.pipeline.status_since.to_rfc3339()
-    ));
+    );
     if let Some(desired) = &meta.pipeline.desired_status {
-        out.push_str(&format!("Pipeline Desired Status: {}\n", desired));
+        let _ = write!(&mut out, "Pipeline Desired Status: {desired}\n");
     }
 
     for (idx, collection) in meta.collections.iter().enumerate() {
-        out.push_str(&format!(
+        let _ = write!(
+            &mut out,
             "\n## Collection {idx} ({})\nDirectory: {}/\n",
             collection.time.to_rfc3339(),
             collection.directory
-        ));
+        );
 
         if !collection.summary.collected.is_empty() {
             out.push_str("\nSuccessfully Collected:\n");
             for entry in &collection.summary.collected {
-                out.push_str(&format!("  ✓ {}\n", entry));
+                let _ = write!(&mut out, "  ✓ {entry}\n");
             }
         }
         if !collection.summary.failed.is_empty() {
             out.push_str("\nFailed To Collect:\n");
             for entry in &collection.summary.failed {
-                out.push_str(&format!("  ✗ {}: {}\n", entry.file, entry.reason));
+                let _ = write!(&mut out, "  ✗ {}: {}\n", entry.file, entry.reason);
             }
         }
         if !collection.summary.skipped.is_empty() {
             out.push_str("\nSkipped (by request):\n");
             for entry in &collection.summary.skipped {
-                out.push_str(&format!("  ⚠ {}\n", entry));
+                let _ = write!(&mut out, "  ⚠ {entry}\n");
             }
         }
     }
@@ -339,10 +343,7 @@ pub(crate) async fn get_pipeline_support_bundle(
         .content_type("application/zip")
         .insert_header((
             "Content-Disposition",
-            format!(
-                "attachment; filename=\"{}-support-bundle.zip\"",
-                pipeline_name
-            ),
+            format!("attachment; filename=\"{pipeline_name}-support-bundle.zip\""),
         ))
         .insert_header(actix_http::ContentEncoding::Identity)
         .body(bundle.buffer))

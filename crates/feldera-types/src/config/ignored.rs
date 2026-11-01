@@ -19,6 +19,7 @@
 
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
+use std::fmt::Write as _;
 
 /// Value put in place of a key to find out whether anything reads it.
 ///
@@ -120,7 +121,7 @@ fn format_path(path: &[Segment]) -> String {
                 }
                 s.push_str(key);
             }
-            Segment::Index(index) => s.push_str(&format!("[{index}]")),
+            Segment::Index(index) => { let _ = write!(&mut s, "[{index}]"); },
         }
     }
     s

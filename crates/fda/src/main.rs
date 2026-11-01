@@ -3462,7 +3462,7 @@ fn format_program_errors(program_error: &ProgramError) -> String {
 
     if let Some(sql) = &program_error.sql_compilation {
         has_output = true;
-        output.push_str(&format!("SQL compiler exit code: {}\n", sql.exit_code));
+        let _ = writeln!(output, "SQL compiler exit code: {}", sql.exit_code);
 
         if sql.messages.is_empty() {
             output.push_str("No SQL compiler messages.\n");
@@ -3497,7 +3497,7 @@ fn format_program_errors(program_error: &ProgramError) -> String {
             output.push('\n');
         }
         has_output = true;
-        output.push_str(&format!("Rust compiler exit code: {}\n", rust.exit_code));
+        let _ = writeln!(output, "Rust compiler exit code: {}", rust.exit_code);
 
         if !rust.stdout.is_empty() {
             output.push_str("\nstdout:\n");

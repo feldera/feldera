@@ -290,7 +290,7 @@ impl FlatVariant {
         let mut lo = 0usize;
         let mut hi = c.count;
         while lo < hi {
-            let mid = (lo + hi) / 2;
+            let mid = lo.midpoint(hi);
             match cmp(&bytes[c.element(mid)]) {
                 Ordering::Less => lo = mid + 1,
                 Ordering::Greater => hi = mid,

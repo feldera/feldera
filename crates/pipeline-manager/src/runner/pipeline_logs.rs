@@ -3,7 +3,7 @@ use feldera_observability::json_logging::use_json_log_format;
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::VecDeque;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Write as _};
 use std::str::FromStr;
 use std::time::Duration;
 use tokio::sync::mpsc::error::{SendTimeoutError, TrySendError};
@@ -495,18 +495,16 @@ fn format_log_line(message: &LogMessage) -> String {
                 line,
                 timestamp,
             } => {
+                let mut output = format!("[manager] {timestamp} {level:>5} {target}: {line}");
+                if !pipeline_id.is_empty() {
+                    let _ = write!(&mut output, " pipeline-id={pipeline_id:?}");
+                }
                 let display_name = if pipeline_name.is_empty() {
                     "N/A"
                 } else {
                     pipeline_name.as_str()
                 };
-                let mut output = format!("[manager] {timestamp} {level:>5} {target}: {line}");
-                if !pipeline_id.is_empty() {
-                    output.push_str(&format!(" pipeline-id={pipeline_id:?}"));
-                }
-                if !display_name.is_empty() {
-                    output.push_str(&format!(" pipeline-name={display_name:?}"));
-                }
+                let _ = write!(&mut output, " pipeline-name={display_name:?}");
                 output
             }
         };

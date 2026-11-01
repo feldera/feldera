@@ -72,7 +72,7 @@ impl DistinctSemantics for ZeroOrOneWeight {
     const NESTED_SCOPE_NAME: &'static str = "DistinctIncremental";
 
     fn output_weight(w: ZWeight) -> ZWeight {
-        if w > 0 { 1 } else { 0 }
+        (w > 0).into()
     }
 }
 

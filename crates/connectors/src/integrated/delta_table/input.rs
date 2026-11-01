@@ -78,7 +78,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::cmp::min;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt::Display;
+use std::fmt::{Display, Write as _};
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -314,7 +314,7 @@ fn describe_paths<'a>(paths: impl IntoIterator<Item = &'a str>) -> String {
     let rest = paths.count();
     let mut description = format!("{shown:?}");
     if rest > 0 {
-        description.push_str(&format!(" and {rest} more"));
+        let _ = write!(&mut description, " and {rest} more");
     }
     description
 }
