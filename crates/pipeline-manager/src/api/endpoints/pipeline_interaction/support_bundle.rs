@@ -207,20 +207,16 @@ impl SupportBundleZip {
 fn render_metadata_text(meta: &BundleMetadata<'_>) -> String {
     let mut out = String::with_capacity(8 * 1024);
     out.push_str("\n# Support Bundle Table of Contents\n\n");
-    let _ = write!(&mut out, "Pipeline: {}\n", meta.pipeline.name);
-    let _ = write!(
+    let _ = writeln!(&mut out, "Pipeline: {}", meta.pipeline.name);
+    let _ = writeln!(&mut out, "Requested at: {}", meta.requested_at.to_rfc3339());
+    let _ = writeln!(
         &mut out,
-        "Requested at: {}\n",
-        meta.requested_at.to_rfc3339()
-    );
-    let _ = write!(
-        &mut out,
-        "Pipeline Status: {} (since {})\n",
+        "Pipeline Status: {} (since {})",
         meta.pipeline.status,
         meta.pipeline.status_since.to_rfc3339()
     );
     if let Some(desired) = &meta.pipeline.desired_status {
-        let _ = write!(&mut out, "Pipeline Desired Status: {desired}\n");
+        let _ = writeln!(&mut out, "Pipeline Desired Status: {desired}");
     }
 
     for (idx, collection) in meta.collections.iter().enumerate() {
@@ -234,19 +230,19 @@ fn render_metadata_text(meta: &BundleMetadata<'_>) -> String {
         if !collection.summary.collected.is_empty() {
             out.push_str("\nSuccessfully Collected:\n");
             for entry in &collection.summary.collected {
-                let _ = write!(&mut out, "  ✓ {entry}\n");
+                let _ = writeln!(&mut out, "  ✓ {entry}");
             }
         }
         if !collection.summary.failed.is_empty() {
             out.push_str("\nFailed To Collect:\n");
             for entry in &collection.summary.failed {
-                let _ = write!(&mut out, "  ✗ {}: {}\n", entry.file, entry.reason);
+                let _ = writeln!(&mut out, "  ✗ {}: {}", entry.file, entry.reason);
             }
         }
         if !collection.summary.skipped.is_empty() {
             out.push_str("\nSkipped (by request):\n");
             for entry in &collection.summary.skipped {
-                let _ = write!(&mut out, "  ⚠ {entry}\n");
+                let _ = writeln!(&mut out, "  ⚠ {entry}");
             }
         }
     }
