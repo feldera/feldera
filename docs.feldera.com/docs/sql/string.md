@@ -203,7 +203,7 @@ example.
   </tr>
   <tr>
     <td><a id="replace"></a><code>REPLACE(haystack, needle, replacement)</code></td>
-    <td>Replaces all occurrences of `needle` in `haystack` with `replacement`.</td>
+    <td>Replaces all occurrences of `needle` in `haystack` with `replacement`.  If `needle` is empty, the result is `haystack`.</td>
     <td><code>replace('abcdefabcdef', 'cd', 'XX')</code> => <code>abXXefabXXef</code></td>
   </tr>
   <tr>

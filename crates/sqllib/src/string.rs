@@ -549,6 +549,10 @@ some_function1!(initcap_spaces, SqlString, SqlString);
 
 #[doc(hidden)]
 pub fn replace___(haystack: SqlString, needle: SqlString, replacement: SqlString) -> SqlString {
+    // An empty needle leaves the haystack unchanged
+    if needle.str().is_empty() {
+        return haystack;
+    }
     SqlString::from(haystack.str().replace(needle.str(), replacement.str()))
 }
 
