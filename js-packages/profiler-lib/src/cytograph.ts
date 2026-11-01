@@ -530,9 +530,7 @@ export class CytographRendering {
         elk: {
             'algorithm': 'layered',
             'elk.direction': 'DOWN',
-            'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-            // try to preserve the positions already computed
-            'elk.layered.nodeplacement.strategy': 'INTERACTIVE'
+            'elk.hierarchyHandling': 'INCLUDE_CHILDREN'
         }
     };
 
