@@ -10,7 +10,6 @@ export type CircuitMetricCategory = string;
 export interface ProfileMetricDescription {
     readonly name: string;
     readonly category: CircuitMetricCategory;
-    readonly advanced: boolean;
     readonly description: string;
 }
 
@@ -919,6 +918,15 @@ export class MetricDescriptions {
     private static readonly COLLATOR =
         new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 
+    /** The basic measurements, the only ones shown when advanced metrics are off: operator
+     * runtime, records received, storage size, and memory size. */
+    private static readonly BASIC_MEASUREMENTS: ReadonlySet<string> = new Set([
+        "runtime_seconds",
+        "input_batches_stats.record_count",
+        "spine_storage_size_bytes",
+        "allocated_memory_bytes",
+    ]);
+
     static known(): boolean {
         return MetricDescriptions.METRIC_DESCRIPTIONS.size > 0;
     }
@@ -993,14 +1001,20 @@ export class MetricDescriptions {
             || MetricDescriptions.COLLATOR.compare(a.id, b.id);
     }
 
-    /** Return a description of the measurement and a boolean indicating whether the measurements is "advanced" */
-    static describe(prop: string): { description: string, advanced: boolean } {
+    /** Return a description of the measurement */
+    static describe(prop: string): { description: string } {
         let info = MetricDescriptions.getMetricInfo(MetricDescriptions.stripSuffix(prop));
         if (info !== undefined) {
-            return { description: info.description, advanced: info.advanced };
+            return { description: info.description };
         }
 
-        return { description: "", advanced: false };
+        return { description: "" };
+    }
+
+    /** True when the metric tables show a measurement: always with `showAdvanced`, else only
+     * the basic measurements. */
+    static isShown(prop: string, showAdvanced: boolean): boolean {
+        return showAdvanced || MetricDescriptions.BASIC_MEASUREMENTS.has(prop);
     }
 }
 

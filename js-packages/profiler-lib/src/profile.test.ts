@@ -1132,7 +1132,7 @@ describe('PropertyValue.categoryShares', () => {
     // scaled on its own.
     beforeAll(() => {
         const metric = (name: string, category: string) =>
-            ({ name, category, advanced: false, description: '' })
+            ({ name, category, description: '' })
         MetricDescriptions.setMetricDescriptions([
             metric('spine_storage_size_bytes', 'State'),
             metric('state_records_count', 'State'),
