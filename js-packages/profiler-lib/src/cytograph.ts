@@ -406,6 +406,8 @@ class GraphDiff {
 
 /** Handles updates and rendering for the displayed cytograph. */
 export class CytographRendering {
+    /** The progress message while the graph changes and ELK lays it out. */
+    static readonly LAYOUT_MESSAGE = "Computing layout...";
     currentGraph: Cytograph | null;
     readonly cy: cytoscape.Core;
     /**
@@ -710,7 +712,7 @@ export class CytographRendering {
         // throw before rethrowing.
         this.renderingInFlight = true;
         this.callbacks.onRenderingChange?.(true);
-        this.message("Computing layout...");
+        this.message(CytographRendering.LAYOUT_MESSAGE);
         try {
             this.cy
                 .layout(options)

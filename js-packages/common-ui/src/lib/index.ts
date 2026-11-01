@@ -45,6 +45,7 @@ export { type CodePosition, type CodeRange, setSelections } from './monaco'
 export { default as OverlayDrawer } from './OverlayDrawer.svelte'
 export { default as PersistentContent } from './PersistentContent.svelte'
 export { default as PipelineEventHistory } from './PipelineEventHistory.svelte'
+export { default as PointerTooltip } from './PointerTooltip.svelte'
 export { default as Popover } from './Popover.svelte'
 export {
   type PersistentHandle,

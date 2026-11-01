@@ -100,10 +100,20 @@ describe('the view', () => {
     const held = () => Array.from(container.querySelectorAll('canvas')).filter((c) => !layers.includes(c))
     expect(held()).toHaveLength(0)
 
-    // The copy goes up before the graph is touched, so it is already there when the toggle returns.
-    cy.$id('region').emit('dblclick')
+    // The copy goes up when the graph changes, after the progress message of the toggle is painted.
+    // The observer runs before the layout can finish, so the copy is still there when it sees it.
+    const copy = await new Promise<HTMLCanvasElement>((resolve) => {
+      const observer = new MutationObserver(() => {
+        const copies = held()
+        if (copies.length > 0) {
+          observer.disconnect()
+          resolve(copies[0]!)
+        }
+      })
+      observer.observe(container, { childList: true, subtree: true })
+      cy.$id('region').emit('dblclick')
+    })
     expect(held()).toHaveLength(1)
-    const copy = held()[0]!
     expect(copy.width).toBe(layers[0]!.width)
     expect(layers.every((c) => c.style.visibility === 'hidden')).toBe(true)
 

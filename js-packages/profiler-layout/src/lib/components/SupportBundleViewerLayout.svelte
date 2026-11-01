@@ -4,6 +4,7 @@
   import {
     isFindShortcut,
     PersistentContent,
+    PointerTooltip,
     SearchBar,
     type SearchDirection,
     SegmentedControl,
@@ -479,13 +480,6 @@
             {error}
           </div>
         {/if}
-        {#if message}
-          <div
-            class="absolute left-2 top-2 z-10 rounded bg-white/90 px-2 py-1 font-mono text-sm shadow"
-          >
-            {message}
-          </div>
-        {/if}
       </div>
     {/if}
   </div>
@@ -725,6 +719,14 @@
     />
   </PersistentContent>
 {/if}
+
+<!-- The progress message ("Computing layout...") next to the pointer, where the user looks. -->
+<PointerTooltip
+  show={message !== ''}
+  class="rounded preset-filled-error-500 px-2 py-1 font-mono text-sm shadow"
+>
+  {message}
+</PointerTooltip>
 
 <!-- Persistent code panel overlay. It renders once and follows the placeholder of the active {#if}
      branch, so the Monaco editor survives the sqlPanelFullHeight toggle. -->
