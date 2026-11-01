@@ -378,6 +378,7 @@
     {
       id: 'Metrics',
       label: metricsLabel,
+      title: 'Show the measurements of the pipeline, of the current node, or of the top nodes',
       panel: MetricsTab,
       keepAlive: true,
       tabBarEnd: metricsTabBarEnd
@@ -385,6 +386,7 @@
     {
       id: 'Connectors',
       label: connectorsLabel,
+      title: 'Show the statistics and errors of the input and output connectors',
       panel: ConnectorsTab,
       keepAlive: true,
       // The tab stays visible, but is disabled when the bundle has no connector statistics.
@@ -393,6 +395,7 @@
     {
       id: 'Health',
       label: healthLabel,
+      title: 'Show the history of the pipeline status: program, storage and deployment',
       panel: HealthTab,
       keepAlive: true,
       // A pipeline with no monitor history gives an empty list. There is nothing to show then.
@@ -401,6 +404,7 @@
     {
       id: 'Logs',
       label: logsLabel,
+      title: 'Show the pipeline log from the bundle',
       panel: LogsTab,
       keepAlive: true,
       tabBarEnd: commonTabBarEnd
@@ -408,6 +412,7 @@
     {
       id: 'Config',
       label: configLabel,
+      title: 'Show the pipeline configuration from the bundle',
       panel: ConfigTab,
       keepAlive: true,
       // No runtime config in the bundle → nothing to show, so the tab is present but unselectable.
@@ -416,6 +421,7 @@
     {
       id: 'Issues',
       label: issuesLabel,
+      title: 'Show the problems that the triage rules found in the bundle',
       panel: IssuesTab,
       keepAlive: true,
       tabBarEnd: issuesTabBarEnd
@@ -502,7 +508,10 @@
 {#snippet connectorsLabel()}
   Connectors
   {#if connectorErrorCount > 0}
-    <span class="ml-1 {statusCounterClass} {statusToneColors.error.chip}">
+    <span
+      class="ml-1 {statusCounterClass} {statusToneColors.error.chip}"
+      title="Total parse, encode and transport errors of all the connectors"
+    >
       {connectorErrorCount}
     </span>
   {/if}
@@ -513,7 +522,10 @@
 {#snippet issuesLabel()}
   Issues &amp; Suggestions
   {#if triageResults.results.length > 0}
-    <span class="ml-1 inline-block min-w-5 rounded px-1 font-medium preset-filled-warning-200-800">
+    <span
+      class="ml-1 inline-block min-w-5 rounded px-1 font-medium preset-filled-warning-200-800"
+      title="Number of issues and suggestions that the triage rules found"
+    >
       {triageResults.results.length}
     </span>
   {/if}
@@ -573,9 +585,23 @@
     value={metricsMode}
     onValueChange={setMetricsMode}
     items={[
-      { value: 'overview', label: 'Overview' },
-      { value: 'node', label: 'Node', disabled: !lastNodeData },
-      { value: 'top-nodes', label: 'Top nodes', disabled: !hasProfile }
+      {
+        value: 'overview',
+        label: 'Overview',
+        title: 'Show the global statistics of the pipeline and the totals of all nodes'
+      },
+      {
+        value: 'node',
+        label: 'Node',
+        title: 'Show the measurements of the current node',
+        disabled: !lastNodeData
+      },
+      {
+        value: 'top-nodes',
+        label: 'Top nodes',
+        title: 'Show the nodes with the highest values of the current metric',
+        disabled: !hasProfile
+      }
     ]}
     class="px-2"
   />
