@@ -49,7 +49,7 @@
 >
   <Combobox.Control>
     <Combobox.Input
-      class="h-6 border-none bg-surface-100-900/50 py-0 pr-7 pl-2 text-[14px] ring-0"
+      class="h-6 border-none bg-surface-100-900/50 py-0 pr-7 pl-2 ring-0"
       {title}
     />
     <Combobox.Trigger class="right-0.5 size-5 min-h-0 min-w-0 bg-transparent p-0">
@@ -59,7 +59,7 @@
   <Portal>
     <Combobox.Positioner>
       <!-- The positioner copies its z-index from the content (`z-2`). -->
-      <Combobox.Content class="scrollbar z-2 max-h-96 gap-0 overflow-y-auto p-1 text-[14px]">
+      <Combobox.Content class="scrollbar z-2 max-h-96 gap-0 overflow-y-auto p-1">
         {#each matching as metric (metric.id)}
           <Combobox.Item item={metric} class="py-0.5">
             <Combobox.ItemText>{metric.label}</Combobox.ItemText>
