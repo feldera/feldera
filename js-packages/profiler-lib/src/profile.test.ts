@@ -1321,6 +1321,63 @@ describe('CircuitProfile.consumerCount', () => {
     })
 })
 
+describe('CircuitProfile and the multihost remote waiter', () => {
+    // As in a multihost profile: the waiter is in the region of the first sharded accumulator, and
+    // the receiver of every sharded accumulator has an edge into it.
+    //
+    //   r1 [ waiter, recv1 -> out1 ]   r2 [ recv2 -> out2 ]
+    //   recv1 -> waiter <- recv2
+    const edge = (from: string, to: string) =>
+        ({ from_node: from, to_node: to, from_cluster: false, to_cluster: false })
+    const receiver = (id: string) =>
+        ({ Simple: { id, label: 'ShardedAccumulatorReceiver @ s/o/d/sharded_accumulator.rs:143:29' } })
+
+    const profile = (() => {
+        const json = {
+            metrics: [],
+            worker_profiles: [{ metadata: {} }],
+            graph: {
+                nodes: {
+                    id: 'n', label: 'root', nodes: [
+                        {
+                            Cluster: {
+                                id: 'r1', label: 'create table t1', nodes: [
+                                    { Simple: { id: 'waiter', label: 'ShardedAccumulatorRemoteWaiter' } },
+                                    receiver('recv1'),
+                                    { Simple: { id: 'out1', label: 'AccumulateOutput' } }
+                                ]
+                            }
+                        },
+                        {
+                            Cluster: {
+                                id: 'r2', label: 'create table t2', nodes: [
+                                    receiver('recv2'),
+                                    { Simple: { id: 'out2', label: 'AccumulateOutput' } }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                edges: [
+                    edge('recv1', 'waiter'), edge('recv1', 'out1'),
+                    edge('recv2', 'waiter'), edge('recv2', 'out2')
+                ]
+            }
+        }
+        return CircuitProfile.fromJson(json as unknown as JsonProfiles).profile
+    })()
+
+    it('leaves out the edges into the waiter, and keeps the others', () => {
+        expect(profile.edges.map((e) => e.toString())).toEqual(['recv1->out1', 'recv2->out2'])
+        // `r2` feeds nothing outside itself once the edge into the waiter is gone.
+        expect(profile.consumerCount('r2')).toBe(0)
+    })
+
+    it('keeps the waiter itself', () => {
+        expect(profile.simpleNodes.has('waiter')).toBe(true)
+    })
+})
+
 describe('ComplexNode.leafCount', () => {
     // A region's badge reports the primitive operators hidden inside it, at any nesting depth -
     // counting immediate children instead would report 2 for `outer` below.

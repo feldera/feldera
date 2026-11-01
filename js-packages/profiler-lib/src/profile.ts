@@ -1490,6 +1490,9 @@ export class CircuitProfile {
     static readonly Z1_TRACE_OUTPUT = "Z1 (trace) (output)";
     static readonly Z1 = "Z^-1";
     static readonly Z1_OUTPUT = "Z^-1 (output)";
+    // The one waiter of a multihost circuit. The receiver of every sharded accumulator has an edge
+    // into it, and the waiter is in the region of the first sharded accumulator.
+    static readonly REMOTE_WAITER = "ShardedAccumulatorRemoteWaiter";
     // Name of the property that holds the persistent ID.
     // In the profile graph this is represented in all workers (if present)
     public static readonly PERSISTENT_ID = "persistent_id";
@@ -1693,6 +1696,10 @@ export class CircuitProfile {
         let to = e.to_node;
         let source = this.getNode(from);
         let target = this.getNode(to);
+        // The edges into the remote waiter connect it to most of the graph, and carry no data.
+        if (target.isSome() && target.unwrap().operation.trim() === CircuitProfile.REMOTE_WAITER) {
+            return;
+        }
         let back = false;
         if (source.isSome() && target.isSome()) {
             let sourceLabel = source.unwrap().label;
