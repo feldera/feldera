@@ -99,6 +99,12 @@ export function assert(condition: any, message: string): asserts condition {
     }
 }
 
+/** Resolves after the browser paints the next frame. The browser calls `requestAnimationFrame`
+ *  callbacks just before a paint, and runs the timeout that the callback queues after that paint. */
+export function afterNextPaint(): Promise<void> {
+    return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
+
 /** A Map using an Option for lookups. */
 export class OMap<K, V> {
     private map = new Map<K, V>();
