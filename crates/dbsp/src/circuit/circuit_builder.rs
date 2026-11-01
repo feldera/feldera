@@ -30,7 +30,10 @@ use crate::{
         bootstrap::{BootstrapInfo, ConcurrentBootstrapInfo, ReplayRegistration, ReplaySource},
         cache::{CircuitCache, CircuitStoreMarker},
         fingerprinter::Fingerprinter,
-        metadata::OperatorMeta,
+        metadata::{
+            MetaItem, OperatorMeta, SUBCIRCUIT_RUNS_COUNT, SUBCIRCUIT_RUNS_INPUT_UNKNOWN_COUNT,
+            SUBCIRCUIT_RUNS_WITH_INPUT_COUNT,
+        },
         metrics::DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS,
         operator_traits::{
             BinaryOperator, BinarySinkOperator, Data, ImportOperator, NaryOperator,
@@ -1049,6 +1052,13 @@ pub trait Node: Any {
 
     fn import<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
         Box::pin(async {})
+    }
+
+    /// For an import node, reports if the value that the last `import` call
+    /// consumed was empty, or `None` if the node cannot tell (see
+    /// [`ImportOperator::imported_empty`]).
+    fn import_is_empty(&self) -> Option<bool> {
+        None
     }
 
     /// Notify the operator that the circuit is starting a transaction.
@@ -4849,6 +4859,10 @@ where
         })
     }
 
+    fn import_is_empty(&self) -> Option<bool> {
+        self.operator.imported_empty()
+    }
+
     fn start_transaction(&mut self) {
         self.operator.start_transaction();
     }
@@ -7217,6 +7231,35 @@ where
     executor: Box<dyn Executor<C>>,
     labels: BTreeMap<String, String>,
     nesting_depth: Scope,
+    run_stats: SubcircuitRunStats,
+}
+
+/// Counts the runs of a nested circuit, for profiling.
+///
+/// Each count is local to one worker: a run that got no input on this worker
+/// can get input on another worker.
+#[derive(Default)]
+struct SubcircuitRunStats {
+    /// Runs of the nested circuit, one per step of the parent circuit.
+    runs: usize,
+
+    /// Runs in which at least one import got a value that was not empty.
+    runs_with_input: usize,
+
+    /// Runs with no import that got a value that was not empty, but with at
+    /// least one import that cannot tell if its value was empty.
+    runs_input_unknown: usize,
+}
+
+impl SubcircuitRunStats {
+    fn record(&mut self, has_input: bool, input_unknown: bool) {
+        self.runs += 1;
+        if has_input {
+            self.runs_with_input += 1;
+        } else if input_unknown {
+            self.runs_input_unknown += 1;
+        }
+    }
 }
 
 impl<C> Drop for ChildNode<C>
@@ -7261,6 +7304,7 @@ where
             executor: Box::new(executor) as Box<dyn Executor<C>>,
             labels,
             nesting_depth,
+            run_stats: SubcircuitRunStats::default(),
         }
     }
 
@@ -7346,9 +7390,20 @@ where
         Box::pin(async {
             // We may want to make the executor responsible for evaluating import nodes
             // if there is a need for customizing this behavior.
+            let mut has_input = false;
+            let mut input_unknown = false;
             for node_id in self.circuit.import_nodes() {
                 self.circuit.eval_import_node(node_id).await;
+                match self
+                    .circuit
+                    .map_local_node_mut(node_id, &mut |node| node.import_is_empty())
+                {
+                    Some(true) => {}
+                    Some(false) => has_input = true,
+                    None => input_unknown = true,
+                }
             }
+            self.run_stats.record(has_input, input_unknown);
             self.executor.transaction(&self.circuit).await?;
             Ok(None)
         })
@@ -7374,7 +7429,13 @@ where
         self.circuit.clock_end(scope + self.nesting_depth);
     }
 
-    fn metadata(&self, _meta: &mut OperatorMeta) {}
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            SUBCIRCUIT_RUNS_COUNT => MetaItem::Count(self.run_stats.runs),
+            SUBCIRCUIT_RUNS_WITH_INPUT_COUNT => MetaItem::Count(self.run_stats.runs_with_input),
+            SUBCIRCUIT_RUNS_INPUT_UNKNOWN_COUNT => MetaItem::Count(self.run_stats.runs_input_unknown),
+        });
+    }
 
     fn fixedpoint(&self, scope: Scope) -> bool {
         self.circuit.check_fixedpoint(scope + self.nesting_depth)

@@ -82,6 +82,9 @@ where
 pub struct Delta0<D> {
     val: Option<D>,
     fixedpoint: bool,
+    /// Whether the last imported value was empty (see
+    /// [`ImportOperator::imported_empty`]).
+    imported_empty: Option<bool>,
 }
 
 impl<D> Delta0<D> {
@@ -89,6 +92,7 @@ impl<D> Delta0<D> {
         Self {
             val: None,
             fixedpoint: false,
+            imported_empty: None,
         }
     }
 }
@@ -123,13 +127,19 @@ where
     D: HasZero + Clone + 'static,
 {
     async fn import(&mut self, val: &D) {
+        self.imported_empty = Some(val.is_zero());
         self.val = Some(val.clone());
         self.fixedpoint = false;
     }
 
     async fn import_owned(&mut self, val: D) {
+        self.imported_empty = Some(val.is_zero());
         self.val = Some(val);
         self.fixedpoint = false;
+    }
+
+    fn imported_empty(&self) -> Option<bool> {
+        self.imported_empty
     }
 
     async fn eval(&mut self) -> D {
