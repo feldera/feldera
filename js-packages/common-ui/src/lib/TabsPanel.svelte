@@ -12,6 +12,8 @@
   export type TabSpec<T extends Record<string, unknown>> = {
     id: string
     label: Snippet
+    /** Hover text of the tab trigger */
+    title?: string
     panel: Component<T>
     keepAlive: boolean
     tabBarEnd?: Snippet
@@ -57,7 +59,7 @@
   // snippet, which dispatches back to each TabSpec's own `label` snippet so a tab definition
   // stays the single source of truth regardless of the chosen variant.
   const segmentItems = $derived<SegmentedItem<string>[]>(
-    tabs.map((t) => ({ value: t.id, disabled: t.disabled }))
+    tabs.map((t) => ({ value: t.id, title: t.title, disabled: t.disabled }))
   )
 </script>
 
@@ -125,8 +127,8 @@
     <Tabs.List
       class="flex w-full min-w-0 flex-wrap items-center gap-0 pb-0 mb-0 [&>:not([role=tab],button)]:min-h-12 [&>button:not([role=tab])]:my-2 {headerClass}"
     >
-      {#each tabs as { id, label, disabled }}
-        <Tabs.Trigger value={id} {disabled} class="tab">
+      {#each tabs as { id, label, title, disabled }}
+        <Tabs.Trigger value={id} {disabled} {title} class="tab">
           {@render label()}
         </Tabs.Trigger>
       {/each}
