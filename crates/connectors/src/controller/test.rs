@@ -1614,6 +1614,56 @@ pub fn stop_during_input_endpoint_open(engine: &dyn PipelineTestEngine) {
     );
 }
 
+/// Adding an input endpoint after the pipeline stopped must fail and leave no
+/// endpoint behind.
+///
+/// `stop` clears the inputs only once, so an endpoint added after it would
+/// keep a live reader on a terminated controller.
+#[engine_test]
+pub fn add_input_endpoint_after_stop(engine: &dyn PipelineTestEngine) {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+    let controller = engine
+        .controller(
+            &identity(&[None]),
+            &config,
+            Box::new(|e, _| panic!("error: {e}")),
+        )
+        .unwrap();
+    controller.start();
+    controller.initiate_stop();
+
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+    let result = controller.add_input_endpoint(
+        "late",
+        endpoint_config,
+        Box::new(TransactionalInputEndpoint::new()),
+        None,
+    );
+    // Check before `Controller::stop`, which clears the inputs again.
+    let num_inputs = controller.status().input_status().len();
+    controller.stop().unwrap();
+    assert!(
+        result.is_err(),
+        "adding an input endpoint succeeded although the pipeline stopped"
+    );
+    assert_eq!(
+        num_inputs, 0,
+        "a stopped pipeline kept a new input endpoint"
+    );
+}
+
 /// A commit that takes several steps must finish even if a client starts a
 /// new API transaction while it runs.
 ///
