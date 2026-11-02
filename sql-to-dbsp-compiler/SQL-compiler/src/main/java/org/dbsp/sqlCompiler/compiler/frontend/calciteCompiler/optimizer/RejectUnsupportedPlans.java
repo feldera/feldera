@@ -64,7 +64,7 @@ import java.util.Locale;
  * ROW values; ordering comparisons are rejected, as they are on ROW values.
  */
 public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
-    private static final String ERROR_KIND = "Unsupported comparison";
+    public static final String ERROR_KIND = "Unsupported comparison";
 
     public static final Documentation.Link ROW_DOCUMENTATION =
             new Documentation.Link("sql/comparisons", "comparing-row-values");
