@@ -441,6 +441,53 @@ of updates and writing them to the Delta Table as a small number of large files.
 
 See [output buffer](/connectors#configuring-the-output-buffer) for details on configuring the output buffer mechanism.
 
+## Distributed connectors
+
+In a multihost pipeline, Feldera assigns each output connector to one host by
+default.  That host collects all of the connector's output from the other
+hosts and writes it.  When one output connector writes most of the pipeline's
+output, one host does most of the work.
+
+To spread the work of writing across the hosts, set the generic
+[`distributed`](/connectors#distributed) attribute to `true`.  Then the
+connector runs on every host, and each host writes the Parquet files for the
+part of the output on its own workers.
+
+```json
+{
+  "transport": {
+    "name": "delta_table_output",
+    "config": {
+      "uri": "s3://my-bucket/big_view",
+      "mode": "append"
+    }
+  },
+  "distributed": true
+}
+```
+
+A distributed connector works as follows:
+
+- The part of the connector on one host is its leader.  The leader creates
+  the table if it does not exist.  The other hosts wait for the table.
+- Each host writes its own data files.
+- For each transaction, each host sends the list of its new files to the
+  leader, which adds all of them to the table in one commit.  A reader
+  therefore sees all of a transaction's output or none of it, as with a
+  connector that runs on one host.
+- With `send_snapshot`, each host sends the part of the view's snapshot on its
+  own workers, so together the hosts send the whole snapshot once.
+
+A distributed Delta Lake output connector has these limits:
+
+- It supports only `mode` set to `append` and `update_mode` set to `cdc`.
+- It does not support the [output buffer](#the-small-file-problem-and-output-buffer-configuration),
+  because each host would fill its buffer at a different time.  Each
+  transaction therefore writes at least one file on each host that has output
+  for it.  Use larger transactions, or compact the table, to keep the number
+  of files low.
+- In a single-host pipeline, `distributed` has no effect.
+
 ## Example usage
 
 ### Streaming incremental updates

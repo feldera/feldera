@@ -195,10 +195,13 @@ The following attributes are common to all connectors:
   [Iceberg](/connectors/sources/iceberg#distributed-connectors) input
   connectors support this setting.
 
-  For an output connector, this setting has no effect yet: the connector
-  runs on one host.  Only the null output connector, and the
-  [Delta Lake](/connectors/sinks/delta) output connector with `mode` set to
-  `append` and `update_mode` set to `cdc`, accept this setting.
+  For an output connector, the connector runs on every host and each host
+  writes the part of the output on its own workers.  When `false`, the
+  connector runs on one host, which writes all of its output.  Only the null
+  output connector, and the
+  [Delta Lake](/connectors/sinks/delta#distributed-connectors) output
+  connector with `mode` set to `append` and `update_mode` set to `cdc`,
+  support this setting.
 
   For other connectors, a pipeline with `distributed` set to `true` fails to
   start.

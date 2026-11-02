@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use feldera_adapterlib::errors::controller::ConfigError;
 use feldera_types::circuit::Layout;
 use feldera_types::{
-    config::ConnectorConfig,
+    config::{ConnectorConfig, TransportConfig},
     coordination::{InputDistribution, InputShard},
 };
 use serde_json::Value as JsonValue;
@@ -92,6 +92,17 @@ pub fn validate_output_distribution(
                 "the '{}' output transport does not support the 'distributed' property (only 'null_output', and 'delta_table_output' with 'mode: append' and 'update_mode: cdc', do)",
                 config.transport.name()
             ),
+        ));
+    }
+    // The parts commit through a leader one transaction at a time, but output buffering flushes
+    // each host's buffer at its own time, so the hosts' batches would not line up.
+    if config.distributed
+        && matches!(config.transport, TransportConfig::DeltaTableOutput(_))
+        && config.output_buffer_config.enable_output_buffer
+    {
+        return Err(ConfigError::invalid_transport_configuration(
+            endpoint_name,
+            "a distributed 'delta_table_output' connector does not support output buffering ('enable_output_buffer')",
         ));
     }
     Ok(())
@@ -317,6 +328,16 @@ mod tests {
             let error = validate_output_distribution("c", &output(transport)).unwrap_err();
             assert!(error.to_string().contains("'distributed'"), "{error}");
         }
+
+        // Output buffering is refused on a distributed Delta Lake output, but not on the null
+        // output.
+        let mut buffered = output(delta(serde_json::json!({"mode": "append"})));
+        buffered.output_buffer_config.enable_output_buffer = true;
+        let error = validate_output_distribution("c", &buffered).unwrap_err();
+        assert!(error.to_string().contains("output buffering"), "{error}");
+        let mut buffered = output(TransportConfig::NullOutput);
+        buffered.output_buffer_config.enable_output_buffer = true;
+        validate_output_distribution("c", &buffered).unwrap();
 
         // Without `distributed`, any transport will do.
         let mut truncate = output(delta(serde_json::json!({"mode": "truncate"})));

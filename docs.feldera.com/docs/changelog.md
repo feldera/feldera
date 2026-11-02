@@ -28,6 +28,14 @@ Source edition can be found on github.
   `dev_tweaks.tls_exchange` to `false` to exchange data in plaintext.  See
   [Client certificates](/get-started/enterprise/https#client-certificates).
 
+- Enterprise (multihost): the Delta Lake output connector, with `mode` set to
+  `append` and `update_mode` set to `cdc`, and the null output connector,
+  accept `distributed: true`.  A distributed output connector runs on every
+  host, and each host writes the part of the output on its own workers.  A
+  distributed Delta Lake output still commits each transaction once.  It does
+  not support output buffering.  See
+  [Distributed connectors](/connectors/sinks/delta#distributed-connectors).
+
 - Behavior change (multihost): a multihost pipeline keeps the state of each
   materialized view on all of its hosts, instead of on one host.  A
   `send_snapshot` connector, including HTTP egress, gets its snapshot from all

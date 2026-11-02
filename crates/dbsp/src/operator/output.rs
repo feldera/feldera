@@ -145,6 +145,36 @@ impl RootCircuit {
 
         (output_handle, gid)
     }
+
+    /// Like [`Self::output_accumulated_stream_persistent_with_gid`], for a
+    /// second output of the same relation, which follows the checkpoints of
+    /// the first output, the one with persistent id `follows`.
+    ///
+    /// This output writes no checkpoint of its own.  At restore it is new
+    /// exactly when the first output is new, so a bootstrap rebuilds it, and
+    /// gives its readers the whole relation, only when it rebuilds the first
+    /// output.  Without this, adding the second output to a pipeline would
+    /// rebuild it, and give the relation a second time to readers that
+    /// already have it.
+    #[track_caller]
+    pub fn output_accumulated_stream_following_with_gid<B>(
+        &self,
+        stream: &Stream<Self, Option<Spine<B>>>,
+        enable_count: EnableCount,
+        persistent_id: Option<&str>,
+        follows: &str,
+    ) -> (OutputHandle<SpineSnapshot<B>>, GlobalNodeId)
+    where
+        B: Batch + Send,
+    {
+        let (mut output, output_handle) = AccumulateOutput::<B>::new(enable_count);
+        output.follows = Some(follows.to_string());
+
+        let gid = self.add_sink(output, stream);
+        self.set_persistent_node_id(&gid, persistent_id);
+
+        (output_handle, gid)
+    }
 }
 
 impl<T> Stream<RootCircuit, Option<T>>
@@ -625,6 +655,11 @@ where
     /// where the next committed transaction combines it with that
     /// transaction's output and publishes the result.
     cache: Option<SpineSnapshot<B>>,
+
+    /// The persistent id of another output of the same stream, whose
+    /// checkpoint this operator follows (see
+    /// [`RootCircuit::output_accumulated_stream_following_with_gid`]).
+    follows: Option<String>,
 }
 
 impl<B> AccumulateOutput<B>
@@ -664,6 +699,7 @@ where
             caching: false,
             bootstrap_enabled: false,
             cache: None,
+            follows: None,
         };
 
         (output, handle)
@@ -728,8 +764,13 @@ where
         &mut self,
         persistent_id: Option<&str>,
     ) -> Result<Option<Box<dyn OperatorCheckpoint>>, Error> {
+        let pid = require_persistent_id(persistent_id, &self.global_id)?;
+        if self.follows.is_some() {
+            // The output that this one follows writes the checkpoint.
+            return Ok(None);
+        }
         Ok(Some(Box::new(FileOperatorCheckpoint {
-            name: Self::checkpoint_file(require_persistent_id(persistent_id, &self.global_id)?),
+            name: Self::checkpoint_file(pid),
             content: FBuf::new(),
         })))
     }
@@ -737,7 +778,13 @@ where
     fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
 
-        let path = base.clone().join(Self::checkpoint_file(pid));
+        // A persistent id at restore is `{worker}-{label}`, so the output
+        // that this one follows has `{worker}-{follows}`.
+        let pid = match &self.follows {
+            Some(follows) => format!("{}-{follows}", Runtime::worker_index()),
+            None => pid.to_string(),
+        };
+        let path = base.clone().join(Self::checkpoint_file(&pid));
         let _content = Runtime::storage_backend().unwrap().read(&path)?;
 
         Ok(())

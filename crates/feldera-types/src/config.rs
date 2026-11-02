@@ -8,6 +8,7 @@
 use crate::duration::ConfigDuration;
 use crate::postprocess::PostprocessorConfig;
 use crate::preprocess::PreprocessorConfig;
+use crate::program_schema::SqlIdentifier;
 use crate::secret_ref::MaybeSecretRef;
 use crate::secret_resolver::default_secrets_directory;
 use crate::size::{ConfigSize, LegacySizeUnit};
@@ -38,7 +39,7 @@ use feldera_ir::{MirNode, MirNodeId};
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::Display;
 use std::path::Path;
 use std::str::FromStr;
@@ -263,6 +264,24 @@ pub struct PipelineConfig {
 }
 
 impl PipelineConfig {
+    /// Returns the names, in canonical form, of the streams and indexes that output connectors
+    /// with [`ConnectorConfig::distributed`] read, if their transports support it.  A multihost
+    /// pipeline shards these over all of its workers for the connectors.
+    pub fn distributed_output_streams(&self) -> BTreeSet<String> {
+        self.outputs
+            .values()
+            .filter(|output| {
+                let config = &output.connector_config;
+                config.distributed && config.transport.supports_output_distribution()
+            })
+            .flat_map(|output| {
+                std::iter::once(output.stream.as_ref())
+                    .chain(output.connector_config.index.as_deref())
+            })
+            .map(|name| SqlIdentifier::from(name).name())
+            .collect()
+    }
+
     pub fn max_parallel_connector_init(&self) -> u64 {
         max(
             self.global
@@ -2790,6 +2809,36 @@ mod test {
         );
     }
 
+    /// Only output connectors that set `distributed` on a transport that
+    /// supports it count, with their index, in canonical form.  `distributed`
+    /// on an input connector does not count.
+    #[test]
+    fn distributed_output_streams() {
+        let config: PipelineConfig = serde_json::from_value(serde_json::json!({
+            "name": "p",
+            "inputs": {"t.kafka": {"stream": "t", "distributed": true,
+                "transport": {"name": "kafka_input", "config": {
+                    "topic": "t", "bootstrap.servers": "localhost:9092"}}}},
+            "outputs": {
+                "a": {"stream": "A", "distributed": true,
+                    "transport": {"name": "delta_table_output", "config": {
+                        "uri": "memory://", "mode": "append"}}},
+                "b": {"stream": "b", "distributed": true, "index": "B_Idx",
+                    "transport": {"name": "null_output"}},
+                "c": {"stream": "c",
+                    "transport": {"name": "null_output"}},
+                "d": {"stream": "d", "distributed": true,
+                    "transport": {"name": "delta_table_output", "config": {
+                        "uri": "memory://", "mode": "truncate"}}},
+            },
+        }))
+        .unwrap();
+        assert_eq!(
+            config.distributed_output_streams(),
+            std::collections::BTreeSet::from(["a".into(), "b".into(), "b_idx".into()])
+        );
+    }
+
     /// The older size spelling means the same settings to this release, so a
     /// configuration survives the trip out to a pinned runtime and back.
     #[test]
@@ -3648,10 +3697,14 @@ pub struct ConnectorConfig {
     /// Only the Kafka, Delta Lake, and Iceberg input transports support this
     /// setting.
     ///
-    /// For an output connector: this setting has no effect yet.  The
-    /// connector runs on one host.  Only the null output transport, and the
+    /// For an output connector: when `false` (the default), the connector
+    /// runs on one host, which writes all of its output.  When `true`, the
+    /// connector runs on every host, and each host writes the part of the
+    /// output on its own workers.  Only the null output transport, and the
     /// Delta Lake output transport with `mode: append` and
-    /// `update_mode: cdc`, accept this setting.
+    /// `update_mode: cdc`, support this setting.  A distributed Delta Lake
+    /// output commits each transaction once, through its part on one host, and
+    /// it does not support output buffering.
     ///
     /// In a single-host pipeline, this setting has no effect.
     ///
