@@ -212,6 +212,7 @@ Default settings applied to all pipeline pods.
 | `pipeline.allowProfiling` | `false` | Grant the `PERFMON` and `IPC_LOCK` capabilities to pipeline containers, enabling performance profiling. Node kernel settings may also be required, see [Visualizing profiles](/operations/visualizing-profiles.md#enterprise-environments). |
 | `pipeline.terminationGracePeriodSeconds` | `60` | Seconds a pipeline has to write a checkpoint when Kubernetes evicts its pod or drains its node. See [Writing checkpoints](/pipelines/fault-tolerance#writing-checkpoints). |
 | `pipeline.deniedConnectors` | `[]` | Connectors that pipelines may not use, by their `transport.name` (for example `file_input`). A pipeline that uses one fails to start. |
+| `pipeline.allowLocalFileUris` | `true` | Allow Delta Lake and Iceberg connectors to use a local path (`file://...` or a path with no scheme). When `false`, a pipeline that uses one fails to start. Use an object store URL instead, such as `s3://bucket/path`. |
 
 ### Extra volumes
 
