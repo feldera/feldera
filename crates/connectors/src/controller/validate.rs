@@ -3,12 +3,20 @@ use std::collections::{BTreeMap, HashSet};
 use feldera_adapterlib::errors::controller::ConfigError;
 use feldera_types::config::{PipelineConfig, StorageBackendConfig};
 
-use super::distribution::validate_distribution;
+use super::distribution::{validate_distribution, validate_output_distribution};
 
 pub fn validate_config(config: &PipelineConfig) -> Result<(), ConfigError> {
     validate_sync_config(config)?;
 
     let mut dependencies = Vec::new();
+
+    let multihost = config
+        .multihost
+        .as_ref()
+        .is_some_and(|multihost| multihost.hosts > 1);
+    for (endpoint_name, output) in config.outputs.iter() {
+        validate_output_distribution(endpoint_name, &output.connector_config, multihost)?;
+    }
 
     for (endpoint_name, input) in config.inputs.iter() {
         validate_distribution(endpoint_name, &input.connector_config)?;

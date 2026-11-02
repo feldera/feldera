@@ -378,14 +378,7 @@ impl ExternalInputEndpointStatus {
         }
         merge_errors(&mut self.parse_errors, parse_errors);
         merge_errors(&mut self.transport_errors, transport_errors);
-        self.health = match (self.health.take(), health) {
-            (Some(a), Some(b)) => Some(if matches!(a.status, ConnectorHealthStatus::Unhealthy) {
-                a
-            } else {
-                b
-            }),
-            (a, b) => a.or(b),
-        };
+        self.health = merge_health(self.health.take(), health);
         self.paused &= paused;
         self.barrier |= barrier;
         let (a, b) = (self.completed_frontier.take(), completed_frontier);
@@ -453,6 +446,18 @@ fn join_partitions(a: &JsonValue, b: &JsonValue) -> JsonValue {
     }
     let (partitions, offsets): (Vec<_>, Vec<_>) = joined.into_iter().unzip();
     serde_json::json!({"partitions": partitions, "offsets": offsets})
+}
+
+/// Combines the health of two hosts' parts of a connector: unhealthy if either is.
+fn merge_health(a: Option<ConnectorHealth>, b: Option<ConnectorHealth>) -> Option<ConnectorHealth> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(if matches!(a.status, ConnectorHealthStatus::Unhealthy) {
+            a
+        } else {
+            b
+        }),
+        (a, b) => a.or(b),
+    }
 }
 
 /// Appends `b` to `a` and sorts the result by time, because each host numbers
@@ -557,6 +562,81 @@ pub struct ExternalOutputEndpointStatus {
     /// sending it to its sink.
     #[serde(default)]
     pub paused: bool,
+}
+
+impl ExternalOutputEndpointMetrics {
+    /// Adds `other`, which another host reports for its part of the same
+    /// distributed connector, to these metrics.
+    ///
+    /// Counts add up.  The connector has processed only as much input as its
+    /// slowest part.
+    pub fn merge(&mut self, other: &Self) {
+        // Naming every field makes a new field a compile error until it is
+        // merged here.
+        let &Self {
+            transmitted_records,
+            transmitted_bytes,
+            queued_records,
+            queued_batches,
+            buffered_records,
+            buffered_batches,
+            num_encode_errors,
+            num_transport_errors,
+            total_processed_input_records,
+            total_processed_steps,
+            memory,
+            batch_records_written,
+        } = other;
+        self.transmitted_records += transmitted_records;
+        self.transmitted_bytes += transmitted_bytes;
+        self.queued_records += queued_records;
+        self.queued_batches += queued_batches;
+        self.buffered_records += buffered_records;
+        self.buffered_batches += buffered_batches;
+        self.num_encode_errors += num_encode_errors;
+        self.num_transport_errors += num_transport_errors;
+        self.total_processed_input_records = self
+            .total_processed_input_records
+            .min(total_processed_input_records);
+        self.total_processed_steps = self.total_processed_steps.min(total_processed_steps);
+        self.memory += memory;
+        self.batch_records_written = match (self.batch_records_written, batch_records_written) {
+            (Some(a), Some(b)) => Some(a + b),
+            (a, b) => a.or(b),
+        };
+    }
+}
+
+impl ExternalOutputEndpointStatus {
+    /// Combines this status with `other`, which another host reports for its
+    /// part of the same distributed connector, into the status of the
+    /// connector as a whole.
+    ///
+    /// The combined connector is healthy, paused, or free of a fatal error
+    /// only if every part is.
+    pub fn merge(&mut self, other: Self) {
+        // Naming every field makes a new field a compile error until it is
+        // merged here.
+        let Self {
+            // Every host reports the same name and configuration.
+            endpoint_name: _,
+            config: _,
+            metrics,
+            fatal_error,
+            encode_errors,
+            transport_errors,
+            health,
+            paused,
+        } = other;
+        self.metrics.merge(&metrics);
+        if self.fatal_error.is_none() {
+            self.fatal_error = fatal_error;
+        }
+        merge_errors(&mut self.encode_errors, encode_errors);
+        merge_errors(&mut self.transport_errors, transport_errors);
+        self.health = merge_health(self.health.take(), health);
+        self.paused &= paused;
+    }
 }
 
 /// Global controller metrics.
@@ -819,7 +899,8 @@ mod tests {
 
         use crate::adapter_stats::{
             CompletedWatermark, ConnectorError, ConnectorHealth, ConnectorHealthStatus,
-            ExternalInputEndpointMetrics, ExternalInputEndpointStatus, FrontierMerge,
+            ExternalInputEndpointMetrics, ExternalInputEndpointStatus,
+            ExternalOutputEndpointMetrics, ExternalOutputEndpointStatus, FrontierMerge,
             ShortEndpointConfig,
         };
         use serde_json::{Value, json};
@@ -1029,6 +1110,71 @@ mod tests {
                     "{other}"
                 );
             }
+        }
+
+        fn output_status(steps: u64, records: u64) -> ExternalOutputEndpointStatus {
+            ExternalOutputEndpointStatus {
+                endpoint_name: "v.delta".into(),
+                config: ShortEndpointConfig { stream: "v".into() },
+                metrics: ExternalOutputEndpointMetrics {
+                    transmitted_records: 1,
+                    transmitted_bytes: 2,
+                    queued_records: 3,
+                    queued_batches: 4,
+                    buffered_records: 5,
+                    buffered_batches: 6,
+                    num_encode_errors: 7,
+                    num_transport_errors: 8,
+                    total_processed_input_records: records,
+                    total_processed_steps: steps,
+                    memory: 9,
+                    batch_records_written: None,
+                },
+                fatal_error: None,
+                encode_errors: None,
+                transport_errors: None,
+                health: Some(ConnectorHealth::healthy()),
+                paused: true,
+            }
+        }
+
+        /// The parts of a distributed output connector add up their counts,
+        /// and the slowest part decides the progress, the health, and the
+        /// pause.
+        #[test]
+        fn output_merge() {
+            let mut a = output_status(5, 50);
+            let mut b = output_status(3, 30);
+            b.metrics.batch_records_written = Some(10);
+            b.health = Some(ConnectorHealth::unhealthy("sick"));
+            b.paused = false;
+            b.fatal_error = Some("broken".into());
+            b.transport_errors = Some(vec![error(2, "b2")]);
+            a.merge(b);
+            assert_eq!(
+                a.metrics,
+                ExternalOutputEndpointMetrics {
+                    transmitted_records: 2,
+                    transmitted_bytes: 4,
+                    queued_records: 6,
+                    queued_batches: 8,
+                    buffered_records: 10,
+                    buffered_batches: 12,
+                    num_encode_errors: 14,
+                    num_transport_errors: 16,
+                    total_processed_input_records: 30,
+                    total_processed_steps: 3,
+                    memory: 18,
+                    batch_records_written: Some(10),
+                }
+            );
+            assert!(matches!(
+                a.health.unwrap().status,
+                ConnectorHealthStatus::Unhealthy
+            ));
+            assert!(!a.paused);
+            assert_eq!(a.fatal_error.as_deref(), Some("broken"));
+            assert_eq!(a.transport_errors.unwrap().len(), 1);
         }
 
         /// A connector is paused only if every host is, in any order.

@@ -32,7 +32,7 @@ use uuid::Uuid;
 
 use crate::ControllerError;
 use crate::bootstrap::{self, InputOperators};
-use crate::catalog::{OUTPUT_MAPPING, SPREAD_VIEW_INTEGRALS};
+use crate::catalog::{DISTRIBUTED_OUTPUT_STREAMS, OUTPUT_MAPPING, SPREAD_VIEW_INTEGRALS};
 use crate::storage::{StaticStorage, publish_with_state};
 use dbsp::Error as DbspError;
 use dbsp_connectors::engine::{
@@ -123,6 +123,7 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
         let CircuitParams {
             layout,
             output_assignment,
+            distributed_output_streams,
             spread_view_integrals,
             storage,
             init_checkpoint,
@@ -141,13 +142,14 @@ pub fn static_circuit_factory(circuit: StaticCircuitFactory) -> CircuitFactory {
                 .downcast_ref::<StaticStorage>()
                 .expect("the static engine runs only on the storage that it opens")
         });
-        // The catalog reads this global while `circuit` builds the circuit, so hold
+        // The catalog reads these globals while `circuit` builds the circuit, so hold
         // `CIRCUIT_BUILD` until then: a process that builds several circuits at once, as
         // tests do, must not build one with another's settings.
         let _build = CIRCUIT_BUILD
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         *OUTPUT_MAPPING.lock().unwrap() = output_assignment;
+        *DISTRIBUTED_OUTPUT_STREAMS.lock().unwrap() = distributed_output_streams;
         SPREAD_VIEW_INTEGRALS.store(spread_view_integrals, Ordering::Relaxed);
         let config = CircuitConfig::from(layout)
             .with_max_rss_bytes(max_rss_bytes)

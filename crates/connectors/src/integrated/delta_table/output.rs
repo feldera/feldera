@@ -1,4 +1,5 @@
 use crate::catalog::{ArrowRowSink, CursorWithPolarity, SerBatchReader, SerKeyRange};
+use crate::controller::output_leader::{OutputPart, OutputPartRole};
 use crate::controller::{ControllerInner, EndpointId};
 use crate::format::MAX_DUPLICATES;
 use crate::format::parquet::{ArrowSchemaOptions, relation_to_arrow_fields};
@@ -254,6 +255,10 @@ pub struct DeltaTableWriter {
     /// A merge batch failed for good, or its post-commit hook failed. Its commit may still
     /// have landed, so the next flush must read the table again before it looks anything up.
     merge_reload: bool,
+    /// This host's part of a distributed connector.  The part writes its files in `encode`, as
+    /// usual, but the leader commits every part's files of a transaction at once, in
+    /// `steps_processed`, so that each transaction is one commit.
+    part: Option<OutputPart>,
 }
 
 /// Limit on the number of records buffered in memory in the encoder.
@@ -316,10 +321,17 @@ impl DeltaTableWriter {
         continue_previous_state: bool,
         is_index: bool,
         output_buffered: bool,
+        part: Option<OutputPart>,
     ) -> Result<Self, ControllerError> {
         config
             .validate()
             .map_err(|e| ControllerError::invalid_transport_configuration(endpoint_name, &e))?;
+        if part.is_some() && config.is_merge() {
+            return Err(ControllerError::invalid_transport_configuration(
+                endpoint_name,
+                "a distributed connector does not support 'update_mode: merge'",
+            ));
+        }
 
         if let Some(advice) = unbuffered_merge_advice(config, output_buffered) {
             warn!("delta_table {endpoint_name}: {advice}");
@@ -414,8 +426,16 @@ impl DeltaTableWriter {
         // Create or open the delta table.
         // Panic safety: block_on() panics if called from a tokio async context.
         // new() is called from sync controller code (connect_output), so this is fine.
+        // Only the leader of a distributed connector creates the table.
+        let may_create = part
+            .as_ref()
+            .is_none_or(|part| matches!(part.role, OutputPartRole::Leader(_)));
         let task = TOKIO
-            .block_on(WriterTask::create(inner.clone(), continue_previous_state))
+            .block_on(WriterTask::create(
+                inner.clone(),
+                continue_previous_state,
+                may_create,
+            ))
             .map_err(|e| {
                 ControllerError::output_transport_error(
                     endpoint_name,
@@ -471,6 +491,7 @@ impl DeltaTableWriter {
             #[cfg(any(test, feature = "testing"))]
             merge_violations: 0,
             merge_reload: false,
+            part,
         })
     }
 }
@@ -527,6 +548,10 @@ struct WriterTask {
     /// due, cleared when a later checkpoint is written: why the connector
     /// reports itself unhealthy.
     checkpoint_owed: Option<String>,
+    /// Set for a part of a distributed connector that is not the leader, until it opens the
+    /// table that the leader creates (see [Self::open_leaders_table]).  Until then,
+    /// `delta_table` is not loaded, but its object store works.
+    unopened: bool,
 }
 
 /// Retry the future `op` with exponential backoff of up to 10 seconds until it
@@ -621,11 +646,29 @@ impl WriterTask {
         }
     }
 
+    /// Creates or opens the table.  With `may_create` false, only opens it, waiting until it
+    /// exists: the parts of a distributed connector that are not its leader wait for the leader
+    /// to create the table, because two concurrent creates can both succeed, each with its own
+    /// table id.
     async fn create(
         inner: Arc<DeltaTableWriterInner>,
         continue_previous_state: bool,
+        may_create: bool,
     ) -> AnyResult<Self> {
         let storage_options = inner.config.object_store_config.clone();
+
+        if !may_create {
+            // Opening the table waits until the leader has created it, so do not wait for it
+            // here, while the pipeline initializes: the leader's host may not be running yet (see
+            // [Self::open_leaders_table]).  The table's object store works before it is loaded.
+            let url = deltalake::table::builder::ensure_table_uri(&inner.config.uri)?;
+            let delta_table = deltalake::DeltaTableBuilder::from_url(url)?
+                .with_storage_options(storage_options)
+                .build()?;
+            let mut task = Self::new(inner, delta_table);
+            task.unopened = true;
+            return Ok(task);
+        }
 
         // On restart (resuming from a checkpoint), open the existing table
         // without truncating or error-checking.  This prevents data loss when
@@ -706,17 +749,83 @@ impl WriterTask {
             },
         )
         .await?;
+        Self::opened(inner, delta_table)
+    }
 
+    /// Checks `delta_table`, which [Self::create] created or opened, and returns its writer.
+    /// Opens the table that this part's leader creates, waiting until it exists, if this part
+    /// has not opened it yet.
+    ///
+    /// A part calls this before it writes its first data files, not at initialization.  A
+    /// connector must not wait for another host while the pipeline initializes, because the
+    /// coordinator can hold the other hosts back until this host has initialized its input
+    /// connectors.  The pipeline runs its first step only after the coordinator has activated
+    /// every host, so by then the leader has created the table.
+    async fn open_leaders_table(&mut self) -> AnyResult<()> {
+        if !self.unopened {
+            return Ok(());
+        }
+        let inner = &self.inner;
+        let url = deltalake::table::builder::ensure_table_uri(&inner.config.uri)?;
+        let storage_options = inner.config.object_store_config.clone();
+        info!(
+            "delta_table {}: opening delta table '{}', which the connector's leader creates",
+            &inner.endpoint_name, &inner.config.uri,
+        );
+        // The leader creates the table soon, so a small `max_retries` must not make this part
+        // give up before the table exists.
+        let max_retries = inner
+            .config
+            .max_retries
+            .unwrap_or(DEFAULT_OPEN_RETRIES)
+            .max(DEFAULT_OPEN_RETRIES);
+        let delta_table = open_with_retry(
+            &inner.endpoint_name,
+            &inner.config.uri,
+            Some(max_retries),
+            &inner.shutdown,
+            |e| match e {
+                DeltaTableError::InvalidTableLocation(_) => {
+                    Some(format!("{e}. Check the connector's `uri`."))
+                }
+                _ => None,
+            },
+            || {
+                let url = url.clone();
+                let storage_options = storage_options.clone();
+                async move {
+                    deltalake::DeltaTableBuilder::from_url(url)?
+                        .with_storage_options(storage_options)
+                        .load()
+                        .await
+                }
+            },
+        )
+        .await?;
+        Self::check_opened(inner, &delta_table)?;
+        self.delta_table = delta_table;
+        self.unopened = false;
+        Ok(())
+    }
+
+    fn opened(inner: Arc<DeltaTableWriterInner>, delta_table: DeltaTable) -> AnyResult<Self> {
+        Self::check_opened(&inner, &delta_table)?;
+        Ok(Self::new(inner, delta_table))
+    }
+
+    /// Checks that this writer can write to `delta_table`, which is open, and warns about its
+    /// properties that differ from the connector's configuration.
+    fn check_opened(inner: &DeltaTableWriterInner, delta_table: &DeltaTable) -> AnyResult<()> {
         // `SaveMode::Ignore` keeps an existing table's schema and throws away
         // the one computed here, and nothing downstream compares the two, so a
         // mismatched VARIANT column would be written as the wrong encoding
         // with no error at all.
         check_variant_encoding(
-            &delta_table,
+            delta_table,
             &inner.struct_fields,
             inner.config.variant_encoding,
         )?;
-        check_column_mapping(&delta_table)?;
+        check_column_mapping(delta_table)?;
 
         info!(
             "delta_table {}: opened delta table '{}' (current table version {})",
@@ -735,22 +844,26 @@ impl WriterTask {
         // checkpoint) the values supplied in the connector config are ignored and the
         // table keeps whatever properties it was created with.  Compare the user's intent against
         // what actually landed in the table metadata and warn on any discrepancy.
-        warn_about_table_property_discrepancies(&inner, &delta_table);
+        warn_about_table_property_discrepancies(inner, delta_table);
+        Ok(())
+    }
 
+    fn new(inner: Arc<DeltaTableWriterInner>, delta_table: DeltaTable) -> Self {
         let app_id = format!(
             "feldera-delta-output-{}-{}",
             inner.endpoint_name,
             uuid::Uuid::new_v4()
         );
 
-        Ok(Self {
+        Self {
             inner,
             delta_table,
             app_id,
             next_txn_version: 0,
             last_attempted_txn: None,
             checkpoint_owed: None,
-        })
+            unopened: false,
+        }
     }
 
     /// The application transaction version this writer last committed, as
@@ -1464,8 +1577,12 @@ impl OutputConsumer for DeltaTableWriter {
     }
 
     fn batch_start(&mut self, _step: Step, _batch_type: OutputBatchType) {
-        self.pending_actions.clear();
-        self.num_rows = 0;
+        // A distributed part keeps the files of every batch until `steps_processed` reports
+        // them, because a batch with no step count does not commit.
+        if self.part.is_none() {
+            self.pending_actions.clear();
+            self.num_rows = 0;
+        }
         self.inner.records_written.store(0, Ordering::Relaxed);
     }
 
@@ -1484,6 +1601,11 @@ impl OutputConsumer for DeltaTableWriter {
     }
 
     fn batch_end(&mut self) {
+        // A distributed part keeps its files for the leader, in `steps_processed`.
+        if self.part.is_some() {
+            return;
+        }
+
         // Merge mode applied and committed the batch in `encode`, and reported it there.
         // Its progress count still ends here, so an idle endpoint does not read as busy.
         if self.merge.is_some() || self.pending_actions.is_empty() {
@@ -1532,6 +1654,118 @@ impl OutputConsumer for DeltaTableWriter {
                 .output_buffer(self.inner.endpoint_id, num_bytes, num_rows);
         }
     }
+
+    fn steps_processed(&mut self, count: Step) {
+        let Some(part) = self.part.clone() else {
+            return;
+        };
+
+        let _span = info_span!(
+            "delta_output",
+            endpoint = &*self.inner.endpoint_name,
+            table = &*self.inner.config.uri,
+        )
+        .entered();
+
+        let num_bytes: usize = self.pending_actions.iter().map(|a| a.size as usize).sum();
+        let num_rows = std::mem::take(&mut self.num_rows);
+        let actions = std::mem::take(&mut self.pending_actions);
+        let result = serde_json::to_value(&actions)
+            .map_err(anyhow::Error::from)
+            .and_then(|payload| {
+                let mut on_wait = |waited: Duration, reported: &[usize]| {
+                    if let Some(controller) = self.inner.controller.upgrade() {
+                        controller.update_output_connector_health(
+                            self.inner.endpoint_id,
+                            ConnectorHealth::unhealthy(&format!(
+                                "waited {waited:?} for the other parts of this connector to report step {count}; the hosts that reported are {reported:?}"
+                            )),
+                        );
+                    }
+                };
+                part.commit(count, payload, &self.inner.shutdown, &mut on_wait, |payloads| {
+                    let mut all = Vec::new();
+                    for payload in payloads {
+                        let adds = serde_json::from_value::<Vec<Add>>(payload)?;
+                        for add in &adds {
+                            check_part_file(&add.path)?;
+                        }
+                        all.extend(adds);
+                    }
+                    if all.is_empty() {
+                        return Ok(());
+                    }
+                    // Panic safety: block_on() panics if called from a tokio async context.
+                    // steps_processed() is called from the dedicated output thread.
+                    TOKIO.block_on(self.task.commit_with_retry(&all))
+                })
+            });
+        self.inner.records_written.store(0, Ordering::Relaxed);
+        match result {
+            Ok(()) => {
+                if let Some(controller) = self.inner.controller.upgrade() {
+                    controller
+                        .update_output_connector_health(self.inner.endpoint_id, self.task.health());
+                    if num_rows > 0 {
+                        controller.status.output_buffer(
+                            self.inner.endpoint_id,
+                            num_bytes,
+                            num_rows,
+                        );
+                    }
+                }
+            }
+            // The Parquet files of an uncommitted transaction are orphans that `VACUUM`
+            // collects.
+            Err(e) if self.inner.shutdown.is_cancelled() => {
+                info!("delta_table {}: {e:#}", &self.inner.endpoint_name)
+            }
+            Err(e) => {
+                if let Some(controller) = self.inner.controller.upgrade() {
+                    controller.output_transport_error(
+                        self.inner.endpoint_id,
+                        &self.inner.endpoint_name,
+                        false,
+                        e,
+                        Some("delta_commit"),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/// Returns an error unless `path`, the path of a data file that a part of a distributed
+/// connector reports to its leader, names a file inside the table.
+///
+/// The leader adds the file to the table as given, so a report must not be able to add a file
+/// outside of the table, such as `/etc/passwd` or `s3://other-bucket/file`.  Delta Lake paths are
+/// relative and percent-encoded, and readers decode them, so this checks the decoded path: it
+/// must be relative, with every segment a name, not empty, `.`, or `..`.  It must not contain
+/// `\`, which some readers treat as a separator, or start with a URL scheme or a drive, such as
+/// `s3:` or `c:`.  A segment may otherwise contain `:`, as a partition value can.
+fn check_part_file(path: &str) -> AnyResult<()> {
+    /// Whether `path` starts with a URL scheme followed by `:`, which includes a drive letter.
+    fn has_scheme(path: &str) -> bool {
+        path.split_once(':').is_some_and(|(scheme, _)| {
+            scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+                && scheme
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+        })
+    }
+
+    let inside = urlencoding::decode(path).is_ok_and(|path| {
+        !path.contains('\\')
+            && !has_scheme(&path)
+            && path
+                .split('/')
+                .all(|segment| !matches!(segment, "" | "." | ".."))
+    });
+    if !inside {
+        bail!("a part of the connector reported a data file outside of the table: {path:?}");
+    }
+    Ok(())
 }
 
 /// Stop `merge` skipping the lookup for inserts, logging why the first time.
@@ -1816,6 +2050,26 @@ impl Encoder for DeltaTableWriter {
     fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
         if self.merge.is_some() {
             return self.encode_merge(batch);
+        }
+
+        // Panic safety: block_on() panics if called from a tokio async context.
+        // encode() is called from the dedicated output thread (output_thread_func).
+        if let Err(e) = TOKIO.block_on(self.task.open_leaders_table()) {
+            let e = anyhow!(
+                "error opening delta table '{}': {e:#}",
+                self.inner.config.uri
+            );
+            // As at initialization, a table that this part cannot open stops the connector.
+            if let Some(controller) = self.inner.controller.upgrade() {
+                controller.output_transport_error(
+                    self.inner.endpoint_id,
+                    &self.inner.endpoint_name,
+                    true,
+                    anyhow!("{e:#}"),
+                    Some("delta_open"),
+                );
+            }
+            return Err(e);
         }
 
         let ranges = batch.split(
@@ -2220,6 +2474,7 @@ pub mod parallel {
             continue_previous_state,
             indexed,
             true,
+            None,
         )
     }
 
@@ -2265,8 +2520,62 @@ pub mod parallel {
             false,
             true,
             true,
+            None,
         )
         .expect("failed to create merge endpoint")
+    }
+
+    /// A part of a distributed connector that is not the leader initializes at once, although
+    /// the table does not exist yet, because its leader may not be running yet.  It opens the
+    /// table once the leader has created it.
+    #[test]
+    fn follower_part_opens_the_table_after_initialization() {
+        use crate::controller::{
+            output_leader::{OutputPart, OutputPartRole},
+            peer_client::PeerClient,
+        };
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().join("table");
+        let uri = uri.to_str().unwrap();
+        let part = OutputPart {
+            endpoint: "test_endpoint".into(),
+            host: 0,
+            leader_host: 1,
+            role: OutputPartRole::Follower(
+                PeerClient::new(&vec!["http://127.0.0.1:1/".to_string(); 2], None, None).unwrap(),
+            ),
+        };
+        let started = Instant::now();
+        let mut follower = DeltaTableWriter::new(
+            EndpointId::default(),
+            "test_endpoint",
+            &DeltaTableWriterConfig {
+                uri: uri.to_string(),
+                ..serde_json::from_value(json!({"uri": uri, "mode": "append"})).unwrap()
+            },
+            &None,
+            &value_relation(),
+            Weak::new(),
+            CancellationToken::new(),
+            false,
+            false,
+            false,
+            Some(part),
+        )
+        .expect("the follower should initialize without the table");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(follower.task.unopened);
+
+        // The leader creates the table.
+        make_endpoint(1, uri, false);
+        TOKIO.block_on(follower.task.open_leaders_table()).unwrap();
+        assert!(!follower.task.unopened);
+        assert_eq!(follower.task.delta_table.version(), Some(0));
     }
 
     /// Only merge mode caps part uploads. A shared cap halved cdc throughput against a store
@@ -4888,6 +5197,7 @@ pub mod parallel {
             false,
             false,
             true,
+            None,
         );
         assert!(
             result.is_err(),
@@ -5037,6 +5347,7 @@ pub mod parallel {
             false,
             true,
             true,
+            None,
         )
         .expect("failed to create endpoint");
 
@@ -5108,6 +5419,7 @@ pub mod parallel {
             false,
             true,
             true,
+            None,
         )
         .expect("failed to create endpoint");
 
@@ -5336,6 +5648,7 @@ pub mod parallel {
             false,
             true,
             true,
+            None,
         )
         .expect("failed to create endpoint");
 
@@ -5542,6 +5855,45 @@ pub mod parallel {
     #[engine_test]
     pub fn merge_keyed_on_smallint(engine: &dyn ConnectorTestEngine) {
         merge_key_type_case(engine, "smallint");
+    }
+}
+
+#[cfg(test)]
+mod part_file_tests {
+    use super::check_part_file;
+
+    /// A part may report only files inside the table.
+    #[test]
+    fn part_files_stay_in_the_table() {
+        for path in [
+            "part-00000-1.snappy.parquet",
+            "year=2026/part-00000-1.snappy.parquet",
+            "a%20b.parquet",
+            "ts=2026-01-01%2010%3A00%3A00/part-00000-1.snappy.parquet",
+        ] {
+            check_part_file(path).unwrap();
+        }
+        for path in [
+            "",
+            "/etc/passwd",
+            "../outside.parquet",
+            "year=2026/../../outside.parquet",
+            "%2e%2e/outside.parquet",
+            "..\\outside.parquet",
+            "s3://other-bucket/file.parquet",
+            "file:///etc/passwd",
+            "//host/file.parquet",
+            "./part-00000-1.snappy.parquet",
+            "year=2026//part-00000-1.snappy.parquet",
+            "x/..%2f..%2foutside.parquet",
+            "x/%2e%2e%2f%2e%2e%2foutside.parquet",
+            "%2fetc/passwd",
+            "x%5c..%5c..%5coutside.parquet",
+            "s3%3a//other-bucket/file.parquet",
+            "c:%5cwindows%5cfile.parquet",
+        ] {
+            assert!(check_part_file(path).is_err(), "{path:?}");
+        }
     }
 }
 

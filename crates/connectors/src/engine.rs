@@ -6,7 +6,7 @@
 //! [`server_main`](crate::server::server_main), is generic over it.
 
 use std::any::Any;
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::fmt::Debug;
 use std::io;
 use std::ops::Range;
@@ -46,6 +46,10 @@ pub struct CircuitParams {
 
     /// The host that writes each output relation of a multihost pipeline.
     pub output_assignment: BTreeMap<String, usize>,
+
+    /// The streams and indexes, in canonical form, that distributed output connectors read.  On
+    /// multihost, the circuit shards each of them over all workers for those connectors.
+    pub distributed_output_streams: BTreeSet<String>,
 
     /// Whether a multihost pipeline shards the integrals of its materialized
     /// views and indexes over all workers of all hosts, instead of keeping
