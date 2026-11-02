@@ -13,15 +13,6 @@ export type CommitPoll = {
   percent: number | null
 }
 
-/**
- * Estimates the full duration of a commit from its progress in two polls,
- * `periodMs` apart. Is `Infinity` if the progress did not increase.
- */
-export const estimateCommitMs = (fromPercent: number, toPercent: number, periodMs: number) => {
-  const gain = toPercent - fromPercent
-  return gain > 0 ? (100 / gain) * periodMs : Infinity
-}
-
 export class LongCommitDetector {
   private previous: CommitPoll | undefined
   /** The transaction whose commit is long. It stays long until the commit ends. */
@@ -52,11 +43,20 @@ export class LongCommitDetector {
     if (
       previous?.percent == null ||
       previous.transactionId !== poll.transactionId ||
-      estimateCommitMs(previous.percent, poll.percent, this.periodMs) <= this.thresholdMs
+      this.estimateCommitMs(previous.percent, poll.percent) <= this.thresholdMs
     ) {
       return false
     }
     this.longTransactionId = poll.transactionId
     return true
+  }
+
+  /**
+   * Estimates the full duration of a commit from its progress in two polls in
+   * sequence. Is `Infinity` if the progress did not increase.
+   */
+  estimateCommitMs(fromPercent: number, toPercent: number) {
+    const gain = toPercent - fromPercent
+    return gain > 0 ? (100 / gain) * this.periodMs : Infinity
   }
 }

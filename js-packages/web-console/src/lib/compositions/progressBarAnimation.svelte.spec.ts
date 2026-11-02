@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest'
-import { ManualScheduler } from './manualAnimationScheduler'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   ProgressBarAnimator,
   type ProgressFrame,
   type ProgressSample
 } from './progressBarAnimation'
+
+// The file runs in the browser project for its `requestAnimationFrame`. The fake timers replace it.
 
 const PERIOD = 2000
 const HALF = PERIOD / 2
@@ -45,14 +46,17 @@ const toView = (f: ProgressFrame<string>): View => ({
   idle: !f.sample.active
 })
 
+/** Runs the callbacks that wait for a paint. The animator waits for two animation frames. */
+const paint = () => {
+  vi.advanceTimersToNextFrame()
+  vi.advanceTimersToNextFrame()
+}
+
 const setup = () => {
   const frames: View[] = []
-  const scheduler = new ManualScheduler()
-  const animator = new ProgressBarAnimator<string>(PERIOD, (frame) => frames.push(toView(frame)), {
-    scheduler
-  })
+  const animator = new ProgressBarAnimator<string>(PERIOD, (frame) => frames.push(toView(frame)))
   const last = () => frames.at(-1)!
-  return { frames, scheduler, animator, last }
+  return { frames, animator, last }
 }
 
 const frame = (
@@ -69,15 +73,22 @@ const frame = (
 })
 
 describe('ProgressBarAnimator', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('grows the bar of the first sample from 0', () => {
-    const { animator, last, scheduler } = setup()
+    const { animator, last } = setup()
     animator.update(running(1, 40, 20))
     expect(last()).toEqual(frame('running 1', 0, 0, 0))
-    scheduler.paint()
+    paint()
     expect(last()).toEqual(frame('running 1', 40, 20, HALF))
-    scheduler.advance(HALF)
+    vi.advanceTimersByTime(HALF)
     expect(last()).toEqual(frame('running 1', 40, 20, PERIOD))
-    expect(scheduler.pendingCount).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('shows an idle first sample as an empty, dimmed bar', () => {
@@ -87,148 +98,147 @@ describe('ProgressBarAnimator', () => {
   })
 
   it('follows one activity over a full period per sample', () => {
-    const { animator, last, scheduler } = setup()
+    const { animator, last } = setup()
     animator.update(running(1, 10))
-    scheduler.paint()
-    scheduler.advance(HALF)
+    paint()
+    vi.advanceTimersByTime(HALF)
     animator.update(running(1, 50, 30))
     expect(last()).toEqual(frame('running 1', 50, 30, PERIOD))
-    expect(scheduler.pendingCount).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('grows the bar from 0 when an activity starts after an idle period', () => {
-    const { animator, last, scheduler } = setup()
+    const { animator, last } = setup()
     animator.update(idle(1))
     animator.update(running(2, 30))
     expect(last()).toEqual(frame('running 2', 0, 0, 0))
-    scheduler.paint()
+    paint()
     expect(last()).toEqual(frame('running 2', 30, 0, HALF))
   })
 
   it('shows a sample that arrived while starting once the start completes', () => {
-    const { animator, last, scheduler } = setup()
+    const { animator, last } = setup()
     animator.update(idle(1))
     animator.update(running(2, 30))
     animator.update(running(2, 50))
-    scheduler.paint()
+    paint()
     expect(last()).toEqual(frame('running 2', 50, 0, HALF))
   })
 
   it('finishes, snaps to 0 and grows again when the key changes', () => {
-    const { animator, frames, scheduler } = setup()
+    const { animator, frames } = setup()
     animator.update(running(1, 60))
     animator.update(running(2, 40, 10))
     // Transaction 1 stays on the screen until its bar is full.
     expect(frames.at(-1)).toEqual(frame('running 1', 100, 100, HALF))
 
-    scheduler.advance(HALF)
+    vi.advanceTimersByTime(HALF)
     expect(frames.at(-1)).toEqual(frame('running 2', 0, 0, 0))
 
-    scheduler.paint()
+    paint()
     expect(frames.at(-1)).toEqual(frame('running 2', 40, 10, HALF))
 
-    scheduler.advance(HALF)
+    vi.advanceTimersByTime(HALF)
     expect(frames.at(-1)).toEqual(frame('running 2', 40, 10, PERIOD))
-    expect(scheduler.pendingCount).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('does not snap to 0 before the finish completes', () => {
-    const { animator, last, scheduler } = setup()
+    const { animator, last } = setup()
     animator.update(running(1, 60))
     animator.update(running(2, 40))
-    scheduler.advance(HALF - 1)
+    vi.advanceTimersByTime(HALF - 1)
     expect(last()).toEqual(frame('running 1', 100, 100, HALF))
   })
 
   it('restarts once when the key skips several values between two samples', () => {
-    const { animator, frames, scheduler } = setup()
+    const { animator, frames } = setup()
     animator.update(running(100, 60))
     animator.update(running(105, 40))
-    scheduler.advance(HALF)
-    scheduler.paint()
-    scheduler.advance(HALF)
+    vi.advanceTimersByTime(HALF)
+    paint()
+    vi.advanceTimersByTime(HALF)
     const finishes = frames.filter((f) => f.combinedPercent === 100)
     expect(finishes).toHaveLength(1)
-    // The screen never shows the activities that the poll skipped.
     expect(new Set(frames.map((f) => f.label))).toEqual(new Set(['running 100', 'running 105']))
   })
 
   it('does not delay the finish when the key changes again while finishing', () => {
-    const { animator, last, scheduler } = setup()
+    const { animator, last } = setup()
     animator.update(running(1, 60))
     animator.update(running(2, 20))
-    scheduler.advance(HALF / 2)
+    vi.advanceTimersByTime(HALF / 2)
     animator.update(running(3, 30))
-    scheduler.advance(HALF / 2)
+    vi.advanceTimersByTime(HALF / 2)
     expect(last()).toEqual(frame('running 3', 0, 0, 0))
-    scheduler.paint()
+    paint()
     expect(last()).toEqual(frame('running 3', 30, 0, HALF))
   })
 
   it('finishes and then shows an idle bar when the activity ends', () => {
-    const { animator, last, scheduler } = setup()
+    const { animator, last } = setup()
     animator.update(running(1, 60))
     animator.update(idle(1))
     // The activity that stopped keeps its label until its bar is full.
     expect(last()).toEqual(frame('running 1', 100, 100, HALF))
-    scheduler.advance(HALF)
+    vi.advanceTimersByTime(HALF)
     expect(last()).toEqual(frame('idle 1', 0, 0, 0))
-    expect(scheduler.pendingCount).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('does not finish an idle bar when only the key changes', () => {
-    const { animator, last, scheduler } = setup()
+    const { animator, last } = setup()
     animator.update(idle(1))
     animator.update(idle(2))
     expect(last()).toEqual(frame('idle 2', 0, 0, 0))
-    expect(scheduler.pendingCount).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('restarts with the latest sample that arrived while finishing', () => {
-    const { animator, last, scheduler } = setup()
+    const { animator, last } = setup()
     animator.update(running(1, 60))
     animator.update(idle(1))
     animator.update(running(2, 25))
     // The move to 100% does not start again. The bar continues to the end.
     expect(last()).toEqual(frame('running 1', 100, 100, HALF))
-    scheduler.advance(HALF)
-    scheduler.paint()
+    vi.advanceTimersByTime(HALF)
+    paint()
     expect(last()).toEqual(frame('running 2', 25, 0, HALF))
   })
 
   it('shows a sample that arrived while restarting once the restart completes', () => {
-    const { animator, last, scheduler } = setup()
+    const { animator, last } = setup()
     animator.update(running(1, 60))
     animator.update(running(2, 20))
-    scheduler.advance(HALF)
-    scheduler.paint()
+    vi.advanceTimersByTime(HALF)
+    paint()
     animator.update(running(2, 70))
     expect(last()).toEqual(frame('running 2', 20, 0, HALF))
-    scheduler.advance(HALF)
+    vi.advanceTimersByTime(HALF)
     expect(last()).toEqual(frame('running 2', 70, 0, PERIOD))
   })
 
   it('finishes again when the key changes while restarting', () => {
-    const { animator, last, scheduler } = setup()
+    const { animator, last } = setup()
     animator.update(running(1, 60))
     animator.update(running(2, 20))
-    scheduler.advance(HALF)
-    scheduler.paint()
+    vi.advanceTimersByTime(HALF)
+    paint()
     animator.update(running(3, 10))
     // The bar of the activity on the screen moves to 100%, not the bar of the latest one.
     expect(last()).toEqual(frame('running 2', 100, 100, HALF))
-    // The restart of key 2 is cancelled. Thus, only the new move to 100% waits.
-    expect(scheduler.pendingCount).toBe(1)
+    // The restart of key 2 is cancelled. The only pending timer ends the new move to 100%.
+    expect(vi.getTimerCount()).toBe(1)
   })
 
   it('cancels pending steps on dispose', () => {
-    const { animator, frames, scheduler } = setup()
+    const { animator, frames } = setup()
     animator.update(running(1, 60))
     animator.update(running(2, 20))
     animator.dispose()
     const count = frames.length
-    scheduler.advance(PERIOD)
-    scheduler.paint()
+    vi.advanceTimersByTime(PERIOD)
+    paint()
     expect(frames).toHaveLength(count)
   })
 })

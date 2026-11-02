@@ -1,7 +1,7 @@
 <script lang="ts" generics="K">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import { formatQty } from 'common-lib/format'
-  import { Tooltip, useIsScreenSm } from 'common-ui'
+  import { Tooltip } from 'common-ui'
   import { type Snippet, untrack } from 'svelte'
   import { slide } from 'svelte/transition'
   import type { ProgressSample } from '#lib/compositions/progressBarAnimation.ts'
@@ -69,8 +69,9 @@
 
   const polledSample = $derived(toSample({ key: resetKey as K, status, progress }, showBar))
 
-  // The bar, the chip and the counts render the frame only. They do not use
-  // the props from the poll directly.
+  // The bar, the chip and the counts read `frame` only, not the props of the
+  // latest poll. Thus, the chip and the counts of an activity that stopped
+  // stay until its bar is full.
   const bar = useProgressBarAnimation(
     () => polledSample,
     untrack(() => pollPeriodMs)
@@ -87,10 +88,10 @@
        parent lays two rows side by side while both fit and wraps them when they do
        not, without either row stretching to fill a line it has to itself. -->
   <div
-    class="items-top flex max-w-150 basis-150 flex-wrap gap-x-4 gap-y-2 h-16 {_class}"
+    class="items-top flex max-w-150 basis-150 flex-wrap gap-x-4 gap-y-2 sm:h-16 {_class}"
     transition:slide
   >
-    <div class="flex w-full flex-col items-start sm:w-28 sm:items-center justify-center">
+    <div class="flex w-full flex-col items-start justify-center sm:w-28 sm:items-center">
       <div class="text-base text-nowrap">{label}</div>
       <div
         class="pointer-events-none {statusChipClass} {shown.status?.class ??
@@ -100,11 +101,11 @@
       </div>
     </div>
 
-    <div class="flex min-w-0 flex-1 flex-col h-full justify-end gap-2">
+    <div class="flex h-full min-w-0 flex-1 flex-col justify-end gap-2">
       {@render header?.()}
       <!-- The bar and its counts share one grid cell with an invisible copy of
            their lines. The copy keeps the height of the row the same while the
-           bar slides in, shows or hides. -->
+           bar slides in or out. -->
       <div class="grid">
         <div class="invisible col-start-1 row-start-1 flex flex-col gap-2" aria-hidden="true">
           <div class="text-base"><span class="font-dm-mono font-bold">&nbsp;</span></div>
@@ -118,8 +119,8 @@
           >
             <div class="text-base text-nowrap">
               {#if shown.progress}
-                <!-- The counts name no category of their own; the tooltips carry what
-                   they count, so the labels stay short enough to fit one line. -->
+                <!-- The tooltips tell what the counts count. Thus, the labels are
+                     short enough to fit on one line. -->
                 <span
                   data-testid="box-label-completed"
                   class="cursor-help underline decoration-dotted underline-offset-4"
