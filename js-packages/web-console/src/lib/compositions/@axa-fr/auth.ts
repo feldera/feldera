@@ -41,7 +41,8 @@ export const toAxaOidcConfig = (c: OidcConfig): OidcConfiguration => ({
   storage: c.storage,
   // monitor_session: undefined,
   // token_renew_mode: 'access_token_or_id_token_invalid' // "access_token_or_id_token_invalid" (default), "access_token_invalid", "id_token_invalid"
-  logout_tokens_to_invalidate: []
+  // Revoke the refresh token on sign-out. A failed revocation is logged and sign-out still completes.
+  logout_tokens_to_invalidate: ['refresh_token']
   // demonstrating_proof_of_possession: undefined,
   // demonstrating_proof_of_possession_configuration: undefined,
   // preload_user_info: undefined,
