@@ -295,17 +295,18 @@ public class LowerAsof implements CircuitTransform {
             this.map(join, result);
 
             // If there is an IntegrateTraceRetainValues operator on the left input, it needs to be moved.
+            // The graph has edges per operator, so a successor can read another output of the input.
             CircuitGraph graph = this.getGraph();
             for (Port<DBSPOperator> port : graph.getSuccessors(join.left().operator)) {
                 IGCOperator op = port.node().as(DBSPIntegrateTraceRetainValuesOperator.class);
-                if (op != null)
+                if (op != null && op.garbageCollects(join.left()))
                     Utilities.putNew(this.leftGces, op, result);
             }
 
             // Similar procedure for the right input
             for (Port<DBSPOperator> port : graph.getSuccessors(join.right().operator)) {
                 IGCOperator op = port.node().as(DBSPIntegrateTraceRetainNValuesOperator.class);
-                if (op != null)
+                if (op != null && op.garbageCollects(join.right()))
                     Utilities.putNew(this.rightGces, op, result);
             }
         }
