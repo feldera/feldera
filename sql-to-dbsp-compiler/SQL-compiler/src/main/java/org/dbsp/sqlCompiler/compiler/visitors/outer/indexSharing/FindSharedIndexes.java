@@ -158,6 +158,8 @@ class FindSharedIndexes extends CircuitWithGraphsVisitor {
             if (sibling == operator)
                 continue;
             DBSPMapIndexOperator smi = sibling.to(DBSPMapIndexOperator.class);
+            if (!smi.input().equals(input))
+                continue;
             MapIndexAndConsumer nextPair = this.mayBeCombined(graph, smi);
             if (nextPair == null)
                 continue;
