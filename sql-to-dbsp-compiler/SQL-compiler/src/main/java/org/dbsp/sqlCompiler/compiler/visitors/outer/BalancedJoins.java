@@ -10,14 +10,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.util.Linq;
-import org.dbsp.util.graph.Port;
-
-import java.util.List;
 
 /** Choose for each join whether it is dynamically balanced or just a hash join */
 public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
@@ -25,10 +21,10 @@ public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
         super(compiler, graphs);
     }
 
-    /** True if a GC operator garbage-collects the integral after an output of {@code operator}. */
-    private boolean hasGcSuccessor(DBSPOperator operator) {
-        return Linq.any(this.getGraph().getSuccessors(operator), succ -> succ.node().is(IGCOperator.class) &&
-                succ.node().to(IGCOperator.class).data().node() == operator);
+    /** True if a GC operator garbage-collects the integral of {@code port}. */
+    private boolean isGarbageCollected(OutputPort port) {
+        return Linq.any(this.getGraph().getSuccessors(port.node()), succ -> succ.node().is(IGCOperator.class) &&
+                succ.node().to(IGCOperator.class).garbageCollects(port));
     }
 
     private boolean canBalance(DBSPJoinBaseOperator join) {
@@ -37,12 +33,9 @@ public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
         // Inside recursive component cannot be adaptive
         if (parent.is(DBSPNestedOperator.class))
             return false;
-        // Operators with GC cannot be adaptive
-        List<Port<DBSPOperator>> leftSuccs = this.getGraph().getSuccessors(join.left().node());
-        if (Linq.any(leftSuccs, s -> this.hasGcSuccessor(s.node())))
-            return false;
-        List<Port<DBSPOperator>> rightSuccs = this.getGraph().getSuccessors(join.right().node());
-        return !Linq.any(rightSuccs, s -> this.hasGcSuccessor(s.node()));
+        // Operators with GC cannot be adaptive: a balanced join keeps its own integral,
+        // which the GC operators of its inputs do not reach
+        return !this.isGarbageCollected(join.left()) && !this.isGarbageCollected(join.right());
     }
 
     @Override
