@@ -321,7 +321,7 @@ pub fn encode_dir_as_string(dir_path: &Path) -> Result<String, UtilError> {
 /// does not affect it.
 pub fn checksum_encoded_dir_contents(
     data_str: &str,
-    normalize: impl Fn(&str) -> String,
+    normalize: impl Fn(&str, &str) -> Result<(String, String), UtilError>,
 ) -> Result<String, UtilError> {
     let data_bytes = BASE64_STANDARD
         .decode(data_str)
@@ -346,7 +346,12 @@ pub fn checksum_encoded_dir_contents(
         std::io::Read::read_to_string(&mut entry, &mut content).map_err(|e| {
             UtilError::IoError(format!("reading '{path}' from gzipped tar archive"), e)
         })?;
-        files.insert(normalize(&path), normalize(&content));
+        let (path, content) = normalize(&path, &content)?;
+        if files.insert(path.clone(), content).is_some() {
+            return Err(UtilError::InvalidContent(format!(
+                "duplicate normalized path in generated program: {path}"
+            )));
+        }
     }
     let mut hasher = Sha256::new();
     for (path, content) in &files {
