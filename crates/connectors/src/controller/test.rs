@@ -1991,6 +1991,55 @@ pub fn api_transaction_commit_does_not_wait_for_removed_endpoint(engine: &dyn Pi
     controller.stop().unwrap();
 }
 
+/// A retry of an API commit must not add the input that arrived after the
+/// first request to the commit.
+#[engine_test]
+pub fn retried_api_commit_keeps_its_input(engine: &dyn PipelineTestEngine) {
+    let (controller, feeder, before) = start_api_transaction_test(engine, false);
+    let tid = controller.start_transaction().unwrap().transaction_id;
+    controller.request_step();
+    wait(
+        || controller.inner.get_transaction_state().is_started(),
+        API_TRANSACTION_TIMEOUT_MS,
+    )
+    .expect("the transaction never started");
+    push_records(&feeder, 0..100);
+
+    // The first step after the commit request waits, so the commit cannot
+    // take its input before the retry.
+    let (entered_sender, entered) = std::sync::mpsc::channel();
+    let (release, release_receiver) = std::sync::mpsc::channel::<()>();
+    *controller.inner.input_step_hook.lock().unwrap() = Some(Box::new(move |_| {
+        entered_sender.send(()).unwrap();
+        let _ = release_receiver.recv();
+    }));
+    controller.start_commit_transaction(Some(tid)).unwrap();
+    entered
+        .recv_timeout(Duration::from_millis(API_TRANSACTION_TIMEOUT_MS))
+        .expect("no step ran after the commit request");
+
+    let commit_target = || {
+        controller
+            .inner
+            .transaction_info
+            .lock()
+            .unwrap()
+            .commit_target
+            .clone()
+            .expect("the commit has no target")
+    };
+    let target = commit_target();
+    push_records(&feeder, 100..200);
+    controller.start_commit_transaction(Some(tid)).unwrap();
+    let retried = commit_target();
+    assert_eq!(retried.records, target.records);
+    assert_eq!(retried.polls_begun, target.polls_begun);
+
+    drop(release);
+    wait_for_commit(&controller, before);
+    controller.stop().unwrap();
+}
+
 /// In a multihost pipeline, the coordinator commits an API transaction with a
 /// step that feeds no input.  A host must finish the commit in that step even
 /// if the transaction was committed before any step started it, so that every
