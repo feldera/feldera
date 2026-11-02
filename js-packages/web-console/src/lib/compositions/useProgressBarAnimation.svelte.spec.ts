@@ -1,6 +1,5 @@
 import { flushSync } from 'svelte'
-import { describe, expect, it } from 'vitest'
-import { ManualScheduler } from './manualAnimationScheduler'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProgressFrame, ProgressSample } from './progressBarAnimation'
 import { useProgressBarAnimation } from './useProgressBarAnimation.svelte'
 
@@ -15,13 +14,18 @@ const running = (key: number, combinedPercent: number): ProgressSample<string> =
   data: `transaction ${key}`
 })
 
+/** Runs the callbacks that wait for a paint. The animator waits for two animation frames. */
+const paint = () => {
+  vi.advanceTimersToNextFrame()
+  vi.advanceTimersToNextFrame()
+}
+
 /** Runs the composition on a reactive sample, as a component does. */
 const setup = (initial: ProgressSample<string>) => {
   const polled = $state({ sample: initial })
-  const scheduler = new ManualScheduler()
   let bar: { readonly current: ProgressFrame<string> } = undefined!
   const stop = $effect.root(() => {
-    bar = useProgressBarAnimation(() => polled.sample, PERIOD, { scheduler })
+    bar = useProgressBarAnimation(() => polled.sample, PERIOD)
   })
   const poll = (sample: ProgressSample<string>) => {
     polled.sample = sample
@@ -29,10 +33,17 @@ const setup = (initial: ProgressSample<string>) => {
   }
   /** The label and the bar width that the screen shows. */
   const view = () => [bar.current.sample.data, bar.current.combinedPercent]
-  return { poll, scheduler, stop, view }
+  return { poll, stop, view }
 }
 
 describe('useProgressBarAnimation', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('shows an empty bar for the first sample before any effect runs', () => {
     const { stop, view } = setup(running(1, 40))
     expect(view()).toEqual(['transaction 1', 0])
@@ -40,42 +51,42 @@ describe('useProgressBarAnimation', () => {
   })
 
   it('grows the bar of the first sample from 0', () => {
-    const { scheduler, stop, view } = setup(running(1, 40))
+    const { stop, view } = setup(running(1, 40))
     flushSync()
     expect(view()).toEqual(['transaction 1', 0])
-    scheduler.paint()
+    paint()
     expect(view()).toEqual(['transaction 1', 40])
     stop()
   })
 
   it('follows a new sample of the same activity', () => {
-    const { poll, scheduler, stop, view } = setup(running(1, 40))
+    const { poll, stop, view } = setup(running(1, 40))
     flushSync()
-    scheduler.paint()
-    scheduler.advance(HALF)
+    paint()
+    vi.advanceTimersByTime(HALF)
     poll(running(1, 70))
     expect(view()).toEqual(['transaction 1', 70])
     stop()
   })
 
   it('keeps the old activity on screen until its bar is full', () => {
-    const { poll, scheduler, stop, view } = setup(running(1, 40))
+    const { poll, stop, view } = setup(running(1, 40))
     flushSync()
     poll(running(2, 30))
     expect(view()).toEqual(['transaction 1', 100])
-    scheduler.advance(HALF)
+    vi.advanceTimersByTime(HALF)
     expect(view()).toEqual(['transaction 2', 0])
-    scheduler.paint()
+    paint()
     expect(view()).toEqual(['transaction 2', 30])
     stop()
   })
 
   it('cancels pending steps when its owner is destroyed', () => {
-    const { poll, scheduler, stop } = setup(running(1, 40))
+    const { poll, stop } = setup(running(1, 40))
     flushSync()
     poll(running(2, 30))
-    expect(scheduler.pendingCount).toBe(1)
+    expect(vi.getTimerCount()).toBe(1)
     stop()
-    expect(scheduler.pendingCount).toBe(0)
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

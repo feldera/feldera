@@ -4,8 +4,12 @@
 // `playwright-snapshots.commit` pins the commit of that repository that the tests use.
 //
 //   bun scripts/playwright-snapshots.ts pull   Downloads the pinned commit to `playwright-snapshots/`.
-//   bun scripts/playwright-snapshots.ts push   Commits `playwright-snapshots/` as the full contents
-//                                              of the repository, and pins the new commit.
+//   bun scripts/playwright-snapshots.ts push   Commits the screenshots that changed after the pull
+//                                              on top of the latest commit of that repository, and
+//                                              pins the new commit.
+//
+// `push` sends only the changed screenshots. Thus, two branches that update different screenshots
+// at the same time do not delete the screenshots of each other.
 
 import {
   cpSync,
@@ -56,6 +60,33 @@ const listChangedFiles = (manifest: Manifest) =>
     .filter(([file, hash]) => manifest.hashes[file] !== hash)
     .map(([file]) => file)
 
+/** Lists the screenshots that were deleted after the download of `manifest.commit`. */
+const listDeletedFiles = (manifest: Manifest) => {
+  const hashes = hashFiles()
+  return Object.keys(manifest.hashes).filter((file) => !(file in hashes))
+}
+
+const DOWNLOAD_ATTEMPTS = 3
+
+/** Downloads the archive of `commit`. Retries a failed download, because the network can fail. */
+async function download(commit: string): Promise<Response> {
+  const url = `https://codeload.github.com/${REPO}/tar.gz/${commit}`
+  let error: unknown
+  for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(url)
+      if (response.ok) {
+        return response
+      }
+      error = new Error(`HTTP ${response.status}`)
+    } catch (e) {
+      error = e
+    }
+    console.warn(`Cannot download ${REPO}@${commit} (attempt ${attempt}): ${error}`)
+  }
+  throw new Error(`Cannot download ${REPO}@${commit}: ${error}`)
+}
+
 async function pull() {
   const commit = readFileSync(pinFile, 'utf8').trim()
   const manifest = readManifest()
@@ -72,10 +103,7 @@ async function pull() {
       )
     }
   }
-  const response = await fetch(`https://codeload.github.com/${REPO}/tar.gz/${commit}`)
-  if (!response.ok) {
-    throw new Error(`Cannot download ${REPO}@${commit}: HTTP ${response.status}`)
-  }
+  const response = await download(commit)
   const archive = path.join(mkdtempSync(path.join(tmpdir(), 'playwright-snapshots-')), 'a.tar.gz')
   await Bun.write(archive, response)
   rmSync(snapshotsDir, { recursive: true, force: true })
@@ -86,23 +114,61 @@ async function pull() {
 }
 
 async function push() {
-  const workDir = mkdtempSync(path.join(tmpdir(), 'playwright-snapshots-'))
-  await $`git clone -q --depth 1 git@github.com:${REPO}.git ${workDir}`
-  await $`git -C ${workDir} rm -r -q --ignore-unmatch .`
-  for (const entry of readdirSync(snapshotsDir)) {
-    if (!LOCAL_ENTRIES.includes(entry)) {
-      cpSync(path.join(snapshotsDir, entry), path.join(workDir, entry), { recursive: true })
+  const manifest = readManifest()
+  if (!manifest) {
+    throw new Error('Run `bun run test-prepare` first. It records the screenshots to compare with.')
+  }
+  const changed = listChangedFiles(manifest)
+  const deleted = listDeletedFiles(manifest)
+  // If a different branch pushes between the clone and the push, the push fails. Then the
+  // loop applies the changes again to a new clone, which contains the screenshots of that branch.
+  for (let attempt = 1; ; attempt++) {
+    const workDir = mkdtempSync(path.join(tmpdir(), 'playwright-snapshots-'))
+    await $`git clone -q --depth 1 git@github.com:${REPO}.git ${workDir}`
+    const hasChanges = await commitChanges(workDir, changed, deleted)
+    const isPushed =
+      !hasChanges || (await $`git -C ${workDir} push -q origin HEAD:main`.nothrow()).exitCode === 0
+    if (isPushed) {
+      await pinClone(workDir, hasChanges)
+      return
     }
+    if (attempt === PUSH_ATTEMPTS) {
+      throw new Error(`Cannot push to ${REPO}`)
+    }
+  }
+}
+
+const PUSH_ATTEMPTS = 3
+
+/** Copies the changed screenshots to the clone in `workDir`, and commits them. Returns `false` if nothing changed. */
+async function commitChanges(workDir: string, changed: string[], deleted: string[]) {
+  for (const file of changed) {
+    const target = path.join(workDir, file)
+    mkdirSync(path.dirname(target), { recursive: true })
+    cpSync(path.join(snapshotsDir, file), target)
+  }
+  for (const file of deleted) {
+    rmSync(path.join(workDir, file), { force: true })
   }
   await $`git -C ${workDir} add -A`
   const hasChanges = (await $`git -C ${workDir} diff --cached --quiet`.nothrow()).exitCode !== 0
   if (hasChanges) {
     const source = (await $`git -C ${packageDir} rev-parse --short HEAD`.text()).trim()
     await $`git -C ${workDir} commit -q -m ${`Update web-console screenshots (feldera ${source})`}`
-    await $`git -C ${workDir} push -q origin HEAD:main`
   }
+  return hasChanges
+}
+
+/** Pins the commit of the clone in `workDir`, and replaces the local screenshots with its files. */
+async function pinClone(workDir: string, hasChanges: boolean) {
   const commit = (await $`git -C ${workDir} rev-parse HEAD`.text()).trim()
   writeFileSync(pinFile, `${commit}\n`)
+  // The commit can contain the screenshots that other branches pushed.
+  rmSync(snapshotsDir, { recursive: true, force: true })
+  cpSync(workDir, snapshotsDir, {
+    recursive: true,
+    filter: (source) => path.basename(source) !== '.git'
+  })
   writeManifest(commit)
   console.log(
     hasChanges

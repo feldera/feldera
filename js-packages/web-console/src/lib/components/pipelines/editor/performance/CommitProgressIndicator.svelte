@@ -2,13 +2,12 @@
   import { untrack } from 'svelte'
   import { slide } from 'svelte/transition'
   import { match } from 'ts-pattern'
-  import { CounterAnimator } from '#lib/compositions/counterAnimation.ts'
   import { LongCommitDetector } from '#lib/compositions/longCommit.ts'
+  import { useInterpolatedValue } from '#lib/compositions/useInterpolatedValue.svelte.ts'
   import { PIPELINE_STATS_POLL_MS } from '#lib/compositions/useAggregatePipelineStats.svelte.ts'
   import { commitProgressPercents } from '#lib/functions/commitProgress.ts'
   import type { PipelineMetrics } from '#lib/functions/pipelineMetrics.ts'
   import { statusToneColors } from '#lib/functions/pipelineStatusColor.ts'
-  import IconLoader from '#assets/icons/generic/loader-alt.svg?component'
   import CommitProgressRow from './CommitProgressRow.svelte'
 
   let {
@@ -42,19 +41,14 @@
   )
 
   // The header counts up to each new transaction ID, at the rate that the ID grew.
-  let shownTransactionId = $state(untrack(() => transactionId))
-  const transactionIdCounter = new CounterAnimator(
-    untrack(() => pollPeriodMs),
-    (id) => (shownTransactionId = id)
+  // When a transaction starts after a poll with no transaction, the ID jumps to its value.
+  const shownTransactionId = useInterpolatedValue(
+    () => ({ value: transactionId, key: transactionStatus !== null }),
+    untrack(() => pollPeriodMs)
   )
-  // A pre-effect shows a jump to a new ID in the same render as the new status.
-  $effect.pre(() => {
-    transactionIdCounter.update({ value: transactionId, active: transactionStatus !== null })
-  })
-  $effect(() => () => transactionIdCounter.dispose())
 
   // The row shows the commit bar only for a long commit. A short commit ends
-  // before the next poll, so its bar would only jump to 100%.
+  // before its bar can show useful progress.
   const longCommit = new LongCommitDetector(untrack(() => pollPeriodMs))
   let isLongCommit = $state(false)
   // A pre-effect updates the flag before the row reads the same poll. Thus,
@@ -99,18 +93,17 @@
     {#snippet header()}
       <!-- The line keeps its height while no transaction runs, so that the row
            does not change its height. -->
-      <div class="flex h-6 items-center gap-2 font-dm-mono text-nowrap">
+      <div class="flex h-6 items-center font-dm-mono text-nowrap">
         {#if transactionStatus !== null}
-          <IconLoader class="h-4 flex-none animate-spin fill-surface-950-50"></IconLoader>
           <span
-            ><span class="select-none">ID: </span><span class="font-bold">{shownTransactionId}</span
+            ><span class="select-none">ID: </span><span class="font-bold"
+              >{Math.round(shownTransactionId.current)}</span
             ></span
           >
         {/if}
       </div>
     {/snippet}
   </CommitProgressRow>
-  <!-- Only transactions have an ID. Thus, the bootstrapping row has no header. -->
   <CommitProgressRow
     label="Bootstrapping"
     status={bootstrapStatus}

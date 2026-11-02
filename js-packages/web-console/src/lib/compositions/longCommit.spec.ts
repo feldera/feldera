@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { estimateCommitMs, LONG_COMMIT_MS, LongCommitDetector } from './longCommit'
+import { LONG_COMMIT_MS, LongCommitDetector } from './longCommit'
 
 const PERIOD = 2000
 
@@ -12,15 +12,18 @@ const run = (polls: { transactionId: number; percent: number | null }[]) => {
   return polls.map((poll) => detector.update(poll))
 }
 
-describe('estimateCommitMs', () => {
+describe('LongCommitDetector.estimateCommitMs', () => {
+  const estimateCommitMs = (fromPercent: number, toPercent: number) =>
+    new LongCommitDetector(PERIOD).estimateCommitMs(fromPercent, toPercent)
+
   it('extrapolates the gain between two polls to the full commit', () => {
     // 10% in 2 s gives 100% in 20 s.
-    expect(estimateCommitMs(20, 30, PERIOD)).toBe(20000)
+    expect(estimateCommitMs(20, 30)).toBe(20000)
   })
 
   it('is infinite when the progress does not increase', () => {
-    expect(estimateCommitMs(30, 30, PERIOD)).toBe(Infinity)
-    expect(estimateCommitMs(30, 10, PERIOD)).toBe(Infinity)
+    expect(estimateCommitMs(30, 30)).toBe(Infinity)
+    expect(estimateCommitMs(30, 10)).toBe(Infinity)
   })
 })
 

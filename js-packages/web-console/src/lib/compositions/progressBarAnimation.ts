@@ -1,75 +1,57 @@
 /**
- * Controls the animation of a progress bar that gets its data from a poll.
+ * Controls the animation of a progress bar. The view polls the pipeline for
+ * the progress of an activity, for example a transaction commit, and passes
+ * each result to `ProgressBarAnimator` as a sample.
  *
  * Rules:
- * - While one activity (for example, a transaction) runs, the bar moves to
- *   each new sample in one poll period.
+ * - While one activity runs, the bar moves to the percent of each new sample
+ *   in one poll period.
  * - When the activity stops, or a different activity replaces it, the bar
  *   moves to 100% in half a period.
- * - Then, if a new activity runs, the bar goes to 0 immediately. It moves to
- *   the new sample in the other half of the period.
- * - When an activity starts after an idle period, the bar also starts from 0.
- *   Thus, a bar always starts at 0, and it always gets to 100% if it started.
- * - The bar does not show the activities that the poll did not see.
+ * - Then, if a new activity runs, the bar jumps to 0. It moves to the percent
+ *   of the new sample in the other half of the period.
+ * - When an activity starts after a poll with no activity, the bar also
+ *   starts from 0.
+ * Thus, the bar of each activity starts at 0 and ends at 100%.
  *
- * Each frame contains the sample that it shows. Thus, if a view shows only
- * frames, its labels (for example, the transaction ID) change at the same
- * time as the bar. The old activity stays on the screen until its bar is full.
+ * The animator does not change the view directly. For each step, it calls
+ * `render` with a `ProgressFrame`. A frame holds the widths to show, the time
+ * to move to them, and the sample that these widths belong to. The view takes
+ * all the labels near the bar, for example the status chip, from the sample of
+ * the frame. Thus, the labels change at the same time as the bar, and the
+ * labels of an activity that stopped stay on the screen until its bar is full.
  */
 
-/** One sample of the activity, from the poll. */
+/** The progress of the activity in one poll. */
 export type ProgressSample<T> = {
   /** Identifies the activity. A different key shows that a different activity started. */
   key: unknown
   /** Is `false` when no activity runs. */
   active: boolean
-  /** The completed work plus the partly processed work, in percent. Is `null` if not known. */
+  /**
+   * The completed work plus the partly processed work, from 0 to 100. Is
+   * `null` if not known.
+   */
   combinedPercent: number | null
-  /** The completed work, in percent. */
+  /** The completed work, from 0 to 100. */
   completedPercent: number
   /** The data that the view shows near the bar, for example a status and operator counts. */
   data: T
 }
 
-/** The data that the view shows, and the time that the bar uses to move to its new width. */
+/** One step of the animation. The view renders the bar and its labels from this frame. */
 export type ProgressFrame<T> = {
   /**
-   * The sample of the bar. While the bar moves to 100%, this sample is older
-   * than the latest sample.
+   * The sample that the view takes its labels from. Usually it is the latest
+   * sample. While the bar of an activity that stopped moves to 100%, it is
+   * the last sample of that activity.
    */
   sample: ProgressSample<T>
+  /** The widths to show, from 0 to 100. They can differ from the percents of `sample`. */
   combinedPercent: number | null
   completedPercent: number
+  /** The time to move from the current widths to the new widths. */
   durationMs: number
-}
-
-export type AnimationScheduler = {
-  /** Runs `callback` after `ms`. Returns a function that cancels the callback. */
-  after(ms: number, callback: () => void): () => void
-  /**
-   * Runs `callback` after the browser paints the current frame. Thus, the
-   * browser does not merge a style set before the paint with a style set in
-   * `callback`.
-   */
-  afterPaint(callback: () => void): () => void
-  /** The current time, in milliseconds. */
-  now(): number
-}
-
-export const browserScheduler: AnimationScheduler = {
-  after(ms, callback) {
-    const id = setTimeout(callback, ms)
-    return () => clearTimeout(id)
-  },
-  afterPaint(callback) {
-    // The browser paints the pending style after the first frame.
-    // The second frame runs the callback.
-    let id = requestAnimationFrame(() => {
-      id = requestAnimationFrame(callback)
-    })
-    return () => cancelAnimationFrame(id)
-  },
-  now: () => performance.now()
 }
 
 /** Makes the frame that shows an empty bar for `sample` immediately. */
@@ -80,7 +62,7 @@ export const zeroFrame = <T>(sample: ProgressSample<T>): ProgressFrame<T> => ({
   durationMs: 0
 })
 
-/** Makes the frame that shows `sample` when no activity stopped. */
+/** Makes the frame that moves the bar to the percents of `sample` in `periodMs`. */
 export const followFrame = <T>(sample: ProgressSample<T>, periodMs: number): ProgressFrame<T> =>
   sample.active
     ? {
@@ -89,13 +71,35 @@ export const followFrame = <T>(sample: ProgressSample<T>, periodMs: number): Pro
         completedPercent: sample.completedPercent,
         durationMs: periodMs
       }
-    : // An idle bar shows no progress. It goes to 0 immediately, not slowly.
+    : // An idle bar shows no progress. It jumps to 0.
       zeroFrame(sample)
 
-export type ProgressBarOptions = {
-  scheduler?: AnimationScheduler
+/** Runs `callback` after `ms`. Returns a function that cancels the callback. */
+const after = (ms: number, callback: () => void) => {
+  const id = setTimeout(callback, ms)
+  return () => clearTimeout(id)
 }
 
+/**
+ * Runs `callback` after the browser paints the styles that are set now. Thus,
+ * the browser shows a width of 0 before `callback` sets a new width, and the
+ * CSS transition starts from 0. Returns a function that cancels the callback.
+ */
+const afterPaint = (callback: () => void) => {
+  // A `requestAnimationFrame` callback runs before the paint. Thus, the
+  // callback runs in the second animation frame, after the first paint.
+  let id = requestAnimationFrame(() => {
+    id = requestAnimationFrame(callback)
+  })
+  return () => cancelAnimationFrame(id)
+}
+
+/**
+ * The step of the animation that runs now:
+ * - `follow`: the bar moves to the percent of each new sample.
+ * - `finish`: the bar of an activity that stopped moves to 100%.
+ * - `restart`: the bar grows from 0 to the percent of the latest sample.
+ */
 type Phase = 'follow' | 'finish' | 'restart'
 
 export class ProgressBarAnimator<T> {
@@ -104,15 +108,11 @@ export class ProgressBarAnimator<T> {
   /** The sample of the last frame that was rendered. */
   private shown: ProgressSample<T> | undefined
   private cancelPending: () => void = () => {}
-  private readonly scheduler: AnimationScheduler
 
   constructor(
     private readonly periodMs: number,
-    private readonly render: (frame: ProgressFrame<T>) => void,
-    options: ProgressBarOptions = {}
-  ) {
-    this.scheduler = options.scheduler ?? browserScheduler
-  }
+    private readonly render: (frame: ProgressFrame<T>) => void
+  ) {}
 
   /** Receives a new sample from the poll. */
   update(sample: ProgressSample<T>) {
@@ -131,10 +131,10 @@ export class ProgressBarAnimator<T> {
     if (this.phase === 'follow') {
       this.show(followFrame(sample, this.periodMs))
     }
-    // Else, the sequence that runs now shows the latest sample at its end.
+    // In the `finish` and `restart` phases, the bar shows the latest sample when the phase ends.
   }
 
-  /** Cancels the steps that did not run. Call it when the bar is removed. */
+  /** Cancels the steps that did not run yet. Call it when the view removes the bar. */
   dispose() {
     this.cancelPending()
   }
@@ -156,10 +156,13 @@ export class ProgressBarAnimator<T> {
       completedPercent: 100,
       durationMs: stepMs
     })
-    this.cancelPending = this.scheduler.after(stepMs, () => this.restart(stepMs))
+    this.cancelPending = after(stepMs, () => this.restart(stepMs))
   }
 
-  /** Grows the bar of the latest sample from 0 in `stepMs`, or shows an idle bar. */
+  /**
+   * Grows the bar from 0 to the percent of the latest sample in `stepMs`. If
+   * the latest sample is idle, shows an empty bar.
+   */
   private restart(stepMs: number) {
     if (!this.latest!.active) {
       this.phase = 'follow'
@@ -169,7 +172,7 @@ export class ProgressBarAnimator<T> {
     this.phase = 'restart'
     this.fromZero(this.latest!, () => {
       this.show({ ...followFrame(this.latest!, this.periodMs), durationMs: stepMs })
-      this.cancelPending = this.scheduler.after(stepMs, () => {
+      this.cancelPending = after(stepMs, () => {
         this.phase = 'follow'
         this.show(followFrame(this.latest!, this.periodMs))
       })
@@ -179,6 +182,6 @@ export class ProgressBarAnimator<T> {
   /** Sets the bar of `sample` to 0 immediately, and calls `grow` after the paint. */
   private fromZero(sample: ProgressSample<T>, grow: () => void) {
     this.show(zeroFrame(sample))
-    this.cancelPending = this.scheduler.afterPaint(grow)
+    this.cancelPending = afterPaint(grow)
   }
 }
