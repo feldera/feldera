@@ -105,7 +105,7 @@ public class MergeGC extends Passes {
         IGCOperator gcOperator(DBSPOperator noop, CheckRetain.RetentionKind kind) {
             for (Port<DBSPOperator> succ: this.getGraph().getSuccessors(noop)) {
                 DBSPOperator node = succ.node();
-                if (node.is(IGCOperator.class) && node.to(IGCOperator.class).garbageCollects(noop) &&
+                if (node.is(IGCOperator.class) && node.to(IGCOperator.class).garbageCollects(noop.getOutput(0)) &&
                         CheckRetain.slot(node) == kind)
                     return node.to(IGCOperator.class);
             }

@@ -11,7 +11,7 @@ public interface IGCOperator extends IDBSPOuterNode {
     OutputPort data();
 
     /** True if the operator garbage collects the integral after {@code source}. */
-    default boolean garbageCollects(DBSPOperator source) {
-        return this.data().node() == source;
+    default boolean garbageCollects(OutputPort source) {
+        return this.data().equals(source);
     }
 }
