@@ -4880,6 +4880,149 @@ async fn runner_descriptor_uses_runtime_compatibility_not_string_equality() {
         "the model must decide runner readiness the way the implementation does"
     );
 }
+
+/// A stop request keeps the bootstrap configuration of a deployment the runner has started.
+///
+/// `deployment_initial` and `bootstrap_policy` both describe the current deployment. A stop
+/// request clears them while the pipeline is still `Stopped`; otherwise it leaves them for the
+/// transition to `Stopping` to clear. Drives the model and the implementation through the same
+/// steps, with either stop request, and compares the two fields.
+#[tokio::test]
+async fn stop_request_keeps_bootstrap_config_of_started_deployment() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let model = Mutex::new(DbModel {
+        tenants: BTreeMap::from([(tenant_id, TenantRecord::default())]),
+        api_keys: BTreeMap::new(),
+        pipelines: BTreeMap::new(),
+        pipeline_events: BTreeMap::new(),
+        cluster_events: BTreeMap::new(),
+        oidc_trusts: BTreeMap::new(),
+        users: BTreeMap::new(),
+        memberships: BTreeMap::new(),
+    });
+    let bootstrap_config = BootstrapConfig {
+        bootstrap_policy: Some(BootstrapPolicy::Allow),
+        silent_bootstrap: true,
+        concurrent_bootstrap: false,
+    };
+    let rust_info =
+        RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string());
+
+    // Each case: the status the pipeline reaches after `/start`, and whether the stop request
+    // is `set_deployment_resources_desired_status_stopped` (forced) or its `_if_not_provisioned`
+    // variant, which leaves a `Provisioned` pipeline alone.
+    let cases = [
+        (ResourcesStatus::Stopped, false),
+        (ResourcesStatus::Stopped, true),
+        (ResourcesStatus::Provisioning, false),
+        (ResourcesStatus::Provisioning, true),
+        (ResourcesStatus::Provisioned, true),
+    ];
+    for (i, (status, forced)) in cases.into_iter().enumerate() {
+        let name = format!("example{i}");
+        let id = PipelineId(Uuid::now_v7());
+        let deployment_config = serde_json::to_value(generate_pipeline_config(
+            id,
+            &name,
+            &RuntimeConfig::default(),
+        ))
+        .unwrap();
+        let mut observed = Vec::new();
+        for db in [&model as &dyn Storage, &handle.db as &dyn Storage] {
+            let descr = PipelineDescr {
+                name: name.clone(),
+                description: "".to_string(),
+                tags: vec![],
+                runtime_config: json!({}),
+                program_code: "".to_string(),
+                udf_rust: "".to_string(),
+                udf_toml: "".to_string(),
+                program_config: json!({}),
+            };
+            db.new_pipeline(tenant_id, id.0, "v0", descr).await.unwrap();
+            db.transit_program_status_to_compiling_sql(tenant_id, id, Version(1))
+                .await
+                .unwrap();
+            db.transit_program_status_to_success(
+                tenant_id,
+                id,
+                Version(1),
+                &rust_info,
+                "def",
+                "123",
+                "456",
+            )
+            .await
+            .unwrap();
+            db.set_deployment_resources_desired_status_provisioned(
+                tenant_id,
+                &name,
+                RuntimeDesiredStatus::Paused,
+                bootstrap_config,
+                false,
+            )
+            .await
+            .unwrap();
+            if status != ResourcesStatus::Stopped {
+                db.transit_deployment_resources_status_to_provisioning(
+                    tenant_id,
+                    id,
+                    Version(1),
+                    Uuid::nil(),
+                    deployment_config.clone(),
+                )
+                .await
+                .unwrap();
+            }
+            if status == ResourcesStatus::Provisioned {
+                db.transit_deployment_resources_status_to_provisioned(
+                    tenant_id,
+                    id,
+                    Version(1),
+                    "location1",
+                    json!({}),
+                    RuntimeStatus::Initializing,
+                    json!(""),
+                    RuntimeDesiredStatus::Paused,
+                )
+                .await
+                .unwrap();
+            }
+            if forced {
+                db.set_deployment_resources_desired_status_stopped(tenant_id, &name)
+                    .await
+                    .unwrap();
+            } else {
+                let (was_set, _) = db
+                    .set_deployment_resources_desired_status_stopped_if_not_provisioned(
+                        tenant_id, &name,
+                    )
+                    .await
+                    .unwrap();
+                assert!(was_set);
+            }
+            let pipeline = db.get_pipeline_by_id(tenant_id, id).await.unwrap();
+            assert_eq!(pipeline.deployment_resources_status, status);
+            observed.push((pipeline.deployment_initial, pipeline.bootstrap_policy));
+        }
+
+        let expected = if status == ResourcesStatus::Stopped {
+            (None, None)
+        } else {
+            (Some(RuntimeDesiredStatus::Paused), Some(bootstrap_config))
+        };
+        assert_eq!(
+            observed[1], expected,
+            "implementation: stop request from {status:?} (forced: {forced})"
+        );
+        assert_eq!(
+            observed[0], observed[1],
+            "model (left) and implementation (right): stop request from {status:?} (forced: {forced})"
+        );
+    }
+}
+
 #[tokio::test]
 async fn pipeline_provision_version_guard() {
     let handle = test_setup().await;
@@ -8933,12 +9076,13 @@ impl Storage for Mutex<DbModel> {
             // Apply changes: update
             if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
                 pipeline.deployment_initial = None;
+                pipeline.bootstrap_policy = None;
             } else {
                 // Retain: pipeline.deployment_initial
+                // Retain: pipeline.bootstrap_policy
             }
             pipeline.deployment_resources_desired_status = new_resources_desired_status;
             pipeline.deployment_resources_desired_status_since = Utc::now();
-            pipeline.bootstrap_policy = None;
             self.lock()
                 .await
                 .pipelines
@@ -8971,12 +9115,13 @@ impl Storage for Mutex<DbModel> {
         // Apply changes: update
         if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
             pipeline.deployment_initial = None;
+            pipeline.bootstrap_policy = None;
         } else {
             // Retain: pipeline.deployment_initial
+            // Retain: pipeline.bootstrap_policy
         }
         pipeline.deployment_resources_desired_status = new_resources_desired_status;
         pipeline.deployment_resources_desired_status_since = Utc::now();
-        pipeline.bootstrap_policy = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
