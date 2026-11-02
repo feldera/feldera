@@ -52,6 +52,11 @@ const DYNAMODB_RETRYABLE_CODES: &[&str] = &[
     // Retryable as a whole; the transactional writer reads the per-item
     // reasons first and gives up on a permanent one.
     "TransactionCanceledException",
+    // The credentials the request carried are stale or not yet valid: a
+    // rotated role, a key that is still propagating, a token past its
+    // expiry. The SDK's identity cache refreshes them on a later attempt.
+    "UnrecognizedClientException",
+    "ExpiredTokenException",
 ];
 
 /// HTTP statuses the SDK's default classifier retries.
@@ -260,12 +265,19 @@ pub(crate) fn describe_sdk_error<E: WriteOperationError>(
 pub(crate) type RetryDelay =
     Arc<dyn Fn(usize) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
+/// How long a chunk retries before the endpoint reports itself unhealthy.
+/// A few retries are ordinary under load, when DynamoDB returns part of a
+/// chunk unprocessed; a chunk that has not landed for this long is an outage.
+const UNHEALTHY_AFTER: Duration = Duration::from_secs(10);
+
 /// The retry budget of a chunk writer and how it waits between retries.
 #[derive(Clone)]
 pub(crate) struct RetryPolicy {
     /// Retries after the first request. `None` is unbounded.
     pub(crate) max_retries: Option<usize>,
     pub(crate) delay: RetryDelay,
+    /// Time in the retry loop after which a chunk reports the endpoint unhealthy.
+    pub(crate) unhealthy_after: Duration,
 }
 
 impl RetryPolicy {
@@ -281,7 +293,14 @@ impl RetryPolicy {
         Self {
             max_retries: max_retries.map(usize::from),
             delay,
+            unhealthy_after: UNHEALTHY_AFTER,
         }
+    }
+
+    #[cfg(any(test, feature = "testing"))]
+    pub(crate) fn unhealthy_after(mut self, unhealthy_after: Duration) -> Self {
+        self.unhealthy_after = unhealthy_after;
+        self
     }
 
     fn exhausted(&self, retries: usize) -> bool {
@@ -306,6 +325,8 @@ struct ChunkRetries<'a> {
     endpoint_name: &'a str,
     /// Retries so far.
     retries: usize,
+    /// When the first retry started: the chunk's time in the loop.
+    first_retry: Option<Instant>,
 }
 
 impl<'a> ChunkRetries<'a> {
@@ -323,6 +344,7 @@ impl<'a> ChunkRetries<'a> {
             operation,
             endpoint_name,
             retries: 0,
+            first_retry: None,
         }
     }
 
@@ -348,6 +370,7 @@ impl<'a> ChunkRetries<'a> {
             return Err(error);
         }
         self.retries += 1;
+        let first_retry = *self.first_retry.get_or_insert_with(Instant::now);
         let description = format!(
             "retrying {} for {outstanding} item(s) (retry {}{}): {cause}",
             self.operation,
@@ -358,8 +381,26 @@ impl<'a> ChunkRetries<'a> {
             "dynamodb output connector '{}' {description}",
             self.endpoint_name
         );
-        self.guard.retrying(&description);
-        (self.policy.delay)(self.retries).await;
+        self.guard.retrying();
+        let delay = (self.policy.delay)(self.retries);
+        match self
+            .policy
+            .unhealthy_after
+            .checked_sub(first_retry.elapsed())
+        {
+            // The chunk is past the threshold, or reaches it during this wait.
+            Some(due) if due > Duration::ZERO => {
+                tokio::pin!(delay);
+                if tokio::time::timeout(due, &mut delay).await.is_err() {
+                    self.guard.overdue(&description);
+                    delay.await;
+                }
+            }
+            _ => {
+                self.guard.overdue(&description);
+                delay.await;
+            }
+        }
         // A retry that the shutdown cancelled during the wait never started.
         self.metrics.record_retries(1);
         Ok(())
@@ -532,20 +573,26 @@ const CONDITION_CHECK_FAILED: &str = "ConditionalCheckFailed";
 /// kept and retried.
 const NO_ERROR: &str = "None";
 
+/// `CancellationReason` code for an item DynamoDB rejects as malformed. A
+/// retry sends the same item to the same answer. Every other code, the
+/// documented transient ones and any code this connector does not know,
+/// keeps the item for a retry.
+const VALIDATION_ERROR: &str = "ValidationError";
+
 /// Classifies each item of a cancelled transaction from its `CancellationReason`
 /// and decides what to retry.
 struct CancellationOutcome {
     /// Items to resubmit: those with no error of their own, plus those rejected
-    /// for a transient reason (throttling / conflict).
+    /// for a transient reason (throttling, conflict) or a reason this
+    /// connector does not know.
     kept: Vec<TransactWriteItem>,
     /// Count of items dropped because their condition was not met.
     condition_failed: usize,
-    /// A kept item was rejected for a transient reason, so the resubmission is a
-    /// genuine retry that should back off and count against `max_retries`.
+    /// A kept item was rejected with an error of its own, so the resubmission
+    /// is a genuine retry that should back off and count against `max_retries`.
     has_retryable: bool,
-    /// Codes of items that failed permanently for a reason other than a condition
-    /// check (for example `ValidationError`). Their presence makes the whole
-    /// transaction unrecoverable.
+    /// Codes of items DynamoDB rejected as malformed (`ValidationError`).
+    /// Their presence makes the whole transaction unrecoverable.
     hard_failures: Vec<String>,
 }
 
@@ -575,27 +622,15 @@ fn partition_by_cancellation_reason(
         match reason.code() {
             Some(CONDITION_CHECK_FAILED) => outcome.condition_failed += 1,
             None | Some(NO_ERROR) => outcome.kept.push(item),
-            Some(code) if is_retryable_cancellation_code(code) => {
+            Some(VALIDATION_ERROR) => outcome.hard_failures.push(VALIDATION_ERROR.to_string()),
+            Some(_) => {
                 outcome.has_retryable = true;
                 outcome.kept.push(item);
             }
-            Some(code) => outcome.hard_failures.push(code.to_string()),
         }
     }
 
     Some(outcome)
-}
-
-/// Whether a per-item cancellation code denotes a transient failure worth
-/// retrying, as opposed to a permanent one.
-fn is_retryable_cancellation_code(code: &str) -> bool {
-    matches!(
-        code,
-        "TransactionConflict"
-            | "ThrottlingError"
-            | "ProvisionedThroughputExceeded"
-            | "ItemCollectionSizeLimitExceeded"
-    )
 }
 
 /// Outcome of a transactional chunk that DynamoDB accepted (possibly after
@@ -928,6 +963,17 @@ mod tests {
     }
 
     #[test]
+    fn an_unknown_reason_keeps_the_item_for_a_retry() {
+        let mut items = vec![put_item("1"), put_item("2")];
+        let reasons = vec![reason("SomethingNew"), reason(NO_ERROR)];
+
+        let outcome = partition_by_cancellation_reason(&mut items, &reasons).unwrap();
+        assert!(outcome.has_retryable);
+        assert_eq!(outcome.kept.len(), 2);
+        assert!(outcome.hard_failures.is_empty());
+    }
+
+    #[test]
     fn permanent_non_condition_reason_is_a_hard_failure() {
         let mut items = vec![put_item("1"), put_item("2")];
         let reasons = vec![reason("ValidationError"), reason(CONDITION_CHECK_FAILED)];
@@ -1010,6 +1056,19 @@ mod tests {
                 WriteErrorKind::Retryable,
                 "{code}"
             );
+        }
+    }
+
+    #[test]
+    fn stale_credentials_are_retryable_whatever_the_status() {
+        for code in ["UnrecognizedClientException", "ExpiredTokenException"] {
+            for status in [400, 403] {
+                assert_eq!(
+                    classify_sdk_error(&generic(Some(code), status)),
+                    WriteErrorKind::Retryable,
+                    "{code} {status}"
+                );
+            }
         }
     }
 

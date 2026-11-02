@@ -2268,9 +2268,9 @@ export type DynamoDbWriterConfig = {
    * the budget. Items of a transaction that fail their condition expression are dropped
    * without a retry, which costs nothing here.
    *
-   * While a chunk retries, the connector reports itself unhealthy in the pipeline's
-   * statistics, with the cause; it reports healthy again once no chunk retries and a
-   * chunk has landed. Defaults to `10`.
+   * Once a chunk has retried for ten seconds, the connector reports itself unhealthy in
+   * the pipeline's statistics, with the cause; it reports healthy again once no chunk
+   * retries and a chunk has landed. Defaults to `10`.
    */
   max_retries?: number | null
   /**
