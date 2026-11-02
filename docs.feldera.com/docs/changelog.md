@@ -27,10 +27,13 @@ Source edition can be found on github.
   credential failures, and item collections over their size limit. An error
   that a retry cannot fix, such as a validation error or a missing table,
   drops the chunk at once in both write modes, where transactional mode used
-  to retry it. The connector reports itself unhealthy while a chunk retries
-  and after a chunk gives up, and healthy again once the writes land. The
-  metric `dynamodb_output_retries_total` counts retries as they start, and
-  the gauge `dynamodb_output_retrying_chunks` shows the chunks retrying now.
+  to retry it, and the other chunks of the step are still written, where a
+  failed chunk used to drop the rest of the step uncounted. Stale credentials
+  and unknown transaction cancellation reasons are retried. The connector
+  reports itself unhealthy once a chunk has retried for ten seconds and after
+  a chunk gives up, and healthy again once the writes land. The metric
+  `dynamodb_output_retries_total` counts retries as they start, and the gauge
+  `dynamodb_output_retrying_chunks` shows the chunks retrying now.
   Diagnostics retain cancellation causes without dumping raw HTTP responses
   or returned item data.
   See [Retries and health](/connectors/sinks/dynamodb#retries-and-health).

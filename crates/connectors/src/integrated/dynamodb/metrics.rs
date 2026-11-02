@@ -25,7 +25,8 @@ pub(crate) struct DynamoDBOutputMetrics {
     /// points at raising table capacity rather than connector concurrency.
     throttled_items: AtomicU64,
 
-    /// `TransactWriteItems` requests that failed and were retried.  This is the
+    /// `TransactWriteItems` requests that failed, retried or not, other than
+    /// cancellations caused only by condition checks.  This is the
     /// transactional-mode analogue of `throttled_items`: in transactional mode a
     /// failure surfaces as a whole-request error rather than as unprocessed
     /// items.
@@ -34,7 +35,9 @@ pub(crate) struct DynamoDBOutputMetrics {
     /// Output records dropped after exhausting the configured write retries,
     /// or because the write failed with an error that a retry cannot fix.
     /// The latter happens with unbounded retries too.  A non-zero value means
-    /// data failed to reach the target table and was discarded.
+    /// data failed to reach the target table and was discarded.  Records in
+    /// flight when the pipeline stops are not counted: the connector did not
+    /// discard them.
     failed_items: AtomicU64,
 
     /// Output records dropped because they exceed DynamoDB's 400 KB item-size
@@ -89,7 +92,7 @@ impl DynamoDBOutputMetrics {
         self.throttled_items.fetch_add(count, Ordering::Relaxed);
     }
 
-    /// Record a failed `TransactWriteItems` request (which is then retried).
+    /// Record a failed `TransactWriteItems` request, retried or not.
     pub(super) fn record_transact_write_failure(&self) {
         self.transact_write_failures.fetch_add(1, Ordering::Relaxed);
     }
@@ -157,7 +160,8 @@ impl ConnectorMetrics for DynamoDBOutputMetrics {
             ),
             (
                 "dynamodb_output_transact_write_failures_total",
-                "Total number of TransactWriteItems requests that failed and were retried.",
+                "Total number of TransactWriteItems requests that failed, retried or not, \
+                 other than cancellations caused only by condition checks.",
                 ValueType::Counter,
                 self.transact_write_failures.load(Ordering::Relaxed) as f64,
             ),

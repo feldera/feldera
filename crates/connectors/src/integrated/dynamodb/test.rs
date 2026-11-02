@@ -2516,8 +2516,17 @@ mod retry_tests {
     use super::*;
     use std::sync::atomic::Ordering;
 
+    /// A policy that waits at once and reports unhealthy on the first retry.
     fn policy(max_retries: Option<u8>) -> RetryPolicy {
-        RetryPolicy::with_delay(max_retries, no_delay())
+        RetryPolicy::with_delay(max_retries, no_delay()).unhealthy_after(Duration::ZERO)
+    }
+
+    /// A policy with the given delay that reports unhealthy on the first retry.
+    fn gated(
+        max_retries: Option<u8>,
+        delay: crate::integrated::dynamodb::helpers::RetryDelay,
+    ) -> RetryPolicy {
+        RetryPolicy::with_delay(max_retries, delay).unhealthy_after(Duration::ZERO)
     }
 
     fn mount(server: &wiremock::MockServer, mock: wiremock::Mock) {
@@ -2695,7 +2704,7 @@ mod retry_tests {
             mount_rest(&server, target, error(code, "no"));
             let harness = Harness::new();
             let (delay, gate) = Gate::new();
-            let policy = RetryPolicy::with_delay(None, delay);
+            let policy = gated(None, delay);
             let error = if target == BATCH_TARGET {
                 finish(harness.write_batch(single_attempt_client(&server), puts(&[1, 2]), policy))
                     .unwrap_err()
@@ -3000,7 +3009,7 @@ mod retry_tests {
         let outcome = finish(harness.write_transact(
             single_attempt_client(&server),
             transact_puts(&[1, 2]),
-            RetryPolicy::with_delay(Some(0), delay),
+            gated(Some(0), delay),
         ))
         .unwrap();
         assert_eq!((outcome.retries, outcome.suppressed), (0, 1));
@@ -3015,12 +3024,14 @@ mod retry_tests {
         );
         assert_eq!(harness.publisher.reports(), vec![Ok(())]);
 
-        // Missing reasons, a mismatched count, and all-`None` reasons retry
-        // the whole request with backoff and the budget.
+        // Missing reasons, a mismatched count, all-`None` reasons and a code
+        // this connector does not know retry the whole request with backoff
+        // and the budget.
         for (name, response) in [
             ("missing", cancelled(&[])),
             ("mismatched", cancelled(&["None"])),
             ("all none", cancelled(&["None", "None"])),
+            ("unknown code", cancelled(&["SomethingNew", "None"])),
         ] {
             let server = mock_server();
             mount_sequence(&server, TRANSACT_TARGET, vec![response]);
@@ -3089,12 +3100,12 @@ mod retry_tests {
         let a = harness.write_batch(
             single_attempt_client(&server),
             puts(&[1]),
-            RetryPolicy::with_delay(None, delay_a),
+            gated(None, delay_a),
         );
         let b = harness.write_batch(
             single_attempt_client(&server),
             puts(&[2]),
-            RetryPolicy::with_delay(None, delay_b),
+            gated(None, delay_b),
         );
         assert_eq!(gate_a.entered(), 1);
         assert_eq!(gate_b.entered(), 1);
@@ -3116,13 +3127,64 @@ mod retry_tests {
     }
 
     #[test]
+    fn a_quick_partial_success_stays_healthy() {
+        let server = mock_server();
+        mount_sequence(&server, BATCH_TARGET, vec![unprocessed(&[2])]);
+        mount_rest(&server, BATCH_TARGET, ok());
+        let harness = Harness::new();
+        // The production threshold: a retry under load is no outage.
+        let retries = finish(harness.write_batch(
+            single_attempt_client(&server),
+            puts(&[1, 2]),
+            RetryPolicy::with_delay(None, no_delay()),
+        ))
+        .unwrap();
+        assert_eq!(retries, 1);
+        assert_eq!(harness.metric("dynamodb_output_retries_total"), 1.0);
+        assert_eq!(harness.publisher.reports(), vec![Ok(())]);
+    }
+
+    #[test]
+    fn a_long_retry_loop_turns_unhealthy_after_the_threshold() {
+        let server = mock_server();
+        mount_sequence(&server, BATCH_TARGET, vec![throttled()]);
+        mount_rest(&server, BATCH_TARGET, ok());
+        let harness = Harness::new();
+        let (delay, gate) = Gate::new();
+        let chunk = harness.write_batch(
+            single_attempt_client(&server),
+            puts(&[1]),
+            RetryPolicy::with_delay(None, delay).unhealthy_after(Duration::from_millis(500)),
+        );
+        assert_eq!(gate.entered(), 1);
+        assert_eq!(harness.metric("dynamodb_output_retrying_chunks"), 1.0);
+        assert!(harness.publisher.reports().is_empty());
+        // The report comes during the wait, not at the next retry.
+        let since = std::time::Instant::now();
+        while harness.publisher.reports().is_empty() {
+            assert!(since.elapsed() < Duration::from_secs(10), "no report");
+            sleep(Duration::from_millis(10));
+        }
+        let reports = harness.publisher.reports();
+        assert!(
+            reports[0]
+                .as_ref()
+                .is_err_and(|cause| cause.contains("retry 1")),
+            "{reports:?}"
+        );
+        gate.release();
+        finish(chunk).unwrap();
+        assert_eq!(harness.publisher.reports().last(), Some(&Ok(())));
+    }
+
+    #[test]
     fn a_failure_beside_a_retry_loop_stays_unhealthy_until_the_loop_lands() {
         let server = mock_server();
         mount(
             &server,
             on_item(BATCH_TARGET, 1)
                 .respond_with(throttled())
-                .up_to_n_times(1),
+                .up_to_n_times(2),
         );
         mount(&server, on_item(BATCH_TARGET, 1).respond_with(ok()));
         mount(&server, on_item(BATCH_TARGET, 2).respond_with(throttled()));
@@ -3131,7 +3193,7 @@ mod retry_tests {
         let slow = harness.write_batch(
             single_attempt_client(&server),
             puts(&[1]),
-            RetryPolicy::with_delay(None, delay),
+            gated(None, delay),
         );
         assert_eq!(gate.entered(), 1);
 
@@ -3141,8 +3203,18 @@ mod retry_tests {
             policy(Some(0)),
         ));
         let error = doomed.unwrap_err().to_string();
-        assert_eq!(harness.publisher.reports().last(), Some(&Err(error)));
+        assert_eq!(
+            harness.publisher.reports().last(),
+            Some(&Err(error.clone()))
+        );
         assert_eq!(harness.metric("dynamodb_output_retrying_chunks"), 1.0);
+
+        // A further retry of the slow chunk does not hide the lost records.
+        let reports = harness.publisher.reports().len();
+        gate.release();
+        assert_eq!(gate.entered(), 2);
+        assert_eq!(harness.publisher.reports().last(), Some(&Err(error)));
+        assert_eq!(harness.publisher.reports().len(), reports);
 
         gate.release();
         finish(slow).unwrap();
@@ -3180,7 +3252,7 @@ mod retry_tests {
             mount_rest(&server, target, throttled());
             let harness = Harness::new();
             let (delay, gate) = Gate::new();
-            let policy = RetryPolicy::with_delay(None, delay);
+            let policy = gated(None, delay);
             let handle: tokio::task::JoinHandle<anyhow::Result<()>> = if target == BATCH_TARGET {
                 let chunk = harness.write_batch(single_attempt_client(&server), puts(&[1]), policy);
                 TOKIO.spawn(async move { chunk.await.unwrap().map(|_| ()) })
@@ -3255,7 +3327,7 @@ pub fn dynamodb_retried_write_resends_every_sql_type(engine: &dyn ConnectorTestE
         CancellationToken::new(),
         true,
         metrics.clone(),
-        RetryPolicy::with_delay(Some(3), no_delay()),
+        RetryPolicy::with_delay(Some(3), no_delay()).unhealthy_after(Duration::ZERO),
         Box::new(publisher.clone()),
     )
     .unwrap();
@@ -3299,13 +3371,17 @@ pub fn dynamodb_retried_write_resends_every_sql_type(engine: &dyn ConnectorTestE
 }
 
 /// A pipeline that reads `input_file` and writes to the mock DynamoDB at
-/// `server_uri` with one worker. Errors go to `errors` instead of a panic.
+/// `server_uri` in chunks of `batch_size` from `threads` workers. Errors go
+/// to `errors` instead of a panic.
+#[allow(clippy::too_many_arguments)]
 fn mock_dynamodb_pipeline(
     engine: &dyn PipelineTestEngine,
     server_uri: &str,
     write_mode: DynamoDBWriteMode,
     max_retries: Option<u8>,
     max_concurrent_requests: usize,
+    batch_size: usize,
+    threads: usize,
     input_file: &NamedTempFile,
     errors: Arc<std::sync::Mutex<Vec<String>>>,
 ) -> Controller {
@@ -3313,8 +3389,8 @@ fn mock_dynamodb_pipeline(
         write_mode,
         max_retries,
         max_concurrent_requests,
-        batch_size: Some(10),
-        ..endpoint_config("tbl".to_string(), Some(server_uri.to_string()), 1)
+        batch_size: Some(batch_size),
+        ..endpoint_config("tbl".to_string(), Some(server_uri.to_string()), threads)
     };
     let config: PipelineConfig = serde_json::from_value(json!({
         "name": "test",
@@ -3373,6 +3449,17 @@ fn output_health(controller: &Controller) -> Option<bool> {
         .map(|health| matches!(health.status, ConnectorHealthStatus::Healthy))
 }
 
+/// The records the controller's statistics show as transmitted by `test_output1`.
+fn transmitted_records(controller: &Controller) -> u64 {
+    controller
+        .status()
+        .output_status()
+        .values()
+        .find(|status| status.endpoint_name == "test_output1")
+        .map(|status| status.metrics.transmitted_records.load(Ordering::Relaxed))
+        .unwrap()
+}
+
 fn output_metrics(controller: &Controller) -> Arc<dyn ConnectorMetrics> {
     controller
         .status()
@@ -3392,8 +3479,9 @@ fn connector_metric(metrics: &dyn ConnectorMetrics, name: &str) -> f64 {
         .unwrap()
 }
 
-/// The controller shows the sink unhealthy while DynamoDB throttles it, and
-/// healthy again once the writes land, with the SDK's own retries in place.
+/// The controller shows the sink unhealthy once DynamoDB has throttled it
+/// for longer than the threshold, and healthy again once the writes of
+/// both workers land, with the SDK's own retries in place.
 #[engine_test(requires(DynamoDbItems))]
 pub fn dynamodb_output_reports_health_through_a_throttling_outage(engine: &dyn PipelineTestEngine) {
     use mock_dynamodb::*;
@@ -3415,11 +3503,10 @@ pub fn dynamodb_output_reports_health_through_a_throttling_outage(engine: &dyn P
             })
             .mount(&server),
     );
-    let input_file = write_raw_json_input(&[
-        record(1, "a", Some(10), "one"),
-        record(2, "b", None, "two"),
-        record(3, "c", Some(30), "three"),
-    ]);
+    // Two keys for two workers: each worker gets one chunk, and both chunks
+    // count in the one tracker the workers share.
+    let input_file =
+        write_raw_json_input(&[record(1, "a", Some(10), "one"), record(2, "b", None, "two")]);
     let errors = Arc::new(std::sync::Mutex::new(Vec::new()));
     let controller = mock_dynamodb_pipeline(
         engine,
@@ -3427,31 +3514,39 @@ pub fn dynamodb_output_reports_health_through_a_throttling_outage(engine: &dyn P
         DynamoDBWriteMode::Batch,
         None,
         16,
+        10,
+        2,
         &input_file,
         errors.clone(),
     );
 
     controller.start();
-    wait(|| output_health(&controller) == Some(false), 60_000)
-        .expect("the sink never reported itself unhealthy");
     let metrics = output_metrics(&controller);
     wait(
-        || connector_metric(&*metrics, "dynamodb_output_retries_total") >= 2.0,
+        || connector_metric(&*metrics, "dynamodb_output_retrying_chunks") == 2.0,
         60_000,
     )
-    .expect("the connector did not retry twice");
+    .expect("the two workers did not both retry");
+    wait(|| output_health(&controller) == Some(false), 60_000)
+        .expect("the sink never reported itself unhealthy");
+    wait(
+        || connector_metric(&*metrics, "dynamodb_output_retries_total") >= 4.0,
+        60_000,
+    )
+    .expect("the connector did not retry twice per worker");
     assert_eq!(output_health(&controller), Some(false));
     assert_eq!(
         connector_metric(&*metrics, "dynamodb_output_retrying_chunks"),
-        1.0
+        2.0
     );
     recovered.store(true, Ordering::Release);
     wait(|| output_health(&controller) == Some(true), 120_000).expect("the sink never recovered");
 
     let requests = requests(&server, BATCH_TARGET);
-    assert!(requests.len() >= 3, "{}", requests.len());
-    assert!(requests.iter().all(|request| item_count(request) == 3));
-    assert!(connector_metric(&*metrics, "dynamodb_output_retries_total") >= 2.0);
+    assert!(requests.len() >= 6, "{}", requests.len());
+    assert!(requests.iter().all(|request| item_count(request) == 1));
+    assert_eq!(transmitted_records(&controller), 2);
+    assert!(connector_metric(&*metrics, "dynamodb_output_retries_total") >= 4.0);
     assert_eq!(
         connector_metric(&*metrics, "dynamodb_output_failed_items_total"),
         0.0
@@ -3494,6 +3589,8 @@ fn stop_during_an_unbounded_outage(engine: &dyn PipelineTestEngine, write_mode: 
         write_mode,
         None,
         1,
+        10,
+        1,
         &input_file,
         errors.clone(),
     );
@@ -3528,6 +3625,99 @@ fn stop_during_an_unbounded_outage(engine: &dyn PipelineTestEngine, write_mode: 
         connector_metric(&*metrics, "dynamodb_output_failed_items_total"),
         0.0
     );
+    // The stop may be reported, as the records in flight are lost; nothing
+    // else is, since no chunk gave up.
+    let errors = errors.lock().unwrap();
+    assert!(
+        errors
+            .iter()
+            .all(|error| error.contains("the pipeline is shutting down")),
+        "{errors:?}"
+    );
+}
+
+/// One chunk that DynamoDB rejects for good does not take the rest of its
+/// step with it: the other chunks are sent and counted, the lost records are
+/// counted, and the error names them.
+fn a_permanent_failure_keeps_the_rest_of_the_step(
+    engine: &dyn PipelineTestEngine,
+    write_mode: DynamoDBWriteMode,
+) {
+    use mock_dynamodb::*;
+
+    let target = match write_mode {
+        DynamoDBWriteMode::Batch => BATCH_TARGET,
+        DynamoDBWriteMode::Transactional => TRANSACT_TARGET,
+    };
+    let server = server();
+    // Mounted first, so that it answers for the chunk that holds record 1.
+    TOKIO.block_on(
+        on_item(target, 1)
+            .respond_with(error(
+                "ValidationException",
+                "One or more parameter values were invalid",
+            ))
+            .mount(&server),
+    );
+    TOKIO.block_on(on(target).respond_with(ok()).mount(&server));
+    // Five chunks of two on one write slot: the first fails for good while
+    // the worker waits for the slot with the second.
+    let records = (0..10)
+        .map(|id| record(id, "x", Some(id as i64), "r"))
+        .collect::<Vec<_>>();
+    let input_file = write_raw_json_input(&records);
+    let errors = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let controller = mock_dynamodb_pipeline(
+        engine,
+        &server.uri(),
+        write_mode,
+        None,
+        1,
+        2,
+        1,
+        &input_file,
+        errors.clone(),
+    );
+
+    controller.start();
+    wait(|| transmitted_records(&controller) == 8, 60_000)
+        .expect("the other chunks of the step did not land");
+    wait(|| !errors.lock().unwrap().is_empty(), 60_000).expect("the failure was not reported");
+    wait(|| output_health(&controller) == Some(true), 60_000)
+        .expect("the sink did not recover once the other chunks landed");
+    let requests = requests(&server, target);
+    assert_eq!(requests.len(), 5);
+    let metrics = output_metrics(&controller);
+    assert_eq!(
+        connector_metric(&*metrics, "dynamodb_output_failed_items_total"),
+        2.0
+    );
+    assert_eq!(
+        connector_metric(&*metrics, "dynamodb_output_retries_total"),
+        0.0
+    );
+    controller.stop().unwrap();
+    let errors = errors.lock().unwrap();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert!(
+        errors[0].contains("dropped 2 item(s)") && errors[0].contains("ValidationException"),
+        "{}",
+        errors[0]
+    );
+}
+
+#[engine_test(requires(DynamoDbItems))]
+pub fn dynamodb_output_keeps_a_batch_step_after_a_permanent_failure(
+    engine: &dyn PipelineTestEngine,
+) {
+    a_permanent_failure_keeps_the_rest_of_the_step(engine, DynamoDBWriteMode::Batch);
+}
+
+#[engine_test(requires(DynamoDbItems))]
+pub fn dynamodb_output_keeps_a_transactional_step_after_a_permanent_failure(
+    engine: &dyn PipelineTestEngine,
+) {
+    a_permanent_failure_keeps_the_rest_of_the_step(engine, DynamoDBWriteMode::Transactional);
 }
 
 #[engine_test(requires(DynamoDbItems))]

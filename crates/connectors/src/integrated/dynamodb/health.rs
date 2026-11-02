@@ -5,16 +5,19 @@
 //! endpoint's health through a [`HealthPublisher`] and keeps the count of
 //! chunks in a retry loop as a gauge.
 //!
-//! | Event                          | Count | Published                              |
-//! |--------------------------------|-------|----------------------------------------|
-//! | A chunk schedules a retry      | +1 on its first retry | unhealthy, with the cause |
-//! | A chunk succeeds               | -1 if counted | healthy, if no chunk retries |
-//! | A chunk gives up               | -1 if counted | unhealthy, with the failure |
-//! | A chunk is dropped (shutdown)  | -1 if counted | nothing                      |
+//! | Event                            | Count | Published                              |
+//! |----------------------------------|-------|----------------------------------------|
+//! | A chunk schedules a retry        | +1 on its first retry | nothing                   |
+//! | A chunk retries past the threshold | +1 if not yet | unhealthy, with the cause, or with the outstanding failure |
+//! | A chunk succeeds                 | -1 if counted | healthy, if no chunk retries |
+//! | A chunk gives up                 | -1 if counted | unhealthy, with the failure |
+//! | A chunk is dropped (shutdown)    | -1 if counted | nothing                      |
 //!
 //! A count of zero alone is not health: the last chunk may have given up. A
-//! later success clears that failure. Publication runs under the state lock,
-//! so two chunks cannot publish stale states out of order.
+//! later success clears that failure; until then the failure is what the
+//! endpoint reports, since lost records matter more than a retry in
+//! progress. Publication runs under the state lock, so two chunks cannot
+//! publish stale states out of order.
 
 use std::sync::{Arc, Mutex, Weak};
 
@@ -117,9 +120,21 @@ pub(crate) struct ChunkGuard<'a> {
 }
 
 impl ChunkGuard<'_> {
-    /// The chunk waits for a retry because of `cause`.
-    pub(crate) fn retrying(&mut self, cause: &str) {
+    /// The chunk waits for a retry. Counted once; nothing is published.
+    pub(crate) fn retrying(&mut self) {
         let mut state = self.health.state.lock().unwrap();
+        self.count(&mut state);
+    }
+
+    /// The chunk has retried for longer than the threshold because of `cause`.
+    pub(crate) fn overdue(&mut self, cause: &str) {
+        let mut state = self.health.state.lock().unwrap();
+        self.count(&mut state);
+        let description = state.failure.clone().unwrap_or_else(|| cause.to_string());
+        self.health.publish(&mut state, Some(description));
+    }
+
+    fn count(&mut self, state: &mut State) {
         if !self.counted {
             self.counted = true;
             state.retrying_chunks += 1;
@@ -127,7 +142,6 @@ impl ChunkGuard<'_> {
                 .metrics
                 .set_retrying_chunks(state.retrying_chunks as u64);
         }
-        self.health.publish(&mut state, Some(cause.to_string()));
     }
 
     /// The chunk was written.
@@ -229,9 +243,10 @@ mod tests {
     fn a_retry_is_unhealthy_and_a_success_is_healthy() {
         let (health, publisher, metrics) = health();
         let mut chunk = health.chunk();
-        chunk.retrying("throttled");
-        chunk.retrying("throttled");
-        chunk.retrying("still throttled");
+        chunk.retrying();
+        chunk.overdue("throttled");
+        chunk.overdue("throttled");
+        chunk.overdue("still throttled");
         assert_eq!(health.retrying_chunks(), 1);
         assert_eq!(gauge(&metrics), 1.0);
         chunk.succeeded();
@@ -249,6 +264,35 @@ mod tests {
     }
 
     #[test]
+    fn a_retry_counts_without_a_report() {
+        let (health, publisher, metrics) = health();
+        let mut chunk = health.chunk();
+        chunk.retrying();
+        chunk.retrying();
+        assert_eq!(health.retrying_chunks(), 1);
+        assert_eq!(gauge(&metrics), 1.0);
+        assert!(publisher.reports().is_empty());
+        chunk.succeeded();
+        assert_eq!(gauge(&metrics), 0.0);
+        assert_eq!(publisher.reports(), vec![Ok(())]);
+    }
+
+    #[test]
+    fn an_outstanding_failure_outranks_a_retry_cause() {
+        let (health, publisher, _) = health();
+        let mut slow = health.chunk();
+        slow.overdue("throttled");
+        health.chunk().failed("gave up");
+        slow.overdue("still throttled");
+        assert_eq!(
+            publisher.reports(),
+            vec![Err("throttled".into()), Err("gave up".into())]
+        );
+        slow.succeeded();
+        assert_eq!(publisher.reports().last(), Some(&Ok(())));
+    }
+
+    #[test]
     fn a_success_without_retries_is_healthy_once() {
         let (health, publisher, _) = health();
         health.chunk().succeeded();
@@ -260,7 +304,7 @@ mod tests {
     fn a_failure_is_unhealthy_until_a_later_success() {
         let (health, publisher, _) = health();
         let mut chunk = health.chunk();
-        chunk.retrying("throttled");
+        chunk.overdue("throttled");
         chunk.failed("gave up");
         assert_eq!(health.retrying_chunks(), 0);
         assert_eq!(
@@ -284,7 +328,7 @@ mod tests {
     fn a_success_cannot_hide_another_chunks_retry_loop() {
         let (health, publisher, _) = health();
         let mut slow = health.chunk();
-        slow.retrying("throttled");
+        slow.overdue("throttled");
         health.chunk().succeeded();
         assert_eq!(publisher.reports(), vec![Err("throttled".into())]);
         slow.succeeded();
@@ -295,9 +339,9 @@ mod tests {
     fn a_failure_while_another_chunk_retries_stays_unhealthy_until_it_succeeds() {
         let (health, publisher, metrics) = health();
         let mut slow = health.chunk();
-        slow.retrying("slow throttled");
+        slow.overdue("slow throttled");
         let mut doomed = health.chunk();
-        doomed.retrying("doomed throttled");
+        doomed.overdue("doomed throttled");
         assert_eq!(gauge(&metrics), 2.0);
         doomed.failed("doomed gave up");
         assert_eq!(gauge(&metrics), 1.0);
@@ -314,10 +358,10 @@ mod tests {
     fn a_dropped_chunk_releases_its_count_without_a_report() {
         let (health, publisher, metrics) = health();
         let mut other = health.chunk();
-        other.retrying("throttled");
+        other.overdue("throttled");
         {
             let mut dropped = health.chunk();
-            dropped.retrying("throttled too");
+            dropped.overdue("throttled too");
             assert_eq!(gauge(&metrics), 2.0);
         }
         assert_eq!(gauge(&metrics), 1.0);
@@ -336,15 +380,15 @@ mod tests {
     fn completion_order_under_the_lock_decides_the_final_state() {
         let (health, publisher, _) = health();
         let (mut a, mut b) = (health.chunk(), health.chunk());
-        a.retrying("a");
-        b.retrying("b");
+        a.overdue("a");
+        b.overdue("b");
         a.succeeded();
         b.failed("b gave up");
         assert_eq!(publisher.reports().last(), Some(&Err("b gave up".into())));
 
         let (mut a, mut b) = (health.chunk(), health.chunk());
-        a.retrying("a");
-        b.retrying("b");
+        a.overdue("a");
+        b.overdue("b");
         b.failed("b gave up");
         a.succeeded();
         assert_eq!(publisher.reports().last(), Some(&Ok(())));

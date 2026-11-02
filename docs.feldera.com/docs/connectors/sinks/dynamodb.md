@@ -68,18 +68,19 @@ whatever the cause:
 | ----------------------------------------------------------------------- | --------------- | ----------------------------------------- |
 | Items returned as unprocessed in a successful response                  | `batch`         | Those items only                          |
 | Transient contention on an item (`TransactionConflict`, throttling)     | `transactional` | The items that did not fail their condition |
-| A request that fails with a retryable error: throttling, a timeout, a network failure, a server error, a temporary failure to obtain credentials, or an item collection over its size limit | both | The remaining items of the chunk |
+| A request that fails with a retryable error: throttling, a timeout, a network failure, a server error, a temporary failure to obtain credentials, stale credentials, or an item collection over its size limit | both | The remaining items of the chunk |
 
 The AWS SDK makes its own few attempts before an error reaches the connector.
 Only the retries the connector starts after that count against the budget.
 
 A request that fails with an error a retry cannot fix, such as a validation
 error, a missing table, denied access, or an invalid credential configuration,
-discards the chunk at once, whatever the budget. In `transactional` mode, a
-cancellation caused by a permanent item error discards the whole transaction,
-while items that fail their condition expression are dropped and the rest is
-resubmitted without a retry. A cancellation without usable per-item reasons is
-retried as a whole.
+discards the chunk at once, whatever the budget. The other chunks of the same
+step are still sent. In `transactional` mode, a cancellation caused by a
+`ValidationError` on an item discards the whole transaction, while items that
+fail their condition expression are dropped and the rest is resubmitted without
+a retry. A cancellation for any other reason, or without usable per-item
+reasons, is retried.
 
 With the default budget of `10`, the connector gives up after about a minute
 of continuous failure and discards the remaining records of the chunk. They
@@ -94,11 +95,15 @@ The connector reports its health in the pipeline's connector statistics:
 
 | State                                        | Health                                  |
 | -------------------------------------------- | --------------------------------------- |
-| A chunk waits for a retry                    | Unhealthy, with the cause of the retry  |
+| A chunk has retried for less than 10 seconds | Unchanged: a retry under load is no outage |
+| A chunk has retried for 10 seconds or more   | Unhealthy, with the cause of the retry  |
 | A chunk gave up                              | Unhealthy, with the error, until a later chunk lands |
 | No chunk retries and the last chunk landed   | Healthy                                 |
 
-A pipeline stop ends every retry loop without a health report.
+A pipeline stop ends every retry loop without a health report. The records
+of a chunk in flight at the stop are lost, since the connector is not fault
+tolerant; the stop is reported as a connector error and the records are not
+counted as failed.
 
 Error and health descriptions retain DynamoDB's error code, message, request
 ID, and throttling or per-item cancellation reasons. They omit raw HTTP
@@ -108,7 +113,8 @@ Metrics prefixed `dynamodb_output_` show the retries: `retries_total` counts
 each retry as it starts, `retrying_chunks` is the number of chunks in a retry
 loop right now, `throttled_items_total` counts items returned as unprocessed,
 `transact_write_failures_total` counts failed `TransactWriteItems` calls, and
-`failed_items_total` counts the records discarded.
+`failed_items_total` counts the records the connector discarded, which
+excludes the records in flight at a stop.
 
 ## Conditional writes
 
