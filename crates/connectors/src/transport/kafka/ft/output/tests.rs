@@ -26,7 +26,9 @@ mod real;
 const TOPIC: &str = "ft_test_topic";
 
 /// A connected sink on `cluster` with a one second transaction timeout, so
-/// that a delivery failure turns into an abortable transaction quickly.
+/// that a delivery failure turns into an abortable transaction quickly. The
+/// statistics interval is 100 ms, so the producer queue part of `memory()` is
+/// at most about 100 ms old (the default is 10 s).
 fn endpoint(
     cluster: &MockCluster<'_, DefaultProducerContext>,
 ) -> (
@@ -40,6 +42,7 @@ fn endpoint(
         "fault_tolerance": {
             "producer_options": {
                 "transaction.timeout.ms": "1000",
+                "statistics.interval.ms": "100",
             }
         }
     }))
@@ -257,7 +260,10 @@ fn an_outage_aborts_and_replays_the_transaction() {
         "{:?}",
         callbacks.errors()
     );
-    assert_eq!(endpoint.memory(), 0, "the spool must be released at commit");
+    // `memory()` also counts the producer queue from the last statistics
+    // callback, which can be from before the commit.
+    wait(|| endpoint.memory() == 0, 5_000)
+        .expect("the spool and the producer queue must be released at commit");
     assert_eq!(callbacks.metric("kafka_output_replay_spool_bytes"), 0.0);
 
     let received = read_topic(&cluster);
