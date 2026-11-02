@@ -110,7 +110,7 @@ def test_delta_input_column_mapping_nested_follow(pipeline_name):
         loc.cleanup()
 
 
-def test_delta_input_column_mapping_nested_distributed_filter(pipeline_name):
+def test_delta_input_column_mapping_nested_dist_filter(pipeline_name):
     """A distributed snapshot of a nested column-mapped table applies a
     ``filter`` that names a nested field (#7657). Each host reads its part of
     the snapshot as raw Parquet, so the nested names must be logical before the
