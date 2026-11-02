@@ -995,6 +995,12 @@ pub struct OutputCollectionHandles {
     /// Incremented every time an output connector is attached to this stream; decremented when
     /// the output connector is detached.
     pub enable_count: Arc<dyn EnableCount>,
+
+    /// The handles for distributed output connectors, set on multihost for a stream that one of
+    /// them reads.  They have the same schema and integral, but their delta stream is sharded over
+    /// all workers of all hosts, with the same key as the integral, and each host reads the part
+    /// on its own workers.
+    pub distributed: Option<Box<OutputCollectionHandles>>,
 }
 
 impl OutputCollectionHandles {

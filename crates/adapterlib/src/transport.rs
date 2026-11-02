@@ -38,6 +38,10 @@ use crate::utils::long_operation::LongOperationWarning;
 pub type Step = u64;
 
 /// A configured input endpoint.
+///
+/// In a multihost pipeline, an input endpoint must not wait for another host
+/// while it is created or connected, for the reason given in the documentation
+/// of [OutputEndpoint].
 pub trait InputEndpoint: Send {
     /// This endpoint's level of fault tolerance, if any:
     ///
@@ -1462,6 +1466,16 @@ pub enum OutputBatchType {
 /// A bounded wait is not an exception worth making: "bounded" here has to mean
 /// short enough to sit inside a shutdown, and a retry budget measured in
 /// minutes does not.
+///
+/// # Initialization must not wait for another host
+///
+/// In a multihost pipeline, an endpoint must not wait for another host while
+/// it is created or connected.  The coordinator can hold the other hosts back
+/// until this host has initialized, so such a wait can last until it gives up.
+/// An endpoint that needs another host, such as a part of a distributed
+/// connector that needs its leader, waits for it in a step instead: the
+/// pipeline runs its first step only after the coordinator has activated every
+/// host.
 pub trait OutputEndpoint: Send {
     fn command_handler(&self) -> Option<Arc<dyn CommandHandler>> {
         None

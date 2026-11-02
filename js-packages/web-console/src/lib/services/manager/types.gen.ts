@@ -850,13 +850,24 @@ export type ConnectOptions = {
 
 export type ConnectorConfig = OutputBufferConfig & {
   /**
-   * Divide the input of this connector among the hosts of a multihost
-   * pipeline. Valid for input connectors only.
+   * Divide the work of this connector among the hosts of a multihost
+   * pipeline.
    *
-   * When `false` (the default), the connector runs on one host, which
-   * reads all of its input. When `true`, the connector runs on every host,
-   * and each host reads a different part of the input. Only the Kafka,
-   * Delta Lake, and Iceberg input transports support this setting.
+   * For an input connector: when `false` (the default), the connector runs
+   * on one host, which reads all of its input. When `true`, the connector
+   * runs on every host, and each host reads a different part of the input.
+   * Only the Kafka, Delta Lake, and Iceberg input transports support this
+   * setting.
+   *
+   * For an output connector: when `false` (the default), the connector
+   * runs on one host, which writes all of its output.  When `true`, the
+   * connector runs on every host, and each host writes the part of the
+   * output on its own workers.  Only the null output transport, and the
+   * Delta Lake output transport with `mode: append` and
+   * `update_mode: cdc`, support this setting.  On other output transports,
+   * it has no effect.  A distributed Delta Lake output commits each
+   * transaction once, through its part on one host, and it does not support
+   * output buffering.
    *
    * In a single-host pipeline, this setting has no effect.
    *

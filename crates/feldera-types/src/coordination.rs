@@ -270,6 +270,18 @@ pub struct CoordinationActivate {
     /// activates the other hosts with this map.  Host 0's own map is empty.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub input_choices: BTreeMap<String, JsonValue>,
+
+    /// The base URL of each host's HTTP server, in host order, such as
+    /// `https://pipeline-0.example:8080/`.
+    ///
+    /// The part of a distributed output connector on one host uses these to
+    /// report to the connector's leader on another host.  Under mutual TLS, the
+    /// server checks the caller's pipeline identity, not its address.  A
+    /// coordinator that predates this field sends none, and then a multihost
+    /// pipeline refuses a distributed output connector that commits through a
+    /// leader.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub host_urls: Vec<String>,
 }
 
 /// `/coordination/input/choices` reply.
@@ -733,6 +745,29 @@ pub struct AdHocScan {
 
     /// Columnar projection.
     pub projection: Option<Vec<usize>>,
+}
+
+/// `/coordination/output/commit` request, from the part of a distributed output connector on
+/// one host to the connector's leader on another host.
+///
+/// The part reports its output for every committed transaction, even with nothing to report, by
+/// the step at which the transaction committed.  The leader commits the output of every part for
+/// that step at once.  The reply comes after that commit: 200 OK if it succeeded, 409 Conflict
+/// with the error if it failed, and another error if the leader is not ready, in which case the
+/// part tries again.  A repeated report of a step does no harm.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OutputPartReport {
+    /// The name of the output connector.
+    pub endpoint: String,
+
+    /// The ordinal of the part's host.
+    pub host: usize,
+
+    /// The step at which the transaction committed.
+    pub step: Step,
+
+    /// The part's output, in a form that the connector defines.
+    pub payload: JsonValue,
 }
 
 /// `/coordination/labels/incomplete` reply, streamed from pipeline to coordinator.

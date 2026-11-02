@@ -45,6 +45,15 @@ Source edition can be found on github.
   storage again as the pipeline's state.  A multihost pipeline deletes
   the older checkpoint when every host has written the newest one.
 
+- Enterprise (multihost): the Delta Lake output connector, with `mode` set to
+  `append` and `update_mode` set to `cdc`, and the null output connector,
+  support `distributed: true`.  On other output connectors, it still has no
+  effect.  A distributed output connector runs on every host, and each host
+  writes the part of the output on its own workers.  A distributed Delta Lake
+  output still commits each transaction once.  It does not support output
+  buffering.  See
+  [Distributed connectors](/connectors/sinks/delta#distributed-connectors).
+
 - Incompatible change (multihost): a multihost pipeline no longer supports
   `send_snapshot`.  A pipeline with an output connector that sets it fails to
   start, and HTTP egress refuses `send_snapshot=true`.  To read the whole of a

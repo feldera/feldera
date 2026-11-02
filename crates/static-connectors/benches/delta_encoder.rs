@@ -44,6 +44,7 @@ fn create_indexed_writer(threads: usize, table_uri: &str) -> DeltaTableWriter {
         false,
         true,
         true,
+        None,
     )
     .unwrap()
 }

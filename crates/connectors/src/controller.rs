@@ -58,7 +58,7 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
-use distribution::{ActivationInput, input_shard, resume_distribution};
+use distribution::{ActivationInput, input_shard, output_is_distributed, resume_distribution};
 use feldera_adapterlib::bootstrap::{BootstrapInfo, ConcurrentRestoreOutcome};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
@@ -150,9 +150,13 @@ mod checkpoint;
 mod distribution;
 mod error;
 mod journal;
+pub(crate) mod output_leader;
+pub(crate) mod peer_client;
 mod preprocessor_stalls;
 #[cfg(target_os = "macos")]
 mod samply_spawn;
+use output_leader::{CommitLeader, OutputPart, OutputPartRole};
+use peer_client::PeerClient;
 mod stats;
 pub(crate) mod sync;
 mod validate;
@@ -264,9 +268,23 @@ pub struct ControllerBuilder {
     /// [coordination::CoordinationActivate::input_choices]).
     input_choices: BTreeMap<String, JsonValue>,
 
+    /// The base URL of each host of a multihost pipeline, in host order (see
+    /// [coordination::CoordinationActivate::host_urls]).  This is empty without a coordinator,
+    /// or with a coordinator that predates it.
+    host_urls: Vec<String>,
+
+    /// The root CA that the other hosts' HTTPS certificates chain to, for a pipeline that
+    /// serves HTTPS without requiring client certificates (otherwise, see `exchange_tls`).
+    peer_root_certificate: Option<reqwest::Certificate>,
+
     /// The host that writes each output relation of a multihost pipeline, as the coordinator
     /// assigns them.  This is empty without a coordinator.
     output_assignment: BTreeMap<String, usize>,
+
+    /// The streams that distributed output connectors read (see
+    /// [PipelineConfig::distributed_output_streams]), from the full configuration, before
+    /// activation replaces this host's connectors, so that every host builds the same circuit.
+    distributed_output_streams: BTreeSet<String>,
 
     /// The pipeline's storage, if it has any.
     storage: Option<Arc<dyn PipelineStorage>>,
@@ -324,7 +342,10 @@ impl ControllerBuilder {
             layout: None,
             input_distribution: BTreeMap::new(),
             input_choices: BTreeMap::new(),
+            host_urls: Vec::new(),
+            peer_root_certificate: None,
             output_assignment: BTreeMap::new(),
+            distributed_output_streams: config.distributed_output_streams(),
             storage,
             exchange_tls: None,
             exchange_uuid: Uuid::nil(),
@@ -444,6 +465,22 @@ impl ControllerBuilder {
         }
     }
 
+    /// Sets the base URL of each host of a multihost pipeline.
+    pub(crate) fn with_host_urls(self, host_urls: Vec<String>) -> Self {
+        Self { host_urls, ..self }
+    }
+
+    /// Sets the root CA that the other hosts' HTTPS certificates chain to.
+    pub(crate) fn with_peer_root_certificate(
+        self,
+        peer_root_certificate: Option<reqwest::Certificate>,
+    ) -> Self {
+        Self {
+            peer_root_certificate,
+            ..self
+        }
+    }
+
     /// Sets TLS for exchange with the other hosts of a multihost pipeline.
     pub(crate) fn with_exchange_tls(self, exchange_tls: Option<PipelinePeerTls>) -> Self {
         Self {
@@ -506,8 +543,11 @@ impl ControllerBuilder {
     fn finish(self, init: ControllerInit) -> ControllerInit {
         init.with_input_distribution(self.input_distribution, self.input_choices)
             .with_output_assignment(self.output_assignment)
+            .with_distributed_output_streams(self.distributed_output_streams)
             .with_exchange_tls(self.exchange_tls)
             .with_exchange_uuid(self.exchange_uuid)
+            .with_host_urls(self.host_urls)
+            .with_peer_root_certificate(self.peer_root_certificate)
     }
 
     pub(crate) fn storage(&self) -> Option<Arc<dyn PipelineStorage>> {
@@ -2684,6 +2724,11 @@ impl Controller {
     pub fn layout(&self) -> &Layout {
         &self.inner.layout
     }
+
+    /// Returns the leader of distributed output connector `endpoint_name`, if it is on this host.
+    pub(crate) fn output_leader(&self, endpoint_name: &str) -> Option<Arc<CommitLeader>> {
+        self.inner.output_leader(endpoint_name)
+    }
 }
 
 pub struct ApiConnectionGuard(Arc<ControllerInner>);
@@ -3339,6 +3384,8 @@ impl CircuitThread {
             checkpointed_input_distribution: _,
             checkpointed_output_assignment: _,
             input_choices,
+            host_urls,
+            peer_root_certificate,
             view_integrals,
         } = controller_init;
 
@@ -3358,9 +3405,24 @@ impl CircuitThread {
         }
 
         let layout = circuit_params.layout.clone();
-        let output_assignment = layout
-            .is_multihost()
-            .then(|| circuit_params.output_assignment.clone());
+        let peer_client = if layout.is_multihost() && !host_urls.is_empty() {
+            Some(
+                PeerClient::new(
+                    &host_urls,
+                    circuit_params.exchange_tls.as_ref(),
+                    peer_root_certificate,
+                )
+                .map_err(|error| {
+                    ControllerError::invalid_transport_configuration(
+                        "host URLs",
+                        &format!("cannot call the other hosts: {error:#}"),
+                    )
+                })?,
+            )
+        } else {
+            None
+        };
+        let output_assignment = circuit_params.output_assignment.clone();
         let EngineCircuit {
             driver: mut circuit,
             runtime,
@@ -3550,21 +3612,25 @@ impl CircuitThread {
             checkpoint_receiver,
             incarnation_uuid,
             input_distribution,
-            output_assignment,
             view_integrals,
             input_choices,
+            peer_client,
+            output_assignment,
             storage
                 .as_ref()
                 .and_then(|storage| storage.local_path())
                 .map(PathBuf::from),
+            // The first step, below in `run`, needs the other hosts, and the coordinator
+            // activates them only after it reads these choices.
+            Box::new({
+                let state = state.clone();
+                move |choices| {
+                    if let Some(state) = &state {
+                        state.set_input_choices(choices);
+                    }
+                }
+            }),
         )?;
-
-        // The connectors have initialized.  Publish their choices now: the
-        // first step, below in `run`, needs the other hosts, and the
-        // coordinator activates them only after it reads these.
-        if let Some(state) = &state {
-            state.set_input_choices(controller.input_choices());
-        }
 
         let bootstrapping = circuit.bootstrap_in_progress();
 
@@ -5635,7 +5701,7 @@ impl FtState {
             input_statistics: HashMap::new(),
             output_statistics: HashMap::new(),
             input_distribution: controller.input_distribution.clone(),
-            output_assignment: controller.output_assignment.clone(),
+            output_assignment: controller.output_assignment_for_checkpoint(),
             view_integrals: controller.view_integrals,
         };
         let journal = storage.open_journal(JournalMode::Create(&checkpoint))?;
@@ -6453,6 +6519,12 @@ pub struct ControllerInit {
 
     /// See [ControllerBuilder::input_choices].
     input_choices: BTreeMap<String, JsonValue>,
+
+    /// See [ControllerBuilder::host_urls].
+    host_urls: Vec<String>,
+
+    /// See [ControllerBuilder::peer_root_certificate].
+    peer_root_certificate: Option<reqwest::Certificate>,
 }
 
 impl ControllerInit {
@@ -6470,6 +6542,22 @@ impl ControllerInit {
                 &self.checkpointed_input_distribution,
             ),
             input_choices,
+            ..self
+        }
+    }
+
+    /// Sets the base URL of each host of a multihost pipeline.
+    fn with_host_urls(self, host_urls: Vec<String>) -> Self {
+        Self { host_urls, ..self }
+    }
+
+    /// Sets the root CA that the other hosts' HTTPS certificates chain to.
+    fn with_peer_root_certificate(
+        self,
+        peer_root_certificate: Option<reqwest::Certificate>,
+    ) -> Self {
+        Self {
+            peer_root_certificate,
             ..self
         }
     }
@@ -6501,6 +6589,8 @@ impl ControllerInit {
             checkpointed_input_distribution: BTreeMap::new(),
             checkpointed_output_assignment: None,
             input_choices: BTreeMap::new(),
+            host_urls: Vec::new(),
+            peer_root_certificate: None,
         })
     }
 
@@ -6755,6 +6845,8 @@ impl ControllerInit {
             checkpointed_input_distribution,
             checkpointed_output_assignment,
             input_choices: BTreeMap::new(),
+            host_urls: Vec::new(),
+            peer_root_certificate: None,
         })
     }
 
@@ -6876,6 +6968,7 @@ impl ControllerInit {
         Ok(CircuitParams {
             layout,
             output_assignment: BTreeMap::new(),
+            distributed_output_streams: BTreeSet::new(),
             storage,
             init_checkpoint: None,
             defer_restore: false,
@@ -6903,6 +6996,15 @@ impl ControllerInit {
             }
         }
         self.circuit_params.output_assignment = output_assignment;
+        self
+    }
+
+    /// Sets the streams that distributed output connectors read.
+    fn with_distributed_output_streams(
+        mut self,
+        distributed_output_streams: BTreeSet<String>,
+    ) -> Self {
+        self.circuit_params.distributed_output_streams = distributed_output_streams;
         self
     }
 
@@ -7301,6 +7403,10 @@ struct OutputEndpointDescr {
     /// its own.  See [`OutputEndpoints`].
     stream_name: String,
 
+    /// True if the endpoint is this host's part of a distributed output
+    /// connector, which reads [OutputCollectionHandles::distributed].
+    distributed: bool,
+
     /// Transaction number when the endpoint was created.
     /// 0 - the endpoint was created before the first transaction performed by the controller.
     ///
@@ -7333,6 +7439,7 @@ impl OutputEndpointDescr {
     pub fn new(
         endpoint_name: &str,
         stream_name: &str,
+        distributed: bool,
         send_snapshot: bool,
         snapshot_already_sent: bool,
         command_handler: Option<Arc<dyn CommandHandler>>,
@@ -7341,6 +7448,7 @@ impl OutputEndpointDescr {
         Self {
             endpoint_name: endpoint_name.to_string(),
             stream_name: canonical_identifier(stream_name),
+            distributed,
             queue: Arc::new(SegQueue::new()),
             command_handler,
             control: Arc::new(OutputEndpointControl::new(
@@ -7359,7 +7467,27 @@ impl OutputEndpointDescr {
 /// Deferred constructor for an input endpoint's reader.
 type OpenInputReaderFn<'a> = Box<dyn FnOnce() -> Result<Box<dyn InputReader>, AnyError> + 'a>;
 
-type StreamEndpointMap = BTreeMap<String, (OutputCollectionHandles, BTreeSet<EndpointId>)>;
+/// The key of a group in [OutputEndpoints].
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct GroupKey {
+    /// The name of the output handles, in canonical form.
+    stream: String,
+
+    /// Whether the handles are the ones for distributed output connectors.
+    distributed: bool,
+}
+
+impl GroupKey {
+    /// The key of the group that `endpoint` reads from.
+    fn of(endpoint: &OutputEndpointDescr) -> Self {
+        Self {
+            stream: endpoint.stream_name.clone(),
+            distributed: endpoint.distributed,
+        }
+    }
+}
+
+type StreamEndpointMap = BTreeMap<GroupKey, (OutputCollectionHandles, BTreeSet<EndpointId>)>;
 
 /// The controller's output endpoints.
 ///
@@ -7368,7 +7496,9 @@ type StreamEndpointMap = BTreeMap<String, (OutputCollectionHandles, BTreeSet<End
 /// removes the batch from it, so no two groups may share a handle: the group
 /// read second would find it empty, and its endpoints would never receive
 /// output.  The first index of a materialized view shares the view's handles,
-/// so endpoints on that index join the view's group.
+/// so endpoints on that index join the view's group.  Distributed output
+/// connectors read [OutputCollectionHandles::distributed], so they have groups
+/// of their own.
 ///
 /// Every output handle in the catalog has a group from the start, so
 /// `push_output` reads every handle after every step, whether or not the
@@ -7380,7 +7510,8 @@ struct OutputEndpoints {
     by_id: BTreeMap<EndpointId, OutputEndpointDescr>,
 
     /// The endpoints of each output handle in the catalog, keyed by the
-    /// handle's name in canonical form.
+    /// handle's name in canonical form and whether it is the handle for
+    /// distributed output connectors.
     by_stream: StreamEndpointMap,
 }
 
@@ -7397,7 +7528,18 @@ impl OutputEndpoints {
     fn new(catalog: &dyn CircuitCatalog) -> Self {
         let by_stream = catalog
             .output_iter()
-            .map(|(name, handles)| (name.name(), (handles.clone(), BTreeSet::new())))
+            .flat_map(|(name, handles)| {
+                let key = |distributed| GroupKey {
+                    stream: name.name(),
+                    distributed,
+                };
+                let distributed = handles
+                    .distributed
+                    .as_deref()
+                    .map(|distributed| (key(true), distributed.clone()));
+                std::iter::once((key(false), handles.clone())).chain(distributed)
+            })
+            .map(|(key, handles)| (key, (handles, BTreeSet::new())))
             .collect();
 
         Self {
@@ -7410,7 +7552,7 @@ impl OutputEndpoints {
         &self,
     ) -> impl Iterator<
         Item = (
-            &'_ String,
+            &'_ GroupKey,
             &'_ (OutputCollectionHandles, BTreeSet<EndpointId>),
         ),
     > {
@@ -7451,7 +7593,8 @@ impl OutputEndpoints {
         mut endpoint_descr: OutputEndpointDescr,
         transaction_number: impl FnOnce() -> u64,
     ) -> Result<(), ControllerError> {
-        let Some((handles, endpoints)) = self.by_stream.get_mut(&endpoint_descr.stream_name) else {
+        let Some((handles, endpoints)) = self.by_stream.get_mut(&GroupKey::of(&endpoint_descr))
+        else {
             return Err(ControllerError::unknown_output_stream(
                 &endpoint_descr.endpoint_name,
                 &endpoint_descr.stream_name,
@@ -7467,7 +7610,7 @@ impl OutputEndpoints {
     fn remove(&mut self, endpoint_id: &EndpointId) -> Option<OutputEndpointDescr> {
         self.by_id.remove(endpoint_id).inspect(|descr| {
             self.by_stream
-                .get_mut(&descr.stream_name)
+                .get_mut(&GroupKey::of(descr))
                 .map(|(handles, endpoints)| {
                     handles.enable_count.disable();
                     endpoints.remove(endpoint_id)
@@ -8323,15 +8466,24 @@ pub struct ControllerInner {
     /// Layout of the circuit's workers.
     layout: Layout,
 
+    /// The client for the other hosts, in a multihost pipeline whose coordinator sent each
+    /// host's URL (see [ControllerBuilder::host_urls]).  The parts of a distributed output
+    /// connector use it to report to their leader (see [output_leader]).
+    peer_client: Option<PeerClient>,
+
+    /// The host that writes each output relation of a multihost pipeline, as the coordinator
+    /// assigns them.  The part of a distributed output connector on its stream's host is the
+    /// connector's leader (see [output_leader]).  Each checkpoint records it (see
+    /// [ControllerInner::checkpoint_output_assignment]).
+    output_assignment: BTreeMap<String, usize>,
+
+    /// The leader of each distributed output connector on this host, by connector name.
+    output_leaders: Mutex<BTreeMap<String, Arc<CommitLeader>>>,
+
     /// The input distribution that this host used at activation, which each
     /// checkpoint records.  Only connector initialization applies it (see
     /// [ControllerInner::connect_input]).
     input_distribution: BTreeMap<String, InputDistribution>,
-
-    /// The output assignment that a multihost host used at activation, which
-    /// each checkpoint records (see [Checkpoint::output_assignment]), or
-    /// `None` if the pipeline is not multihost.
-    output_assignment: Option<BTreeMap<String, usize>>,
 
     /// Where this pipeline keeps the integrals of its materialized views, which each checkpoint
     /// records (see [choose_view_integrals]).
@@ -8428,6 +8580,15 @@ impl Drop for ControllerInner {
 }
 
 impl ControllerInner {
+    /// The output assignment that a checkpoint records (see
+    /// [Checkpoint::output_assignment]): this host's, if the pipeline is
+    /// multihost, and otherwise `None`.
+    fn output_assignment_for_checkpoint(&self) -> Option<BTreeMap<String, usize>> {
+        self.layout
+            .is_multihost()
+            .then(|| self.output_assignment.clone())
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn new(
         config: PipelineConfig,
@@ -8447,10 +8608,12 @@ impl ControllerInner {
         checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
         incarnation_uuid: Uuid,
         input_distribution: BTreeMap<String, InputDistribution>,
-        output_assignment: Option<BTreeMap<String, usize>>,
         view_integrals: ViewIntegrals,
         input_choices: BTreeMap<String, JsonValue>,
+        peer_client: Option<PeerClient>,
+        output_assignment: BTreeMap<String, usize>,
         storage_path: Option<PathBuf>,
+        publish_input_choices: Box<dyn FnOnce(BTreeMap<String, JsonValue>) + Send>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(
             config.clone(),
@@ -8485,8 +8648,10 @@ impl ControllerInner {
                 outputs: ShardedLock::new(outputs),
                 next_output_id: Atomic::new(0),
                 layout,
-                input_distribution: input_distribution.clone(),
+                peer_client,
                 output_assignment,
+                output_leaders: Mutex::new(BTreeMap::new()),
+                input_distribution: input_distribution.clone(),
                 view_integrals,
                 shutdown: runtime.shutdown_token().child_token(),
                 runtime,
@@ -8596,16 +8761,27 @@ impl ControllerInner {
                     )
                 });
 
-        let pool_size = config.max_parallel_connector_init();
-        run_on_thread_pool(
-            "connector-init",
-            pool_size as usize,
-            source_tasks.chain(sink_tasks),
-        )
-        .inspect_err(|_e| {
-            // Set the state to terminated to make sure that when we later unpark auxiliary threads, they will exit.
-            controller.set_terminated();
-        })?;
+        let pool_size = config.max_parallel_connector_init() as usize;
+        let init_connectors = |tasks: Vec<_>| {
+            run_on_thread_pool("connector-init", pool_size, tasks).inspect_err(|_e| {
+                // Set the state to terminated to make sure that when we later unpark auxiliary
+                // threads, they will exit.
+                controller.set_terminated();
+            })
+        };
+        if controller.layout.is_multihost() {
+            // Publish the input choices as soon as the input connectors have initialized,
+            // before the output connectors initialize.  The coordinator activates the other
+            // hosts only after it reads the choices.  No connector may wait for another host
+            // while it initializes (see `OutputEndpoint`), but publishing first keeps an output
+            // connector that breaks that rule from holding back the other hosts.
+            init_connectors(source_tasks.collect())?;
+            publish_input_choices(controller.input_choices());
+            init_connectors(sink_tasks.collect())?;
+        } else {
+            init_connectors(source_tasks.chain(sink_tasks).collect())?;
+            publish_input_choices(controller.input_choices());
+        }
 
         if controller.layout.local_host_idx() == 0 && controller.runtime.has_wall_clock() {
             let _ = controller.connect_input("now", &now_endpoint_config(&config), None, None);
@@ -9183,12 +9359,74 @@ impl ControllerInner {
         let mut outputs = self.outputs.write().unwrap();
 
         if let Some(ep) = outputs.remove(endpoint_id) {
+            // Keep the closed leader, so that the other parts' later reports fail at once with
+            // the leader's error, instead of retrying forever for a leader that does not come
+            // back.  A new part for the same connector replaces it (see `output_part`).
+            if let Some(leader) = self.output_leaders.lock().unwrap().get(&ep.endpoint_name) {
+                leader.close();
+            }
             ep.disconnect_flag.store(true, Ordering::Release);
             ep.unparker.unpark();
             self.status.remove_output(endpoint_id);
             // The circuit thread may be waiting for output buffer space.
             self.unpark_circuit();
         }
+    }
+
+    /// Returns this host's part of distributed output connector `endpoint_name`, if its transport
+    /// commits through a leader, and registers the part as the leader on the leader's host.
+    ///
+    /// The leader is the part on the host that the coordinator assigned to the connector's
+    /// stream, the same host that would gather the stream for a connector that is not
+    /// distributed.
+    fn output_part(
+        &self,
+        endpoint_name: &str,
+        endpoint_config: &OutputEndpointConfig,
+    ) -> Result<Option<OutputPart>, ControllerError> {
+        if !matches!(
+            endpoint_config.connector_config.transport,
+            TransportConfig::DeltaTableOutput(_)
+        ) {
+            return Ok(None);
+        }
+        let host = self.layout.local_host_idx();
+        let leader_host = self
+            .output_assignment
+            .get(&SqlIdentifier::from(&endpoint_config.stream).name())
+            .copied()
+            .unwrap_or_default();
+        let role = if host == leader_host {
+            let leader = Arc::new(CommitLeader::new(self.layout.n_hosts()));
+            self.output_leaders
+                .lock()
+                .unwrap()
+                .insert(endpoint_name.to_string(), leader.clone());
+            OutputPartRole::Leader(leader)
+        } else {
+            let client = self.peer_client.clone().ok_or_else(|| {
+                ControllerError::invalid_transport_configuration(
+                    endpoint_name,
+                    "a distributed output connector with this transport commits through the part on one host, which needs the URL of each host from the coordinator, which this coordinator does not send",
+                )
+            })?;
+            OutputPartRole::Follower(client)
+        };
+        Ok(Some(OutputPart {
+            endpoint: endpoint_name.to_string(),
+            host,
+            leader_host,
+            role,
+        }))
+    }
+
+    /// Returns the leader of distributed output connector `endpoint_name`, if it is on this host.
+    pub(crate) fn output_leader(&self, endpoint_name: &str) -> Option<Arc<CommitLeader>> {
+        self.output_leaders
+            .lock()
+            .unwrap()
+            .get(endpoint_name)
+            .cloned()
     }
 
     fn add_output_endpoint(
@@ -9249,6 +9487,33 @@ impl ControllerInner {
                     })?,
                 endpoint_config.stream.to_string(),
             )
+        };
+
+        // On multihost, a distributed connector reads this host's shard of the stream.
+        let distributed = output_is_distributed(
+            &endpoint_config.connector_config,
+            self.layout.is_multihost(),
+        );
+        if endpoint_config.connector_config.distributed
+            && !distributed
+            && self.layout.is_multihost()
+        {
+            warn!(
+                "{endpoint_name}: the '{}' output transport does not support 'distributed', so this connector runs on one host",
+                endpoint_config.connector_config.transport.name()
+            );
+        }
+        let handles = if distributed {
+            handles.distributed.as_deref().ok_or_else(|| {
+                ControllerError::invalid_transport_configuration(
+                    endpoint_name,
+                    &format!(
+                        "the circuit has no shards of '{stream_name}' for distributed output connectors, because the pipeline configuration had no distributed connector on it at startup"
+                    ),
+                )
+            })?
+        } else {
+            handles
         };
 
         if endpoint_config.connector_config.send_snapshot && handles.integrate_handle.is_none() {
@@ -9457,6 +9722,11 @@ impl ControllerInner {
             // than preserving stale data).
             let continue_previous_state =
                 initial_statistics.is_some() && !connector_definition_changed;
+            let part = if distributed {
+                self.output_part(endpoint_name, endpoint_config)?
+            } else {
+                None
+            };
             let endpoint = create_integrated_output_endpoint(
                 endpoint_id,
                 endpoint_name,
@@ -9467,6 +9737,7 @@ impl ControllerInner {
                 self.shutdown_token().clone(),
                 continue_previous_state,
                 endpoint_config.connector_config.index.is_some(),
+                part,
             )?;
 
             let command_handler = endpoint.command_handler();
@@ -9478,6 +9749,7 @@ impl ControllerInner {
         let endpoint_descr = OutputEndpointDescr::new(
             endpoint_name,
             &stream_name,
+            distributed,
             endpoint_config.connector_config.send_snapshot,
             snapshot_already_sent,
             command_handler,
@@ -11319,7 +11591,7 @@ impl RunningCheckpoint {
             input_statistics,
             output_statistics,
             input_distribution: circuit.controller.input_distribution.clone(),
-            output_assignment: circuit.controller.output_assignment.clone(),
+            output_assignment: circuit.controller.output_assignment_for_checkpoint(),
             view_integrals: circuit.controller.view_integrals,
         };
         Span::new("blocking")
