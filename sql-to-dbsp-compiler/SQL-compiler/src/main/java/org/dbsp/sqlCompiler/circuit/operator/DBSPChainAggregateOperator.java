@@ -25,7 +25,7 @@ public class DBSPChainAggregateOperator extends DBSPUnaryOperator implements ILi
 
     public DBSPChainAggregateOperator(CalciteRelNode node, DBSPClosureExpression init,
                                       DBSPClosureExpression function, DBSPType outputType, OutputPort source) {
-        super(node, "chain_aggregate", function, outputType, false, source);
+        super(node, "chain_aggregate", function, outputType, source);
         this.init = init;
         Utilities.enforce(init.parameters.length == 2);
         Utilities.enforce(function.parameters.length == 3);

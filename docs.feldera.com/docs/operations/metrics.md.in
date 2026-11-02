@@ -131,6 +131,12 @@ given view.
 
 These metrics accumulate across checkpoint and resume.
 
+Some output connectors export metrics of their own in addition to these,
+under the same `endpoint` label, for example the
+[Kafka](/connectors/sinks/kafka#output-metrics) and
+[Delta Lake](/connectors/sinks/delta#metrics) output connectors. Each
+connector page documents them.
+
 {{output_connector_}}
 
 ## Checkpoint Synchronization

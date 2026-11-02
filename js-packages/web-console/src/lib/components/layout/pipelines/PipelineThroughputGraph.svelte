@@ -7,14 +7,14 @@
   import { type EChartsType, init, use } from 'echarts/core'
   import { CanvasRenderer } from 'echarts/renderers'
   import { Chart } from 'svelte-echarts'
-  import { ServerDate } from '$lib/compositions/serverTime'
+  import { ServerDate } from '#lib/compositions/serverTime.ts'
   import {
     calcPipelineThroughput,
     type PipelineMetrics,
     timeSeriesAxisMax
-  } from '$lib/functions/pipelineMetrics'
-  import type { Pipeline } from '$lib/services/pipelineManager'
-  import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
+  } from '#lib/functions/pipelineMetrics.ts'
+  import type { Pipeline } from '#lib/services/pipelineManager.ts'
+  import type { TimeSeriesEntry } from '#lib/types/pipelineManager.ts'
 
   const {
     pipeline,

@@ -44,7 +44,7 @@ class DuplicateSharedIndexes extends CircuitCloneWithGraphsVisitor {
         DBSPMapIndexOperator index = node.to(DBSPMapIndexOperator.class);
         var copy = new DBSPMapIndexOperator(
                 index.getRelNode(), index.getClosureFunction(), index.getOutputIndexedZSetType(),
-                index.isMultiset, this.mapped(index.input()));
+                this.mapped(index.input()));
         this.addOperator(copy);
         return copy;
     }

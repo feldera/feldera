@@ -39,7 +39,8 @@ public class DBSPTimeAddSub extends DBSPExpression {
     public DBSPTimeAddSub(CalciteObject node, DBSPType type, DBSPOpcode opcode, DBSPExpression left, DBSPExpression right) {
         super(node, type);
         this.opcode = opcode;
-        Utilities.enforce(opcode == DBSPOpcode.ADD || opcode == DBSPOpcode.SUB);
+        Utilities.enforce(opcode == DBSPOpcode.ADD || opcode == DBSPOpcode.SUB ||
+                opcode == DBSPOpcode.ADD_SATURATING || opcode == DBSPOpcode.SUB_SATURATING);
         this.left = left;
         this.right = right;
         if (this.type.is(DBSPTypeShortInterval.class)) {

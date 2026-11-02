@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { pipelineStatusColor, statusChipClass } from '$lib/functions/pipelineStatusColor'
-  import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
-  import type { PipelineStatus } from '$lib/services/pipelineManager'
+  import { pipelineStatusColor, statusChipClass } from '#lib/functions/pipelineStatusColor.ts'
+  import { getPipelineStatusLabel } from '#lib/functions/pipelines/status.ts'
+  import type { PipelineStatus } from '#lib/services/pipelineManager.ts'
 
   const {
     status,

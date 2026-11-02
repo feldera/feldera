@@ -20,8 +20,14 @@ def test_create_api_key():
     assert resp.get("id")
     assert resp.get("api_key")
 
-    # Best-effort cleanup
     try:
-        TEST_CLIENT.http.delete(path=f"/api_keys/{name}")
-    except FelderaAPIError:
-        pass
+        described = {"id": resp["id"], "name": name, "role": "write"}
+        assert TEST_CLIENT.get_api_key(name) == described
+        assert described in TEST_CLIENT.list_api_keys()
+    finally:
+        TEST_CLIENT.delete_api_key(name)
+
+    assert name not in [key["name"] for key in TEST_CLIENT.list_api_keys()]
+    with pytest.raises(FelderaAPIError) as err:
+        TEST_CLIENT.get_api_key(name)
+    assert err.value.status_code == 404

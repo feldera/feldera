@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import {
     AggregationMode,
     BooleanValue,
@@ -9,6 +9,7 @@ import {
     ComplexNode,
     CountValue,
     Measurement,
+    MetricDescriptions,
     MissingValue,
     PercentValue,
     PropertyValue,
@@ -38,12 +39,6 @@ describe('measurementLabel', () => {
         // Suffixes are joined with a dot, and labels the runtime attaches carry a colon.
         expect(measurementLabel('input_batches_stats.min_size')).toBe('Input batches stats min size')
         expect(measurementLabel('completed_merges.slot:0.steps')).toBe('Completed merges slot:0 steps')
-    })
-
-    it('leaves a legacy name readable', () => {
-        // Legacy ids are spelled with spaces and slashes already.
-        expect(measurementLabel('input batches/min size')).toBe('Input batches/min size')
-        expect(measurementLabel('time%')).toBe('Time%')
     })
 
     it('returns the id when there is nothing to spell out', () => {
@@ -823,57 +818,6 @@ describe('Measurement.parseValues tags the new-format metrics', () => {
     })
 })
 
-// TODO: remove together with the rest of the legacy parsing path.
-describe('Measurement.parseLegacyValues tags the legacy metrics', () => {
-    const parsed = (datum: unknown[]) => Measurement.parseLegacyValues(datum as any)[0]!
-
-    const CASES: Array<[unknown[], string, AggregationMode]> = [
-        [['time%', [10, 1000]], 'PercentValue', AggregationMode.CommonDenominator],
-        [['merge reduction', [1, 2]], 'PercentValue', AggregationMode.WeightedRatio],
-        [['Bloom filter hit rate', [1, 2]], 'PercentValue', AggregationMode.WeightedRatio],
-        [['batches', 5], 'CountValue', AggregationMode.Sum],
-        [['storage size', 5], 'CountValue', AggregationMode.Sum],
-        [['steps', 5], 'CountValue', AggregationMode.Max],
-        [['invocations', 5], 'CountValue', AggregationMode.Max],
-        [['time', { secs: 1, nanos: 0 }], 'TimeValue', AggregationMode.Sum],
-        [['runtime_elapsed', { secs: 1, nanos: 0 }], 'TimeValue', AggregationMode.Max],
-        [['balancer policy', 'round-robin'], 'StringValue', AggregationMode.CommonValue],
-        [['rebalancing in progress', true], 'BooleanValue', AggregationMode.Or]
-    ]
-
-    for (const [datum, kind, mode] of CASES) {
-        it(`reads ${datum[0]} as a ${kind} folded with ${AggregationMode[mode]}`, () => {
-            const m = parsed(datum)
-            expect(m.value.unwrap().constructor.name).toBe(kind)
-            expect(m.aggregation).toBe(mode)
-        })
-    }
-
-    // Batch-size summaries arrive nested under one name, and the entries inside it are spelled
-    // with a slash. Joining them with a dot left all five unparsed and uncategorized.
-    it('reads the nested batch-size summary that the format actually sends', () => {
-        const parsed = Measurement.parseLegacyValues(['input batches', {
-            entries: [['batches', 5], ['min size', 3], ['max size', 9], ['avg size', 7],
-            ['total records', 35]]
-        }] as any)
-        const read = parsed.map(m => [m.property, m.value.isSome()
-            ? m.value.unwrap().constructor.name : 'unparsed', AggregationMode[m.aggregation]])
-        expect(read).toEqual([
-            ['input batches/batches', 'CountValue', 'Sum'],
-            ['input batches/min size', 'CountValue', 'Min'],
-            ['input batches/max size', 'CountValue', 'Max'],
-            ['input batches/avg size', 'RatioValue', 'WeightedRatio'],
-            ['input batches/total records', 'CountValue', 'Sum']
-        ])
-        // The names have to match the category table too, or the metrics land under "Other".
-        expect(measurementCategory('input batches/min size')).toBe('storage')
-    })
-
-    it('leaves a metric it cannot turn into a number unparsed', () => {
-        expect(parsed(['key distribution', [1, 2, 3]]).value.isNone()).toBe(true)
-    })
-})
-
 // A region's value for a metric is folded from the nodes it contains
 describe('region aggregation', () => {
     const count = (value: number) => ({ type: 'count', value })
@@ -1098,35 +1042,47 @@ describe('SimpleNode.totalOf', () => {
 // `totalShare` would place all of them at 100 -- the bug where the overview came out uniformly
 // red. Its totals are placed against the others of their category instead.
 describe('categoryShares', () => {
-    // 'total size', 'allocated bytes' and 'batches' are all in the memory category; 'time' is in
-    // CPU, so it is scaled on its own.
+    // The first three metrics are in the State category; 'runtime_seconds' is in Time, so it is
+    // scaled on its own.
+    beforeAll(() => {
+        const metric = (name: string, category: string) =>
+            ({ name, category, advanced: false, description: '' })
+        MetricDescriptions.setMetricDescriptions([
+            metric('spine_storage_size_bytes', 'State'),
+            metric('state_records_count', 'State'),
+            metric('spine_batches_count', 'State'),
+            metric('runtime_seconds', 'Time')
+        ])
+    })
+
     const totals = new Map<string, PropertyValue>([
-        ['total size', new BytesValue(13_260_000_000)],
-        ['allocated bytes', new CountValue(5_930_000)],
-        ['batches', new CountValue(366)],
-        ['time', new TimeValue(170)]
+        ['spine_storage_size_bytes', new BytesValue(13_260_000_000)],
+        ['state_records_count', new CountValue(5_930_000)],
+        ['spine_batches_count', new CountValue(366)],
+        ['runtime_seconds', new TimeValue(170)]
     ])
 
     it('spreads totals that span orders of magnitude', () => {
         const shares = categoryShares(totals)
         // Log scale: the largest saturates and the smallest stays well clear of it, where a
         // linear scale would put 366 out of 13 billion at 0.
-        expect(shares.get('total size')).toBe(100)
-        expect(shares.get('allocated bytes')!).toBeGreaterThan(60)
-        expect(shares.get('batches')!).toBeGreaterThan(20)
-        expect(shares.get('batches')!).toBeLessThan(30)
+        expect(shares.get('spine_storage_size_bytes')).toBe(100)
+        expect(shares.get('state_records_count')!).toBeGreaterThan(60)
+        expect(shares.get('spine_batches_count')!).toBeGreaterThan(20)
+        expect(shares.get('spine_batches_count')!).toBeLessThan(30)
     })
 
     it('scales each category on its own', () => {
-        // The only CPU total, so it is that category's maximum however small it looks beside
+        // The only Time total, so it is that category's maximum however small it looks beside
         // the byte counts.
-        expect(measurementCategory('time')).not.toBe(measurementCategory('total size'))
-        expect(categoryShares(totals).get('time')).toBe(100)
+        expect(measurementCategory('runtime_seconds'))
+            .not.toBe(measurementCategory('spine_storage_size_bytes'))
+        expect(categoryShares(totals).get('runtime_seconds')).toBe(100)
     })
 
     it('shades nothing when a category measured nothing', () => {
-        const shares = categoryShares(new Map([['total size', new BytesValue(0)]]))
-        expect(shares.get('total size')).toBe(0)
+        const shares = categoryShares(new Map([['spine_storage_size_bytes', new BytesValue(0)]]))
+        expect(shares.get('spine_storage_size_bytes')).toBe(0)
     })
 })
 
@@ -1369,6 +1325,63 @@ describe('CircuitProfile.consumerCount', () => {
     })
 })
 
+describe('CircuitProfile and the multihost remote waiter', () => {
+    // As in a multihost profile: the waiter is in the region of the first sharded accumulator, and
+    // the receiver of every sharded accumulator has an edge into it.
+    //
+    //   r1 [ waiter, recv1 -> out1 ]   r2 [ recv2 -> out2 ]
+    //   recv1 -> waiter <- recv2
+    const edge = (from: string, to: string) =>
+        ({ from_node: from, to_node: to, from_cluster: false, to_cluster: false })
+    const receiver = (id: string) =>
+        ({ Simple: { id, label: 'ShardedAccumulatorReceiver @ s/o/d/sharded_accumulator.rs:143:29' } })
+
+    const profile = (() => {
+        const json = {
+            metrics: [],
+            worker_profiles: [{ metadata: {} }],
+            graph: {
+                nodes: {
+                    id: 'n', label: 'root', nodes: [
+                        {
+                            Cluster: {
+                                id: 'r1', label: 'create table t1', nodes: [
+                                    { Simple: { id: 'waiter', label: 'ShardedAccumulatorRemoteWaiter' } },
+                                    receiver('recv1'),
+                                    { Simple: { id: 'out1', label: 'AccumulateOutput' } }
+                                ]
+                            }
+                        },
+                        {
+                            Cluster: {
+                                id: 'r2', label: 'create table t2', nodes: [
+                                    receiver('recv2'),
+                                    { Simple: { id: 'out2', label: 'AccumulateOutput' } }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                edges: [
+                    edge('recv1', 'waiter'), edge('recv1', 'out1'),
+                    edge('recv2', 'waiter'), edge('recv2', 'out2')
+                ]
+            }
+        }
+        return CircuitProfile.fromJson(json as unknown as JsonProfiles).profile
+    })()
+
+    it('leaves out the edges into the waiter, and keeps the others', () => {
+        expect(profile.edges.map((e) => e.toString())).toEqual(['recv1->out1', 'recv2->out2'])
+        // `r2` feeds nothing outside itself once the edge into the waiter is gone.
+        expect(profile.consumerCount('r2')).toBe(0)
+    })
+
+    it('keeps the waiter itself', () => {
+        expect(profile.simpleNodes.has('waiter')).toBe(true)
+    })
+})
+
 describe('ComplexNode.leafCount', () => {
     // A region's badge reports the primitive operators hidden inside it, at any nesting depth -
     // counting immediate children instead would report 2 for `outer` below.
@@ -1407,6 +1420,24 @@ describe('ComplexNode.leafCount', () => {
         expect(profile.simpleNodes.get('n1').unwrap()).not.toHaveProperty('leafCount')
         // ...and neither does the toplevel node, which is never drawn.
         expect(profile.complexNodes.get('n').unwrap().leafCount).toBe(0)
+    })
+})
+
+// Issue 7198: the profiler no longer reads the format that Feldera wrote before v0.244
+describe('CircuitProfile.fromJson on a legacy profile', () => {
+    it('says that the format is not supported', () => {
+        const legacy = {
+            worker_profiles: [{ metadata: { n1: { entries: [['invocations', 5]] } } }],
+            graph: {
+                nodes: { id: 'n', label: 'circuit', nodes: [{ Simple: { id: 'n1', label: 'map' } }] },
+                edges: []
+            }
+        }
+        expect(() => CircuitProfile.fromJson(legacy as unknown as JsonProfiles)).toThrow(new Error(
+            'This profile is from a Feldera version older than v0.244 (February 2026). ' +
+            'The profiler cannot read this format. Open the profile with the profiler of ' +
+            'Feldera v0.243 or older, or upgrade Feldera to v0.244 or newer and collect ' +
+            'a new support bundle.'))
     })
 })
 

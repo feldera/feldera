@@ -4,11 +4,21 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Test;
 
-/** Tests for the rejection of equality comparisons between ROW values,
+/** Tests for the rejection of comparisons between ROW values,
  * implemented by {@link org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.RejectUnsupportedPlans}. */
 public class RowComparisonTests extends SqlIoTest {
     static final String EQ_REJECTED = "ROW values cannot be compared using '='";
     static final String NE_REJECTED = "ROW values cannot be compared using '<>'";
+
+    /** The error for an ordering comparison of ROW values with 'operator' */
+    static String orderingRejected(String operator) {
+        return "ROW values cannot be compared using '" + operator + "'; compare their fields instead";
+    }
+
+    /** The error for an ordering comparison with 'operator' of ARRAY or MAP values that contain ROW values */
+    static String containerOrderingRejected(String operator) {
+        return "ARRAY and MAP values that contain ROW values cannot be compared using '" + operator + "'";
+    }
 
     /** Two tables with a single column of the user-defined type 'point' */
     static final String UDT_TABLES = """
@@ -150,15 +160,83 @@ public class RowComparisonTests extends SqlIoTest {
                  true | 1""");
     }
 
-    /** Ordering comparisons on ROW values remain legal */
     @Test
-    public void acceptOrderingComparisonsOnRow() {
+    public void rejectOrderingOnRow() {
+        this.statementsFailingInCompilation(ROW_TABLE +
+                "CREATE VIEW V AS SELECT r < s FROM T;", orderingRejected("<"));
+        this.statementsFailingInCompilation(ROW_TABLE +
+                "CREATE VIEW V AS SELECT r <= s FROM T;", orderingRejected("<="));
+        this.statementsFailingInCompilation(ROW_TABLE +
+                "CREATE VIEW V AS SELECT r > s FROM T;", orderingRejected(">"));
+        this.statementsFailingInCompilation(ROW_TABLE +
+                "CREATE VIEW V AS SELECT r >= s FROM T;", orderingRejected(">="));
+        this.statementsFailingInCompilation(UDT_TABLES +
+                "CREATE VIEW V AS SELECT L.p < R.p FROM L, R;", orderingRejected("<"));
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(a INT, b INT);
+                CREATE VIEW V AS SELECT (a, b) < (b, a) FROM T;""", orderingRejected("<"));
+    }
+
+    /** BETWEEN expands into '>=' and '<=' */
+    @Test
+    public void rejectBetweenOnRow() {
+        this.statementsFailingInCompilation(ROW_TABLE +
+                "CREATE VIEW V AS SELECT r BETWEEN s AND ROW(1, 2) FROM T;", orderingRejected(">="));
+        this.statementsFailingInCompilation(ROW_TABLE +
+                "CREATE VIEW V AS SELECT r NOT BETWEEN SYMMETRIC s AND ROW(1, 2) FROM T;",
+                orderingRejected(">="));
+    }
+
+    /** The first argument of LEAST_IGNORE_NULLS is a NULL literal, which does not have a ROW type */
+    @Test
+    public void rejectGreatestLeastOnRow() {
+        this.statementsFailingInCompilation(ROW_TABLE +
+                "CREATE VIEW V AS SELECT GREATEST(r, s) FROM T;", orderingRejected("GREATEST"));
+        this.statementsFailingInCompilation(ROW_TABLE +
+                "CREATE VIEW V AS SELECT LEAST(r, s) FROM T;", orderingRejected("LEAST"));
+        this.statementsFailingInCompilation(ROW_TABLE +
+                "CREATE VIEW V AS SELECT GREATEST_IGNORE_NULLS(r, s) FROM T;",
+                orderingRejected("GREATEST_IGNORE_NULLS"));
+        this.statementsFailingInCompilation(ROW_TABLE +
+                "CREATE VIEW V AS SELECT LEAST_IGNORE_NULLS(NULL, r, s) FROM T;",
+                orderingRejected("LEAST_IGNORE_NULLS"));
+    }
+
+    /** Ordering comparisons are rejected on ARRAY and MAP values that contain ROW values.
+     * The ROW type can be an element, a key, or a value, at any depth. */
+    @Test
+    public void rejectOrderingOnArrayAndMapOfRows() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(a ROW(x INT) ARRAY, b ROW(x INT) ARRAY);
+                CREATE VIEW V AS SELECT a < b FROM T;""", containerOrderingRejected("<"));
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(a ROW(x INT) ARRAY ARRAY, b ROW(x INT) ARRAY ARRAY);
+                CREATE VIEW V AS SELECT GREATEST(a, b) FROM T;""", containerOrderingRejected("GREATEST"));
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(m MAP<VARCHAR, ROW(x INT)>, n MAP<VARCHAR, ROW(x INT)>);
+                CREATE VIEW V AS SELECT m >= n FROM T;""", containerOrderingRejected(">="));
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(m MAP<ROW(x INT), INT>, n MAP<ROW(x INT), INT>);
+                CREATE VIEW V AS SELECT m <= n FROM T;""", containerOrderingRejected("<="));
+    }
+
+    /** A MAP compares the ROW values it contains using IS NOT DISTINCT FROM */
+    @Test
+    public void acceptEqualityOnMapOfRows() {
+        this.getCC("""
+                CREATE TABLE T(m MAP<ROW(x INT), ROW(y INT)>, n MAP<ROW(x INT), ROW(y INT)>);
+                CREATE VIEW V AS SELECT m = n, m <> n FROM T;""");
+    }
+
+    /** MIN and MAX order ROW values with a NULL field before any other value */
+    @Test
+    public void minMaxOnRow() {
         CompilerCircuitStream ccs = this.getCCS(ROW_TABLE +
-                "CREATE VIEW V AS SELECT r < s AS lt, r >= s AS ge FROM T;");
-        ccs.step("INSERT INTO T VALUES(ROW(ROW(1, 2), ROW(1, 3)))", """
-                 lt   | ge    | weight
-                -----------------------
-                 true | false | 1""");
+                "CREATE VIEW V AS SELECT MIN(r) AS mn, MAX(r) AS mx FROM T;");
+        ccs.step("INSERT INTO T VALUES(ROW(ROW(1, NULL), ROW(1, 2))), (ROW(ROW(1, 2), ROW(1, 2)))", """
+                 mn          | mx       | weight
+                ----------------------------------
+                 { 1, NULL } | { 1, 2 } | 1""");
     }
 
     /** Every rewrite that the error messages and the documentation suggest must compile */

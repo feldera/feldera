@@ -13,7 +13,7 @@
 
 import { BigNumber } from 'bignumber.js'
 import { describe, expect, it } from 'vitest'
-import type { ChangeStreamData, Row } from '$lib/components/pipelines/editor/ChangeStream.svelte'
+import type { ChangeStreamData, Row } from '#lib/components/pipelines/editor/ChangeStream.svelte'
 import {
   appendRowsForRelation,
   createBigNumberStreamParser,

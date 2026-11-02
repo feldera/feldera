@@ -1,6 +1,6 @@
 import JSONbig from 'true-json-bigint'
-import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
-import type { CreateClientConfig } from '$lib/services/manager/client.gen'
+import { felderaEndpoint } from '#lib/functions/configs/felderaEndpoint.ts'
+import type { CreateClientConfig } from '#lib/services/manager/client.gen.ts'
 
 export const createClientConfig: CreateClientConfig = (config) => ({
   ...config,

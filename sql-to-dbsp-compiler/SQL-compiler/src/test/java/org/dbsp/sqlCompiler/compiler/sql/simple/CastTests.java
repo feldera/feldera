@@ -93,6 +93,24 @@ public class CastTests extends SqlIoTest {
     }
 
     @Test
+    public void castStringToInteger() {
+        // A constant cast must give the runtime's result: the runtime trims spaces,
+        // accepts only ASCII digits, and checks the range of unsigned types.
+        this.qs("""
+                SELECT CAST(' 12 ' AS INT), CAST('200' AS TINYINT UNSIGNED);
+                 i  | u
+                ----------
+                 12 | 200
+                (1 row)""");
+        this.runtimeConstantFail("SELECT CAST('٣' AS INT)",
+                "Error converting '٣' to INTEGER: invalid digit found in string");
+        this.runtimeConstantFail("SELECT CAST('-1' AS TINYINT UNSIGNED)",
+                "Error converting '-1' to TINYINT UNSIGNED: invalid digit found in string");
+        this.runtimeConstantFail("SELECT CAST('-0' AS TINYINT UNSIGNED)",
+                "Error converting '-0' to TINYINT UNSIGNED: invalid digit found in string");
+    }
+
+    @Test
     public void castFailPosition() {
         // use bround to inhibit compile-time optimization;
         // line numbers include the 2 lines of DDL from prepareInputs
@@ -857,6 +875,47 @@ public class CastTests extends SqlIoTest {
                 CREATE VIEW V AS SELECT CAST(d AS INTERVAL DAYS) AS i FROM D;""");
         this.runtimeFail(compiler, "INSERT INTO D VALUES (10000000000000000000000000000);",
                 "to INTERVAL DAYS");
+    }
+
+    @Test
+    public void castFractionToYearMonthInterval() {
+        // A literal and a column give the same interval: the number is truncated to an integer
+        var ccs = this.getCCS("""
+                CREATE TABLE F(d DECIMAL(5, 2));
+                CREATE VIEW V AS SELECT
+                    CAST(CAST(CAST(1.5 AS INTERVAL YEAR) AS INTERVAL MONTH) AS INT) AS yl,
+                    CAST(CAST(CAST(d AS INTERVAL YEAR) AS INTERVAL MONTH) AS INT) AS yc,
+                    CAST(CAST(-1.5 AS INTERVAL MONTH) AS INT) AS ml,
+                    CAST(CAST(-d AS INTERVAL MONTH) AS INT) AS mc
+                FROM F;""");
+        ccs.stepWeightOne("INSERT INTO F VALUES (1.5);", """
+                 yl | yc | ml | mc
+                -------------------
+                 12 | 12 | -1 | -1""");
+    }
+
+    @Test
+    public void castBetweenIntervalTypesTruncates() {
+        // A cast truncates the value toward zero to the last field of the target type,
+        // for columns and for literals
+        var ccs = this.getCCS("""
+                CREATE TABLE I(m INT, h INT);
+                CREATE VIEW V AS SELECT
+                    CAST(CAST(CAST(INTERVAL '1' MONTH * m AS INTERVAL YEAR) AS INTERVAL MONTH) AS INT) AS ym,
+                    CAST(CAST(CAST(INTERVAL '-19' MONTH AS INTERVAL YEAR) AS INTERVAL MONTH) AS INT) AS yl,
+                    CAST(CAST(CAST(INTERVAL '1' HOUR * h AS INTERVAL DAY) AS INTERVAL HOUR) AS INT) AS dh,
+                    CAST(CAST(CAST(INTERVAL '-25' HOUR AS INTERVAL DAY) AS INTERVAL HOUR) AS INT) AS dl,
+                    CAST(CAST(CAST(INTERVAL '25' HOUR AS INTERVAL DAY) AS INTERVAL HOUR) AS INT) AS dp,
+                    DATE '2020-01-01' + CAST(INTERVAL '1' MONTH * m AS INTERVAL YEAR) AS dm,
+                    DATE '2020-01-01' + CAST(INTERVAL '19' MONTH AS INTERVAL YEAR) AS dlit,
+                    CAST(INTERVAL '19' MONTH AS INTERVAL YEAR) = INTERVAL '1' YEAR AS eq,
+                    CAST(INTERVAL '1' YEAR * -1.5 AS INTEGER) AS y15,
+                    CAST(INTERVAL '1' YEAR * -1.5 AS VARCHAR) AS s15
+                FROM I;""");
+        ccs.stepWeightOne("INSERT INTO I VALUES (-19, -25);", """
+                 ym  | yl  | dh  | dl  | dp | dm         | dlit       | eq   | y15 | s15
+                --------------------------------------------------------------------------
+                 -12 | -12 | -24 | -24 | 24 | 2019-01-01 | 2021-01-01 | true | -1  | -1""");
     }
 
     @Test

@@ -41,10 +41,7 @@ export class MetadataSelector {
         }
 
         // Initial metric value
-        if (this.allMetrics.has("time%")) {
-            // Legacy metrics support, to be removed
-            this.selectedMetric = "time%";
-        } else if (this.allMetrics.has("runtime_percent")) {
+        if (this.allMetrics.has("runtime_percent")) {
             this.selectedMetric = "runtime_percent";
         } else {
             this.selectedMetric = this.allMetrics.values().next().value || "";

@@ -1392,6 +1392,8 @@ export const httpInput = <ThrowOnError extends boolean = true>(
  *
  * Retrieve logs of a pipeline as a stream.
  *
+ * Error lines can contain record values, for example the input of a parse error.
+ *
  * The logs stream catches up to the extent of the internally configured per-pipeline
  * circular logs buffer (limited to a certain byte size and number of lines, whichever
  * is reached first). After the catch-up, new lines are pushed whenever they become

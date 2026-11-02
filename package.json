@@ -1,8 +1,8 @@
 {
   "name": "feldera-js",
   "dependencies": {
-    "@sveltejs/kit": "^2.70.2",
-    "svelte": "5.55.7"
+    "@sveltejs/kit": "^3.1.0",
+    "svelte": "5.57.3"
   },
   "private": true,
   "scripts": {
@@ -12,5 +12,13 @@
     "build:libs": "bun scripts/check-bun-version.ts && bun run --filter common-lib --filter triage-types --filter profiler-lib --filter common-ui --filter profiler-layout --filter @feldera/vite-plugin-monaco-editor build:self",
     "check": "bun run build:libs && bun run --filter '*' check:self"
   },
-  "workspaces": ["js-packages/*"]
+  "workspaces": ["js-packages/*"],
+  "overrides": {
+    "@opentelemetry/core": "^2.12.0",
+    "dompurify": "^3.4.17",
+    "follow-redirects": "^1.16.2",
+    "js-yaml": "^4.3.2",
+    "svg2ttf": "^6.1.0",
+    "tar": "^7.5.22"
+  }
 }

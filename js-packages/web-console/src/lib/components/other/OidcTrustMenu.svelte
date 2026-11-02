@@ -9,14 +9,14 @@
   import { asyncReadable } from '@square/svelte-store'
   import { onDestroy, onMount, tick } from 'svelte'
   import { page } from '$app/state'
-  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
-  import NewOidcTrustForm from '$lib/components/oidcTrust/NewOidcTrustForm.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+  import GenericDialog from '#lib/components/dialogs/GenericDialog.svelte'
+  import NewOidcTrustForm from '#lib/components/oidcTrust/NewOidcTrustForm.svelte'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
   import {
     deleteOidcTrust,
     getOidcTrustList,
     type OidcTrustDescr
-  } from '$lib/services/pipelineManager'
+  } from '#lib/services/pipelineManager.ts'
 
   const tenantName = $derived(page.data.feldera?.tenantName ?? 'current tenant')
   const trusts = asyncReadable<OidcTrustDescr[]>([], getOidcTrustList, { reloadable: true })

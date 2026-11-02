@@ -501,7 +501,7 @@ impl NatsReader {
 
                     // A replay consumer is single-use: whether the replay
                     // succeeded or not, the next attempt creates a fresh one.
-                    delete_nats_consumer(&jetstream, &stream_ctx, &consumer_name).await;
+                    delete_consumer_family(&jetstream, &stream_ctx, &consumer_name).await;
 
                     result.map_err(|error| {
                         error.with_context(format!(
@@ -929,9 +929,9 @@ impl NatsReader {
 /// Every consumer gets this prefix plus a unique suffix (see
 /// [`create_nats_consumer`]), so consumers are always named by us rather than
 /// by the server. Server-assigned names are opaque, which makes it impossible
-/// to attribute a consumer to a pipeline from the NATS side and, worse, keeps
-/// the ordered consumer's self-recreation from ever deleting the consumer it
-/// replaces (it deletes by the client-side name, which then never matches).
+/// to attribute a consumer to a pipeline from the NATS side. The client
+/// library names its own recreations of a consumer after it, see
+/// [`list_consumer_family`].
 fn consumer_name_prefix(consumer_config: &cfg::ConsumerConfig, table_name: &str) -> String {
     let base = consumer_config
         .name
@@ -1096,6 +1096,71 @@ async fn delete_nats_consumer(
     }
 }
 
+/// Names the consumers on the stream that descend from `consumer_name`: the
+/// consumer itself and the `{consumer_name}_{n}` ones the client library
+/// creates when it recreates an ordered consumer after a gap, a lost
+/// heartbeat or an external deletion. The library deletes the consumer it
+/// replaces, so at most one of them normally exists. The unique suffix of
+/// our own names (see [`create_nats_consumer`]) keeps one connector's
+/// consumers out of another's family.
+async fn list_consumer_family(
+    jetstream: &jetstream::Context,
+    stream_name: &str,
+    consumer_name: &str,
+) -> AnyResult<Vec<String>> {
+    use futures::TryStreamExt;
+    let stream = jetstream.get_stream_no_info(stream_name).await?;
+    let recreated_prefix = format!("{consumer_name}_");
+    let mut names = stream.consumer_names();
+    let mut family = Vec::new();
+    while let Some(name) = names.try_next().await? {
+        if name == consumer_name || name.starts_with(&recreated_prefix) {
+            family.push(name);
+        }
+    }
+    Ok(family)
+}
+
+/// Deletes the consumer and every recreation of it, see
+/// [`list_consumer_family`]. Falls back to deleting `consumer_name` alone
+/// when the listing fails.
+async fn delete_consumer_family(
+    jetstream: &jetstream::Context,
+    stream_ctx: &StreamContext,
+    consumer_name: &str,
+) {
+    let stream_name = stream_ctx.stream_name.as_str();
+    match tokio::time::timeout(
+        CONSUMER_DELETE_TIMEOUT,
+        list_consumer_family(jetstream, stream_name, consumer_name),
+    )
+    .await
+    {
+        Ok(Ok(family)) => {
+            if family.is_empty() {
+                debug!(
+                    "No consumer named '{consumer_name}' or recreated from it is left on stream '{stream_name}'"
+                );
+            }
+            for name in family {
+                delete_nats_consumer(jetstream, stream_ctx, &name).await;
+            }
+        }
+        Ok(Err(error)) => {
+            warn!(
+                "Failed to list the consumers of stream '{stream_name}', deleting only '{consumer_name}': {error:#}"
+            );
+            delete_nats_consumer(jetstream, stream_ctx, consumer_name).await;
+        }
+        Err(_) => {
+            warn!(
+                "Timed out after {CONSUMER_DELETE_TIMEOUT:?} listing the consumers of stream '{stream_name}', deleting only '{consumer_name}'"
+            );
+            delete_nats_consumer(jetstream, stream_ctx, consumer_name).await;
+        }
+    }
+}
+
 /// Grace period before re-checking whether a consumer we just deleted has
 /// reappeared.
 const DELAYED_CREATE_RECHECK_DELAY: Duration = Duration::from_secs(2);
@@ -1108,7 +1173,8 @@ const DELAYED_CREATE_RECHECK_DELAY: Duration = Duration::from_secs(2);
 /// apply the create after the delete, leaving an orphan that nobody will
 /// ever read and that scans the stream on the server's behalf. A delete
 /// sent immediately after would race the same reordering, so this instead
-/// waits out a grace period, then deletes the consumer again if it exists.
+/// waits out a grace period, then deletes the consumer and any recreation
+/// of it (see [`list_consumer_family`]) that exists by then.
 ///
 /// Spawned rather than awaited: the caller (a create path, or a pause
 /// tearing down a reader) should not block on this best-effort cleanup.
@@ -1122,16 +1188,7 @@ fn clean_up_delayed_create(
     let consumer_name = consumer_name.to_string();
     tokio::spawn(async move {
         tokio::time::sleep(DELAYED_CREATE_RECHECK_DELAY).await;
-        let reappeared = jetstream
-            .get_consumer_from_stream::<nats_consumer::Config, _, _>(
-                &consumer_name,
-                &stream_ctx.stream_name,
-            )
-            .await
-            .is_ok();
-        if reappeared {
-            delete_nats_consumer(&jetstream, &stream_ctx, &consumer_name).await;
-        }
+        delete_consumer_family(&jetstream, &stream_ctx, &consumer_name).await;
     });
 }
 
@@ -1526,8 +1583,9 @@ impl Canceller {
         // The reader task is gone, but the client library may have already
         // sent its own recreate of this consumer (on a detected gap or lost
         // heartbeat) before cancellation reached it. That recreate can still
-        // land after our delete below, the same reordering
-        // `clean_up_delayed_create` exists for, so check for it too.
+        // land after the cleanup below has looked for it, the same
+        // reordering `clean_up_delayed_create` exists for, so check for it
+        // too.
         let Canceller {
             jetstream,
             stream_ctx,
@@ -1535,7 +1593,7 @@ impl Canceller {
             ..
         } = self;
         async move {
-            delete_nats_consumer(&jetstream, &stream_ctx, &consumer_name).await;
+            delete_consumer_family(&jetstream, &stream_ctx, &consumer_name).await;
             clean_up_delayed_create(&jetstream, &stream_ctx, &consumer_name);
         }
     }

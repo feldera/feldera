@@ -41,6 +41,8 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
+import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -431,7 +433,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             DBSPExpression[] monotoneComponents = Linq.map(
                     monotoneFields, MonotoneExpression::getReducedExpression, DBSPExpression.class);
             DBSPTypeTuple type = new DBSPTypeTuple(CalciteObject.EMPTY,
-                    expression.getType().mayBeNull,
+                    false,
                     Linq.list(Linq.map(monotoneComponents, DBSPExpression::getType, DBSPType.class)));
             reduced = expression.isRaw() ?
                     new DBSPRawTupleExpression(monotoneComponents) :
@@ -453,14 +455,30 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             this.set(expression, result);
             return;
         }
-        MonotoneExpression result = new MonotoneExpression(
-                expression, new MonotoneType(expression.getType()), expression);
-        this.constantExpressions.add(expression);
-        if (expression.is(IsNumericLiteral.class)) {
-            if (!expression.to(DBSPLiteral.class).isNull() &&
-                    expression.to(IsNumericLiteral.class).gt0())
-                this.positiveExpressions.add(expression);
+        boolean isNull = expression.isNull();
+        DBSPType waterlineType = expression.getType().withMayBeNull(false);
+        DBSPExpression waterline;
+        if (isNull) {
+            // A waterline bounds the values that are not NULL, and a NULL literal has none, so
+            // every waterline is valid for it; the maximum value of its type never goes down
+            if (!waterlineType.is(IsBoundedType.class)) {
+                IMaybeMonotoneType nmt = NonMonotoneType.nonMonotone(expression.getType());
+                this.set(expression, new MonotoneExpression(expression, nmt, null));
+                return;
+            }
+            waterline = waterlineType.to(IsBoundedType.class).getMaxValue();
+        } else {
+            waterline = expression.getWithNullable(false);
         }
+        MonotoneExpression result = new MonotoneExpression(
+                expression, new MonotoneType(expression.getType()), waterline);
+        // A NULL literal is not a constant in this analysis: the rules for a constant operand,
+        // such as x - c or ROUND(x, c), do not apply to c = NULL, which makes the result NULL
+        // for every row.
+        if (!isNull)
+            this.constantExpressions.add(expression);
+        if (!isNull && expression.is(IsNumericLiteral.class) && expression.to(IsNumericLiteral.class).gt0())
+            this.positiveExpressions.add(expression);
         this.set(expression, result);
     }
 
@@ -495,7 +513,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         DBSPExpression reduced = null;
 
         if (source.mayBeMonotone()) {
-            reduced = new DBSPSomeExpression(expression.getNode(), source.getReducedExpression());
+            reduced = source.getReducedExpression();
         }
         if (this.positiveExpressions.contains(expression.expression))
             this.positiveExpressions.add(expression);
@@ -512,7 +530,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         DBSPExpression reduced = null;
 
         if (source.mayBeMonotone()) {
-            reduced = new DBSPUnwrapExpression(expression.getNode(), expression.message, source.getReducedExpression());
+            reduced = source.getReducedExpression();
         }
         if (this.positiveExpressions.contains(expression.expression))
             this.positiveExpressions.add(expression);
@@ -580,6 +598,38 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.variables.put(statement, value);
     }
 
+    /** {@code expression} applied to the waterlines {@code left} and {@code right} of its
+     * operands, with saturating arithmetic where the operation can fail: when it produces a date
+     * or a timestamp, or adds or subtracts intervals. */
+    static DBSPExpression onWaterlines(DBSPTimeAddSub expression, DBSPExpression left, DBSPExpression right) {
+        boolean canFail = !expression.getType().is(IsIntervalType.class) ||
+                expression.left.getType().is(IsIntervalType.class);
+        DBSPOpcode opcode = canFail ? Objects.requireNonNull(expression.opcode.saturating()) : expression.opcode;
+        return new DBSPTimeAddSub(expression.getNode(), expression.getType().withMayBeNull(false),
+                opcode, left, right);
+    }
+
+    /** {@code expression} applied to the waterlines {@code left} and {@code right} of its
+     * operands: the saturating form of an arithmetic operation, MIN or MAX for their forms that
+     * treat NULL specially, and the operation itself otherwise. */
+    static DBSPExpression onWaterlines(DBSPBinaryExpression expression, DBSPExpression left, DBSPExpression right) {
+        DBSPOpcode opcode = switch (expression.opcode) {
+            case MIN_IGNORE_NULLS -> DBSPOpcode.MIN;
+            case MAX_IGNORE_NULLS, MAX_NULL_WINS -> DBSPOpcode.MAX;
+            default -> Objects.requireNonNullElse(expression.opcode.saturating(), expression.opcode);
+        };
+        return new DBSPBinaryExpression(expression.getNode(), expression.getType().withMayBeNull(false),
+                opcode, left, right);
+    }
+
+    /** {@code waterline}, converted to the type of {@code expression} without NULL. */
+    static DBSPExpression castToTypeOf(DBSPExpression expression, DBSPExpression waterline) {
+        DBSPType type = expression.getType().withMayBeNull(false);
+        if (waterline.getType().sameType(type))
+            return waterline;
+        return waterline.cast(expression.getNode(), type, DBSPCastExpression.CastType.SqlUnsafe);
+    }
+
     @Override
     public void postorder(DBSPTimeAddSub expression) {
         MonotoneExpression left = this.get(expression.left);
@@ -599,16 +649,16 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if ((expression.opcode == DBSPOpcode.ADD) && lm && rm) {
             // The addition of two monotone expressions is monotone
             resultType = new MonotoneType(expression.type);
-            reduced = new DBSPTimeAddSub(expression.getNode(), expression.getType(),
-                    expression.opcode, left.getReducedExpression(), right.getReducedExpression());
+            reduced = onWaterlines(expression, left.getReducedExpression(), right.getReducedExpression());
         }
         // Some expressions are monotone if some of their operands are constant
         if (lm && expression.opcode == DBSPOpcode.SUB) {
-            // Subtracting a constant from a monotone expression produces a monotone result
-            if (this.constantExpressions.contains(expression.right)) {
+            // Subtracting a constant from a monotone expression produces a monotone result.
+            // A constant has no waterline when its value can fail, e.g. a CAST without a
+            // saturating form.
+            if (this.constantExpressions.contains(expression.right) && rm) {
                 resultType = left.copyMonotonicity(expression.type);
-                reduced = new DBSPTimeAddSub(expression.getNode(), expression.getType(),
-                        expression.opcode, left.getReducedExpression(), right.getReducedExpression());
+                reduced = onWaterlines(expression, left.getReducedExpression(), right.getReducedExpression());
             }
         }
         MonotoneExpression result = new MonotoneExpression(expression, resultType, reduced);
@@ -648,8 +698,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 expression.opcode == DBSPOpcode.U128_TO_BINARY) && lm && rm) {
             // The addition of two monotone expressions is monotone
             resultType = new MonotoneType(expression.type);
-            reduced = expression.replaceSources(
-                    left.getReducedExpression(), right.getReducedExpression());
+            reduced = onWaterlines(expression, left.getReducedExpression(), right.getReducedExpression());
         }
         // MAX and MAX_NULL_WINS are NULL when either argument is NULL, so either monotone argument
         // bounds the result.  MAX_IGNORE_NULLS returns the other argument when one is NULL, so only
@@ -661,39 +710,33 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (leftBounds || rightBounds) {
             resultType = new MonotoneType(expression.type);
             if (!leftBounds) {
-                reduced = right.getReducedExpression()
-                        // must preserve type
-                        .cast(expression.getNode(), expression.getType(), DBSPCastExpression.CastType.SqlUnsafe);
+                reduced = castToTypeOf(expression, right.getReducedExpression());
             } else if (!rightBounds) {
-                reduced = left.getReducedExpression()
-                        .cast(expression.getNode(), expression.getType(), DBSPCastExpression.CastType.SqlUnsafe);
+                reduced = castToTypeOf(expression, left.getReducedExpression());
             } else {
-                reduced = expression.replaceSources(
-                        left.getReducedExpression(),
-                        right.getReducedExpression());
+                reduced = onWaterlines(expression, left.getReducedExpression(), right.getReducedExpression());
             }
         } else if ((expression.opcode == DBSPOpcode.MIN || expression.opcode == DBSPOpcode.MIN_IGNORE_NULLS)
                 && lm && rm) {
             // The result of MIN is monotone if both expressions are monotone
             resultType = new MonotoneType(expression.type);
-            reduced = expression.replaceSources(
-                    left.getReducedExpression(),
-                    right.getReducedExpression());
+            reduced = onWaterlines(expression, left.getReducedExpression(), right.getReducedExpression());
         } else if (expression.opcode == DBSPOpcode.COALESCE && lm && rm) {
+            // A value of COALESCE is a value of one of its arguments, so it is at least the smaller
+            // waterline
             resultType = new MonotoneType(expression.type);
-            reduced = new DBSPBinaryExpression(expression.getNode(), expression.type, DBSPOpcode.MIN,
-                    left.getReducedExpression()
-                            .cast(expression.getNode(), expression.type, DBSPCastExpression.CastType.SqlUnsafe),
-                    right.getReducedExpression()
-                            .cast(expression.getNode(), expression.type, DBSPCastExpression.CastType.SqlUnsafe));
+            reduced = new DBSPBinaryExpression(expression.getNode(), expression.type.withMayBeNull(false),
+                    DBSPOpcode.MIN, castToTypeOf(expression, left.getReducedExpression()),
+                    castToTypeOf(expression, right.getReducedExpression()));
         }
         // Some expressions are monotone if some of their operands are constant
         if (left.mayBeMonotone() && expression.opcode == DBSPOpcode.SUB) {
-            // Subtracting a constant from a monotone expression produces a monotone result
-            if (this.constantExpressions.contains(expression.right)) {
+            // Subtracting a constant from a monotone expression produces a monotone result.
+            // A constant has no waterline when its value can fail, e.g. a CAST without a
+            // saturating form.
+            if (this.constantExpressions.contains(expression.right) && rm) {
                 resultType = left.copyMonotonicity(expression.type);
-                reduced = expression.replaceSources(
-                        left.getReducedExpression(), right.getReducedExpression());
+                reduced = onWaterlines(expression, left.getReducedExpression(), right.getReducedExpression());
             }
         }
         if (left.mayBeMonotone() && this.isPositiveLiteral(expression.right) &&
@@ -704,16 +747,14 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             // Multiplying or dividing a monotone expression by
             // a positive constant produces a monotone result
             resultType = left.copyMonotonicity(expression.type);
-            reduced = expression.replaceSources(
-                    left.getReducedExpression(), right.getReducedExpression());
+            reduced = onWaterlines(expression, left.getReducedExpression(), right.getReducedExpression());
         }
         // MUL_INTERVAL always has the number on the right
         if (right.mayBeMonotone() && this.isPositiveLiteral(expression.left) &&
                 expression.opcode == DBSPOpcode.MUL) {
             // Multiplying a positive constant by a monotone expression produces a monotone result
             resultType = right.copyMonotonicity(expression.type);
-            reduced = expression.replaceSources(
-                    left.getReducedExpression(), right.getReducedExpression());
+            reduced = onWaterlines(expression, left.getReducedExpression(), right.getReducedExpression());
         }
         MonotoneExpression result = new MonotoneExpression(expression, resultType, reduced);
         this.set(expression, result);
@@ -741,13 +782,27 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         DBSPExpression reduced = null;
 
         // A cast preserves monotonicity if the result type can represent monotone values
-        // and the cast preserves order.
+        // and the cast preserves order.  A SAFE_CAST that can fail returns NULL among values,
+        // which is not monotone for either position of NULL in the order.
         boolean outputTypeMayBeMonotone = typeCanBeMonotone(expression.getType());
-        boolean isMonotone = source.mayBeMonotone() && outputTypeMayBeMonotone &&
+        boolean nullAmongValues = expression.safe.isSafe() && expression.canFail();
+        boolean isMonotone = source.mayBeMonotone() && outputTypeMayBeMonotone && !nullAmongValues &&
                 castPreservesOrder(expression.source.getType(), expression.getType());
+        if (isMonotone) {
+            DBSPExpression waterline = source.getReducedExpression();
+            DBSPType type = expression.getType().withMayBeNull(false);
+            if (waterline.getType().sameType(type))
+                // A cast that only changes nullability
+                reduced = waterline;
+            else if (!expression.canFail())
+                reduced = waterline.cast(expression.getNode(), type, DBSPCastExpression.CastType.SqlUnsafe);
+            else if (DBSPCastExpression.hasSaturatingForm(waterline.getType(), type))
+                reduced = waterline.cast(expression.getNode(), type, DBSPCastExpression.CastType.Saturating);
+            else
+                isMonotone = false;
+        }
         IMaybeMonotoneType resultType;
         if (isMonotone) {
-            reduced = expression.replaceSource(source.getReducedExpression());
             resultType = source.copyMonotonicity(expression.getType());
         } else {
             resultType = NonMonotoneType.nonMonotone(expression.type);
@@ -776,7 +831,13 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         }
         DBSPExpression reduced = null;
         if (source.mayBeMonotone()) {
-            reduced = expression.replaceSource(source.getReducedExpression());
+            DBSPExpression waterline = source.getReducedExpression();
+            // The encoding of a nullable value uses a wider integer; the encoding of Some(w) is
+            // the integer of the value w in the data
+            if (expression.source.getType().mayBeNull)
+                waterline = waterline.some();
+            reduced = new DBSPUnsignedWrapExpression(
+                    expression.getNode(), waterline, expression.ascending, expression.nullsLast);
         }
         MonotoneExpression result = new MonotoneExpression(
                 expression, source.copyMonotonicity(expression.getType()), reduced);
@@ -788,7 +849,11 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         MonotoneExpression source = this.get(expression.source);
         DBSPExpression reduced = null;
         if (source.mayBeMonotone()) {
-            reduced = expression.replaceSource(source.getReducedExpression());
+            DBSPType type = expression.getType();
+            DBSPExpression decoded = new DBSPUnsignedUnwrapExpression(expression.getNode(),
+                    source.getReducedExpression(), type, expression.ascending, expression.nullsLast);
+            // The decoding into a nullable type of the encoding of Some(w) is Some(w)
+            reduced = type.mayBeNull ? decoded.neverFailsUnwrap(expression.getNode()) : decoded;
         }
         if (this.constantExpressions.contains(expression.source))
             this.constantExpressions.add(expression);
@@ -813,7 +878,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         DBSPExpression reduced = null;
         IMaybeMonotoneType resultType = NonMonotoneType.nonMonotone(expression.getType());
         if (monotoneUnary.contains(expression.opcode) && source.mayBeMonotone()) {
-            reduced = expression.replaceSource(source.getReducedExpression());
+            reduced = new DBSPUnaryExpression(expression.getNode(), expression.getType().withMayBeNull(false),
+                    expression.opcode, source.getReducedExpression());
             if (this.positiveExpressions.contains(expression.source))
                 this.positiveExpressions.add(expression);
             resultType = source.copyMonotonicity(expression.getType());
@@ -824,90 +890,36 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.set(expression, result);
     }
 
-    /** True if every argument of {@code expression} after the first is a constant. */
-    boolean constantAfterFirst(DBSPApplyExpression expression) {
-        for (int i = 1; i < expression.arguments.length; i++)
-            if (!this.constantExpressions.contains(expression.arguments[i]))
-                return false;
-        return true;
-    }
-
-    /** The reduced form of argument {@code index} of {@code expression}: the monotone part of a
-     * monotone argument, or a copy of a constant argument. */
-    DBSPExpression reducedArgument(DBSPApplyExpression expression, MonotoneExpression[] arguments, int index) {
-        if (arguments[index].mayBeMonotone())
-            return arguments[index].getReducedExpression();
-        Utilities.enforce(this.constantExpressions.contains(expression.arguments[index]),
-                () -> "Argument " + expression.arguments[index] + " is neither monotone nor constant");
-        return expression.arguments[index].deepCopy();
+    /** What the analysis knows about argument {@code index} of {@code expression}. */
+    MonotoneFunction.Argument argument(DBSPApplyExpression expression, int index) {
+        DBSPExpression argument = expression.arguments[index];
+        MonotoneExpression monotone = this.get(argument);
+        DBSPExpression waterline = monotone.mayBeMonotone() ? monotone.getReducedExpression() : null;
+        return new MonotoneFunction.Argument(argument, this.constantExpressions.contains(argument), waterline);
     }
 
     @Override
     public void postorder(DBSPApplyExpression expression) {
-        MonotoneExpression[] arguments = Linq.map(expression.arguments, this::get, MonotoneExpression.class);
-        boolean allArgsMonotone = Linq.all(arguments, MonotoneExpression::mayBeMonotone);
         boolean allArgsConstant = Linq.all(expression.arguments, this.constantExpressions::contains);
         DBSPExpression reduced = null;
         IMaybeMonotoneType resultType = NonMonotoneType.nonMonotone(expression.getType());
         String name = expression.getFunctionName();
         boolean isDeterministic = name == null || !name.equals("now");
         if (name != null) {
-            // Monotone in the first argument only; the others, such as the digits of ROUND
-            // or the sizes of a HOP or TUMBLE window, must be constant
-            if ((name.startsWith("round_") ||
-                    name.startsWith("bround_") ||
-                    name.startsWith("truncate_") ||
-                    name.startsWith("trunc_") ||
-                    name.startsWith("tumble_") ||
-                    name.equals("hop_start_timestamp")) &&
-                    arguments.length > 0 && arguments[0].mayBeMonotone() &&
-                    this.constantAfterFirst(expression)) {
-                DBSPExpression[] reducedArgs = new DBSPExpression[arguments.length];
-                for (int i = 0; i < arguments.length; i++)
-                    reducedArgs[i] = this.reducedArgument(expression, arguments, i);
+            if (name.equals("now")) {
+                // Only when called from ImplementNow
                 resultType = new MonotoneType(expression.getType());
-                reduced = expression.replaceArguments(reducedArgs);
-            }
-            if (allArgsMonotone) {
-                DBSPExpression[] reducedArgs = Linq.map(
-                        arguments, MonotoneExpression::getReducedExpression, DBSPExpression.class);
-                // Monotone functions applied to monotone arguments.
-                if (name.startsWith("log10_") ||
-                        name.startsWith("ln_") ||
-                        name.startsWith("ceil_") ||
-                        // Not sqrt_: it returns NaN, the largest value, for a negative argument
-                        // name.startsWith("sqrt_") ||
-                        name.startsWith("cbrt_") ||
-                        name.startsWith("exp_") ||
-                        name.startsWith("atan_") ||
-                        name.startsWith("sinh_") ||
-                        name.startsWith("asinh_") ||
-                        name.startsWith("tanh_") ||
-                        name.startsWith("degrees_") ||
-                        name.startsWith("radians_") ||
-                        name.startsWith("floor_") ||
-                        name.startsWith("sign_") ||
-                        name.startsWith("numeric_inc") ||
-                        name.startsWith("extract_year_") ||
-                        name.startsWith("extract_millennium_") ||
-                        name.startsWith("extract_century_") ||
-                        name.startsWith("extract_decade_") ||
-                        name.startsWith("extract_isoyear_") ||
-                        name.startsWith("extract_epoch_") ||
-                        name.startsWith("extract_hour_Time_") ||
-                        name.startsWith("to_bound_") ||
-                        name.startsWith("date_trunc_") ||
-                        name.startsWith("time_trunc_") ||
-                        name.startsWith("timestamp_trunc_") ||
-                        name.equals("now") // Only when called from ImplementNow
-                ) {
-                    resultType = new MonotoneType(expression.getType());
-                    reduced = expression.replaceArguments(reducedArgs);
-                }
-                // datediff_(left, right) computes right - left: monotone in right for a constant left
-                if (name.startsWith("datediff_") && this.constantExpressions.contains(expression.arguments[0])) {
-                    resultType = new MonotoneType(expression.getType());
-                    reduced = expression.replaceArguments(reducedArgs);
+                reduced = expression.replaceArguments();
+            } else {
+                MonotoneFunction function = MonotoneFunction.find(name);
+                if (function != null) {
+                    List<MonotoneFunction.Argument> arguments = new ArrayList<>();
+                    for (int i = 0; i < expression.arguments.length; i++)
+                        arguments.add(this.argument(expression, i));
+                    MonotoneFunctionCall call = new MonotoneFunctionCall(function, expression, arguments);
+                    reduced = call.waterline();
+                    if (reduced != null)
+                        resultType = new MonotoneType(expression.getType());
                 }
             }
         }

@@ -4,9 +4,9 @@
 use crate::{
     Date, MICROS_PER_DAY, MICROS_PER_HOUR, MICROS_PER_MINUTE, MICROS_PER_SECOND, SqlDecimal,
     operators::{eq, gt, gte, lt, lte, neq},
-    plus_Date_Date_LongInterval__, sign, some_existing_operator, some_function1, some_function2,
-    some_operator, some_polymorphic_function1, some_polymorphic_function2,
-    some_polymorphic_null_function2,
+    plus_Date_Date_LongInterval__, plus_saturating_Date_Date_LongInterval__, sign,
+    some_existing_operator, some_function1, some_function2, some_operator,
+    some_polymorphic_function1, some_polymorphic_function2, some_polymorphic_null_function2,
     timestamp::{extract_epoch_Date, extract_quarter_Date},
 };
 use dbsp::{algebra::F64, num_entries_scalar};
@@ -572,6 +572,74 @@ some_function2!(
     ShortInterval
 );
 
+// Saturating forms of the ShortInterval operations.  A result above the range of the type is
+// the maximum interval, and a result below it the minimum.
+
+#[doc(hidden)]
+pub fn plus_saturating_ShortInterval_ShortInterval_ShortInterval__(
+    left: ShortInterval,
+    right: ShortInterval,
+) -> ShortInterval {
+    ShortInterval::from_microseconds(left.microseconds().saturating_add(right.microseconds()))
+}
+
+#[doc(hidden)]
+pub fn minus_saturating_ShortInterval_ShortInterval_ShortInterval__(
+    left: ShortInterval,
+    right: ShortInterval,
+) -> ShortInterval {
+    ShortInterval::from_microseconds(left.microseconds().saturating_sub(right.microseconds()))
+}
+
+#[doc(hidden)]
+pub fn times_saturating_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
+    ShortInterval::from_microseconds(left.microseconds().saturating_mul(right))
+}
+
+#[doc(hidden)]
+pub fn times_saturating_ShortInterval_d(left: ShortInterval, right: F64) -> ShortInterval {
+    // The conversion truncates and saturates; NaN becomes 0
+    ShortInterval::from_microseconds((left.microseconds() as f64 * right.into_inner()) as i64)
+}
+
+#[doc(hidden)]
+pub fn times_saturating_ShortInterval_SqlDecimal<const P: usize, const S: usize>(
+    left: ShortInterval,
+    right: SqlDecimal<P, S>,
+) -> ShortInterval {
+    let negative = (left.microseconds() < 0) != right.is_negative();
+    let product = SqlDecimal::<38, 0>::try_from(left.microseconds())
+        .ok()
+        .and_then(|us| us.checked_mul_generic::<P, S, 38, 0>(right))
+        .and_then(|product| i64::try_from(product).ok());
+    ShortInterval::from_microseconds(product.unwrap_or(if negative { i64::MIN } else { i64::MAX }))
+}
+
+/// A divisor of 0 still fails.
+#[doc(hidden)]
+pub fn div_saturating_ShortInterval_i64(left: ShortInterval, right: i64) -> ShortInterval {
+    ShortInterval::from_microseconds(left.microseconds().saturating_div(right))
+}
+
+#[doc(hidden)]
+pub fn div_saturating_ShortInterval_d(left: ShortInterval, right: F64) -> ShortInterval {
+    // The conversion truncates and saturates; NaN becomes 0
+    ShortInterval::from_microseconds((left.microseconds() as f64 / right.into_inner()) as i64)
+}
+
+#[doc(hidden)]
+pub fn div_saturating_ShortInterval_SqlDecimal<const P: usize, const S: usize>(
+    left: ShortInterval,
+    right: SqlDecimal<P, S>,
+) -> ShortInterval {
+    let negative = (left.microseconds() < 0) != right.is_negative();
+    let quotient = SqlDecimal::<38, 0>::try_from(left.microseconds())
+        .ok()
+        .and_then(|us| us.checked_div_generic::<P, S, 38, 0>(right))
+        .and_then(|quotient| i64::try_from(quotient).ok());
+    ShortInterval::from_microseconds(quotient.unwrap_or(if negative { i64::MIN } else { i64::MAX }))
+}
+
 /////////////////////////
 
 /// A difference between two [Date]s expressed as a (positive or
@@ -930,6 +998,74 @@ some_function2!(
     LongInterval
 );
 
+// Saturating forms of the LongInterval operations.  A result above the range of the type is
+// the maximum interval, and a result below it the minimum.
+
+#[doc(hidden)]
+pub fn plus_saturating_LongInterval_LongInterval_LongInterval__(
+    left: LongInterval,
+    right: LongInterval,
+) -> LongInterval {
+    LongInterval::from_months(left.months().saturating_add(right.months()))
+}
+
+#[doc(hidden)]
+pub fn minus_saturating_LongInterval_LongInterval_LongInterval__(
+    left: LongInterval,
+    right: LongInterval,
+) -> LongInterval {
+    LongInterval::from_months(left.months().saturating_sub(right.months()))
+}
+
+#[doc(hidden)]
+pub fn times_saturating_LongInterval_i32(left: LongInterval, right: i32) -> LongInterval {
+    LongInterval::from_months(left.months().saturating_mul(right))
+}
+
+#[doc(hidden)]
+pub fn times_saturating_LongInterval_d(left: LongInterval, right: F64) -> LongInterval {
+    // The conversion truncates and saturates; NaN becomes 0
+    LongInterval::from_months((left.months() as f64 * right.into_inner()) as i32)
+}
+
+#[doc(hidden)]
+pub fn times_saturating_LongInterval_SqlDecimal<const P: usize, const S: usize>(
+    left: LongInterval,
+    right: SqlDecimal<P, S>,
+) -> LongInterval {
+    let negative = (left.months() < 0) != right.is_negative();
+    let product = SqlDecimal::<38, 0>::try_from(left.months())
+        .ok()
+        .and_then(|months| months.checked_mul_generic::<P, S, 38, 0>(right))
+        .and_then(|product| i32::try_from(product).ok());
+    LongInterval::from_months(product.unwrap_or(if negative { i32::MIN } else { i32::MAX }))
+}
+
+/// A divisor of 0 still fails.
+#[doc(hidden)]
+pub fn div_saturating_LongInterval_i32(left: LongInterval, right: i32) -> LongInterval {
+    LongInterval::from_months(left.months().saturating_div(right))
+}
+
+#[doc(hidden)]
+pub fn div_saturating_LongInterval_d(left: LongInterval, right: F64) -> LongInterval {
+    // The conversion truncates and saturates; NaN becomes 0
+    LongInterval::from_months((left.months() as f64 / right.into_inner()) as i32)
+}
+
+#[doc(hidden)]
+pub fn div_saturating_LongInterval_SqlDecimal<const P: usize, const S: usize>(
+    left: LongInterval,
+    right: SqlDecimal<P, S>,
+) -> LongInterval {
+    let negative = (left.months() < 0) != right.is_negative();
+    let quotient = SqlDecimal::<38, 0>::try_from(left.months())
+        .ok()
+        .and_then(|months| months.checked_div_generic::<P, S, 38, 0>(right))
+        .and_then(|quotient| i32::try_from(quotient).ok());
+    LongInterval::from_months(quotient.unwrap_or(if negative { i32::MIN } else { i32::MAX }))
+}
+
 #[doc(hidden)]
 pub fn extract_year_LongInterval(value: LongInterval) -> i64 {
     (value.months / 12).into()
@@ -975,6 +1111,14 @@ pub fn extract_epoch_LongInterval(value: LongInterval) -> i64 {
     let dt = Date::from_days(0);
     let dt = plus_Date_Date_LongInterval__(dt, value);
     // I think this is right and Postgres is wrong
+    extract_epoch_Date(dt)
+}
+
+/// Saturating form of `extract_epoch_LongInterval`: the epoch of 0001-01-01 for an interval that
+/// moves 1970-01-01 before that date, and the epoch of 9999-12-31 for one that moves it after.
+#[doc(hidden)]
+pub fn extract_epoch_LongInterval_saturating(value: LongInterval) -> i64 {
+    let dt = plus_saturating_Date_Date_LongInterval__(Date::from_days(0), value);
     extract_epoch_Date(dt)
 }
 
@@ -1102,9 +1246,15 @@ crate::hash_repr::hash_repr_struct! {
 mod test {
     use super::{
         LongInterval, ShortInterval, abs_LongInterval, abs_ShortInterval, div_null_LongInterval_d,
-        div_null_ShortInterval_d,
+        div_null_ShortInterval_d, div_saturating_ShortInterval_SqlDecimal,
+        div_saturating_ShortInterval_d, extract_epoch_LongInterval,
+        extract_epoch_LongInterval_saturating,
+        minus_saturating_LongInterval_LongInterval_LongInterval__,
+        plus_saturating_ShortInterval_ShortInterval_ShortInterval__,
+        times_saturating_LongInterval_SqlDecimal, times_saturating_LongInterval_d,
+        times_saturating_ShortInterval_i64,
     };
-    use crate::SqlDecimal;
+    use crate::{Date, SqlDecimal, extract_epoch_Date};
     use dbsp::algebra::F64;
 
     #[test]
@@ -1250,6 +1400,63 @@ mod test {
         assert_eq!(
             ShortInterval::from_microseconds(i64::MAX).to_string(),
             "+106751991 04:00:54.775807"
+        );
+    }
+
+    #[test]
+    fn saturating_interval_arithmetic() {
+        let max = ShortInterval::from_microseconds(i64::MAX);
+        let min = ShortInterval::from_microseconds(i64::MIN);
+        let one = ShortInterval::from_microseconds(1);
+        assert_eq!(
+            plus_saturating_ShortInterval_ShortInterval_ShortInterval__(max, one),
+            max
+        );
+        assert_eq!(
+            plus_saturating_ShortInterval_ShortInterval_ShortInterval__(one, one),
+            ShortInterval::from_microseconds(2)
+        );
+        assert_eq!(
+            minus_saturating_LongInterval_LongInterval_LongInterval__(
+                LongInterval::from_months(i32::MIN),
+                LongInterval::from_months(1)
+            ),
+            LongInterval::from_months(i32::MIN)
+        );
+        assert_eq!(times_saturating_ShortInterval_i64(min, 2), min);
+        assert_eq!(times_saturating_ShortInterval_i64(max, -2), min);
+        assert_eq!(
+            times_saturating_LongInterval_d(LongInterval::from_months(i32::MAX), F64::new(2.0)),
+            LongInterval::from_months(i32::MAX)
+        );
+        assert_eq!(div_saturating_ShortInterval_d(min, F64::new(0.5)), min);
+        let two = SqlDecimal::<4, 2>::new(200, 2).unwrap();
+        assert_eq!(
+            times_saturating_LongInterval_SqlDecimal(LongInterval::from_months(-12), two),
+            LongInterval::from_months(-24)
+        );
+        assert_eq!(
+            times_saturating_LongInterval_SqlDecimal(LongInterval::from_months(i32::MIN), two),
+            LongInterval::from_months(i32::MIN)
+        );
+        let half = SqlDecimal::<4, 2>::new(50, 2).unwrap();
+        assert_eq!(div_saturating_ShortInterval_SqlDecimal(max, half), max);
+    }
+
+    #[test]
+    fn saturating_epoch_of_long_interval() {
+        let year = LongInterval::from_months(12);
+        assert_eq!(
+            extract_epoch_LongInterval_saturating(year),
+            extract_epoch_LongInterval(year)
+        );
+        assert_eq!(
+            extract_epoch_LongInterval_saturating(LongInterval::from_months(i32::MAX)),
+            extract_epoch_Date(Date::LAST_LEGAL)
+        );
+        assert_eq!(
+            extract_epoch_LongInterval_saturating(LongInterval::from_months(i32::MIN)),
+            extract_epoch_Date(Date::FIRST_LEGAL)
         );
     }
 }

@@ -49,7 +49,7 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
                                        @Nullable DBSPAggregateList aggregateList,
                                        OutputPort input) {
         super(node, "stream_aggregate",
-                outputType, function, aggregateList, false, input);
+                outputType, function, aggregateList, input);
         Utilities.enforce(aggregateList == null ||
                 aggregateList.rowVar.getType().sameType(input.getOutputIndexedZSetType().elementType.ref()));
         Utilities.enforce(aggregateList == null ||

@@ -534,14 +534,14 @@ public class ShareIndexesTests extends StreamingTestBase {
         List<OutputPort> starInputs = Linq.list(index(circuit, t, 1), index(circuit, s, 1), index(circuit, u, 1));
         DBSPClosureExpression starFunction = firstFields(starInputs);
         DBSPStarJoinOperator star = new DBSPStarJoinOperator(CalciteEmptyRel.INSTANCE,
-                new DBSPTypeZSet(starFunction.getResultType()), starFunction, false, starInputs);
+                new DBSPTypeZSet(starFunction.getResultType()), starFunction, starInputs);
         circuit.addOperator(star);
         view(circuit, "SJ", star);
 
         List<OutputPort> joinInputs = Linq.list(index(circuit, t, 2), index(circuit, s, 1));
         DBSPClosureExpression joinFunction = firstFields(joinInputs);
         DBSPJoinOperator join = new DBSPJoinOperator(CalciteEmptyRel.INSTANCE,
-                new DBSPTypeZSet(joinFunction.getResultType()), joinFunction, false,
+                new DBSPTypeZSet(joinFunction.getResultType()), joinFunction,
                 joinInputs.get(0), joinInputs.get(1), false);
         circuit.addOperator(join);
         view(circuit, "J", join);

@@ -404,10 +404,10 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     public void postorder(DBSPStringLiteral node) {
         if (node.value != null) {
             this.property("value");
-            this.stream.append(node.value);
+            this.stream.append(node.value.toJavaString());
         }
         this.property("charset");
-        this.stream.append(node.charset.toString());
+        this.stream.append("UTF-8");
         super.postorder(node);
     }
 

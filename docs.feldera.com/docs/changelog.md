@@ -10,6 +10,69 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.373.0
+
+- With `FELDERA_REFUSE_LOCAL_FILE_URIS=true`, Delta Lake and Iceberg connectors
+  refuse local paths, such as `file:///etc` or `/etc`, also when a secret or an
+  environment variable holds the path.
+
+- Behavior change (exactly-once Kafka output): the connector no longer limits
+  delivery retries to five, and a failed commit no longer leaves the connector
+  stuck while the pipeline runs. It keeps the records of the open transaction,
+  aborts the transaction after a delivery failure, sends the records again,
+  and commits, with a backoff of up to ten seconds, until the commit succeeds
+  or the pipeline stops. It reports unhealthy while it recovers. A fatal
+  producer error or an unclassified transaction error holds the output thread
+  until the pipeline is stopped instead of dropping later output. Fencing by
+  another instance or by the broker after a transaction timeout requires a
+  restart. Records the client refuses are reported once, even when first
+  discovered during replay. A refusal by the broker, a revoked permission, a
+  missing topic or a transaction longer than `transaction.timeout.ms` is
+  reported as a connector error after three aborts in a row, and no record is
+  dropped. Above 64 MiB the kept records spill to a file in
+  the pipeline's storage directory. New metrics `kafka_output_transaction_aborts_total`,
+  `kafka_output_commit_retries_total` and `kafka_output_replay_spool_bytes`.
+  See [Exactly-once delivery and recovery](/connectors/sinks/kafka#exactly-once-delivery-and-recovery).
+
+- Enterprise (Kubernetes): `POST`, `PUT`, and `PATCH /v0/pipelines` refuse a
+  `runtime_config` with a `resources.storage_class` or
+  `resources.volume_attributes_class` that is not on the allowlist of the
+  installation, or a `resources.storage_min` or `resources.storage_max` above
+  `kubernetesRunner.upperLimitStorageMegabyte`, with a 400
+  `InvalidRuntimeConfig` error.  Before, the API accepted these values and the
+  next start failed.  On all installations, `storage_min` cannot be more than
+  `storage_max`.  A pipeline stored with such values still loads.  See
+  [Storage limits](/pipelines/configuration#storage-limits).
+
+- Incompatible change (SQL): date arithmetic now matches the SQL
+  standard.  An interval holds whole numbers in every field except
+  `SECOND`, and an operation that produces an interval truncates the value
+  toward zero to the last field of its type (see
+  [the interval types](/sql/datetime#the-interval-types)):
+  - A cast between interval types:
+    `CAST(INTERVAL '19' MONTH AS INTERVAL YEAR)` is now `INTERVAL '1' YEAR`
+    instead of 19 months, so `DATE '2020-01-01' + CAST(INTERVAL '19' MONTH
+    AS INTERVAL YEAR)` is now 2021-01-01 instead of 2021-08-01.
+    `CAST(INTERVAL '25' HOUR AS INTERVAL DAY)` is now `INTERVAL '1' DAY`
+    instead of 25 hours.
+  - A cast of a number with a fraction: `CAST(1.5 AS INTERVAL YEAR)` is
+    now `INTERVAL '1' YEAR` instead of 18 months, and
+    `CAST(-1.5 AS INTERVAL DAY)` is now `INTERVAL '-1' DAY` instead of
+    -36 hours.
+  - The product or the quotient of an interval and a number, which has
+    the type of the interval: `INTERVAL '1' YEAR * 1.5` is now
+    `INTERVAL '1' YEAR` instead of 18 months, and `INTERVAL '1' DAY / 2`
+    is now `INTERVAL '0' DAY` instead of 12 hours.
+  - The difference of two dates, times or timestamps, which has the type
+    of its qualifier and counts the boundaries of its last field between
+    the two values: `(DATE '2021-01-01' - DATE '2020-12-31') YEAR` is now
+    `INTERVAL '1' YEAR` instead of 0 months, and
+    `(DATE '2021-03-01' - DATE '2020-01-01') YEAR` is now
+    `INTERVAL '1' YEAR` instead of 14 months.  `TIMESTAMPDIFF` does not
+    change.
+
+## v0.372.0
+
 - Behavior change (non-fault-tolerant Kafka output): temporary delivery
   failures are retried without a deadline by default, replacing the former
   five-minute limit. When the broker is down the producer queue fills,
@@ -25,6 +88,14 @@ Source edition can be found on github.
   Metrics prefixed `kafka_output_` expose producer queue depth, delivery
   counts, and queue wait time. See
   [Kafka output delivery and metrics](/connectors/sinks/kafka#delivery-retries-and-backpressure).
+
+- NATS input connector: the client library is updated to async-nats 0.51.0,
+  which fixes spurious missing-heartbeat errors while messages are buffered
+  and pull consumers looping on `409 Exceeded MaxRequest*`. The `max_batch`,
+  `max_bytes` and `max_expiry` consumer settings now reach the server, where
+  earlier releases dropped them. A consumer that the library recreates is
+  named `<prefix>_<uuid>_<n>`, and the connector deletes it together with its
+  own. See [consumer lifecycle](/connectors/sources/nats#consumer-lifecycle).
 
 ## v0.371.0
 
@@ -86,6 +157,12 @@ Source edition can be found on github.
   without `--watch`. In Python, `Pipeline.logs(follow=False)` and
   `FelderaClient.get_pipeline_logs(name, follow=False)` request it.
 
+- Python SDK: `FelderaClient` can now list, look up and delete API keys
+  (`list_api_keys()`, `get_api_key()`, `delete_api_key()`) and manage the
+  members of the current tenant (`list_tenant_members()`,
+  `add_tenant_member()`, `set_tenant_member_role()`,
+  `remove_tenant_member()`), matching `fda apikey` and `fda member`.
+
 - Bug fix (Parquet output): a deletion in the output of a view with a Parquet
   output connector crashed the pipeline.  The connector now reports an
   encoder error for that batch instead; the Parquet format still cannot
@@ -120,6 +197,21 @@ Source edition can be found on github.
   is now a parse error.  Before this change, such a
   value was accepted: for example, a timestamp of `253402300800000000`
   microseconds in an Avro or Parquet input became `10000-01-01 00:00:00`.
+
+- Incompatible change (SQL): `<`, `<=`, `>` and `>=` are no longer
+  allowed between `ROW` values, and neither are `BETWEEN`, `GREATEST`,
+  `LEAST`, `GREATEST_IGNORE_NULLS` and `LEAST_IGNORE_NULLS` with `ROW`
+  arguments, so some programs that used to compile are now rejected.
+  The same holds for `ARRAY` and `MAP` values that contain `ROW` values,
+  such as `ROW(x INT) ARRAY`; `=` and `<>` remain allowed on them.
+  These operations placed a `NULL` field before any other value, so
+  `ROW(1, NULL) < ROW(1, 2)` was `true`; standard SQL gives `NULL`.
+  Compare the fields instead, for example
+  `r.x < s.x OR (r.x = s.x AND r.y < s.y)`.  A user-defined type
+  declared with `CREATE TYPE ... AS (...)` is a `ROW` type, so the
+  restriction covers its values too.  `ORDER BY`, `MIN` and `MAX` still
+  accept `ROW` values.  See
+  [comparing `ROW` values](https://docs.feldera.com/sql/comparisons#comparing-row-values).
 
 ## v0.369.0
 

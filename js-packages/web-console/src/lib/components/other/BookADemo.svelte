@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { useConceptualHq } from '$lib/compositions/useConceptualHq.svelte'
-  import { captureEvent } from '$lib/services/analytics'
-  import { bookADemoUrl } from '$lib/services/calendly'
-  import type { Snippet } from '$lib/types/svelte'
+  import { useConceptualHq } from '#lib/compositions/useConceptualHq.svelte.ts'
+  import { captureEvent } from '#lib/services/analytics.ts'
+  import { bookADemoUrl } from '#lib/services/calendly.ts'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   const {
     class: _class,

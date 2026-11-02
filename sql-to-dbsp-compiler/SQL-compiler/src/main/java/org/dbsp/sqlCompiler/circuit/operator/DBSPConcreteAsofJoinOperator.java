@@ -38,7 +38,6 @@ public final class DBSPConcreteAsofJoinOperator extends DBSPJoinBaseOperator imp
      * @param leftTimestamp   Function that extracts a "timestamp" from the left input
      * @param rightTimestamp  Function that extracts a "timestamp" from the right input
      * @param comparator      Function that compares two timestamps.  Not yet used - hardwired.
-     * @param isMultiset      True if output is a multiset
      * @param isLeft          True if this is a left join
      * @param left            Left input
      * @param right           Right input
@@ -48,9 +47,9 @@ public final class DBSPConcreteAsofJoinOperator extends DBSPJoinBaseOperator imp
                                         DBSPClosureExpression leftTimestamp,
                                         DBSPClosureExpression rightTimestamp,
                                         DBSPExpression comparator,
-                                        boolean isMultiset, boolean isLeft,
+                                        boolean isLeft,
                                         OutputPort left, OutputPort right) {
-        super(node, "asof_join", function, outputType, isMultiset, left, right, false);
+        super(node, "asof_join", function, outputType, left, right, false);
         this.isLeft = isLeft;
         this.comparator = comparator;
         this.leftTimestamp = leftTimestamp;
@@ -107,7 +106,7 @@ public final class DBSPConcreteAsofJoinOperator extends DBSPJoinBaseOperator imp
             return new DBSPConcreteAsofJoinOperator(
                     this.getRelNode(), this.getOutputZSetType(),
                     Objects.requireNonNull(function), this.leftTimestamp, this.rightTimestamp,
-                    this.comparator, this.isMultiset, this.isLeft,
+                    this.comparator, this.isLeft,
                     newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         }
@@ -137,7 +136,7 @@ public final class DBSPConcreteAsofJoinOperator extends DBSPJoinBaseOperator imp
         return new DBSPConcreteAsofJoinOperator(
                 CalciteEmptyRel.INSTANCE, info.getZsetType(), info.getFunction(),
                 leftTimestamp, rightTimestamp, comparator,
-                info.isMultiset(), isLeft, info.getInput(0), info.getInput(1))
+                isLeft, info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPConcreteAsofJoinOperator.class);
     }
 }

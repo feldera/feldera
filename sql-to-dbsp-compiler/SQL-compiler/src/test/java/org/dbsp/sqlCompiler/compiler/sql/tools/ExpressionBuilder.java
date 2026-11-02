@@ -108,10 +108,10 @@ public class ExpressionBuilder {
     }
 
     public DBSPExpression binary(DBSPOpcode opcode, DBSPExpression left, DBSPExpression right) {
-        // Comparing a nullable value produces a nullable Boolean
+        // Comparing a nullable value produces a nullable Boolean, except for IS_DISTINCT
         DBSPType type = opcode.isComparison()
-                ? new DBSPTypeBool(CalciteObject.EMPTY,
-                        left.getType().mayBeNull || right.getType().mayBeNull)
+                ? new DBSPTypeBool(CalciteObject.EMPTY, opcode != DBSPOpcode.IS_DISTINCT &&
+                        (left.getType().mayBeNull || right.getType().mayBeNull))
                 : left.getType();
         return this.binary(type, opcode, left, right);
     }

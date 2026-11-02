@@ -1111,7 +1111,7 @@ dependencies = [
  "futures-lite",
  "parking",
  "polling",
- "rustix 1.0.7",
+ "rustix 1.1.6",
  "slab",
  "tracing",
  "windows-sys 0.59.0",
@@ -1130,9 +1130,9 @@ dependencies = [
 
 [[package]]
 name = "async-nats"
-version = "0.47.0"
+version = "0.51.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07d6f157065c3461096d51aacde0c326fa49f3f6e0199e204c566842cdaa5299"
+checksum = "a4f92759f418774b78c36ef07885849150ce950c67d9bcdeff8a9c253f57d9a1"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -1143,7 +1143,7 @@ dependencies = [
  "nuid",
  "pin-project",
  "portable-atomic",
- "rand 0.8.6",
+ "rand 0.10.1",
  "regex",
  "rustls-native-certs 0.8.1",
  "rustls-pki-types",
@@ -1152,7 +1152,7 @@ dependencies = [
  "serde_json",
  "serde_nanos",
  "serde_repr",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "time",
  "tokio",
  "tokio-rustls",
@@ -2787,7 +2787,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -4272,7 +4272,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -4362,7 +4362,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp_connectors"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "actix",
  "actix-codec",
@@ -4487,6 +4487,7 @@ dependencies = [
  "tokio-postgres-rustls",
  "tokio-stream",
  "tokio-util",
+ "tokio-websockets",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -4499,7 +4500,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp_nexmark"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "anyhow",
  "ascii_table",
@@ -5311,7 +5312,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cea14ef9355e3beab063703aa9dab15afd25f0667c341310c1e5274bb1d0da18"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5509,13 +5510,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ce92ff622d6dadf7349484f42c93271a0d49b7cc4d466a936405bacbe10aa78"
 dependencies = [
  "cfg-if",
- "rustix 1.0.7",
- "windows-sys 0.59.0",
+ "rustix 1.1.6",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
 name = "fda"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -5562,7 +5563,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-adapterlib"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -5596,7 +5597,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-buffer-cache"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "enum-map",
  "feldera-types",
@@ -5624,7 +5625,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-datagen"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "anyhow",
  "async-channel 2.5.0",
@@ -5649,7 +5650,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-fxp"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "dbsp",
  "feldera-size-of",
@@ -5668,7 +5669,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-iceberg"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5699,7 +5700,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-ir"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "proptest",
  "proptest-derive",
@@ -5711,7 +5712,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-macros"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -5721,7 +5722,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-modular-bloom"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "criterion",
  "fastbloom",
@@ -5731,7 +5732,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-mtls"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "actix-tls",
  "actix-web",
@@ -5746,7 +5747,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-observability"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "chrono",
  "colored",
@@ -5759,7 +5760,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-rest-api"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "bytes",
  "chrono",
@@ -5781,7 +5782,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-samply"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "crossbeam",
  "feldera-size-of",
@@ -5815,7 +5816,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-sqllib"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "arcstr",
  "base58",
@@ -5860,7 +5861,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-storage"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "anyhow",
  "crossbeam",
@@ -5883,7 +5884,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-types"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -5901,6 +5902,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "regex",
+ "ryu",
  "serde",
  "serde_json",
  "tempfile",
@@ -7261,7 +7263,7 @@ checksum = "e04d7f318608d35d4b61ddd75cbdaee86b023ebe2bd5a66ee0915f0bf93095a9"
 dependencies = [
  "hermit-abi 0.5.1",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -7630,7 +7632,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -7736,9 +7738,9 @@ checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.9.4"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd945864f07fe9f5371a27ad7b52a172b4b499999f1d97574c9fa68373937e12"
+checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "litemap"
@@ -9248,7 +9250,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pipeline-manager"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "actix-cors",
  "actix-files",
@@ -9432,7 +9434,7 @@ dependencies = [
  "concurrent-queue",
  "hermit-abi 0.5.1",
  "pin-project-lite",
- "rustix 1.0.7",
+ "rustix 1.1.6",
  "tracing",
  "windows-sys 0.59.0",
 ]
@@ -10496,7 +10498,7 @@ dependencies = [
 
 [[package]]
 name = "readers"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "async-std",
  "csv",
@@ -11270,20 +11272,20 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
 name = "rustix"
-version = "1.0.7"
+version = "1.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c71e83d6afe7ff64890ec6b71d6a69bb8a610ab78ce364b3352876bb4c801266"
+checksum = "e5e76742e5294153d4dde1207dbec5bdd81eef6fabdc0d2118babadabfd858aa"
 dependencies = [
  "bitflags 2.10.0",
  "errno",
  "libc",
- "linux-raw-sys 0.9.4",
- "windows-sys 0.59.0",
+ "linux-raw-sys 0.12.1",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -12170,7 +12172,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "sltsqlvalue"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "dbsp",
  "feldera-sqllib",
@@ -12599,7 +12601,7 @@ dependencies = [
 
 [[package]]
 name = "static-connectors"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "anyhow",
  "apache-avro 0.18.0",
@@ -12675,7 +12677,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "storage-test-compat"
-version = "0.372.0"
+version = "0.376.0"
 dependencies = [
  "dbsp",
  "derive_more 1.0.0",
@@ -13009,8 +13011,8 @@ dependencies = [
  "fastrand",
  "getrandom 0.3.3",
  "once_cell",
- "rustix 1.0.7",
- "windows-sys 0.59.0",
+ "rustix 1.1.6",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -13031,7 +13033,7 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "45c6481c4829e4cc63825e62c49186a34538b7b2750b73b266581ffb612fb5ed"
 dependencies = [
- "rustix 1.0.7",
+ "rustix 1.1.6",
  "windows-sys 0.59.0",
 ]
 
@@ -13444,9 +13446,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-websockets"
-version = "0.10.1"
+version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f591660438b3038dd04d16c938271c79e7e06260ad2ea2885a4861bfb238605d"
+checksum = "d52efb639344a7c6adb8e62c6f3d2c19c001ff1b79a5041ba1c6ed42e19c6aa5"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -13455,12 +13457,13 @@ dependencies = [
  "futures-sink",
  "http 1.4.2",
  "httparse",
- "rand 0.8.6",
+ "rand 0.10.1",
  "rustls-pki-types",
+ "sha1_smol",
+ "simdutf8",
  "tokio",
  "tokio-rustls",
  "tokio-util",
- "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -14451,7 +14454,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -15126,7 +15129,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d65cbf2f12c15564212d48f4e3dfb87923d25d611f2aed18f4cb23f0413d89e"
 dependencies = [
  "libc",
- "rustix 1.0.7",
+ "rustix 1.1.6",
 ]
 
 [[package]]

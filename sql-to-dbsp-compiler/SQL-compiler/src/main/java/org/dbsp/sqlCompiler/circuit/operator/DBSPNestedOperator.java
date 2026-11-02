@@ -175,11 +175,6 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     }
 
     @Override
-    public boolean isMultiset(int outputNumber) {
-        return this.internalOutputs.get(outputNumber).isMultiset();
-    }
-
-    @Override
     public IIndentStream toString(IIndentStream builder) {
         return builder.append("nested_")
                 .append(this.id)

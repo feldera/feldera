@@ -1,8 +1,8 @@
+import { useTryPipeline } from '#lib/compositions/pipelines/useTryPipeline.ts'
+import { resolve } from '#lib/functions/svelte.ts'
+import type { Demo } from '#lib/services/manager/index.ts'
+import { getDemos } from '#lib/services/pipelineManager.ts'
 import { goto } from '$app/navigation'
-import { useTryPipeline } from '$lib/compositions/pipelines/useTryPipeline'
-import { resolve } from '$lib/functions/svelte'
-import type { Demo } from '$lib/services/manager'
-import { getDemos } from '$lib/services/pipelineManager'
 
 export async function load({ url, parent }) {
   await parent()

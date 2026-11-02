@@ -47,7 +47,7 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase
             DBSPTypeIndexedZSet outputType,
             @Nullable DBSPAggregator function,
             @Nullable DBSPAggregateList aggregate, OutputPort input) {
-        super(node, "aggregate", outputType, function, aggregate, false, input);
+        super(node, "aggregate", outputType, function, aggregate, input);
         Utilities.enforce(input.getOutputIndexedZSetType().keyType.sameType(outputType.keyType));
     }
 

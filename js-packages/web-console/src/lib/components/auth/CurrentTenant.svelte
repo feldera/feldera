@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Select } from 'common-ui'
+  import { switchTenant } from '#lib/compositions/switchTenant.ts'
   import { page } from '$app/state'
-  import { switchTenant } from '$lib/compositions/switchTenant'
 
   let { class: className = '' }: { class?: string } = $props()
 

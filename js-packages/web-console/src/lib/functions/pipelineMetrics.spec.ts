@@ -1,7 +1,7 @@
 import { formatDuration } from 'common-lib/format'
 import { describe, expect, it } from 'vitest'
-import type { ControllerStatus, InputEndpointStatus } from '$lib/services/manager'
-import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
+import type { ControllerStatus, InputEndpointStatus } from '#lib/services/manager/index.ts'
+import type { TimeSeriesEntry } from '#lib/types/pipelineManager.ts'
 import {
   accumulatePipelineMetrics,
   calcPipelineThroughput,

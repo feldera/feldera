@@ -173,6 +173,16 @@ must also be fault tolerant. If a fault-tolerant pipeline includes non-fault-tol
 connectors, then in the event of a crash and restart, Feldera may send
 duplicate output to those connectors, but it will not drop output.
 
+Output connectors individually document their support for fault
+tolerance.  Today only the [Kafka output
+connector](/connectors/sinks/kafka) supports exactly-once output: in an
+exactly-once pipeline it writes each step in a Kafka transaction, and it
+recovers from a broker outage by aborting and replaying the transaction.
+See [Exactly-once delivery and
+recovery](/connectors/sinks/kafka#exactly-once-delivery-and-recovery)
+for what it does during an outage, what it reports, and how it behaves
+after a restart.
+
 The following table documents input connector support for fault
 tolerance.
 

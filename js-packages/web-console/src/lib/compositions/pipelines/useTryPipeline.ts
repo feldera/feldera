@@ -1,11 +1,11 @@
-import { goto } from '$app/navigation'
 import {
   usePipelineList,
   useUpdatePipelineList
-} from '$lib/compositions/pipelines/usePipelineList.svelte'
-import { resolve } from '$lib/functions/svelte'
-import { captureEvent } from '$lib/services/analytics'
-import type { Demo } from '$lib/services/manager'
+} from '#lib/compositions/pipelines/usePipelineList.svelte.ts'
+import { resolve } from '#lib/functions/svelte.ts'
+import { captureEvent } from '#lib/services/analytics.ts'
+import type { Demo } from '#lib/services/manager/index.ts'
+import { goto } from '$app/navigation'
 import { usePipelineManager } from '../usePipelineManager.svelte'
 
 export const useTryPipeline = () => {

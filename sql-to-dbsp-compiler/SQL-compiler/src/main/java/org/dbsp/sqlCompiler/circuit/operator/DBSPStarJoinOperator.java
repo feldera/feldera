@@ -20,8 +20,8 @@ import java.util.List;
  * this operator is incremental-only. */
 public class DBSPStarJoinOperator extends DBSPStarJoinBaseOperator implements IIncremental {
     public DBSPStarJoinOperator(CalciteRelNode node, DBSPType outputType, DBSPClosureExpression function,
-                                boolean isMultiset, List<OutputPort> inputs) {
-        super(node, "inner_star_join", outputType, function, isMultiset, inputs);
+                                List<OutputPort> inputs) {
+        super(node, "inner_star_join", outputType, function, inputs);
         Utilities.enforce(function.getResultType().sameType(outputType.to(DBSPTypeZSet.class).elementType));
     }
 
@@ -30,7 +30,7 @@ public class DBSPStarJoinOperator extends DBSPStarJoinBaseOperator implements II
         Utilities.enforce(function != null);
         if (this.mustReplace(force, function, inputs, outputType)) {
             return new DBSPStarJoinOperator(this.getRelNode(), outputType, function.to(DBSPClosureExpression.class),
-                    this.isMultiset, inputs).copyAnnotations(this);
+                    inputs).copyAnnotations(this);
         }
         return this;
     }
@@ -49,7 +49,7 @@ public class DBSPStarJoinOperator extends DBSPStarJoinBaseOperator implements II
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         return new DBSPStarJoinOperator(
                 CalciteEmptyRel.INSTANCE, info.getZsetType(), info.getClosureFunction(),
-                info.isMultiset(), info.inputs())
+                info.inputs())
                 .addAnnotations(info.annotations(), DBSPStarJoinOperator.class);
     }
 }

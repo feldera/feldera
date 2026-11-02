@@ -1,8 +1,8 @@
 <script lang="ts" module>
-  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
-  import type { Field } from '$lib/services/manager'
-  import { isDataRow, isErrorRow, isWarningRow, type Row } from '$lib/types/adhocQuery'
-  import type { SQLValueJS } from '$lib/types/sql'
+  import { useSkeletonTheme } from '#lib/compositions/useSkeletonTheme.svelte.ts'
+  import type { Field } from '#lib/services/manager/index.ts'
+  import { isDataRow, isErrorRow, isWarningRow, type Row } from '#lib/types/adhocQuery.ts'
+  import type { SQLValueJS } from '#lib/types/sql.ts'
 
   export type QueryResult = {
     rows: () => Row[]
@@ -36,21 +36,21 @@
 </script>
 
 <script lang="ts">
-  import SQLValue from '$lib/components/relationData/SQLValue.svelte'
-  import SqlColumnHeader from '$lib/components/relationData/SQLColumnHeader.svelte'
-  import { usePopoverTooltip } from '$lib/compositions/common/usePopoverTooltip.svelte'
-  import List from '$lib/components/common/virtualList/HeadlessVirtualList.svelte'
+  import SQLValue from '#lib/components/relationData/SQLValue.svelte'
+  import SqlColumnHeader from '#lib/components/relationData/SQLColumnHeader.svelte'
+  import { usePopoverTooltip } from '#lib/compositions/common/usePopoverTooltip.svelte.ts'
+  import List from '#lib/components/common/virtualList/HeadlessVirtualList.svelte'
   import {
     ClipboardCopyButton,
     ScrollDownFab,
     selectScope,
     useReverseScrollContainer
   } from 'common-ui'
-  import type { Snippet } from '$lib/types/svelte'
+  import type { Snippet } from '#lib/types/svelte.ts'
   import type { UIEventHandler } from 'svelte/elements'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
   import SQLValueTooltip from '../other/SQLValueTooltip.svelte'
-  import { tableToCSJV } from '$lib/functions/sql'
+  import { tableToCSJV } from '#lib/functions/sql.ts'
 
   let {
     query = $bindable(),

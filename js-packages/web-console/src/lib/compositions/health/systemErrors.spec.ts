@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ExtendedPipeline, RustCompilerMessage } from '$lib/services/pipelineManager'
+import type { ExtendedPipeline, RustCompilerMessage } from '#lib/services/pipelineManager.ts'
 import { extractProgramErrors } from './systemErrors'
 
 const getReport = (pipelineName: string, message: string) => ({ pipelineName, message })

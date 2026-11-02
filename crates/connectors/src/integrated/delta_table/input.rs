@@ -78,7 +78,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::cmp::min;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fmt::Display;
+use std::fmt::{Display, Write as _};
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -314,7 +314,7 @@ fn describe_paths<'a>(paths: impl IntoIterator<Item = &'a str>) -> String {
     let rest = paths.count();
     let mut description = format!("{shown:?}");
     if rest > 0 {
-        description.push_str(&format!(" and {rest} more"));
+        let _ = write!(&mut description, " and {rest} more");
     }
     description
 }
@@ -3720,7 +3720,7 @@ impl DeltaTableInputEndpointInner {
             !(self.distributed.is_some() && Self::is_snapshot_transaction_label(&transaction));
 
         // Limit the number of connectors simultaneously reading from Delta Lake.
-        let _token = DELTA_READER_SEMAPHORE.acquire().await.unwrap();
+        let mut token = Some(DELTA_READER_SEMAPHORE.acquire().await.unwrap());
 
         let mut stream = match self.execute_stream(dataframe, read_size).await {
             Err(e) => {
@@ -3794,7 +3794,13 @@ impl DeltaTableInputEndpointInner {
         let mut timestamp = Utc::now();
 
         while let Some(batch) = stream.next().await {
-            wait_running(receiver).await;
+            if *receiver.borrow() != PipelineState::Running {
+                // A paused reader may not be drained until other readers finish, so it
+                // must not hold a permit while it waits.
+                drop(token.take());
+                wait_running(receiver).await;
+                token = Some(DELTA_READER_SEMAPHORE.acquire().await.unwrap());
+            }
             let batch = match batch {
                 Ok(batch) => batch,
                 Err(e) => {

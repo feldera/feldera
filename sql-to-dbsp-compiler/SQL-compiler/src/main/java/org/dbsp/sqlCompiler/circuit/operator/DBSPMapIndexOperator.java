@@ -43,17 +43,6 @@ import java.util.Objects;
 /** Generate an IndexedZSet by applying a function to every element of an input dataset.
  * Output is always an IndexedZSet.  Input can be a ZSet or an IndexedZSet */
 public final class DBSPMapIndexOperator extends DBSPUnaryOperator implements ILinear {
-    /** Create an MapIndexOperator
-     * @param node            Corresponding Calcite node.
-     * @param indexFunction   Function that indexes.
-     * @param outputType      Type of output stream element.
-     * @param input           Source operator. */
-    public DBSPMapIndexOperator(CalciteRelNode node, DBSPExpression indexFunction,
-                                DBSPTypeIndexedZSet outputType,
-                                OutputPort input) {
-        this(node, indexFunction, outputType, input.isMultiset(), input);
-    }
-
     static DBSPTypeIndexedZSet extractType(DBSPClosureExpression expression) {
         return new DBSPTypeIndexedZSet(expression.getResultType().to(DBSPTypeRawTuple.class));
     }
@@ -64,21 +53,19 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator implements ILi
      * @param input           Source operator. */
     public DBSPMapIndexOperator(CalciteRelNode node, DBSPClosureExpression indexFunction,
                                 OutputPort input) {
-        this(node, indexFunction, extractType(indexFunction), input.isMultiset(), input);
+        this(node, indexFunction, extractType(indexFunction), input);
     }
 
     /** Create an MapIndexOperator
      * @param node            Corresponding Calcite node.
      * @param indexFunction   Function that indexes.  The function has the shape
      *                        |row| (key(row), value(row)).
-     * @param isMultiset      True if the input is a multiset.
      * @param outputType      Type of output stream element.
      * @param input           Source operator. */
     public DBSPMapIndexOperator(CalciteRelNode node, DBSPExpression indexFunction,
                                 DBSPTypeIndexedZSet outputType,
-                                boolean isMultiset,
                                 OutputPort input) {
-        super(node, "map_index", indexFunction, outputType, isMultiset, input);
+        super(node, "map_index", indexFunction, outputType, input);
         DBSPType outputElementType = outputType.getKVType();
         // Expression must return a tuple that is composed of a key and a value
         this.checkResultType(indexFunction, outputElementType);
@@ -118,7 +105,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator implements ILi
     public static DBSPMapIndexOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         return new DBSPMapIndexOperator(CalciteEmptyRel.INSTANCE,
-                info.getClosureFunction(), info.getIndexedZsetType(), info.isMultiset(), info.getInput(0))
+                info.getClosureFunction(), info.getIndexedZsetType(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPMapIndexOperator.class);
     }
 }

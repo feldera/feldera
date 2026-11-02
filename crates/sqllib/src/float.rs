@@ -44,6 +44,27 @@ pub fn log10_d(left: F64) -> F64 {
 
 some_polymorphic_function1!(log10, d, F64, F64);
 
+/// Saturating form of `ln_d`: negative infinity, the smallest
+/// DOUBLE, for a negative argument, -0.0 included.
+#[doc(hidden)]
+pub fn ln_d_saturating(left: F64) -> F64 {
+    if left.into_inner().is_sign_negative() {
+        F64::new(f64::NEG_INFINITY)
+    } else {
+        ln_d(left)
+    }
+}
+
+/// Saturating form of `log10_d`, like [`ln_d_saturating`].
+#[doc(hidden)]
+pub fn log10_d_saturating(left: F64) -> F64 {
+    if left.into_inner().is_sign_negative() {
+        F64::new(f64::NEG_INFINITY)
+    } else {
+        log10_d(left)
+    }
+}
+
 #[doc(hidden)]
 #[inline(always)]
 pub fn log_d(left: F64) -> F64 {
@@ -51,6 +72,12 @@ pub fn log_d(left: F64) -> F64 {
 }
 
 some_polymorphic_function1!(log, d, F64, F64);
+
+/// Saturating form of `log_d`, like [`ln_d_saturating`].
+#[doc(hidden)]
+pub fn log_d_saturating(left: F64) -> F64 {
+    ln_d_saturating(left)
+}
 
 #[doc(hidden)]
 #[inline(always)]
@@ -71,6 +98,17 @@ pub fn log_d_d(left: F64, right: F64) -> F64 {
 }
 
 some_polymorphic_function2!(log, d, F64, d, F64, F64);
+
+/// Saturating form of `log_d_d` in its first argument: negative infinity, the
+/// smallest DOUBLE, for a negative first argument, -0.0 included.
+#[doc(hidden)]
+pub fn log_d_d_saturating(left: F64, right: F64) -> F64 {
+    if left.into_inner().is_sign_negative() {
+        F64::new(f64::NEG_INFINITY)
+    } else {
+        log_d_d(left, right)
+    }
+}
 
 /// Returns `round(value * 10^digits) / 10^digits`, without -0.  When `value * 10^digits` is not
 /// finite, `value` has no digits at the position `digits`, so the result is `value`.
@@ -106,6 +144,23 @@ pub fn truncate_f_i32(left: F32, right: i32) -> F32 {
 }
 
 some_polymorphic_function2!(truncate, f, F32, i32, i32, F32);
+
+// The compiler names TRUNC and TRUNCATE by their SQL spelling.
+#[doc(hidden)]
+#[inline(always)]
+pub fn trunc_d_i32(left: F64, right: i32) -> F64 {
+    truncate_d_i32(left, right)
+}
+
+some_polymorphic_function2!(trunc, d, F64, i32, i32, F64);
+
+#[doc(hidden)]
+#[inline(always)]
+pub fn trunc_f_i32(left: F32, right: i32) -> F32 {
+    truncate_f_i32(left, right)
+}
+
+some_polymorphic_function2!(trunc, f, F32, i32, i32, F32);
 
 #[doc(hidden)]
 #[inline(always)]
@@ -154,6 +209,18 @@ pub fn sqrt_d(left: F64) -> F64 {
 }
 
 some_polymorphic_function1!(sqrt, d, F64, F64);
+
+/// Saturating form of `sqrt_d`: negative infinity, the smallest
+/// DOUBLE, for a negative argument, whose square root is NaN, the
+/// largest DOUBLE.
+#[doc(hidden)]
+pub fn sqrt_d_saturating(left: F64) -> F64 {
+    if left.into_inner() < 0.0 {
+        F64::new(f64::NEG_INFINITY)
+    } else {
+        sqrt_d(left)
+    }
+}
 
 //////////////////// floor /////////////////////
 
@@ -528,7 +595,10 @@ some_polymorphic_null_function1!(finite_or_null, f, F32, F32);
 
 #[cfg(test)]
 mod test {
-    use super::{round_d_i32, round_f_i32, truncate_d_i32};
+    use super::{
+        ln_d_saturating, log_d_d_saturating, log_d_saturating, log10_d_saturating, round_d_i32,
+        round_f_i32, sqrt_d_saturating, trunc_d_i32, trunc_f_i32, truncate_d_i32,
+    };
     use dbsp::algebra::{F32, F64};
 
     #[test]
@@ -540,5 +610,29 @@ mod test {
         assert_eq!(round_d_i32(F64::new(1e300), 20), F64::new(1e300));
         assert_eq!(round_f_i32(F32::new(1.5), 50), F32::new(1.5));
         assert_eq!(round_d_i32(F64::new(1.25), 1), F64::new(1.3));
+    }
+
+    #[test]
+    fn trunc_is_truncate() {
+        assert_eq!(trunc_d_i32(F64::new(1.29), 1), F64::new(1.2));
+        assert_eq!(trunc_f_i32(F32::new(-1.29), 1), F32::new(-1.2));
+    }
+
+    #[test]
+    fn saturating_logarithms() {
+        let minus_infinity = F64::new(f64::NEG_INFINITY);
+        assert_eq!(ln_d_saturating(F64::new(-9.0)), minus_infinity);
+        assert_eq!(ln_d_saturating(F64::new(-0.0)), minus_infinity);
+        assert_eq!(ln_d_saturating(F64::new(0.0)), minus_infinity);
+        assert_eq!(ln_d_saturating(F64::new(1.0)), F64::new(0.0));
+        assert_eq!(log10_d_saturating(F64::new(-1.0)), minus_infinity);
+        assert_eq!(log10_d_saturating(F64::new(100.0)), F64::new(2.0));
+        assert_eq!(log_d_saturating(F64::new(-1.0)), minus_infinity);
+        let two = F64::new(2.0);
+        assert_eq!(log_d_d_saturating(F64::new(-9.0), two), minus_infinity);
+        assert_eq!(log_d_d_saturating(two, two), F64::new(1.0));
+        assert_eq!(sqrt_d_saturating(F64::new(-9.0)), minus_infinity);
+        assert_eq!(sqrt_d_saturating(F64::new(-0.0)), F64::new(-0.0));
+        assert_eq!(sqrt_d_saturating(F64::new(9.0)), F64::new(3.0));
     }
 }

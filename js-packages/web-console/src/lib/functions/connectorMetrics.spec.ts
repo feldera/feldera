@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import { microseconds } from 'common-lib/duration'
 import {
   aggregateConnectorMetrics,
   type ConnectorStatus,
   type InputEndpointStatus,
   type OutputEndpointStatus
 } from 'common-ui/connectorMetrics'
-import { microseconds } from 'common-lib/duration'
+import { describe, expect, it } from 'vitest'
 
 const input = (
   name: string,

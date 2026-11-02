@@ -26,13 +26,17 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.dbsp.util.Linq;
 
 import java.util.List;
 
 public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
-    public OptimizeDistinctVisitor(DBSPCompiler compiler) {
+    final MultisetAnalysis multisets;
+
+    public OptimizeDistinctVisitor(DBSPCompiler compiler, MultisetAnalysis multisets) {
         super(compiler, false);
+        this.multisets = multisets;
     }
 
     @Override
@@ -41,7 +45,7 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
         OutputPort input = this.mapped(distinct.input());
         if (input.node().is(DBSPStreamDistinctOperator.class) ||
             input.node().is(DBSPDistinctOperator.class) ||
-            !input.isMultiset()) {
+            !this.multisets.isMultiset(input)) {
             this.map(distinct.outputPort(), input, false);
             return;
         } else if (input.node().is(DBSPPositiveOperator.class)) {
@@ -92,7 +96,7 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
         OutputPort input = this.mapped(distinct.input());
         if (input.node().is(DBSPStreamDistinctOperator.class) ||
             input.node().is(DBSPDistinctOperator.class) ||
-            !input.isMultiset()) {
+            !this.multisets.isMultiset(input)) {
             this.map(distinct.outputPort(), input, false);
             return;
         }

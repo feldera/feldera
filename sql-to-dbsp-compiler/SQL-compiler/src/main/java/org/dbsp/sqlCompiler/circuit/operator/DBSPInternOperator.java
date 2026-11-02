@@ -18,7 +18,7 @@ import java.util.List;
  * Does not correspond to a DBSP operator. */
 public class DBSPInternOperator extends DBSPUnaryOperator implements ILinear {
     public DBSPInternOperator(OutputPort source) {
-        super(CalciteEmptyRel.INSTANCE, "interned_strings", null, source.outputType(), false, source);
+        super(CalciteEmptyRel.INSTANCE, "interned_strings", null, source.outputType(), source);
     }
 
     @Override

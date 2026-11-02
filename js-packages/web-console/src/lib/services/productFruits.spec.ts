@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { Configuration } from '$lib/services/manager'
-import type { UserProfile } from '$lib/types/auth'
+import type { Configuration } from '#lib/services/manager/index.ts'
+import type { UserProfile } from '#lib/types/auth.ts'
 
 // Capture calls to the underlying loader without injecting its <script>.
 const init = vi.fn()

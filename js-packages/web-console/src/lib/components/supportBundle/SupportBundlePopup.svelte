@@ -17,12 +17,15 @@
    * again.
    */
   import { slide } from 'svelte/transition'
-  import Popup from '$lib/components/common/Popup.svelte'
-  import SlidingPanels from '$lib/components/common/SlidingPanels.svelte'
-  import { openStoredBundleTab, openUploadBundleTab } from '$lib/compositions/profileBundleHandoff'
-  import { type PickedBundle, useBundlePicker } from '$lib/compositions/useBundlePicker'
-  import { useToast } from '$lib/compositions/useToastNotification'
-  import type { Snippet } from '$lib/types/svelte'
+  import Popup from '#lib/components/common/Popup.svelte'
+  import SlidingPanels from '#lib/components/common/SlidingPanels.svelte'
+  import {
+    openStoredBundleTab,
+    openUploadBundleTab
+  } from '#lib/compositions/profileBundleHandoff.ts'
+  import { type PickedBundle, useBundlePicker } from '#lib/compositions/useBundlePicker.ts'
+  import { useToast } from '#lib/compositions/useToastNotification.ts'
+  import type { Snippet } from '#lib/types/svelte.ts'
   import SupportBundleConfirm from './SupportBundleConfirm.svelte'
   import SupportBundleMenu from './SupportBundleMenu.svelte'
 

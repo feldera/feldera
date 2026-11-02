@@ -1,13 +1,18 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.DifferentialTester;
 import org.dbsp.sqlCompiler.compiler.sql.tools.TablePair;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FuseIntoArrayAgg;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.junit.Assert;
 import org.junit.Test;
@@ -306,7 +311,7 @@ public class RollingAggregateGCIncrementalTests extends StreamingTestBase {
     }
 
     /** The number of array types in the values of all aggregate operators of the circuit */
-    private static int storedArrays(CompilerCircuitStream ccs) {
+    private static int storedArrays(CompilerCircuit ccs) {
         int[] count = new int[1];
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             @Override
@@ -676,6 +681,52 @@ public class RollingAggregateGCIncrementalTests extends StreamingTestBase {
                          1 | 50  | -1
                          1 | 100 | 1""");
         Assert.assertEquals(0, storedArrays(ccs));
+    }
+
+    /** Resolves the references of each aggregate in the aggregate operators; fails when a
+     * variable node is shared by closures with different parameters */
+    private static CircuitVisitor resolveAggregates(DBSPCompiler compiler) {
+        return new CircuitVisitor(compiler) {
+            @Override
+            public void postorder(DBSPAggregateOperatorBase operator) {
+                if (operator.aggregateList == null)
+                    return;
+                for (IAggregate aggregate : operator.aggregateList.aggregates)
+                    new ResolveReferences(compiler, true).apply(aggregate);
+            }
+        };
+    }
+
+    /** Compiles {@code sql} for the Gen-2 engine, whose aggregate operators keep their aggregate
+     * list, resolving the aggregates after each {@link FuseIntoArrayAgg} */
+    private CompilerCircuit compileForGen2(String sql) {
+        CompilerOptions options = this.testOptions();
+        options.ioOptions.gen2 = true;
+        DBSPCompiler compiler = new DBSPCompiler(options);
+        compiler.optimizerHook = optimizer -> {
+            optimizer.insertAfter(FuseIntoArrayAgg.class, 1, resolveAggregates(compiler));
+            optimizer.insertAfter(FuseIntoArrayAgg.class, 2, resolveAggregates(compiler));
+        };
+        compiler.submitStatementsForCompilation(sql);
+        return new CompilerCircuit(compiler);
+    }
+
+    @Test
+    public void fusedLambdaForGen2() {
+        // A fused column holding a lambda calls it in the postprocessing and in the empty-set
+        // result of the ARRAY_AGG; each call needs its own copy of the lambda.  Fused: 1 aggregate of 1
+        var group = this.compileForGen2("""
+                CREATE TABLE t(k INT, c INT);
+                CREATE VIEW v AS SELECT k, ARRAY_MAX(TRANSFORM(ARRAY_AGG(c), x -> x * 2)) AS m
+                FROM t GROUP BY k;""");
+        Assert.assertEquals(0, storedArrays(group));
+        var window = this.compileForGen2("""
+                CREATE TABLE t(p INT, ts INT NOT NULL, c INT);
+                CREATE LOCAL VIEW w AS SELECT p, ts, ARRAY_AGG(c) OVER
+                    (PARTITION BY p ORDER BY ts RANGE BETWEEN 2 PRECEDING AND CURRENT ROW) AS arr
+                FROM t;
+                CREATE VIEW v AS SELECT p, ts, ARRAY_MAX(TRANSFORM(arr, x -> x * 2)) AS m FROM w;""");
+        Assert.assertEquals(0, storedArrays(window));
     }
 
     @Test

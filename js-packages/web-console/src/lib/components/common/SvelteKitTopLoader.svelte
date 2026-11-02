@@ -1,11 +1,17 @@
 <!-- Inspired from 'sveltekit-top-loader' npm package -->
 
 <script lang="ts">
-  import type { AfterNavigate, BeforeNavigate, Navigation, NavigationType } from '@sveltejs/kit'
   import nProgress from 'nprogress'
   import { onMount } from 'svelte'
   import { run } from 'svelte/legacy'
-  import { afterNavigate, beforeNavigate } from '$app/navigation'
+  import {
+    type AfterNavigate,
+    afterNavigate,
+    type BeforeNavigate,
+    beforeNavigate,
+    type Navigation,
+    type NavigationType
+  } from '$app/navigation'
 
   interface Props {
     /**
@@ -131,6 +137,10 @@
   })
 
   beforeNavigate((navigation) => {
+    // Shallow routing (the former pushState/replaceState) is not a page change.
+    if (navigation.shallow && navigation.type === 'goto') {
+      return
+    }
     // Check if navigation should be ignored via dependency injection
     if (ignoreBeforeNavigate?.(navigation)) {
       return
@@ -140,6 +150,10 @@
   })
 
   afterNavigate((navigation) => {
+    // Shallow routing (the former pushState/replaceState) is not a page change.
+    if (navigation.shallow && navigation.type === 'goto') {
+      return
+    }
     // Check if navigation should be ignored via dependency injection
     if (ignoreAfterNavigate?.(navigation)) {
       return

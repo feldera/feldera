@@ -218,7 +218,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 DBSPSimpleOperator replacement =
                         new DBSPAsofJoinOperator(join.getRelNode(), join.getOutputZSetType(),
                                 newJoinFunction, leftTimestampIndex, rightTimestampIndex,
-                                join.comparator, join.isMultiset, join.isLeft, leftMap, rightMap);
+                                join.comparator, join.isLeft, leftMap, rightMap);
                 this.map(join, replacement);
                 done = true;
             }
@@ -413,7 +413,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 operator.equalityComparator.getNode(), remapComparedFields(equality, rowFields, newRowType));
         DBSPSimpleOperator result = new DBSPIndexedTopKOperator(
                 operator.getRelNode(), operator.numbering, newComparator, operator.limit,
-                newEquality, newProducer, operator.isMultiset, adjust.outputPort())
+                newEquality, newProducer, adjust.outputPort())
                 .copyAnnotations(operator);
         this.map(operator, result);
     }

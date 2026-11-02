@@ -32,10 +32,10 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utf8String;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.nio.charset.StandardCharsets;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STRING;
 
@@ -80,7 +80,7 @@ public class DBSPTypeString extends DBSPTypeBaseType implements IHasPrecision {
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
             return this.none();
-        return new DBSPStringLiteral("", StandardCharsets.UTF_8, this);
+        return new DBSPStringLiteral(CalciteObject.EMPTY, this, Utf8String.EMPTY);
     }
 
     @Override

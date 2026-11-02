@@ -411,7 +411,7 @@ public class RangeAggregates extends WindowAggregates {
 
             indexInput = new DBSPMapIndexOperator(node, partAndOrderClo,
                     TypeCompiler.makeIndexedZSet(partAndOrder.getType(), copiedFields.getType()),
-                    lastOperator.isMultiset, lastOperator.outputPort());
+                    lastOperator.outputPort());
             this.compiler.addOperator(indexInput);
         }
 
@@ -455,8 +455,7 @@ public class RangeAggregates extends WindowAggregates {
             DBSPClosureExpression addExtraField =
                     addExtraFieldBody.closure(key, left, right);
             return new DBSPStreamJoinOperator(node.maybeFinal(isLast), TypeCompiler.makeZSet(addExtraFieldBody.getType()),
-                    addExtraField, indexInput.isMultiset || windowAgg.isMultiset,
-                    indexInput.outputPort(), integral.outputPort(), false);
+                    addExtraField, indexInput.outputPort(), integral.outputPort(), false);
         }
     }
 

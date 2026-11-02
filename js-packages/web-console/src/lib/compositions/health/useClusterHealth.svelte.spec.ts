@@ -13,7 +13,7 @@ const poll = vi.hoisted(() => ({
   answer: undefined as ((event: unknown) => void) | undefined
 }))
 
-vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
+vi.mock('#lib/compositions/usePipelineManager.svelte.ts', () => ({
   usePipelineManager: () => ({
     getClusterEvent: () =>
       new Promise((resolve) => {

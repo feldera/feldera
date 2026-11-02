@@ -8,6 +8,7 @@
 use crate::duration::ConfigDuration;
 use crate::postprocess::PostprocessorConfig;
 use crate::preprocess::PreprocessorConfig;
+use crate::secret_ref::MaybeSecretRef;
 use crate::secret_resolver::default_secrets_directory;
 use crate::size::{ConfigSize, LegacySizeUnit};
 use crate::transport::adhoc::AdHocInputConfig;
@@ -3901,7 +3902,54 @@ pub enum TransportConfig {
     EmptyInput,
 }
 
+/// When set to any value except `false`, `0` or empty, the pipeline refuses connector paths
+/// on its local filesystem.
+pub const REFUSE_LOCAL_FILE_URIS_ENV: &str = "FELDERA_REFUSE_LOCAL_FILE_URIS";
+
+/// A `file:` URL, or a string without a URL scheme. A one-letter scheme is a Windows drive.
+fn is_local_file_uri(location: &str) -> bool {
+    let Some((scheme, _)) = location.split_once(':') else {
+        return true;
+    };
+    let valid_scheme = scheme.len() > 1
+        && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+    !valid_scheme || scheme.eq_ignore_ascii_case("file")
+}
+
 impl TransportConfig {
+    /// The local paths of a Delta Lake or Iceberg connector, as (property, value) pairs.
+    /// Before references are `resolved`, skips them. After, checks every value, because a
+    /// resolved value can look like a reference.
+    pub fn local_file_uris(&self, resolved: bool) -> Vec<(&'static str, &str)> {
+        let locations = match self {
+            TransportConfig::DeltaTableInput(config) => vec![("uri", Some(&*config.uri))],
+            TransportConfig::DeltaTableOutput(config) => vec![("uri", Some(&*config.uri))],
+            TransportConfig::IcebergInput(config) => vec![
+                ("metadata_location", config.metadata_location.as_deref()),
+                (
+                    "glue.warehouse",
+                    config.glue_catalog_config.warehouse.as_deref(),
+                ),
+            ],
+            _ => Vec::new(),
+        };
+        locations
+            .into_iter()
+            .filter_map(|(property, location)| Some((property, location?)))
+            .filter(|(_, location)| {
+                (resolved
+                    || matches!(
+                        MaybeSecretRef::new(location.to_string()),
+                        Ok(MaybeSecretRef::String(_))
+                    ))
+                    && is_local_file_uri(location)
+            })
+            .collect()
+    }
+
     /// Writes each of the transport's duration settings out as the value in
     /// effect; see `ConnectorConfig::normalize_durations`.
     pub fn normalize_durations(&mut self) {
@@ -4431,5 +4479,55 @@ mod transport_metadata_tests {
         }))
         .unwrap();
         assert!(transport.transport_metadata_mut().is_none());
+    }
+}
+
+#[cfg(test)]
+mod local_file_uri_tests {
+    use super::TransportConfig;
+    use serde_json::json;
+
+    #[test]
+    fn local_file_uris() {
+        let delta = |uri: &str| -> TransportConfig {
+            serde_json::from_value(
+                json!({"name": "delta_table_input", "config": {"uri": uri, "mode": "snapshot"}}),
+            )
+            .unwrap()
+        };
+        for uri in [
+            "file:///etc",
+            "FILE:/etc",
+            "/etc",
+            "./t",
+            "",
+            "c:/t",
+            " file:///etc",
+        ] {
+            assert_eq!(delta(uri).local_file_uris(false), vec![("uri", uri)]);
+        }
+        for uri in [
+            "s3://b/t",
+            "gs://b/t",
+            "az://c/t",
+            "abfss://c@a/t",
+            "uc://c.s.t",
+        ] {
+            assert!(delta(uri).local_file_uris(false).is_empty(), "{uri}");
+        }
+        // A reference is checked after resolution. Its resolved value can look like a reference.
+        assert!(delta("${env:X}").local_file_uris(false).is_empty());
+        assert_eq!(
+            delta("${env:X}").local_file_uris(true),
+            vec![("uri", "${env:X}")]
+        );
+
+        let iceberg: TransportConfig = serde_json::from_value(json!({"name": "iceberg_input",
+            "config": {"mode": "snapshot", "metadata_location": "file:///t/m.json"}}))
+        .unwrap();
+        assert_eq!(
+            iceberg.local_file_uris(false),
+            vec![("metadata_location", "file:///t/m.json")]
+        );
     }
 }

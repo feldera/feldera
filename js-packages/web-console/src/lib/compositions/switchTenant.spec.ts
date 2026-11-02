@@ -7,13 +7,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const setSelectedTenant = vi.hoisted(() => vi.fn())
 const clearConfigCaches = vi.hoisted(() => vi.fn())
 
-vi.mock('$lib/services/auth', () => ({
+vi.mock('#lib/services/auth.ts', () => ({
   setSelectedTenant: (...args: unknown[]) => setSelectedTenant(...args)
 }))
-vi.mock('$lib/compositions/configCache', () => ({
+vi.mock('#lib/compositions/configCache.ts', () => ({
   clearConfigCaches: () => clearConfigCaches()
 }))
-vi.mock('$lib/functions/svelte', () => ({
+vi.mock('#lib/functions/svelte.ts', () => ({
   resolve: (path: string) => path
 }))
 

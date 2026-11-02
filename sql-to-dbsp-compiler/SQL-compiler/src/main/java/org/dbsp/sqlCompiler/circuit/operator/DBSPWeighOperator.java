@@ -24,7 +24,7 @@ public final class DBSPWeighOperator extends DBSPUnaryOperator implements ILinea
 
     public DBSPWeighOperator(CalciteRelNode node, DBSPExpression function, OutputPort source) {
         super(node, "weigh", function,
-                outputType(source.getOutputIndexedZSetType()), false, source);
+                outputType(source.getOutputIndexedZSetType()), source);
     }
 
     @Override

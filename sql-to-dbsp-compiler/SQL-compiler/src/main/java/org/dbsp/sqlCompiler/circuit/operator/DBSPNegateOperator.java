@@ -38,7 +38,7 @@ import java.util.List;
 
 public final class DBSPNegateOperator extends DBSPUnaryOperator implements ILinear {
     public DBSPNegateOperator(CalciteRelNode node, OutputPort input) {
-        super(node, "neg", null, input.outputType(), input.isMultiset(), input);
+        super(node, "neg", null, input.outputType(), input);
     }
 
     @Override

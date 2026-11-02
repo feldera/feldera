@@ -78,7 +78,7 @@ These values set cluster-wide bounds for pipeline resource requests. See [pipeli
 | `kubernetesRunner.lowerLimitMemoryMegabyte` | `100` | Minimum allowed memory (MB) for a pipeline pod. Also the default minimum if none is specified in pipeline resources. |
 | `kubernetesRunner.upperLimitMemoryMegabyte` | `32000` | Maximum allowed memory (MB) for a pipeline pod. Also the default maximum if none is specified. |
 | `kubernetesRunner.defaultStorageMegabyte` | `30000` | Default persistent storage volume size (MB) per pipeline if not specified in pipeline resources. |
-| `kubernetesRunner.upperLimitStorageMegabyte` | `128000` | Maximum allowed persistent storage volume size (MB) per pipeline. |
+| `kubernetesRunner.upperLimitStorageMegabyte` | `128000` | Maximum allowed persistent storage volume size (MB) per pipeline. The API refuses a larger `storage_min` or `storage_max`. See [storage limits](/pipelines/configuration#storage-limits). |
 | `kubernetesRunner.lowerLimitEphemeralStorageMegabyte` | `500` | Minimum ephemeral storage (MB) for a pipeline pod. Must be large enough to hold the pipeline executable. Also the default. |
 | `kubernetesRunner.upperLimitEphemeralStorageMegabyte` | `2000` | Maximum ephemeral storage (MB) for a pipeline pod. |
 
@@ -88,7 +88,7 @@ These values set cluster-wide bounds for pipeline resource requests. See [pipeli
 |-----|---------|-------------|
 | `kubernetesRunner.storageClassName` | `null` | Storage class for pipeline persistent volumes. `null` uses the cluster default. |
 | `kubernetesRunner.enableStorageClassNamesSupported` | `false` | When `true`, only storage classes listed in `storageClassNamesSupported` can be used. |
-| `kubernetesRunner.storageClassNamesSupported` | `[]` | Allowlist of permitted storage class names. Only effective when `enableStorageClassNamesSupported` is `true`. |
+| `kubernetesRunner.storageClassNamesSupported` | `[]` | Allowlist of permitted storage class names. Only effective when `enableStorageClassNamesSupported` is `true`. The API refuses other names. |
 
 ### Pipeline Volume Attributes Class
 
@@ -98,7 +98,7 @@ Requires Kubernetes 1.34 or later and a CSI driver that supports [volume attribu
 |-----|---------|-------------|
 | `kubernetesRunner.volumeAttributesClassName` | `null` | Volume attributes class for pipeline persistent volumes that do not set `resources.volume_attributes_class`. `null` sets none. |
 | `kubernetesRunner.enableVolumeAttributesClassNamesSupported` | `false` | When `true`, only volume attributes classes listed in `volumeAttributesClassNamesSupported` can be used. |
-| `kubernetesRunner.volumeAttributesClassNamesSupported` | `[]` | Allowlist of permitted volume attributes class names. Only effective when `enableVolumeAttributesClassNamesSupported` is `true`. |
+| `kubernetesRunner.volumeAttributesClassNamesSupported` | `[]` | Allowlist of permitted volume attributes class names. Only effective when `enableVolumeAttributesClassNamesSupported` is `true`. The API refuses other names. |
 
 ### Connector Kubernetes Secrets
 

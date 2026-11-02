@@ -25,9 +25,8 @@ public abstract class DBSPAggregateOperatorBase
                                         DBSPTypeIndexedZSet outputType,
                                         @Nullable DBSPAggregator function,
                                         @Nullable DBSPAggregateList aggregateList,
-                                        boolean multiset,
                                         OutputPort source) {
-        super(node, operation, function, outputType, multiset, source);
+        super(node, operation, function, outputType, source);
         this.aggregateList = aggregateList;
         // There are really two different representations of an aggregate operator,
         // which reuse the same classes: a high-level one, which contains an Aggregate,

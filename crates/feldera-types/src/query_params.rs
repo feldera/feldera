@@ -87,12 +87,13 @@ pub struct ApproveParameters {
 }
 
 /// Query parameters to the `/stats` endpoint.
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Deserialize, Serialize, IntoParams, ToSchema)]
+#[into_params(parameter_in = Query)]
 pub struct StatsParams {
-    /// When `true`, include the most recent error messages for each endpoint
-    /// in the response (up to `MAX_CONNECTOR_ERRORS` per list). Default is
-    /// `false` so that callers polling `/stats` keep getting a lightweight
-    /// response. This selector is intended for the support-bundle collector.
+    /// When `true`, the response includes the most recent error messages of
+    /// each connector. An error message can contain values from the record
+    /// that caused it. The default is `false`, which keeps the response small
+    /// for callers that poll `/stats`.
     #[serde(default)]
     pub include_connector_errors: bool,
 }

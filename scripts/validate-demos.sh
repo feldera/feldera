@@ -8,6 +8,7 @@ do
     if [[ "$output" == *warning* ]]
     then
         echo FAIL
+        echo "$output"
         count=$[$count + 1]
     else
         echo OK

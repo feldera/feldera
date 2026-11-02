@@ -44,7 +44,7 @@
     "@tsconfig/svelte": "^5.0.6",
     "@types/node": "^24.10.1",
     "feldera-theme": "workspace:*",
-    "svelte": "5.55.7",
+    "svelte": "5.57.3",
     "svelte-check": "^4.3.5",
     "tailwindcss": "^4.1.17",
     "typescript": "~5.9.3",

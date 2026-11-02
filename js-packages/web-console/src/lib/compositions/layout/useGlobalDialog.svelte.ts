@@ -1,4 +1,4 @@
-import type { Snippet } from '$lib/types/svelte'
+import type { Snippet } from '#lib/types/svelte.ts'
 
 export type DialogAction = {
   name: string

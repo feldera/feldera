@@ -27,22 +27,22 @@ but always return a Boolean value (sometimes nullable):
   <tr>
     <td><a id="gt"></a><code>&gt;</code></td>
     <td>greater than</td>
-    <td></td>
+    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a></td>
   </tr>
   <tr>
     <td><a id="lt"></a><code>&lt;</code></td>
     <td>less than</td>
-    <td></td>
+    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a></td>
   </tr>
   <tr>
     <td><a id="gte"></a><code>&gt;=</code></td>
     <td>greater or equal</td>
-    <td></td>
+    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a></td>
   </tr>
   <tr>
     <td><a id="lte"></a><code>&lt;=</code></td>
     <td>less or equal</td>
-    <td></td>
+    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a></td>
   </tr>
   <tr>
     <td><a id="isnull"></a><code>IS NULL</code></td>
@@ -152,8 +152,10 @@ silences the warning for the whole program; see the
 Comparison operations (`=`, `<>`, `!=`, `<`, `>`, `<=`, `>=`, `<=>`,
 `IS NULL`, `IS NOT NULL`) are defined on all data types, even generic
 and recursive data types (including `ARRAY`, `MAP`, `ROW`, `VARIANT`,
-user-defined types).  The one exception is that `=`, `<>`, and `!=`
-are [rejected on `ROW` values](#comparing-row-values).
+user-defined types).  The exceptions are that `=`, `<>`, `!=`, `<`,
+`>`, `<=`, and `>=` are [rejected on `ROW` values](#comparing-row-values),
+and that `<`, `>`, `<=`, and `>=` are [rejected on `ARRAY` and `MAP`
+values that contain `ROW` values](#comparing-array-and-map-values).
 
 Equality needs no notion of order.  Two `ARRAY` values are equal when
 they have the same length and equal elements at each index; two `MAP`
@@ -180,6 +182,12 @@ insides of a value.  For example, `ARRAY[NULL] < ARRAY[1]` is `true`.
 Map keys are never `NULL`, so this affects fields, array elements, and
 map values.
 
+`ORDER BY`, including the `ORDER BY` of a window, and `SORT_ARRAY`
+sort values in the same order, and `MIN`, `MAX`, `ARG_MIN`, `ARG_MAX`,
+`ARRAY_MIN`, and `ARRAY_MAX` choose values in the same order.  These
+accept `ROW` values: for example, `MIN` over `ROW(1, NULL)` and
+`ROW(1, 2)` is `ROW(1, NULL)`.
+
 ### Comparing `ARRAY` and `MAP` values
 
 For `ARRAY` and `MAP` values `=` is equivalent to `IS NOT DISTINCT
@@ -194,16 +202,30 @@ When one operand is a `NULL` array or a `NULL` map, `=` produces
 `NULL` as any other comparison does, while `IS NOT DISTINCT FROM`
 produces `false`.
 
+Elements, keys, and values that are [`ROW` values](#comparing-row-values)
+are compared using `IS NOT DISTINCT FROM` as well, so `=`, `<>`, and
+`!=` are accepted on arrays and maps that contain `ROW` values.
+The ordering comparisons are rejected on `ROW` values, so `<`, `<=`,
+`>`, `>=`, `BETWEEN`, `GREATEST`, `LEAST`, `GREATEST_IGNORE_NULLS`,
+and `LEAST_IGNORE_NULLS` are also rejected on arrays and maps that
+contain `ROW` values at any depth, such as values of type
+`ROW(x INT) ARRAY`, `ROW(x INT) ARRAY ARRAY`, `MAP<VARCHAR, ROW(x INT)>`,
+or `MAP<ROW(x INT), INT>`.
+
 ### Comparing `ROW` values {#comparing-row-values}
 
-Feldera rejects `=`, `<>`, and `!=` between `ROW` values.
+Feldera rejects `=`, `<>`, `!=`, `<`, `<=`, `>`, and `>=` between
+`ROW` values.
 
 The reason is that the standard meaning of these operators on `ROW`
 values surprises most users.  The standard compares the fields
-pairwise under three-valued logic: the result is `false` as soon as
-one pair of fields differs, `true` when every pair is equal, and
-`NULL` otherwise.  A `NULL` field therefore does not simply make the
-whole comparison `NULL`:
+under three-valued logic.  For `=` and `<>`, the fields are compared
+pairwise: `=` is `false` as soon as one pair of fields differs, `true`
+when every pair is equal, and `NULL` otherwise.  For `<`, `<=`, `>`,
+and `>=`, the fields are compared in order, and the first pair that is
+not known to be equal decides the result; when that pair contains a
+`NULL`, the result is `NULL`.  A `NULL` field therefore does not
+simply make the whole comparison `NULL`:
 
 <table>
   <tr>
@@ -226,13 +248,29 @@ whole comparison `NULL`:
     <td><code>true</code></td>
     <td>one pair differs, so the two rows are known to differ</td>
   </tr>
+  <tr>
+    <td><code>ROW(1, NULL) &lt; ROW(2, NULL)</code></td>
+    <td><code>true</code></td>
+    <td>the first fields decide</td>
+  </tr>
+  <tr>
+    <td><code>ROW(1, NULL) &lt; ROW(1, 2)</code></td>
+    <td><code>NULL</code></td>
+    <td>the first fields are equal, the second pair is unknown</td>
+  </tr>
+  <tr>
+    <td><code>ROW(1, NULL) &lt;= ROW(1, NULL)</code></td>
+    <td><code>NULL</code></td>
+    <td>the first fields are equal, the second pair is unknown</td>
+  </tr>
 </table>
 
 Two different values thus compare as `false`, while two identical ones
-compare as `NULL`: a `ROW` value is not equal to itself once any field
-is `NULL`.  A query that gets this wrong silently drops or keeps the
-wrong rows, because `WHERE` treats `NULL` as `false`.  Rejecting the
-comparison forces the choice to be explicit.
+compare as `NULL`: a `ROW` value is not equal to itself, and not `<=`
+itself, once any field is `NULL`.  A query that gets this wrong
+silently drops or keeps the wrong rows, because `WHERE` treats `NULL`
+as `false`.  Rejecting the comparison forces the choice to be
+explicit.
 
 Write [`IS NOT DISTINCT FROM`](#notdistinct) in place of `=`, and [`IS
 DISTINCT FROM`](#distinct) in place of `<>` and `!=`.  Both treat
@@ -249,13 +287,24 @@ CREATE VIEW v AS SELECT p IS NOT DISTINCT FROM q, p IS DISTINCT FROM q FROM T;
 CREATE VIEW w AS SELECT p <=> q FROM T;
 ```
 
+No operator replaces `<`, `<=`, `>`, and `>=`; compare the fields
+instead:
+
+```sql
+CREATE TYPE point AS (x INT, y INT);
+CREATE TABLE T(p point, q point);
+-- Rejected:
+--   CREATE VIEW v AS SELECT p < q FROM T;
+CREATE VIEW v AS SELECT T.p.x < T.q.x OR (T.p.x = T.q.x AND T.p.y < T.q.y) FROM T;
+```
+
 A user-defined type declared with `CREATE TYPE ... AS (...)` is a
 `ROW` type (see [user-defined types](types.md#user-defined-types)), so
 the restriction applies to values of such types as well.
 
-A program can request `ROW` equality without writing `=`.  The
-compiler rejects each of the following forms; the last column gives
-the accepted rewrite:
+A program can also compare `ROW` values without writing one of these
+operators.  The compiler rejects each of the following forms; the last
+column gives the accepted rewrite:
 
 <table>
   <tr>
@@ -304,9 +353,29 @@ the accepted rewrite:
     <td><code>CASE WHEN r IS NOT DISTINCT FROM v THEN NULL ELSE r END</code></td>
   </tr>
   <tr>
-    <td><code>(a, b) = (c, d)</code>, <code>(a, b) &lt;&gt; (c, d)</code></td>
+    <td><code>r &lt; s</code>, <code>r &lt;= s</code>, <code>r &gt; s</code>, <code>r &gt;= s</code></td>
+    <td>explicit ordering comparison</td>
+    <td>compare the fields: <code>r.x &lt; s.x OR (r.x = s.x AND r.y &lt; s.y)</code></td>
+  </tr>
+  <tr>
+    <td><code>r BETWEEN a AND b</code></td>
+    <td>expands to <code>r &gt;= a AND r &lt;= b</code></td>
+    <td>compare the fields of <code>r</code> with those of <code>a</code> and <code>b</code></td>
+  </tr>
+  <tr>
+    <td><code>GREATEST(r, s)</code>, <code>LEAST(r, s)</code>, <code>GREATEST_IGNORE_NULLS(r, s)</code>, <code>LEAST_IGNORE_NULLS(r, s)</code></td>
+    <td>the result is chosen by comparing the arguments</td>
+    <td>a <code>CASE</code> expression that compares the fields</td>
+  </tr>
+  <tr>
+    <td><code>a &lt; b</code> where <code>a</code> and <code>b</code> are arrays or maps that contain <code>ROW</code> values</td>
+    <td>the <code>ROW</code> values inside are ordered</td>
+    <td>compare the fields of the elements</td>
+  </tr>
+  <tr>
+    <td><code>(a, b) = (c, d)</code>, <code>(a, b) &lt;&gt; (c, d)</code>, <code>(a, b) &lt; (c, d)</code></td>
     <td>a row constructor builds a <code>ROW</code> value</td>
-    <td><code>(a, b) IS [NOT] DISTINCT FROM (c, d)</code></td>
+    <td><code>(a, b) IS [NOT] DISTINCT FROM (c, d)</code>, <code>a &lt; c OR (a = c AND b &lt; d)</code></td>
   </tr>
 </table>
 
@@ -332,16 +401,22 @@ WHERE EXISTS (SELECT 1 FROM r WHERE r.p IS NOT DISTINCT FROM l.p);
 
 The following remain legal on `ROW` values:
 
-- the ordering comparisons `<`, `<=`, `>`, `>=`;
 - `IS [NOT] DISTINCT FROM`, `<=>`, and `IS [NOT] NULL`;
 - constructs that group values rather than compare them, because they
   use distinctness and not equality: `GROUP BY`, `SELECT DISTINCT`,
-  `PARTITION BY`, `UNION`, `INTERSECT`, and `EXCEPT`.
+  `PARTITION BY`, `UNION`, `INTERSECT`, and `EXCEPT`;
+- constructs that sort or choose values in the order described in
+  [comparing complex values](#comparing-complex-values): `ORDER BY`,
+  `MIN`, `MAX`, `ARG_MIN`, `ARG_MAX`, `SORT_ARRAY`, `ARRAY_MIN`, and
+  `ARRAY_MAX`;
+- `=`, `<>`, and `!=` between `ARRAY` or `MAP` values that contain
+  `ROW` values, which [compare the `ROW` values using `IS NOT DISTINCT
+  FROM`](#comparing-array-and-map-values).
 
 The restriction covers a comparison written directly between two row
 constructors, such as `(a, b) = (c, d)`: a row constructor builds a
-`ROW` value like any other.  Compare the fields, `a = c AND b = d`, if
-that is what you mean.
+`ROW` value like any other.  Compare the fields, `a = c AND b = d` or
+`a < c OR (a = c AND b < d)`, if that is what you mean.
 
 ## Other conditional operators
 
@@ -360,11 +435,11 @@ that is what you mean.
   </tr>
   <tr>
     <td><a id="greatest"></a><code>GREATEST( expr [, expr ]* )</code></td>
-    <td>The largest of a number of expressions; if any argument is <code>NULL</code>, the result is <code>NULL</code>.</td>
+    <td>The largest of a number of expressions; if any argument is <code>NULL</code>, the result is <code>NULL</code>.  Rejected for <a href="#comparing-row-values"><code>ROW</code> values</a>.</td>
   </tr>
   <tr>
     <td><a id="greatest_ignore_nulls"></a><code>GREATEST_IGNORE_NULLS( expr [, expr ]* )</code></td>
-    <td>The largest of a number of expressions; only if all arguments are <code>NULL</code>, the result is <code>NULL</code>; otherwise <code>NULL</code> values are ignored.</td>
+    <td>The largest of a number of expressions; only if all arguments are <code>NULL</code>, the result is <code>NULL</code>; otherwise <code>NULL</code> values are ignored.  Rejected for <a href="#comparing-row-values"><code>ROW</code> values</a>.</td>
   </tr>
   <tr>
     <td><a id="if"></a><code>IF( condition, ifTrue, ifFalse )</code></td>
@@ -376,11 +451,11 @@ that is what you mean.
   </tr>
   <tr>
     <td><a id="least"></a><code>LEAST( expr [, expr ]* )</code></td>
-    <td>The smallest of a number of expressions; if any argument is <code>NULL</code>, the result is <code>NULL</code>.</td>
+    <td>The smallest of a number of expressions; if any argument is <code>NULL</code>, the result is <code>NULL</code>.  Rejected for <a href="#comparing-row-values"><code>ROW</code> values</a>.</td>
   </tr>
   <tr>
     <td><a id="least_ignore_nulls"></a><code>LEAST_IGNORE_NULLS( expr [, expr ]* )</code></td>
-    <td>The smallest of a number of expressions; only if all arguments are <code>NULL</code>, the result is <code>NULL</code>; otherwise <code>NULL</code> values are ignored.</td>
+    <td>The smallest of a number of expressions; only if all arguments are <code>NULL</code>, the result is <code>NULL</code>; otherwise <code>NULL</code> values are ignored.  Rejected for <a href="#comparing-row-values"><code>ROW</code> values</a>.</td>
   </tr>
   <tr>
     <td><a id="nullif"></a><code>NULLIF(value0, value1)</code></td>

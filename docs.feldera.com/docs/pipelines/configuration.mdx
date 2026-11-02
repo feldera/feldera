@@ -111,6 +111,22 @@ runtime configuration fields cannot be edited:
 - `resources.storage_class`
 - `clock_timezone_offset`
 
+#### Storage limits
+
+On Kubernetes, an administrator can limit pipeline storage in the
+[Helm chart](/get-started/enterprise/helm-chart-reference#kubernetes-runner):
+
+| Runtime configuration field | Helm values |
+|---|---|
+| `resources.storage_class` | `kubernetesRunner.enableStorageClassNamesSupported`, `kubernetesRunner.storageClassNamesSupported` |
+| `resources.volume_attributes_class` | `kubernetesRunner.enableVolumeAttributesClassNamesSupported`, `kubernetesRunner.volumeAttributesClassNamesSupported` |
+| `resources.storage_min`, `resources.storage_max` | `kubernetesRunner.upperLimitStorageMegabyte` |
+
+`POST`, `PUT`, and `PATCH` refuse a `runtime_config` with a value outside these limits, with a 400
+`InvalidRuntimeConfig` error. On all installations, `resources.storage_min` cannot be more than
+`resources.storage_max`. A runtime configuration stored before a limit was set still loads, but the
+pipeline does not start until the value is changed.
+
 #### Resizing a running pipeline
 
 :::caution Experimental feature

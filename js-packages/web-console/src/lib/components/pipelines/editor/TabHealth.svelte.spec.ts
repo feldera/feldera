@@ -6,8 +6,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import type { PipelineMonitorEventSelectedInfo } from '$lib/services/manager'
-import type { ExtendedPipeline } from '$lib/services/pipelineManager'
+import type { PipelineMonitorEventSelectedInfo } from '#lib/services/manager/index.ts'
+import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
 
 // --- Mock usePipelineManager so the tab can fetch events offline ---
 
@@ -15,7 +15,7 @@ const getPipelineEventsMock = vi.fn<(name: string) => Promise<PipelineMonitorEve
 const getPipelineEventMock =
   vi.fn<(name: string, id: string) => Promise<PipelineMonitorEventSelectedInfo>>()
 
-vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
+vi.mock('#lib/compositions/usePipelineManager.svelte.ts', () => ({
   usePipelineManager: () => ({
     getPipelineEvents: getPipelineEventsMock,
     getPipelineEvent: getPipelineEventMock

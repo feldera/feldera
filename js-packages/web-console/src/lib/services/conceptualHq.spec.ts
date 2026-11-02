@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { Configuration } from '$lib/services/manager'
-import type { UserProfile } from '$lib/types/auth'
+import type { Configuration } from '#lib/services/manager/index.ts'
+import type { UserProfile } from '#lib/types/auth.ts'
 
 // The composition owns the reactive visitor ID; here we only assert that the
 // loader script triggers a refresh. Mocking it also keeps runes out of this
 // node-environment spec.
 const refreshConceptualHqDeviceId = vi.hoisted(() => vi.fn())
 
-vi.mock('$lib/compositions/useConceptualHq.svelte', () => ({ refreshConceptualHqDeviceId }))
+vi.mock('#lib/compositions/useConceptualHq.svelte.ts', () => ({ refreshConceptualHqDeviceId }))
 
 const profile: UserProfile = { id: 'user-1', email: 'a@b.com', name: 'Ann' }
 
@@ -192,7 +192,7 @@ describe('trackConceptualHqSignup', () => {
   it('measures the age on the server clock', async () => {
     const { trackConceptualHqSignup } = await setup()
     // Import after `setup`, so that both use the same `ServerDate` instance.
-    const { ServerDate } = await import('$lib/compositions/serverTime')
+    const { ServerDate } = await import('#lib/compositions/serverTime.ts')
     // The browser clock is 7 h ahead of the server.
     vi.useFakeTimers({ now: now + 7 * 3600_000 })
     try {

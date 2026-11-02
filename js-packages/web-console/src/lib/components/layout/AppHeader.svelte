@@ -1,13 +1,13 @@
 <script lang="ts">
-  import FelderaModernLogoColorDark from '$assets/images/feldera-modern/Feldera Logo Color Dark.svg?component'
-  import FelderaModernLogoColorLight from '$assets/images/feldera-modern/Feldera Logo Color Light.svg?component'
-  import FelderaModernLogomarkColorDark from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
-  import FelderaModernLogomarkColorLight from '$assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
-  import ProfileButton from '$lib/components/auth/ProfileButton.svelte'
-  import { useClusterHealth } from '$lib/compositions/health/useClusterHealth.svelte'
-  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
-  import { resolve } from '$lib/functions/svelte'
-  import type { Snippet } from '$lib/types/svelte'
+  import FelderaModernLogoColorDark from '#assets/images/feldera-modern/Feldera Logo Color Dark.svg?component'
+  import FelderaModernLogoColorLight from '#assets/images/feldera-modern/Feldera Logo Color Light.svg?component'
+  import FelderaModernLogomarkColorDark from '#assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
+  import FelderaModernLogomarkColorLight from '#assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
+  import ProfileButton from '#lib/components/auth/ProfileButton.svelte'
+  import { useClusterHealth } from '#lib/compositions/health/useClusterHealth.svelte.ts'
+  import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
+  import { resolve } from '#lib/functions/svelte.ts'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   const {
     afterStart,

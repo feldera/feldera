@@ -25,7 +25,7 @@ public class DBSPWindowOperatorTests {
         DBSPTypeIndexedZSet type = new DBSPTypeIndexedZSet(
                 CalciteObject.EMPTY, DBSPTypeDate.INSTANCE, DBSPTypeTuple.EMPTY);
         return new DBSPConstantOperator(CalciteEmptyRel.INSTANCE,
-                new DBSPIndexedZSetExpression(CalciteObject.EMPTY, type), false);
+                new DBSPIndexedZSetExpression(CalciteObject.EMPTY, type));
     }
 
     private static OutputPort controlInput(
@@ -51,7 +51,7 @@ public class DBSPWindowOperatorTests {
     private static final class TestScalarOperator extends DBSPSimpleOperator {
         TestScalarOperator() {
             super(CalciteEmptyRel.INSTANCE, "apply_test_source", null,
-                    DBSPTypeTuple.EMPTY, false);
+                    DBSPTypeTuple.EMPTY);
         }
 
         @Override

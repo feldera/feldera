@@ -278,6 +278,8 @@ public class CalciteOptimizer implements IWritesLogs {
                 return this.getName();
             }
         });
+        this.addStep(new SimpleOptimizerStep("Reduce table function arguments", 0,
+                new TableFunctionReduceExpressionsRule()));
         // Must run before "Expand windows", which converts the RexOver
         // projections this rewrite creates.
         this.addStep(new SimpleOptimizerStep("Rewrite SESSION", 0,

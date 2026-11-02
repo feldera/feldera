@@ -82,19 +82,37 @@ After you select a zip file, click **View profile** to open it in a new tab.
 | Toolbar | **Load profile** gets a new bundle. **Snapshot** selects one of the profiles in the bundle. **Search node** finds a node. |
 | Minimap | A map that shows which part of the dataflow graph is in the window |
 | Dataflow graph | The nodes and edges of the pipeline |
-| SQL | The SQL program of the pipeline. A click on a node selects its SQL here, if the node has a SQL source position. |
-| Analysis panel | The tabs **Metrics**, **Logs**, **Config** and **Issues & Suggestions** |
+| Code panel | The source files of the pipeline. See [The code panel](#the-code-panel). |
+| Analysis panel | The tabs **Metrics**, **Connectors**, **Health**, **Logs**, **Config** and **Issues & Suggestions** |
 
 The analysis panel has these tabs:
 
 | Tab | Content |
 |---|---|
 | Metrics | The measurements of the pipeline, of the current node, or of the top nodes. See [Displaying measurements](#displaying-measurements). |
+| Connectors | The statistics and the recent errors of the input and output connectors. See [Connectors](#connectors). |
+| Health | The status history and the incidents of the pipeline. See [Health](#health). |
 | Logs | The pipeline log from the bundle |
 | Config | The pipeline configuration from the bundle |
 | Issues & Suggestions | Problems that triage rules found in the bundle. See [Issues & Suggestions](#issues-and-suggestions). |
 
-The button in the top right corner of the SQL panel stretches it to the full
+The viewer disables **Connectors**, **Health** and **Config** when the bundle
+has no data for them.
+
+### The code panel
+
+The code panel has one tab for each source file of the pipeline:
+
+| Tab | Content |
+|---|---|
+| `program.sql` | The SQL program |
+| `udf.rs` | The Rust code of the [user-defined functions](/sql/udf) |
+| `udf.toml` | The Rust dependencies of the user-defined functions |
+
+The viewer shows the `udf.rs` and `udf.toml` tabs only when these files are
+not empty. A click on a node with a SQL source position opens `program.sql`.
+
+The button in the top right corner of the code panel stretches it to the full
 height of the window.
 
 ## Moving around the dataflow graph
@@ -111,13 +129,13 @@ The dataflow graph can be much larger than the window.
 
 ## The current node
 
-Click a node to make it the *current node*. The other parts of the
-viewer show information about the current node:
+Click a node to make it the *current node*. The current node glows, and the
+other parts of the viewer show information about it:
 
 | Action | Result |
 |---|---|
 | Move the pointer over a node | The node glows. The other parts of the viewer do not change. |
-| Click a node | The node becomes the current node and glows. The **Node** view of the **Metrics** tab shows its measurements, the SQL panel selects the SQL of the node, if the node has a SQL source position, and the edges show its [reachability](#reachability). |
+| Click a node | The node becomes the current node. The **Node** view of the **Metrics** tab shows its measurements. If the node has a SQL source position, the code panel selects its SQL in `program.sql`. The edges show its [reachability](#reachability). |
 | Press Escape | There is no current node. |
 
 ### Nodes and SQL
@@ -126,8 +144,8 @@ A node with a Code chip has an associated SQL source position:
 
 ![Nodes with a SQL source position](source-chip.png)
 
-When you click such a node, the SQL panel selects the SQL statements of
-the node and scrolls to them:
+When you click such a node, the code panel opens `program.sql`, selects the
+SQL statements of the node and scrolls to them:
 
 ![The SQL of the current node](sources.png)
 
@@ -201,11 +219,12 @@ The **Metrics** tab has three views:
 | Node | The measurements of the current node |
 | Top nodes | The top nodes according to the current metric |
 
-### Per-pipeline measurements
+### Pipeline measurements
 
-The **Overview** view shows the global statistics of the pipeline, for
-example the number of records that the pipeline received and processed,
-and its CPU time. Then it shows the measurements for the full dataflow graph.
+The first group of metrics in the **Overview** are the **Global stats** - statistics
+of the whole pipeline. They include the last status, the version and the uptime of
+the pipeline, and the number of records that it received and processed. Then
+the view shows the measurements for the full dataflow graph.
 
 ![The Overview view](overall.png)
 
@@ -260,6 +279,53 @@ The node most worthy of attention is first. Click a node ID to center the
 dataflow graph on that node.
 
 ![The top nodes for the current metric](important-nodes.png)
+
+## Connectors
+
+The **Connectors** tab shows the statistics of the input and output
+connectors at the time when the profile was collected. The first table lists the SQL tables
+of the pipeline and their input connectors. If the pipeline has output
+connectors, a second table lists the views and their output connectors:
+
+![The Connectors tab](connectors-tab.png)
+
+| Column | What it shows |
+|---|---|
+| Table, View | The SQL table or view of the connector |
+| Connectors | The name and the status of each connector. Select **Unhealthy** to show only the connectors with problems. |
+| Transaction | Input only. **Started** or **Ready to commit** if the connector started the current transaction. |
+| Ingested, Transmitted | The number of records and bytes that the connector received or sent |
+| Buffered, Queued | The records and batches that wait in the connector |
+| Latency p99 | Input only. The 99th percentile of the time from the ingestion of a batch to the end of its processing, over the last 10 minutes. Red marks the slowest connectors. |
+| Parse, Encode and Transport errors | The number of errors of each kind |
+
+The statistics show the state of the connectors at a moment when the profile was collected.
+So the tab does not show the current performance.
+
+The label of the **Connectors** tab shows the total number of connector
+errors. To see the errors of a connector, click its error icon or one of its
+error counts. A list of its most recent errors opens next to the table. A click
+on the number of errors shows the errors of that kind.
+
+![The parse errors of a connector](connector-errors.png)
+
+The pipeline keeps only the 100 most recent errors of each kind, so the bundle
+has at most 100 errors of each kind. If the pipeline dropped older errors, the
+list shows "N other errors skipped" in their place.
+
+## Health
+
+The **Health** tab shows the recorded pipeline monitoring events. Feldera
+checks the status of the pipeline at regular intervals, and records each check
+as an event. See [Pipeline monitoring](/tutorials/rest_api/pipeline-monitoring).
+
+![The Health tab, with the details of an incident](health-tab.png)
+
+| Part | What it shows |
+|---|---|
+| Pipeline status | The status of the pipeline in each of the last 72 hours before the profile was collected. Click a bar to see the events of that hour. |
+| Incidents | The incidents of the pipeline, newest first. Click an incident to see its events. |
+| Event details | The fields of each event. The left and right arrow keys move to the previous or the next incident or hour. |
 
 ## Issues & Suggestions {#issues-and-suggestions}
 
@@ -319,8 +385,8 @@ Press Enter for the next match, and Shift+Enter for the previous match.
 | `Ctrl-F` (`Cmd-F` on macOS) | Anywhere else | Opens the search of the open tab. It selects the old text, so you can type a new search immediately. |
 | Escape | | Removes the current node, or closes the search |
 
-The **Config** tab does not have its own search. On this tab, `Ctrl-F`
-opens the search of the browser.
+To search the **Connectors**, **Health** and **Config** tabs, use the search
+function of the browser (`Ctrl-F`).
 
 ## Profiling pipelines using samply
 

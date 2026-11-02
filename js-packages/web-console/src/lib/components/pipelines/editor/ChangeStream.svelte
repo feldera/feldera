@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import type { XgressEntry } from '$lib/services/pipelineManager'
+  import type { XgressEntry } from '#lib/services/pipelineManager.ts'
   export type Row =
     | { relationName: string; columns: Field[] }
     | XgressEntry
@@ -15,15 +15,15 @@
   import { humanSize } from 'common-lib/string'
   import JSONbig from 'true-json-bigint'
 
-  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
-  import List from '$lib/components/common/virtualList/HeadlessVirtualList.svelte'
-  import SQLValue from '$lib/components/relationData/SQLValue.svelte'
-  import type { Field } from '$lib/services/manager'
-  import SqlColumnHeader from '$lib/components/relationData/SQLColumnHeader.svelte'
-  import { usePopoverTooltip } from '$lib/compositions/common/usePopoverTooltip.svelte'
+  import WarningBanner from '#lib/components/pipelines/editor/WarningBanner.svelte'
+  import List from '#lib/components/common/virtualList/HeadlessVirtualList.svelte'
+  import SQLValue from '#lib/components/relationData/SQLValue.svelte'
+  import type { Field } from '#lib/services/manager/index.ts'
+  import SqlColumnHeader from '#lib/components/relationData/SQLColumnHeader.svelte'
+  import { usePopoverTooltip } from '#lib/compositions/common/usePopoverTooltip.svelte.ts'
   import { ScrollDownFab, useReverseScrollContainer } from 'common-ui'
-  import SQLValueTooltip from '$lib/components/other/SQLValueTooltip.svelte'
-  import type { SQLValueJS } from '$lib/types/sql'
+  import SQLValueTooltip from '#lib/components/other/SQLValueTooltip.svelte'
+  import type { SQLValueJS } from '#lib/types/sql.ts'
 
   let {
     changeStream,

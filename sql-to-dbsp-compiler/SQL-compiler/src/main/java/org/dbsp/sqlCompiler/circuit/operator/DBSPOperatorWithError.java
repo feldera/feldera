@@ -70,11 +70,6 @@ public abstract class DBSPOperatorWithError
     }
 
     @Override
-    public boolean isMultiset(int outputNumber) {
-        return true;
-    }
-
-    @Override
     public int outputCount() {
         return 2;
     }

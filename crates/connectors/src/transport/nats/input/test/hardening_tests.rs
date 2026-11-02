@@ -512,6 +512,42 @@ pub fn deleted_positioned_consumer_does_not_reingest(engine: &dyn ConnectorTestE
     .unwrap();
 }
 
+/// A consumer the client library recreated must not outlive a pause.
+///
+/// The library names a recreated ordered consumer `{name}_{n}` and deletes
+/// the one it replaces, so the connector must delete the recreated consumer
+/// rather than the name it chose itself.
+#[engine_test(services(Nats))]
+pub fn library_recreated_consumer_is_deleted_on_pause(engine: &dyn ConnectorTestEngine) {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        engine,
+        basic_nats_config,
+        &[
+            StartNats,
+            CreateStream,
+            Publish(2),
+            CreatePipeline,
+            Extend,
+            WaitForRecords(2),
+            DeleteConsumers,
+            // The library notices the deletion and recreates the consumer.
+            WaitForConsumerCount {
+                count: 1,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+            Pause,
+            WaitForConsumerCount {
+                count: 0,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+            AssertConsumerCountersMatchServer,
+            Disconnect,
+        ],
+    )
+    .unwrap();
+}
+
 /// The consumer counters must agree with the server when a create times out
 /// but the server created the consumer anyway.
 ///

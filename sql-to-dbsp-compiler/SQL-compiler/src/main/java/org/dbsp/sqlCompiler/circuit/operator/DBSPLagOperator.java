@@ -43,7 +43,7 @@ public final class DBSPLagOperator extends DBSPUnaryOperator implements IHasInpu
                            DBSPExpression projection, DBSPExpression function,
                            DBSPExpression comparator,
                            DBSPTypeIndexedZSet outputType, OutputPort source) {
-        super(node, "lag_custom_order", function, outputType, source.isMultiset(), source);
+        super(node, "lag_custom_order", function, outputType, source);
         Utilities.enforce(comparator.is(DBSPComparatorExpression.class) ||
                 comparator.is(DBSPPathExpression.class));
         if (comparator.is(DBSPComparatorExpression.class)) {

@@ -129,8 +129,7 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
             List<OutputPort> sourceSource = Linq.map(sources, s -> s.node().inputs.get(0));
             DBSPSimpleOperator replace = new DBSPJoinOperator(operator.getRelNode(),
                     operator.getOutputZSetType(),
-                    operator.getFunction(), operator.isMultiset,
-                    sourceSource.get(0), sourceSource.get(1), operator.balanced)
+                    operator.getFunction(), sourceSource.get(0), sourceSource.get(1), operator.balanced)
                     .copyAnnotations(operator);
             this.addOperator(replace);
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(
@@ -148,8 +147,7 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
             List<OutputPort> sourceSource = Linq.map(sources, s -> s.node().inputs.get(0));
             DBSPSimpleOperator replace = new DBSPJoinIndexOperator(operator.getRelNode(),
                     operator.getOutputIndexedZSetType(),
-                    operator.getFunction(), operator.isMultiset,
-                    sourceSource.get(0), sourceSource.get(1), operator.balanced)
+                    operator.getFunction(), sourceSource.get(0), sourceSource.get(1), operator.balanced)
                     .copyAnnotations(operator);
             this.addOperator(replace);
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getRelNode(), replace.outputPort());

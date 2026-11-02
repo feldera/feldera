@@ -13,8 +13,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
-import type { PipelineThumb } from '$lib/services/pipelineManager'
+import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
+import type { PipelineThumb } from '#lib/services/pipelineManager.ts'
 
 const SORT_KEY = 'layout/pipelines/table/sort'
 

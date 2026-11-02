@@ -155,7 +155,7 @@ to the type itself).
 
 A user-defined structure type is a `ROW` type, and its values behave
 like `ROW` values everywhere.  In particular, they cannot be compared
-using `=`, `<>`, or `!=`; see [comparing `ROW`
+using `=`, `<>`, `!=`, `<`, `<=`, `>`, or `>=`; see [comparing `ROW`
 values](comparisons.md#comparing-row-values).
 
 An expression that constructs a structure uses the type name, e.g.:

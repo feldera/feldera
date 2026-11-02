@@ -32,7 +32,7 @@ public final class DBSPAggregateLinearPostprocessRetainKeysOperator
             DBSPClosureExpression retainKeysFunction,
             OutputPort left, OutputPort right) {
         super(node, "aggregate_linear_postprocess_retain_keys",
-                function, outputType, false, left, right);
+                function, outputType, left, right);
         this.postProcess = postProcess;
         this.retainKeysFunction = retainKeysFunction;
     }

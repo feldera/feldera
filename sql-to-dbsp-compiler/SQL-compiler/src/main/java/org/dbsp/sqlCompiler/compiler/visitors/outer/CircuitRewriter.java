@@ -277,7 +277,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         if (!input.equals(operator.input()) ||
             !chain.equals(operator.chain)) {
             result = new DBSPChainOperator(operator.getRelNode(),
-                    chain, operator.isMultiset, input)
+                    chain, input)
                     .copyAnnotations(operator);
         }
         this.map(operator.outputPort(), result.outputPort());
@@ -320,7 +320,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || !input.equals(operator.input())) {
             result = new DBSPIndexedTopKOperator(operator.getRelNode(),
                     operator.numbering, function, limit, equalityComparator,
-                    outputProducer, operator.isMultiset, input)
+                    outputProducer, input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -436,7 +436,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || function != operator.getFunction()) {
             result = new DBSPFlatMapIndexOperator(
                     operator.getRelNode(), function,
-                    resultType.to(DBSPTypeIndexedZSet.class), operator.isMultiset, input)
+                    resultType.to(DBSPTypeIndexedZSet.class), input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -522,7 +522,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         DBSPExpression value = this.transform(operator.getFunction());
         DBSPSimpleOperator result = operator;
         if (value != operator.getFunction()) {
-            result = new DBSPConstantOperator(operator.getRelNode(), value, operator.isMultiset)
+            result = new DBSPConstantOperator(operator.getRelNode(), value)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -543,8 +543,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || function != operator.function
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPJoinOperator(operator.getRelNode(),
-                    outputType.to(DBSPTypeZSet.class), function, operator.isMultiset,
-                    sources.get(0), sources.get(1), operator.balanced)
+                    outputType.to(DBSPTypeZSet.class), function, sources.get(0), sources.get(1), operator.balanced)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -561,7 +560,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPStarJoinOperator(operator.getRelNode(),
                     outputType.to(DBSPTypeZSet.class), function.to(DBSPClosureExpression.class),
-                    operator.isMultiset, sources)
+                    sources)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -578,7 +577,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPStarJoinIndexOperator(operator.getRelNode(),
                     outputType.to(DBSPTypeIndexedZSet.class), function.to(DBSPClosureExpression.class),
-                    operator.isMultiset, sources)
+                    sources)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -597,7 +596,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPStarJoinFilterMapOperator(operator.getRelNode(),
                     outputType.to(DBSPTypeZSet.class), function.to(DBSPClosureExpression.class),
-                    filter, map, operator.isMultiset, sources)
+                    filter, map, sources)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -613,8 +612,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || function != operator.function
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPLeftJoinOperator(operator.getRelNode(),
-                    outputType.to(DBSPTypeZSet.class), function, operator.isMultiset,
-                    sources.get(0), sources.get(1), operator.balanced)
+                    outputType.to(DBSPTypeZSet.class), function, sources.get(0), sources.get(1), operator.balanced)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -630,8 +628,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || function != operator.function
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPLeftJoinIndexOperator(operator.getRelNode(),
-                    outputType.to(DBSPTypeIndexedZSet.class), function, operator.isMultiset,
-                    sources.get(0), sources.get(1), operator.balanced)
+                    outputType.to(DBSPTypeIndexedZSet.class), function, sources.get(0), sources.get(1), operator.balanced)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -649,8 +646,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || function != operator.function
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPLeftJoinFilterMapOperator(operator.getRelNode(),
-                    outputType.to(DBSPTypeZSet.class), function, filter, map, operator.isMultiset,
-                    sources.get(0), sources.get(1), operator.balanced)
+                    outputType.to(DBSPTypeZSet.class), function, filter, map, sources.get(0), sources.get(1), operator.balanced)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -674,7 +670,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
             result = new DBSPConcreteAsofJoinOperator(operator.getRelNode(),
                     outputType.to(DBSPTypeZSet.class), function,
                     leftTimestamp, rightTimestamp, comparator,
-                    operator.isMultiset, operator.isLeft,
+                    operator.isLeft,
                     sources.get(0), sources.get(1))
                     .copyAnnotations(operator);
         }
@@ -695,7 +691,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
             result = new DBSPAsofJoinOperator(operator.getRelNode(),
                     outputType.to(DBSPTypeZSet.class), function,
                     operator.leftTimestampIndex, operator.rightTimestampIndex, comparator,
-                    operator.isMultiset, operator.isLeft,
+                    operator.isLeft,
                     sources.get(0), sources.get(1))
                     .copyAnnotations(operator);
         }
@@ -788,7 +784,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || function != operator.function
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPStreamJoinOperator(operator.getRelNode(), outputType.to(DBSPTypeZSet.class),
-                    function, operator.isMultiset, sources.get(0), sources.get(1), operator.balanced)
+                    function, sources.get(0), sources.get(1), operator.balanced)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
@@ -808,7 +804,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || map != operator.map
                 || Linq.different(sources, operator.inputs)) {
             result = new DBSPJoinFilterMapOperator(operator.getRelNode(), outputType.to(DBSPTypeZSet.class),
-                    function, filter, map, operator.isMultiset, sources.get(0), sources.get(1), operator.balanced)
+                    function, filter, map, sources.get(0), sources.get(1), operator.balanced)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

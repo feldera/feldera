@@ -7,7 +7,7 @@ use crate::{
 use std::{
     borrow::Cow,
     collections::{HashMap, hash_map::Entry},
-    fmt::Display,
+    fmt::{Display, Write as _},
     slice,
 };
 
@@ -69,7 +69,7 @@ impl Region {
         );
 
         for i in 0..region_id.0.len() {
-            region_ident.push_str(&region_id.0[i].to_string());
+            let _ = write!(&mut region_ident, "{}", region_id.0[i]);
             if i < region_id.0.len() - 1 {
                 region_ident.push('_');
             }

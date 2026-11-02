@@ -1,13 +1,10 @@
 import { expect, test } from '@playwright/test'
-import { postPipelineAction, putPipeline } from '$lib/services/pipelineManager'
+import { postPipelineAction, putPipeline } from '#lib/services/pipelineManager.ts'
 import {
   cleanupPipeline,
-  configureTestClient,
   TEST_COMPILATION_PROFILE,
   waitForPipeline
-} from '$lib/services/testPipelineHelpers'
-
-configureTestClient()
+} from '#lib/services/testPipelineHelpers.ts'
 
 const PIPELINE_NAME = `test-clear-storage-${Date.now()}`
 

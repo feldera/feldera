@@ -36,6 +36,13 @@ jobs:
         env:
           VITEST_MAX_WORKERS: "4"
 
+      # Loads the integration and e2e test files without a Feldera instance, so
+      # a test file that fails to import fails here, before the Docker build.
+      - name: Check that integration and e2e test files load
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: bun run test-list
+        working-directory: js-packages/web-console
+
       - name: Run profiler-layout vitest unit & component tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: bun run test-unit

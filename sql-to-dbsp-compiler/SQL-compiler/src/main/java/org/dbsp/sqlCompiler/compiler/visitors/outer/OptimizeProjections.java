@@ -537,11 +537,8 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
         List<Integer> keptOutputs = useMap.field(1).deref().getUsedFields();
         List<DBSPExpression> kept = Linq.map(keptOutputs, i -> produced.fields[i].deepCopy());
         DBSPClosureExpression newProducer = new DBSPTupleExpression(kept, false).closure(topKClosure.parameters);
-        // Dropping the rank column may let rows of a group repeat
-        boolean isMultiset = topK.isMultiset ||
-                !DBSPIndexedTopKOperator.emitsDistinctRows(topK.numbering, topK.limit, newProducer);
         DBSPSimpleOperator newTopK = new DBSPIndexedTopKOperator(topK.getRelNode(), topK.numbering,
-                topK.getFunction(), topK.limit, topK.equalityComparator, newProducer, isMultiset, topK.input())
+                topK.getFunction(), topK.limit, topK.equalityComparator, newProducer, topK.input())
                 .copyAnnotations(topK).to(DBSPSimpleOperator.class);
         this.addOperator(newTopK);
 
@@ -579,7 +576,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 }
                 DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(
                         jfm.getRelNode(), operator.getOutputZSetType(), jfm.getFunction(),
-                        jfm.filter, newMap, operator.isMultiset, jfm.left(), jfm.right(), jfm.balanced)
+                        jfm.filter, newMap, jfm.left(), jfm.right(), jfm.balanced)
                         .copyAnnotations(operator).copyAnnotations(source.node()).to(DBSPSimpleOperator.class);
                 this.map(operator, result);
                 return;
@@ -600,7 +597,7 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 }
                 DBSPSimpleOperator result = new DBSPStarJoinFilterMapOperator(
                         jfm.getRelNode(), operator.getOutputZSetType(), jfm.getClosureFunction(),
-                        jfm.filter, newMap, operator.isMultiset, jfm.inputs)
+                        jfm.filter, newMap, jfm.inputs)
                         .copyAnnotations(operator).copyAnnotations(source.node()).to(DBSPSimpleOperator.class);
                 this.map(operator, result);
                 return;

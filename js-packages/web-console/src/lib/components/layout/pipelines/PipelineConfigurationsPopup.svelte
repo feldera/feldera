@@ -1,16 +1,19 @@
 <script lang="ts">
   import { toast } from 'svelte-french-toast'
   import JSONbig from 'true-json-bigint'
-  import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
-  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
-  import MultiJSONDialog from '$lib/components/dialogs/MultiJSONDialog.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { usePermission } from '$lib/compositions/usePermission.svelte'
-  import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
-  import { useToast } from '$lib/compositions/useToastNotification'
-  import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
-  import { editSettingsDisabledReason } from '$lib/functions/pipelines/status'
-  import { deletePipeline as _deletePipeline, type Pipeline } from '$lib/services/pipelineManager'
+  import IconLoader from '#assets/icons/generic/loader-alt.svg?component'
+  import GenericDialog from '#lib/components/dialogs/GenericDialog.svelte'
+  import MultiJSONDialog from '#lib/components/dialogs/MultiJSONDialog.svelte'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
+  import { getPipelineAction } from '#lib/compositions/usePipelineAction.svelte.ts'
+  import { useToast } from '#lib/compositions/useToastNotification.ts'
+  import type { WritablePipeline } from '#lib/compositions/useWritablePipeline.svelte.ts'
+  import { editSettingsDisabledReason } from '#lib/functions/pipelines/status.ts'
+  import {
+    deletePipeline as _deletePipeline,
+    type Pipeline
+  } from '#lib/services/pipelineManager.ts'
 
   const {
     pipeline,

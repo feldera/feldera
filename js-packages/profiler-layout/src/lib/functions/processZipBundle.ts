@@ -4,6 +4,7 @@ import {
   type ConnectorMetrics,
   type ConnectorStatus
 } from 'common-ui/connectorMetrics'
+import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
 import type { Dataflow, JsonProfiles } from 'profiler-lib'
 import sortOn from 'sort-on'
 import { groupBy } from './array'
@@ -16,15 +17,17 @@ const dataflowGraphRegex = /dataflow_graph\.json$/
 const pipelineConfigRegex = /pipeline_config\.json$/
 const logsRegex = /logs\.txt$/
 const statsRegex = /stats\.json$/
+const pipelineEventsRegex = /pipeline_events\.json$/
 
 // Any of these files makes a collection worth opening. A bundle missing the circuit profile
-// still carries program code, config, logs and stats, all of which the viewer can display.
+// still carries program code, config, logs, stats and events, all of which the viewer can display.
 const usefulFileRegexes = [
   circuitProfileRegex,
   dataflowGraphRegex,
   pipelineConfigRegex,
   logsRegex,
-  statsRegex
+  statsRegex,
+  pipelineEventsRegex
 ]
 
 // New bundle layout (since support-bundle metadata_version 1): each collection
@@ -58,11 +61,19 @@ function collectionDate(key: string): Date {
   return new Date(key)
 }
 
+/** A pipeline source file, named as in the web-console editor. */
+export interface SourceFile {
+  name: 'program.sql' | 'udf.rs' | 'udf.toml'
+  /** Monaco language id. Monaco has no TOML grammar, so TOML uses `graphql`, the same as the
+   *  web-console editor. */
+  language: 'sql' | 'rust' | 'graphql'
+  code: string
+}
+
 export interface ProcessedProfile {
   /** Parsed `circuit_profile.json` */
   profile?: JsonProfiles
   dataflow?: Dataflow
-  sources?: string[]
   logText?: string
   pipelineName?: string
   /** Cumulative pipeline-wide metrics from `stats.json`, when the bundle includes them. */
@@ -70,9 +81,17 @@ export interface ProcessedProfile {
   /** Input and output connector statistics from `stats.json`, grouped by table and view, when the
    *  bundle includes them. */
   connectorMetrics?: ConnectorMetrics
+  /** The `connectorMetrics` source, with the error lists of the connectors. */
+  connectorStatus?: ConnectorStatus
   /** Pipeline runtime configuration (`runtime_config` from `pipeline_config.json`), when the
    *  bundle includes it. */
   runtimeConfig?: unknown
+  /** Pipeline monitor events from `pipeline_events.json`, newest first, when the bundle includes
+   *  them. */
+  pipelineEvents?: PipelineMonitorEvent[]
+  /** The pipeline source files from `pipeline_config.json`, `program.sql` first. A missing
+   *  `program_code` and empty UDF files are left out. */
+  sourceFiles?: SourceFile[]
 }
 
 /**
@@ -152,18 +171,29 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
   }
 
   const configFile = files.find((file) => pipelineConfigRegex.test(file.filename))
-  let sources: string[] | undefined
   let pipelineName: string | undefined
   let runtimeConfig: unknown
+  let sourceFiles: SourceFile[] | undefined
   if (configFile) {
     const pipelineConfig = JSON.parse(decoder.decode(await configFile.read())) as unknown as {
-      program_code: string
+      program_code?: unknown
       name?: string
       runtime_config?: unknown
+      udf_rust?: string
+      udf_toml?: string
     }
-    sources = pipelineConfig.program_code.split('\n')
     pipelineName = pipelineConfig.name || undefined
     runtimeConfig = pipelineConfig.runtime_config ?? undefined
+    const program = pipelineConfig.program_code
+    const programFiles: SourceFile[] =
+      typeof program === 'string' ? [{ name: 'program.sql', language: 'sql', code: program }] : []
+    const udfFiles = (
+      [
+        { name: 'udf.rs', language: 'rust', code: pipelineConfig.udf_rust },
+        { name: 'udf.toml', language: 'graphql', code: pipelineConfig.udf_toml }
+      ] as const
+    ).flatMap(({ code, ...file }) => (typeof code === 'string' && code ? [{ ...file, code }] : []))
+    sourceFiles = [...programFiles, ...udfFiles]
   }
 
   const logsFile = files.find((file) => logsRegex.test(file.filename))
@@ -179,6 +209,7 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
   const statsFile = files.find((file) => statsRegex.test(file.filename))
   let globalMetrics: GlobalMetrics | undefined
   let connectorMetrics: ConnectorMetrics | undefined
+  let connectorStatus: ConnectorStatus | undefined
   if (statsFile) {
     let stats: (Partial<ConnectorStatus> & { global_metrics?: GlobalMetrics }) | undefined
     try {
@@ -187,19 +218,46 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
       stats = undefined
     }
     globalMetrics = stats?.global_metrics
-    connectorMetrics = aggregateBundleConnectorMetrics(stats)
+    connectorStatus = parseConnectorStatus(stats)
+    connectorMetrics = connectorStatus && aggregateBundleConnectorMetrics(connectorStatus)
+  }
+
+  // A malformed file leaves the events undefined and does not fail the load.
+  const pipelineEventsFile = files.find((file) => pipelineEventsRegex.test(file.filename))
+  let pipelineEvents: PipelineMonitorEvent[] | undefined
+  if (pipelineEventsFile) {
+    try {
+      const parsed: unknown = JSON.parse(decoder.decode(await pipelineEventsFile.read()))
+      pipelineEvents = Array.isArray(parsed) ? parsed.filter(isPipelineMonitorEvent) : undefined
+    } catch {
+      pipelineEvents = undefined
+    }
   }
 
   return {
     profile,
     dataflow,
-    sources,
     logText,
     pipelineName,
     globalMetrics,
     connectorMetrics,
-    runtimeConfig
+    connectorStatus,
+    runtimeConfig,
+    pipelineEvents,
+    sourceFiles
   }
+}
+
+/** Checks only the fields that identify an event and place it on the timeline. The Health tab
+ *  shows the other fields without a check. */
+function isPipelineMonitorEvent(value: unknown): value is PipelineMonitorEvent {
+  const e = value as Partial<PipelineMonitorEvent> | null
+  return (
+    typeof e === 'object' &&
+    e !== null &&
+    typeof e.event_id === 'string' &&
+    typeof e.recorded_at === 'string'
+  )
 }
 
 /**
@@ -218,19 +276,12 @@ export function parseConnectorStatus(
 }
 
 /**
- * Groups the connector statistics of a parsed `stats.json` by table and view. Returns `undefined`
- * when it lists no connectors.
+ * Groups the connector statistics of a `stats.json` by table and view.
  *
  * @throws Error if a connector entry cannot be aggregated, for example one without
  *         `config.stream`
  */
-function aggregateBundleConnectorMetrics(
-  stats: Partial<ConnectorStatus> | null | undefined
-): ConnectorMetrics | undefined {
-  const connectorStatus = parseConnectorStatus(stats)
-  if (!connectorStatus) {
-    return undefined
-  }
+function aggregateBundleConnectorMetrics(connectorStatus: ConnectorStatus): ConnectorMetrics {
   // A bundle holds one `/stats` sample, so `io_active` is false for all connectors.
   try {
     return aggregateConnectorMetrics(connectorStatus)

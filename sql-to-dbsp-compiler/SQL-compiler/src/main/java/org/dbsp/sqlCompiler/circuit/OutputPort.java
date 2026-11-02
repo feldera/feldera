@@ -118,10 +118,6 @@ public class OutputPort {
         return this.outputType();
     }
 
-    public boolean isMultiset() {
-        return this.node().isMultiset(this.outputNumber);
-    }
-
     public DBSPType outputType() {
         return this.node().outputType(this.outputNumber);
     }

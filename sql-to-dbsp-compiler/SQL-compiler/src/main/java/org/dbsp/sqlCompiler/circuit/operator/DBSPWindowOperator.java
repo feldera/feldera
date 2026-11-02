@@ -35,7 +35,7 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements IHas
 
     public DBSPWindowOperator(CalciteRelNode node, boolean lowerInclusive, boolean upperInclusive,
             boolean lowerUnbounded, OutputPort data, OutputPort control) {
-        super(node, "window", null, data.outputType(), data.isMultiset(), data, control);
+        super(node, "window", null, data.outputType(), data, control);
         // Check that the left input and output are indexed ZSets.
         DBSPTypeIndexedZSet indexedType = this.getOutputIndexedZSetType();
         DBSPType expectedControlType = new DBSPTypeRawTuple(

@@ -3,7 +3,7 @@ import {
   isBundlePickerSupported,
   type PickedDiskFile,
   pickSupportBundle
-} from '$lib/services/supportBundleHistory'
+} from '#lib/services/supportBundleHistory.ts'
 
 /** A support bundle the user chose. */
 export type PickedBundle = {

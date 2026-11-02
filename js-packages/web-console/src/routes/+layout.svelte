@@ -1,24 +1,23 @@
 <script lang="ts">
   import './layout.css'
-  import { BodyAttr, HtmlAttr } from 'svelte-attr'
-  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
+  import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
   import '@fortawesome/fontawesome-free/css/brands.min.css'
 
   import posthog from 'posthog-js'
   import { Toaster } from 'svelte-french-toast'
-  import { browser } from '$app/environment'
+  import { browser } from '$app/env'
   import { afterNavigate, beforeNavigate } from '$app/navigation'
 
-  import '$assets/fonts/feldera-material-icons.css'
-  import '$assets/fonts/generic-icons.css'
+  import '#assets/fonts/feldera-material-icons.css'
+  import '#assets/fonts/generic-icons.css'
 
+  import GlobalModal from '#lib/components/dialogs/GlobalModal.svelte'
+  import { useInterval } from '#lib/compositions/common/useInterval.svelte.ts'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import { ServerDate } from '#lib/compositions/serverTime.ts'
+  import { useSystemMessages } from '#lib/compositions/useSystemMessages.svelte.ts'
+  import { getLicenseMessage } from '#lib/functions/license.ts'
   import { page } from '$app/state'
-  import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
-  import { useInterval } from '$lib/compositions/common/useInterval.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { ServerDate } from '$lib/compositions/serverTime'
-  import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
-  import { getLicenseMessage } from '$lib/functions/license'
   import { _markRouterReady } from './+layout'
 
   const { children } = $props()
@@ -28,8 +27,18 @@
   const dialog = useGlobalDialog()
 
   if (browser) {
-    beforeNavigate(() => posthog.capture('$pageleave'))
-    afterNavigate(() => {
+    beforeNavigate(({ shallow, type }) => {
+      // Shallow routing (the former pushState/replaceState) is not a page change.
+      if (shallow && type === 'goto') {
+        return
+      }
+      posthog.capture('$pageleave')
+    })
+    afterNavigate(({ shallow, type }) => {
+      // Shallow routing (the former pushState/replaceState) is not a page change.
+      if (shallow && type === 'goto') {
+        return
+      }
       _markRouterReady()
       posthog.capture('$pageview')
     })
@@ -52,13 +61,18 @@
     }
     upsert(/^license_/, getLicenseMessage(page.data.feldera.config, new ServerDate()))
   }, 60000)
+
+  // <html> and <body> are outside the component tree, so set their classes directly.
+  $effect(() => {
+    document.documentElement.setAttribute('class', darkMode.current)
+  })
+  $effect(() => {
+    document.body.setAttribute(
+      'class',
+      'text-base scrollbar-h-[10px] scrollbar-thumb-primary-200 scrollbar-thumb-rounded-full scrollbar-w-[10px] dark:scrollbar-thumb-surface-600 scrollbar-hover:scrollbar-thumb-surface-400 dark:scrollbar-hover:scrollbar-thumb-surface-600'
+    )
+  })
 </script>
-
-<HtmlAttr class={darkMode.current}></HtmlAttr>
-
-<BodyAttr
-  class="text-base scrollbar-h-[10px] scrollbar-thumb-primary-200 scrollbar-thumb-rounded-full scrollbar-w-[10px] dark:scrollbar-thumb-surface-600 scrollbar-hover:scrollbar-thumb-surface-400 dark:scrollbar-hover:scrollbar-thumb-surface-600"
-/>
 
 <Toaster
   position={'bottom-right'}

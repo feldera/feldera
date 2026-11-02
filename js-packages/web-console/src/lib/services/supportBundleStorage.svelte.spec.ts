@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { fakeHandle } from '$lib/services/testSupportBundleHelpers'
+import { fakeHandle } from '#lib/services/testSupportBundleHelpers.ts'
 import {
   bundleOps,
   isPermissionRequired,

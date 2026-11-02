@@ -23,6 +23,7 @@ use futures_util::StreamExt;
 use serde::Deserialize;
 use std::cmp::min;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::io::Write;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -196,7 +197,7 @@ where
                 first_line = false;
             }
             Err(e) => {
-                logs.push_str(&format!("ERROR: Unable to read server response: {}", e));
+                let _ = write!(&mut logs, "ERROR: Unable to read server response: {e}");
             }
         }
     }
@@ -333,12 +334,13 @@ where
             if !body_bytes.is_empty() {
                 let body_str = String::from_utf8_lossy(&body_bytes);
                 if let Ok(error_response) = serde_json::from_str::<ErrorResponse>(&body_str) {
-                    error_string.push_str(&format!(
+                    let _ = write!(
+                        &mut error_string,
                         ": {}",
                         error_response.message.trim_end_matches('\n')
-                    ));
+                    );
                 } else {
-                    error_string.push_str(&format!(": {}", body_str.trim_end_matches('\n')));
+                    let _ = write!(&mut error_string, ": {}", body_str.trim_end_matches('\n'));
                 }
             }
             Err(error_string)

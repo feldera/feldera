@@ -547,8 +547,10 @@ impl DevTweaks {
         self.top_level_negative_weight_fraction.unwrap_or(0.2)
     }
 
-    pub fn disable_auto_transaction(&self) -> bool {
-        self.disable_auto_transaction.unwrap_or(false)
+    /// Whether to start a transaction automatically for every step, which is
+    /// the opposite of the `disable_auto_transaction` field.
+    pub fn enable_auto_transaction(&self) -> bool {
+        !self.disable_auto_transaction.unwrap_or(false)
     }
 
     /// Configured `now_offset` as milliseconds since the Unix epoch,
@@ -785,5 +787,17 @@ mod tests {
                 (String::from("foobar"), json!({"key": "value"}))
             ]),
         );
+    }
+
+    #[test]
+    fn auto_transactions_are_enabled_unless_disabled() {
+        let enable = |config| {
+            serde_json::from_value::<DevTweaks>(config)
+                .unwrap()
+                .enable_auto_transaction()
+        };
+        assert!(enable(json!({})));
+        assert!(enable(json!({"disable_auto_transaction": false})));
+        assert!(!enable(json!({"disable_auto_transaction": true})));
     }
 }

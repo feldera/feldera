@@ -1,7 +1,7 @@
 <script lang="ts">
   import { match, P } from 'ts-pattern'
-  import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
-  import type { ProgramStatus } from '$lib/services/pipelineManager'
+  import IconLoader from '#assets/icons/generic/loader-alt.svg?component'
+  import type { ProgramStatus } from '#lib/services/pipelineManager.ts'
 
   const {
     programStatus

@@ -86,15 +86,17 @@ class illarg_window_dense_rank_legal(TstView):
                         WHERE dr <= 10; """
 
 
-# Negative Test
-# TODO: fix this test, it now should pass
-# class illarg_window_dense_rank_illegal(TstView):
-#    def __init__(self):
-#        # checked manually
-#        self.sql = """CREATE MATERIALIZED VIEW illarg_window_dense_rank_illegal AS SELECT
-#                      id, DENSE_RANK() OVER (ORDER BY 1) AS count
-#                      FROM illegal_tbl"""
-#        self.expected_error = "DENSE_RANK only supported in a TopK pattern"
+# Ordering by a constant makes every row tie, so each one ranks 1.
+class illarg_window_dense_rank_order_by_const(TstView):
+    def __init__(self):
+        self.data = [
+            {"id": 0, "count": 1},
+            {"id": 1, "count": 1},
+            {"id": 2, "count": 1},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW illarg_window_dense_rank_order_by_const AS SELECT
+                      id, DENSE_RANK() OVER (ORDER BY 1) AS count
+                      FROM illegal_tbl"""
 
 
 # LAG
@@ -155,15 +157,17 @@ class illarg_window_rank_legal(TstView):
                         WHERE dr <= 10; """
 
 
-# Negative Test
-# TODO: fix this test, it now should pass
-# class illarg_window_rank_illegal(TstView):
-#    def __init__(self):
-#        # checked manually
-#        self.sql = """CREATE MATERIALIZED VIEW illarg_window_rank_illegal AS SELECT
-#                      id, RANK() OVER (ORDER BY NULL) AS count
-#                      FROM illegal_tbl"""
-#        self.expected_error = "RANK only supported in a TopK pattern"
+# Ordering by NULL makes every row tie, so each one ranks 1.
+class illarg_window_rank_order_by_null(TstView):
+    def __init__(self):
+        self.data = [
+            {"id": 0, "count": 1},
+            {"id": 1, "count": 1},
+            {"id": 2, "count": 1},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW illarg_window_rank_order_by_null AS SELECT
+                      id, RANK() OVER (ORDER BY NULL) AS count
+                      FROM illegal_tbl"""
 
 
 # MAX
@@ -220,15 +224,14 @@ class illarg_window_row_num_legal(TstView):
                         WHERE dr <= 10; """
 
 
-# Negative Test
-# TODO: fix this test, it now should pass
-# class illarg_window_row_num_illegal(TstView):
-#    def __init__(self):
-#        # checked manually
-#        self.sql = """CREATE MATERIALIZED VIEW illarg_window_row_num_illegal AS SELECT
-#                      id, ROW_NUMBER() OVER (ORDER BY NULL) AS count
-#                      FROM illegal_tbl"""
-#        self.expected_error = "ROW_NUMBER only supported in a TopK pattern"
+# Ordering by NULL makes every row tie, so which row gets which number is
+# unspecified; only the numbers themselves are checked.
+class illarg_window_row_num_order_by_null(TstView):
+    def __init__(self):
+        self.data = [{"count": 1}, {"count": 2}, {"count": 3}]
+        self.sql = """CREATE MATERIALIZED VIEW illarg_window_row_num_order_by_null AS SELECT
+                      ROW_NUMBER() OVER (ORDER BY NULL) AS count
+                      FROM illegal_tbl"""
 
 
 # SUM

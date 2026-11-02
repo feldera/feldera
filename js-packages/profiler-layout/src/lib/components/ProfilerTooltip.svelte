@@ -7,7 +7,7 @@
     shadeOfRed
   } from 'profiler-lib'
   import { SvelteSet } from 'svelte/reactivity'
-  import { groupBy } from '$lib/functions/array'
+  import { groupBy } from '../functions/array'
 
   export type TooltipData =
     | { nodeAttributes: NodeAttributes }

@@ -3,10 +3,10 @@
   import { MonacoEditor } from 'common-ui'
   import * as MonacoImports from 'monaco-editor'
   import { editor } from 'monaco-editor'
-  import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
-  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
-  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
-  import { isMonacoEditorDisabled } from '$lib/functions/monacoEditor'
+  import { useCodeEditorSettings } from '#lib/compositions/pipelines/useCodeEditorSettings.svelte.ts'
+  import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
+  import { useSkeletonTheme } from '#lib/compositions/useSkeletonTheme.svelte.ts'
+  import { isMonacoEditorDisabled } from '#lib/functions/monacoEditor.ts'
 
   let {
     filePath,

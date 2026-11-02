@@ -229,6 +229,8 @@ public class SimplifyConditionals implements IRTransform {
         @Override
         public void postorder(DBSPBlockExpression block) {
             this.substitutionContext.popContext();
+            // A block can be the condition of an if expression
+            this.postorder((DBSPExpression) block);
         }
 
         @Override
@@ -246,6 +248,8 @@ public class SimplifyConditionals implements IRTransform {
             Utilities.putNew(this.identitySubstitution, expression, expression);
             expression.consumer.accept(this);
             this.substitutionContext.popContext();
+            // A let expression can be the condition of an if expression
+            this.postorder((DBSPExpression) expression);
             return VisitDecision.STOP;
         }
 

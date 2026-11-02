@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import { useTryPipeline } from '$lib/compositions/pipelines/useTryPipeline'
-  import { usePermission } from '$lib/compositions/usePermission.svelte'
-  import type { Demo } from '$lib/services/pipelineManager'
+  import { usePipelineList } from '#lib/compositions/pipelines/usePipelineList.svelte.ts'
+  import { useTryPipeline } from '#lib/compositions/pipelines/useTryPipeline.ts'
+  import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
+  import type { Demo } from '#lib/services/pipelineManager.ts'
 
   let { demo, placement }: { demo: Demo | null; placement?: string } = $props()
   const tryPipeline = useTryPipeline()

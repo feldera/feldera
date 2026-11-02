@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -23,16 +24,18 @@ public class TopKUnusedFieldsTests extends SqlIoTest {
 
     static class TopKShapes extends CircuitVisitor {
         final List<Shape> shapes = new ArrayList<>();
+        final MultisetAnalysis multisets;
 
         TopKShapes(DBSPCompiler compiler) {
             super(compiler);
+            this.multisets = new MultisetAnalysis(compiler);
         }
 
         @Override
         public void postorder(DBSPIndexedTopKOperator operator) {
             int input = operator.input().getOutputIndexedZSetType().getElementTypeTuple().size();
             int output = operator.getOutputIndexedZSetType().getElementTypeTuple().size();
-            this.shapes.add(new Shape(input, output, operator.isMultiset));
+            this.shapes.add(new Shape(input, output, this.multisets.isMultiset(operator.outputPort())));
         }
     }
 
@@ -65,6 +68,7 @@ public class TopKUnusedFieldsTests extends SqlIoTest {
     /** The shape of the only TopK in the circuit */
     static Shape shape(CompilerCircuitStream ccs) {
         TopKShapes shapes = new TopKShapes(ccs.compiler);
+        ccs.visit(shapes.multisets);
         ccs.visit(shapes);
         Assert.assertEquals(1, shapes.shapes.size());
         return shapes.shapes.get(0);

@@ -59,7 +59,7 @@ public class CSE extends Repeat {
         /** True if two constants have the same type and the same values, compared as expressions,
          * with the same weights and in the same order. */
         static boolean sameRows(DBSPConstantOperator left, DBSPConstantOperator right) {
-            if (left.isMultiset != right.isMultiset || !left.outputType.sameType(right.outputType))
+            if (!left.outputType.sameType(right.outputType))
                 return false;
             DBSPZSetExpression leftRows = left.getFunction().as(DBSPZSetExpression.class);
             DBSPZSetExpression rightRows = right.getFunction().as(DBSPZSetExpression.class);

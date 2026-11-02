@@ -1,16 +1,16 @@
 <script lang="ts">
   import { nubLast } from 'common-lib/array'
   import { SegmentedControl } from 'common-ui'
-  import AppHeader from '$lib/components/layout/AppHeader.svelte'
-  import Footer from '$lib/components/layout/Footer.svelte'
-  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
-  import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
-  import BookADemo from '$lib/components/other/BookADemo.svelte'
-  import DemoTile from '$lib/components/other/DemoTile.svelte'
-  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
-  import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
-  import { useDemos } from '$lib/compositions/useDemos.svelte'
-  import { resolve } from '$lib/functions/svelte'
+  import AppHeader from '#lib/components/layout/AppHeader.svelte'
+  import Footer from '#lib/components/layout/Footer.svelte'
+  import NavigationExtras from '#lib/components/layout/NavigationExtras.svelte'
+  import PipelineBreadcrumbs from '#lib/components/layout/PipelineBreadcrumbs.svelte'
+  import BookADemo from '#lib/components/other/BookADemo.svelte'
+  import DemoTile from '#lib/components/other/DemoTile.svelte'
+  import CreatePipelineButton from '#lib/components/pipelines/CreatePipelineButton.svelte'
+  import { useAdaptiveDrawer } from '#lib/compositions/layout/useAdaptiveDrawer.svelte.ts'
+  import { useDemos } from '#lib/compositions/useDemos.svelte.ts'
+  import { resolve } from '#lib/functions/svelte.ts'
 
   let demosType = $state('All')
   const drawer = useAdaptiveDrawer('right')

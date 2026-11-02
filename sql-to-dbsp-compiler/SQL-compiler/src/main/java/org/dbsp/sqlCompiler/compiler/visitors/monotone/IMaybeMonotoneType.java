@@ -12,8 +12,9 @@ import java.util.List;
 public interface IMaybeMonotoneType extends ICastable, IHasId {
     /** The type whose monotonicity is represented */
     DBSPType getType();
-    /** A type that contains only the monotone fields of this type.
-     * May return 'null' if the type has no monotone components. */
+    /** A type that contains only the monotone fields of this type, none of them nullable: the type
+     * of a waterline, which is never NULL.  May return 'null' if the type has no monotone
+     * components. */
     @Nullable
     DBSPType getProjectedType();
     /** True if the type has some monotone fields */

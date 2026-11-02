@@ -195,6 +195,9 @@ pub fn input_transport_config_to_endpoint(
 /// waits on something outside the pipeline uses it to stop waiting when the
 /// pipeline goes down.
 ///
+/// `storage_path` is the pipeline's storage directory, if it has one on the
+/// local file system. An endpoint that spills to disk uses it.
+///
 /// Returns an error if there is a invalid configuration for the endpoint.
 /// Returns `None` if the transport configuration variant is incompatible with an output endpoint.
 #[allow(unused_variables)]
@@ -203,6 +206,7 @@ pub fn output_transport_config_to_endpoint(
     endpoint_name: &str,
     fault_tolerant: bool,
     secrets_dir: &Path,
+    storage_path: Option<&Path>,
     shutdown: CancellationToken,
 ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
@@ -216,7 +220,9 @@ pub fn output_transport_config_to_endpoint(
                 shutdown,
             )?))),
             true => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(
-                config, shutdown,
+                config,
+                shutdown,
+                storage_path.map(Path::to_owned),
             )?))),
         },
         #[cfg(feature = "with-redis")]

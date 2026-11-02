@@ -209,6 +209,12 @@ given view.
 
 These metrics accumulate across checkpoint and resume.
 
+Some output connectors export metrics of their own in addition to these,
+under the same `endpoint` label, for example the
+[Kafka](/connectors/sinks/kafka#output-metrics) and
+[Delta Lake](/connectors/sinks/delta#metrics) output connectors. Each
+connector page documents them.
+
 | Name | Type | Description |
 | :--- | :--- | :---------- |
 | <a name='output_connector_batch_records_written'>`output_connector_batch_records_written`</a> |gauge | Number of records written so far in the current output batch. Non-zero while a batch write is in progress. Resets to 0 after the batch is committed. |

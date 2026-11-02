@@ -1,7 +1,7 @@
 import { type ProductFruitsUserObject, productFruits } from 'product-fruits'
 
-import type { Configuration } from '$lib/services/manager'
-import type { UserProfile } from '$lib/types/auth'
+import type { Configuration } from '#lib/services/manager/index.ts'
+import type { UserProfile } from '#lib/types/auth.ts'
 
 /**
  * User interface language passed to Product Fruits. The console ships English

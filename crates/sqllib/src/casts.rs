@@ -24,8 +24,7 @@ use num_traits::{CheckedDiv, CheckedMul, cast::NumCast};
 use regex::{Captures, Regex};
 use smallstr::SmallString;
 use std::{
-    error::Error, fmt::Display, fmt::Write, iter::once, marker::PhantomData, ops::Div,
-    sync::LazyLock,
+    error::Error, fmt::Display, fmt::Write, iter::once, marker::PhantomData, sync::LazyLock,
 };
 
 trait ToSmallString: Display {
@@ -1750,6 +1749,137 @@ cast_to_i!(u32);
 cast_to_i!(u64);
 cast_to_i!(u128);
 
+// Saturating forms of the casts to integer and DECIMAL types.  A
+// value above the range of the result type converts to its maximum, and a value below the
+// range to its minimum.  NaN, the largest DOUBLE, converts to the maximum.
+
+macro_rules! saturating_cast_to_integer {
+    ($result_type: ident) => {
+        saturating_cast_to_integer!(
+            $result_type,
+            signed: i8, i16, i32, i64, i128;
+            unsigned: u8, u16, u32, u64, u128
+        );
+
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<cast_to_ $result_type _SqlDecimal_saturating>]<const P: usize, const S: usize>(
+                value: SqlDecimal<P, S>,
+            ) -> $result_type {
+                let bound = if value.is_negative() { $result_type::MIN } else { $result_type::MAX };
+                [<cast_to_ $result_type _SqlDecimal>](value).unwrap_or(bound)
+            }
+
+            #[doc(hidden)]
+            pub fn [<cast_to_ $result_type _d_saturating>](value: F64) -> $result_type {
+                let bound = if value.into_inner() < 0.0 { $result_type::MIN } else { $result_type::MAX };
+                [<cast_to_ $result_type _d>](value).unwrap_or(bound)
+            }
+
+            #[doc(hidden)]
+            pub fn [<cast_to_ $result_type _f_saturating>](value: F32) -> $result_type {
+                let bound = if value.into_inner() < 0.0 { $result_type::MIN } else { $result_type::MAX };
+                [<cast_to_ $result_type _f>](value).unwrap_or(bound)
+            }
+        }
+    };
+    ($result_type: ident, signed: $($signed: ident),*; unsigned: $($unsigned: ident),*) => {
+        ::paste::paste! {
+            $(
+                #[doc(hidden)]
+                pub fn [<cast_to_ $result_type _ $signed _saturating>](value: $signed) -> $result_type {
+                    let bound = if value < 0 { $result_type::MIN } else { $result_type::MAX };
+                    [<cast_to_ $result_type _ $signed>](value).unwrap_or(bound)
+                }
+            )*
+            $(
+                #[doc(hidden)]
+                pub fn [<cast_to_ $result_type _ $unsigned _saturating>](value: $unsigned) -> $result_type {
+                    [<cast_to_ $result_type _ $unsigned>](value).unwrap_or($result_type::MAX)
+                }
+            )*
+        }
+    };
+}
+
+saturating_cast_to_integer!(i8);
+saturating_cast_to_integer!(i16);
+saturating_cast_to_integer!(i32);
+saturating_cast_to_integer!(i64);
+saturating_cast_to_integer!(i128);
+saturating_cast_to_integer!(u8);
+saturating_cast_to_integer!(u16);
+saturating_cast_to_integer!(u32);
+saturating_cast_to_integer!(u64);
+saturating_cast_to_integer!(u128);
+
+/// MAX of the DECIMAL type if `positive`, MIN otherwise.
+fn saturated_decimal<const P: usize, const S: usize>(positive: bool) -> SqlDecimal<P, S> {
+    if positive {
+        SqlDecimal::<P, S>::MAX
+    } else {
+        SqlDecimal::<P, S>::MIN
+    }
+}
+
+macro_rules! saturating_cast_to_decimal {
+    (signed: $($signed: ident),*; unsigned: $($unsigned: ident),*) => {
+        ::paste::paste! {
+            $(
+                #[doc(hidden)]
+                pub fn [<cast_to_SqlDecimal_ $signed _saturating>]<const P: usize, const S: usize>(
+                    value: $signed,
+                ) -> SqlDecimal<P, S> {
+                    [<cast_to_SqlDecimal_ $signed>]::<P, S>(value)
+                        .unwrap_or_else(|_| saturated_decimal(value >= 0))
+                }
+            )*
+            $(
+                #[doc(hidden)]
+                pub fn [<cast_to_SqlDecimal_ $unsigned _saturating>]<const P: usize, const S: usize>(
+                    value: $unsigned,
+                ) -> SqlDecimal<P, S> {
+                    [<cast_to_SqlDecimal_ $unsigned>]::<P, S>(value)
+                        .unwrap_or_else(|_| saturated_decimal(true))
+                }
+            )*
+        }
+    };
+}
+
+saturating_cast_to_decimal!(signed: i8, i16, i32, i64; unsigned: u8, u16, u32, u64);
+
+#[doc(hidden)]
+pub fn cast_to_SqlDecimal_SqlDecimal_saturating<
+    const P0: usize,
+    const S0: usize,
+    const P1: usize,
+    const S1: usize,
+>(
+    value: SqlDecimal<P1, S1>,
+) -> SqlDecimal<P0, S0> {
+    cast_to_SqlDecimal_SqlDecimal::<P0, S0, P1, S1>(value)
+        .unwrap_or_else(|_| saturated_decimal(!value.is_negative()))
+}
+
+#[doc(hidden)]
+pub fn cast_to_SqlDecimal_d_saturating<const P: usize, const S: usize>(
+    value: F64,
+) -> SqlDecimal<P, S> {
+    cast_to_SqlDecimal_d::<P, S>(value).unwrap_or_else(|_| {
+        saturated_decimal(value.into_inner() >= 0.0 || value.into_inner().is_nan())
+    })
+}
+
+#[doc(hidden)]
+pub fn cast_to_SqlDecimal_f_saturating<const P: usize, const S: usize>(
+    value: F32,
+) -> SqlDecimal<P, S> {
+    cast_to_SqlDecimal_f::<P, S>(value).unwrap_or_else(|_| {
+        saturated_decimal(value.into_inner() >= 0.0 || value.into_inner().is_nan())
+    })
+}
+
 #[doc(hidden)]
 #[inline]
 #[allow(clippy::unnecessary_cast)]
@@ -1764,6 +1894,11 @@ macro_rules! cast_interval_to_integer {
             #[doc(hidden)]
             pub fn [<cast_to_ $result_type _ $type_name >](value: $arg_type) -> SqlResult<$result_type> {
                 [< cast_to_ $result_type _ $intermediate_type >]( value. $method() )
+            }
+
+            #[doc(hidden)]
+            pub fn [<cast_to_ $result_type _ $type_name _saturating>](value: $arg_type) -> $result_type {
+                [< cast_to_ $result_type _ $intermediate_type _saturating>]( value. $method() )
             }
 
             cast_function!($result_type, $result_type, $type_name, $arg_type);
@@ -1895,6 +2030,29 @@ cast_function!(SqlDecimal <const P: usize, const S: usize>, SqlDecimal<P, S>, Sh
 cast_function!(SqlDecimal <const P: usize, const S: usize>, SqlDecimal<P, S>, ShortInterval_HOURS, ShortInterval);
 cast_function!(SqlDecimal <const P: usize, const S: usize>, SqlDecimal<P, S>, ShortInterval_DAYS, ShortInterval);
 
+// Saturating forms of the casts from an interval in one unit to DECIMAL: a negative interval
+// outside the range converts to the minimum, and a positive one to the maximum.
+macro_rules! saturating_cast_interval_to_decimal {
+    ($type_name: ident, $arg_type: ty, $method: ident) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<cast_to_SqlDecimal_ $type_name _saturating>]<const P: usize, const S: usize>(
+                value: $arg_type,
+            ) -> SqlDecimal<P, S> {
+                [<cast_to_SqlDecimal_ $type_name>]::<P, S>(value)
+                    .unwrap_or(saturated_decimal(value.$method() >= 0))
+            }
+        }
+    };
+}
+
+saturating_cast_interval_to_decimal!(LongInterval_YEARS, LongInterval, months);
+saturating_cast_interval_to_decimal!(LongInterval_MONTHS, LongInterval, months);
+saturating_cast_interval_to_decimal!(ShortInterval_SECONDS, ShortInterval, microseconds);
+saturating_cast_interval_to_decimal!(ShortInterval_MINUTES, ShortInterval, microseconds);
+saturating_cast_interval_to_decimal!(ShortInterval_HOURS, ShortInterval, microseconds);
+saturating_cast_interval_to_decimal!(ShortInterval_DAYS, ShortInterval, microseconds);
+
 //////// casts to Short interval
 
 #[doc(hidden)]
@@ -1923,12 +2081,19 @@ pub fn cast_to_ShortInterval_DAYS_i64(value: i64) -> SqlResult<ShortInterval> {
     }
 }
 
+/// Converts `value` units of `multiplier` microseconds to a `ShortInterval`.  A unit other than the
+/// second holds no fraction, so `value` is truncated toward zero first.
 fn convert_to_ShortInterval_SqlDecimal<const P: usize, const S: usize>(
     value: SqlDecimal<P, S>,
     multiplier: i64,
     kind: &'static str,
 ) -> SqlResult<ShortInterval> {
-    let dd = DynamicDecimal::from(value);
+    let units = if multiplier == MICROS_PER_SECOND as i64 {
+        value
+    } else {
+        value.trunc()
+    };
+    let dd = DynamicDecimal::from(units);
     let mul = DynamicDecimal::from(multiplier);
     dd.checked_mul(&mul)
         .and_then(|val| i64::try_from(val).ok())
@@ -1980,7 +2145,7 @@ pub fn cast_to_ShortInterval_HOURS_i64(value: i64) -> SqlResult<ShortInterval> {
 pub fn cast_to_ShortInterval_HOURS_SqlDecimal<const P: usize, const S: usize>(
     value: SqlDecimal<P, S>,
 ) -> SqlResult<ShortInterval> {
-    convert_to_ShortInterval_SqlDecimal::<P, S>(value, 3600i64 * 1000 * 1000, "DAYS")
+    convert_to_ShortInterval_SqlDecimal::<P, S>(value, 3600i64 * 1000 * 1000, "HOURS")
 }
 
 #[doc(hidden)]
@@ -2488,20 +2653,135 @@ cast_function!(LongInterval_YEARS, LongInterval, s, SqlString);
 cast_function!(LongInterval_YEARS_TO_MONTHS, LongInterval, s, SqlString);
 cast_function!(LongInterval_MONTHS, LongInterval, s, SqlString);
 
+// A cast between interval types truncates the value toward zero to the last field of the
+// target type.
+
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_LongInterval_LongInterval(value: LongInterval) -> SqlResult<LongInterval> {
+pub fn cast_to_LongInterval_YEARS_LongInterval(value: LongInterval) -> SqlResult<LongInterval> {
+    Ok(LongInterval::from_months(value.months() / 12 * 12))
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_LongInterval_MONTHS_LongInterval(value: LongInterval) -> SqlResult<LongInterval> {
     Ok(value)
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_ShortInterval_ShortInterval(value: ShortInterval) -> SqlResult<ShortInterval> {
+pub fn cast_to_LongInterval_YEARS_TO_MONTHS_LongInterval(
+    value: LongInterval,
+) -> SqlResult<LongInterval> {
     Ok(value)
 }
 
-cast_function!(LongInterval, LongInterval, LongInterval, LongInterval);
-cast_function!(ShortInterval, ShortInterval, ShortInterval, ShortInterval);
+cast_function!(LongInterval_YEARS, LongInterval, LongInterval, LongInterval);
+cast_function!(
+    LongInterval_MONTHS,
+    LongInterval,
+    LongInterval,
+    LongInterval
+);
+cast_function!(
+    LongInterval_YEARS_TO_MONTHS,
+    LongInterval,
+    LongInterval,
+    LongInterval
+);
+
+/// Defines the cast of a short interval to the type with `units`, whose last field is `unit`
+/// microseconds long.
+macro_rules! cast_to_short_interval {
+    ($units: ident, $unit: expr) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            #[inline]
+            pub fn [<cast_to_ShortInterval_ $units _ShortInterval>](
+                value: ShortInterval,
+            ) -> SqlResult<ShortInterval> {
+                let unit = $unit as i64;
+                Ok(ShortInterval::from_microseconds(value.microseconds() / unit * unit))
+            }
+
+            cast_function!([<ShortInterval_ $units>], ShortInterval, ShortInterval, ShortInterval);
+        }
+    };
+}
+
+cast_to_short_interval!(DAYS, MICROS_PER_DAY);
+cast_to_short_interval!(HOURS, MICROS_PER_HOUR);
+cast_to_short_interval!(DAYS_TO_HOURS, MICROS_PER_HOUR);
+cast_to_short_interval!(MINUTES, MICROS_PER_MINUTE);
+cast_to_short_interval!(HOURS_TO_MINUTES, MICROS_PER_MINUTE);
+cast_to_short_interval!(DAYS_TO_MINUTES, MICROS_PER_MINUTE);
+cast_to_short_interval!(SECONDS, 1);
+cast_to_short_interval!(DAYS_TO_SECONDS, 1);
+cast_to_short_interval!(HOURS_TO_SECONDS, 1);
+cast_to_short_interval!(MINUTES_TO_SECONDS, 1);
+
+// Saturating forms of the casts from numbers to an interval in one unit: a number whose
+// interval is below the range converts to the minimum interval, and one above it to the
+// maximum.
+macro_rules! saturating_cast_to_interval {
+    ($interval: ident, $unit: ident, $minimum: expr, $maximum: expr) => {
+        saturating_cast_to_interval!(
+            $interval, $unit, $minimum, $maximum,
+            signed: i8, i16, i32, i64;
+            unsigned: u8, u16, u32, u64
+        );
+
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<cast_to_ $interval _ $unit _SqlDecimal_saturating>]<const P: usize, const S: usize>(
+                value: SqlDecimal<P, S>,
+            ) -> $interval {
+                let bound = if value.is_negative() { $minimum } else { $maximum };
+                [<cast_to_ $interval _ $unit _SqlDecimal>](value).unwrap_or(bound)
+            }
+        }
+    };
+    ($interval: ident, $unit: ident, $minimum: expr, $maximum: expr,
+     signed: $($signed: ident),*; unsigned: $($unsigned: ident),*) => {
+        ::paste::paste! {
+            $(
+                #[doc(hidden)]
+                pub fn [<cast_to_ $interval _ $unit _ $signed _saturating>](value: $signed) -> $interval {
+                    let bound = if value < 0 { $minimum } else { $maximum };
+                    [<cast_to_ $interval _ $unit _ $signed>](value).unwrap_or(bound)
+                }
+            )*
+            $(
+                #[doc(hidden)]
+                pub fn [<cast_to_ $interval _ $unit _ $unsigned _saturating>](value: $unsigned) -> $interval {
+                    [<cast_to_ $interval _ $unit _ $unsigned>](value).unwrap_or($maximum)
+                }
+            )*
+        }
+    };
+}
+
+const SHORT_INTERVAL_MIN: ShortInterval = ShortInterval::from_microseconds(i64::MIN);
+const SHORT_INTERVAL_MAX: ShortInterval = ShortInterval::from_microseconds(i64::MAX);
+const LONG_INTERVAL_MIN: LongInterval = LongInterval::from_months(i32::MIN);
+const LONG_INTERVAL_MAX: LongInterval = LongInterval::from_months(i32::MAX);
+
+saturating_cast_to_interval!(
+    ShortInterval,
+    SECONDS,
+    SHORT_INTERVAL_MIN,
+    SHORT_INTERVAL_MAX
+);
+saturating_cast_to_interval!(
+    ShortInterval,
+    MINUTES,
+    SHORT_INTERVAL_MIN,
+    SHORT_INTERVAL_MAX
+);
+saturating_cast_to_interval!(ShortInterval, HOURS, SHORT_INTERVAL_MIN, SHORT_INTERVAL_MAX);
+saturating_cast_to_interval!(ShortInterval, DAYS, SHORT_INTERVAL_MIN, SHORT_INTERVAL_MAX);
+saturating_cast_to_interval!(LongInterval, MONTHS, LONG_INTERVAL_MIN, LONG_INTERVAL_MAX);
+saturating_cast_to_interval!(LongInterval, YEARS, LONG_INTERVAL_MIN, LONG_INTERVAL_MAX);
 
 static DAYS_TO_HOURS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([+-])?(\d+)\s+(\d{1,2})$").unwrap());
@@ -3141,6 +3421,56 @@ pub fn cast_to_Timestamp_u64(value: u64) -> SqlResult<Timestamp> {
 
 cast_function!(Timestamp, Timestamp, u64, u64);
 
+// Saturating forms of the casts between numbers and TIMESTAMP.  A number below the legal range
+// converts to the first legal TIMESTAMP, and a number above it, or NaN, to the last.  A
+// TIMESTAMP converts through its number of milliseconds.
+
+/// The first legal TIMESTAMP if `negative`, the last otherwise.
+fn saturated_timestamp(negative: bool) -> Timestamp {
+    if negative {
+        Timestamp::FIRST_LEGAL
+    } else {
+        Timestamp::LAST_LEGAL
+    }
+}
+
+#[doc(hidden)]
+pub fn cast_to_Timestamp_i64_saturating(value: i64) -> Timestamp {
+    cast_to_Timestamp_i64(value).unwrap_or(saturated_timestamp(value < 0))
+}
+
+#[doc(hidden)]
+pub fn cast_to_Timestamp_u64_saturating(value: u64) -> Timestamp {
+    cast_to_Timestamp_u64(value).unwrap_or(Timestamp::LAST_LEGAL)
+}
+
+#[doc(hidden)]
+pub fn cast_to_Timestamp_d_saturating(value: F64) -> Timestamp {
+    cast_to_Timestamp_d(value).unwrap_or(saturated_timestamp(value.into_inner() < 0.0))
+}
+
+#[doc(hidden)]
+pub fn cast_to_Timestamp_f_saturating(value: F32) -> Timestamp {
+    cast_to_Timestamp_f(value).unwrap_or(saturated_timestamp(value.into_inner() < 0.0))
+}
+
+#[doc(hidden)]
+pub fn cast_to_Timestamp_SqlDecimal_saturating<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+) -> Timestamp {
+    cast_to_Timestamp_SqlDecimal(value).unwrap_or(saturated_timestamp(value.is_negative()))
+}
+
+#[doc(hidden)]
+pub fn cast_to_i64_Timestamp_saturating(value: Timestamp) -> i64 {
+    value.milliseconds()
+}
+
+#[doc(hidden)]
+pub fn cast_to_u64_Timestamp_saturating(value: Timestamp) -> u64 {
+    cast_to_u64_i64_saturating(value.milliseconds())
+}
+
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_i64_Timestamp(value: Timestamp) -> SqlResult<i64> {
@@ -3168,8 +3498,20 @@ cast_function!(u64, u64, Timestamp, Timestamp);
 pub fn cast_to_SqlDecimal_Timestamp<const P: usize, const S: usize>(
     value: Timestamp,
 ) -> SqlResult<SqlDecimal<P, S>> {
-    cast_to_SqlDecimal_i64::<P, S>(value.microseconds())
-        .map(|x| x.div(SqlDecimal::<P, S>::for_i32(1000)))
+    // The number of milliseconds, rounded toward zero to the scale of the result
+    SqlDecimal::<P, S>::new(value.microseconds() as i128, 3).ok_or_else(|| {
+        SqlRuntimeError::from_string(format!(
+            "Cannot represent {value} as DECIMAL({P}, {S}): precision of DECIMAL type too small to represent value"
+        ))
+    })
+}
+
+#[doc(hidden)]
+pub fn cast_to_SqlDecimal_Timestamp_saturating<const P: usize, const S: usize>(
+    value: Timestamp,
+) -> SqlDecimal<P, S> {
+    cast_to_SqlDecimal_Timestamp::<P, S>(value)
+        .unwrap_or(saturated_decimal(value.microseconds() >= 0))
 }
 
 #[doc(hidden)]
@@ -3215,6 +3557,16 @@ macro_rules! cast_ts {
 
             cast_function!(Timestamp, Timestamp, $type_name, $arg_type);
             cast_from_ts!($type_name, $arg_type);
+
+            #[doc(hidden)]
+            pub fn [<cast_to_Timestamp_ $type_name _saturating>](value: $arg_type) -> Timestamp {
+                cast_to_Timestamp_i64_saturating(value as i64)
+            }
+
+            #[doc(hidden)]
+            pub fn [<cast_to_ $type_name _Timestamp_saturating>](value: Timestamp) -> $arg_type {
+                [<cast_to_ $type_name _i64_saturating>](value.milliseconds())
+            }
         }
     };
 }
@@ -3312,6 +3664,13 @@ pub fn cast_to_SqlDecimal_TimestampTz<const P: usize, const S: usize>(
 }
 
 #[doc(hidden)]
+pub fn cast_to_SqlDecimal_TimestampTz_saturating<const P: usize, const S: usize>(
+    value: TimestampTz,
+) -> SqlDecimal<P, S> {
+    cast_to_SqlDecimal_Timestamp_saturating(value.into())
+}
+
+#[doc(hidden)]
 pub fn cast_to_SqlDecimalN_TimestampTz<const P: usize, const S: usize>(
     value: TimestampTz,
 ) -> SqlResult<Option<SqlDecimal<P, S>>> {
@@ -3370,6 +3729,47 @@ cast_ts_tz!(u16, u16);
 cast_ts_tz!(u8, u8);
 cast_ts_tz!(f, F32);
 cast_ts_tz!(d, F64);
+
+/// Saturating casts from a number to TIMESTAMP WITH TIME ZONE, and from TIMESTAMP WITH TIME ZONE
+/// to an integer, through the saturating casts with TIMESTAMP.
+macro_rules! saturating_cast_ts_tz {
+    ($type_name: ident, $arg_type: ty) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<cast_to_TimestampTz_ $type_name _saturating>](value: $arg_type) -> TimestampTz {
+                [<cast_to_Timestamp_ $type_name _saturating>](value).into()
+            }
+        }
+    };
+    ($type_name: ident, $arg_type: ty, integer) => {
+        saturating_cast_ts_tz!($type_name, $arg_type);
+
+        ::paste::paste! {
+            #[doc(hidden)]
+            pub fn [<cast_to_ $type_name _TimestampTz_saturating>](value: TimestampTz) -> $arg_type {
+                [<cast_to_ $type_name _Timestamp_saturating>](value.into())
+            }
+        }
+    };
+}
+
+saturating_cast_ts_tz!(i64, i64, integer);
+saturating_cast_ts_tz!(u64, u64, integer);
+saturating_cast_ts_tz!(i32, i32, integer);
+saturating_cast_ts_tz!(i16, i16, integer);
+saturating_cast_ts_tz!(i8, i8, integer);
+saturating_cast_ts_tz!(u32, u32, integer);
+saturating_cast_ts_tz!(u16, u16, integer);
+saturating_cast_ts_tz!(u8, u8, integer);
+saturating_cast_ts_tz!(f, F32);
+saturating_cast_ts_tz!(d, F64);
+
+#[doc(hidden)]
+pub fn cast_to_TimestampTz_SqlDecimal_saturating<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+) -> TimestampTz {
+    cast_to_Timestamp_SqlDecimal_saturating(value).into()
+}
 
 //////////////////// Other casts
 
@@ -4071,6 +4471,67 @@ mod tests {
         interval::{LongInterval, ShortInterval},
         limit_or_size_string,
     };
+
+    #[test]
+    fn interval_casts_truncate() {
+        use crate::{
+            cast_to_LongInterval_MONTHS_LongInterval, cast_to_LongInterval_YEARS_LongInterval,
+            cast_to_ShortInterval_DAYS_ShortInterval,
+            cast_to_ShortInterval_HOURS_TO_MINUTES_ShortInterval,
+            cast_to_ShortInterval_SECONDS_ShortInterval,
+        };
+
+        let months = LongInterval::from_months;
+        assert_eq!(
+            cast_to_LongInterval_YEARS_LongInterval(months(19)).unwrap(),
+            months(12)
+        );
+        assert_eq!(
+            cast_to_LongInterval_YEARS_LongInterval(months(-19)).unwrap(),
+            months(-12)
+        );
+        assert_eq!(
+            cast_to_LongInterval_YEARS_LongInterval(months(i32::MIN)).unwrap(),
+            months(-178956970 * 12)
+        );
+        assert_eq!(
+            cast_to_LongInterval_MONTHS_LongInterval(months(19)).unwrap(),
+            months(19)
+        );
+
+        let hours = |h: i64| ShortInterval::from_microseconds(h * 3_600_000_000);
+        let micros = ShortInterval::from_microseconds;
+        assert_eq!(
+            cast_to_ShortInterval_DAYS_ShortInterval(hours(-25)).unwrap(),
+            hours(-24)
+        );
+        assert_eq!(
+            cast_to_ShortInterval_HOURS_TO_MINUTES_ShortInterval(micros(90_500_000)).unwrap(),
+            micros(60_000_000)
+        );
+        assert_eq!(
+            cast_to_ShortInterval_SECONDS_ShortInterval(micros(1_500_001)).unwrap(),
+            micros(1_500_001)
+        );
+    }
+
+    #[test]
+    fn decimal_to_short_interval_truncates() {
+        use crate::{
+            cast_to_ShortInterval_DAYS_SqlDecimal, cast_to_ShortInterval_SECONDS_SqlDecimal,
+        };
+
+        let value = SqlDecimal::<5, 2>::new(-150, 2).unwrap();
+        // A day holds no fraction; a second does
+        assert_eq!(
+            cast_to_ShortInterval_DAYS_SqlDecimal(value).unwrap(),
+            ShortInterval::from_microseconds(-86_400_000_000)
+        );
+        assert_eq!(
+            cast_to_ShortInterval_SECONDS_SqlDecimal(value).unwrap(),
+            ShortInterval::from_microseconds(-1_500_000)
+        );
+    }
 
     #[test]
     fn date_casts_out_of_range() {
@@ -4826,5 +5287,175 @@ mod tests {
         assert!(cast_to_ShortInterval_HOURS_i64(2_000_000_000_000).is_err());
         assert!(cast_to_ShortInterval_MINUTES_u64(200_000_000_000_000).is_err());
         assert!(cast_to_ShortInterval_SECONDS_i64(10_000_000_000_000_000).is_err());
+    }
+
+    #[test]
+    fn timestamp_to_decimal() {
+        use crate::{SqlDecimal, Timestamp, cast_to_SqlDecimal_Timestamp};
+
+        // 2024-01-01 00:00:00: the milliseconds have 13 digits, the microseconds 16
+        let timestamp = Timestamp::from_milliseconds(1_704_067_200_000);
+        let result = cast_to_SqlDecimal_Timestamp::<15, 0>(timestamp).unwrap();
+        assert_eq!(
+            result,
+            SqlDecimal::<15, 0>::new(1_704_067_200_000, 0).unwrap()
+        );
+        assert!(cast_to_SqlDecimal_Timestamp::<12, 0>(timestamp).is_err());
+        // A DECIMAL with fewer than 10 integer digits
+        let second = Timestamp::from_milliseconds(1000);
+        let result = cast_to_SqlDecimal_Timestamp::<9, 0>(second).unwrap();
+        assert_eq!(result, SqlDecimal::<9, 0>::new(1000, 0).unwrap());
+        // The microseconds are the fraction, rounded toward zero
+        let before = Timestamp::from_microseconds(-1500);
+        let result = cast_to_SqlDecimal_Timestamp::<10, 0>(before).unwrap();
+        assert_eq!(result, SqlDecimal::<10, 0>::new(-1, 0).unwrap());
+        let result = cast_to_SqlDecimal_Timestamp::<10, 3>(before).unwrap();
+        assert_eq!(result, SqlDecimal::<10, 3>::new(-1500, 3).unwrap());
+    }
+}
+
+#[cfg(test)]
+mod saturating_test {
+    use crate::{
+        LongInterval, ShortInterval, SqlDecimal, cast_to_SqlDecimal_LongInterval_MONTHS_saturating,
+        cast_to_SqlDecimal_ShortInterval_SECONDS_saturating,
+        cast_to_SqlDecimal_SqlDecimal_saturating, cast_to_SqlDecimal_d_saturating,
+        cast_to_SqlDecimal_i32_saturating, cast_to_SqlDecimal_u64_saturating,
+        cast_to_i8_LongInterval_YEARS_saturating, cast_to_i8_i32_saturating,
+        cast_to_i32_ShortInterval_MINUTES_saturating, cast_to_i32_SqlDecimal_saturating,
+        cast_to_i32_d_saturating, cast_to_i32_u64_saturating, cast_to_u32_i64_saturating,
+        cast_to_u64_ShortInterval_SECONDS_saturating,
+    };
+    use dbsp::algebra::F64;
+
+    type D3 = SqlDecimal<3, 1>;
+
+    #[test]
+    fn saturating_casts_of_intervals() {
+        let minimum = ShortInterval::from_microseconds(i64::MIN);
+        assert_eq!(
+            cast_to_i32_ShortInterval_MINUTES_saturating(minimum),
+            i32::MIN
+        );
+        let hour = ShortInterval::from_seconds(3600);
+        assert_eq!(cast_to_i32_ShortInterval_MINUTES_saturating(hour), 60);
+        assert_eq!(cast_to_u64_ShortInterval_SECONDS_saturating(-hour), 0);
+        let centuries = LongInterval::from_months(12 * 300);
+        assert_eq!(cast_to_i8_LongInterval_YEARS_saturating(centuries), i8::MAX);
+        let result: D3 = cast_to_SqlDecimal_ShortInterval_SECONDS_saturating(-hour);
+        assert_eq!(result, D3::MIN);
+        let result: D3 = cast_to_SqlDecimal_LongInterval_MONTHS_saturating(centuries);
+        assert_eq!(result, D3::MAX);
+    }
+
+    #[test]
+    fn saturating_casts_to_intervals() {
+        use crate::{
+            cast_to_LongInterval_YEARS_SqlDecimal_saturating,
+            cast_to_LongInterval_YEARS_u64_saturating, cast_to_ShortInterval_DAYS_i64_saturating,
+            cast_to_ShortInterval_HOURS_i8_saturating,
+        };
+
+        assert_eq!(
+            cast_to_ShortInterval_DAYS_i64_saturating(i64::MIN),
+            ShortInterval::from_microseconds(i64::MIN)
+        );
+        assert_eq!(
+            cast_to_ShortInterval_HOURS_i8_saturating(-2),
+            ShortInterval::from_seconds(-7200)
+        );
+        assert_eq!(
+            cast_to_LongInterval_YEARS_u64_saturating(u64::MAX),
+            LongInterval::from_months(i32::MAX)
+        );
+        let large = SqlDecimal::<12, 0>::new(-100_000_000_000, 0).unwrap();
+        assert_eq!(
+            cast_to_LongInterval_YEARS_SqlDecimal_saturating(large),
+            LongInterval::from_months(i32::MIN)
+        );
+    }
+
+    #[test]
+    fn saturating_casts_with_timestamps() {
+        use crate::{
+            Timestamp, TimestampTz, cast_to_SqlDecimal_Timestamp_saturating,
+            cast_to_SqlDecimal_TimestampTz_saturating, cast_to_Timestamp_SqlDecimal_saturating,
+            cast_to_Timestamp_d_saturating, cast_to_Timestamp_i64_saturating,
+            cast_to_Timestamp_u64_saturating, cast_to_TimestampTz_i32_saturating,
+            cast_to_i8_Timestamp_saturating, cast_to_u16_TimestampTz_saturating,
+            cast_to_u64_Timestamp_saturating,
+        };
+
+        assert_eq!(
+            cast_to_Timestamp_i64_saturating(i64::MIN),
+            Timestamp::FIRST_LEGAL
+        );
+        assert_eq!(
+            cast_to_Timestamp_i64_saturating(1000),
+            Timestamp::from_milliseconds(1000)
+        );
+        assert_eq!(
+            cast_to_Timestamp_u64_saturating(u64::MAX),
+            Timestamp::LAST_LEGAL
+        );
+        assert_eq!(
+            cast_to_Timestamp_d_saturating(F64::new(f64::NAN)),
+            Timestamp::LAST_LEGAL
+        );
+        let large = SqlDecimal::<38, 0>::new(-100_000_000_000_000_000, 0).unwrap();
+        assert_eq!(
+            cast_to_Timestamp_SqlDecimal_saturating(large),
+            Timestamp::FIRST_LEGAL
+        );
+        let minute: TimestampTz = Timestamp::from_milliseconds(-60_000).into();
+        assert_eq!(cast_to_TimestampTz_i32_saturating(-60_000), minute);
+        assert_eq!(
+            cast_to_i8_Timestamp_saturating(Timestamp::LAST_LEGAL),
+            i8::MAX
+        );
+        assert_eq!(cast_to_u64_Timestamp_saturating(Timestamp::FIRST_LEGAL), 0);
+        assert_eq!(cast_to_u16_TimestampTz_saturating(minute), 0);
+        let result: D3 = cast_to_SqlDecimal_Timestamp_saturating(Timestamp::LAST_LEGAL);
+        assert_eq!(result, D3::MAX);
+        let result: D3 = cast_to_SqlDecimal_TimestampTz_saturating(minute);
+        assert_eq!(result, D3::MIN);
+    }
+
+    #[test]
+    fn saturating_casts_to_integers() {
+        assert_eq!(cast_to_i8_i32_saturating(300), i8::MAX);
+        assert_eq!(cast_to_i8_i32_saturating(-300), i8::MIN);
+        assert_eq!(cast_to_i8_i32_saturating(-3), -3);
+        assert_eq!(cast_to_u32_i64_saturating(-5), 0);
+        assert_eq!(cast_to_i32_u64_saturating(u64::MAX), i32::MAX);
+        assert_eq!(cast_to_i32_d_saturating(F64::new(f64::NAN)), i32::MAX);
+        assert_eq!(
+            cast_to_i32_d_saturating(F64::new(f64::NEG_INFINITY)),
+            i32::MIN
+        );
+        assert_eq!(cast_to_i32_d_saturating(F64::new(1e20)), i32::MAX);
+        assert_eq!(cast_to_i32_d_saturating(F64::new(-3.7)), -3);
+        let large = SqlDecimal::<12, 0>::new(-100_000_000_000, 0).unwrap();
+        assert_eq!(cast_to_i32_SqlDecimal_saturating(large), i32::MIN);
+    }
+
+    #[test]
+    fn saturating_casts_to_decimals() {
+        let result: D3 = cast_to_SqlDecimal_i32_saturating(1000);
+        assert_eq!(result, D3::MAX);
+        let result: D3 = cast_to_SqlDecimal_i32_saturating(-1000);
+        assert_eq!(result, D3::MIN);
+        let result: D3 = cast_to_SqlDecimal_u64_saturating(u64::MAX);
+        assert_eq!(result, D3::MAX);
+        let result: D3 = cast_to_SqlDecimal_d_saturating(F64::new(f64::NAN));
+        assert_eq!(result, D3::MAX);
+        let result: D3 = cast_to_SqlDecimal_d_saturating(F64::new(-1e10));
+        assert_eq!(result, D3::MIN);
+        let wide = SqlDecimal::<5, 1>::new(-12345, 1).unwrap();
+        let result: D3 = cast_to_SqlDecimal_SqlDecimal_saturating(wide);
+        assert_eq!(result, D3::MIN);
+        let fits = SqlDecimal::<5, 1>::new(-123, 1).unwrap();
+        let result: D3 = cast_to_SqlDecimal_SqlDecimal_saturating(fits);
+        assert_eq!(result, D3::new(-123, 1).unwrap());
     }
 }

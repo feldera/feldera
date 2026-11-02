@@ -21,7 +21,7 @@ import { SegmentedControl, TabsPanel, PersistentContent, MonacoEditor } from 'co
 | Layout | `Drawer` shows a resizable side panel on wide screens (`InlineDrawer`) and an overlay on tablets and phones (`OverlayDrawer`). `InlineDropdown` toggles content under a header. `useIsMobile.svelte` has the screen-size media queries. |
 | Layout helpers | `PersistentContent` and `persistentRect.svelte` for content that must survive conditional re-renders (see those files for details). `ANSIDecoratedText` renders ANSI-colored log output. |
 | Buttons | `ClipboardCopyButton`. `ClickFeedback` shows a short confirmation state after a click. |
-| Pipeline views | `ConnectorMetricsTables` shows the connector statistics of each table and view. Use `aggregateConnectorMetrics` from `common-ui/connectorMetrics` to make its input from a `/stats` response. |
+| Pipeline views | `ConnectorMetricsTables` shows the connector statistics of each table and view. Use `aggregateConnectorMetrics` from `common-ui/connectorMetrics` to make its input from a `/stats` response. `ConnectorErrors` shows the error lists of one connector. The caller passes the connector status, from the API or from a support bundle. |
 | Health views | `StatusTimeline`, `EventLogList` and `HealthEventList` show a status history, its incidents and the events of one incident. `PipelineEventHistory` combines them for the monitor events of a pipeline, from the API or from a support bundle. |
 
 Plain TypeScript modules that only the web console and the profiler use also
@@ -40,14 +40,12 @@ live here. Import them by their path, e.g. `common-ui/pipelineHealth`:
 Code that is useful outside the web console and the profiler (formatting,
 collections) lives in [`common-lib`](../common-lib/README.md) instead.
 
-`src/lib` is the published surface (re-exported from `src/lib/index.ts`);
-`src/routes` is only a local preview/showcase app and is not published.
+`src/lib` is the published surface (re-exported from `src/lib/index.ts`).
 
 ## Developing
 
 ```sh
 bun install
-bun run dev      # preview/showcase app
 bun run check    # type-check
 ```
 
@@ -68,5 +66,5 @@ bun --cwd=js-packages/common-ui run build:self   # from the repo root
 
 `build` rebuilds `common-lib` first. `build:self` builds only this package.
 
-This package was scaffolded with [`sv`](https://npmjs.com/package/sv); the
-underlying tooling docs live at <https://svelte.dev/docs/kit/packaging>.
+`build:self` runs `svelte-package` (docs: <https://svelte.dev/docs/kit/packaging>).
+This package does not use SvelteKit.

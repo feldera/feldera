@@ -40,7 +40,6 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator implements 
      * @param leftTimestampIndex Index of left timestamp in left tuple.
      * @param rightTimestampIndex Index of right timestamp in right tuple
      * @param comparator      Function that compares two timestamps.
-     * @param isMultiset      True if output is a multiset
      * @param isLeft          True if this is a left join
      * @param left            Left input
      * @param right           Right input
@@ -50,9 +49,9 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator implements 
                                 int leftTimestampIndex,
                                 int rightTimestampIndex,
                                 DBSPExpression comparator,
-                                boolean isMultiset, boolean isLeft,
+                                boolean isLeft,
                                 OutputPort left, OutputPort right) {
-        super(node, "asof_join_abstract", function, outputType, isMultiset, left, right, false);
+        super(node, "asof_join_abstract", function, outputType, left, right, false);
         this.isLeft = isLeft;
         this.comparator = comparator;
         this.leftTimestampIndex = leftTimestampIndex;
@@ -101,7 +100,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator implements 
             return new DBSPAsofJoinOperator(this.getRelNode(),
                     outputType.to(DBSPTypeZSet.class), Objects.requireNonNull(function),
                     this.leftTimestampIndex, this.rightTimestampIndex,
-                    this.comparator, this.isMultiset, this.isLeft, newInputs.get(0), newInputs.get(1))
+                    this.comparator, this.isLeft, newInputs.get(0), newInputs.get(1))
                     .copyAnnotations(this);
         }
         return this;
@@ -130,7 +129,7 @@ public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator implements 
         return new DBSPAsofJoinOperator(
                 CalciteEmptyRel.INSTANCE, info.getZsetType(), info.getFunction(),
                 leftTimestampIndex, rightTimestampIndex, comparator,
-                info.isMultiset(), isLeft, info.getInput(0), info.getInput(1))
+                isLeft, info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPAsofJoinOperator.class);
     }
 }

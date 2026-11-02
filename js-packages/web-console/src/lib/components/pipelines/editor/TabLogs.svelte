@@ -5,7 +5,7 @@
     type LogCursor,
     type LogResume,
     parseLogResume
-  } from '$lib/functions/pipelines/logCursor'
+  } from '#lib/functions/pipelines/logCursor.ts'
 
   const streams: Record<
     string,
@@ -74,23 +74,23 @@
 
 <script lang="ts">
   import { unionName, type NamesInUnion } from 'common-lib/union'
-  import LogsStreamList from '$lib/components/pipelines/editor/LogsStreamList.svelte'
+  import LogsStreamList from '#lib/components/pipelines/editor/LogsStreamList.svelte'
   import { emptySearchState, type SearchState } from 'common-ui'
 
   import {
     newlineTextDecoder,
     parseStream,
     pushAsCircularBuffer
-  } from '$lib/functions/pipelines/changeStream'
-  import { type ExtendedPipeline, type PipelineStatus } from '$lib/services/pipelineManager'
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  } from '#lib/functions/pipelines/changeStream.ts'
+  import { type ExtendedPipeline, type PipelineStatus } from '#lib/services/pipelineManager.ts'
+  import { usePipelineActionCallbacks } from '#lib/compositions/pipelines/usePipelineActionCallbacks.svelte.ts'
   import { untrack } from 'svelte'
-  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
-  import { useInterval } from '$lib/compositions/common/useInterval.svelte'
+  import WarningBanner from '#lib/components/pipelines/editor/WarningBanner.svelte'
+  import { useInterval } from '#lib/compositions/common/useInterval.svelte.ts'
   import Dayjs from 'dayjs'
   import { match } from 'ts-pattern'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { Ref } from '$lib/compositions/ref.svelte'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { Ref } from '#lib/compositions/ref.svelte.ts'
 
   let {
     pipeline,

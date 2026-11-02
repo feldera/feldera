@@ -34,12 +34,12 @@ public final class DBSPDeindexOperator extends DBSPUnaryOperator implements ILin
 
     public DBSPDeindexOperator(CalciteRelNode node, CalciteObject functionNode, OutputPort input) {
         super(node, "map", function(functionNode, input.outputType()),
-                outputType(input.getOutputIndexedZSetType()), true, input);
+                outputType(input.getOutputIndexedZSetType()), input);
     }
 
     /** Rebuilds a decoded operator with its serialized function. */
     DBSPDeindexOperator(CalciteRelNode node, DBSPClosureExpression function, DBSPType outputType, OutputPort input) {
-        super(node, "map", function, outputType, true, input);
+        super(node, "map", function, outputType, input);
     }
 
     @Override

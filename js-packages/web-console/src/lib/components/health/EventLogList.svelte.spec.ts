@@ -3,8 +3,8 @@
  * the text color of the status tone. A resolved incident keeps the icon, in a neutral color.
  */
 
-import type { HealthEventBucket, HealthStatus } from 'common-ui/healthEvents'
 import { EventLogList, healthStatusIcon } from 'common-ui'
+import type { HealthEventBucket, HealthStatus } from 'common-ui/healthEvents'
 import { statusToneColors } from 'common-ui/statusTone'
 import { createRawSnippet } from 'svelte'
 import { describe, expect, it, vi } from 'vitest'

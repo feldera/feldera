@@ -45,19 +45,19 @@
 
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { DecoupledStateProxy } from '$lib/compositions/decoupledState.svelte'
-  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
-  import { isMonacoEditorDisabled } from '$lib/functions/monacoEditor'
+  import { DecoupledStateProxy } from '#lib/compositions/decoupledState.svelte.ts'
+  import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
+  import { isMonacoEditorDisabled } from '#lib/functions/monacoEditor.ts'
   import { getThemeColor, MonacoEditor, setSelections as setEditorSelections } from 'common-ui'
   import * as MonacoImports from 'monaco-editor'
   import { editor, KeyCode, KeyMod } from 'monaco-editor'
   import type { EditorLanguage } from 'monaco-editor/esm/metadata.js'
-  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
-  import { effectMonacoContentPlaceholder } from '$lib/components/monacoEditor/effectMonacoContentPlaceholder.svelte'
-  import { GenericOverlayWidget } from '$lib/components/monacoEditor/GenericOverlayWidget'
-  import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
-  import { felderaCompilerMarkerSource } from '$lib/functions/pipelines/monaco'
-  import type { Snippet } from '$lib/types/svelte'
+  import { useSkeletonTheme } from '#lib/compositions/useSkeletonTheme.svelte.ts'
+  import { effectMonacoContentPlaceholder } from '#lib/components/monacoEditor/effectMonacoContentPlaceholder.svelte.ts'
+  import { GenericOverlayWidget } from '#lib/components/monacoEditor/GenericOverlayWidget.ts'
+  import { useCodeEditorSettings } from '#lib/compositions/pipelines/useCodeEditorSettings.svelte.ts'
+  import { felderaCompilerMarkerSource } from '#lib/functions/pipelines/monaco.ts'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   void MonacoImports // Explicitly import all monaco-editor esm modules
 

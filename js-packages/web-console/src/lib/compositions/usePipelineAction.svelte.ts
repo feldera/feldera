@@ -2,14 +2,14 @@ import type { NamesInUnion } from 'common-lib/union'
 import { unionName } from 'common-lib/union'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
-import { page } from '$app/state'
-import { hasSelectedRelations } from '$lib/components/pipelines/editor/TabChangeStream.svelte'
+import { hasSelectedRelations } from '#lib/components/pipelines/editor/TabChangeStream.svelte'
 import type {
   ExtendedPipeline,
   PipelineAction,
   PipelineStatus,
   PipelineThumb
-} from '$lib/services/pipelineManager'
+} from '#lib/services/pipelineManager.ts'
+import { page } from '$app/state'
 import { usePipelineList, useUpdatePipelineList } from './pipelines/usePipelineList.svelte'
 import { type PipelineManagerApi, usePipelineManager } from './usePipelineManager.svelte'
 import { useReactiveWaiter } from './useReactiveWaiter.svelte'

@@ -1,4 +1,4 @@
-import type { PipelineAction } from '$lib/services/pipelineManager'
+import type { PipelineAction } from '#lib/services/pipelineManager.ts'
 
 type Cb = (pipelineName: string) => Promise<void>
 

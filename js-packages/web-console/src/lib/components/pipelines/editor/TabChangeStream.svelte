@@ -30,7 +30,7 @@
    * - Buffer clearing happens in startSelectedStreams to reset data when pipeline restarts
    */
 
-  import type { ChangeStreamData, Row } from '$lib/components/pipelines/editor/ChangeStream.svelte'
+  import type { ChangeStreamData, Row } from '#lib/components/pipelines/editor/ChangeStream.svelte'
 
   type RelationInfo = {
     pipelineName: string
@@ -286,30 +286,30 @@
   import { count, groupBy } from 'common-lib/array'
   import { getCaseIndependentName, normalizeCaseIndependentName } from 'common-ui/felderaRelation'
   import { tuple } from 'common-lib/tuple'
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import { usePipelineActionCallbacks } from '#lib/compositions/pipelines/usePipelineActionCallbacks.svelte.ts'
 
-  import { type ExtendedPipeline, type XgressEntry } from '$lib/services/pipelineManager'
+  import { type ExtendedPipeline, type XgressEntry } from '#lib/services/pipelineManager.ts'
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
-  import type { Field, Relation } from '$lib/services/manager'
+  import type { Field, Relation } from '#lib/services/manager/index.ts'
   import {
     appendRowsForRelation,
     createBigNumberStreamParser,
     newlineJsonDecoder,
     parseStream
-  } from '$lib/functions/pipelines/changeStream'
+  } from '#lib/functions/pipelines/changeStream.ts'
   import JSONbig from 'true-json-bigint'
   import { untrack } from 'svelte'
   import { SegmentedControl, Tooltip, useIsMobile } from 'common-ui'
   import {
     usePipelineManager,
     type PipelineManagerApi
-  } from '$lib/compositions/usePipelineManager.svelte'
-  import { useProtocol } from '$lib/compositions/useProtocol'
-  import { getSelectedTenant } from '$lib/services/auth'
-  import { isPipelineInteractive } from '$lib/functions/pipelines/status'
-  import { Ref } from '$lib/compositions/ref.svelte'
-  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
+  } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { useProtocol } from '#lib/compositions/useProtocol.ts'
+  import { getSelectedTenant } from '#lib/services/auth.ts'
+  import { isPipelineInteractive } from '#lib/functions/pipelines/status.ts'
+  import { Ref } from '#lib/compositions/ref.svelte.ts'
+  import WarningBanner from '#lib/components/pipelines/editor/WarningBanner.svelte'
 
   let {
     pipeline,

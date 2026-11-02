@@ -2,7 +2,7 @@ import BundleLogsView from './components/BundleLogsView.svelte'
 import ProfilerDiagram from './components/ProfilerDiagram.svelte'
 import ProfilerTooltip from './components/ProfilerTooltip.svelte'
 import ProfileTimestampSelector from './components/ProfileTimestampSelector.svelte'
-import SqlCodeView from './components/SqlCodeView.svelte'
+import SourceCodeView from './components/SourceCodeView.svelte'
 import SupportBundleViewerLayout from './components/SupportBundleViewerLayout.svelte'
 import TriageResultsView from './components/TriageResultsView.svelte'
 
@@ -11,7 +11,7 @@ export {
   ProfilerTooltip,
   ProfileTimestampSelector,
   SupportBundleViewerLayout,
-  SqlCodeView,
+  SourceCodeView,
   BundleLogsView,
   TriageResultsView
 }
@@ -23,5 +23,5 @@ export {
 } from './functions/globalMetrics'
 export { createLoadGuard } from './functions/loadGuard'
 export { createLookupCoordinator, type LookupCoordinator } from './functions/lookup'
-export type { ProcessedProfile } from './functions/processZipBundle'
+export type { ProcessedProfile, SourceFile } from './functions/processZipBundle'
 export { getSuitableProfiles, processProfileFiles } from './functions/processZipBundle'

@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer;
 
+import org.apache.calcite.avatica.util.TimeUnit;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
@@ -17,6 +18,7 @@ import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.NlsString;
 import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
+import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -181,7 +183,58 @@ public class RexOptimize extends RexShuttle {
         }
     }
 
-    /** Constant fold interval computations */
+    /** The number of runtime units (months or microseconds) in the last field of the interval type
+     * {@code type} */
+    static BigDecimal runtimeUnitsInLastField(RelDataType type) {
+        SqlTypeName name = type.getSqlTypeName();
+        TimeUnit last = Objects.requireNonNull(name.getEndUnit());
+        if (SqlTypeName.YEAR_INTERVAL_TYPES.contains(name))
+            return last.multiplier;
+        if (last == TimeUnit.SECOND)
+            return BigDecimal.ONE;
+        // Calcite multipliers for day-time units are in milliseconds
+        return last.multiplier.movePointRight(3);
+    }
+
+    /** The value of {@code interval} multiplied or divided by {@code number}, as a literal value of
+     * {@code resultType}, computed exactly like the runtime: in months or microseconds, truncated
+     * toward zero, and then truncated toward zero to the last field of {@code resultType}.  Null when
+     * the result is an error. */
+    static @Nullable BigDecimal intervalProductOrQuotient(
+            RexLiteral interval, RexLiteral number, boolean divide, RelDataType resultType) {
+        BigDecimal value = interval.getValueAs(BigDecimal.class);
+        BigDecimal factor = number.getValueAs(BigDecimal.class);
+        if (value == null || factor == null)
+            return null;
+        boolean yearMonth = SqlTypeName.YEAR_INTERVAL_TYPES.contains(resultType.getSqlTypeName());
+        // Calcite stores a year-month interval in months, and a day-time interval in milliseconds;
+        // the runtime stores microseconds
+        BigDecimal units = yearMonth ? value : value.movePointRight(3);
+        BigDecimal result;
+        SqlTypeName numberType = number.getType().getSqlTypeName();
+        if (SqlTypeName.APPROX_TYPES.contains(numberType)) {
+            // The runtime computes in DOUBLE, after converting a REAL to DOUBLE
+            double f = numberType == SqlTypeName.REAL ? (double) factor.floatValue() : factor.doubleValue();
+            double d = divide ? units.doubleValue() / f : units.doubleValue() * f;
+            if (!Double.isFinite(d))
+                return null;
+            result = new BigDecimal(d);
+        } else if (divide) {
+            if (factor.signum() == 0)
+                return null;
+            result = units.divide(factor, 0, RoundingMode.DOWN);
+        } else {
+            result = units.multiply(factor);
+        }
+        BigDecimal unit = runtimeUnitsInLastField(resultType);
+        result = result.divide(unit, 0, RoundingMode.DOWN).multiply(unit);
+        BigDecimal max = BigDecimal.valueOf(yearMonth ? Integer.MAX_VALUE : Long.MAX_VALUE);
+        if (result.abs().compareTo(max) > 0)
+            return null;
+        return yearMonth ? result : result.movePointLeft(3);
+    }
+
+    /** Constant fold interval computations, with the semantics of the runtime */
     RexNode optimizeInterval(RexCall call) {
         RelDataType resultType = call.getType();
         switch (call.getKind()) {
@@ -192,44 +245,49 @@ public class RexOptimize extends RexShuttle {
                     Objects.requireNonNull(value);
                     return this.builder.makeLiteral(value.negate(), resultType, true, false);
                 }
+                break;
             }
             case CHECKED_PLUS:
             case CHECKED_MINUS:
-            case CHECKED_TIMES:
-            case CHECKED_DIVIDE:
-            case DIVIDE:
-            case TIMES:
             case MINUS:
             case PLUS: {
                 RexNode op0 = call.getOperands().get(0);
                 RexNode op1 = call.getOperands().get(1);
-                if (op0 instanceof RexLiteral left && op1 instanceof RexLiteral right) {
+                // The difference of two DATE or TIMESTAMP literals is an interval too
+                if (op0 instanceof RexLiteral left && op1 instanceof RexLiteral right &&
+                        SqlTypeUtil.isInterval(left.getType()) && SqlTypeUtil.isInterval(right.getType())) {
                     BigDecimal leftValue = Objects.requireNonNull(left.getValueAs(BigDecimal.class));
                     BigDecimal rightValue = Objects.requireNonNull(right.getValueAs(BigDecimal.class));
-                    switch (call.getKind()) {
-                        case CHECKED_MINUS:
-                        case CHECKED_PLUS:
-                        case PLUS:
-                        case MINUS: {
-                            if (call.getKind() == SqlKind.MINUS || call.getKind() == SqlKind.CHECKED_MINUS) {
-                                rightValue = rightValue.negate();
-                            }
-                            BigDecimal result = leftValue.add(rightValue);
-                            return this.builder.makeLiteral(result, resultType, true, false);
-                        }
-                        case CHECKED_TIMES:
-                        case TIMES: {
-                            BigDecimal result = leftValue.multiply(rightValue);
-                            return this.builder.makeLiteral(result, resultType, true, false);
-                        }
-                        case CHECKED_DIVIDE:
-                        case DIVIDE: {
-                            // Microsecond precision; values are in milliseconds, and we keep 3 more decimals
-                            BigDecimal result = leftValue.divide(rightValue, 3, RoundingMode.FLOOR);
-                            return this.builder.makeLiteral(result, resultType, true, false);
-                        }
+                    if (call.getKind() == SqlKind.MINUS || call.getKind() == SqlKind.CHECKED_MINUS) {
+                        rightValue = rightValue.negate();
                     }
+                    BigDecimal result = leftValue.add(rightValue);
+                    return this.builder.makeLiteral(result, resultType, true, false);
                 }
+                break;
+            }
+            case CHECKED_TIMES:
+            case TIMES:
+            case CHECKED_DIVIDE:
+            case DIVIDE: {
+                boolean divide = call.getKind() == SqlKind.DIVIDE || call.getKind() == SqlKind.CHECKED_DIVIDE;
+                RexNode op0 = call.getOperands().get(0);
+                RexNode op1 = call.getOperands().get(1);
+                if (!(op0 instanceof RexLiteral left) || !(op1 instanceof RexLiteral right))
+                    break;
+                RexLiteral interval = left;
+                RexLiteral number = right;
+                if (!divide && SqlTypeUtil.isInterval(right.getType())) {
+                    interval = right;
+                    number = left;
+                }
+                if (!SqlTypeUtil.isInterval(interval.getType()) || !SqlTypeUtil.isNumeric(number.getType()))
+                    break;
+                BigDecimal result = intervalProductOrQuotient(interval, number, divide, resultType);
+                if (result == null)
+                    // The runtime reports the error
+                    break;
+                return this.builder.makeLiteral(result, resultType, true, false);
             }
             default:
                 break;

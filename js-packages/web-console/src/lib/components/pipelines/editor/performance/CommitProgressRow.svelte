@@ -4,8 +4,8 @@
   import { Tooltip, useIsScreenSm } from 'common-ui'
   import { type Snippet, untrack } from 'svelte'
   import { slide } from 'svelte/transition'
-  import { statusChipClass, statusToneColors } from '$lib/functions/pipelineStatusColor'
-  import type { CommitProgressSummary } from '$lib/services/manager'
+  import { statusChipClass, statusToneColors } from '#lib/functions/pipelineStatusColor.ts'
+  import type { CommitProgressSummary } from '#lib/services/manager/index.ts'
 
   let {
     label,

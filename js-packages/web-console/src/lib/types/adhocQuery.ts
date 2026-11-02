@@ -1,4 +1,4 @@
-import type { SQLValueJS } from '$lib/types/sql'
+import type { SQLValueJS } from '#lib/types/sql.ts'
 
 /** Ad-hoc query result: the result's rows, plus - each in place of a row - the
  * message from a failed query and the notice that only the first rows were kept. */

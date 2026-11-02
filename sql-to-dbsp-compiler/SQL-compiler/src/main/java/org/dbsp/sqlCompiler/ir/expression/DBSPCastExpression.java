@@ -33,11 +33,23 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSqlResult;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
+
+import java.math.BigInteger;
 
 /** This class represents a cast of an expression to a given type.
  * There are actually multiple kinds of casts, depending on the {@link #safe} value.
@@ -75,7 +87,11 @@ public final class DBSPCastExpression extends DBSPExpression {
         UnwrapResultSafe,
 
         /** A call to a Rust function in sqllib, which always returns a SqlResult[T] value. */
-        RustCast;
+        RustCast,
+        /** A cast between scalar types that never fails, for values that are not nullable: a value
+         * above the range of the target type converts to its maximum, and a value below the range
+         * to its minimum. */
+        Saturating;
 
         public boolean isSql() {
             return this == SqlUnsafe || this == SqlSafe;
@@ -117,6 +133,8 @@ public final class DBSPCastExpression extends DBSPExpression {
                         source.getType().to(DBSPTypeSqlResult.class).getWrappedType());
         // Safe casts must produce a nullable type
         Utilities.enforce(!safe.isSafe() || to.mayBeNull);
+        Utilities.enforce(safe != CastType.Saturating || (!to.mayBeNull && !source.getType().mayBeNull),
+                () -> "Saturating cast of a nullable value " + source.getType() + " to " + to);
         Utilities.enforce(source.getType().is(DBSPTypeNull.class)
                         || source.getType().is(DBSPTypeTupleBase.class) == to.is(DBSPTypeTupleBase.class)
                         || source.getType().is(DBSPTypeVariant.class) || to.is(DBSPTypeVariant.class)
@@ -129,6 +147,108 @@ public final class DBSPCastExpression extends DBSPExpression {
     public DBSPCastExpression replaceSource(DBSPExpression source) {
         Utilities.enforce(source.getType().sameType(this.source.getType()));
         return new DBSPCastExpression(this.getNode(), source, this.type, this.safe);
+    }
+
+    /** True if {@code type} is an interval in one unit: years, months, days, hours, minutes or
+     * seconds. */
+    static boolean isSingleUnitInterval(DBSPType type) {
+        DBSPTypeShortInterval shortInterval = type.as(DBSPTypeShortInterval.class);
+        if (shortInterval != null)
+            return switch (shortInterval.units) {
+                case DAYS, HOURS, MINUTES, SECONDS -> true;
+                default -> false;
+            };
+        DBSPTypeLongInterval longInterval = type.as(DBSPTypeLongInterval.class);
+        return longInterval != null && longInterval.units != DBSPTypeLongInterval.Units.YEARS_TO_MONTHS;
+    }
+
+    /** True if {@code type} is a TIMESTAMP, with or without a time zone. */
+    static boolean isTimestamp(DBSPType type) {
+        return type.is(DBSPTypeTimestamp.class) || type.is(DBSPTypeTimestampTz.class);
+    }
+
+    /** True if {@code type} is an integer of at most 64 bits. */
+    static boolean isNarrowInteger(DBSPType type) {
+        DBSPTypeInteger integer = type.as(DBSPTypeInteger.class);
+        return integer != null && integer.getWidth() <= 64;
+    }
+
+    /** True if the runtime has a saturating cast from {@code source} to {@code target}.  These
+     * casts are from a number to an integer or a DECIMAL, except from a 128-bit integer to a
+     * DECIMAL; between an interval in one unit or a TIMESTAMP and an integer of at most 64 bits
+     * or a DECIMAL; and to a TIMESTAMP from a DOUBLE or a REAL. */
+    public static boolean hasSaturatingForm(DBSPType source, DBSPType target) {
+        boolean decimalSource = source.is(DBSPTypeDecimal.class);
+        boolean floatSource = source.is(DBSPTypeDouble.class) || source.is(DBSPTypeReal.class);
+        if (isSingleUnitInterval(source))
+            return isNarrowInteger(target) || target.is(DBSPTypeDecimal.class);
+        if (isSingleUnitInterval(target))
+            return isNarrowInteger(source) || decimalSource;
+        if (isTimestamp(source))
+            return isNarrowInteger(target) || target.is(DBSPTypeDecimal.class);
+        if (isTimestamp(target))
+            return isNarrowInteger(source) || decimalSource || floatSource;
+        boolean integerSource = source.is(DBSPTypeInteger.class);
+        boolean numericSource = integerSource || decimalSource || floatSource;
+        return numericSource && (target.is(DBSPTypeInteger.class) ||
+                (target.is(DBSPTypeDecimal.class) && (!integerSource || isNarrowInteger(source))));
+    }
+
+    /** True if the conversion of this cast fails for some argument, e.g. from INT to TINYINT;
+     * a SAFE_CAST returns NULL instead.  True for every conversion not known to succeed for all
+     * arguments. */
+    public boolean canFail() {
+        DBSPType from = this.source.getType();
+        DBSPType to = this.type;
+        if (from.sameTypeIgnoringNullability(to))
+            return false;
+        // The date and time types convert to TIMESTAMP, and a TIMESTAMP converts to a DATE,
+        // without leaving the legal range
+        boolean fromTimestamp = isTimestamp(from);
+        boolean toTimestamp = isTimestamp(to);
+        boolean fromDateOrTime = from.is(DBSPTypeDate.class) || from.is(DBSPTypeTime.class);
+        if (toTimestamp && (fromTimestamp || fromDateOrTime))
+            return false;
+        if (fromTimestamp && to.is(DBSPTypeDate.class))
+            return false;
+        // A cast between two units keeps the value of the interval
+        boolean shortIntervals = from.is(DBSPTypeShortInterval.class) && to.is(DBSPTypeShortInterval.class);
+        boolean longIntervals = from.is(DBSPTypeLongInterval.class) && to.is(DBSPTypeLongInterval.class);
+        if (shortIntervals || longIntervals)
+            return false;
+
+        DBSPTypeInteger fromInteger = from.as(DBSPTypeInteger.class);
+        DBSPTypeDecimal fromDecimal = from.as(DBSPTypeDecimal.class);
+        DBSPTypeInteger toInteger = to.as(DBSPTypeInteger.class);
+        // A TIMESTAMP converts to its number of milliseconds, a BIGINT
+        if (fromTimestamp && toInteger != null)
+            return !toInteger.signed || toInteger.getWidth() != 64;
+        // A conversion to DOUBLE or REAL rounds, and gives an infinity for a value out of range
+        boolean toFloat = to.is(DBSPTypeDouble.class) || to.is(DBSPTypeReal.class);
+        boolean fromFloat = from.is(DBSPTypeDouble.class) || from.is(DBSPTypeReal.class);
+        if (toFloat)
+            return fromInteger == null && fromDecimal == null && !fromFloat && !fromTimestamp;
+
+        DBSPTypeDecimal toDecimal = to.as(DBSPTypeDecimal.class);
+        if (fromInteger != null && toInteger != null)
+            return toInteger.minimum().compareTo(fromInteger.minimum()) > 0 ||
+                    toInteger.maximum().compareTo(fromInteger.maximum()) < 0;
+        if (fromInteger != null && toDecimal != null) {
+            // The DECIMAL holds the integers below 10^(precision - scale) in absolute value
+            BigInteger limit = BigInteger.TEN.pow(toDecimal.precision - toDecimal.scale);
+            return fromInteger.minimum().compareTo(limit.negate()) <= 0 ||
+                    fromInteger.maximum().compareTo(limit) >= 0;
+        }
+        if (fromDecimal != null && toInteger != null) {
+            // Rounding gives at most 10^(precision - scale) in absolute value
+            BigInteger limit = BigInteger.TEN.pow(fromDecimal.precision - fromDecimal.scale);
+            return toInteger.minimum().compareTo(limit.negate()) > 0 ||
+                    toInteger.maximum().compareTo(limit) < 0;
+        }
+        if (fromDecimal != null && toDecimal != null)
+            return toDecimal.scale < fromDecimal.scale ||
+                    toDecimal.precision - toDecimal.scale < fromDecimal.precision - fromDecimal.scale;
+        return true;
     }
 
     @Override

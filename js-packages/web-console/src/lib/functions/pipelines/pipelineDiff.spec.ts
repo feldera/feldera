@@ -5,7 +5,7 @@
  * into the `approval_diff` shape, so the parser only handles the new location.
  */
 import { describe, expect, it } from 'vitest'
-import type { ExtendedPipeline } from '$lib/services/pipelineManager'
+import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
 import { parsePipelineDiff } from './pipelineDiff'
 
 const approvalDiff = {

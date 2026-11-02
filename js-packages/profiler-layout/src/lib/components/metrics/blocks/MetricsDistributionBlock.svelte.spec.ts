@@ -18,7 +18,7 @@ import MetricsDistributionBlock from './MetricsDistributionBlock.svelte'
  * The tests that read a declared style run without them: a loaded theme reports a transparent
  * background as `oklab(0 0 0 / 0)` rather than `rgba(0, 0, 0, 0)`. */
 const loadTheme = async (theme: 'light' | 'dark' = 'light') => {
-  await import('../../../../routes/layout.css')
+  await import('../../../../../test/tailwind.css')
   await import('feldera-theme/feldera-modern.css')
   document.documentElement.dataset.theme = 'feldera-modern-theme'
   document.documentElement.classList.toggle('dark', theme === 'dark')

@@ -1,13 +1,13 @@
 import { closedIntervalAction } from 'common-lib/promise'
 import { untrack } from 'svelte'
-import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
 import {
   accumulatePipelineMetrics,
   emptyPipelineMetrics,
   type PipelineMetrics
-} from '$lib/functions/pipelineMetrics'
-import { isMetricsAvailable } from '$lib/functions/pipelines/status'
-import type { ExtendedPipeline } from '$lib/services/pipelineManager'
+} from '#lib/functions/pipelineMetrics.ts'
+import { isMetricsAvailable } from '#lib/functions/pipelines/status.ts'
+import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
 
 const metrics: Record<string, PipelineMetrics> = {} // Disable reactivity for metrics data for better performance
 let getMetrics = $state<() => typeof metrics>(() => metrics)

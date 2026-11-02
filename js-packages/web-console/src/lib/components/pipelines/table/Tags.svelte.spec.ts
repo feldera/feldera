@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import type { PipelineManagerApi } from '$lib/compositions/usePipelineManager.svelte'
-import { permissionsOf } from '$lib/services/rbac'
+import type { PipelineManagerApi } from '#lib/compositions/usePipelineManager.svelte.ts'
+import { permissionsOf } from '#lib/services/rbac.ts'
 
 // Tag mutation (assign/unassign/create/edit/delete) is gated on
 // write:pipeline_meta. Default the mocked role to `write` so the existing

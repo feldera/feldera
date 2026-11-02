@@ -9162,7 +9162,15 @@ export type GetPipelineStatsData = {
      */
     pipeline_name: string
   }
-  query?: never
+  query?: {
+    /**
+     * When `true`, the response includes the most recent error messages of
+     * each connector. An error message can contain values from the record
+     * that caused it. The default is `false`, which keeps the response small
+     * for callers that poll `/stats`.
+     */
+    include_connector_errors?: boolean
+  }
   url: '/v0/pipelines/{pipeline_name}/stats'
 }
 

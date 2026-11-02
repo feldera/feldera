@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest'
 import {
   defaultLatencyColorSpread,
   latencyColor,
   latencyColorFraction,
   latencyColorScale
 } from 'common-ui/latencyColor'
+import { describe, expect, it } from 'vitest'
 
 describe('latencyColorScale', () => {
   it('returns undefined when no connector reports a latency', () => {

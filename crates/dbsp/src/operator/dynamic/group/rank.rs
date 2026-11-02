@@ -792,7 +792,7 @@ where
 }
 
 #[cfg(test)]
-mod test {
+pub(super) mod test {
     use std::{
         cmp::Ordering,
         collections::{BTreeMap, HashMap},
@@ -823,7 +823,7 @@ mod test {
     const P: u64 = 0;
 
     /// Total order: sort by `Tup2::0`, then `Tup2::1` (tie-break). `rank_eq` uses only `::0`.
-    struct OrderByFirstTupleField;
+    pub struct OrderByFirstTupleField;
 
     impl CmpFunc<Tup2<u64, u64>> for OrderByFirstTupleField {
         fn cmp(left: &Tup2<u64, u64>, right: &Tup2<u64, u64>) -> Ordering {
@@ -1503,7 +1503,7 @@ mod test {
         }
     }
 
-    fn multiset_to_indexed_zset(
+    pub fn multiset_to_indexed_zset(
         counts: &HashMap<(u64, Tup2<u64, u64>), ZWeight>,
     ) -> OrdIndexedZSet<u64, Tup2<u64, u64>> {
         let tuples: Vec<Tup2<Tup2<u64, Tup2<u64, u64>>, ZWeight>> = counts

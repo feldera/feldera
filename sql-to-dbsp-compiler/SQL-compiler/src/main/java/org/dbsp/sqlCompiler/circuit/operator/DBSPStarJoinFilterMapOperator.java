@@ -32,8 +32,8 @@ public class DBSPStarJoinFilterMapOperator extends DBSPStarJoinBaseOperator impl
 
     public DBSPStarJoinFilterMapOperator(CalciteRelNode node, DBSPType outputType, DBSPClosureExpression function,
                                          @Nullable DBSPClosureExpression filter, @Nullable DBSPClosureExpression map,
-                                         boolean isMultiset, List<OutputPort> inputs) {
-        super(node, "inner_star_join_flatmap", outputType, function, isMultiset, inputs);
+                                         List<OutputPort> inputs) {
+        super(node, "inner_star_join_flatmap", outputType, function, inputs);
         this.filter = filter;
         this.map = map;
     }
@@ -43,7 +43,7 @@ public class DBSPStarJoinFilterMapOperator extends DBSPStarJoinBaseOperator impl
         Utilities.enforce(function != null);
         if (this.mustReplace(force, function, inputs, outputType)) {
             return new DBSPStarJoinFilterMapOperator(this.getRelNode(), outputType, function.to(DBSPClosureExpression.class),
-                    this.filter, this.map, this.isMultiset, inputs).copyAnnotations(this);
+                    this.filter, this.map, inputs).copyAnnotations(this);
         }
         return this;
     }
@@ -92,7 +92,7 @@ public class DBSPStarJoinFilterMapOperator extends DBSPStarJoinBaseOperator impl
             map = fromJsonInner(node, "map", decoder, DBSPClosureExpression.class);
         return new DBSPStarJoinFilterMapOperator(
                 CalciteEmptyRel.INSTANCE, info.getZsetType(), info.getClosureFunction(),
-                filter, map, info.isMultiset(), info.inputs())
+                filter, map, info.inputs())
                 .addAnnotations(info.annotations(), DBSPStarJoinFilterMapOperator.class);
     }
 }

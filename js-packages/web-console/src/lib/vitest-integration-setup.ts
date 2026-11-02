@@ -8,7 +8,8 @@
  * only the compilation-cache warmup needs the once-per-worker guard here.
  */
 
-import { configureTestClient, warmCompilationCache } from '$lib/services/testPipelineHelpers'
+import { beforeAll } from 'vitest'
+import { configureTestClient, warmCompilationCache } from '#lib/services/testPipelineHelpers.ts'
 
 declare global {
   // eslint-disable-next-line no-var
@@ -16,5 +17,10 @@ declare global {
 }
 
 configureTestClient()
-globalThis.__feldera_warmup ??= warmCompilationCache()
-await globalThis.__feldera_warmup
+// A hook, so that `vitest list` loads the test files
+// without a Feldera instance. The timeout exceeds the 10 minutes that
+// `waitForCompilation` waits.
+beforeAll(async () => {
+  globalThis.__feldera_warmup ??= warmCompilationCache()
+  await globalThis.__feldera_warmup
+}, 11 * 60_000)

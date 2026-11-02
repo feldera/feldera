@@ -1,8 +1,8 @@
 <script lang="ts">
   import { ClipboardCopyButton } from 'common-ui'
-  import { useToast } from '$lib/compositions/useToastNotification'
-  import { displaySQLValue, serializeSQLValue } from '$lib/functions/sql'
-  import type { SQLValueJS } from '$lib/types/sql'
+  import { useToast } from '#lib/compositions/useToastNotification.ts'
+  import { displaySQLValue, serializeSQLValue } from '#lib/functions/sql.ts'
+  import type { SQLValueJS } from '#lib/types/sql.ts'
 
   let {
     popupRef = $bindable(),

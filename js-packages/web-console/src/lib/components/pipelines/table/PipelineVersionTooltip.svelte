@@ -10,9 +10,9 @@
   } = $props()
 
   import { Popover, Tooltip } from 'common-ui'
-  import RBAC from '$lib/components/auth/RBAC.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { normalizeRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
+  import RBAC from '#lib/components/auth/RBAC.svelte'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { normalizeRuntimeVersion } from '#lib/functions/pipelines/runtimeVersion.ts'
 
   const api = usePipelineManager()
 </script>

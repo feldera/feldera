@@ -1,4 +1,4 @@
-import type { NodeAttributes, TooltipRow } from 'profiler-lib'
+import { MetricDescriptions, type NodeAttributes, type TooltipRow } from 'profiler-lib'
 import { describe, expect, it } from 'vitest'
 import { buildBlocks } from './dispatch.js'
 
@@ -58,14 +58,24 @@ describe('buildBlocks puts the selected metric first', () => {
   })
 
   it('leads the panel, whichever category it belongs to', () => {
-    // 'total size' is a memory metric and 'time' a CPU one, so they land in different blocks;
-    // the selected one decides which block comes first.
-    const metrics = ['total size', 'time']
+    // 'allocated_memory_bytes' is a State metric and 'runtime_seconds' a Time one, so they land
+    // in different blocks; the selected one decides which block comes first.
+    const metric = (name: string, category: string) => ({
+      name,
+      category,
+      advanced: false,
+      description: ''
+    })
+    MetricDescriptions.setMetricDescriptions([
+      metric('allocated_memory_bytes', 'State'),
+      metric('runtime_seconds', 'Time')
+    ])
+    const metrics = ['allocated_memory_bytes', 'runtime_seconds']
     const first = (current: string) => buildBlocks(makeAttrs(metrics, current), true)[0]!
-    expect(first('time').entries[0]!.row.metric).toBe('time')
-    expect(first('total size').entries[0]!.row.metric).toBe('total size')
+    expect(first('runtime_seconds').entries[0]!.row.metric).toBe('runtime_seconds')
+    expect(first('allocated_memory_bytes').entries[0]!.row.metric).toBe('allocated_memory_bytes')
     // Two blocks either way: the selected metric moves to the front, stays in its category.
-    expect(buildBlocks(makeAttrs(metrics, 'time'), true)).toHaveLength(2)
+    expect(buildBlocks(makeAttrs(metrics, 'runtime_seconds'), true)).toHaveLength(2)
   })
 
   it('leaves the order alone when no metric is selected', () => {

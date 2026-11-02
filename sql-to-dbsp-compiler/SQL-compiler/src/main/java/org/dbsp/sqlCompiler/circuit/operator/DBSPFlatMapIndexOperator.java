@@ -17,9 +17,9 @@ import java.util.Objects;
 
 public final class DBSPFlatMapIndexOperator extends DBSPUnaryOperator implements ILinear {
     public DBSPFlatMapIndexOperator(CalciteRelNode node, DBSPExpression expression,
-                                    DBSPTypeIndexedZSet outputType, boolean isMultiset,
+                                    DBSPTypeIndexedZSet outputType,
                                     OutputPort input) {
-        super(node, "flat_map_index", expression, outputType, isMultiset, input);
+        super(node, "flat_map_index", expression, outputType, input);
         // We use this operator in a very restricted way,
         // to implement a MapIndex preceded or followed by a Filter.
         // So the iterator is always over an Option().
@@ -42,7 +42,7 @@ public final class DBSPFlatMapIndexOperator extends DBSPUnaryOperator implements
         if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPFlatMapIndexOperator(
                     this.getRelNode(), Objects.requireNonNull(function),
-                    outputType.to(DBSPTypeIndexedZSet.class), this.isMultiset, newInputs.get(0))
+                    outputType.to(DBSPTypeIndexedZSet.class), newInputs.get(0))
                     .copyAnnotations(this);
         }
         return this;
@@ -52,7 +52,7 @@ public final class DBSPFlatMapIndexOperator extends DBSPUnaryOperator implements
     public static DBSPFlatMapIndexOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         return new DBSPFlatMapIndexOperator(CalciteEmptyRel.INSTANCE, info.getFunction(),
-                info.getIndexedZsetType(), info.isMultiset(), info.getInput(0))
+                info.getIndexedZsetType(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPFlatMapIndexOperator.class);
     }
 }

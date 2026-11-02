@@ -186,7 +186,6 @@ report one each time.
 ## File Organization
 
 - `src/assets/`: Static assets referenced in UI components, but not served as-is
-- `src/hooks.server.ts`: Point of injection of HTTP request and page load middleware
 - `src/lib/`: Imported modules
 - `src/lib/components/`: Reusable Svelte components
 - `src/lib/compositions/`: Stateful functions that app state management

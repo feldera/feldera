@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import type { GlobalDialogContent } from '$lib/compositions/layout/useGlobalDialog.svelte'
+import type { GlobalDialogContent } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
 import GenericDialog from './GenericDialog.svelte'
 
 function makeContent(overrides?: Partial<GlobalDialogContent>): GlobalDialogContent {

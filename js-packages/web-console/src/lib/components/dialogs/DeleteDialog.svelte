@@ -18,7 +18,7 @@
 </script>
 
 <script lang="ts" generics="Args extends unknown[]">
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
 
   import GenericDialog from './GenericDialog.svelte'
 

@@ -17,9 +17,9 @@ public abstract class DBSPJoinBaseOperator extends DBSPBinaryOperator implements
 
     protected DBSPJoinBaseOperator(
             CalciteRelNode node, String operation, DBSPExpression function,
-            DBSPType outputType, boolean isMultiset,
+            DBSPType outputType,
             OutputPort left, OutputPort right, boolean balanced) {
-        super(node, operation, function, outputType, isMultiset, left, right);
+        super(node, operation, function, outputType, left, right);
         this.checkParameterCount(function, 3);
         this.balanced = balanced;
         DBSPClosureExpression closure = this.getClosureFunction();

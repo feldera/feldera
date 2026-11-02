@@ -103,9 +103,12 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
@@ -1290,6 +1293,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
     @Override
     public VisitDecision preorder(DBSPU128Literal literal) {
+        if (literal.isNull())
+            return this.doNull(literal);
         String val = Objects.requireNonNull(literal.value).toString();
         this.push(literal);
         this.builder.append(literal.wrapSome(val + literal.getIntegerType().getRustString()));
@@ -1302,12 +1307,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (literal.isNull())
             return this.doNull(literal);
         this.push(literal);
-        Objects.requireNonNull(literal.value);
-        byte[] bytes = literal.value.getBytes(literal.charset);
-        String decoded = new String(bytes, literal.charset);
-        decoded = Utilities.doubleQuote(decoded, true);
+        String quoted = Utilities.doubleQuote(Objects.requireNonNull(literal.value).toJavaString(), true);
         this.builder.append(literal.wrapSome(
-        DBSPTypeCode.STRING.rustName + "::from(arcstr::literal!(" + decoded + "))"));
+        DBSPTypeCode.STRING.rustName + "::from(arcstr::literal!(" + quoted + "))"));
         this.pop(literal);
         return VisitDecision.STOP;
     }
@@ -1321,8 +1323,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.push(literal);
         Objects.requireNonNull(literal.value);
         if (literal.raw) {
-            String contents = "r#\"" + literal.value + "\"#";
-            this.builder.append(literal.wrapSome(contents));
+            this.builder.append(literal.wrapSome(Utilities.rustRawString(literal.value)));
         } else {
             this.builder.append(literal.wrapSome(Utilities.doubleQuote(literal.value, true)));
         }
@@ -1388,6 +1389,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 " not implemented", expression.getNode());
     }
 
+    /** Emits the generic arguments of the cast function from {@code source} to {@code dest},
+     * if it has any. */
+    private void castGenericArguments(DBSPType dest, DBSPType source) {
+        int argCount = source.genericArgumentCount() + dest.genericArgumentCount();
+        if (argCount > 0) {
+            this.builder.append("::<");
+            boolean first = dest.emitGenericArguments(this.builder, true);
+            source.emitGenericArguments(this.builder, first);
+            this.builder.append(">");
+        }
+    }
+
     @Override
     public VisitDecision preorder(DBSPCastExpression expression) {
         /* Default implementation of cast of a source expression to the 'this' type.
@@ -1399,6 +1412,23 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("((")
                     .append(expression.getType())
                     .append(")");
+            expression.source.accept(this);
+            this.builder.append(")");
+            this.pop(expression);
+            return VisitDecision.STOP;
+        }
+        if (expression.safe == DBSPCastExpression.CastType.Saturating) {
+            DBSPType sourceType = expression.source.getType();
+            DBSPType targetType = expression.getType();
+            Utilities.enforce(DBSPCastExpression.hasSaturatingForm(sourceType, targetType),
+                    () -> "No saturating cast from " + sourceType + " to " + targetType);
+            this.builder.append("cast_to_")
+                    .append(destType.baseTypeWithSuffix())
+                    .append("_")
+                    .append(sourceType.baseTypeWithSuffix())
+                    .append("_saturating");
+            this.castGenericArguments(destType, sourceType);
+            this.builder.append("(");
             expression.source.accept(this);
             this.builder.append(")");
             this.pop(expression);
@@ -1500,18 +1530,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
 
         if ((sourceType.is(DBSPTypeLongInterval.class) && code == DBSPTypeCode.INTERVAL_LONG) ||
             (sourceType.is(DBSPTypeShortInterval.class) && code == DBSPTypeCode.INTERVAL_SHORT)) {
+            // The function depends on the units of the destination only
             DBSPTypeBaseType t = destType.to(DBSPTypeBaseType.class);
-            functionName = "cast_to_" + t.shortName() + destType.nullableSuffix() +
+            functionName = "cast_to_" + destType.baseTypeWithSuffix() +
                     "_" + t.shortName() + sourceType.nullableSuffix();
         }
-        int argCount = sourceType.genericArgumentCount() + destType.genericArgumentCount();
         this.builder.append(functionName);
-        if (argCount > 0) {
-            this.builder.append("::<");
-            boolean first = destType.emitGenericArguments(this.builder, true);
-            sourceType.emitGenericArguments(this.builder, first);
-            this.builder.append(">");
-        }
+        this.castGenericArguments(destType, sourceType);
         this.builder.append("(");
         expression.source.accept(this);
         DBSPTypeString str = destType.as(DBSPTypeString.class);
@@ -1622,7 +1647,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPTimeAddSub expression) {
         this.push(expression);
         this.visitingChild = 0;
-        String functionName = expression.opcode == DBSPOpcode.ADD ? "plus" : "minus";
+        String functionName = switch (expression.opcode) {
+            case ADD -> "plus";
+            case SUB -> "minus";
+            case ADD_SATURATING -> "plus_saturating";
+            case SUB_SATURATING -> "minus_saturating";
+            default -> throw new InternalCompilerError("Unexpected opcode " + expression.opcode, expression);
+        };
         functionName += "_" + typeCode(expression.type) +
                         "_" + typeCode(expression.left.getType()) +
                         "_" + typeCode(expression.right.getType()) +
@@ -1857,7 +1888,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
                                     expression.opcode == DBSPOpcode.MUL ||
                                     expression.opcode == DBSPOpcode.DIV ||
                                     expression.opcode == DBSPOpcode.MOD ||
-                                    expression.opcode == DBSPOpcode.DIV_NULL
+                                    expression.opcode == DBSPOpcode.DIV_NULL ||
+                                    expression.opcode == DBSPOpcode.ADD_SATURATING ||
+                                    expression.opcode == DBSPOpcode.SUB_SATURATING ||
+                                    expression.opcode == DBSPOpcode.MUL_SATURATING ||
+                                    expression.opcode == DBSPOpcode.DIV_SATURATING
                             ;
                     if (genericArgCount > 0 && needsGenericArguments) {
                         this.builder.append("::<");

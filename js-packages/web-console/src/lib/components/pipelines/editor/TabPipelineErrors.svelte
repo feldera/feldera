@@ -1,9 +1,9 @@
 <script lang="ts">
   import { selectScope } from 'common-ui'
-  import { extractProgramStderr, type SystemError } from '$lib/compositions/health/systemErrors'
-  import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
-  import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
-  import type { ExtendedPipeline } from '$lib/services/pipelineManager'
+  import { extractProgramStderr, type SystemError } from '#lib/compositions/health/systemErrors.ts'
+  import { useLayoutSettings } from '#lib/compositions/layout/useLayoutSettings.svelte.ts'
+  import { useSkeletonTheme } from '#lib/compositions/useSkeletonTheme.svelte.ts'
+  import type { ExtendedPipeline } from '#lib/services/pipelineManager.ts'
 
   const { hideWarnings, verbatimErrors } = useLayoutSettings()
 

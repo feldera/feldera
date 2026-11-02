@@ -21,9 +21,9 @@ import java.util.Objects;
 public final class DBSPLeftJoinOperator extends DBSPJoinBaseOperator implements IIncremental {
     public DBSPLeftJoinOperator(
             CalciteRelNode node, DBSPTypeZSet outputType,
-            DBSPExpression function, boolean isMultiset,
+            DBSPExpression function,
             OutputPort left, OutputPort right, boolean balanced) {
-        super(node, joinOperationName("left_join", balanced), function, outputType, isMultiset, left, right, balanced);
+        super(node, joinOperationName("left_join", balanced), function, outputType, left, right, balanced);
         this.checkResultType(function, this.getOutputZSetElementType());
         Utilities.enforce(left.getOutputIndexedZSetType().keyType.sameType(right.getOutputIndexedZSetType().keyType));
         Utilities.enforce(right.getOutputIndexedZSetType().elementType.mayBeNull);
@@ -37,7 +37,7 @@ public final class DBSPLeftJoinOperator extends DBSPJoinBaseOperator implements 
             return new DBSPLeftJoinOperator(
                 this.getRelNode(), outputType.to(DBSPTypeZSet.class),
                 Objects.requireNonNull(function),
-                this.isMultiset, newInputs.get(0), newInputs.get(1), balanced).copyAnnotations(this);
+                newInputs.get(0), newInputs.get(1), balanced).copyAnnotations(this);
         return this;
     }
 
@@ -58,7 +58,7 @@ public final class DBSPLeftJoinOperator extends DBSPJoinBaseOperator implements 
         boolean balanced = Utilities.getBooleanProperty(node, "balanced");
         return new DBSPLeftJoinOperator(
                 CalciteEmptyRel.INSTANCE, info.getZsetType(), info.getFunction(),
-                info.isMultiset(), info.getInput(0), info.getInput(1), balanced)
+                info.getInput(0), info.getInput(1), balanced)
                 .addAnnotations(info.annotations(), DBSPLeftJoinOperator.class);
     }
 }

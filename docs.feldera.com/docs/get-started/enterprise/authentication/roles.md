@@ -17,7 +17,7 @@ below it.
 
 | Role | Scope | Can do |
 |---|---|---|
-| `read` | tenant | View pipelines, logs, metrics, stats, and configuration |
+| `read` | tenant | View pipelines, logs, metrics, stats, connector errors (e.g., parse/encode errors), and configuration. Note that logs or connector errors may show the faulty record's contents. |
 | `write` | tenant | Everything `read` can, plus create, edit, run, and delete pipelines; push and query data; and manage the tenant's API keys |
 | `admin` | tenant | Everything `write` can, plus manage the tenant's members and their roles, and manage the tenant's OIDC trust relationships |
 | `owner` | platform | Everything `admin` can, in any tenant; create tenants; manage the installation |

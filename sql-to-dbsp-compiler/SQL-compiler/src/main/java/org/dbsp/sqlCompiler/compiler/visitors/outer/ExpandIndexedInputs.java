@@ -23,6 +23,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 
@@ -83,6 +84,24 @@ public class ExpandIndexedInputs extends Passes {
         return new DBSPTypeIndexedZSet(node.getNode(), keyType, valueType);
     }
 
+    /** The whole row of a deduped {@code (key, value)} pair {@code w}: field {@code i} comes
+     * from the key when column {@code i} is a primary-key column, else from the value. */
+    static DBSPTupleExpression interleaveKeyValue(
+            DBSPVariablePath w, int columns, List<Integer> keyColumnFields) {
+        Set<Integer> keyColumns = new HashSet<>(keyColumnFields);
+        DBSPExpression[] rowFields = new DBSPExpression[columns];
+        int keySlot = 0;
+        int valueSlot = 0;
+        for (int i = 0; i < columns; i++) {
+            if (keyColumns.contains(i)) {
+                rowFields[i] = w.field(0).deref().field(keySlot++).applyCloneIfNeeded();
+            } else {
+                rowFields[i] = w.field(1).deref().field(valueSlot++).applyCloneIfNeeded();
+            }
+        }
+        return new DBSPTupleExpression(rowFields);
+    }
+
     public static List<Integer> getKeyFields(DBSPSourceMultisetOperator node) {
         List<Integer> keyColumnFields = new ArrayList<>();
         int i = 0;
@@ -141,25 +160,13 @@ public class ExpandIndexedInputs extends Passes {
             }
         }
 
-        /** Rebuild the whole row from a deduped {@code (key, value)} pair: field {@code i}
-         * comes from the key when column {@code i} is a primary-key column, else from the
-         * value. */
+        /** Rebuild the whole row from a deduped {@code (key, value)} pair. */
         private DBSPClosureExpression interleaveKeyValue(
                 DBSPSourceMultisetOperator node, DBSPTypeIndexedZSet ix, List<Integer> keyColumnFields) {
-            Set<Integer> keyColumns = new HashSet<>(keyColumnFields);
             DBSPVariablePath w = ix.getKVRefType().var();
             int columns = node.metadata.getColumns().size();
-            DBSPExpression[] rowFields = new DBSPExpression[columns];
-            int keySlot = 0;
-            int valueSlot = 0;
-            for (int i = 0; i < columns; i++) {
-                if (keyColumns.contains(i)) {
-                    rowFields[i] = w.field(0).deref().field(keySlot++).applyCloneIfNeeded();
-                } else {
-                    rowFields[i] = w.field(1).deref().field(valueSlot++).applyCloneIfNeeded();
-                }
-            }
-            return new DBSPTupleExpression(rowFields).closure(w.asParameter()).to(DBSPClosureExpression.class);
+            return ExpandIndexedInputs.interleaveKeyValue(w, columns, keyColumnFields)
+                    .closure(w.asParameter()).to(DBSPClosureExpression.class);
         }
 
 
@@ -238,10 +245,16 @@ public class ExpandIndexedInputs extends Passes {
         @Override
         public void postorder(DBSPVariablePath var) {
             var decl = this.resolver.reference.getDeclaration(var);
-            if (decl == this.parameter) {
-                this.map(var, this.w.field(1));
-            } else {
+            if (decl != this.parameter) {
                 super.postorder(var);
+                return;
+            }
+            if (this.dedupKeys) {
+                // The value lacks the key columns, so the whole row is rebuilt from both
+                int columns = this.parameter.getType().deref().to(DBSPTypeTupleBase.class).size();
+                this.map(var, interleaveKeyValue(this.w, columns, this.keyColumnFields).borrow());
+            } else {
+                this.map(var, this.w.field(1));
             }
         }
 

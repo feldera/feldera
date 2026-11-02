@@ -19,6 +19,7 @@ export {
     measurementLabel,
     compareMetrics,
     CircuitProfile,
+    MetricDescriptions,
     PropertyValue,
     type PropertyValueParser,
     MissingValue,

@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.MultisetAnalysis;
 
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -42,6 +43,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
     final ICircuit parent;
     final boolean topLevel;
     final CircuitPostfix materializations;
+    final MultisetAnalysis multisets;
 
     /* Example output:
      * ... preamble ...
@@ -55,12 +57,14 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
      *    return xxx;
      * } */
     public SingleOperatorWriter(DBSPOperator operator, DBSPCircuit circuit,
-                                ICircuit parent, CircuitPostfix materializations) {
+                                ICircuit parent, CircuitPostfix materializations,
+                                MultisetAnalysis multisets) {
         this.circuit = circuit;
         this.parent = parent;
         this.operator = operator;
         this.topLevel = circuit == parent;
         this.materializations = materializations;
+        this.multisets = multisets;
     }
 
     /** Collects all {@link DBSPStaticExpression}s that appear in an expression */
@@ -116,7 +120,8 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                     use readers::*;""").newline();
         }
         ToRustVisitor visitor = new ToRustVisitor(
-                compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations(), this.materializations)
+                compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations(),
+                this.materializations, this.multisets)
                 .withPreferHash(true);
         visitor.innerVisitor.setOperatorContext(this.operator);
         visitor.discoverIndexes(circuit);

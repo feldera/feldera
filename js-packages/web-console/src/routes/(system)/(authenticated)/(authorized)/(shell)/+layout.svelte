@@ -2,33 +2,33 @@
   import { closedIntervalAction } from 'common-lib/promise'
   import { OverlayDrawer } from 'common-ui'
   import Dayjs from 'dayjs'
-  import { invalidateAll } from '$app/navigation'
-  import { page } from '$app/state'
-  import SvelteKitTopLoader from '$lib/components/common/SvelteKitTopLoader.svelte'
-  import LineBanner, { BannerButton } from '$lib/components/layout/LineBanner.svelte'
-  import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
-  import AuthErrorToast from '$lib/components/other/AuthErrorToast.svelte'
-  import BookADemo from '$lib/components/other/BookADemo.svelte'
-  import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
-  import OpenSupportBundleDialog from '$lib/components/supportBundle/OpenSupportBundleDialog.svelte'
-  import { useInterval } from '$lib/compositions/common/useInterval.svelte'
-  import { fetchConfigs } from '$lib/compositions/configCache'
+  import SvelteKitTopLoader from '#lib/components/common/SvelteKitTopLoader.svelte'
+  import LineBanner, { BannerButton } from '#lib/components/layout/LineBanner.svelte'
+  import NavigationExtras from '#lib/components/layout/NavigationExtras.svelte'
+  import AuthErrorToast from '#lib/components/other/AuthErrorToast.svelte'
+  import BookADemo from '#lib/components/other/BookADemo.svelte'
+  import CreatePipelineButton from '#lib/components/pipelines/CreatePipelineButton.svelte'
+  import OpenSupportBundleDialog from '#lib/components/supportBundle/OpenSupportBundleDialog.svelte'
+  import { useInterval } from '#lib/compositions/common/useInterval.svelte.ts'
+  import { fetchConfigs } from '#lib/compositions/configCache.ts'
   import {
     useClusterHealth,
     useRefreshClusterHealth
-  } from '$lib/compositions/health/useClusterHealth.svelte'
-  import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
-  import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import { useIsEnterprise } from '$lib/compositions/useEdition.svelte'
-  import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
-  import { useToast } from '$lib/compositions/useToastNotification'
-  import { clusterHealthMessage } from '$lib/functions/pipelines/health'
-  import { resolve } from '$lib/functions/svelte'
-  import type { Snippet } from '$lib/types/svelte'
+  } from '#lib/compositions/health/useClusterHealth.svelte.ts'
+  import { useAdaptiveDrawer } from '#lib/compositions/layout/useAdaptiveDrawer.svelte.ts'
+  import { useContextDrawer } from '#lib/compositions/layout/useContextDrawer.svelte.ts'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import { useRefreshPipelineList } from '#lib/compositions/pipelines/usePipelineList.svelte.ts'
+  import { useIsEnterprise } from '#lib/compositions/useEdition.svelte.ts'
+  import { usePipelineAction } from '#lib/compositions/usePipelineAction.svelte.ts'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { useSystemMessages } from '#lib/compositions/useSystemMessages.svelte.ts'
+  import { useToast } from '#lib/compositions/useToastNotification.ts'
+  import { clusterHealthMessage } from '#lib/functions/pipelines/health.ts'
+  import { resolve } from '#lib/functions/svelte.ts'
+  import type { Snippet } from '#lib/types/svelte.ts'
+  import { refreshAll } from '$app/navigation'
+  import { page } from '$app/state'
   import type { LayoutData } from './$types'
 
   const { children, data }: { children: Snippet; data: LayoutData } = $props()
@@ -58,7 +58,7 @@
   // Check for backend version changes every 10 seconds, starting 10 seconds
   // after layout load (first tick is delayed by `periodMs`).
   // Calls `fetchConfigs()` to both get the latest config and update the cache,
-  // otherwise `invalidateAll()` would re-render the root layout from a stale cache
+  // otherwise `refreshAll()` would re-render the root layout from a stale cache
   // and trigger the version mismatch in a loop.
   let dismissTimeout: ReturnType<typeof setTimeout> | undefined
   $effect.pre(() =>
@@ -72,7 +72,7 @@
         const currentRevision = data.feldera!.revision
         if (config && (config.version !== currentVersion || config.revision !== currentRevision)) {
           // Automatically refresh the page data to get the new backend version
-          await invalidateAll()
+          await refreshAll()
 
           // Show a notification that the backend was updated
           const msgId = `backend_version_changed`

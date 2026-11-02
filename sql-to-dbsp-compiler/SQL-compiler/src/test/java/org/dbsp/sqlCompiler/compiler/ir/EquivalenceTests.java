@@ -56,7 +56,7 @@ public class EquivalenceTests {
 
     static IDBSPInnerNode cse(DBSPCompiler compiler, DBSPClosureExpression closure) {
         DBSPOperator fake = new DBSPConstantOperator(
-                CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()), false);
+                CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()));
         ValueNumbering numbering = new ValueNumbering(compiler);
         numbering.setOperatorContext(fake);
         numbering.apply(closure);

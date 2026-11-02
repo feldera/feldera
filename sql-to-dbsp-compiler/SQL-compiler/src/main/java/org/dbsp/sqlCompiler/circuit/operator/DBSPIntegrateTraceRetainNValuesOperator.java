@@ -17,7 +17,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Utilities;
 
@@ -54,7 +53,7 @@ public final class DBSPIntegrateTraceRetainNValuesOperator
             CalciteRelNode node, DBSPExpression function,
             OutputPort data, OutputPort control, int n, WhichN which) {
         super(node, "accumulate_integrate_trace_retain_values_" + which.which,
-                function, data.outputType(), data.isMultiset(), data, control);
+                function, data.outputType(), data, control);
         Utilities.enforce(n > 0);
         this.n = n;
         this.which = which;
@@ -67,11 +66,6 @@ public final class DBSPIntegrateTraceRetainNValuesOperator
             DBSPCompiler compiler, CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection,
             OutputPort control, int n, WhichN which, @Nullable DBSPClosureExpression alsoRetain) {
         DBSPType controlType = control.outputType();
-        Utilities.enforce(controlType.is(DBSPTypeTupleBase.class),
-                () -> "Control type is not a tuple: " + controlType);
-        DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
-        Utilities.enforce(controlTuple.size() == 2);
-
         DBSPVariablePath controlArg = controlType.ref().var();
         Utilities.enforce(data.outputType().is(DBSPTypeIndexedZSet.class),
                 () -> "Data is not indexed: " + data.outputType());
@@ -82,11 +76,8 @@ public final class DBSPIntegrateTraceRetainNValuesOperator
                 .to(PartiallyMonotoneTuple.class)
                 .getFieldType(1)
                 .projectExpression(dataArg.deref());
-        DBSPExpression compare0 = controlArg.deref().field(0).not();
         DBSPExpression compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
-                project, controlArg.deref().field(1), DBSPOpcode.CONTROLLED_FILTER_GTE);
-        compare = ExpressionCompiler.makeBinaryExpression(
-                node, compare.getType(), DBSPOpcode.OR, compare0, compare);
+                project, controlArg.deref(), DBSPOpcode.CONTROLLED_FILTER_GTE);
         if (alsoRetain != null) {
             DBSPExpression retained = alsoRetain.call(dataArg.deepCopy()).reduce(compiler);
             compare = ExpressionCompiler.makeBinaryExpression(

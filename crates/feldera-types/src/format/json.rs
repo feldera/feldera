@@ -225,3 +225,57 @@ impl Default for JsonEncoderConfig {
         }
     }
 }
+
+/// A JSON formatter that writes floats with `ryu`, as `serde_json` 1.0.148
+/// and earlier did, so the JSON text of a float does not change with
+/// `serde_json` updates (1.0.149 writes `1e20` as `1e+20`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct JsonFloatFormatter;
+
+impl serde_json::ser::Formatter for JsonFloatFormatter {
+    // `serde_json` writes non-finite values as `null` without calling these.
+    fn write_f32<W: ?Sized + std::io::Write>(
+        &mut self,
+        writer: &mut W,
+        value: f32,
+    ) -> std::io::Result<()> {
+        writer.write_all(ryu::Buffer::new().format_finite(value).as_bytes())
+    }
+
+    fn write_f64<W: ?Sized + std::io::Write>(
+        &mut self,
+        writer: &mut W,
+        value: f64,
+    ) -> std::io::Result<()> {
+        writer.write_all(ryu::Buffer::new().format_finite(value).as_bytes())
+    }
+}
+
+/// A `serde_json` serializer that writes floats with [`JsonFloatFormatter`].
+pub fn json_serializer<W: std::io::Write>(
+    writer: W,
+) -> serde_json::Serializer<W, JsonFloatFormatter> {
+    serde_json::Serializer::with_formatter(writer, JsonFloatFormatter)
+}
+
+/// Like `serde_json::to_string`, with floats written by [`JsonFloatFormatter`].
+pub fn to_json_string<T: Serialize + ?Sized>(value: &T) -> serde_json::Result<String> {
+    let mut json = Vec::new();
+    value.serialize(&mut json_serializer(&mut json))?;
+    String::from_utf8(json).map_err(serde::ser::Error::custom)
+}
+
+#[cfg(test)]
+mod float_format_tests {
+    use super::to_json_string;
+
+    #[test]
+    fn floats_keep_their_json_text() {
+        let doubles = [1e20, -3.4e38, 1.5e-7, 123.25, 1e15, f64::NAN];
+        assert_eq!(
+            to_json_string(&doubles).unwrap(),
+            "[1e20,-3.4e38,1.5e-7,123.25,1000000000000000.0,null]"
+        );
+        assert_eq!(to_json_string(&3.4e38f32).unwrap(), "3.4e38");
+    }
+}

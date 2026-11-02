@@ -28,6 +28,7 @@ use feldera_types::config::{PipelineConfigProgramInfo, UdfLibrary};
 use indoc::formatdoc;
 use std::collections::HashSet;
 use std::env::consts::{DLL_PREFIX, DLL_SUFFIX};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -339,7 +340,7 @@ fn toml_basic_string(value: &str) -> String {
             '"' => quoted.push_str("\\\""),
             '\\' => quoted.push_str("\\\\"),
             character if character.is_control() => {
-                quoted.push_str(&format!("\\u{:04X}", u32::from(character)))
+                let _ = write!(&mut quoted, "\\u{:04X}", u32::from(character));
             }
             character => quoted.push(character),
         }

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { asyncReadable } from '@square/svelte-store'
   import { Select } from 'common-ui'
-  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+  import GenericDialog from '#lib/components/dialogs/GenericDialog.svelte'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
   import {
     addTenantUser,
     getAuthConfig,
@@ -10,7 +10,7 @@
     removeTenantUser,
     setTenantUserRole,
     type TenantUser
-  } from '$lib/services/pipelineManager'
+  } from '#lib/services/pipelineManager.ts'
 
   // Optional tenant (UUID/name): an owner viewing another tenant's members via
   // the admin page's per-tenant picker, without changing the global selection.

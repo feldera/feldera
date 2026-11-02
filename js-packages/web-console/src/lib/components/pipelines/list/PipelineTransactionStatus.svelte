@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { statusChipClass, statusToneColors } from '$lib/functions/pipelineStatusColor'
-  import type { GlobalMetricsTimestamp } from '$lib/types/pipelineManager'
+  import { statusChipClass, statusToneColors } from '#lib/functions/pipelineStatusColor.ts'
+  import type { GlobalMetricsTimestamp } from '#lib/types/pipelineManager.ts'
 
   let {
     globalMetrics,

@@ -42,6 +42,7 @@ use dbsp::{
 };
 use erased_serde::{Serialize as ErasedSerialize, Serializer as ErasedSerializer};
 use feldera_storage::tokio::TOKIO;
+use feldera_types::format::json::json_serializer;
 #[cfg(feature = "with-dynamodb")]
 use feldera_types::serde_with_context::serde_config::{BinaryFormat, VariantFormat};
 use feldera_types::serde_with_context::serialize::{
@@ -223,7 +224,7 @@ impl JsonSerializer {
 
 impl BytesSerializer for JsonSerializer {
     fn serialize(&mut self, val: &dyn ErasedSerialize, buf: &mut Vec<u8>) -> AnyResult<()> {
-        val.serialize(&mut serde_json::Serializer::new(buf))?;
+        val.serialize(&mut json_serializer(buf))?;
         Ok(())
     }
 }
@@ -1160,5 +1161,19 @@ where
         self.cursor.seek_key(key);
         self.update_key();
         self.update_val();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_output_keeps_float_text() {
+        let mut buf = Vec::new();
+        JsonSerializer::create()
+            .serialize(&(1e20f64, 3.4e38f32, -0.0f64), &mut buf)
+            .unwrap();
+        assert_eq!(String::from_utf8(buf).unwrap(), "[1e20,3.4e38,-0.0]");
     }
 }

@@ -1,5 +1,5 @@
 mod output;
 #[cfg(test)]
-mod test;
+pub(crate) mod test;
 
 pub use output::KafkaOutputEndpoint;

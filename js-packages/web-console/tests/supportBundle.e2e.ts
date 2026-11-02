@@ -1,14 +1,11 @@
 import { type BrowserContext, expect, type Page, type Request, test } from '@playwright/test'
-import { putPipeline } from '$lib/services/pipelineManager'
+import { putPipeline } from '#lib/services/pipelineManager.ts'
 import {
   cleanupPipeline,
-  configureTestClient,
   startPipelineAndWaitForRunning,
   TEST_COMPILATION_PROFILE,
   waitForCompilation
-} from '$lib/services/testPipelineHelpers'
-
-configureTestClient()
+} from '#lib/services/testPipelineHelpers.ts'
 
 const PIPELINE_NAME = `test-support-bundle-${Date.now()}`
 

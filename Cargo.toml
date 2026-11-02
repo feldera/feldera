@@ -1,6 +1,6 @@
 [workspace.package]
 authors = ["Feldera Team <dev@feldera.com>"]
-version = "0.372.0"
+version = "0.376.0"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/feldera/feldera"
 repository = "https://github.com/feldera/feldera"
@@ -67,10 +67,11 @@ async-channel = "2.3.1"
 # Its default feature set selects ring; aws-lc-rs is the same choice made
 # elsewhere in this workspace. The rest of the list restates the defaults, so
 # revisit it when upgrading.
-async-nats = { version = "0.47.0", default-features = false, features = [
+async-nats = { version = "0.51.0", default-features = false, features = [
     "server_2_10",
     "server_2_11",
     "server_2_12",
+    "server_2_14",
     "service",
     "aws-lc-rs",
     "jetstream",
@@ -104,6 +105,11 @@ aws-lc-rs = "1.18.0"
 rsa = { version = "0.9.10", features = ["std"] }
 rcgen = { version = "0.14.8", default-features = false, features = ["pem", "aws_lc_rs"] }
 tokio-postgres-rustls = { version = "0.14.0", default-features = false, features = ["aws-lc-rs"] }
+# Pulled in by async-nats for ws:// server URLs. Its default hashes the
+# websocket handshake with sha1_smol; the feature keeps it on aws-lc-rs.
+# Keep the version in sync with the one async-nats depends on, or the
+# lockfile ends up with two copies and only async-nats's one is used.
+tokio-websockets = { version = "0.13.3", default-features = false, features = ["aws_lc_rs"] }
 base64 = "0.22.1"
 base58 = "0.2.0"
 binrw = "0.15.2"
@@ -134,7 +140,7 @@ dashmap = "6.1.0"
 # TODO: un-ignore `a_spilling_aggregation_does_not_deadlock` once a release
 # carries apache/datafusion#24891.
 datafusion = "55"
-dbsp = { path = "crates/dbsp", version = "0.372.0" }
+dbsp = { path = "crates/dbsp", version = "0.376.0" }
 # JSON functions applied to strings.
 datafusion-functions-json = "0.55.4"
 dbsp_nexmark = { path = "crates/nexmark" }
@@ -170,22 +176,22 @@ erased-serde = "0.3.31"
 fake = "2.10"
 fastbloom = "0.14.0"
 fdlimit = "0.3.0"
-feldera-buffer-cache = { version = "0.372.0", path = "crates/buffer-cache" }
+feldera-buffer-cache = { version = "0.376.0", path = "crates/buffer-cache" }
 feldera-cloud1-client = "0.3.0"
 feldera-datagen = { path = "crates/datagen" }
-feldera-fxp = { version = "0.372.0", path = "crates/fxp" }
+feldera-fxp = { version = "0.376.0", path = "crates/fxp" }
 feldera-iceberg = { path = "crates/iceberg" }
-feldera-observability = { version = "0.372.0", path = "crates/feldera-observability" }
-feldera-mtls = { version = "0.372.0", path = "crates/feldera-mtls" }
-feldera-macros = { version = "0.372.0", path = "crates/feldera-macros" }
-feldera-modular-bloom = { version = "0.372.0", path = "crates/modular-bloom" }
-feldera-sqllib = { version = "0.372.0", path = "crates/sqllib" }
-feldera-storage = { version = "0.372.0", path = "crates/storage" }
-feldera-types = { version = "0.372.0", path = "crates/feldera-types" }
-feldera-rest-api = { version = "0.372.0", path = "crates/rest-api" }
-feldera-ir = { version = "0.372.0", path = "crates/ir" }
-feldera-adapterlib = { version = "0.372.0", path = "crates/adapterlib" }
-feldera-samply = { version = "0.372.0", path = "crates/samply" }
+feldera-observability = { version = "0.376.0", path = "crates/feldera-observability" }
+feldera-mtls = { version = "0.376.0", path = "crates/feldera-mtls" }
+feldera-macros = { version = "0.376.0", path = "crates/feldera-macros" }
+feldera-modular-bloom = { version = "0.376.0", path = "crates/modular-bloom" }
+feldera-sqllib = { version = "0.376.0", path = "crates/sqllib" }
+feldera-storage = { version = "0.376.0", path = "crates/storage" }
+feldera-types = { version = "0.376.0", path = "crates/feldera-types" }
+feldera-rest-api = { version = "0.376.0", path = "crates/rest-api" }
+feldera-ir = { version = "0.376.0", path = "crates/ir" }
+feldera-adapterlib = { version = "0.376.0", path = "crates/adapterlib" }
+feldera-samply = { version = "0.376.0", path = "crates/samply" }
 flate2 = "1.1.0"
 form_urlencoded = "1.2.0"
 fs_extra = "1.3.0"

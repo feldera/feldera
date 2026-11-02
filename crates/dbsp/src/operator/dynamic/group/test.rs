@@ -1,7 +1,11 @@
 #![allow(clippy::type_complexity)]
 
-use std::{cmp::Ordering, sync::Arc};
+use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 
+use super::rank::test::{
+    OrderByFirstTupleField, multiset_to_indexed_zset, reference_dense_rank_custom_order,
+    reference_rank_custom_order, reference_row_number_custom_order,
+};
 use crate::utils::test::CIRCUIT_CASES;
 use crate::{
     DBData, DynZWeight, RootCircuit, Runtime, ZWeight,
@@ -14,7 +18,8 @@ use crate::{
         test::test_batch::{TestBatch, TestBatchFactories, assert_batch_eq, assert_typed_batch_eq},
     },
     typed_batch::{
-        BatchReader, DynBatchReader, DynOrdIndexedZSet, OrdIndexedZSet, SpineSnapshot, TypedBatch,
+        BatchReader, DynBatchReader, DynOrdIndexedZSet, IndexedZSetReader, OrdIndexedZSet,
+        SpineSnapshot, TypedBatch,
     },
     utils::{Tup2, Tup3, Tup4},
 };
@@ -212,6 +217,7 @@ fn topk_test_circuit(
 
 fn topk_custom_ord_test_circuit(
     circuit: &mut RootCircuit,
+    k: usize,
 ) -> AnyResult<(
     IndexedZSetHandle<i32, Tup3<String, i32, i32>>,
     OutputHandle<OrdIndexedZSet<i32, Tup3<String, i32, i32>>>,
@@ -246,13 +252,13 @@ fn topk_custom_ord_test_circuit(
     }
 
     let topk_handle = input_stream
-        .topk_custom_order::<AscDesc>(5)
+        .topk_custom_order::<AscDesc>(k)
         .integrate()
         .output();
 
     let topk_rank_handle = input_stream
         .topk_rank_custom_order::<AscDesc, _, _, _>(
-            5,
+            k,
             |Tup3(_, x1, y1), Tup3(_, x2, y2)| x1 == x2 && y1 == y2,
             |rank, Tup3(s, x, y)| Tup4(rank, s.clone(), *x, *y),
         )
@@ -261,7 +267,7 @@ fn topk_custom_ord_test_circuit(
 
     let topk_dense_rank_handle = input_stream
         .topk_dense_rank_custom_order::<AscDesc, _, _, _>(
-            5,
+            k,
             |Tup3(_, x1, y1), Tup3(_, x2, y2)| x1 == x2 && y1 == y2,
             |rank, Tup3(s, x, y)| Tup4(rank, s.clone(), *x, *y),
         )
@@ -269,7 +275,7 @@ fn topk_custom_ord_test_circuit(
         .output();
 
     let topk_row_number_handle = input_stream
-        .topk_row_number_custom_order::<AscDesc, _, _>(5, |rank, Tup3(s, x, y)| {
+        .topk_row_number_custom_order::<AscDesc, _, _>(k, |rank, Tup3(s, x, y)| {
             Tup4(rank, s.clone(), *x, *y)
         })
         .integrate()
@@ -532,7 +538,7 @@ fn test_topk_custom_ord() {
             topk_dense_rank_handle,
             topk_row_number_handle,
         ),
-    ) = Runtime::init_circuit(4, topk_custom_ord_test_circuit).unwrap();
+    ) = Runtime::init_circuit(4, |circuit| topk_custom_ord_test_circuit(circuit, 5)).unwrap();
 
     let trace = vec![
         vec![
@@ -572,6 +578,12 @@ fn test_topk_custom_ord() {
             (1, Tup3("foo".to_string(), 7, 96), 1),
             (1, Tup3("baz".to_string(), 8, 96), 1),
         ],
+        // A row of weight 2 leads the second peer group. Four rows precede
+        // the group, so it ranks 5 and stays in the output.
+        vec![
+            (1, Tup3("foo".to_string(), 7, 96), 2),
+            (1, Tup3("bar".to_string(), 8, 96), 1),
+        ],
     ];
     let mut expected_output = vec![indexed_zset! {
         1 => {Tup3("foo".to_string(), 8, 98) => 1, Tup3("foo".to_string(), 8, 97) => 1, Tup3("foo".to_string(), 9, 99) => 1, Tup3("foo".to_string(), 9, 98) => 1, Tup3("foo".to_string(), 10, 100) => 1},
@@ -593,6 +605,9 @@ fn test_topk_custom_ord() {
     },
     indexed_zset! {
         1 => {Tup3("foo".to_string(), 7, 96) => 2, Tup3("bar".to_string(), 8, 96) => 1, Tup3("baz".to_string(), 8, 96) => 2, Tup3("buzz".to_string(), 8, 96) => 1, Tup3("foo".to_string(), 8, 96) => 1},
+    },
+    indexed_zset! {
+        1 => {Tup3("foo".to_string(), 7, 96) => 4, Tup3("bar".to_string(), 8, 96) => 2, Tup3("baz".to_string(), 8, 96) => 2, Tup3("buzz".to_string(), 8, 96) => 1, Tup3("foo".to_string(), 8, 96) => 1},
     }]
     .into_iter();
 
@@ -616,6 +631,9 @@ fn test_topk_custom_ord() {
     },
     indexed_zset! {
         1 => {Tup4(1, "foo".to_string(), 7, 96) => 2, Tup4(3, "bar".to_string(), 8, 96) => 1, Tup4(3, "baz".to_string(), 8, 96) => 2, Tup4(3, "buzz".to_string(), 8, 96) => 1, Tup4(3, "foo".to_string(), 8, 96) => 1, Tup4(3, "foobar".to_string(), 8, 96) => 1, Tup4(3, "fubar".to_string(), 8, 96) => 1},
+    },
+    indexed_zset! {
+        1 => {Tup4(1, "foo".to_string(), 7, 96) => 4, Tup4(5, "bar".to_string(), 8, 96) => 2, Tup4(5, "baz".to_string(), 8, 96) => 2, Tup4(5, "buzz".to_string(), 8, 96) => 1, Tup4(5, "foo".to_string(), 8, 96) => 1, Tup4(5, "foobar".to_string(), 8, 96) => 1, Tup4(5, "fubar".to_string(), 8, 96) => 1},
     }]
     .into_iter();
 
@@ -639,6 +657,9 @@ fn test_topk_custom_ord() {
     },
     indexed_zset! {
         1 => {Tup4(1, "foo".to_string(), 7, 96) => 2, Tup4(2, "bar".to_string(), 8, 96) => 1, Tup4(2, "baz".to_string(), 8, 96) => 2, Tup4(2, "buzz".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 96) => 1, Tup4(2, "foobar".to_string(), 8, 96) => 1, Tup4(2, "fubar".to_string(), 8, 96) => 1, Tup4(3, "foo".to_string(), 8, 95) => 1, Tup4(4, "foo".to_string(), 9, 97) => 1, Tup4(5, "foo".to_string(), 9, 96) => 1},
+    },
+    indexed_zset! {
+        1 => {Tup4(1, "foo".to_string(), 7, 96) => 4, Tup4(2, "bar".to_string(), 8, 96) => 2, Tup4(2, "baz".to_string(), 8, 96) => 2, Tup4(2, "buzz".to_string(), 8, 96) => 1, Tup4(2, "foo".to_string(), 8, 96) => 1, Tup4(2, "foobar".to_string(), 8, 96) => 1, Tup4(2, "fubar".to_string(), 8, 96) => 1, Tup4(3, "foo".to_string(), 8, 95) => 1, Tup4(4, "foo".to_string(), 9, 97) => 1, Tup4(5, "foo".to_string(), 9, 96) => 1},
     }]
     .into_iter();
 
@@ -662,6 +683,9 @@ fn test_topk_custom_ord() {
     },
     indexed_zset! {
         1 => {Tup4(1, "foo".to_string(), 7, 96) => 1, Tup4(2, "foo".to_string(), 7, 96) => 1, Tup4(3, "bar".to_string(), 8, 96) => 1, Tup4(4, "baz".to_string(), 8, 96) => 1, Tup4(5, "baz".to_string(), 8, 96) => 1},
+    },
+    indexed_zset! {
+        1 => {Tup4(1, "foo".to_string(), 7, 96) => 1, Tup4(2, "foo".to_string(), 7, 96) => 1, Tup4(3, "foo".to_string(), 7, 96) => 1, Tup4(4, "foo".to_string(), 7, 96) => 1, Tup4(5, "bar".to_string(), 8, 96) => 1},
     }]
     .into_iter();
 
@@ -693,6 +717,30 @@ fn test_topk_custom_ord() {
             &expected_row_number_output.next().unwrap(),
         );
     }
+}
+
+#[test]
+fn test_topk_custom_ord_zero() {
+    let (
+        mut dbsp,
+        (
+            input_handle,
+            topk_handle,
+            topk_rank_handle,
+            topk_dense_rank_handle,
+            topk_row_number_handle,
+        ),
+    ) = Runtime::init_circuit(4, |circuit| topk_custom_ord_test_circuit(circuit, 0)).unwrap();
+
+    input_handle.push(1, (Tup3("foo".to_string(), 10, 100), 1));
+    input_handle.push(1, (Tup3("foo".to_string(), 9, 99), 2));
+    dbsp.transaction().unwrap();
+
+    // Ranks and row numbers start at 1, so no row qualifies.
+    assert!(topk_handle.consolidate().is_empty());
+    assert!(topk_rank_handle.consolidate().is_empty());
+    assert!(topk_dense_rank_handle.consolidate().is_empty());
+    assert!(topk_row_number_handle.consolidate().is_empty());
 }
 
 #[test]
@@ -891,6 +939,193 @@ fn test_topk(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
     }
 }
 
+/// Strategy for batches of updates to the input of `topk_rank_test_circuit`.
+///
+/// Each update is `(key, Tup2(ranked, tie_break), weight)`, and a negative
+/// weight deletes copies of a row. The ranges are small, so rows often tie on
+/// the ranked field and often repeat whole, which gives them weights above 1.
+fn topk_rank_trace() -> impl Strategy<Value = Vec<Vec<(u64, Tup2<u64, u64>, ZWeight)>>> {
+    vec(
+        vec(
+            (0..3u64, 0..4u64, 0..3u64, -2..=3i64).prop_map(|(key, ranked, tie_break, weight)| {
+                (key, Tup2(ranked, tie_break), weight)
+            }),
+            0..10,
+        ),
+        1..20,
+    )
+}
+
+/// Builds a circuit that computes top-k RANK, DENSE_RANK, and ROW_NUMBER of
+/// the same input.
+///
+/// Rows are ranked by `Tup2::0`, and `Tup2::1` orders the rows of a peer group.
+/// Each output row is `Tup3(ranked, tie_break, rank)`.
+///
+/// # Arguments
+///
+/// * `circuit` - The circuit to build.
+/// * `k` - The number of ranks to keep (row numbers for ROW_NUMBER).
+///
+/// # Returns
+///
+/// The input handle and the integrated outputs of RANK, DENSE_RANK, and
+/// ROW_NUMBER, in that order.
+fn topk_rank_test_circuit(
+    circuit: &mut RootCircuit,
+    k: usize,
+) -> AnyResult<(
+    IndexedZSetHandle<u64, Tup2<u64, u64>>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, i64>>>>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, i64>>>>,
+    OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, Tup3<u64, u64, i64>>>>,
+)> {
+    let (input_stream, input_handle) = circuit.add_input_indexed_zset::<u64, Tup2<u64, u64>>();
+
+    let rank_handle = input_stream
+        .topk_rank_custom_order::<OrderByFirstTupleField, _, _, _>(
+            k,
+            |left, right| left.0 == right.0,
+            |rank, value| Tup3(value.0, value.1, rank),
+        )
+        .accumulate_integrate()
+        .accumulate_output();
+    let dense_rank_handle = input_stream
+        .topk_dense_rank_custom_order::<OrderByFirstTupleField, _, _, _>(
+            k,
+            |left, right| left.0 == right.0,
+            |rank, value| Tup3(value.0, value.1, rank),
+        )
+        .accumulate_integrate()
+        .accumulate_output();
+    let row_number_handle = input_stream
+        .topk_row_number_custom_order::<OrderByFirstTupleField, _, _>(k, |row_number, value| {
+            Tup3(value.0, value.1, row_number)
+        })
+        .accumulate_integrate()
+        .accumulate_output();
+
+    Ok((
+        input_handle,
+        rank_handle,
+        dense_rank_handle,
+        row_number_handle,
+    ))
+}
+
+/// Pushes `batch` to `input_handle` and applies it to `multiset`.
+///
+/// An update never deletes more copies of a row than `multiset` holds, so the
+/// input stays a valid table, with no negative weights.
+///
+/// # Arguments
+///
+/// * `input_handle` - The input of the circuit.
+/// * `multiset` - The contents of the input, which the function updates.
+/// * `batch` - The updates to apply.
+fn push_clamped(
+    input_handle: &IndexedZSetHandle<u64, Tup2<u64, u64>>,
+    multiset: &mut HashMap<(u64, Tup2<u64, u64>), ZWeight>,
+    batch: Vec<(u64, Tup2<u64, u64>, ZWeight)>,
+) {
+    for (key, value, weight) in batch {
+        let current = multiset.entry((key, value)).or_insert(0);
+        let weight = weight.max(-*current);
+        if weight != 0 {
+            *current += weight;
+            input_handle.push(key, (value, weight));
+        }
+    }
+}
+
+/// Returns the rows of `ranked` whose rank, the last field, is at most `k`.
+fn rank_at_most(
+    ranked: OrdIndexedZSet<u64, Tup3<u64, u64, i64>>,
+    k: usize,
+) -> OrdIndexedZSet<u64, Tup3<u64, u64, i64>> {
+    let tuples = ranked
+        .iter()
+        .filter(|(_, Tup3(_, _, rank), _)| *rank <= k as i64)
+        .map(|(key, value, weight)| Tup2(Tup2(key, value), weight))
+        .collect();
+    OrdIndexedZSet::from_tuples((), tuples)
+}
+
+/// Checks top-k RANK, DENSE_RANK, and ROW_NUMBER on `trace` against the
+/// reference models in `rank::test`, cut at rank `k`.
+///
+/// # Arguments
+///
+/// * `k` - The number of ranks to keep (row numbers for ROW_NUMBER).
+/// * `trace` - Batches of updates to the input.
+/// * `transaction` - Whether to run all batches in one transaction and check
+///   the outputs at commit, instead of one transaction per batch with a check
+///   after each.
+fn test_topk_rank(k: usize, trace: Vec<Vec<(u64, Tup2<u64, u64>, ZWeight)>>, transaction: bool) {
+    let (mut dbsp, (input_handle, rank_handle, dense_rank_handle, row_number_handle)) =
+        Runtime::init_circuit(
+            CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+            move |circuit| topk_rank_test_circuit(circuit, k),
+        )
+        .unwrap();
+
+    let check = |multiset: &HashMap<(u64, Tup2<u64, u64>), ZWeight>| {
+        let input = multiset_to_indexed_zset(multiset);
+
+        let expected_rank = rank_at_most(
+            reference_rank_custom_order::<_, _, OrderByFirstTupleField, _, _, _>(
+                &input,
+                |left, right| left.0.cmp(&right.0),
+                |rank, value| Tup3(value.0, value.1, rank),
+            ),
+            k,
+        );
+        assert_typed_batch_eq(&rank_handle.concat().consolidate(), &expected_rank);
+
+        let expected_dense_rank = rank_at_most(
+            reference_dense_rank_custom_order::<_, _, OrderByFirstTupleField, _, _, _>(
+                &input,
+                |left, right| left.0.cmp(&right.0),
+                |rank, value| Tup3(value.0, value.1, rank),
+            ),
+            k,
+        );
+        assert_typed_batch_eq(
+            &dense_rank_handle.concat().consolidate(),
+            &expected_dense_rank,
+        );
+
+        let expected_row_number = rank_at_most(
+            reference_row_number_custom_order::<_, _, OrderByFirstTupleField, _, _>(
+                &input,
+                |row_number, value| Tup3(value.0, value.1, row_number),
+            ),
+            k,
+        );
+        assert_typed_batch_eq(
+            &row_number_handle.concat().consolidate(),
+            &expected_row_number,
+        );
+    };
+
+    let mut multiset = HashMap::new();
+    if transaction {
+        dbsp.start_transaction().unwrap();
+        for batch in trace {
+            push_clamped(&input_handle, &mut multiset, batch);
+            dbsp.step().unwrap();
+        }
+        dbsp.commit_transaction().unwrap();
+        check(&multiset);
+    } else {
+        for batch in trace {
+            push_clamped(&input_handle, &mut multiset, batch);
+            dbsp.transaction().unwrap();
+            check(&multiset);
+        }
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
 
@@ -902,6 +1137,16 @@ proptest! {
     #[test]
     fn test_topk_big_step(trace in input_trace(5, 1_000, 200, 20)) {
         test_topk(trace, true)
+    }
+
+    #[test]
+    fn test_topk_rank_small_step(k in 0..=6usize, trace in topk_rank_trace()) {
+        test_topk_rank(k, trace, false)
+    }
+
+    #[test]
+    fn test_topk_rank_big_step(k in 0..=6usize, trace in topk_rank_trace()) {
+        test_topk_rank(k, trace, true)
     }
 
     #[test]

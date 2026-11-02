@@ -125,16 +125,17 @@ enum PublishFailure {
 
 /// Classifies an ack error from `async-nats`.
 ///
-/// `Other` carries server errors the client does not map to a kind (such as
-/// an exceeded message size, which the pre-publish check keeps off this
-/// path): retried, because a transient server-side condition also lands
-/// here, and the retry loop logs the error text so a permanent one is
-/// visible in the logs.
+/// `MaxPayloadExceeded` is the client's own size check, which the
+/// pre-publish check keeps off this path. `Other` carries server errors the
+/// client does not map to a kind: retried, because a transient server-side
+/// condition also lands here, and the retry loop logs the error text so a
+/// permanent one is visible in the logs.
 fn classify(error: jetstream::context::PublishError) -> PublishFailure {
     match error.kind() {
         PublishErrorKind::StreamNotFound
         | PublishErrorKind::WrongLastMessageId
-        | PublishErrorKind::WrongLastSequence => PublishFailure::Permanent(error.into()),
+        | PublishErrorKind::WrongLastSequence
+        | PublishErrorKind::MaxPayloadExceeded => PublishFailure::Permanent(error.into()),
         PublishErrorKind::TimedOut
         | PublishErrorKind::BrokenPipe
         | PublishErrorKind::MaxAckPending

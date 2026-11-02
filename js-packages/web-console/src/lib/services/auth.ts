@@ -1,7 +1,7 @@
 import * as AxaOidc from '@axa-fr/oidc-client'
-import { errorCodeOf, requestTenantRecheck } from '$lib/compositions/tenantAccess'
-import { resolve } from '$lib/functions/svelte'
-import { stashRedirectTarget } from '$lib/services/redirectTarget'
+import { errorCodeOf, requestTenantRecheck } from '#lib/compositions/tenantAccess.ts'
+import { resolve } from '#lib/functions/svelte.ts'
+import { stashRedirectTarget } from '#lib/services/redirectTarget.ts'
 
 const { OidcClient } = AxaOidc
 

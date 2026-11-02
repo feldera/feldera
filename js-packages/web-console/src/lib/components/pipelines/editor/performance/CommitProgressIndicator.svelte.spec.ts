@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
+import type { PipelineMetrics } from '#lib/functions/pipelineMetrics.ts'
 import type {
   CommitProgressSummary,
   ConcurrentBootstrapPhase,
   TransactionStatus
-} from '$lib/services/manager'
+} from '#lib/services/manager/index.ts'
 import CommitProgressIndicator from './CommitProgressIndicator.svelte'
 
 const progress = (completed: number, in_progress: number, remaining: number) =>

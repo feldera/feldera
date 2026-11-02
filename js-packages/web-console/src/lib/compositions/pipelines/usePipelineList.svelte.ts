@@ -1,5 +1,5 @@
-import { useInterval } from '$lib/compositions/common/useInterval.svelte'
-import type { PipelineThumb } from '$lib/services/pipelineManager'
+import { useInterval } from '#lib/compositions/common/useInterval.svelte.ts'
+import type { PipelineThumb } from '#lib/services/pipelineManager.ts'
 import { type PipelineManagerApi, usePipelineManager } from '../usePipelineManager.svelte'
 
 let pipelines = $state<PipelineThumb[] | undefined>(undefined)

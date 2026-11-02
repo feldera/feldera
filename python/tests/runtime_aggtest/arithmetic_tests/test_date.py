@@ -19,7 +19,7 @@ class arithtst_adate_minus_date(TstView):
 
 class arithtst_date_minus_date_str(TstView):
     def __init__(self):
-        # Validated on MySQL
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
@@ -37,7 +37,7 @@ class arithtst_date_minus_date_str(TstView):
                 "hrs_str": "-23520",
                 "days_str": "-980",
                 "mths_str": "-32",
-                "yrs_str": "-2",
+                "yrs_str": "-3",
             },
             {
                 "id": 2,
@@ -46,7 +46,7 @@ class arithtst_date_minus_date_str(TstView):
                 "hrs_str": "+180144",
                 "days_str": "+7506",
                 "mths_str": "+246",
-                "yrs_str": "+20",
+                "yrs_str": "+21",
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_minus_date_str AS SELECT
@@ -112,24 +112,22 @@ class arithtst_date_minus_sinterval(TstView):
 
 class arithtst_date_minus_linterval(TstView):
     def __init__(self):
-        # Validated on MySQL
-        # The result of subtracting MONTH type interval matches with MySQL
-        # whereas YEARS behaves similarly as MONTHS in terms of accuracy
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "months": datetime.date(2014, 11, 5),
-                "years": datetime.date(2014, 11, 5),
+                "years": datetime.date(2014, 12, 5),
             },
             {
                 "id": 1,
                 "months": datetime.date(2023, 2, 21),
-                "years": datetime.date(2023, 2, 21),
+                "years": datetime.date(2023, 6, 21),
             },
             {
                 "id": 2,
                 "months": datetime.date(1948, 12, 21),
-                "years": datetime.date(1948, 12, 21),
+                "years": datetime.date(1948, 6, 21),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_minus_linterval AS SELECT
@@ -178,24 +176,22 @@ class arithtst_date_plus_sinterval(TstView):
 
 class arithtst_date_plus_linterval(TstView):
     def __init__(self):
-        # Validated on MySQL
-        # The result of adding MONTH type interval matches with MySQL
-        # whereas YEARS behaves similarly as MONTHS in terms of accuracy
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
                 "months": datetime.date(2035, 1, 5),
-                "years": datetime.date(2035, 1, 5),
+                "years": datetime.date(2034, 12, 5),
             },
             {
                 "id": 1,
                 "months": datetime.date(2017, 10, 21),
-                "years": datetime.date(2017, 10, 21),
+                "years": datetime.date(2017, 6, 21),
             },
             {
                 "id": 2,
                 "months": datetime.date(1989, 12, 21),
-                "years": datetime.date(1989, 12, 21),
+                "years": datetime.date(1990, 6, 21),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW date_plus_linterval AS SELECT
@@ -245,7 +241,7 @@ class arithtst_dt_sub_sinterval(TstView):
 
 class arithtst_dt_sub_linterval(TstView):
     def __init__(self):
-        # Validated on MySQL
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
@@ -255,12 +251,12 @@ class arithtst_dt_sub_linterval(TstView):
             {
                 "id": 1,
                 "mths_str": datetime.date(2023, 2, 21),
-                "yrs_str": datetime.date(2022, 6, 21),
+                "yrs_str": datetime.date(2023, 6, 21),
             },
             {
                 "id": 2,
                 "mths_str": datetime.date(1948, 12, 21),
-                "yrs_str": datetime.date(1949, 6, 21),
+                "yrs_str": datetime.date(1948, 6, 21),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW dt_sub_linterval AS SELECT
@@ -309,7 +305,7 @@ class arithtst_dt_add_sinterval(TstView):
 
 class arithtst_dt_add_linterval(TstView):
     def __init__(self):
-        # Validated on MySQL
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
@@ -319,12 +315,12 @@ class arithtst_dt_add_linterval(TstView):
             {
                 "id": 1,
                 "mths_str": datetime.date(2017, 10, 21),
-                "yrs_str": datetime.date(2018, 6, 21),
+                "yrs_str": datetime.date(2017, 6, 21),
             },
             {
                 "id": 2,
                 "mths_str": datetime.date(1989, 12, 21),
-                "yrs_str": datetime.date(1989, 6, 21),
+                "yrs_str": datetime.date(1990, 6, 21),
             },
         ]
         self.sql = """CREATE MATERIALIZED VIEW dt_add_linterval AS SELECT
@@ -645,7 +641,7 @@ class arithtst_dt_plus_dttinterval(TstView):
 
 class arithtst_bneg_date(TstView):
     def __init__(self):
-        # Checked manually
+        # Validated on HSQLDB
         self.data = [
             {
                 "id": 0,
@@ -663,7 +659,7 @@ class arithtst_bneg_date(TstView):
                 "hours_neg": "+23520",
                 "days_neg": "+980",
                 "months_neg": "+32",
-                "years_neg": "+2",
+                "years_neg": "+3",
             },
             {
                 "id": 2,
@@ -672,7 +668,7 @@ class arithtst_bneg_date(TstView):
                 "hours_neg": "-180144",
                 "days_neg": "-7506",
                 "months_neg": "-246",
-                "years_neg": "-20",
+                "years_neg": "-21",
             },
         ]
         self.sql = """CREATE  MATERIALIZED VIEW bneg_date AS SELECT

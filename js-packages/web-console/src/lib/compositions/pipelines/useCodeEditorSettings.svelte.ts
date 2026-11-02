@@ -1,4 +1,4 @@
-import { useLocalStorage } from '$lib/compositions/localStore.svelte.js'
+import { useLocalStorage } from '#lib/compositions/localStore.svelte.js'
 
 export const useCodeEditorSettings = () => {
   const editorFontSize = useLocalStorage('layout/pipelines/editor/fontSize', 14)

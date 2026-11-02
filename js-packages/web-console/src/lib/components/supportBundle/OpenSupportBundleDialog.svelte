@@ -6,18 +6,18 @@
    * left of it picks a new one from disk. Both open a profile viewer tab, and that tab
    * reads the archive out of the bundle history itself.
    */
-  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
-  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { openStoredBundleTab } from '$lib/compositions/profileBundleHandoff'
-  import { useSupportBundleHistory } from '$lib/compositions/useSupportBundleHistory.svelte'
-  import { useToast } from '$lib/compositions/useToastNotification'
+  import GenericDialog from '#lib/components/dialogs/GenericDialog.svelte'
+  import { useElapsedTime } from '#lib/compositions/common/useElapsedTime.ts'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import { openStoredBundleTab } from '#lib/compositions/profileBundleHandoff.ts'
+  import { useSupportBundleHistory } from '#lib/compositions/useSupportBundleHistory.svelte.ts'
+  import { useToast } from '#lib/compositions/useToastNotification.ts'
   import {
     type BundleHistoryEntry,
     clearBundleHistory,
     isBundleCacheRequired,
     markBundleOpenedNow
-  } from '$lib/services/supportBundleHistory'
+  } from '#lib/services/supportBundleHistory.ts'
   import SupportBundlePopup from './SupportBundlePopup.svelte'
 
   const history = useSupportBundleHistory()

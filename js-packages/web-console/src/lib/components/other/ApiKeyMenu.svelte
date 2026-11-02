@@ -1,9 +1,9 @@
 <script lang="ts">
   import { asyncReadable } from '@square/svelte-store'
-  import NewApiKeyForm from '$lib/components/apiKey/NewApiKeyForm.svelte'
-  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import NewApiKeyForm from '#lib/components/apiKey/NewApiKeyForm.svelte'
+  import GenericDialog from '#lib/components/dialogs/GenericDialog.svelte'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import { usePipelineManager } from '#lib/compositions/usePipelineManager.svelte.ts'
 
   const api = usePipelineManager()
   const apiKeys = asyncReadable([], api.getApiKeys, { reloadable: true })

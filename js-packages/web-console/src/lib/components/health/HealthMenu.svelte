@@ -2,8 +2,8 @@
   import type { Loadable } from '@square/svelte-store'
   import { InlineDropdown } from 'common-ui'
   import { slide } from 'svelte/transition'
-  import ErrorTile from '$lib/components/health/ErrorTile.svelte'
-  import type { SystemError } from '$lib/compositions/health/systemErrors'
+  import ErrorTile from '#lib/components/health/ErrorTile.svelte'
+  import type { SystemError } from '#lib/compositions/health/systemErrors.ts'
 
   const { systemErrors, close }: { systemErrors: Loadable<SystemError[]>; close?: () => void } =
     $props()

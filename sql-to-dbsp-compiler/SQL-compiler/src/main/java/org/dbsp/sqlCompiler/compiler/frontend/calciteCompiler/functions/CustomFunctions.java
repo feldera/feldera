@@ -72,6 +72,7 @@ public class CustomFunctions {
         this.functions.add(Bin2Utf8Function.INSTANCE);
         this.functions.add(BlackboxFunction.INSTANCE);
         this.functions.add(BroundFunction.INSTANCE);
+        this.functions.add(ChrFunction.INSTANCE);
         this.functions.add(ConnectorMetadataFunction.INSTANCE);
         this.functions.add(ConvertTimezoneFunction.INSTANCE);
         this.functions.add(DivNullFunction.INSTANCE);
@@ -213,6 +214,16 @@ public class CustomFunctions {
             super(SqlStdOperatorTable.ABS, "decimal#abs,float#abs,integer#abs,datetime#abs", """
                     runtime_aggtest/illarg_tests2/test_numeric_type_fn.py|
                     runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py""");
+        }
+    }
+
+    static class ChrFunction extends CalciteFunctionClone {
+        static final ChrFunction INSTANCE = new ChrFunction();
+
+        // Cannot be folded by Calcite, which builds a character outside the
+        // Basic Multilingual Plane as two UTF-16 code units
+        private ChrFunction() {
+            super(SqlLibraryOperators.CHR, "string#chr", FunctionDocumentation.NO_FILE);
         }
     }
 

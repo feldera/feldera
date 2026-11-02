@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { pipelineStatusColor } from '$lib/functions/pipelineStatusColor'
-  import { getDeploymentStatusLabel } from '$lib/functions/pipelines/status'
-  import type { PipelineStatus } from '$lib/services/pipelineManager'
+  import { pipelineStatusColor } from '#lib/functions/pipelineStatusColor.ts'
+  import { getDeploymentStatusLabel } from '#lib/functions/pipelines/status.ts'
+  import type { PipelineStatus } from '#lib/services/pipelineManager.ts'
 
   const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
 

@@ -42,12 +42,12 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utf8String;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -332,7 +332,7 @@ public class TableParser {
                             data = data.substring(1);
                             data = data.replace("\\n", "\n");
                         }
-                        yield new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, data, StandardCharsets.UTF_8);
+                        yield new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, Utf8String.fromJava(data));
                     }
                 }
                 case BOOL -> {

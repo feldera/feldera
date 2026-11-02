@@ -222,6 +222,18 @@ public class PostgresFloat8Tests extends SqlIoTest {
                  1.2345678901234e-200 |                    0
                 (5 rows)
 
+                -- trunc is the same as truncate
+                SELECT f.f1, trunc(f.f1) AS trunc_f1
+                   FROM FLOAT8_TBL f;
+                          f1          |       trunc_f1
+                ----------------------+----------------------
+                                    0 |                    0
+                               1004.3 |                 1004
+                               -34.84 |                  -34
+                 1.2345678901234e+200 | 1.2345678901234e+200
+                 1.2345678901234e-200 |                    0
+                (5 rows)
+
                 -- round
                 SELECT f.f1, round(f.f1) AS round_f1
                    FROM FLOAT8_TBL f;

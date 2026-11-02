@@ -3,15 +3,15 @@
   import { promisePool } from 'common-lib/promise'
   import { Tooltip } from 'common-ui'
   import { slide } from 'svelte/transition'
-  import Popup from '$lib/components/common/Popup.svelte'
-  import SlidingPanels from '$lib/components/common/SlidingPanels.svelte'
+  import Popup from '#lib/components/common/Popup.svelte'
+  import SlidingPanels from '#lib/components/common/SlidingPanels.svelte'
   import {
     usePipelineList,
     useUpdatePipelineList
-  } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import { usePermission } from '$lib/compositions/usePermission.svelte'
-  import type { PipelineManagerApi } from '$lib/compositions/usePipelineManager.svelte'
-  import { useToast } from '$lib/compositions/useToastNotification'
+  } from '#lib/compositions/pipelines/usePipelineList.svelte.ts'
+  import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
+  import type { PipelineManagerApi } from '#lib/compositions/usePipelineManager.svelte.ts'
+  import { useToast } from '#lib/compositions/useToastNotification.ts'
   import {
     parseTag,
     tagColorOf,
@@ -19,8 +19,8 @@
     tagDisplayName,
     tagWithColor,
     validateTag
-  } from '$lib/functions/pipelines/tags'
-  import { patchPipeline } from '$lib/services/pipelineManager'
+  } from '#lib/functions/pipelines/tags.ts'
+  import { patchPipeline } from '#lib/services/pipelineManager.ts'
 
   let {
     pipelineName,

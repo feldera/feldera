@@ -34,16 +34,16 @@ import javax.annotation.Nullable;
 public abstract class DBSPUnaryOperator extends DBSPSimpleOperator {
     protected DBSPUnaryOperator(CalciteRelNode node, String operation,
                                 @Nullable DBSPExpression function, DBSPType outputType,
-                                boolean isMultiset, OutputPort source) {
-        this(node, operation, function, outputType, isMultiset, source, null);
+                                OutputPort source) {
+        this(node, operation, function, outputType, source, null);
     }
 
     @SuppressWarnings("SameParameterValue")
     protected DBSPUnaryOperator(CalciteRelNode node, String operation,
                                 @Nullable DBSPExpression function, DBSPType outputType,
-                                boolean isMultiset, OutputPort source,
+                                OutputPort source,
                                 @Nullable String comment) {
-        super(node, operation, function, outputType, isMultiset, comment);
+        super(node, operation, function, outputType, comment);
         this.addInput(source);
     }
 

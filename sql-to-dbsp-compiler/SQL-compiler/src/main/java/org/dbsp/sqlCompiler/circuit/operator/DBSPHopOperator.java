@@ -32,7 +32,7 @@ public final class DBSPHopOperator extends DBSPUnaryOperator implements ILinear 
                            DBSPExpression interval,
                            DBSPExpression start, DBSPExpression size,
                            DBSPTypeZSet outputType, OutputPort input) {
-        super(node, "hop", null, outputType, input.isMultiset(), input);
+        super(node, "hop", null, outputType, input);
         this.timestampIndex = timestampIndex;
         this.interval = interval;
         this.start = start;

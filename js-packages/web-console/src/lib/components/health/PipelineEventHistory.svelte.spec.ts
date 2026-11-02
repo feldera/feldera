@@ -4,8 +4,8 @@
  */
 
 import { formatDateTime } from 'common-lib/format'
-import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
 import { PipelineEventHistory } from 'common-ui'
+import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
 import { describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'

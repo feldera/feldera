@@ -9,6 +9,8 @@ use actix_web::dev::ServiceRequest;
 use actix_web::http::header;
 use anyhow::{Context, Error as AnyError, Result as AnyResult};
 use clap::Parser;
+use feldera_types::config::ResourceConfig;
+use feldera_types::size::ConfigSize;
 use reqwest::Certificate;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::{ResolvesClientCert, WebPkiServerVerifier};
@@ -1512,6 +1514,35 @@ pub struct ApiServerConfig {
     #[serde(default)]
     #[arg(long, action = clap::ArgAction::Set, default_value_t = false, env = "FELDERA_ENABLE_PIPELINE_RESIZE")]
     pub enable_pipeline_resize: bool,
+
+    /// Allow only the storage classes in `--storage-classes` in `resources.storage_class`.
+    /// Set it the same as the runner.
+    #[serde(default)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = false, env = "FELDERA_ENABLE_STORAGE_CLASSES_ALLOWLIST")]
+    pub enable_storage_classes_allowlist: bool,
+
+    /// Storage classes allowed when `--enable-storage-classes-allowlist` is set.
+    #[serde(default)]
+    #[arg(long, value_delimiter = ',', env = "FELDERA_STORAGE_CLASSES")]
+    pub storage_classes: Vec<String>,
+
+    /// Allow only the volume attributes classes in `--volume-attributes-classes` in
+    /// `resources.volume_attributes_class`. Set it the same as the runner.
+    #[serde(default)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = false, env = "FELDERA_ENABLE_VOLUME_ATTRIBUTES_CLASSES_ALLOWLIST")]
+    pub enable_volume_attributes_classes_allowlist: bool,
+
+    /// Volume attributes classes allowed when `--enable-volume-attributes-classes-allowlist` is
+    /// set.
+    #[serde(default)]
+    #[arg(long, value_delimiter = ',', env = "FELDERA_VOLUME_ATTRIBUTES_CLASSES")]
+    pub volume_attributes_classes: Vec<String>,
+
+    /// Maximum `resources.storage_min` and `resources.storage_max`, in megabytes (M). Unset is
+    /// no maximum. Set it the same as the runner.
+    #[serde(default)]
+    #[arg(long, env = "FELDERA_UPPER_LIMIT_STORAGE_MEGABYTE")]
+    pub upper_limit_storage_megabyte: Option<f64>,
 }
 
 /// A trust relationship granting the platform-wide `owner` role, declared at
@@ -1608,6 +1639,53 @@ impl ApiServerConfig {
         Ok(())
     }
 
+    /// Refuses the storage in `resources` that the runner refuses at start.
+    pub(crate) fn check_storage(&self, resources: &ResourceConfig) -> Result<(), String> {
+        if let (Some(min), Some(max)) = (resources.storage_min, resources.storage_max)
+            && min > max
+        {
+            return Err(format!(
+                "resources.storage_min ({min}) is more than resources.storage_max ({max}). Lower storage_min or raise storage_max."
+            ));
+        }
+        let field = if resources.storage_max.is_some() {
+            "storage_max"
+        } else {
+            "storage_min"
+        };
+        if let Some(upper_limit) = self.upper_limit_storage_megabyte
+            && let Some(amount) = resources.storage_max.or(resources.storage_min)
+            && amount > ConfigSize::from_mb(upper_limit as u64)
+        {
+            return Err(format!(
+                "resources.{field} ({amount}) is more than the maximum of {upper_limit}M on this installation. Lower it, or ask an administrator to raise kubernetesRunner.upperLimitStorageMegabyte."
+            ));
+        }
+        if let Some(class) = &resources.storage_class
+            && self.enable_storage_classes_allowlist
+            && !self.storage_classes.contains(class)
+        {
+            return Err(format!(
+                "resources.storage_class '{class}' is not allowed on this installation (allowed: {}). Use an allowed class, remove it to use the default, or ask an administrator to add it to kubernetesRunner.storageClassNamesSupported.",
+                allowed_list(&self.storage_classes)
+            ));
+        }
+        // An empty name counts as unset, as in the runner.
+        if let Some(class) = resources
+            .volume_attributes_class
+            .as_ref()
+            .filter(|class| !class.is_empty())
+            && self.enable_volume_attributes_classes_allowlist
+            && !self.volume_attributes_classes.contains(class)
+        {
+            return Err(format!(
+                "resources.volume_attributes_class '{class}' is not allowed on this installation (allowed: {}). Use an allowed class, remove it to use the default, or ask an administrator to add it to kubernetesRunner.volumeAttributesClassNamesSupported.",
+                allowed_list(&self.volume_attributes_classes)
+            ));
+        }
+        Ok(())
+    }
+
     /// Where a trust registered through the API may point.
     pub(crate) fn tenant_issuer_policy(&self) -> TenantIssuerPolicy {
         if self.allow_internal_tenant_trust_issuers {
@@ -1687,7 +1765,25 @@ impl ApiServerConfig {
             provision_on_login: true,
             http_base_path: String::new(),
             enable_pipeline_resize: false,
+            enable_storage_classes_allowlist: false,
+            storage_classes: vec![],
+            enable_volume_attributes_classes_allowlist: false,
+            volume_attributes_classes: vec![],
+            upper_limit_storage_megabyte: None,
         }
+    }
+}
+
+/// Lists `classes` for an error message.
+fn allowed_list(classes: &[String]) -> String {
+    if classes.is_empty() {
+        "none".to_string()
+    } else {
+        classes
+            .iter()
+            .map(|class| format!("'{class}'"))
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 }
 
@@ -2478,6 +2574,65 @@ mod tests {
         config.owners.clear();
         config.auth_provider = AuthProviderType::None;
         assert!(config.validate_authorization().is_ok());
+    }
+
+    /// `check_storage` refuses what the Kubernetes runner refuses at start, and only that.
+    #[test]
+    fn check_storage_refuses_what_the_runner_refuses() {
+        let resources =
+            |value: serde_json::Value| -> ResourceConfig { serde_json::from_value(value).unwrap() };
+        let mut config = ApiServerConfig::test_config();
+
+        // Without limits, only `storage_min` > `storage_max` is refused.
+        for allowed in [
+            serde_json::json!({}),
+            serde_json::json!({"storage_class": "any", "volume_attributes_class": "any"}),
+            serde_json::json!({"storage_min": "1T", "storage_max": "1T"}),
+        ] {
+            assert_eq!(config.check_storage(&resources(allowed)), Ok(()));
+        }
+        let error = config
+            .check_storage(&resources(
+                serde_json::json!({"storage_min": "2G", "storage_max": "1G"}),
+            ))
+            .unwrap_err();
+        assert!(error.contains("resources.storage_min (2G)"), "{error}");
+
+        config.upper_limit_storage_megabyte = Some(1000.0);
+        config.enable_storage_classes_allowlist = true;
+        config.storage_classes = vec!["gp3".to_string()];
+        config.enable_volume_attributes_classes_allowlist = true;
+        config.volume_attributes_classes = vec![];
+        for allowed in [
+            serde_json::json!({}),
+            serde_json::json!({"storage_max": "1G", "storage_class": "gp3"}),
+            serde_json::json!({"storage_min": "500M", "storage_max": "1G"}),
+            // An empty name counts as unset.
+            serde_json::json!({"volume_attributes_class": ""}),
+        ] {
+            assert_eq!(config.check_storage(&resources(allowed)), Ok(()));
+        }
+        for (refused, expected) in [
+            (
+                serde_json::json!({"storage_max": "1001M"}),
+                "resources.storage_max (1001M) is more than the maximum of 1000M",
+            ),
+            (
+                serde_json::json!({"storage_min": "2G"}),
+                "resources.storage_min (2G) is more than the maximum of 1000M",
+            ),
+            (
+                serde_json::json!({"storage_class": "io2"}),
+                "resources.storage_class 'io2' is not allowed on this installation (allowed: 'gp3')",
+            ),
+            (
+                serde_json::json!({"volume_attributes_class": "iops-4000"}),
+                "resources.volume_attributes_class 'iops-4000' is not allowed on this installation (allowed: none)",
+            ),
+        ] {
+            let error = config.check_storage(&resources(refused)).unwrap_err();
+            assert!(error.contains(expected), "{error}");
+        }
     }
 
     /// The platform version suffix matches the edition of the build.

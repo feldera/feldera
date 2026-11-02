@@ -39,7 +39,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 public final class DBSPDifferentiateOperator extends DBSPUnaryOperator implements IStateful, ILinear {
     public DBSPDifferentiateOperator(CalciteRelNode node, OutputPort source) {
-        super(node, "differentiate", null, source.outputType(), source.isMultiset(), source);
+        super(node, "differentiate", null, source.outputType(), source);
     }
 
     @Override

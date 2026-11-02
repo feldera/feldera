@@ -51,6 +51,14 @@ public class UnusedFieldsTest {
     }
 
     @Test
+    public void testU128None() {
+        DBSPType u128 = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.UINT128, true);
+        DBSPExpression none = u128.none();
+        DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
+        Assert.assertEquals("None::<u128>", ToRustInnerVisitor.toRustString(compiler, none, null, false));
+    }
+
+    @Test
     public void testReduce() {
         DBSPCompiler compiler = new DBSPCompiler(new CompilerOptions());
         DBSPTypeTuple tuple = b.tup(

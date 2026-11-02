@@ -90,7 +90,8 @@ LAST` clause of an enclosing `ORDER BY` says.
 
 On arrays, `=` is equivalent to `IS NOT DISTINCT FROM` and `<>` is
 equivalent to `IS DISTINCT FROM`: two `NULL` elements compare as
-equal, so `ARRAY[1, NULL] = ARRAY[1, NULL]` is `true`.  See
+equal, so `ARRAY[1, NULL] = ARRAY[1, NULL]` is `true`.  `>`, `<`,
+`>=`, and `<=` are rejected on arrays that contain `ROW` values.  See
 [comparing complex values](comparisons.md#comparing-complex-values).
 
 **Examples:**

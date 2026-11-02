@@ -4,10 +4,10 @@
   import { humanSize } from 'common-lib/string'
   import { ClickFeedback, InlineDropdown } from 'common-ui'
   import { slide } from 'svelte/transition'
-  import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { usePermission } from '$lib/compositions/usePermission.svelte'
-  import type { CheckpointMetadata } from '$lib/services/manager'
+  import { useElapsedTime } from '#lib/compositions/common/useElapsedTime.ts'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+  import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
+  import type { CheckpointMetadata } from '#lib/services/manager/index.ts'
   import CheckpointDialog from './CheckpointDialog.svelte'
 
   const {

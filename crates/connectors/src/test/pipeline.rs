@@ -160,7 +160,9 @@ pub enum TestCircuit {
 
     /// A table `test_input1` with the columns of `relation` and no primary key, a view
     /// `test_output1` that holds its rows, and an index `index` on the view, keyed by the
-    /// columns of `key`. The index can hold several rows under one key.
+    /// columns of `key`. The index can hold several rows under one key. The table has the
+    /// persistent id `input`, the view the persistent id `output`, and the index the persistent
+    /// id `output.idx`.
     IndexedView {
         /// The key columns. The engine serves the index by the name of `key`.
         key: Relation,
@@ -193,7 +195,8 @@ pub enum TestCircuit {
     /// rows, and a view `counts` with the columns of [`count_columns`]: for each key that
     /// [`skewed_key`] maps the `id` of a row of `passthrough` to, the number of such rows. The
     /// table and the views are materialized, and each has a persistent id: `input`,
-    /// `passthrough`, and `counts`.
+    /// `passthrough`, and `counts`. Every operator that keeps state has a persistent id as
+    /// well, so that the circuit can be checkpointed.
     Aggregate {
         /// The columns of the table and of `passthrough`, which include `id BIGINT NOT NULL`.
         relation: Relation,

@@ -14,11 +14,11 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import type { ECMouseEvent } from 'svelte-echarts'
   import { Chart } from 'svelte-echarts'
-  import { ServerDate } from '$lib/compositions/serverTime'
-  import { resourceSizeBytes, timeSeriesAxisMax } from '$lib/functions/pipelineMetrics'
-  import type { Pipeline } from '$lib/services/pipelineManager'
-  import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
-  import type { Snippet } from '$lib/types/svelte'
+  import { ServerDate } from '#lib/compositions/serverTime.ts'
+  import { resourceSizeBytes, timeSeriesAxisMax } from '#lib/functions/pipelineMetrics.ts'
+  import type { Pipeline } from '#lib/services/pipelineManager.ts'
+  import type { TimeSeriesEntry } from '#lib/types/pipelineManager.ts'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   const {
     pipeline,

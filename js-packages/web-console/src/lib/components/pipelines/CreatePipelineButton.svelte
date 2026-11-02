@@ -1,6 +1,6 @@
 <script lang="ts">
-  import RBAC from '$lib/components/auth/RBAC.svelte'
-  import PipelineNameInput from '$lib/components/pipelines/PipelineNameInput.svelte'
+  import RBAC from '#lib/components/auth/RBAC.svelte'
+  import PipelineNameInput from '#lib/components/pipelines/PipelineNameInput.svelte'
 
   const {
     inputClass,

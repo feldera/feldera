@@ -67,7 +67,7 @@ import {
   startSamplyProfile,
   type TenantInfo,
   type TenantMember
-} from '$lib/services/manager'
+} from '#lib/services/manager/index.ts'
 
 export type {
   CheckpointActivity,
@@ -87,18 +87,22 @@ export type {
   RuntimeConfig,
   RustCompilerMessage,
   SqlCompilerMessage
-} from '$lib/services/manager'
+} from '#lib/services/manager/index.ts'
 
 import { match, P } from 'ts-pattern'
-import type { XgressRecord } from '$lib/types/pipelineManager'
+import type { XgressRecord } from '#lib/types/pipelineManager.ts'
 
-export type { ProgramSchema } from '$lib/services/manager'
+export type { ProgramSchema } from '#lib/services/manager/index.ts'
 export type ProgramStatus = _ProgramStatus
 
 import JSONbig from 'true-json-bigint'
-import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
-import { applyAuthToRequest, getAuthorizationHeaders, handleAuthResponse } from '$lib/services/auth'
-import { createClient } from '$lib/services/manager/client'
+import { felderaEndpoint } from '#lib/functions/configs/felderaEndpoint.ts'
+import {
+  applyAuthToRequest,
+  getAuthorizationHeaders,
+  handleAuthResponse
+} from '#lib/services/auth.ts'
+import { createClient } from '#lib/services/manager/client/index.ts'
 
 const unauthenticatedClient = createClient({
   bodySerializer: JSONbig.stringify,
@@ -1078,7 +1082,7 @@ export const relationEgressStream = async (
  * of sending the whole log again. Pass the position from the last response, or an empty
  * string the first time. Either way the response reports where it resumed in its
  * `feldera-logs-*` headers and the body holds nothing but log lines. See
- * `$lib/functions/pipelines/logCursor` for how the position is kept.
+ * `#lib/functions/pipelines/logCursor.ts` for how the position is kept.
  */
 export const pipelineLogsStream = async (
   pipelineName: string,

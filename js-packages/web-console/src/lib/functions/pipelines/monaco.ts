@@ -1,8 +1,8 @@
 import { nonNull } from 'common-lib/function'
 import { editor, MarkerSeverity, type Range } from 'monaco-editor'
 import invariant from 'tiny-invariant'
-import { type SystemError, showSqlCompilerMessage } from '$lib/compositions/health/systemErrors'
-import type { SqlCompilerMessage } from '$lib/services/pipelineManager'
+import { type SystemError, showSqlCompilerMessage } from '#lib/compositions/health/systemErrors.ts'
+import type { SqlCompilerMessage } from '#lib/services/pipelineManager.ts'
 
 const getDefaultErrorMarker = (error: { message: string }) => ({
   startLineNumber: 0,

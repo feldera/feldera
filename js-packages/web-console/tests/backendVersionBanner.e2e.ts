@@ -1,7 +1,4 @@
 import { expect, test } from '@playwright/test'
-import { configureTestClient } from '$lib/services/testPipelineHelpers'
-
-configureTestClient()
 
 test.describe('Backend version banner', () => {
   test.setTimeout(60_000)
@@ -67,7 +64,7 @@ test.describe('Backend version banner', () => {
     // mechanism. The buggy code path called bare `getConfig()`, which never
     // wrote the cache, so `feldera_config_cache.version` would stay at OLD
     // forever and `data.feldera.version` would keep mismatching the live
-    // response, re-firing `invalidateAll()` every 10s.
+    // response, re-firing `refreshAll()` every 10s.
     currentVersion = NEW_VERSION
     const tFlip = Date.now()
 

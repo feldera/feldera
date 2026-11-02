@@ -586,6 +586,10 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py|
                     runtime_aggtest/unsigned_int_tests/test_un_int_supported_functions.py
                     """, false),
+            new Func(SqlLibraryOperators.STARTSWITH, "STARTSWITH", SqlLibrary.SNOWFLAKE, "string#startswith,binary#startswith",
+                    FunctionDocumentation.NO_FILE, false),
+            new Func(SqlLibraryOperators.ENDSWITH, "ENDSWITH", SqlLibrary.SNOWFLAKE, "string#endswith,binary#endswith",
+                    FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.ILIKE, "ILIKE", SqlLibrary.POSTGRESQL, "string#ilike", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.NOT_ILIKE, "NOT ILIKE", SqlLibrary.POSTGRESQL, "string#ilike", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.RLIKE, "RLIKE", SqlLibrary.MYSQL, "string#rlike",
@@ -635,7 +639,6 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "runtime_aggtest/illarg_tests2/test_date_time_fn.py", false),
             new Func(SqlLibraryOperators.TIMESTAMP_TRUNC, "TIMESTAMP_TRUNC", SqlLibrary.BIG_QUERY, "datetime#timestamp_trunc",
                     "runtime_aggtest/illarg_tests2/test_date_time_fn.py", false),
-            new Func(SqlLibraryOperators.CHR, "CHR", SqlLibrary.POSTGRESQL, "string#chr", FunctionDocumentation.NO_FILE, false),
             new Func(SqlLibraryOperators.TANH, "TANH", SqlLibrary.ALL, "float#tanh",
                     "runtime_aggtest/illarg_tests2/test_numeric_type_fn.py", false),
             new Func(SqlLibraryOperators.COTH, "COTH", SqlLibrary.ALL, "float#coth",

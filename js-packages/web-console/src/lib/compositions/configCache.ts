@@ -3,10 +3,10 @@ import {
   errorCodeOf,
   isTenantRecheckPending,
   resetTenantRecheck
-} from '$lib/compositions/tenantAccess'
-import { getSelectedTenant, setSelectedTenant } from '$lib/services/auth'
-import type { Configuration, SessionInfo } from '$lib/services/manager'
-import { getConfig, getConfigSession } from '$lib/services/pipelineManager'
+} from '#lib/compositions/tenantAccess.ts'
+import { getSelectedTenant, setSelectedTenant } from '#lib/services/auth.ts'
+import type { Configuration, SessionInfo } from '#lib/services/manager/index.ts'
+import { getConfig, getConfigSession } from '#lib/services/pipelineManager.ts'
 
 // Cache keys for localStorage
 const CONFIG_CACHE_KEY = 'feldera_config_cache'

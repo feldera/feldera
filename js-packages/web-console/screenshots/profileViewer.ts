@@ -18,20 +18,30 @@ export const BUNDLE_PATH = path.join(
   'fixtures/fraud-detection-support-bundle.zip'
 )
 
+/** The bundle of the connector error shots. See `fixtures/make-connector-errors-bundle.py`. */
+export const CONNECTOR_ERRORS_BUNDLE_PATH = path.join(
+  import.meta.dirname,
+  'fixtures/connector-errors-support-bundle.zip'
+)
+
 /** The limit to read the bundle or to lay out the diagram. Each takes about 0.8 seconds. */
 const LOAD_TIMEOUT = 5_000
 
 /**
- * Opens the profile viewer on the bundle, and waits until the diagram has its first layout.
+ * Opens the profile viewer on the bundle at `bundlePath`, and waits until the diagram has its first
+ * layout.
  * The viewer only reads the bundle, so every pipeline manager request is refused. Then the shots
- * are the same with a manager, without one, and whatever the manager holds.
+ * are the same with a manager, without one, and whatever the manager holds. The app does not start
+ * without the authentication config, so the shots answer `{}` to it, which means no authentication.
  */
-export async function openProfile(page: Page) {
+export async function openProfile(page: Page, bundlePath = BUNDLE_PATH) {
   await page.route(/\/v0\//, (route) => route.abort('connectionrefused'))
+  // The unauthenticated client requests this path without the `/v0` prefix.
+  await page.route(/\/config\/authentication$/, (route) => route.fulfill({ json: {} }))
   // Analytics and in-app guides add overlays at random times.
   await page.route(/posthog|productfruits/, (route) => route.abort())
   await page.goto('/profile-viewer')
-  await page.locator('input[type="file"]').setInputFiles(BUNDLE_PATH, { timeout: LOAD_TIMEOUT })
+  await page.locator('input[type="file"]').setInputFiles(bundlePath, { timeout: LOAD_TIMEOUT })
   await expect(page.getByTestId('visualizer-diagram')).toBeVisible({ timeout: LOAD_TIMEOUT })
   await waitForDiagram(page)
 }
@@ -69,8 +79,8 @@ export const test = base.extend<object, { viewer: Page }>({
 /**
  * Undoes what a test did to the viewer: removes the annotations, closes a menu or a list, unpins the
  * node information, clears the search, moves the view back to where the profile opened, scrolls the
- * panes to the top, and shows the Overview of the metrics. A test that collapses a region or expands
- * a row of bars collapses it again.
+ * panes to the top, and opens the Overview of the Metrics tab. A test that collapses a region, expands
+ * a row of bars or opens the details of an event undoes this change itself.
  */
 async function resetViewer(page: Page) {
   await clearAnnotations(page)
@@ -84,7 +94,10 @@ async function resetViewer(page: Page) {
   })
   await page.keyboard.press('Escape')
   await page.getByPlaceholder('Search node').fill('')
-  await page.locator('[data-pane]').nth(3).getByText('Overview', { exact: true }).click()
+  const analysis = page.locator('[data-pane]').nth(3)
+  // The tabs of the analysis panel are a radio group.
+  await analysis.getByRole('radiogroup').getByText('Metrics', { exact: true }).click()
+  await analysis.getByText('Overview', { exact: true }).click()
   await page.mouse.move(0, 0)
 }
 

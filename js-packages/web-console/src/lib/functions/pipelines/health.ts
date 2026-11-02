@@ -1,7 +1,7 @@
 import { pushSortedOn } from 'common-lib/array'
 import type { HealthEventBucket, HealthStatus } from 'common-ui/healthEvents'
 import { match } from 'ts-pattern'
-import type { ClusterMonitorEventSelectedInfo, MonitorStatus } from '$lib/services/manager'
+import type { ClusterMonitorEventSelectedInfo, MonitorStatus } from '#lib/services/manager/index.ts'
 
 /** Which cluster sub-service a health event belongs to. */
 type ClusterEventTag = 'api' | 'runner' | 'compiler'

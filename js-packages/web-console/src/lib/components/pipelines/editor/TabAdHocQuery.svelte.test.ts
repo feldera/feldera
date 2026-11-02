@@ -25,7 +25,7 @@ import { render } from 'vitest-browser-svelte'
 // browser is computed from `window.location` — here the vitest dev-server
 // origin, not the Feldera manager. Point it at the same origin the API client
 // uses (configureTestClient) so the WebSocket reaches the running instance.
-vi.mock('$lib/functions/configs/felderaEndpoint', () => {
+vi.mock('#lib/functions/configs/felderaEndpoint.ts', () => {
   const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {}
   const felderaEndpoint = (
     env.FELDERA_TEST_API_ORIGIN ??
@@ -45,7 +45,7 @@ vi.mock('$app/state', () => ({
   }
 }))
 
-import { getExtendedPipeline, putPipeline } from '$lib/services/pipelineManager'
+import { getExtendedPipeline, putPipeline } from '#lib/services/pipelineManager.ts'
 import {
   cleanupPipeline,
   configureTestClient,
@@ -53,7 +53,7 @@ import {
   startPipelineAndWaitForRunning,
   TEST_COMPILATION_PROFILE,
   waitForCompilation
-} from '$lib/services/testPipelineHelpers'
+} from '#lib/services/testPipelineHelpers.ts'
 import TabAdHocQuery from './TabAdHocQuery.svelte'
 
 const PIPELINE_NAME = 'test-adhoc-query-errors'

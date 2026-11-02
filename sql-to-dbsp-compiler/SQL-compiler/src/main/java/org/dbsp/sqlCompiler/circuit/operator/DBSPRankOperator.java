@@ -62,8 +62,7 @@ public class DBSPRankOperator extends DBSPUnaryOperator
                             DBSPClosureExpression projectionFunc,
                             DBSPClosureExpression outputProducer, OutputPort source) {
         super(node, "rank", comparator,
-                outputType(source.getOutputIndexedZSetType(), outputProducer),
-                numbering.mayHaveDuplicates(), source);
+                outputType(source.getOutputIndexedZSetType(), outputProducer), source);
         DBSPType valueType = source.getOutputIndexedZSetType().elementType;
         this.numbering = numbering;
         this.projectionFunc = projectionFunc;

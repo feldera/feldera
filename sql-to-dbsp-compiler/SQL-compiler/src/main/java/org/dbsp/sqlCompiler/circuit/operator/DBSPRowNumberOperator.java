@@ -51,8 +51,7 @@ public class DBSPRowNumberOperator extends DBSPUnaryOperator
                                  DBSPExpression comparator,
                                  DBSPClosureExpression outputProducer, OutputPort source) {
         super(node, "row_number_custom_order", comparator,
-                outputType(source.getOutputIndexedZSetType(), outputProducer),
-                false, source);
+                outputType(source.getOutputIndexedZSetType(), outputProducer), source);
         DBSPType valueType = source.getOutputIndexedZSetType().elementType;
         this.outputProducer = outputProducer;
         Utilities.enforce(comparator.is(DBSPComparatorExpression.class) ||

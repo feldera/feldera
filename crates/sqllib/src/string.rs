@@ -384,6 +384,20 @@ pub fn position__(needle: SqlString, haystack: SqlString) -> i32 {
 some_function2!(position, SqlString, SqlString, i32);
 
 #[doc(hidden)]
+pub fn starts_with__(value: SqlString, prefix: SqlString) -> bool {
+    value.str().starts_with(prefix.str())
+}
+
+some_function2!(starts_with, SqlString, SqlString, bool);
+
+#[doc(hidden)]
+pub fn ends_with__(value: SqlString, suffix: SqlString) -> bool {
+    value.str().ends_with(suffix.str())
+}
+
+some_function2!(ends_with, SqlString, SqlString, bool);
+
+#[doc(hidden)]
 pub fn char_length_(value: SqlString) -> i32 {
     value.str().chars().count() as i32
 }
@@ -535,6 +549,10 @@ some_function1!(initcap_spaces, SqlString, SqlString);
 
 #[doc(hidden)]
 pub fn replace___(haystack: SqlString, needle: SqlString, replacement: SqlString) -> SqlString {
+    // An empty needle leaves the haystack unchanged
+    if needle.str().is_empty() {
+        return haystack;
+    }
     SqlString::from(haystack.str().replace(needle.str(), replacement.str()))
 }
 

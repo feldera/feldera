@@ -1,6 +1,6 @@
 <script lang="ts">
-  import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+  import GenericDialog from '#lib/components/dialogs/GenericDialog.svelte'
+  import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
 
   const { onConfirm }: { onConfirm: () => void } = $props()
 

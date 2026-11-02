@@ -53,6 +53,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.functions.ExternalFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.NonBmpLiterals;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.WarnFloatingPointEquality;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -111,7 +112,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeKeyword;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestampTz;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.IHasPrecision;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
@@ -136,13 +136,13 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Utf8String;
 import org.dbsp.util.Utilities;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.Point;
 
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -317,10 +317,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 case REAL:
                     return new DBSPRealLiteral(Objects.requireNonNull(literal.getValueAs(Float.class)));
                 case STRING:
-                    String str = literal.getValueAs(String.class);
-                    RelDataType litType = literal.getType();
-                    Charset charset = litType.getCharset();
-                    return new DBSPStringLiteral(Objects.requireNonNull(str), Objects.requireNonNull(charset), type);
+                    String str = Objects.requireNonNull(literal.getValueAs(String.class));
+                    return new DBSPStringLiteral(CalciteObject.EMPTY, type, Utf8String.fromJava(str));
                 case BOOL:
                     return new DBSPBoolLiteral(Objects.requireNonNull(literal.getValueAs(Boolean.class)));
                 case DECIMAL:
@@ -424,9 +422,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (opcode == DBSPOpcode.CONCAT) return false;
         if (opcode == DBSPOpcode.SUB && left.is(IsDateType.class) && right.is(IsDateType.class))
             return true;
-        if (left.is(DBSPTypeTimestampTz.class) || right.is(DBSPTypeTimestampTz.class))
-            // This is illegal, will report an error later
-            return false;
+        if (opcode.isComparison()) {
+            // A comparison with a date or time value needs a common type
+            if (left.is(IsDateType.class) || right.is(IsDateType.class))
+                return true;
+            // A comparison between a string and an interval needs a common type;
+            // intervals with different units are compared without casts
+            if (left.is(DBSPTypeString.class) && right.is(IsIntervalType.class) ||
+                    left.is(IsIntervalType.class) && right.is(DBSPTypeString.class))
+                return true;
+        }
         // Dates can be mixed with interval types in a binary operation
         if (left.is(IsTimeRelatedType.class)) return false;
         if (right.is(IsTimeRelatedType.class)) return false;
@@ -517,11 +522,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 commonBase = typeWithNull;
                 expressionResultType = commonBase;
             }
-            if (opcode.isComparison()) {
-                expressionResultType = DBSPTypeBool.create(anyNull);
-            } else if (opcode == DBSPOpcode.IS_DISTINCT)
+            if (opcode == DBSPOpcode.IS_DISTINCT)
                 // Never null
                 expressionResultType = DBSPTypeBool.create(false);
+            else if (opcode.isComparison())
+                expressionResultType = DBSPTypeBool.create(anyNull);
             if (commonBase.is(DBSPTypeNull.class)) {
                 // Result is always NULL - evaluate to the NULL literal directly
                 return DBSPLiteral.none(type);
@@ -542,12 +547,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             if (leftType.is(DBSPTypeNull.class) || rightType.is(DBSPTypeNull.class)) {
                 // Result is always NULL - evaluate to the NULL literal directly
                 return DBSPLiteral.none(type);
-            }
-            if (opcode.isComparison() &&
-                    ((leftType.is(DBSPTypeTimestampTz.class) && !rightType.is(DBSPTypeTimestampTz.class)) ||
-                     (!leftType.is(DBSPTypeTimestampTz.class) && rightType.is(DBSPTypeTimestampTz.class)))) {
-                throw new CompilationError("Operation " + opcode + " between " + leftType.asSqlString() +
-                        " and " + rightType.asSqlString() + " not supported", node);
             }
             if (opcode == DBSPOpcode.MUL || opcode == DBSPOpcode.DIV || opcode == DBSPOpcode.DIV_INTERVAL_NULL) {
                 // Multiplication between an interval and a numeric value.
@@ -585,7 +584,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         right = right.cast(node, new DBSPTypeDouble(rightType.getNode(), rightType.mayBeNull),
                                 DBSPCastExpression.CastType.SqlUnsafe);
                     }
-                    return new DBSPBinaryExpression(node, type, opcode, left, right);
+                    // The result has the type of the interval: compute it in the finest type and cast it,
+                    // which truncates it toward zero to the last field of the type
+                    DBSPType finest = type.to(IsIntervalType.class).finestType();
+                    DBSPExpression result = new DBSPBinaryExpression(node, finest, opcode, left, right);
+                    return result.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
                 }
             }
             if (opcode == DBSPOpcode.SUB || opcode == DBSPOpcode.ADD) {
@@ -620,13 +623,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             else
                 throw new UnsupportedException("Operation " + opcode + " on " +
                         left.getType().asSqlString() + " and " + right.getType().asSqlString(), node);
-            if (opcode.isComparison()) {
-                expressionResultType = DBSPTypeBool.create(anyNull);
-            }
-            if (opcode == DBSPOpcode.IS_DISTINCT) {
+            if (opcode == DBSPOpcode.IS_DISTINCT)
                 // Never null
                 expressionResultType = DBSPTypeBool.create(false);
-            }
+            else if (opcode.isComparison())
+                expressionResultType = DBSPTypeBool.create(anyNull);
         }
         DBSPExpression call = new DBSPBinaryExpression(node, expressionResultType, opcode, left, right);
         return call.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
@@ -785,13 +786,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
      * @param  expectedArgCount A list containing all known possible argument counts.
      */
     static DBSPExpression compileStrictFunction(
-            boolean adjustNullability, RexCall call, CalciteObject node, DBSPType resultType,
+            boolean adjustNullability, String baseName, CalciteObject node, DBSPType resultType,
             List<DBSPExpression> ops, Integer... expectedArgCount) {
         for (DBSPExpression op: ops) {
             if (op.is(DBSPLiteral.class) && op.to(DBSPLiteral.class).isNull())
                 return resultType.none();
         }
-        return compileFunction(adjustNullability, call, node, resultType, ops, expectedArgCount);
+        return compileFunction(adjustNullability, baseName, node, resultType, ops, expectedArgCount);
+    }
+
+    static DBSPExpression compileStrictFunction(
+            boolean adjustNullability, RexCall call, CalciteObject node, DBSPType resultType,
+            List<DBSPExpression> ops, Integer... expectedArgCount) {
+        return compileStrictFunction(adjustNullability, getCallName(call), node, resultType, ops, expectedArgCount);
     }
 
     static DBSPExpression compileStrictFunction(
@@ -864,7 +871,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (arg.getType().sameType(DBSPTypeKeyword.INSTANCE))
             return;
         if (arg.is(DBSPStringLiteral.class)) {
-            ops.set(argument, new DBSPKeywordLiteral(node, Objects.requireNonNull(arg.to(DBSPStringLiteral.class).value)));
+            Utf8String keyword = Objects.requireNonNull(arg.to(DBSPStringLiteral.class).value);
+            ops.set(argument, new DBSPKeywordLiteral(node, keyword.toJavaString()));
             return;
         }
         throw new CompilationError("Unknown keyword", node);
@@ -944,9 +952,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     void checkRegexLiteral(CalciteObject call, DBSPExpression arg) {
         if (!arg.is(DBSPStringLiteral.class))
             return;
-        String pattern = arg.to(DBSPStringLiteral.class).value;
-        if (pattern == null)
+        Utf8String value = arg.to(DBSPStringLiteral.class).value;
+        if (value == null)
             return;
+        String pattern = value.toJavaString();
         String construct = RustRegexChecker.unsupportedConstruct(pattern);
         if (construct != null)
             this.compiler.reportWarning(call.getPositionRange(), RustRegexChecker.WARNING,
@@ -1066,14 +1075,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             return;
         }
         if (formatArg.is(DBSPStringLiteral.class)) {
-            String str = formatArg.to(DBSPStringLiteral.class).value;
+            Utf8String str = formatArg.to(DBSPStringLiteral.class).value;
             if (str == null) {
                 this.compiler.reportWarning(formatArgPosition,
                         "Suspicious argument",
                         "Format argument is NULL.");
                 return;
             }
-            if (!str.contains("%")) {
+            if (!str.toJavaString().contains("%")) {
                 this.compiler.reportWarning(formatArgPosition,
                         "Suspicious argument",
                         "Format argument does not look like a format string.");
@@ -1092,8 +1101,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (args.size() == 2) {
             DBSPExpression otherArg = args.get(1 - formatPosition);
             if (otherArg.is(DBSPStringLiteral.class)) {
-                String strData = otherArg.to(DBSPStringLiteral.class).value;
-                if (strData != null && strData.contains("%")) {
+                Utf8String strData = otherArg.to(DBSPStringLiteral.class).value;
+                if (strData != null && strData.toJavaString().contains("%")) {
                     this.compiler.reportWarning(argumentPosition(call, otherArg),
                             "Suspicious argument",
                             "Are the two arguments swapped?");
@@ -1117,6 +1126,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 .append(" ")
                 .appendSupplier(() -> finalCall.getType().toString());
         List<DBSPExpression> ops = Linq.map(call.operands, e -> e.accept(this));
+        if (call.op == NonBmpLiterals.Wrapper.INSTANCE) {
+            DBSPStringLiteral literal = ops.get(0).to(DBSPStringLiteral.class);
+            return new DBSPStringLiteral(node, type, literal.value);
+        }
         String operationName = call.op.kind.sql;
         switch (call.op.kind) {
             case CHECKED_TIMES:
@@ -1372,7 +1385,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             return result;
                         return result.castToNullable();
                     }
-                    case "numeric_inc", "sign", "md5": {
+                    case "sign", "md5": {
                         DBSPExpression expr = this.strictnessCheck(ops, type);
                         if (expr != null)
                             return expr;
@@ -1969,15 +1982,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 ops.set(1, this.makeRegex(node, ops.get(1)));
                 return compileFunction(call, node, type, ops, 2);
             }
-            case POSITION: {
+            case POSITION:
+            case STARTS_WITH:
+            case ENDS_WITH: {
+                // Also called for STARTSWITH and ENDSWITH
                 validateArgCount(node, operationName, ops.size(), 2);
                 String module_prefix = "";
-                if (ops.get(0).type.is(DBSPTypeBinary.class)) {
+                if (Linq.any(ops, op -> op.type.is(DBSPTypeBinary.class))) {
                     module_prefix = "binary_";
                 } else {
                     this.ensureString(ops, 0);
+                    this.ensureString(ops, 1);
                 }
-                return compileFunction(module_prefix + getCallName(call), node, type, ops, 2);
+                return compileStrictFunction(true, module_prefix + getCallName(call), node, type, ops, 2);
             }
             case ARRAY_JOIN:
             case ARRAY_TO_STRING: {
@@ -2086,7 +2103,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     Utilities.enforce(index.is(DBSPStringLiteral.class));
                     DBSPStringLiteral lit = index.to(DBSPStringLiteral.class);
                     Utilities.enforce(lit.value != null);
-                    String fieldName = lit.value;
+                    String fieldName = lit.value.toJavaString();
                     Utilities.enforce(tuple.originalStruct != null);
                     DBSPTypeStruct.Field field = tuple.originalStruct.getField(
                             new ProgramIdentifier(fieldName));
@@ -2290,14 +2307,30 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     return this.warnAlwaysNull(node, type);
                 }
 
+                // The key and the map's keys can differ inside, such as an INT ARRAY against
+                // INT NOT NULL ARRAY keys; both are compared in a common type
+                DBSPType argKeyType = arg1.type.withMayBeNull(keyType.mayBeNull);
+                if (!keyType.sameType(argKeyType)) {
+                    keyType = TypeCompiler.reduceType(node, keyType, argKeyType,
+                            "Cannot find common type between key and map", true);
+                    arg0 = arg0.cast(node, new DBSPTypeMap(keyType, map.getValueType(), arg0.type.mayBeNull),
+                            DBSPCastExpression.CastType.SqlUnsafe);
+                    arg1 = arg1.cast(node, keyType.withMayBeNull(arg1.type.mayBeNull),
+                            DBSPCastExpression.CastType.SqlUnsafe);
+                }
+
                 String method = getArrayOrMapCallName(call, arg0, arg1);
+                // Calcite's result is nullable if a ROW key has a nullable field,
+                // but the Rust function returns NULL only for a NULL map or key
+                DBSPType resultType = type.withMayBeNull(arg0.type.mayBeNull || arg1.type.mayBeNull);
                 // the rust code has signature: (Vec<T>, T)
                 // so if elements of the vector are nullable and T is an Option type
                 // therefore we need to wrap arg1 in Some
                 if (keyType.mayBeNull) {
                     arg1 = new DBSPApplyExpression(arg1.getNode(), "Some", arg1.type.withMayBeNull(true), arg1);
                 }
-                return new DBSPApplyExpression(node, method, type, arg0, arg1);
+                DBSPExpression exp = new DBSPApplyExpression(node, method, resultType, arg0, arg1);
+                return exp.cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
             }
             case ARRAY_DISTINCT: {
                 DBSPExpression arg0 = ops.get(0);

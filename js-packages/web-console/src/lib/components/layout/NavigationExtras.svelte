@@ -1,8 +1,8 @@
 <script lang="ts">
   import { fade } from 'svelte/transition'
-  import IconDiscord from '$assets/icons/vendors/discord-logomark-color.svg?component'
-  import IconSlack from '$assets/icons/vendors/slack-logomark-color.svg?component'
-  import Popup from '$lib/components/common/Popup.svelte'
+  import IconDiscord from '#assets/icons/vendors/discord-logomark-color.svg?component'
+  import IconSlack from '#assets/icons/vendors/slack-logomark-color.svg?component'
+  import Popup from '#lib/components/common/Popup.svelte'
 
   const { inline }: { inline?: boolean } = $props()
 

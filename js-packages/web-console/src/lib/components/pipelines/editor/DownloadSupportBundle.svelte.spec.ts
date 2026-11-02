@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-svelte'
 
-type AddToBundleHistory = typeof import('$lib/services/supportBundleHistory').addToBundleHistory
+type AddToBundleHistory = typeof import('#lib/services/supportBundleHistory.ts').addToBundleHistory
 
 const {
   addToBundleHistory,
@@ -35,7 +35,7 @@ const {
   }
 })
 
-vi.mock('$lib/compositions/profileBundleHandoff', () => ({
+vi.mock('#lib/compositions/profileBundleHandoff.ts', () => ({
   openRemoteBundleTab,
   openUploadBundleTab,
   openStoredBundleTab,
@@ -48,12 +48,12 @@ vi.mock('$lib/compositions/profileBundleHandoff', () => ({
  * the bundle, which needs an archive over `maxCachedBundleBytes` or a browser out of
  * storage quota.
  */
-vi.mock('$lib/services/supportBundleHistory', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('$lib/services/supportBundleHistory')>()
+vi.mock('#lib/services/supportBundleHistory.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('#lib/services/supportBundleHistory.ts')>()
   realHistory.addToBundleHistory = actual.addToBundleHistory
   return { ...actual, addToBundleHistory }
 })
-vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
+vi.mock('#lib/compositions/usePipelineManager.svelte.ts', () => ({
   usePipelineManager: () => ({
     downloadPipelineSupportBundle: vi.fn(() => ({
       dataPromise: Promise.resolve({}),
@@ -63,9 +63,9 @@ vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
 }))
 
 // These imports come after the vi.mock calls above, so that the mocks are in place.
-import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-import { clearBundleHistory, listBundleHistory } from '$lib/services/supportBundleHistory'
-import { fakeHandle } from '$lib/services/testSupportBundleHelpers'
+import { useGlobalDialog } from '#lib/compositions/layout/useGlobalDialog.svelte.ts'
+import { clearBundleHistory, listBundleHistory } from '#lib/services/supportBundleHistory.ts'
+import { fakeHandle } from '#lib/services/testSupportBundleHelpers.ts'
 import DownloadSupportBundle from './DownloadSupportBundle.svelte'
 
 const PIPELINE = 'my-pipeline'

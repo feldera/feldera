@@ -8,7 +8,7 @@
 
 import Dexie from 'dexie'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fakeHandle } from '$lib/services/testSupportBundleHelpers'
+import { fakeHandle } from '#lib/services/testSupportBundleHelpers.ts'
 import {
   clearBundleRecords,
   deleteBundleRecords,

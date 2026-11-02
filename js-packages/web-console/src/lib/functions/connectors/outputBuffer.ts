@@ -1,7 +1,7 @@
 import { BigNumber } from 'bignumber.js'
 import { bignumber, maxBigNumber, minBigNumber } from 'common-lib/valibot'
 import * as va from 'valibot'
-import type { FormFieldOptions } from '$lib/functions/forms'
+import type { FormFieldOptions } from '#lib/functions/forms.ts'
 
 export type OutputBufferConfig = {
   enable_output_buffer?: boolean
@@ -26,8 +26,7 @@ export const outputBufferConfigValidation = () =>
   va.forward(
     va.partialCheck(
       [['max_output_buffer_time'], ['max_output_buffer_size_records']],
-      (input: any) =>
-        !!input.max_output_buffer_time || !!input.max_output_buffer_size_records,
+      (input: any) => !!input.max_output_buffer_time || !!input.max_output_buffer_size_records,
       'Specify either max_output_buffer_time or max_output_buffer_size_records'
     ),
     ['max_output_buffer_time']

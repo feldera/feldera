@@ -15,7 +15,6 @@
     "build:self": "tsc",
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
-    "prepare": "bun run clean && bun run build:self",
     "check": "bun run check:self",
     "check:self": "tsc --noEmit"
   },

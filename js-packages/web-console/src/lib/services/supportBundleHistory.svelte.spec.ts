@@ -28,7 +28,7 @@ vi.mock('./supportBundleStore', async (importOriginal) => ({
   putBundleRecord
 }))
 
-import { fakeHandle } from '$lib/services/testSupportBundleHelpers'
+import { fakeHandle } from '#lib/services/testSupportBundleHelpers.ts'
 // These imports follow the vi.mock call above, so that the mock is in place.
 import {
   addToBundleHistory,

@@ -24,7 +24,7 @@ public final class DBSPBinaryDistinctOperator extends DBSPBinaryOperator
     public final boolean positive;
 
     public DBSPBinaryDistinctOperator(CalciteRelNode node, OutputPort integral, OutputPort delta, boolean positive) {
-        super(node, "distinct_component", null, delta.outputType(), false, integral, delta);
+        super(node, "distinct_component", null, delta.outputType(), integral, delta);
         this.positive = positive;
     }
 

@@ -35,6 +35,9 @@ public class FelderaRexBuilder extends RexBuilder {
     private boolean keepCast(RelDataType type, RexLiteral literal) {
         SqlTypeName to = type.getSqlTypeName();
         SqlTypeName from = literal.getType().getSqlTypeName();
+        if (SqlTypeUtil.isInterval(type) && SqlTypeUtil.isInterval(literal.getType()) && to != from)
+            // Calcite keeps the value, the runtime truncates it to the last field of the type
+            return true;
         if ((to == SqlTypeName.TIME || to == SqlTypeName.TIMESTAMP)
                 && SqlTypeUtil.isCharacter(literal.getType())) {
             // For a string with more fractional seconds than the precision of the type

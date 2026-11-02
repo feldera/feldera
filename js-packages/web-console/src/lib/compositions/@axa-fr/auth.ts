@@ -1,7 +1,7 @@
 import type { OidcConfiguration, OidcUserInfo } from '@axa-fr/oidc-client'
 import * as OidcClient from '@axa-fr/oidc-client'
-import type { OidcConfig } from '$lib/compositions/auth'
-import type { UserProfile } from '$lib/types/auth'
+import type { OidcConfig } from '#lib/compositions/auth.ts'
+import type { UserProfile } from '#lib/types/auth.ts'
 
 const { TokenAutomaticRenewMode } = OidcClient
 

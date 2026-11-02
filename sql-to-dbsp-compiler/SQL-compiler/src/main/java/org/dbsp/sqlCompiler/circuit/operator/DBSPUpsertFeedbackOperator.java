@@ -22,7 +22,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 @NonCoreIR
 public final class DBSPUpsertFeedbackOperator extends DBSPUnaryOperator implements IContainsIntegrator, IIncremental {
     public DBSPUpsertFeedbackOperator(CalciteRelNode node, OutputPort source) {
-        super(node, "upsert_feedback", null, source.outputType(), source.isMultiset(), source);
+        super(node, "upsert_feedback", null, source.outputType(), source);
         source.getOutputIndexedZSetType();  // asserts that the type is right
     }
 

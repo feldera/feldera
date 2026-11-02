@@ -24,7 +24,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 public final class DBSPApplyNOperator extends DBSPSimpleOperator implements ILinear {
     public DBSPApplyNOperator(CalciteRelNode node, DBSPClosureExpression function,
                               List<OutputPort> inputs) {
-        super(node, "apply_n", function, function.getResultType(), false);
+        super(node, "apply_n", function, function.getResultType());
         Utilities.enforce(!inputs.isEmpty());
         for (var input: inputs)
             this.addInput(input);

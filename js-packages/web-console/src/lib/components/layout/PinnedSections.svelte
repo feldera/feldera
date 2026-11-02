@@ -20,7 +20,7 @@
    * Clicking the pinned wrapper scrolls its first section into view instead of
    * activating a control inside it; see `onclickcapture` below.
    */
-  import type { Snippet } from '$lib/types/svelte'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   const {
     children,

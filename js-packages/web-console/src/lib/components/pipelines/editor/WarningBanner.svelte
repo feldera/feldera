@@ -1,7 +1,7 @@
 <script lang="ts">
   import { statusToneColors } from 'common-ui'
   import { slide } from 'svelte/transition'
-  import type { Snippet } from '$lib/types/svelte'
+  import type { Snippet } from '#lib/types/svelte.ts'
 
   const styles = {
     warning: {

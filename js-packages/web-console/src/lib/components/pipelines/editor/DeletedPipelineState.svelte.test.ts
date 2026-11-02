@@ -16,18 +16,18 @@ import {
   getPipelines,
   type PipelineThumb,
   putPipeline
-} from '$lib/services/pipelineManager'
+} from '#lib/services/pipelineManager.ts'
 import {
   cleanupPipeline,
   configureTestClient,
   type ExtendedPipeline,
   TEST_COMPILATION_PROFILE
-} from '$lib/services/testPipelineHelpers'
+} from '#lib/services/testPipelineHelpers.ts'
 
 // Mock SvelteKit's $app/state for components that read `page.data.feldera`
 // and `page.url` (the CodeEditor parses positions from the URL hash).
 vi.mock('$app/state', async () => {
-  const { permissionsOf, roleOf } = await import('$lib/services/rbac')
+  const { permissionsOf, roleOf } = await import('#lib/services/rbac.ts')
   const role = roleOf('write')
   return {
     page: {
@@ -42,13 +42,15 @@ vi.mock('$app/state', async () => {
         }
       },
       url: new URL('http://localhost/')
-    }
+    },
+    // superforms (reached via AppHeader > ProfileButton) imports `navigating`.
+    navigating: { to: null }
   }
 })
 
-import PipelineEditLayout from '$lib/components/layout/pipelines/PipelineEditLayout.svelte'
-import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
-import { emptyPipelineMetrics, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
+import PipelineEditLayout from '#lib/components/layout/pipelines/PipelineEditLayout.svelte'
+import type { WritablePipeline } from '#lib/compositions/useWritablePipeline.svelte.ts'
+import { emptyPipelineMetrics, type PipelineMetrics } from '#lib/functions/pipelineMetrics.ts'
 import ActionsFixture from './ActionsFixture.svelte'
 import InteractionPanel from './InteractionPanel.svelte'
 import MonitoringPanel from './MonitoringPanel.svelte'

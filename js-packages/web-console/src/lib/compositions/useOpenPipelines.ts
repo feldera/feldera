@@ -1,4 +1,4 @@
-import { useLocalStorage } from '$lib/compositions/localStore.svelte'
+import { useLocalStorage } from '#lib/compositions/localStore.svelte.js'
 
 export type PipelineTab = { existing: string } | { new: string }
 

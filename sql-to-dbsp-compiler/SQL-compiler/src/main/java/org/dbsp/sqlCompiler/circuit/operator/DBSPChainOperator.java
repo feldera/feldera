@@ -43,8 +43,8 @@ import java.util.List;
 public class DBSPChainOperator extends DBSPUnaryOperator implements ILinear {
     public final ComputationChain chain;
 
-    public DBSPChainOperator(CalciteRelNode node, ComputationChain chain, boolean isMultiset, OutputPort source) {
-        super(node, "chain" + chain.summary(), null, chain.getOutputType(), isMultiset, source);
+    public DBSPChainOperator(CalciteRelNode node, ComputationChain chain, OutputPort source) {
+        super(node, "chain" + chain.summary(), null, chain.getOutputType(), source);
         this.chain = chain;
         Utilities.enforce(this.chain.size() > 1);
     }
@@ -338,7 +338,7 @@ public class DBSPChainOperator extends DBSPUnaryOperator implements ILinear {
             List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, function, newInputs, outputType)) {
             Utilities.enforce(function == null);
-            return new DBSPChainOperator(this.getRelNode(), this.chain, this.isMultiset, newInputs.get(0))
+            return new DBSPChainOperator(this.getRelNode(), this.chain, newInputs.get(0))
                     .copyAnnotations(this);
         }
         return this;
@@ -379,7 +379,7 @@ public class DBSPChainOperator extends DBSPUnaryOperator implements ILinear {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         ComputationChain chain = ComputationChain.fromJson(node, decoder);
         return new DBSPChainOperator(CalciteEmptyRel.INSTANCE,
-                chain, info.isMultiset(), info.getInput(0))
+                chain, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPChainOperator.class);
     }
 }

@@ -443,6 +443,55 @@ where
 some_operator!(fp_div, div, f, F32, F32);
 some_operator!(fp_div, div, d, F64, F64);
 
+/// Saturating forms of the integer operators.  A result above the range of the type is the
+/// maximum value of the type, and a result below it is the minimum.  A divisor of 0 still fails.
+macro_rules! saturating_int_operator {
+    ($func_name: ident, $method: ident) => {
+        saturating_int_operator!($func_name, $method, i8, i16, i32, i64, i128, u8, u16, u32, u64);
+    };
+    ($func_name: ident, $method: ident, $($t: ident),*) => {
+        ::paste::paste! {
+            $(
+                #[doc(hidden)]
+                #[inline(always)]
+                pub fn [<$func_name _saturating_ $t _ $t>](left: $t, right: $t) -> $t {
+                    left.$method(right)
+                }
+            )*
+        }
+    };
+}
+
+saturating_int_operator!(plus, saturating_add);
+saturating_int_operator!(minus, saturating_sub);
+saturating_int_operator!(times, saturating_mul);
+saturating_int_operator!(div, saturating_div);
+
+/// Saturating forms of the floating-point operators.  These operators never fail: a result
+/// too large for the type is an infinity.
+macro_rules! saturating_fp_operator {
+    ($func_name: ident, $op: tt) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name _saturating_f_f>](left: F32, right: F32) -> F32 {
+                left $op right
+            }
+
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name _saturating_d_d>](left: F64, right: F64) -> F64 {
+                left $op right
+            }
+        }
+    };
+}
+
+saturating_fp_operator!(plus, +);
+saturating_fp_operator!(minus, -);
+saturating_fp_operator!(times, *);
+saturating_fp_operator!(div, /);
+
 #[doc(hidden)]
 pub fn plus_u_u(left: usize, right: usize) -> usize {
     left + right
@@ -709,7 +758,11 @@ macro_rules! coalesce_N_N {
 
 #[cfg(test)]
 mod tests {
-    use super::{neg_i8_, neg_i16N_, neg_i64_};
+    use super::{
+        div_saturating_i32_i32, minus_saturating_u32_u32, neg_i8_, neg_i16N_, neg_i64_,
+        plus_saturating_d_d, plus_saturating_i8_i8, times_saturating_i64_i64,
+    };
+    use dbsp::algebra::F64;
     use std::cell::Cell;
 
     #[test]
@@ -740,5 +793,23 @@ mod tests {
                 assert_eq!(evaluations.get(), expected, "{context}");
             }
         }
+    }
+
+    #[test]
+    fn saturating_integer_arithmetic() {
+        assert_eq!(plus_saturating_i8_i8(100, 100), i8::MAX);
+        assert_eq!(plus_saturating_i8_i8(-100, -100), i8::MIN);
+        assert_eq!(plus_saturating_i8_i8(100, -100), 0);
+        assert_eq!(minus_saturating_u32_u32(10, 20), 0);
+        assert_eq!(times_saturating_i64_i64(i64::MAX, 2), i64::MAX);
+        assert_eq!(times_saturating_i64_i64(i64::MAX, -2), i64::MIN);
+        assert_eq!(div_saturating_i32_i32(i32::MIN, -1), i32::MAX);
+        assert_eq!(div_saturating_i32_i32(7, 2), 3);
+    }
+
+    #[test]
+    fn saturating_fp_arithmetic() {
+        let max = F64::new(f64::MAX);
+        assert_eq!(plus_saturating_d_d(max, max), F64::new(f64::INFINITY));
     }
 }

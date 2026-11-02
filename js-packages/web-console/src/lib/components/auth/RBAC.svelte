@@ -10,7 +10,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { page } from '$app/state'
-  import { hasPermissions, type Permission } from '$lib/services/rbac'
+  import { hasPermissions, type Permission } from '#lib/services/rbac.ts'
 
   let {
     require: permission,

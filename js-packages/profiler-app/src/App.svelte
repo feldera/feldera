@@ -1,14 +1,16 @@
 <script lang="ts">
-  import type { ConnectorMetrics } from 'common-ui/connectorMetrics'
+  import type { ConnectorMetrics, ConnectorStatus } from 'common-ui/connectorMetrics'
+  import type { PipelineMonitorEvent } from 'common-ui/pipelineHealth'
   import {
     createLoadGuard,
-    getSuitableProfiles,
     type GlobalMetrics,
+    getSuitableProfiles,
     processProfileFiles,
+    type SourceFile,
     SupportBundleViewerLayout,
     type ZipItem
   } from 'profiler-layout'
-  import type { JsonProfiles, Dataflow } from 'profiler-lib'
+  import type { Dataflow, JsonProfiles } from 'profiler-lib'
   import { TriageResults } from 'triage-types'
   import faviconDataUrl from '$assets/favicon.svg?dataurl=enc'
   import FelderaModernLogoColorDark from '$assets/images/feldera-modern/Feldera Logo Color Dark.svg?component'
@@ -23,11 +25,13 @@
   let profileData: {
     profile: JsonProfiles | undefined
     dataflow: Dataflow | undefined
-    sources: string[] | undefined
     logText: string | undefined
     globalMetrics: GlobalMetrics | undefined
     connectorMetrics: ConnectorMetrics | undefined
+    connectorStatus: ConnectorStatus | undefined
     runtimeConfig: unknown
+    pipelineEvents: PipelineMonitorEvent[] | undefined
+    sourceFiles: SourceFile[] | undefined
   } | null = $state(null)
 
   let fileInput: HTMLInputElement | null = $state(null)
@@ -48,11 +52,13 @@
     profileData = {
       profile: data.profile,
       dataflow: data.dataflow,
-      sources: data.sources,
       logText: data.logText,
       globalMetrics: data.globalMetrics,
       connectorMetrics: data.connectorMetrics,
-      runtimeConfig: data.runtimeConfig
+      connectorStatus: data.connectorStatus,
+      runtimeConfig: data.runtimeConfig,
+      pipelineEvents: data.pipelineEvents,
+      sourceFiles: data.sourceFiles
     }
   }
 
@@ -117,11 +123,13 @@
     <SupportBundleViewerLayout
       profileData={profileData.profile}
       dataflowData={profileData.dataflow}
-      programCode={profileData.sources}
       logText={profileData.logText}
       globalMetrics={profileData.globalMetrics}
       connectorMetrics={profileData.connectorMetrics}
+      connectorStatus={profileData.connectorStatus}
       runtimeConfig={profileData.runtimeConfig}
+      pipelineEvents={profileData.pipelineEvents}
+      sourceFiles={profileData.sourceFiles}
       triageResults={new TriageResults()}
       {profileFiles}
       {selectedTimestamp}

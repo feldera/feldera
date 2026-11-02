@@ -12,6 +12,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.util.List;
+
 /** Unit tests for {@link SimplifyConditionals} */
 public class TestSimplifyConditionals extends BaseSQLTests {
     final ExpressionBuilder b = new ExpressionBuilder();
@@ -88,6 +90,26 @@ public class TestSimplifyConditionals extends BaseSQLTests {
                 } else {
                     2
                 }))""", result.toString());
+    }
+
+    @Test
+    public void testLetAndBlockConditions() {
+        DBSPCompiler compiler = this.testCompiler();
+        // |x: i32| if (let y = x + 1; y < 0) { 0 } else { 1 }
+        var letCondition = b.lambda(b.i32(), x -> b.ifThenElse(
+                b.let(b.add(x, b.lit(1)), y -> b.binary(DBSPOpcode.LT, y.deepCopy(), b.lit(0))),
+                b.lit(0), b.lit(1)));
+        // |x: i32| if { let y = x + 1; y < 0 } { 0 } else { 1 }
+        var blockCondition = b.lambda(b.i32(), x -> b.ifThenElse(
+                b.block(b.add(x, b.lit(1)), y -> b.binary(DBSPOpcode.LT, y.deepCopy(), b.lit(0))),
+                b.lit(0), b.lit(1)));
+
+        SimplifyConditionals sc = new SimplifyConditionals(compiler);
+        CanonicalForm cf = new CanonicalForm(compiler);
+        for (var clo : List.of(letCondition, blockCondition)) {
+            var result = cf.apply(sc.apply(clo));
+            Assert.assertEquals(cf.apply(clo).toString(), result.toString());
+        }
     }
 
     @Test

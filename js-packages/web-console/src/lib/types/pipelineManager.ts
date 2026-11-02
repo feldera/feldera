@@ -1,4 +1,4 @@
-import type { GlobalControllerMetrics } from '$lib/services/manager'
+import type { GlobalControllerMetrics } from '#lib/services/manager/index.ts'
 
 export type GlobalMetricsTimestamp = GlobalControllerMetrics & {
   timeMs: number
