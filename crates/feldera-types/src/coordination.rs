@@ -725,6 +725,29 @@ pub struct SnapshotLeaseId {
     pub id: Uuid,
 }
 
+/// `/coordination/output/commit` request, from the part of a distributed output connector on
+/// one host to the connector's leader on another host.
+///
+/// The part reports its output for every committed transaction, even with nothing to report, by
+/// the step at which the transaction committed.  The leader commits the output of every part for
+/// that step at once.  The reply comes after that commit: 200 OK if it succeeded, 409 Conflict
+/// with the error if it failed, and another error if the leader is not ready, in which case the
+/// part tries again.  A repeated report of a step does no harm.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct OutputPartReport {
+    /// The name of the output connector.
+    pub endpoint: String,
+
+    /// The ordinal of the part's host.
+    pub host: usize,
+
+    /// The step at which the transaction committed.
+    pub step: Step,
+
+    /// The part's output, in a form that the connector defines.
+    pub payload: JsonValue,
+}
+
 /// `/coordination/labels/incomplete` reply, streamed from pipeline to coordinator.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Labels {

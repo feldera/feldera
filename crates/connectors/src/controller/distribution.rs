@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use feldera_adapterlib::errors::controller::ConfigError;
 use feldera_types::circuit::Layout;
 use feldera_types::{
-    config::ConnectorConfig,
+    config::{ConnectorConfig, TransportConfig},
     coordination::{InputDistribution, InputShard},
 };
 use serde_json::Value as JsonValue;
@@ -78,6 +78,35 @@ pub fn validate_distribution(
     Ok(())
 }
 
+/// Returns whether output connector `config` runs as a distributed connector, with a part on
+/// every host: it sets `distributed`, its transport supports that (see
+/// `TransportConfig::supports_output_distribution`), and the pipeline is `multihost`.
+/// Otherwise, `distributed` has no effect, as before output connectors could be distributed.
+pub fn output_is_distributed(config: &ConnectorConfig, multihost: bool) -> bool {
+    config.distributed && config.transport.supports_output_distribution() && multihost
+}
+
+/// Returns an error if output connector `config` runs as a distributed connector (see
+/// [output_is_distributed]) in a way that its transport does not support.
+pub fn validate_output_distribution(
+    endpoint_name: &str,
+    config: &ConnectorConfig,
+    multihost: bool,
+) -> Result<(), ConfigError> {
+    // The parts commit through a leader one transaction at a time, but output buffering flushes
+    // each host's buffer at its own time, so the hosts' batches would not line up.
+    if output_is_distributed(config, multihost)
+        && matches!(config.transport, TransportConfig::DeltaTableOutput(_))
+        && config.output_buffer_config.enable_output_buffer
+    {
+        return Err(ConfigError::invalid_transport_configuration(
+            endpoint_name,
+            "a distributed 'delta_table_output' connector does not support output buffering ('enable_output_buffer')",
+        ));
+    }
+    Ok(())
+}
+
 /// Returns the part of the input that this host reads for input connector
 /// `endpoint_name`, or `None` if this host reads all of it as an ordinary
 /// connector.
@@ -140,7 +169,10 @@ mod tests {
 
     use std::collections::BTreeMap;
 
-    use super::{input_shard, resume_distribution, validate_distribution};
+    use super::{
+        input_shard, output_is_distributed, resume_distribution, validate_distribution,
+        validate_output_distribution,
+    };
 
     fn kafka(distributed: bool) -> ConnectorConfig {
         let config: KafkaInputConfig = serde_json::from_value(serde_json::json!({
@@ -248,5 +280,69 @@ mod tests {
             resume_distribution(current, &checkpointed),
             BTreeMap::from([("a".to_string(), home(2)), ("new".to_string(), home(1))])
         );
+    }
+
+    /// An output connector with `config` as its transport config.
+    fn output(transport: TransportConfig) -> ConnectorConfig {
+        ConnectorConfig {
+            distributed: true,
+            ..ConnectorConfig::new(transport, None)
+        }
+    }
+
+    /// A Delta Lake output connector config with `config` added to its URI.
+    fn delta(config: serde_json::Value) -> TransportConfig {
+        let mut json = serde_json::json!({"uri": "memory://"});
+        json.as_object_mut()
+            .unwrap()
+            .extend(config.as_object().unwrap().clone());
+        TransportConfig::DeltaTableOutput(serde_json::from_value(json).unwrap())
+    }
+
+    /// Only the null output, and the Delta Lake output that appends a change log, run as
+    /// distributed connectors, and only on multihost.  Elsewhere `distributed` has no effect and is
+    /// accepted, as it was before output connectors could be distributed.
+    #[test]
+    fn output_distribution_depends_on_the_transport() {
+        let supported = [
+            TransportConfig::NullOutput,
+            delta(serde_json::json!({"mode": "append"})),
+            delta(serde_json::json!({"mode": "append", "update_mode": "cdc"})),
+        ];
+        for transport in supported {
+            let config = output(transport);
+            assert!(output_is_distributed(&config, true));
+            assert!(!output_is_distributed(&config, false));
+            validate_output_distribution("c", &config, true).unwrap();
+        }
+
+        let unsupported = [
+            delta(serde_json::json!({"mode": "truncate"})),
+            delta(serde_json::json!({"mode": "error_if_exists"})),
+            delta(serde_json::json!({"mode": "append", "update_mode": "merge"})),
+            TransportConfig::KafkaOutput(
+                serde_json::from_value(serde_json::json!({
+                    "topic": "t",
+                    "bootstrap.servers": "localhost:9092",
+                }))
+                .unwrap(),
+            ),
+        ];
+        for transport in unsupported {
+            let config = output(transport);
+            assert!(!output_is_distributed(&config, true));
+            validate_output_distribution("c", &config, true).unwrap();
+        }
+
+        // Output buffering is refused on a distributed Delta Lake output on multihost, but not on
+        // one host, where the connector is not distributed, and not on the null output.
+        let mut buffered = output(delta(serde_json::json!({"mode": "append"})));
+        buffered.output_buffer_config.enable_output_buffer = true;
+        let error = validate_output_distribution("c", &buffered, true).unwrap_err();
+        assert!(error.to_string().contains("output buffering"), "{error}");
+        validate_output_distribution("c", &buffered, false).unwrap();
+        let mut buffered = output(TransportConfig::NullOutput);
+        buffered.output_buffer_config.enable_output_buffer = true;
+        validate_output_distribution("c", &buffered, true).unwrap();
     }
 }

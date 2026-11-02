@@ -4651,6 +4651,7 @@ pub fn output_endpoint_records_transaction_after_enable(engine: &dyn PipelineTes
         "test_output1",
         false,
         false,
+        false,
         None,
         Parker::new().unparker().clone(),
     );

@@ -1,3 +1,4 @@
+use crate::controller::output_leader::OutputPart;
 use crate::controller::{ControllerInner, EndpointId};
 use crate::transport::IntegratedInputEndpoint;
 use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint};
@@ -56,6 +57,7 @@ pub fn create_integrated_output_endpoint(
     shutdown: CancellationToken,
     continue_previous_state: bool,
     is_index: bool,
+    part: Option<OutputPart>,
 ) -> Result<Box<dyn IntegratedOutputEndpoint>, ControllerError> {
     let ep: Box<dyn IntegratedOutputEndpoint> = match &connector_config.transport {
         #[cfg(feature = "with-deltalake")]
@@ -70,6 +72,7 @@ pub fn create_integrated_output_endpoint(
             continue_previous_state,
             is_index,
             connector_config.output_buffer_config.enable_output_buffer,
+            part,
         )?),
         TransportConfig::PostgresOutput(config) => Box::new(PostgresOutputEndpoint::new(
             endpoint_id,

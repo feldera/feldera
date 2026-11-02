@@ -20,7 +20,9 @@ use anyhow::{Context, Result as AnyResult, anyhow, bail};
 use bytes::{Buf, Bytes, BytesMut};
 use feldera_mtls::PipelinePeerTls;
 use feldera_types::{
-    coordination::{AdHocScan, AdHocScanFormat, SnapshotLease, SnapshotLeaseId, Step},
+    coordination::{
+        AdHocScan, AdHocScanFormat, OutputPartReport, SnapshotLease, SnapshotLeaseId, Step,
+    },
     program_schema::SqlIdentifier,
 };
 use reqwest::{Client, StatusCode, Url};
@@ -285,6 +287,9 @@ pub const SCAN_ATTEMPTS: u32 = 5;
 /// retry waits twice as long as the one before.
 const FIRST_RETRY_DELAY: Duration = Duration::from_millis(200);
 
+/// The longest delay between two tries of [PeerClient::report_output].
+const MAX_REPORT_RETRY_DELAY: Duration = Duration::from_secs(5);
+
 /// How long a connection to another host may take to open.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -395,6 +400,53 @@ impl PeerClient {
             .post_json(host, "coordination/snapshot/lease", &request)
             .await?;
         Ok(reply.id)
+    }
+
+    /// Reports a part of a distributed output connector to its leader on `host`, and returns once
+    /// the leader has committed the report's step.
+    ///
+    /// The report is sent again, after a delay that grows to [MAX_REPORT_RETRY_DELAY], until the
+    /// leader answers, because the leader might not be ready yet and a repeated report does no
+    /// harm.  If the leader's commit failed, this returns that error.  The caller stops it at
+    /// shutdown.
+    pub async fn report_output(&self, host: usize, report: &OutputPartReport) -> AnyResult<()> {
+        let url = self.host_urls[host].join("coordination/output/commit")?;
+        let mut delay = self.first_retry_delay;
+        let mut attempts = 0u64;
+        loop {
+            let error = match self
+                .client
+                .post(url.clone())
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(serde_json::to_vec(report)?)
+                .send()
+                .await
+            {
+                Ok(response) if response.status() == StatusCode::OK => return Ok(()),
+                Ok(response) if response.status() == StatusCode::CONFLICT => {
+                    let body = response.text().await.unwrap_or_default();
+                    bail!(
+                        "the leader on host {host} failed to commit step {}: {body}",
+                        report.step
+                    );
+                }
+                Ok(response) => {
+                    let status = response.status();
+                    let body = response.text().await.unwrap_or_default();
+                    anyhow!("{status}: {body}")
+                }
+                Err(error) => anyhow!(error),
+            };
+            attempts += 1;
+            if attempts.is_power_of_two() {
+                warn!(
+                    "reporting step {} of output connector {:?} to its leader on host {host} failed {attempts} times, most recently with: {error:#}",
+                    report.step, report.endpoint
+                );
+            }
+            tokio::time::sleep(delay).await;
+            delay = (delay * 2).min(MAX_REPORT_RETRY_DELAY);
+        }
     }
 
     /// Releases lease `id` on `host`.  A failure is only logged: the host
@@ -553,7 +605,7 @@ pub async fn send_snapshot_parts(
 #[cfg(test)]
 mod tests {
     use std::{
-        sync::Arc,
+        sync::{Arc, Mutex},
         time::{Duration, Instant},
     };
 
@@ -769,6 +821,81 @@ mod tests {
             }
         });
         (url, skips)
+    }
+
+    /// Starts a server that answers its `n`th request with `statuses[n]`, or
+    /// 200 OK after them, and returns its URL and the number of requests it
+    /// got.
+    async fn status_server(statuses: Vec<u16>) -> (String, Arc<Mutex<usize>>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let requests = Arc::new(Mutex::new(0));
+        tokio::spawn({
+            let requests = requests.clone();
+            async move {
+                loop {
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let mut request = Vec::new();
+                    let mut buffer = [0; 4096];
+                    let (header_end, length) = loop {
+                        let n = stream.read(&mut buffer).await.unwrap();
+                        request.extend_from_slice(&buffer[..n]);
+                        if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                            let headers = String::from_utf8_lossy(&request[..end]).to_lowercase();
+                            let length = headers
+                                .lines()
+                                .find_map(|line| line.strip_prefix("content-length: "))
+                                .map_or(0, |n| n.trim().parse().unwrap());
+                            break (end + 4, length);
+                        }
+                    };
+                    while request.len() < header_end + length {
+                        let n = stream.read(&mut buffer).await.unwrap();
+                        request.extend_from_slice(&buffer[..n]);
+                    }
+                    let status = {
+                        let mut requests = requests.lock().unwrap();
+                        *requests += 1;
+                        statuses.get(*requests - 1).copied().unwrap_or(200)
+                    };
+                    let header = format!(
+                        "HTTP/1.1 {status} X\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                    );
+                    stream.write_all(header.as_bytes()).await.unwrap();
+                    stream.shutdown().await.unwrap();
+                }
+            }
+        });
+        (url, requests)
+    }
+
+    /// Reports step 4 to the leader at `url`, as a part does.
+    async fn report(url: &str) -> anyhow::Result<()> {
+        let mut client = super::PeerClient::new(&[url.to_string()], None, None).unwrap();
+        client.first_retry_delay = Duration::from_millis(1);
+        let report = feldera_types::coordination::OutputPartReport {
+            endpoint: "spread".into(),
+            host: 1,
+            step: 4,
+            payload: serde_json::json!([]),
+        };
+        tokio::time::timeout(Duration::from_secs(10), client.report_output(0, &report))
+            .await
+            .expect("the report should finish")
+    }
+
+    /// A part retries its report while the leader is not ready, and stops at
+    /// once when the leader says that its commit failed.
+    #[tokio::test]
+    async fn report_retries_until_the_leader_answers() {
+        let (url, requests) = status_server(vec![503, 503]).await;
+        report(&url).await.unwrap();
+        assert_eq!(*requests.lock().unwrap(), 3);
+
+        let (url, requests) = status_server(vec![409]).await;
+        assert!(report(&url).await.is_err());
+        assert_eq!(*requests.lock().unwrap(), 1);
     }
 
     /// A lease from a host that accepts the connection but never answers fails after the lease

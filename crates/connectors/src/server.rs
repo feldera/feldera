@@ -75,7 +75,8 @@ use feldera_types::config::{
 };
 use feldera_types::coordination::{
     AdHocScan, AdHocScanFormat, CoordinationActivate, CoordinationCapabilities, CoordinationStatus,
-    InputChoices, Labels, RestartArgs, SnapshotLease, SnapshotLeaseId, Step, StepRequest,
+    InputChoices, Labels, OutputPartReport, RestartArgs, SnapshotLease, SnapshotLeaseId, Step,
+    StepRequest,
 };
 use feldera_types::format::json::JsonEncoderConfig;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -1863,6 +1864,7 @@ where
         .service(coordination_adhoc_scan)
         .service(coordination_snapshot_lease)
         .service(coordination_snapshot_release)
+        .service(coordination_output_commit)
         .service(coordination_labels_incomplete)
         .service(coordination_input_choices)
         .service(coordination_restart)
@@ -2913,7 +2915,8 @@ pub mod test_http_helpers {
         /// Starts `n_hosts` hosts of `workers_per_host` workers each, with
         /// pipeline configuration `config`, which needs no `workers` or
         /// `multihost`.  Each output connector in `config` goes to the host
-        /// that `output_assignment` gives its stream, or host 0.
+        /// that `output_assignment` gives its stream, or host 0, except that a
+        /// distributed output connector goes to every host.
         pub(crate) async fn start(
             engine: &dyn PipelineTestEngine,
             n_hosts: usize,
@@ -2938,6 +2941,9 @@ pub mod test_http_helpers {
         /// `storage_dirs`, if there is one, and starts from its entry of
         /// `checkpoints`, if that is given.  Returns an error if a host fails
         /// to start.
+        ///
+        /// The view's persistent id is the one that `config`'s `program_ir`
+        /// gives it, as [test_program_ir] builds it, or `v0`.
         pub(crate) async fn start_with_storage(
             engine: &dyn PipelineTestEngine,
             n_hosts: usize,
@@ -2950,6 +2956,11 @@ pub mod test_http_helpers {
             use feldera_types::coordination::CoordinationActivate;
 
             let mut config = config.clone();
+            let view_persistent_id = config
+                .pointer("/program_ir/mir/1/persistent_id")
+                .and_then(|id| id.as_str())
+                .unwrap_or("v0")
+                .to_string();
             config["workers"] = json!(n_hosts * workers_per_host);
             config["multihost"] = json!({"hosts": n_hosts});
             let pipeline_config: feldera_types::config::PipelineConfig =
@@ -2995,7 +3006,7 @@ pub mod test_http_helpers {
                 ));
                 let circuit = TestCircuit::Identity {
                     relation: relation(),
-                    persistent_output_ids: vec![Some("v0".to_string())],
+                    persistent_output_ids: vec![Some(view_persistent_id.clone())],
                     input_properties: Vec::new(),
                     materialized: true,
                     persistent_ids: true,
@@ -3023,8 +3034,13 @@ pub mod test_http_helpers {
                 let outputs = pipeline_config
                     .outputs
                     .iter()
+                    // As the coordinator does, a distributed connector goes to every host, and
+                    // any other connector, including one whose transport cannot be distributed,
+                    // to the host that the stream is assigned to.
                     .filter(|(_, output)| {
-                        output_assignment.get(&*output.stream).copied().unwrap_or(0) == host
+                        let config = &output.connector_config;
+                        (config.distributed && config.transport.supports_output_distribution())
+                            || output_assignment.get(&*output.stream).copied().unwrap_or(0) == host
                     })
                     .map(|(name, output)| (name.clone(), output.clone()))
                     .collect();
@@ -5850,6 +5866,31 @@ async fn coordination_snapshot_lease(
     Ok(HttpResponse::Ok().json(SnapshotLeaseId { id }))
 }
 
+/// Reports a part of a distributed output connector to its leader on this host, and answers once
+/// the leader has committed the report's step.  See [OutputPartReport].
+#[post("/coordination/output/commit")]
+async fn coordination_output_commit(
+    state: WebData<ServerState>,
+    report: web::Json<OutputPartReport>,
+) -> Result<HttpResponse, PipelineError> {
+    let report = report.into_inner();
+    let Some(leader) = state.controller()?.output_leader(&report.endpoint) else {
+        return Ok(HttpResponse::ServiceUnavailable().body(format!(
+            "output connector {:?} has no leader on this host yet",
+            report.endpoint
+        )));
+    };
+    Ok(
+        match leader
+            .report(report.host, report.step, report.payload)
+            .await
+        {
+            Ok(()) => HttpResponse::Ok().finish(),
+            Err(error) => HttpResponse::Conflict().body(error),
+        },
+    )
+}
+
 /// Releases a snapshot lease.  Releasing a lease that does not exist, for
 /// example because it was already released, succeeds.
 #[post("/coordination/snapshot/release")]
@@ -7366,6 +7407,460 @@ pub mod test_http {
         });
     }
 
+    /// A distributed null output on 3 hosts runs on every host, and each host
+    /// writes its own share of the view: every host gets some rows, and the
+    /// shares add up to the view.
+    #[engine_test]
+    pub fn multihost_distributed_null_output(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let config = json!({
+                "name": "test",
+                "inputs": {},
+                "outputs": {
+                    "spread": {
+                        "stream": "test_output1",
+                        "distributed": true,
+                        "transport": {"name": "null_output"},
+                        "format": {"name": "csv"},
+                    },
+                },
+            });
+            let mut pipeline =
+                MultihostTestPipeline::start(engine, 3, 2, &config, &[("test_output1", 0)]).await;
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..4 {
+                pipeline.step().await;
+            }
+
+            let shares = output_shares(&pipeline, "spread", 300).await;
+            assert!(shares.iter().all(|&share| share > 0), "{shares:?}");
+            assert_eq!(shares.iter().sum::<u64>(), 300, "{shares:?}");
+        });
+    }
+
+    /// Waits until the parts of output connector `endpoint` on all of the
+    /// hosts have sent `total` records in all, and returns how many each sent.
+    async fn output_shares(
+        pipeline: &MultihostTestPipeline,
+        endpoint: &str,
+        total: u64,
+    ) -> Vec<u64> {
+        timeout(Duration::from_secs(30), async {
+            loop {
+                let mut shares = Vec::new();
+                for server in &pipeline.servers {
+                    let stats = get_stats(server).await;
+                    let output = stats
+                        .outputs
+                        .iter()
+                        .find(|output| output.endpoint_name == endpoint)
+                        .expect("every host runs the distributed connector");
+                    shares.push(output.metrics.transmitted_records);
+                }
+                if shares.iter().sum::<u64>() >= total {
+                    return shares;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("the connector did not send all of its output")
+    }
+
+    /// A distributed Delta Lake output on 3 hosts writes from every host but
+    /// commits through its leader: the table is created once, each transaction
+    /// is one commit, and the table holds every row of the view, once.  The
+    /// leader is on host 1, so that it is not the host that ingests.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test]
+    pub fn multihost_distributed_delta_output(engine: &dyn PipelineTestEngine) {
+        distributed_delta_output(engine, false, &[], None);
+    }
+
+    /// Like `multihost_distributed_delta_output`, with `send_snapshot`.  The
+    /// connector starts paused and starts only after the rows are in the view,
+    /// so they reach it in its snapshot, and each part sends only its own
+    /// host's part of the view.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test]
+    pub fn multihost_distributed_delta_snapshot(engine: &dyn PipelineTestEngine) {
+        distributed_delta_output(engine, true, &[], None);
+    }
+
+    /// Like `multihost_distributed_delta_snapshot`, but the connector starts
+    /// on one host a step before the others, as it can when the coordinator
+    /// passes the start along to each host.  Host 0 is not the leader.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test]
+    pub fn multihost_distributed_delta_snapshot_staggered(engine: &dyn PipelineTestEngine) {
+        distributed_delta_output(engine, true, &[0], None);
+    }
+
+    /// Like `multihost_distributed_delta_snapshot`, with each view's integral on one host
+    /// (`dev_tweaks.view_integrals: one_host`).  Each part's snapshot is its host's part of the
+    /// integral, so the leader's host, which has all of it, sends the whole snapshot, and the
+    /// table still has every row once.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test]
+    pub fn multihost_distributed_delta_snapshot_one_host_integrals(
+        engine: &dyn PipelineTestEngine,
+    ) {
+        distributed_delta_output(engine, true, &[], Some("one_host"));
+    }
+
+    /// Like `multihost_distributed_delta_snapshot_staggered`, but the leader,
+    /// on host 1, starts the connector a step after the other hosts.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test]
+    pub fn multihost_distributed_delta_snapshot_leader_starts_last(
+        engine: &dyn PipelineTestEngine,
+    ) {
+        distributed_delta_output(engine, true, &[0, 2], None);
+    }
+
+    /// The body of the distributed Delta Lake output tests.  With
+    /// `send_snapshot`, the hosts in `early` start the connector a step before
+    /// the other hosts.  Host 1 is the leader.  `view_integrals`, if any, is
+    /// `dev_tweaks.view_integrals`.
+    #[cfg(feature = "with-deltalake")]
+    fn distributed_delta_output(
+        engine: &dyn PipelineTestEngine,
+        send_snapshot: bool,
+        early: &[usize],
+        view_integrals: Option<&str>,
+    ) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let dir = tempfile::tempdir().unwrap();
+            let table_uri = dir.path().join("table");
+            let mut config = distributed_delta_config(
+                &table_uri,
+                json!({"send_snapshot": send_snapshot, "paused": send_snapshot}),
+                json!({}),
+            );
+            if let Some(view_integrals) = view_integrals {
+                config["dev_tweaks"] = json!({ "view_integrals": view_integrals });
+            }
+            let mut pipeline =
+                MultihostTestPipeline::start(engine, 3, 2, &config, &[("test_output1", 1)]).await;
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..4 {
+                pipeline.step().await;
+            }
+            if send_snapshot {
+                let n_hosts = pipeline.servers.len();
+                let late = (0..n_hosts).filter(|host| !early.contains(host));
+                let order: Vec<usize> = early.iter().copied().chain(late).collect();
+                for (index, &host) in order.iter().enumerate() {
+                    let response = pipeline.servers[host]
+                        .get("/output_endpoints/spread/start")
+                        .send()
+                        .await
+                        .unwrap();
+                    assert!(response.status().is_success());
+                    if index + 1 == early.len() {
+                        pipeline.step().await;
+                    }
+                }
+                for _ in 0..3 {
+                    pipeline.step().await;
+                }
+            }
+            let shares = output_shares(&pipeline, "spread", 300).await;
+            if view_integrals == Some("one_host") {
+                // Only the leader's host has the integral, so only it sends the snapshot.
+                assert_eq!(shares, [0, 300, 0]);
+            } else {
+                assert!(shares.iter().all(|&share| share > 0), "{shares:?}");
+            }
+            assert_eq!(shares.iter().sum::<u64>(), 300, "{shares:?}");
+
+            // Version 0 creates the table, and version 1 commits the one
+            // transaction with output.  With staggered starts, the early hosts'
+            // parts of the snapshot and the other hosts' parts reach the table in
+            // the commits of two transactions.
+            let (version, ids) = read_delta_table(&table_uri).await;
+            assert_eq!(version, Some(if early.is_empty() { 1 } else { 2 }));
+            assert_eq!(ids, (0..300).collect::<Vec<i64>>());
+        });
+    }
+
+    /// The configuration of a pipeline with distributed Delta Lake output
+    /// `spread` on `test_output1`, writing to `table_uri`, with `connector`
+    /// added to the connector's configuration and `transport` to its
+    /// transport's.
+    #[cfg(feature = "with-deltalake")]
+    fn distributed_delta_config(
+        table_uri: &std::path::Path,
+        connector: serde_json::Value,
+        transport: serde_json::Value,
+    ) -> serde_json::Value {
+        let mut transport_config = json!({
+            "uri": table_uri.display().to_string(),
+            "mode": "append",
+        });
+        transport_config
+            .as_object_mut()
+            .unwrap()
+            .extend(transport.as_object().unwrap().clone());
+        let mut spread = json!({
+            "stream": "test_output1",
+            "distributed": true,
+            "transport": {"name": "delta_table_output", "config": transport_config},
+        });
+        spread
+            .as_object_mut()
+            .unwrap()
+            .extend(connector.as_object().unwrap().clone());
+        json!({"name": "test", "inputs": {}, "outputs": {"spread": spread}})
+    }
+
+    /// Returns the version of the Delta Lake table at `table_uri` and the
+    /// sorted `id`s of its rows.
+    #[cfg(feature = "with-deltalake")]
+    async fn read_delta_table(table_uri: &std::path::Path) -> (Option<u64>, Vec<i64>) {
+        use arrow::array::{Array, Int64Array};
+        use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+        let table = deltalake::open_table(url::Url::from_file_path(table_uri).unwrap())
+            .await
+            .unwrap();
+        let mut ids = Vec::new();
+        for file in table.get_file_uris().unwrap() {
+            let file = std::fs::File::open(table_uri.join(&*file)).unwrap();
+            for batch in ParquetRecordBatchReaderBuilder::try_new(file)
+                .unwrap()
+                .build()
+                .unwrap()
+            {
+                let batch = batch.unwrap();
+                let column = arrow::compute::cast(
+                    batch.column_by_name("id").unwrap(),
+                    &arrow::datatypes::DataType::Int64,
+                )
+                .unwrap();
+                let column = column.as_any().downcast_ref::<Int64Array>().unwrap();
+                ids.extend((0..column.len()).map(|i| column.value(i)));
+            }
+        }
+        ids.sort();
+        (table.version(), ids)
+    }
+
+    /// A distributed Delta Lake output on 3 hosts over many transactions,
+    /// with empty steps between them: each commit after the one that creates
+    /// the table holds the files of all 3 parts and the next transaction
+    /// version of the leader, in order, and the table holds every row once.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test]
+    pub fn multihost_distributed_delta_many_transactions(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let dir = tempfile::tempdir().unwrap();
+            let table_uri = dir.path().join("table");
+            let config = distributed_delta_config(&table_uri, json!({}), json!({}));
+            let mut pipeline =
+                MultihostTestPipeline::start(engine, 3, 2, &config, &[("test_output1", 2)]).await;
+            for batch in 0..5 {
+                let data = vec![for_ids(batch * 60..(batch + 1) * 60)];
+                TestHttpSender::send_stream(
+                    pipeline.servers[0].post("/ingress/test_input1"),
+                    &data,
+                )
+                .await;
+                for _ in 0..3 {
+                    pipeline.step().await;
+                }
+                output_shares(&pipeline, "spread", (batch as u64 + 1) * 60).await;
+            }
+
+            let (version, ids) = read_delta_table(&table_uri).await;
+            assert_eq!(ids, (0..300).collect::<Vec<i64>>());
+            let version = version.unwrap();
+            assert!(version >= 5, "{version}");
+            for v in 1..=version {
+                let log =
+                    std::fs::read_to_string(table_uri.join(format!("_delta_log/{v:020}.json")))
+                        .unwrap();
+                let actions: Vec<serde_json::Value> = log
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect();
+                let adds = actions.iter().filter(|a| a.get("add").is_some()).count();
+                let txns: Vec<_> = actions
+                    .iter()
+                    .filter_map(|a| a.get("txn"))
+                    .map(|txn| txn["version"].as_u64().unwrap())
+                    .collect();
+                assert_eq!(adds, 3, "commit {v} should hold one file from each part");
+                assert_eq!(txns, [v - 1], "commit {v}");
+            }
+        });
+    }
+
+    /// `distributed: true` on an output transport that cannot be distributed has no effect: the
+    /// connector runs on the host that the stream is assigned to, as before output connectors could
+    /// be distributed, and writes every row once.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test]
+    pub fn multihost_unsupported_distributed_output_runs_on_one_host(
+        engine: &dyn PipelineTestEngine,
+    ) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let dir = tempfile::tempdir().unwrap();
+            let table_uri = dir.path().join("table");
+            let config =
+                distributed_delta_config(&table_uri, json!({}), json!({"mode": "truncate"}));
+            let mut pipeline =
+                MultihostTestPipeline::start(engine, 3, 2, &config, &[("test_output1", 1)]).await;
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..4 {
+                pipeline.step().await;
+            }
+            for host in [0, 2] {
+                assert!(
+                    pipeline.states[host]
+                        .controller()
+                        .unwrap()
+                        .output_endpoint_status("spread")
+                        .is_err(),
+                    "host {host} runs the connector"
+                );
+            }
+            tokio::time::timeout(Duration::from_secs(30), async {
+                while read_delta_table_ids(&table_uri).await.len() < 300 {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("the connector did not write the view");
+            assert_eq!(
+                read_delta_table_ids(&table_uri).await,
+                (0..300).collect::<Vec<i64>>()
+            );
+        });
+    }
+
+    /// The sorted `id`s of the rows of the Delta Lake table at `table_uri`, or none if there is no
+    /// table yet.
+    #[cfg(feature = "with-deltalake")]
+    async fn read_delta_table_ids(table_uri: &std::path::Path) -> Vec<i64> {
+        if !table_uri.join("_delta_log").exists() {
+            return Vec::new();
+        }
+        read_delta_table(table_uri).await.1
+    }
+
+    /// When the leader's part of a distributed Delta Lake output stops, the other parts' later
+    /// reports fail at once, as transport errors of those parts, instead of retrying forever for a
+    /// leader that does not come back.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test]
+    pub fn multihost_distributed_delta_leader_stops(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let dir = tempfile::tempdir().unwrap();
+            let table_uri = dir.path().join("table");
+            let config = distributed_delta_config(&table_uri, json!({}), json!({}));
+            let mut pipeline =
+                MultihostTestPipeline::start(engine, 3, 2, &config, &[("test_output1", 1)]).await;
+
+            let leader = pipeline.states[1].controller().unwrap();
+            let leader_part = leader
+                .status()
+                .output_status()
+                .iter()
+                .find(|(_, status)| status.endpoint_name == "spread")
+                .map(|(id, _)| *id)
+                .unwrap();
+            leader.disconnect_output(&leader_part);
+
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            let transport_errors = |pipeline: &MultihostTestPipeline, host: usize| {
+                pipeline.states[host]
+                    .controller()
+                    .unwrap()
+                    .output_endpoint_status("spread")
+                    .unwrap()
+                    .metrics
+                    .num_transport_errors
+            };
+            tokio::time::timeout(Duration::from_secs(30), async {
+                while transport_errors(&pipeline, 0) == 0 || transport_errors(&pipeline, 2) == 0 {
+                    pipeline.step().await;
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("the other parts should report their failed commits");
+        });
+    }
+
+    /// When the leader of a distributed Delta Lake output cannot commit, every
+    /// part reports the error, and no part counts its rows as written.
+    #[cfg(all(feature = "with-deltalake", unix))]
+    #[engine_test]
+    pub fn multihost_distributed_delta_commit_failure(engine: &dyn PipelineTestEngine) {
+        use std::os::unix::fs::PermissionsExt;
+
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let dir = tempfile::tempdir().unwrap();
+            let table_uri = dir.path().join("table");
+            let config = distributed_delta_config(&table_uri, json!({}), json!({"max_retries": 0}));
+            let mut pipeline =
+                MultihostTestPipeline::start(engine, 3, 2, &config, &[("test_output1", 1)]).await;
+
+            // The table exists now.  Nobody can add to its log.
+            let log = table_uri.join("_delta_log");
+            let set_mode = |mode| {
+                std::fs::set_permissions(&log, std::fs::Permissions::from_mode(mode)).unwrap()
+            };
+            set_mode(0o555);
+
+            let data = vec![for_ids(0..300)];
+            TestHttpSender::send_stream(pipeline.servers[0].post("/ingress/test_input1"), &data)
+                .await;
+            for _ in 0..4 {
+                pipeline.step().await;
+            }
+            let errors = timeout(Duration::from_secs(30), async {
+                loop {
+                    let mut errors = Vec::new();
+                    let mut transmitted = 0;
+                    for server in &pipeline.servers {
+                        let stats = get_stats(server).await;
+                        let output = stats
+                            .outputs
+                            .iter()
+                            .find(|output| output.endpoint_name == "spread")
+                            .unwrap();
+                        errors.push(output.metrics.num_transport_errors);
+                        transmitted += output.metrics.transmitted_records;
+                    }
+                    assert_eq!(transmitted, 0);
+                    if errors.iter().all(|&e| e > 0) {
+                        return errors;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await;
+            set_mode(0o755);
+            errors.expect("every part should report the failed commit");
+        });
+    }
+
     /// A 2-host pipeline restarts from its checkpoint with its state: the
     /// view's snapshot after the restart has every row from before it.
     #[engine_test(requires(Storage, Checkpoints))]
@@ -7610,36 +8105,191 @@ pub mod test_http {
         });
     }
 
-    /// Returns the version of the Delta Lake table at `table_uri` and the
-    /// sorted `id`s of its rows.
+    /// A Delta Lake output that wrote a view restarts from its checkpoint as a
+    /// distributed connector.  The table must still hold every row of the
+    /// view once, and later rows must reach it.
     #[cfg(feature = "with-deltalake")]
-    async fn read_delta_table(table_uri: &std::path::Path) -> (Option<u64>, Vec<i64>) {
-        use arrow::array::{Array, Int64Array};
-        use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-
-        let table = deltalake::open_table(url::Url::from_file_path(table_uri).unwrap())
+    #[engine_test(requires(Storage, Checkpoints))]
+    pub fn multihost_output_becomes_distributed(engine: &dyn PipelineTestEngine) {
+        actix_web::rt::System::new().block_on(async {
+            ensure_default_crypto_provider();
+            let tempdir = TempDir::new().unwrap();
+            let dirs: Vec<_> = (0..2)
+                .map(|host| {
+                    let dir = tempdir.path().join(format!("host{host}"));
+                    std::fs::create_dir(&dir).unwrap();
+                    dir
+                })
+                .collect();
+            let table_uri = tempdir.path().join("table");
+            let config = |distributed: bool| {
+                json!({
+                    "name": "test",
+                    "program_ir": test_program_ir("v0"),
+                    "inputs": {},
+                    "outputs": {
+                        "sink": {
+                            "stream": "test_output1",
+                            "distributed": distributed,
+                            "transport": {"name": "delta_table_output", "config": {
+                                "uri": table_uri.display().to_string(),
+                                "mode": "append",
+                            }},
+                        },
+                    },
+                })
+            };
+            let assignment = [("test_output1", 0)];
+            let mut pipeline = MultihostTestPipeline::start_with_storage(
+                engine,
+                2,
+                2,
+                &config(false),
+                &assignment,
+                &dirs,
+                None,
+            )
             .await
             .unwrap();
-        let mut ids = Vec::new();
-        for file in table.get_file_uris().unwrap() {
-            let file = std::fs::File::open(table_uri.join(&*file)).unwrap();
-            for batch in ParquetRecordBatchReaderBuilder::try_new(file)
-                .unwrap()
-                .build()
-                .unwrap()
-            {
-                let batch = batch.unwrap();
-                let column = arrow::compute::cast(
-                    batch.column_by_name("id").unwrap(),
-                    &arrow::datatypes::DataType::Int64,
-                )
-                .unwrap();
-                let column = column.as_any().downcast_ref::<Int64Array>().unwrap();
-                ids.extend((0..column.len()).map(|i| column.value(i)));
+            TestHttpSender::send_stream(
+                pipeline.servers[0].post("/ingress/test_input1"),
+                &[for_ids(0..300)],
+            )
+            .await;
+            for _ in 0..3 {
+                pipeline.step().await;
             }
+            let checkpoints = pipeline.checkpoint().await;
+            pipeline.stop(engine, &dirs).await;
+            assert_eq!(read_delta_table(&table_uri).await.1.len(), 300);
+
+            let mut pipeline = MultihostTestPipeline::start_with_storage(
+                engine,
+                2,
+                2,
+                &config(true),
+                &assignment,
+                &dirs,
+                Some(&checkpoints),
+            )
+            .await
+            .unwrap();
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+            TestHttpSender::send_stream(
+                pipeline.servers[0].post("/ingress/test_input1"),
+                &[for_ids(300..400)],
+            )
+            .await;
+            for _ in 0..3 {
+                pipeline.step().await;
+            }
+            let ids = timeout(Duration::from_secs(30), async {
+                loop {
+                    let (_version, ids) = read_delta_table(&table_uri).await;
+                    if ids.len() >= 400 {
+                        return ids;
+                    }
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                }
+            })
+            .await
+            .unwrap_or_else(|_| panic!("the table never got the new rows"));
+            assert_eq!(ids, (0..400).collect::<Vec<i64>>());
+        });
+    }
+
+    /// A changed view sends all of its rows again to a distributed Delta
+    /// Lake output after the restart, exactly as to one that is not
+    /// distributed: in both cases the table ends with every row twice.
+    #[cfg(feature = "with-deltalake")]
+    #[engine_test(requires(Storage, Checkpoints))]
+    pub fn multihost_changed_view_resends_to_distributed_output(engine: &dyn PipelineTestEngine) {
+        let mut tables = Vec::new();
+        for distributed in [false, true] {
+            tables.push(actix_web::rt::System::new().block_on(async {
+                ensure_default_crypto_provider();
+                let tempdir = TempDir::new().unwrap();
+                let dirs: Vec<_> = (0..2)
+                    .map(|host| {
+                        let dir = tempdir.path().join(format!("host{host}"));
+                        std::fs::create_dir(&dir).unwrap();
+                        dir
+                    })
+                    .collect();
+                let table_uri = tempdir.path().join("table");
+                let config = |view: &str| {
+                    json!({
+                        "name": "test",
+                        "program_ir": test_program_ir(view),
+                        "inputs": {},
+                        "outputs": {
+                            "sink": {
+                                "stream": "test_output1",
+                                "distributed": distributed,
+                                "transport": {"name": "delta_table_output", "config": {
+                                    "uri": table_uri.display().to_string(),
+                                    "mode": "append",
+                                }},
+                            },
+                        },
+                    })
+                };
+                let assignment = [("test_output1", 0)];
+                let mut pipeline = MultihostTestPipeline::start_with_storage(
+                    engine,
+                    2,
+                    2,
+                    &config("v0"),
+                    &assignment,
+                    &dirs,
+                    None,
+                )
+                .await
+                .unwrap();
+                TestHttpSender::send_stream(
+                    pipeline.servers[0].post("/ingress/test_input1"),
+                    &[for_ids(0..300)],
+                )
+                .await;
+                for _ in 0..3 {
+                    pipeline.step().await;
+                }
+                let checkpoints = pipeline.checkpoint().await;
+                pipeline.stop(engine, &dirs).await;
+
+                // A new persistent id for the view, as for a changed view.
+                let mut pipeline = MultihostTestPipeline::start_with_storage(
+                    engine,
+                    2,
+                    2,
+                    &config("v1"),
+                    &assignment,
+                    &dirs,
+                    Some(&checkpoints),
+                )
+                .await
+                .unwrap();
+                timeout(Duration::from_secs(30), async {
+                    loop {
+                        pipeline.step().await;
+                        if read_delta_table(&table_uri).await.1.len() >= 600 {
+                            break;
+                        }
+                    }
+                })
+                .await
+                .unwrap_or_else(|_| panic!("the view never reached the table again"));
+                for _ in 0..3 {
+                    pipeline.step().await;
+                }
+                read_delta_table(&table_uri).await.1
+            }));
         }
-        ids.sort();
-        (table.version(), ids)
+        let twice: Vec<i64> = (0..300).flat_map(|id| [id, id]).collect();
+        assert_eq!(tables[0], twice, "not distributed");
+        assert_eq!(tables[1], twice, "distributed");
     }
 
     /// The configuration for the multihost snapshot tests.
