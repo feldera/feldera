@@ -1,3 +1,4 @@
+use super::prebuilt::GeneratedCrateNames;
 use super::rustc_diagnostics::parse_cargo_json_messages;
 use crate::compiler::gen2_udf_compiler::{
     cleanup_gen2_udf_compilation, perform_gen2_udf_compilation,
@@ -5,11 +6,10 @@ use crate::compiler::gen2_udf_compiler::{
 use crate::compiler::util::{
     CleanupDecision, DirectoryContent, DiskSpace, ProcessGroupTerminator, UtilError,
     checksum_buffer, checksum_encoded_dir_contents, checksum_file, cleanup_specific_directories,
-    cleanup_specific_files, copy_file, copy_file_if_checksum_differs, crate_name_pipeline_base,
-    crate_name_pipeline_globals, crate_name_pipeline_main, create_dir_if_not_exists,
-    create_new_file, decode_string_as_dir, pipeline_binary_filename, program_info_filename,
-    read_file_content, recreate_dir, recreate_file_with_content, sha256, truncate_sha256_checksum,
-    write_file,
+    cleanup_specific_files, copy_file, copy_file_if_checksum_differs, crate_name_pipeline_globals,
+    crate_name_pipeline_main, create_dir_if_not_exists, create_new_file, decode_string_as_dir,
+    pipeline_binary_filename, program_info_filename, read_file_content, recreate_dir,
+    recreate_file_with_content, sha256, truncate_sha256_checksum, write_file,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -42,7 +42,6 @@ use tokio::{
     time::{Duration, sleep},
 };
 use tracing::{debug, error, info, trace, warn};
-use uuid::Uuid;
 
 /// The frequency at which the compiler polls the database for new Rust compilation requests.
 /// It balances resource consumption due to polling and a fast Rust compilation response.
@@ -501,16 +500,16 @@ fn prebuilt_binary_key(
     udf_rust: &str,
     udf_toml: &str,
 ) -> Result<String, RustCompilationError> {
-    let pipeline_crate_base = crate_name_pipeline_base(pipeline_id);
-    let nil_crate_base = crate_name_pipeline_base(PipelineId(Uuid::nil()));
-    let to_nil_pipeline = |text: &str| text.replace(&pipeline_crate_base, &nil_crate_base);
-    let generated_rust_checksum = checksum_encoded_dir_contents(main_rust, to_nil_pipeline)?;
+    let names = GeneratedCrateNames::new(pipeline_id);
+    let generated_rust_checksum = checksum_encoded_dir_contents(main_rust, |path, content| {
+        names.normalize_file(path, content)
+    })?;
     Ok(calculate_source_checksum(
         platform_version,
         runtime_version,
         profile,
         &generated_rust_checksum,
-        &to_nil_pipeline(udf_stubs),
+        &names.normalize_rust(udf_stubs)?,
         udf_rust,
         udf_toml,
     ))
@@ -3079,6 +3078,11 @@ mod test {
                 format!("use feldera_pipe_{crate_base}_globals::*;{extra_code}"),
             )
             .unwrap();
+            std::fs::write(
+                crate_dir.join("Cargo.toml"),
+                format!("[package]\nname = \"feldera_pipe_{crate_base}_main\"\n[dependencies]\nfeldera_pipe_{crate_base}_globals = {{ path = \"../feldera_pipe_{crate_base}_globals\" }}\n"),
+            )
+            .unwrap();
             std::fs::File::options()
                 .write(true)
                 .open(&main_rs)
@@ -3118,6 +3122,36 @@ mod test {
             );
         }
         let pipeline_id = PipelineId(uuid::Uuid::now_v7());
+        // A SQL literal equal to its own pipeline namespace must not collide
+        // with a different literal in the nil pipeline's prebuilt program.
+        let literal = format!(
+            "const S: &str = \"{}\";",
+            crate_name_pipeline_base(pipeline_id)
+        );
+        let nil_literal = format!(
+            "const S: &str = \"{}\";",
+            crate_name_pipeline_base(nil_pipeline_id)
+        );
+        assert_eq!(
+            key(
+                pipeline_id,
+                &generate(pipeline_id, &literal, first_compilation)
+            ),
+            key(
+                nil_pipeline_id,
+                &generate(nil_pipeline_id, &literal, later_compilation)
+            ),
+        );
+        assert_ne!(
+            key(
+                pipeline_id,
+                &generate(pipeline_id, &literal, first_compilation)
+            ),
+            key(
+                nil_pipeline_id,
+                &generate(nil_pipeline_id, &nil_literal, first_compilation)
+            ),
+        );
         assert_ne!(
             key(
                 pipeline_id,
