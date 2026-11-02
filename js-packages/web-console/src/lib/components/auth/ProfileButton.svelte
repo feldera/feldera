@@ -54,7 +54,11 @@
 <Popup>
   {#snippet trigger(toggle)}
     {#if typeof auth === 'object' && 'logout' in auth}
-      <button onclick={toggle} class="flex items-center gap-2 rounded font-semibold">
+      <button
+        onclick={toggle}
+        class="flex items-center gap-2 rounded font-semibold"
+        aria-label="Open settings popup"
+      >
         <div class="hidden {compactBreakpoint}block w-2"></div>
         <span class="hidden {compactBreakpoint}block">Logged in</span>
         <div class="hidden {compactBreakpoint}block w-1"></div>

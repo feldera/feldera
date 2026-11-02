@@ -20,6 +20,7 @@ Two ways to obtain a token:
        GET /authorize  -> role-picker page -> 302 back with ?code=&state=
        POST /token (grant_type=authorization_code) -> access_token + id_token
        GET /userinfo with the bearer access token.
+       POST /revoke (token=<refresh_token>) on sign-out, RFC 7009.
 
 The manager (crates/pipeline-manager/src/auth.rs) validates tokens by:
   1. fetching <issuer>/.well-known/openid-configuration to read jwks_uri,
@@ -162,6 +163,7 @@ def make_handler(
             "userinfo_endpoint": f"{issuer}/userinfo",
             "jwks_uri": f"{issuer}/.well-known/jwks.json",
             "end_session_endpoint": f"{issuer}/logout",
+            "revocation_endpoint": f"{issuer}/revoke",
             "response_types_supported": ["code"],
             "grant_types_supported": ["authorization_code", "refresh_token"],
             "code_challenge_methods_supported": ["S256", "plain"],
@@ -380,6 +382,7 @@ def make_handler(
   <li><a href="/authorize">/authorize</a> &mdash; browser login (code + PKCE)</li>
   <li><code>POST /token</code> &mdash; code / refresh-token exchange</li>
   <li><code>GET /userinfo</code> &mdash; profile from a bearer access token</li>
+  <li><code>POST /revoke</code> &mdash; revoke a refresh token (RFC 7009)</li>
   <li><a href="/logout">/logout</a> &mdash; end session</li>
   <li><a href="/token?sub=alice&amp;email=alice@example.com">GET /token</a>
       &mdash; machine mint: sub, email, tenant, tenants, groups, aud, exp_secs (optional)</li>
@@ -565,6 +568,18 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
                 400,
             )
 
+        # POST /revoke (RFC 7009). The answer is 200 even for an unknown token,
+        # so a client cannot probe which tokens exist.
+        def _handle_revoke_post(self) -> None:
+            params = self._read_body_params()
+            token = params.get("token")
+            if token:
+                refresh_tokens.pop(token, None)
+            self.send_response(200)
+            self._cors()
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
         # GET /userinfo
         def _handle_userinfo(self) -> None:
             auth = self.headers.get("Authorization", "")
@@ -637,6 +652,8 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v0/pipelines</pre>
             path = urlparse(self.path).path
             if path == "/token":
                 self._handle_token_post()
+            elif path == "/revoke":
+                self._handle_revoke_post()
             else:
                 self._send_json({"error": "not found"}, status=404)
 
