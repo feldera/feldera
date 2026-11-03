@@ -471,8 +471,11 @@ class HttpRequests:
         path: str,
         params: Optional[Mapping[str, Any]] = None,
         stream: bool = False,
+        idempotent: Optional[bool] = None,
     ) -> Any:
-        return self.send_request(requests.get, path, params=params, stream=stream)
+        return self.send_request(
+            requests.get, path, params=params, stream=stream, idempotent=idempotent
+        )
 
     def post(
         self,

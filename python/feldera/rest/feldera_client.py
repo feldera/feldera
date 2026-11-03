@@ -2355,10 +2355,15 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :raises FelderaAPIError: If the pipeline does not exist or if there's an error
         """
 
+        # A bundle that collects new data is slow and loads the pipeline, so do
+        # not repeat it after a failure that can come late, such as a gateway
+        # timeout or a dropped connection.
+        collect = str((params or {}).get("collect", "true")).lower() != "false"
         resp = self.http.get(
             path=f"/pipelines/{pipeline_name}/support_bundle",
             params=params,
             stream=True,
+            idempotent=not collect,
         )
 
         buffer = bytearray()

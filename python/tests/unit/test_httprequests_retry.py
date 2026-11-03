@@ -625,6 +625,15 @@ class TestClientMarksIdempotentEndpoints:
         client.validate_program("")
         assert client.http.post.call_args.kwargs["idempotent"] is True
 
+    def test_support_bundle_retries_only_without_collection(self):
+        # Each retry of a collecting bundle starts a new, slow collection.
+        client = self._client_with_mock_http()
+        client.http.get.return_value.iter_content.return_value = [b"zip"]
+        client.get_pipeline_support_bundle("p")
+        assert client.http.get.call_args.kwargs["idempotent"] is False
+        client.get_pipeline_support_bundle("p", params={"collect": "false"})
+        assert client.http.get.call_args.kwargs["idempotent"] is True
+
     def test_patch_pipeline_is_not_idempotent(self):
         # A replayed rename finds the old name gone; a 5xx must not retry it.
         client = self._client_with_mock_http()
