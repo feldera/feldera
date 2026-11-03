@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="180" viewBox="0 0 240 180" fill="none" role="img"><title>Pipeline is not running</title><path d="M64 90H98M142 90H176" stroke="#CFD1C4" stroke-width="1.3" stroke-dasharray="3 4"/>
+<rect x="44" y="80" width="20" height="20" rx="4" fill="#FAF9F6" stroke="#A6AD94" stroke-width="1.2"/>
+<rect x="176" y="80" width="20" height="20" rx="4" fill="#FAF9F6" stroke="#A6AD94" stroke-width="1.2"/>
+<rect x="98" y="68" width="44" height="44" rx="10" fill="#ECEBDC" stroke="#A6AD94" stroke-width="1.4"/>
+<path d="M115 80L130 90L115 100Z" fill="#777F5B" stroke="#777F5B" stroke-width="1.2" stroke-linejoin="round"/></svg>

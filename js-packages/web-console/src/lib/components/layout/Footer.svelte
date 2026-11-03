@@ -8,7 +8,7 @@
   const darkMode = useDarkMode()
 </script>
 
-<div class="flex w-full flex-row justify-between px-2 py-4 whitespace-nowrap sm:px-5">
+<div class="flex w-full flex-row justify-between px-2 py-4 whitespace-nowrap sm:px-8">
   {#if darkMode.current === 'dark'}
     <FelderaLogoWhiteDetail class="h-8 pl-4 opacity-40"></FelderaLogoWhiteDetail>
   {:else}

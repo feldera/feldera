@@ -7,7 +7,8 @@
   import IconSlack from '#assets/icons/vendors/slack-logomark-color.svg?component'
   import FelderaLogomarkLight from '#assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
   import FelderaLogomarkDark from '#assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
-  import NoPipelinesIllustration from '#assets/images/generic/no-pipelines.svg?component'
+  import NoPipelinesLight from '#assets/illustrations/no-pipelines-light.svg?component'
+  import NoPipelinesDark from '#assets/illustrations/no-pipelines-dark.svg?component'
   import AppHeader from '#lib/components/layout/AppHeader.svelte'
   import Footer from '#lib/components/layout/Footer.svelte'
   import NavigationExtras from '#lib/components/layout/NavigationExtras.svelte'
@@ -82,7 +83,7 @@
 {/snippet}
 
 <!-- The home page uses 20px side gutters (as the pipeline page) rather than the default 32px. -->
-<AppHeader class="px-2 md:px-5">
+<AppHeader class="px-2 md:px-8">
   {#snippet beforeEnd()}
     {#if !isScreenMd.current}
       <button
@@ -117,7 +118,7 @@
         <!-- The right padding gives back the reserved scrollbar gutter, so the banner ends
              where the header's buttons do (as the pipelines toolbar does). -->
         <div
-          class="sticky left-0 max-w-[100cqi] px-2 pt-0 md:pr-[calc(--spacing(5)-var(--scrollbar-width))] md:pl-5"
+          class="sticky left-0 max-w-[100cqi] px-2 pt-0 md:pr-[calc(--spacing(8)-var(--scrollbar-width))] md:pl-8"
         >
           <div class="relative flex w-full items-center gap-4 p-6 sm:gap-12">
             <div class="welcome-banner-bg absolute top-0 left-0 -z-10 h-full w-full card"></div>
@@ -165,7 +166,7 @@
         {#snippet header()}
           <!-- Raised 2px so its baseline (and lowercase letters) line up with the labels of
                the controls beside it; box-centred, the mostly lowercase title reads low. -->
-          <div class="relative -top-0.5 text-xl font-medium whitespace-nowrap">Your pipelines</div>
+          <div class="relative -top-0.5 text-xl font-normal whitespace-nowrap">Your pipelines</div>
         {/snippet}
         {#if !pipelines.pipelines}
           <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
@@ -191,11 +192,15 @@
             {/snippet}
           </PipelineTable>
         {:else}
-          <div class="px-2 md:px-5">
+          <div class="px-2 md:px-8">
             {@render header()}
           </div>
           <div class="flex w-full flex-col items-center gap-4 pt-8 pb-6 sm:pt-16">
-            <NoPipelinesIllustration class="h-[180px] w-[240px]"></NoPipelinesIllustration>
+            {#if darkMode.current === 'dark'}
+              <NoPipelinesDark class="h-[180px] w-[240px]"></NoPipelinesDark>
+            {:else}
+              <NoPipelinesLight class="h-[180px] w-[240px]"></NoPipelinesLight>
+            {/if}
             <div class="">Your pipelines will appear here</div>
             <div class="relative flex gap-5">
               <CreatePipelineButton btnClass="preset-filled-surface-50-950"></CreatePipelineButton>
@@ -210,7 +215,7 @@
       {#if demos.current.length}
         <!-- Held at the bottom of the screen while the pipelines table scrolls. -->
         <PinnedSections class="max-w-[100cqi] gap-8">
-          <div class="px-2 md:pr-[calc(--spacing(5)-var(--scrollbar-width))] md:pl-5">
+          <div class="px-2 md:pr-[calc(--spacing(8)-var(--scrollbar-width))] md:pl-8">
             <InlineDropdown bind:open={showSuggestedDemos.value}>
               {#snippet header(open, toggle)}
                 <div
@@ -231,7 +236,7 @@
                   ></div>
 
                   <div class="flex flex-nowrap items-center gap-4">
-                    <div class="text-xl font-medium">Explore use cases and tutorials</div>
+                    <div class="text-xl font-normal">Explore use cases and tutorials</div>
                     <a class="btn preset-filled-surface-50-950" href={resolve('/demos/')}
                       >View all</a
                     >

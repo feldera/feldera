@@ -17,11 +17,14 @@
 <div class="flex flex-nowrap overflow-hidden overflow-ellipsis whitespace-nowrap {_class}">
   {#each breadcrumbs as breadcrumb}
     <a
-      class="inline cursor-pointer self-center {textClass} [&:not(:nth-last-child(2))]:text-surface-500"
+      class="inline cursor-pointer self-center transition-colors {textClass} [&:not(:nth-last-child(2))]:text-surface-600-400 [&:not(:nth-last-child(2))]:hover:text-surface-950-50"
       href={breadcrumb.href}
       onclick={breadcrumb.onclick}>{breadcrumb.text}</a
     >
-    <span class="inline self-center px-2 {textClass} !text-surface-500 last:hidden">/</span>
+    <!-- The separator stays light: regular weight and the faint secondary grey. -->
+    <span class="inline self-center px-2 {textClass} font-normal! text-surface-400-600! last:hidden"
+      >/</span
+    >
   {/each}
   {@render last?.()}
 </div>

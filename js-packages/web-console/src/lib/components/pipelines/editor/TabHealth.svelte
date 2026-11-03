@@ -48,7 +48,12 @@
   })
 </script>
 
-<div data-testid="box-pipeline-health" class="flex h-full flex-nowrap overflow-hidden">
+<!-- Sits straight on the panel, padded to line up with the other tabs' content. The sticky
+     "Previous incidents" heading takes the panel colour so it covers rows scrolling under it. -->
+<div
+  data-testid="box-pipeline-health"
+  class="flex h-full flex-nowrap overflow-hidden [&_.sticky]:bg-white! dark:[&_.sticky]:bg-[#2a2a2a]!"
+>
   <PipelineEventHistory
     {events}
     loading={!events && !deleted}
@@ -56,5 +61,6 @@
     updatedText={formatUpdatedAgo(lastUpdated)}
     loadEvent={(eventId) => api.getPipelineEvent(pipelineName, eventId)}
     localStorageKey="layout/drawer/pipelineHealth"
+    boxClass="px-3 pt-4 pb-2"
   />
 </div>

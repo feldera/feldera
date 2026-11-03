@@ -310,16 +310,18 @@
   --color-status-neutral-dot: #8b8d98;
   --color-status-blue: #2f5f8f;
   --color-status-blue-subtle: #e8eff6;
-  --color-status-blue-dot: #5b8fc7;
+  --color-status-blue-dot: #52758c;
   --color-status-jade: #2f6b55;
   --color-status-jade-subtle: #e4f0ea;
-  --color-status-jade-dot: #4f9a7c;
+  --color-status-jade-dot: #687d45;
   --color-status-warning: #8a5a12;
   --color-status-warning-subtle: #f8eed8;
-  --color-status-warning-dot: #e0b04a;
+  --color-status-warning-dot: #947023;
   --color-status-error: #a33a3a;
   --color-status-error-subtle: #f7e6e4;
-  --color-status-error-dot: #d0605c;
+  --color-status-error-dot: #b35449;
+  /* Timeline bars with no events, and other "unknown" markers. */
+  --color-status-nodata: #dedfd5;
 
   /* Neutrals for the tinted page: an almost white, neutral grey page, white
      tables, editors, panels and form controls on it, a plain grey for tab bars and
@@ -341,16 +343,17 @@
   --color-status-neutral-dot: #696e77;
   --color-status-blue: #70b8ff;
   --color-status-blue-subtle: #0077ff3a;
-  --color-status-blue-dot: #70b8ff;
+  --color-status-blue-dot: #8faec3;
   --color-status-jade: #1fd8a4;
   --color-status-jade-subtle: #00f9a51c;
-  --color-status-jade-dot: #1fd8a4;
+  --color-status-jade-dot: #a8bc83;
   --color-status-warning: #ffca16;
   --color-status-warning-subtle: #fa820022;
-  --color-status-warning-dot: #ffca16;
+  --color-status-warning-dot: #d1b16d;
   --color-status-error: #ff9592;
   --color-status-error-subtle: #f4121227;
-  --color-status-error-dot: #e5484d;
+  --color-status-error-dot: #db857b;
+  --color-status-nodata: #45463f;
   --color-page: var(--color-dark);
   --color-toolbar: #222222;
   --color-row-hover: var(--color-surface-950);

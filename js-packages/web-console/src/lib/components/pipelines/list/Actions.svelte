@@ -41,6 +41,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 <script lang="ts">
   import { Popover, Tooltip, useIsMobile } from 'common-ui'
   import { fade } from 'svelte/transition'
+  import { tick } from 'svelte'
   import { match, P } from 'ts-pattern'
   import IconLoader from '#assets/icons/generic/loader-alt.svg?component'
   import Popup from '#lib/components/common/Popup.svelte'
@@ -410,6 +411,67 @@ groups related actions into multi-action dropdowns when multiple options are ava
 
   const isMobile = useIsMobile()
 
+  // When the toolbar runs out of room it would wrap under the file tabs. Before that happens,
+  // the labelled buttons turn into icon buttons one at a time, least important first, and
+  // get their labels back as room returns.
+  const compactSteps = ['storage', 'pause', 'stop', 'start'] as const
+  let compactLevel = $state(0)
+  let actionBar: HTMLElement | undefined = $state()
+  const compact = $derived(compactSteps.slice(0, compactLevel).join(' '))
+  // Classes for each step: the label hides, and the button squares up around its icon.
+  const compactLabel = {
+    storage: 'in-[[data-compact~=storage]]:hidden',
+    pause: 'in-[[data-compact~=pause]]:hidden',
+    stop: 'in-[[data-compact~=stop]]:hidden',
+    start: 'in-[[data-compact~=start]]:hidden'
+  }
+  const compactBtn = {
+    pause: 'in-[[data-compact~=pause]]:aspect-square in-[[data-compact~=pause]]:px-0!',
+    stop: 'in-[[data-compact~=stop]]:aspect-square in-[[data-compact~=stop]]:px-0!',
+    start: 'in-[[data-compact~=start]]:aspect-square in-[[data-compact~=start]]:px-0!'
+  }
+
+  // The bar sits in a reversed, wrapping row with the file tabs; it has wrapped when the two
+  // no longer share a line.
+  const isWrapped = () => {
+    const host = actionBar?.parentElement
+    const tabs = host?.parentElement?.lastElementChild
+    if (!host || !tabs || tabs === host) {
+      return false
+    }
+    return Math.abs(host.getBoundingClientRect().top - tabs.getBoundingClientRect().top) > 1
+  }
+  const fitToolbar = async () => {
+    compactLevel = 0
+    await tick()
+    while (isWrapped() && compactLevel < compactSteps.length) {
+      compactLevel++
+      await tick()
+    }
+  }
+  // Refit when the row changes width, and when the set of buttons changes. Only width changes
+  // count: compacting changes the row's height, which must not start another fit.
+  $effect(() => {
+    const row = actionBar?.parentElement?.parentElement
+    if (!row) {
+      return
+    }
+    let lastWidth = -1
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width !== lastWidth) {
+        lastWidth = entry.contentRect.width
+        fitToolbar()
+      }
+    })
+    observer.observe(row)
+    return () => observer.disconnect()
+  })
+  $effect(() => {
+    active
+    pipeline.current.storageStatus
+    fitToolbar()
+  })
+
   const buttonClass = 'btn'
   const iconClass = 'text-[16px]'
   const shortClass = 'btn-icon btn-icon-sm'
@@ -642,7 +704,12 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {/snippet}
 
 {#if !deleted}
-  <div data-testid="box-action-buttons" class={'flex flex-nowrap items-center gap-2 ' + _class}>
+  <div
+    bind:this={actionBar}
+    data-testid="box-action-buttons"
+    data-compact={compact}
+    class={'flex flex-nowrap items-center gap-2 ' + _class}
+  >
     {#each active as name}
       {@render actions[name]()}
     {/each}
@@ -806,7 +873,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       class:disabled
       class={isMobile.current
         ? `${buttonClass} ${shortClass} ${importantBtnColor} ${iconClass}`
-        : `${buttonClass} ${longClass} ${importantBtnColor}`}
+        : `${buttonClass} ${longClass} ${importantBtnColor} ${compactBtn.start}`}
       onclick={async () => {
         if (!action) {
           return
@@ -816,7 +883,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       }}
     >
       <span class="fd fd-play {iconClass}"></span>
-      <span class="hidden sm:inline">
+      <span class="hidden sm:inline {compactLabel.start}">
         {text}
       </span>
     </button>
@@ -878,11 +945,12 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {/snippet}
 {#snippet _pause()}
   <button
-    class="hidden sm:flex {buttonClass} {longClass} {basicBtnColor}"
+    class="hidden sm:flex {buttonClass} {longClass} {basicBtnColor} {compactBtn.pause}"
     onclick={buttonConfigs._pause.onclick}
+    aria-label="Pause"
   >
     <span class="fd fd-pause {iconClass}"></span>
-    Pause
+    <span class={compactLabel.pause}>Pause</span>
   </button>
   <button
     class="flex sm:hidden {buttonClass} {shortClass} {basicBtnColor} {iconClass}"
@@ -895,13 +963,14 @@ groups related actions into multi-action dropdowns when multiple options are ava
   <div>
     <button
       disabled={!isEnterprise.value}
-      class="hidden sm:flex {buttonClass} {longClass} {basicBtnColor}"
+      class="hidden sm:flex {buttonClass} {longClass} {basicBtnColor} {compactBtn.stop}"
       onclick={() => {
         globalDialog.dialog = stopDialog
       }}
+      aria-label="Stop"
     >
       <span class="fd fd-square {iconClass}"></span>
-      Stop
+      <span class={compactLabel.stop}>Stop</span>
     </button>
     <button
       class="sm:hidden {buttonClass} {shortClass} {basicBtnColor} fd fd-square {iconClass}"
@@ -936,11 +1005,12 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {/snippet}
 {#snippet _kill()}
   <button
-    class="hidden sm:flex {buttonClass} {longClass} {basicBtnColor}"
+    class="hidden sm:flex {buttonClass} {longClass} {basicBtnColor} {compactBtn.stop}"
     onclick={() => (globalDialog.dialog = killDialog)}
+    aria-label="Force Stop"
   >
     <span class="fd fd-square-power {iconClass}"></span>
-    Force Stop
+    <span class={compactLabel.stop}>Force Stop</span>
   </button>
   <button
     class="sm:hidden {buttonClass} {shortClass} {basicBtnColor} fd fd-square-power {iconClass}"
@@ -1043,7 +1113,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       class="flex h-6 items-center gap-1 rounded-sm pl-2 text-[12px] leading-4 text-nowrap text-surface-700-300 {basicBtnColor}"
     >
       <span class="fd fd-database text-[16px]"></span>
-      Storage in use
+      <span class={compactLabel.storage}>Storage in use</span>
       <div class="ml-1 flex h-full border-l border-surface-200-800">
         <button
           aria-label="Clear storage"
@@ -1066,7 +1136,9 @@ groups related actions into multi-action dropdowns when multiple options are ava
     >
       <span class="fd {storageStatus === 'InUse' ? 'fd-database' : 'fd-database-off'} text-[16px]"
       ></span>
-      {storageStatus === 'InUse' ? 'Storage in use' : 'Storage cleared'}
+      <span class={compactLabel.storage}
+        >{storageStatus === 'InUse' ? 'Storage in use' : 'Storage cleared'}</span
+      >
     </div>
     <Tooltip placement="top">
       {#if storageStatus === 'Cleared'}

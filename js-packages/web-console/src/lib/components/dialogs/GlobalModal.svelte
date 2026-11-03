@@ -40,7 +40,7 @@
       To: "opacity-0"
   -->
     <div
-      class="fixed inset-0 cursor-pointer bg-gray-500/75 transition-opacity"
+      class="fixed inset-0 cursor-pointer bg-black/40 transition-opacity"
       role="presentation"
       aria-hidden="true"
     ></div>
@@ -61,7 +61,7 @@
           To: "opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
       -->
         <div
-          class="relative w-full transform rounded-container bg-white text-left shadow-xl transition-all sm:max-w-2xl dark:bg-dark"
+          class="relative w-full transform rounded-lg border border-line bg-white text-left shadow-xl transition-all sm:max-w-2xl dark:border-[#3f3f3f] dark:bg-[#2a2a2a]"
           role="presentation"
           onclick={(e) => {
             e.stopPropagation()

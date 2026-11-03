@@ -100,7 +100,11 @@ test.describe('Pipeline search', () => {
 
     // All test pipelines should be in "Stopped" (Ready To Start) status
     const statusSelect = page.getByTestId('select-pipeline-status')
-    await statusSelect.selectOption('Ready To Start')
+    const selectStatus = async (status: string) => {
+      await statusSelect.click()
+      await page.getByRole('option', { name: status, exact: true }).click()
+    }
+    await selectStatus('Ready To Start')
 
     const searchInput = page.getByTestId('input-pipeline-search')
     await searchInput.fill('beta')
@@ -109,7 +113,7 @@ test.describe('Pipeline search', () => {
     await expect(page.getByTestId(`box-row-${PREFIX}-alpha`)).not.toBeVisible()
 
     // Switching to a non-matching status should hide everything
-    await statusSelect.selectOption('Running')
+    await selectStatus('Running')
     await expect(page.getByTestId(`box-row-${PREFIX}-beta`)).not.toBeVisible()
   })
 })

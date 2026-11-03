@@ -310,6 +310,9 @@
   import { isPipelineInteractive } from '#lib/functions/pipelines/status.ts'
   import { Ref } from '#lib/compositions/ref.svelte.ts'
   import WarningBanner from '#lib/components/pipelines/editor/WarningBanner.svelte'
+  import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
+  import ChangeStreamLight from '#assets/illustrations/change-stream-light.svg?component'
+  import ChangeStreamDark from '#assets/illustrations/change-stream-dark.svg?component'
 
   let {
     pipeline,
@@ -457,6 +460,7 @@
   }
 
   const isMobile = useIsMobile()
+  const darkMode = useDarkMode()
   const mobileDisplayModes = ['Tables and Views', 'Data stream'] as const
   type MobileDisplayMode = (typeof mobileDisplayModes)[number]
   let mobileDisplayMode = $state<MobileDisplayMode>('Tables and Views')
@@ -470,14 +474,14 @@
     {@const isDisabled =
       protocol === 'http' && !relation.selected && selectedRelationsCount >= maxStreamsOnHttp}
     <label
-      class="flex-none! overflow-hidden overflow-ellipsis {isDisabled
+      class="flex flex-none! items-center gap-1 overflow-hidden {isDisabled
         ? 'cursor-not-allowed opacity-50'
         : 'cursor-pointer'}"
     >
       <input
         type="checkbox"
         data-testid="input-changestream-relation-{relation.relationName}"
-        class="bg-white-dark m-1 checkbox translate-y-1"
+        class="bg-white-dark m-1 checkbox shrink-0"
         checked={relation.selected}
         disabled={isDisabled}
         onchange={(e) => {
@@ -513,7 +517,7 @@
         }}
         value={relation}
       />
-      {relation.relationName}
+      <span class="truncate">{relation.relationName}</span>
     </label>
     {#if isDisabled}
       <Tooltip class="" placement="right">
@@ -523,13 +527,13 @@
     {/if}
   {/snippet}
   {#if inputs.length}
-    <div class="text-surface-600-400">Tables:</div>
+    <div class="text-surface-600-400">Tables</div>
   {/if}
   {#each inputs as relation}
     {@render relationItem({ ...relation, pipelineName })}
   {/each}
   {#if outputs.length}
-    <div class="pt-2 text-surface-600-400">Views:</div>
+    <div class="pt-2 text-surface-600-400">Views</div>
   {/if}
   {#each outputs as relation}
     {@render relationItem({ ...relation, pipelineName })}
@@ -553,14 +557,21 @@
         }}
       ></ChangeStream>
     {/key}
-  {:else}
+  {:else if Object.values(pipelinesRelations[tenantName]?.[pipelineName] ?? {}).some((r) => r.selected)}
     <span class="p-2 text-surface-600-400">
-      {#if Object.values(pipelinesRelations[tenantName]?.[pipelineName] ?? {}).some((r) => r.selected)}
-        The selected tables and views have not emitted any new changes
-      {:else}
-        Select tables and views to see the record updates as they are emitted
-      {/if}
+      The selected tables and views have not emitted any new changes
     </span>
+  {:else}
+    <div class="flex h-full flex-1 flex-col items-center justify-center gap-4 p-2 text-center">
+      {#if darkMode.current === 'dark'}
+        <ChangeStreamDark class="h-[180px] w-[280px] max-w-full"></ChangeStreamDark>
+      {:else}
+        <ChangeStreamLight class="h-[180px] w-[280px] max-w-full"></ChangeStreamLight>
+      {/if}
+      <span class="text-surface-600-400">
+        Select tables and views to see the record updates as they are emitted
+      </span>
+    </div>
   {/if}
 {/snippet}
 

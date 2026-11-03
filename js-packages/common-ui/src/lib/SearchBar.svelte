@@ -10,6 +10,9 @@
   Hosts open the search by wiring Ctrl/Cmd-F to the exported `activate()`; the widget handles no
   shortcut itself. The popup closes only via `toggle()`, Escape, the close button, or blur when
   empty — never on outside click.
+
+  With `inline`, there is no button or popup: the field is always shown, `activate()` focuses it,
+  and Escape or the clear button empties it instead of closing.
 -->
 <script lang="ts">
   import { tick } from 'svelte'
@@ -36,6 +39,8 @@
     inputClass?: string
     /** Extra classes for the search toggle button (size, style preset, ...). */
     buttonClass?: string
+    /** Always show the field in place instead of a button that opens a popup. */
+    inline?: boolean
     /** Advance to the next match — Enter or the down button. */
     onnext: () => void
     /** Step back to the previous match — Shift-Enter or the up button. */
@@ -55,11 +60,14 @@
     class: className = '',
     inputClass = '',
     buttonClass = '',
+    inline = false,
     onnext,
     onprevious,
     onclear
   }: Props = $props()
 
+  const findShortcutLabel =
+    typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘F' : 'Ctrl F'
   const hasResults = $derived(!!results && results.total > 0)
   const counterText = $derived(
     !results ? '' : results.total > 0 ? `${results.current} of ${results.total}` : 'No results'
@@ -76,7 +84,11 @@
   // Open the popup and focus/select the query, or just refocus it if already open. Hosts wire
   // Ctrl/Cmd-F here, so the shortcut opens-or-refocuses and never closes the search.
   export async function activate() {
-    if (!open) {
+    if (inline) {
+      if (document.activeElement !== inputEl) {
+        opener = document.activeElement as HTMLElement | null
+      }
+    } else if (!open) {
       opener = document.activeElement as HTMLElement | null
       open = true
       await tick()
@@ -101,6 +113,16 @@
   }
 
   function close() {
+    if (inline) {
+      reset()
+      if (opener) {
+        opener.focus({ preventScroll: true })
+      } else {
+        inputEl?.focus()
+      }
+      opener = null
+      return
+    }
     open = false
     reset()
     opener?.focus({ preventScroll: true })
@@ -136,7 +158,7 @@
   // An empty field losing focus closes the popup; a field with text stays open so focus can move to
   // the nav / close buttons. No focus-restore here — blur means focus is already moving on.
   function onblur() {
-    if (!value) {
+    if (!inline && !value) {
       open = false
       reset()
       opener = null
@@ -144,6 +166,75 @@
   }
 </script>
 
+{#if inline}
+  <div
+    class="flex items-center gap-1 rounded border border-line bg-white pr-1 transition-colors focus-within:border-primary-500 dark:bg-dark {className}"
+  >
+    <span class="flex shrink-0 pl-2 text-[16px] text-surface-600-400" aria-hidden="true">
+      {@html searchIcon}
+    </span>
+    <input
+      bind:this={inputEl}
+      bind:value
+      type="text"
+      {placeholder}
+      {title}
+      {onkeydown}
+      {oninput}
+      class="min-w-0 flex-1 border-0 bg-transparent px-1 py-0 outline-none focus:ring-0 {inputClass}"
+    />
+    <!-- Before a search runs, says how to run it; after, the match position or "No results". -->
+    {#if results}
+      <span
+        class="shrink-0 px-1 text-sm whitespace-nowrap {hasResults
+          ? 'text-surface-600-400'
+          : 'text-error-500'}"
+        aria-live="polite">{counterText}</span
+      >
+    {:else if value}
+      <span class="shrink-0 px-1 text-sm whitespace-nowrap text-surface-600-400">
+        Press <kbd class="rounded border border-surface-200-800 px-1 text-xs">Enter</kbd>
+      </span>
+    {:else}
+      <kbd
+        class="mr-1 shrink-0 rounded border border-surface-200-800 px-1 text-xs whitespace-nowrap text-surface-600-400"
+        >{findShortcutLabel}</kbd
+      >
+    {/if}
+    <!-- Match navigation shows once a search has run. -->
+    <div class="flex shrink-0 items-center gap-1 {results ? '' : 'hidden'}">
+      <button
+        type="button"
+        class="fd fd-arrow-down btn-icon rotate-180 p-0 hover:not-disabled:preset-tonal-surface disabled:opacity-30"
+        onclick={() => submit('prev')}
+        disabled={!hasResults}
+        aria-label="Previous match"
+        title="Previous match (Shift+Enter)"
+      >
+      </button>
+      <button
+        type="button"
+        class="fd fd-arrow-down btn-icon p-0 hover:not-disabled:preset-tonal-surface disabled:opacity-30"
+        onclick={() => submit('next')}
+        disabled={!hasResults}
+        aria-label="Next match"
+        title="Next match (Enter)"
+      >
+      </button>
+    </div>
+    {#if value}
+      <span class="mx-1 h-4 w-px shrink-0 bg-surface-200-800" aria-hidden="true"></span>
+      <button
+        type="button"
+        class="fd fd-x btn-icon p-0 hover:preset-tonal-surface"
+        onclick={close}
+        aria-label="Clear search"
+        title="Clear search (Esc)"
+      >
+      </button>
+    {/if}
+  </div>
+{:else}
 <div class="relative flex items-center {className}">
   <button
     type="button"
@@ -206,3 +297,4 @@
     </div>
   {/if}
 </div>
+{/if}

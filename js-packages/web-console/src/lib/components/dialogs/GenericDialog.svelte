@@ -36,11 +36,16 @@
   })
 </script>
 
-<div class="flex flex-col gap-4 p-4 sm:p-8" data-testid="box-generic-dialog">
-  <div class="flex flex-nowrap justify-between">
-    <div class="h5" data-testid="box-dialog-title">{content.title}</div>
+<div class="flex flex-col gap-3 p-4 sm:p-6" data-testid="box-generic-dialog">
+  <div class="flex flex-nowrap items-start justify-between gap-4">
+    <div class="text-lg font-semibold break-words" data-testid="box-dialog-title">
+      {content.title}
+    </div>
     {#if !noclose}
-      <button onclick={cancel} class="fd fd-x -m-4 btn-icon text-[20px]" aria-label="Close dialog"
+      <button
+        onclick={cancel}
+        class="fd fd-x -mt-0.5 -mr-1 btn-icon btn-icon-sm shrink-0 text-[16px] text-surface-700-300 hover:bg-row-hover"
+        aria-label="Close dialog"
       ></button>
     {/if}
   </div>
@@ -48,7 +53,7 @@
     class="-mr-4 scrollbar flex max-h-[calc(90vh-116px)] flex-col gap-4 overflow-visible pr-4 sm:-mr-8 sm:pr-8"
   >
     {#if content.description}
-      <span class="whitespace-pre-wrap" data-testid="box-dialog-description">
+      <span class="whitespace-pre-wrap text-surface-600-400" data-testid="box-dialog-description">
         {content.description}
       </span>
     {/if}
@@ -63,10 +68,10 @@
     {@render children?.()}
   </div>
   {#if content.onSuccess || content.onCancel}
-    <div class="flex w-full flex-nowrap justify-end gap-4" data-testid="box-dialog-actions">
+    <div class="flex w-full flex-nowrap justify-end gap-2 pt-3" data-testid="box-dialog-actions">
       <button
         onclick={() => cancel()}
-        class="btn preset-filled-surface-50-950 px-4"
+        class="btn h-8 preset-outlined-surface-200-800 px-4"
         class:order-last={swapActions}
         data-testid="btn-dialog-cancel"
       >
@@ -77,9 +82,7 @@
           <button
             {disabled}
             onclick={content.onSuccess.callback}
-            class="btn px-4 {danger
-              ? 'preset-filled-error-500 font-semibold'
-              : 'preset-filled-primary-500'}"
+            class="btn h-8 px-4 {danger ? 'preset-filled-error-500' : 'preset-filled-primary-500'}"
             data-testid={content.onSuccess['data-testid']}
           >
             {content.onSuccess.name}

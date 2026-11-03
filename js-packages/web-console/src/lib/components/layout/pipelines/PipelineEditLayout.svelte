@@ -176,6 +176,9 @@
   }
 
   let currentMonitoringTab: MonitoringTabs | null = $state(null)
+  // Reported by the code panel, so the Runtime tab's Start button can refuse to start an
+  // unsaved program, like the toolbar's Start does.
+  let unsavedChanges = $state(false)
   let currentInteractionTab: string | null = $state(null)
 
   const monitoringTabSwitchTo = async () => {
@@ -238,7 +241,7 @@
       <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
         <PipelineBreadcrumbs
           class="-ml-3 items-center py-1 pl-3"
-          textClass="text-base font-semibold"
+          textClass="text-base"
           breadcrumbs={[
             ...(isTablet.current
               ? []
@@ -267,7 +270,7 @@
               class="flex min-w-0 items-center gap-1"
               inputClass="input flex -ml-1 mr-2 py-0 pl-1 text-base"
             >
-              <span class="truncate text-base font-semibold">
+              <span class="truncate text-base font-medium">
                 {pipelineName}
               </span>
             </DoubleClickInput>
@@ -351,7 +354,7 @@
         }
       }}
     >
-      <div class="absolute flex h-full w-full flex-col pt-3 pl-2 md:pl-3">
+      <div class="absolute flex h-full w-full flex-col pl-2 md:pl-3">
         <PipelineList
           {pipelineName}
           pipelines={pipelineList.pipelines}
@@ -396,6 +399,7 @@
                   {statusBarCenter}
                   {statusBarEnd}
                   toolBarStart={pipelinesPanelToggle}
+                  bind:unsavedChanges
                 ></PipelineCodePanel>
               {:else}
                 <div
@@ -423,7 +427,8 @@
               {/if}
             </Pane>
             {#if showInteractionPanel.value}
-              <PaneResizer class="pane-divider-vertical w-px! bg-line dark:bg-[#3f3f3f]"></PaneResizer>
+              <PaneResizer class="pane-divider-vertical w-px! bg-line dark:bg-[#3f3f3f]"
+              ></PaneResizer>
               <Pane defaultSize={40} minSize={20} class="flex flex-col !overflow-visible">
                 {#if pipeline.current && metrics.current}
                   <InteractionPanel
@@ -450,6 +455,7 @@
                 {deleted}
                 hiddenTabs={singleton(currentInteractionTab)}
                 bind:currentTab={currentMonitoringTab}
+                {unsavedChanges}
               ></MonitoringPanel>
             {:else}
               <div class="flex flex-1 rounded-lg bg-surface-50-950 px-2 pt-3 pb-2"></div>
@@ -464,15 +470,17 @@
 {#snippet statusBarCenter()}
   {#if pipelineThumb}
     {@const programStatus = programStatusOf(pipelineThumb.status)}
-    <ProgramStatus {programStatus}></ProgramStatus>
-    <div class="flex items-center gap-2 pl-1">
-      <PipelineVersion
-        {pipelineName}
-        runtimeVersion={pipelineThumb.platformVersion}
-        baseRuntimeVersion={page.data.feldera!.version}
-        configuredRuntimeVersion={pipelineThumb.programConfig?.runtime_version}
-        {programStatus}
-      ></PipelineVersion>
+    <div class="contents text-[12px]">
+      <ProgramStatus {programStatus}></ProgramStatus>
+      <div class="flex items-center gap-2 pl-1">
+        <PipelineVersion
+          {pipelineName}
+          runtimeVersion={pipelineThumb.platformVersion}
+          baseRuntimeVersion={page.data.feldera!.version}
+          configuredRuntimeVersion={pipelineThumb.programConfig?.runtime_version}
+          {programStatus}
+        ></PipelineVersion>
+      </div>
     </div>
   {/if}
 {/snippet}
@@ -481,7 +489,7 @@
   <div class="flex h-10 w-10 shrink-0 items-center justify-center border-r border-line">
     <button
       class="fd fd-panel-left btn-icon btn-icon-sm text-[16px] hover:bg-row-hover {showPipelinesPanel.value
-        ? 'text-secondary-500'
+        ? 'text-surface-950-50'
         : 'text-surface-700-300'}"
       aria-label={showPipelinesPanel.value ? 'Collapse pipelines' : 'Open pipelines'}
       aria-pressed={showPipelinesPanel.value}

@@ -10,6 +10,13 @@
   import { sleep } from 'common-lib/promise'
   import { ConnectorMetricsTables, Drawer, SegmentedControl, useIsScreenXl } from 'common-ui'
   import Dayjs from 'dayjs'
+  import { usePermission } from '#lib/compositions/usePermission.svelte.ts'
+  import { getPipelineAction } from '#lib/compositions/usePipelineAction.svelte.ts'
+  import { usePipelineActionCallbacks } from '#lib/compositions/pipelines/usePipelineActionCallbacks.svelte.ts'
+  import { useToast } from '#lib/compositions/useToastNotification.ts'
+  import { useDarkMode } from '#lib/compositions/useDarkMode.svelte.ts'
+  import NotRunningLight from '#assets/illustrations/pipeline-not-running-light.svg?component'
+  import NotRunningDark from '#assets/illustrations/pipeline-not-running-dark.svg?component'
   import PipelineMemoryGraph from '#lib/components/layout/pipelines/PipelineMemoryGraph.svelte'
   import PipelineStorageGraph from '#lib/components/layout/pipelines/PipelineStorageGraph.svelte'
   import PipelineThroughputGraph from '#lib/components/layout/pipelines/PipelineThroughputGraph.svelte'
@@ -42,11 +49,14 @@
   const {
     pipeline,
     metrics,
-    deleted = false
+    deleted = false,
+    unsavedChanges = false
   }: {
     pipeline: { current: ExtendedPipeline }
     metrics: { current: PipelineMetrics }
     deleted?: boolean
+    /** Unsaved code changes; the Start button below waits for them to be saved. */
+    unsavedChanges?: boolean
   } = $props()
 
   const global = $derived(metrics.current.global)
@@ -59,6 +69,24 @@
 
   let statusTab: 'age' | 'updated' = $state('age')
   const isXl = useIsScreenXl()
+  const darkMode = useDarkMode()
+
+  // The empty state's Start button starts the pipeline the way the toolbar's Start does,
+  // and is offered in the same cases: a stopped pipeline and permission to run it.
+  const canExec = usePermission('exec:pipeline')
+  const { postPipelineAction } = getPipelineAction()
+  const pipelineActionCallbacks = usePipelineActionCallbacks()
+  const { toastError } = useToast()
+  const canStart = $derived(!deleted && pipeline.current.status === 'Stopped' && canExec.allowed)
+  const startPipeline = async () => {
+    const { waitFor } = await postPipelineAction(pipeline.current.name, 'start', {
+      onPausedReady: async (pipelineName: string) => {
+        const cbs = pipelineActionCallbacks.getAll(pipelineName, 'start_paused')
+        await Promise.allSettled(cbs.map((cb) => cb(pipelineName)))
+      }
+    })
+    waitFor().catch(toastError('Waiting for pipeline to start'))
+  }
   const api = usePipelineManager()
   // Background polling races pipeline shutdown/startup, so don't show toast popups
   // when the expected "pipeline not running" errors happen while reconnecting.
@@ -227,8 +255,27 @@
 {/snippet}
 
 {#if isMetricsAvailable(pipeline.current.status) === 'no'}
-  <div class="flex justify-between pt-2 sm:pt-0">
-    <div>Pipeline is not running</div>
+  <div class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+    {#if darkMode.current === 'dark'}
+      <NotRunningDark viewBox="40 60 160 60" class="h-[60px] w-[160px]"></NotRunningDark>
+    {:else}
+      <NotRunningLight viewBox="40 60 160 60" class="h-[60px] w-[160px]"></NotRunningLight>
+    {/if}
+    <div class="mt-4 text-lg text-surface-950-50">Pipeline isn’t running</div>
+    <div class="text-surface-600-400">Start the pipeline to see runtime metrics and activity.</div>
+    {#if canStart}
+      <button
+        class="mt-3 btn h-8 preset-outlined-surface-200-800 px-3"
+        disabled={unsavedChanges}
+        onclick={startPipeline}
+      >
+        <span class="fd fd-play text-[14px]"></span>
+        Start pipeline
+      </button>
+      {#if unsavedChanges}
+        <div class="text-sm text-surface-600-400">Save your changes to start the pipeline.</div>
+      {/if}
+    {/if}
   </div>
 {:else if !global}
   <div class="flex justify-between">
@@ -243,7 +290,7 @@
     >
       {#snippet main()}
         <div
-          class="-mr-2 scrollbar flex h-full min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto pr-2 pb-10"
+          class="-mr-2 scrollbar flex h-full min-w-0 flex-1 flex-col gap-4 overflow-x-clip overflow-y-auto pr-2 pb-10 pl-3"
         >
           <div class="flex w-full flex-col gap-4">
             {#if pipeline.current.status === 'Unavailable'}
@@ -337,7 +384,9 @@
               </div>
             </div>
             <div class="flex w-full flex-col gap-2 xl:flex-row">
-              <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
+              <div
+                class="bg-white-dark relative h-52 w-full max-w-[700px] rounded-lg border border-line dark:border-[#3f3f3f]"
+              >
                 <PipelineThroughputGraph
                   {pipeline}
                   metrics={timeSeries}
@@ -345,7 +394,9 @@
                   keepMs={GRAPH_WINDOW_MS}
                 ></PipelineThroughputGraph>
               </div>
-              <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
+              <div
+                class="bg-white-dark relative h-52 w-full max-w-[700px] rounded-lg border border-line dark:border-[#3f3f3f]"
+              >
                 <PipelineMemoryGraph
                   {pipeline}
                   metrics={timeSeries}
@@ -354,7 +405,9 @@
                   memoryPressure={global.memory_pressure}
                 ></PipelineMemoryGraph>
               </div>
-              <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
+              <div
+                class="bg-white-dark relative h-52 w-full max-w-[700px] rounded-lg border border-line dark:border-[#3f3f3f]"
+              >
                 <PipelineStorageGraph
                   {pipeline}
                   metrics={timeSeries}

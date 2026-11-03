@@ -28,6 +28,8 @@
     updatedText?: string | null
     /** Returns one event with all its detail fields. By default, finds the event in `events`. */
     loadEvent?: (eventId: string) => Promise<PipelineMonitorEvent | null | undefined>
+    /** Background, corners and padding of the timeline and incident list box. */
+    boxClass?: string
     /** localStorage key to persist the size of the details drawer. */
     localStorageKey?: string
   }
@@ -38,7 +40,8 @@
     now,
     updatedText = null,
     loadEvent = async (eventId) => events?.find((e) => e.event_id === eventId),
-    localStorageKey
+    localStorageKey,
+    boxClass = 'bg-white-dark rounded p-2'
   }: Props = $props()
 
   const categorizedEvents = $derived(categorizePipelineEvents(events ?? []))
@@ -185,7 +188,7 @@
   {localStorageKey}
 >
   {#snippet main()}
-    <div class="bg-white-dark flex h-full flex-1 flex-col gap-4 overflow-hidden rounded p-2">
+    <div class="flex h-full flex-1 flex-col gap-4 overflow-hidden {boxClass}">
       <StatusTimeline
         bind:this={timelineRef}
         label="Pipeline status"

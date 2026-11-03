@@ -177,7 +177,7 @@
 
 {#snippet eventGroup(events: Bucket, iconClass: string = '')}
   <div
-    class="flex flex-nowrap items-center gap-7 rounded px-2 py-2 {selectedEventBuckets.has(events)
+    class="-mx-2 flex flex-nowrap items-center gap-7 rounded px-2 py-2 {selectedEventBuckets.has(events)
       ? 'bg-secondary-50-950/50'
       : ''}"
   >

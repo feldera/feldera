@@ -45,7 +45,8 @@
     children,
     statusBarCenter,
     statusBarEnd,
-    toolBarStart
+    toolBarStart,
+    unsavedChanges = $bindable(false)
   }: {
     pipeline: WritablePipeline<true>
     deleted: boolean
@@ -54,6 +55,8 @@
     statusBarEnd: Snippet
     /** Rendered before the file tabs, such as the pipelines list toggle. */
     toolBarStart?: Snippet
+    /** Whether the editor holds changes that are not saved yet. Read-only for the parent. */
+    unsavedChanges?: boolean
   } = $props()
 
   let runtimeVersion = $derived(
@@ -220,6 +223,9 @@ example = "1.0"`,
   })
 
   let downstreamChanged = $state(false)
+  $effect(() => {
+    unsavedChanges = downstreamChanged
+  })
   let saveFile = $state(async () => false)
 
   // While the pipeline has code from a link, every save asks the user to confirm.

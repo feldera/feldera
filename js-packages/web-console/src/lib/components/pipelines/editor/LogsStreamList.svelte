@@ -42,7 +42,7 @@
   {getCopyContent}
   {onStickToBottomChange}
   {onMatchCountChange}
-  class="bg-white-dark rounded pl-2 text-[13px] leading-5"
+  class="pl-3 text-[13px] leading-5"
 >
   {#snippet header()}
     {#if logs.totalDiscardedLines}

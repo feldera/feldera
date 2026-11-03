@@ -51,13 +51,15 @@
     metrics,
     deleted = false,
     hiddenTabs,
-    currentTab = $bindable(null)
+    currentTab = $bindable(null),
+    unsavedChanges = false
   }: {
     pipeline: { current: ExtendedPipeline }
     metrics: { current: PipelineMetrics }
     deleted?: boolean
     hiddenTabs: string[]
     currentTab: MonitoringTabs | null
+    unsavedChanges?: boolean
   } = $props()
 
   const pipelineName = $derived(pipeline.current.name)
@@ -118,7 +120,7 @@
         label: TabLogs,
         panel: PanelLogs,
         keepAlive: true,
-        tabBarEnd: TabBarEndLogs
+        tabBarEnd: TabBarEndPipelineInfo
       }
     ].filter(
       (tab) => !hiddenTabs.includes(tab.id) && (canQueryData.allowed || !dataTabs.includes(tab.id))
@@ -214,6 +216,8 @@
     errors,
     deleted,
     logSearch,
+    logSearchBar,
+    unsavedChanges,
     onLogMatchCountChange: (count: number) => (logMatchCount = count)
   })
   $effect(() => {
@@ -230,6 +234,9 @@
   })
   $effect(() => {
     tabProps.logSearch = logSearch
+  })
+  $effect(() => {
+    tabProps.unsavedChanges = unsavedChanges
   })
 </script>
 
@@ -276,21 +283,20 @@
   <span>Logs</span>
 {/snippet}
 
-{#snippet TabBarEndLogs()}
-  <div class="ml-auto flex items-center gap-2">
-    <SearchBar
-      bind:this={searchBar}
-      bind:value={logSearchInput}
-      placeholder="Search logs"
-      title="Search logs (Enter / Shift+Enter to step matches, Esc to clear, Ctrl/Cmd-F to toggle)"
-      results={searchResults}
-      onnext={() => submitLogSearch('next')}
-      onprevious={() => submitLogSearch('prev')}
-      onclear={resetLogSearch}
-      inputClass="h-8 w-40 rounded-[4px] py-0"
-    />
-    {@render PipelineInfoHeader()}
-  </div>
+<!-- Rendered by the Logs tab above the log lines, so it stays in place while they scroll. -->
+{#snippet logSearchBar()}
+  <SearchBar
+    bind:this={searchBar}
+    bind:value={logSearchInput}
+    inline
+    placeholder="Search logs"
+    title="Search logs (Enter / Shift+Enter to step matches, Esc to clear, Ctrl/Cmd-F to focus)"
+    results={searchResults}
+    onnext={() => submitLogSearch('next')}
+    onprevious={() => submitLogSearch('prev')}
+    onclear={resetLogSearch}
+    class="h-8 w-full max-w-[480px]"
+  />
 {/snippet}
 
 {#snippet TabBarEndPipelineInfo()}
@@ -300,7 +306,10 @@
 {/snippet}
 
 {#snippet PipelineInfoHeader()}
-  <ClipboardCopyButton value={pipeline.current.id} class="preset-tonal-surface btn-sm">
+  <ClipboardCopyButton
+    value={pipeline.current.id}
+    class="preset-outlined-surface-200-800 btn-sm before:text-[14px]!"
+  >
     <span class="font-normal text-surface-950-50"> Pipeline ID </span>
   </ClipboardCopyButton>
   <Tooltip placement="top">

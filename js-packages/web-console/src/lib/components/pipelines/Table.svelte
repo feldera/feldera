@@ -4,7 +4,8 @@
   import { formatDateTime } from 'common-lib/format'
   import { matchesSubstring } from 'common-lib/string'
   import { type NamesInUnion, unionName } from 'common-lib/union'
-  import { Popover, Select, Tooltip } from 'common-ui'
+  import { Popover, Tooltip } from 'common-ui'
+  import { fade } from 'svelte/transition'
   import { match } from 'ts-pattern'
   import PipelineStatus from '#lib/components/pipelines/list/PipelineStatus.svelte'
   import ColumnResizer from '#lib/components/pipelines/table/ColumnResizer.svelte'
@@ -21,6 +22,7 @@
   import { page } from '$app/state'
   import PipelineVersion from './table/PipelineVersion.svelte'
   import Tags from './table/Tags.svelte'
+  import Popup from '#lib/components/common/Popup.svelte'
 
   let {
     pipelines,
@@ -82,6 +84,9 @@
     ['Failed', ['SystemError', 'SqlError', 'RustError']],
     ['Unavailable', ['Unavailable']]
   ]
+
+  let statusFilterLabel = $state(filterStatuses[0][0])
+  let statusMenuOpen = $state(false)
 
   let nameSearch = $state('')
   const pipelinesFiltered = $derived(
@@ -182,7 +187,7 @@
     <!-- The header and the controls share one wrapping row: the controls sit beside the
          header and drop to their own line only when they no longer fit next to it. -->
     <div
-      class="sticky left-0 flex max-w-[100cqi] flex-wrap items-center gap-x-4 gap-y-2 px-2 md:px-5"
+      class="sticky left-0 flex max-w-[100cqi] flex-wrap items-center gap-x-4 gap-y-2 px-2 md:px-8"
     >
       {#if header}
         {@render header()}
@@ -200,23 +205,59 @@
             nameSearch = e.currentTarget.value
           }}
         />
-        <Select
-          data-testid="select-pipeline-status"
-          class="sm:w-40"
-          onchange={(e) => {
-            statusFilter.value = filterStatuses.find((v) => e.currentTarget.value === v[0])![0]
-            statusFilter.set()
-          }}
-        >
-          {#each filterStatuses as filter (filter[0])}
-            <option value={filter[0]}>{filter[0]}</option>
-          {/each}
-        </Select>
+        <Popup wrapperClass="sm:w-40" bind:isOpen={statusMenuOpen}>
+          {#snippet trigger(toggle, isOpen)}
+            <button
+              type="button"
+              data-testid="select-pipeline-status"
+              class="input flex w-full items-center justify-between gap-2 text-left"
+              aria-haspopup="listbox"
+              aria-expanded={isOpen}
+              onclick={toggle}
+            >
+              <span class="truncate">{statusFilterLabel}</span>
+              <span
+                class="fd fd-chevron-down shrink-0 text-[16px] text-surface-600-400 transition-transform {isOpen
+                  ? 'rotate-180'
+                  : ''}"
+              ></span>
+            </button>
+          {/snippet}
+          {#snippet content(close)}
+            <div
+              transition:fade={{ duration: 100 }}
+              class="bg-white-dark absolute top-full left-0 z-30 mt-1 flex w-full min-w-[180px] flex-col overflow-hidden rounded p-1 shadow-md dark:border dark:border-surface-950-50/10"
+              role="listbox"
+              aria-label="Filter by status"
+            >
+              {#each filterStatuses as filter (filter[0])}
+                {@const selected = filter[0] === statusFilterLabel}
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  class="flex h-9 items-center justify-between gap-2 rounded px-3 text-left hover:preset-tonal-surface"
+                  onclick={() => {
+                    statusFilterLabel = filter[0]
+                    statusFilter.value = filter[0]
+                    statusFilter.set()
+                    close()
+                  }}
+                >
+                  {filter[0]}
+                  {#if selected}
+                    <span class="fd fd-check text-[16px]"></span>
+                  {/if}
+                </button>
+              {/each}
+            </div>
+          {/snippet}
+        </Popup>
         {@render preHeaderEnd?.()}
       </div>
     </div>
   </div>
-  <div class="flex md:px-3">
+  <div class="flex px-2 md:pr-[calc(--spacing(8)-var(--scrollbar-width))] md:pl-8">
     <!-- The page wraps the table to fit its content, so a percentage width would have nothing
          to resolve against. As a flex item the table starts at the columns' total, which also
          sets how wide the page scrolls, and grows into any room left over while Message is

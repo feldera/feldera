@@ -1,6 +1,5 @@
 <script lang="ts">
   import { nubLast } from 'common-lib/array'
-  import { SegmentedControl } from 'common-ui'
   import AppHeader from '#lib/components/layout/AppHeader.svelte'
   import Footer from '#lib/components/layout/Footer.svelte'
   import NavigationExtras from '#lib/components/layout/NavigationExtras.svelte'
@@ -60,13 +59,25 @@
     {/if}
   {/snippet}
 </AppHeader>
-<div class="flex px-2 pb-5 md:px-8">
-  <SegmentedControl value={demosType} onValueChange={(v) => (demosType = v)} {items} />
+<!-- Underlined tabs like the pipeline page's, with the selected one in the chart olive. -->
+<div class="mb-5 flex gap-1 border-b border-line px-2 pt-2 md:px-8" role="tablist">
+  {#each items as item (item.value)}
+    {@const selected = item.value === demosType}
+    <button
+      type="button"
+      role="tab"
+      aria-selected={selected}
+      class="relative -mb-px px-3 pt-2.5 pb-2 whitespace-nowrap transition-colors {selected
+        ? 'text-surface-950-50 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-chart-line'
+        : 'text-surface-600-400 hover:text-surface-950-50'}"
+      onclick={() => (demosType = item.value)}
+    >
+      {item.label}
+    </button>
+  {/each}
 </div>
 <div class="scrollbar flex h-full flex-col justify-between overflow-y-auto">
-  <div
-    class="grid grid-cols-1 gap-4 px-2 sm:grid-cols-2 md:px-8 lg:grid-cols-3 2xl:grid-cols-5"
-  >
+  <div class="grid grid-cols-1 gap-4 px-2 sm:grid-cols-2 md:px-8 lg:grid-cols-3 2xl:grid-cols-5">
     {#each demos.current.filter((demo) => {
       return !demo || demosType === 'All' || demo.type === demosType
     }) as demo}

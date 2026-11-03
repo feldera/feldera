@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="280" height="180" viewBox="0 0 280 180" fill="none" role="img" aria-labelledby="title desc">
+<title id="title">Choose a table to explore its changes</title>
+<desc id="desc">A lavender highlighted table row connects to a flowing sequence of record update cards.</desc>
+<!-- Table selection -->
+<rect x="35" y="45" width="91" height="94" rx="9" fill="#FAF9F6" stroke="#B2B49F" stroke-width="1.2"/>
+<path d="M35 66H126" stroke="#DCDCD3"/>
+<path d="M47 55H65M71 55H78" stroke="#ADB099" stroke-width="1.5" stroke-linecap="round"/>
+<rect x="42" y="75" width="77" height="22" rx="4" fill="#EEEBF5"/>
+<rect x="48" y="81" width="10" height="10" rx="2" fill="#FAF9F6" stroke="#9581AE" stroke-width="1.1"/>
+<path d="M50.5 86L53 88.5L56 84" stroke="#9581AE" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M66 86H92M98 86H109" stroke="#A194B7" stroke-width="1.3" stroke-linecap="round"/>
+<rect x="48" y="105" width="10" height="10" rx="2" stroke="#C2C5B5"/>
+<path d="M66 110H106M48 127H79M87 127H107" stroke="#D0D3C6" stroke-width="1.3" stroke-linecap="round"/>
+<!-- Stream follows the selected row, with deliberate endpoints. -->
+<path d="M126 86H144C151 86 151 67 159 67H174M144 86C151 86 151 111 159 111H188" stroke="#ADB099" stroke-width="1.2" stroke-dasharray="3 4"/>
+<!-- Update cards -->
+<rect x="179" y="45" width="54" height="38" rx="6" fill="#F5F4F0" stroke="#DFE1D6" transform="rotate(6 206 64)"/>
+<rect x="173" y="48" width="54" height="38" rx="6" fill="#FAF9F6" stroke="#B2B49F" stroke-width="1.2"/>
+<rect x="180" y="56" width="13" height="13" rx="3" fill="#ECEBDC"/>
+<path d="M184 62.5H189M186.5 60V65" stroke="#858970" stroke-width="1.1" stroke-linecap="round"/>
+<path d="M200 60H218M200 65H211M181 77H216" stroke="#C0C3B2" stroke-width="1.2" stroke-linecap="round"/>
+<rect x="188" y="100" width="54" height="38" rx="6" fill="#FAF9F6" stroke="#C0C3B2" stroke-width="1.2"/>
+<rect x="195" y="108" width="13" height="13" rx="3" fill="#EEEBF5"/>
+<path d="M199 114.5H204" stroke="#9581AE" stroke-width="1.2" stroke-linecap="round"/>
+<path d="M215 112H233M215 117H226M196 129H231" stroke="#D0D3C6" stroke-width="1.2" stroke-linecap="round"/>
+<!-- Small cursor makes the required first action explicit. -->
+<path d="M105 91L108 111L112 106L116 113L120 111L116 104L123 104Z" fill="#FAF9F6" stroke="#858970" stroke-width="1.2" stroke-linejoin="round"/>
+</svg>
