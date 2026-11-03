@@ -2829,7 +2829,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             let incarnation_uuid = incarnation_uuid.unwrap_or(metrics.incarnation_uuid);
             if incarnation_uuid != metrics.incarnation_uuid {
                 eprintln!(
-                    "Pipeline restarted since the transaction started (incarnation {incarnation_uuid}, now {}), so the transaction was lost",
+                    "Pipeline restarted since the transaction started (incarnation {incarnation_uuid}, now {}), so the transaction status was lost",
                     metrics.incarnation_uuid
                 );
                 std::process::exit(1);
