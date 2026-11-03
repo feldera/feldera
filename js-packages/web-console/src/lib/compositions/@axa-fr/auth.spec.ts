@@ -1,11 +1,14 @@
 import { OidcClient, type OidcLocation } from '@axa-fr/oidc-client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { toAxaOidcConfig } from '#lib/compositions/@axa-fr/auth.ts'
+import { toAxaOidcConfig, withoutRevocationRetry } from '#lib/compositions/@axa-fr/auth.ts'
 import type { OidcConfig } from '#lib/compositions/auth.ts'
 
 const idp = 'https://idp.example.com/'
 const revocationEndpoint = `${idp}oauth2/revoke`
 const endSessionEndpoint = `${idp}logout`
+
+/** The OIDC client aborts each request after this time. */
+const CLIENT_REQUEST_TIMEOUT_MS = 10_000
 
 /** An AWS Cognito configuration in the form that `loadAuthConfig` builds. */
 const oidcConfig = (overrides: { revocation_endpoint?: string } = {}): OidcConfig =>
@@ -57,12 +60,14 @@ type Network = {
 
 /**
  * Restore a session from storage the way the console does on page load, then
- * sign out. `respondToRevocation` answers the revocation request.
+ * sign out. `respondToRevocation` answers the revocation request, and
+ * `logoutExtras` are the extra parameters the console passes to `logoutAsync`.
  */
 async function signOut(options: {
   config?: OidcConfig
   tokens?: { accessToken: string; refreshToken?: string }
   respondToRevocation?: () => Promise<Response>
+  logoutExtras?: Record<string, string>
 }): Promise<Network & { storage: Storage }> {
   const config = options.config ?? oidcConfig()
   const configurationName = `test-${crypto.randomUUID()}`
@@ -83,7 +88,7 @@ async function signOut(options: {
     network.events.push(`fetch ${url}`)
     if (url === revocationEndpoint) {
       network.revocations.push(Object.fromEntries(new URLSearchParams(String(init?.body))))
-      return respondToRevocation()
+      return abortable(respondToRevocation(), init?.signal)
     }
     throw new Error(`Unexpected request to ${url}`)
   }
@@ -95,7 +100,7 @@ async function signOut(options: {
     getOrigin: () => 'https://console.example.com'
   }
 
-  const client = OidcClient.getOrCreate(() => fetchMock as typeof fetch, location)(
+  const client = OidcClient.getOrCreate(() => withoutRevocationRetry(fetchMock), location)(
     toAxaOidcConfig(config),
     configurationName
   )
@@ -103,12 +108,21 @@ async function signOut(options: {
   expect(client.tokens?.refreshToken, 'stored session was not restored').toBe(
     options.tokens ? options.tokens.refreshToken : 'refresh-token'
   )
-  await client.logoutAsync('/')
+  await client.logoutAsync('/', options.logoutExtras)
   return { ...network, storage: config.storage! }
+}
+
+/** Reject `response` with the abort reason when `signal` aborts, as `fetch` does. */
+function abortable(response: Promise<Response>, signal: AbortSignal | null | undefined) {
+  return new Promise<Response>((resolve, reject) => {
+    signal?.addEventListener('abort', () => reject(signal.reason))
+    response.then(resolve, reject)
+  })
 }
 
 describe('sign-out', () => {
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -149,6 +163,43 @@ describe('sign-out', () => {
     expect(storedTokens(storage)).toBeUndefined()
   })
 
+  it('signs out after one revocation attempt when the provider does not answer', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    let isSignedOut = false
+    const signingOut = signOut({ respondToRevocation: () => new Promise(() => {}) }).then(
+      (network) => {
+        isSignedOut = true
+        return network
+      }
+    )
+
+    await vi.advanceTimersByTimeAsync(CLIENT_REQUEST_TIMEOUT_MS - 1)
+    expect(isSignedOut).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(isSignedOut).toBe(true)
+    const { revocations, events, storage } = await signingOut
+    expect(revocations).toHaveLength(1)
+    expect(events.at(-1)).toBe(`open ${endSessionEndpoint}`)
+    expect(storedTokens(storage)).toBeUndefined()
+  })
+
+  it('sends only the revocation parameters when the console passes Cognito logout extras', async () => {
+    const { revocations } = await signOut({
+      logoutExtras: {
+        client_id: 'test-client',
+        redirect_uri: 'https://console.example.com/auth/callback/',
+        response_type: 'code',
+        nonce: 'nonce'
+      }
+    })
+
+    expect(revocations).toEqual([
+      { token: 'refresh-token', token_type_hint: 'refresh_token', client_id: 'test-client' }
+    ])
+  })
+
   it('skips revocation when the provider has no revocation endpoint', async () => {
     const { revocations, events } = await signOut({
       config: oidcConfig({ revocation_endpoint: undefined })
@@ -165,6 +216,33 @@ describe('sign-out', () => {
 
     expect(revocations).toEqual([])
     expect(events).toEqual([`open ${endSessionEndpoint}`])
+  })
+})
+
+describe('withoutRevocationRetry', () => {
+  const revocationBody = 'token=t&token_type_hint=refresh_token'
+  const tokenBody = 'grant_type=refresh_token&refresh_token=t'
+
+  /** Send `body` through the wrapper to a `fetch` that fails with `error`. */
+  const errorOf = (body: string, error: Error) =>
+    withoutRevocationRetry(() => Promise.reject(error))('https://idp.example.com/endpoint', {
+      method: 'POST',
+      body
+    }).catch((e: Error) => e)
+
+  const abortError = () => new DOMException('This operation was aborted', 'AbortError')
+
+  it('rejects an aborted revocation request with a TimeoutError', async () => {
+    expect(await errorOf(revocationBody, abortError())).toMatchObject({ name: 'TimeoutError' })
+  })
+
+  it('keeps the AbortError of an aborted token request', async () => {
+    expect(await errorOf(tokenBody, abortError())).toMatchObject({ name: 'AbortError' })
+  })
+
+  it('keeps other errors of a revocation request', async () => {
+    const networkError = new TypeError('Failed to fetch')
+    expect(await errorOf(revocationBody, networkError)).toBe(networkError)
   })
 })
 

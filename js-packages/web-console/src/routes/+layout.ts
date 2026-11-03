@@ -3,7 +3,12 @@ import Dayjs from 'dayjs'
 import duration from 'dayjs/plugin/duration'
 import equal from 'fast-deep-equal'
 import posthog from 'posthog-js'
-import { authTimeOf, fromAxaUserInfo, toAxaOidcConfig } from '#lib/compositions/@axa-fr/auth.ts'
+import {
+  authTimeOf,
+  fromAxaUserInfo,
+  toAxaOidcConfig,
+  withoutRevocationRetry
+} from '#lib/compositions/@axa-fr/auth.ts'
 import { loadAuthConfig } from '#lib/compositions/auth.ts'
 import {
   clearConfigCaches,
@@ -525,7 +530,7 @@ const axaOidcAuth = async (params: {
   onBeforeLogout?: () => void
 }) => {
   const oidcClient = OidcClient.getOrCreate(
-    () => fetch,
+    () => withoutRevocationRetry(fetch),
     new OidcLocation()
   )({ ...params.oidcConfig, extras: { audience: 'feldera-api' } })
   const href = window.location.href

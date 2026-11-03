@@ -1,6 +1,7 @@
 <script lang="ts">
   import { healthStatusColors } from 'common-ui'
   import { fade } from 'svelte/transition'
+  import IconLoader from '#assets/icons/generic/loader-alt.svg?component'
   import CurrentTenant from '#lib/components/auth/CurrentTenant.svelte'
   import RBAC from '#lib/components/auth/RBAC.svelte'
   import Popup from '#lib/components/common/Popup.svelte'
@@ -23,6 +24,10 @@
   const auth = page.data.auth as AuthDetails | undefined
 
   const globalDialog = useGlobalDialog()
+
+  // Sign-out can wait up to 10 s for the identity provider to revoke the refresh token.
+  // The page then navigates to the provider, so the button stays pending on success.
+  let isSigningOut = $state(false)
 
   // Undefined while no poll has answered; the dot then shows no verdict.
   // Stale data cannot claim health, but a recorded issue keeps its own colour.
@@ -131,17 +136,29 @@
         <div class="-mt-1 flex flex-col gap-1">
           {#if typeof auth === 'object' && 'logout' in auth}
             <button
-              class="-mx-2 flex h-9 items-center gap-1.5 rounded px-2 font-medium hover:bg-surface-50-950"
+              class="-mx-2 flex h-9 items-center gap-1.5 rounded px-2 font-medium hover:bg-surface-50-950 disabled:cursor-wait disabled:opacity-70"
+              data-testid="btn-sign-out"
+              disabled={isSigningOut}
               onclick={async () => {
-                // Redirect to home page, otherwise the auth client inserts the current page
-                // which is not whitelisted by the auth provider
-                await auth.logout({ callbackUrl: '/' })
+                isSigningOut = true
+                try {
+                  // Redirect to home page, otherwise the auth client inserts the current page
+                  // which is not whitelisted by the auth provider
+                  await auth.logout({ callbackUrl: '/' })
+                } catch (e) {
+                  isSigningOut = false
+                  throw e
+                }
               }}
             >
               <div class="flex w-7 shrink-0 justify-center">
-                <div class="fd fd-log-out text-[16px]"></div>
+                {#if isSigningOut}
+                  <IconLoader class="h-4 animate-spin fill-surface-950-50"></IconLoader>
+                {:else}
+                  <div class="fd fd-log-out text-[16px]"></div>
+                {/if}
               </div>
-              Sign Out
+              {isSigningOut ? 'Signing out…' : 'Sign Out'}
             </button>
           {/if}
           <RBAC require="read:cluster_health">
