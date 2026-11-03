@@ -201,21 +201,41 @@ class PipelineRestartedError(Exception):
     """Raised when the pipeline process came back as a new incarnation mid-test."""
 
 
-def raise_if_restarted(pipeline: Pipeline, incarnation, cause: Exception):
-    """Turn a wrong view result into a restart report when the pipeline is a new incarnation.
+def check_incarnation(pipeline: Pipeline, incarnation, cause: Exception = None):
+    """Raise PipelineRestartedError when the pipeline is a new incarnation.
 
     A pipeline pod that restarts after ingestion holds empty tables, reports
     Running, and answers every ad-hoc query with an empty result. Completion
-    tokens only catch a restart during ingestion (feldera#6986), so the view
-    check compares the incarnation UUID recorded after start.
+    tokens only catch a restart during ingestion (feldera#6986), so the test
+    compares the incarnation UUID recorded after start.
     """
     metrics = pipeline.stats().global_metrics
-    if incarnation is not None and metrics.incarnation_uuid != incarnation:
-        raise PipelineRestartedError(
-            f"pipeline {pipeline.name} restarted during the test: incarnation "
-            f"{incarnation} became {metrics.incarnation_uuid}, it now holds "
-            f"{metrics.total_input_records} input records\n{cause}"
-        ) from cause
+    if incarnation is None or metrics.incarnation_uuid == incarnation:
+        return
+    message = (
+        f"pipeline {pipeline.name} restarted during the test: incarnation "
+        f"{incarnation} became {metrics.incarnation_uuid}, it now holds "
+        f"{metrics.total_input_records} input records"
+    )
+    if cause is not None:
+        message += f"\n{cause}"
+    raise PipelineRestartedError(message) from cause
+
+
+def raise_if_restarted(pipeline: Pipeline, incarnation, cause: Exception):
+    """Turn a wrong view result into a restart report, else keep the view diff.
+
+    The pod may still be coming up, so a failed probe must not replace the
+    view diff: the caller re-raises `cause` when this returns.
+    """
+    try:
+        check_incarnation(pipeline, incarnation, cause)
+    except PipelineRestartedError:
+        raise
+    except Exception as probe_error:
+        print(
+            f"WARNING: could not check the incarnation of {pipeline.name}: {probe_error}"
+        )
 
 
 class TstAccumulator:
@@ -340,6 +360,8 @@ class TstAccumulator:
                 except AssertionError as e:
                     raise_if_restarted(pipeline, incarnation, e)
                     raise
+            # Views that expect no rows pass on an empty incarnation.
+            check_incarnation(pipeline, incarnation)
 
         except Exception as e:
             # Determine if this is a compile time or runtime error based on the pipeline state
