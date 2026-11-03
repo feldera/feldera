@@ -23,6 +23,8 @@
   import PipelineVersion from './table/PipelineVersion.svelte'
   import Tags from './table/Tags.svelte'
   import Popup from '#lib/components/common/Popup.svelte'
+  import { statusToneColors } from '#lib/functions/pipelineStatusColor.ts'
+  import type { StatusTone } from 'common-ui/statusTone'
 
   let {
     pipelines,
@@ -85,6 +87,15 @@
     ['Unavailable', ['Unavailable']]
   ]
 
+  // The dot beside each status filter, in the colour its pipelines' status dots use.
+  const filterDotTone: Record<string, StatusTone> = {
+    Running: 'jade',
+    Paused: 'blue',
+    'Ready To Start': 'neutral',
+    Compiling: 'warning',
+    Failed: 'error',
+    Unavailable: 'warning'
+  }
   let statusFilterLabel = $state(filterStatuses[0][0])
   let statusMenuOpen = $state(false)
 
@@ -210,7 +221,7 @@
             <button
               type="button"
               data-testid="select-pipeline-status"
-              class="input flex w-full items-center justify-between gap-2 text-left"
+              class="input flex h-8 w-full items-center justify-between gap-2 rounded-[4px] text-left"
               aria-haspopup="listbox"
               aria-expanded={isOpen}
               onclick={toggle}
@@ -244,7 +255,19 @@
                     close()
                   }}
                 >
-                  {filter[0]}
+                  <span class="flex items-center gap-2">
+                    {#if filterDotTone[filter[0]]}
+                      <span
+                        class="h-2 w-2 shrink-0 rounded-full {statusToneColors[
+                          filterDotTone[filter[0]]
+                        ].dot}"
+                      ></span>
+                    {:else}
+                      <!-- Keeps "All Pipelines" in line with the labels that have a dot. -->
+                      <span class="h-2 w-2 shrink-0" aria-hidden="true"></span>
+                    {/if}
+                    {filter[0]}
+                  </span>
                   {#if selected}
                     <span class="fd fd-check text-[16px]"></span>
                   {/if}
